@@ -157,6 +157,18 @@ export function getQueryRoles() {
 export function previewFilterRules(datasource_id: number, rules?: any) {
   return request({ url: `${API_PATH}/datasources/${datasource_id}/rules/preview`, method: "post", data: { rules } });
 }
+/** 大模型生成候选筛选规则；rules 为当前草稿（可选） */
+export function suggestFilterRules(datasource_id: number, rules?: any) {
+  return request({ url: `${API_PATH}/datasources/${datasource_id}/rules/suggest`, method: "post", data: { rules } });
+}
+/** 大模型把自然语言转成筛选规则 */
+export function parseFilterRules(datasource_id: number, text: string) {
+  return request({ url: `${API_PATH}/datasources/${datasource_id}/rules/parse`, method: "post", data: { text } });
+}
+/** 大模型逐表逐字段分类建议 */
+export function classifyAdvise(datasource_id: number, rules?: any) {
+  return request({ url: `${API_PATH}/datasources/${datasource_id}/rules/classify-advise`, method: "post", data: { rules } });
+}
 
 // 会话
 export function getQuerySessions() {

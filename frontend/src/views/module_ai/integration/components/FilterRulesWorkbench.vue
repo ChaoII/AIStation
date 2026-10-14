@@ -338,13 +338,116 @@
           </el-row>
         </div>
       </el-tab-pane>
+
+      <!-- 5) 大模型辅助：生成候选 / 自然语言配置 / 逐表逐字段建议 -->
+      <el-tab-pane label="大模型辅助" name="llm">
+        <div v-loading="llmLoading" class="frwb-pane frwb-llm">
+          <el-alert
+            type="info"
+            :closable="false"
+            class="frwb-note"
+            title="以下三区均由大模型辅助生成候选规则 / 建议；「应用到草稿」仅写入前端草稿（未落库），确认后可回「规则配置」微调再保存。"
+          />
+
+          <!-- 5.1) 生成候选规则 -->
+          <el-card shadow="never" class="frwb-card frwb-llm__card">
+            <template #header>
+              <div class="frwb-llm__head">
+                <span class="frwb-card__title">生成候选规则</span>
+                <el-button size="small" :loading="llmLoading" @click="doSuggest">生成候选规则</el-button>
+              </div>
+            </template>
+            <template v-if="suggestResult">
+              <RulePreview :rules="suggestResult" />
+              <div class="frwb-llm__foot">
+                <el-button
+                  v-hasPerm="['module_ai:query:ask']"
+                  size="small"
+                  type="primary"
+                  @click="applyRules(suggestResult)"
+                >
+                  应用到草稿
+                </el-button>
+              </div>
+            </template>
+            <el-empty v-else description="点「生成候选规则」让大模型给出候选规则" :image-size="60" />
+          </el-card>
+
+          <!-- 5.2) 自然语言配置 -->
+          <el-card shadow="never" class="frwb-card frwb-llm__card">
+            <template #header>
+              <span class="frwb-card__title">自然语言配置</span>
+            </template>
+            <el-input
+              v-model="llmText"
+              type="textarea"
+              :rows="3"
+              placeholder="用自然语言描述规则，例如：把 SYS_ 前缀的表当系统表，created_time / is_deleted 当审计字段"
+            />
+            <div class="frwb-llm__foot">
+              <el-button
+                size="small"
+                type="primary"
+                :loading="llmLoading"
+                :disabled="!llmText.trim()"
+                @click="doParse"
+              >
+                解析
+              </el-button>
+            </div>
+            <template v-if="parseResult">
+              <RulePreview :rules="parseResult" />
+              <div class="frwb-llm__foot">
+                <el-button
+                  v-hasPerm="['module_ai:query:ask']"
+                  size="small"
+                  type="primary"
+                  @click="applyRules(parseResult)"
+                >
+                  应用到草稿
+                </el-button>
+              </div>
+            </template>
+            <el-empty v-else description="输入自然语言后点「解析」转换为筛选规则" :image-size="60" />
+          </el-card>
+
+          <!-- 5.3) 逐表逐字段建议 -->
+          <el-card shadow="never" class="frwb-card frwb-llm__card">
+            <template #header>
+              <div class="frwb-llm__head">
+                <span class="frwb-card__title">逐表逐字段建议</span>
+                <el-button size="small" :loading="llmLoading" @click="doClassify">获取分类建议</el-button>
+              </div>
+            </template>
+            <template v-if="classifyResult">
+              <div class="frwb-llm__subtitle">系统表建议（{{ classifyResult.system_suggest?.length || 0 }}）</div>
+              <el-table :data="classifyResult.system_suggest || []" size="small" border>
+                <el-table-column label="表名" prop="name" min-width="200" show-overflow-tooltip />
+                <el-table-column label="建议原因" prop="reason" min-width="260" show-overflow-tooltip />
+              </el-table>
+              <div class="frwb-llm__subtitle">审计字段建议（{{ classifyResult.audit_suggest?.length || 0 }}）</div>
+              <el-table :data="classifyResult.audit_suggest || []" size="small" border>
+                <el-table-column label="字段名" prop="name" min-width="200" show-overflow-tooltip />
+                <el-table-column label="建议原因" prop="reason" min-width="260" show-overflow-tooltip />
+              </el-table>
+              <el-alert
+                type="warning"
+                :closable="false"
+                class="frwb-note"
+                title="此处为逐项分类建议，非完整规则，仅作参考，不回填草稿。"
+              />
+            </template>
+            <el-empty v-else description="点「获取分类建议」查看逐表逐字段建议" :image-size="60" />
+          </el-card>
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ref, computed, watch, onBeforeUnmount, defineComponent, h } from "vue";
+import { ElMessage, ElMessageBox, ElForm, ElFormItem } from "element-plus";
 import { Refresh, Right } from "@element-plus/icons-vue";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
@@ -356,6 +459,9 @@ import {
   saveQueryDatasource,
   syncQueryDatasourceSchema,
   previewFilterRules,
+  suggestFilterRules,
+  parseFilterRules,
+  classifyAdvise,
 } from "@/api/module_ai/query";
 
 use([PieChart, CanvasRenderer, TooltipComponent, LegendComponent]);
@@ -393,6 +499,38 @@ function deepClone(v: any) {
   return JSON.parse(JSON.stringify(v));
 }
 
+// 只读规则预览小部件：复用同一套展示，供「生成候选 / 自然语言解析」两处回显规则
+const RulePreview = defineComponent({
+  name: "RulePreview",
+  props: { rules: { type: Object, required: true } },
+  setup(props) {
+    // 数组字段取空串兜底，避免展示 undefined
+    const fmt = (arr: any) =>
+      Array.isArray(arr) && arr.length ? arr.join("、") : "—";
+    return () =>
+      h(ElForm, { labelWidth: "110px", size: "small", class: "frwb-llm__preview" }, () => [
+        h(ElFormItem, { label: "启用" }, () => [
+          h("span", props.rules?.enabled === false ? "停用" : "启用"),
+        ]),
+        h(ElFormItem, { label: "表名前缀" }, () => [
+          h("span", fmt(props.rules?.system_table?.prefixes)),
+        ]),
+        h(ElFormItem, { label: "表名关键词" }, () => [
+          h("span", fmt(props.rules?.system_table?.keywords)),
+        ]),
+        h(ElFormItem, { label: "精确表名" }, () => [
+          h("span", fmt(props.rules?.system_table?.exact)),
+        ]),
+        h(ElFormItem, { label: "表名正则" }, () => [
+          h("span", props.rules?.system_table?.regex || "—"),
+        ]),
+        h(ElFormItem, { label: "审计字段" }, () => [
+          h("span", fmt(props.rules?.audit_fields)),
+        ]),
+      ]);
+  },
+});
+
 const innerTab = ref("config");
 const dsDetail = ref<any>(null);
 const rules = ref<any>(defaultRules());
@@ -404,6 +542,15 @@ const saving = ref(false);
 const compareLoading = ref(false);
 // 前后对比是否已成功加载过基准（已保存规则的命中结果）
 const compareLoaded = ref(false);
+// 大模型辅助：共用 loading 标志，避免三区同时重复点击
+const llmLoading = ref(false);
+// 自然语言输入
+const llmText = ref("");
+// 生成候选 / 自然语言解析的候选规则结果
+const suggestResult = ref<any>(null);
+const parseResult = ref<any>(null);
+// 逐表逐字段分类建议结果（system_suggest / audit_suggest）
+const classifyResult = ref<any>(null);
 // 数据源切换代际守卫：仅接受当前代际的异步响应，避免旧数据源晚回覆盖新数据源
 let gen = 0;
 
@@ -531,6 +678,56 @@ let previewTimer: any = null;
 function scheduleRefresh() {
   if (previewTimer) clearTimeout(previewTimer);
   previewTimer = setTimeout(() => doRefreshPreview(), 300);
+}
+
+// 大模型辅助：把候选/解析规则写入前端草稿（仅改草稿不落库，无需二次确认），并刷新预览、切回「规则配置」
+function applyRules(r: any) {
+  rules.value = normalizeRules(r);
+  doRefreshPreview();
+  ElMessage.success("已应用到草稿（未落库），可回「规则配置」微调后再保存");
+  innerTab.value = "config";
+}
+
+// 生成候选规则：基于当前草稿交给大模型生成候选
+async function doSuggest() {
+  if (!props.datasource?.id) return;
+  llmLoading.value = true;
+  try {
+    const r = await suggestFilterRules(props.datasource.id, rules.value);
+    suggestResult.value = r.data?.data?.rules || null;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "生成候选规则失败");
+  } finally {
+    llmLoading.value = false;
+  }
+}
+
+// 自然语言解析：把自然语言描述转成筛选规则
+async function doParse() {
+  if (!props.datasource?.id || !llmText.value.trim()) return;
+  llmLoading.value = true;
+  try {
+    const r = await parseFilterRules(props.datasource.id, llmText.value);
+    parseResult.value = r.data?.data?.rules || null;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "解析失败");
+  } finally {
+    llmLoading.value = false;
+  }
+}
+
+// 逐表逐字段分类建议：仅展示建议，不回填规则
+async function doClassify() {
+  if (!props.datasource?.id) return;
+  llmLoading.value = true;
+  try {
+    const r = await classifyAdvise(props.datasource.id, rules.value);
+    classifyResult.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "获取分类建议失败");
+  } finally {
+    llmLoading.value = false;
+  }
 }
 
 // 进入 / 切换数据源时加载详情与初始预览
@@ -713,5 +910,34 @@ onBeforeUnmount(() => {
 .frwb-arrow {
   margin: 0 4px;
   vertical-align: middle;
+}
+/* 大模型辅助区：卡片纵向堆叠 + 每卡内头部/底部操作行 */
+.frwb-llm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.frwb-llm__card {
+  flex-shrink: 0;
+}
+.frwb-llm__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.frwb-llm__subtitle {
+  margin: 10px 0 6px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.frwb-llm__foot {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+}
+.frwb-llm__preview {
+  margin-top: 4px;
 }
 </style>
