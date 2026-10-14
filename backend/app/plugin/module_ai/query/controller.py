@@ -1111,7 +1111,9 @@ async def import_ds_as_ontology(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
-    r = await AiQueryService.import_ds_table_as_ontology(int(data.get("datasource_id", 0)), str(data.get("table", "")))
+    r = await AiQueryService.import_ds_table_as_ontology(
+        int(data.get("datasource_id", 0)), str(data.get("table", "")),
+        domain_code=str(data.get("domain_code", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已导入"))
 
 
@@ -1124,6 +1126,7 @@ async def import_ds_as_ontology_batch(
         int(data.get("datasource_id", 0)),
         tables=data.get("tables"),
         include_technical=bool(data.get("include_technical", False)),
+        domain_code=str(data.get("domain_code", "")),
     )
     msg = f"已导入 {r.get('imported', 0)} 个本体对象" if r.get("ok") else r.get("msg", "导入失败")
     return SuccessResponse(data=r, msg=msg)

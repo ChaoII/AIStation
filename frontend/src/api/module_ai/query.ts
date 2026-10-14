@@ -131,22 +131,27 @@ export function syncQueryDatasourceSchema(id: number) {
 export function getQueryDatasourceSchema(id: number) {
   return request({ url: `${API_PATH}/datasources/${id}/schema`, method: "get" });
 }
-export function importDsAsOntology(datasource_id: number, table: string) {
+export function importDsAsOntology(
+  datasource_id: number,
+  table: string,
+  domain_code = ""
+) {
   return request({
     url: `${API_PATH}/ontology/import-from-ds`,
     method: "post",
-    data: { datasource_id, table },
+    data: { datasource_id, table, domain_code },
   });
 }
 export function importDsAsOntologyBatch(
   datasource_id: number,
   tables?: string[] | null,
-  include_technical = false
+  include_technical = false,
+  domain_code = ""
 ) {
   return request({
     url: `${API_PATH}/ontology/import-from-ds/batch`,
     method: "post",
-    data: { datasource_id, tables: tables || null, include_technical },
+    data: { datasource_id, tables: tables || null, include_technical, domain_code },
   });
 }
 export function getQueryRoles() {

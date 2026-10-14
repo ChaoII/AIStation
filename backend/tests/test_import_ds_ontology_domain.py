@@ -153,3 +153,42 @@ def test_import_ds_ontology_sets_domain_and_business(test_client, auth_headers):
         asyncio.run(_assert_rows())
     finally:
         asyncio.run(_cleanup(ds_id, code))
+
+
+def test_import_ds_ontology_endpoint_passes_domain_code(test_client, auth_headers):
+    """走 POST /ontology/import-from-ds 接口：body 传 domain_code → 对象写入该域（Task 5）。"""
+    code = f"ds_ont_ep_domain_{uuid.uuid4().hex[:8]}"
+    ds_id = _create_ds(test_client, auth_headers, code)
+    assert ds_id, "应得到新建数据源的 id"
+
+    asyncio.run(_seed_schema(ds_id))
+    try:
+        # 通过控制器端点导入，body 携带 domain_code
+        r = test_client.post(
+            "/api/v1/ai/query/ontology/import-from-ds",
+            json={"datasource_id": ds_id, "table": "SYS_XYZ", "domain_code": "fuel_business"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("data", {}).get("ok") is True, f"接口导入应成功: {body}"
+
+        async def _assert_domain():
+            async with async_db_session() as db:
+                obj = (
+                    await db.execute(
+                        text(
+                            "SELECT domain_code FROM ai_ont_object WHERE code=:c"
+                        ),
+                        {"c": "SYS_XYZ"},
+                    )
+                ).mappings().first()
+                assert obj is not None, "ai_ont_object 应含有导入对象行"
+                assert obj["domain_code"] == "fuel_business", (
+                    f"通过接口导入的对象 domain_code 应为 fuel_business，"
+                    f"实际: {obj['domain_code']}"
+                )
+
+        asyncio.run(_assert_domain())
+    finally:
+        asyncio.run(_cleanup(ds_id, code))
