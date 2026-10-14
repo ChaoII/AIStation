@@ -7004,6 +7004,32 @@ class AiQueryService:
         # NL2SQL）。meta 已带原始问题，这里只影响后续生成。开关默认关。
         question = await cls._maybe_rewrite(question, sess["id"], datasource)
 
+        # ---- 指标快路径（对齐 ask）：确定性、零 LLM；命中即流式返回 ----
+        if not _is_listing_question(question):
+            try:
+                metrics = await cls.list_metrics(datasource)
+                terms = await cls.list_terms(datasource)
+                metric = _match_metric(question, metrics, terms)
+                if metric and metric.get("agg") != "group" and _wants_grouping(question):
+                    metric = None
+                if metric:
+                    params = _build_params(metric, question)
+                    res = await _execute_metric(metric, params, auth)
+                    msg = await cls._save_message(
+                        sess["id"], question, path="fast", datasource=metric["datasource"],
+                        sql=res["sql"], columns=res["columns"], rows=res["rows"],
+                        result_rows=len(res["rows"]), took_ms=res.get("took_ms", 0),
+                        summary=cls._summarize(metric, res))
+                    yield {"type": "result", "path": "fast",
+                           "columns": res["columns"], "rows": res["rows"],
+                           "summary": msg.get("summary") or ""}
+                    yield {"type": "done", "path": "fast", "session_id": sess["id"]}
+                    return
+            except Exception as e:  # noqa: BLE001
+                # 快路径失败**不得中断 SSE** → 记录并继续走对象/NL2SQL 流式
+                log.warning("[query] 流式指标快路径失败，降级：[{}] {}",
+                            type(e).__name__, str(e)[:120])
+
         # ---- 对象查询（语义执行层）：能出合法 IR 就流式返回，否则继续 NL2SQL 流式 ----
         cfg0 = await cls._cfg()
         if cls._cfg_bool(cfg0, "object_query_enabled", False):
