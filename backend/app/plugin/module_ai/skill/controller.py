@@ -1,7 +1,7 @@
 """技能广场控制器。"""
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, File, Form, Query, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -9,7 +9,7 @@ from app.common.response import ErrorResponse, SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 
-from .schema import AiSkillCreateSchema, AiSkillUpdateSchema
+from .schema import AiSkillCreateSchema, AiSkillImportSchema, AiSkillUpdateSchema
 from .service import AiSkillService
 
 AiSkillRouter = APIRouter(route_class=OperationLogRoute, prefix="/skills", tags=["AI-技能"])
@@ -50,6 +50,33 @@ async def create_skill(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:skill:create"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiSkillService.create(data, auth), msg="创建成功")
+
+
+@AiSkillRouter.post("/import", summary="导入技能（粘贴 SKILL.md）")
+async def import_skill(
+    data: AiSkillImportSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:skill:create"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiSkillService.import_skill(data, auth),
+        msg="导入成功（默认停用，请检查后启用）",
+    )
+
+
+@AiSkillRouter.post("/import-zip", summary="导入技能（上传 Zip 包）")
+async def import_skill_zip(
+    file: Annotated[UploadFile, File(description="技能 Zip 包（含 SKILL.md）")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:skill:create"]))],
+    category: Annotated[str | None, Form(description="导入分类")] = None,
+    source: Annotated[str | None, Form(description="来源标注")] = "SkillHub",
+) -> JSONResponse:
+    content = await file.read()
+    return SuccessResponse(
+        data=await AiSkillService.import_skill_zip(
+            content, file.filename, category, source, auth
+        ),
+        msg="导入成功（默认停用，请检查后启用）",
+    )
 
 
 @AiSkillRouter.put("/update/{skill_id}", summary="编辑技能")

@@ -34,3 +34,12 @@ class AiSkillUpdateSchema(BaseModel):
     featured: bool | None = None
     sort_order: int | None = None
     enabled: bool | None = None
+
+
+class AiSkillImportSchema(BaseModel):
+    """导入技能（粘贴 SKILL.md 内容）。"""
+
+    content: str = Field(..., description="SKILL.md 全文（可含 YAML frontmatter）")
+    name: str | None = Field(default=None, max_length=128, description="覆盖技能名")
+    category: str | None = Field(default=None, max_length=64, description="导入到哪个分类")
+    source: str | None = Field(default="SkillHub", max_length=64, description="来源标注（记录用）")

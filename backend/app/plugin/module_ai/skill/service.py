@@ -166,6 +166,73 @@ class AiSkillService:
             await db.flush()
             return _to_dict(s)
 
+    # ---------- 导入（SkillHub / Claude Skills 的 SKILL.md 与 Zip） ----------
+
+    @classmethod
+    async def _unique_name(cls, db, base: str) -> str:
+        """同名技能自动加序号，便于区分多次导入。"""
+        name = (base or "未命名技能")[:120]
+        candidate, idx = name, 2
+        while await db.scalar(
+            select(AiSkillModel).where(
+                AiSkillModel.name == candidate, AiSkillModel.is_deleted.is_(False)
+            )
+        ):
+            candidate = f"{name}-{idx}"
+            idx += 1
+        return candidate
+
+    @classmethod
+    async def _persist_import(cls, parsed: dict, category, source, auth) -> dict:
+        """把解析结果落库为技能（默认停用，用户检查后再启用）。"""
+        async with async_db_session.begin() as db:
+            name = await cls._unique_name(db, parsed["name"])
+            s = AiSkillModel(
+                name=name,
+                description=parsed.get("description") or "",
+                content=parsed.get("content") or "",
+                skill_type="instruction",
+                category=(category or "导入技能")[:64],
+                author=(parsed.get("author") or f"外部导入（{source or 'SkillHub'}）")[:64],
+                version=parsed.get("version") or "1.0",
+                scripts=parsed.get("scripts") or None,
+                config={
+                    "source": source or "SkillHub",
+                    "source_file": parsed.get("source_file"),
+                    "import_tags": parsed.get("tags") or [],
+                },
+                icon="",
+                featured=False,
+                sort_order=0,
+                enabled=False,  # 导入后默认停用：先人工检查内容与脚本，再启用
+                created_id=auth.user.id,
+                updated_id=auth.user.id,
+            )
+            db.add(s)
+            await db.flush()
+            return _to_dict(s)
+
+    @classmethod
+    async def import_skill(cls, data, auth) -> dict:
+        """导入技能：解析粘贴的 SKILL.md 内容。"""
+        from .importer import parse_skill_md
+
+        parsed = parse_skill_md(data.content, fallback_name=data.name or "")
+        if data.name:
+            parsed["name"] = data.name
+        return await cls._persist_import(parsed, data.category, data.source, auth)
+
+    @classmethod
+    async def import_skill_zip(
+        cls, file_bytes: bytes, filename: str | None, category, source, auth
+    ) -> dict:
+        """导入技能：解析上传的 Zip 包（优先 SKILL.md）。"""
+        from .importer import parse_zip
+
+        fallback = (filename or "").rsplit(".", 1)[0]
+        parsed = parse_zip(file_bytes, fallback_name=fallback)
+        return await cls._persist_import(parsed, category, source, auth)
+
     @classmethod
     async def bump_install(cls, skill_ids: list[int], delta: int) -> None:
         """安装计数增减（安装 +1 / 卸载 -1），失败仅告警不阻断。"""
