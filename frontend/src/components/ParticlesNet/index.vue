@@ -23,13 +23,13 @@ const options = {
   particles: {
     number: { value: 60, density: { enable: true, width: 1200, height: 800 } },
     color: { value: ["#409EFF", "#36CFC9"] },
-    opacity: { value: { min: 0.22, max: 0.5 } },
+    opacity: { value: { min: 0.28, max: 0.55 } },
     size: { value: { min: 2, max: 4 } },
     links: {
       enable: true,
       distance: 150,
       color: "#409EFF",
-      opacity: 0.22,
+      opacity: 0.28,
       width: 1,
     },
     move: {
@@ -46,8 +46,8 @@ const options = {
       resize: { enable: true },
     },
     modes: {
-      attract: { distance: 220, duration: 0.6, speed: 1.8 },
-      grab: { distance: 180, links: { opacity: 0.35 } },
+      attract: { distance: 240, duration: 0.6, speed: 2.4 },
+      grab: { distance: 200, links: { opacity: 0.4 } },
       push: { quantity: 3 },
     },
   },
@@ -60,6 +60,11 @@ const options = {
   inset: 0;
   // 不遮挡/不拦截表单交互（鼠标事件由 window 侦听，故仍能吸附）
   pointer-events: none;
+
+  :deep(#login-particles) {
+    position: absolute;
+    inset: 0;
+  }
 
   :deep(canvas) {
     display: block;
