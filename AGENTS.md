@@ -545,6 +545,31 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 - AI 页面**必须与既有模块风格一致**（参考 `module_system/param`）：直接复用 Element Plus 组件（`el-card/el-descriptions/el-table/el-form/el-tag/el-statistic`）与 `--el-*` 变量；**不要自造主题化外壳/自定义配色**（`styles/ai-console.css` 的自定义观感曾被否定，需按框架组件重做）。
 - 完成界面后**用无头浏览器截图 + 视觉分析**（`vision-recognition` 技能）核对，避免与框架割裂。
 
+### 能力市场（工具/技能/MCP/插件统一橱窗，2026-10）
+
+- 位置：后端 `backend/app/plugin/module_ai/{market,mcp,plugins}/`；前端 `frontend/src/views/module_ai/{market,mcp,plugin}/`；
+  文档 `docs/ai-capability-market.md`。
+- 核心语义：**市场是橱窗，安装 = 把商品 `payload` 复制成自己的真实资产**（`ai_tools`/`ai_skills`/
+  `ai_mcp_servers`/`ai_plugins`）；幂等靠 `ai_market_relations(kind=installed)`，真实资产 id 存在该行 `description`。
+  Agent 绑定零侵入（仍绑自己的 `tool_ids`/`skill_ids`/`mcp_ids`）。
+- 五张新表：`ai_market_items` / `ai_market_relations` / `ai_market_shares` / `ai_mcp_servers` / `ai_plugins`；
+  增列 `ai_tools.code|timeout`、`ai_agents.mcp_ids`。
+- 权限码：`module_ai:market:{query,install,submit,share,review}`、`module_ai:mcp:*`、`module_ai:plugin:*`；
+  菜单/权限由 `init_app._ensure_ai_menus()` **启动时幂等补齐**（存量库重启即生效，无需手工 INSERT）。
+- **迁移必须手写**：本项目 dev 库有 400+ 张未被模型覆盖的历史/影子表（`ont_*`），`autogenerate`
+  会把它们判成待 DROP（灾难）。手写迁移时对**插件表**（`ai_agents`/`ai_tools`，不由迁移链创建）
+  增列要先 `sa.inspect(bind).has_table()` 判断，否则空库全链重放（SQLite 回归）会失败。
+- 脚本工具沙箱（`tools_catalog/script_executor.py`）：AST 白名单（导入白名单模块、禁 dunder/`eval`/`open`/`getattr`、
+  禁 `with/async`）+ 受限 builtins（含白名单 `__import__`，否则脚本内 `import` 会报 "not found"）+
+  `sys.settrace` 行计数超时（Windows 无 `signal.alarm`）。**创建时静态拒绝**非法脚本。
+  注意 `io` 模块**不可**加入白名单（`io.open` 可读写文件）。
+- MCP：agno 原生 `MCPTools`（stdio 用 `StdioServerParameters`，http 用 `url`+`headers`；`tool_name_prefix`
+  防重名）；`run_agno_tool_stream(mcp_tools=...)` 内连接/关闭，连不上只跳过（降级）。测试只做可达性探测。
+- 依赖变更：`mcp>=2.1,<3`（清华源）连带 **`pyjwt` 2.9→2.15、`uvicorn` 0.30→0.54**，并收紧
+  `requires-python <3.14`（3.14 分支要求 starlette>=0.48，与 fastapi 0.115.2 冲突）。
+- PG 特有坑：`GROUP BY` **不能按 select 别名**（SQLite 放行、PG 报 GroupingError）——
+  分类计数类查询要 `group_by(<表达式>)`。
+
 ### 连接超时（QueuePool 耗尽）排查与修复
 - 现象：长时运行或大量 e2e 后，登录/接口返回"请求超时"；日志 `QueuePool limit of size ... overflow ... reached, connection timed out`。
 - 根因（2026-10 实测）：一个请求最多同时吃 **3 条**连接（服务层普遍自己开 `async_db_session()`，不复用请求会话），
