@@ -1,5 +1,7 @@
 <template>
   <div class="auth-view" :style="{ '--login-background-url': `url(${loginBackgroundUrl})` }">
+    <!-- 跟随鼠标的聚光淡网格（零依赖组件；触摸设备自动禁用） -->
+    <GridSpotlight :cell="46" :radius="240" :grid-opacity="0.3" :glow-opacity="0.14" />
     <!-- 右侧切换主题、语言按钮  -->
     <div class="auth-view__toolbar">
       <el-tooltip :content="t('login.themeToggle')" placement="bottom">
@@ -21,10 +23,7 @@
         <div class="auth-panel__brand">
           <div class="auth-panel__logo-wrap">
             <!-- logo -->
-            <el-image
-              :src="configStore.configData?.sys_web_logo?.config_value || ''"
-              class="auth-panel__logo"
-            />
+            <el-image :src="loginLogoUrl" class="auth-panel__logo" />
           </div>
           <div class="auth-panel__meta">
             <div class="auth-panel__title-row">
@@ -99,6 +98,12 @@ const loginBackgroundUrl = computed(() => {
   );
 });
 
+// logo 兜底：配置为空时用内置 logo（此前配置指向失效地址 → 登录页显示"加载失败"）
+const loginLogoUrl = computed(() => {
+  const cfg = String(configStore.configData?.sys_web_logo?.config_value || "").trim();
+  return cfg || new URL("@/assets/images/logo.png", import.meta.url).href;
+});
+
 type LayoutMap = "login" | "register" | "resetPwd";
 
 const t = useI18n().t;
@@ -127,6 +132,15 @@ const loginPreset = reactive<{ username: string; password: string }>({
   height: 100%;
   padding: clamp(1rem, 3vw, 2rem);
   overflow: hidden;
+  // 聚光网格层：在背景之上、内容之下（否则绝对定位会盖住卡片）
+  :deep(.grid-spotlight) {
+    z-index: 0;
+  }
+  .auth-view__toolbar,
+  .auth-view__wrapper {
+    position: relative;
+    z-index: 1;
+  }
   background-color: var(--el-bg-color-page);
 
   &::before {
