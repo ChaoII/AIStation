@@ -42,6 +42,10 @@ export interface AiToolRow {
   /** 请求头（敏感值已掩码为 ****） */
   headers?: Record<string, any> | null;
   params_schema?: Record<string, any> | null;
+  /** Python 脚本源码（kind=script） */
+  code?: string | null;
+  /** 脚本执行超时（秒） */
+  timeout?: number;
 }
 
 export function getAiToolList(params?: any) {
@@ -72,6 +76,17 @@ export function testAiTool(id: number) {
   return request({
     url: `${API_PATH}/test/${id}`,
     method: "post",
+    headers: { _silent: "true" },
+    timeout: 30000,
+  });
+}
+
+/** 试运行 Python 脚本工具（可带参数） */
+export function testAiScript(id: number, args?: Record<string, any>) {
+  return request({
+    url: `${API_PATH}/test-script/${id}`,
+    method: "post",
+    data: { args: args || {} },
     headers: { _silent: "true" },
     timeout: 30000,
   });
