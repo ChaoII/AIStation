@@ -143,27 +143,6 @@
     </el-tabs>
 
     <!-- 第三方登录 -->
-    <div class="third-party-login">
-      <div class="divider-container">
-        <div class="divider-line"></div>
-        <span class="divider-text">{{ t("login.otherLoginMethods") }}</span>
-        <div class="divider-line"></div>
-      </div>
-      <div class="flex-center gap-x-5 w-full text-[var(--el-text-color-secondary)]">
-        <CommonWrapper>
-          <div text-20px class="i-svg:wechat" />
-        </CommonWrapper>
-        <CommonWrapper>
-          <div text-20px cursor-pointer class="i-svg:qq" />
-        </CommonWrapper>
-        <CommonWrapper>
-          <div text-20px cursor-pointer class="i-svg:github" />
-        </CommonWrapper>
-        <CommonWrapper>
-          <div text-20px cursor-pointer class="i-svg:gitee" />
-        </CommonWrapper>
-      </div>
-    </div>
   </div>
 </template>
 <script setup lang="ts">
@@ -177,7 +156,6 @@ import AuthAPI, {
   type CaptchaInfo,
 } from "@/api/module_system/auth";
 import { useAppStore, useUserStore, useSettingsStore } from "@/store";
-import CommonWrapper from "@/components/CommonWrapper/index.vue";
 import { User, Loading, Lock } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 
@@ -596,27 +574,6 @@ function toOtherForm(type: "register" | "resetPwd") {
         text-align: center;
         white-space: nowrap;
       }
-    }
-  }
-}
-
-.third-party-login {
-  .divider-container {
-    display: flex;
-    align-items: center;
-    margin: 20px 0;
-
-    .divider-line {
-      flex: 1;
-      height: 1px;
-      background: linear-gradient(to right, transparent, var(--el-border-color-light), transparent);
-    }
-
-    .divider-text {
-      padding: 0 16px;
-      font-size: 12px;
-      color: var(--el-text-color-regular);
-      white-space: nowrap;
     }
   }
 }

@@ -2,7 +2,7 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import setupPlugins from "@/plugins";
 import { createTerminal } from "vue-web-terminal";
-import { resolveSiteLogo } from "@/utils/siteLogo";
+import { resolveSiteLogo, resolveSiteFavicon } from "@/utils/siteLogo";
 
 // 暗黑主题样式
 import "element-plus/theme-chalk/dark/css-vars.css";
@@ -51,10 +51,24 @@ const setTitleAndFavicon = async () => {
       document.title = webTitle;
     }
 
-    if (webFavicon) {
+    // favicon：配置为空或指向失效地址时回落到内置 V3 图标（否则标签页显示默认地球）
+    {
       const favicon = document.querySelector('link[rel="icon"]');
       if (favicon instanceof HTMLLinkElement) {
-        favicon.href = webFavicon;
+        const fallbackFavicon = resolveSiteFavicon("");
+        if (webFavicon) {
+          // 先探测配置图标能否加载；失败（失效地址）则回落内置图标
+          const probe = new Image();
+          probe.onload = () => {
+            favicon.href = webFavicon;
+          };
+          probe.onerror = () => {
+            favicon.href = fallbackFavicon;
+          };
+          probe.src = webFavicon;
+        } else {
+          favicon.href = fallbackFavicon;
+        }
       }
     }
 

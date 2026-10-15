@@ -1,17 +1,19 @@
 <template>
   <div class="auth-view" :style="{ '--login-background-url': `url(${loginBackgroundUrl})` }">
     <!-- 跟随鼠标的聚光淡网格（零依赖组件；触摸设备自动禁用） -->
-    <GridSpotlight :cell="46" :radius="240" :grid-opacity="0.3" :glow-opacity="0.14" />
+    <GridSpotlight
+      :cell="46"
+      :radius="240"
+      :grid-opacity="0.25"
+      :glow-opacity="0.12"
+      line-color="rgba(64, 158, 255, 0.42)"
+      glow-color="rgba(64, 158, 255, 0.5)"
+    />
     <!-- 极光光斑背景：让毛玻璃卡的模糊效果明显 -->
     <AuroraBackground />
     <ParticlesNet />
-    <!-- 右侧切换主题、语言按钮  -->
+    <!-- 右侧语言切换按钮（登录页为固定深色沉浸式，不提供明暗切换） -->
     <div class="auth-view__toolbar">
-      <el-tooltip :content="t('login.themeToggle')" placement="bottom">
-        <CommonWrapper>
-          <ThemeSwitch />
-        </CommonWrapper>
-      </el-tooltip>
       <el-tooltip :content="t('login.languageToggle')" placement="bottom">
         <CommonWrapper>
           <LangSelect size="text-20px" />
@@ -58,28 +60,6 @@
             class="auth-panel__form"
           />
         </transition>
-
-        <!-- 登录页底部版权 -->
-        <footer class="auth-panel__footer">
-          <el-text size="small">
-            <a :href="configStore.configData?.sys_git_code?.config_value || ''" target="_blank">
-              {{ configStore.configData?.sys_web_copyright?.config_value || "" }}
-            </a>
-            |
-            <a :href="configStore.configData?.sys_help_doc?.config_value || ''" target="_blank">
-              帮助
-            </a>
-            |
-            <a :href="configStore.configData?.sys_web_privacy?.config_value || ''" target="_blank">
-              隐私
-            </a>
-            |
-            <a :href="configStore.configData?.sys_web_clause?.config_value || ''" target="_blank">
-              条款
-            </a>
-            {{ configStore.configData?.sys_keep_record?.config_value || "" }}
-          </el-text>
-        </footer>
       </section>
     </div>
   </div>
@@ -87,7 +67,6 @@
 
 <script setup lang="ts">
 import CommonWrapper from "@/components/CommonWrapper/index.vue";
-import ThemeSwitch from "@/components/ThemeSwitch/index.vue";
 import { useConfigStore } from "@/store";
 import { resolveLoginBackground, resolveSiteLogo } from "@/utils/siteLogo";
 
@@ -140,7 +119,8 @@ const loginPreset = reactive<{ username: string; password: string }>({
     position: relative;
     z-index: 1;
   }
-  background-color: var(--el-bg-color-page);
+  // 登录页为固定深色沉浸式：兜底背景锁定深蓝黑（正常被背景图覆盖）
+  background-color: #070d1a;
 
   &::before {
     position: fixed;
@@ -156,7 +136,8 @@ const loginPreset = reactive<{ username: string; password: string }>({
     z-index: -1;
     pointer-events: none;
     content: "";
-    background: linear-gradient(120deg, var(--el-bg-color), transparent);
+    // 深蓝黑氛围罩：贴合深蓝科幻底图，柔和铺底不冲淡
+    background: linear-gradient(120deg, rgba(6, 12, 24, 0.38), rgba(6, 12, 24, 0.06) 55%, rgba(6, 12, 24, 0.24));
   }
 }
 
@@ -165,16 +146,21 @@ const loginPreset = reactive<{ username: string; password: string }>({
   gap: 0.75rem;
   align-self: flex-end;
   padding: 0.5rem 0.75rem;
-  background-color: var(--el-bg-color-overlay);
-  border: 1px solid var(--el-border-color-light);
+  // 固定深色玻璃托盘（不随系统明暗变化），语言图标统一浅色
+  --el-text-color-primary: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.92);
+  background-color: rgba(10, 16, 30, 0.72);
+  border: 1px solid rgba(140, 170, 220, 0.25);
   border-radius: 999px;
-  box-shadow: var(--el-box-shadow-light);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   transition:
     transform 0.3s ease,
     box-shadow 0.3s ease;
 
   &:hover {
-    box-shadow: var(--el-box-shadow);
+    box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.5);
     transform: translateY(-2px);
   }
 
@@ -217,18 +203,31 @@ const loginPreset = reactive<{ username: string; password: string }>({
   flex-direction: column;
   gap: 1.5rem;
   justify-content: flex-start;
-  width: min(520px, 100%);
-  padding: clamp(2rem, 3vw, 2.75rem);
+  width: min(440px, 100%);
+  padding: clamp(2rem, 3vw, 2.5rem);
   margin-inline: auto;
-  // 毛玻璃：半透明底色 + 强背景模糊 + 饱和度提升，让背后极光/网络透出
-  background: color-mix(in srgb, var(--el-bg-color) 52%, transparent);
-  border: 1px solid color-mix(in srgb, var(--el-border-color) 45%, transparent);
+  // 深蓝黑玻璃卡片：与背景同色系融入，文字统一浅色（覆盖文本变量）
+  --el-text-color-primary: rgba(255, 255, 255, 0.94);
+  --el-text-color-regular: rgba(226, 232, 244, 0.78);
+  --el-text-color-secondary: rgba(180, 195, 220, 0.6);
+  --el-text-color-placeholder: rgba(255, 255, 255, 0.4);
+  --el-border-color: rgba(120, 150, 200, 0.28);
+  --el-border-color-light: rgba(140, 170, 220, 0.22);
+  --el-border-color-lighter: rgba(120, 150, 200, 0.18);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.06);
+  background: linear-gradient(
+    165deg,
+    rgba(18, 28, 48, 0.66),
+    rgba(10, 16, 30, 0.58) 60%,
+    rgba(14, 22, 40, 0.62)
+  );
+  border: 1px solid rgba(140, 170, 220, 0.22);
   border-radius: 22px;
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--el-bg-color) 60%, transparent),
-    0 22px 48px -16px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(28px) saturate(1.45);
-  -webkit-backdrop-filter: blur(28px) saturate(1.45);
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 22px 48px -16px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(42px) saturate(1.8);
+  -webkit-backdrop-filter: blur(42px) saturate(1.8);
   animation: panelLift 0.7s ease;
 }
 
@@ -248,9 +247,10 @@ const loginPreset = reactive<{ username: string; password: string }>({
   justify-content: center;
   width: 52px;
   height: 52px;
-  background: var(--el-fill-color-light);
+  background: rgba(64, 128, 255, 0.14);
+  border: 1px solid rgba(140, 170, 220, 0.22);
   border-radius: 18px;
-  box-shadow: var(--el-box-shadow-light);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .auth-panel__logo {
@@ -291,7 +291,7 @@ const loginPreset = reactive<{ username: string; password: string }>({
 }
 
 .auth-panel__version-label {
-  color: var(--el-text-color-placeholder);
+  color: var(--el-text-color-secondary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -299,9 +299,9 @@ const loginPreset = reactive<{ username: string; password: string }>({
 .auth-panel__version-pill {
   padding: 0.1rem 0.55rem;
   font-weight: 500;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  border: 1px solid var(--el-border-color-lighter);
+  color: #7fb2ff;
+  background: rgba(64, 128, 255, 0.16);
+  border: 1px solid rgba(64, 128, 255, 0.3);
   border-radius: 999px;
 }
 
@@ -315,16 +315,20 @@ const loginPreset = reactive<{ username: string; password: string }>({
   }
 
   :deep(.el-input__wrapper) {
-    background: color-mix(in srgb, var(--el-fill-color-blank) 62%, transparent);
-    box-shadow: 0 0 0 1px var(--el-border-color) inset;
+    background: rgba(8, 14, 26, 0.5);
+    box-shadow: 0 0 0 1px rgba(120, 150, 200, 0.3) inset;
     transition: all 0.2s ease;
 
     &:hover {
-      box-shadow: 0 0 0 1px var(--el-border-color-hover) inset;
+      box-shadow: 0 0 0 1px rgba(140, 170, 220, 0.45) inset;
     }
 
     &.is-focus {
       box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+    }
+
+    :deep(.el-input__inner) {
+      color: rgba(255, 255, 255, 0.92);
     }
   }
 
@@ -349,25 +353,6 @@ const loginPreset = reactive<{ username: string; password: string }>({
   :deep(.el-card) {
     background: transparent;
     box-shadow: none;
-  }
-}
-
-.auth-panel__footer {
-  padding-top: 0.875rem;
-  margin-top: 0.125rem;
-  font-size: 0.875rem;
-  text-align: center;
-  border-top: 1px solid var(--el-border-color-lighter);
-
-  a {
-    margin-left: 0.1rem;
-    color: var(--el-text-color-regular);
-    text-decoration: none;
-    transition: color 0.2s ease;
-
-    &:hover {
-      color: var(--el-color-primary);
-    }
   }
 }
 
