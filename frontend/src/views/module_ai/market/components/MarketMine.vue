@@ -1,50 +1,65 @@
-<!-- 我的资产：个人真实资产 + 提交市场 / 分享 / 撤回 -->
+<!-- 我的资产：卡片式维护（沿用能力市场样式）+ 启停 / 提交市场 / 分享 / 撤回 / 删除 -->
 <template>
   <div class="market-mine">
-    <el-card shadow="never" class="toolbar-card">
-      <div class="toolbar">
-        <el-radio-group v-model="assetType" @change="load">
-          <el-radio-button value="">全部</el-radio-button>
-          <el-radio-button value="tool">工具</el-radio-button>
-          <el-radio-button value="skill">技能</el-radio-button>
-          <el-radio-button value="mcp">MCP</el-radio-button>
-          <el-radio-button value="plugin">插件</el-radio-button>
-        </el-radio-group>
-        <el-tag size="small" type="info" effect="plain">共 {{ items.length }} 项资产</el-tag>
+    <div class="mine-toolbar">
+      <div class="type-tabs">
+        <span
+          v-for="t in typeOptions"
+          :key="t.value"
+          class="type-tab"
+          :class="{ 'is-active': assetType === t.value }"
+          @click="switchType(t.value)"
+        >
+          {{ t.label }}
+        </span>
       </div>
-    </el-card>
+      <el-tag size="small" type="info" effect="plain">共 {{ items.length }} 项资产</el-tag>
+    </div>
 
-    <el-card shadow="never">
-      <el-table v-loading="loading" :data="items" border stripe>
-        <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
-        <el-table-column label="类型" width="90">
-          <template #default="{ row }">
-            <el-tag size="small" effect="plain">{{ assetLabel(row.asset_type) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="category" label="分类" width="120">
-          <template #default="{ row }">{{ row.category || "—" }}</template>
-        </el-table-column>
-        <el-table-column label="启用" width="80">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.enabled ? 'success' : 'info'" effect="plain">
-              {{ row.enabled ? "启用" : "停用" }}
+    <el-row v-loading="loading" :gutter="12" class="card-grid">
+      <el-col
+        v-for="row in items"
+        :key="`${row.asset_type}-${row.real_id}`"
+        :xs="24"
+        :sm="12"
+        :md="8"
+        :lg="6"
+      >
+        <div class="market-card">
+          <div class="market-card__head">
+            <IconTile :item="{ icon: row.icon, asset_type: row.asset_type }" />
+            <div class="market-card__title">
+              <div class="market-card__name">{{ row.name }}</div>
+              <div class="market-card__sub">
+                <el-tag size="small" effect="plain">{{ assetLabel(row.asset_type) }}</el-tag>
+                <span v-if="row.category" class="market-card__cat">{{ row.category }}</span>
+              </div>
+            </div>
+            <el-tooltip :content="row.enabled ? '停用' : '启用'" placement="top">
+              <el-switch
+                :model-value="row.enabled"
+                @change="(v: any) => toggleAsset(row as any, v)"
+              />
+            </el-tooltip>
+          </div>
+
+          <div class="market-card__desc">{{ row.description || "暂无描述" }}</div>
+
+          <div class="market-card__foot">
+            <span class="metric">市场</span>
+            <el-tag
+              v-if="row.market"
+              size="small"
+              :type="statusTagType(row.market.status)"
+              effect="plain"
+            >
+              {{ statusLabel(row.market.status) }}
             </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="市场状态" width="200">
-          <template #default="{ row }">
-            <template v-if="row.market">
-              <el-tag size="small" :type="statusTagType(row.market.status)" effect="plain">
-                {{ statusLabel(row.market.status) }}
-              </el-tag>
-              <span class="market-count">{{ row.market.install_count }} 次安装</span>
-            </template>
             <span v-else class="market-none">未提交</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
-          <template #default="{ row }">
+            <span v-if="row.market" class="metric">{{ row.market.install_count }} 次安装</span>
+          </div>
+
+          <div class="mine-actions">
             <el-button
               v-hasPerm="['module_ai:market:submit']"
               size="small"
@@ -72,14 +87,17 @@
             >
               撤回
             </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty
-        v-if="!loading && !items.length"
-        description="暂无资产，可先在工具/技能/MCP 页创建"
-      />
-    </el-card>
+            <el-button size="small" type="danger" :icon="Delete" @click="removeAsset(row as any)">
+              删除
+            </el-button>
+          </div>
+        </div>
+      </el-col>
+    </el-row>
+    <el-empty
+      v-if="!loading && !items.length"
+      description="暂无资产：可在「能力市场」安装，或到技能广场导入"
+    />
 
     <!-- 提交市场 -->
     <el-dialog v-model="submitVisible" title="提交到能力市场" width="560px" append-to-body>
@@ -158,182 +176,326 @@
 </template>
 
 <script setup lang="ts">
-import { Remove, Share, Upload } from "@element-plus/icons-vue";
-import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
-import { onMounted, reactive, ref } from "vue";
+  import { Delete, Remove, Share, Upload } from "@element-plus/icons-vue";
+  import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
+  import { onMounted, reactive, ref } from "vue";
 
-import {
-  getMyAssets,
-  shareMarketItem,
-  submitMarketItem,
-  withdrawMarketItem,
-  type MyAsset,
-} from "@/api/module_ai/market";
-import UserAPI from "@/api/module_system/user";
+  import {
+    deleteMyAsset,
+    getMyAssets,
+    shareMarketItem,
+    submitMarketItem,
+    toggleMyAsset,
+    withdrawMarketItem,
+    type MyAsset,
+  } from "@/api/module_ai/market";
+  import UserAPI from "@/api/module_system/user";
 
-defineOptions({ name: "MarketMine" });
+  import IconTile from "./IconTile.vue";
 
-const loading = ref(false);
-const items = ref<MyAsset[]>([]);
-const assetType = ref("");
+  defineOptions({ name: "MarketMine" });
 
-const submitVisible = ref(false);
-const submitting = ref(false);
-const submitFormRef = ref<FormInstance>();
-const submitForm = reactive({
-  asset_type: "tool",
-  source_id: 0,
-  name: "",
-  category: "",
-  icon: "",
-  version: "1.0",
-  description: "",
-});
-const submitRules = {
-  name: [{ required: true, message: "请输入名称", trigger: "blur" }],
-};
+  const loading = ref(false);
+  const items = ref<MyAsset[]>([]);
+  const assetType = ref("");
 
-const shareVisible = ref(false);
-const sharing = ref(false);
-const shareTarget = ref<MyAsset | null>(null);
-const shareForm = reactive({ to_user_id: undefined as number | undefined, message: "" });
-const userOptions = ref<{ id: number; name: string; username: string }[]>([]);
-const userLoading = ref(false);
+  const typeOptions = [
+    { label: "全部", value: "" },
+    { label: "工具", value: "tool" },
+    { label: "技能", value: "skill" },
+    { label: "MCP", value: "mcp" },
+    { label: "插件", value: "plugin" },
+  ];
 
-function assetLabel(type: string) {
-  return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
-}
+  const submitVisible = ref(false);
+  const submitting = ref(false);
+  const submitFormRef = ref<FormInstance>();
+  const submitForm = reactive({
+    asset_type: "tool",
+    source_id: 0,
+    name: "",
+    category: "",
+    icon: "",
+    version: "1.0",
+    description: "",
+  });
+  const submitRules = {
+    name: [{ required: true, message: "请输入名称", trigger: "blur" }],
+  };
 
-function statusLabel(status: string) {
-  return (
-    { pending: "待审核", approved: "已上架", rejected: "已驳回", offline: "已下架" }[status] ||
-    status
-  );
-}
+  const shareVisible = ref(false);
+  const sharing = ref(false);
+  const shareTarget = ref<MyAsset | null>(null);
+  const shareForm = reactive({ to_user_id: undefined as number | undefined, message: "" });
+  const userOptions = ref<{ id: number; name: string; username: string }[]>([]);
+  const userLoading = ref(false);
 
-function statusTagType(status: string): "primary" | "success" | "warning" | "info" | "danger" {
-  return ({ pending: "warning", approved: "success", rejected: "danger", offline: "info" }[
-    status
-  ] || "info") as "primary" | "success" | "warning" | "info" | "danger";
-}
-
-async function load() {
-  loading.value = true;
-  try {
-    const res: any = await getMyAssets({ asset_type: assetType.value || undefined });
-    items.value = res.data?.data?.items || [];
-  } finally {
-    loading.value = false;
+  function assetLabel(type: string) {
+    return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
   }
-}
 
-function openSubmit(row: MyAsset) {
-  submitForm.asset_type = row.asset_type;
-  submitForm.source_id = row.real_id;
-  submitForm.name = row.name;
-  submitForm.category = row.category || "";
-  submitForm.icon = "";
-  submitForm.version = "1.0";
-  submitForm.description = row.description || "";
-  submitVisible.value = true;
-}
+  function statusLabel(status: string) {
+    return (
+      { pending: "待审核", approved: "已上架", rejected: "已驳回", offline: "已下架" }[status] ||
+      status
+    );
+  }
 
-async function confirmSubmit() {
-  if (!submitFormRef.value) return;
-  await submitFormRef.value.validate();
-  submitting.value = true;
-  try {
-    await submitMarketItem({ ...submitForm });
-    ElMessage.success("已提交，等待管理员审核");
-    submitVisible.value = false;
+  function statusTagType(status: string): "primary" | "success" | "warning" | "info" | "danger" {
+    return (
+      { pending: "warning", approved: "success", rejected: "danger", offline: "info" }[status] ||
+      "info"
+    ) as "primary" | "success" | "warning" | "info" | "danger";
+  }
+
+  async function load() {
+    loading.value = true;
+    try {
+      const res: any = await getMyAssets({ asset_type: assetType.value || undefined });
+      items.value = res.data?.data?.items || [];
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  function switchType(value: string) {
+    assetType.value = value;
     load();
-  } finally {
-    submitting.value = false;
   }
-}
 
-async function withdraw(row: MyAsset) {
-  await ElMessageBox.confirm(
-    `撤回后「${row.name}」将从市场下架，其他用户无法再安装（已安装的副本不受影响）。是否继续？`,
-    "撤回确认",
-    { confirmButtonText: "撤回", cancelButtonText: "取消", type: "warning" }
-  );
-  await withdrawMarketItem(row.market!.item_id);
-  ElMessage.success("已撤回");
-  load();
-}
-
-function openShare(row: MyAsset) {
-  if (!row.market) {
-    ElMessage.warning("请先提交市场，审核通过后即可分享");
-    return;
+  /** 启停：就地更新该行（不整表刷新） */
+  async function toggleAsset(row: MyAsset, value: any) {
+    const enabled = Boolean(value);
+    await toggleMyAsset(row.asset_type, row.real_id, enabled);
+    row.enabled = enabled;
+    ElMessage.success(enabled ? "已启用" : "已停用");
   }
-  shareTarget.value = row;
-  shareForm.to_user_id = undefined;
-  shareForm.message = "";
-  userOptions.value = [];
-  shareVisible.value = true;
-}
 
-async function searchUsers(query: string) {
-  if (!query) {
+  async function removeAsset(row: MyAsset) {
+    await ElMessageBox.confirm(
+      `将删除你的${assetLabel(row.asset_type)}「${row.name}」，删除后不可恢复（已安装到智能体的绑定也会失效）。是否继续？`,
+      "删除确认",
+      { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+    );
+    await deleteMyAsset(row.asset_type, row.real_id);
+    ElMessage.success("已删除");
+    load();
+  }
+
+  function openSubmit(row: MyAsset) {
+    submitForm.asset_type = row.asset_type;
+    submitForm.source_id = row.real_id;
+    submitForm.name = row.name;
+    submitForm.category = row.category || "";
+    submitForm.icon = row.icon || "";
+    submitForm.version = "1.0";
+    submitForm.description = row.description || "";
+    submitVisible.value = true;
+  }
+
+  async function confirmSubmit() {
+    if (!submitFormRef.value) return;
+    await submitFormRef.value.validate();
+    submitting.value = true;
+    try {
+      await submitMarketItem({ ...submitForm });
+      ElMessage.success("已提交，等待管理员审核");
+      submitVisible.value = false;
+      load();
+    } finally {
+      submitting.value = false;
+    }
+  }
+
+  async function withdraw(row: MyAsset) {
+    await ElMessageBox.confirm(
+      `撤回后「${row.name}」将从市场下架，其他用户无法再安装（已安装的副本不受影响）。是否继续？`,
+      "撤回确认",
+      { confirmButtonText: "撤回", cancelButtonText: "取消", type: "warning" }
+    );
+    await withdrawMarketItem(row.market!.item_id);
+    ElMessage.success("已撤回");
+    load();
+  }
+
+  function openShare(row: MyAsset) {
+    if (!row.market) {
+      ElMessage.warning("请先提交市场，审核通过后即可分享");
+      return;
+    }
+    shareTarget.value = row;
+    shareForm.to_user_id = undefined;
+    shareForm.message = "";
     userOptions.value = [];
-    return;
+    shareVisible.value = true;
   }
-  userLoading.value = true;
-  try {
-    const res: any = await UserAPI.listUser({ username: query, page_no: 1, page_size: 20 });
-    const rows = res.data?.data?.items || [];
-    userOptions.value = rows.map((u: any) => ({ id: u.id, name: u.name, username: u.username }));
-  } finally {
-    userLoading.value = false;
-  }
-}
 
-async function confirmShare() {
-  if (!shareForm.to_user_id) {
-    ElMessage.warning("请选择接收人");
-    return;
+  async function searchUsers(query: string) {
+    if (!query) {
+      userOptions.value = [];
+      return;
+    }
+    userLoading.value = true;
+    try {
+      const res: any = await UserAPI.listUser({ username: query, page_no: 1, page_size: 20 });
+      const rows = res.data?.data?.items || [];
+      userOptions.value = rows.map((u: any) => ({ id: u.id, name: u.name, username: u.username }));
+    } finally {
+      userLoading.value = false;
+    }
   }
-  sharing.value = true;
-  try {
-    await shareMarketItem({
-      item_id: shareTarget.value!.market!.item_id,
-      to_user_id: shareForm.to_user_id,
-      message: shareForm.message,
-    });
-    ElMessage.success("已发送分享");
-    shareVisible.value = false;
-  } finally {
-    sharing.value = false;
-  }
-}
 
-onMounted(load);
+  async function confirmShare() {
+    if (!shareForm.to_user_id) {
+      ElMessage.warning("请选择接收人");
+      return;
+    }
+    sharing.value = true;
+    try {
+      await shareMarketItem({
+        item_id: shareTarget.value!.market!.item_id,
+        to_user_id: shareForm.to_user_id,
+        message: shareForm.message,
+      });
+      ElMessage.success("已发送分享");
+      shareVisible.value = false;
+    } finally {
+      sharing.value = false;
+    }
+  }
+
+  onMounted(load);
 </script>
 
 <style lang="scss" scoped>
-.toolbar-card {
-  margin-bottom: 12px;
-}
+  .mine-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+  }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+  .type-tabs {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
 
-.market-count {
-  margin-left: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
+  .type-tab {
+    font-size: var(--el-font-size-base);
+    color: var(--el-text-color-regular);
+    cursor: pointer;
+    padding: 2px 0;
+    border-bottom: 2px solid transparent;
 
-.market-none {
-  color: var(--el-text-color-secondary);
-}
+    &:hover {
+      color: var(--el-color-primary);
+    }
 
-.user-select {
-  width: 100%;
-}
+    &.is-active {
+      color: var(--el-color-primary);
+      font-weight: 600;
+      border-bottom-color: var(--el-color-primary);
+    }
+  }
+
+  .card-grid {
+    min-height: 120px;
+  }
+
+  /* 与能力市场卡片保持一致的外观 */
+  .market-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    margin-bottom: 16px;
+    padding: 18px 20px;
+    background: var(--el-fill-color-blank);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    transition:
+      box-shadow 0.2s,
+      border-color 0.2s;
+
+    &:hover {
+      border-color: var(--el-color-primary-light-5);
+      box-shadow: 0 6px 18px rgb(0 0 0 / 8%);
+    }
+  }
+
+  .market-card__head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .market-card__title {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .market-card__name {
+    font-weight: 600;
+    font-size: var(--el-font-size-base);
+    line-height: 1.5;
+    margin-bottom: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .market-card__sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .market-card__cat {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .market-card__desc {
+    margin: 14px 0 16px;
+    color: var(--el-text-color-regular);
+    font-size: var(--el-font-size-base);
+    line-height: 1.7;
+    min-height: 48px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .market-card__foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--el-border-color-lighter);
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .market-none {
+    color: var(--el-text-color-secondary);
+  }
+
+  .mine-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .user-select {
+    width: 100%;
+  }
 </style>

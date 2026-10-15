@@ -37,12 +37,15 @@ export interface MyAsset {
   description: string;
   category: string;
   enabled: boolean;
+  /** 图标（真实资产自带或取自关联市场商品） */
+  icon?: string;
   market?: {
     item_id: number;
     status: string;
     featured: boolean;
     install_count: number;
     audit_remark: string;
+    icon?: string;
   } | null;
 }
 
@@ -103,6 +106,20 @@ export function submitMarketItem(data: {
 
 export function getMyAssets(params?: { asset_type?: string }) {
   return request({ url: `${API_PATH}/mine`, method: "get", params });
+}
+
+/** 统一启停我的资产（能力市场内维护，无需跳转各模块页） */
+export function toggleMyAsset(assetType: string, realId: number, enabled: boolean) {
+  return request({
+    url: `${API_PATH}/mine/${assetType}/${realId}/toggle`,
+    method: "put",
+    params: { enabled },
+  });
+}
+
+/** 统一删除我的资产（软删除） */
+export function deleteMyAsset(assetType: string, realId: number) {
+  return request({ url: `${API_PATH}/mine/${assetType}/${realId}`, method: "delete" });
 }
 
 export function withdrawMarketItem(id: number) {
