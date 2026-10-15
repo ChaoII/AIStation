@@ -2,6 +2,7 @@
   <div class="auth-view" :style="{ '--login-background-url': `url(${loginBackgroundUrl})` }">
     <!-- 跟随鼠标的聚光淡网格（零依赖组件；触摸设备自动禁用） -->
     <GridSpotlight :cell="46" :radius="240" :grid-opacity="0.3" :glow-opacity="0.14" />
+    <ParticlesNet />
     <!-- 右侧切换主题、语言按钮  -->
     <div class="auth-view__toolbar">
       <el-tooltip :content="t('login.themeToggle')" placement="bottom">

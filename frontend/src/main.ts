@@ -20,11 +20,21 @@ import "animate.css";
 
 import { useConfigStore } from "@/store";
 
+// tsParticles：粒子网络背景（登录页「鼠标吸附跟随」）—— 用成熟库，不手写特效
+import VueParticles from "@tsparticles/vue3";
+import { loadSlim } from "@tsparticles/slim";
+
 const app = createApp(App);
 // 注册插件
 app.use(setupPlugins);
 // 注册终端组件
 app.use(createTerminal());
+// 注册 tsParticles（提供全局组件 <VueParticles> 与引擎）
+app.use(VueParticles, {
+  init: async (engine) => {
+    await loadSlim(engine);
+  },
+});
 // 封装设置 title 和 favicon 的函数
 const setTitleAndFavicon = async () => {
   try {
