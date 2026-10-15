@@ -127,7 +127,14 @@
           </el-button>
         </div>
       </el-form-item>
-      <el-form-item v-if="httpForm.kind === 'http' && shouldShowBodyHint" label="请求体">
+      <el-form-item v-if="httpForm.kind === 'http'" label="请求体类型">
+        <el-select v-model="httpForm.bodyType" style="width: 100%" :disabled="isGetOrDelete">
+          <el-option label="无（参数走查询串）" value="none" />
+          <el-option label="JSON" value="json" />
+          <el-option label="Form Data" value="form-data" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="httpForm.kind === 'http' && bodyHintText" label="请求体">
         <el-alert type="info" :closable="false" show-icon :title="bodyHintText" />
       </el-form-item>
       <template v-if="httpForm.kind === 'script'">
@@ -280,7 +287,7 @@ const httpForm = reactive({
   name: "",
   kind: "http" as "http" | "script",
   method: "GET",
-  bodyType: "json" as "none" | "json",
+  bodyType: "none" as "none" | "json" | "form-data",
   url: "",
   headerFields: [] as { key: string; value: string }[],
   paramFields: [] as ParamField[],
@@ -292,15 +299,34 @@ const httpForm = reactive({
 /** 编辑 HTTP/脚本时锁定类型；新建可切换 */
 const kindLocked = computed(() => mode.value === "http-edit" || mode.value === "script-edit");
 
-/** GET/DELETE 无请求体；POST/PUT/PATCH 用 JSON body */
-const shouldShowBodyHint = computed(() => ["POST", "PUT", "PATCH"].includes(httpForm.method));
+/** GET/DELETE 无请求体；其余方法按「请求体类型」决定剩余入参进入 query 还是 body */
+const isGetOrDelete = computed(() => ["GET", "DELETE"].includes(httpForm.method));
 const bodyHintText = computed(() => {
-  if (httpForm.method === "POST") return "以 POST 发送，剩余入参字段作为 JSON 请求体。";
-  if (httpForm.method === "PUT") return "以 PUT 发送，剩余入参字段作为 JSON 请求体（整体替换）。";
-  if (httpForm.method === "PATCH")
-    return "以 PATCH 发送，剩余入参字段作为 JSON 请求体（局部更新）。";
+  const m = httpForm.method;
+  const bt = isGetOrDelete.value ? "none" : httpForm.bodyType;
+  if (bt === "none") {
+    if (isGetOrDelete.value) return `${m} 无请求体，剩余入参字段作为查询串。`;
+    return `以 ${m} 发送，不携带请求体，剩余入参字段作为查询串。`;
+  }
+  if (bt === "form-data")
+    return `以 ${m} 发送，剩余入参字段作为 application/x-www-form-urlencoded 表单（Form Data）。`;
+  if (m === "POST") return "以 POST 发送，剩余入参字段作为 JSON 请求体。";
+  if (m === "PUT") return "以 PUT 发送，剩余入参字段作为 JSON 请求体（整体替换）。";
+  if (m === "PATCH") return "以 PATCH 发送，剩余入参字段作为 JSON 请求体（局部更新）。";
   return "";
 });
+
+/** 切换方法时调整请求体类型：GET/DELETE 强制 none；切回需请求体的方法时默认回 JSON */
+watch(
+  () => httpForm.method,
+  (m) => {
+    if (["GET", "DELETE"].includes(m)) {
+      httpForm.bodyType = "none";
+    } else if (httpForm.bodyType === "none") {
+      httpForm.bodyType = "json";
+    }
+  }
+);
 
 function resetForm() {
   Object.assign(httpForm, {
@@ -308,7 +334,7 @@ function resetForm() {
     name: "",
     kind: "http",
     method: "GET",
-    bodyType: "json",
+    bodyType: "none",
     url: "",
     headerFields: [],
     paramFields: [],
@@ -416,6 +442,9 @@ async function loadForEdit() {
       kind: isScript ? "script" : "http",
       method: tool.method || "GET",
       url: tool.url || "",
+      bodyType: ["GET", "DELETE"].includes(tool.method || "GET")
+        ? "none"
+        : tool.body_type || "none",
       headerFields: Object.entries(tool.headers || {}).map(([k, v]) => ({
         key: k,
         value: String(v),
@@ -539,6 +568,7 @@ async function submitHttpForm() {
     payload.method = httpForm.method;
     payload.url = httpForm.url.trim();
     payload.headers = buildObjectFromRows(httpForm.headerFields);
+    payload.body_type = isGetOrDelete.value ? "none" : httpForm.bodyType;
   }
   submitLoading.value = true;
   try {

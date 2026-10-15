@@ -30,6 +30,9 @@ class AiToolModel(ModelMixin, UserMixin):
     headers: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True, default=None, comment="自定义请求头"
     )
+    body_type: Mapped[str] = mapped_column(
+        String(16), default="json", comment="HTTP 请求体类型: none/json/form-data"
+    )
     params_schema: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True, default=None, comment="入参 JSON schema"
     )

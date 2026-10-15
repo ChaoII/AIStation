@@ -842,6 +842,41 @@ _MCPS: list[dict] = [
 
 # ------------------------------------------------- 能力包（插件 = 技能 + 工具 + MCP 的集合）
 
+#: 各内置 MCP 的官方文档/配置说明链接（用于前端卡片/详情「文档」跳转）
+_MCP_DOCS: dict[str, str] = {
+    "mcp-lark": "https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/im-v1/mcp-overview",
+    "mcp-wecom": "https://github.com/luhua/wecom-bot-mcp-server",
+    "mcp-github": "https://github.com/modelcontextprotocol/servers/tree/main/src/github",
+    "mcp-notion": "https://github.com/makenotion/notion-mcp-server",
+    "mcp-gitlab": "https://github.com/modelcontextprotocol/servers/tree/main/src/gitlab",
+    "mcp-playwright": "https://github.com/microsoft/playwright-mcp",
+    "mcp-context7": "https://github.com/upstash/context7",
+    "mcp-filesystem": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+    "mcp-slack": "https://github.com/modelcontextprotocol/servers/tree/main/src/slack",
+    "mcp-linear": "https://github.com/modelcontextprotocol/servers/tree/main/src/linear",
+    "mcp-supabase": "https://supabase.com/docs/guides/getting-started/mcp",
+    "mcp-postgres": "https://github.com/modelcontextprotocol/servers/tree/main/src/postgres",
+    "mcp-sqlite": "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+    "mcp-memory": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+    "mcp-sequential-thinking": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+    "mcp-fetch": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+    "mcp-sentry": "https://github.com/getsentry/sentry-mcp",
+    "mcp-stripe": "https://github.com/stripe/agent-toolkit/tree/main/src/mcp",
+    "mcp-figma": "https://github.com/Framelink/figma-mcp-server",
+    "mcp-gmail": "https://github.com/modelcontextprotocol/servers/tree/main/src/gmail",
+    "mcp-git": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+}
+
+
+def _mcp_payload_with_docs(m: dict) -> dict:
+    """返回 MCP payload，并把官方文档链接注入 ``docs`` 字段（前端卡片/详情跳转用）。"""
+    payload = dict(m["payload"])
+    docs = _MCP_DOCS.get(m["key"])
+    if docs:
+        payload["docs"] = docs
+    return payload
+
+
 def _skill_payload_by_key(key: str) -> dict | None:
     for sk in _SKILLS:
         if sk["key"] == key:
@@ -859,7 +894,7 @@ def _tool_payload_by_key(key: str) -> dict | None:
 def _mcp_payload_by_key(key: str) -> dict | None:
     for m in _MCPS:
         if m["key"] == key:
-            return m["payload"]
+            return _mcp_payload_with_docs(m)
     return None
 
 
@@ -1012,12 +1047,29 @@ async def ensure_market_seed() -> None:
                 )
 
             for m in _MCPS:
+                mcp_payload = _mcp_payload_with_docs(m)
+                key = ("mcp", m["name"])
+                if key in existing:
+                    # 存量官方 MCP：仅刷新文档链接（seed 幂等更新，不改其它字段），保证已部署库也拿到 docs
+                    row = await db.scalar(
+                        select(AiMarketItemModel).where(
+                            AiMarketItemModel.asset_type == "mcp",
+                            AiMarketItemModel.name == m["name"],
+                            AiMarketItemModel.is_official.is_(True),
+                        )
+                    )
+                    if row is not None:
+                        docs = mcp_payload.get("docs")
+                        cur_payload = row.payload or {}
+                        if docs and cur_payload.get("docs") != docs:
+                            row.payload = dict(cur_payload, docs=docs)
+                    continue
                 _add(
                     "mcp",
                     m["name"],
                     description=m["description"],
                     category=m["category"],
-                    payload=m["payload"],
+                    payload=mcp_payload,
                     icon=f"market-icons/{m['key']}.png",
                     tags=["MCP", "办公"],
                     featured=bool(m.get("featured")),

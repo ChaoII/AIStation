@@ -39,6 +39,8 @@ export interface AiToolRow {
   description?: string | null;
   method?: string;
   url?: string;
+  /** HTTP 请求体类型：none / json / form-data */
+  body_type?: string;
   /** 请求头（敏感值已掩码为 ****） */
   headers?: Record<string, any> | null;
   params_schema?: Record<string, any> | null;

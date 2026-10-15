@@ -186,6 +186,7 @@ def _to_dict(t: AiToolModel) -> dict:
         "method": t.method or "GET",
         "url": t.url or "",
         "headers": _mask_headers(t.headers),
+        "body_type": t.body_type or "json",
         "params_schema": t.params_schema,
         "code": t.code or "",
         "timeout": t.timeout or 10,
@@ -223,11 +224,13 @@ async def execute_script_tool(tool: AiToolModel, args: dict) -> object:
 
 
 async def execute_http_tool(tool: AiToolModel, args: dict) -> object:
-    """执行自定义 HTTP 工具：URL 路径占位替换 + 剩余参数按方法进入 query/body。
+    """执行自定义 HTTP 工具：URL 路径占位替换 + 剩余参数按方法/请求体类型进入 query/body。
 
-    - GET：剩余参数作为 query。
-    - POST/PUT/PATCH：剩余参数作为 JSON body。
-    - DELETE：剩余参数作为 query。
+    请求体类型（body_type）：
+    - none：剩余入参全部作为 query。
+    - json：剩余入参作为 JSON body。
+    - form-data：剩余入参作为 application/x-www-form-urlencoded。
+    GET/DELETE 无请求体，恒为 none；POST/PUT/PATCH 默认 json。
     """
     import httpx
 
@@ -236,16 +239,26 @@ async def execute_http_tool(tool: AiToolModel, args: dict) -> object:
     remaining = {k: v for k, v in (args or {}).items() if f"{{{k}}}" in url}
     for k, v in remaining.items():
         url = url.replace(f"{{{k}}}", str(v))
-    body = {k: v for k, v in (args or {}).items() if k not in remaining}
+    params = {k: v for k, v in (args or {}).items() if k not in remaining}
     method = (tool.method or "GET").upper()
-    method = (tool.method or "GET").upper()
+    body_type = (tool.body_type or "json").lower()
+    if method in ("GET", "DELETE"):
+        body_type = "none"
+    json_body = None
+    form_body = None
+    if body_type == "json":
+        json_body = params
+        params = None
+    elif body_type == "form-data":
+        form_body = params
+        params = None
     async with httpx.AsyncClient(timeout=30) as c:
         method_map = {
-            "GET": lambda: c.get(url, params=body, headers=headers),
-            "POST": lambda: c.post(url, json=body, headers=headers),
-            "PUT": lambda: c.put(url, json=body, headers=headers),
-            "PATCH": lambda: c.patch(url, json=body, headers=headers),
-            "DELETE": lambda: c.delete(url, params=body, headers=headers),
+            "GET": lambda: c.get(url, params=params, headers=headers),
+            "POST": lambda: c.post(url, params=params, json=json_body, data=form_body, headers=headers),
+            "PUT": lambda: c.put(url, params=params, json=json_body, data=form_body, headers=headers),
+            "PATCH": lambda: c.patch(url, params=params, json=json_body, data=form_body, headers=headers),
+            "DELETE": lambda: c.delete(url, params=params, headers=headers),
         }
         resp = await method_map.get(method, method_map["GET"])()
     try:
@@ -439,6 +452,7 @@ class AiToolService:
                 method=(data.method or "GET").upper(),
                 url=data.url or "",
                 headers=data.headers,
+                body_type=(data.body_type or "json").lower(),
                 params_schema=data.params_schema,
                 code=getattr(data, "code", None) or "",
                 timeout=int(getattr(data, "timeout", None) or 10),
@@ -474,6 +488,8 @@ class AiToolService:
                 t.method = data.method.upper()
             if data.url is not None:
                 t.url = data.url
+            if data.body_type is not None:
+                t.body_type = data.body_type.lower()
             if getattr(data, "code", None) is not None:
                 t.code = data.code
             if getattr(data, "timeout", None) is not None:

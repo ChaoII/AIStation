@@ -93,22 +93,34 @@ class _FakeClient:
     async def __aexit__(self, *args):
         return False
 
-    async def get(self, url, params=None, headers=None):
+    def _capture(self, method, url, params=None, json=None, data=None, headers=None):
         _FakeClient.captured = {
-            "method": "GET",
+            "method": method,
             "url": url,
             "params": params,
+            "json": json,
+            "data": data,
             "headers": headers,
         }
+
+    async def get(self, url, params=None, headers=None):
+        self._capture("GET", url, params=params, headers=headers)
         return _FakeResponse()
 
-    async def post(self, url, json=None, headers=None):
-        _FakeClient.captured = {
-            "method": "POST",
-            "url": url,
-            "json": json,
-            "headers": headers,
-        }
+    async def post(self, url, params=None, json=None, data=None, headers=None):
+        self._capture("POST", url, params=params, json=json, data=data, headers=headers)
+        return _FakeResponse()
+
+    async def put(self, url, params=None, json=None, data=None, headers=None):
+        self._capture("PUT", url, params=params, json=json, data=data, headers=headers)
+        return _FakeResponse()
+
+    async def patch(self, url, params=None, json=None, data=None, headers=None):
+        self._capture("PATCH", url, params=params, json=json, data=data, headers=headers)
+        return _FakeResponse()
+
+    async def delete(self, url, params=None, headers=None):
+        self._capture("DELETE", url, params=params, headers=headers)
         return _FakeResponse()
 
 
@@ -135,6 +147,84 @@ def test_execute_http_tool_substitutes_url_and_query(monkeypatch):
     assert _FakeClient.captured["url"] == "http://example.test/items/7"
     assert _FakeClient.captured["params"] == {"q": "hi"}
     assert _FakeClient.captured["headers"] == {"X-Test": "1"}
+
+
+def test_execute_http_tool_body_type_json_and_form(monkeypatch):
+    """POST 按 body_type 分流：json 走 json body，form-data 走表单 data，none 走 query。"""
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+    from app.plugin.module_ai.tools_catalog.service import execute_http_tool
+
+    tool = AiToolModel(
+        name="pytest_body",
+        kind="http",
+        method="POST",
+        url="http://example.test/items",
+        headers={"X-Test": "1"},
+        enabled=True,
+    )
+    # json
+    tool.body_type = "json"
+    asyncio.run(execute_http_tool(tool, {"name": "a", "price": 1}))
+    assert _FakeClient.captured["method"] == "POST"
+    assert _FakeClient.captured["json"] == {"name": "a", "price": 1}
+    assert _FakeClient.captured["params"] is None
+    assert _FakeClient.captured["data"] is None
+
+    # form-data：剩余入参作为表单 data
+    tool.body_type = "form-data"
+    asyncio.run(execute_http_tool(tool, {"name": "a", "price": 1}))
+    assert _FakeClient.captured["json"] is None
+    assert _FakeClient.captured["data"] == {"name": "a", "price": 1}
+
+    # none：剩余入参作为 query，不发送 body
+    tool.body_type = "none"
+    asyncio.run(execute_http_tool(tool, {"name": "a", "price": 1}))
+    assert _FakeClient.captured["json"] is None
+    assert _FakeClient.captured["data"] is None
+    assert _FakeClient.captured["params"] == {"name": "a", "price": 1}
+
+
+def test_execute_http_tool_get_forces_none_body(monkeypatch):
+    """GET 即使配置 json 也强制无请求体：剩余入参全部作为 query。"""
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+    from app.plugin.module_ai.tools_catalog.service import execute_http_tool
+
+    tool = AiToolModel(
+        name="pytest_get",
+        kind="http",
+        method="GET",
+        url="http://example.test/items/{id}",
+        body_type="json",
+        enabled=True,
+    )
+    asyncio.run(execute_http_tool(tool, {"id": 3, "page": 2}))
+    assert _FakeClient.captured["method"] == "GET"
+    assert _FakeClient.captured["url"] == "http://example.test/items/3"
+    assert _FakeClient.captured["params"] == {"page": 2}
+    assert _FakeClient.captured["json"] is None
+
+
+def test_http_tool_body_type_persisted(test_client, auth_headers):
+    """创建的 HTTP 工具持久化 body_type，列表回显，update 可改。"""
+    tid = _create_tool(test_client, auth_headers, method="POST", body_type="form-data")
+    try:
+        rows = test_client.get("/api/v1/ai/tools/list", headers=auth_headers).json()["data"]
+        assert next(r for r in rows if r["id"] == tid)["body_type"] == "form-data"
+        upd = test_client.put(
+            f"/api/v1/ai/tools/update/{tid}", json={"body_type": "json"}, headers=auth_headers
+        )
+        assert upd.status_code == 200, upd.text
+        assert upd.json()["data"]["body_type"] == "json"
+    finally:
+        _delete_tools(test_client, auth_headers, [tid])
 
 
 def test_http_tool_test_endpoint(monkeypatch, test_client, auth_headers):
@@ -372,3 +462,18 @@ def test_script_tool_config_masked_in_list(test_client, auth_headers):
     tool2 = AiToolModel(name="pytest_httpmask", kind="http", config={"username": "alice"}, enabled=True)
     d2 = _to_dict(tool2)
     assert d2["config"] == {"username": "alice"}
+
+
+def test_mcp_payload_injects_docs():
+    """内置 MCP 的 payload 注入官方文档链接（docs），且每个内置 MCP 都有配置说明链接。"""
+    from app.plugin.module_ai.market.seed import _MCPS, _mcp_payload_with_docs
+
+    keys = [m["key"] for m in _MCPS]
+    # 每个内置 MCP 都有 docs 链接（前端卡片/详情跳转依赖）
+    assert len(keys) == len(set(keys)), "MCP key 存在重复"
+    for m in _MCPS:
+        payload = _mcp_payload_with_docs(m)
+        assert payload.get("docs"), f"{m['key']} 缺少官方文档链接"
+        assert payload["docs"].startswith("https://"), f"{m['key']} 文档链接非 https"
+        # payload 不应因注入而改变原有 name
+        assert payload.get("name") == m["payload"].get("name")

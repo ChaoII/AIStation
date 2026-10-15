@@ -11,6 +11,7 @@ class AiToolCreateSchema(BaseModel):
     method: str = Field(default="GET", max_length=8)
     url: str = Field(default="", max_length=512)
     headers: dict | None = None
+    body_type: str = Field(default="json", max_length=16, description="HTTP 请求体类型: none/json/form-data")
     params_schema: dict | None = None
     code: str | None = Field(default="", description="Python 脚本源码（kind=script）")
     timeout: int = Field(default=10, ge=1, le=60, description="脚本执行超时（秒）")
@@ -27,6 +28,7 @@ class AiToolUpdateSchema(BaseModel):
     method: str | None = Field(default=None, max_length=8)
     url: str | None = Field(default=None, max_length=512)
     headers: dict | None = None
+    body_type: str | None = Field(default=None, max_length=16)
     params_schema: dict | None = None
     code: str | None = None
     timeout: int | None = Field(default=None, ge=1, le=60)
