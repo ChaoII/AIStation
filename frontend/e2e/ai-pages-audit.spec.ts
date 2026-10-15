@@ -12,10 +12,12 @@ import { test, type Page } from "@playwright/test";
 
 /** 要体检的页面（路径 + 中文名 + 一个"应该出现"的标志元素选择器） */
 const PAGES: Array<{ path: string; name: string; marker: string }> = [
-  { path: "/ai/query", name: "智能问数", marker: ".app-main .app-container" },
+  { path: "/ai/query", name: "智能问数(工作台)", marker: ".app-main .app-container" },
   { path: "/ai/ontology", name: "本体", marker: ".app-main .app-container" },
-  { path: "/ai/integration", name: "数据与集成", marker: ".app-main .app-container" },
-  { path: "/ai/asset", name: "数据资产(应重定向到集成)", marker: ".app-main .app-container" },
+  { path: "/ai/integration", name: "数据与集成(重定向到工作台)", marker: ".app-main .app-container" },
+  { path: "/ai/asset", name: "数据资产(重定向到工作台)", marker: ".app-main .app-container" },
+  { path: "/ai/eval", name: "问数评测(重定向到工作台)", marker: ".app-main .app-container" },
+  { path: "/ai/query/reports", name: "自定义报表(重定向到工作台)", marker: ".app-main .app-container" },
   { path: "/ai/governance", name: "治理驾驶舱", marker: ".app-main .app-container" },
   { path: "/ai/knowledge", name: "知识库", marker: ".app-main .app-container" },
   { path: "/ai/overview", name: "AI 控制台", marker: ".app-main .app-container" },
@@ -56,7 +58,7 @@ async function dismissTour(page: Page) {
 }
 
 test("AI 模块页面健康审计", async ({ page }) => {
-  // 12 个页面 × 每页约 4 秒，默认 60 秒不够
+  // 14 个页面 × 每页约 4 秒，默认 60 秒不够
   test.setTimeout(600_000);
   const report: string[] = [];
 

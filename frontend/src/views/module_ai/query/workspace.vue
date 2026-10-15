@@ -1,16 +1,16 @@
 <template>
   <div class="app-container ai-query-workspace">
-    <el-tabs v-model="tab" type="border-card" lazy class="aqw-tabs">
-      <el-tab-pane label="数据与集成" name="integration">
+    <el-tabs v-model="tab" type="border-card" class="aqw-tabs">
+      <el-tab-pane label="数据与集成" name="integration" lazy>
         <IntegrationPage />
       </el-tab-pane>
-      <el-tab-pane label="智能问数" name="ask">
+      <el-tab-pane label="智能问数" name="ask" lazy>
         <QueryPage />
       </el-tab-pane>
-      <el-tab-pane label="问数评测" name="eval">
+      <el-tab-pane label="问数评测" name="eval" lazy>
         <EvalPage />
       </el-tab-pane>
-      <el-tab-pane label="自定义报表" name="reports">
+      <el-tab-pane label="自定义报表" name="reports" lazy>
         <ReportsPage />
       </el-tab-pane>
     </el-tabs>
@@ -28,18 +28,19 @@ import ReportsPage from "./reports.vue";
 
 defineOptions({ name: "AiQuery" });
 
-const VALID_TABS = ["integration", "ask", "eval", "reports"] as const;
-type TabValue = (typeof VALID_TABS)[number];
-
 const router = useRouter();
 const route = useRoute();
 
-const tab = ref<TabValue>("ask");
+const VALID_TABS = ["integration", "ask", "eval", "reports"] as const;
+type TabValue = (typeof VALID_TABS)[number];
 
 function normalizeTab(v: unknown): TabValue {
   const s = String(v ?? "");
   return (VALID_TABS as readonly string[]).includes(s) ? (s as TabValue) : "ask";
 }
+
+// 初始值直接从路由同步：深链 ?tab=integration 时首帧就渲染对应页签，避免先闪「智能问数」
+const tab = ref<TabValue>(normalizeTab(route.query.tab));
 
 /** 地址栏 → 页签状态（含从旧地址重定向带来的 tab 参数）。 */
 function syncTabFromRoute() {
