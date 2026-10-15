@@ -15,7 +15,11 @@
       :disabled="props.disabled"
     >
       <template #default>
-        <template v-if="internalFileList && internalFileList.length > 0 && internalFileList[0].url">
+        <template
+          v-if="
+            internalFileList && internalFileList.length > 0 && internalFileList[0].url && !imgError
+          "
+        >
           <el-image
             :key="internalFileList[0].url"
             class="single-upload__image"
@@ -24,6 +28,7 @@
             :preview-src-list="props.enablePreview ? [internalFileList[0].url] : []"
             :preview-teleported="true"
             @click.stop="handleImageClick"
+            @error="handleImageError"
           />
           <el-icon
             v-if="!props.disabled"
@@ -32,6 +37,10 @@
           >
             <CircleCloseFilled />
           </el-icon>
+        </template>
+        <!-- 值为空或加载失败时，展示内置默认资源（仍可点击上传替换） -->
+        <template v-else-if="props.placeholderUrl">
+          <el-image :src="props.placeholderUrl" class="single-upload__image" fit="cover" />
         </template>
         <template v-else>
           <el-icon class="single-upload__add-btn">
@@ -128,6 +137,14 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+
+  /**
+   * 占位图：当值为空或图片加载失败时显示的内置资源（仅展示，不改写存储值）
+   */
+  placeholderUrl: {
+    type: String,
+    default: "",
+  },
 });
 
 // 接收字符串类型的modelValue，保持与现有代码的兼容性
@@ -137,6 +154,22 @@ const modelValue = defineModel<string>({
 
 // 内部使用的文件列表
 const internalFileList = ref<UploadUserFile[]>([]);
+
+// 当前值是否加载失败（用于回落到内置默认资源展示）
+const imgError = ref(false);
+
+watch(
+  () => modelValue.value,
+  () => {
+    imgError.value = false;
+  },
+  { immediate: true }
+);
+
+// 图片加载失败
+function handleImageError() {
+  imgError.value = true;
+}
 
 // 监听modelValue变化，同步到internalFileList
 watch(

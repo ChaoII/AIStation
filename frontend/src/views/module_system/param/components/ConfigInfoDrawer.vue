@@ -38,6 +38,7 @@
                   :max-file-size="item.maxFileSize"
                   :show-tip="true"
                   :enable-preview="true"
+                  :placeholder-url="item.placeholderUrl"
                   @success="(fileInfo: UploadFilePath) => handleUploadSuccess(fileInfo, key)"
                   @error="handleUploadError"
                 />
@@ -863,14 +864,20 @@ const logoConfigs = computed(() => ({
   sys_web_logo: {
     ...configStore.configData.sys_web_logo,
     maxFileSize: 5,
+    // 值为空/失效时展示内置默认 logo
+    placeholderUrl: new URL("@/assets/images/logo.svg", import.meta.url).href,
   },
   sys_web_favicon: {
     ...configStore.configData.sys_web_favicon,
     maxFileSize: 5,
+    // 值为空/失效时展示内置默认 favicon
+    placeholderUrl: `${import.meta.env.BASE_URL}favicon.png`,
   },
   sys_login_background: {
     ...configStore.configData.sys_login_background,
     maxFileSize: 10,
+    // 值为空/失效时展示内置默认登录背景
+    placeholderUrl: new URL("@/assets/images/login-bg.svg", import.meta.url).href,
   },
 }));
 
