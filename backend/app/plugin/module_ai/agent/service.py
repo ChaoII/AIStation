@@ -383,6 +383,23 @@ class AiAgentService:
                         + "\n\n".join(skill_blocks)
                     )
 
+            # 注入启用的能力插件说明（平台级开关，如网页抓取/表格导出）
+            try:
+                from app.plugin.module_ai.plugins.service import PluginService
+
+                plugins = await PluginService.enabled_plugins()
+                if plugins:
+                    plugin_lines = [
+                        f"- {p['label']}（{p['key']}）：{p['description']}"
+                        for p in plugins
+                    ]
+                    system_prompt = (
+                        f"{system_prompt}\n\n## 已启用能力插件\n"
+                        "平台已启用以下能力插件，在合适场景可使用：\n" + "\n".join(plugin_lines)
+                    )
+            except Exception:  # noqa: BLE001  插件说明注入失败不影响运行
+                pass
+
             # 选中的本体函数/动作编码（直接选择即授予，无「能力」抽象）
             ont_codes = agent.get("capabilities") or []
 
