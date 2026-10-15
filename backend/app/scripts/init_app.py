@@ -684,6 +684,14 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
 REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
 
+# 已并入「智能问数」工作台的功能页：存量库置 hidden=True + redirect 到工作台对应页签（新库不再创建）
+AI_MERGE_WORKSPACE: dict[str, str] = {
+    "AiIntegration": "/ai/query?tab=integration",
+    "AiEval": "/ai/query?tab=eval",
+    "AiQueryReports": "/ai/query?tab=reports",
+    "AiAsset": "/ai/query?tab=integration",
+}
+
 
 async def _ensure_ai_menus() -> None:
     """确保 AI 管理保留页面与按钮权限存在，并隐藏已下线页面（chat 来自种子数据）。"""
@@ -762,14 +770,10 @@ async def _ensure_ai_menus() -> None:
                 ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 18, "el-icon-DataLine"),
                 ("模型供应商", "AiProviderManage", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 19, "el-icon-Service"),
                 ("本体", "AiOntology", "/ai/ontology", "module_ai/ontology/index", "module_ai:query:ask", 9, "el-icon-Files"),
-                ("数据与集成", "AiIntegration", "/ai/integration", "module_ai/integration/index", "module_ai:query:ask", 21, "el-icon-Connection"),
                 ("无代码应用", "AiWorkshop", "/ai/workshop", "module_ai/workshop/index", "module_ai:query:ask", 22, "el-icon-Monitor"),
                 ("治理", "AiGovernance", "/ai/governance", "module_ai/governance/index", "module_ai:query:ask", 23, "el-icon-Odometer"),
-                ("数据资产", "AiAsset", "/ai/asset", "module_ai/asset/index", "module_ai:query:ask", 24, "el-icon-DataBoard"),
-                # 问数工作区（本体 → 问数 → 评测/报表 的闭环，顺序相邻）
-                ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", "module_ai:query:ask", 33, "el-icon-ChatDotRound"),
-                ("问数评测", "AiEval", "/ai/eval", "module_ai/eval/index", "module_ai:query:ask", 34, "el-icon-DataAnalysis"),
-                ("自定义报表", "AiQueryReports", "/ai/query/reports", "module_ai/query/reports", "module_ai:query:ask", 35, "el-icon-Tickets"),
+                # 问数工作台：数据与集成 / 问数评测 / 自定义报表 / 数据资产 已并入（存量库 hidden+redirect）
+                ("智能问数", "AiQuery", "/ai/query", "module_ai/query/workspace", "module_ai:query:ask", 33, "el-icon-ChatDotRound"),
             ]
             # 问数是「本体 → 问数 → 评测 / 报表」链路的**数据产生方**：
             # 它是「存为报表」的唯一入口。历史上被隐藏（"降为 Agent 能力"），
@@ -778,13 +782,19 @@ async def _ensure_ai_menus() -> None:
             await db.execute(
                 update(MenuModel)
                 .where(MenuModel.route_name == "AiQuery")
-                .values(hidden=False, order=33, permission="module_ai:query:ask")
+                .values(
+                    hidden=False,
+                    order=33,
+                    permission="module_ai:query:ask",
+                    component_path="module_ai/query/workspace",
+                )
             )
-            for _rn, _order in (("AiEval", 34), ("AiQueryReports", 35)):
+            # 已并入工作台的功能页：存量库隐藏并重定向到工作台对应页签
+            for _rn, _redirect in AI_MERGE_WORKSPACE.items():
                 await db.execute(
                     update(MenuModel)
                     .where(MenuModel.route_name == _rn)
-                    .values(hidden=False, order=_order)
+                    .values(hidden=True, redirect=_redirect)
                 )
             for title, rname, rpath, comp, perm, order, icon in pages:
                 exists = await db.scalar(

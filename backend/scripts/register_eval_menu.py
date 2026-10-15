@@ -1,5 +1,8 @@
 """注册「问数评测」菜单（/ai/eval）到 sys_menu，并授权给 admin 角色。
 
+⚠️ 已废弃（2026-10-15）：被 backend/app/scripts/init_app.py 的 _ensure_ai_menus
+幂等逻辑取代（问数评测已并入「智能问数」工作台），请勿再运行，避免把旧菜单写回。
+
 用法（backend 下）::
 
     python scripts/register_eval_menu.py --dry-run   # 只看现状与将要插入的内容

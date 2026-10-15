@@ -72,13 +72,31 @@ export const constantRoutes: RouteRecordRaw[] = [
     component: () => import("@/views/error/404.vue"),
     meta: { hidden: true, title: "404" },
   },
-  // 「数据资产」已并入「数据与集成」（选数据源 → 选表 → 就地维护元数据）。
-  // 保留这条重定向，避免老书签/老链接直接 404。
+  // 「数据资产 / 数据与集成 / 问数评测 / 自定义报表」已并入「智能问数」工作台
+  // （/ai/query?tab=xxx）。保留这些重定向，避免老书签/老链接直接 404。
   {
     path: "/ai/asset",
     name: "AiAssetMoved",
-    redirect: "/ai/integration",
-    meta: { hidden: true, title: "数据资产（已并入数据与集成）" },
+    redirect: "/ai/query?tab=integration",
+    meta: { hidden: true, title: "数据资产（已并入智能问数工作台）" },
+  },
+  {
+    path: "/ai/integration",
+    name: "AiIntegrationMoved",
+    redirect: "/ai/query?tab=integration",
+    meta: { hidden: true, title: "数据与集成（已并入智能问数工作台）" },
+  },
+  {
+    path: "/ai/eval",
+    name: "AiEvalMoved",
+    redirect: "/ai/query?tab=eval",
+    meta: { hidden: true, title: "问数评测（已并入智能问数工作台）" },
+  },
+  {
+    path: "/ai/query/reports",
+    name: "AiQueryReportsMoved",
+    redirect: "/ai/query?tab=reports",
+    meta: { hidden: true, title: "自定义报表（已并入智能问数工作台）" },
   },
   // Big screen display (standalone, no sidebar)
   {
