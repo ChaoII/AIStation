@@ -13,7 +13,17 @@
           {{ t.label }}
         </span>
       </div>
-      <el-tag size="small" type="info" effect="plain">共 {{ items.length }} 项资产</el-tag>
+      <div class="mine-toolbar__right">
+        <el-button
+          v-if="assetType && hasPerm(`module_ai:${assetType}:create`)"
+          type="primary"
+          :icon="Plus"
+          @click="openCreate"
+        >
+          新建{{ assetLabel(assetType) }}
+        </el-button>
+        <el-tag size="small" type="info" effect="plain">共 {{ items.length }} 项资产</el-tag>
+      </div>
     </div>
 
     <el-row v-loading="loading" :gutter="16" class="card-grid">
@@ -40,6 +50,14 @@
                 <el-switch
                   :model-value="row.enabled"
                   @change="(v: any) => toggleAsset(row as any, v)"
+                />
+              </el-tooltip>
+              <el-tooltip content="编辑" placement="top">
+                <el-button
+                  size="small"
+                  circle
+                  :icon="Edit"
+                  @click="openEdit(row as any)"
                 />
               </el-tooltip>
               <el-tooltip content="提交市场" placement="top">
@@ -106,7 +124,7 @@
     </el-row>
     <el-empty
       v-if="!loading && !items.length"
-      description="暂无资产：可在「能力市场」安装，或到技能广场导入"
+      description="暂无资产：可在「能力市场」安装，或点击上方「新建」创建"
     />
 
     <!-- 提交市场 -->
@@ -182,13 +200,19 @@
         <el-button type="primary" :loading="sharing" @click="confirmShare">发送分享</el-button>
       </template>
     </el-dialog>
+
+    <!-- 创建 / 编辑各类资产 -->
+    <CreateToolDialog v-model="toolVisible" :real-id="editRealId" @saved="onAssetSaved" />
+    <CreateMcpDialog v-model="mcpVisible" :real-id="editRealId" @saved="onAssetSaved" />
+    <CreateSkillDialog v-model="skillVisible" :real-id="editRealId" @saved="onAssetSaved" />
+    <CreatePluginDialog v-model="pluginVisible" :real-id="editRealId" @saved="onAssetSaved" />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { Delete, Remove, Share, Upload } from "@element-plus/icons-vue";
+  import { Delete, Edit, Plus, Remove, Share, Upload } from "@element-plus/icons-vue";
   import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
-  import { onMounted, reactive, ref } from "vue";
+  import { nextTick, onMounted, reactive, ref } from "vue";
 
   import {
     deleteMyAsset,
@@ -204,6 +228,10 @@
   import { useUserStore } from "@/store";
 
   import IconTile from "./IconTile.vue";
+  import CreateMcpDialog from "./CreateMcpDialog.vue";
+  import CreatePluginDialog from "./CreatePluginDialog.vue";
+  import CreateSkillDialog from "./CreateSkillDialog.vue";
+  import CreateToolDialog from "./CreateToolDialog.vue";
 
   defineOptions({ name: "MarketMine" });
 
@@ -223,6 +251,34 @@
     const roles = store.basicInfo.roles;
     if (roles && roles.some((r) => r.code === ROLE_ROOT)) return true;
     return store.prems.includes(perm);
+  }
+
+  // ---- 创建 / 编辑各类资产 ----
+  const toolVisible = ref(false);
+  const mcpVisible = ref(false);
+  const skillVisible = ref(false);
+  const pluginVisible = ref(false);
+  const editRealId = ref<number | null>(null);
+
+  function openCreate() {
+    editRealId.value = null;
+    if (assetType.value === "tool") toolVisible.value = true;
+    else if (assetType.value === "skill") skillVisible.value = true;
+    else if (assetType.value === "mcp") mcpVisible.value = true;
+    else if (assetType.value === "plugin") pluginVisible.value = true;
+  }
+
+  function openEdit(row: MyAsset) {
+    editRealId.value = row.real_id;
+    if (row.asset_type === "tool") toolVisible.value = true;
+    else if (row.asset_type === "skill") skillVisible.value = true;
+    else if (row.asset_type === "mcp") mcpVisible.value = true;
+    else if (row.asset_type === "plugin") pluginVisible.value = true;
+  }
+
+  function onAssetSaved() {
+    // 创建/编辑成功后刷新列表
+    load();
   }
 
   const submitVisible = ref(false);
@@ -396,6 +452,12 @@
     padding-bottom: 12px;
     margin-bottom: 12px;
     border-bottom: 1px solid var(--el-border-color-lighter);
+  }
+
+  .mine-toolbar__right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .type-tabs {

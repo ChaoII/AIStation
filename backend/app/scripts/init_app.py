@@ -701,10 +701,12 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
 REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
 
 # 已并入「能力市场」统一维护的页面：存量库隐藏并重定向到能力市场
-# （技能广场 / 能力插件不再作为独立维护入口，全部在「能力市场 → 我的资产」维护）
+# （技能广场 / 能力插件 / 工具管理 / MCP管理 不再作为独立维护入口，全部在「能力市场 → 我的资产」维护）
 AI_MERGED_INTO_MARKET: dict[str, str] = {
     "AiSkill": "/ai/market",
     "AiPlugin": "/ai/market",
+    "AiTool": "/ai/market",
+    "AiMcp": "/ai/market",
 }
 
 # 「智能问数」独立菜单目录：目录（type=1）+ 4 个独立页面子菜单；
@@ -788,13 +790,9 @@ async def _ensure_ai_menus() -> None:
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10, "el-icon-Cpu"),
                 ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11, "el-icon-User"),
                 ("工作流", "AiWorkflow", "/ai/workflow", "module_ai/workflow/index", "module_ai:workflow:query", 12, "el-icon-Connection"),
-                ("技能广场", "AiSkill", "/ai/skill", "module_ai/skill/index", "module_ai:skill:query", 13, "el-icon-MagicStick"),
                 ("知识库", "AiKnowledge", "/ai/knowledge", "module_ai/knowledge/index", "module_ai:knowledge:query", 14, "el-icon-Collection"),
                 ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 15, "el-icon-Document"),
-                ("工具管理", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 16, "el-icon-Operation"),
                 ("能力市场", "AiMarket", "/ai/market", "module_ai/market/index", "module_ai:market:query", 20, "el-icon-Shop"),
-                ("MCP 管理", "AiMcp", "/ai/mcp", "module_ai/mcp/index", "module_ai:mcp:query", 21, "el-icon-Connection"),
-                ("能力插件", "AiPlugin", "/ai/plugin", "module_ai/plugin/index", "module_ai:plugin:query", 24, "el-icon-Suitcase"),
                 ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 17, "el-icon-Monitor"),
                 ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 18, "el-icon-DataLine"),
                 ("模型供应商", "AiProviderManage", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 19, "el-icon-Service"),

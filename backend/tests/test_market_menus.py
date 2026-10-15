@@ -50,17 +50,19 @@ def _admin_menu_ids() -> set[int]:
 
 
 def test_market_menus_registered(test_client, auth_headers):
-    """能力市场/MCP/插件菜单已注册且授权给 admin。"""
+    """能力市场菜单已注册且授权给 admin；MCP/插件已并入市场（不再作为可见独立入口）。"""
     menus = _menus_by_route(["AiMarket", "AiMcp", "AiPlugin"])
-    assert set(menus) == {"AiMarket", "AiMcp", "AiPlugin"}
+    assert "AiMarket" in menus
     assert menus["AiMarket"].route_path == "/ai/market"
     assert menus["AiMarket"].component_path == "module_ai/market/index"
-    assert menus["AiMcp"].route_path == "/ai/mcp"
-    assert menus["AiPlugin"].route_path == "/ai/plugin"
     granted = _admin_menu_ids()
-    for m in menus.values():
-        assert m.id in granted, f"菜单 {m.route_name} 未授权给 admin"
-        assert m.status == "0"
+    assert menus["AiMarket"].id in granted
+    assert menus["AiMarket"].status == "0"
+    # MCP/插件已并入「能力市场 → 我的资产」：若存量库仍存在菜单行（或本会话其它用例预置），
+    # 必须处于隐藏态，而非作为可见独立入口
+    for rn in ("AiMcp", "AiPlugin"):
+        if rn in menus:
+            assert menus[rn].hidden is True, f"{rn} 应隐藏（已并入能力市场）"
 
 
 def test_market_permissions_registered(test_client, auth_headers):
