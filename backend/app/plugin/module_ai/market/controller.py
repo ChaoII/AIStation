@@ -89,6 +89,31 @@ async def market_submit(
     )
 
 
+@MarketRouter.put("/mine/{asset_type}/{real_id}/toggle", summary="启停我的资产")
+async def market_toggle_asset(
+    asset_type: str,
+    real_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+    enabled: Annotated[bool, Query(description="是否启用")] = True,
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.toggle_asset(asset_type, real_id, enabled, auth.user.id),
+        msg="已更新",
+    )
+
+
+@MarketRouter.delete("/mine/{asset_type}/{real_id}", summary="删除我的资产")
+async def market_delete_asset(
+    asset_type: str,
+    real_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.delete_asset(asset_type, real_id, auth.user.id),
+        msg="已删除",
+    )
+
+
 @MarketRouter.get("/mine", summary="我的资产（含市场状态）")
 async def market_mine(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],

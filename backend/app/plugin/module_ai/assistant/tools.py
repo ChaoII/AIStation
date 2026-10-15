@@ -431,4 +431,46 @@ async def propose_create_annotation_task(
     }
 
 
+# ---------------------------------------------------------------- 通用能力（内置工具）
+
+# 说明：原先挂在「能力插件」下的 web_fetch / table_export 本质是内置工具，
+# 现统一注册为内置工具（能力插件=能力包，见 market/seed.py 的 bundle）。
+
+
+@tool(
+    "web_fetch",
+    "抓取指定 URL 的网页正文文本（只读，返回前 4000 字）",
+    _obj({"url": {"type": "string", "description": "要抓取的网页地址"}}, ["url"]),
+)
+async def web_fetch(url: str) -> object:
+    from app.plugin.module_ai.plugins.plugin_executor import run_web_fetch
+
+    return await run_web_fetch({"url": url})
+
+
+@tool(
+    "table_export",
+    "把结构化数据导出为 CSV 文本（不落盘，直接返回内容）",
+    _obj(
+        {
+            "rows": {
+                "type": "array",
+                "description": "行数据，元素为对象（键为列名）",
+                "items": {"type": "object"},
+            },
+            "columns": {
+                "type": "array",
+                "description": "列顺序（可选，缺省取首行的键）",
+                "items": {"type": "string"},
+            },
+        },
+        ["rows"],
+    ),
+)
+async def table_export(rows: list, columns: list | None = None) -> object:
+    from app.plugin.module_ai.plugins.plugin_executor import run_table_export
+
+    return await run_table_export({"rows": rows, "columns": columns or []})
+
+
 TOOL_SCHEMAS = [t["schema"] for t in TOOL_REGISTRY.values()]

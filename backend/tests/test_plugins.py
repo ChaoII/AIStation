@@ -12,16 +12,25 @@ def _new_key(prefix: str = "pytest_plugin") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
-def test_builtin_plugins_seeded(test_client, auth_headers):
-    """首次访问列表时惰性预置内置插件，含 web_fetch/table_export。"""
+def test_no_builtin_plugins_seeded(test_client, auth_headers):
+    """内置插件预置已取消：web_fetch/table_export 改为内置工具，「插件」= 能力包（市场商品）。"""
     rows = test_client.get("/api/v1/ai/plugins/list", headers=auth_headers).json()["data"]
-    keys = {r["key"] for r in rows}
-    assert {"web_fetch", "table_export"} <= keys
-    ready = {r["key"] for r in rows if r["executor_ready"]}
-    assert {"web_fetch", "table_export"} <= ready
-    # 未实现执行器的内置 key 标记 executor_ready=False
-    not_ready = {r["key"] for r in rows if not r["executor_ready"]}
-    assert {"email_send", "report_generate", "data_pipeline"} <= not_ready
+    assert all(r["kind"] != "builtin" for r in rows), "不应再预置内置插件"
+
+
+def test_web_fetch_and_table_export_are_builtin_tools():
+    """原先挂在插件下的两项能力已是内置工具（工具管理里可开关）。"""
+    from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
+
+    assert "web_fetch" in TOOL_REGISTRY
+    assert "table_export" in TOOL_REGISTRY
+
+
+def test_plugin_specs_empty():
+    """内置插件规格已清空（保留常量以备将来预置内置包）。"""
+    from app.plugin.module_ai.plugins.plugin_executor import PLUGIN_SPECS
+
+    assert PLUGIN_SPECS == []
 
 
 def test_plugin_crud_and_toggle(test_client, auth_headers):
@@ -58,10 +67,17 @@ def test_plugin_crud_and_toggle(test_client, auth_headers):
 
 def test_plugin_duplicate_key_rejected(test_client, auth_headers):
     """重复 key 被拒。"""
+    key = _new_key()
+    first = test_client.post(
+        "/api/v1/ai/plugins/create",
+        headers=auth_headers,
+        json={"key": key, "label": "重复测试"},
+    )
+    assert first.status_code == 200, first.text
     r = test_client.post(
         "/api/v1/ai/plugins/create",
         headers=auth_headers,
-        json={"key": "web_fetch", "label": "重复"},
+        json={"key": key, "label": "重复"},
     )
     assert r.status_code != 200
     assert "已存在" in r.json()["msg"]

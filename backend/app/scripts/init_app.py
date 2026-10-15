@@ -700,6 +700,13 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
 REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
 
+# 已并入「能力市场」统一维护的页面：存量库隐藏并重定向到能力市场
+# （技能广场 / 能力插件不再作为独立维护入口，全部在「能力市场 → 我的资产」维护）
+AI_MERGED_INTO_MARKET: dict[str, str] = {
+    "AiSkill": "/ai/market",
+    "AiPlugin": "/ai/market",
+}
+
 # 「智能问数」独立菜单目录：目录（type=1）+ 4 个独立页面子菜单；
 # 存量库从「工作台合并态」幂等迁移为目录结构；数据资产（AiAsset）继续并入数据与集成
 QUERY_GROUP = "AiQueryGroup"
@@ -884,6 +891,15 @@ async def _ensure_ai_menus() -> None:
                 .where(MenuModel.route_name == "AiAsset")
                 .values(hidden=True, redirect="/ai/integration")
             )
+
+            # 4) 已并入「能力市场」统一维护的页面：技能广场 / 能力插件（隐藏 + 重定向）
+            for _rn, _redirect in AI_MERGED_INTO_MARKET.items():
+                await db.execute(
+                    update(MenuModel)
+                    .where(MenuModel.route_name == _rn)
+                    .values(hidden=True, redirect=_redirect)
+                )
+
             for title, rname, rpath, comp, perm, order, icon in pages:
                 exists = await db.scalar(
                     select(MenuModel).where(MenuModel.route_name == rname)

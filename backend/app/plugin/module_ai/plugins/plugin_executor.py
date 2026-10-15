@@ -7,55 +7,10 @@ from __future__ import annotations
 
 from app.core.logger import log
 
-#: 内置插件规格（首次访问列表时惰性预置到 ai_plugins）
-PLUGIN_SPECS: list[dict] = [
-    {
-        "key": "web_fetch",
-        "label": "网页抓取",
-        "executor_ready": True,
-        "description": "抓取指定 URL 的页面文本内容（只读，返回正文摘要）",
-        "config_schema": {
-            "type": "object",
-            "properties": {"timeout": {"type": "integer", "default": 15}},
-        },
-    },
-    {
-        "key": "table_export",
-        "label": "表格导出",
-        "executor_ready": True,
-        "description": "把结构化数据导出为 CSV 文本（返回内容，不落盘）",
-        "config_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "key": "email_send",
-        "label": "邮件发送",
-        "executor_ready": False,
-        "description": "发送邮件（需配置 SMTP，暂未实现执行器）",
-        "config_schema": {
-            "type": "object",
-            "properties": {
-                "smtp_host": {"type": "string"},
-                "smtp_port": {"type": "integer"},
-                "username": {"type": "string"},
-                "password": {"type": "string"},
-            },
-        },
-    },
-    {
-        "key": "report_generate",
-        "label": "报告生成",
-        "executor_ready": False,
-        "description": "生成分析报告（复用平台报告能力，暂未实现独立执行器）",
-        "config_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "key": "data_pipeline",
-        "label": "数据管道",
-        "executor_ready": False,
-        "description": "触发数据管道任务（暂未实现执行器）",
-        "config_schema": {"type": "object", "properties": {}},
-    },
-]
+#: 内置插件规格：**已清空**——原先的 web_fetch / table_export 已改为内置工具
+#: （见 assistant/tools.py），「插件」在能力市场里表示**能力包**（技能+工具+MCP 的集合，
+#: 见 market/seed.py 的 bundle）。保留此常量以便将来需要预置内置包时使用。
+PLUGIN_SPECS: list[dict] = []
 
 #: key -> 规格（供预置与就绪判定）
 PLUGIN_SPEC_MAP: dict[str, dict] = {s["key"]: s for s in PLUGIN_SPECS}

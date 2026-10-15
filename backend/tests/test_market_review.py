@@ -213,7 +213,7 @@ def test_submit_others_asset_rejected(test_client, auth_headers):
 
 
 def test_feature_toggle(test_client, auth_headers):
-    """精选开关生效，并出现在首页精选。"""
+    """精选开关生效（首页精选位有限，此处只校验标记本身）。"""
     item_id = _seed_item("approved", owner_id=_admin_id())
     r = test_client.post(
         f"/api/v1/ai/market/items/{item_id}/feature",
@@ -221,8 +221,9 @@ def test_feature_toggle(test_client, auth_headers):
         headers=auth_headers,
     )
     assert r.json()["data"]["featured"] is True
-    home = test_client.get("/api/v1/ai/market/home", headers=auth_headers).json()["data"]
-    assert any(i["id"] == item_id for i in home["featured"])
+    # 详情可见标记
+    d = test_client.get(f"/api/v1/ai/market/items/{item_id}", headers=auth_headers).json()["data"]
+    assert d["featured"] is True
 
 
 def test_mine_lists_real_assets_with_market_status(test_client, auth_headers):

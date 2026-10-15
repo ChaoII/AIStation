@@ -17,6 +17,14 @@ from app.plugin.module_ai.tools_catalog.model import AiToolModel
 
 from .model import AiMarketItemModel, AiMarketRelationModel, AiMarketShareModel
 
+#: 资产类型 → 真实模型（我的资产统一维护用）
+_ASSET_MODELS = {
+    "tool": AiToolModel,
+    "skill": AiSkillModel,
+    "mcp": AiMcpServerModel,
+    "plugin": AiPluginModel,
+}
+
 # 允许上架的资产类型
 VALID_ASSET_TYPES = ("tool", "skill", "mcp", "plugin")
 
@@ -149,6 +157,17 @@ async def _unique_name(db, model, base: str, field: str = "name") -> str:
         idx += 1
 
 
+class _BundleChild:
+    """能力包（bundle）内的子项：借用父商品的名称/图标，复用 _materialize 递归安装。"""
+
+    def __init__(self, asset_type: str, payload: dict, parent) -> None:
+        self.asset_type = asset_type
+        self.payload = payload
+        self.name = payload.get("name") or parent.name
+        self.description = payload.get("description") or parent.description
+        self.icon = parent.icon
+
+
 async def _materialize(db, item: AiMarketItemModel, user_id: int) -> int:
     """把商品 payload 复制成当前用户的真实资产，返回真实记录 id。
 
@@ -232,11 +251,21 @@ async def _materialize(db, item: AiMarketItemModel, user_id: int) -> int:
         await db.flush()
         return row.id
     if asset_type == "plugin":
+        # 能力包（bundle，对齐 Dify 插件语义）：先安装包内的技能 / 工具 / MCP，
+        # 再落一条「包」记录，便于在能力市场里查看与追溯。
+        bundle = payload.get("bundle") or {}
+        if bundle:
+            for sk in bundle.get("skills") or []:
+                await _materialize(db, _BundleChild("skill", sk, item), user_id)
+            for tl in bundle.get("tools") or []:
+                await _materialize(db, _BundleChild("tool", tl, item), user_id)
+            for mc in bundle.get("mcps") or []:
+                await _materialize(db, _BundleChild("mcp", mc, item), user_id)
         key = await _unique_name(db, AiPluginModel, payload.get("key") or item.name, field="key")
         row = AiPluginModel(
             key=key,
             label=payload.get("label") or item.name,
-            kind=payload.get("kind") or "builtin",
+            kind=payload.get("kind") or ("bundle" if bundle else "builtin"),
             config=payload.get("config"),
             config_schema=payload.get("config_schema"),
             executor_ready=bool(payload.get("executor_ready", False)),
@@ -273,7 +302,7 @@ class MarketService:
             featured = (
                 (
                     await db.execute(
-                        featured_stmt.order_by(AiMarketItemModel.install_count.desc()).limit(8)
+                        featured_stmt.order_by(AiMarketItemModel.install_count.desc()).limit(12)
                     )
                 )
                 .scalars()
@@ -558,6 +587,7 @@ class MarketService:
                         "featured": bool(m.featured),
                         "install_count": m.install_count or 0,
                         "audit_remark": m.audit_remark or "",
+                        "icon": m.icon or "",
                     }
 
             result: list[dict] = []
@@ -572,6 +602,7 @@ class MarketService:
                     )
                 ).scalars().all()
                 for r in rows:
+                    market = market_map.get((kind, r.id))
                     result.append(
                         {
                             "asset_type": kind,
@@ -580,7 +611,9 @@ class MarketService:
                             "description": getattr(r, "description", "") or "",
                             "category": getattr(r, "category", "") or "",
                             "enabled": bool(getattr(r, "enabled", True)),
-                            "market": market_map.get((kind, r.id)),
+                            # 图标：优先真实资产自带（技能），否则用关联市场商品的图标
+                            "icon": (getattr(r, "icon", "") or "") or ((market or {}).get("icon") or ""),
+                            "market": market,
                         }
                     )
 
@@ -771,3 +804,37 @@ class MarketService:
                 raise CustomException(msg="该分享已处理")
             share.status = "rejected"
             return {"share_id": share_id, "status": "rejected"}
+
+    # ---------- 我的资产：统一维护（启停 / 删除） ----------
+
+    @classmethod
+    async def toggle_asset(cls, asset_type: str, real_id: int, enabled: bool, user_id: int) -> dict:
+        """统一启停入口：按资产类型定位真实资产行（仅限本人）。"""
+        model = _ASSET_MODELS.get(asset_type)
+        if model is None:
+            raise CustomException(msg=f"不支持的资产类型：{asset_type}")
+        async with async_db_session.begin() as db:
+            row = await db.get(model, real_id)
+            if not row or row.is_deleted:
+                raise CustomException(msg="资产不存在")
+            if getattr(row, "created_id", None) != user_id:
+                raise CustomException(msg="只能操作自己的资产")
+            row.enabled = bool(enabled)
+            if hasattr(row, "updated_id"):
+                row.updated_id = user_id
+            return {"asset_type": asset_type, "real_id": real_id, "enabled": bool(enabled)}
+
+    @classmethod
+    async def delete_asset(cls, asset_type: str, real_id: int, user_id: int) -> dict:
+        """统一删除入口（软删除真实资产，仅限本人）。"""
+        model = _ASSET_MODELS.get(asset_type)
+        if model is None:
+            raise CustomException(msg=f"不支持的资产类型：{asset_type}")
+        async with async_db_session.begin() as db:
+            row = await db.get(model, real_id)
+            if not row or row.is_deleted:
+                raise CustomException(msg="资产不存在")
+            if getattr(row, "created_id", None) != user_id:
+                raise CustomException(msg="只能删除自己的资产")
+            await db.delete(row)
+            return {"asset_type": asset_type, "real_id": real_id, "deleted": True}

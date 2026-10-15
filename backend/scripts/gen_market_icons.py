@@ -72,6 +72,10 @@ ICONS: dict[str, tuple[str, str]] = {
     "mcp-playwright": ("emerald to teal", "browser window with a cursor"),
     "mcp-context7": ("indigo to violet", "document page with a spark star"),
     "mcp-filesystem": ("amber to orange", "folder"),
+    # ---- 能力包（技能 + 工具 + MCP 的集合） ----
+    "pack-office": ("blue to indigo", "stacked cards with a briefcase"),
+    "pack-dev": ("violet to purple", "stacked cards with code brackets"),
+    "pack-data": ("teal to cyan", "stacked cards with a bar chart"),
 }
 
 

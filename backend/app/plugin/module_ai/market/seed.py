@@ -455,6 +455,79 @@ _MCPS: list[dict] = [
 ]
 
 
+# ------------------------------------------------- 能力包（插件 = 技能 + 工具 + MCP 的集合）
+
+def _skill_payload_by_key(key: str) -> dict | None:
+    for sk in _SKILLS:
+        if sk["key"] == key:
+            return _payload_of(sk)
+    return None
+
+
+def _tool_payload_by_key(key: str) -> dict | None:
+    for k, name, title, group, desc in _TOOLS:
+        if k == key:
+            return _tool_payload(k, name, title, group, desc)
+    return None
+
+
+def _mcp_payload_by_key(key: str) -> dict | None:
+    for m in _MCPS:
+        if m["key"] == key:
+            return m["payload"]
+    return None
+
+
+#: 能力包（对齐 Dify「插件=能力集合」的语义）：安装时把包内技能/工具/MCP 一并装为个人资产
+_PACKS: list[dict] = [
+    {
+        "key": "pack-office",
+        "name": "办公效率包",
+        "category": "能力包",
+        "featured": True,
+        "description": "文档写作 + 会议纪要 + 商务邮件 + 周报生成，配表格查询与图表，再带上企业微信机器人，一键装齐日常办公能力",
+        "skills": ["skill-doc-writing", "skill-meeting-notes", "skill-email-writing", "skill-weekly-report"],
+        "tools": ["tool-csv", "tool-visualization"],
+        "mcps": ["mcp-wecom"],
+    },
+    {
+        "key": "pack-dev",
+        "name": "研发助手包",
+        "category": "能力包",
+        "featured": True,
+        "description": "代码审查 + SQL 助手 + 需求拆解 + 提示词优化，加网页搜索与 GitHub、Playwright 两个 MCP",
+        "skills": ["skill-code-review", "skill-sql-helper", "skill-requirement-breakdown", "skill-prompt-optimize"],
+        "tools": ["tool-duckduckgo", "tool-calculator"],
+        "mcps": ["mcp-github", "mcp-playwright"],
+    },
+    {
+        "key": "pack-data",
+        "name": "数据分析包",
+        "category": "能力包",
+        "description": "数据分析 + 竞品调研，配 CSV/Excel 查询、图表生成、维基百科与 arXiv 论文检索",
+        "skills": ["skill-data-analysis", "skill-competitor-research"],
+        "tools": ["tool-csv", "tool-visualization", "tool-wikipedia", "tool-arxiv"],
+        "mcps": [],
+    },
+]
+
+
+def _pack_payload(pack: dict) -> dict:
+    """把能力包定义转成市场 payload（bundle 内为各能力的完整快照）。"""
+    return {
+        "key": pack["key"],
+        "label": pack["name"],
+        "kind": "bundle",
+        "bundle": {
+            "skills": [p for p in (_skill_payload_by_key(k) for k in pack["skills"]) if p],
+            "tools": [p for p in (_tool_payload_by_key(k) for k in pack["tools"]) if p],
+            "mcps": [p for p in (_mcp_payload_by_key(k) for k in pack["mcps"]) if p],
+        },
+        "enabled": True,
+        "description": pack["description"],
+    }
+
+
 def _payload_of(skill: dict) -> dict:
     return {
         "name": skill["name"],
@@ -563,6 +636,19 @@ async def ensure_market_seed() -> None:
                     icon=f"market-icons/{m['key']}.png",
                     tags=["MCP", "办公"],
                     featured=bool(m.get("featured")),
+                )
+
+            # 能力包（插件）：技能 + 工具 + MCP 的集合
+            for pack in _PACKS:
+                _add(
+                    "plugin",
+                    pack["name"],
+                    description=pack["description"],
+                    category=pack["category"],
+                    payload=_pack_payload(pack),
+                    icon=f"market-icons/{pack['key']}.png",
+                    tags=["能力包"],
+                    featured=bool(pack.get("featured")),
                 )
 
             if added:
