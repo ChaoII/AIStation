@@ -8,6 +8,13 @@ REMOVED = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
 # 页面保留：控制台/模型/提示词/工具/应用/日志，其余功能页也保留
 KEPT = ["AiModel", "AiPrompt", "AiTool", "AiApp", "AiLogs"]
 RICH_KEPT = ["AiOverview", "AiAgent", "AiWorkflow", "AiSkill", "AiKnowledge", "AiProviderManage"]
+# 已并入「智能问数」工作台的功能页（存量库应 hidden + redirect 到工作台对应页签）
+MERGED = {
+    "AiIntegration": "/ai/query?tab=integration",
+    "AiEval": "/ai/query?tab=eval",
+    "AiQueryReports": "/ai/query?tab=reports",
+    "AiAsset": "/ai/query?tab=integration",
+}
 
 
 def _ensure_removed_rows_visible() -> None:
@@ -98,3 +105,63 @@ def test_ai_button_perms_keep_provider_report():
         "module_ai:workflow:query",
     ):
         assert code in perms
+
+
+def _ensure_merged_rows_visible() -> None:
+    """保证待合并菜单在库中存在且可见，模拟存量库（component_path 留空）。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.core.database import async_db_session
+
+    async def _run() -> None:
+        async with async_db_session() as db:
+            async with db.begin():
+                parent = await db.scalar(
+                    select(MenuModel).where(
+                        MenuModel.route_name == "AI", MenuModel.type == 1
+                    )
+                )
+                assert parent is not None, "AI 父菜单不存在（种子数据未初始化）"
+                for rname, _ in MERGED.items():
+                    row = await db.scalar(
+                        select(MenuModel).where(MenuModel.route_name == rname)
+                    )
+                    if row:
+                        row.hidden = False
+                        row.redirect = None
+                        continue
+                    db.add(
+                        MenuModel(
+                            name=rname,
+                            type=2,
+                            order=99,
+                            route_name=rname,
+                            route_path=f"/ai/{rname.lower()}",
+                            component_path="",
+                            parent_id=parent.id,
+                            status="0",
+                            is_deleted=False,
+                            hidden=False,
+                            title=rname,
+                        )
+                    )
+
+    asyncio.run(_run())
+
+
+def test_ai_menus_merge_workspace(test_client):
+    """_ensure_ai_menus 后：四个功能页被隐藏并重定向到工作台，智能问数为唯一入口。"""
+    _ensure_merged_rows_visible()
+    asyncio.run(init_app._ensure_ai_menus())
+    menus = _fetch_menus()
+
+    for rname, redirect in MERGED.items():
+        assert rname in menus, f"缺少待合并菜单 {rname}"
+        assert menus[rname].hidden is True, f"{rname} 未被隐藏"
+        assert menus[rname].redirect == redirect, f"{rname} redirect 应为 {redirect}"
+    ask = menus["AiQuery"]
+    assert ask.hidden is False, "智能问数不应被隐藏"
+    assert ask.component_path == "module_ai/query/workspace", "智能问数应指向工作台容器"
+    assert ask.permission == "module_ai:query:ask"
+    assert ask.order == 33

@@ -1,5 +1,8 @@
 """注册「自定义报表」菜单（/ai/query/reports）并授权给 ADMIN 角色。
 
+⚠️ 已废弃（2026-10-15）：被 backend/app/scripts/init_app.py 的 _ensure_ai_menus
+幂等逻辑取代（自定义报表已并入「智能问数」工作台），请勿再运行，避免把旧菜单写回。
+
 幂等：已存在同 route_path 则跳过插入（仍补授权）。
 用法（backend 下）::
 
