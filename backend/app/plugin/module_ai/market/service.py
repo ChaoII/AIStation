@@ -261,26 +261,28 @@ class MarketService:
                 .scalars()
                 .all()
             )
-            category_rows = (
+            # 分类计数：在 Python 侧聚合（PG 对 GROUP BY 表达式要求逐字一致，
+            # 参数化后 select 与 group_by 的参数编号不同会被判定为不同表达式而报错）
+            cat_rows = (
                 await db.execute(
-                    select(
-                        func.coalesce(func.nullif(AiMarketItemModel.category, ""), "未分类").label(
-                            "name"
-                        ),
-                        func.count().label("count"),
+                    select(AiMarketItemModel.category).where(
+                        AiMarketItemModel.status == "approved"
                     )
-                    .where(AiMarketItemModel.status == "approved")
-                    .group_by(
-                        func.coalesce(func.nullif(AiMarketItemModel.category, ""), "未分类")
-                    )
-                    .order_by(func.count().desc())
                 )
-            ).all()
+            ).scalars().all()
+            counter: dict[str, int] = {}
+            for c in cat_rows:
+                key = (c or "").strip() or "未分类"
+                counter[key] = counter.get(key, 0) + 1
+            categories = [
+                {"name": k, "count": v}
+                for k, v in sorted(counter.items(), key=lambda kv: -kv[1])
+            ]
             return {
                 "featured": [
                     _to_dict(i, *await cls._relation_flags(db, user_id, i.id)) for i in featured
                 ],
-                "categories": [{"name": r.name, "count": r.count} for r in category_rows],
+                "categories": categories,
             }
 
     @classmethod

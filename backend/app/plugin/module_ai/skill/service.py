@@ -1,7 +1,7 @@
 """技能广场服务：CRUD、分类统计、精选、安装计数、按技能注入内容。"""
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.core.database import async_db_session
 
@@ -74,18 +74,25 @@ class AiSkillService:
 
     @classmethod
     async def categories(cls) -> list[dict]:
-        """分类统计（含未分类），供前端分类 tab。"""
+        """分类统计（含未分类），供前端分类 tab。
+
+        在 Python 侧聚合：PG 对 ``GROUP BY`` 表达式要求逐字一致，参数化后
+        select 与 group_by 的参数编号不同会被判定为不同表达式（GroupingError）。
+        """
         async with async_db_session() as db:
-            name_col = func.coalesce(func.nullif(AiSkillModel.category, ""), "未分类")
             rows = (
                 await db.execute(
-                    select(name_col.label("name"), func.count().label("count"))
-                    .where(AiSkillModel.is_deleted.is_(False))
-                    .group_by(name_col)
-                    .order_by(func.count().desc())
+                    select(AiSkillModel.category).where(AiSkillModel.is_deleted.is_(False))
                 )
-            ).all()
-            return [{"name": r.name, "count": r.count} for r in rows]
+            ).scalars().all()
+        counter: dict[str, int] = {}
+        for c in rows:
+            key = (c or "").strip() or "未分类"
+            counter[key] = counter.get(key, 0) + 1
+        return [
+            {"name": k, "count": v}
+            for k, v in sorted(counter.items(), key=lambda kv: -kv[1])
+        ]
 
     @classmethod
     async def create(cls, data, auth) -> dict:
