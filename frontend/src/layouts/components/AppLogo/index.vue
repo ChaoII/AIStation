@@ -1,9 +1,14 @@
 <template>
   <div class="logo">
     <transition enter-active-class="animate__animated animate__fadeInLeft">
-      <router-link :key="+collapse" class="wh-full flex-center" to="/">
-        <img :src="logoUrl" class="w50px h50px" />
-        <span v-if="!collapse" class="title">
+      <router-link
+        :key="+collapse"
+        class="wh-full logo__link"
+        :class="{ 'is-collapsed': collapse }"
+        to="/"
+      >
+        <img :src="logoUrl" class="logo__icon" />
+        <span v-if="!collapse" class="logo__text">
           {{ configStore.configData.sys_web_title.config_value }}
         </span>
       </router-link>
@@ -35,13 +40,33 @@ defineProps({
   height: $navbar-height;
   background-color: var(--layout-logo-bg);
 
-  .title {
-    max-width: 100px;
-    margin-left: 10px;
+  .logo__link {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 100%;
+    padding-left: 16px;
+
+    &.is-collapsed {
+      justify-content: center;
+      padding-left: 0;
+    }
+  }
+
+  .logo__icon {
+    flex-shrink: 0;
+    width: 46px;
+    height: 46px;
+  }
+
+  .logo__text {
+    max-width: 150px;
+    margin-left: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 14px;
-    font-weight: bold;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
     color: $sidebar-logo-text-color;
     white-space: nowrap;
   }
@@ -55,7 +80,7 @@ defineProps({
   .logo {
     background-color: transparent !important;
 
-    .title {
+    .logo__text {
       color: var(--menu-text);
     }
   }
@@ -77,7 +102,7 @@ defineProps({
   }
 
   // 隐藏文字，只显示图标
-  .logo .title {
+  .logo .logo__text {
     display: none;
   }
 }
