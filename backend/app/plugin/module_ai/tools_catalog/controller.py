@@ -8,7 +8,12 @@ from app.common.response import ErrorResponse, SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 
-from .schema import AiToolCreateSchema, AiToolToggleSchema, AiToolUpdateSchema
+from .schema import (
+    AiToolCreateSchema,
+    AiToolTestScriptSchema,
+    AiToolToggleSchema,
+    AiToolUpdateSchema,
+)
 from .service import AiToolService
 
 AiToolRouter = APIRouter(route_class=OperationLogRoute, prefix="/tools", tags=["AI-工具"])
@@ -92,3 +97,14 @@ async def test_tool(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:update"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiToolService.test(tool_id), msg="测试成功")
+
+
+@AiToolRouter.post("/test-script/{tool_id}", summary="试运行脚本工具")
+async def test_script_tool(
+    tool_id: int,
+    data: AiToolTestScriptSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiToolService.test_script(tool_id, data.args), msg="试运行完成"
+    )

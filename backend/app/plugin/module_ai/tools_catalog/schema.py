@@ -12,6 +12,8 @@ class AiToolCreateSchema(BaseModel):
     url: str = Field(default="", max_length=512)
     headers: dict | None = None
     params_schema: dict | None = None
+    code: str | None = Field(default="", description="Python 脚本源码（kind=script）")
+    timeout: int = Field(default=10, ge=1, le=60, description="脚本执行超时（秒）")
     enabled: bool = True
     description: str | None = None
 
@@ -26,6 +28,8 @@ class AiToolUpdateSchema(BaseModel):
     url: str | None = Field(default=None, max_length=512)
     headers: dict | None = None
     params_schema: dict | None = None
+    code: str | None = None
+    timeout: int | None = Field(default=None, ge=1, le=60)
     enabled: bool | None = None
     description: str | None = None
 
@@ -34,3 +38,9 @@ class AiToolToggleSchema(BaseModel):
     """启停工具。"""
 
     enabled: bool
+
+
+class AiToolTestScriptSchema(BaseModel):
+    """试运行脚本工具。"""
+
+    args: dict | None = Field(default=None, description="传给 run(args) 的参数")

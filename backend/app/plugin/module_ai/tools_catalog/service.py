@@ -68,6 +68,13 @@ def _tool_source(t: AiToolModel) -> str:
     return "http" if (t.kind or "") == "http" else "system"
 
 
+def _validate_script(code: str | None) -> None:
+    """脚本工具创建/更新时的静态校验（AST 白名单）。"""
+    from .script_executor import validate as validate_script
+
+    validate_script(code or "")
+
+
 def _readiness_of(t: AiToolModel) -> tuple[bool, str]:
     """按来源判定工具就绪性：agno 走注册表（依赖 + 必填配置 + 高危门禁），其余恒就绪。"""
     if _tool_source(t) == "agno":
@@ -116,6 +123,8 @@ def _to_dict(t: AiToolModel) -> dict:
         "url": t.url or "",
         "headers": _mask_headers(t.headers),
         "params_schema": t.params_schema,
+        "code": t.code or "",
+        "timeout": t.timeout or 10,
         "enabled": t.enabled,
         "ready": ready,
         "reason": reason,
@@ -131,14 +140,22 @@ def _http_schema(tool: AiToolModel) -> dict:
     """按 params_schema 生成 OpenAI 函数工具 schema。"""
     schema = tool.params_schema or {"type": "object", "properties": {}}
     description = schema.get("description") if isinstance(schema, dict) else None
+    kind_label = "脚本" if (tool.kind or "") == "script" else "HTTP"
     return {
         "type": "function",
         "function": {
             "name": tool.name,
-            "description": description or f"自定义 HTTP 工具：{tool.name}",
+            "description": description or f"自定义{kind_label}工具：{tool.name}",
             "parameters": schema,
         },
     }
+
+
+async def execute_script_tool(tool: AiToolModel, args: dict) -> object:
+    """执行自定义脚本工具（沙箱内）。"""
+    from .script_executor import run as run_script
+
+    return run_script(tool.code or "", args or {}, tool.timeout or 10)
 
 
 async def execute_http_tool(tool: AiToolModel, args: dict) -> object:
@@ -225,6 +242,8 @@ async def get_enabled_tool_schemas() -> list[dict]:
                 schemas.extend(agno.build_openai_schemas(spec, tool.config, reserved))
         elif source == "http":
             schemas.append(_http_schema(tool))
+        elif source == "script":
+            schemas.append(_http_schema(tool))
         else:
             entry = TOOL_REGISTRY.get(tool.name)
             if entry:
@@ -279,6 +298,13 @@ async def dispatch_tool(
             return await execute_http_tool(tool, args)
         except Exception as e:  # noqa: BLE001  HTTP 工具异常兜底，不中断对话
             return {"error": str(e)}
+    if tool is not None and _source_of_row(tool) == "script":
+        if not tool.enabled:
+            return {"error": "工具未启用"}
+        try:
+            return await execute_script_tool(tool, args or {})
+        except Exception as e:  # noqa: BLE001  脚本异常兜底，不中断对话
+            return {"error": str(e)}
     return {"error": f"未知工具：{name}"}
 
 
@@ -325,7 +351,11 @@ class AiToolService:
             if exists:
                 raise CustomException(msg=f"工具名已存在：{data.name}")
             kind = data.kind or "http"
-            source = getattr(data, "source", None) or ("http" if kind == "http" else "system")
+            if kind == "script":
+                _validate_script(getattr(data, "code", None))
+            source = getattr(data, "source", None) or (
+                "http" if kind == "http" else ("script" if kind == "script" else "system")
+            )
             t = AiToolModel(
                 name=data.name,
                 kind=kind,
@@ -335,6 +365,8 @@ class AiToolService:
                 url=data.url or "",
                 headers=data.headers,
                 params_schema=data.params_schema,
+                code=getattr(data, "code", None) or "",
+                timeout=int(getattr(data, "timeout", None) or 10),
                 enabled=data.enabled,
                 description=getattr(data, "description", None),
                 created_id=auth.user.id,
@@ -367,6 +399,13 @@ class AiToolService:
                 t.method = data.method.upper()
             if data.url is not None:
                 t.url = data.url
+            if getattr(data, "code", None) is not None:
+                t.code = data.code
+            if getattr(data, "timeout", None) is not None:
+                t.timeout = data.timeout
+            # 脚本工具：更新后仍需通过静态校验
+            if (t.kind or "") == "script":
+                _validate_script(t.code)
             # 启用态一律要求就绪（含高危门禁），避免绕过 toggle 把高危工具打开
             if t.enabled:
                 _assert_enableable(t)
@@ -417,13 +456,33 @@ class AiToolService:
 
     @classmethod
     async def test(cls, tool_id: int) -> dict:
-        """测试工具：内置工具返回 schema，HTTP 工具发起一次真实请求。"""
+        """测试工具：内置工具返回 schema，HTTP 工具发起一次真实请求，脚本工具空参试运行。"""
         t = await cls._load(tool_id)
         if (t.kind or "builtin") == "builtin":
             entry = TOOL_REGISTRY.get(t.name)
             if not entry:
                 raise CustomException(msg=f"内置工具未注册：{t.name}")
             return {"kind": "builtin", "message": "内置工具已注册", "schema": entry["schema"]}
+        if (t.kind or "") == "script":
+            return {
+                "kind": "script",
+                "result": await execute_script_tool(t, {}),
+            }
         if not t.url:
             raise CustomException(msg="URL 不能为空")
         return {"kind": "http", "result": await execute_http_tool(t, {})}
+
+    @classmethod
+    async def test_script(cls, tool_id: int, args: dict | None) -> dict:
+        """试运行脚本工具（可带参数），返回 ``{ok, result|error}``。"""
+        t = await cls._load(tool_id)
+        if (t.kind or "") != "script":
+            raise CustomException(msg="该工具不是脚本工具")
+        from .script_executor import validate as validate_script
+
+        try:
+            validate_script(t.code or "")
+            result = await execute_script_tool(t, args or {})
+            return {"ok": True, "result": result}
+        except CustomException as e:
+            return {"ok": False, "error": e.msg}
