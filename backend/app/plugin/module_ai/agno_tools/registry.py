@@ -89,34 +89,6 @@ AGNO_CATALOG: list[dict] = [
         "description": "执行 Shell 命令（高风险，默认关闭）",
     },
     {
-        "key": "tavily",
-        "title": "Tavily 搜索",
-        "module": "agno.tools.tavily",
-        "class_name": "TavilyTools",
-        "requires": "tavily",
-        "pip_name": "tavily-python",
-        "config_fields": [
-            {"key": "api_key", "label": "API Key", "secret": True, "required": True}
-        ],
-        "group": "网络",
-        "risk": "low",
-        "description": "Tavily AI 搜索 API",
-    },
-    {
-        "key": "serpapi",
-        "title": "SerpAPI 搜索",
-        "module": "agno.tools.serpapi",
-        "class_name": "SerpApiTools",
-        "requires": "serpapi",
-        "pip_name": "google-search-results",
-        "config_fields": [
-            {"key": "api_key", "label": "API Key", "secret": True, "required": True}
-        ],
-        "group": "网络",
-        "risk": "low",
-        "description": "SerpAPI 谷歌搜索结果",
-    },
-    {
         "key": "duckduckgo",
         "title": "DuckDuckGo 搜索",
         "module": "agno.tools.duckduckgo",
@@ -137,19 +109,6 @@ AGNO_CATALOG: list[dict] = [
         "group": "网络",
         "risk": "low",
         "description": "维基百科条目查询",
-    },
-    {
-        "key": "openweather",
-        "title": "城市天气",
-        "module": "agno.tools.openweather",
-        "class_name": "OpenWeatherTools",
-        "requires": None,
-        "config_fields": [
-            {"key": "api_key", "label": "API Key", "secret": True, "required": True}
-        ],
-        "group": "网络",
-        "risk": "low",
-        "description": "查询城市当前天气与预报",
     },
     {
         "key": "newspaper",

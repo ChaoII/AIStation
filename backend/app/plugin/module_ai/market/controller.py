@@ -23,8 +23,11 @@ MarketRouter = APIRouter(route_class=OperationLogRoute, prefix="/market", tags=[
 @MarketRouter.get("/home", summary="市场首页（精选+分类）")
 async def market_home(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+    asset_type: Annotated[str | None, Query(description="按资产类型联动精选与分类")] = None,
 ) -> JSONResponse:
-    return SuccessResponse(data=await MarketService.home(auth.user.id), msg="查询成功")
+    return SuccessResponse(
+        data=await MarketService.home(auth.user.id, asset_type), msg="查询成功"
+    )
 
 
 @MarketRouter.get("/items", summary="市场商品列表")

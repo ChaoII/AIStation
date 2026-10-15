@@ -256,19 +256,24 @@ class MarketService:
     # ---------- 查询 ----------
 
     @classmethod
-    async def home(cls, user_id: int) -> dict:
-        """市场首页：精选（上架+精选）与分类计数（仅统计已上架）。"""
+    async def home(cls, user_id: int, asset_type: str | None = None) -> dict:
+        """市场首页：精选（上架+精选）与分类计数（仅统计已上架）。
+
+        ``asset_type`` 传入时，精选与分类计数都限定在该类型内（前端类型页签联动分类栏）。
+        """
         async with async_db_session() as db:
+            featured_stmt = select(AiMarketItemModel).where(
+                AiMarketItemModel.status == "approved",
+                AiMarketItemModel.featured.is_(True),
+            )
+            if asset_type:
+                featured_stmt = featured_stmt.where(
+                    AiMarketItemModel.asset_type == asset_type
+                )
             featured = (
                 (
                     await db.execute(
-                        select(AiMarketItemModel)
-                        .where(
-                            AiMarketItemModel.status == "approved",
-                            AiMarketItemModel.featured.is_(True),
-                        )
-                        .order_by(AiMarketItemModel.install_count.desc())
-                        .limit(8)
+                        featured_stmt.order_by(AiMarketItemModel.install_count.desc()).limit(8)
                     )
                 )
                 .scalars()
@@ -276,13 +281,12 @@ class MarketService:
             )
             # 分类计数：在 Python 侧聚合（PG 对 GROUP BY 表达式要求逐字一致，
             # 参数化后 select 与 group_by 的参数编号不同会被判定为不同表达式而报错）
-            cat_rows = (
-                await db.execute(
-                    select(AiMarketItemModel.category).where(
-                        AiMarketItemModel.status == "approved"
-                    )
-                )
-            ).scalars().all()
+            cat_stmt = select(AiMarketItemModel.category).where(
+                AiMarketItemModel.status == "approved"
+            )
+            if asset_type:
+                cat_stmt = cat_stmt.where(AiMarketItemModel.asset_type == asset_type)
+            cat_rows = (await db.execute(cat_stmt)).scalars().all()
             counter: dict[str, int] = {}
             for c in cat_rows:
                 key = (c or "").strip() or "未分类"

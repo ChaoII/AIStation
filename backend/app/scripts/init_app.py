@@ -1000,6 +1000,7 @@ async def _ensure_agno_tools() -> None:
     async with async_db_session() as db:
         async with db.begin():
             existing = set((await db.execute(select(AiToolModel.name))).scalars().all())
+            catalog_keys = {spec["key"] for spec in AGNO_CATALOG}
             added = 0
             for spec in AGNO_CATALOG:
                 if spec["key"] in existing:
@@ -1016,8 +1017,25 @@ async def _ensure_agno_tools() -> None:
                     )
                 )
                 added += 1
+            # 清理已从精选目录移除的工具（如需密钥的 tavily/serpapi/openweather）：
+            # 平台只集成**免密钥**的 agno 工具，下架项连同配置一并软删除。
+            removed = 0
+            stale = (
+                await db.execute(
+                    select(AiToolModel).where(
+                        AiToolModel.source == "agno",
+                        AiToolModel.is_deleted.is_(False),
+                        AiToolModel.name.notin_(catalog_keys),
+                    )
+                )
+            ).scalars().all()
+            for row in stale:
+                row.is_deleted = True
+                removed += 1
             if added:
                 log.info(f"✅ 已注册 {added} 个 Agno 精选 AI 工具")
+            if removed:
+                log.info(f"✅ 已下架 {removed} 个需密钥/已移除的 Agno 工具")
             else:
                 log.info("✅ Agno 精选 AI 工具已就绪")
 
