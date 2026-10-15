@@ -53,6 +53,87 @@ def _to_dict(item: AiMarketItemModel, installed: bool = False, favorited: bool =
     }
 
 
+async def _snapshot(db, asset_type: str, source_id: int) -> tuple[dict, int]:
+    """读取个人真实资产并生成市场快照 payload，返回 ``(payload, owner_id)``。"""
+    _ensure_asset_type(asset_type)
+    if asset_type == "tool":
+        row = await db.get(AiToolModel, source_id)
+        if not row or row.is_deleted:
+            raise CustomException(msg="来源工具不存在")
+        return (
+            {
+                "name": row.name,
+                "kind": row.kind or "builtin",
+                "source": row.source or "system",
+                "config": row.config,
+                "method": row.method or "GET",
+                "url": row.url or "",
+                "headers": row.headers,
+                "params_schema": row.params_schema,
+                "code": row.code or "",
+                "timeout": row.timeout or 10,
+                "enabled": bool(row.enabled),
+                "description": row.description or "",
+            },
+            row.created_id,
+        )
+    if asset_type == "skill":
+        row = await db.get(AiSkillModel, source_id)
+        if not row or row.is_deleted:
+            raise CustomException(msg="来源技能不存在")
+        return (
+            {
+                "name": row.name,
+                "description": row.description or "",
+                "content": row.content or "",
+                "skill_type": row.skill_type or "tool",
+                "category": row.category or "",
+                "author": row.author or "",
+                "version": row.version or "1.0",
+                "scripts": row.scripts,
+                "config": row.config,
+                "icon": row.icon or "",
+                "enabled": bool(row.enabled),
+            },
+            row.created_id,
+        )
+    if asset_type == "mcp":
+        row = await db.get(AiMcpServerModel, source_id)
+        if not row or row.is_deleted:
+            raise CustomException(msg="来源 MCP 服务器不存在")
+        return (
+            {
+                "name": row.name,
+                "transport": row.transport or "streamable-http",
+                "command": row.command or "",
+                "args": row.args or [],
+                "env": row.env,
+                "url": row.url or "",
+                "headers": row.headers,
+                "auth_type": row.auth_type or "none",
+                "enabled": bool(row.enabled),
+                "description": row.description or "",
+            },
+            row.created_id,
+        )
+    row = await db.get(AiPluginModel, source_id)
+    if not row or row.is_deleted:
+        raise CustomException(msg="来源插件不存在")
+    return (
+        {
+            "key": row.key,
+            "label": row.label or "",
+            "kind": row.kind or "builtin",
+            "config": row.config,
+            "config_schema": row.config_schema,
+            "executor_ready": bool(row.executor_ready),
+            "enabled": bool(row.enabled),
+            "description": row.description or "",
+        },
+        row.created_id,
+    )
+
+
 async def _unique_name(db, model, base: str, field: str = "name") -> str:
     """生成不与现有记录冲突的唯一名（name/key 唯一约束兜底）。"""
     name = base or "unnamed"
@@ -378,3 +459,159 @@ class MarketService:
                 "asset_type": item.asset_type,
                 "name": item.name,
             }
+
+    # ---------- 提交 / 撤回 / 我的资产 ----------
+
+    @classmethod
+    async def submit(cls, data, user_id: int) -> dict:
+        """提交个人资产到市场：快照 payload，状态 pending，等待审核。"""
+        name = (data.name or "").strip()
+        if not name:
+            raise CustomException(msg="商品名称不能为空")
+        async with async_db_session.begin() as db:
+            payload, owner_id = await _snapshot(db, data.asset_type, data.source_id)
+            if owner_id != user_id:
+                raise CustomException(msg="只能提交自己的资产")
+            dup = await db.scalar(
+                select(AiMarketItemModel).where(
+                    AiMarketItemModel.asset_type == data.asset_type,
+                    AiMarketItemModel.name == name,
+                    AiMarketItemModel.status.in_(("pending", "approved")),
+                    AiMarketItemModel.is_deleted.is_(False),
+                )
+            )
+            if dup:
+                raise CustomException(msg=f"该资产已提交过（状态：{dup.status}）")
+            item = AiMarketItemModel(
+                asset_type=data.asset_type,
+                name=name,
+                description=data.description or "",
+                icon=data.icon or "",
+                category=data.category or "",
+                tags=data.tags or [],
+                version=data.version or "1.0",
+                owner_id=user_id,
+                is_official=False,
+                featured=False,
+                status="pending",
+                payload=payload,
+                source_id=data.source_id,
+                install_count=0,
+                favorite_count=0,
+            )
+            db.add(item)
+            await db.flush()
+            return _to_dict(item)
+
+    @classmethod
+    async def withdraw(cls, item_id: int, user_id: int) -> dict:
+        """撤回自己的商品（下架），撤回后不可安装。"""
+        async with async_db_session.begin() as db:
+            item = await db.get(AiMarketItemModel, item_id)
+            if not item or item.is_deleted:
+                raise CustomException(msg="商品不存在")
+            if item.owner_id != user_id:
+                raise CustomException(msg="只能撤回自己提交的商品")
+            item.status = "offline"
+            return _to_dict(item)
+
+    @classmethod
+    async def list_mine(cls, user_id: int, asset_type: str | None = None) -> dict:
+        """我的资产：个人真实资产 + 关联的市场提交状态。"""
+        async with async_db_session() as db:
+            # 我提交的市场商品（按 asset_type + source_id 建立索引）
+            market_rows = (
+                await db.execute(
+                    select(AiMarketItemModel).where(
+                        AiMarketItemModel.owner_id == user_id,
+                        AiMarketItemModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalars().all()
+            market_map: dict[tuple[str, int], dict] = {}
+            for m in market_rows:
+                if m.source_id is not None:
+                    market_map[(m.asset_type, m.source_id)] = {
+                        "item_id": m.id,
+                        "status": m.status,
+                        "featured": bool(m.featured),
+                        "install_count": m.install_count or 0,
+                        "audit_remark": m.audit_remark or "",
+                    }
+
+            result: list[dict] = []
+
+            async def _collect(model, kind: str, name_field: str = "name"):
+                rows = (
+                    await db.execute(
+                        select(model).where(
+                            model.created_id == user_id,
+                            model.is_deleted.is_(False),
+                        )
+                    )
+                ).scalars().all()
+                for r in rows:
+                    result.append(
+                        {
+                            "asset_type": kind,
+                            "real_id": r.id,
+                            "name": getattr(r, name_field) or "",
+                            "description": getattr(r, "description", "") or "",
+                            "category": getattr(r, "category", "") or "",
+                            "enabled": bool(getattr(r, "enabled", True)),
+                            "market": market_map.get((kind, r.id)),
+                        }
+                    )
+
+            if asset_type in (None, "", "tool"):
+                await _collect(AiToolModel, "tool")
+            if asset_type in (None, "", "skill"):
+                await _collect(AiSkillModel, "skill")
+            if asset_type in (None, "", "mcp"):
+                await _collect(AiMcpServerModel, "mcp")
+            if asset_type in (None, "", "plugin"):
+                await _collect(AiPluginModel, "plugin", name_field="label")
+            return {"items": result, "total": len(result)}
+
+    # ---------- 审核 ----------
+
+    @classmethod
+    async def review_list(cls, status: str | None = None) -> dict:
+        """审核列表：默认待审核（pending），可按状态过滤。"""
+        async with async_db_session() as db:
+            stmt = select(AiMarketItemModel).where(AiMarketItemModel.is_deleted.is_(False))
+            if status:
+                stmt = stmt.where(AiMarketItemModel.status == status)
+            else:
+                stmt = stmt.where(AiMarketItemModel.status == "pending")
+            rows = (
+                await db.execute(stmt.order_by(AiMarketItemModel.created_time.desc()))
+            ).scalars().all()
+            return {"items": [_to_dict(r) for r in rows], "total": len(rows)}
+
+    @classmethod
+    async def review(cls, item_id: int, action: str, remark: str, user_id: int) -> dict:
+        """审核商品：approve 上架 / reject 驳回（带意见）。"""
+        if action not in ("approve", "reject"):
+            raise CustomException(msg="审核动作不合法")
+        async with async_db_session.begin() as db:
+            item = await db.get(AiMarketItemModel, item_id)
+            if not item or item.is_deleted:
+                raise CustomException(msg="商品不存在")
+            from datetime import datetime
+
+            item.status = "approved" if action == "approve" else "rejected"
+            item.audit_remark = remark or ""
+            item.audit_user = user_id
+            item.audit_time = datetime.now()
+            return _to_dict(item)
+
+    @classmethod
+    async def set_featured(cls, item_id: int, featured: bool) -> dict:
+        """设置/取消精选（审核权限）。"""
+        async with async_db_session.begin() as db:
+            item = await db.get(AiMarketItemModel, item_id)
+            if not item or item.is_deleted:
+                raise CustomException(msg="商品不存在")
+            item.featured = bool(featured)
+            return _to_dict(item)

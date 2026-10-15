@@ -9,7 +9,7 @@ from app.common.response import ErrorResponse, SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 
-from .schema import MarketItemQuerySchema
+from .schema import MarketItemQuerySchema, MarketReviewSchema, MarketSubmitSchema
 from .service import MarketService
 
 MarketRouter = APIRouter(route_class=OperationLogRoute, prefix="/market", tags=["AI-市场"])
@@ -68,4 +68,64 @@ async def market_unfavorite(
 ) -> JSONResponse:
     return SuccessResponse(
         data=await MarketService.favorite(item_id, auth.user.id, False), msg="已取消收藏"
+    )
+
+
+@MarketRouter.post("/submit", summary="提交资产到市场")
+async def market_submit(
+    data: MarketSubmitSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:submit"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.submit(data, auth.user.id), msg="已提交，等待审核"
+    )
+
+
+@MarketRouter.get("/mine", summary="我的资产（含市场状态）")
+async def market_mine(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+    asset_type: Annotated[str | None, Query(description="资产类型过滤")] = None,
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.list_mine(auth.user.id, asset_type), msg="查询成功"
+    )
+
+
+@MarketRouter.post("/items/{item_id}/withdraw", summary="撤回我的商品")
+async def market_withdraw(
+    item_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:submit"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.withdraw(item_id, auth.user.id), msg="已撤回"
+    )
+
+
+@MarketRouter.get("/review/list", summary="审核列表")
+async def market_review_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:review"]))],
+    status: Annotated[str | None, Query(description="状态过滤，默认 pending")] = None,
+) -> JSONResponse:
+    return SuccessResponse(data=await MarketService.review_list(status), msg="查询成功")
+
+
+@MarketRouter.post("/review", summary="审核商品")
+async def market_review(
+    data: MarketReviewSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:review"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.review(data.item_id, data.action, data.remark or "", auth.user.id),
+        msg="审核完成",
+    )
+
+
+@MarketRouter.post("/items/{item_id}/feature", summary="设置精选")
+async def market_feature(
+    item_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:review"]))],
+    featured: Annotated[bool, Query(description="是否精选")] = True,
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.set_featured(item_id, featured), msg="设置成功"
     )
