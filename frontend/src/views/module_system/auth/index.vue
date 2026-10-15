@@ -2,6 +2,8 @@
   <div class="auth-view" :style="{ '--login-background-url': `url(${loginBackgroundUrl})` }">
     <!-- 跟随鼠标的聚光淡网格（零依赖组件；触摸设备自动禁用） -->
     <GridSpotlight :cell="46" :radius="240" :grid-opacity="0.3" :glow-opacity="0.14" />
+    <!-- 极光光斑背景：让毛玻璃卡的模糊效果明显 -->
+    <AuroraBackground />
     <ParticlesNet />
     <!-- 右侧切换主题、语言按钮  -->
     <div class="auth-view__toolbar">
@@ -218,15 +220,15 @@ const loginPreset = reactive<{ username: string; password: string }>({
   width: min(520px, 100%);
   padding: clamp(2rem, 3vw, 2.75rem);
   margin-inline: auto;
-  // 毛玻璃：半透明底色 + 背景模糊，让背后动态网络透出
-  background: color-mix(in srgb, var(--el-bg-color) 60%, transparent);
-  border: 1px solid color-mix(in srgb, var(--el-border-color) 50%, transparent);
+  // 毛玻璃：半透明底色 + 强背景模糊 + 饱和度提升，让背后极光/网络透出
+  background: color-mix(in srgb, var(--el-bg-color) 52%, transparent);
+  border: 1px solid color-mix(in srgb, var(--el-border-color) 45%, transparent);
   border-radius: 22px;
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--el-bg-color) 72%, transparent),
-    0 18px 40px -14px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(20px) saturate(1.3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+    inset 0 1px 0 color-mix(in srgb, var(--el-bg-color) 60%, transparent),
+    0 22px 48px -16px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(28px) saturate(1.45);
+  -webkit-backdrop-filter: blur(28px) saturate(1.45);
   animation: panelLift 0.7s ease;
 }
 

@@ -9,10 +9,10 @@
  * 非空 → 使用配置值。登录页、AppLogo、main.ts 三处复用。
  */
 
-/** 站点 logo：配置为空时回落内置 logo.png */
+/** 站点 logo：配置为空时回落内置 logo.svg（透明背景，亮/暗主题自适应） */
 export function resolveSiteLogo(cfgValue?: string | null): string {
   const cfg = String(cfgValue || "").trim();
-  return cfg || new URL("@/assets/images/logo.png", import.meta.url).href;
+  return cfg || new URL("@/assets/images/logo.svg", import.meta.url).href;
 }
 
 /** 登录页背景：配置为空时回落内置 login-bg.svg */

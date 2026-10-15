@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="aig" x1="8" y1="0" x2="60" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#409EFF"/>
+      <stop offset="1" stop-color="#36CFC9"/>
+    </linearGradient>
+  </defs>
+  <!-- 两条腿 -->
+  <path d="M32 12 L14 56 M32 12 L50 56" stroke="url(#aig)" stroke-width="7" stroke-linecap="round"/>
+  <!-- 弧线横杠 -->
+  <path d="M19 42 Q32 49 45 42" stroke="url(#aig)" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <!-- 三个节点 -->
+  <circle cx="32" cy="12" r="6" fill="url(#aig)"/>
+  <circle cx="14" cy="56" r="6" fill="url(#aig)"/>
+  <circle cx="50" cy="56" r="6" fill="url(#aig)"/>
+</svg>
