@@ -9,12 +9,8 @@ from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.sse import sse_response
-from app.utils.s3_client import s3_client
 
-from .eval_scheduler import start_evaluation, stop_evaluation
 from .paths import shared_root, work_dir
-from .predict_executor import start_prediction, stop_prediction
-from .scheduler import start_training
 from .schema import (
     DatasetExportSchema,
     ModelExportSchema,
@@ -213,6 +209,8 @@ async def stop_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["mo
 
 @router.post("/task/{task_id}/start", summary="开始训练")
 async def start_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:task:update"]))):
+    from .scheduler import start_training
+
     try:
         await start_training(task_id)
         return SuccessResponse(data={"id": task_id}, msg="训练已开始")
@@ -418,6 +416,8 @@ async def get_eval_logs(eval_id: int, auth: AuthSchema = Depends(AuthPermission(
 
 @router.post("/eval/{eval_id}/start", summary="开始评估")
 async def start_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:create"]))):
+    from .eval_scheduler import start_evaluation
+
     try:
         await start_evaluation(eval_id)
         return SuccessResponse(data={"id": eval_id}, msg="评估已开始")
@@ -428,6 +428,8 @@ async def start_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["m
 
 @router.post("/eval/{eval_id}/stop", summary="停止评估")
 async def stop_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:create"]))):
+    from .eval_scheduler import stop_evaluation
+
     await stop_evaluation(eval_id)
     return SuccessResponse(data={"id": eval_id}, msg="评估已停止")
 
@@ -534,6 +536,8 @@ async def get_predict_logs(predict_id: int, auth: AuthSchema = Depends(AuthPermi
 
 @router.post("/predict/{predict_id}/start", summary="开始预测")
 async def start_predict(predict_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:create"]))):
+    from .predict_executor import start_prediction
+
     try:
         await start_prediction(predict_id)
         return SuccessResponse(data={"id": predict_id}, msg="预测已开始")
@@ -544,6 +548,8 @@ async def start_predict(predict_id: int, auth: AuthSchema = Depends(AuthPermissi
 
 @router.post("/predict/{predict_id}/stop", summary="停止预测")
 async def stop_predict(predict_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:create"]))):
+    from .predict_executor import stop_prediction
+
     await stop_prediction(predict_id)
     return SuccessResponse(data={"id": predict_id}, msg="预测已停止")
 
@@ -643,6 +649,8 @@ async def download_model(
     if not model or not model.get("storage_path"):
         from app.common.response import ErrorResponse
         return ErrorResponse(msg="模型或文件不存在")
+
+    from app.utils.s3_client import s3_client
 
     key, fmt = resolve_download_target(model, s3_client.object_exists)
     url = s3_client.presigned_url(key)

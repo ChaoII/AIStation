@@ -4,7 +4,6 @@ from typing import Any
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.core.exceptions import CustomException
 
-from ..engine.prefect_engine import run_prefect_workflow_sync, utc_now_iso, validate_workflow_graph
 from ..node_type.crud import WorkflowNodeTypeCRUD
 from .crud import WorkflowCRUD
 from .schema import (
@@ -197,6 +196,8 @@ class WorkflowService:
         异常:
         - CustomException: 不存在、图无效或发布失败。
         """
+        from ..engine.prefect_engine import validate_workflow_graph
+
         obj = await WorkflowCRUD(auth).get_obj_by_id_crud(id=id)
         if not obj:
             raise CustomException(msg="工作流不存在")
@@ -238,6 +239,8 @@ class WorkflowService:
         异常:
         - CustomException: 未发布、缺节点、节点类型未注册等。
         """
+        from ..engine.prefect_engine import run_prefect_workflow_sync, utc_now_iso
+
         obj = await WorkflowCRUD(auth).get_obj_by_id_crud(id=body.workflow_id)
         if not obj:
             raise CustomException(msg="工作流不存在")
