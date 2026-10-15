@@ -16,7 +16,7 @@ dependencies = [
     "asyncpg==0.30.0",                          # postgresql 异步操作数据库基于 psycopg2：asyncpg 是 psycopg2 的异步版本，psycopg2 是一个 pure-Python PostgreSQL 数据库适配器。性能：asyncpg 通常在性能上优于 psycopg2，特别是在高并发和大数据量的场景下。
     "bcrypt==4.0.1",                            # 密码加密解析,切勿升级，如果升级，请同时升级python版本
     "bleach==6.3.0",                            # 过滤 HTML 标签
-    "click==8.1.7",                             # 命令行参数解析
+    "click>=8.1.8,<8.2",                             # 命令行参数解析
     "croniter>=1.0.12,<5.0.0",                  # cron（与 prefect 约束一致；部署 requirements.txt 同源）
     "cryptography==45.0.2",                     # mysql8 密码加密                     # mysql8 密码加密
     "fastapi==0.115.2",                         # fastapi 框架
@@ -55,6 +55,11 @@ dependencies = [
     "websockets>=15.0.1,<16.0",                 # websocket（prefect>=3.5 需 >=15.0.1；与部署 requirements.txt 一致）
     "jieba>=0.42.1",
     "mcp>=2.1.0,<3.0.0",
+    "ddgs>=9.16.0",
+    "wikipedia>=1.4.0",
+    "arxiv>=4.0.1",
+    "duckdb>=1.5.6",
+    "matplotlib>=3.10.9",
 ]
 
 [dependency-groups]

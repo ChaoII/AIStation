@@ -157,7 +157,20 @@ async def _materialize(db, item: AiMarketItemModel, user_id: int) -> int:
     payload = item.payload or {}
     asset_type = item.asset_type
     if asset_type == "tool":
-        name = await _unique_name(db, AiToolModel, payload.get("name") or item.name)
+        want_name = payload.get("name") or item.name
+        # 平台已内置同名工具（agno/system）或用户已有同名行：直接复用，安装即"启用"，
+        # 不再复制出带后缀的新行（否则派发时按名字找不到 agno 工具）。
+        existing = await db.scalar(
+            select(AiToolModel).where(
+                AiToolModel.name == want_name,
+                AiToolModel.is_deleted.is_(False),
+            )
+        )
+        if existing is not None:
+            if not existing.enabled:
+                existing.enabled = True
+            return existing.id
+        name = await _unique_name(db, AiToolModel, want_name)
         row = AiToolModel(
             name=name,
             kind=payload.get("kind") or "http",

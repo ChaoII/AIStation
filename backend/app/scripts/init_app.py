@@ -700,13 +700,16 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
 REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
 
-# 已并入「智能问数」工作台的功能页：存量库置 hidden=True + redirect 到工作台对应页签（新库不再创建）
-AI_MERGE_WORKSPACE: dict[str, str] = {
-    "AiIntegration": "/ai/query?tab=integration",
-    "AiEval": "/ai/query?tab=eval",
-    "AiQueryReports": "/ai/query?tab=reports",
-    "AiAsset": "/ai/query?tab=integration",
-}
+# 「智能问数」独立菜单目录：目录（type=1）+ 4 个独立页面子菜单；
+# 存量库从「工作台合并态」幂等迁移为目录结构；数据资产（AiAsset）继续并入数据与集成
+QUERY_GROUP = "AiQueryGroup"
+QUERY_GROUP_TITLE = "智能问数"
+QUERY_GROUP_MENUS: list[tuple[str, str, str, str, int, str]] = [
+    ("数据与集成", "AiIntegration", "/ai/integration", "module_ai/integration/index", 1, "el-icon-Connection"),
+    ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", 2, "el-icon-ChatDotRound"),
+    ("问数评测", "AiEval", "/ai/eval", "module_ai/eval/index", 3, "el-icon-DataAnalysis"),
+    ("自定义报表", "AiQueryReports", "/ai/query/reports", "module_ai/query/reports", 4, "el-icon-Tickets"),
+]
 
 
 async def _ensure_ai_menus() -> None:
@@ -791,30 +794,96 @@ async def _ensure_ai_menus() -> None:
                 ("本体", "AiOntology", "/ai/ontology", "module_ai/ontology/index", "module_ai:query:ask", 9, "el-icon-Files"),
                 ("无代码应用", "AiWorkshop", "/ai/workshop", "module_ai/workshop/index", "module_ai:query:ask", 22, "el-icon-Monitor"),
                 ("治理", "AiGovernance", "/ai/governance", "module_ai/governance/index", "module_ai:query:ask", 23, "el-icon-Odometer"),
-                # 问数工作台：数据与集成 / 问数评测 / 自定义报表 / 数据资产 已并入（存量库 hidden+redirect）
-                ("智能问数", "AiQuery", "/ai/query", "module_ai/query/workspace", "module_ai:query:ask", 33, "el-icon-ChatDotRound"),
             ]
-            # 问数是「本体 → 问数 → 评测 / 报表」链路的**数据产生方**：
-            # 它是「存为报表」的唯一入口。历史上被隐藏（"降为 Agent 能力"），
-            # 导致「自定义报表 / 问数评测」可见、而其数据来源页点不到 → **闭环断裂**（实测踩过）。
-            # 故保持可见，并与评测/报表**相邻**成"问数工作区"（33/34/35）。
-            await db.execute(
-                update(MenuModel)
-                .where(MenuModel.route_name == "AiQuery")
-                .values(
-                    hidden=False,
-                    order=33,
-                    permission="module_ai:query:ask",
-                    component_path="module_ai/query/workspace",
+            # 问数链路：本体 → 问数 → 评测/报表（data 产生方「存为报表」唯一入口，曾因隐藏断闭环）。
+            # 采用「独立菜单目录 + 4 个独立页面子菜单」结构，结构明确（不再用页签工作台）。
+            # 1) 目录（type=1）：唯一键 route_name=QUERY_GROUP
+            _group = await db.scalar(
+                select(MenuModel).where(
+                    MenuModel.route_name == QUERY_GROUP, MenuModel.type == 1
                 )
             )
-            # 已并入工作台的功能页：存量库隐藏并重定向到工作台对应页签
-            for _rn, _redirect in AI_MERGE_WORKSPACE.items():
+            if not _group:
+                _group = MenuModel(
+                    name=QUERY_GROUP_TITLE,
+                    type=1,
+                    icon="el-icon-ChatDotRound",
+                    order=33,
+                    route_name=QUERY_GROUP,
+                    # type=1 目录硬性要求：route_path 与 redirect 均非空（MenuOutSchema 输出校验），
+                    # 否则 GET /system/user/current/info → 500 → 前端菜单/路由全挂（实测踩过）。
+                    # 与默认子菜单 AiQuery 同路径（项目既有惯例，normalizeMenuNestedPaths 会置空子级）。
+                    route_path="/ai/query",
+                    component_path="",
+                    permission="",
+                    redirect="/ai/query",
+                    parent_id=parent.id,
+                    status="0",
+                    is_deleted=False,
+                    title=QUERY_GROUP_TITLE,
+                )
+                db.add(_group)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=_group.id))
+            else:
+                # 存量目录（可能带脏字段，如之前版本 route_path=""/redirect=None）统一修复
                 await db.execute(
                     update(MenuModel)
-                    .where(MenuModel.route_name == _rn)
-                    .values(hidden=True, redirect=_redirect)
+                    .where(MenuModel.id == _group.id)
+                    .values(
+                        hidden=False,
+                        icon="el-icon-ChatDotRound",
+                        route_path="/ai/query",
+                        redirect="/ai/query",
+                        parent_id=parent.id,
+                    )
                 )
+
+            # 2) 四个子菜单迁移到目录下：恢复独立 component、清 redirect、取消隐藏
+            for _title, _rn, _rpath, _comp, _order, _icon in QUERY_GROUP_MENUS:
+                _row = await db.scalar(
+                    select(MenuModel).where(MenuModel.route_name == _rn)
+                )
+                if _row:
+                    await db.execute(
+                        update(MenuModel)
+                        .where(MenuModel.id == _row.id)
+                        .values(
+                            hidden=False,
+                            redirect=None,
+                            component_path=_comp,
+                            route_path=_rpath,
+                            parent_id=_group.id,
+                            permission="module_ai:query:ask",
+                            order=_order,
+                            icon=_icon,
+                        )
+                    )
+                else:
+                    _m = MenuModel(
+                        name=_title,
+                        type=2,
+                        icon=_icon,
+                        order=_order,
+                        route_name=_rn,
+                        route_path=_rpath,
+                        component_path=_comp,
+                        permission="module_ai:query:ask",
+                        parent_id=_group.id,
+                        status="0",
+                        is_deleted=False,
+                        title=_title,
+                    )
+                    db.add(_m)
+                    await db.flush()
+                    db.add(RoleMenusModel(role_id=1, menu_id=_m.id))
+
+            # 3) 数据资产：保持隐藏并重定向到「数据与集成」（并入该子菜单）
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.route_name == "AiAsset")
+                .values(hidden=True, redirect="/ai/integration")
+            )
             for title, rname, rpath, comp, perm, order, icon in pages:
                 exists = await db.scalar(
                     select(MenuModel).where(MenuModel.route_name == rname)
@@ -844,7 +913,7 @@ async def _ensure_ai_menus() -> None:
             # ⚠️ 必须先 flush：上面 `pages` 循环刚 add 的关联还在 pending 里，
             #    select 看不到 → 会重复 INSERT 撞 UNIQUE(role_id, menu_id)（实测把启动搞挂）。
             await db.flush()
-            for _rn in ("AiQuery", "AiEval", "AiQueryReports", "AiOntology"):
+            for _rn in ("AiQuery", "AiEval", "AiQueryReports", "AiIntegration", "AiOntology"):
                 _mm = await db.scalar(select(MenuModel).where(MenuModel.route_name == _rn))
                 if not _mm:
                     continue
@@ -1393,6 +1462,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_ai_menus()
         await _ensure_ai_tools()
         await _ensure_agno_tools()
+        # 能力市场官方种子（通用技能 + agno 免密钥工具 + 办公类 MCP），幂等
+        try:
+            from app.plugin.module_ai.market.seed import ensure_market_seed
+
+            await ensure_market_seed()
+        except Exception as e:  # noqa: BLE001  种子失败不阻断启动
+            log.warning(f"⚠️  能力市场官方种子写入失败（不阻断启动）: {e}")
         await _ensure_notification_params()
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
