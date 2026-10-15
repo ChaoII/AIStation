@@ -679,6 +679,22 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:provider:create", "新增供应商"),
     ("module_ai:provider:update", "编辑供应商"),
     ("module_ai:provider:delete", "删除供应商"),
+    # 能力市场（工具/技能/MCP/插件统一橱窗 + 安装/提交/分享/审核）
+    ("module_ai:market:query", "浏览能力市场"),
+    ("module_ai:market:install", "安装市场商品"),
+    ("module_ai:market:submit", "提交资产到市场"),
+    ("module_ai:market:share", "分享市场商品"),
+    ("module_ai:market:review", "审核市场商品"),
+    # MCP 服务器管理
+    ("module_ai:mcp:query", "查询 MCP 服务器"),
+    ("module_ai:mcp:create", "新增 MCP 服务器"),
+    ("module_ai:mcp:update", "编辑 MCP 服务器"),
+    ("module_ai:mcp:delete", "删除 MCP 服务器"),
+    # 能力插件
+    ("module_ai:plugin:query", "查询能力插件"),
+    ("module_ai:plugin:create", "新增能力插件"),
+    ("module_ai:plugin:update", "编辑能力插件"),
+    ("module_ai:plugin:delete", "删除能力插件"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -766,6 +782,9 @@ async def _ensure_ai_menus() -> None:
                 ("知识库", "AiKnowledge", "/ai/knowledge", "module_ai/knowledge/index", "module_ai:knowledge:query", 14, "el-icon-Collection"),
                 ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 15, "el-icon-Document"),
                 ("工具管理", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 16, "el-icon-Operation"),
+                ("能力市场", "AiMarket", "/ai/market", "module_ai/market/index", "module_ai:market:query", 20, "el-icon-Shop"),
+                ("MCP 管理", "AiMcp", "/ai/mcp", "module_ai/mcp/index", "module_ai:mcp:query", 21, "el-icon-Connection"),
+                ("能力插件", "AiPlugin", "/ai/plugin", "module_ai/plugin/index", "module_ai:plugin:query", 24, "el-icon-Suitcase"),
                 ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 17, "el-icon-Monitor"),
                 ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 18, "el-icon-DataLine"),
                 ("模型供应商", "AiProviderManage", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 19, "el-icon-Service"),
