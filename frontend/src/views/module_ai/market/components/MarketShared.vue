@@ -103,7 +103,7 @@ async function load() {
       direction: direction.value,
       status: status.value || undefined,
     });
-    items.value = res.data?.items || [];
+    items.value = res.data?.data?.items || [];
   } finally {
     loading.value = false;
   }

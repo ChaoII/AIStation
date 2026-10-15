@@ -146,7 +146,7 @@ async function load() {
   loading.value = true;
   try {
     const res: any = await getMarketReviewList({ status: status.value });
-    items.value = res.data?.items || [];
+    items.value = res.data?.data?.items || [];
   } finally {
     loading.value = false;
   }

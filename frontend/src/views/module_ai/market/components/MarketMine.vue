@@ -221,7 +221,7 @@ async function load() {
   loading.value = true;
   try {
     const res: any = await getMyAssets({ asset_type: assetType.value || undefined });
-    items.value = res.data?.items || [];
+    items.value = res.data?.data?.items || [];
   } finally {
     loading.value = false;
   }
@@ -283,7 +283,7 @@ async function searchUsers(query: string) {
   userLoading.value = true;
   try {
     const res: any = await UserAPI.listUser({ username: query, page_no: 1, page_size: 20 });
-    const rows = res.data?.items || res.data?.records || [];
+    const rows = res.data?.data?.items || [];
     userOptions.value = rows.map((u: any) => ({ id: u.id, name: u.name, username: u.username }));
   } finally {
     userLoading.value = false;

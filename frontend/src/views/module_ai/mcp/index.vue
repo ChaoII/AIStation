@@ -231,7 +231,7 @@ async function load() {
   loading.value = true;
   try {
     const res: any = await getMcpList();
-    rows.value = res.data || [];
+    rows.value = res.data?.data || [];
   } finally {
     loading.value = false;
   }
@@ -316,7 +316,7 @@ async function toggle(row: McpServer, value: any) {
 
 async function testServer(row: McpServer) {
   const res: any = await testMcp(row.id);
-  const data = res.data || {};
+  const data = res.data?.data || {};
   if (data.reachable) {
     ElMessage.success(`连接正常：${data.detail}`);
   } else {

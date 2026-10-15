@@ -175,7 +175,7 @@ async function load() {
   loading.value = true;
   try {
     const res: any = await getPluginList();
-    rows.value = res.data || [];
+    rows.value = res.data?.data || [];
   } finally {
     loading.value = false;
   }

@@ -230,8 +230,8 @@ function assetIcon(type: string) {
 
 async function loadHome() {
   const res: any = await getMarketHome();
-  featured.value = res.data?.featured || [];
-  categories.value = res.data?.categories || [];
+  featured.value = res.data?.data?.featured || [];
+  categories.value = res.data?.data?.categories || [];
 }
 
 async function loadItems() {
@@ -246,8 +246,8 @@ async function loadItems() {
       page_no: pageNo.value,
       page_size: pageSize,
     });
-    items.value = res.data?.items || [];
-    total.value = res.data?.total || 0;
+    items.value = res.data?.data?.items || [];
+    total.value = res.data?.data?.total || 0;
   } finally {
     loading.value = false;
   }
@@ -260,7 +260,7 @@ function reload() {
 
 async function openDetail(item: MarketItem) {
   const res: any = await getMarketItemDetail(item.id);
-  detail.value = res.data;
+  detail.value = res.data?.data;
   detailVisible.value = true;
 }
 
@@ -271,7 +271,7 @@ async function installItem(item: MarketItem) {
     { confirmButtonText: "安装", cancelButtonText: "取消", type: "info" }
   );
   const res: any = await installMarketItem(item.id);
-  if (res.data?.installed) {
+  if (res.data?.data?.installed) {
     ElMessage.success(`已安装「${item.name}」`);
   } else {
     ElMessage.info("该商品已安装过");
