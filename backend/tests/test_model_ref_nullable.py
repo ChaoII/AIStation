@@ -164,8 +164,8 @@ def test_migration_chain_has_single_head_and_no_cycle():
 
     assert len(roots) == 1, f"迁移链有 {len(roots)} 个根：{roots}（应恰好 1 个）"
     assert len(heads) == 1, f"迁移链有 {len(heads)} 个头：{heads}（应恰好 1 个）"
-    assert heads[0] == "935f817cdee4", (
-        f"当前 head 是 {heads[0]}，但仓库里最新的迁移是 935f817cdee4——"
+    assert heads[0] == "b6a11c0ffee2", (
+        f"当前 head 是 {heads[0]}，但仓库里最新的迁移是 b6a11c0ffee2——"
         f"新迁移的 down_revision 可能写错"
     )
 

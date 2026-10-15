@@ -270,7 +270,9 @@ class MarketService:
                         func.count().label("count"),
                     )
                     .where(AiMarketItemModel.status == "approved")
-                    .group_by("name")
+                    .group_by(
+                        func.coalesce(func.nullif(AiMarketItemModel.category, ""), "未分类")
+                    )
                     .order_by(func.count().desc())
                 )
             ).all()

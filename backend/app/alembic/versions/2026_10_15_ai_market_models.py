@@ -194,18 +194,32 @@ def upgrade() -> None:
     op.create_index(op.f("ix_ai_plugins_uuid"), "ai_plugins", ["uuid"], unique=True)
 
     # 6. ai_agents 增加 MCP 服务器ID列表
-    op.add_column(
-        "ai_agents",
-        sa.Column("mcp_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=True, comment="MCP 服务器ID列表"),
-    )
+    #    注意：ai_agents / ai_tools 属插件模块表，**不由迁移链创建**（由应用启动时补齐），
+    #    因此空库重放（如 SQLite 全链回归）时表可能尚不存在——存在才增列，保证可重放。
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+
+    def _has_column(table: str, column: str) -> bool:
+        if not inspector.has_table(table):
+            return False
+        return column in {c["name"] for c in inspector.get_columns(table)}
+
+    if inspector.has_table("ai_agents") and not _has_column("ai_agents", "mcp_ids"):
+        op.add_column(
+            "ai_agents",
+            sa.Column("mcp_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=True, comment="MCP 服务器ID列表"),
+        )
 
     # 7. ai_tools 增加脚本工具字段
-    op.add_column("ai_tools", sa.Column("code", sa.Text(), nullable=True, comment="Python 脚本源码（kind=script）"))
-    # timeout 为 NOT NULL 且表内可能已有数据，需要 server_default 兜底
-    op.add_column(
-        "ai_tools",
-        sa.Column("timeout", sa.Integer(), nullable=False, server_default="10", comment="脚本执行超时（秒）"),
-    )
+    if inspector.has_table("ai_tools"):
+        if not _has_column("ai_tools", "code"):
+            op.add_column("ai_tools", sa.Column("code", sa.Text(), nullable=True, comment="Python 脚本源码（kind=script）"))
+        if not _has_column("ai_tools", "timeout"):
+            # timeout 为 NOT NULL 且表内可能已有数据，需要 server_default 兜底
+            op.add_column(
+                "ai_tools",
+                sa.Column("timeout", sa.Integer(), nullable=False, server_default="10", comment="脚本执行超时（秒）"),
+            )
 
 
 def downgrade() -> None:
