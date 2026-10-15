@@ -62,6 +62,7 @@ def _to_dict(a: AiAgentModel) -> dict:
         "tool_ids": a.tool_ids or [],
         "skill_ids": a.skill_ids or [],
         "knowledge_ids": a.knowledge_ids or [],
+        "mcp_ids": a.mcp_ids or [],
         "query_enabled": getattr(a, "query_enabled", False),
         "query_datasource": getattr(a, "query_datasource", None) or "system",
         "capabilities": getattr(a, "capabilities", None) or [],
@@ -212,6 +213,7 @@ class AiAgentService:
                 tool_ids=data.tool_ids or [],
                 skill_ids=data.skill_ids or [],
                 knowledge_ids=data.knowledge_ids or [],
+                mcp_ids=getattr(data, "mcp_ids", None) or [],
                 capabilities=getattr(data, "capabilities", None) or [],
                 query_enabled=data.query_enabled,
                 query_datasource=data.query_datasource or "system",
@@ -237,7 +239,7 @@ class AiAgentService:
             for key in (
                 "agent_name", "category_id", "agent_role", "description", "model_id",
                 "prompt_id", "temperature", "workflow_id", "tool_ids", "skill_ids",
-                "knowledge_ids", "query_enabled", "query_datasource", "input_schema",
+                "knowledge_ids", "mcp_ids", "query_enabled", "query_datasource", "input_schema",
                 "capabilities", "avatar", "color", "markdown", "enabled", "order",
             ):
                 val = getattr(data, key, None)
@@ -453,6 +455,14 @@ class AiAgentService:
             from app.plugin.module_ai.assistant.tools import QUERY_DS_CONTEXT
 
             ds_token = QUERY_DS_CONTEXT.set(agent.get("query_datasource") or "system")
+            # MCP 工具：按 Agent 绑定的 mcp_ids 取用户自己的启用服务器（失败降级）
+            mcp_tools: list = []
+            if agent.get("mcp_ids"):
+                from app.plugin.module_ai.mcp.service import McpService
+                from app.plugin.module_ai.mcp.tools import build_mcp_tools
+
+                servers = await McpService.enabled_servers(agent["mcp_ids"], uid)
+                mcp_tools = build_mcp_tools(servers)
             try:
                 from app.plugin.module_ai.assistant.agno_service import run_agno_tool_stream
 
@@ -466,6 +476,7 @@ class AiAgentService:
                     session_id=session_id,
                     name="aistation_agent",
                     description=f"AIStation 智能体：{agent.get('agent_name') or '智能体'}",
+                    mcp_tools=mcp_tools or None,
                     state=state,
                 ):
                     yield frame

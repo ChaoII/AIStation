@@ -16,6 +16,7 @@ class AiAgentCreateSchema(BaseModel):
     tool_ids: list[str] = Field(default_factory=list)
     skill_ids: list[int] = Field(default_factory=list)
     knowledge_ids: list[int] = Field(default_factory=list)
+    mcp_ids: list[int] = Field(default_factory=list, description="绑定的 MCP 服务器ID列表")
     capabilities: list[str] = Field(
         default_factory=list,
         description="能力列表：功能标志（query/grounding/knowledge）+ 本体能力编码（本体函数/对象动作 code）",
@@ -42,6 +43,7 @@ class AiAgentUpdateSchema(BaseModel):
     tool_ids: list[str] | None = None
     skill_ids: list[int] | None = None
     knowledge_ids: list[int] | None = None
+    mcp_ids: list[int] | None = None
     capabilities: list[str] | None = None
     query_enabled: bool | None = None
     query_datasource: str | None = Field(default=None, max_length=64)

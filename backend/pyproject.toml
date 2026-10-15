@@ -3,7 +3,7 @@ name = "backend"
 version = "2.0.0"
 description = "aistation后端工程"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"  # 上限 3.14：mcp>=2.1 在 3.14+ 要求 starlette>=0.48，与 fastapi==0.115.2 冲突
 dependencies = [
     "agno==3.0.6",
     "aiofiles==24.1.0",                         # 文件操作
@@ -41,7 +41,7 @@ dependencies = [
     "psycopg-binary==3.3.2",                    # postgresql 异步操作数据库基于 psycopg2：asyncpg 是 psycopg2 的异步版本，psycopg2 是一个 pure-Python PostgreSQL 数据库适配器。
     "pydantic-settings==2.5.2",                 # 配置设置
     "pydantic-validation-decorator==0.1.4",     # 模型验证
-    "pyjwt==2.9.0",                             # OAuth2
+    "pyjwt>=2.10.1,<3.0.0",                             # OAuth2
     "pymysql==1.1.2",                           # mysql 同步步操作数据库基于 pymysql：aiomysql 是 pymysql 的异步版本，pymysql 是一个纯 Python 实现的 MySQL 客户端。成熟度：aiomysql 相对较为成熟，社区支持较好，文档也比较完善。
     "python-multipart==0.0.9",                  # request.form() 对表单进行「解析」时安装
     "redis==7.1.0",                             # redis 同/异步操作数据库(用户celery配套使用)redis 异步操作数据库 redis已经完全具备了aioredis的功能，无需重复安全,且aioredis已经不再维护也不兼容3.10+的版本
@@ -51,9 +51,10 @@ dependencies = [
     "sqlglot[rs]==27.8.0",                      # sql 解析
     "typer==0.19.0",                             # 命令行工具
     "user-agents==2.2.0",                       # 获取用户UA
-    "uvicorn==0.30.6",                          # uvicorn web 框架
+    "uvicorn>=0.31.1",                          # uvicorn web 框架
     "websockets>=15.0.1,<16.0",                 # websocket（prefect>=3.5 需 >=15.0.1；与部署 requirements.txt 一致）
     "jieba>=0.42.1",
+    "mcp>=2.1.0,<3.0.0",
 ]
 
 [dependency-groups]

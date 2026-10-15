@@ -38,12 +38,13 @@ async def run_agno_core(
     instructions: list[str] | None = None,
     description: str | None = None,
     tools: list | None = None,
+    extra_tools: list | None = None,
     name: str | None = None,
 ) -> AsyncIterator[str]:
     """Agno Agent 驱动的通用事件流执行核心：app / agent / assistant 共用。
 
     - 工具：默认业务工具；传入 ``tools``（如 ``dynamic.build_dynamic_tools`` 生成的
-      app/agent 自定义工具）则覆盖。
+      app/agent 自定义工具）则覆盖。``extra_tools`` 追加（如 MCP 工具集）。
     - ``input_text`` 缺省用 ``user_text``。
     - 产出 Agno 原生 SSE 帧并累积正文供会话落库由调用方决定。
     - 使用 ``agno_tools.business`` / ``agno_tools.dynamic`` 两个 ContextVar 同时注入
@@ -63,6 +64,7 @@ async def run_agno_core(
             instructions=instructions,
             description=description,
             tools=tools,
+            extra_tools=extra_tools,
             name=name,
         )
         async for item in agent.arun(
@@ -170,6 +172,7 @@ async def run_agno_tool_stream(
     name: str | None = None,
     description: str | None = None,
     instructions_extra: list[str] | None = None,
+    mcp_tools: list | None = None,
     state: dict | None = None,
 ) -> AsyncIterator[str]:
     """app/agent 运行台共用：用 Agno Agent 驱动“模型 + 提示词 + 动态工具”。
@@ -178,6 +181,8 @@ async def run_agno_tool_stream(
     - ``dispatch(name, args, user_id)``：异步派发器（内置/Agno/HTTP 工具）。
     - 内部用 ``dynamic.build_dynamic_tools`` 把 schema 包装成 Agno 工具，
       执行统一走 ``dispatch``；``user_id`` 通过 ContextVar 注入。
+    - ``mcp_tools``：已构建的 MCP 工具集（``mcp.tools.build_mcp_tools`` 产出），
+      在此处统一连接/关闭；连接失败的服务器自动跳过（降级运行）。
     - 传入 ``state``（含 ``assistant_text``）时会把正文增量累加进去，供调用方
       会话落库（对齐旧实现 ``state["assistant_text"]`` 的语义）。
     """
@@ -185,32 +190,44 @@ async def run_agno_tool_stream(
 
     from app.plugin.module_ai.agno_tools.dynamic import build_dynamic_tools
 
-    tools = build_dynamic_tools(tool_schemas or [], dispatch) if tool_schemas else None
+    tools = build_dynamic_tools(tool_schemas or [], dispatch) if tool_schemas else []
     instructions: list[str] = []
     if system_prompt:
         instructions.append(system_prompt)
     if instructions_extra:
         instructions.extend(instructions_extra)
 
-    async for sse in run_agno_core(
-        model_config=model_config,
-        user_text=user_text,
-        user_id=user_id,
-        session_id=session_id,
-        instructions=instructions or None,
-        description=description,
-        tools=tools,
-        name=name,
-    ):
-        if state is not None and "event: RunContent" in sse:
-            try:
-                _data = sse.split("\ndata:", 1)[1].strip()
-                _payload = _json.loads(_data)
-                if isinstance(_payload.get("content"), str):
-                    state["assistant_text"] = state.get("assistant_text", "") + _payload["content"]
-            except Exception:  # noqa: BLE001 解析失败不影响透传
-                pass
-        yield sse
+    connected_mcp: list = []
+    if mcp_tools:
+        from app.plugin.module_ai.mcp.tools import connect_mcp_tools
+
+        connected_mcp = await connect_mcp_tools(mcp_tools)
+    try:
+        async for sse in run_agno_core(
+            model_config=model_config,
+            user_text=user_text,
+            user_id=user_id,
+            session_id=session_id,
+            instructions=instructions or None,
+            description=description,
+            tools=tools or None,
+            extra_tools=connected_mcp or None,
+            name=name,
+        ):
+            if state is not None and "event: RunContent" in sse:
+                try:
+                    _data = sse.split("\ndata:", 1)[1].strip()
+                    _payload = _json.loads(_data)
+                    if isinstance(_payload.get("content"), str):
+                        state["assistant_text"] = state.get("assistant_text", "") + _payload["content"]
+                except Exception:  # noqa: BLE001 解析失败不影响透传
+                    pass
+            yield sse
+    finally:
+        if connected_mcp:
+            from app.plugin.module_ai.mcp.tools import close_mcp_tools
+
+            await close_mcp_tools(connected_mcp)
 
 
 def agno_stream_response(body: AsyncIterator[str]):

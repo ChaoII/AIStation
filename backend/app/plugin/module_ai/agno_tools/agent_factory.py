@@ -57,6 +57,7 @@ def build_agent(
     instructions: list[str] | None = None,
     description: str | None = None,
     tools: list | None = None,
+    extra_tools: list | None = None,
     name: str | None = None,
     db=None,
 ) -> Agent:
@@ -65,12 +66,15 @@ def build_agent(
     - ``model_config`` / ``model`` 至少提供一个用于覆盖默认模型。
     - 工具默认取自 ``agno_tools.business.build_business_tools()``；传入 ``tools``
       则覆盖（app/agent 运行台可注入自定义/HTTP 工具，见 ``agno_tools.dynamic``）。
+    - ``extra_tools``：额外追加的工具集（如 MCP ``MCPTools``），与 ``tools`` 合并。
     - ``instructions`` / ``description`` / ``name`` 可覆盖默认（app/agent 可注入
       渲染后的系统提示词与自定义角色）。
     """
     from .business import build_business_tools
 
-    tool_list = tools if tools is not None else build_business_tools()
+    tool_list = list(tools if tools is not None else build_business_tools())
+    if extra_tools:
+        tool_list.extend(extra_tools)
     model_obj = model or build_model(model_config)
 
     kwargs: dict[str, Any] = {
