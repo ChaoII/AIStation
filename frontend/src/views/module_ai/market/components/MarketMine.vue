@@ -16,7 +16,7 @@
       <el-tag size="small" type="info" effect="plain">共 {{ items.length }} 项资产</el-tag>
     </div>
 
-    <el-row v-loading="loading" :gutter="24" class="card-grid">
+    <el-row v-loading="loading" :gutter="16" class="card-grid">
       <el-col
         v-for="row in items"
         :key="`${row.asset_type}-${row.real_id}`"
@@ -35,12 +35,55 @@
                 <span v-if="row.category" class="market-card__cat">{{ row.category }}</span>
               </div>
             </div>
-            <el-tooltip :content="row.enabled ? '停用' : '启用'" placement="top">
-              <el-switch
-                :model-value="row.enabled"
-                @change="(v: any) => toggleAsset(row as any, v)"
-              />
-            </el-tooltip>
+            <div class="mine-head-actions">
+              <el-tooltip :content="row.enabled ? '停用' : '启用'" placement="top">
+                <el-switch
+                  :model-value="row.enabled"
+                  @change="(v: any) => toggleAsset(row as any, v)"
+                />
+              </el-tooltip>
+              <el-tooltip content="提交市场" placement="top">
+                <el-button
+                  v-if="hasPerm('module_ai:market:submit')"
+                  size="small"
+                  circle
+                  :icon="Upload"
+                  :disabled="!!row.market && row.market.status !== 'offline'"
+                  @click="openSubmit(row as any)"
+                />
+              </el-tooltip>
+              <el-tooltip content="分享" placement="top">
+                <el-button
+                  v-if="hasPerm('module_ai:market:share')"
+                  size="small"
+                  circle
+                  :icon="Share"
+                  @click="openShare(row as any)"
+                />
+              </el-tooltip>
+              <el-tooltip
+                v-if="row.market && row.market.status !== 'offline'"
+                content="撤回"
+                placement="top"
+              >
+                <el-button
+                  v-if="hasPerm('module_ai:market:submit')"
+                  size="small"
+                  circle
+                  :icon="Remove"
+                  @click="withdraw(row as any)"
+                />
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button
+                  size="small"
+                  circle
+                  type="danger"
+                  :icon="Delete"
+                  @click="removeAsset(row as any)"
+                />
+              </el-tooltip>
+            </div>
           </div>
 
           <div class="market-card__desc">{{ row.description || "暂无描述" }}</div>
@@ -57,39 +100,6 @@
             </el-tag>
             <span v-else class="market-none">未提交</span>
             <span v-if="row.market" class="metric">{{ row.market.install_count }} 次安装</span>
-          </div>
-
-          <div class="mine-actions">
-            <el-button
-              v-hasPerm="['module_ai:market:submit']"
-              size="small"
-              type="primary"
-              :icon="Upload"
-              :disabled="!!row.market && row.market.status !== 'offline'"
-              @click="openSubmit(row as any)"
-            >
-              提交市场
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:market:share']"
-              size="small"
-              :icon="Share"
-              @click="openShare(row as any)"
-            >
-              分享
-            </el-button>
-            <el-button
-              v-if="row.market && row.market.status !== 'offline'"
-              v-hasPerm="['module_ai:market:submit']"
-              size="small"
-              :icon="Remove"
-              @click="withdraw(row as any)"
-            >
-              撤回
-            </el-button>
-            <el-button size="small" type="danger" :icon="Delete" @click="removeAsset(row as any)">
-              删除
-            </el-button>
           </div>
         </div>
       </el-col>
@@ -190,6 +200,8 @@
     type MyAsset,
   } from "@/api/module_ai/market";
   import UserAPI from "@/api/module_system/user";
+  import { ROLE_ROOT } from "@/constants";
+  import { useUserStore } from "@/store";
 
   import IconTile from "./IconTile.vue";
 
@@ -205,6 +217,13 @@
     { label: "MCP", value: "mcp" },
     { label: "插件", value: "plugin" },
   ];
+
+  function hasPerm(perm: string): boolean {
+    const store = useUserStore();
+    const roles = store.basicInfo.roles;
+    if (roles && roles.some((r) => r.code === ROLE_ROOT)) return true;
+    return store.prems.includes(perm);
+  }
 
   const submitVisible = ref(false);
   const submitting = ref(false);
@@ -407,7 +426,7 @@
 
   .card-grid {
     min-height: 120px;
-    row-gap: 24px;
+    row-gap: 16px;
     margin-bottom: 8px;
   }
 
@@ -434,6 +453,18 @@
     display: flex;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .mine-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    padding-top: 2px;
+  }
+
+  .mine-head-actions :deep(.el-button) {
+    margin-left: 0;
   }
 
   .market-card__title {
@@ -489,13 +520,6 @@
 
   .market-none {
     color: var(--el-text-color-secondary);
-  }
-
-  .mine-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 12px;
   }
 
   .user-select {
