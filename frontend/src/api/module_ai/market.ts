@@ -63,8 +63,8 @@ export interface MarketShare {
   created_time?: string;
 }
 
-export function getMarketHome() {
-  return request({ url: `${API_PATH}/home`, method: "get" });
+export function getMarketHome(params?: { asset_type?: string }) {
+  return request({ url: `${API_PATH}/home`, method: "get", params });
 }
 
 export function getMarketItems(params?: any) {

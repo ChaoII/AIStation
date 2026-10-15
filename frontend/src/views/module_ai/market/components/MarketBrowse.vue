@@ -46,17 +46,10 @@
       </el-row>
     </template>
 
-    <!-- 分类筛选 -->
-    <div class="category-bar">
-      <span class="section-title">全部能力</span>
+    <!-- 分类筛选：随类型联动（无「全部」项，点已选项可取消） -->
+    <div v-if="categories.length" class="category-bar">
+      <span class="section-title">{{ currentTypeLabel }}能力</span>
       <div class="category-tabs">
-        <span
-          class="category-tab"
-          :class="{ 'is-active': !categoryFilter }"
-          @click="switchCategory('')"
-        >
-          全部
-        </span>
         <span
           v-for="c in categories"
           :key="c.name"
@@ -188,12 +181,17 @@
     () => !!typeFilter.value || !!categoryFilter.value || !!keyword.value || onlyFavorite.value || onlyInstalled.value
   );
 
+  /** 当前类型的中文名（用于分类栏标题） */
+  const currentTypeLabel = computed(
+    () => typeOptions.find((t) => t.value === typeFilter.value)?.label || "全部"
+  );
+
   function assetLabel(type: string) {
     return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
   }
 
   async function loadHome() {
-    const res: any = await getMarketHome();
+    const res: any = await getMarketHome({ asset_type: typeFilter.value || undefined });
     featured.value = res.data?.data?.featured || [];
     categories.value = res.data?.data?.categories || [];
   }
@@ -224,11 +222,15 @@
 
   function switchType(value: string) {
     typeFilter.value = value;
+    // 分类集合随类型变化 → 清空已选分类并重新加载分类计数
+    categoryFilter.value = "";
+    loadHome();
     reload();
   }
 
   function switchCategory(name: string) {
-    categoryFilter.value = name;
+    // 再点同一分类即取消（回到该类型全部）
+    categoryFilter.value = categoryFilter.value === name ? "" : name;
     reload();
   }
 

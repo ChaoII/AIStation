@@ -19,6 +19,13 @@
         >
           新建技能
         </el-button>
+        <el-button
+          v-hasPerm="['module_ai:skill:create']"
+          :icon="Upload"
+          @click="openImportDialog"
+        >
+          导入技能
+        </el-button>
         <el-tabs v-model="activeTab" class="skill-tabs">
           <el-tab-pane label="全部" name="all" />
           <el-tab-pane
@@ -273,6 +280,58 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 导入技能（SkillHub / Claude Skills） -->
+    <el-dialog v-model="importVisible" title="导入技能" width="640px" append-to-body>
+      <el-tabs v-model="importTab">
+        <el-tab-pane label="粘贴 SKILL.md" name="paste">
+          <el-input
+            v-model="importForm.content"
+            type="textarea"
+            :rows="12"
+            placeholder="粘贴技能文档全文（可含 --- YAML frontmatter ---），例如 SkillHub 技能详情页的 SKILL.md 内容"
+          />
+        </el-tab-pane>
+        <el-tab-pane label="上传 Zip 包" name="zip">
+          <el-upload
+            drag
+            :auto-upload="false"
+            :limit="1"
+            accept=".zip"
+            :file-list="zipFiles"
+            :on-change="onZipChange"
+            :on-remove="() => (zipFiles = [])"
+          >
+            <el-icon class="upload-icon"><Upload /></el-icon>
+            <div class="el-upload__text">把技能 Zip 拖到此处，或<em>点击选择</em></div>
+            <template #tip>
+              <div class="el-upload__tip">平台只读取其中的 SKILL.md 与文本文件，不落盘、不执行脚本</div>
+            </template>
+          </el-upload>
+        </el-tab-pane>
+      </el-tabs>
+      <el-form label-width="80px" class="import-meta">
+        <el-form-item label="技能名">
+          <el-input v-model="importForm.name" placeholder="留空则用文档中的 name" maxlength="128" />
+        </el-form-item>
+        <el-form-item label="分类">
+          <el-input v-model="importForm.category" placeholder="如：办公效率（留空归入「导入技能」）" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="来源">
+          <el-input v-model="importForm.source" placeholder="SkillHub" maxlength="64" />
+        </el-form-item>
+      </el-form>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="导入后技能默认停用：请先检查内容与附带脚本，确认无误再启用（平台不会执行导入的脚本）。"
+      />
+      <template #footer>
+        <el-button @click="importVisible = false">取消</el-button>
+        <el-button type="primary" :loading="importing" @click="confirmImport">导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -288,6 +347,7 @@ import {
   Link,
   CopyDocument,
   Search,
+  Upload,
 } from "@element-plus/icons-vue";
 import MarkdownIt from "markdown-it";
 import {
@@ -300,6 +360,8 @@ import {
   toggleAiSkillFeatured,
   installAiSkillToAgent,
   batchSkillStatus,
+  importAiSkill,
+  importAiSkillZip,
 } from "@/api/module_ai/skill";
 import { getAiAgentList } from "@/api/module_ai/agent";
 
@@ -580,6 +642,66 @@ function deleteSkill(s: any) {
 }
 
 onMounted(loadData);
+
+// ---------- 导入技能（SkillHub / Claude Skills） ----------
+const importVisible = ref(false);
+const importing = ref(false);
+const importTab = ref("paste");
+const zipFiles = ref<any[]>([]);
+const importForm = reactive({
+  content: "",
+  name: "",
+  category: "",
+  source: "SkillHub",
+});
+
+function openImportDialog() {
+  importForm.content = "";
+  importForm.name = "";
+  importForm.category = "";
+  importForm.source = "SkillHub";
+  zipFiles.value = [];
+  importTab.value = "paste";
+  importVisible.value = true;
+}
+
+function onZipChange(file: any) {
+  zipFiles.value = [file];
+}
+
+async function confirmImport() {
+  importing.value = true;
+  try {
+    let res: any;
+    if (importTab.value === "zip") {
+      const raw = zipFiles.value[0]?.raw;
+      if (!raw) {
+        ElMessage.warning("请先选择 Zip 包");
+        return;
+      }
+      res = await importAiSkillZip(raw, importForm.category || undefined, importForm.source);
+    } else {
+      if (!importForm.content.trim()) {
+        ElMessage.warning("请粘贴技能文档内容");
+        return;
+      }
+      res = await importAiSkill({
+        content: importForm.content,
+        name: importForm.name || undefined,
+        category: importForm.category || undefined,
+        source: importForm.source || undefined,
+      });
+    }
+    const name = res.data?.data?.name || "技能";
+    ElMessage.success(`已导入「${name}」（默认停用，请检查后启用）`);
+    importVisible.value = false;
+    loadData();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "导入失败");
+  } finally {
+    importing.value = false;
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -771,5 +893,14 @@ onMounted(loadData);
 .skill-md :deep(h2),
 .skill-md :deep(h3) {
   margin: 0.5em 0;
+}
+.import-meta {
+  margin-top: 12px;
+}
+
+.upload-icon {
+  font-size: 40px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
 }
 </style>

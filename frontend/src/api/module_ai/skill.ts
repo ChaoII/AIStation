@@ -51,3 +51,28 @@ export function uninstallAiSkillFromAgent(agentId: number, skillId: number) {
     data: { skill_id: skillId },
   });
 }
+
+/** 导入技能：粘贴 SKILL.md 全文（SkillHub / Claude Skills 规范）。 */
+export function importAiSkill(data: {
+  content: string;
+  name?: string;
+  category?: string;
+  source?: string;
+}) {
+  return request({ url: `${API_PATH}/import`, method: "post", data });
+}
+
+/** 导入技能：上传 Zip 包（内含 SKILL.md）。 */
+export function importAiSkillZip(file: File, category?: string, source?: string) {
+  const form = new FormData();
+  form.append("file", file);
+  if (category) form.append("category", category);
+  form.append("source", source || "SkillHub");
+  return request({
+    url: `${API_PATH}/import-zip`,
+    method: "post",
+    data: form,
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 60000,
+  });
+}
