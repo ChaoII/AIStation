@@ -19,32 +19,32 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, ref } from "vue";
+import { computed, ref } from "vue";
 
-  import { ROLE_ROOT } from "@/constants";
-  import { useUserStore } from "@/store";
+import { ROLE_ROOT } from "@/constants";
+import { useUserStore } from "@/store";
 
-  import MarketBrowse from "./components/MarketBrowse.vue";
-  import MarketMine from "./components/MarketMine.vue";
-  import MarketReview from "./components/MarketReview.vue";
-  import MarketShared from "./components/MarketShared.vue";
+import MarketBrowse from "./components/MarketBrowse.vue";
+import MarketMine from "./components/MarketMine.vue";
+import MarketReview from "./components/MarketReview.vue";
+import MarketShared from "./components/MarketShared.vue";
 
-  defineOptions({ name: "AiMarket" });
+defineOptions({ name: "AiMarket" });
 
-  const activeTab = ref("browse");
-  const userStore = useUserStore();
+const activeTab = ref("browse");
+const userStore = useUserStore();
 
-  /** 审核中心仅对超管或持有 review 权限的用户可见 */
-  const canReview = computed(() => {
-    const roles = userStore.basicInfo.roles?.map((r) => r.code) || [];
-    return roles.includes(ROLE_ROOT) || userStore.prems.includes("module_ai:market:review");
-  });
+/** 审核中心仅对超管或持有 review 权限的用户可见 */
+const canReview = computed(() => {
+  const roles = userStore.basicInfo.roles?.map((r) => r.code) || [];
+  return roles.includes(ROLE_ROOT) || userStore.prems.includes("module_ai:market:review");
+});
 </script>
 
 <style lang="scss" scoped>
-  .market-main-tabs {
-    :deep(.el-tabs__header) {
-      margin-bottom: 12px;
-    }
+.market-main-tabs {
+  :deep(.el-tabs__header) {
+    margin-bottom: 12px;
   }
+}
 </style>

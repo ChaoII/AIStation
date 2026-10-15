@@ -55,7 +55,12 @@
           clearable
           @change="reload"
         >
-          <el-option v-for="c in categories" :key="c.name" :label="`${c.name} (${c.count})`" :value="c.name" />
+          <el-option
+            v-for="c in categories"
+            :key="c.name"
+            :label="`${c.name} (${c.count})`"
+            :value="c.name"
+          />
         </el-select>
         <el-input
           v-model="keyword"
@@ -145,10 +150,14 @@
         </div>
         <el-descriptions :column="1" border class="detail-desc">
           <el-descriptions-item label="版本">{{ detail.version }}</el-descriptions-item>
-          <el-descriptions-item label="分类">{{ detail.category || "未分类" }}</el-descriptions-item>
+          <el-descriptions-item label="分类">
+            {{ detail.category || "未分类" }}
+          </el-descriptions-item>
           <el-descriptions-item label="标签">
             <template v-if="detail.tags?.length">
-              <el-tag v-for="t in detail.tags" :key="t" size="small" class="tag-gap">{{ t }}</el-tag>
+              <el-tag v-for="t in detail.tags" :key="t" size="small" class="tag-gap">
+                {{ t }}
+              </el-tag>
             </template>
             <span v-else>—</span>
           </el-descriptions-item>
@@ -179,255 +188,255 @@
 </template>
 
 <script setup lang="ts">
-  import { Download, Search, Star, View } from "@element-plus/icons-vue";
-  import { ElMessage, ElMessageBox } from "element-plus";
-  import { onMounted, ref } from "vue";
+import { Download, Search, Star, View } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { onMounted, ref } from "vue";
 
-  import {
-    favoriteMarketItem,
-    getMarketHome,
-    getMarketItemDetail,
-    getMarketItems,
-    installMarketItem,
-    unfavoriteMarketItem,
-    type MarketItem,
-  } from "@/api/module_ai/market";
+import {
+  favoriteMarketItem,
+  getMarketHome,
+  getMarketItemDetail,
+  getMarketItems,
+  installMarketItem,
+  unfavoriteMarketItem,
+  type MarketItem,
+} from "@/api/module_ai/market";
 
-  defineOptions({ name: "MarketBrowse" });
+defineOptions({ name: "MarketBrowse" });
 
-  const loading = ref(false);
-  const featured = ref<MarketItem[]>([]);
-  const categories = ref<{ name: string; count: number }[]>([]);
-  const items = ref<MarketItem[]>([]);
-  const total = ref(0);
-  const pageNo = ref(1);
-  const pageSize = 12;
-  const typeFilter = ref("");
-  const categoryFilter = ref("");
-  const keyword = ref("");
-  const onlyFavorite = ref(false);
-  const onlyInstalled = ref(false);
+const loading = ref(false);
+const featured = ref<MarketItem[]>([]);
+const categories = ref<{ name: string; count: number }[]>([]);
+const items = ref<MarketItem[]>([]);
+const total = ref(0);
+const pageNo = ref(1);
+const pageSize = 12;
+const typeFilter = ref("");
+const categoryFilter = ref("");
+const keyword = ref("");
+const onlyFavorite = ref(false);
+const onlyInstalled = ref(false);
 
-  const detailVisible = ref(false);
-  const detail = ref<MarketItem | null>(null);
+const detailVisible = ref(false);
+const detail = ref<MarketItem | null>(null);
 
-  function assetLabel(type: string) {
-    return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+function assetLabel(type: string) {
+  return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+}
+
+function assetIcon(type: string) {
+  return { tool: "🧰", skill: "🧩", mcp: "🔌", plugin: "📦" }[type] || "📦";
+}
+
+async function loadHome() {
+  const res: any = await getMarketHome();
+  featured.value = res.data?.featured || [];
+  categories.value = res.data?.categories || [];
+}
+
+async function loadItems() {
+  loading.value = true;
+  try {
+    const res: any = await getMarketItems({
+      type: typeFilter.value || undefined,
+      category: categoryFilter.value || undefined,
+      keyword: keyword.value || undefined,
+      favorite: onlyFavorite.value,
+      installed: onlyInstalled.value,
+      page_no: pageNo.value,
+      page_size: pageSize,
+    });
+    items.value = res.data?.items || [];
+    total.value = res.data?.total || 0;
+  } finally {
+    loading.value = false;
   }
+}
 
-  function assetIcon(type: string) {
-    return { tool: "🧰", skill: "🧩", mcp: "🔌", plugin: "📦" }[type] || "📦";
+function reload() {
+  pageNo.value = 1;
+  loadItems();
+}
+
+async function openDetail(item: MarketItem) {
+  const res: any = await getMarketItemDetail(item.id);
+  detail.value = res.data;
+  detailVisible.value = true;
+}
+
+async function installItem(item: MarketItem) {
+  await ElMessageBox.confirm(
+    `将把「${item.name}」复制为你自己的${assetLabel(item.asset_type)}资产，可在对应管理页维护。是否继续？`,
+    "安装确认",
+    { confirmButtonText: "安装", cancelButtonText: "取消", type: "info" }
+  );
+  const res: any = await installMarketItem(item.id);
+  if (res.data?.installed) {
+    ElMessage.success(`已安装「${item.name}」`);
+  } else {
+    ElMessage.info("该商品已安装过");
   }
+  item.installed = true;
+  if (detail.value && detail.value.id === item.id) detail.value.installed = true;
+  loadItems();
+}
 
-  async function loadHome() {
-    const res: any = await getMarketHome();
-    featured.value = res.data?.featured || [];
-    categories.value = res.data?.categories || [];
+async function toggleFavorite(item: MarketItem) {
+  if (item.favorited) {
+    await unfavoriteMarketItem(item.id);
+    item.favorited = false;
+    item.favorite_count = Math.max(item.favorite_count - 1, 0);
+  } else {
+    await favoriteMarketItem(item.id);
+    item.favorited = true;
+    item.favorite_count += 1;
   }
-
-  async function loadItems() {
-    loading.value = true;
-    try {
-      const res: any = await getMarketItems({
-        type: typeFilter.value || undefined,
-        category: categoryFilter.value || undefined,
-        keyword: keyword.value || undefined,
-        favorite: onlyFavorite.value,
-        installed: onlyInstalled.value,
-        page_no: pageNo.value,
-        page_size: pageSize,
-      });
-      items.value = res.data?.items || [];
-      total.value = res.data?.total || 0;
-    } finally {
-      loading.value = false;
-    }
+  if (detail.value && detail.value.id === item.id) {
+    detail.value.favorited = item.favorited;
+    detail.value.favorite_count = item.favorite_count;
   }
+}
 
-  function reload() {
-    pageNo.value = 1;
-    loadItems();
-  }
-
-  async function openDetail(item: MarketItem) {
-    const res: any = await getMarketItemDetail(item.id);
-    detail.value = res.data;
-    detailVisible.value = true;
-  }
-
-  async function installItem(item: MarketItem) {
-    await ElMessageBox.confirm(
-      `将把「${item.name}」复制为你自己的${assetLabel(item.asset_type)}资产，可在对应管理页维护。是否继续？`,
-      "安装确认",
-      { confirmButtonText: "安装", cancelButtonText: "取消", type: "info" }
-    );
-    const res: any = await installMarketItem(item.id);
-    if (res.data?.installed) {
-      ElMessage.success(`已安装「${item.name}」`);
-    } else {
-      ElMessage.info("该商品已安装过");
-    }
-    item.installed = true;
-    if (detail.value && detail.value.id === item.id) detail.value.installed = true;
-    loadItems();
-  }
-
-  async function toggleFavorite(item: MarketItem) {
-    if (item.favorited) {
-      await unfavoriteMarketItem(item.id);
-      item.favorited = false;
-      item.favorite_count = Math.max(item.favorite_count - 1, 0);
-    } else {
-      await favoriteMarketItem(item.id);
-      item.favorited = true;
-      item.favorite_count += 1;
-    }
-    if (detail.value && detail.value.id === item.id) {
-      detail.value.favorited = item.favorited;
-      detail.value.favorite_count = item.favorite_count;
-    }
-  }
-
-  onMounted(() => {
-    loadHome();
-    loadItems();
-  });
+onMounted(() => {
+  loadHome();
+  loadItems();
+});
 </script>
 
 <style lang="scss" scoped>
-  .featured-card,
-  .filter-card {
-    margin-bottom: 12px;
-  }
+.featured-card,
+.filter-card {
+  margin-bottom: 12px;
+}
 
-  .section-head {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-  }
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
 
-  .section-title {
-    font-weight: 600;
-  }
+.section-title {
+  font-weight: 600;
+}
 
-  .section-sub {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-  }
+.section-sub {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
 
-  .featured-item {
-    margin-bottom: 12px;
-    cursor: pointer;
-  }
+.featured-item {
+  margin-bottom: 12px;
+  cursor: pointer;
+}
 
-  .filter-bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px;
-  }
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
 
-  .category-select {
-    width: 180px;
-  }
+.category-select {
+  width: 180px;
+}
 
-  .search-input {
-    width: 240px;
-  }
+.search-input {
+  width: 240px;
+}
 
-  .item-grid {
-    min-height: 120px;
-  }
+.item-grid {
+  min-height: 120px;
+}
 
-  .market-item {
-    margin-bottom: 12px;
-    height: 100%;
-  }
+.market-item {
+  margin-bottom: 12px;
+  height: 100%;
+}
 
-  .item-head,
-  .featured-item__head,
-  .detail-head {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-  }
+.item-head,
+.featured-item__head,
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
 
-  .item-icon,
-  .detail-icon {
-    font-size: 24px;
-    line-height: 1;
-  }
+.item-icon,
+.detail-icon {
+  font-size: 24px;
+  line-height: 1;
+}
 
-  .item-head-main {
-    min-width: 0;
-    flex: 1;
-  }
+.item-head-main {
+  min-width: 0;
+  flex: 1;
+}
 
-  .item-name,
-  .detail-name {
-    font-weight: 600;
-    margin-bottom: 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+.item-name,
+.detail-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-  .item-tags,
-  .detail-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
+.item-tags,
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 
-  .item-desc {
-    margin: 10px 0;
-    color: var(--el-text-color-regular);
-    font-size: var(--el-font-size-base);
-    min-height: 40px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
+.item-desc {
+  margin: 10px 0;
+  color: var(--el-text-color-regular);
+  font-size: var(--el-font-size-base);
+  min-height: 40px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
-  .item-foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
+.item-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 
-  .item-count {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-  }
+.item-count {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
 
-  .item-actions {
-    display: flex;
-    gap: 4px;
-  }
+.item-actions {
+  display: flex;
+  gap: 4px;
+}
 
-  .pager {
-    margin-top: 12px;
-    justify-content: flex-end;
-  }
+.pager {
+  margin-top: 12px;
+  justify-content: flex-end;
+}
 
-  .detail-body {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
+.detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
-  .detail-desc {
-    margin-top: 4px;
-  }
+.detail-desc {
+  margin-top: 4px;
+}
 
-  .detail-actions {
-    display: flex;
-    gap: 8px;
-  }
+.detail-actions {
+  display: flex;
+  gap: 8px;
+}
 
-  .tag-gap {
-    margin-right: 4px;
-  }
+.tag-gap {
+  margin-right: 4px;
+}
 </style>

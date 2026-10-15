@@ -75,7 +75,10 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!loading && !items.length" description="暂无资产，可先在工具/技能/MCP 页创建" />
+      <el-empty
+        v-if="!loading && !items.length"
+        description="暂无资产，可先在工具/技能/MCP 页创建"
+      />
     </el-card>
 
     <!-- 提交市场 -->
@@ -88,7 +91,11 @@
           <el-input v-model="submitForm.name" maxlength="128" placeholder="市场展示名称" />
         </el-form-item>
         <el-form-item label="分类" prop="category">
-          <el-input v-model="submitForm.category" maxlength="64" placeholder="如：效率 / 数据 / 办公" />
+          <el-input
+            v-model="submitForm.category"
+            maxlength="64"
+            placeholder="如：效率 / 数据 / 办公"
+          />
         </el-form-item>
         <el-form-item label="图标">
           <el-input v-model="submitForm.icon" maxlength="256" placeholder="emoji 或图片 URL" />
@@ -151,183 +158,182 @@
 </template>
 
 <script setup lang="ts">
-  import { Remove, Share, Upload } from "@element-plus/icons-vue";
-  import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
-  import { onMounted, reactive, ref } from "vue";
+import { Remove, Share, Upload } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
+import { onMounted, reactive, ref } from "vue";
 
-  import {
-    getMyAssets,
-    shareMarketItem,
-    submitMarketItem,
-    withdrawMarketItem,
-    type MyAsset,
-  } from "@/api/module_ai/market";
-  import UserAPI from "@/api/module_system/user";
+import {
+  getMyAssets,
+  shareMarketItem,
+  submitMarketItem,
+  withdrawMarketItem,
+  type MyAsset,
+} from "@/api/module_ai/market";
+import UserAPI from "@/api/module_system/user";
 
-  defineOptions({ name: "MarketMine" });
+defineOptions({ name: "MarketMine" });
 
-  const loading = ref(false);
-  const items = ref<MyAsset[]>([]);
-  const assetType = ref("");
+const loading = ref(false);
+const items = ref<MyAsset[]>([]);
+const assetType = ref("");
 
-  const submitVisible = ref(false);
-  const submitting = ref(false);
-  const submitFormRef = ref<FormInstance>();
-  const submitForm = reactive({
-    asset_type: "tool",
-    source_id: 0,
-    name: "",
-    category: "",
-    icon: "",
-    version: "1.0",
-    description: "",
-  });
-  const submitRules = {
-    name: [{ required: true, message: "请输入名称", trigger: "blur" }],
-  };
+const submitVisible = ref(false);
+const submitting = ref(false);
+const submitFormRef = ref<FormInstance>();
+const submitForm = reactive({
+  asset_type: "tool",
+  source_id: 0,
+  name: "",
+  category: "",
+  icon: "",
+  version: "1.0",
+  description: "",
+});
+const submitRules = {
+  name: [{ required: true, message: "请输入名称", trigger: "blur" }],
+};
 
-  const shareVisible = ref(false);
-  const sharing = ref(false);
-  const shareTarget = ref<MyAsset | null>(null);
-  const shareForm = reactive({ to_user_id: undefined as number | undefined, message: "" });
-  const userOptions = ref<{ id: number; name: string; username: string }[]>([]);
-  const userLoading = ref(false);
+const shareVisible = ref(false);
+const sharing = ref(false);
+const shareTarget = ref<MyAsset | null>(null);
+const shareForm = reactive({ to_user_id: undefined as number | undefined, message: "" });
+const userOptions = ref<{ id: number; name: string; username: string }[]>([]);
+const userLoading = ref(false);
 
-  function assetLabel(type: string) {
-    return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+function assetLabel(type: string) {
+  return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+}
+
+function statusLabel(status: string) {
+  return (
+    { pending: "待审核", approved: "已上架", rejected: "已驳回", offline: "已下架" }[status] ||
+    status
+  );
+}
+
+function statusTagType(status: string): "primary" | "success" | "warning" | "info" | "danger" {
+  return ({ pending: "warning", approved: "success", rejected: "danger", offline: "info" }[
+    status
+  ] || "info") as "primary" | "success" | "warning" | "info" | "danger";
+}
+
+async function load() {
+  loading.value = true;
+  try {
+    const res: any = await getMyAssets({ asset_type: assetType.value || undefined });
+    items.value = res.data?.items || [];
+  } finally {
+    loading.value = false;
   }
+}
 
-  function statusLabel(status: string) {
-    return (
-      { pending: "待审核", approved: "已上架", rejected: "已驳回", offline: "已下架" }[status] ||
-      status
-    );
-  }
+function openSubmit(row: MyAsset) {
+  submitForm.asset_type = row.asset_type;
+  submitForm.source_id = row.real_id;
+  submitForm.name = row.name;
+  submitForm.category = row.category || "";
+  submitForm.icon = "";
+  submitForm.version = "1.0";
+  submitForm.description = row.description || "";
+  submitVisible.value = true;
+}
 
-  function statusTagType(status: string): "primary" | "success" | "warning" | "info" | "danger" {
-    return (
-      { pending: "warning", approved: "success", rejected: "danger", offline: "info" }[status] ||
-      "info"
-    ) as "primary" | "success" | "warning" | "info" | "danger";
-  }
-
-  async function load() {
-    loading.value = true;
-    try {
-      const res: any = await getMyAssets({ asset_type: assetType.value || undefined });
-      items.value = res.data?.items || [];
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  function openSubmit(row: MyAsset) {
-    submitForm.asset_type = row.asset_type;
-    submitForm.source_id = row.real_id;
-    submitForm.name = row.name;
-    submitForm.category = row.category || "";
-    submitForm.icon = "";
-    submitForm.version = "1.0";
-    submitForm.description = row.description || "";
-    submitVisible.value = true;
-  }
-
-  async function confirmSubmit() {
-    if (!submitFormRef.value) return;
-    await submitFormRef.value.validate();
-    submitting.value = true;
-    try {
-      await submitMarketItem({ ...submitForm });
-      ElMessage.success("已提交，等待管理员审核");
-      submitVisible.value = false;
-      load();
-    } finally {
-      submitting.value = false;
-    }
-  }
-
-  async function withdraw(row: MyAsset) {
-    await ElMessageBox.confirm(
-      `撤回后「${row.name}」将从市场下架，其他用户无法再安装（已安装的副本不受影响）。是否继续？`,
-      "撤回确认",
-      { confirmButtonText: "撤回", cancelButtonText: "取消", type: "warning" }
-    );
-    await withdrawMarketItem(row.market!.item_id);
-    ElMessage.success("已撤回");
+async function confirmSubmit() {
+  if (!submitFormRef.value) return;
+  await submitFormRef.value.validate();
+  submitting.value = true;
+  try {
+    await submitMarketItem({ ...submitForm });
+    ElMessage.success("已提交，等待管理员审核");
+    submitVisible.value = false;
     load();
+  } finally {
+    submitting.value = false;
   }
+}
 
-  function openShare(row: MyAsset) {
-    if (!row.market) {
-      ElMessage.warning("请先提交市场，审核通过后即可分享");
-      return;
-    }
-    shareTarget.value = row;
-    shareForm.to_user_id = undefined;
-    shareForm.message = "";
+async function withdraw(row: MyAsset) {
+  await ElMessageBox.confirm(
+    `撤回后「${row.name}」将从市场下架，其他用户无法再安装（已安装的副本不受影响）。是否继续？`,
+    "撤回确认",
+    { confirmButtonText: "撤回", cancelButtonText: "取消", type: "warning" }
+  );
+  await withdrawMarketItem(row.market!.item_id);
+  ElMessage.success("已撤回");
+  load();
+}
+
+function openShare(row: MyAsset) {
+  if (!row.market) {
+    ElMessage.warning("请先提交市场，审核通过后即可分享");
+    return;
+  }
+  shareTarget.value = row;
+  shareForm.to_user_id = undefined;
+  shareForm.message = "";
+  userOptions.value = [];
+  shareVisible.value = true;
+}
+
+async function searchUsers(query: string) {
+  if (!query) {
     userOptions.value = [];
-    shareVisible.value = true;
+    return;
   }
-
-  async function searchUsers(query: string) {
-    if (!query) {
-      userOptions.value = [];
-      return;
-    }
-    userLoading.value = true;
-    try {
-      const res: any = await UserAPI.listUser({ username: query, page_no: 1, page_size: 20 });
-      const rows = res.data?.items || res.data?.records || [];
-      userOptions.value = rows.map((u: any) => ({ id: u.id, name: u.name, username: u.username }));
-    } finally {
-      userLoading.value = false;
-    }
+  userLoading.value = true;
+  try {
+    const res: any = await UserAPI.listUser({ username: query, page_no: 1, page_size: 20 });
+    const rows = res.data?.items || res.data?.records || [];
+    userOptions.value = rows.map((u: any) => ({ id: u.id, name: u.name, username: u.username }));
+  } finally {
+    userLoading.value = false;
   }
+}
 
-  async function confirmShare() {
-    if (!shareForm.to_user_id) {
-      ElMessage.warning("请选择接收人");
-      return;
-    }
-    sharing.value = true;
-    try {
-      await shareMarketItem({
-        item_id: shareTarget.value!.market!.item_id,
-        to_user_id: shareForm.to_user_id,
-        message: shareForm.message,
-      });
-      ElMessage.success("已发送分享");
-      shareVisible.value = false;
-    } finally {
-      sharing.value = false;
-    }
+async function confirmShare() {
+  if (!shareForm.to_user_id) {
+    ElMessage.warning("请选择接收人");
+    return;
   }
+  sharing.value = true;
+  try {
+    await shareMarketItem({
+      item_id: shareTarget.value!.market!.item_id,
+      to_user_id: shareForm.to_user_id,
+      message: shareForm.message,
+    });
+    ElMessage.success("已发送分享");
+    shareVisible.value = false;
+  } finally {
+    sharing.value = false;
+  }
+}
 
-  onMounted(load);
+onMounted(load);
 </script>
 
 <style lang="scss" scoped>
-  .toolbar-card {
-    margin-bottom: 12px;
-  }
+.toolbar-card {
+  margin-bottom: 12px;
+}
 
-  .toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 
-  .market-count {
-    margin-left: 6px;
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-  }
+.market-count {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
 
-  .market-none {
-    color: var(--el-text-color-secondary);
-  }
+.market-none {
+  color: var(--el-text-color-secondary);
+}
 
-  .user-select {
-    width: 100%;
-  }
+.user-select {
+  width: 100%;
+}
 </style>

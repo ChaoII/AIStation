@@ -141,6 +141,9 @@
                 >
                   技能
                 </el-tag>
+                <el-tag v-if="(a.mcp_ids || []).length" size="small" effect="plain" type="danger">
+                  {{ a.mcp_ids.length }} MCP
+                </el-tag>
                 <el-tooltip
                   v-if="
                     a.query_enabled || (a.knowledge_ids || []).length || (a.skill_ids || []).length
@@ -588,6 +591,24 @@
             >
               <el-option v-for="k in knowledgeOptions" :key="k.id" :label="k.name" :value="k.id" />
             </el-select>
+          </el-form-item>
+          <el-form-item label="MCP">
+            <el-select
+              v-model="agentForm.mcp_ids"
+              multiple
+              filterable
+              placeholder="绑定 MCP 服务器"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="m in mcpOptions"
+                :key="m.id"
+                :label="`${m.name}（${m.transport}）`"
+                :value="m.id"
+                :disabled="!m.enabled"
+              />
+            </el-select>
+            <div class="mcp-hint">MCP 服务器在「MCP 管理」页配置，绑定后其工具可被调用</div>
           </el-form-item>
           <el-form-item label="智能问数">
             <el-switch v-model="agentForm.query_enabled" />
@@ -1037,6 +1058,7 @@ import { getAiPromptList } from "@/api/module_ai/prompt";
 import { getAiToolList } from "@/api/module_ai/tool";
 import { getAiWorkflowList } from "@/api/module_ai/workflow";
 import { getAiSkillList } from "@/api/module_ai/skill";
+import { getMcpList } from "@/api/module_ai/mcp";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
 import { getOntActions, getOntFunctions } from "@/api/module_ai/ontology";
 import { getQueryDatasources } from "@/api/module_ai/query";
@@ -1059,6 +1081,7 @@ const queryDatasources = ref<any[]>([]);
 const workflowOptions = ref<{ id: number; name: string }[]>([]);
 const skillOptions = ref<{ id: number; name: string }[]>([]);
 const knowledgeOptions = ref<{ id: number; name: string }[]>([]);
+const mcpOptions = ref<{ id: number; name: string; transport: string; enabled: boolean }[]>([]);
 const ontFns = ref<any[]>([]);
 const ontActs = ref<any[]>([]);
 
@@ -1161,6 +1184,13 @@ const loadData = async () => {
     workflowOptions.value = (wr.data?.data || []).map((w: any) => ({ id: w.id, name: w.name }));
     skillOptions.value = (sr.data?.data || []).map((s: any) => ({ id: s.id, name: s.name }));
     knowledgeOptions.value = (kr.data?.data || []).map((k: any) => ({ id: k.id, name: k.name }));
+    const mcr = await getMcpList();
+    mcpOptions.value = (mcr.data?.data || []).map((m: any) => ({
+      id: m.id,
+      name: m.name,
+      transport: m.transport,
+      enabled: m.enabled !== false,
+    }));
     queryDatasources.value = dr.data?.data || [];
     const fnr = await getOntFunctions();
     ontFns.value = fnr.data?.data || [];
@@ -1224,6 +1254,7 @@ function openAgentDialog(a?: any) {
       tool_ids: [],
       skill_ids: [],
       knowledge_ids: [],
+      mcp_ids: [],
       query_enabled: false,
       query_datasource: "system",
       temperature: 0.7,
@@ -1264,6 +1295,7 @@ async function saveAgent() {
       tool_ids: agentForm.runMode === "model" ? agentForm.tool_ids : [],
       skill_ids: agentForm.runMode === "model" ? agentForm.skill_ids : [],
       knowledge_ids: agentForm.runMode === "model" ? agentForm.knowledge_ids : [],
+      mcp_ids: agentForm.runMode === "model" ? agentForm.mcp_ids || [] : [],
       query_enabled: agentForm.runMode === "model" ? agentForm.query_enabled : false,
       query_datasource:
         agentForm.runMode === "model" ? agentForm.query_datasource || "system" : "system",

@@ -205,24 +205,33 @@
         <el-button text type="primary" :icon="Plus" @click="addCustomParam">添加参数</el-button>
       </el-form>
 
-      <!-- HTTP 工具表单 -->
+      <!-- HTTP / 脚本 工具表单 -->
       <el-form v-else :model="httpForm" label-width="120px">
         <el-form-item label="工具名" required>
           <el-input v-model="httpForm.name" placeholder="唯一名称，供模型调用" />
         </el-form-item>
-        <el-form-item label="请求方法">
+        <el-form-item label="工具类型">
+          <el-radio-group
+            v-model="httpForm.kind"
+            :disabled="dialog.mode === 'http-edit' || dialog.mode === 'script-edit'"
+          >
+            <el-radio-button value="http">HTTP 请求</el-radio-button>
+            <el-radio-button value="script">Python 脚本</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="httpForm.kind === 'http'" label="请求方法">
           <el-select v-model="httpForm.method" style="width: 100%">
             <el-option label="GET" value="GET" />
             <el-option label="POST" value="POST" />
           </el-select>
         </el-form-item>
-        <el-form-item label="请求地址" required>
+        <el-form-item v-if="httpForm.kind === 'http'" label="请求地址" required>
           <el-input
             v-model="httpForm.url"
             placeholder="如 https://api.example.com/items/{id}，{id} 会被入参替换"
           />
         </el-form-item>
-        <el-form-item label="请求头">
+        <el-form-item v-if="httpForm.kind === 'http'" label="请求头">
           <div class="header-builder">
             <div v-for="(h, i) in httpForm.headerFields" :key="i" class="header-row">
               <el-input v-model="h.key" placeholder="请求头名，如 Authorization" />
@@ -277,6 +286,26 @@
             </el-button>
           </div>
         </el-form-item>
+        <template v-if="httpForm.kind === 'script'">
+          <el-form-item label="脚本代码" required>
+            <el-input
+              v-model="httpForm.code"
+              type="textarea"
+              :rows="12"
+              spellcheck="false"
+              placeholder='必须定义 run(args) 函数，返回 dict，例如：&#10;def run(args):&#10;    return {"sum": args.get("a", 0) + args.get("b", 0)}'
+            />
+          </el-form-item>
+          <el-form-item label="执行超时(秒)">
+            <el-input-number v-model="httpForm.timeout" :min="1" :max="60" />
+          </el-form-item>
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="脚本在受控沙箱内运行：仅允许导入 json/math/re/datetime 等白名单模块，禁止文件、网络与系统调用。"
+          />
+        </template>
         <el-form-item label="启用">
           <el-switch v-model="httpForm.enabled" />
         </el-form-item>
@@ -289,6 +318,13 @@
           @click="handleTestTool(currentTool)"
         >
           测试
+        </el-button>
+        <el-button
+          v-if="dialog.mode === 'script-edit'"
+          :loading="testing"
+          @click="handleTestScript"
+        >
+          试运行
         </el-button>
         <el-button @click="handleCloseDialog">取消</el-button>
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
@@ -376,6 +412,7 @@ import {
   deleteAiTool,
   getAiToolList,
   testAiTool,
+  testAiScript,
   toggleAiTool,
   updateAiTool,
   batchToolStatus,
@@ -386,7 +423,7 @@ import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 
 defineOptions({ name: "AiTool" });
 
-type DialogMode = "http-create" | "http-edit" | "agno-config";
+type DialogMode = "http-create" | "http-edit" | "script-create" | "script-edit" | "agno-config";
 type TagType = "primary" | "success" | "info" | "warning" | "danger";
 
 // 按工具 key 映射图标；未知则按分组，再退回来源/首字符
@@ -434,12 +471,15 @@ const testing = ref(false);
 const httpForm = reactive({
   id: undefined as number | undefined,
   name: "",
+  kind: "http" as "http" | "script",
   method: "GET",
   url: "",
   headers_text: "",
   headerFields: [] as { key: string; value: string }[],
   params_schema_text: "",
   paramFields: [] as { key: string; type: string; default: string; required: boolean }[],
+  code: "",
+  timeout: 10,
   enabled: true,
 });
 
@@ -520,12 +560,14 @@ watch(searchForm, () => {
 function sourceLabel(source: string): string {
   if (source === "agno") return "Agno";
   if (source === "http") return "HTTP";
+  if (source === "script") return "脚本";
   return "系统";
 }
 
 function sourceTagType(source: string): TagType {
   if (source === "agno") return "warning";
   if (source === "http") return "success";
+  if (source === "script") return "primary";
   return "info";
 }
 
@@ -545,9 +587,9 @@ function iconOf(tool: AiToolRow): Component | undefined {
   );
 }
 
-/** 无配置项的 agno/系统工具禁用「配置」入口；HTTP 始终可配置 */
+/** 无配置项的 agno/系统工具禁用「配置」入口；HTTP/脚本始终可配置 */
 function configDisabled(tool: AiToolRow): boolean {
-  return tool.source !== "http" && !tool.config_fields?.length;
+  return !["http", "script"].includes(tool.source) && !tool.config_fields?.length;
 }
 
 async function refreshList() {
@@ -594,12 +636,15 @@ function resetHttpForm() {
   Object.assign(httpForm, {
     id: undefined,
     name: "",
+    kind: "http",
     method: "GET",
     url: "",
     headers_text: "",
     headerFields: [],
     params_schema_text: "",
     paramFields: [],
+    code: "",
+    timeout: 10,
     enabled: true,
   });
 }
@@ -608,18 +653,20 @@ function openCreate() {
   resetHttpForm();
   currentTool.value = null;
   dialog.mode = "http-create";
-  dialog.title = "新增 HTTP 工具";
+  dialog.title = "新增工具";
   dialog.visible = true;
 }
 
 function openEdit(tool: AiToolRow) {
   resetHttpForm();
   currentTool.value = tool;
-  dialog.mode = "http-edit";
+  const isScript = tool.kind === "script";
+  dialog.mode = isScript ? "script-edit" : "http-edit";
   dialog.title = `编辑工具：${tool.name}`;
   Object.assign(httpForm, {
     id: tool.id,
     name: tool.name,
+    kind: isScript ? "script" : "http",
     method: tool.method || "GET",
     url: tool.url || "",
     headerFields: Object.entries(tool.headers || {}).map(([k, v]) => ({
@@ -627,13 +674,15 @@ function openEdit(tool: AiToolRow) {
       value: String(v),
     })),
     paramFields: schemaToParamFields(tool.params_schema),
+    code: tool.code || "",
+    timeout: tool.timeout || 10,
     enabled: tool.enabled !== false,
   });
   dialog.visible = true;
 }
 
 function openConfig(tool: AiToolRow) {
-  if (tool.source === "http") {
+  if (tool.source === "http" || tool.source === "script") {
     openEdit(tool);
     return;
   }
@@ -772,21 +821,31 @@ async function submitHttpForm() {
     ElMessage.warning("请填写工具名");
     return;
   }
-  if (!httpForm.url.trim()) {
+  const isScript = httpForm.kind === "script";
+  if (isScript) {
+    if (!httpForm.code.trim()) {
+      ElMessage.warning("请填写脚本代码");
+      return;
+    }
+  } else if (!httpForm.url.trim()) {
     ElMessage.warning("请填写请求地址");
     return;
   }
-  const headers = buildObjectFromRows(httpForm.headerFields);
   const paramsSchema = paramFieldsToSchema(httpForm.paramFields);
   const payload: any = {
     name: httpForm.name.trim(),
-    kind: "http",
-    method: httpForm.method,
-    url: httpForm.url.trim(),
-    headers,
+    kind: isScript ? "script" : "http",
     params_schema: paramsSchema,
     enabled: httpForm.enabled,
   };
+  if (isScript) {
+    payload.code = httpForm.code;
+    payload.timeout = httpForm.timeout;
+  } else {
+    payload.method = httpForm.method;
+    payload.url = httpForm.url.trim();
+    payload.headers = buildObjectFromRows(httpForm.headerFields);
+  }
   submitLoading.value = true;
   try {
     if (httpForm.id) await updateAiTool(httpForm.id, payload);
@@ -799,6 +858,42 @@ async function submitHttpForm() {
   } finally {
     submitLoading.value = false;
   }
+}
+
+/** 试运行脚本工具（需先保存，试运行调用后端已存代码） */
+async function handleTestScript() {
+  if (!httpForm.id) {
+    ElMessage.warning("请先保存脚本，再试运行");
+    return;
+  }
+  testing.value = true;
+  try {
+    const res: any = await testAiScript(httpForm.id, {});
+    const data = res.data || {};
+    if (data.ok) {
+      ElMessageBox.alert(
+        `<pre style="max-height:320px;overflow:auto;margin:0">${escapeHtml(
+          JSON.stringify(data.result, null, 2)
+        )}</pre>`,
+        "试运行结果",
+        { dangerouslyUseHTMLString: true, confirmButtonText: "关闭" }
+      );
+    } else {
+      ElMessage.error(data.error || "试运行失败");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "试运行失败");
+  } finally {
+    testing.value = false;
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 async function handleTestTool(tool: AiToolRow | null) {

@@ -49,10 +49,17 @@
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 'pending'">
-              <el-button size="small" type="primary" :icon="Check" @click="openReview(row as any, 'approve')">
+              <el-button
+                size="small"
+                type="primary"
+                :icon="Check"
+                @click="openReview(row as any, 'approve')"
+              >
                 通过
               </el-button>
-              <el-button size="small" :icon="Close" @click="openReview(row as any, 'reject')">驳回</el-button>
+              <el-button size="small" :icon="Close" @click="openReview(row as any, 'reject')">
+                驳回
+              </el-button>
             </template>
             <el-button
               v-else-if="row.status === 'approved'"
@@ -94,122 +101,122 @@
 </template>
 
 <script setup lang="ts">
-  import { Check, Close, Remove } from "@element-plus/icons-vue";
-  import { ElMessage, ElMessageBox } from "element-plus";
-  import { computed, onMounted, ref } from "vue";
+import { Check, Close, Remove } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, onMounted, ref } from "vue";
 
-  import {
-    getMarketReviewList,
-    reviewMarketItem,
-    setMarketFeatured,
-    type MarketItem,
-  } from "@/api/module_ai/market";
+import {
+  getMarketReviewList,
+  reviewMarketItem,
+  setMarketFeatured,
+  type MarketItem,
+} from "@/api/module_ai/market";
 
-  defineOptions({ name: "MarketReview" });
+defineOptions({ name: "MarketReview" });
 
-  const loading = ref(false);
-  const status = ref("pending");
-  const items = ref<MarketItem[]>([]);
+const loading = ref(false);
+const status = ref("pending");
+const items = ref<MarketItem[]>([]);
 
-  const dialogVisible = ref(false);
-  const submitting = ref(false);
-  const current = ref<MarketItem | null>(null);
-  const action = ref("approve");
-  const remark = ref("");
+const dialogVisible = ref(false);
+const submitting = ref(false);
+const current = ref<MarketItem | null>(null);
+const action = ref("approve");
+const remark = ref("");
 
-  const dialogTitle = computed(() => {
-    if (action.value === "approve") return "审核通过";
-    return current.value?.status === "approved" ? "下架商品" : "驳回商品";
-  });
+const dialogTitle = computed(() => {
+  if (action.value === "approve") return "审核通过";
+  return current.value?.status === "approved" ? "下架商品" : "驳回商品";
+});
 
-  function assetLabel(type: string) {
-    return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+function assetLabel(type: string) {
+  return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+}
+
+function statusLabel(s: string) {
+  return { pending: "待审核", approved: "已上架", rejected: "已驳回", offline: "已下架" }[s] || s;
+}
+
+function statusTagType(s: string): "primary" | "success" | "warning" | "info" | "danger" {
+  return ({ pending: "warning", approved: "success", rejected: "danger", offline: "info" }[s] ||
+    "info") as "primary" | "success" | "warning" | "info" | "danger";
+}
+
+async function load() {
+  loading.value = true;
+  try {
+    const res: any = await getMarketReviewList({ status: status.value });
+    items.value = res.data?.items || [];
+  } finally {
+    loading.value = false;
   }
+}
 
-  function statusLabel(s: string) {
-    return { pending: "待审核", approved: "已上架", rejected: "已驳回", offline: "已下架" }[s] || s;
+function openReview(row: MarketItem, act: string) {
+  current.value = row;
+  action.value = act;
+  remark.value = "";
+  dialogVisible.value = true;
+}
+
+async function confirmReview() {
+  if (!current.value) return;
+  if (action.value === "reject" && !remark.value.trim()) {
+    ElMessage.warning("驳回/下架请填写原因");
+    return;
   }
-
-  function statusTagType(s: string): "primary" | "success" | "warning" | "info" | "danger" {
-    return ({ pending: "warning", approved: "success", rejected: "danger", offline: "info" }[s] ||
-      "info") as "primary" | "success" | "warning" | "info" | "danger";
+  submitting.value = true;
+  try {
+    await reviewMarketItem({
+      item_id: current.value.id,
+      action: action.value,
+      remark: remark.value,
+    });
+    ElMessage.success(action.value === "approve" ? "已通过并上架" : "已驳回/下架");
+    dialogVisible.value = false;
+    load();
+  } finally {
+    submitting.value = false;
   }
+}
 
-  async function load() {
-    loading.value = true;
-    try {
-      const res: any = await getMarketReviewList({ status: status.value });
-      items.value = res.data?.items || [];
-    } finally {
-      loading.value = false;
-    }
+async function toggleFeatured(row: MarketItem, value: any) {
+  const on = Boolean(value);
+  if (on) {
+    await ElMessageBox.confirm(
+      `将「${row.name}」设为精选后会展示在能力市场首页推荐位。是否继续？`,
+      "精选确认",
+      { confirmButtonText: "设为精选", cancelButtonText: "取消", type: "info" }
+    );
   }
+  await setMarketFeatured(row.id, on);
+  row.featured = on;
+  ElMessage.success(on ? "已设为精选" : "已取消精选");
+}
 
-  function openReview(row: MarketItem, act: string) {
-    current.value = row;
-    action.value = act;
-    remark.value = "";
-    dialogVisible.value = true;
-  }
-
-  async function confirmReview() {
-    if (!current.value) return;
-    if (action.value === "reject" && !remark.value.trim()) {
-      ElMessage.warning("驳回/下架请填写原因");
-      return;
-    }
-    submitting.value = true;
-    try {
-      await reviewMarketItem({
-        item_id: current.value.id,
-        action: action.value,
-        remark: remark.value,
-      });
-      ElMessage.success(action.value === "approve" ? "已通过并上架" : "已驳回/下架");
-      dialogVisible.value = false;
-      load();
-    } finally {
-      submitting.value = false;
-    }
-  }
-
-  async function toggleFeatured(row: MarketItem, value: any) {
-    const on = Boolean(value);
-    if (on) {
-      await ElMessageBox.confirm(
-        `将「${row.name}」设为精选后会展示在能力市场首页推荐位。是否继续？`,
-        "精选确认",
-        { confirmButtonText: "设为精选", cancelButtonText: "取消", type: "info" }
-      );
-    }
-    await setMarketFeatured(row.id, on);
-    row.featured = on;
-    ElMessage.success(on ? "已设为精选" : "已取消精选");
-  }
-
-  onMounted(load);
+onMounted(load);
 </script>
 
 <style lang="scss" scoped>
-  .toolbar-card {
-    margin-bottom: 12px;
-  }
+.toolbar-card {
+  margin-bottom: 12px;
+}
 
-  .toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 
-  .item-icon {
-    margin-right: 6px;
-  }
+.item-icon {
+  margin-right: 6px;
+}
 
-  .type-tag {
-    margin-left: 6px;
-  }
+.type-tag {
+  margin-left: 6px;
+}
 
-  .done-text {
-    color: var(--el-text-color-secondary);
-  }
+.done-text {
+  color: var(--el-text-color-secondary);
+}
 </style>
