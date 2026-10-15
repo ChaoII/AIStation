@@ -123,6 +123,17 @@ def run(args: dict) -> dict:
 
 ## 七、能力插件
 
+> **官方种子**：应用启动时 `ensure_market_seed()`（`market/seed.py`）幂等写入官方商品，共 **33 条**：
+> - **16 个通用技能**（内容创作 / 办公效率 / 开发编程 / 数据分析 / 设计多媒体 / AI Agent / 知识管理 / 商业运营 / 行业专业 / 生活服务），
+>   content 为可直接注入 Agent 的中文指令；
+> - **9 个 agno 免密钥工具**（calculator / webtools / hackernews / duckduckgo / wikipedia / arxiv / newspaper / csv_toolkit / visualization），
+>   安装时**复用**平台同名 `ai_tools` 行（不复制副本，否则派发按名字找不到 agno 工具）；
+> - **8 个办公类 MCP**（飞书官方、企业微信机器人、GitHub / Notion / GitLab 官方、Playwright、Context7、本地文件系统），
+>   凭据以 `<占位>` 给出，安装后由用户填写并启用。
+>
+> 图标：`backend/scripts/gen_market_icons.py` 用 Qwen-Image 网关批量生成（统一扁平 App 图标风格），
+> 落盘到 `frontend/public/market-icons/<key>.png`（1024 生成 → 256 压缩，每张约 40–60KB）；缺失时前端回退 emoji。
+
 插件是**能力包**（非平台代码插件）。首次打开「能力插件」页会惰性预置内置 key：
 
 | key | 执行器 | 说明 |
