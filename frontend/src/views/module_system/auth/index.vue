@@ -87,23 +87,19 @@
 import CommonWrapper from "@/components/CommonWrapper/index.vue";
 import ThemeSwitch from "@/components/ThemeSwitch/index.vue";
 import { useConfigStore } from "@/store";
+import { resolveLoginBackground, resolveSiteLogo } from "@/utils/siteLogo";
 
 const configStore = useConfigStore();
 
-// 添加计算属性处理背景图片URL
-const loginBackgroundUrl = computed(() => {
-  // 使用可选链操作符确保安全访问
-  return (
-    configStore.configData?.sys_login_background?.config_value ||
-    new URL("@/assets/images/login-bg.svg", import.meta.url).href
-  );
-});
+// 登录背景兜底：配置为空时用内置背景（此前配置指向失效地址 → 登录页背景空白）
+const loginBackgroundUrl = computed(() =>
+  resolveLoginBackground(configStore.configData?.sys_login_background?.config_value)
+);
 
 // logo 兜底：配置为空时用内置 logo（此前配置指向失效地址 → 登录页显示"加载失败"）
-const loginLogoUrl = computed(() => {
-  const cfg = String(configStore.configData?.sys_web_logo?.config_value || "").trim();
-  return cfg || new URL("@/assets/images/logo.png", import.meta.url).href;
-});
+const loginLogoUrl = computed(() =>
+  resolveSiteLogo(configStore.configData?.sys_web_logo?.config_value)
+);
 
 type LayoutMap = "login" | "register" | "resetPwd";
 
@@ -222,11 +218,15 @@ const loginPreset = reactive<{ username: string; password: string }>({
   width: min(520px, 100%);
   padding: clamp(2rem, 3vw, 2.75rem);
   margin-inline: auto;
-  background: var(--el-bg-color-overlay);
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 24px;
-  box-shadow: var(--el-box-shadow);
-  backdrop-filter: blur(20px);
+  // 毛玻璃：半透明底色 + 背景模糊，让背后动态网络透出
+  background: color-mix(in srgb, var(--el-bg-color) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--el-border-color) 50%, transparent);
+  border-radius: 22px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--el-bg-color) 72%, transparent),
+    0 18px 40px -14px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
   animation: panelLift 0.7s ease;
 }
 
@@ -313,6 +313,7 @@ const loginPreset = reactive<{ username: string; password: string }>({
   }
 
   :deep(.el-input__wrapper) {
+    background: color-mix(in srgb, var(--el-fill-color-blank) 62%, transparent);
     box-shadow: 0 0 0 1px var(--el-border-color) inset;
     transition: all 0.2s ease;
 
@@ -322,6 +323,24 @@ const loginPreset = reactive<{ username: string; password: string }>({
 
     &.is-focus {
       box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+    }
+  }
+
+  // 主按钮：蓝青轻渐变（基于 Element Plus 变量，非写死主题色）
+  :deep(.el-button--primary) {
+    border: none;
+    background-image: linear-gradient(
+      135deg,
+      var(--el-color-primary-light-3),
+      var(--el-color-primary)
+    );
+
+    &:hover {
+      background-image: linear-gradient(
+        135deg,
+        var(--el-color-primary-light-4),
+        var(--el-color-primary-light-2)
+      );
     }
   }
 

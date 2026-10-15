@@ -2,6 +2,7 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import setupPlugins from "@/plugins";
 import { createTerminal } from "vue-web-terminal";
+import { resolveSiteLogo } from "@/utils/siteLogo";
 
 // 暗黑主题样式
 import "element-plus/theme-chalk/dark/css-vars.css";
@@ -57,10 +58,11 @@ const setTitleAndFavicon = async () => {
       }
     }
 
-    if (webLogo) {
+    {
       const loadingLogo = document.querySelector(".loading-container-logo");
       if (loadingLogo instanceof HTMLImageElement) {
-        loadingLogo.src = webLogo;
+        // 配置为空时回落内置 logo.png，避免加载页 logo 破损
+        loadingLogo.src = resolveSiteLogo(webLogo);
       }
     }
   } catch (error) {

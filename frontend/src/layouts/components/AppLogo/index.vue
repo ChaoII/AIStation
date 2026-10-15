@@ -2,7 +2,7 @@
   <div class="logo">
     <transition enter-active-class="animate__animated animate__fadeInLeft">
       <router-link :key="+collapse" class="wh-full flex-center" to="/">
-        <img :src="configStore.configData.sys_web_logo.config_value" class="w50px h50px" />
+        <img :src="logoUrl" class="w50px h50px" />
         <span v-if="!collapse" class="title">
           {{ configStore.configData.sys_web_title.config_value }}
         </span>
@@ -12,8 +12,14 @@
 </template>
 
 <script lang="ts" setup>
+import { computed } from "vue";
 import { useConfigStore } from "@/store";
+import { resolveSiteLogo } from "@/utils/siteLogo";
+
 const configStore = useConfigStore();
+
+// logo 兜底：配置为空/失效时回落内置 logo.png（此前导致侧边栏出现破损图）
+const logoUrl = computed(() => resolveSiteLogo(configStore.configData?.sys_web_logo?.config_value));
 
 defineProps({
   collapse: {

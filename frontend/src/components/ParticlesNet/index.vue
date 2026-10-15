@@ -21,15 +21,15 @@ const options = {
   detectRetina: true,
   background: { color: { value: "transparent" } },
   particles: {
-    number: { value: 60, density: { enable: true, width: 1200, height: 800 } },
+    number: { value: 80, density: { enable: true, width: 1200, height: 800 } },
     color: { value: ["#409EFF", "#36CFC9"] },
-    opacity: { value: { min: 0.28, max: 0.55 } },
-    size: { value: { min: 2, max: 4 } },
+    opacity: { value: { min: 0.3, max: 0.6 } },
+    size: { value: { min: 2, max: 4.5 } },
     links: {
       enable: true,
-      distance: 150,
+      distance: 160,
       color: "#409EFF",
-      opacity: 0.28,
+      opacity: 0.3,
       width: 1,
     },
     move: {
