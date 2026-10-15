@@ -15,7 +15,7 @@ from app.plugin.module_ai.plugins.model import AiPluginModel
 from app.plugin.module_ai.skill.model import AiSkillModel
 from app.plugin.module_ai.tools_catalog.model import AiToolModel
 
-from .model import AiMarketItemModel, AiMarketRelationModel
+from .model import AiMarketItemModel, AiMarketRelationModel, AiMarketShareModel
 
 # 允许上架的资产类型
 VALID_ASSET_TYPES = ("tool", "skill", "mcp", "plugin")
@@ -615,3 +615,138 @@ class MarketService:
                 raise CustomException(msg="商品不存在")
             item.featured = bool(featured)
             return _to_dict(item)
+
+    # ---------- 点对点分享 ----------
+
+    @classmethod
+    async def share_item(cls, item_id: int, to_user_id: int, message: str, user_id: int) -> dict:
+        """把商品分享给指定用户（不可分享给自己，接收人必须存在）。"""
+        from app.api.v1.module_system.user.model import UserModel
+
+        if to_user_id == user_id:
+            raise CustomException(msg="不能分享给自己")
+        async with async_db_session.begin() as db:
+            item = await db.get(AiMarketItemModel, item_id)
+            if not item or item.is_deleted:
+                raise CustomException(msg="商品不存在")
+            target = await db.get(UserModel, to_user_id)
+            if not target or target.is_deleted:
+                raise CustomException(msg="接收用户不存在")
+            dup = await db.scalar(
+                select(AiMarketShareModel).where(
+                    AiMarketShareModel.item_id == item_id,
+                    AiMarketShareModel.from_user_id == user_id,
+                    AiMarketShareModel.to_user_id == to_user_id,
+                    AiMarketShareModel.status == "pending",
+                    AiMarketShareModel.is_deleted.is_(False),
+                )
+            )
+            if dup:
+                raise CustomException(msg="已有一条待接收的分享")
+            share = AiMarketShareModel(
+                item_id=item_id,
+                from_user_id=user_id,
+                to_user_id=to_user_id,
+                status="pending",
+                message=message or "",
+            )
+            db.add(share)
+            await db.flush()
+            return await cls._share_dict(db, share)
+
+    @classmethod
+    async def _share_dict(cls, db, share: AiMarketShareModel) -> dict:
+        """组装分享记录输出（含商品摘要与双方用户名）。"""
+        from app.api.v1.module_system.user.model import UserModel
+
+        item = await db.get(AiMarketItemModel, share.item_id)
+        from_user = await db.get(UserModel, share.from_user_id)
+        to_user = await db.get(UserModel, share.to_user_id)
+        return {
+            "id": share.id,
+            "item_id": share.item_id,
+            "item_name": item.name if item else "",
+            "item_type": item.asset_type if item else "",
+            "item_icon": (item.icon or "") if item else "",
+            "item_description": (item.description or "") if item else "",
+            "from_user_id": share.from_user_id,
+            "from_user_name": from_user.name if from_user else "",
+            "to_user_id": share.to_user_id,
+            "to_user_name": to_user.name if to_user else "",
+            "status": share.status,
+            "message": share.message or "",
+            "created_time": share.created_time,
+        }
+
+    @classmethod
+    async def list_shares(cls, user_id: int, direction: str = "in", status: str | None = None) -> dict:
+        """分享列表：dir=in 收件箱 / dir=out 发件箱（严格按 from/to 过滤）。"""
+        async with async_db_session() as db:
+            stmt = select(AiMarketShareModel).where(AiMarketShareModel.is_deleted.is_(False))
+            if direction == "out":
+                stmt = stmt.where(AiMarketShareModel.from_user_id == user_id)
+            else:
+                stmt = stmt.where(AiMarketShareModel.to_user_id == user_id)
+            if status:
+                stmt = stmt.where(AiMarketShareModel.status == status)
+            rows = (
+                await db.execute(stmt.order_by(AiMarketShareModel.created_time.desc()))
+            ).scalars().all()
+            return {"items": [await cls._share_dict(db, s) for s in rows], "total": len(rows)}
+
+    @classmethod
+    async def accept_share(cls, share_id: int, user_id: int) -> dict:
+        """接收分享：把商品复制为接收方真实资产，并标记 accepted。"""
+        async with async_db_session.begin() as db:
+            share = await db.get(AiMarketShareModel, share_id)
+            if not share or share.is_deleted:
+                raise CustomException(msg="分享记录不存在")
+            if share.to_user_id != user_id:
+                raise CustomException(msg="无权处理该分享")
+            if share.status != "pending":
+                raise CustomException(msg="该分享已处理")
+            item = await db.get(AiMarketItemModel, share.item_id)
+            if not item or item.is_deleted:
+                raise CustomException(msg="商品已不存在")
+            # 幂等：已安装则不重复复制
+            rel = await db.scalar(
+                select(AiMarketRelationModel).where(
+                    AiMarketRelationModel.user_id == user_id,
+                    AiMarketRelationModel.item_id == item.id,
+                    AiMarketRelationModel.kind == "installed",
+                    AiMarketRelationModel.is_deleted.is_(False),
+                )
+            )
+            real_id = None
+            if not rel:
+                real_id = await _materialize(db, item, user_id)
+                db.add(
+                    AiMarketRelationModel(
+                        user_id=user_id,
+                        item_id=item.id,
+                        kind="installed",
+                        description=str(real_id),
+                    )
+                )
+                item.install_count = (item.install_count or 0) + 1
+            else:
+                try:
+                    real_id = int(rel.description) if rel.description else None
+                except (TypeError, ValueError):
+                    real_id = None
+            share.status = "accepted"
+            return {"share_id": share_id, "status": "accepted", "real_id": real_id}
+
+    @classmethod
+    async def reject_share(cls, share_id: int, user_id: int) -> dict:
+        """拒绝分享。"""
+        async with async_db_session.begin() as db:
+            share = await db.get(AiMarketShareModel, share_id)
+            if not share or share.is_deleted:
+                raise CustomException(msg="分享记录不存在")
+            if share.to_user_id != user_id:
+                raise CustomException(msg="无权处理该分享")
+            if share.status != "pending":
+                raise CustomException(msg="该分享已处理")
+            share.status = "rejected"
+            return {"share_id": share_id, "status": "rejected"}

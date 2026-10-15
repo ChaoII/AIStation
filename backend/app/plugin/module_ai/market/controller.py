@@ -9,7 +9,12 @@ from app.common.response import ErrorResponse, SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 
-from .schema import MarketItemQuerySchema, MarketReviewSchema, MarketSubmitSchema
+from .schema import (
+    MarketItemQuerySchema,
+    MarketReviewSchema,
+    MarketShareSchema,
+    MarketSubmitSchema,
+)
 from .service import MarketService
 
 MarketRouter = APIRouter(route_class=OperationLogRoute, prefix="/market", tags=["AI-市场"])
@@ -128,4 +133,48 @@ async def market_feature(
 ) -> JSONResponse:
     return SuccessResponse(
         data=await MarketService.set_featured(item_id, featured), msg="设置成功"
+    )
+
+
+@MarketRouter.post("/shares/share", summary="分享商品给用户")
+async def market_share(
+    data: MarketShareSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:share"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.share_item(
+            data.item_id, data.to_user_id, data.message or "", auth.user.id
+        ),
+        msg="分享成功",
+    )
+
+
+@MarketRouter.get("/shares", summary="分享列表（收件箱/发件箱）")
+async def market_shares(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+    direction: Annotated[str, Query(description="in=收到的 out=发出的")] = "in",
+    status: Annotated[str | None, Query(description="状态过滤")] = None,
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.list_shares(auth.user.id, direction, status), msg="查询成功"
+    )
+
+
+@MarketRouter.post("/shares/{share_id}/accept", summary="接收分享")
+async def market_share_accept(
+    share_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.accept_share(share_id, auth.user.id), msg="已接收"
+    )
+
+
+@MarketRouter.post("/shares/{share_id}/reject", summary="拒绝分享")
+async def market_share_reject(
+    share_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.reject_share(share_id, auth.user.id), msg="已拒绝"
     )
