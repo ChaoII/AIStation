@@ -1,118 +1,79 @@
-<!-- 能力市场：精选推荐 + 类型/分类筛选 + 商品网格 + 详情抽屉 -->
+<!-- 能力市场：推荐精选 + 类型/分类筛选 + 商品卡片网格 + 详情抽屉 -->
 <template>
   <div class="market-browse">
-    <!-- 精选推荐 -->
-    <el-card v-if="featured.length" shadow="never" class="featured-card">
-      <template #header>
-        <div class="section-head">
-          <span class="section-title">精选推荐</span>
-          <span class="section-sub">编辑精选的能力，一键安装为你的资产</span>
-        </div>
-      </template>
-      <el-row :gutter="12">
-        <el-col v-for="f in featured" :key="f.id" :xs="24" :sm="12" :md="8" :lg="6">
-          <el-card shadow="hover" class="featured-item" @click="openDetail(f)">
-            <div class="featured-item__head">
-              <span class="item-icon">{{ f.icon || assetIcon(f.asset_type) }}</span>
-              <div class="item-head-main">
-                <div class="item-name">{{ f.name }}</div>
-                <el-tag size="small" effect="plain">{{ assetLabel(f.asset_type) }}</el-tag>
-              </div>
-            </div>
-            <div class="item-desc">{{ f.description || "暂无描述" }}</div>
-            <div class="item-foot">
-              <span class="item-count">{{ f.install_count }} 次安装</span>
-              <el-button
-                v-hasPerm="['module_ai:market:install']"
-                size="small"
-                type="primary"
-                :icon="Download"
-                :disabled="f.installed"
-                @click.stop="installItem(f)"
-              >
-                {{ f.installed ? "已安装" : "安装" }}
-              </el-button>
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
-    </el-card>
-
-    <!-- 筛选栏 -->
-    <el-card shadow="never" class="filter-card">
-      <div class="filter-bar">
-        <el-radio-group v-model="typeFilter" @change="reload">
-          <el-radio-button value="">全部</el-radio-button>
-          <el-radio-button value="tool">工具</el-radio-button>
-          <el-radio-button value="skill">技能</el-radio-button>
-          <el-radio-button value="mcp">MCP</el-radio-button>
-          <el-radio-button value="plugin">插件</el-radio-button>
-        </el-radio-group>
-        <el-select
-          v-model="categoryFilter"
-          class="category-select"
-          placeholder="全部分类"
-          clearable
-          @change="reload"
+    <!-- 顶部工具条：类型筛选 + 搜索 + 个人筛选 + 提交入口 -->
+    <div class="browse-toolbar">
+      <div class="type-tabs">
+        <span
+          v-for="t in typeOptions"
+          :key="t.value"
+          class="type-tab"
+          :class="{ 'is-active': typeFilter === t.value }"
+          @click="switchType(t.value)"
         >
-          <el-option
-            v-for="c in categories"
-            :key="c.name"
-            :label="`${c.name} (${c.count})`"
-            :value="c.name"
-          />
-        </el-select>
+          {{ t.label }}
+        </span>
+      </div>
+      <div class="toolbar-right">
         <el-input
           v-model="keyword"
           class="search-input"
           :prefix-icon="Search"
-          placeholder="搜索名称或描述"
+          placeholder="搜索能力名称或描述"
           clearable
           @keyup.enter="reload"
           @clear="reload"
         />
-        <el-checkbox v-model="onlyFavorite" @change="reload">只看收藏</el-checkbox>
-        <el-checkbox v-model="onlyInstalled" @change="reload">只看已安装</el-checkbox>
-        <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
+        <el-button :icon="Star" :type="onlyFavorite ? 'primary' : 'default'" @click="toggleFavoriteFilter">
+          只看收藏
+        </el-button>
+        <el-button :icon="Download" :type="onlyInstalled ? 'primary' : 'default'" @click="toggleInstalledFilter">
+          已安装
+        </el-button>
       </div>
-    </el-card>
+    </div>
 
-    <!-- 商品网格 -->
-    <el-row v-loading="loading" :gutter="12" class="item-grid">
+    <!-- 精选推荐 -->
+    <template v-if="featured.length && !hasFilter">
+      <div class="section-head">
+        <span class="section-title">推荐能力</span>
+        <span class="section-sub">平台精选，一键安装为你的资产</span>
+      </div>
+      <el-row :gutter="12" class="card-grid">
+        <el-col v-for="f in featured" :key="`f-${f.id}`" :xs="24" :sm="12" :md="8" :lg="6">
+          <market-card :item="f" @open="openDetail" @install="installItem" @favorite="toggleFavorite" />
+        </el-col>
+      </el-row>
+    </template>
+
+    <!-- 分类筛选 -->
+    <div class="category-bar">
+      <span class="section-title">全部能力</span>
+      <div class="category-tabs">
+        <span
+          class="category-tab"
+          :class="{ 'is-active': !categoryFilter }"
+          @click="switchCategory('')"
+        >
+          全部
+        </span>
+        <span
+          v-for="c in categories"
+          :key="c.name"
+          class="category-tab"
+          :class="{ 'is-active': categoryFilter === c.name }"
+          @click="switchCategory(c.name)"
+        >
+          {{ c.name }}
+          <em class="category-count">{{ c.count }}</em>
+        </span>
+      </div>
+    </div>
+
+    <!-- 卡片网格 -->
+    <el-row v-loading="loading" :gutter="12" class="card-grid">
       <el-col v-for="item in items" :key="item.id" :xs="24" :sm="12" :md="8" :lg="6">
-        <el-card shadow="hover" class="market-item">
-          <div class="item-head">
-            <span class="item-icon">{{ item.icon || assetIcon(item.asset_type) }}</span>
-            <div class="item-head-main">
-              <div class="item-name">{{ item.name }}</div>
-              <div class="item-tags">
-                <el-tag size="small" effect="plain">{{ assetLabel(item.asset_type) }}</el-tag>
-                <el-tag v-if="item.category" size="small" type="info" effect="plain">
-                  {{ item.category }}
-                </el-tag>
-              </div>
-            </div>
-          </div>
-          <div class="item-desc">{{ item.description || "暂无描述" }}</div>
-          <div class="item-foot">
-            <span class="item-count">
-              {{ item.install_count }} 安装 · {{ item.favorite_count }} 收藏
-            </span>
-            <div class="item-actions">
-              <el-button size="small" :icon="View" @click="openDetail(item)">详情</el-button>
-              <el-button
-                v-hasPerm="['module_ai:market:install']"
-                size="small"
-                type="primary"
-                :icon="Download"
-                :disabled="item.installed"
-                @click="installItem(item)"
-              >
-                {{ item.installed ? "已安装" : "安装" }}
-              </el-button>
-            </div>
-          </div>
-        </el-card>
+        <market-card :item="item" @open="openDetail" @install="installItem" @favorite="toggleFavorite" />
       </el-col>
     </el-row>
     <el-empty v-if="!loading && !items.length" description="暂无符合条件的商品" />
@@ -131,7 +92,7 @@
     <el-drawer v-model="detailVisible" title="商品详情" size="480px">
       <div v-if="detail" class="detail-body">
         <div class="detail-head">
-          <span class="detail-icon">{{ detail.icon || assetIcon(detail.asset_type) }}</span>
+          <icon-tile :item="detail" size="lg" />
           <div>
             <div class="detail-name">{{ detail.name }}</div>
             <div class="detail-tags">
@@ -139,25 +100,17 @@
               <el-tag v-if="detail.category" size="small" type="info" effect="plain">
                 {{ detail.category }}
               </el-tag>
-              <el-tag v-if="detail.is_official" size="small" type="success" effect="plain">
-                官方
-              </el-tag>
-              <el-tag v-if="detail.featured" size="small" type="warning" effect="plain">
-                精选
-              </el-tag>
+              <el-tag v-if="detail.is_official" size="small" type="success" effect="plain">官方</el-tag>
+              <el-tag v-if="detail.featured" size="small" type="warning" effect="plain">精选</el-tag>
             </div>
           </div>
         </div>
         <el-descriptions :column="1" border class="detail-desc">
           <el-descriptions-item label="版本">{{ detail.version }}</el-descriptions-item>
-          <el-descriptions-item label="分类">
-            {{ detail.category || "未分类" }}
-          </el-descriptions-item>
+          <el-descriptions-item label="分类">{{ detail.category || "未分类" }}</el-descriptions-item>
           <el-descriptions-item label="标签">
             <template v-if="detail.tags?.length">
-              <el-tag v-for="t in detail.tags" :key="t" size="small" class="tag-gap">
-                {{ t }}
-              </el-tag>
+              <el-tag v-for="t in detail.tags" :key="t" size="small" class="tag-gap">{{ t }}</el-tag>
             </template>
             <span v-else>—</span>
           </el-descriptions-item>
@@ -188,255 +141,297 @@
 </template>
 
 <script setup lang="ts">
-import { Download, Search, Star, View } from "@element-plus/icons-vue";
-import { ElMessage, ElMessageBox } from "element-plus";
-import { onMounted, ref } from "vue";
+  import { Download, Search, Star } from "@element-plus/icons-vue";
+  import { ElMessage, ElMessageBox } from "element-plus";
+  import { computed, onMounted, ref } from "vue";
 
-import {
-  favoriteMarketItem,
-  getMarketHome,
-  getMarketItemDetail,
-  getMarketItems,
-  installMarketItem,
-  unfavoriteMarketItem,
-  type MarketItem,
-} from "@/api/module_ai/market";
+  import {
+    favoriteMarketItem,
+    getMarketHome,
+    getMarketItemDetail,
+    getMarketItems,
+    installMarketItem,
+    unfavoriteMarketItem,
+    type MarketItem,
+  } from "@/api/module_ai/market";
 
-defineOptions({ name: "MarketBrowse" });
+  import IconTile from "./IconTile.vue";
+  import MarketCard from "./MarketCard.vue";
 
-const loading = ref(false);
-const featured = ref<MarketItem[]>([]);
-const categories = ref<{ name: string; count: number }[]>([]);
-const items = ref<MarketItem[]>([]);
-const total = ref(0);
-const pageNo = ref(1);
-const pageSize = 12;
-const typeFilter = ref("");
-const categoryFilter = ref("");
-const keyword = ref("");
-const onlyFavorite = ref(false);
-const onlyInstalled = ref(false);
+  defineOptions({ name: "MarketBrowse" });
 
-const detailVisible = ref(false);
-const detail = ref<MarketItem | null>(null);
+  const loading = ref(false);
+  const featured = ref<MarketItem[]>([]);
+  const categories = ref<{ name: string; count: number }[]>([]);
+  const items = ref<MarketItem[]>([]);
+  const total = ref(0);
+  const pageNo = ref(1);
+  const pageSize = 12;
+  const typeFilter = ref("");
+  const categoryFilter = ref("");
+  const keyword = ref("");
+  const onlyFavorite = ref(false);
+  const onlyInstalled = ref(false);
 
-function assetLabel(type: string) {
-  return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
-}
+  const detailVisible = ref(false);
+  const detail = ref<MarketItem | null>(null);
 
-function assetIcon(type: string) {
-  return { tool: "🧰", skill: "🧩", mcp: "🔌", plugin: "📦" }[type] || "📦";
-}
+  const typeOptions = [
+    { label: "全部", value: "" },
+    { label: "工具", value: "tool" },
+    { label: "技能", value: "skill" },
+    { label: "MCP", value: "mcp" },
+    { label: "插件", value: "plugin" },
+  ];
 
-async function loadHome() {
-  const res: any = await getMarketHome();
-  featured.value = res.data?.data?.featured || [];
-  categories.value = res.data?.data?.categories || [];
-}
-
-async function loadItems() {
-  loading.value = true;
-  try {
-    const res: any = await getMarketItems({
-      type: typeFilter.value || undefined,
-      category: categoryFilter.value || undefined,
-      keyword: keyword.value || undefined,
-      favorite: onlyFavorite.value,
-      installed: onlyInstalled.value,
-      page_no: pageNo.value,
-      page_size: pageSize,
-    });
-    items.value = res.data?.data?.items || [];
-    total.value = res.data?.data?.total || 0;
-  } finally {
-    loading.value = false;
-  }
-}
-
-function reload() {
-  pageNo.value = 1;
-  loadItems();
-}
-
-async function openDetail(item: MarketItem) {
-  const res: any = await getMarketItemDetail(item.id);
-  detail.value = res.data?.data;
-  detailVisible.value = true;
-}
-
-async function installItem(item: MarketItem) {
-  await ElMessageBox.confirm(
-    `将把「${item.name}」复制为你自己的${assetLabel(item.asset_type)}资产，可在对应管理页维护。是否继续？`,
-    "安装确认",
-    { confirmButtonText: "安装", cancelButtonText: "取消", type: "info" }
+  const hasFilter = computed(
+    () => !!typeFilter.value || !!categoryFilter.value || !!keyword.value || onlyFavorite.value || onlyInstalled.value
   );
-  const res: any = await installMarketItem(item.id);
-  if (res.data?.data?.installed) {
-    ElMessage.success(`已安装「${item.name}」`);
-  } else {
-    ElMessage.info("该商品已安装过");
-  }
-  item.installed = true;
-  if (detail.value && detail.value.id === item.id) detail.value.installed = true;
-  loadItems();
-}
 
-async function toggleFavorite(item: MarketItem) {
-  if (item.favorited) {
-    await unfavoriteMarketItem(item.id);
-    item.favorited = false;
-    item.favorite_count = Math.max(item.favorite_count - 1, 0);
-  } else {
-    await favoriteMarketItem(item.id);
-    item.favorited = true;
-    item.favorite_count += 1;
+  function assetLabel(type: string) {
+    return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
   }
-  if (detail.value && detail.value.id === item.id) {
-    detail.value.favorited = item.favorited;
-    detail.value.favorite_count = item.favorite_count;
-  }
-}
 
-onMounted(() => {
-  loadHome();
-  loadItems();
-});
+  async function loadHome() {
+    const res: any = await getMarketHome();
+    featured.value = res.data?.data?.featured || [];
+    categories.value = res.data?.data?.categories || [];
+  }
+
+  async function loadItems() {
+    loading.value = true;
+    try {
+      const res: any = await getMarketItems({
+        type: typeFilter.value || undefined,
+        category: categoryFilter.value || undefined,
+        keyword: keyword.value || undefined,
+        favorite: onlyFavorite.value,
+        installed: onlyInstalled.value,
+        page_no: pageNo.value,
+        page_size: pageSize,
+      });
+      items.value = res.data?.data?.items || [];
+      total.value = res.data?.data?.total || 0;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  function reload() {
+    pageNo.value = 1;
+    loadItems();
+  }
+
+  function switchType(value: string) {
+    typeFilter.value = value;
+    reload();
+  }
+
+  function switchCategory(name: string) {
+    categoryFilter.value = name;
+    reload();
+  }
+
+  function toggleFavoriteFilter() {
+    onlyFavorite.value = !onlyFavorite.value;
+    reload();
+  }
+
+  function toggleInstalledFilter() {
+    onlyInstalled.value = !onlyInstalled.value;
+    reload();
+  }
+
+  async function openDetail(item: MarketItem) {
+    const res: any = await getMarketItemDetail(item.id);
+    detail.value = res.data?.data;
+    detailVisible.value = true;
+  }
+
+  async function installItem(item: MarketItem) {
+    await ElMessageBox.confirm(
+      `将把「${item.name}」复制为你自己的${assetLabel(item.asset_type)}资产，可在对应管理页维护。是否继续？`,
+      "安装确认",
+      { confirmButtonText: "安装", cancelButtonText: "取消", type: "info" }
+    );
+    const res: any = await installMarketItem(item.id);
+    if (res.data?.data?.installed) {
+      ElMessage.success(`已安装「${item.name}」`);
+    } else {
+      ElMessage.info("该商品已安装过");
+    }
+    item.installed = true;
+    if (detail.value && detail.value.id === item.id) detail.value.installed = true;
+    loadItems();
+  }
+
+  async function toggleFavorite(item: MarketItem) {
+    if (item.favorited) {
+      await unfavoriteMarketItem(item.id);
+      item.favorited = false;
+      item.favorite_count = Math.max(item.favorite_count - 1, 0);
+    } else {
+      await favoriteMarketItem(item.id);
+      item.favorited = true;
+      item.favorite_count += 1;
+    }
+    if (detail.value && detail.value.id === item.id) {
+      detail.value.favorited = item.favorited;
+      detail.value.favorite_count = item.favorite_count;
+    }
+  }
+
+  onMounted(() => {
+    loadHome();
+    loadItems();
+  });
 </script>
 
 <style lang="scss" scoped>
-.featured-card,
-.filter-card {
-  margin-bottom: 12px;
-}
+  .browse-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+  }
 
-.section-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
+  .type-tabs {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
 
-.section-title {
-  font-weight: 600;
-}
+  .type-tab {
+    font-size: var(--el-font-size-base);
+    color: var(--el-text-color-regular);
+    cursor: pointer;
+    padding: 2px 0;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s;
 
-.section-sub {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
+    &:hover {
+      color: var(--el-color-primary);
+    }
 
-.featured-item {
-  margin-bottom: 12px;
-  cursor: pointer;
-}
+    &.is-active {
+      color: var(--el-color-primary);
+      font-weight: 600;
+      border-bottom-color: var(--el-color-primary);
+    }
+  }
 
-.filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-}
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
 
-.category-select {
-  width: 180px;
-}
+  .search-input {
+    width: 240px;
+  }
 
-.search-input {
-  width: 240px;
-}
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 16px 0 10px;
+  }
 
-.item-grid {
-  min-height: 120px;
-}
+  .section-title {
+    font-weight: 600;
+  }
 
-.market-item {
-  margin-bottom: 12px;
-  height: 100%;
-}
+  .section-sub {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
 
-.item-head,
-.featured-item__head,
-.detail-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
+  .category-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 16px 0 10px;
+    overflow: hidden;
+  }
 
-.item-icon,
-.detail-icon {
-  font-size: 24px;
-  line-height: 1;
-}
+  .category-tabs {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    white-space: nowrap;
+  }
 
-.item-head-main {
-  min-width: 0;
-  flex: 1;
-}
+  .category-tab {
+    font-size: var(--el-font-size-base);
+    color: var(--el-text-color-regular);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
 
-.item-name,
-.detail-name {
-  font-weight: 600;
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+    &:hover {
+      color: var(--el-color-primary);
+    }
 
-.item-tags,
-.detail-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
+    &.is-active {
+      color: var(--el-color-primary);
+      font-weight: 600;
+    }
+  }
 
-.item-desc {
-  margin: 10px 0;
-  color: var(--el-text-color-regular);
-  font-size: var(--el-font-size-base);
-  min-height: 40px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+  .category-count {
+    font-style: normal;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
 
-.item-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
+  .card-grid {
+    min-height: 120px;
+  }
 
-.item-count {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
+  .pager {
+    margin-top: 12px;
+    justify-content: flex-end;
+  }
 
-.item-actions {
-  display: flex;
-  gap: 4px;
-}
+  .detail-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
 
-.pager {
-  margin-top: 12px;
-  justify-content: flex-end;
-}
+  .detail-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
 
-.detail-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+  .detail-name {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
 
-.detail-desc {
-  margin-top: 4px;
-}
+  .detail-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
 
-.detail-actions {
-  display: flex;
-  gap: 8px;
-}
+  .detail-desc {
+    margin-top: 4px;
+  }
 
-.tag-gap {
-  margin-right: 4px;
-}
+  .detail-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .tag-gap {
+    margin-right: 4px;
+  }
 </style>
