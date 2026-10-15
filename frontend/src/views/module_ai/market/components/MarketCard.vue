@@ -70,7 +70,6 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    margin-bottom: 16px;
     padding: 18px 20px;
     background: var(--el-fill-color-blank);
     border: 1px solid var(--el-border-color-lighter);

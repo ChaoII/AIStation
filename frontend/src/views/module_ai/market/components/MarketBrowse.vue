@@ -170,7 +170,6 @@
   const detail = ref<MarketItem | null>(null);
 
   const typeOptions = [
-    { label: "全部", value: "" },
     { label: "工具", value: "tool" },
     { label: "技能", value: "skill" },
     { label: "MCP", value: "mcp" },
@@ -221,7 +220,8 @@
   }
 
   function switchType(value: string) {
-    typeFilter.value = value;
+    // 再点同一类型 = 取消筛选（回到全部，无「全部」页签）
+    typeFilter.value = typeFilter.value === value ? "" : value;
     // 分类集合随类型变化 → 清空已选分类并重新加载分类计数
     categoryFilter.value = "";
     loadHome();
@@ -394,6 +394,8 @@
 
   .card-grid {
     min-height: 120px;
+    row-gap: 22px;
+    margin-bottom: 8px;
   }
 
   .pager {
