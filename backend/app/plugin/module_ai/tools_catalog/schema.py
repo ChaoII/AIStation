@@ -44,3 +44,15 @@ class AiToolTestScriptSchema(BaseModel):
     """试运行脚本工具。"""
 
     args: dict | None = Field(default=None, description="传给 run(args) 的参数")
+
+
+class AiToolInspectScriptSchema(BaseModel):
+    """解析脚本 run 签名：提取参数名/类型/默认/必填 + 基础校验。"""
+
+    code: str = Field(default="", description="Python 脚本源码")
+
+
+class AiToolFormatScriptSchema(BaseModel):
+    """格式化脚本源码。"""
+
+    code: str = Field(default="", description="Python 脚本源码")

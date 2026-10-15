@@ -220,3 +220,155 @@ def test_get_enabled_tool_schemas_excludes_disabled(test_client, auth_headers):
         assert disabled_name not in names
     finally:
         _delete_tools(test_client, auth_headers, ids)
+
+
+def test_script_extract_params_multi():
+    """run 带类型注解的多参数：正确提取名/类型/默认/必填。"""
+    from app.plugin.module_ai.tools_catalog.script_executor import _extract_run_params
+
+    code = """
+import re
+
+def run(name: str = "world", age: int = 3, score: float = 0.5, tags: list = []) -> dict:
+    return {"name": name, "age": age}
+"""
+    params = _extract_run_params(code)
+    by_name = {p["name"]: p for p in params}
+    assert set(by_name) == {"name", "age", "score", "tags"}
+    assert by_name["name"]["type"] == "string"
+    assert by_name["name"]["default"] == "world"
+    assert by_name["name"]["required"] is False
+    assert by_name["age"]["type"] == "integer"
+    assert by_name["age"]["default"] == 3
+    assert by_name["score"]["type"] == "number"
+    assert by_name["tags"]["type"] == "array"
+
+
+def test_script_extract_params_single_args_empty():
+    """run(args) 单参形态：不可提取多参（返回空列表）。"""
+    from app.plugin.module_ai.tools_catalog.script_executor import _extract_run_params
+
+    code = 'def run(args: dict) -> dict:\n    return {"sum": args.get("a", 0)}\n'
+    assert _extract_run_params(code) == []
+
+
+def test_script_execute_multi_params():
+    """run 多参形态：按参数名传值，缺省参数可省略。"""
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+    from app.plugin.module_ai.tools_catalog.service import execute_script_tool
+
+    code = (
+        "def run(name: str = 'x', age: int = 3) -> dict:\n"
+        '    return {"name": name, "age": age}\n'
+    )
+    tool = AiToolModel(name="pytest_multi", kind="script", code=code, timeout=10, enabled=True)
+    result = asyncio.run(execute_script_tool(tool, {"name": "alice", "age": 20}))
+    assert result == {"name": "alice", "age": 20}
+    # 只传部分：缺省参数用默认值
+    result2 = asyncio.run(execute_script_tool(tool, {"name": "bob"}))
+    assert result2 == {"name": "bob", "age": 3}
+
+
+def test_script_execute_legacy_args():
+    """run(args) 单参形态：整个 dict 传入（向后兼容）。"""
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+    from app.plugin.module_ai.tools_catalog.service import execute_script_tool
+
+    code = 'def run(args):\n    return {"sum": args.get("a", 0) + args.get("b", 0)}\n'
+    tool = AiToolModel(name="pytest_legacy", kind="script", code=code, timeout=10, enabled=True)
+    result = asyncio.run(execute_script_tool(tool, {"a": 2, "b": 3}))
+    assert result == {"sum": 5}
+
+
+def test_inspect_script_endpoint(test_client, auth_headers):
+    """/inspect-script 解析 run 签名并返回参数与校验状态。"""
+    code = 'def run(name: str, count: int = 1) -> dict:\n    return {}\n'
+    r = test_client.post(
+        "/api/v1/ai/tools/inspect-script", json={"code": code}, headers=auth_headers
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["valid"] is True
+    assert data["error"] == ""
+    params = {p["name"]: p for p in data["params"]}
+    assert params["name"]["type"] == "string"
+    assert params["name"]["default"] is None
+    assert params["name"]["required"] is True
+    assert params["count"]["type"] == "integer"
+    assert params["count"]["default"] == 1
+    assert params["count"]["required"] is False
+
+
+def test_inspect_script_invalid_endpoint(test_client, auth_headers):
+    """/inspect-script 对非法脚本返回 valid=False 与错误信息。"""
+    r = test_client.post(
+        "/api/v1/ai/tools/inspect-script",
+        json={"code": "def run(args:\n    pass"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["valid"] is False
+    assert data["error"]
+
+
+def test_format_script_endpoint(test_client, auth_headers):
+    """/format-script 用 ruff 格式化（语法错误时原样返回）。"""
+    messy = 'def run(x:int=1)->dict:\n  return{"x":x}\n'
+    r = test_client.post(
+        "/api/v1/ai/tools/format-script", json={"code": messy}, headers=auth_headers
+    )
+    assert r.status_code == 200, r.text
+    out = r.json()["data"]["code"]
+    assert "x: int = 1" in out or "x:int=1" in out  # 至少可通过 ast 解析
+    import ast
+
+    ast.parse(out)  # 不抛即通过
+    # 语法错误：原样返回
+    r2 = test_client.post(
+        "/api/v1/ai/tools/format-script", json={"code": "def broken("}, headers=auth_headers
+    )
+    assert r2.json()["data"]["code"] == "def broken("
+
+
+def test_script_execute_injects_tool_config():
+    """脚本可读取工具私有配置：注入沙箱全局 TOOL_CONFIG，源码不含明文。"""
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+    from app.plugin.module_ai.tools_catalog.service import execute_script_tool
+
+    code = 'def run():\n    return {"key": TOOL_CONFIG.get("api_key", "missing")}\n'
+    tool = AiToolModel(
+        name="pytest_cfg",
+        kind="script",
+        code=code,
+        config={"api_key": "sk-secret", "username": "alice"},
+        timeout=10,
+        enabled=True,
+    )
+    result = asyncio.run(execute_script_tool(tool, {}))
+    assert result == {"key": "sk-secret"}
+    # 未传入 config 时不报错，返回缺省
+    tool2 = AiToolModel(name="pytest_cfg2", kind="script", code=code, timeout=10, enabled=True)
+    assert asyncio.run(execute_script_tool(tool2, {})) == {"key": "missing"}
+
+
+def test_script_tool_config_masked_in_list(test_client, auth_headers):
+    """脚本工具 config（运行时私有参数）在列表回显时全量脱敏为 ****。"""
+    import app.plugin.module_ai.tools_catalog.service as svc
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+    from app.plugin.module_ai.tools_catalog.service import _to_dict
+
+    tool = AiToolModel(
+        name="pytest_masked",
+        kind="script",
+        code="def run(): return {}",
+        config={"api_key": "sk-secret", "username": "alice"},
+        timeout=10,
+        enabled=True,
+    )
+    d = _to_dict(tool)
+    assert d["config"] == {"api_key": svc.HEADER_MASK, "username": svc.HEADER_MASK}
+    # 非脚本工具：仅密钥命名字段脱敏，普通值原样（用户名不脱敏）
+    tool2 = AiToolModel(name="pytest_httpmask", kind="http", config={"username": "alice"}, enabled=True)
+    d2 = _to_dict(tool2)
+    assert d2["config"] == {"username": "alice"}

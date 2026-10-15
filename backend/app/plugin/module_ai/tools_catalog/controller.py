@@ -10,6 +10,8 @@ from app.core.router_class import OperationLogRoute
 
 from .schema import (
     AiToolCreateSchema,
+    AiToolFormatScriptSchema,
+    AiToolInspectScriptSchema,
     AiToolTestScriptSchema,
     AiToolToggleSchema,
     AiToolUpdateSchema,
@@ -108,3 +110,19 @@ async def test_script_tool(
     return SuccessResponse(
         data=await AiToolService.test_script(tool_id, data.args), msg="试运行完成"
     )
+
+
+@AiToolRouter.post("/inspect-script", summary="解析脚本签名，提取参数")
+async def inspect_script_tool(
+    data: AiToolInspectScriptSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiToolService.inspect_script(data.code), msg="解析成功")
+
+
+@AiToolRouter.post("/format-script", summary="格式化脚本代码")
+async def format_script_tool(
+    data: AiToolFormatScriptSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(data={"code": await AiToolService.format_script(data.code)}, msg="格式化完成")

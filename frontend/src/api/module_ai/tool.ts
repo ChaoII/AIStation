@@ -91,3 +91,23 @@ export function testAiScript(id: number, args?: Record<string, any>) {
     timeout: 30000,
   });
 }
+
+/** 解析脚本 run 签名，自动提取参数名/类型/默认值/必填 */
+export function inspectAiScript(code: string) {
+  return request({
+    url: `${API_PATH}/inspect-script`,
+    method: "post",
+    data: { code },
+    headers: { _silent: "true" },
+  });
+}
+
+/** 格式化脚本代码（ruff） */
+export function formatAiScript(code: string) {
+  return request({
+    url: `${API_PATH}/format-script`,
+    method: "post",
+    data: { code },
+    headers: { _silent: "true" },
+  });
+}

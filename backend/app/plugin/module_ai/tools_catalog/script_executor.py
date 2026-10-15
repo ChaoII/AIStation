@@ -7,7 +7,10 @@
 2. **受限内建**：执行时只注入安全 builtins 白名单（无 ``open``/``__import__``）。
 3. **超时**：``sys.settrace`` 行计数（Windows 无 ``signal.alarm``，故不用信号）。
 
-入口约定：脚本必须定义 ``def run(args: dict) -> dict``。
+入口约定：脚本必须定义 ``def run(...) -> dict``。支持两种形态：
+1. 带类型注解的多参数：``def run(name: str = "x", age: int = 3) -> dict`` ——
+   调用时按参数名传值，可自动提取参数名/类型/默认值/必填。
+2. 兼容旧脚本：``def run(args: dict) -> dict`` —— 整个入参 dict 传入。
 """
 from __future__ import annotations
 
@@ -205,8 +208,127 @@ def validate(code: str) -> None:
         raise CustomException(msg="脚本必须定义 run(args) 函数")
 
 
-def _build_globals() -> dict[str, Any]:
-    """构造受限执行全局命名空间（白名单 builtins + 白名单模块）。"""
+#: 类型注解（ast 节点）→ JSON Schema type 的映射
+_ANNOTATION_TYPE_MAP: dict[str, str] = {
+    "str": "string",
+    "int": "integer",
+    "float": "number",
+    "bool": "boolean",
+    "list": "array",
+    "dict": "object",
+    "tuple": "array",
+    "set": "array",
+    "bytes": "string",
+    "Any": "",
+}
+
+
+def _annotation_to_type(node: ast.AST | None) -> str:
+    """把类型注解 AST 节点转成 JSON Schema type（尽力而为，失败返回空串）。"""
+    if node is None:
+        return ""
+    # 形如 list[str]、dict[str, int]
+    if isinstance(node, ast.Subscript):
+        base = node.value
+        if isinstance(base, ast.Name):
+            return _ANNOTATION_TYPE_MAP.get(base.id, base.id.lower())
+        return ""
+    if isinstance(node, ast.Name):
+        return _ANNOTATION_TYPE_MAP.get(node.id, node.id.lower())
+    # 形如 str | None（Union）
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _annotation_to_type(node.left)
+        return left
+    if isinstance(node, ast.Constant):
+        return _ANNOTATION_TYPE_MAP.get(str(node.value), "string")
+    return ""
+
+
+def _literal_default(node: ast.AST | None) -> Any:
+    """把默认值 AST 节点求值为 Python 字面量；无法求值返回 None。"""
+    if node is None:
+        return None
+    try:
+        return ast.literal_eval(node)
+    except Exception:  # noqa: BLE001
+        # 无法求值（如可变默认 list/dict），用 ast.unparse 还原为文本代表
+        try:
+            return ast.unparse(node)
+        except Exception:  # noqa: BLE001
+            return None
+
+
+def _extract_run_params(code: str) -> list[dict]:
+    """从 run 函数签名提取参数（名/类型/默认/必填）。无 run 或非多参形态返回 []。"""
+    try:
+        tree = ast.parse(code, mode="exec")
+    except SyntaxError:
+        return []
+    run_node = next(
+        (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "run"),
+        None,
+    )
+    if run_node is None:
+        return []
+    args = run_node.args
+    # 仅一个参数（且通常名为 args）→ 旧形态 dict 入参，无可提取的多参
+    if len(args.args) == 1 and not args.vararg and not args.kwarg:
+        return []
+    positional = args.args
+    defaults = list(args.defaults)
+    # 默认值与位置参数从后往前对齐
+    default_map: dict[str, ast.AST | None] = {}
+    if defaults:
+        for arg_node, default_node in zip(
+            positional[-len(defaults):], defaults, strict=False
+        ):
+            default_map[arg_node.arg] = default_node
+    params: list[dict] = []
+    for i, arg_node in enumerate(positional):
+        name = arg_node.arg
+        if name == "self":
+            continue
+        if i > 0 and args.posonlyargs and arg_node in args.posonlyargs:
+            pass
+        type_name = _annotation_to_type(arg_node.annotation)
+        has_default = name in default_map
+        params.append(
+            {
+                "name": name,
+                "type": type_name,
+                "default": _literal_default(default_map.get(name)) if has_default else None,
+                "required": not has_default,
+            }
+        )
+    return params
+
+
+def _call_run(fn: Any, args: dict, code: str) -> Any:
+    """按 run 签名调用：多参形态按名传值，单参形态兼容传入整个 dict。"""
+    try:
+        tree = ast.parse(code, mode="exec")
+    except SyntaxError:
+        return fn(dict(args or {}))
+    run_node = next(
+        (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "run"),
+        None,
+    )
+    if run_node is None:
+        return fn(dict(args or {}))
+    if len(run_node.args.args) == 1 and not run_node.args.vararg and not run_node.args.kwarg:
+        return fn(dict(args or {}))
+    # 多参形态：只传签名里出现的键，保证带默认值的参数可省略
+    keys = {a.arg for a in run_node.args.args}
+    kwargs = {k: v for k, v in (args or {}).items() if k in keys}
+    return fn(**kwargs)
+
+
+def _build_globals(config: dict | None = None) -> dict[str, Any]:
+    """构造受限执行全局命名空间（白名单 builtins + 白名单模块 + 工具配置）。
+
+    注入 ``TOOL_CONFIG``（工具私有配置，如密钥/敏感值/按用户区分的参数），
+    脚本内以 ``TOOL_CONFIG["api_key"]`` 读取；值不可见、不与源码明文混存。
+    """
     import importlib
 
     ns: dict[str, Any] = {"__builtins__": dict(SAFE_BUILTINS), "__name__": "sandbox_script"}
@@ -215,16 +337,18 @@ def _build_globals() -> dict[str, Any]:
             ns[mod_name] = importlib.import_module(mod_name)
         except Exception:  # noqa: BLE001  个别模块在精简环境可能缺失，忽略
             continue
+    ns["TOOL_CONFIG"] = dict(config or {})
     return ns
 
 
-def run(code: str, args: dict | None = None, timeout: int = 10) -> dict:
+def run(code: str, args: dict | None = None, timeout: int = 10, config: dict | None = None) -> dict:
     """执行脚本并返回结果（dict）。
 
     参数:
     - code: 脚本源码（须定义 ``run(args)``）。
     - args: 传入 ``run`` 的参数字典。
     - timeout: 超时秒数（换算为行计数上限）。
+    - config: 工具私有配置，注入为沙箱全局 ``TOOL_CONFIG``，供脚本读取。
 
     返回:
     - dict: ``run`` 的返回值；非 dict 结果包成 ``{"result": ...}``。
@@ -240,7 +364,7 @@ def run(code: str, args: dict | None = None, timeout: int = 10) -> dict:
                 raise _ScriptTimeout()
         return _tracer
 
-    ns = _build_globals()
+    ns = _build_globals(config)
     try:
         compiled = compile(code, "<ai_script_tool>", "exec")
     except SyntaxError as e:  # pragma: no cover - validate 已拦截
@@ -252,7 +376,7 @@ def run(code: str, args: dict | None = None, timeout: int = 10) -> dict:
         fn = ns.get("run")
         if not callable(fn):
             raise CustomException(msg="脚本必须定义 run(args) 函数")
-        result = fn(dict(args or {}))
+        result = _call_run(fn, dict(args or {}), code)
     except _ScriptTimeout as e:
         raise CustomException(msg=f"脚本执行超时（>{timeout}s）") from e
     except CustomException:

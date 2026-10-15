@@ -55,6 +55,9 @@
         <el-select v-model="httpForm.method" style="width: 100%">
           <el-option label="GET" value="GET" />
           <el-option label="POST" value="POST" />
+          <el-option label="PUT" value="PUT" />
+          <el-option label="PATCH" value="PATCH" />
+          <el-option label="DELETE" value="DELETE" />
         </el-select>
       </el-form-item>
       <el-form-item v-if="httpForm.kind === 'http'" label="请求地址" required>
@@ -68,7 +71,12 @@
           <div v-for="(h, i) in httpForm.headerFields" :key="i" class="header-row">
             <el-input v-model="h.key" placeholder="请求头名，如 Authorization" />
             <el-input v-model="h.value" placeholder="值" />
-            <el-button text type="danger" :icon="Delete" @click="httpForm.headerFields.splice(i, 1)" />
+            <el-button
+              text
+              type="danger"
+              :icon="Delete"
+              @click="httpForm.headerFields.splice(i, 1)"
+            />
           </div>
           <el-button
             text
@@ -106,31 +114,93 @@
             type="primary"
             :icon="Plus"
             @click="
-              httpForm.paramFields.push({ key: '', type: 'string', default: '', required: false })
+              httpForm.paramFields.push({
+                key: '',
+                type: 'string',
+                default: '',
+                required: false,
+                description: '',
+              })
             "
           >
             添加字段
           </el-button>
         </div>
       </el-form-item>
+      <el-form-item v-if="httpForm.kind === 'http' && shouldShowBodyHint" label="请求体">
+        <el-alert type="info" :closable="false" show-icon :title="bodyHintText" />
+      </el-form-item>
       <template v-if="httpForm.kind === 'script'">
         <el-form-item label="脚本代码" required>
-          <el-input
-            v-model="httpForm.code"
-            type="textarea"
-            :rows="12"
-            spellcheck="false"
-            placeholder='必须定义 run(args) 函数，返回 dict，例如：&#10;def run(args):&#10;    return {"sum": args.get("a", 0) + args.get("b", 0)}'
-          />
+          <div class="script-editor">
+            <div class="script-editor__toolbar">
+              <span class="script-editor__label">Python 脚本</span>
+              <div class="script-editor__actions">
+                <el-button
+                  size="small"
+                  :icon="MagicStick"
+                  :loading="inspecting"
+                  @click="handleInspectScript"
+                >
+                  从代码提取参数
+                </el-button>
+                <el-button
+                  size="small"
+                  :icon="RefreshRight"
+                  :loading="formatting"
+                  @click="handleFormatScript"
+                >
+                  格式化
+                </el-button>
+                <el-button size="small" text @click="fillScriptTemplate">填入示例</el-button>
+                <el-button size="small" text type="danger" @click="clearScriptCode">清空</el-button>
+              </div>
+            </div>
+            <CodeEditor
+              v-model="httpForm.code"
+              language="python"
+              theme="one-dark"
+              :height="'260px'"
+              border
+            />
+          </div>
         </el-form-item>
         <el-form-item label="执行超时(秒)">
           <el-input-number v-model="httpForm.timeout" :min="1" :max="60" />
+        </el-form-item>
+        <el-form-item label="运行时参数">
+          <div class="header-builder">
+            <div v-for="(rq, ri) in runtimeConfig" :key="ri" class="header-row">
+              <el-input v-model="rq.key" placeholder="参数名，如 api_key" class="field-row__key" />
+              <el-input
+                v-model="rq.value"
+                type="password"
+                show-password
+                placeholder="值（保存后不可见）"
+                class="field-row__default"
+              />
+              <el-button text type="danger" :icon="Delete" @click="runtimeConfig.splice(ri, 1)" />
+            </div>
+            <el-button
+              text
+              type="primary"
+              :icon="Plus"
+              @click="runtimeConfig.push({ key: '', value: '' })"
+            >
+              添加参数
+            </el-button>
+          </div>
+          <div class="runtime-config__tip">
+            用于密钥/敏感值/按用户区分的参数（如 api_key、用户名）。脚本内通过
+            <code>TOOL_CONFIG["参数名"]</code>
+            读取，不写进源码；值保存后一律不可见。
+          </div>
         </el-form-item>
         <el-alert
           type="info"
           :closable="false"
           show-icon
-          title="脚本在受控沙箱内运行：仅允许导入 json/math/re/datetime 等白名单模块，禁止文件、网络与系统调用。"
+          title="脚本在受控沙箱内运行：仅允许导入 json/math/re/datetime 等白名单模块，禁止文件、网络与系统调用。建议用带类型注解的多参数签名（如 def run(name: str = 'x')），点击「从代码提取参数」自动生成入参表。"
         />
       </template>
       <el-form-item label="启用">
@@ -139,18 +209,10 @@
     </el-form>
 
     <template #footer>
-      <el-button
-        v-if="mode === 'http-edit'"
-        :loading="testing"
-        @click="handleTestTool"
-      >
+      <el-button v-if="mode === 'http-edit'" :loading="testing" @click="handleTestTool">
         测试
       </el-button>
-      <el-button
-        v-if="mode === 'script-edit'"
-        :loading="testing"
-        @click="handleTestScript"
-      >
+      <el-button v-if="mode === 'script-edit'" :loading="testing" @click="handleTestScript">
         试运行
       </el-button>
       <el-button @click="visible = false">取消</el-button>
@@ -162,11 +224,15 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Delete, Plus } from "@element-plus/icons-vue";
+import { Delete, MagicStick, Plus, RefreshRight } from "@element-plus/icons-vue";
+
+import CodeEditor from "@/components/CodeEditor/index.vue";
 
 import {
   createAiTool,
+  formatAiScript,
   getAiToolList,
+  inspectAiScript,
   testAiScript,
   testAiTool,
   updateAiTool,
@@ -192,19 +258,32 @@ const dialogTitle = computed(() => {
 
 const submitLoading = ref(false);
 const testing = ref(false);
+const inspecting = ref(false);
+const formatting = ref(false);
 const currentTool = ref<AiToolRow | null>(null);
 const currentConfigFields = ref<AiToolConfigField[]>([]);
 const agnoFields = reactive<Record<string, string>>({});
 const customParams = ref<{ key: string; value: string }[]>([]);
+/** 脚本工具运行时私有参数（密钥/敏感值/按用户区分，值不可见） */
+const runtimeConfig = ref<{ key: string; value: string }[]>([]);
+
+interface ParamField {
+  key: string;
+  type: string;
+  default: string;
+  required: boolean;
+  description?: string;
+}
 
 const httpForm = reactive({
   id: undefined as number | undefined,
   name: "",
   kind: "http" as "http" | "script",
   method: "GET",
+  bodyType: "json" as "none" | "json",
   url: "",
   headerFields: [] as { key: string; value: string }[],
-  paramFields: [] as { key: string; type: string; default: string; required: boolean }[],
+  paramFields: [] as ParamField[],
   code: "",
   timeout: 10,
   enabled: true,
@@ -213,12 +292,23 @@ const httpForm = reactive({
 /** 编辑 HTTP/脚本时锁定类型；新建可切换 */
 const kindLocked = computed(() => mode.value === "http-edit" || mode.value === "script-edit");
 
+/** GET/DELETE 无请求体；POST/PUT/PATCH 用 JSON body */
+const shouldShowBodyHint = computed(() => ["POST", "PUT", "PATCH"].includes(httpForm.method));
+const bodyHintText = computed(() => {
+  if (httpForm.method === "POST") return "以 POST 发送，剩余入参字段作为 JSON 请求体。";
+  if (httpForm.method === "PUT") return "以 PUT 发送，剩余入参字段作为 JSON 请求体（整体替换）。";
+  if (httpForm.method === "PATCH")
+    return "以 PATCH 发送，剩余入参字段作为 JSON 请求体（局部更新）。";
+  return "";
+});
+
 function resetForm() {
   Object.assign(httpForm, {
     id: undefined,
     name: "",
     kind: "http",
     method: "GET",
+    bodyType: "json",
     url: "",
     headerFields: [],
     paramFields: [],
@@ -230,11 +320,20 @@ function resetForm() {
   currentConfigFields.value = [];
   Object.keys(agnoFields).forEach((k) => delete agnoFields[k]);
   customParams.value = [];
+  runtimeConfig.value = [];
 }
 
-function schemaToParamFields(
-  schema: any
-): { key: string; type: string; default: string; required: boolean }[] {
+const SCRIPT_TEMPLATE = `def run(name: str = "world", count: int = 1) -> dict:
+    """工具说明：返回问候语。
+
+    Args:
+        name: 称呼
+        count: 重复次数
+    """
+    return {"message": f"Hello, {name}!", "count": count}
+`;
+
+function schemaToParamFields(schema: any): ParamField[] {
   if (!schema || typeof schema !== "object") return [];
   const props = schema.properties || {};
   const required = new Set(schema.required || []);
@@ -243,6 +342,7 @@ function schemaToParamFields(
     type: spec?.type || "string",
     default: spec?.default === undefined ? "" : String(spec.default),
     required: required.has(key),
+    description: spec?.description || "",
   }));
 }
 
@@ -263,13 +363,15 @@ function coerceDefault(v: string, type: string): any {
   return v;
 }
 
-function paramFieldsToSchema(fields: any[]): Record<string, any> | undefined {
+function paramFieldsToSchema(fields: ParamField[]): Record<string, any> | undefined {
   const properties: Record<string, any> = {};
   const required: string[] = [];
   for (const f of fields || []) {
     const key = (f.key || "").trim();
     if (!key) continue;
     const p: Record<string, any> = { type: f.type || "string" };
+    const desc = (f.description || "").trim();
+    if (desc) p.description = desc;
     const dv = coerceDefault(f.default, f.type);
     if (dv !== undefined) p.default = dv;
     if (f.required) required.push(key);
@@ -314,12 +416,20 @@ async function loadForEdit() {
       kind: isScript ? "script" : "http",
       method: tool.method || "GET",
       url: tool.url || "",
-      headerFields: Object.entries(tool.headers || {}).map(([k, v]) => ({ key: k, value: String(v) })),
+      headerFields: Object.entries(tool.headers || {}).map(([k, v]) => ({
+        key: k,
+        value: String(v),
+      })),
       paramFields: schemaToParamFields(tool.params_schema),
       code: tool.code || "",
       timeout: tool.timeout || 10,
       enabled: tool.enabled !== false,
     });
+    // 脚本工具：加载运行时私有参数（值已由后端脱敏为 ****）
+    runtimeConfig.value = Object.entries(tool.config || {}).map(([k, v]) => ({
+      key: k,
+      value: v === null || v === undefined ? "" : String(v),
+    }));
   } else {
     // agno / system：配置字段自动生成
     mode.value = "agno-config";
@@ -332,7 +442,10 @@ async function loadForEdit() {
     const declared = new Set(currentConfigFields.value.map((f) => f.key));
     customParams.value = Object.entries(tool.config || {})
       .filter(([key]) => !declared.has(key))
-      .map(([key, value]) => ({ key, value: value === null || value === undefined ? "" : String(value) }));
+      .map(([key, value]) => ({
+        key,
+        value: value === null || value === undefined ? "" : String(value),
+      }));
   }
 }
 
@@ -384,6 +497,28 @@ async function submitHttpForm() {
       ElMessage.warning("请填写脚本代码");
       return;
     }
+    // 保存前静默校验脚本（语法 + 安全白名单）
+    inspecting.value = true;
+    try {
+      const res: any = await inspectAiScript(httpForm.code);
+      const data = res.data?.data || {};
+      if (!data.valid) {
+        ElMessage.error(data.error || "脚本校验未通过");
+        return;
+      }
+      // 若尚未提取参数且代码存在多参签名，自动提取
+      if (!httpForm.paramFields.length && (data.params || []).length) {
+        httpForm.paramFields = data.params.map((p: any) => ({
+          key: p.name,
+          type: p.type || "string",
+          default: p.default === undefined || p.default === null ? "" : String(p.default),
+          required: !!p.required,
+          description: "",
+        }));
+      }
+    } finally {
+      inspecting.value = false;
+    }
   } else if (!httpForm.url.trim()) {
     ElMessage.warning("请填写请求地址");
     return;
@@ -398,6 +533,8 @@ async function submitHttpForm() {
   if (isScript) {
     payload.code = httpForm.code;
     payload.timeout = httpForm.timeout;
+    // 运行时私有参数（密钥/敏感值/按用户区分）：值不写进源码，运行时注入 TOOL_CONFIG
+    payload.config = buildObjectFromRows(runtimeConfig.value);
   } else {
     payload.method = httpForm.method;
     payload.url = httpForm.url.trim();
@@ -455,7 +592,7 @@ async function handleTestScript() {
   testing.value = true;
   try {
     const res: any = await testAiScript(httpForm.id, {});
-    const data = res.data || {};
+    const data = res.data?.data || {};
     if (data.ok) {
       ElMessageBox.alert(
         `<pre style="max-height:320px;overflow:auto;margin:0">${escapeHtml(
@@ -472,6 +609,72 @@ async function handleTestScript() {
   } finally {
     testing.value = false;
   }
+}
+
+/** 从代码自动提取参数：解析 run 签名，回填参数表 */
+async function handleInspectScript() {
+  if (!httpForm.code.trim()) {
+    ElMessage.warning("请先编写脚本代码");
+    return;
+  }
+  inspecting.value = true;
+  try {
+    const res: any = await inspectAiScript(httpForm.code);
+    const data = res.data?.data || {};
+    if (!data.valid) {
+      ElMessage.error(data.error || "脚本校验未通过");
+      return;
+    }
+    const params = (data.params || []) as {
+      name: string;
+      type: string;
+      default: any;
+      required: boolean;
+    }[];
+    if (!params.length) {
+      // 兼容 run(args) 单参形态：无多参可提取，提示改为手动声明
+      ElMessage.info(
+        "未检测到多参数：当前为 run(args) 形态，可改用带类型注解的多参数签名以便自动提取"
+      );
+      return;
+    }
+    httpForm.paramFields = params.map((p) => ({
+      key: p.name,
+      type: p.type || "string",
+      default: p.default === undefined || p.default === null ? "" : String(p.default),
+      required: !!p.required,
+      description: "",
+    }));
+    ElMessage.success(`已从代码提取 ${params.length} 个参数`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "解析失败");
+  } finally {
+    inspecting.value = false;
+  }
+}
+
+/** 格式化脚本代码 */
+async function handleFormatScript() {
+  if (!httpForm.code.trim()) return;
+  formatting.value = true;
+  try {
+    const res: any = await formatAiScript(httpForm.code);
+    httpForm.code = res.data?.code ?? httpForm.code;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "格式化失败");
+  } finally {
+    formatting.value = false;
+  }
+}
+
+function fillScriptTemplate() {
+  if (!httpForm.code.trim()) {
+    httpForm.code = SCRIPT_TEMPLATE;
+  }
+}
+
+function clearScriptCode() {
+  httpForm.code = "";
 }
 
 defineExpose({ loadForEdit });
@@ -524,5 +727,38 @@ watch(
 }
 .field-row__req {
   flex-shrink: 0;
+}
+.script-editor {
+  width: 100%;
+}
+.script-editor__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.script-editor__label {
+  font-size: var(--el-font-size-small);
+  color: var(--el-text-color-secondary);
+}
+.script-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.runtime-config__tip {
+  margin-top: 6px;
+  font-size: var(--el-font-size-small);
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+}
+.runtime-config__tip code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  color: var(--el-color-primary);
+  font-family: var(--el-font-family-mono, Consolas, monospace);
 }
 </style>

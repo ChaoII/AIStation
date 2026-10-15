@@ -35,6 +35,16 @@ def _mask_config(config: dict | None) -> dict | None:
     return masked
 
 
+def _mask_config_all(config: dict | None) -> dict | None:
+    """运行时私有配置（脚本 TOOL_CONFIG）全量脱敏：所有值统一替换为掩码。
+
+    此类参数多为密钥/敏感值/按用户区分的参数，值一律不对外可见。
+    """
+    if not config:
+        return config
+    return {str(k): HEADER_MASK for k in config}
+
+
 def _merge_config(old: dict | None, new: dict) -> dict:
     """合并更新配置：掩码/空串保留原值，未出现键删除，其余覆盖。"""
     before = old or {}
@@ -75,6 +85,55 @@ def _validate_script(code: str | None) -> None:
     validate_script(code or "")
 
 
+def _inspect_script(code: str | None) -> dict:
+    """解析脚本 run 签名，提取参数与基础校验结果。"""
+    from .script_executor import _extract_run_params
+    from .script_executor import validate as validate_script
+
+    code = code or ""
+    params = _extract_run_params(code)
+    try:
+        validate_script(code)
+        valid = True
+        error = ""
+    except CustomException as e:
+        valid = False
+        error = e.msg
+    return {"valid": valid, "error": error, "params": params}
+
+
+def _format_script(code: str | None) -> str:
+    """用 ruff format 格式化 Python 脚本；ruff 不可用时原样返回。"""
+    import ast as _ast
+    import shutil
+    import subprocess
+
+    code = code or ""
+    if not code.strip():
+        return code
+    # 先做语法校验，语法错误不格式化（直接返回原码）
+    try:
+        _ast.parse(code, mode="exec")
+    except SyntaxError:
+        return code
+    ruff = shutil.which("ruff")
+    if not ruff:
+        return code
+    try:
+        proc = subprocess.run(
+            [ruff, "format", "-", "--quiet"],
+            input=code.encode("utf-8"),
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return proc.stdout.decode("utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    return code
+
+
 def _readiness_of(t: AiToolModel) -> tuple[bool, str]:
     """按来源判定工具就绪性：agno 走注册表（依赖 + 必填配置 + 高危门禁），其余恒就绪。"""
     if _tool_source(t) == "agno":
@@ -113,12 +172,17 @@ def _agno_meta(t: AiToolModel) -> dict:
 def _to_dict(t: AiToolModel) -> dict:
     ready, reason = _readiness_of(t)
     meta = _agno_meta(t)
+    # 脚本工具：config 是运行时私有参数（密钥/敏感值/按用户区分），全量脱敏，值不可见
+    if (t.kind or "") == "script":
+        config_out = _mask_config_all(t.config)
+    else:
+        config_out = _mask_config(t.config)
     return {
         "id": t.id,
         "name": t.name,
         "kind": t.kind or "builtin",
         "source": _tool_source(t),
-        "config": _mask_config(t.config),
+        "config": config_out,
         "method": t.method or "GET",
         "url": t.url or "",
         "headers": _mask_headers(t.headers),
@@ -152,14 +216,19 @@ def _http_schema(tool: AiToolModel) -> dict:
 
 
 async def execute_script_tool(tool: AiToolModel, args: dict) -> object:
-    """执行自定义脚本工具（沙箱内）。"""
+    """执行自定义脚本工具（沙箱内），并注入工具私有配置为沙箱全局 ``TOOL_CONFIG``。"""
     from .script_executor import run as run_script
 
-    return run_script(tool.code or "", args or {}, tool.timeout or 10)
+    return run_script(tool.code or "", args or {}, tool.timeout or 10, config=tool.config or {})
 
 
 async def execute_http_tool(tool: AiToolModel, args: dict) -> object:
-    """执行自定义 HTTP 工具：URL 路径占位替换 + 剩余参数作为 query/body。"""
+    """执行自定义 HTTP 工具：URL 路径占位替换 + 剩余参数按方法进入 query/body。
+
+    - GET：剩余参数作为 query。
+    - POST/PUT/PATCH：剩余参数作为 JSON body。
+    - DELETE：剩余参数作为 query。
+    """
     import httpx
 
     url = tool.url or ""
@@ -167,12 +236,18 @@ async def execute_http_tool(tool: AiToolModel, args: dict) -> object:
     remaining = {k: v for k, v in (args or {}).items() if f"{{{k}}}" in url}
     for k, v in remaining.items():
         url = url.replace(f"{{{k}}}", str(v))
-    query = {k: v for k, v in (args or {}).items() if k not in remaining}
+    body = {k: v for k, v in (args or {}).items() if k not in remaining}
+    method = (tool.method or "GET").upper()
+    method = (tool.method or "GET").upper()
     async with httpx.AsyncClient(timeout=30) as c:
-        if (tool.method or "GET").upper() == "POST":
-            resp = await c.post(url, json=query, headers=headers)
-        else:
-            resp = await c.get(url, params=query, headers=headers)
+        method_map = {
+            "GET": lambda: c.get(url, params=body, headers=headers),
+            "POST": lambda: c.post(url, json=body, headers=headers),
+            "PUT": lambda: c.put(url, json=body, headers=headers),
+            "PATCH": lambda: c.patch(url, json=body, headers=headers),
+            "DELETE": lambda: c.delete(url, params=body, headers=headers),
+        }
+        resp = await method_map.get(method, method_map["GET"])()
     try:
         return resp.json()
     except Exception:  # noqa: BLE001
@@ -486,3 +561,13 @@ class AiToolService:
             return {"ok": True, "result": result}
         except CustomException as e:
             return {"ok": False, "error": e.msg}
+
+    @classmethod
+    async def inspect_script(cls, code: str | None) -> dict:
+        """解析脚本 run 签名，提取参数供前端自动生成参数表与 schema。"""
+        return _inspect_script(code)
+
+    @classmethod
+    async def format_script(cls, code: str | None) -> str:
+        """格式化脚本源码（ruff）。"""
+        return _format_script(code)
