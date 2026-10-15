@@ -39,7 +39,7 @@
         <span class="section-title">推荐能力</span>
         <span class="section-sub">平台精选，一键安装为你的资产</span>
       </div>
-      <el-row :gutter="12" class="card-grid">
+      <el-row :gutter="24" class="card-grid">
         <el-col v-for="f in featured" :key="`f-${f.id}`" :xs="24" :sm="12" :md="8" :lg="6">
           <market-card :item="f" @open="openDetail" @install="installItem" @favorite="toggleFavorite" />
         </el-col>
@@ -64,7 +64,7 @@
     </div>
 
     <!-- 卡片网格 -->
-    <el-row v-loading="loading" :gutter="12" class="card-grid">
+    <el-row v-loading="loading" :gutter="24" class="card-grid">
       <el-col v-for="item in items" :key="item.id" :xs="24" :sm="12" :md="8" :lg="6">
         <market-card :item="item" @open="openDetail" @install="installItem" @favorite="toggleFavorite" />
       </el-col>
@@ -310,7 +310,9 @@
     font-size: var(--el-font-size-base);
     color: var(--el-text-color-regular);
     cursor: pointer;
-    padding: 2px 0;
+    height: 30px;
+    line-height: 30px;
+    padding: 0 2px;
     border-bottom: 2px solid transparent;
     transition: color 0.2s;
 
@@ -394,7 +396,7 @@
 
   .card-grid {
     min-height: 120px;
-    row-gap: 22px;
+    row-gap: 24px;
     margin-bottom: 8px;
   }
 

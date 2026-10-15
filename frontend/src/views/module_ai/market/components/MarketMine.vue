@@ -16,7 +16,7 @@
       <el-tag size="small" type="info" effect="plain">共 {{ items.length }} 项资产</el-tag>
     </div>
 
-    <el-row v-loading="loading" :gutter="12" class="card-grid">
+    <el-row v-loading="loading" :gutter="24" class="card-grid">
       <el-col
         v-for="row in items"
         :key="`${row.asset_type}-${row.real_id}`"
@@ -389,7 +389,9 @@
     font-size: var(--el-font-size-base);
     color: var(--el-text-color-regular);
     cursor: pointer;
-    padding: 2px 0;
+    height: 30px;
+    line-height: 30px;
+    padding: 0 2px;
     border-bottom: 2px solid transparent;
 
     &:hover {
@@ -405,7 +407,7 @@
 
   .card-grid {
     min-height: 120px;
-    row-gap: 22px;
+    row-gap: 24px;
     margin-bottom: 8px;
   }
 
@@ -414,7 +416,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    padding: 18px 20px;
+    padding: 16px 18px;
     background: var(--el-fill-color-blank);
     border: 1px solid var(--el-border-color-lighter);
     border-radius: 10px;
@@ -464,11 +466,11 @@
   }
 
   .market-card__desc {
-    margin: 14px 0 16px;
+    margin: 12px 0 12px;
     color: var(--el-text-color-regular);
     font-size: var(--el-font-size-base);
     line-height: 1.7;
-    min-height: 48px;
+    min-height: 40px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -479,7 +481,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding-top: 12px;
+    padding-top: 8px;
     border-top: 1px solid var(--el-border-color-lighter);
     font-size: 12px;
     color: var(--el-text-color-secondary);
