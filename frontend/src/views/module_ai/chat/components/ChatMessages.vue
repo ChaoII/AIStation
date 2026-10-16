@@ -2,12 +2,7 @@
   <div ref="messagesContainer" class="chat-messages">
     <WelcomeScreen v-if="messages.length === 0" @prompt-click="handlePromptClick" />
     <div v-else class="messages-list">
-      <MessageItem
-        v-for="message in messages"
-        :key="message.id"
-        :message="message"
-        @toggle-fold="handleToggleFold(message)"
-      />
+      <MessageItem v-for="message in messages" :key="message.id" :message="message" />
     </div>
     <div v-if="error" class="error-banner">
       <el-alert :title="error" type="error" :closable="true" show-icon @close="handleErrorClose" />
@@ -17,12 +12,12 @@
 
 <script setup lang="ts">
 import { ref, nextTick, watch } from "vue";
+import type { UIMessage } from "ai";
 import WelcomeScreen from "./WelcomeScreen.vue";
 import MessageItem from "./MessageItem.vue";
-import type { ChatMessage } from "@/views/module_ai/chat/types";
 
 interface Props {
-  messages: ChatMessage[];
+  messages: UIMessage[];
   error: string;
 }
 
@@ -54,10 +49,6 @@ watch(
 
 const handlePromptClick = (prompt: string) => {
   emit("prompt-click", prompt);
-};
-
-const handleToggleFold = (message: ChatMessage) => {
-  message.collapsed = !message.collapsed;
 };
 
 const handleErrorClose = () => {

@@ -24,7 +24,7 @@ const msg = {
     },
     { type: "tool", toolCallId: "t2", toolName: "ai_query", args: {}, state: "input-streaming" },
     { type: "source-url", sourceId: "s1", url: "http://a", title: "来源A" },
-    { type: "data", data: { type: "data-finish", action: { type: "navigate", path: "/x" } } },
+    { type: "data-finish", data: { action: { type: "navigate", path: "/x" } }, id: "d1" },
   ],
 };
 

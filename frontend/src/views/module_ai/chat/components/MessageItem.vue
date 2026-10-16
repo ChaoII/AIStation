@@ -1,7 +1,7 @@
 <template>
-  <div :class="['message-group', message.type]">
+  <div :class="['message-item', message.role]">
     <div class="message-avatar">
-      <div v-if="message.type === 'user'" class="user-avatar">
+      <div v-if="message.role === 'user'" class="user-avatar">
         <el-icon><User /></el-icon>
       </div>
       <div v-else class="ai-avatar">
@@ -10,11 +10,9 @@
     </div>
     <div class="message-content">
       <div class="message-header">
-        <strong class="sender-name">
-          {{ message.type === "user" ? userName : "FA助手" }}
-        </strong>
+        <strong class="sender-name">{{ roleLabel }}</strong>
         <el-button
-          v-if="message.content"
+          v-if="fullText"
           text
           size="small"
           :icon="CopyDocument"
@@ -23,46 +21,46 @@
         ></el-button>
       </div>
       <div class="message-body">
-        <div v-if="message.think" class="think-block">
-          <span class="think-label">思考中…</span>
-          {{ message.think }}
-        </div>
-        <div v-if="message.files && message.files.length > 0" class="message-files">
-          <div v-for="file in message.files" :key="file.id" class="attached-file">
-            <el-icon class="file-icon"><Document /></el-icon>
-            <span class="file-name">{{ file.name }}</span>
-            <span class="file-size">{{ formatFileSize(file.size) }}</span>
+        <!-- Agent 工具调用时间线（通常先于正文，置于顶部） -->
+        <ToolCallTimeline v-if="toolParts.length" :parts="toolParts" class="message-tools" />
+
+        <template v-for="(p, idx) in nonToolParts" :key="idx">
+          <ReasoningBlock
+            v-if="p.type === 'reasoning'"
+            :text="p.text || ''"
+            :streaming="p.state === 'streaming'"
+          />
+          <div
+            v-else-if="p.type === 'text'"
+            class="message-text"
+            :class="{ 'is-user': message.role === 'user' }"
+          >
+            <RichContent :content="p.text || ''" />
+            <span v-if="p.state === 'streaming'" class="cursor-typing" />
           </div>
-        </div>
-        <el-button
-          v-if="message.content.length > 200"
-          text
-          size="small"
-          :icon="message.collapsed ? ArrowDown : ArrowUp"
-          class="fold-button"
-          @click="handleToggleFold"
-        >
-          {{ message.collapsed ? "展开" : "收起" }}
-        </el-button>
-        <div
-          class="message-text"
-          :class="{ collapsed: message.collapsed }"
-          v-html="formattedContent"
-        ></div>
-        <div v-if="message.sources && message.sources.length" class="message-sources">
-          <div class="message-sources__title">引用来源</div>
-          <div class="message-sources__list">
-            <div v-for="(s, i) in message.sources" :key="i" class="message-source-item">
-              <el-icon class="message-source-item__icon"><Document /></el-icon>
-              <span class="message-source-item__title">{{ s.title }}</span>
-              <el-tag v-if="s.score != null" size="small" type="info">
-                相似度 {{ Number(s.score).toFixed(2) }}
-              </el-tag>
-            </div>
+          <div
+            v-else-if="p.type === 'source-url' || p.type === 'source-document'"
+            class="message-source"
+          >
+            <el-icon class="message-source__icon"><Document /></el-icon>
+            <span class="message-source__title">{{ sourceTitle(p) }}</span>
+            <a
+              v-if="p.type === 'source-url' && p.url"
+              class="message-source__link"
+              :href="p.url"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              查看
+            </a>
           </div>
-        </div>
+          <div v-else-if="isDataPart(p)" class="message-data">
+            {{ renderData(p.data) }}
+          </div>
+        </template>
+
         <div
-          v-if="message.type === 'assistant' && message.loading && !message.content"
+          v-if="message.role === 'assistant' && isLoading"
           class="typing-indicator"
         >
           <div class="typing-dots">
@@ -79,157 +77,57 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { ElMessage } from "element-plus";
-import {
-  User,
-  ChatDotRound,
-  CopyDocument,
-  ArrowDown,
-  ArrowUp,
-  Document,
-} from "@element-plus/icons-vue";
-import MarkdownIt from "markdown-it";
-import markdownItHighlightjs from "markdown-it-highlightjs";
-import hljs from "highlight.js";
-import DOMPurify from "dompurify";
-/* 亮色用 atom-one；暗色由文末全局块覆盖 .hljs 底与字色，避免整段代码发亮底 */
-import "highlight.js/styles/atom-one-light.css";
+import { User, ChatDotRound, CopyDocument, Document } from "@element-plus/icons-vue";
+import type { UIMessage } from "ai";
+import RichContent from "./RichContent.vue";
+import ReasoningBlock from "./ReasoningBlock.vue";
+import ToolCallTimeline from "./ToolCallTimeline.vue";
+import { textOf, toolPartsOf, sourcePartsOf } from "@/composables/ai/uiMessage";
 import { useUserStoreHook } from "@/store";
-import type { ChatMessage } from "@/views/module_ai/chat/types";
 
 interface Props {
-  message: ChatMessage;
-}
-
-interface Emits {
-  (e: "toggle-fold"): void;
+  message: UIMessage;
 }
 
 const props = defineProps<Props>();
-const emit = defineEmits<Emits>();
 
 const userStore = useUserStoreHook();
 
-const userName = computed(() => userStore.basicInfo.name || "用户");
+const roleLabel = computed(() =>
+  props.message.role === "user" ? userStore.basicInfo.name || "用户" : "FA助手"
+);
 
-const md: MarkdownIt = new MarkdownIt({
-  html: true,
-  linkify: true,
-  typographer: true,
-  breaks: true,
-  highlight(str: string, lang: string): string {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return `<pre class="hljs"><code>${hljs.highlight(str, { language: lang, ignoreIllegals: true }).value}</code></pre>`;
-      } catch {
-        return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code></pre>`;
-      }
-    }
-    return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code></pre>`;
-  },
-}).use(markdownItHighlightjs);
+const fullText = computed(() => textOf(props.message));
 
-const defaultRender =
-  md.renderer.rules.link_open ||
-  function (tokens: any[], idx: number, options: any, env: any, self: any) {
-    return self.renderToken(tokens, idx, options, env, self);
-  };
+const toolParts = computed(() => toolPartsOf(props.message));
+const nonToolParts = computed(() =>
+  (props.message.parts || []).filter((p: any) => p.type !== "tool")
+);
 
-md.renderer.rules.link_open = function (
-  tokens: any[],
-  idx: number,
-  options: any,
-  env: any,
-  self: any
-) {
-  tokens[idx].attrPush(["target", "_blank"]);
-  tokens[idx].attrPush(["rel", "noopener noreferrer"]);
-  return defaultRender(tokens, idx, options, env, self);
-};
+const sourceParts = computed(() => sourcePartsOf(props.message));
 
-const formattedContent = computed(() => {
-  if (!props.message.content) return "";
-  const rawHtml = md.render(props.message.content);
-  return DOMPurify.sanitize(rawHtml, {
-    ALLOWED_TAGS: [
-      "a",
-      "abbr",
-      "acronym",
-      "b",
-      "blockquote",
-      "br",
-      "code",
-      "col",
-      "colgroup",
-      "dd",
-      "del",
-      "dl",
-      "dt",
-      "em",
-      "h1",
-      "h2",
-      "h3",
-      "h4",
-      "h5",
-      "h6",
-      "hr",
-      "i",
-      "img",
-      "li",
-      "ol",
-      "p",
-      "pre",
-      "s",
-      "span",
-      "strike",
-      "strong",
-      "sub",
-      "sup",
-      "table",
-      "tbody",
-      "td",
-      "tfoot",
-      "th",
-      "thead",
-      "tr",
-      "tt",
-      "u",
-      "ul",
-      "video",
-      "source",
-      "div",
-    ],
-    ALLOWED_ATTR: [
-      "href",
-      "title",
-      "target",
-      "rel",
-      "src",
-      "alt",
-      "width",
-      "height",
-      "class",
-      "id",
-      "controls",
-      "poster",
-      "type",
-      "colspan",
-      "rowspan",
-      "span",
-    ],
-  });
-});
+const isLoading = computed(() => (props.message.parts || []).length === 0);
 
-const handleToggleFold = () => {
-  emit("toggle-fold");
+/** 类型守卫：SDK `DataUIPart`（type 以 `data-` 开头且含 data）。 */
+function isDataPart(p: any): p is { type: string; data: unknown } {
+  return typeof p?.type === "string" && p.type.startsWith("data-") && p.data != null;
+}
+
+const sourceTitle = (p: any) =>
+  p.title || (p.type === "source-url" ? (p.url || "") : "") || "引用来源";
+
+const renderData = (data: any) => {
+  if (data && typeof data === "object") return JSON.stringify(data);
+  return String(data ?? "");
 };
 
 const handleCopy = async () => {
   try {
-    await navigator.clipboard.writeText(props.message.content);
+    await navigator.clipboard.writeText(fullText.value);
     ElMessage.success("已复制到剪贴板");
   } catch {
     const textArea = document.createElement("textarea");
-    textArea.value = props.message.content;
+    textArea.value = fullText.value;
     document.body.appendChild(textArea);
     textArea.select();
     document.execCommand("copy");
@@ -237,18 +135,10 @@ const handleCopy = async () => {
     ElMessage.success("已复制到剪贴板");
   }
 };
-
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
-};
 </script>
 
 <style lang="scss" scoped>
-.message-group {
+.message-item {
   display: flex;
   gap: 16px;
   margin-bottom: 16px;
@@ -308,55 +198,9 @@ const formatFileSize = (bytes: number): string => {
       }
     }
 
-    .message-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
     .message-body {
-      .message-files {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 12px;
-
-        .attached-file {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-          padding: 8px 12px;
-          font-size: 12px;
-          background: var(--el-fill-color-light);
-          border-radius: 6px;
-
-          .file-icon {
-            font-size: var(--el-font-size-medium);
-            color: var(--el-color-primary);
-          }
-
-          .file-name {
-            max-width: 120px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-          }
-
-          .file-size {
-            color: var(--el-text-color-secondary);
-          }
-        }
-      }
-
-      .fold-button {
-        padding: 0;
+      .message-tools {
         margin-bottom: 8px;
-        font-size: 12px;
-        color: var(--el-text-color-secondary);
-
-        &:hover {
-          color: var(--el-color-primary);
-        }
       }
 
       .message-text {
@@ -364,65 +208,45 @@ const formatFileSize = (bytes: number): string => {
         line-height: 1.6;
         color: var(--el-text-color-primary);
         word-wrap: break-word;
-        transition:
-          max-height 0.25s ease,
-          opacity 0.2s ease;
 
-        &.collapsed {
-          position: relative;
-          max-height: 120px;
+        &.is-user {
+          display: inline-block;
+          padding: 10px 14px;
+          background: var(--el-color-primary-light-9);
+          border: 1px solid var(--el-border-color-light);
+          border-radius: 12px;
+        }
+      }
+
+      .cursor-typing {
+        color: var(--el-color-primary);
+        animation: cursor-blink 0.8s step-end infinite;
+      }
+
+      .message-source {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        padding: 6px 10px;
+        margin: 6px 0;
+        font-size: 12px;
+        background: var(--el-fill-color-light);
+        border: 1px solid var(--el-border-color-light);
+        border-radius: 6px;
+
+        .message-source__icon {
+          color: var(--el-color-primary);
+        }
+
+        .message-source__title {
+          flex: 1;
           overflow: hidden;
-
-          &::after {
-            position: absolute;
-            right: 0;
-            bottom: 0;
-            left: 0;
-            height: 60px;
-            content: "";
-            background: linear-gradient(
-              transparent,
-              var(--chat-area-bg, var(--el-bg-color-overlay))
-            );
-          }
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
 
-        :deep(pre) {
-          padding: 12px;
-          margin: 12px 0;
-          overflow-x: auto;
-          background: var(--el-fill-color-light);
-          border-radius: 6px;
-
-          code {
-            font-family: "Courier New", Courier, monospace;
-            font-size: var(--el-font-size-small);
-          }
-        }
-
-        :deep(code) {
-          padding: 2px 6px;
-          font-family: "Courier New", Courier, monospace;
-          font-size: var(--el-font-size-small);
-          background: var(--el-fill-color-light);
-          border-radius: 3px;
-        }
-
-        :deep(p) {
-          margin: 8px 0;
-        }
-
-        :deep(ul),
-        :deep(ol) {
-          padding-left: 24px;
-          margin: 8px 0;
-        }
-
-        :deep(li) {
-          margin: 4px 0;
-        }
-
-        :deep(a) {
+        .message-source__link {
+          font-size: 12px;
           color: var(--el-color-primary);
           text-decoration: none;
 
@@ -430,68 +254,16 @@ const formatFileSize = (bytes: number): string => {
             text-decoration: underline;
           }
         }
-
-        :deep(blockquote) {
-          padding: 8px 16px;
-          margin: 12px 0;
-          background: var(--el-fill-color-light);
-          border-left: 4px solid var(--el-color-primary);
-        }
-
-        :deep(table) {
-          width: 100%;
-          margin: 12px 0;
-          border-collapse: collapse;
-
-          th,
-          td {
-            padding: 8px 12px;
-            border: 1px solid var(--el-border-color-light);
-          }
-
-          th {
-            font-weight: 600;
-            background: var(--el-fill-color-light);
-          }
-        }
       }
 
-      .message-sources {
-        margin-top: 12px;
-
-        .message-sources__title {
-          margin-bottom: 8px;
-          font-size: var(--el-font-size-small);
-          font-weight: 600;
-        }
-
-        .message-sources__list {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-
-        .message-source-item {
-          display: flex;
-          gap: 6px;
-          align-items: center;
-          padding: 6px 10px;
-          font-size: 12px;
-          background: var(--el-fill-color-light);
-          border: 1px solid var(--el-border-color-light);
-          border-radius: 6px;
-
-          .message-source-item__icon {
-            color: var(--el-color-primary);
-          }
-
-          .message-source-item__title {
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-          }
-        }
+      .message-data {
+        padding: 8px 10px;
+        margin: 6px 0;
+        font-size: var(--el-font-size-small);
+        color: var(--el-text-color-secondary);
+        white-space: pre-wrap;
+        background: var(--el-fill-color-light);
+        border-radius: 6px;
       }
 
       .typing-indicator {
@@ -540,29 +312,6 @@ const formatFileSize = (bytes: number): string => {
           text-align: right;
         }
       }
-
-      .message-actions {
-        justify-content: flex-end;
-      }
-
-      .message-body .message-text {
-        padding: 10px 14px;
-        background: var(--el-color-primary-light-9);
-        border: 1px solid var(--el-border-color-light);
-        border-radius: 12px;
-
-        &.collapsed::after {
-          background: linear-gradient(transparent, var(--el-color-primary-light-9));
-        }
-
-        :deep(pre) {
-          border: 1px solid var(--el-border-color-lighter);
-        }
-
-        :deep(code:not(pre code)) {
-          border: 1px solid var(--el-border-color-lighter);
-        }
-      }
     }
   }
 
@@ -585,52 +334,14 @@ const formatFileSize = (bytes: number): string => {
     transform: translateY(-4px);
   }
 }
-</style>
 
-<!-- 暗色下覆盖 highlight.js 亮色主题，避免代码块发白底 -->
-<style lang="scss">
-html.dark .chat-messages .message-text {
-  pre.hljs,
-  code.hljs {
-    color: var(--el-text-color-regular) !important;
-    background: var(--el-fill-color) !important;
+@keyframes cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
   }
-
-  .hljs-comment,
-  .hljs-quote {
-    color: var(--el-text-color-secondary) !important;
+  50% {
+    opacity: 0;
   }
-
-  .hljs-keyword,
-  .hljs-selector-tag,
-  .hljs-built_in {
-    color: var(--el-color-primary) !important;
-  }
-
-  .hljs-string,
-  .hljs-title,
-  .hljs-attr {
-    color: var(--el-color-success) !important;
-  }
-
-  .hljs-number,
-  .hljs-literal {
-    color: var(--el-color-warning) !important;
-  }
-}
-.think-block {
-  padding: 8px 10px;
-  margin-bottom: 8px;
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--el-text-color-secondary);
-  white-space: pre-wrap;
-  background: var(--el-fill-color-light);
-  border-left: 2px solid var(--el-border-color);
-  border-radius: 4px;
-}
-.think-label {
-  margin-right: 6px;
-  color: var(--el-color-primary);
 }
 </style>

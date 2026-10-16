@@ -48,14 +48,16 @@ export function sourcePartsOf(msg: any): AiUIPart[] {
   );
 }
 
-/** 取指定 data-* part 的 data（SDK `data` part 内嵌 `data.type`）。 */
+/** 取指定 data-* part 的 data（SDK `DataUIPart` 的 type 为 ``data-${NAME}``，如 `data-finish`）。 */
 export function dataPartsOf(msg: any, type?: string): any[] {
   return (msg?.parts || [])
-    .filter(
-      (p: AiUIPart) =>
-        p.type === "data" && (!type || p.data?.type === type)
-    )
+    .filter((p: AiUIPart) => p.type === type || (!type && isDataPartType(p.type)))
     .map((p: AiUIPart) => p.data);
+}
+
+/** 判断某 part 是否为 SDK 的 data part（type 以 `data-` 开头）。 */
+export function isDataPartType(type: string | undefined): boolean {
+  return typeof type === "string" && type.startsWith("data-");
 }
 
 /** 按 `state` 分组 tool part，返回 `Record<state, part[]>`。 */

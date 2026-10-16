@@ -62,18 +62,11 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useStorage } from "@vueuse/core";
 import { useSettingsStore } from "@/store";
 import { useAiChat } from "@/composables/ai/useAiChat";
-import {
-  textOf,
-  reasoningOf,
-  toolPartsOf,
-  sourcesOf,
-  dataPartsOf,
-} from "@/composables/ai/uiMessage";
+import { dataPartsOf } from "@/composables/ai/uiMessage";
 import { createAiSession } from "@/api/module_ai/session";
 import { AnnotationAPI } from "@/api/module_annotation";
 import ChatMessages from "@/views/module_ai/chat/components/ChatMessages.vue";
 import ChatInput from "@/views/module_ai/chat/components/ChatInput.vue";
-import type { ChatMessage } from "@/views/module_ai/chat/types";
 
 const router = useRouter();
 const settingsStore = useSettingsStore();
@@ -216,30 +209,8 @@ const scheduleUpdateFabPositionBurst = (frames = 18) => {
   tick();
 };
 
-// 把 Agno 事件流消息映射为页面 ChatMessage（正文/思考/工具/来源）
-const liveMessages = computed<ChatMessage[]>(() =>
-  chat.messages.value.map((m: any) => {
-    const text = textOf(m);
-    const think = reasoningOf(m);
-    const toolNames = toolPartsOf(m)
-      .map((p) => p.toolName)
-      .filter(Boolean);
-    const toolHint = toolNames.map((n) => `\n\n> 🔧 调用工具：${n}`).join("");
-    const sources = sourcesOf(m);
-    return {
-      id: m.id,
-      type: m.role === "user" ? "user" : "assistant",
-      content: `${text}${toolHint}`,
-      think: think || undefined,
-      sources: sources.length ? sources : undefined,
-      timestamp: Date.now(),
-      loading: isSending.value && m.role === "assistant" && !text,
-      collapsed: text.length > 200,
-    };
-  })
-);
-
-const displayMessages = computed<ChatMessage[]>(() => liveMessages.value);
+// 直接渲染 useChat 的 SDK UIMessage（按 parts 渲染，含文本/思维/工具/来源）
+const displayMessages = chat.messages;
 
 // 待确认操作：用户确认后调用既有业务 API
 const confirmAssistantAction = async (action: any) => {
