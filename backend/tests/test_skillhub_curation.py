@@ -106,8 +106,8 @@ def test_build_skill_content_length_cap():
 
 def test_skillhub_skills_shape():
     """固化数据集形状锚点：≥200、字段齐全、content 含中文、无重复、不与内置技能撞名。"""
-    from app.plugin.module_ai.market.skillhub_skills import SKILLHUB_SKILLS
     from app.plugin.module_ai.market.seed import _SKILLS
+    from app.plugin.module_ai.market.skillhub_skills import SKILLHUB_SKILLS
 
     assert len(SKILLHUB_SKILLS) >= 200
     keys: set[str] = set()

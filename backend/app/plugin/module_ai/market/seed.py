@@ -7,6 +7,8 @@
 
 内容原则：
 - **技能**：平台自带的通用指令技能（写入 ``ai_skills``，安装后可直接注入 Agent）。
+- **skillhub 精选技能**：来自 ``market/skillhub_skills.py``（由 ``scripts/_generate_skillhub_skills.py``
+  一键生成，中文角色/触发 + 结构抽取内容，运行时离线）。
 - **工具**：只收录 agno 内置且**免 API Key** 的通用工具（安装 = 复用/启用平台同名 agno 工具行）。
 - **MCP**：真实存在的官方/主流实现（飞书、企业微信机器人、GitHub、Notion、GitLab、Playwright、
   Context7、本地文件系统），凭据以 ``<占位>`` 给出，安装后由用户填写并启用。
@@ -14,6 +16,7 @@
 from __future__ import annotations
 
 from app.core.logger import log
+from app.plugin.module_ai.market.skillhub_skills import SKILLHUB_SKILLS
 
 # ---------------------------------------------------------------- 通用技能
 
@@ -837,6 +840,22 @@ _MCPS: list[dict] = [
             "把参数替换为你的本地仓库路径，模型仅能访问该仓库。",
         },
     },
+    {
+        "key": "mcp-time",
+        "name": "时间/时区 MCP",
+        "category": "研发工具",
+        "description": "获取当前时间、时区与世界时钟（官方参考实现，免密钥）",
+        "payload": {
+            "name": "时间/时区 MCP",
+            "transport": "stdio",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-time"],
+            "env": {},
+            "auth_type": "none",
+            "enabled": False,
+            "description": "官方 @modelcontextprotocol/server-time，免密钥，用于时间/时区/世界时钟查询。",
+        },
+    },
 ]
 
 
@@ -865,6 +884,7 @@ _MCP_DOCS: dict[str, str] = {
     "mcp-figma": "https://github.com/Framelink/figma-mcp-server",
     "mcp-gmail": "https://github.com/modelcontextprotocol/servers/tree/main/src/gmail",
     "mcp-git": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+    "mcp-time": "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
 }
 
 
@@ -957,7 +977,7 @@ def _payload_of(skill: dict) -> dict:
         "category": skill["category"],
         "author": "AIStation 官方",
         "version": "1.0",
-        "icon": f"market-icons/{skill['key']}.png",
+        "icon": skill.get("icon") if skill.get("icon") is not None else f"market-icons/{skill['key']}.png",
         "enabled": True,
     }
 
@@ -1031,6 +1051,19 @@ async def ensure_market_seed() -> None:
                     category=sk["category"],
                     payload=_payload_of(sk),
                     icon=sk.get("icon") or f"market-icons/{sk['key']}.png",
+                    tags=sk.get("tags") or [],
+                    featured=bool(sk.get("featured")),
+                )
+
+            # skillhub.cn 精选固化技能（生成脚本产出，独立列表避免混淆）
+            for sk in SKILLHUB_SKILLS:
+                _add(
+                    "skill",
+                    sk["name"],
+                    description=sk["description"],
+                    category=sk["category"],
+                    payload=_payload_of(sk),
+                    icon=sk.get("icon") or "",
                     tags=sk.get("tags") or [],
                     featured=bool(sk.get("featured")),
                 )
