@@ -11,8 +11,8 @@ export interface MapCtx {
   textStarted?: boolean;
   /** 思维 part 是否已 start。 */
   reasoningStarted?: boolean;
-  /** 按工具名缓存 tool_call_id（后端无稳定 id 时保证 input/output 成对）。 */
-  toolIds?: Record<string, string>;
+  /** 按工具名缓存 tool_call_id 队列（FIFO，保证多个同名工具的 input/output 成对）。 */
+  toolIds?: Record<string, string[]>;
 }
 
 export interface ParsedFrame {
@@ -100,7 +100,7 @@ export function mapAgnoEvent(eventName: string, data: any, ctx: MapCtx): UIMessa
       const toolName = String(tool.tool_name ?? tool.toolName ?? "工具");
       const provided = String(tool.tool_call_id ?? tool.toolCallId ?? "");
       const toolCallId = provided || `tool-${toolName}-${++ctx.seq}`;
-      (ctx.toolIds ||= {})[toolName] = toolCallId;
+      (ctx.toolIds ||= {})[toolName] = [...(ctx.toolIds[toolName] || []), toolCallId];
       out.push({
         type: "tool-input-available",
         toolCallId,
@@ -113,7 +113,9 @@ export function mapAgnoEvent(eventName: string, data: any, ctx: MapCtx): UIMessa
       const tool = (data?.tool || {}) as Record<string, unknown>;
       const toolName = String(tool.tool_name ?? tool.toolName ?? "工具");
       const provided = String(tool.tool_call_id ?? tool.toolCallId ?? "");
-      const toolCallId = provided || ctx.toolIds?.[toolName] || `tool-${toolName}-${++ctx.seq}`;
+      const queue = ctx.toolIds?.[toolName];
+      const toolCallId =
+        provided || (queue && queue.length ? queue.shift()! : `tool-${toolName}-${++ctx.seq}`);
       const result = tool.result ?? tool.output;
       const errText = toolResultError(result);
       if (errText) {

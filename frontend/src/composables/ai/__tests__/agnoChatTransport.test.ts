@@ -111,6 +111,34 @@ it("ToolCallCompleted（正常结果）→ 仍为 tool-output-available", () => 
   );
   expect(out[0]).toMatchObject({ type: "tool-output-available", output: { rows: 1 } });
 });
+it("同名工具多次调用（无 id）→ FIFO 配对 input/output", () => {
+  const ctx = makeCtx();
+  const s1 = mapAgnoEvent(
+    "ToolCallStarted",
+    { tool: { tool_name: "ai_query", tool_args: { q: "a" } } },
+    ctx
+  )[0] as any;
+  const s2 = mapAgnoEvent(
+    "ToolCallStarted",
+    { tool: { tool_name: "ai_query", tool_args: { q: "b" } } },
+    ctx
+  )[0] as any;
+  expect(s1.toolCallId).not.toBe(s2.toolCallId);
+  // 第一个完成应匹配第一次 start 的 id
+  const c1 = mapAgnoEvent(
+    "ToolCallCompleted",
+    { tool: { tool_name: "ai_query", result: { rows: 1 } } },
+    ctx
+  )[0] as any;
+  expect(c1.toolCallId).toBe(s1.toolCallId);
+  // 第二个完成应匹配第二次 start 的 id
+  const c2 = mapAgnoEvent(
+    "ToolCallCompleted",
+    { tool: { tool_name: "ai_query", result: { rows: 2 } } },
+    ctx
+  )[0] as any;
+  expect(c2.toolCallId).toBe(s2.toolCallId);
+});
 it("RunError → error chunk", () => {
   expect(mapAgnoEvent("RunError", { error: "boom" }, makeCtx())[0]).toMatchObject({
     type: "error",
