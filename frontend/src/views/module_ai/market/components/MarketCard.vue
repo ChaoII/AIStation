@@ -8,6 +8,9 @@
         <div class="market-card__sub">
           <el-tag size="small" effect="plain">{{ assetLabel }}</el-tag>
           <span v-if="item.category" class="market-card__cat">{{ item.category }}</span>
+          <span v-if="item.owner_name || item.is_official" class="market-card__author">
+            {{ item.owner_name || "官方" }}
+          </span>
         </div>
       </div>
       <el-tooltip :content="item.installed ? '已安装' : '安装'" placement="top">
@@ -135,6 +138,14 @@ function formatCount(n: number | undefined): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.market-card__author {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 96px;
 }
 
 .market-card__add {

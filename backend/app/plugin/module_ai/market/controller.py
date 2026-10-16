@@ -25,9 +25,10 @@ MarketRouter = APIRouter(route_class=OperationLogRoute, prefix="/market", tags=[
 async def market_home(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
     asset_type: Annotated[str | None, Query(description="按资产类型联动精选与分类")] = None,
+    shuffle: Annotated[bool, Query(description="精选随机排序（前端「换一换」）")] = False,
 ) -> JSONResponse:
     return SuccessResponse(
-        data=await MarketService.home(auth.user.id, asset_type), msg="查询成功"
+        data=await MarketService.home(auth.user.id, asset_type, shuffle), msg="查询成功"
     )
 
 

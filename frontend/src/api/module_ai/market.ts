@@ -14,6 +14,8 @@ export interface MarketItem {
   tags: string[];
   version: string;
   owner_id?: number | null;
+  /** 提交者名（官方/用户） */
+  owner_name?: string;
   is_official: boolean;
   featured: boolean;
   /** 状态：draft/pending/approved/rejected/offline */
@@ -66,7 +68,7 @@ export interface MarketShare {
   created_time?: string;
 }
 
-export function getMarketHome(params?: { asset_type?: string }) {
+export function getMarketHome(params?: { asset_type?: string; shuffle?: boolean }) {
   return request({ url: `${API_PATH}/home`, method: "get", params });
 }
 

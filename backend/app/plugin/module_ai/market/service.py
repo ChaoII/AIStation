@@ -36,7 +36,12 @@ def _ensure_asset_type(asset_type: str) -> str:
     return asset_type
 
 
-def _to_dict(item: AiMarketItemModel, installed: bool = False, favorited: bool = False) -> dict:
+def _to_dict(
+    item: AiMarketItemModel,
+    installed: bool = False,
+    favorited: bool = False,
+    owner_name: str = "",
+) -> dict:
     return {
         "id": item.id,
         "asset_type": item.asset_type,
@@ -47,6 +52,7 @@ def _to_dict(item: AiMarketItemModel, installed: bool = False, favorited: bool =
         "tags": item.tags or [],
         "version": item.version or "1.0",
         "owner_id": item.owner_id,
+        "owner_name": owner_name,
         "is_official": bool(item.is_official),
         "featured": bool(item.featured),
         "status": item.status,
@@ -311,11 +317,19 @@ class MarketService:
     # ---------- 查询 ----------
 
     @classmethod
-    async def home(cls, user_id: int, asset_type: str | None = None) -> dict:
+    async def home(
+        cls,
+        user_id: int,
+        asset_type: str | None = None,
+        shuffle: bool = False,
+    ) -> dict:
         """市场首页：精选（上架+精选）与分类计数（仅统计已上架）。
 
         ``asset_type`` 传入时，精选与分类计数都限定在该类型内（前端类型页签联动分类栏）。
+        ``shuffle`` 为 True 时精选随机排序（用于前端「换一换」）。
         """
+        from app.api.v1.module_system.user.model import UserModel
+
         async with async_db_session() as db:
             featured_stmt = select(AiMarketItemModel).where(
                 AiMarketItemModel.status == "approved",
@@ -325,15 +339,28 @@ class MarketService:
                 featured_stmt = featured_stmt.where(
                     AiMarketItemModel.asset_type == asset_type
                 )
+            order = (
+                func.random() if shuffle else AiMarketItemModel.install_count.desc()
+            )
             featured = (
                 (
                     await db.execute(
-                        featured_stmt.order_by(AiMarketItemModel.install_count.desc()).limit(12)
+                        featured_stmt.order_by(order).limit(12)
                     )
                 )
                 .scalars()
                 .all()
             )
+            # 批量取提交者名
+            owner_ids = {i.owner_id for i in featured if i.owner_id}
+            names: dict[int, str] = {}
+            if owner_ids:
+                urows = (
+                    await db.execute(
+                        select(UserModel.id, UserModel.name).where(UserModel.id.in_(owner_ids))
+                    )
+                ).all()
+                names = dict(urows)
             # 分类计数：在 Python 侧聚合（PG 对 GROUP BY 表达式要求逐字一致，
             # 参数化后 select 与 group_by 的参数编号不同会被判定为不同表达式而报错）
             cat_stmt = select(AiMarketItemModel.category).where(
@@ -352,7 +379,12 @@ class MarketService:
             ]
             return {
                 "featured": [
-                    _to_dict(i, *await cls._relation_flags(db, user_id, i.id)) for i in featured
+                    _to_dict(
+                        i,
+                        *await cls._relation_flags(db, user_id, i.id),
+                        names.get(i.owner_id, ""),
+                    )
+                    for i in featured
                 ],
                 "categories": categories,
             }
@@ -400,11 +432,22 @@ class MarketService:
                     AiMarketRelationModel.is_deleted.is_(False),
                 )
                 stmt = stmt.where(AiMarketItemModel.id.in_(sub))
+            if getattr(query, "official", False):
+                stmt = stmt.where(AiMarketItemModel.is_official.is_(True))
+            if getattr(query, "mine", False):
+                stmt = stmt.where(AiMarketItemModel.owner_id == user_id)
+
+            # 排序：newest 默认 / install / favorite
+            order = AiMarketItemModel.created_time.desc()
+            if getattr(query, "sort", None) == "install":
+                order = AiMarketItemModel.install_count.desc()
+            elif getattr(query, "sort", None) == "favorite":
+                order = AiMarketItemModel.favorite_count.desc()
 
             total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
             rows = (
                 await db.execute(
-                    stmt.order_by(AiMarketItemModel.created_time.desc())
+                    stmt.order_by(order)
                     .offset((query.page_no - 1) * query.page_size)
                     .limit(query.page_size)
                 )
@@ -426,6 +469,18 @@ class MarketService:
             flags: dict[int, set[str]] = {}
             for item_id, kind in rel_rows:
                 flags.setdefault(item_id, set()).add(kind)
+            # 批量取提交者名
+            from app.api.v1.module_system.user.model import UserModel
+
+            owner_ids = {r.owner_id for r in rows if r.owner_id}
+            names: dict[int, str] = {}
+            if owner_ids:
+                urows = (
+                    await db.execute(
+                        select(UserModel.id, UserModel.name).where(UserModel.id.in_(owner_ids))
+                    )
+                ).all()
+                names = dict(urows)
             return {
                 "page_no": query.page_no,
                 "page_size": query.page_size,
@@ -435,6 +490,7 @@ class MarketService:
                         r,
                         "installed" in flags.get(r.id, set()),
                         "favorited" in flags.get(r.id, set()),
+                        names.get(r.owner_id, ""),
                     )
                     for r in rows
                 ],
@@ -448,7 +504,13 @@ class MarketService:
             if not item or item.is_deleted:
                 return None
             installed, favorited = await cls._relation_flags(db, user_id, item_id)
-            return _to_dict(item, installed, favorited)
+            owner_name = ""
+            if item.owner_id:
+                from app.api.v1.module_system.user.model import UserModel
+
+                owner = await db.get(UserModel, item.owner_id)
+                owner_name = owner.name if owner else ""
+            return _to_dict(item, installed, favorited, owner_name)
 
     # ---------- 收藏 ----------
 

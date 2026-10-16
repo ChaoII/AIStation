@@ -3,13 +3,16 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class MarketItemQuerySchema(BaseModel):
-    """市场商品列表查询：类型/分类/关键词/个人关系过滤 + 分页。"""
+    """市场商品列表查询：类型/分类/关键词/个人关系/排序过滤 + 分页。"""
 
     type: str | None = Field(default=None, max_length=16, description="资产类型: tool/skill/mcp/plugin")
     category: str | None = Field(default=None, max_length=64, description="市场分类")
     keyword: str | None = Field(default=None, max_length=64, description="关键词（名称/描述）")
     favorite: bool = Field(default=False, description="只看我收藏的")
     installed: bool = Field(default=False, description="只看我安装的")
+    official: bool = Field(default=False, description="只看平台官方商品")
+    mine: bool = Field(default=False, description="只看我提交的商品")
+    sort: str | None = Field(default=None, max_length=16, description="排序: newest/install/favorite")
     page_no: int = Field(default=1, ge=1)
     page_size: int = Field(default=12, ge=1, le=100)
 

@@ -38,6 +38,31 @@
         >
           已安装
         </el-button>
+        <el-button
+          :icon="OfficeBuilding"
+          :type="onlyOfficial ? 'primary' : 'default'"
+          @click="
+            onlyOfficial = !onlyOfficial;
+            reload();
+          "
+        >
+          官方
+        </el-button>
+        <el-button
+          :icon="Aim"
+          :type="onlyMine ? 'primary' : 'default'"
+          @click="
+            onlyMine = !onlyMine;
+            reload();
+          "
+        >
+          我提交的
+        </el-button>
+        <el-select v-model="sortBy" class="sort-select" placeholder="排序" @change="reload">
+          <el-option label="最新" value="newest" />
+          <el-option label="安装最多" value="install" />
+          <el-option label="收藏最多" value="favorite" />
+        </el-select>
       </div>
     </div>
 
@@ -46,6 +71,9 @@
       <div class="section-head">
         <span class="section-title">推荐能力</span>
         <span class="section-sub">平台精选，一键安装为你的资产</span>
+        <el-button size="small" :icon="RefreshRight" text @click="refreshFeatured">
+          换一换
+        </el-button>
       </div>
       <el-row :gutter="16" class="card-grid">
         <el-col v-for="f in featured" :key="`f-${f.id}`" :xs="24" :sm="12" :md="8" :lg="6">
@@ -76,18 +104,38 @@
       </div>
     </div>
 
-    <!-- 卡片网格 -->
-    <el-row v-loading="loading" :gutter="16" class="card-grid">
-      <el-col v-for="item in items" :key="item.id" :xs="24" :sm="12" :md="8" :lg="6">
-        <MarketCard
-          :item="item"
-          @open="openDetail"
-          @install="installItem"
-          @favorite="toggleFavorite"
-        />
-      </el-col>
-    </el-row>
-    <el-empty v-if="!loading && !items.length" description="暂无符合条件的商品" />
+    <!-- 卡片网格：加载骨架屏 + 空状态建议 -->
+    <el-skeleton v-if="loading" :rows="3" animated class="grid-skeleton" />
+    <template v-else>
+      <el-row :gutter="16" class="card-grid">
+        <el-col v-for="item in items" :key="item.id" :xs="24" :sm="12" :md="8" :lg="6">
+          <MarketCard
+            :item="item"
+            @open="openDetail"
+            @install="installItem"
+            @favorite="toggleFavorite"
+          />
+        </el-col>
+      </el-row>
+      <div v-if="!items.length" class="empty-state">
+        <el-empty description="暂无符合条件的商品">
+          <el-button type="primary" plain @click="clearFilters">清空筛选</el-button>
+        </el-empty>
+        <div v-if="categories.length" class="empty-suggest">
+          <span class="empty-suggest-label">试试热门分类：</span>
+          <el-tag
+            v-for="c in categories.slice(0, 5)"
+            :key="c.name"
+            size="small"
+            effect="plain"
+            class="suggest-tag"
+            @click="switchCategory(c.name)"
+          >
+            {{ c.name }}
+          </el-tag>
+        </div>
+      </div>
+    </template>
 
     <el-pagination
       v-if="total > pageSize"
@@ -122,6 +170,9 @@
         </div>
         <el-descriptions :column="1" border class="detail-desc">
           <el-descriptions-item label="版本">{{ detail.version }}</el-descriptions-item>
+          <el-descriptions-item label="作者">
+            {{ detail.owner_name || (detail.is_official ? "官方" : "—") }}
+          </el-descriptions-item>
           <el-descriptions-item label="分类">
             {{ detail.category || "未分类" }}
           </el-descriptions-item>
@@ -165,7 +216,15 @@
 </template>
 
 <script setup lang="ts">
-import { Download, Link, Search, Star } from "@element-plus/icons-vue";
+import {
+  Aim,
+  Download,
+  Link,
+  OfficeBuilding,
+  RefreshRight,
+  Search,
+  Star,
+} from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 
@@ -196,6 +255,9 @@ const categoryFilter = ref("");
 const keyword = ref("");
 const onlyFavorite = ref(false);
 const onlyInstalled = ref(false);
+const onlyOfficial = ref(false);
+const onlyMine = ref(false);
+const sortBy = ref("newest");
 
 const detailVisible = ref(false);
 const detail = ref<MarketItem | null>(null);
@@ -213,7 +275,9 @@ const hasFilter = computed(
     !!categoryFilter.value ||
     !!keyword.value ||
     onlyFavorite.value ||
-    onlyInstalled.value
+    onlyInstalled.value ||
+    onlyOfficial.value ||
+    onlyMine.value
 );
 
 /** 当前类型的中文名（用于分类栏标题） */
@@ -225,8 +289,8 @@ function assetLabel(type: string) {
   return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
 }
 
-async function loadHome() {
-  const res: any = await getMarketHome({ asset_type: typeFilter.value || undefined });
+async function loadHome(shuffle = false) {
+  const res: any = await getMarketHome({ asset_type: typeFilter.value || undefined, shuffle });
   featured.value = res.data?.data?.featured || [];
   categories.value = res.data?.data?.categories || [];
 }
@@ -240,6 +304,9 @@ async function loadItems() {
       keyword: keyword.value || undefined,
       favorite: onlyFavorite.value,
       installed: onlyInstalled.value,
+      official: onlyOfficial.value,
+      mine: onlyMine.value,
+      sort: sortBy.value || undefined,
       page_no: pageNo.value,
       page_size: pageSize,
     });
@@ -253,6 +320,23 @@ async function loadItems() {
 function reload() {
   pageNo.value = 1;
   loadItems();
+}
+
+async function refreshFeatured() {
+  await loadHome(true);
+}
+
+function clearFilters() {
+  typeFilter.value = "";
+  categoryFilter.value = "";
+  keyword.value = "";
+  onlyFavorite.value = false;
+  onlyInstalled.value = false;
+  onlyOfficial.value = false;
+  onlyMine.value = false;
+  sortBy.value = "newest";
+  loadHome();
+  reload();
 }
 
 function switchType(value: string) {
@@ -371,6 +455,38 @@ onMounted(() => {
 
 .search-input {
   width: 240px;
+}
+
+.sort-select {
+  width: 130px;
+}
+
+.grid-skeleton {
+  margin-top: 4px;
+}
+
+.empty-state {
+  padding: 24px 0 8px;
+  text-align: center;
+}
+
+.empty-suggest {
+  margin-top: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.empty-suggest-label {
+  color: var(--el-text-color-secondary);
+}
+
+.suggest-tag {
+  cursor: pointer;
 }
 
 .section-head {
