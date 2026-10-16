@@ -1449,6 +1449,49 @@ async def _ensure_notification_params() -> None:
         log.info("✅ 通知系统参数已确保")
 
 
+#: 脚本安全平台配置（``script_allowed`` 总开关 + ``script_sandbox_policies`` 沙箱策略）。
+#: 缺省默认：总开关开、默认安全策略（lambda/class/双下划线导入禁，单下划线属性与 yield 允许）。
+SCRIPT_SAFETY_PARAMS = [
+    (
+        "script_allowed",
+        "运行脚本工具",
+        "true",
+        "脚本工具全局开关；关闭时仅超管可创建/编辑/启用/运行脚本工具",
+    ),
+    (
+        "script_sandbox_policies",
+        "脚本沙箱强化策略",
+        '{"ban_lambda":true,"ban_class":true,"ban_dunder_import":true,"ban_single_underscore_attr":false,"ban_yield":false}',
+        "脚本沙箱策略（JSON），逐项可放宽：ban_lambda/ban_class/ban_dunder_import/ban_single_underscore_attr/ban_yield",
+    ),
+]
+
+
+async def _ensure_script_safety_params() -> None:
+    """幂等补齐脚本安全平台配置（script_allowed / script_sandbox_policies）。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.params.model import ParamsModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            for key, name, default, desc in SCRIPT_SAFETY_PARAMS:
+                existing = await db.execute(
+                    select(ParamsModel).where(ParamsModel.config_key == key)
+                )
+                if not existing.scalar_one_or_none():
+                    db.add(ParamsModel(
+                        config_name=name,
+                        config_key=key,
+                        config_value=default,
+                        config_type=True,
+                        status="0",
+                        description=desc,
+                    ))
+    log.info("✅ 脚本安全配置参数已确保")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
     """
@@ -1502,6 +1545,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         except Exception as e:  # noqa: BLE001  种子失败不阻断启动
             log.warning(f"⚠️  能力市场官方种子写入失败（不阻断启动）: {e}")
         await _ensure_notification_params()
+        await _ensure_script_safety_params()
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
         await _ensure_train_menus()

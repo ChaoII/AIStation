@@ -135,6 +135,20 @@ SAFE_BUILTINS: dict[str, Any] = {
 #: 每“超时秒”允许执行的行数上限（行计数近似指令计数）
 _OPS_PER_SECOND = 200_000
 
+#: 沙箱强化策略默认值（可配置，见 ``script_sandbox_policies``）。
+#:
+#: - ``ban_lambda`` / ``ban_class`` / ``ban_dunder_import``：设计文档要求的安全项，默认开；
+#: - ``ban_single_underscore_attr``：会误伤访问 ``re._cache`` 之类正常场景，默认关；
+#: - ``ban_yield``：生成器本身不逃逸，默认关。
+#: 管理员可放宽/收紧，实现「灵活场景可关、默认收紧」的平衡。
+DEFAULT_POLICIES: dict[str, bool] = {
+    "ban_lambda": True,
+    "ban_class": True,
+    "ban_dunder_import": True,
+    "ban_single_underscore_attr": False,
+    "ban_yield": False,
+}
+
 
 def _safe_import(name: str, globals=None, locals=None, fromlist=(), level=0):  # noqa: ANN001, A002
     """受限 import：只允许白名单模块（供脚本内 ``import xxx`` 使用）。"""
@@ -154,8 +168,8 @@ class _ScriptTimeout(Exception):
     """脚本执行超时（内部信号，转换为 CustomException）。"""
 
 
-def _check_node(node: ast.AST) -> None:
-    """逐节点静态校验，非法即抛 CustomException。"""
+def _check_node(node: ast.AST, policies: dict[str, bool]) -> None:
+    """逐节点静态校验（按策略启用），非法即抛 CustomException。"""
     if isinstance(node, (ast.Import, ast.ImportFrom)):
         names = (
             [a.name for a in node.names]
@@ -166,9 +180,19 @@ def _check_node(node: ast.AST) -> None:
             top = (name or "").split(".")[0]
             if top not in ALLOWED_MODULES:
                 raise CustomException(msg=f"不允许导入模块：{name}")
+        # 策略：禁 from X import __y__（双下划线导入名）
+        if policies.get("ban_dunder_import") and isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if (alias.name or "").startswith("__"):
+                    raise CustomException(
+                        msg=f"不允许导入双下划线名称：{alias.name}"
+                    )
     if isinstance(node, ast.Attribute):
         if node.attr.startswith("__"):
             raise CustomException(msg=f"不允许访问双下划线属性：{node.attr}")
+        # 策略：禁单下划线私有属性（默认关，避免误伤正常访问）
+        if policies.get("ban_single_underscore_attr") and node.attr.startswith("_"):
+            raise CustomException(msg=f"不允许访问私有属性：{node.attr}")
     if isinstance(node, ast.Name):
         if node.id.startswith("__"):
             raise CustomException(msg=f"不允许使用双下划线名称：{node.id}")
@@ -177,6 +201,15 @@ def _check_node(node: ast.AST) -> None:
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         if node.name.startswith("__"):
             raise CustomException(msg=f"不允许定义双下划线名称：{node.name}")
+    # 策略：禁 lambda（设计文档明确要求限制复杂度）
+    if isinstance(node, ast.Lambda) and policies.get("ban_lambda"):
+        raise CustomException(msg="不允许使用 lambda 表达式")
+    # 策略：静态拦截 class 定义（避免运行时 __build_class__ NameError 不直观）
+    if isinstance(node, ast.ClassDef) and policies.get("ban_class"):
+        raise CustomException(msg="不允许定义 class")
+    # 策略：禁 yield / 生成器
+    if isinstance(node, (ast.Yield, ast.YieldFrom)) and policies.get("ban_yield"):
+        raise CustomException(msg=f"不允许使用 {type(node).__name__}")
     if isinstance(
         node,
         (
@@ -192,16 +225,22 @@ def _check_node(node: ast.AST) -> None:
         raise CustomException(msg=f"不允许的语法：{type(node).__name__}")
 
 
-def validate(code: str) -> None:
-    """静态校验脚本源码，非法抛 CustomException。"""
+def validate(code: str, policies: dict[str, bool] | None = None) -> None:
+    """静态校验脚本源码，非法抛 CustomException。
+
+    ``policies`` 为沙箱强化策略（对应平台配置 ``script_sandbox_policies``）；
+    缺省用 ``DEFAULT_POLICIES``（安全收紧，可通过配置逐项放宽）。
+    """
     if not (code or "").strip():
         raise CustomException(msg="脚本内容不能为空")
     try:
         tree = ast.parse(code, mode="exec")
     except SyntaxError as e:
         raise CustomException(msg=f"脚本语法错误：{e.msg}（第 {e.lineno} 行）") from e
+    # 默认策略为底，显式传入的策略逐项覆盖（实现「默认收紧 + 可放宽」）
+    merged = {**DEFAULT_POLICIES, **(policies or {})}
     for node in ast.walk(tree):
-        _check_node(node)
+        _check_node(node, merged)
     # 必须定义 run 函数
     funcs = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     if "run" not in funcs:
@@ -341,7 +380,7 @@ def _build_globals(config: dict | None = None) -> dict[str, Any]:
     return ns
 
 
-def run(code: str, args: dict | None = None, timeout: int = 10, config: dict | None = None) -> dict:
+def run(code: str, args: dict | None = None, timeout: int = 10, config: dict | None = None, policies: dict[str, bool] | None = None) -> dict:
     """执行脚本并返回结果（dict）。
 
     参数:
@@ -349,11 +388,12 @@ def run(code: str, args: dict | None = None, timeout: int = 10, config: dict | N
     - args: 传入 ``run`` 的参数字典。
     - timeout: 超时秒数（换算为行计数上限）。
     - config: 工具私有配置，注入为沙箱全局 ``TOOL_CONFIG``，供脚本读取。
+    - policies: 沙箱强化策略（同 ``validate``）；缺省用 ``DEFAULT_POLICIES``。
 
     返回:
     - dict: ``run`` 的返回值；非 dict 结果包成 ``{"result": ...}``。
     """
-    validate(code)
+    validate(code, policies)
     max_ops = max(int(timeout or 10), 1) * _OPS_PER_SECOND
     counter = {"n": 0}
 

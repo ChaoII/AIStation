@@ -48,8 +48,16 @@
       <el-form-item label="工具类型">
         <el-radio-group v-model="httpForm.kind" :disabled="kindLocked">
           <el-radio-button value="http">HTTP 请求</el-radio-button>
-          <el-radio-button value="script">Python 脚本</el-radio-button>
+          <el-radio-button value="script" :disabled="scriptLocked">Python 脚本</el-radio-button>
         </el-radio-group>
+        <el-alert
+          v-if="scriptLocked"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="平台已禁用脚本工具，仅系统管理员可创建"
+          class="script-locked-tip"
+        />
       </el-form-item>
       <el-form-item v-if="httpForm.kind === 'http'" label="请求方法">
         <el-select v-model="httpForm.method" style="width: 100%">
@@ -239,10 +247,12 @@ import {
   createAiTool,
   formatAiScript,
   getAiToolList,
+  getAiScriptSecurity,
   inspectAiScript,
   testAiScript,
   testAiTool,
   updateAiTool,
+  type AiScriptSecurity,
   type AiToolConfigField,
   type AiToolRow,
 } from "@/api/module_ai/tool";
@@ -267,6 +277,12 @@ const submitLoading = ref(false);
 const testing = ref(false);
 const inspecting = ref(false);
 const formatting = ref(false);
+/** 脚本安全配置：非超管且总开关关闭时禁用「Python 脚本」类型 */
+const scriptSecurity = ref<AiScriptSecurity>({
+  script_allowed: true,
+  sandbox_policies: {},
+  is_superuser: false,
+});
 const currentTool = ref<AiToolRow | null>(null);
 const currentConfigFields = ref<AiToolConfigField[]>([]);
 const agnoFields = reactive<Record<string, string>>({});
@@ -298,6 +314,11 @@ const httpForm = reactive({
 
 /** 编辑 HTTP/脚本时锁定类型；新建可切换 */
 const kindLocked = computed(() => mode.value === "http-edit" || mode.value === "script-edit");
+
+/** 总开关关闭且当前用户非超管时，禁止新建脚本工具（超管豁免） */
+const scriptLocked = computed(
+  () => !scriptSecurity.value.script_allowed && !scriptSecurity.value.is_superuser
+);
 
 /** GET/DELETE 无请求体；其余方法按「请求体类型」决定剩余入参进入 query 还是 body */
 const isGetOrDelete = computed(() => ["GET", "DELETE"].includes(httpForm.method));
@@ -421,6 +442,16 @@ function buildObjectFromRows(
   return Object.keys(out).length ? out : undefined;
 }
 
+/** 拉取脚本安全配置：决定「Python 脚本」类型是否可创建（开关关闭 + 非超管时禁用）。 */
+async function loadScriptSecurity() {
+  try {
+    const res: any = await getAiScriptSecurity();
+    scriptSecurity.value = res.data?.data || scriptSecurity.value;
+  } catch {
+    /* 拉取失败按默认放行；后端仍会按总开关拦截 */
+  }
+}
+
 /** 打开时据 realId 加载编辑数据；无 realId 则创建。 */
 async function loadForEdit() {
   if (!props.realId) {
@@ -521,6 +552,10 @@ async function submitHttpForm() {
     return;
   }
   const isScript = httpForm.kind === "script";
+  if (isScript && scriptLocked.value) {
+    ElMessage.error("平台已禁用脚本工具，仅系统管理员可创建");
+    return;
+  }
   if (isScript) {
     if (!httpForm.code.trim()) {
       ElMessage.warning("请填写脚本代码");
@@ -712,7 +747,10 @@ defineExpose({ loadForEdit });
 watch(
   () => props.modelValue,
   (v) => {
-    if (v) loadForEdit();
+    if (v) {
+      loadForEdit();
+      loadScriptSecurity();
+    }
   }
 );
 </script>
@@ -790,5 +828,8 @@ watch(
   background: var(--el-fill-color-light);
   color: var(--el-color-primary);
   font-family: var(--el-font-family-mono, Consolas, monospace);
+}
+.script-locked-tip {
+  margin-top: 6px;
 }
 </style>

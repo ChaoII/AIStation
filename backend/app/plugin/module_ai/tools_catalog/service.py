@@ -1,4 +1,6 @@
 """AI 工具服务：内置工具开关 + 自定义 HTTP 工具执行。"""
+import json
+
 from sqlalchemy import select
 
 from app.core.database import async_db_session
@@ -78,14 +80,112 @@ def _tool_source(t: AiToolModel) -> str:
     return "http" if (t.kind or "") == "http" else "system"
 
 
-def _validate_script(code: str | None) -> None:
-    """脚本工具创建/更新时的静态校验（AST 白名单）。"""
+def can_create_script_tool(auth, script_allowed: bool) -> bool:
+    """``script_allowed`` 总开关判定：关闭时仅超管可创建/编辑/启用/运行脚本工具。
+
+    - ``script_allowed=True``：任意用户可创建。
+    - ``script_allowed=False``：仅超管（``is_superuser``）可创建，普通用户被拒。
+    """
+    if script_allowed:
+        return True
+    user = getattr(auth, "user", None)
+    return bool(getattr(user, "is_superuser", False))
+
+
+#: 平台脚本安全配置键（存于 ``sys_param``，启动时载入 Redis ``system_config``）。
+_SCRIPT_ALLOWED_KEY = "script_allowed"
+_SANDBOX_POLICIES_KEY = "script_sandbox_policies"
+
+
+def _parse_script_allowed(value: str | None) -> bool:
+    """解析 ``script_allowed`` 配置值；缺省视为允许。"""
+    if value is None:
+        return True
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _parse_sandbox_policies(value: str | None) -> dict:
+    """解析 ``script_sandbox_policies`` 配置（JSON）；缺省/非法回退默认安全策略。"""
+    from .script_executor import DEFAULT_POLICIES
+
+    policies = dict(DEFAULT_POLICIES)
+    if not value:
+        return policies
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return policies
+    if isinstance(parsed, dict):
+        # 默认策略为底，配置里显式传入的逐项覆盖（实现「默认收紧 + 可放宽」）
+        return {**DEFAULT_POLICIES, **parsed}
+    return policies
+
+
+async def get_script_safety_config(db=None) -> tuple[bool, dict]:
+    """读取平台脚本安全配置，返回 ``(script_allowed, sandbox_policies)``。
+
+    - ``script_allowed``：全局总开关，默认开。
+    - ``sandbox_policies``：沙箱强化策略（可逐项放宽），默认用 ``DEFAULT_POLICIES``。
+    ``db`` 可传入已有会话（如 create/update 事务内）以复用连接；否则自行开会话。
+    """
+    from app.api.v1.module_system.params.model import ParamsModel
+
+    async def _read(sess) -> tuple[bool, dict]:
+        rows = (
+            await sess.execute(
+                select(ParamsModel.config_key, ParamsModel.config_value)
+                .where(
+                    ParamsModel.config_key.in_(
+                        [_SCRIPT_ALLOWED_KEY, _SANDBOX_POLICIES_KEY]
+                    )
+                )
+            )
+        ).all()
+        allowed = True
+        policies = _parse_sandbox_policies(None)
+        for key, val in rows:
+            if key == _SCRIPT_ALLOWED_KEY:
+                allowed = _parse_script_allowed(val)
+            elif key == _SANDBOX_POLICIES_KEY:
+                policies = _parse_sandbox_policies(val)
+        return allowed, policies
+
+    if db is not None:
+        return await _read(db)
+    async with async_db_session() as sess:
+        return await _read(sess)
+
+
+def _assert_script_allowed(auth, script_allowed: bool) -> None:
+    """总开关拦截：非超管且开关关闭时，禁止创建/编辑/启用/运行脚本工具。"""
+    if not can_create_script_tool(auth, script_allowed):
+        raise CustomException(msg="平台已禁用脚本工具，请联系系统管理员")
+
+
+async def _is_superuser_by_id(user_id: int | None) -> bool:
+    """按用户 ID 判超管（运行时 dispatch 仅有 ``user_id``，无完整 auth）。"""
+    if not user_id:
+        return False
+    from app.api.v1.module_system.user.model import UserModel
+
+    async with async_db_session() as db:
+        val = await db.scalar(
+            select(UserModel.is_superuser).where(
+                UserModel.id == user_id,
+                UserModel.is_deleted.is_(False),
+            )
+        )
+        return bool(val)
+
+
+def _validate_script(code: str | None, policies: dict | None = None) -> None:
+    """脚本工具创建/更新时的静态校验（AST 白名单，按策略启用）。"""
     from .script_executor import validate as validate_script
 
-    validate_script(code or "")
+    validate_script(code or "", policies)
 
 
-def _inspect_script(code: str | None) -> dict:
+def _inspect_script(code: str | None, policies: dict | None = None) -> dict:
     """解析脚本 run 签名，提取参数与基础校验结果。"""
     from .script_executor import _extract_run_params
     from .script_executor import validate as validate_script
@@ -93,7 +193,7 @@ def _inspect_script(code: str | None) -> dict:
     code = code or ""
     params = _extract_run_params(code)
     try:
-        validate_script(code)
+        validate_script(code, policies)
         valid = True
         error = ""
     except CustomException as e:
@@ -216,11 +316,17 @@ def _http_schema(tool: AiToolModel) -> dict:
     }
 
 
-async def execute_script_tool(tool: AiToolModel, args: dict) -> object:
+async def execute_script_tool(tool: AiToolModel, args: dict, policies: dict | None = None) -> object:
     """执行自定义脚本工具（沙箱内），并注入工具私有配置为沙箱全局 ``TOOL_CONFIG``。"""
     from .script_executor import run as run_script
 
-    return run_script(tool.code or "", args or {}, tool.timeout or 10, config=tool.config or {})
+    return run_script(
+        tool.code or "",
+        args or {},
+        tool.timeout or 10,
+        config=tool.config or {},
+        policies=policies,
+    )
 
 
 async def execute_http_tool(tool: AiToolModel, args: dict) -> object:
@@ -389,8 +495,12 @@ async def dispatch_tool(
     if tool is not None and _source_of_row(tool) == "script":
         if not tool.enabled:
             return {"error": "工具未启用"}
+        # 运行时同样受平台总开关约束：开关关闭且当前用户非超管时禁止执行
+        allowed, policies = await get_script_safety_config()
+        if not allowed and not await _is_superuser_by_id(user_id):
+            return {"error": "平台已禁用脚本工具"}
         try:
-            return await execute_script_tool(tool, args or {})
+            return await execute_script_tool(tool, args or {}, policies)
         except Exception as e:  # noqa: BLE001  脚本异常兜底，不中断对话
             return {"error": str(e)}
     return {"error": f"未知工具：{name}"}
@@ -440,7 +550,9 @@ class AiToolService:
                 raise CustomException(msg=f"工具名已存在：{data.name}")
             kind = data.kind or "http"
             if kind == "script":
-                _validate_script(getattr(data, "code", None))
+                allowed, policies = await get_script_safety_config(db)
+                _assert_script_allowed(auth, allowed)
+                _validate_script(getattr(data, "code", None), policies)
             source = getattr(data, "source", None) or (
                 "http" if kind == "http" else ("script" if kind == "script" else "system")
             )
@@ -494,9 +606,11 @@ class AiToolService:
                 t.code = data.code
             if getattr(data, "timeout", None) is not None:
                 t.timeout = data.timeout
-            # 脚本工具：更新后仍需通过静态校验
+            # 脚本工具：更新后仍需通过静态校验（含平台总开关 + 策略）
             if (t.kind or "") == "script":
-                _validate_script(t.code)
+                allowed, policies = await get_script_safety_config(db)
+                _assert_script_allowed(auth, allowed)
+                _validate_script(t.code, policies)
             # 启用态一律要求就绪（含高危门禁），避免绕过 toggle 把高危工具打开
             if t.enabled:
                 _assert_enableable(t)
@@ -520,6 +634,10 @@ class AiToolService:
                 return None
             # 启用前必须就绪：缺依赖/缺配置或高危门禁关闭时拒绝，防止一键开启任意代码执行
             if enabled:
+                # 脚本工具另受平台总开关约束（开关关闭且非超管时不可启用）
+                if (t.kind or "") == "script":
+                    allowed, _ = await get_script_safety_config(db)
+                    _assert_script_allowed(auth, allowed)
                 _assert_enableable(t)
             t.enabled = bool(enabled)
             t.updated_id = auth.user.id
@@ -530,6 +648,10 @@ class AiToolService:
     async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:
         """批量启用/停用工具。启用时跳过未就绪(高危/缺配置)的项。"""
         async with async_db_session.begin() as db:
+            # 脚本工具批量启用同样受平台总开关约束（开关关闭且非超管时跳过脚本项）
+            script_allowed = True
+            if enabled:
+                script_allowed, _ = await get_script_safety_config(db)
             count = 0
             for tid in ids:
                 t = await db.get(AiToolModel, tid)
@@ -537,16 +659,18 @@ class AiToolService:
                     continue
                 if enabled:
                     try:
+                        if (t.kind or "") == "script":
+                            _assert_script_allowed(auth, script_allowed)
                         _assert_enableable(t)
                     except CustomException:
-                        continue  # 未就绪项跳过，不阻断其它
+                        continue  # 未就绪/受总开关限制的项跳过，不阻断其它
                 t.enabled = bool(enabled)
                 t.updated_id = getattr(getattr(auth, "user", None), "id", None)
                 count += 1
             return count
 
     @classmethod
-    async def test(cls, tool_id: int) -> dict:
+    async def test(cls, tool_id: int, auth) -> dict:
         """测试工具：内置工具返回 schema，HTTP 工具发起一次真实请求，脚本工具空参试运行。"""
         t = await cls._load(tool_id)
         if (t.kind or "builtin") == "builtin":
@@ -555,25 +679,29 @@ class AiToolService:
                 raise CustomException(msg=f"内置工具未注册：{t.name}")
             return {"kind": "builtin", "message": "内置工具已注册", "schema": entry["schema"]}
         if (t.kind or "") == "script":
+            allowed, policies = await get_script_safety_config()
+            _assert_script_allowed(auth, allowed)
             return {
                 "kind": "script",
-                "result": await execute_script_tool(t, {}),
+                "result": await execute_script_tool(t, {}, policies),
             }
         if not t.url:
             raise CustomException(msg="URL 不能为空")
         return {"kind": "http", "result": await execute_http_tool(t, {})}
 
     @classmethod
-    async def test_script(cls, tool_id: int, args: dict | None) -> dict:
+    async def test_script(cls, tool_id: int, args: dict | None, auth) -> dict:
         """试运行脚本工具（可带参数），返回 ``{ok, result|error}``。"""
         t = await cls._load(tool_id)
         if (t.kind or "") != "script":
             raise CustomException(msg="该工具不是脚本工具")
         from .script_executor import validate as validate_script
 
+        allowed, policies = await get_script_safety_config()
+        _assert_script_allowed(auth, allowed)
         try:
-            validate_script(t.code or "")
-            result = await execute_script_tool(t, args or {})
+            validate_script(t.code or "", policies)
+            result = await execute_script_tool(t, args or {}, policies)
             return {"ok": True, "result": result}
         except CustomException as e:
             return {"ok": False, "error": e.msg}
@@ -581,7 +709,8 @@ class AiToolService:
     @classmethod
     async def inspect_script(cls, code: str | None) -> dict:
         """解析脚本 run 签名，提取参数供前端自动生成参数表与 schema。"""
-        return _inspect_script(code)
+        _, policies = await get_script_safety_config()
+        return _inspect_script(code, policies)
 
     @classmethod
     async def format_script(cls, code: str | None) -> str:

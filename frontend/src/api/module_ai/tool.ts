@@ -50,8 +50,24 @@ export interface AiToolRow {
   timeout?: number;
 }
 
+/** 脚本安全配置：总开关 + 沙箱强化策略 + 当前用户是否超管 */
+export interface AiScriptSecurity {
+  script_allowed: boolean;
+  sandbox_policies: Record<string, boolean>;
+  is_superuser: boolean;
+}
+
 export function getAiToolList(params?: any) {
   return request({ url: `${API_PATH}/list`, method: "get", params });
+}
+
+/** 查询脚本安全配置（总开关 + 沙箱策略 + 当前用户是否超管） */
+export function getAiScriptSecurity() {
+  return request({
+    url: `${API_PATH}/script-security`,
+    method: "get",
+    headers: { _silent: "true" },
+  });
 }
 
 export function createAiTool(data: any) {

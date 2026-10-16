@@ -178,3 +178,166 @@ def test_dispatch_script_tool(test_client):
 
     out = asyncio.run(_go())
     assert out == {"sum": 3}
+
+
+# ---------- 沙箱：可配置策略（script_sandbox_policies） ----------
+
+def test_validate_policy_ban_lambda():
+    """策略 ban_lambda=True 时拒绝含 lambda 的脚本。"""
+    code = "def run(args):\n    f = lambda x: x + 1\n    return {'v': f(1)}"
+    with pytest.raises(CustomException):
+        se.validate(code, policies={"ban_lambda": True})
+
+
+def test_validate_policy_allow_lambda():
+    """策略 ban_lambda=False 时放行 lambda（灵活场景）。"""
+    code = "def run(args):\n    f = lambda x: x + 1\n    return {'v': f(1)}"
+    se.validate(code, policies={"ban_lambda": False})
+
+
+def test_validate_policy_ban_class():
+    """策略 ban_class=True 时静态拦截 class 定义。"""
+    code = "class C:\n    pass\ndef run(args):\n    return {'ok': 1}"
+    with pytest.raises(CustomException):
+        se.validate(code, policies={"ban_class": True})
+
+
+def test_validate_policy_ban_dunder_import():
+    """策略 ban_dunder_import=True 时拒绝 from X import __y__。"""
+    code = "from json import __decoder__\ndef run(args):\n    return 1"
+    with pytest.raises(CustomException):
+        se.validate(code, policies={"ban_dunder_import": True})
+
+
+def test_validate_policy_ban_single_underscore_attr():
+    """策略 ban_single_underscore_attr=True 时拒绝访问单下划线私有属性。"""
+    code = "import re\ndef run(args):\n    return str(re._cache)"
+    with pytest.raises(CustomException):
+        se.validate(code, policies={"ban_single_underscore_attr": True})
+
+
+def test_validate_policy_ban_single_underscore_attr_off():
+    """策略 ban_single_underscore_attr=False（默认）时放行单下划线属性。"""
+    code = "import re\ndef run(args):\n    return str(re._cache)"
+    se.validate(code, policies={"ban_single_underscore_attr": False})
+
+
+def test_validate_policy_ban_yield():
+    """策略 ban_yield=True 时拒绝含 yield 的生成器函数。"""
+    code = "def run(args):\n    yield 1"
+    with pytest.raises(CustomException):
+        se.validate(code, policies={"ban_yield": True})
+
+
+def test_validate_default_policies_reject_lambda():
+    """默认策略（未显式传 policies）应安全收紧：拒绝 lambda。"""
+    code = "def run(args):\n    f = lambda x: x\n    return 1"
+    with pytest.raises(CustomException):
+        se.validate(code)
+
+
+# ---------- script_allowed 全局开关 ----------
+
+def _fake_auth(is_superuser: bool):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(user=SimpleNamespace(is_superuser=is_superuser))
+
+
+def test_can_create_script_tool_when_allowed():
+    """script_allowed=True 时任意用户都可创建脚本工具。"""
+    from app.plugin.module_ai.tools_catalog.service import can_create_script_tool
+
+    assert can_create_script_tool(_fake_auth(False), script_allowed=True) is True
+
+
+def test_can_create_script_tool_superuser_when_disabled():
+    """script_allowed=False 时超管仍可创建脚本工具。"""
+    from app.plugin.module_ai.tools_catalog.service import can_create_script_tool
+
+    assert can_create_script_tool(_fake_auth(True), script_allowed=False) is True
+
+
+def test_can_create_script_tool_normal_user_when_disabled():
+    """script_allowed=False 时普通用户创建脚本工具被拒。"""
+    from app.plugin.module_ai.tools_catalog.service import can_create_script_tool
+
+    assert can_create_script_tool(_fake_auth(False), script_allowed=False) is False
+
+
+# ---------- 平台脚本安全配置解析 ----------
+
+def test_parse_script_allowed():
+    """script_allowed 配置值解析：缺省视为允许，常见的真假字符串可识别。"""
+    from app.plugin.module_ai.tools_catalog.service import _parse_script_allowed
+
+    assert _parse_script_allowed(None) is True
+    assert _parse_script_allowed("true") is True
+    assert _parse_script_allowed("1") is True
+    assert _parse_script_allowed("on") is True
+    assert _parse_script_allowed("false") is False
+    assert _parse_script_allowed("0") is False
+    assert _parse_script_allowed("False") is False
+    assert _parse_script_allowed("") is False
+
+
+def test_parse_sandbox_policies():
+    """script_sandbox_policies 解析：缺省/非法回退默认策略，部分覆盖未指定项用默认。"""
+    from app.plugin.module_ai.tools_catalog.service import _parse_sandbox_policies
+
+    assert _parse_sandbox_policies(None) == se.DEFAULT_POLICIES
+    assert _parse_sandbox_policies("not json") == se.DEFAULT_POLICIES
+    p = _parse_sandbox_policies('{"ban_lambda": false}')
+    assert p["ban_lambda"] is False
+    assert p["ban_class"] is True  # 未指定的项沿用默认（安全收紧）
+    assert p["ban_single_underscore_attr"] is False  # 默认关
+
+
+def test_script_allowed_switch_blocks_non_superuser(test_client):
+    """`script_allowed=false` 时：超管可创建脚本工具，普通用户被拒不误伤超管。"""
+    import asyncio
+    from types import SimpleNamespace
+
+    from app.plugin.module_ai.tools_catalog.schema import AiToolCreateSchema
+    from app.plugin.module_ai.tools_catalog.service import AiToolService
+
+    async def _set_param(key: str, value: str) -> None:
+        from sqlalchemy import select
+
+        from app.api.v1.module_system.params.model import ParamsModel
+        from app.core.database import async_db_session
+
+        async with async_db_session() as db:
+            async with db.begin():
+                row = await db.scalar(
+                    select(ParamsModel).where(ParamsModel.config_key == key)
+                )
+                if row:
+                    row.config_value = value
+                else:
+                    db.add(ParamsModel(
+                        config_name=key, config_key=key, config_value=value,
+                        config_type=True, status="0",
+                    ))
+
+    async def _go():
+        await _set_param("script_allowed", "false")
+        try:
+            # 超管豁免：可创建
+            sup = SimpleNamespace(user=SimpleNamespace(id=1, is_superuser=True))
+            await AiToolService.create(
+                AiToolCreateSchema(name=_new_name("su"), kind="script", code=VALID_CODE),
+                sup,
+            )
+            # 普通用户：被拦截
+            norm = SimpleNamespace(user=SimpleNamespace(id=999, is_superuser=False))
+            with pytest.raises(CustomException) as ei:
+                await AiToolService.create(
+                    AiToolCreateSchema(name=_new_name("normal"), kind="script", code=VALID_CODE),
+                    norm,
+                )
+            assert "禁用脚本工具" in ei.value.msg
+        finally:
+            await _set_param("script_allowed", "true")
+
+    asyncio.run(_go())

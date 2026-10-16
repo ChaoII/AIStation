@@ -16,7 +16,7 @@ from .schema import (
     AiToolToggleSchema,
     AiToolUpdateSchema,
 )
-from .service import AiToolService
+from .service import AiToolService, get_script_safety_config
 
 AiToolRouter = APIRouter(route_class=OperationLogRoute, prefix="/tools", tags=["AI-工具"])
 
@@ -26,6 +26,27 @@ async def list_tools(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:query"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiToolService.list_tools(), msg="查询成功")
+
+
+@AiToolRouter.get("/script-security", summary="脚本安全配置")
+async def script_security(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:query"]))],
+) -> JSONResponse:
+    """返回脚本安全配置（总开关 + 沙箱策略 + 当前用户是否超管），供前端据适配脚本工具创建。
+
+    - ``script_allowed``：全局总开关。
+    - ``sandbox_policies``：沙箱强化策略（可逐项放宽）。
+    - ``is_superuser``：当前用户是否超管（超管豁免开关）。
+    """
+    allowed, policies = await get_script_safety_config()
+    return SuccessResponse(
+        data={
+            "script_allowed": allowed,
+            "sandbox_policies": policies,
+            "is_superuser": bool(getattr(auth.user, "is_superuser", False)),
+        },
+        msg="查询成功",
+    )
 
 
 @AiToolRouter.get("/agno", summary="Agno 精选工具规格")
@@ -98,7 +119,7 @@ async def test_tool(
     tool_id: int,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:update"]))],
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiToolService.test(tool_id), msg="测试成功")
+    return SuccessResponse(data=await AiToolService.test(tool_id, auth), msg="测试成功")
 
 
 @AiToolRouter.post("/test-script/{tool_id}", summary="试运行脚本工具")
@@ -108,7 +129,7 @@ async def test_script_tool(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:update"]))],
 ) -> JSONResponse:
     return SuccessResponse(
-        data=await AiToolService.test_script(tool_id, data.args), msg="试运行完成"
+        data=await AiToolService.test_script(tool_id, data.args, auth), msg="试运行完成"
     )
 
 
