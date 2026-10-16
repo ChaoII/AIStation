@@ -84,6 +84,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useStorage } from "@vueuse/core";
 import { useSettingsStore } from "@/store";
 import { useAiChat } from "@/composables/ai/useAiChat";
+import { isToolPart } from "@/composables/ai/uiMessage";
 import { Menu } from "@element-plus/icons-vue";
 import {
   getAiSessionList,
@@ -293,7 +294,7 @@ const handleAssistantAction = async () => {
   let action: any;
   let reportId: any;
   for (const p of last.parts || []) {
-    if (p.type === "tool" && p.output != null) {
+    if (isToolPart(p) && p.output != null) {
       const meta = extractMeta(p.output);
       if (meta.action) action = meta.action;
       if (meta.reportId != null) reportId = meta.reportId;

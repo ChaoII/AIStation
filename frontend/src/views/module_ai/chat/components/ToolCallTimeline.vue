@@ -5,7 +5,7 @@
         <el-icon class="tool-item__icon" :class="`is-${meta(part).tag}`">
           <component :is="meta(part).icon" />
         </el-icon>
-        <span class="tool-item__name">{{ part.toolName || "工具" }}</span>
+        <span class="tool-item__name">{{ toolNameOf(part) }}</span>
         <el-tag size="small" :type="meta(part).tag" effect="light">
           {{ meta(part).label }}
         </el-tag>
@@ -37,14 +37,14 @@ import { ref, type Component } from "vue";
 import { Loading, CircleCheck, CircleClose, ArrowUp, ArrowDown } from "@element-plus/icons-vue";
 import JsonPretty from "vue-json-pretty";
 import "vue-json-pretty/lib/styles.css";
-import type { AiUIPart } from "@/composables/ai/uiMessage";
+import { toolNameOf, type AiUIPart } from "@/composables/ai/uiMessage";
 
 interface Props {
   /** 消息里的 tool parts（按出现顺序）。 */
   parts: AiUIPart[];
 }
 
-const props = defineProps<Props>();
+defineProps<Props>();
 
 const open = ref<Record<number, boolean>>({});
 
@@ -71,7 +71,7 @@ function meta(part: AiUIPart): StateMeta {
 }
 
 /** 把可能为 JSON 字符串的输入/输出转成对象（vue-json-pretty 展示用）。 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function normalize(value: unknown): any {
   if (typeof value === "string") {
     try {

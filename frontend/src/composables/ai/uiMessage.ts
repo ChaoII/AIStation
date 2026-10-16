@@ -29,9 +29,23 @@ export function reasoningOf(msg: any): string {
     .join("");
 }
 
-/** 取工具类 part（SDK 标准 `tool` part）。 */
+/** 判断是否为工具类 part：SDK 静态 tool part 的 type 为 ``tool-${toolName}``，动态为 `dynamic-tool`。 */
+export function isToolPart(p: any): boolean {
+  return typeof p?.type === "string" && (p.type.startsWith("tool-") || p.type === "dynamic-tool");
+}
+
+/** 取工具名：动态 part 有 `toolName`；静态 part 需要从 `tool-${name}` 推导。 */
+export function toolNameOf(p: any): string {
+  if (p?.toolName) return String(p.toolName);
+  if (typeof p?.type === "string" && p.type.startsWith("tool-")) {
+    return p.type.slice(5);
+  }
+  return String(p?.toolName || "工具");
+}
+
+/** 取工具类 part（静态 `tool-${name}` / 动态 `dynamic-tool`）。 */
 export function toolPartsOf(msg: any): AiUIPart[] {
-  return (msg?.parts || []).filter((p: AiUIPart) => p.type === "tool");
+  return (msg?.parts || []).filter((p: AiUIPart) => isToolPart(p));
 }
 
 /** 取知识检索引用来源（累积 sources part，兼容旧 messages）。 */
@@ -63,8 +77,8 @@ export function isDataPartType(type: string | undefined): boolean {
 /** 按 `state` 分组 tool part，返回 `Record<state, part[]>`。 */
 export function toolPartsByState(msg: any): Record<string, AiUIPart[]> {
   const groups: Record<string, AiUIPart[]> = {};
-  for (const p of (msg?.parts || [])) {
-    if (p.type === "tool") {
+  for (const p of msg?.parts || []) {
+    if (isToolPart(p)) {
       const key = p.state || "unknown";
       (groups[key] ||= []).push(p);
     }

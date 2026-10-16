@@ -59,10 +59,7 @@
           </div>
         </template>
 
-        <div
-          v-if="message.role === 'assistant' && isLoading"
-          class="typing-indicator"
-        >
+        <div v-if="message.role === 'assistant' && isLoading" class="typing-indicator">
           <div class="typing-dots">
             <span></span>
             <span></span>
@@ -82,7 +79,7 @@ import type { UIMessage } from "ai";
 import RichContent from "./RichContent.vue";
 import ReasoningBlock from "./ReasoningBlock.vue";
 import ToolCallTimeline from "./ToolCallTimeline.vue";
-import { textOf, toolPartsOf, sourcePartsOf } from "@/composables/ai/uiMessage";
+import { textOf, toolPartsOf, isToolPart } from "@/composables/ai/uiMessage";
 import { useUserStoreHook } from "@/store";
 
 interface Props {
@@ -100,11 +97,7 @@ const roleLabel = computed(() =>
 const fullText = computed(() => textOf(props.message));
 
 const toolParts = computed(() => toolPartsOf(props.message));
-const nonToolParts = computed(() =>
-  (props.message.parts || []).filter((p: any) => p.type !== "tool")
-);
-
-const sourceParts = computed(() => sourcePartsOf(props.message));
+const nonToolParts = computed(() => (props.message.parts || []).filter((p: any) => !isToolPart(p)));
 
 const isLoading = computed(() => (props.message.parts || []).length === 0);
 
@@ -114,7 +107,7 @@ function isDataPart(p: any): p is { type: string; data: unknown } {
 }
 
 const sourceTitle = (p: any) =>
-  p.title || (p.type === "source-url" ? (p.url || "") : "") || "引用来源";
+  p.title || (p.type === "source-url" ? p.url || "" : "") || "引用来源";
 
 const renderData = (data: any) => {
   if (data && typeof data === "object") return JSON.stringify(data);
