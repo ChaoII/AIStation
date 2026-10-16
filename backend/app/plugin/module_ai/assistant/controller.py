@@ -58,6 +58,7 @@ async def assistant_stream(
                 session_id=data.session_id,
                 knowledge_ids=data.knowledge_ids,
                 model_id=data.model_id,
+                files=data.files,
             ):
                 yield item
         except Exception:  # noqa: BLE001

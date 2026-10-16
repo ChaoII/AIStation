@@ -12,10 +12,81 @@
 """
 from __future__ import annotations
 
+import base64
+import io
 from collections.abc import AsyncIterator
 
 from app.core.exceptions import CustomException
 from app.plugin.module_ai.models.service import AiModelService
+
+
+def _parse_data_uri(data_url: str) -> tuple[bytes, str]:
+    """从 data URL（``data:<mime>;base64,<b64>``）提取原始字节与 mime，失败返回 ``(b"", "")``。"""
+    try:
+        header, b64 = data_url.split(",", 1)
+        mime = ""
+        if header.startswith("data:"):
+            mime = header[5:].split(";")[0]
+        return base64.b64decode(b64), mime
+    except Exception:  # noqa: BLE001 单个文件解析失败不阻断
+        return b"", ""
+
+
+def _extract_doc_text(raw: bytes, mime: str, name: str = "") -> str:
+    """抽取文档纯文本（txt/pdf/docx）。老 .doc / 未知格式返回空串。"""
+    ext = (name.rsplit(".", 1)[-1] if "." in name else "").lower()
+    if ext == "txt" or "text/plain" in mime:
+        return raw.decode("utf-8", errors="ignore")
+    if ext == "pdf" or "application/pdf" in mime:
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(raw))
+            return "\n".join((page.extract_text() or "") for page in reader.pages)
+        except Exception:  # noqa: BLE001
+            return ""
+    if ext == "docx" or "officedocument.wordprocessingml" in mime:
+        try:
+            import docx
+
+            doc = docx.Document(io.BytesIO(raw))
+            return "\n".join(p.text for p in doc.paragraphs)
+        except Exception:  # noqa: BLE001
+            return ""
+    return ""
+
+
+def _process_uploaded_files(files: list[dict] | None) -> tuple[list, str]:
+    """把上传文件拆成 `(images, doc_context)`。
+
+    - 图片（mime 以 ``image/`` 开头）→ Agno ``Image``（原始字节）。
+    - 文档 → 抽取文本拼到 ``doc_context``，作为输入上下文。
+    - 非图片非文档（含 .doc 老格式/未知）→ 忽略。
+    """
+    if not files:
+        return [], ""
+    from agno.media import Image
+
+    images: list = []
+    doc_chunks: list[str] = []
+    for f in files:
+        if not isinstance(f, dict):
+            continue
+        name = str(f.get("name") or "")
+        ftype = str(f.get("type") or f.get("mime_type") or "").lower()
+        data_url = str(f.get("dataUrl") or f.get("data_url") or f.get("data") or "")
+        if not data_url:
+            continue
+        raw, mime = _parse_data_uri(data_url)
+        if not raw:
+            continue
+        if ftype.startswith("image/") or mime.startswith("image/"):
+            images.append(Image(content=raw, mime_type=mime or ftype, format=(ftype.split("/")[-1] or None)))
+        else:
+            text = _extract_doc_text(raw, mime or ftype, name)
+            if text.strip():
+                doc_chunks.append(f"【{name or '上传文档'}】\n{text.strip()}")
+    return images, "\n\n".join(doc_chunks)
 
 
 def _sse(event) -> str:
@@ -35,6 +106,7 @@ async def run_agno_core(
     user_id: int | None,
     session_id: int | None,
     input_text: str | None = None,
+    images: list | None = None,
     instructions: list[str] | None = None,
     description: str | None = None,
     tools: list | None = None,
@@ -73,6 +145,7 @@ async def run_agno_core(
             input_text if input_text is not None else user_text,
             stream=True,
             stream_events=True,
+            images=images,
             user_id=str(user_id) if user_id is not None else None,
             session_id=f"session_{session_id}" if session_id is not None else None,
             add_history_to_context=True,
@@ -94,6 +167,7 @@ async def run_agno_stream(
     session_id: int | None = None,
     knowledge_ids: list[int] | None = None,
     model_id: int | None = None,
+    files: list[dict] | None = None,
 ) -> AsyncIterator[str]:
     """用 Agno Agent 驱动一轮助手对话，产出 Agno 原生 SSE 事件流。
 
@@ -129,6 +203,12 @@ async def run_agno_stream(
     input_text = user_text
     if system_ctx:
         input_text = f"【参考知识】\n{system_ctx}\n\n问题：{user_text}"
+    # 上传文件：图片转 Agno Image，文档文本抽取注入上下文
+    images, doc_ctx = _process_uploaded_files(files)
+    if doc_ctx:
+        input_text = f"{input_text}\n\n【上传文档】\n{doc_ctx}"
+    if not input_text.strip() and images:
+        input_text = "请分析上传的图片，并描述你看到的内容与相关建议。"
     assistant_text = ""
     try:
         async for sse in run_agno_core(
@@ -137,6 +217,7 @@ async def run_agno_stream(
             user_id=user_id,
             session_id=session_id,
             input_text=input_text,
+            images=images,
         ):
             # 累积正文（RunContent 事件），用于会话落库
             if "event: RunContent" in sse:

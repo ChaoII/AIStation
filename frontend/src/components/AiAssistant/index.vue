@@ -84,7 +84,7 @@ import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useStorage } from "@vueuse/core";
 import { useSettingsStore } from "@/store";
-import { useAiChat } from "@/composables/ai/useAiChat";
+import { useAiChat, type AiChatFilePayload } from "@/composables/ai/useAiChat";
 import { isToolPart } from "@/composables/ai/uiMessage";
 import { Menu } from "@element-plus/icons-vue";
 import {
@@ -99,6 +99,7 @@ import { AnnotationAPI } from "@/api/module_annotation";
 import ChatMessages from "@/views/module_ai/chat/components/ChatMessages.vue";
 import ChatInput from "@/views/module_ai/chat/components/ChatInput.vue";
 import SessionSidebar from "@/views/module_ai/chat/components/SessionSidebar.vue";
+import type { UploadedFile } from "@/views/module_ai/chat/types";
 
 const router = useRouter();
 const settingsStore = useSettingsStore();
@@ -313,15 +314,35 @@ const handleAssistantAction = async () => {
   }
 };
 
+// 文件 → data URL
+const readAsDataUrl = (file: File) =>
+  new Promise<string>((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ""));
+    r.onerror = () => resolve("");
+    r.readAsDataURL(file);
+  });
+
+const toFilePayload = async (files?: UploadedFile[]): Promise<AiChatFilePayload[]> => {
+  const out: AiChatFilePayload[] = [];
+  for (const f of files || []) {
+    if (!f.file) continue;
+    const dataUrl = await readAsDataUrl(f.file);
+    if (!dataUrl) continue;
+    out.push({ name: f.name, type: f.type, dataUrl });
+  }
+  return out;
+};
+
 // 发送消息（会话统一走 /sessions：首条消息时创建会话）
-const handleSend = async (message: string) => {
+const handleSend = async (message: string, files?: UploadedFile[]) => {
   const text = (message || "").trim();
-  if (!text || isSending.value) return;
+  if ((!text && (!files || files.length === 0)) || isSending.value) return;
   errorText.value = "";
 
   if (currentSessionId.value == null) {
     try {
-      const res = await createAiSession({ title: text.slice(0, 20) });
+      const res = await createAiSession({ title: (text || "附件消息").slice(0, 20) });
       const created = res.data?.data;
       if (created?.id != null) {
         currentSessionId.value = created.id;
@@ -332,7 +353,8 @@ const handleSend = async (message: string) => {
     }
   }
 
-  await chat.sendMessage({ text });
+  const payload = await toFilePayload(files);
+  await chat.sendMessage({ text, files: payload.length ? payload : undefined });
   await handleAssistantAction();
 };
 

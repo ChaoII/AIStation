@@ -1,7 +1,14 @@
 import { computed, unref, type MaybeRef } from "vue";
 import { useChat } from "@ai-sdk/vue";
-import type { UIMessage } from "ai";
+import type { UIMessage, ChatRequestOptions } from "ai";
 import { AgnoChatTransport } from "./agnoChatTransport";
+
+/** 随消息上传的文件载荷（data URL）。 */
+export interface AiChatFilePayload {
+  name: string;
+  type: string;
+  dataUrl: string;
+}
 
 export interface UseAiChatOptions {
   /** 相对 VITE_APP_BASE_API 的流式路径，默认助手流。 */
@@ -47,12 +54,12 @@ export function useAiChat(options: UseAiChatOptions | (() => UseAiChatOptions) =
 
   const error = computed<string | null>(() => chat.error.value?.message || null);
 
-  const isStreaming = computed(
-    () => status.value === "submitted" || status.value === "streaming"
-  );
+  const isStreaming = computed(() => status.value === "submitted" || status.value === "streaming");
 
-  async function sendMessage(input: { text: string }) {
-    await chat.sendMessage({ text: input.text });
+  async function sendMessage(input: { text: string; files?: AiChatFilePayload[] }) {
+    const opts: ChatRequestOptions = {};
+    if (input.files?.length) opts.body = { files: input.files };
+    await chat.sendMessage({ text: input.text }, opts);
   }
 
   function stop() {
