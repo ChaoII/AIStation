@@ -7,8 +7,80 @@ from collections.abc import AsyncIterator
 from sqlalchemy import select
 
 from app.core.database import async_db_session
+from app.core.exceptions import CustomException
+from app.plugin.module_ai.knowledge.model import AiKnowledgeBaseModel
+from app.plugin.module_ai.mcp.model import AiMcpServerModel
+from app.plugin.module_ai.skill.model import AiSkillModel
+from app.plugin.module_ai.tools_catalog.model import AiToolModel
 
 from .model import AiAgentCategoryModel, AiAgentModel
+
+
+async def _validate_agent_bindings(
+    db,
+    *,
+    tool_ids: list[str] | None = None,
+    skill_ids: list[int] | None = None,
+    knowledge_ids: list[int] | None = None,
+    mcp_ids: list[int] | None = None,
+    user_id: int,
+) -> None:
+    """校验智能体绑定的资产，防止跨用户绑定与绑定不存在资产。
+
+    - ``tool_ids``（平台共享，按名）：须存在、未删、启用；
+    - ``skill_ids`` / ``knowledge_ids``（共享）：须存在、未删；
+    - ``mcp_ids``（用户私有）：须存在、未删、``created_id == 当前用户``。
+    """
+    if tool_ids:
+        rows = (
+            await db.execute(
+                select(AiToolModel.name).where(
+                    AiToolModel.name.in_(tool_ids),
+                    AiToolModel.is_deleted.is_(False),
+                    AiToolModel.enabled.is_(True),
+                )
+            )
+        ).scalars().all()
+        missing = [n for n in tool_ids if n not in rows]
+        if missing:
+            raise CustomException(msg=f"绑定的工具不存在或未启用：{', '.join(missing)}")
+    if skill_ids:
+        rows = (
+            await db.execute(
+                select(AiSkillModel.id).where(
+                    AiSkillModel.id.in_(skill_ids),
+                    AiSkillModel.is_deleted.is_(False),
+                )
+            )
+        ).scalars().all()
+        missing = [i for i in skill_ids if i not in rows]
+        if missing:
+            raise CustomException(msg=f"绑定的技能不存在：{missing}")
+    if knowledge_ids:
+        rows = (
+            await db.execute(
+                select(AiKnowledgeBaseModel.id).where(
+                    AiKnowledgeBaseModel.id.in_(knowledge_ids),
+                    AiKnowledgeBaseModel.is_deleted.is_(False),
+                )
+            )
+        ).scalars().all()
+        missing = [i for i in knowledge_ids if i not in rows]
+        if missing:
+            raise CustomException(msg=f"绑定的知识库不存在：{missing}")
+    if mcp_ids:
+        rows = (
+            await db.execute(
+                select(AiMcpServerModel.id, AiMcpServerModel.created_id).where(
+                    AiMcpServerModel.id.in_(mcp_ids),
+                    AiMcpServerModel.is_deleted.is_(False),
+                )
+            )
+        ).all()
+        owner_map = {r[0]: r[1] for r in rows}
+        bad = [i for i in mcp_ids if i not in owner_map or owner_map[i] != user_id]
+        if bad:
+            raise CustomException(msg=f"绑定的 MCP 服务器不存在或不属于当前用户：{bad}")
 
 
 async def _cap_names(caps: list[str]) -> list[str]:
@@ -226,6 +298,14 @@ class AiAgentService:
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )
+            await _validate_agent_bindings(
+                db,
+                tool_ids=data.tool_ids or [],
+                skill_ids=data.skill_ids or [],
+                knowledge_ids=data.knowledge_ids or [],
+                mcp_ids=getattr(data, "mcp_ids", None) or [],
+                user_id=auth.user.id,
+            )
             db.add(a)
             await db.flush()
             return _to_dict(a)
@@ -245,6 +325,14 @@ class AiAgentService:
                 val = getattr(data, key, None)
                 if val is not None:
                     setattr(a, key, val)
+            await _validate_agent_bindings(
+                db,
+                tool_ids=data.tool_ids if getattr(data, "tool_ids", None) is not None else None,
+                skill_ids=data.skill_ids if getattr(data, "skill_ids", None) is not None else None,
+                knowledge_ids=data.knowledge_ids if getattr(data, "knowledge_ids", None) is not None else None,
+                mcp_ids=data.mcp_ids if getattr(data, "mcp_ids", None) is not None else None,
+                user_id=auth.user.id,
+            )
             a.updated_id = auth.user.id
             await db.flush()
             return _to_dict(a)
