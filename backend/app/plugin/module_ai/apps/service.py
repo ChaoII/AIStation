@@ -259,6 +259,8 @@ async def _build_app_tools(names: list[str] | None):
         if source == "http":
             schemas.append(build_http_tool_schema(tool))
             http_tools[name] = tool
+        if source == "script":
+            schemas.append(build_http_tool_schema(tool))
     return schemas, http_tools
 
 
@@ -311,9 +313,9 @@ async def run_app_ui_stream(
         SYSTEM_PROMPT,
         last_user_text,
     )
+    from app.plugin.module_ai.models.service import AiModelService
     from app.plugin.module_ai.overview.service import AiOverviewService
     from app.plugin.module_ai.prompts.service import AiPromptService, render_prompt
-    from app.plugin.module_ai.models.service import AiModelService
     from app.plugin.module_ai.sessions.service import persist_session_exchange
     from app.plugin.module_ai.streaming import UiMessageStream
 
