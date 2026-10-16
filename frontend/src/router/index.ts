@@ -72,31 +72,19 @@ export const constantRoutes: RouteRecordRaw[] = [
     component: () => import("@/views/error/404.vue"),
     meta: { hidden: true, title: "404" },
   },
-  // 「数据资产 / 数据与集成 / 问数评测 / 自定义报表」已并入「智能问数」工作台
-  // （/ai/query?tab=xxx）。保留这些重定向，避免老书签/老链接直接 404。
+  // 数据资产：并入「数据与集成」子菜单（后端动态路由已带 redirect，此处静态兜底防 404）
   {
     path: "/ai/asset",
     name: "AiAssetMoved",
-    redirect: "/ai/query?tab=integration",
-    meta: { hidden: true, title: "数据资产（已并入智能问数工作台）" },
+    redirect: "/ai/integration",
+    meta: { hidden: true, title: "数据资产（已并入数据与集成）" },
   },
+  // 工作台对话（独立聊天页，静态兜底避免 404）
   {
-    path: "/ai/integration",
-    name: "AiIntegrationMoved",
-    redirect: "/ai/query?tab=integration",
-    meta: { hidden: true, title: "数据与集成（已并入智能问数工作台）" },
-  },
-  {
-    path: "/ai/eval",
-    name: "AiEvalMoved",
-    redirect: "/ai/query?tab=eval",
-    meta: { hidden: true, title: "问数评测（已并入智能问数工作台）" },
-  },
-  {
-    path: "/ai/query/reports",
-    name: "AiQueryReportsMoved",
-    redirect: "/ai/query?tab=reports",
-    meta: { hidden: true, title: "自定义报表（已并入智能问数工作台）" },
+    path: "/ai/workspace/chat/:kind/:id",
+    name: "AiWorkspaceChat",
+    component: () => import("@/views/module_ai/workspace/chat.vue"),
+    meta: { hidden: true, title: "工作台对话" },
   },
   // Big screen display (standalone, no sidebar)
   {
@@ -122,6 +110,17 @@ const router = createRouter({
   routes: constantRoutes,
   // 刷新时，滚动条位置还原
   scrollBehavior: () => ({ left: 0, top: 0 }),
+});
+
+// 兼容旧书签/旧链接：/ai/query?tab=integration|eval|reports → 对应独立页面
+// （「智能问数」已从页签工作台改为独立菜单目录 + 4 个子菜单；无 tab / tab=ask / 非法值留在问数页）
+router.beforeEach((to) => {
+  if (to.path === "/ai/query" && to.query.tab) {
+    const tab = String(to.query.tab);
+    if (tab === "integration") return { path: "/ai/integration" };
+    if (tab === "eval") return { path: "/ai/eval" };
+    if (tab === "reports") return { path: "/ai/query/reports" };
+  }
 });
 
 // 全局注册 router

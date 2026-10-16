@@ -26,9 +26,10 @@ def _ensure_session_owner(session: dict, auth: AuthSchema) -> None:
 @AiSessionRouter.get("/list", summary="会话列表")
 async def list_sessions(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    app_id: int | None = None,
 ) -> JSONResponse:
     uid = getattr(getattr(auth, "user", None), "id", None)
-    return SuccessResponse(data=await AiSessionService.list_sessions(uid), msg="查询成功")
+    return SuccessResponse(data=await AiSessionService.list_sessions(uid, app_id), msg="查询成功")
 
 
 @AiSessionRouter.get("/detail/{session_id}", summary="会话详情（含消息）")

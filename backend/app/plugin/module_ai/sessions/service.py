@@ -54,13 +54,17 @@ async def persist_session_exchange(
 class AiSessionService:
 
     @classmethod
-    async def list_sessions(cls, user_id: int | None = None) -> list[dict]:
+    async def list_sessions(
+        cls, user_id: int | None = None, app_id: int | None = None
+    ) -> list[dict]:
         async with async_db_session() as db:
             stmt = select(AiSessionModel).where(AiSessionModel.is_deleted.is_(False))
             if user_id is not None:
                 stmt = stmt.where(AiSessionModel.user_id == user_id)
+            if app_id is not None:
+                stmt = stmt.where(AiSessionModel.app_id == app_id)
             rows = (
-                await db.execute(stmt.order_by(AiSessionModel.id.desc()))
+                await db.execute(stmt.order_by(AiSessionModel.updated_time.desc(), AiSessionModel.id.desc()))
             ).scalars().all()
             return [_session_dict(s) for s in rows]
 
