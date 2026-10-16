@@ -10,7 +10,7 @@
         </div>
       </div>
 
-      <div ref="containerRef" class="input-container">
+      <div ref="containerRef" class="input-container" :class="{ 'is-locked': disabled || sending }">
         <div class="editor-wrap">
           <div ref="editorEl" class="cm-host" :class="{ 'is-readonly': disabled || sending }"></div>
 
@@ -29,10 +29,16 @@
 
           <div v-if="atMenuVisible" class="at-menu" :style="atMenuStyle">
             <div class="at-menu__title">快捷指令</div>
-            <div v-for="cmd in atCommands" :key="cmd.name" class="at-item" @click="chooseAt(cmd)">
+            <div
+              v-for="cmd in filteredAtCommands"
+              :key="cmd.name"
+              class="at-item"
+              @click="chooseAt(cmd)"
+            >
               <span class="at-item__name">#{{ cmd.name }}</span>
               <span class="at-item__desc">{{ cmd.desc }}</span>
             </div>
+            <div v-if="filteredAtCommands.length === 0" class="at-menu__empty">无匹配指令</div>
           </div>
         </div>
 
@@ -107,6 +113,7 @@ const editorEl = ref<HTMLElement>();
 const containerRef = ref<HTMLElement>();
 
 const atMenuVisible = ref(false);
+const atQuery = ref("");
 let atAnchor: number | null = null;
 
 const acceptTypes = computed(
@@ -126,6 +133,13 @@ const atCommands = [
   { name: "创建数据集", desc: "调用数据集创建工具" },
   { name: "创建标注任务", desc: "创建标注任务" },
 ];
+
+/** 根据 `@` 后已输入文本过滤快捷指令。 */
+const filteredAtCommands = computed(() => {
+  const q = atQuery.value.trim();
+  if (!q) return atCommands;
+  return atCommands.filter((c) => c.name.includes(q) || c.desc.includes(q));
+});
 
 /** 高亮 `#指令名` token。 */
 const mentionHighlight = ViewPlugin.fromClass(
@@ -209,26 +223,39 @@ onBeforeUnmount(() => {
 
 function detectAtMenu(state: EditorState) {
   const head = state.selection.main.head;
-  const before = head > 0 ? state.doc.sliceString(head - 1, head) : "";
-  if (before === "@" && !props.sending) {
-    atAnchor = head;
+  // 从光标向前找当前`@`（仅当`@`与光标之间的文本是连续字词时视作候选前缀）
+  const before = state.doc.sliceString(0, head);
+  const atPos = findAtPos(before);
+  if (atPos !== -1 && !props.sending) {
+    atAnchor = atPos + 1;
+    atQuery.value = state.doc.sliceString(atPos + 1, head);
     atMenuVisible.value = true;
-  } else if (before !== "@") {
+  } else {
     atMenuVisible.value = false;
     atAnchor = null;
+    atQuery.value = "";
   }
+}
+
+/** 在光标前的文本中定位最后一个未被 `#` 占位的 `@`，返回其位置；无则 -1。 */
+function findAtPos(text: string): number {
+  const re = /(?:^|\s|^#|#)@([\w\u4e00-\u9fa5]*)$/;
+  const m = re.exec(text);
+  return m ? m.index + m[0].lastIndexOf("@") : -1;
 }
 
 function chooseAt(cmd: { name: string }) {
   if (!view || atAnchor == null) return;
-  // 把光标前的 `@` 替换为 `#名称`
+  // 把光标前的 `@查询` 整体替换为 `#名称`
+  const head = view.state.selection.main.head;
   view.dispatch({
-    changes: { from: atAnchor - 1, to: atAnchor, insert: `#${cmd.name}` },
-    selection: { anchor: atAnchor + cmd.name.length },
+    changes: { from: atAnchor - 1, to: head, insert: `#${cmd.name}` },
+    selection: { anchor: atAnchor - 1 + cmd.name.length + 1 },
   });
   inputMessage.value = view.state.doc.toString();
   atMenuVisible.value = false;
   atAnchor = null;
+  atQuery.value = "";
   view.focus();
 }
 
@@ -369,6 +396,12 @@ defineExpose({
         box-shadow: 0 0 0 1px var(--el-color-primary);
       }
 
+      &.is-locked:hover,
+      &.is-locked:focus-within {
+        border-color: var(--el-border-color-light);
+        box-shadow: var(--el-box-shadow-light);
+      }
+
       .editor-wrap {
         position: relative;
         flex: 1;
@@ -432,6 +465,12 @@ defineExpose({
             font-size: var(--el-font-size-small);
             color: var(--el-text-color-secondary);
             background: var(--el-fill-color-light);
+          }
+
+          .at-menu__empty {
+            padding: 10px 12px;
+            font-size: var(--el-font-size-small);
+            color: var(--el-text-color-secondary);
           }
 
           .at-item {
