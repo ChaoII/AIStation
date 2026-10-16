@@ -603,12 +603,13 @@
               <el-option
                 v-for="m in mcpOptions"
                 :key="m.id"
-                :label="`${m.name}（${m.transport}）`"
+                :label="`${m.name}（${m.transport}${m.enabled ? '' : ' · 未启用'}）`"
                 :value="m.id"
-                :disabled="!m.enabled"
               />
             </el-select>
-            <div class="mcp-hint">MCP 服务器在「MCP 管理」页配置，绑定后其工具可被调用</div>
+            <div class="mcp-hint">
+              MCP 服务器在「能力市场 → 我的资产」配置并启用；未启用的绑定后在对话中暂不生效
+            </div>
           </el-form-item>
           <el-form-item label="智能问数">
             <el-switch v-model="agentForm.query_enabled" />
