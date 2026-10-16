@@ -38,6 +38,28 @@ from app.plugin.module_ai.market.skillhub_curation import (  # noqa: E402
 BASE = "https://api.skillhub.cn"
 UA = "aistation-skillhub-gen/1.0 (curation script)"
 
+# 图标落地目录（frontend public，供前端 /web/market-icons/ 引用）
+ICON_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "frontend", "public", "market-icons")
+)
+
+
+def _download_icon(url: str, dest: str, timeout: int = 20) -> bool:
+    """下载技能图标到本地，成功返回 True。"""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+        if not data:
+            return False
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as fh:
+            fh.write(data)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ⚠️ 下载图标失败（{exc}）：{url}")
+        return False
+
 
 def _json(url: str, retries: int = 3, timeout: int = 30) -> dict:
     """GET JSON，429/5xx 指数退避重试。"""
@@ -180,6 +202,7 @@ def fetch_skill(slug: str, cand: dict, skip_risk: bool = True) -> dict | None:
     tags = tags + ["skillhub"]
 
     content = build_skill_content(source_slug=slug, description_zh=desc_zh, sk_md=md, license=license_name)
+    icon_url = cand.get("iconUrl") or skill.get("iconUrl") or ""
     return {
         "key": f"skillhub-{slug}",
         "name": display,
@@ -189,6 +212,7 @@ def fetch_skill(slug: str, cand: dict, skip_risk: bool = True) -> dict | None:
         "content": content,
         "featured": False,
         "icon": category_emoji(category),
+        "icon_url": icon_url,
         "source": "skillhub.cn",
         "source_slug": slug,
         "license": license_name,
@@ -253,8 +277,13 @@ def main() -> None:
         if ent is None or ent["key"] in seen_keys:
             continue
         seen_keys.add(ent["key"])
+        icon_url = ent.pop("icon_url", "")
+        if icon_url:
+            local_name = f"skillhub-{slug}.png"
+            if _download_icon(icon_url, os.path.join(ICON_DIR, local_name)):
+                ent["icon"] = f"market-icons/{local_name}"
         skills.append(ent)
-        print(f"  [{len(skills)}/{args.limit}] {ent['name']}")
+        print(f"  [{len(skills)}/{args.limit}] {ent['name']} → {ent['icon']}")
         time.sleep(0.2)
 
     if len(skills) < args.limit:

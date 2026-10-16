@@ -1057,6 +1057,25 @@ async def ensure_market_seed() -> None:
 
             # skillhub.cn 精选固化技能（生成脚本产出，独立列表避免混淆）
             for sk in SKILLHUB_SKILLS:
+                sk_key = ("skill", sk["name"])
+                if sk_key in existing:
+                    # 幂等刷新：仅更新官方内置技能行的 icon（数据由生成脚本更新，避免旧 emoji 图标留存）
+                    row = await db.scalar(
+                        select(AiMarketItemModel).where(
+                            AiMarketItemModel.asset_type == "skill",
+                            AiMarketItemModel.name == sk["name"],
+                            AiMarketItemModel.is_official.is_(True),
+                        )
+                    )
+                    if row is not None:
+                        new_icon = sk.get("icon") or ""
+                        if (row.icon or "") != new_icon:
+                            row.icon = new_icon
+                            pl = dict(row.payload or {})
+                            if pl.get("icon") != new_icon:
+                                pl["icon"] = new_icon
+                                row.payload = pl
+                    continue
                 _add(
                     "skill",
                     sk["name"],
