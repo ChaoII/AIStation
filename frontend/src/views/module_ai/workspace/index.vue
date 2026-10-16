@@ -478,6 +478,7 @@ async function saveCron() {
 .ws-card {
   display: flex;
   flex-direction: column;
+  height: 100%;
   margin-bottom: 12px;
   padding: 16px 18px;
   background: var(--el-fill-color-blank);
