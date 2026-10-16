@@ -84,8 +84,14 @@ def test_plugin_duplicate_key_rejected(test_client, auth_headers):
 
 
 def test_executor_registry_shape():
-    """执行器注册表只含已实现的 key。"""
-    assert set(PLUGIN_EXECUTORS) == {"web_fetch", "table_export"}
+    """执行器注册表含全部 5 个内置 key（web_fetch/table_export 及新补的三个）。"""
+    assert set(PLUGIN_EXECUTORS) == {
+        "web_fetch",
+        "table_export",
+        "email_send",
+        "report_generate",
+        "data_pipeline",
+    }
 
 
 def test_table_export_executor():
@@ -102,9 +108,64 @@ def test_table_export_executor():
 
 
 def test_unimplemented_plugin_returns_error():
-    """未实现执行器的插件返回明确错误。"""
-    out = asyncio.run(execute_plugin("email_send", {}))
+    """未实现执行器的插件返回明确错误（用不存在的 key）。"""
+    out = asyncio.run(execute_plugin("no_such_plugin_key", {}))
     assert "未实现执行器" in out["error"]
+
+
+def test_plugin_executor_tools_registered():
+    """新补的三个执行器暴露为内置工具，Agent 可调用。"""
+    from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
+
+    assert "email_send" in TOOL_REGISTRY
+    assert "report_generate" in TOOL_REGISTRY
+    assert "data_pipeline" in TOOL_REGISTRY
+
+
+def test_email_send_missing_recipients():
+    """email_send 缺收件人返回明确错误（不依赖 SMTP/DB）。"""
+    out = asyncio.run(execute_plugin("email_send", {"subject": "s", "body": "b"}))
+    assert "收件人" in out["error"]
+
+
+def test_email_send_missing_smtp(test_client):
+    """SMTP 未配置时返回明确错误。"""
+    out = asyncio.run(
+        execute_plugin("email_send", {"to": "a@b.com", "subject": "s", "body": "b"})
+    )
+    assert "SMTP" in out["error"]
+
+
+def test_report_generate_creates_report(test_client):
+    """report_generate 保存报告并返回 report_id。"""
+    out = asyncio.run(
+        execute_plugin("report_generate", {"title": "测试报告", "content": "正文内容"})
+    )
+    assert out["report_id"]
+    assert out["title"] == "测试报告"
+
+
+def test_data_pipeline_missing_pipeline_id():
+    """data_pipeline 缺 pipeline_id 返回错误（不依赖 DB）。"""
+    out = asyncio.run(execute_plugin("data_pipeline", {}))
+    assert "管道" in out["error"]
+
+
+def test_data_pipeline_delegates_to_run_pipeline(monkeypatch):
+    """data_pipeline 委派给 AiQueryService.run_pipeline，返回其结果。"""
+    import asyncio
+
+    from app.plugin.module_ai.plugins import plugin_executor as pe
+
+    async def fake_run(pipeline_id: int) -> dict:
+        return {"ok": True, "materialized": 5, "msg": "done"}
+
+    monkeypatch.setattr(
+        "app.plugin.module_ai.query.service.AiQueryService.run_pipeline", fake_run
+    )
+    out = asyncio.run(pe.execute_plugin("data_pipeline", {"pipeline_id": 3}))
+    assert out["ok"] is True
+    assert out["materialized"] == 5
 
 
 def test_web_fetch_executor_unreachable():

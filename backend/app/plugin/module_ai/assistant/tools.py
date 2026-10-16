@@ -473,4 +473,53 @@ async def table_export(rows: list, columns: list | None = None) -> object:
     return await run_table_export({"rows": rows, "columns": columns or []})
 
 
+@tool(
+    "email_send",
+    "通过平台 SMTP 发送邮件给指定收件人（需平台已配置 SMTP）",
+    _obj(
+        {
+            "to": {"type": "string", "description": "收件人邮箱，多个用逗号分隔"},
+            "subject": {"type": "string", "description": "邮件主题"},
+            "body": {"type": "string", "description": "邮件正文"},
+        },
+        ["to"],
+    ),
+)
+async def email_send(to: str, subject: str = "", body: str = "", user_id: int | None = None) -> object:
+    from app.plugin.module_ai.plugins.plugin_executor import run_email_send
+
+    return await run_email_send({"to": to, "subject": subject, "body": body})
+
+
+@tool(
+    "report_generate",
+    "把内容保存为结构化报告，返回 report_id",
+    _obj(
+        {
+            "title": {"type": "string", "description": "报告标题"},
+            "content": {"type": "string", "description": "报告正文（Markdown）"},
+        },
+        ["title"],
+    ),
+)
+async def report_generate(title: str, content: str = "", user_id: int | None = None) -> object:
+    from app.plugin.module_ai.plugins.plugin_executor import run_report_generate
+
+    return await run_report_generate({"title": title, "content": content}, user_id=user_id)
+
+
+@tool(
+    "data_pipeline",
+    "运行指定数据管道（ELT：拉取外部数据落库到目标对象）",
+    _obj(
+        {"pipeline_id": {"type": "integer", "description": "数据管道 ID"}},
+        ["pipeline_id"],
+    ),
+)
+async def data_pipeline(pipeline_id: int, user_id: int | None = None) -> object:
+    from app.plugin.module_ai.plugins.plugin_executor import run_data_pipeline
+
+    return await run_data_pipeline({"pipeline_id": pipeline_id})
+
+
 TOOL_SCHEMAS = [t["schema"] for t in TOOL_REGISTRY.values()]

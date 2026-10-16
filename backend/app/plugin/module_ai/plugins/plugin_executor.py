@@ -62,10 +62,108 @@ async def run_table_export(args: dict, config: dict | None = None) -> dict:
     return {"columns": columns, "rows": len(rows), "csv": content}
 
 
+async def run_email_send(args: dict, config: dict | None = None) -> dict:
+    """通过平台 SMTP 配置发送邮件（有副作用：真实发送）。
+
+    参数：``to``（收件人，逗号分隔）、``subject``、``body``。SMTP 取自平台
+    ``notify_smtp_*`` 全局参数；未配置则返回明确错误。
+    """
+    import asyncio
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.utils import formataddr
+
+    recipients = (args or {}).get("to") or (args or {}).get("recipients")
+    if isinstance(recipients, str):
+        recipients = [r.strip() for r in recipients.split(",") if r.strip()]
+    if not recipients:
+        return {"error": "缺少收件人（to）"}
+    subject = (args or {}).get("subject") or ""
+    body = (args or {}).get("body") or ""
+
+    from app.core.database import async_db_session
+    from app.utils.notification import load_params
+
+    async with async_db_session() as db:
+        params = await load_params(
+            db,
+            "notify_smtp_host",
+            "notify_smtp_port",
+            "notify_smtp_user",
+            "notify_smtp_pass",
+            "notify_smtp_from",
+            "notify_smtp_from_name",
+            "notify_smtp_ssl",
+        )
+    host = params.get("notify_smtp_host")
+    if not host:
+        return {"error": "SMTP 未配置（notify_smtp_host）"}
+    port = int(params.get("notify_smtp_port", 587) or 587)
+    user = params.get("notify_smtp_user", "")
+    password = params.get("notify_smtp_pass", "")
+    from_addr = params.get("notify_smtp_from", user)
+    from_name = params.get("notify_smtp_from_name", "")
+    use_ssl = params.get("notify_smtp_ssl", "0") == "1"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject or "（无主题）"
+    msg["From"] = formataddr((from_name or from_addr, from_addr))
+    msg["To"] = ", ".join(recipients)
+    msg.attach(MIMEText(body or "", "plain", "utf-8"))
+
+    def _send() -> None:
+        if use_ssl:
+            server = smtplib.SMTP_SSL(host, port)
+        else:
+            server = smtplib.SMTP(host, port)
+            server.starttls()
+        if user and password:
+            server.login(user, password)
+        server.sendmail(from_addr, recipients, msg.as_string())
+        server.quit()
+
+    try:
+        # SMTP 握手为阻塞操作，放入线程池避免阻断事件循环
+        await asyncio.to_thread(_send)
+    except Exception as e:  # noqa: BLE001  发送失败不抛异常
+        log.warning(f"邮件发送失败：{e}")
+        return {"error": f"邮件发送失败：{type(e).__name__}: {e}"}
+    return {"sent": True, "recipients": recipients}
+
+
+async def run_report_generate(args: dict, config: dict | None = None, user_id: int | None = None) -> dict:
+    """把内容保存为结构化报告（复用报告中心），返回 report_id。"""
+    title = (args or {}).get("title") or ""
+    content = (args or {}).get("content") or ""
+    if not title:
+        return {"error": "缺少报告标题（title）"}
+    from app.plugin.module_ai.report.service import AiReportService
+
+    saved = await AiReportService.create(
+        title, content, {"plugin": "report_generate"}, user_id
+    )
+    return {"report_id": saved["id"], "title": saved["title"]}
+
+
+async def run_data_pipeline(args: dict, config: dict | None = None) -> dict:
+    """运行指定数据管道（ELT 拉取外部数据落库到目标对象），复用问数管道执行器。"""
+    pipeline_id = (args or {}).get("pipeline_id")
+    if not pipeline_id:
+        return {"error": "缺少管道ID（pipeline_id）"}
+    from app.plugin.module_ai.query.service import AiQueryService
+
+    result = await AiQueryService.run_pipeline(int(pipeline_id))
+    return result if isinstance(result, dict) else {"result": result}
+
+
 #: key -> 执行器
 PLUGIN_EXECUTORS = {
     "web_fetch": run_web_fetch,
     "table_export": run_table_export,
+    "email_send": run_email_send,
+    "report_generate": run_report_generate,
+    "data_pipeline": run_data_pipeline,
 }
 
 
