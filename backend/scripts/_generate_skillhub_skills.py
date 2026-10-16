@@ -170,7 +170,14 @@ def fetch_skill(slug: str, cand: dict, skip_risk: bool = True) -> dict | None:
     license_name = _license_from_md(md) or skill.get("license")
     display = skill.get("displayName") or (cand.get("namespace") or {}).get("displayName") or cand.get("name") or slug
     category = map_category(cand.get("category") or "")
-    tags = list((cand.get("tags") or {}).keys())[:5] + ["skillhub"]
+    raw_tags = cand.get("tags") or []
+    if isinstance(raw_tags, dict):
+        tags = list(raw_tags.keys())[:5]
+    elif isinstance(raw_tags, list):
+        tags = [str(t) for t in raw_tags][:5]
+    else:
+        tags = []
+    tags = tags + ["skillhub"]
 
     content = build_skill_content(source_slug=slug, description_zh=desc_zh, sk_md=md, license=license_name)
     return {
