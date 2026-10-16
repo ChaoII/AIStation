@@ -121,9 +121,13 @@ function formatCount(n: number | undefined): string {
   font-size: var(--el-font-size-base);
   line-height: 1.5;
   margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .market-card__sub {
