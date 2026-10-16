@@ -327,6 +327,8 @@ defineExpose({
 <style lang="scss" scoped>
 .chat-input {
   .input-wrapper {
+    max-width: 800px;
+    margin: 0 auto;
     padding: 12px 16px;
 
     .uploaded-files {

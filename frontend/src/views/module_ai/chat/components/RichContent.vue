@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="rich-content" v-html="html" @click="handleClick"></div>
+  <div ref="rootRef" class="rich-content" @click="handleClick" v-html="html"></div>
 </template>
 
 <script setup lang="ts">
@@ -48,7 +48,9 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
 
 const html = computed(() => {
   if (!props.content) return "";
-  const rawHtml = md.render(props.content);
+  // 归一换行 + 去掉首尾空白，避免渲染出空白 <p>/多余空行
+  const normalized = props.content.replace(/\r\n/g, "\n").trim();
+  const rawHtml = md.render(normalized);
   return DOMPurify.sanitize(rawHtml, {
     ALLOWED_TAGS: [
       "a",
@@ -195,18 +197,52 @@ const handleClick = async (e: MouseEvent) => {
   color: var(--el-text-color-primary);
   word-wrap: break-word;
 
+  :deep(h1) {
+    font-size: 1.4em;
+  }
+
+  :deep(h2) {
+    font-size: 1.25em;
+  }
+
+  :deep(h3) {
+    font-size: 1.1em;
+  }
+
+  :deep(h4),
+  :deep(h5),
+  :deep(h6) {
+    font-size: 1em;
+  }
+
+  :deep(h1),
+  :deep(h2),
+  :deep(h3),
+  :deep(h4),
+  :deep(h5),
+  :deep(h6) {
+    margin: 0 0 10px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
   :deep(p) {
-    margin: 8px 0;
+    margin: 0 0 10px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
   }
 
   :deep(ul),
   :deep(ol) {
     padding-left: 24px;
-    margin: 8px 0;
+    margin: 0 0 10px;
   }
 
   :deep(li) {
-    margin: 4px 0;
+    margin: 2px 0;
+    line-height: 1.7;
   }
 
   :deep(a) {
