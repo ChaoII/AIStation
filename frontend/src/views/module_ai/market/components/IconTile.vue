@@ -22,6 +22,7 @@ const FALLBACK: Record<string, string> = {
   skill: "🧩",
   mcp: "🔌",
   plugin: "📦",
+  agent: "🤖",
 };
 
 /** 图片加载失败标记：缺图/路径失效时回退到类型 emoji，避免裂图 */
@@ -35,13 +36,14 @@ watch(
 
 const icon = computed(() => (props.item.icon || "").trim());
 
-/** 图片判定：http(s) 链接、带图片扩展名、或 market-icons/ 相对路径 */
+/** 图片判定：http(s) 链接、带图片扩展名、或 market-icons/ / agent-icons/ 相对路径 */
 const isImage = computed(() => {
   const i = icon.value;
   return (
     /^https?:\/\//i.test(i) ||
     /\.(png|jpe?g|svg|webp|gif)$/i.test(i) ||
-    i.startsWith("market-icons/")
+    i.startsWith("market-icons/") ||
+    i.startsWith("agent-icons/")
   );
 });
 

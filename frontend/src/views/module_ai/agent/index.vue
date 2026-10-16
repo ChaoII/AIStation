@@ -100,22 +100,22 @@
 
         <el-row v-if="!activeChatAgent" v-loading="loading" :gutter="12">
           <el-col v-for="a in pagedAgents" :key="a.id" :xs="24" :sm="12" :md="8" :lg="6" :xl="6">
-            <el-card shadow="hover" class="agent-card" :body-style="{ padding: '16px' }">
+            <el-card shadow="never" class="agent-card" :body-style="{ padding: '16px 18px' }">
               <div class="agent-card__head">
+                <IconTile :item="{ icon: a.avatar, asset_type: 'agent' }" />
+                <div class="agent-card__meta">
+                  <div class="agent-card__name">{{ a.agent_name }}</div>
+                  <div class="agent-card__sub">
+                    <el-tag size="small" :type="a.enabled ? 'success' : 'info'" effect="plain">
+                      {{ a.enabled ? "启用" : "停用" }}
+                    </el-tag>
+                  </div>
+                </div>
                 <el-checkbox
                   :model-value="isSelected(a)"
                   class="agent-card__check"
                   @change="toggleSelect(a)"
                 />
-                <div class="agent-avatar" :style="{ background: a.color || '#409eff' }">
-                  {{ a.agent_name.slice(0, 1) }}
-                </div>
-                <div class="agent-card__meta">
-                  <div class="agent-card__name">{{ a.agent_name }}</div>
-                  <el-tag size="small" :type="a.enabled ? 'success' : 'info'">
-                    {{ a.enabled ? "启用" : "停用" }}
-                  </el-tag>
-                </div>
               </div>
               <div class="agent-card__role">{{ a.agent_role || "—" }}</div>
               <div class="agent-card__tags">
@@ -323,31 +323,11 @@
           <div v-for="(m, i) in chatMsgs" :key="i" class="agent-chat-msg" :class="m.role">
             <div v-if="m.role === 'user'" class="agent-chat-bubble user">{{ m.content }}</div>
             <div v-else class="agent-chat-bubble">
-              <div v-if="m.think" class="agent-chat-think">
-                <span class="agent-chat-think-title">思考过程</span>
-                <div>{{ m.think }}</div>
-              </div>
-              <div v-if="m.tools.length" class="agent-chat-tools">
-                <div class="agent-chat-tools-title">执行链</div>
-                <div class="agent-chat-tools-flow">
-                  <template v-for="(t, ti) in m.tools" :key="t">
-                    <span
-                      class="agent-chat-tool"
-                      :class="{
-                        'agent-chat-tool--running': m.loading && ti === m.tools.length - 1,
-                      }"
-                    >
-                      <el-icon class="agent-chat-tool__icon">
-                        <component :is="toolIcon(t)" />
-                      </el-icon>
-                      {{ t }}
-                    </span>
-                    <i v-if="ti < m.tools.length - 1" class="agent-chat-tool-arrow">→</i>
-                  </template>
-                </div>
-              </div>
+              <ReasoningBlock v-if="m.think" :text="m.think" :streaming="m.loading" />
+              <ToolCallTimeline v-if="toolParts(m).length" :parts="toolParts(m)" />
               <div v-if="m.content" class="agent-chat-text" v-html="renderMd(m.content)"></div>
-              <span v-if="m.loading" class="agent-chat-loading">
+              <span v-if="m.content && m.loading" class="cursor-typing"></span>
+              <span v-if="m.loading && !m.content" class="agent-chat-loading">
                 <el-icon class="is-loading"><Loading /></el-icon>
                 思考中…
               </span>
@@ -1037,7 +1017,6 @@ import {
   DataAnalysis,
   Document,
   User,
-  Connection,
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 import { agnoToolInfo, readAgnoFrames } from "@/composables/ai/agnoSse";
@@ -1064,6 +1043,10 @@ import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
 import { getOntActions, getOntFunctions } from "@/api/module_ai/ontology";
 import { getQueryDatasources } from "@/api/module_ai/query";
 import { getAiSessionList, getAiSessionDetail } from "@/api/module_ai/session";
+import IconTile from "@/views/module_ai/market/components/IconTile.vue";
+import ReasoningBlock from "@/views/module_ai/chat/components/ReasoningBlock.vue";
+import ToolCallTimeline from "@/views/module_ai/chat/components/ToolCallTimeline.vue";
+import type { AiUIPart } from "@/composables/ai/uiMessage";
 
 defineOptions({ name: "AiAgent" });
 
@@ -1678,13 +1661,15 @@ function handleChatEvent(event: string, data: Record<string, unknown>, asst: any
   }
   if (event === "RunContent" || event === "ReasoningContentDelta") chatScroll();
 }
-// 工具名 → 图标（能力节点可视化）
-function toolIcon(name: string) {
-  const n = (name || "").toLowerCase();
-  if (n.includes("query")) return DataAnalysis;
-  if (n.includes("resolve")) return Connection;
-  if (n.includes("search") || n.includes("rag") || n.includes("knowledge")) return Collection;
-  return Operation;
+// 工具名列表 → ToolCallTimeline 期望的 AiUIPart 数组
+function toolParts(m: any): AiUIPart[] {
+  const tools = (m.tools || []) as string[];
+  return tools.map((name, idx) => ({
+    type: `tool-${name}`,
+    toolName: name,
+    toolCallId: `${name}-${idx}`,
+    state: idx === tools.length - 1 && m.loading ? "running" : "output-available",
+  }));
 }
 
 // ---- 详情 / 复制 ----
@@ -2380,6 +2365,23 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
 .agent-chat-text {
   line-height: 1.7;
 }
+
+.cursor-typing {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--el-color-primary);
+  animation: cursor-blink 0.9s steps(2, start) infinite;
+}
+
+@keyframes cursor-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
 .agent-chat-loading {
   display: inline-flex;
   align-items: center;
@@ -2684,40 +2686,64 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
 
 .agent-card {
   margin-bottom: 12px;
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  transition:
+    box-shadow 0.2s,
+    transform 0.2s,
+    border-color 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary-light-5);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 8%);
+    transform: translateY(-2px);
+  }
 
   .agent-card__head {
     display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-
-  .agent-avatar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    color: #fff;
-    font-size: var(--el-font-size-large);
-    border-radius: 10px;
+    gap: 12px;
+    align-items: flex-start;
   }
 
   .agent-card__meta {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    min-width: 0;
+    flex: 1;
   }
 
   .agent-card__name {
     font-size: var(--el-font-size-base);
     font-weight: 600;
+    line-height: 1.5;
+    margin-bottom: 6px;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .agent-card__sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    flex-wrap: wrap;
+  }
+
+  .agent-card__check {
+    flex: 0 0 auto;
   }
 
   .agent-card__role {
-    margin: 10px 0;
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-    min-height: 34px;
+    margin: 12px 0;
+    color: var(--el-text-color-regular);
+    font-size: var(--el-font-size-base);
+    line-height: 1.7;
+    min-height: 44px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -2733,8 +2759,12 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
 
   .agent-card__actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--el-border-color-lighter);
+    font-size: 12px;
 
     :deep(.el-button + .el-button) {
       margin-left: 0;
