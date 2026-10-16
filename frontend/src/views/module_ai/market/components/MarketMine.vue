@@ -212,7 +212,7 @@
 <script setup lang="ts">
   import { Delete, Edit, Plus, Remove, Share, Upload } from "@element-plus/icons-vue";
   import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
-  import { nextTick, onMounted, reactive, ref } from "vue";
+  import { nextTick, onMounted, reactive, ref, watch } from "vue";
 
   import {
     deleteMyAsset,
@@ -234,6 +234,27 @@
   import CreateToolDialog from "./CreateToolDialog.vue";
 
   defineOptions({ name: "MarketMine" });
+
+  const props = defineProps<{ target: { asset_type: string; name: string } | null }>();
+  const emit = defineEmits<{ targetHandled: [] }>();
+
+  // 安装需密钥资产后跳转而来：切到对应类型并自动打开该资产编辑
+  watch(
+    () => props.target,
+    async (target) => {
+      if (!target) return;
+      assetType.value = target.asset_type;
+      await load();
+      const hit = items.value.find((r) => r.name === target.name);
+      if (hit) {
+        openEdit(hit);
+      } else {
+        ElMessage.info(`未在「我的资产」中找到「${target.name}」，请手动定位`);
+      }
+      emit("targetHandled");
+    },
+    { immediate: true }
+  );
 
   const loading = ref(false);
   const items = ref<MyAsset[]>([]);

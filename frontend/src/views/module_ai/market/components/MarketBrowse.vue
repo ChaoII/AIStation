@@ -243,6 +243,8 @@ import MarketCard from "./MarketCard.vue";
 
 defineOptions({ name: "MarketBrowse" });
 
+const emit = defineEmits<{ goConfigure: [target: { asset_type: string; name: string }] }>();
+
 const loading = ref(false);
 const featured = ref<MarketItem[]>([]);
 const categories = ref<{ name: string; count: number }[]>([]);
@@ -287,6 +289,13 @@ const currentTypeLabel = computed(
 
 function assetLabel(type: string) {
   return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+}
+
+/** 判定商品是否需配置密钥（MCP 且 auth_type 非 none，或 env/args 含占位符）。 */
+function needsKey(item: MarketItem) {
+  const p: any = item.payload || {};
+  const hasPlaceholder = JSON.stringify(p.env || p.args || "").includes("<");
+  return item.asset_type === "mcp" && ((p.auth_type && p.auth_type !== "none") || hasPlaceholder);
 }
 
 async function loadHome(shuffle = false) {
@@ -377,7 +386,8 @@ async function installItem(item: MarketItem) {
     { confirmButtonText: "安装", cancelButtonText: "取消", type: "info" }
   );
   const res: any = await installMarketItem(item.id);
-  if (res.data?.data?.installed) {
+  const firstInstall = !!res.data?.data?.installed;
+  if (firstInstall) {
     ElMessage.success(`已安装「${item.name}」`);
   } else {
     ElMessage.info("该商品已安装过");
@@ -385,6 +395,14 @@ async function installItem(item: MarketItem) {
   item.installed = true;
   if (detail.value && detail.value.id === item.id) detail.value.installed = true;
   loadItems();
+  if (firstInstall && needsKey(item)) {
+    await ElMessageBox.alert(
+      `「${item.name}」需要到「我的资产」填写密钥并启用后，才能在智能体中选用。`,
+      "需要配置密钥",
+      { confirmButtonText: "去配置", type: "warning" }
+    );
+    emit("goConfigure", { asset_type: item.asset_type, name: item.name });
+  }
 }
 
 async function toggleFavorite(item: MarketItem) {

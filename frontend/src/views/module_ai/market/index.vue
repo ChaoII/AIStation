@@ -5,10 +5,10 @@
     <el-card shadow="never" class="market-shell" :body-style="{ padding: '0 16px 12px' }">
       <el-tabs v-model="activeTab" class="market-main-tabs">
         <el-tab-pane label="能力市场" name="browse">
-          <MarketBrowse />
+          <MarketBrowse @go-configure="goConfigure" />
         </el-tab-pane>
         <el-tab-pane label="我的资产" name="mine">
-          <MarketMine />
+          <MarketMine :target="mineTarget" @target-handled="mineTarget = null" />
         </el-tab-pane>
         <el-tab-pane label="分享给我" name="shared">
           <MarketShared />
@@ -36,6 +36,14 @@ defineOptions({ name: "AiMarket" });
 
 const activeTab = ref("browse");
 const userStore = useUserStore();
+
+/** 安装需密钥资产后，跳转到「我的资产」并指定要打开编辑的资产 */
+const mineTarget = ref<{ asset_type: string; name: string } | null>(null);
+
+function goConfigure(target: { asset_type: string; name: string }) {
+  activeTab.value = "mine";
+  mineTarget.value = target;
+}
 
 /** 审核中心仅对超管或持有 review 权限的用户可见 */
 const canReview = computed(() => {
