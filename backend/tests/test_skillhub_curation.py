@@ -102,3 +102,23 @@ def test_build_skill_content_length_cap():
     md = "## Workflow\n" + "- 内容超长\n" * 300
     content = build_skill_content(source_slug="long", description_zh=desc, sk_md=md)
     assert len(content) <= MAX_CONTENT_LEN
+
+
+def test_skillhub_skills_shape():
+    """固化数据集形状锚点：≥200、字段齐全、content 含中文、无重复、不与内置技能撞名。"""
+    from app.plugin.module_ai.market.skillhub_skills import SKILLHUB_SKILLS
+    from app.plugin.module_ai.market.seed import _SKILLS
+
+    assert len(SKILLHUB_SKILLS) >= 200
+    keys: set[str] = set()
+    names: set[str] = set()
+    builtin = {s["name"] for s in _SKILLS}
+    for s in SKILLHUB_SKILLS:
+        for field in ("name", "description", "content", "category"):
+            assert s[field], f"{s.get('key')} 缺字段 {field}"
+        assert has_cjk(s["content"])
+        assert s["key"] not in keys and s["name"] not in names
+        assert s["name"] not in builtin
+        assert s["icon"], "图标应为非空（分类 emoji）"
+        keys.add(s["key"])
+        names.add(s["name"])
