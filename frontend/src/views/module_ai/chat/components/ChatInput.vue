@@ -3,23 +3,39 @@
     <div class="input-wrapper">
       <div v-if="uploadedFiles.length > 0" class="uploaded-files">
         <div v-for="file in uploadedFiles" :key="file.id" class="file-item">
-          <el-icon class="file-icon"><Document /></el-icon>
+          <img v-if="isImage(file)" :src="fileUrl(file)" class="file-thumb" alt="" />
+          <el-icon v-else class="file-icon"><Document /></el-icon>
           <span class="file-name">{{ file.name }}</span>
           <el-icon class="file-remove" @click="removeFile(file.id)"><Close /></el-icon>
         </div>
       </div>
-      <div class="input-container">
-        <el-input
-          v-model="inputMessage"
-          type="textarea"
-          :placeholder="placeholder"
-          :disabled="disabled || sending"
-          :autosize="{ minRows: 1, maxRows: 6 }"
-          resize="none"
-          class="message-input"
-          @keydown.enter.exact.prevent="handleSend"
-          @keydown.shift.enter.exact="handleShiftEnter"
-        />
+
+      <div ref="containerRef" class="input-container">
+        <div class="editor-wrap">
+          <div ref="editorEl" class="cm-host" :class="{ 'is-readonly': disabled || sending }"></div>
+
+          <div class="quick-chips">
+            <el-tag
+              v-for="chip in quickChips"
+              :key="chip"
+              size="small"
+              effect="plain"
+              class="chip"
+              @click="insertToken(`#${chip}`)"
+            >
+              #{{ chip }}
+            </el-tag>
+          </div>
+
+          <div v-if="atMenuVisible" class="at-menu" :style="atMenuStyle">
+            <div class="at-menu__title">快捷指令</div>
+            <div v-for="cmd in atCommands" :key="cmd.name" class="at-item" @click="chooseAt(cmd)">
+              <span class="at-item__name">#{{ cmd.name }}</span>
+              <span class="at-item__desc">{{ cmd.desc }}</span>
+            </div>
+          </div>
+        </div>
+
         <div class="input-actions">
           <el-upload
             ref="uploadRef"
@@ -51,9 +67,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { Promotion, Paperclip, Document, Close, VideoPause } from "@element-plus/icons-vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import type { UploadFile } from "element-plus";
+import { Promotion, Paperclip, Document, Close, VideoPause } from "@element-plus/icons-vue";
+import {
+  EditorView,
+  keymap,
+  placeholder,
+  ViewPlugin,
+  Decoration,
+  type DecorationSet,
+} from "@codemirror/view";
+import { EditorState, Prec, RangeSetBuilder } from "@codemirror/state";
+import { basicSetup } from "codemirror";
+import { insertNewlineAndIndent } from "@codemirror/commands";
 import type { UploadedFile } from "@/views/module_ai/chat/types";
 
 interface Props {
@@ -75,23 +102,150 @@ const emit = defineEmits<Emits>();
 
 const inputMessage = ref("");
 const uploadedFiles = ref<UploadedFile[]>([]);
+const editorEl = ref<HTMLElement>();
+const containerRef = ref<HTMLElement>();
 
-const acceptTypes = computed(() => {
-  return ".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.mp3,.wav,.mp4,.avi,.mov";
+const atMenuVisible = ref(false);
+let atAnchor: number | null = null;
+
+const acceptTypes = computed(
+  () => ".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.mp3,.wav,.mp4,.avi,.mov"
+);
+
+const atMenuStyle = computed(() => ({
+  left: "12px",
+  bottom: `${(editorEl.value?.clientHeight || 120) + 44}px`,
+}));
+
+const quickChips = ["联网搜索", "生成报告", "创建数据集", "创建标注任务"];
+
+const atCommands = [
+  { name: "联网搜索", desc: "联网检索最新信息" },
+  { name: "生成报告", desc: "基于检索结果生成报告" },
+  { name: "创建数据集", desc: "调用数据集创建工具" },
+  { name: "创建标注任务", desc: "创建标注任务" },
+];
+
+/** 高亮 `#指令名` token。 */
+const mentionHighlight = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildMentions(view);
+    }
+    update(u: any) {
+      if (u.docChanged) this.decorations = buildMentions(u.view);
+    }
+  },
+  { decorations: (v: any) => v.decorations }
+);
+
+function buildMentions(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const re = /#[A-Za-z\u4e00-\u9fa5_][\w\u4e00-\u9fa5_-]*/g;
+  const text = view.state.doc.toString();
+  const mark = Decoration.mark({ class: "mention" });
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    builder.add(m.index, m.index + m[0].length, mark);
+  }
+  return builder.finish();
+}
+
+let view: EditorView | null = null;
+
+onMounted(() => {
+  if (!editorEl.value) return;
+  view = new EditorView({
+    parent: editorEl.value,
+    state: EditorState.create({
+      doc: "",
+      extensions: [
+        basicSetup,
+        EditorView.lineWrapping,
+        placeholder("输入消息…（Enter 发送 / Shift+Enter 换行，@ 唤起快捷指令）"),
+        mentionHighlight,
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) {
+            inputMessage.value = u.state.doc.toString();
+          }
+          detectAtMenu(u.state);
+        }),
+        Prec.highest(
+          keymap.of([
+            {
+              key: "Enter",
+              preventDefault: true,
+              run: () => {
+                handleSend();
+                return true;
+              },
+            },
+            {
+              key: "Shift-Enter",
+              preventDefault: true,
+              run: (cm) => {
+                insertNewlineAndIndent(cm);
+                return true;
+              },
+            },
+            { key: "Escape", run: () => (atMenuVisible.value = false) },
+          ])
+        ),
+      ],
+    }),
+  });
 });
 
-const placeholder = "输入消息…（Enter 发送 / Shift+Enter 换行）";
+onBeforeUnmount(() => {
+  view?.destroy();
+  view = null;
+});
+
+function detectAtMenu(state: EditorState) {
+  const head = state.selection.main.head;
+  const before = head > 0 ? state.doc.sliceString(head - 1, head) : "";
+  if (before === "@" && !props.sending) {
+    atAnchor = head;
+    atMenuVisible.value = true;
+  } else if (before !== "@") {
+    atMenuVisible.value = false;
+    atAnchor = null;
+  }
+}
+
+function chooseAt(cmd: { name: string }) {
+  if (!view || atAnchor == null) return;
+  // 把光标前的 `@` 替换为 `#名称`
+  view.dispatch({
+    changes: { from: atAnchor - 1, to: atAnchor, insert: `#${cmd.name}` },
+    selection: { anchor: atAnchor + cmd.name.length },
+  });
+  inputMessage.value = view.state.doc.toString();
+  atMenuVisible.value = false;
+  atAnchor = null;
+  view.focus();
+}
+
+function insertToken(token: string) {
+  if (!view) return;
+  const head = view.state.selection.main.head;
+  view.dispatch({
+    changes: { from: head, to: head, insert: `${token} ` },
+    selection: { anchor: head + token.length + 1 },
+  });
+  inputMessage.value = view.state.doc.toString();
+  view.focus();
+}
 
 const handleFileChange = (uploadFile: UploadFile) => {
   const file = uploadFile.raw;
   if (!file) return;
-
   const maxSize = 10 * 1024 * 1024;
   if (file.size > maxSize) {
     alert("文件大小不能超过10MB");
     return;
   }
-
   const uploadedFile: UploadedFile = {
     id: Date.now().toString() + Math.random().toString(36).substr(2),
     name: file.name,
@@ -99,7 +253,6 @@ const handleFileChange = (uploadFile: UploadFile) => {
     type: file.type,
     file,
   };
-
   uploadedFiles.value.push(uploadedFile);
 };
 
@@ -110,24 +263,28 @@ const removeFile = (id: string) => {
   }
 };
 
+const isImage = (file: UploadedFile) => file.type?.startsWith("image/");
+const fileUrl = (file: UploadedFile) => (file.file ? URL.createObjectURL(file.file) : "");
+
+const clearEditor = () => {
+  if (!view) return;
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "" } });
+  inputMessage.value = "";
+};
+
 const handleSend = () => {
   const message = inputMessage.value.trim();
   if ((!message && uploadedFiles.value.length === 0) || props.disabled || props.sending) {
     return;
   }
   emit("send", message, uploadedFiles.value.length > 0 ? [...uploadedFiles.value] : undefined);
-  inputMessage.value = "";
+  clearEditor();
   uploadedFiles.value = [];
-};
-
-const handleShiftEnter = () => {
-  inputMessage.value += "\n";
 };
 
 defineExpose({
   focus: () => {
-    const input = document.querySelector(".message-input textarea") as HTMLTextAreaElement;
-    input?.focus();
+    view?.focus();
   },
 });
 </script>
@@ -135,7 +292,6 @@ defineExpose({
 <style lang="scss" scoped>
 .chat-input {
   .input-wrapper {
-    /* 铺满聊天区，仅保留左右内边距，不再居中限宽 */
     padding: 12px 16px;
 
     .uploaded-files {
@@ -148,16 +304,17 @@ defineExpose({
         display: flex;
         gap: 6px;
         align-items: center;
-        padding: 8px 14px;
+        padding: 6px 10px;
         font-size: var(--el-font-size-small);
         background: var(--el-fill-color-light);
         border: 1px solid var(--el-border-color-light);
         border-radius: 8px;
-        transition: all 0.2s ease;
 
-        &:hover {
-          background: var(--el-color-primary-light-9);
-          border-color: var(--el-color-primary-light-7);
+        .file-thumb {
+          width: 28px;
+          height: 28px;
+          object-fit: cover;
+          border-radius: 4px;
         }
 
         .file-icon {
@@ -174,10 +331,8 @@ defineExpose({
         }
 
         .file-remove {
-          font-size: 14px;
-          color: var(--el-text-color-secondary);
           cursor: pointer;
-          transition: color 0.2s ease;
+          color: var(--el-text-color-secondary);
 
           &:hover {
             color: var(--el-color-danger);
@@ -186,8 +341,8 @@ defineExpose({
       }
     }
 
-    /* 紧凑一行：左侧 textarea 自适应，右侧附件/发送按钮内联 */
     .input-container {
+      position: relative;
       display: flex;
       gap: 8px;
       align-items: flex-end;
@@ -200,32 +355,100 @@ defineExpose({
         border-color 0.2s ease,
         box-shadow 0.2s ease;
 
-      &:hover {
-        border-color: var(--el-color-primary);
-        box-shadow: var(--el-box-shadow);
-      }
-
+      &:hover,
       &:focus-within {
         border-color: var(--el-color-primary);
         box-shadow: 0 0 0 1px var(--el-color-primary);
       }
 
-      .message-input {
+      .editor-wrap {
+        position: relative;
         flex: 1;
         min-width: 0;
 
-        :deep(.el-textarea__inner) {
-          padding: 0;
+        .cm-host {
+          max-height: 180px;
+          overflow: hidden;
+          font-size: var(--el-font-size-base);
           line-height: 1.6;
-          color: var(--el-text-color-primary);
-          resize: none;
-          background: transparent;
-          border: none;
-          box-shadow: none;
+
+          &.is-readonly {
+            opacity: 0.6;
+            pointer-events: none;
+          }
+
+          :deep(.cm-editor) {
+            background: transparent;
+
+            &.cm-focused {
+              outline: none;
+            }
+          }
+
+          :deep(.cm-scroller) {
+            font-family: inherit;
+            overflow: auto;
+          }
+
+          :deep(.mention) {
+            color: var(--el-color-primary);
+            font-weight: 600;
+            background: var(--el-color-primary-light-9);
+            border-radius: 3px;
+          }
         }
 
-        :deep(.el-textarea) {
-          padding: 0;
+        .quick-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-top: 6px;
+
+          .chip {
+            cursor: pointer;
+          }
+        }
+
+        .at-menu {
+          position: absolute;
+          z-index: 30;
+          width: 220px;
+          overflow: hidden;
+          background: var(--el-bg-color-overlay);
+          border: 1px solid var(--el-border-color-light);
+          border-radius: 8px;
+          box-shadow: var(--el-box-shadow);
+
+          .at-menu__title {
+            padding: 6px 12px;
+            font-size: var(--el-font-size-small);
+            color: var(--el-text-color-secondary);
+            background: var(--el-fill-color-light);
+          }
+
+          .at-item {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            padding: 8px 12px;
+            cursor: pointer;
+
+            &:hover {
+              background: var(--el-fill-color-light);
+            }
+
+            .at-item__name {
+              flex-shrink: 0;
+              font-size: var(--el-font-size-small);
+              font-weight: 600;
+              color: var(--el-color-primary);
+            }
+
+            .at-item__desc {
+              font-size: var(--el-font-size-small);
+              color: var(--el-text-color-secondary);
+            }
+          }
         }
       }
 
@@ -238,39 +461,17 @@ defineExpose({
         .upload-btn {
           font-size: var(--el-font-size-large);
           color: var(--el-text-color-secondary);
-          transition: all 0.2s ease;
 
           &:hover {
             color: var(--el-color-primary);
-            transform: scale(1.05);
           }
         }
 
-        .send-button {
-          flex-shrink: 0;
-          border-radius: 50%;
-          box-shadow: var(--el-box-shadow-light);
-          transition: all 0.2s ease;
-
-          &:hover {
-            box-shadow: var(--el-box-shadow);
-            transform: translateY(-1px);
-          }
-
-          &:active {
-            transform: translateY(0);
-          }
-        }
-
+        .send-button,
         .stop-button {
           flex-shrink: 0;
           border-radius: 50%;
           box-shadow: var(--el-box-shadow-light);
-          transition: all 0.2s ease;
-
-          &:hover {
-            transform: scale(1.05);
-          }
         }
       }
     }
@@ -279,16 +480,6 @@ defineExpose({
   &.chat-input--disabled .input-wrapper .input-container {
     opacity: 0.72;
     filter: grayscale(0.06);
-
-    &:hover {
-      border-color: var(--el-border-color-light);
-      box-shadow: var(--el-box-shadow-light);
-    }
-
-    &:focus-within {
-      border-color: var(--el-border-color-light);
-      box-shadow: var(--el-box-shadow-light);
-    }
   }
 }
 </style>
