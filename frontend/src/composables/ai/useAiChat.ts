@@ -1,5 +1,6 @@
-import { computed } from "vue";
+import { computed, unref, type MaybeRef } from "vue";
 import { useChat } from "@ai-sdk/vue";
+import type { UIMessage } from "ai";
 import { AgnoChatTransport } from "./agnoChatTransport";
 
 export interface UseAiChatOptions {
@@ -7,6 +8,10 @@ export interface UseAiChatOptions {
   path?: string;
   /** 附加请求体（如 app_id / session_id / knowledge_ids / model_id）。 */
   body?: () => Record<string, unknown>;
+  /** 会话 id（useChat 的 chat id），支持响应式（切换会话时重建）。 */
+  id?: MaybeRef<string | number | null>;
+  /** 初始历史消息（切换会话时用于恢复）。 */
+  initialMessages?: MaybeRef<UIMessage[]>;
 }
 
 /**
@@ -19,13 +24,22 @@ export interface UseAiChatOptions {
  */
 export function useAiChat(options: UseAiChatOptions | (() => UseAiChatOptions) = {}) {
   const getOptions = typeof options === "function" ? options : () => options;
-  const opts = getOptions();
+  // transport 固定（path/body 稳定）；body 为函数，每次请求时动态读取会话/知识等
+  const baseOpts = getOptions();
+  const transport = new AgnoChatTransport({
+    path: baseOpts.path || "/ai/assistant/stream",
+    buildBody: baseOpts.body,
+  });
 
-  const chat = useChat({
-    transport: new AgnoChatTransport({
-      path: opts.path || "/ai/assistant/stream",
-      buildBody: opts.body,
-    }),
+  const chat = useChat(() => {
+    const o = getOptions();
+    const chatId = unref(o.id);
+    const initMsgs = unref(o.initialMessages);
+    return {
+      id: chatId != null ? String(chatId) : undefined,
+      messages: (initMsgs || []) as UIMessage[],
+      transport,
+    };
   });
 
   // useChat 的 ChatStatus 与旧枚举一致（submitted/streaming/ready/error），直接透传
