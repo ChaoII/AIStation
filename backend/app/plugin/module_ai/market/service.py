@@ -6,6 +6,8 @@
   并通过 ``ai_market_relations`` 记录 installed 关系保证幂等；
 - Agent 绑定零侵入：工具/技能/插件绑定用户自己的真实记录，MCP 通过 mcp_ids。
 """
+import re
+
 from sqlalchemy import func, or_, select
 
 from app.core.database import async_db_session
@@ -36,6 +38,77 @@ def _ensure_asset_type(asset_type: str) -> str:
     return asset_type
 
 
+# 敏感字段键名片段（命中即清空值；避免误伤插件 key 这类标识字段）
+_SECRET_KEY_RE = re.compile(
+    r"(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
+    r"authorization|client[_-]?secret|private[_-]?key)",
+    re.IGNORECASE,
+)
+
+# 整包凭证束字段：所有值清空、保留键名（提示安装者需填项）
+_CRED_BUNDLE = ("headers", "env")
+
+# 疑似令牌串（仅用于列表元素，如 MCP args；命中即清空）
+_TOKEN_RE = re.compile(
+    r"(?:sk-[A-Za-z0-9_-]{8,}|gh[pous]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
+    r"|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{8,}|Bearer\s+\S+|<\S+>)",
+    re.IGNORECASE,
+)
+
+
+def _blank_secret(value):
+    """清空凭证值：标量置空，容器递归清空。"""
+    if isinstance(value, dict):
+        return {k: _blank_secret(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_blank_secret(v) for v in value]
+    return ""
+
+
+def _sanitize_node(node, key):
+    """递归脱敏单个节点。"""
+    if isinstance(node, dict):
+        out: dict = {}
+        for k, v in node.items():
+            name = str(k).lower()
+            if name in _CRED_BUNDLE and isinstance(v, dict):
+                # 整包凭证束：值全部清空、保留键名
+                out[k] = dict.fromkeys(v, "")
+            elif _SECRET_KEY_RE.search(name):
+                # 敏感键：值清空（容器递归清空）
+                out[k] = _blank_secret(v)
+            else:
+                out[k] = _sanitize_node(v, name)
+        return out
+    if isinstance(node, list):
+        return [_sanitize_list_item(v) for v in node]
+    return node
+
+
+def _sanitize_list_item(value):
+    """列表元素脱敏：仅对疑似令牌串清空（避免误伤描述/代码文本）。"""
+    if isinstance(value, dict):
+        return _sanitize_node(value, "")
+    if isinstance(value, list):
+        return [_sanitize_list_item(v) for v in value]
+    if isinstance(value, str) and _TOKEN_RE.search(value):
+        return ""
+    return value
+
+
+def _sanitize_payload(payload):
+    """递归清空市场快照中的凭证值，防止提交者明文密钥经 payload 泄露。
+
+    - 键名命中 ``_SECRET_KEY_RE`` 的字段：值清空（容器递归）；
+    - ``headers``/``env`` 整包凭证束：所有值清空、保留键名；
+    - ``args`` 等列表元素命中疑似令牌串：清空；
+    - 其余非敏感字段（url/method/params_schema/code/description 等）原样保留。
+    """
+    if payload is None:
+        return payload
+    return _sanitize_node(payload, "")
+
+
 def _to_dict(
     item: AiMarketItemModel,
     installed: bool = False,
@@ -56,7 +129,7 @@ def _to_dict(
         "is_official": bool(item.is_official),
         "featured": bool(item.featured),
         "status": item.status,
-        "payload": item.payload,
+        "payload": _sanitize_payload(item.payload),
         "source_id": item.source_id,
         "install_count": item.install_count or 0,
         "favorite_count": item.favorite_count or 0,
@@ -74,78 +147,70 @@ async def _snapshot(db, asset_type: str, source_id: int) -> tuple[dict, int]:
         row = await db.get(AiToolModel, source_id)
         if not row or row.is_deleted:
             raise CustomException(msg="来源工具不存在")
-        return (
-            {
-                "name": row.name,
-                "kind": row.kind or "builtin",
-                "source": row.source or "system",
-                "config": row.config,
-                "method": row.method or "GET",
-                "url": row.url or "",
-                "headers": row.headers,
-                "params_schema": row.params_schema,
-                "code": row.code or "",
-                "timeout": row.timeout or 10,
-                "enabled": bool(row.enabled),
-                "description": row.description or "",
-            },
-            row.created_id,
-        )
+        payload = {
+            "name": row.name,
+            "kind": row.kind or "builtin",
+            "source": row.source or "system",
+            "config": row.config,
+            "method": row.method or "GET",
+            "url": row.url or "",
+            "headers": row.headers,
+            "params_schema": row.params_schema,
+            "code": row.code or "",
+            "timeout": row.timeout or 10,
+            "enabled": bool(row.enabled),
+            "description": row.description or "",
+        }
+        return _sanitize_payload(payload), row.created_id
     if asset_type == "skill":
         row = await db.get(AiSkillModel, source_id)
         if not row or row.is_deleted:
             raise CustomException(msg="来源技能不存在")
-        return (
-            {
-                "name": row.name,
-                "description": row.description or "",
-                "content": row.content or "",
-                "skill_type": row.skill_type or "tool",
-                "category": row.category or "",
-                "author": row.author or "",
-                "version": row.version or "1.0",
-                "scripts": row.scripts,
-                "config": row.config,
-                "icon": row.icon or "",
-                "enabled": bool(row.enabled),
-            },
-            row.created_id,
-        )
+        payload = {
+            "name": row.name,
+            "description": row.description or "",
+            "content": row.content or "",
+            "skill_type": row.skill_type or "tool",
+            "category": row.category or "",
+            "author": row.author or "",
+            "version": row.version or "1.0",
+            "scripts": row.scripts,
+            "config": row.config,
+            "icon": row.icon or "",
+            "enabled": bool(row.enabled),
+        }
+        return _sanitize_payload(payload), row.created_id
     if asset_type == "mcp":
         row = await db.get(AiMcpServerModel, source_id)
         if not row or row.is_deleted:
             raise CustomException(msg="来源 MCP 服务器不存在")
-        return (
-            {
-                "name": row.name,
-                "transport": row.transport or "streamable-http",
-                "command": row.command or "",
-                "args": row.args or [],
-                "env": row.env,
-                "url": row.url or "",
-                "headers": row.headers,
-                "auth_type": row.auth_type or "none",
-                "enabled": bool(row.enabled),
-                "description": row.description or "",
-            },
-            row.created_id,
-        )
+        payload = {
+            "name": row.name,
+            "transport": row.transport or "streamable-http",
+            "command": row.command or "",
+            "args": row.args or [],
+            "env": row.env,
+            "url": row.url or "",
+            "headers": row.headers,
+            "auth_type": row.auth_type or "none",
+            "enabled": bool(row.enabled),
+            "description": row.description or "",
+        }
+        return _sanitize_payload(payload), row.created_id
     row = await db.get(AiPluginModel, source_id)
     if not row or row.is_deleted:
         raise CustomException(msg="来源插件不存在")
-    return (
-        {
-            "key": row.key,
-            "label": row.label or "",
-            "kind": row.kind or "builtin",
-            "config": row.config,
-            "config_schema": row.config_schema,
-            "executor_ready": bool(row.executor_ready),
-            "enabled": bool(row.enabled),
-            "description": row.description or "",
-        },
-        row.created_id,
-    )
+    payload = {
+        "key": row.key,
+        "label": row.label or "",
+        "kind": row.kind or "builtin",
+        "config": row.config,
+        "config_schema": row.config_schema,
+        "executor_ready": bool(row.executor_ready),
+        "enabled": bool(row.enabled),
+        "description": row.description or "",
+    }
+    return _sanitize_payload(payload), row.created_id
 
 
 async def _unique_name(db, model, base: str, field: str = "name") -> str:
