@@ -126,12 +126,23 @@ export function withdrawMarketItem(id: number) {
   return request({ url: `${API_PATH}/items/${id}/withdraw`, method: "post" });
 }
 
-export function getMarketReviewList(params?: { status?: string }) {
+export function getMarketReviewList(params?: {
+  status?: string;
+  asset_type?: string;
+  page_no?: number;
+  page_size?: number;
+}) {
   return request({ url: `${API_PATH}/review/list`, method: "get", params });
 }
 
 export function reviewMarketItem(data: { item_id: number; action: string; remark?: string }) {
   return request({ url: `${API_PATH}/review`, method: "post", data });
+}
+
+export function reviewMarketBatch(data: {
+  items: { item_id: number; action: string; remark?: string }[];
+}) {
+  return request({ url: `${API_PATH}/review/batch`, method: "post", data });
 }
 
 export function setMarketFeatured(id: number, featured: boolean) {
@@ -142,7 +153,15 @@ export function setMarketFeatured(id: number, featured: boolean) {
   });
 }
 
-export function shareMarketItem(data: { item_id: number; to_user_id: number; message?: string }) {
+export function shareMarketItem(data: {
+  /** 分享市场商品（与 asset_type+real_id 二选一） */
+  item_id?: number;
+  /** 分享个人资产（与 item_id 二选一） */
+  asset_type?: string;
+  real_id?: number;
+  to_user_id: number;
+  message?: string;
+}) {
   return request({ url: `${API_PATH}/shares/share`, method: "post", data });
 }
 

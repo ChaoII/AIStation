@@ -11,6 +11,7 @@ from app.core.router_class import OperationLogRoute
 
 from .schema import (
     MarketItemQuerySchema,
+    MarketReviewBatchSchema,
     MarketReviewSchema,
     MarketShareSchema,
     MarketSubmitSchema,
@@ -138,8 +139,13 @@ async def market_withdraw(
 async def market_review_list(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:review"]))],
     status: Annotated[str | None, Query(description="状态过滤，默认 pending")] = None,
+    asset_type: Annotated[str | None, Query(description="资产类型过滤")] = None,
+    page_no: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> JSONResponse:
-    return SuccessResponse(data=await MarketService.review_list(status), msg="查询成功")
+    return SuccessResponse(
+        data=await MarketService.review_list(status, asset_type, page_no, page_size), msg="查询成功"
+    )
 
 
 @MarketRouter.post("/review", summary="审核商品")
@@ -150,6 +156,16 @@ async def market_review(
     return SuccessResponse(
         data=await MarketService.review(data.item_id, data.action, data.remark or "", auth.user.id),
         msg="审核完成",
+    )
+
+
+@MarketRouter.post("/review/batch", summary="批量审核商品")
+async def market_review_batch(
+    data: MarketReviewBatchSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:review"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await MarketService.review_batch(data.items, auth.user.id), msg="批量审核完成"
     )
 
 
@@ -164,15 +180,13 @@ async def market_feature(
     )
 
 
-@MarketRouter.post("/shares/share", summary="分享商品给用户")
+@MarketRouter.post("/shares/share", summary="分享商品/个人资产给用户")
 async def market_share(
     data: MarketShareSchema,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:share"]))],
 ) -> JSONResponse:
     return SuccessResponse(
-        data=await MarketService.share_item(
-            data.item_id, data.to_user_id, data.message or "", auth.user.id
-        ),
+        data=await MarketService.share_item(data, auth.user.id),
         msg="分享成功",
     )
 
@@ -182,9 +196,12 @@ async def market_shares(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
     direction: Annotated[str, Query(description="in=收到的 out=发出的")] = "in",
     status: Annotated[str | None, Query(description="状态过滤")] = None,
+    page_no: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> JSONResponse:
     return SuccessResponse(
-        data=await MarketService.list_shares(auth.user.id, direction, status), msg="查询成功"
+        data=await MarketService.list_shares(auth.user.id, direction, status, page_no, page_size),
+        msg="查询成功",
     )
 
 

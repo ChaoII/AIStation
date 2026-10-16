@@ -3,17 +3,42 @@
   <div class="market-review">
     <el-card shadow="never" class="toolbar-card">
       <div class="toolbar">
-        <el-radio-group v-model="status" @change="load">
+        <el-radio-group v-model="status" @change="handleStatusChange">
           <el-radio-button value="pending">待审核</el-radio-button>
           <el-radio-button value="approved">已上架</el-radio-button>
           <el-radio-button value="rejected">已驳回</el-radio-button>
         </el-radio-group>
-        <el-tag size="small" type="info" effect="plain">共 {{ items.length }} 条</el-tag>
+        <el-tag size="small" type="info" effect="plain">共 {{ total }} 条</el-tag>
+        <div v-if="status === 'pending'" class="batch-actions">
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="!selectedRows.length"
+            @click="batchReview('approve')"
+          >
+            批量通过
+          </el-button>
+          <el-button
+            size="small"
+            type="danger"
+            :disabled="!selectedRows.length"
+            @click="batchReview('reject')"
+          >
+            批量驳回
+          </el-button>
+        </div>
       </div>
     </el-card>
 
     <el-card shadow="never">
-      <el-table v-loading="loading" :data="items" border stripe>
+      <el-table
+        v-loading="loading"
+        :data="items"
+        border
+        stripe
+        @selection-change="onSelectionChange"
+      >
+        <el-table-column v-if="status === 'pending'" type="selection" width="48" />
         <el-table-column label="商品" min-width="200">
           <template #default="{ row }">
             <span class="item-icon">{{ row.icon || "📦" }}</span>
@@ -74,6 +99,16 @@
         </el-table-column>
       </el-table>
       <el-empty v-if="!loading && !items.length" description="暂无审核记录" />
+      <div v-if="total > page_size" class="pager">
+        <el-pagination
+          v-model:current-page="page_no"
+          :page-size="page_size"
+          :total="total"
+          layout="prev, pager, next"
+          background
+          @current-change="load"
+        />
+      </div>
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px" append-to-body>
@@ -107,6 +142,7 @@ import { computed, onMounted, ref } from "vue";
 
 import {
   getMarketReviewList,
+  reviewMarketBatch,
   reviewMarketItem,
   setMarketFeatured,
   type MarketItem,
@@ -117,6 +153,10 @@ defineOptions({ name: "MarketReview" });
 const loading = ref(false);
 const status = ref("pending");
 const items = ref<MarketItem[]>([]);
+const page_no = ref(1);
+const page_size = ref(20);
+const total = ref(0);
+const selectedRows = ref<MarketItem[]>([]);
 
 const dialogVisible = ref(false);
 const submitting = ref(false);
@@ -142,14 +182,54 @@ function statusTagType(s: string): "primary" | "success" | "warning" | "info" | 
     "info") as "primary" | "success" | "warning" | "info" | "danger";
 }
 
+function handleStatusChange() {
+  page_no.value = 1;
+  selectedRows.value = [];
+  load();
+}
+
+function onSelectionChange(rows: MarketItem[]) {
+  selectedRows.value = rows;
+}
+
 async function load() {
   loading.value = true;
   try {
-    const res: any = await getMarketReviewList({ status: status.value });
-    items.value = res.data?.data?.items || [];
+    const res: any = await getMarketReviewList({
+      status: status.value,
+      page_no: page_no.value,
+      page_size: page_size.value,
+    });
+    const data = res.data?.data || {};
+    items.value = data.items || [];
+    total.value = data.total || 0;
   } finally {
     loading.value = false;
   }
+}
+
+async function batchReview(act: "approve" | "reject") {
+  if (!selectedRows.value.length) return;
+  const names = selectedRows.value.map((r) => r.name).join("、");
+  const confirmText =
+    act === "approve"
+      ? `将批量通过并上架 ${selectedRows.value.length} 个商品：${names}。是否继续？`
+      : `将批量驳回 ${selectedRows.value.length} 个商品：${names}（可在意见中说明原因）。是否继续？`;
+  await ElMessageBox.confirm(confirmText, "批量审核确认", {
+    confirmButtonText: act === "approve" ? "批量通过" : "批量驳回",
+    cancelButtonText: "取消",
+    type: "warning",
+  });
+  await reviewMarketBatch({
+    items: selectedRows.value.map((r) => ({
+      item_id: r.id,
+      action: act,
+      remark: act === "reject" ? "批量驳回" : "",
+    })),
+  });
+  ElMessage.success(`已批量${act === "approve" ? "通过" : "驳回"}`);
+  selectedRows.value = [];
+  load();
 }
 
 function openReview(row: MarketItem, act: string) {
@@ -214,6 +294,17 @@ onMounted(load);
 
 .type-tag {
   margin-left: 6px;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .done-text {

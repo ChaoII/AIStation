@@ -1,5 +1,5 @@
 """市场查询/提交/分享/审核请求模型。"""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class MarketItemQuerySchema(BaseModel):
@@ -36,8 +36,24 @@ class MarketReviewSchema(BaseModel):
 
 
 class MarketShareSchema(BaseModel):
-    """点对点分享。"""
+    """点对点分享：分享市场商品（item_id）或分享个人资产（asset_type+real_id），二选一。"""
 
-    item_id: int
+    item_id: int | None = Field(default=None, description="市场商品 id（与 asset_type+real_id 二选一）")
+    asset_type: str | None = Field(default=None, max_length=16, description="个人资产类型（与 item_id 二选一）")
+    real_id: int | None = Field(default=None, description="个人资产真实 id（与 item_id 二选一）")
     to_user_id: int
     message: str | None = Field(default="", max_length=255)
+
+    @model_validator(mode="after")
+    def _check_source(self) -> "MarketShareSchema":
+        if self.item_id is None and (not self.asset_type or not self.real_id):
+            raise ValueError("必须提供 item_id 或 asset_type+real_id 之一")
+        if self.item_id is not None and self.asset_type:
+            raise ValueError("item_id 与 asset_type+real_id 不能同时提供")
+        return self
+
+
+class MarketReviewBatchSchema(BaseModel):
+    """批量审核：逐条通过/驳回。"""
+
+    items: list[MarketReviewSchema] = Field(..., min_length=1, max_length=100)

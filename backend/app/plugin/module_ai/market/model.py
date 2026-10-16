@@ -87,8 +87,23 @@ class AiMarketShareModel(ModelMixin):
     __tablename__ = "ai_market_shares"
     __table_args__ = ({"comment": "AI 市场点对点分享表"},)
 
-    item_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("ai_market_items.id"), nullable=False, comment="商品"
+    item_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("ai_market_items.id"), nullable=True, default=None, comment="市场商品（分享市场商品时二选一）"
+    )
+    asset_type: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, default=None, comment="资产类型: tool/skill/mcp/plugin（分享个人资产时二选一）"
+    )
+    payload: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=None, comment="个人资产快照（分享个人资产时）"
+    )
+    asset_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default=None, comment="个人资产名（分享记录快照）"
+    )
+    asset_icon: Mapped[str | None] = mapped_column(
+        String(256), nullable=True, default=None, comment="个人资产图标（分享记录快照）"
+    )
+    source_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="来源真实资产 id（仅记录）"
     )
     from_user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("sys_user.id"), nullable=False, comment="分享人"

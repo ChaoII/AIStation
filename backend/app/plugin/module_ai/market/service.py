@@ -168,10 +168,35 @@ class _BundleChild:
         self.icon = parent.icon
 
 
-async def _materialize(db, item: AiMarketItemModel, user_id: int) -> int:
+class _SharedAssetProxy:
+    """个人资产分享的 materialize 代理：以分享时快照 + 最小字段凑成 ``_materialize`` 所需形态。"""
+
+    def __init__(
+        self,
+        asset_type: str,
+        payload: dict,
+        name: str,
+        description: str,
+        icon: str,
+        category: str,
+    ) -> None:
+        self.asset_type = asset_type
+        self.payload = payload
+        self.name = name or ""
+        self.description = description or ""
+        self.icon = icon or ""
+        self.category = category or ""
+
+
+async def _materialize(
+    db, item: AiMarketItemModel, user_id: int, reuse_by_name: bool = True
+) -> int:
     """把商品 payload 复制成当前用户的真实资产，返回真实记录 id。
 
     幂等性由调用方（relations installed 记录）保证；此函数只负责“复制出一份”。
+
+    ``reuse_by_name``：工具类型为 True 时，若已存在同名工具（平台内置/他人生成）则复用，
+    安装即“启用”、不再复制带后缀新行；为 False 时（个人资产分享）强制给接收方新建一份。
     """
     payload = item.payload or {}
     asset_type = item.asset_type
@@ -179,16 +204,17 @@ async def _materialize(db, item: AiMarketItemModel, user_id: int) -> int:
         want_name = payload.get("name") or item.name
         # 平台已内置同名工具（agno/system）或用户已有同名行：直接复用，安装即"启用"，
         # 不再复制出带后缀的新行（否则派发时按名字找不到 agno 工具）。
-        existing = await db.scalar(
-            select(AiToolModel).where(
-                AiToolModel.name == want_name,
-                AiToolModel.is_deleted.is_(False),
+        if reuse_by_name:
+            existing = await db.scalar(
+                select(AiToolModel).where(
+                    AiToolModel.name == want_name,
+                    AiToolModel.is_deleted.is_(False),
+                )
             )
-        )
-        if existing is not None:
-            if not existing.enabled:
-                existing.enabled = True
-            return existing.id
+            if existing is not None:
+                if not existing.enabled:
+                    existing.enabled = True
+                return existing.id
         name = await _unique_name(db, AiToolModel, want_name)
         row = AiToolModel(
             name=name,
@@ -630,28 +656,60 @@ class MarketService:
     # ---------- 审核 ----------
 
     @classmethod
-    async def review_list(cls, status: str | None = None) -> dict:
-        """审核列表：默认待审核（pending），可按状态过滤。"""
+    async def review_list(
+        cls,
+        status: str | None = None,
+        asset_type: str | None = None,
+        page_no: int = 1,
+        page_size: int = 20,
+    ) -> dict:
+        """审核列表：默认待审核（pending），可按状态/资产类型过滤，分页，带提交者名。"""
+        from app.api.v1.module_system.user.model import UserModel
+
         async with async_db_session() as db:
             stmt = select(AiMarketItemModel).where(AiMarketItemModel.is_deleted.is_(False))
             if status:
                 stmt = stmt.where(AiMarketItemModel.status == status)
             else:
                 stmt = stmt.where(AiMarketItemModel.status == "pending")
+            if asset_type:
+                stmt = stmt.where(AiMarketItemModel.asset_type == asset_type)
+            total = (
+                (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+            )
             rows = (
-                await db.execute(stmt.order_by(AiMarketItemModel.created_time.desc()))
+                await db.execute(
+                    stmt.order_by(AiMarketItemModel.created_time.desc())
+                    .offset((page_no - 1) * page_size)
+                    .limit(page_size)
+                )
             ).scalars().all()
-            return {"items": [_to_dict(r) for r in rows], "total": len(rows)}
+            # 批量取提交者名
+            owner_ids = {r.owner_id for r in rows if r.owner_id}
+            names: dict[int, str] = {}
+            if owner_ids:
+                urows = (
+                    await db.execute(select(UserModel.id, UserModel.name).where(UserModel.id.in_(owner_ids)))
+                ).all()
+                names = dict(urows)
+            items = []
+            for r in rows:
+                d = _to_dict(r)
+                d["owner_name"] = names.get(r.owner_id, "") if r.owner_id else ""
+                items.append(d)
+            return {"page_no": page_no, "page_size": page_size, "total": total, "items": items}
 
     @classmethod
     async def review(cls, item_id: int, action: str, remark: str, user_id: int) -> dict:
-        """审核商品：approve 上架 / reject 驳回（带意见）。"""
+        """审核商品：approve 上架 / reject 驳回（带意见）。已审核商品拒绝再审。"""
         if action not in ("approve", "reject"):
             raise CustomException(msg="审核动作不合法")
         async with async_db_session.begin() as db:
             item = await db.get(AiMarketItemModel, item_id)
             if not item or item.is_deleted:
                 raise CustomException(msg="商品不存在")
+            if item.status in ("approved", "rejected"):
+                raise CustomException(msg="该商品已审核，请勿重复审核")
             from datetime import datetime
 
             item.status = "approved" if action == "approve" else "rejected"
@@ -659,6 +717,18 @@ class MarketService:
             item.audit_user = user_id
             item.audit_time = datetime.now()
             return _to_dict(item)
+
+    @classmethod
+    async def review_batch(cls, items: list, user_id: int) -> dict:
+        """批量审核：逐条通过/驳回，返回每条结果（不因单条失败中断）。"""
+        results = []
+        for it in items:
+            try:
+                res = await cls.review(it.item_id, it.action, it.remark or "", user_id)
+                results.append({"item_id": it.item_id, "ok": True, "status": res["status"]})
+            except CustomException as e:
+                results.append({"item_id": it.item_id, "ok": False, "msg": str(e)})
+        return {"results": results}
 
     @classmethod
     async def set_featured(cls, item_id: int, featured: bool) -> dict:
@@ -673,55 +743,100 @@ class MarketService:
     # ---------- 点对点分享 ----------
 
     @classmethod
-    async def share_item(cls, item_id: int, to_user_id: int, message: str, user_id: int) -> dict:
-        """把商品分享给指定用户（不可分享给自己，接收人必须存在）。"""
+    async def share_item(cls, data, user_id: int) -> dict:
+        """把商品/个人资产分享给指定用户（不可分享给自己，接收人必须存在）。
+
+        ``data`` 为 ``MarketShareSchema``：二选一来源——
+        - ``item_id``：分享市场商品；
+        - ``asset_type`` + ``real_id``：分享个人资产（含未提交市场的），快照存入分享记录。
+        """
+
         from app.api.v1.module_system.user.model import UserModel
 
-        if to_user_id == user_id:
+        if data.to_user_id == user_id:
             raise CustomException(msg="不能分享给自己")
         async with async_db_session.begin() as db:
-            item = await db.get(AiMarketItemModel, item_id)
-            if not item or item.is_deleted:
-                raise CustomException(msg="商品不存在")
-            target = await db.get(UserModel, to_user_id)
+            target = await db.get(UserModel, data.to_user_id)
             if not target or target.is_deleted:
                 raise CustomException(msg="接收用户不存在")
-            dup = await db.scalar(
-                select(AiMarketShareModel).where(
-                    AiMarketShareModel.item_id == item_id,
-                    AiMarketShareModel.from_user_id == user_id,
-                    AiMarketShareModel.to_user_id == to_user_id,
-                    AiMarketShareModel.status == "pending",
-                    AiMarketShareModel.is_deleted.is_(False),
+
+            if data.item_id is not None:
+                # 分享市场商品
+                item = await db.get(AiMarketItemModel, data.item_id)
+                if not item or item.is_deleted:
+                    raise CustomException(msg="商品不存在")
+                dup = await db.scalar(
+                    select(AiMarketShareModel).where(
+                        AiMarketShareModel.item_id == item.id,
+                        AiMarketShareModel.from_user_id == user_id,
+                        AiMarketShareModel.to_user_id == data.to_user_id,
+                        AiMarketShareModel.status == "pending",
+                        AiMarketShareModel.is_deleted.is_(False),
+                    )
                 )
-            )
-            if dup:
-                raise CustomException(msg="已有一条待接收的分享")
-            share = AiMarketShareModel(
-                item_id=item_id,
-                from_user_id=user_id,
-                to_user_id=to_user_id,
-                status="pending",
-                message=message or "",
-            )
+                if dup:
+                    raise CustomException(msg="已有一条待接收的分享")
+                share = AiMarketShareModel(
+                    item_id=item.id,
+                    from_user_id=user_id,
+                    to_user_id=data.to_user_id,
+                    status="pending",
+                    message=data.message or "",
+                )
+            else:
+                # 分享个人资产（含未提交市场的）
+                payload, owner_id = await _snapshot(db, data.asset_type, data.real_id)
+                if owner_id != user_id:
+                    raise CustomException(msg="只能分享自己的资产")
+                dup = await db.scalar(
+                    select(AiMarketShareModel).where(
+                        AiMarketShareModel.asset_type == data.asset_type,
+                        AiMarketShareModel.source_id == data.real_id,
+                        AiMarketShareModel.from_user_id == user_id,
+                        AiMarketShareModel.to_user_id == data.to_user_id,
+                        AiMarketShareModel.status == "pending",
+                        AiMarketShareModel.is_deleted.is_(False),
+                    )
+                )
+                if dup:
+                    raise CustomException(msg="已有一条待接收的分享")
+                share = AiMarketShareModel(
+                    asset_type=data.asset_type,
+                    payload=payload,
+                    asset_name=payload.get("name") or payload.get("label") or "",
+                    asset_icon=payload.get("icon") or "",
+                    source_id=data.real_id,
+                    from_user_id=user_id,
+                    to_user_id=data.to_user_id,
+                    status="pending",
+                    message=data.message or "",
+                )
             db.add(share)
             await db.flush()
             return await cls._share_dict(db, share)
 
     @classmethod
     async def _share_dict(cls, db, share: AiMarketShareModel) -> dict:
-        """组装分享记录输出（含商品摘要与双方用户名）。"""
+        """组装分享记录输出（含资产摘要与双方用户名）。"""
         from app.api.v1.module_system.user.model import UserModel
 
-        item = await db.get(AiMarketItemModel, share.item_id)
+        item = await db.get(AiMarketItemModel, share.item_id) if share.item_id else None
         from_user = await db.get(UserModel, share.from_user_id)
         to_user = await db.get(UserModel, share.to_user_id)
+        # 分享市场商品时以商品信息为准；分享个人资产时以记录内快照为准
+        asset_type = (item.asset_type if item else share.asset_type) or ""
+        asset_name = (item.name if item else share.asset_name) or ""
+        asset_icon = (item.icon if item else share.asset_icon) or ""
         return {
             "id": share.id,
             "item_id": share.item_id,
-            "item_name": item.name if item else "",
-            "item_type": item.asset_type if item else "",
-            "item_icon": (item.icon or "") if item else "",
+            "source": "market" if item else "asset",
+            "asset_type": asset_type,
+            "asset_name": asset_name,
+            "asset_icon": asset_icon,
+            "item_name": asset_name,
+            "item_type": asset_type,
+            "item_icon": asset_icon,
             "item_description": (item.description or "") if item else "",
             "from_user_id": share.from_user_id,
             "from_user_name": from_user.name if from_user else "",
@@ -733,8 +848,15 @@ class MarketService:
         }
 
     @classmethod
-    async def list_shares(cls, user_id: int, direction: str = "in", status: str | None = None) -> dict:
-        """分享列表：dir=in 收件箱 / dir=out 发件箱（严格按 from/to 过滤）。"""
+    async def list_shares(
+        cls,
+        user_id: int,
+        direction: str = "in",
+        status: str | None = None,
+        page_no: int = 1,
+        page_size: int = 20,
+    ) -> dict:
+        """分享列表：dir=in 收件箱 / dir=out 发件箱（严格按 from/to 过滤），分页。"""
         async with async_db_session() as db:
             stmt = select(AiMarketShareModel).where(AiMarketShareModel.is_deleted.is_(False))
             if direction == "out":
@@ -743,14 +865,28 @@ class MarketService:
                 stmt = stmt.where(AiMarketShareModel.to_user_id == user_id)
             if status:
                 stmt = stmt.where(AiMarketShareModel.status == status)
+            total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
             rows = (
-                await db.execute(stmt.order_by(AiMarketShareModel.created_time.desc()))
+                await db.execute(
+                    stmt.order_by(AiMarketShareModel.created_time.desc())
+                    .offset((page_no - 1) * page_size)
+                    .limit(page_size)
+                )
             ).scalars().all()
-            return {"items": [await cls._share_dict(db, s) for s in rows], "total": len(rows)}
+            return {
+                "page_no": page_no,
+                "page_size": page_size,
+                "total": total,
+                "items": [await cls._share_dict(db, s) for s in rows],
+            }
 
     @classmethod
     async def accept_share(cls, share_id: int, user_id: int) -> dict:
-        """接收分享：把商品复制为接收方真实资产，并标记 accepted。"""
+        """接收分享：把资产复制为接收方真实资产，并标记 accepted。
+
+        - 分享市场商品：需商品 ``status==approved`` 才可接收，并校验安装幂等；
+        - 分享个人资产：以分享记录内快照 materialize（可重复安装）。
+        """
         async with async_db_session.begin() as db:
             share = await db.get(AiMarketShareModel, share_id)
             if not share or share.is_deleted:
@@ -759,35 +895,52 @@ class MarketService:
                 raise CustomException(msg="无权处理该分享")
             if share.status != "pending":
                 raise CustomException(msg="该分享已处理")
-            item = await db.get(AiMarketItemModel, share.item_id)
-            if not item or item.is_deleted:
-                raise CustomException(msg="商品已不存在")
-            # 幂等：已安装则不重复复制
-            rel = await db.scalar(
-                select(AiMarketRelationModel).where(
-                    AiMarketRelationModel.user_id == user_id,
-                    AiMarketRelationModel.item_id == item.id,
-                    AiMarketRelationModel.kind == "installed",
-                    AiMarketRelationModel.is_deleted.is_(False),
-                )
-            )
-            real_id = None
-            if not rel:
-                real_id = await _materialize(db, item, user_id)
-                db.add(
-                    AiMarketRelationModel(
-                        user_id=user_id,
-                        item_id=item.id,
-                        kind="installed",
-                        description=str(real_id),
+
+            real_id: int | None = None
+            if share.item_id:
+                # 分享市场商品：校验上架 + 安装幂等
+                item = await db.get(AiMarketItemModel, share.item_id)
+                if not item or item.is_deleted:
+                    raise CustomException(msg="商品已不存在")
+                if item.status != "approved":
+                    raise CustomException(msg="商品未上架或未通过审核，无法接收")
+                rel = await db.scalar(
+                    select(AiMarketRelationModel).where(
+                        AiMarketRelationModel.user_id == user_id,
+                        AiMarketRelationModel.item_id == item.id,
+                        AiMarketRelationModel.kind == "installed",
+                        AiMarketRelationModel.is_deleted.is_(False),
                     )
                 )
-                item.install_count = (item.install_count or 0) + 1
+                if not rel:
+                    real_id = await _materialize(db, item, user_id)
+                    db.add(
+                        AiMarketRelationModel(
+                            user_id=user_id,
+                            item_id=item.id,
+                            kind="installed",
+                            description=str(real_id),
+                        )
+                    )
+                    item.install_count = (item.install_count or 0) + 1
+                else:
+                    try:
+                        real_id = int(rel.description) if rel.description else None
+                    except (TypeError, ValueError):
+                        real_id = None
             else:
-                try:
-                    real_id = int(rel.description) if rel.description else None
-                except (TypeError, ValueError):
-                    real_id = None
+                # 分享个人资产：以快照 materialize
+                payload = share.payload or {}
+                proxy = _SharedAssetProxy(
+                    asset_type=share.asset_type or "tool",
+                    payload=payload,
+                    name=share.asset_name or payload.get("name") or "",
+                    description=payload.get("description") or "",
+                    icon=share.asset_icon or payload.get("icon") or "",
+                    category=payload.get("category") or "",
+                )
+                # 个人资产分享：强制给接收方新建一份，不复用分享人的同名资产
+                real_id = await _materialize(db, proxy, user_id, reuse_by_name=False)
             share.status = "accepted"
             return {"share_id": share_id, "status": "accepted", "real_id": real_id}
 

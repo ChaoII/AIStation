@@ -394,10 +394,6 @@
   }
 
   function openShare(row: MyAsset) {
-    if (!row.market) {
-      ElMessage.warning("请先提交市场，审核通过后即可分享");
-      return;
-    }
     shareTarget.value = row;
     shareForm.to_user_id = undefined;
     shareForm.message = "";
@@ -427,11 +423,26 @@
     }
     sharing.value = true;
     try {
-      await shareMarketItem({
-        item_id: shareTarget.value!.market!.item_id,
+      const target = shareTarget.value!;
+      const payload: {
+        item_id?: number;
+        asset_type?: string;
+        real_id?: number;
+        to_user_id: number;
+        message?: string;
+      } = {
         to_user_id: shareForm.to_user_id,
         message: shareForm.message,
-      });
+      };
+      // 已上架市场商品走 item_id（保留安装/收藏语义）；否则直接分享个人资产（asset_type+real_id）
+      const m = target.market;
+      if (m && m.item_id && m.status === "approved") {
+        payload.item_id = m.item_id;
+      } else {
+        payload.asset_type = target.asset_type;
+        payload.real_id = target.real_id;
+      }
+      await shareMarketItem(payload);
       ElMessage.success("已发送分享");
       shareVisible.value = false;
     } finally {
