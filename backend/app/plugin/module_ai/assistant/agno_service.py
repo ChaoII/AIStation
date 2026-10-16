@@ -40,6 +40,7 @@ async def run_agno_core(
     tools: list | None = None,
     extra_tools: list | None = None,
     name: str | None = None,
+    skills=None,
 ) -> AsyncIterator[str]:
     """Agno Agent 驱动的通用事件流执行核心：app / agent / assistant 共用。
 
@@ -66,6 +67,7 @@ async def run_agno_core(
             tools=tools,
             extra_tools=extra_tools,
             name=name,
+            skills=skills,
         )
         async for item in agent.arun(
             input_text if input_text is not None else user_text,
@@ -174,6 +176,7 @@ async def run_agno_tool_stream(
     instructions_extra: list[str] | None = None,
     mcp_tools: list | None = None,
     state: dict | None = None,
+    skills=None,
 ) -> AsyncIterator[str]:
     """app/agent 运行台共用：用 Agno Agent 驱动“模型 + 提示词 + 动态工具”。
 
@@ -213,6 +216,7 @@ async def run_agno_tool_stream(
             tools=tools or None,
             extra_tools=connected_mcp or None,
             name=name,
+            skills=skills,
         ):
             if state is not None and "event: RunContent" in sse:
                 try:

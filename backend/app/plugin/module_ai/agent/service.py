@@ -364,24 +364,15 @@ class AiAgentService:
                     if rendered:
                         system_prompt = rendered
 
-            # 注入绑定技能内容（技能广场，skill_type=instruction 直接并入系统提示词）
+            # 注入绑定技能：构建 agno Skills 实例（脚本落临时目录，由 agno run_script 执行）
+            agno_skills = None
+            skill_cleanup = None
             if agent.get("skill_ids"):
+                from app.plugin.module_ai.skill.agno_skills import build_agno_skills
                 from app.plugin.module_ai.skill.service import AiSkillService
 
-                skills = await AiSkillService.get_skills_by_ids(agent["skill_ids"])
-                skill_blocks = []
-                for sk in skills:
-                    if sk.get("content"):
-                        skill_blocks.append(
-                            f"### 技能：{sk.get('name')}\n{sk.get('content')}"
-                        )
-                if skill_blocks:
-                    system_prompt = (
-                        f"{system_prompt}\n\n"
-                        "## 可调用技能\n"
-                        "以下是已绑定技能的使用说明，在合适场景按说明执行：\n"
-                        + "\n\n".join(skill_blocks)
-                    )
+                bound = await AiSkillService.get_skills_by_ids(agent["skill_ids"])
+                agno_skills, skill_cleanup = build_agno_skills(bound)
 
             # 注入启用的能力插件说明（平台级开关，如网页抓取/表格导出）
             try:
@@ -495,9 +486,12 @@ class AiAgentService:
                     description=f"AIStation 智能体：{agent.get('agent_name') or '智能体'}",
                     mcp_tools=mcp_tools or None,
                     state=state,
+                    skills=agno_skills,
                 ):
                     yield frame
             finally:
+                if skill_cleanup:
+                    skill_cleanup()  # 删除技能脚本临时目录
                 QUERY_DS_CONTEXT.reset(ds_token)
         except Exception as e:  # noqa: BLE001
             state["error"] = str(e)

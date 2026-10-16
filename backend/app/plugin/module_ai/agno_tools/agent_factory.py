@@ -60,6 +60,7 @@ def build_agent(
     extra_tools: list | None = None,
     name: str | None = None,
     db=None,
+    skills=None,
 ) -> Agent:
     """构建装配好统一业务工具的 Agno ``Agent``。
 
@@ -93,4 +94,6 @@ def build_agent(
         kwargs["session_id"] = f"session_{session_id}"
     if db is not None:
         kwargs["db"] = db
+    if skills is not None:
+        kwargs["skills"] = skills
     return Agent(**kwargs)

@@ -186,7 +186,7 @@ def _delete_agent(test_client, auth_headers, ids) -> None:
 
 
 def test_skill_injected_into_agent_run(monkeypatch, test_client, auth_headers):
-    """绑定技能的智能体，运行回退路径把技能内容并入系统提示词。"""
+    """绑定技能的智能体，运行回退路径经 agno ``Skills`` 注入（指令/脚本由 agno 按需加载）。"""
     skill_id = _create_skill(test_client, auth_headers, content="我是技能内容XYZ")
     captured: dict = {}
     _patch_runtime(monkeypatch)
@@ -216,12 +216,13 @@ def test_skill_injected_into_agent_run(monkeypatch, test_client, auth_headers):
         assert run.status_code == 200, run.text
         assert "好的" in run.text
         assert "event: RunContent" in run.text
-        # 系统提示词（传入 build_agent 的 instructions）应包含技能内容
-        instructions = captured["kwargs"]["instructions"]
-        assert instructions
-        sys_prompt = instructions[0]
-        assert "我是技能内容XYZ" in sys_prompt
-        assert "可调用技能" in sys_prompt
+        # 技能改为经 agno Skills 注入：build_agent 处应带 skills 实例，含绑定技能指令
+        skills = captured["kwargs"].get("skills")
+        assert skills is not None
+        all_skills = skills.get_all_skills()
+        assert any(
+            "我是技能内容XYZ" in (sk.instructions or "") for sk in all_skills
+        )
     finally:
         _delete_agent(test_client, auth_headers, [agent_id])
         _delete_skill(test_client, auth_headers, [skill_id])
