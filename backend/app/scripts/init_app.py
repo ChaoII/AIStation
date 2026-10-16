@@ -1630,6 +1630,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(AiWorkflowService.start_scheduler())
         log.info("✅ 工作流定时调度器已启动")
 
+        from app.plugin.module_ai.workspace.service import WorkspaceService
+        asyncio.create_task(WorkspaceService.cron_scheduler())
+        log.info("✅ 工作台定时任务调度器已启动")
+
         from app.plugin.module_train.deploy_executor import start_deploy_recovery
         asyncio.create_task(start_deploy_recovery())
         log.info("✅ 部署孤儿回收已启动")

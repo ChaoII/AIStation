@@ -145,6 +145,38 @@
         <el-button type="primary" @click="saveCategory">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 新建定时任务弹窗 -->
+    <el-dialog v-model="cronDialogVisible" title="新建定时任务" width="480px">
+      <el-form label-width="90px">
+        <el-form-item label="任务名称">
+          <el-input v-model="cronForm.name" placeholder="任务名称" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="cronForm.description" placeholder="任务描述" />
+        </el-form-item>
+        <el-form-item label="Cron 表达式">
+          <el-input v-model="cronForm.cron" placeholder="如 0 9 * * 1-5（工作日 9 点）" />
+        </el-form-item>
+        <el-form-item label="执行目标">
+          <el-select v-model="cronForm.target_type" style="width: 100%">
+            <el-option label="智能体" value="agent" />
+            <el-option label="工作流" value="workflow" />
+            <el-option label="应用" value="app" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="目标ID">
+          <el-input-number v-model="cronForm.target_id" :min="1" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="cronForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="cronDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveCron">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -156,6 +188,7 @@ import { useRouter } from "vue-router";
 
 import {
   createWorkspaceCategory,
+  createWorkspaceCron,
   deleteWorkspaceCategory,
   getWorkspaceCategoryTree,
   getWorkspaceItems,
@@ -269,7 +302,7 @@ function onCreate(cmd: string) {
   if (cmd === "agent") router.push("/ai/agent");
   else if (cmd === "workflow") router.push("/ai/workflow");
   else if (cmd === "app") router.push("/ai/app");
-  else if (cmd === "cron") ElMessage.info("定时任务创建即将开放");
+  else if (cmd === "cron") openCronCreate();
 }
 
 function toggleEnable(it: WorkspaceItem, val: boolean) {
@@ -333,6 +366,42 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
     loadTree();
     loadItems();
   }
+}
+
+// ---- 定时任务弹窗 ----
+const cronDialogVisible = ref(false);
+const cronForm = ref({
+  name: "",
+  description: "",
+  cron: "",
+  target_type: "agent",
+  target_id: 0,
+  category_id: null as number | null,
+  enabled: true,
+});
+
+function openCronCreate() {
+  cronForm.value = {
+    name: "",
+    description: "",
+    cron: "",
+    target_type: "agent",
+    target_id: 0,
+    category_id: currentCategoryId.value,
+    enabled: true,
+  };
+  cronDialogVisible.value = true;
+}
+
+async function saveCron() {
+  if (!cronForm.value.name.trim() || !cronForm.value.cron.trim()) {
+    ElMessage.warning("请填写任务名称与 cron 表达式");
+    return;
+  }
+  await createWorkspaceCron({ ...cronForm.value });
+  cronDialogVisible.value = false;
+  ElMessage.success("定时任务已创建");
+  loadItems();
 }
 </script>
 

@@ -155,3 +155,138 @@ class WorkspaceService:
             "category_id": getattr(row, "category_id", None),
             "label": label,
         }
+
+    # ---------- 定时任务条目 ----------
+
+    @classmethod
+    async def list_cron(cls, category_id: int | None = None, target_type: str | None = None) -> dict:
+        from sqlalchemy import select as _sel
+
+        async with async_db_session() as db:
+            stmt = _sel(AiWorkspaceCronModel).where(AiWorkspaceCronModel.is_deleted.is_(False))
+            if category_id:
+                stmt = stmt.where(AiWorkspaceCronModel.category_id == category_id)
+            if target_type:
+                stmt = stmt.where(AiWorkspaceCronModel.target_type == target_type)
+            rows = (await db.execute(stmt.order_by(AiWorkspaceCronModel.id.desc()))).scalars().all()
+            items = [cls._cron_dict(r) for r in rows]
+            return {"total": len(items), "items": items}
+
+    @staticmethod
+    def _cron_dict(r: AiWorkspaceCronModel) -> dict:
+        return {
+            "id": r.id,
+            "name": r.name,
+            "description": r.description or "",
+            "cron": r.cron or "",
+            "target_type": r.target_type or "agent",
+            "target_id": r.target_id,
+            "category_id": r.category_id,
+            "enabled": bool(r.enabled),
+            "last_run_time": r.last_run_time,
+            "next_run_time": r.next_run_time,
+        }
+
+    @staticmethod
+    def _compute_next_run(cron: str):
+        from datetime import datetime
+
+        from apscheduler.triggers.cron import CronTrigger
+
+        try:
+            trigger = CronTrigger.from_crontab(cron)
+        except Exception as exc:  # noqa: BLE001
+            raise CustomException(msg=f"cron 表达式无效：{exc}") from exc
+        return trigger.get_next_fire_time(None, datetime.now())
+
+    @classmethod
+    async def create_cron(cls, data, auth) -> dict:
+        next_run = cls._compute_next_run(data.cron) if data.enabled else None
+        async with async_db_session.begin() as db:
+            row = AiWorkspaceCronModel(
+                name=data.name,
+                description=data.description,
+                cron=data.cron,
+                target_type=data.target_type,
+                target_id=data.target_id,
+                category_id=data.category_id,
+                enabled=data.enabled,
+                next_run_time=next_run,
+                created_id=auth.user.id,
+                updated_id=auth.user.id,
+            )
+            db.add(row)
+            await db.flush()
+            return cls._cron_dict(row)
+
+    @classmethod
+    async def update_cron(cls, cron_id: int, data, auth) -> dict | None:
+        async with async_db_session.begin() as db:
+            row = await db.get(AiWorkspaceCronModel, cron_id)
+            if not row or row.is_deleted:
+                return None
+            for key in ("name", "description", "cron", "target_type", "target_id", "category_id", "enabled"):
+                val = getattr(data, key, None)
+                if val is not None:
+                    setattr(row, key, val)
+            # 重新计算下次运行
+            if data.cron is not None or data.enabled is not None:
+                row.next_run_time = cls._compute_next_run(row.cron) if row.enabled else None
+            row.updated_id = auth.user.id
+            await db.flush()
+            return cls._cron_dict(row)
+
+    @classmethod
+    async def delete_cron(cls, cron_id: int, auth) -> None:
+        async with async_db_session.begin() as db:
+            row = await db.get(AiWorkspaceCronModel, cron_id)
+            if not row or row.is_deleted:
+                raise CustomException(msg="定时任务不存在")
+            await db.delete(row)
+
+    @classmethod
+    async def cron_scheduler(cls) -> None:
+        """后台轮询：每分钟检查到期定时任务并尝试执行。"""
+        import asyncio
+        from datetime import datetime
+
+        aiokill = False
+        while not aiokill:
+            try:
+                now = datetime.now()
+                async with async_db_session() as db:
+                    rows = (
+                        await db.execute(
+                            select(AiWorkspaceCronModel).where(
+                                AiWorkspaceCronModel.enabled.is_(True),
+                                AiWorkspaceCronModel.is_deleted.is_(False),
+                            )
+                        )
+                    ).scalars().all()
+                    for r in rows:
+                        if r.next_run_time is not None and r.next_run_time <= now:
+                            # 标记运行并计算下一次
+                            r.last_run_time = now
+                            try:
+                                r.next_run_time = cls._compute_next_run(r.cron)
+                            except Exception:  # noqa: BLE001
+                                r.enabled = False
+                            await db.flush()
+                            try:
+                                await cls._run_target(r.target_type, r.target_id)
+                            except Exception as exc:  # noqa: BLE001
+                                print(f"⚠️ 定时任务 #{r.id} 执行失败：{exc}", flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"⚠️ 定时任务调度异常：{exc}", flush=True)
+            await asyncio.sleep(60)
+
+    @classmethod
+    async def _run_target(cls, target_type: str, target_id: int) -> None:
+        """执行绑定的资产（工作流用其 run_schedule；agent/app 由对应 run 非流式执行）。"""
+        if target_type == "workflow":
+            from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+            await AiWorkflowService.run_schedule(target_id)
+            return
+        # agent / app：暂不做非流式执行，仅记录（后续接入）
+        print(f"ℹ️ 定时任务目标 {target_type}#{target_id} 执行（非流式执行待接入）", flush=True)

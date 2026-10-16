@@ -17,3 +17,23 @@ class WorkspaceCategoryUpdateSchema(BaseModel):
     icon: str | None = None
     color: str | None = None
     sort: int | None = None
+
+
+class WorkspaceCronCreateSchema(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128, description="任务名称")
+    description: str = Field(default="", max_length=512)
+    cron: str = Field(..., description="cron 表达式（5 段）")
+    target_type: str = Field(default="agent", description="agent/workflow/app")
+    target_id: int = Field(default=0, description="执行目标 ID")
+    category_id: int | None = Field(default=None)
+    enabled: bool = Field(default=False)
+
+
+class WorkspaceCronUpdateSchema(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = None
+    cron: str | None = None
+    target_type: str | None = None
+    target_id: int | None = None
+    category_id: int | None = None
+    enabled: bool | None = None

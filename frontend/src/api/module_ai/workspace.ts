@@ -51,3 +51,24 @@ export function deleteWorkspaceCategory(id: number) {
 export function getWorkspaceItems(params?: { category_id?: number | null; asset_type?: string }) {
   return request({ url: `${WS_PATH}/items`, method: "get", params });
 }
+
+// ---------- 定时任务 ----------
+export function createWorkspaceCron(data: {
+  name: string;
+  description?: string;
+  cron: string;
+  target_type: string;
+  target_id?: number | null;
+  category_id?: number | null;
+  enabled?: boolean;
+}) {
+  return request({ url: `${WS_PATH}/cron/create`, method: "post", data });
+}
+
+export function updateWorkspaceCron(id: number, data: Record<string, unknown>) {
+  return request({ url: `${WS_PATH}/cron/update/${id}`, method: "put", data });
+}
+
+export function deleteWorkspaceCron(id: number) {
+  return request({ url: `${WS_PATH}/cron/delete`, method: "delete", data: id });
+}
