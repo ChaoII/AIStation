@@ -29,21 +29,45 @@ export function reasoningOf(msg: any): string {
     .join("");
 }
 
-/** 取工具类 part（dynamic-tool）。 */
+/** 取工具类 part（SDK 标准 `tool` part）。 */
 export function toolPartsOf(msg: any): AiUIPart[] {
-  return (msg?.parts || []).filter((p: AiUIPart) => p.type === "dynamic-tool");
+  return (msg?.parts || []).filter((p: AiUIPart) => p.type === "tool");
 }
 
-/** 取知识检索引用来源（累积 sources part）。 */
+/** 取知识检索引用来源（累积 sources part，兼容旧 messages）。 */
 export function sourcesOf(msg: any): any[] {
   return (msg?.parts || [])
     .filter((p: AiUIPart) => p.type === "sources")
     .flatMap((p: AiUIPart) => p.sources || []);
 }
 
-/** 取指定 data-* part 的 data（如 "data-finish"）。 */
-export function dataPartsOf(msg: any, type: string): any[] {
-  return (msg?.parts || []).filter((p: AiUIPart) => p.type === type).map((p: AiUIPart) => p.data);
+/** 取来源引用 part（SDK 标准 `source-url` / `source-document`）。 */
+export function sourcePartsOf(msg: any): AiUIPart[] {
+  return (msg?.parts || []).filter(
+    (p: AiUIPart) => p.type === "source-url" || p.type === "source-document"
+  );
+}
+
+/** 取指定 data-* part 的 data（SDK `data` part 内嵌 `data.type`）。 */
+export function dataPartsOf(msg: any, type?: string): any[] {
+  return (msg?.parts || [])
+    .filter(
+      (p: AiUIPart) =>
+        p.type === "data" && (!type || p.data?.type === type)
+    )
+    .map((p: AiUIPart) => p.data);
+}
+
+/** 按 `state` 分组 tool part，返回 `Record<state, part[]>`。 */
+export function toolPartsByState(msg: any): Record<string, AiUIPart[]> {
+  const groups: Record<string, AiUIPart[]> = {};
+  for (const p of (msg?.parts || [])) {
+    if (p.type === "tool") {
+      const key = p.state || "unknown";
+      (groups[key] ||= []).push(p);
+    }
+  }
+  return groups;
 }
 
 /** 取单个 part 的文本（text / reasoning 通用）。 */
