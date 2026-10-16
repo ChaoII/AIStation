@@ -667,6 +667,10 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:workflow:create", "新增工作流"),
     ("module_ai:workflow:update", "编辑工作流"),
     ("module_ai:workflow:delete", "删除工作流"),
+    ("module_ai:workspace:query", "访问工作台"),
+    ("module_ai:workspace:create", "新建工作台条目"),
+    ("module_ai:workspace:update", "编辑工作台条目"),
+    ("module_ai:workspace:delete", "删除工作台条目"),
     ("module_ai:skill:query", "查询技能"),
     ("module_ai:skill:create", "新增技能"),
     ("module_ai:skill:update", "编辑技能"),
@@ -786,6 +790,7 @@ async def _ensure_ai_menus() -> None:
                 await db.delete(_m)
 
             pages = [
+                ("工作台", "AiWorkbench", "/ai/workspace", "module_ai/workspace/index", "module_ai:workspace:query", 6, "el-icon-OfficeBuilding"),
                 ("AI 控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 7, "el-icon-Odometer"),
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10, "el-icon-Cpu"),
                 ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11, "el-icon-User"),

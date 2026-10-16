@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Float, Integer, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,6 +13,14 @@ class AiAppModel(ModelMixin, UserMixin):
 
     name: Mapped[str] = mapped_column(
         String(128), nullable=False, unique=True, comment="应用名（唯一）"
+    )
+    category_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("ai_workspace_categories.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True,
+        comment="工作台分类ID",
     )
     icon: Mapped[str] = mapped_column(String(64), default="", comment="图标")
     model_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="绑定模型ID")

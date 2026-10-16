@@ -1,7 +1,7 @@
 """低代码工作流定义模型。"""
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,14 @@ class AiWorkflowModel(ModelMixin, UserMixin):
 
     name: Mapped[str] = mapped_column(
         String(128), nullable=False, comment="工作流名称"
+    )
+    category_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("ai_workspace_categories.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True,
+        comment="工作台分类ID",
     )
     description: Mapped[str | None] = mapped_column(
         String(512), nullable=True, default="", comment="工作流描述"

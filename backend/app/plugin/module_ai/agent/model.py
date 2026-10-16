@@ -34,8 +34,8 @@ class AiAgentModel(ModelMixin, UserMixin):
         String(128), nullable=False, comment="智能体名称"
     )
     category_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("ai_agent_categories.id", ondelete="SET NULL"),
-        nullable=True, default=None, comment="分类ID",
+        Integer, ForeignKey("ai_workspace_categories.id", ondelete="SET NULL"),
+        nullable=True, default=None, comment="工作台分类ID",
     )
     agent_role: Mapped[str | None] = mapped_column(
         String(255), nullable=True, default="", comment="角色描述"
