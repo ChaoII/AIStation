@@ -169,9 +169,6 @@
                 >
                   对话
                 </el-button>
-                <el-button v-hasPerm="['module_ai:agent:query']" size="small" @click="viewAgent(a)">
-                  详情
-                </el-button>
                 <el-button
                   v-hasPerm="['module_ai:agent:update']"
                   size="small"
@@ -180,29 +177,30 @@
                 >
                   编辑
                 </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:agent:update']"
-                  size="small"
-                  :icon="SetUp"
-                  @click="openStudio(a)"
-                >
-                  编排
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:agent:create']"
-                  size="small"
-                  :icon="CopyDocument"
-                  @click="copyAgent(a)"
-                >
-                  复制
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:agent:delete']"
-                  size="small"
-                  type="danger"
-                  :icon="Delete"
-                  @click="deleteAgent(a)"
-                />
+                <el-dropdown trigger="click" @command="(cmd) => onCardCmd(a, cmd)">
+                  <el-button size="small" circle :icon="MoreFilled" />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item v-hasPerm="['module_ai:agent:query']" command="detail">
+                        详情
+                      </el-dropdown-item>
+                      <el-dropdown-item v-hasPerm="['module_ai:agent:update']" command="studio">
+                        编排
+                      </el-dropdown-item>
+                      <el-dropdown-item v-hasPerm="['module_ai:agent:create']" command="copy">
+                        复制
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-hasPerm="['module_ai:agent:delete']"
+                        command="delete"
+                        style="color: #f56c6c"
+                        divided
+                      >
+                        删除
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
             </el-card>
           </el-col>
@@ -1005,8 +1003,6 @@ import {
   MoreFilled,
   ChatDotRound,
   Edit,
-  Delete,
-  CopyDocument,
   Loading,
   MagicStick,
   SetUp,
@@ -1306,6 +1302,14 @@ async function saveAgent() {
 
 function runAgent(a: any) {
   openAgentChat(a);
+}
+
+// 卡片「⋯」下拉：详情 / 编排 / 复制 / 删除
+function onCardCmd(a: any, cmd: string) {
+  if (cmd === "detail") viewAgent(a);
+  else if (cmd === "studio") openStudio(a);
+  else if (cmd === "copy") copyAgent(a);
+  else if (cmd === "delete") deleteAgent(a);
 }
 
 // ---- P3-⑥ Agent Studio 无代码编排 ----
