@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { it, expect } from "vitest";
 import { mapAgnoEvent } from "../agnoChatTransport";
 
 /** 每次测试用独立 ctx，避免共享状态污染。 */
@@ -59,6 +59,57 @@ it("ToolCallCompleted → tool-output-available（与 input 同 id）", () => {
     toolCallId: tid,
     output: { rows: 1 },
   });
+});
+it("ToolCallCompleted（结果含 error/success=false）→ tool-output-error", () => {
+  const ctx = makeCtx();
+  const started = mapAgnoEvent(
+    "ToolCallStarted",
+    { tool: { tool_name: "ai_query", tool_args: {} } },
+    ctx
+  );
+  const tid = (started[0] as any).toolCallId;
+  const out = mapAgnoEvent(
+    "ToolCallCompleted",
+    {
+      tool: {
+        tool_name: "ai_query",
+        tool_call_id: tid,
+        result: { success: false, error: "查询超时" },
+      },
+    },
+    ctx
+  );
+  expect(out[0]).toMatchObject({
+    type: "tool-output-error",
+    toolCallId: tid,
+    errorText: "查询超时",
+  });
+});
+it("ToolCallCompleted（结果为错误字符串）→ tool-output-error", () => {
+  const ctx = makeCtx();
+  const started = mapAgnoEvent(
+    "ToolCallStarted",
+    { tool: { tool_name: "ai_query", tool_args: {} } },
+    ctx
+  );
+  const tid = (started[0] as any).toolCallId;
+  const out = mapAgnoEvent(
+    "ToolCallCompleted",
+    { tool: { tool_name: "ai_query", tool_call_id: tid, result: "错误：数据库连接失败" } },
+    ctx
+  );
+  expect(out[0]).toMatchObject({ type: "tool-output-error", toolCallId: tid });
+});
+it("ToolCallCompleted（正常结果）→ 仍为 tool-output-available", () => {
+  const ctx = makeCtx();
+  const started = mapAgnoEvent("ToolCallStarted", { tool: { tool_name: "ai_query" } }, ctx);
+  const tid = (started[0] as any).toolCallId;
+  const out = mapAgnoEvent(
+    "ToolCallCompleted",
+    { tool: { tool_name: "ai_query", tool_call_id: tid, result: { rows: 1 } } },
+    ctx
+  );
+  expect(out[0]).toMatchObject({ type: "tool-output-available", output: { rows: 1 } });
 });
 it("RunError → error chunk", () => {
   expect(mapAgnoEvent("RunError", { error: "boom" }, makeCtx())[0]).toMatchObject({

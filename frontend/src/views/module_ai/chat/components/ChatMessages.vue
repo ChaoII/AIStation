@@ -2,7 +2,12 @@
   <div ref="messagesContainer" class="chat-messages">
     <WelcomeScreen v-if="messages.length === 0" @prompt-click="handlePromptClick" />
     <div v-else class="messages-list">
-      <MessageItem v-for="message in messages" :key="message.id" :message="message" />
+      <MessageItem
+        v-for="(message, i) in messages"
+        :key="message.id"
+        :message="message"
+        :streaming="isStreaming && i === messages.length - 1"
+      />
     </div>
     <div v-if="error" class="error-banner">
       <el-alert :title="error" type="error" :closable="true" show-icon @close="handleErrorClose" />
@@ -19,6 +24,8 @@ import MessageItem from "./MessageItem.vue";
 interface Props {
   messages: UIMessage[];
   error: string;
+  /** 是否有消息正在流式生成（用于控制光标/「思考中」显示）。 */
+  isStreaming?: boolean;
 }
 
 interface Emits {

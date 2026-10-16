@@ -44,6 +44,26 @@ export function parseAgnoFrame(raw: string): ParsedFrame | null {
 
 const isStr = (v: unknown): v is string => typeof v === "string";
 
+/** 判断工具结果是否表达失败（保守启发式），返回错误文本或 null。 */
+function toolResultError(result: unknown): string | null {
+  if (result == null) return null;
+  if (typeof result === "string") {
+    const s = result.trim();
+    if (/^(错误|失败|error|Error|ERROR|fail|Fail)/.test(s)) return s;
+    return null;
+  }
+  if (typeof result === "object") {
+    const r = result as Record<string, unknown>;
+    if (r.success === false || r.ok === false) {
+      return String(r.error ?? r.message ?? r.reason ?? "工具调用失败");
+    }
+    if (r.error || r.__error__) {
+      return String(r.error ?? r.__error__);
+    }
+  }
+  return null;
+}
+
 /**
  * 把一个 Agno 事件映射为 AI SDK 的 `UIMessageChunk` 序列（纯函数，可测）。
  *
@@ -93,13 +113,14 @@ export function mapAgnoEvent(eventName: string, data: any, ctx: MapCtx): UIMessa
       const tool = (data?.tool || {}) as Record<string, unknown>;
       const toolName = String(tool.tool_name ?? tool.toolName ?? "工具");
       const provided = String(tool.tool_call_id ?? tool.toolCallId ?? "");
-      const toolCallId =
-        provided || ctx.toolIds?.[toolName] || `tool-${toolName}-${++ctx.seq}`;
-      out.push({
-        type: "tool-output-available",
-        toolCallId,
-        output: tool.result ?? tool.output,
-      });
+      const toolCallId = provided || ctx.toolIds?.[toolName] || `tool-${toolName}-${++ctx.seq}`;
+      const result = tool.result ?? tool.output;
+      const errText = toolResultError(result);
+      if (errText) {
+        out.push({ type: "tool-output-error", toolCallId, errorText: errText });
+      } else {
+        out.push({ type: "tool-output-available", toolCallId, output: result });
+      }
       return out;
     }
     case "RunError": {
@@ -138,14 +159,13 @@ export interface AgnoChatTransportOptions {
 }
 
 type SendOptions = Parameters<ChatTransport<UIMessage>["sendMessages"]>[0];
-type ReconnectOptions = Parameters<ChatTransport<UIMessage>["reconnectToStream"]>[0];
 
 /** 把 Agno 原生 SSE 事件流转成 AI SDK `UIMessageChunk` 流的自定义传输层。 */
 export class AgnoChatTransport implements ChatTransport<UIMessage> {
   constructor(private opts: AgnoChatTransportOptions) {}
 
   /** Agno 流不可恢复：始终返回 null（无活跃可续传流）。 */
-  async reconnectToStream(_options: ReconnectOptions): Promise<ReadableStream<UIMessageChunk> | null> {
+  async reconnectToStream(): Promise<ReadableStream<UIMessageChunk> | null> {
     return null;
   }
 
@@ -194,7 +214,8 @@ export class AgnoChatTransport implements ChatTransport<UIMessage> {
             const { value, done } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
-            const frames = buffer.split("\n\n");
+            // 兼容 LF 与 CRLF 帧分隔（\n\n / \r\n\r\n）
+            const frames = buffer.split(/\r?\n\r?\n/);
             buffer = frames.pop() || "";
             for (const raw of frames) {
               const parsed = parseAgnoFrame(raw);

@@ -28,7 +28,7 @@
           <ReasoningBlock
             v-if="p.type === 'reasoning'"
             :text="p.text || ''"
-            :streaming="p.state === 'streaming'"
+            :streaming="streaming === true && p.state === 'streaming'"
           />
           <div
             v-else-if="p.type === 'text'"
@@ -36,7 +36,7 @@
             :class="{ 'is-user': message.role === 'user' }"
           >
             <RichContent :content="p.text || ''" />
-            <span v-if="p.state === 'streaming'" class="cursor-typing" />
+            <span v-if="streaming && p.state === 'streaming'" class="cursor-typing" />
           </div>
           <div
             v-else-if="p.type === 'source-url' || p.type === 'source-document'"
@@ -59,7 +59,7 @@
           </div>
         </template>
 
-        <div v-if="message.role === 'assistant' && isLoading" class="typing-indicator">
+        <div v-if="message.role === 'assistant' && isLoading && streaming" class="typing-indicator">
           <div class="typing-dots">
             <span></span>
             <span></span>
@@ -84,6 +84,8 @@ import { useUserStoreHook } from "@/store";
 
 interface Props {
   message: UIMessage;
+  /** 是否为当前正在流式生成的消息（仅此时显示光标/「思考中」）。 */
+  streaming?: boolean;
 }
 
 const props = defineProps<Props>();

@@ -69,6 +69,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import type { UploadFile } from "element-plus";
+import { ElMessage } from "element-plus";
 import { Promotion, Paperclip, Document, Close, VideoPause } from "@element-plus/icons-vue";
 import {
   EditorView,
@@ -200,6 +201,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   view?.destroy();
   view = null;
+  // 释放所有已创建的预览 ObjectURL，避免内存泄漏
+  for (const f of uploadedFiles.value) {
+    if (f.url) URL.revokeObjectURL(f.url);
+  }
 });
 
 function detectAtMenu(state: EditorState) {
@@ -243,14 +248,15 @@ const handleFileChange = (uploadFile: UploadFile) => {
   if (!file) return;
   const maxSize = 10 * 1024 * 1024;
   if (file.size > maxSize) {
-    alert("文件大小不能超过10MB");
+    ElMessage.warning("文件大小不能超过10MB");
     return;
   }
   const uploadedFile: UploadedFile = {
-    id: Date.now().toString() + Math.random().toString(36).substr(2),
+    id: Date.now().toString() + Math.random().toString(36).slice(2),
     name: file.name,
     size: file.size,
     type: file.type,
+    url: URL.createObjectURL(file),
     file,
   };
   uploadedFiles.value.push(uploadedFile);
@@ -259,12 +265,14 @@ const handleFileChange = (uploadFile: UploadFile) => {
 const removeFile = (id: string) => {
   const index = uploadedFiles.value.findIndex((f) => f.id === id);
   if (index > -1) {
+    const f = uploadedFiles.value[index];
+    if (f.url) URL.revokeObjectURL(f.url);
     uploadedFiles.value.splice(index, 1);
   }
 };
 
 const isImage = (file: UploadedFile) => file.type?.startsWith("image/");
-const fileUrl = (file: UploadedFile) => (file.file ? URL.createObjectURL(file.file) : "");
+const fileUrl = (file: UploadedFile) => file.url || "";
 
 const clearEditor = () => {
   if (!view) return;

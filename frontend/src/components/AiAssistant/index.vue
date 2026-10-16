@@ -64,6 +64,7 @@
             <ChatMessages
               :messages="displayMessages"
               :error="errorText"
+              :is-streaming="isSending"
               @prompt-click="handleSend"
               @error-close="errorText = ''"
             />
