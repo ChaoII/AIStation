@@ -199,6 +199,7 @@ loadSessions();
 .ai-workspace-chat {
   height: 100%;
   display: flex;
+  flex-direction: row;
   gap: 12px;
   padding: 12px;
   box-sizing: border-box;
