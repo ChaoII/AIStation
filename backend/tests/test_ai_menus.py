@@ -5,10 +5,21 @@ from app.scripts import init_app
 
 # 已下线平台页面（存量库应被置为 hidden=True）
 # 含四个已并入「能力市场 → 我的资产」统一维护的独立页：技能广场/工具管理/MCP管理/能力插件
-REMOVED = ["AiProvider", "AiPlayground", "AiReport", "Memory", "AiSkill", "AiTool", "AiMcp", "AiPlugin"]
+REMOVED = [
+    "AiProvider",
+    "AiPlayground",
+    "AiReport",
+    "Memory",
+    "AiSkill",
+    "AiTool",
+    "AiMcp",
+    "AiPlugin",
+    "Chat",
+]
 # 页面保留：控制台/模型/提示词/应用/日志，其余功能页也保留
 KEPT = ["AiModel", "AiPrompt", "AiApp", "AiLogs"]
-RICH_KEPT = ["AiOverview", "AiAgent", "AiWorkflow", "AiKnowledge", "AiProviderManage"]
+# 富功能页保留（智能体/工作流独立菜单已并入「工作台」，不再作为独立页面菜单）
+RICH_KEPT = ["AiOverview", "AiKnowledge", "AiProviderManage"]
 # 「智能问数」独立菜单目录：目录 + 4 个独立页面子菜单；数据资产继续并入数据与集成
 QUERY_GROUP = "AiQueryGroup"
 QUERY_GROUP_MENUS: dict[str, tuple[str, str, int]] = {
@@ -87,10 +98,9 @@ def test_ai_menus_collapsed(test_client):
     for rname in KEPT + RICH_KEPT:
         assert rname in menus, f"缺少保留菜单 {rname}"
         assert menus[rname].hidden is False, f"{rname} 被误隐藏"
-    assert menus["Chat"].hidden is False, "chat 不应被隐藏"
     assert menus["AI"].redirect == "/ai/overview"
-    # 智能助手菜单权限与流式/会话接口对齐
-    assert menus["Chat"].permission == "module_ai:assistant:query"
+    # Chat 独立页已下线（前端 module_ai/chat/index 已删除）：随 REMOVED 统一隐藏
+    assert menus["Chat"].hidden is True
 
 
 def test_ai_button_perms_keep_provider_report():
