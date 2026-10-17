@@ -473,7 +473,7 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AIP Autopilot 自主行动</span>
+          <span>治理巡检（候选行动）</span>
           <span class="ai-sub">规则扫描治理/质量/安全/审批，生成候选自主行动</span>
         </div>
       </template>
@@ -1135,7 +1135,9 @@
         <el-row :gutter="12" class="mb-2">
           <el-col :span="8"><el-statistic title="合规" :value="report.scores.compliance" /></el-col>
           <el-col :span="8"><el-statistic title="安全" :value="report.scores.security" /></el-col>
-          <el-col :span="8"><el-statistic title="护栏" :value="report.scores.guardrails" /></el-col>
+          <el-col :span="8">
+            <el-statistic title="治理检查" :value="report.scores.guardrails" />
+          </el-col>
         </el-row>
         <div class="gov-section">摘要</div>
         <div v-for="(s, i) in report.summary" :key="i" class="report-line">• {{ s }}</div>
@@ -1397,8 +1399,6 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
-const router = useRouter();
 import * as echarts from "echarts";
 import {
   Collection,

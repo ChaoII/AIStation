@@ -461,12 +461,14 @@
             </el-tab-pane>
 
             <!-- 概念 -->
-            <el-tab-pane label="概念" name="concept">
+            <el-tab-pane label="业务概念" name="concept">
               <div class="ig-bar">
                 <el-button type="primary" size="small" :icon="Plus" @click="openConcept()">
                   新建概念
                 </el-button>
-                <el-tag size="small" type="info" effect="plain">本体/概念（语义层）</el-tag>
+                <el-tag size="small" type="info" effect="plain">
+                  业务概念（语义层，非本体对象）
+                </el-tag>
               </div>
               <el-table :data="concepts" size="small" border height="100%">
                 <template #empty>

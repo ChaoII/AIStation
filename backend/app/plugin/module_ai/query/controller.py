@@ -94,7 +94,7 @@ async def save_metric(
     return SuccessResponse(data=await AiQueryService.upsert_metric(data, auth), msg="保存成功")
 
 
-@AiQueryRouter.post("/metrics/promote", summary="沉淀为可复用指标(FDE复用)")
+@AiQueryRouter.post("/metrics/promote", summary="沉淀为可复用指标(供交付复用)")
 async def promote_metric(
     data: QueryPromoteRequest,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
@@ -194,14 +194,14 @@ async def connector_types(
     return SuccessResponse(data=await AiQueryService.connector_types(), msg="查询成功")
 
 
-@AiQueryRouter.get("/autopilot", summary="AIP Autopilot 自主行动中心(候选行动)")
+@AiQueryRouter.get("/autopilot", summary="治理巡检中心(候选行动)")
 async def autopilot(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.autopilot(), msg="查询成功")
 
 
-@AiQueryRouter.post("/autopilot/execute", summary="执行自主行动(敏感扫描/DQ重扫)")
+@AiQueryRouter.post("/autopilot/execute", summary="执行巡检行动(敏感扫描/DQ重扫)")
 async def autopilot_execute(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
@@ -240,7 +240,7 @@ async def derived_objects(
     return SuccessResponse(data=await AiQueryService.derived_objects(), msg="查询成功")
 
 
-@AiQueryRouter.post("/autopilot/auto-fix", summary="AIP 自主修复全自动调度(批量执行)")
+@AiQueryRouter.post("/autopilot/auto-fix", summary="巡检自动修复调度(批量执行)")
 async def autopilot_auto_fix(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
@@ -371,7 +371,7 @@ async def access_walkthrough(
     return SuccessResponse(data=await AiQueryService.access_walkthrough(user_id), msg="查询成功")
 
 
-@AiQueryRouter.get("/guardrails", summary="AIP 安全护栏/治理策略状态")
+@AiQueryRouter.get("/guardrails", summary="治理检查项状态")
 async def guardrails_status(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
@@ -537,7 +537,7 @@ async def object_resolve(
     return SuccessResponse(data=r, msg="解析成功")
 
 
-# ---- FDE 交付工作台 ----
+# ---- 交付命题工作台 ----
 @AiQueryRouter.get("/fde/list", summary="交付命题列表")
 async def fde_list(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
@@ -1362,15 +1362,15 @@ async def kg_traverse(
     return SuccessResponse(data=out, msg="查询成功")
 
 
-# ---- 本体/概念 ----
-@AiQueryRouter.get("/concepts/list", summary="本体/概念列表")
+# ---- 业务概念 ----
+@AiQueryRouter.get("/concepts/list", summary="业务概念列表")
 async def list_concepts(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.list_concepts(), msg="查询成功")
 
 
-@AiQueryRouter.post("/concepts/save", summary="本体/概念保存")
+@AiQueryRouter.post("/concepts/save", summary="业务概念保存")
 async def save_concept(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
@@ -1378,7 +1378,7 @@ async def save_concept(
     return SuccessResponse(data=await AiQueryService.upsert_concept(data, auth), msg="保存成功")
 
 
-@AiQueryRouter.delete("/concepts/delete", summary="本体/概念删除")
+@AiQueryRouter.delete("/concepts/delete", summary="业务概念删除")
 async def delete_concepts(
     ids: list[int],
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

@@ -249,6 +249,13 @@
 
       <!-- 数据域 -->
       <el-tab-pane label="数据域" name="domain">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 10px"
+          title="数据域（Data Domain）：把数据表按业务主题归类，用于问数权限与治理；区别于「业务域」（资产上的业务标签）与「本体域」（本体对象的命名空间）。"
+        />
         <div class="gp-bar">
           <el-button type="primary" size="small" :icon="Plus" @click="openDomain()">
             新建数据域

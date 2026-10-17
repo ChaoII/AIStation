@@ -2523,7 +2523,7 @@ class AiQueryService:
 
     @classmethod
     async def _ensure_concept_table(cls) -> None:
-        """本体/概念表（无 Alembic 迁移时运行时建表）。"""
+        """业务概念表（无 Alembic 迁移时运行时建表）。"""
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
 
@@ -2633,7 +2633,7 @@ class AiQueryService:
 
     @classmethod
     async def _concept_context(cls) -> str:
-        """把本体/概念注入 prompt 上下文：概念+描述+同义词+映射。"""
+        """把业务概念注入 prompt 上下文：概念+描述+同义词+映射。"""
         # 概念也走本体统一语义接口（本体对象的别名/域 + 问数概念表，合并成一份）
         from app.plugin.module_ai.ontology import semantic as _sem
 
