@@ -227,6 +227,11 @@ async def async_db_session_fresh() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+#: 后台预热任务引用。``asyncio.create_task`` 的结果**必须**保留引用，否则任务可能在
+#: 执行途中被 GC 回收（CPython 官方文档明确警告），届时连接既没建好也不会归还。
+_warmup_task: asyncio.Task | None = None
+
+
 async def async_pool_warmup(app: FastAPI, status: bool) -> None:
     """启动期并发预热异步 DB 连接池（审计·并发 #11）。
 
@@ -274,8 +279,9 @@ async def async_pool_warmup(app: FastAPI, status: bool) -> None:
                 except Exception:  # noqa: BLE001 - 归还失败不影响启动
                     pass
 
-    # 后台预热，不阻塞启动事件循环
-    asyncio.create_task(_warmup())
+    # 后台预热，不阻塞启动事件循环（保留任务引用，避免任务被 GC 中途回收）
+    global _warmup_task
+    _warmup_task = asyncio.create_task(_warmup())
 
 
 #: 泄漏连接的判定阈值（秒）：事务开着且**这么久没动静**，必然是泄漏。
