@@ -509,6 +509,16 @@
                 <el-descriptions-item label="关系边">{{ kg.edges ?? "-" }}</el-descriptions-item>
                 <el-descriptions-item label="实体">{{ kg.entities ?? "-" }}</el-descriptions-item>
               </el-descriptions>
+              <GraphCanvas
+                v-if="kgNodes.length"
+                :nodes="kgNodes"
+                :edges="kgEdges"
+                height="560px"
+                layout-name="cose"
+                :node-style="nodeStyle"
+                class="ig-kg-graph"
+              />
+              <el-empty v-else :image-size="60" description="暂无图谱，可点击「重建图谱」生成" />
             </el-tab-pane>
 
             <!-- 筛选规则工作台 -->
@@ -1026,6 +1036,7 @@ import {
   saveQueryConcept,
   deleteQueryConcepts,
   getQueryKgStats,
+  getQueryKgUnified,
   rebuildQueryKg,
   runModelingMetrics,
   runModelingAnnotate,
@@ -1034,6 +1045,7 @@ import { getOntDomains } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
 import GovernancePanel from "./components/GovernancePanel.vue";
 import AssetVersionsDialog from "./components/AssetVersionsDialog.vue";
+import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 
 const tab = ref("table");
 const datasources = ref<any[]>([]);
@@ -1048,6 +1060,14 @@ const metrics = ref<any[]>([]);
 const terms = ref<any[]>([]);
 const concepts = ref<any[]>([]);
 const kg = ref<any>({});
+const kgNodes = ref<any[]>([]);
+const kgEdges = ref<any[]>([]);
+const nodeStyle = {
+  sizeMode: "fixed",
+  fixedSize: 36,
+  colorMode: "type",
+  labelSize: 11,
+};
 const assets = ref<any[]>([]);
 const domains = ref<any[]>([]);
 
@@ -1840,6 +1860,30 @@ async function loadMisc() {
   await safe(getQueryTerms, (v) => (terms.value = v));
   await safe(getQueryConcepts, (v) => (concepts.value = v));
   await safe(getQueryKgStats, (v) => (kg.value = v));
+  await loadUnified();
+}
+
+async function loadUnified() {
+  try {
+    const r = await getQueryKgUnified();
+    const d = r.data?.data || { nodes: [], edges: [] };
+    const nodes = (d.nodes || []).map((n: any) => ({
+      id: n.name,
+      name: n.name,
+      etype: n.etype,
+      category: n.etype,
+    }));
+    const edges = (d.edges || []).map((e: any) => ({
+      source: e.source,
+      target: e.target,
+      rtype: e.rtype,
+    }));
+    kgNodes.value = nodes;
+    kgEdges.value = edges;
+  } catch {
+    kgNodes.value = [];
+    kgEdges.value = [];
+  }
 }
 
 onMounted(async () => {
