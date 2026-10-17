@@ -15,11 +15,6 @@
           :prefix-icon="Search"
           style="width: 200px"
         />
-        <el-radio-group v-model="typeFilter" size="default">
-          <el-radio-button v-for="t in typeOptions" :key="t.value" :value="t.value">
-            {{ t.label }}
-          </el-radio-button>
-        </el-radio-group>
         <el-dropdown trigger="click" @command="onCreate">
           <el-button type="primary" :icon="Plus">新建</el-button>
           <template #dropdown>
@@ -73,7 +68,12 @@
 
       <!-- 右：卡片区 -->
       <el-col :xs="24" :sm="18" :md="19" :lg="20">
-        <el-row v-loading="loading" :gutter="12">
+        <div class="ws-type-bar">
+          <el-tabs v-model="typeFilter" class="ws-type-tabs">
+            <el-tab-pane v-for="t in typeOptions" :key="t.value" :label="t.label" :name="t.value" />
+          </el-tabs>
+        </div>
+        <el-row v-loading="loading" :gutter="16">
           <el-col
             v-for="it in pagedItems"
             :key="`${it.type}-${it.id}`"
@@ -455,6 +455,22 @@ async function saveCron() {
   height: 100%;
   display: flex;
   flex-direction: column;
+  padding: 12px;
+  box-sizing: border-box;
+  background: var(--el-color-white);
+}
+
+.ws-type-bar {
+  margin-bottom: 12px;
+}
+
+.ws-type-tabs {
+  :deep(.el-tabs__header) {
+    margin-bottom: 0;
+  }
+  :deep(.el-tabs__nav-wrap::after) {
+    height: 1px;
+  }
 }
 
 .ws-toolbar {
@@ -524,11 +540,11 @@ async function saveCron() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  margin-bottom: 12px;
-  padding: 16px 18px;
-  background: var(--el-fill-color-blank);
+  margin-bottom: 16px;
+  padding: 18px 20px;
+  background: var(--el-color-white);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   transition:
     box-shadow 0.2s,
@@ -536,7 +552,7 @@ async function saveCron() {
     border-color 0.2s;
   &:hover {
     border-color: var(--el-color-primary-light-5);
-    box-shadow: 0 6px 18px rgb(0 0 0 / 8%);
+    box-shadow: 0 8px 20px rgb(0 0 0 / 8%);
     transform: translateY(-2px);
   }
 }
