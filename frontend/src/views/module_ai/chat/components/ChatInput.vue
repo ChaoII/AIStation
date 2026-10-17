@@ -27,6 +27,36 @@
         </div>
 
         <div class="input-footer">
+          <div class="input-tools">
+            <el-dropdown trigger="click" @command="(m: any) => emit('update:modelId', m.id)">
+              <span class="model-trigger">
+                <span class="model-avatar">{{ (chatModelLabel[0] || "M").toUpperCase() }}</span>
+                <span class="model-name">{{ chatModelLabel }}</span>
+                <el-icon class="model-chevron"><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-for="m in models"
+                    :key="m.id"
+                    :command="m"
+                    :class="{ 'is-active': m.id === modelId }"
+                  >
+                    {{ m.name }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-tooltip :content="thinking === 'deep' ? '深度思考' : '快速'">
+              <span
+                class="thinking-toggle"
+                :class="{ 'is-deep': thinking === 'deep' }"
+                @click="emit('update:thinking', thinking === 'deep' ? 'quick' : 'deep')"
+              >
+                {{ thinking === "deep" ? "🧠" : "⚡" }}
+              </span>
+            </el-tooltip>
+          </div>
           <div class="input-actions">
             <el-upload
               :auto-upload="false"
@@ -95,6 +125,7 @@ import {
   Document,
   Close,
   VideoPause,
+  ArrowDown,
 } from "@element-plus/icons-vue";
 import {
   EditorView,
@@ -112,19 +143,35 @@ import type { UploadedFile } from "@/views/module_ai/chat/types";
 interface Props {
   disabled?: boolean;
   sending?: boolean;
+  /** 可选模型列表（下拉选择） */
+  models?: Array<{ id: number; name: string }>;
+  /** 当前模型 id */
+  modelId?: number | null;
+  /** 思考模式 */
+  thinking?: "quick" | "deep";
 }
 
 interface Emits {
   (e: "send", message: string, files?: UploadedFile[]): void;
   (e: "stop"): void;
+  (e: "update:modelId", id: number): void;
+  (e: "update:thinking", mode: "quick" | "deep"): void;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   sending: false,
+  models: () => [],
+  modelId: null,
+  thinking: "quick",
 });
 
 const emit = defineEmits<Emits>();
+
+const chatModelLabel = computed(() => {
+  const m = props.models.find((x) => x.id === props.modelId);
+  return m?.name || "选择模型";
+});
 
 const inputMessage = ref("");
 const uploadedFiles = ref<UploadedFile[]>([]);
@@ -503,6 +550,78 @@ defineExpose({
         align-items: center;
         justify-content: flex-end;
         gap: 12px;
+
+        .input-tools {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-right: auto;
+
+          .model-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 8px;
+            font-size: 12px;
+            color: var(--el-text-color-secondary);
+            border: 1px solid var(--el-border-color-lighter);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+
+            &:hover {
+              color: var(--el-color-primary);
+              border-color: var(--el-color-primary-light-5);
+              background: var(--el-color-primary-light-9);
+            }
+          }
+
+          .model-avatar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: var(--el-fill-color-light);
+            color: var(--el-text-color-secondary);
+            font-size: 9px;
+            font-weight: 600;
+          }
+
+          .model-name {
+            max-width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .model-chevron {
+            font-size: 12px;
+          }
+
+          .thinking-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            border: 1px solid var(--el-border-color-lighter);
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+
+            &:hover {
+              border-color: var(--el-color-primary-light-5);
+            }
+
+            &.is-deep {
+              background: var(--el-color-primary-light-9);
+              border-color: var(--el-color-primary-light-5);
+            }
+          }
+        }
 
         .input-actions {
           display: flex;
