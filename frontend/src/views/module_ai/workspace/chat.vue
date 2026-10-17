@@ -3,9 +3,18 @@
   <div class="app-container ai-workspace-chat">
     <!-- 左：会话列表 -->
     <aside class="chat-side">
-      <div class="chat-side-head">
-        <span class="chat-side-title">{{ assetLabel }}</span>
-        <el-button size="small" type="primary" :icon="Plus" @click="newSession">新会话</el-button>
+      <button class="chat-new-session" @click="newSession">
+        <el-icon><Plus /></el-icon>
+        <span>新建会话</span>
+      </button>
+      <div class="chat-search">
+        <el-input
+          v-model="sessionSearch"
+          placeholder="搜索会话..."
+          :prefix-icon="Search"
+          size="small"
+          clearable
+        />
       </div>
       <el-scrollbar class="chat-side-scroll">
         <template v-for="group in sessionGroups" :key="group.label">
@@ -17,19 +26,18 @@
             :class="{ 'chat-sess--active': s.id === currentSessionId }"
             @click="openSession(s)"
           >
-            <div class="chat-sess-main">
-              <div class="chat-sess-title">{{ s.title || "未命名会话" }}</div>
-              <div class="chat-sess-meta">
-                {{ s.message_count ?? 0 }} 条 · {{ fmtTime(s.updated_time) }}
-              </div>
+            <div class="chat-sess-title">{{ s.title || "未命名会话" }}</div>
+            <div class="chat-sess-meta">
+              <span>{{ s.message_count ?? 0 }} 条</span>
+              <span>· {{ fmtTime(s.updated_time) }}</span>
             </div>
             <el-icon class="chat-sess-del" @click.stop="delSession(s.id)"><Delete /></el-icon>
           </div>
         </template>
-        <div v-if="!sessionGroups.length" class="chat-side-empty">暂无会话，点「新会话」开始</div>
+        <div v-if="!sessionGroups.length" class="chat-side-empty">暂无会话，点「新建会话」开始</div>
       </el-scrollbar>
       <div class="chat-side-foot">
-        <el-button size="small" :disabled="!todaySessions.length" @click="delToday">
+        <el-button size="small" plain :disabled="!todaySessions.length" @click="delToday">
           删除当天会话
         </el-button>
       </div>
@@ -55,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { Delete, Plus } from "@element-plus/icons-vue";
+import { Delete, Plus, Search } from "@element-plus/icons-vue";
 import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 
@@ -81,18 +89,11 @@ const pathMap: Record<string, string> = {
   app: `/ai/apps/${assetId}/run/stream`,
   workflow: `/ai/workflows/${assetId}/run/stream`,
 };
-const labelMap: Record<string, string> = {
-  agent: "智能体",
-  app: "应用",
-  workflow: "工作流",
-  cron: "定时任务",
-};
-const assetLabel = computed(() => labelMap[kind] || "对话");
-
 // ---- 会话 ----
 const sessions = ref<AiSessionItem[]>([]);
 const currentSessionId = ref<number | null>(null);
 const initialMessages = ref<any[]>([]);
+const sessionSearch = ref("");
 
 const chat = useAiChat({
   path: pathMap[kind] || pathMap.agent,
@@ -120,6 +121,10 @@ function isToday(t?: string | null) {
 }
 
 const sessionGroups = computed(() => {
+  const q = sessionSearch.value.toLowerCase();
+  const list = q
+    ? sessions.value.filter((s) => (s.title || "").toLowerCase().includes(q))
+    : sessions.value;
   const groups: { label: string; items: AiSessionItem[] }[] = [
     { label: "今天", items: [] },
     { label: "昨天", items: [] },
@@ -131,7 +136,7 @@ const sessionGroups = computed(() => {
   yesterday.setDate(today.getDate() - 1);
   const weekAgo = new Date();
   weekAgo.setDate(today.getDate() - 7);
-  for (const s of sessions.value) {
+  for (const s of list) {
     const d = new Date(s.updated_time || s.created_time || 0);
     if (d.toDateString() === today.toDateString()) groups[0].items.push(s);
     else if (d.toDateString() === yesterday.toDateString()) groups[1].items.push(s);
@@ -206,7 +211,7 @@ loadSessions();
 }
 
 .chat-side {
-  flex: 0 0 240px;
+  flex: 0 0 260px;
   display: flex;
   flex-direction: column;
   background: var(--el-fill-color-blank);
@@ -215,16 +220,30 @@ loadSessions();
   overflow: hidden;
 }
 
-.chat-side-head {
+.chat-new-session {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  justify-content: center;
+  gap: 6px;
+  margin: 12px;
+  padding: 10px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 10px;
+  background: var(--el-fill-color-blank);
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  &:hover {
+    border-color: var(--el-color-primary);
+    color: var(--el-color-primary);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+  }
 }
 
-.chat-side-title {
-  font-weight: 600;
+.chat-search {
+  padding: 0 12px 8px;
 }
 
 .chat-side-scroll {
@@ -233,53 +252,61 @@ loadSessions();
 }
 
 .chat-group-label {
-  padding: 8px 12px 4px;
+  padding: 8px 14px 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 
 .chat-sess {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
   cursor: pointer;
   border-radius: 8px;
+  position: relative;
+  transition: background 0.15s;
   &:hover {
     background: var(--el-fill-color-light);
   }
   &.chat-sess--active {
     background: var(--el-color-primary-light-9);
   }
-}
 
-.chat-sess-main {
-  min-width: 0;
-  flex: 1;
+  .chat-sess-del {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+    opacity: 0;
+    color: var(--el-text-color-secondary);
+    cursor: pointer;
+    &:hover {
+      color: var(--el-color-danger);
+    }
+  }
+  &:hover .chat-sess-del {
+    opacity: 1;
+  }
+  &.chat-sess--active .chat-sess-del {
+    opacity: 1;
+  }
 }
 
 .chat-sess-title {
   font-size: var(--el-font-size-base);
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding-right: 20px;
 }
 
 .chat-sess-meta {
+  display: flex;
+  gap: 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
-}
-
-.chat-sess-del {
-  opacity: 0;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  &:hover {
-    color: var(--el-color-danger);
-  }
-}
-.chat-sess:hover .chat-sess-del {
-  opacity: 1;
 }
 
 .chat-side-empty {
