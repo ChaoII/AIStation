@@ -11,37 +11,49 @@
       </div>
 
       <div ref="containerRef" class="input-container" :class="{ 'is-locked': disabled || sending }">
-        <div class="editor-wrap">
-          <div ref="editorEl" class="cm-host" :class="{ 'is-readonly': disabled || sending }"></div>
-          <div v-if="atMenuVisible" class="at-menu" :style="atMenuStyle">
-            <div class="at-menu__title">快捷指令</div>
-            <div
-              v-for="cmd in filteredAtCommands"
-              :key="cmd.name"
-              class="at-item"
-              @click="chooseAt(cmd)"
-            >
-              <span class="at-item__name">#{{ cmd.name }}</span>
-              <span class="at-item__desc">{{ cmd.desc }}</span>
-            </div>
-            <div v-if="filteredAtCommands.length === 0" class="at-menu__empty">无匹配指令</div>
+        <div ref="editorEl" class="cm-host" :class="{ 'is-readonly': disabled || sending }"></div>
+        <div v-if="atMenuVisible" class="at-menu" :style="atMenuStyle">
+          <div class="at-menu__title">快捷指令</div>
+          <div
+            v-for="cmd in filteredAtCommands"
+            :key="cmd.name"
+            class="at-item"
+            @click="chooseAt(cmd)"
+          >
+            <span class="at-item__name">#{{ cmd.name }}</span>
+            <span class="at-item__desc">{{ cmd.desc }}</span>
           </div>
+          <div v-if="filteredAtCommands.length === 0" class="at-menu__empty">无匹配指令</div>
         </div>
 
         <div class="input-footer">
-          <div class="quick-chips">
-            <el-tag
-              v-for="chip in quickChips"
-              :key="chip"
-              size="small"
-              effect="plain"
-              class="chip"
-              @click="insertToken(`#${chip}`)"
-            >
-              #{{ chip }}
-            </el-tag>
-          </div>
+          <el-dropdown trigger="click" @command="(c: string) => insertToken(`#${c}`)">
+            <span class="chips-toggle">
+              <el-icon><Plus /></el-icon>
+              快捷指令
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="chip in quickChips" :key="chip" :command="chip">
+                  # {{ chip }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <div class="input-actions">
+            <el-upload
+              :auto-upload="false"
+              :show-file-list="false"
+              :on-change="handleFileChange"
+              accept="image/*"
+              :multiple="true"
+            >
+              <el-tooltip content="发送图片" placement="top">
+                <span class="upload-btn">
+                  <el-icon><Picture /></el-icon>
+                </span>
+              </el-tooltip>
+            </el-upload>
             <el-upload
               ref="uploadRef"
               :auto-upload="false"
@@ -50,7 +62,11 @@
               :accept="acceptTypes"
               :multiple="true"
             >
-              <el-button :icon="Paperclip" class="upload-btn" circle />
+              <el-tooltip content="上传文件" placement="top">
+                <span class="upload-btn">
+                  <el-icon><Paperclip /></el-icon>
+                </span>
+              </el-tooltip>
             </el-upload>
             <el-button
               v-if="sending"
@@ -76,7 +92,7 @@
           </div>
         </div>
       </div>
-      <div class="input-hint">按 Enter 发送消息，Shift + Enter 换行，@ 唤起快捷指令</div>
+      <div class="input-hint">支持图片与文件 · Enter 发送，Shift+Enter 换行</div>
     </div>
   </div>
 </template>
@@ -85,7 +101,15 @@
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import type { UploadFile } from "element-plus";
 import { ElMessage } from "element-plus";
-import { Promotion, Paperclip, Document, Close, VideoPause } from "@element-plus/icons-vue";
+import {
+  Promotion,
+  Paperclip,
+  Picture,
+  Plus,
+  Document,
+  Close,
+  VideoPause,
+} from "@element-plus/icons-vue";
 import {
   EditorView,
   keymap,
@@ -420,87 +444,83 @@ defineExpose({
         transform: none;
       }
 
-      .editor-wrap {
-        position: relative;
-        min-width: 0;
+      .cm-host {
+        min-height: 52px;
+        max-height: 220px;
+        overflow: auto;
+        font-size: var(--el-font-size-base);
+        line-height: 1.6;
 
-        .cm-host {
-          max-height: 180px;
-          overflow: hidden;
-          font-size: var(--el-font-size-base);
-          line-height: 1.6;
+        &.is-readonly {
+          opacity: 0.6;
+          pointer-events: none;
+        }
 
-          &.is-readonly {
-            opacity: 0.6;
-            pointer-events: none;
-          }
+        :deep(.cm-editor) {
+          background: transparent;
 
-          :deep(.cm-editor) {
-            background: transparent;
-
-            &.cm-focused {
-              outline: none;
-            }
-          }
-
-          :deep(.cm-scroller) {
-            font-family: inherit;
-            overflow: auto;
-          }
-
-          :deep(.mention) {
-            color: var(--el-color-primary);
-            font-weight: 600;
-            background: var(--el-color-primary-light-9);
-            border-radius: 3px;
+          &.cm-focused {
+            outline: none;
           }
         }
 
-        .at-menu {
-          position: absolute;
-          z-index: 30;
-          width: 220px;
-          overflow: hidden;
-          background: var(--el-bg-color-overlay);
-          border: 1px solid var(--el-border-color-light);
-          border-radius: 8px;
-          box-shadow: var(--el-box-shadow);
+        :deep(.cm-scroller) {
+          font-family: inherit;
+          overflow: auto;
+        }
 
-          .at-menu__title {
-            padding: 6px 12px;
-            font-size: var(--el-font-size-small);
-            color: var(--el-text-color-secondary);
+        :deep(.mention) {
+          color: var(--el-color-primary);
+          font-weight: 600;
+          background: var(--el-color-primary-light-9);
+          border-radius: 3px;
+        }
+      }
+
+      .at-menu {
+        position: absolute;
+        z-index: 30;
+        width: 220px;
+        overflow: hidden;
+        background: var(--el-bg-color-overlay);
+        border: 1px solid var(--el-border-color-light);
+        border-radius: 8px;
+        box-shadow: var(--el-box-shadow);
+
+        .at-menu__title {
+          padding: 6px 12px;
+          font-size: var(--el-font-size-small);
+          color: var(--el-text-color-secondary);
+          background: var(--el-fill-color-light);
+        }
+
+        .at-menu__empty {
+          padding: 10px 12px;
+          font-size: var(--el-font-size-small);
+          color: var(--el-text-color-secondary);
+        }
+
+        .at-item {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          padding: 8px 12px;
+          cursor: pointer;
+
+          &:hover {
             background: var(--el-fill-color-light);
           }
 
-          .at-menu__empty {
-            padding: 10px 12px;
+          .at-item__name {
+            flex-shrink: 0;
             font-size: var(--el-font-size-small);
-            color: var(--el-text-color-secondary);
+            font-weight: 600;
+            color: var(--el-color-primary);
           }
 
-          .at-item {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            padding: 8px 12px;
-            cursor: pointer;
-
-            &:hover {
-              background: var(--el-fill-color-light);
-            }
-
-            .at-item__name {
-              flex-shrink: 0;
-              font-size: var(--el-font-size-small);
-              font-weight: 600;
-              color: var(--el-color-primary);
-            }
-
-            .at-item__desc {
-              font-size: var(--el-font-size-small);
-              color: var(--el-text-color-secondary);
-            }
+          .at-item__desc {
+            font-size: var(--el-font-size-small);
+            color: var(--el-text-color-secondary);
           }
         }
       }
@@ -511,28 +531,45 @@ defineExpose({
         justify-content: space-between;
         gap: 12px;
 
-        .quick-chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
+        .chips-toggle {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 4px 10px;
+          font-size: 12px;
+          color: var(--el-text-color-secondary);
+          border: 1px solid var(--el-border-color-lighter);
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.2s;
 
-          .chip {
-            cursor: pointer;
+          &:hover {
+            color: var(--el-color-primary);
+            border-color: var(--el-color-primary-light-5);
+            background: var(--el-color-primary-light-9);
           }
         }
 
         .input-actions {
           display: flex;
           flex-shrink: 0;
-          gap: 8px;
+          gap: 6px;
           align-items: center;
 
           .upload-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
             font-size: var(--el-font-size-large);
             color: var(--el-text-color-secondary);
+            border-radius: 50%;
+            transition: all 0.2s;
 
             &:hover {
               color: var(--el-color-primary);
+              background: var(--el-color-primary-light-9);
             }
           }
 
