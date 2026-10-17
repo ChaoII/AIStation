@@ -4140,10 +4140,13 @@ async def _run_function_model(cfg: dict, values: dict) -> str:
 
 async def call_registered_model(model_id: int | None, system: str, prompt: str,
                                 temperature: float = 0.2) -> str:
-    """调用平台登记的模型（与问数模块同一套运行时解析与请求头）。
+    """调用平台登记的模型（统一走 agno，与问数模块同一套运行时解析与请求头）。
 
     官方 functions-on-models 的等价物：把模型当成函数的一个执行后端。
     """
+    from agno.agent import Agent
+    from agno.models.openai.like import OpenAILike
+
     from app.plugin.module_ai.models.service import AiModelService, build_headers
 
     runtime = await AiModelService.get_runtime_model("chat", model_id) \
@@ -4151,25 +4154,22 @@ async def call_registered_model(model_id: int | None, system: str, prompt: str,
     if not runtime:
         raise CustomException(msg="未配置可用的大模型，请在 AI 管理 → 模型配置 中添加并启用")
     try:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(
-            base_url=runtime["base_url"], api_key=runtime["api_key"] or "sk-none",
-            default_headers=build_headers(runtime["base_url"], runtime.get("extra_headers"),
-                                          "aistation-ontfn"),
+        temp = max(0.0, min(float(temperature or 0.2), 2.0))
+        model = OpenAILike(
+            id=runtime["model"], base_url=runtime["base_url"],
+            api_key=runtime.get("api_key") or "sk-none",
+            temperature=temp, max_tokens=2000, timeout=120,
+            extra_body={"reasoning_effort": "low"},
+            default_headers=build_headers(
+                runtime["base_url"], runtime.get("extra_headers"), "aistation-ontfn"),
         )
+        agent = Agent(model=model, telemetry=False, markdown=False,
+                      instructions=[system] if system else None)
     except Exception as e:  # noqa: BLE001
         raise CustomException(msg=f"大模型客户端不可用：{str(e)[:120]}") from e
-    msgs = []
-    if system:
-        msgs.append({"role": "system", "content": system})
-    msgs.append({"role": "user", "content": prompt})
     try:
-        resp = await client.chat.completions.create(
-            model=runtime["model"], messages=msgs,
-            temperature=max(0.0, min(float(temperature or 0.2), 2.0)),
-        )
-        return (resp.choices[0].message.content or "").strip()
+        resp = await agent.arun(prompt)
+        return (getattr(resp, "content", "") or "").strip()
     except Exception as e:  # noqa: BLE001
         raise CustomException(msg=f"模型调用失败：{(str(e) or type(e).__name__)[:140]}") from e
 
