@@ -42,6 +42,7 @@
               <el-option v-for="f in FORMS" :key="f" :label="f" :value="f" />
             </el-select>
             <el-button size="small" @click="load">刷新</el-button>
+            <el-button size="small" type="primary" plain @click="openCreate">新增题目</el-button>
             <el-button size="small" type="primary" @click="genVisible = true">生成题目</el-button>
             <el-button
               size="small"
@@ -85,9 +86,10 @@
             <el-tag v-else size="small" type="info" effect="plain">未校验</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="110" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="viewSql(row)">金标 SQL</el-button>
+            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -139,6 +141,60 @@
       <div class="ev-q">{{ current?.question }}</div>
       <el-input v-model="currentSql" type="textarea" :rows="9" readonly />
     </el-dialog>
+
+    <el-dialog
+      v-model="editVisible"
+      :title="editing ? '编辑测试题' : '新增测试题'"
+      width="620px"
+      append-to-body
+    >
+      <el-form :model="editForm" label-width="80px">
+        <el-form-item label="问题" required>
+          <el-input
+            v-model="editForm.question"
+            type="textarea"
+            :rows="2"
+            placeholder="自然语言问题"
+          />
+        </el-form-item>
+        <el-form-item label="金标 SQL" required>
+          <el-input
+            v-model="editForm.gold_sql"
+            type="textarea"
+            :rows="6"
+            placeholder="SELECT ..."
+          />
+        </el-form-item>
+        <el-form-item label="数据源">
+          <el-select v-model="editForm.datasource" style="width: 100%">
+            <el-option label="系统库（本体支撑表）" value="system" />
+            <el-option
+              v-for="d in datasources"
+              :key="d.code || d.id"
+              :label="d.name"
+              :value="d.code || `ds:${d.id}`"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="难度">
+          <el-select v-model="editForm.difficulty" style="width: 100%">
+            <el-option v-for="d in DIFFICULTIES" :key="d" :label="d" :value="d" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="形式">
+          <el-select v-model="editForm.form" style="width: 100%">
+            <el-option v-for="f in FORMS" :key="f" :label="f" :value="f" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="场景">
+          <el-input v-model="editForm.scenario" placeholder="业务场景（可选）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveCase">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -150,6 +206,7 @@ import {
   generateEvalRound,
   getEvalCases,
   getQueryDatasources,
+  upsertEvalCase,
 } from "@/api/module_ai/query";
 import { DIFFICULTIES, FORMS, difficultyTag, type EvalCase } from "../types";
 
@@ -168,6 +225,18 @@ const genForm = ref({ datasource: "system", difficulty: "简单", form: "单维�
 const sqlVisible = ref(false);
 const current = ref<EvalCase | null>(null);
 const currentSql = ref("");
+
+const editVisible = ref(false);
+const saving = ref(false);
+const editing = ref<number | null>(null);
+const editForm = ref({
+  question: "",
+  gold_sql: "",
+  datasource: "system",
+  difficulty: "简单",
+  form: "单维统计",
+  scenario: "",
+});
 
 async function load() {
   loading.value = true;
@@ -216,6 +285,54 @@ function viewSql(row: any) {
   current.value = row as EvalCase;
   currentSql.value = row.gold_sql || "";
   sqlVisible.value = true;
+}
+
+function openCreate() {
+  editing.value = null;
+  editForm.value = {
+    question: "",
+    gold_sql: "",
+    datasource: "system",
+    difficulty: "简单",
+    form: "单维统计",
+    scenario: "",
+  };
+  editVisible.value = true;
+}
+
+function openEdit(row: any) {
+  editing.value = row.id;
+  editForm.value = {
+    question: row.question || "",
+    gold_sql: row.gold_sql || "",
+    datasource: row.datasource || "system",
+    difficulty: row.difficulty || "简单",
+    form: row.form || "单维统计",
+    scenario: row.scenario || "",
+  };
+  editVisible.value = true;
+}
+
+async function saveCase() {
+  if (!editForm.value.question.trim()) {
+    ElMessage.warning("请填写问题");
+    return;
+  }
+  if (!editForm.value.gold_sql.trim()) {
+    ElMessage.warning("请填写金标 SQL");
+    return;
+  }
+  saving.value = true;
+  try {
+    await upsertEvalCase({ ...editForm.value, id: editing.value ?? undefined });
+    ElMessage.success(editing.value ? "已保存" : "已新增");
+    editVisible.value = false;
+    await load();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function removeSelected() {

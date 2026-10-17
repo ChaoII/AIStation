@@ -410,6 +410,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import {
   deleteQuerySession,
   getQueryDatasources,
+  getQueryFewshots,
   getQueryMessages,
   getQuerySessions,
   getQuerySettings,
@@ -437,7 +438,11 @@ const asking = ref(false);
 const objectCode = ref("");
 const objectKey = ref("");
 
-const examples = ["销售订单总共有多少笔", "各部门的销售额是多少", "统计摄像机的状态分布"];
+const examples = ref<string[]>([
+  "销售订单总共有多少笔",
+  "各部门的销售额是多少",
+  "统计摄像机的状态分布",
+]);
 
 /** 把「列 + 二维数组」转成 el-table 需要的对象数组。 */
 function rowsOf(m: any) {
@@ -685,6 +690,18 @@ function hideTip() {
   tipHidden.value = true;
   localStorage.setItem("q_tip_hidden", "1");
 }
+async function loadExamples() {
+  try {
+    const r = await getQueryFewshots({});
+    const list = r.data?.data || [];
+    const qs = list
+      .filter((x: any) => x.enabled !== false && x.question)
+      .map((x: any) => x.question);
+    if (qs.length) examples.value = qs.slice(0, 8);
+  } catch {
+    /* 保留默认示例 */
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 问数设置（工程开关）：对象查询（语义执行）等
@@ -910,6 +927,7 @@ onMounted(async () => {
   if (q.object_code) objectCode.value = String(q.object_code);
   if (q.object_key) objectKey.value = String(q.object_key);
   await loadSessions();
+  await loadExamples();
   try {
     const r = await getQueryDatasources();
     datasources.value = r.data?.data || [];
