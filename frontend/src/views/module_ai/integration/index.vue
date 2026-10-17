@@ -3,7 +3,7 @@
   <div class="app-container ai-mod ai-integration-page">
     <el-row :gutter="12" class="ig-fill">
       <!-- 左：数据源（纵向列表，仿「本体」左侧导航） -->
-      <el-col :xs="24" :sm="8" :md="6" :lg="5" class="ig-fill">
+      <el-col v-if="tab !== 'gov'" :xs="24" :sm="8" :md="6" :lg="5" class="ig-fill">
         <el-card shadow="never" class="ig-card">
           <template #header>
             <div class="ig-head">
@@ -32,7 +32,15 @@
               <div class="ig-ds-item__ops" @click.stop>
                 <el-button link type="primary" size="small" @click="testDs(d)">测试</el-button>
                 <el-button link type="primary" size="small" @click="openDs(d)">编辑</el-button>
-                <el-button v-hasPerm="['module_ai:query:ask']" link type="danger" size="small" @click="removeDs(d)">删除</el-button>
+                <el-button
+                  v-hasPerm="['module_ai:query:ask']"
+                  link
+                  type="danger"
+                  size="small"
+                  @click="removeDs(d)"
+                >
+                  删除
+                </el-button>
               </div>
             </div>
             <el-empty
@@ -45,35 +53,149 @@
       </el-col>
 
       <!-- 右：选中数据源的详情 -->
-      <el-col :xs="24" :sm="16" :md="18" :lg="19" class="ig-fill">
+      <el-col
+        :xs="24"
+        :sm="tab === 'gov' ? 24 : 16"
+        :md="tab === 'gov' ? 24 : 18"
+        :lg="tab === 'gov' ? 24 : 19"
+        class="ig-fill"
+      >
         <el-card shadow="never" class="ig-card">
           <el-tabs v-model="tab" class="ig-tabs">
             <!-- 表与字段：核心——选表后就地维护 -->
             <el-tab-pane label="表与字段" name="table">
-                <!-- 表清单：铺满 tab 高度，超出滚动 -->
-                <div class="ig-tables">
-                  <div class="ig-bar">
-                    <el-input
-                      v-model="tableKw"
-                      size="small"
-                      placeholder="搜索表名/中文名"
-                      :prefix-icon="Search"
-                      clearable
-                      class="ig-bar__search"
+              <!-- 表清单：铺满 tab 高度，超出滚动 -->
+              <div class="ig-tables">
+                <div class="ig-bar">
+                  <el-input
+                    v-model="tableKw"
+                    size="small"
+                    placeholder="搜索表名/中文名"
+                    :prefix-icon="Search"
+                    clearable
+                    class="ig-bar__search"
+                  />
+                  <el-button
+                    size="small"
+                    :icon="Refresh"
+                    :disabled="!curDs"
+                    :loading="syncing"
+                    @click="syncSchema"
+                  >
+                    同步
+                  </el-button>
+                  <el-button size="small" :icon="EditPen" @click="openBatch">批量维护</el-button>
+                  <el-switch v-model="hideSys" active-text="只看业务表" />
+                  <el-switch v-model="hideUnmaintained" active-text="只看已维护" />
+                  <span class="ig-bar__gap" />
+                  <el-select
+                    v-model="importDomain"
+                    size="small"
+                    clearable
+                    placeholder="目标本体域"
+                    class="ig-bar__domain"
+                  >
+                    <el-option
+                      v-for="dm in domains"
+                      :key="dm.code"
+                      :label="dm.name"
+                      :value="dm.code"
                     />
+                  </el-select>
+                  <el-button
+                    size="small"
+                    :icon="DataBoard"
+                    :disabled="!curDs"
+                    :loading="importingBatch"
+                    @click="doBatchImport"
+                  >
+                    批量导入
+                  </el-button>
+                </div>
+                <el-table :data="filteredTables" size="small" border height="100%" row-key="table">
+                  <template #empty>
+                    <el-empty :description="tableEmptyText" :image-size="50" />
+                  </template>
+                  <el-table-column label="表名" min-width="200" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      <div class="ig-tname">{{ row.table }}</div>
+                      <div v-if="row.comment" class="ig-tcmt">{{ row.comment }}</div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="中文名" min-width="140" show-overflow-tooltip>
+                    <template #default="{ row }">{{ row.alias || "-" }}</template>
+                  </el-table-column>
+                  <el-table-column label="业务域" min-width="120" show-overflow-tooltip>
+                    <template #default="{ row }">{{ row.domain || "-" }}</template>
+                  </el-table-column>
+                  <el-table-column label="业务描述" min-width="180" show-overflow-tooltip>
+                    <template #default="{ row }">{{ row.description || "-" }}</template>
+                  </el-table-column>
+                  <el-table-column label="业务场景" min-width="140" show-overflow-tooltip>
+                    <template #default="{ row }">{{ row.business_scenarios || "-" }}</template>
+                  </el-table-column>
+                  <el-table-column label="字段数" width="70" align="center">
+                    <template #default="{ row }">{{ row.column_count ?? "-" }}</template>
+                  </el-table-column>
+                  <el-table-column label="纳入" width="64" align="center">
+                    <template #default="{ row }">
+                      <el-tag
+                        size="small"
+                        :type="row.included === false ? 'info' : 'success'"
+                        effect="plain"
+                      >
+                        {{ row.included === false ? "否" : "是" }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="系统/业务" width="92" align="center">
+                    <template #default="{ row }">
+                      <el-tag
+                        size="small"
+                        :type="row.is_system ? 'warning' : 'success'"
+                        effect="plain"
+                      >
+                        {{ row.is_system ? "系统表" : "业务表" }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="90" align="center" fixed="right">
+                    <template #default="{ row }">
+                      <el-button link type="primary" size="small" @click="openFieldDrawer(row)">
+                        字段
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+
+              <!-- 选中表：抽屉里做元数据 + 字段维护 -->
+              <el-drawer
+                v-model="fieldDrawer"
+                :title="`字段维护：${curTable || ''}`"
+                size="600px"
+                append-to-body
+                class="ig-field-drawer"
+              >
+                <div class="ig-detail ig-detail-drawer">
+                  <div class="ig-bar">
+                    <span class="ig-title">{{ curTable }}</span>
+                    <el-tag
+                      v-if="curTableSys !== undefined"
+                      size="small"
+                      :type="curTableSys ? 'warning' : 'success'"
+                      effect="plain"
+                    >
+                      {{ curTableSys ? "系统表" : "业务表" }}
+                    </el-tag>
                     <el-button
                       size="small"
-                      :icon="Refresh"
-                      :disabled="!curDs"
-                      :loading="syncing"
-                      @click="syncSchema"
+                      type="primary"
+                      :loading="savingTable"
+                      @click="saveTable"
                     >
-                      同步
+                      保存表信息
                     </el-button>
-                    <el-button size="small" :icon="EditPen" @click="openBatch">批量维护</el-button>
-                    <el-switch v-model="hideSys" active-text="只看业务表" />
-                    <el-switch v-model="hideUnmaintained" active-text="只看已维护" />
-                    <span class="ig-bar__gap" />
                     <el-select
                       v-model="importDomain"
                       size="small"
@@ -91,171 +213,59 @@
                     <el-button
                       size="small"
                       :icon="DataBoard"
-                      :disabled="!curDs"
-                      :loading="importingBatch"
-                      @click="doBatchImport"
+                      :loading="importing"
+                      @click="doImport"
                     >
-                      批量导入
+                      导入为本体对象
                     </el-button>
                   </div>
-                  <el-table
-                    :data="filteredTables"
-                    size="small"
-                    border
-                    height="100%"
-                    row-key="table"
-                  >
-                    <template #empty>
-                      <el-empty :description="tableEmptyText" :image-size="50" />
-                    </template>
-                    <el-table-column label="表名" min-width="200" show-overflow-tooltip>
-                      <template #default="{ row }">
-                        <div class="ig-tname">{{ row.table }}</div>
-                        <div v-if="row.comment" class="ig-tcmt">{{ row.comment }}</div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="中文名" min-width="140" show-overflow-tooltip>
-                      <template #default="{ row }">{{ row.alias || "-" }}</template>
-                    </el-table-column>
-                    <el-table-column label="业务域" min-width="120" show-overflow-tooltip>
-                      <template #default="{ row }">{{ row.domain || "-" }}</template>
-                    </el-table-column>
-                    <el-table-column label="业务描述" min-width="180" show-overflow-tooltip>
-                      <template #default="{ row }">{{ row.description || "-" }}</template>
-                    </el-table-column>
-                    <el-table-column label="业务场景" min-width="140" show-overflow-tooltip>
-                      <template #default="{ row }">{{ row.business_scenarios || "-" }}</template>
-                    </el-table-column>
-                    <el-table-column label="字段数" width="70" align="center">
-                      <template #default="{ row }">{{ row.column_count ?? "-" }}</template>
-                    </el-table-column>
-                    <el-table-column label="纳入" width="64" align="center">
-                      <template #default="{ row }">
-                        <el-tag size="small" :type="row.included === false ? 'info' : 'success'" effect="plain">
-                          {{ row.included === false ? "否" : "是" }}
-                        </el-tag>
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="系统/业务" width="92" align="center">
-                      <template #default="{ row }">
-                        <el-tag size="small" :type="row.is_system ? 'warning' : 'success'" effect="plain">
-                          {{ row.is_system ? "系统表" : "业务表" }}
-                        </el-tag>
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="操作" width="90" align="center" fixed="right">
-                      <template #default="{ row }">
-                        <el-button link type="primary" size="small" @click="openFieldDrawer(row)">
-                          字段
-                        </el-button>
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                </div>
+                  <el-form :model="tmeta" label-width="100px" size="small" class="ig-form">
+                    <el-form-item label="中文名">
+                      <el-input v-model="tmeta.alias" placeholder="如：燃煤采购结算主表" />
+                    </el-form-item>
+                    <el-form-item label="业务域">
+                      <el-input v-model="tmeta.domain" placeholder="如：燃煤/设备/人员" />
+                    </el-form-item>
+                    <el-form-item label="业务描述">
+                      <el-input
+                        v-model="tmeta.description"
+                        type="textarea"
+                        :rows="2"
+                        placeholder="这张表存什么、怎么用——问数会读它来理解表"
+                      />
+                    </el-form-item>
+                    <el-form-item label="业务场景">
+                      <el-input
+                        v-model="tmeta.business_scenarios"
+                        placeholder="哪些报表/业务用到"
+                      />
+                    </el-form-item>
+                    <el-form-item label="纳入问数">
+                      <el-switch v-model="tmeta.included" />
+                    </el-form-item>
+                    <el-divider content-position="left" class="ig-form__divider">
+                      本体对象建模
+                    </el-divider>
+                    <el-form-item label="业务对象">
+                      <el-switch v-model="tmeta.object_enabled" />
+                    </el-form-item>
+                    <el-form-item label="主键列">
+                      <el-input v-model="tmeta.object_key_col" :disabled="!tmeta.object_enabled" />
+                    </el-form-item>
+                    <el-form-item label="显示名列">
+                      <el-input v-model="tmeta.object_name_col" :disabled="!tmeta.object_enabled" />
+                    </el-form-item>
+                  </el-form>
 
-                <!-- 选中表：抽屉里做元数据 + 字段维护 -->
-                <el-drawer
-                  v-model="fieldDrawer"
-                  :title="`字段维护：${curTable || ''}`"
-                  size="600px"
-                  append-to-body
-                  class="ig-field-drawer"
-                >
-                  <div class="ig-detail ig-detail-drawer">
-                    <div class="ig-bar">
-                      <span class="ig-title">{{ curTable }}</span>
-                      <el-tag
-                        v-if="curTableSys !== undefined"
-                        size="small"
-                        :type="curTableSys ? 'warning' : 'success'"
-                        effect="plain"
-                      >
-                        {{ curTableSys ? "系统表" : "业务表" }}
-                      </el-tag>
-                      <el-button
-                        size="small"
-                        type="primary"
-                        :loading="savingTable"
-                        @click="saveTable"
-                      >
-                        保存表信息
-                      </el-button>
-                      <el-select
-                        v-model="importDomain"
-                        size="small"
-                        clearable
-                        placeholder="目标本体域"
-                        class="ig-bar__domain"
-                      >
-                        <el-option
-                          v-for="dm in domains"
-                          :key="dm.code"
-                          :label="dm.name"
-                          :value="dm.code"
-                        />
-                      </el-select>
-                      <el-button
-                        size="small"
-                        :icon="DataBoard"
-                        :loading="importing"
-                        @click="doImport"
-                      >
-                        导入为本体对象
-                      </el-button>
-                    </div>
-                    <el-form :model="tmeta" label-width="100px" size="small" class="ig-form">
-                      <el-form-item label="中文名">
-                        <el-input v-model="tmeta.alias" placeholder="如：燃煤采购结算主表" />
-                      </el-form-item>
-                      <el-form-item label="业务域">
-                        <el-input v-model="tmeta.domain" placeholder="如：燃煤/设备/人员" />
-                      </el-form-item>
-                      <el-form-item label="业务描述">
-                        <el-input
-                          v-model="tmeta.description"
-                          type="textarea"
-                          :rows="2"
-                          placeholder="这张表存什么、怎么用——问数会读它来理解表"
-                        />
-                      </el-form-item>
-                      <el-form-item label="业务场景">
-                        <el-input
-                          v-model="tmeta.business_scenarios"
-                          placeholder="哪些报表/业务用到"
-                        />
-                      </el-form-item>
-                      <el-form-item label="纳入问数">
-                        <el-switch v-model="tmeta.included" />
-                      </el-form-item>
-                      <el-divider content-position="left" class="ig-form__divider">
-                        本体对象建模
-                      </el-divider>
-                      <el-form-item label="业务对象">
-                        <el-switch v-model="tmeta.object_enabled" />
-                      </el-form-item>
-                      <el-form-item label="主键列">
-                        <el-input
-                          v-model="tmeta.object_key_col"
-                          :disabled="!tmeta.object_enabled"
-                        />
-                      </el-form-item>
-                      <el-form-item label="显示名列">
-                        <el-input
-                          v-model="tmeta.object_name_col"
-                          :disabled="!tmeta.object_enabled"
-                        />
-                      </el-form-item>
-                    </el-form>
-
-                    <div class="ig-bar">
-                      <span class="ig-sub">字段（{{ filteredColumns.length }}）</span>
-                      <el-switch v-model="hideAudit" active-text="只看业务字段" />
-                      <el-tag size="small" type="info" effect="plain">
-                        上游注释可作参考，中文名/枚举可人工维护
-                      </el-tag>
-                    </div>
-                    <div class="ig-fields-wrap">
-                      <el-table :data="filteredColumns" size="small" border height="100%">
+                  <div class="ig-bar">
+                    <span class="ig-sub">字段（{{ filteredColumns.length }}）</span>
+                    <el-switch v-model="hideAudit" active-text="只看业务字段" />
+                    <el-tag size="small" type="info" effect="plain">
+                      上游注释可作参考，中文名/枚举可人工维护
+                    </el-tag>
+                  </div>
+                  <div class="ig-fields-wrap">
+                    <el-table :data="filteredColumns" size="small" border height="100%">
                       <template #empty>
                         <el-empty description="该表暂无字段信息，请先同步表结构" :image-size="50" />
                       </template>
@@ -327,9 +337,9 @@
                         </template>
                       </el-table-column>
                     </el-table>
-                    </div>
                   </div>
-                </el-drawer>
+                </div>
+              </el-drawer>
             </el-tab-pane>
 
             <!-- 管道 -->
@@ -560,6 +570,11 @@
                   <template #default="{ row }">{{ row }}</template>
                 </el-table-column>
               </el-table>
+            </el-tab-pane>
+
+            <!-- 治理：驾驶舱/权限/数据质量/数据域/本体对象（原「治理」菜单并入） -->
+            <el-tab-pane label="治理" name="gov">
+              <GovernancePanel />
             </el-tab-pane>
           </el-tabs>
         </el-card>
@@ -833,11 +848,7 @@
       </el-form>
       <template #footer>
         <el-button @click="colDlg = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="savingCol === colForm.column_name"
-          @click="saveColEdit"
-        >
+        <el-button type="primary" :loading="savingCol === colForm.column_name" @click="saveColEdit">
           保存
         </el-button>
       </template>
@@ -1014,6 +1025,7 @@ import {
 } from "@/api/module_ai/query";
 import { getOntDomains } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
+import GovernancePanel from "./components/GovernancePanel.vue";
 
 const tab = ref("table");
 const datasources = ref<any[]>([]);
@@ -1111,7 +1123,9 @@ const filteredTables = computed(() => {
     return (
       String(t.table).toLowerCase().includes(kw) ||
       String(t.comment).toLowerCase().includes(kw) ||
-      String(t.alias || "").toLowerCase().includes(kw)
+      String(t.alias || "")
+        .toLowerCase()
+        .includes(kw)
     );
   });
 });
@@ -1823,7 +1837,7 @@ const modelingMax = ref(12);
 const modelingLoading = ref(false);
 const modelingResult = ref<any>(null);
 const modelingDsCode = computed(
-  () => curDs.value?.code || (curDs.value ? `ds:${curDs.value.id}` : ""),
+  () => curDs.value?.code || (curDs.value ? `ds:${curDs.value.id}` : "")
 );
 
 async function handleModeling(kind: "metrics" | "annotate") {
@@ -1833,7 +1847,7 @@ async function handleModeling(kind: "metrics" | "annotate") {
     await ElMessageBox.confirm(
       `将对「${curDs.value.name}」用大模型自动生成${label}（写入本体/指标库），是否继续？`,
       "确认生成",
-      { type: "warning", confirmButtonText: "生成", cancelButtonText: "取消" },
+      { type: "warning", confirmButtonText: "生成", cancelButtonText: "取消" }
     );
   } catch {
     return;

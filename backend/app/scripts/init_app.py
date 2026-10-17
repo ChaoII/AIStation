@@ -801,7 +801,6 @@ async def _ensure_ai_menus() -> None:
                 ("模型供应商", "AiProviderManage", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 19, "el-icon-Service"),
                 ("本体", "AiOntology", "/ai/ontology", "module_ai/ontology/index", "module_ai:query:ask", 9, "el-icon-Files"),
                 ("无代码应用", "AiWorkshop", "/ai/workshop", "module_ai/workshop/index", "module_ai:query:ask", 22, "el-icon-Monitor"),
-                ("治理", "AiGovernance", "/ai/governance", "module_ai/governance/index", "module_ai:query:ask", 23, "el-icon-Odometer"),
             ]
             # 问数链路：本体 → 问数 → 评测/报表（data 产生方「存为报表」唯一入口，曾因隐藏断闭环）。
             # 采用「独立菜单目录 + 4 个独立页面子菜单」结构，结构明确（不再用页签工作台）。
