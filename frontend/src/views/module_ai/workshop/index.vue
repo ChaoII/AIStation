@@ -1,4 +1,4 @@
-<!-- 无代码应用 Workshop：说明引导 + 对象应用卡片 + 页内新建/预览/删除 -->
+<!-- 无代码应用 Workshop：说明引导 + 对象应用卡片 + 页内新建/预览/删除 + 应用运行视图(表格/看板) -->
 <template>
   <div class="app-container ai-mod ai-workshop-page">
     <el-card shadow="never" class="ws-shell">
@@ -39,7 +39,7 @@
       <!-- 应用网格 -->
       <el-row v-if="filteredApps.length" :gutter="16" class="ws-grid">
         <el-col v-for="a in filteredApps" :key="a.id" :xs="24" :sm="12" :md="8" :lg="6">
-          <div class="ws-app-card">
+          <div class="ws-app-card" @click="openRun(a)">
             <div class="ws-app-card__head">
               <div class="ws-app-card__icon" :style="{ background: iconBg(a.view_type) }">
                 <el-icon :size="20"><component :is="viewIcon(a.view_type)" /></el-icon>
@@ -54,7 +54,7 @@
                 <el-button size="small" circle :icon="MoreFilled" @click.stop />
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="preview">预览</el-dropdown-item>
+                    <el-dropdown-item command="run">打开</el-dropdown-item>
                     <el-dropdown-item command="edit">编辑</el-dropdown-item>
                     <el-dropdown-item command="delete" style="color: #f56c6c" divided>
                       删除
@@ -82,10 +82,10 @@
               </span>
             </div>
             <div class="ws-app-card__foot">
-              <el-button type="primary" size="small" :icon="View" @click="preview(a)">
-                预览
+              <el-button type="primary" size="small" :icon="View" @click.stop="openRun(a)">
+                打开
               </el-button>
-              <el-button size="small" :icon="Edit" @click="openEdit(a)">编辑</el-button>
+              <el-button size="small" :icon="Edit" @click.stop="openEdit(a)">编辑</el-button>
             </div>
           </div>
         </el-col>
@@ -157,22 +157,108 @@
       </template>
     </el-drawer>
 
-    <!-- 预览抽屉 -->
-    <el-drawer v-model="previewVisible" :title="`预览 · ${previewApp?.name || ''}`" size="720px">
-      <el-table :data="previewRows" border stripe size="small" max-height="70vh">
-        <template #empty>
-          <el-empty :image-size="60" description="暂无数据或读取失败" />
-        </template>
-        <el-table-column
-          v-for="c in previewCols"
-          :key="c"
-          :label="c"
-          :prop="c"
-          min-width="120"
-          show-overflow-tooltip
-        />
-      </el-table>
-      <div class="ws-preview-foot">共读取 {{ previewRows.length }} 行（最多 50 行）</div>
+    <!-- 应用运行视图：表格 / 看板 -->
+    <el-drawer
+      v-model="runVisible"
+      :title="`${runApp?.name || ''}`"
+      size="92%"
+      destroy-on-close
+      class="ws-run-drawer"
+    >
+      <div v-loading="runLoading" class="ws-run">
+        <!-- 运行头部：对象 + 视图切换 + 搜索/分组 -->
+        <div class="ws-run__bar">
+          <div class="ws-run__meta">
+            <span class="ws-run__obj">
+              <el-icon><Collection /></el-icon>
+              {{ runApp?.object_table }} · {{ runRows.length }} 行
+            </span>
+          </div>
+          <div class="ws-run__actions">
+            <el-input
+              v-if="runView === 'table'"
+              v-model="runKeyword"
+              placeholder="搜索表格"
+              clearable
+              :prefix-icon="Search"
+              style="width: 200px"
+            />
+            <el-select
+              v-else
+              v-model="runGroupBy"
+              placeholder="看板分组字段"
+              clearable
+              style="width: 200px"
+            >
+              <el-option v-for="c in runCols" :key="c" :label="c" :value="c" />
+            </el-select>
+            <div class="ws-run__switch">
+              <el-tag
+                v-for="v in ['table', 'kanban']"
+                :key="v"
+                class="ws-run__switch-item"
+                :class="{ 'is-active': runView === v }"
+                :effect="runView === v ? 'dark' : 'plain'"
+                :type="runView === v ? 'primary' : 'info'"
+                style="cursor: pointer"
+                @click="runView = v"
+              >
+                <el-icon :size="14"><component :is="viewIcon(v)" /></el-icon>
+                {{ viewLabel(v) }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+
+        <!-- 表格视图 -->
+        <div v-if="runView === 'table'" class="ws-run__table">
+          <el-table :data="filteredRunRows" border stripe size="small" max-height="72vh">
+            <template #empty>
+              <el-empty :image-size="60" description="暂无数据" />
+            </template>
+            <el-table-column
+              v-for="c in filteredRunCols"
+              :key="c"
+              :label="colLabel(c)"
+              :prop="c"
+              min-width="140"
+              show-overflow-tooltip
+            />
+          </el-table>
+        </div>
+
+        <!-- 看板视图：按分组字段分列 -->
+        <div v-else class="ws-run__kanban">
+          <div v-if="runCols.length" class="ws-kanban">
+            <div v-for="g in kanbanGroups" :key="g.key" class="ws-kb-col">
+              <div class="ws-kb-head">
+                <span class="ws-kb-head__title">{{ g.key === "" ? "未分组" : String(g.key) }}</span>
+                <span class="ws-kb-head__count">{{ g.items.length }}</span>
+              </div>
+              <div class="ws-kb-cards">
+                <div
+                  v-for="(row, i) in g.items"
+                  :key="i"
+                  class="ws-kb-card"
+                  :style="{ borderLeft: `4px solid ${cardColor(g.key)}` }"
+                >
+                  <div class="ws-kb-card__main">
+                    {{ row[runGroupBy] ?? row[runCols[0]] ?? "—" }}
+                  </div>
+                  <div class="ws-kb-card__sub">
+                    <span v-for="c in runSubCols" :key="c" class="ws-kb-card__field">
+                      <b>{{ colLabel(c) }}：</b>
+                      {{ row[c] ?? "—" }}
+                    </span>
+                  </div>
+                </div>
+                <div v-if="!g.items.length" class="ws-kb-card ws-kb-card--empty">无记录</div>
+              </div>
+            </div>
+          </div>
+          <el-empty v-else description="该对象没有可用字段" />
+        </div>
+      </div>
     </el-drawer>
   </div>
 </template>
@@ -225,11 +311,15 @@ const viewOptions = [
   { value: "form", label: "表单", icon: Edit },
 ];
 
-// 预览
-const previewVisible = ref(false);
-const previewApp = ref<any>(null);
-const previewCols = ref<string[]>([]);
-const previewRows = ref<any[]>([]);
+// 运行视图
+const runVisible = ref(false);
+const runApp = ref<any>(null);
+const runLoading = ref(false);
+const runRows = ref<any[]>([]);
+const runCols = ref<string[]>([]);
+const runView = ref<"table" | "kanban">("table");
+const runKeyword = ref("");
+const runGroupBy = ref("");
 
 const filteredApps = computed(() => {
   if (!keyword.value) return apps.value;
@@ -253,6 +343,51 @@ function viewIcon(v: string) {
 }
 function iconBg(v: string) {
   return { table: "#f0f9eb", kanban: "#fdf6ec", form: "#ecf5ff" }[v] || "#f4f4f5";
+}
+
+// 运行数据：preview 返回 [(cols),(rows)]，转对象数组
+const filteredRunRows = computed(() => {
+  const kw = runKeyword.value.trim().toLowerCase();
+  if (!kw) return runRows.value;
+  return runRows.value.filter((r) =>
+    runCols.value.some((c) =>
+      String(r[c] ?? "")
+        .toLowerCase()
+        .includes(kw)
+    )
+  );
+});
+const filteredRunCols = computed(() => {
+  if (!runApp.value?.columns?.length) return runCols.value;
+  // 优先展示应用配置的列
+  return runApp.value.columns;
+});
+const runSubCols = computed(() => {
+  const all = filteredRunCols.value;
+  const main = runGroupBy.value || all[0];
+  return all.filter((c) => c !== main).slice(0, 4);
+});
+const kanbanGroups = computed(() => {
+  const key = runGroupBy.value || runCols.value[0] || "id";
+  const map: Record<string, any[]> = {};
+  for (const r of runRows.value) {
+    const k = r[key] ?? "";
+    (map[k] ||= []).push(r);
+  }
+  return Object.keys(map).map((k) => ({ key: k, items: map[k] }));
+});
+
+function colLabel(c: string) {
+  const obj = objectOptions.value.find((o) => o.table === runApp.value?.object_table);
+  const f = obj?.fields?.find((x: any) => x.name === c);
+  return f?.label ? `${c} · ${f.label}` : c;
+}
+function cardColor(k: any) {
+  const palette = ["#409eff", "#67c23a", "#e6a23c", "#f56c6c", "#909399", "#9b59b6"];
+  let h = 0;
+  const s = String(k ?? "");
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length];
 }
 
 async function load() {
@@ -281,12 +416,7 @@ async function loadObjects() {
 
 function openCreate() {
   editingId.value = null;
-  form.value = {
-    name: "",
-    object_table: "",
-    view_type: "table",
-    columns: [],
-  };
+  form.value = { name: "", object_table: "", view_type: "table", columns: [] };
   createVisible.value = true;
   loadObjects();
 }
@@ -306,7 +436,6 @@ function openEdit(a: any) {
 function onObjectChange(table: string) {
   const obj = objectOptions.value.find((o) => o.table === table);
   if (!obj) return;
-  // 默认全选该对象字段；若无字段则留空
   form.value.columns = (obj.fields || []).map((f: any) => f.name);
   if (!form.value.name) form.value.name = `${obj.label || obj.table}`;
 }
@@ -334,29 +463,37 @@ async function save() {
   }
 }
 
-async function preview(a: any) {
+// 打开应用运行视图
+async function openRun(a: any) {
+  runApp.value = a;
+  runVisible.value = true;
+  runView.value = (a.view_type === "form" ? "table" : a.view_type) as "table" | "kanban";
+  runKeyword.value = "";
+  runGroupBy.value = "";
+  runLoading.value = true;
   try {
-    const r = await workshopPreview(a.id, 50);
+    const r = await workshopPreview(a.id, 200);
     const d = r.data?.data;
-    previewApp.value = a;
     if (d?.ok) {
-      previewCols.value = d.columns || [];
-      previewRows.value = (d.rows || []).map((row: any[]) =>
+      runCols.value = d.columns || [];
+      runRows.value = (d.rows || []).map((row: any[]) =>
         Object.fromEntries((d.columns || []).map((c: string, i: number) => [c, row[i]]))
       );
+      runGroupBy.value = a.columns?.[0] || runCols.value[0] || "";
     } else {
-      previewCols.value = [];
-      previewRows.value = [];
-      ElMessage.warning(d?.msg || "预览失败");
+      runCols.value = [];
+      runRows.value = [];
+      ElMessage.warning(d?.msg || "加载失败");
     }
-    previewVisible.value = true;
   } catch (e: any) {
-    ElMessage.error(e?.message || "预览失败");
+    ElMessage.error(e?.message || "加载失败");
+  } finally {
+    runLoading.value = false;
   }
 }
 
 async function onCardCmd(a: any, cmd: string) {
-  if (cmd === "preview") return preview(a);
+  if (cmd === "run") return openRun(a);
   if (cmd === "edit") return openEdit(a);
   if (cmd === "delete") {
     await ElMessageBox.confirm(`将删除应用「${a.name}」，此操作不可恢复。是否继续？`, "删除确认", {
@@ -467,6 +604,7 @@ onMounted(() => {
   background: var(--el-color-white);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
+  cursor: pointer;
   transition:
     box-shadow 0.2s,
     transform 0.2s,
@@ -593,9 +731,124 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.ws-preview-foot {
-  margin-top: 12px;
-  color: var(--el-text-color-secondary);
+/* 应用运行视图 */
+.ws-run {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.ws-run__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.ws-run__obj {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-text-color-regular);
   font-size: 13px;
+}
+.ws-run__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ws-run__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ws-run__switch-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.ws-run__table {
+  overflow: auto;
+}
+.ws-run__kanban {
+  overflow: auto;
+  flex: 1;
+}
+.ws-kanban {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  align-items: flex-start;
+  padding-bottom: 12px;
+}
+.ws-kb-col {
+  flex: 0 0 260px;
+  background: var(--el-fill-color-light);
+  border-radius: 10px;
+  padding: 10px;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+.ws-kb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.ws-kb-head__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-kb-head__count {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+  border-radius: 10px;
+  padding: 0 8px;
+}
+.ws-kb-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ws-kb-card {
+  background: var(--el-color-white);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 6%);
+}
+.ws-kb-card__main {
+  font-weight: 600;
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-kb-card__sub {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+.ws-kb-card__field {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  b {
+    color: var(--el-text-color-secondary);
+    font-weight: 500;
+  }
+}
+.ws-kb-card--empty {
+  color: var(--el-text-color-placeholder);
+  text-align: center;
 }
 </style>
