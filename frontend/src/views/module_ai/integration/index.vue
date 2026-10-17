@@ -432,8 +432,17 @@
                 <el-button type="primary" size="small" :icon="Plus" @click="openTerm()">
                   新建术语
                 </el-button>
-                <el-tag size="small" type="info" effect="plain">业务黑话 ↔ 字段映射</el-tag>
+                <el-tag size="small" type="info" effect="plain">
+                  业务黑话 ↔ 指标/字段映射（进确定性快路径）
+                </el-tag>
               </div>
+              <el-alert
+                type="info"
+                :closable="false"
+                show-icon
+                style="margin-bottom: 10px"
+                title="分工：术语 = 业务黑话 → 指标/字段的映射（优先级最高，命中即走快路径）；对象别名请到 本体 维护；概念同义词请在「业务概念」维护，不要在此重复录入。"
+              />
               <el-table :data="terms" size="small" border height="100%">
                 <template #empty>
                   <el-empty description="暂无术语" :image-size="60" />
@@ -474,6 +483,13 @@
                   业务概念（问数语义层；含本体对象别名）
                 </el-tag>
               </div>
+              <el-alert
+                type="info"
+                :closable="false"
+                show-icon
+                style="margin-bottom: 10px"
+                title="分工：概念 = 有层级的业务概念 + 同义词；「关联指标」会参与快路径匹配。对象别名在本体维护（此处只读合并），黑话映射请用「术语」。"
+              />
               <el-table :data="concepts" size="small" border height="100%">
                 <template #empty>
                   <el-empty description="暂无概念" :image-size="60" />
