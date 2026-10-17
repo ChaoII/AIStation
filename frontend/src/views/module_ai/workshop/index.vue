@@ -1,4 +1,4 @@
-<!-- 无代码应用 Workshop：说明引导 + 对象应用卡片 + 页内新建/预览/删除 + 应用运行视图(表格/看板) -->
+<!-- 无代码应用 Workshop：说明引导 + 对象应用卡片 + 页内新建/删除 + 应用运行视图(表格/看板/表单) -->
 <template>
   <div class="app-container ai-mod ai-workshop-page">
     <el-card shadow="never" class="ws-shell">
@@ -157,24 +157,40 @@
       </template>
     </el-drawer>
 
-    <!-- 应用运行视图：表格 / 看板 -->
+    <!-- ===== 应用运行视图：表格 / 看板 / 表单 ===== -->
     <el-drawer
       v-model="runVisible"
       :title="`${runApp?.name || ''}`"
-      size="92%"
+      size="94%"
       destroy-on-close
       class="ws-run-drawer"
     >
       <div v-loading="runLoading" class="ws-run">
-        <!-- 运行头部：对象 + 视图切换 + 搜索/分组 -->
+        <!-- 顶部 App Bar：记录数 + 视图切换(segmented) + 搜索/分组/刷新 -->
         <div class="ws-run__bar">
           <div class="ws-run__meta">
             <span class="ws-run__obj">
               <el-icon><Collection /></el-icon>
-              {{ runApp?.object_table }} · {{ runRows.length }} 行
+              <b>{{ runApp?.object_table }}</b>
             </span>
+            <span class="ws-run__count">{{ runRows.length }} 条记录</span>
           </div>
-          <div class="ws-run__actions">
+          <div class="ws-run__switch">
+            <el-tag
+              v-for="v in ['table', 'kanban', 'form']"
+              :key="v"
+              class="ws-run__switch-item"
+              :class="{ 'is-active': runView === v }"
+              :effect="runView === v ? 'dark' : 'plain'"
+              :type="runView === v ? 'primary' : 'info'"
+              style="cursor: pointer"
+              @click="runView = v"
+            >
+              <el-icon :size="14"><component :is="viewIcon(v)" /></el-icon>
+              {{ viewLabel(v) }}
+            </el-tag>
+          </div>
+          <div class="ws-run__tools">
             <el-input
               v-if="runView === 'table'"
               v-model="runKeyword"
@@ -184,35 +200,38 @@
               style="width: 200px"
             />
             <el-select
-              v-else
+              v-else-if="runView === 'kanban'"
               v-model="runGroupBy"
               placeholder="看板分组字段"
               clearable
               style="width: 200px"
             >
-              <el-option v-for="c in runCols" :key="c" :label="c" :value="c" />
+              <el-option v-for="c in runCols" :key="c" :label="colLabel(c)" :value="c" />
             </el-select>
-            <div class="ws-run__switch">
-              <el-tag
-                v-for="v in ['table', 'kanban', 'form']"
-                :key="v"
-                class="ws-run__switch-item"
-                :class="{ 'is-active': runView === v }"
-                :effect="runView === v ? 'dark' : 'plain'"
-                :type="runView === v ? 'primary' : 'info'"
-                style="cursor: pointer"
-                @click="runView = v"
-              >
-                <el-icon :size="14"><component :is="viewIcon(v)" /></el-icon>
-                {{ viewLabel(v) }}
-              </el-tag>
-            </div>
+            <el-tooltip content="刷新数据" placement="top">
+              <el-button circle :icon="Refresh" @click="reloadRun" />
+            </el-tooltip>
           </div>
         </div>
 
         <!-- 表格视图 -->
         <div v-if="runView === 'table'" class="ws-run__table">
-          <el-table :data="filteredRunRows" border stripe size="small" max-height="72vh">
+          <div class="ws-table-stats">
+            <span>
+              共
+              <b>{{ filteredRunRows.length }}</b>
+              条
+            </span>
+            <span v-if="runKeyword" class="ws-table-stats__filter">已筛选</span>
+          </div>
+          <el-table
+            :data="pagedRunRows"
+            border
+            stripe
+            size="small"
+            max-height="66vh"
+            class="ws-table"
+          >
             <template #empty>
               <el-empty :image-size="60" description="暂无数据" />
             </template>
@@ -221,13 +240,23 @@
               :key="c"
               :label="colLabel(c)"
               :prop="c"
-              min-width="140"
+              min-width="150"
               show-overflow-tooltip
             />
           </el-table>
+          <div class="ws-table-pager">
+            <el-pagination
+              v-model:current-page="runPage"
+              :page-size="runPageSize"
+              :total="filteredRunRows.length"
+              layout="total, prev, pager, next"
+              background
+              small
+            />
+          </div>
         </div>
 
-        <!-- 看板视图：按分组字段分列，支持拖拽移动卡片 -->
+        <!-- 看板视图：按分组字段分列，支持拖拽 -->
         <div v-else-if="runView === 'kanban'" class="ws-run__kanban">
           <div v-if="runCols.length" class="ws-kanban">
             <div
@@ -239,7 +268,6 @@
               @drop="onDrop(g.key)"
             >
               <div class="ws-kb-head">
-                <span class="ws-kb-head__bar" />
                 <span class="ws-kb-head__title">{{ g.key === "" ? "未分组" : String(g.key) }}</span>
                 <span class="ws-kb-head__count">{{ g.items.length }}</span>
               </div>
@@ -249,17 +277,37 @@
                   :key="i"
                   draggable="true"
                   class="ws-kb-card"
-                  :style="{ borderLeft: `4px solid ${cardColor(g.key)}` }"
                   @dragstart="onDragStart(row)"
                 >
-                  <div class="ws-kb-card__main">
-                    {{ row[runGroupBy] ?? row[runCols[0]] ?? "—" }}
+                  <div class="ws-kb-card__top">
+                    <div class="ws-kb-card__main">
+                      {{ row[runGroupBy] ?? row[runCols[0]] ?? "—" }}
+                    </div>
+                    <el-dropdown trigger="click" @command="(c: string) => onCardRowCmd(g, row, c)">
+                      <el-icon class="ws-kb-card__more"><MoreFilled /></el-icon>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="move">移动到此列</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
                   </div>
-                  <div class="ws-kb-card__sub">
-                    <span v-for="c in runSubCols" :key="c" class="ws-kb-card__field">
-                      <b>{{ colLabel(c) }}：</b>
+                  <div class="ws-kb-card__tags">
+                    <el-tag
+                      v-for="c in runSubCols"
+                      :key="c"
+                      size="small"
+                      effect="plain"
+                      class="ws-kb-tag"
+                    >
                       {{ row[c] ?? "—" }}
+                    </el-tag>
+                  </div>
+                  <div class="ws-kb-card__foot">
+                    <span class="ws-kb-avatar">
+                      {{ (row[runGroupBy] ?? row[runCols[0]] ?? "?").toString().charAt(0) }}
                     </span>
+                    <span class="ws-kb-foot-text">{{ runApp?.object_table }}</span>
                   </div>
                 </div>
                 <div v-if="!g.items.length" class="ws-kb-card ws-kb-card--empty">拖卡片到这里</div>
@@ -269,42 +317,47 @@
           <el-empty v-else description="该对象没有可用字段" />
         </div>
 
-        <!-- 表单视图：填写并保存到对象表 -->
+        <!-- 表单视图：分组 + 两列 + 必填，提交写入 -->
         <div v-else class="ws-run__form">
-          <el-form
-            v-if="runFields.length"
-            :model="formData"
-            label-width="130px"
-            class="ws-run-form"
-          >
-            <el-form-item v-for="f in runFields" :key="f.name" :label="f.label || f.name">
-              <el-input
-                v-if="!isNum(f) && !isDate(f) && !isBool(f)"
-                v-model="formData[f.name]"
-                clearable
-              />
-              <el-input-number
-                v-else-if="isNum(f)"
-                v-model="formData[f.name]"
-                :controls="false"
-                style="width: 100%"
-              />
-              <el-date-picker
-                v-else-if="isDate(f)"
-                v-model="formData[f.name]"
-                type="datetime"
-                style="width: 100%"
-              />
-              <el-switch v-else-if="isBool(f)" v-model="formData[f.name]" />
-            </el-form-item>
-          </el-form>
-          <el-empty v-else :image-size="60" description="该应用未配置字段" />
-          <div class="ws-run-form-actions">
-            <el-button type="primary" :loading="formSubmitting" @click="submitForm">
-              保存到对象表
-            </el-button>
-            <span class="ws-run-form-hint">演示：仅 ont_orders 支持写入</span>
+          <div v-if="runFields.length">
+            <div class="ws-form-section">
+              <span class="ws-form-section__title">{{ runApp?.object_table }} · 新增记录</span>
+            </div>
+            <el-form :model="formData" label-position="top" class="ws-run-form">
+              <el-row :gutter="16">
+                <el-col v-for="f in runFields" :key="f.name" :xs="24" :sm="12">
+                  <el-form-item :label="colLabel(f.name)" :required="fieldRequired(f)">
+                    <el-input
+                      v-if="!isNum(f) && !isDate(f) && !isBool(f)"
+                      v-model="formData[f.name]"
+                      clearable
+                    />
+                    <el-input-number
+                      v-else-if="isNum(f)"
+                      v-model="formData[f.name]"
+                      :controls="false"
+                      style="width: 100%"
+                    />
+                    <el-date-picker
+                      v-else-if="isDate(f)"
+                      v-model="formData[f.name]"
+                      type="datetime"
+                      style="width: 100%"
+                    />
+                    <el-switch v-else-if="isBool(f)" v-model="formData[f.name]" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <div class="ws-run-form-actions">
+                <el-button type="primary" :loading="formSubmitting" @click="submitForm">
+                  保存到对象表
+                </el-button>
+                <el-button @click="formData = {}">清空</el-button>
+                <span class="ws-run-form-hint">演示：仅 ont_orders 支持写入</span>
+              </div>
+            </el-form>
           </div>
+          <el-empty v-else :image-size="60" description="该应用未配置字段" />
         </div>
       </div>
     </el-drawer>
@@ -321,6 +374,7 @@ import {
   Menu,
   MoreFilled,
   Plus,
+  Refresh,
   Search,
   View,
 } from "@element-plus/icons-vue";
@@ -369,6 +423,8 @@ const runCols = ref<string[]>([]);
 const runView = ref<"table" | "kanban" | "form">("table");
 const runKeyword = ref("");
 const runGroupBy = ref("");
+const runPage = ref(1);
+const runPageSize = 20;
 // 表单视图状态
 const runFields = ref<any[]>([]);
 const formData = ref<any>({});
@@ -384,7 +440,7 @@ const currentFields = computed(() => {
   return (obj?.fields || []).filter((f: any) => !f.sensitive || true);
 });
 
-// ---- 视图映射：table→表格、kanban→看板、form→表单 ----
+// ---- 视图映射 ----
 function viewLabel(v: string) {
   return { table: "表格", kanban: "看板", form: "表单" }[v] || v;
 }
@@ -398,7 +454,7 @@ function iconBg(v: string) {
   return { table: "#f0f9eb", kanban: "#fdf6ec", form: "#ecf5ff" }[v] || "#f4f4f5";
 }
 
-// 运行数据：preview 返回 [(cols),(rows)]，转对象数组
+// 运行数据
 const filteredRunRows = computed(() => {
   const kw = runKeyword.value.trim().toLowerCase();
   if (!kw) return runRows.value;
@@ -410,15 +466,18 @@ const filteredRunRows = computed(() => {
     )
   );
 });
+const pagedRunRows = computed(() => {
+  const start = (runPage.value - 1) * runPageSize;
+  return filteredRunRows.value.slice(start, start + runPageSize);
+});
 const filteredRunCols = computed(() => {
   if (!runApp.value?.columns?.length) return runCols.value;
-  // 优先展示应用配置的列
   return runApp.value.columns;
 });
 const runSubCols = computed(() => {
   const all = filteredRunCols.value;
   const main = runGroupBy.value || all[0];
-  return all.filter((c) => c !== main).slice(0, 4);
+  return all.filter((c) => c !== main).slice(0, 3);
 });
 const kanbanGroups = computed(() => {
   const key = runGroupBy.value || runCols.value[0] || "id";
@@ -436,14 +495,14 @@ function colLabel(c: string) {
   return f?.label ? `${c} · ${f.label}` : c;
 }
 function cardColor(k: any) {
-  const palette = ["#409eff", "#67c23a", "#e6a23c", "#f56c6c", "#909399", "#9b59b6"];
+  const palette = ["#409eff", "#67c23a", "#e6a23c", "#f56c6c", "#909399", "#9b59b6", "#2f9e95"];
   let h = 0;
   const s = String(k ?? "");
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return palette[h % palette.length];
 }
 
-// 看板拖拽（前端重排，不落库，刷新还原）
+// ---- 看板拖拽 ----
 const dragRow = ref<any>(null);
 function onDragStart(row: any) {
   dragRow.value = row;
@@ -454,7 +513,28 @@ function onDrop(key: any) {
   if (k) dragRow.value[k] = key;
   dragRow.value = null;
 }
+function onCardRowCmd(_g: any, row: any, cmd: string) {
+  if (cmd === "move") {
+    // 演示：将卡片移动到「未分组」列（拖拽已支持跨列，这里仅提示）
+    ElMessage.info("拖动卡片列头即可移动（演示，刷新还原）");
+  }
+}
 
+// ---- 表单字段类型 ----
+function isNum(field: any) {
+  return /(int|numeric|double|real|decimal)/i.test(field.type || "");
+}
+function isDate(field: any) {
+  return /(timestamp|date|time)/i.test(field.type || "");
+}
+function isBool(field: any) {
+  return /bool/i.test(field.type || "");
+}
+function fieldRequired(field: any) {
+  return /(name|id|no)$/i.test(field.name || "");
+}
+
+// ---- 加载 ----
 async function load() {
   loading.value = true;
   try {
@@ -535,9 +615,16 @@ async function openRun(a: any) {
   runView.value = (a.view_type === "form" ? "form" : a.view_type) as "table" | "kanban" | "form";
   runKeyword.value = "";
   runGroupBy.value = "";
+  runPage.value = 1;
+  runLoading.value = true;
+  await reloadRun();
+}
+
+async function reloadRun() {
+  if (!runApp.value) return;
   runLoading.value = true;
   try {
-    const r = await workshopPreview(a.id, 200);
+    const r = await workshopPreview(runApp.value.id, 200);
     const d = r.data?.data;
     if (d?.ok) {
       runCols.value = d.columns || [];
@@ -545,18 +632,22 @@ async function openRun(a: any) {
         Object.fromEntries((d.columns || []).map((c: string, i: number) => [c, row[i]]))
       );
       runGroupBy.value =
-        ["status", "location", "state", "type", "category"].find((f) => (a.columns || []).includes(f)) ||
-        a.columns?.[0] ||
+        ["status", "location", "state", "type", "category"].find((f) =>
+          (runApp.value.columns || []).includes(f)
+        ) ||
+        runApp.value.columns?.[0] ||
         runCols.value[0] ||
         "";
-      // 准备表单字段（带类型/中文名，供 form 视图渲染）；对象不在元数据时用实际列兜底
-      let obj = objectOptions.value.find((o) => o.table === a.object_table);
+      // 表单字段：基于实际列，类型从对象元数据补
+      let obj = objectOptions.value.find((o) => o.table === runApp.value.object_table);
       if (!obj) {
         await loadObjects();
-        obj = objectOptions.value.find((o) => o.table === a.object_table);
+        obj = objectOptions.value.find((o) => o.table === runApp.value.object_table);
       }
       const fmap = new Map((obj?.fields || []).map((f: any) => [f.name, f]));
-      runFields.value = runCols.value.map((c: string) => fmap.get(c) || { name: c, type: "", label: "" });
+      runFields.value = runCols.value.map(
+        (c: string) => fmap.get(c) || { name: c, type: "", label: "" }
+      );
       formData.value = {};
     } else {
       runCols.value = [];
@@ -570,24 +661,13 @@ async function openRun(a: any) {
   }
 }
 
-// 表单字段类型判断（按字段 type 推断控件）
-function isNum(field: any) {
-  return /(int|numeric|double|real|decimal)/i.test(field.type || "");
-}
-function isDate(field: any) {
-  return /(timestamp|date|time)/i.test(field.type || "");
-}
-function isBool(field: any) {
-  return /bool/i.test(field.type || "");
-}
-
 async function submitForm() {
   if (!runApp.value) return;
   formSubmitting.value = true;
   try {
     await submitWorkshopApp(runApp.value.id, formData.value);
     ElMessage.success("已保存到对象表");
-    await openRun(runApp.value);
+    await reloadRun();
   } catch (e: any) {
     ElMessage.error(e?.message || "提交失败");
   } finally {
@@ -622,7 +702,6 @@ onMounted(() => {
   flex-direction: column;
   overflow: hidden;
 }
-
 .ai-workshop-page .ws-shell {
   flex: 1 1 auto;
   min-height: 0;
@@ -630,7 +709,6 @@ onMounted(() => {
   flex-direction: column;
   overflow: hidden;
 }
-
 .ai-workshop-page .ws-shell :deep(.el-card__body) {
   flex: 1 1 auto;
   min-height: 0;
@@ -677,7 +755,7 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-/* 工具条 */
+/* 列表工具条 */
 .ws-toolbar {
   display: flex;
   align-items: center;
@@ -776,13 +854,12 @@ onMounted(() => {
   padding-top: 10px;
   border-top: 1px solid var(--el-border-color-lighter);
 }
-
 .ws-empty-suggest {
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
-/* 表单 */
+/* 新建表单 */
 .ws-form-hint {
   font-size: 12px;
   color: var(--el-text-color-secondary);
@@ -834,7 +911,7 @@ onMounted(() => {
   font-size: 12px;
 }
 
-/* 应用运行视图 */
+/* ===== 运行视图 ===== */
 .ws-run {
   display: flex;
   flex-direction: column;
@@ -843,39 +920,67 @@ onMounted(() => {
 .ws-run__bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 12px;
+  gap: 16px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--el-border-color-lighter);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
+}
+.ws-run__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .ws-run__obj {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--el-text-color-regular);
-  font-size: 13px;
+  font-size: 15px;
+  font-weight: 600;
 }
-.ws-run__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+.ws-run__count {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border-radius: 10px;
+  padding: 2px 10px;
 }
 .ws-run__switch {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  padding: 4px;
 }
 .ws-run__switch-item {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: 4px;
   cursor: pointer;
+  border-radius: 6px !important;
 }
-.ws-run__table {
-  overflow: auto;
+.ws-run__tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 表格 */
+.ws-table-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
+  b {
+    color: var(--el-text-color-primary);
+  }
+}
+.ws-table-stats__filter {
+  color: var(--el-color-primary);
 }
 .ws-run__table :deep(.el-table) {
   border-radius: 10px;
@@ -890,9 +995,16 @@ onMounted(() => {
     background: var(--el-color-primary-light-9);
   }
 }
+.ws-table-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* 看板 */
 .ws-run__kanban {
-  overflow: auto;
   flex: 1;
+  overflow: auto;
 }
 .ws-kanban {
   display: flex;
@@ -903,7 +1015,7 @@ onMounted(() => {
 }
 .ws-kb-col {
   position: relative;
-  flex: 0 0 264px;
+  flex: 0 0 272px;
   background: var(--el-fill-color-light);
   border-radius: 12px;
   padding: 12px 10px 10px;
@@ -912,29 +1024,17 @@ onMounted(() => {
   flex-direction: column;
   overflow: hidden;
   transition: background 0.2s;
-  &::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    height: 4px;
-    background: linear-gradient(90deg, var(--kb-color, #409eff), transparent);
-  }
 }
 .ws-kb-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: #fff;
   font-weight: 600;
-}
-.ws-kb-head__bar {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
   background: var(--kb-color, #409eff);
-  flex: 0 0 auto;
 }
 .ws-kb-head__title {
   overflow: hidden;
@@ -944,10 +1044,8 @@ onMounted(() => {
 .ws-kb-head__count {
   margin-left: auto;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color);
-  border-radius: 10px;
-  padding: 0 8px;
+  color: #fff;
+  opacity: 0.85;
 }
 .ws-kb-cards {
   display: flex;
@@ -971,51 +1069,92 @@ onMounted(() => {
     cursor: grabbing;
   }
 }
+.ws-kb-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
 .ws-kb-card__main {
   font-weight: 600;
-  margin-bottom: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ws-kb-card__sub {
+.ws-kb-card__more {
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.ws-kb-card__tags {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 12px;
-  color: var(--el-text-color-regular);
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
 }
-.ws-kb-card__field {
+.ws-kb-tag {
+  max-width: 100%;
+}
+.ws-kb-card__foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.ws-kb-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--kb-color, var(--el-color-primary));
+  color: #fff;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.ws-kb-foot-text {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  b {
-    color: var(--el-text-color-secondary);
-    font-weight: 500;
-  }
 }
 .ws-kb-card--empty {
   color: var(--el-text-color-placeholder);
   text-align: center;
+  cursor: default;
 }
 
-/* 表单视图 */
+/* 表单 */
 .ws-run__form {
-  padding: 4px 8px;
-  max-width: 640px;
+  max-width: 860px;
+}
+.ws-form-section {
+  margin-bottom: 14px;
+}
+.ws-form-section__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 .ws-run-form {
   background: var(--el-color-white);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 12px;
-  padding: 20px 24px 4px;
+  padding: 20px 24px 8px;
+}
+.ws-run-form :deep(.el-form-item__label) {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
 }
 .ws-run-form-actions {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 16px;
-  padding: 0 2px;
+  margin: 8px 0 16px;
 }
 .ws-run-form-hint {
   font-size: 12px;
