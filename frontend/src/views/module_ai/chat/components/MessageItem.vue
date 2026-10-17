@@ -11,26 +11,6 @@
     <div class="message-content">
       <div class="message-header">
         <strong class="sender-name">{{ roleLabel }}</strong>
-        <span class="message-header-actions">
-          <el-button
-            v-if="message.role === 'user' && fullText"
-            text
-            size="small"
-            :icon="Refresh"
-            class="copy-button"
-            title="重新发送"
-            @click="emit('resend', fullText)"
-          ></el-button>
-          <el-button
-            v-if="fullText"
-            text
-            size="small"
-            :icon="CopyDocument"
-            class="copy-button"
-            title="复制"
-            @click="handleCopy"
-          ></el-button>
-        </span>
       </div>
       <div class="message-body">
         <!-- Agent 工具调用时间线（通常先于正文，置于顶部） -->
@@ -79,6 +59,28 @@
           </div>
         </div>
       </div>
+      <div v-if="fullText" class="message-actions">
+        <el-tooltip content="复制" placement="top">
+          <span class="msg-action" @click="handleCopy">
+            <el-icon><CopyDocument /></el-icon>
+          </span>
+        </el-tooltip>
+        <el-tooltip content="点赞" placement="top">
+          <span class="msg-action" :class="{ 'is-on': liked }" @click="liked = !liked">
+            <el-icon><Star /></el-icon>
+          </span>
+        </el-tooltip>
+        <el-tooltip content="反馈" placement="top">
+          <span class="msg-action" @click="feedback">
+            <el-icon><EditPen /></el-icon>
+          </span>
+        </el-tooltip>
+        <el-tooltip v-if="message.role === 'user'" content="重新发送" placement="top">
+          <span class="msg-action" @click="emit('resend', fullText)">
+            <el-icon><Refresh /></el-icon>
+          </span>
+        </el-tooltip>
+      </div>
     </div>
   </div>
 </template>
@@ -86,7 +88,16 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { ElMessage } from "element-plus";
-import { User, ChatDotRound, CopyDocument, Document, Refresh } from "@element-plus/icons-vue";
+import {
+  User,
+  ChatDotRound,
+  CopyDocument,
+  Document,
+  Refresh,
+  Star,
+  EditPen,
+} from "@element-plus/icons-vue";
+import { ref } from "vue";
 import type { UIMessage } from "ai";
 import RichContent from "./RichContent.vue";
 import ReasoningBlock from "./ReasoningBlock.vue";
@@ -143,6 +154,15 @@ const handleCopy = async () => {
     ElMessage.success("已复制到剪贴板");
   }
 };
+
+/** 点赞（本地切换）。 */
+const liked = ref(false);
+
+/** 反馈：目前先复制内容并提示（可后续接后端反馈接口）。 */
+function feedback() {
+  handleCopy();
+  ElMessage.info("已复制内容，请在反馈中补充说明");
+}
 </script>
 
 <style lang="scss" scoped>
@@ -194,14 +214,40 @@ const handleCopy = async () => {
         font-weight: 600;
         color: var(--el-text-color-primary);
       }
+    }
 
-      .copy-button {
-        padding: 4px;
-        font-size: 12px;
+    .message-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      margin-top: 6px;
+      opacity: 0.55;
+      transition: opacity 0.2s;
+
+      &:hover {
+        opacity: 1;
+      }
+
+      .msg-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        font-size: 14px;
         color: var(--el-text-color-secondary);
+        cursor: pointer;
+        transition: all 0.2s;
 
         &:hover {
           color: var(--el-color-primary);
+          background: var(--el-color-primary-light-9);
+        }
+
+        &.is-on {
+          color: var(--el-color-primary);
+          background: var(--el-color-primary-light-9);
         }
       }
     }

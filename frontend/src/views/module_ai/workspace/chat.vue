@@ -86,6 +86,38 @@
         @prompt-click="onPrompt"
         @resend="onSend"
       />
+      <div class="chat-toolbar">
+        <el-dropdown trigger="click" @command="(m: any) => (chatModelId = m.id)">
+          <span class="ct-trigger">
+            <span class="ct-avatar">{{ (chatModelLabel[0] || "M").toUpperCase() }}</span>
+            <span class="ct-name">{{ chatModelLabel }}</span>
+            <el-icon class="ct-chevron"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="m in models"
+                :key="m.id"
+                :command="m"
+                :class="{ 'is-active': m.id === chatModelId }"
+              >
+                {{ m.name }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <div class="ct-thinking">
+          <el-tooltip :content="chatThinking === 'deep' ? '深度思考' : '快速'">
+            <span
+              class="ct-mode"
+              :class="{ 'ct-mode--deep': chatThinking === 'deep' }"
+              @click="chatThinking = chatThinking === 'deep' ? 'quick' : 'deep'"
+            >
+              {{ chatThinking === "deep" ? "🧠" : "⚡" }}
+            </span>
+          </el-tooltip>
+        </div>
+      </div>
       <ChatInput
         :disabled="chat.isStreaming.value"
         :sending="chat.isStreaming.value"
@@ -97,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { Delete, Download, Plus, Search } from "@element-plus/icons-vue";
+import { Delete, Download, Plus, Search, ArrowDown } from "@element-plus/icons-vue";
 import { ElMessageBox } from "element-plus";
 import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
@@ -111,6 +143,7 @@ import {
 } from "@/api/module_ai/session";
 import ChatInput from "@/views/module_ai/chat/components/ChatInput.vue";
 import ChatMessages from "@/views/module_ai/chat/components/ChatMessages.vue";
+import { getAiModelList } from "@/api/module_ai/model";
 import { useAiChat } from "@/composables/ai/useAiChat";
 
 defineOptions({ name: "AiWorkspaceChat" });
@@ -133,9 +166,30 @@ const currentSessionId = ref<number | null>(null);
 const initialMessages = ref<any[]>([]);
 const sessionSearch = ref("");
 
+// 模型 / 思考强度
+const models = ref<any[]>([]);
+const chatModelId = ref<number | null>(null);
+const chatThinking = ref<"quick" | "deep">("quick");
+const chatModelLabel = computed(() => {
+  const m = models.value.find((x) => x.id === chatModelId.value);
+  return m?.name || "选择模型";
+});
+async function loadModels() {
+  try {
+    const res: any = await getAiModelList();
+    models.value = res.data?.data || [];
+  } catch {
+    models.value = [];
+  }
+}
+
 const chat = useAiChat({
   path: pathMap[kind] || pathMap.agent,
-  body: () => ({ session_id: currentSessionId.value }),
+  body: () => ({
+    session_id: currentSessionId.value,
+    model_id: chatModelId.value,
+    thinking: chatThinking.value,
+  }),
   id: currentSessionId,
   initialMessages,
 });
@@ -281,6 +335,7 @@ function onSend(text: string) {
 }
 
 loadSessions();
+loadModels();
 </script>
 
 <style lang="scss" scoped>
@@ -437,5 +492,81 @@ loadSessions();
 
 .chat-main-actions {
   flex-shrink: 0;
+}
+
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 0;
+}
+
+.ct-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    color: var(--el-color-primary);
+    border-color: var(--el-color-primary-light-5);
+    background: var(--el-color-primary-light-9);
+  }
+}
+
+.ct-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.ct-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ct-chevron {
+  font-size: 12px;
+}
+
+.ct-thinking {
+  display: inline-flex;
+}
+
+.ct-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--el-border-color-lighter);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary-light-5);
+  }
+
+  &.ct-mode--deep {
+    background: var(--el-color-primary-light-9);
+    border-color: var(--el-color-primary-light-5);
+  }
 }
 </style>
