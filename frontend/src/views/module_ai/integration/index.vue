@@ -400,6 +400,9 @@
                 <el-tag size="small" type="info" effect="plain">
                   语义指标（问数与 Agent 消费）
                 </el-tag>
+                <el-button size="small" :loading="suggestLoading" @click="openSuggest">
+                  AI 推荐指标/术语
+                </el-button>
               </div>
               <el-table :data="metrics" size="small" border height="100%">
                 <template #empty>
@@ -821,6 +824,44 @@
       <el-empty v-else description="暂无管道，先新建管道" :image-size="60" />
     </el-dialog>
 
+    <!-- AI 推荐指标/术语 -->
+    <el-dialog v-model="suggestVisible" title="AI 推荐指标 / 术语" width="720px">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 10px"
+        title="由大模型根据已纳入资产的中文词典推荐高频指标与业务术语；逐条「采纳」后写入指标/术语库。"
+      />
+      <div class="ig-sub">推荐指标（{{ suggestMetrics.length }}）</div>
+      <el-table :data="suggestMetrics" size="small" border max-height="220">
+        <template #empty>
+          <el-empty description="无推荐" :image-size="40" />
+        </template>
+        <el-table-column prop="name" label="指标名" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="sql" label="SQL" min-width="260" show-overflow-tooltip />
+        <el-table-column label="操作" width="80" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="adoptMetric(row)">采纳</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="ig-sub">推荐术语（{{ suggestTerms.length }}）</div>
+      <el-table :data="suggestTerms" size="small" border max-height="220">
+        <template #empty>
+          <el-empty description="无推荐" :image-size="40" />
+        </template>
+        <el-table-column prop="term" label="术语" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="type" label="类型" width="100" />
+        <el-table-column prop="target" label="指向" min-width="160" show-overflow-tooltip />
+        <el-table-column label="操作" width="80" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="adoptTerm(row)">采纳</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
     <!-- 查看管道落库数据 -->
     <el-dialog v-model="pipeDataDlg" :title="`管道数据：${pipeDataName}`" width="720px">
       <el-table :data="pipeDataRows" size="small" border max-height="420">
@@ -1203,6 +1244,7 @@ import {
   saveQueryAssetColumn,
   batchSaveQueryAssetMeta,
   getQueryAssets,
+  suggestQueryAssets,
   addFavorite,
   createShare,
   getQueryFewshots,
@@ -1366,6 +1408,11 @@ const pipeDataDlg = ref(false);
 const pipeDataName = ref("");
 const pipeDataCols = ref<string[]>([]);
 const pipeDataRows = ref<any[]>([]);
+// AI 推荐指标/术语
+const suggestVisible = ref(false);
+const suggestLoading = ref(false);
+const suggestMetrics = ref<any[]>([]);
+const suggestTerms = ref<any[]>([]);
 // 指标 / 术语 / 概念
 const metricDlg = ref(false);
 const savingMetric = ref(false);
@@ -1990,6 +2037,56 @@ function openMetric(row?: any) {
         enabled: true,
       };
   metricDlg.value = true;
+}
+
+// AI 推荐指标/术语
+async function openSuggest() {
+  suggestVisible.value = true;
+  suggestLoading.value = true;
+  suggestMetrics.value = [];
+  suggestTerms.value = [];
+  try {
+    const r = await suggestQueryAssets();
+    const d = r.data?.data || {};
+    suggestMetrics.value = d.metrics || [];
+    suggestTerms.value = d.terms || [];
+    if (!suggestMetrics.value.length && !suggestTerms.value.length) {
+      ElMessage.warning("未生成推荐，可先完善资产的业务描述后重试");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "推荐失败");
+  } finally {
+    suggestLoading.value = false;
+  }
+}
+
+/** 采纳推荐指标 → 预填「新建指标」弹窗（编码需用户补全后保存）。 */
+function adoptMetric(row: any) {
+  suggestVisible.value = false;
+  openMetric();
+  metricForm.value = {
+    datasource: "system",
+    name: row.name || "",
+    key: "",
+    sql_template: row.sql || "",
+    agg: row.agg || "count",
+    unit: "",
+    enabled: true,
+  };
+}
+
+/** 采纳推荐术语 → 预填「新建术语」弹窗。 */
+function adoptTerm(row: any) {
+  suggestVisible.value = false;
+  openTerm();
+  const isDim = row.type === "dimension";
+  termForm.value = {
+    datasource: "system",
+    term: row.term || "",
+    type: isDim ? "dimension" : "metric",
+    metric_key: isDim ? "" : row.target || "",
+    field_path: isDim ? row.target || "" : "",
+  };
 }
 
 async function saveMetric() {
