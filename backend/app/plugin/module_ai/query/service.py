@@ -7306,6 +7306,24 @@ class AiQueryService:
         # NL2SQL）。meta 已带原始问题，这里只影响后续生成。开关默认关。
         question = await cls._maybe_rewrite(question, sess["id"], datasource)
 
+        # ---- 澄清反问：命中确定性歧义 → 先问用户，不生成 SQL（对齐非流式 ask）----
+        if "【澄清】" not in question:
+            try:
+                from .clarify import detect_clarify
+
+                schema_map = (
+                    await cls._system_schema()
+                    if (datasource or SYSTEM_DS) == SYSTEM_DS
+                    else await cls._ds_schema_map(datasource)
+                )
+                _c = detect_clarify(question, schema_map)
+                if _c:
+                    yield {"type": "clarify", "clarify": _c}
+                    yield {"type": "done", "path": "clarify", "session_id": sess["id"]}
+                    return
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 流式澄清检测失败（忽略）: {str(e)[:80]}")
+
         # ---- 指标快路径（对齐 ask）：确定性、零 LLM；命中即流式返回 ----
         if not _is_listing_question(question):
             try:

@@ -570,6 +570,9 @@ async function ask() {
         cur.ontology = d.ontology || cur.ontology;
         hasResult = true;
         flush();
+      } else if (t === "clarify") {
+        cur.path = "clarify";
+        cur.clarify = d.clarify || {};
       } else if (t === "report_suggest") {
         cur.path = "report_suggest";
         cur.reports = d.reports || [];
@@ -584,6 +587,12 @@ async function ask() {
     cur.streaming = false;
     flush();
     question.value = "";
+    if (cur.path === "clarify" && cur.clarify) {
+      clarify.value = { ...cur.clarify, _q: q };
+      clarifyPick.value = "";
+      clarifyVisible.value = true;
+      return;
+    }
     if (cur.path === "report_suggest" && cur.reports?.length) {
       reportSuggestList.value = cur.reports;
       reportSuggestVisible.value = true;
