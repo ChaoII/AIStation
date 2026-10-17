@@ -70,7 +70,7 @@
 
         <!-- 右：卡片区 -->
         <div class="ws-content">
-          <el-row v-loading="loading" :gutter="16">
+          <el-row v-loading="loading" :gutter="16" class="ws-card-grid">
             <el-col
               v-for="it in pagedItems"
               :key="`${it.type}-${it.id}`"
@@ -622,12 +622,17 @@ async function saveCron() {
   overflow: auto;
 }
 
+/* 卡片网格：上下/左右间距统一 16px（列用 gutter，行用 row-gap） */
+.ai-workspace-page .ws-card-grid {
+  row-gap: 16px;
+}
+
 .ai-workspace-page .ws-tree-card {
   height: 100%;
   overflow: auto;
   background: var(--el-fill-color-blank);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
+  border-radius: var(--el-border-radius-base);
   padding: 12px;
 }
 
@@ -659,11 +664,10 @@ async function saveCron() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  margin-bottom: 16px;
   padding: 16px 18px;
   background: var(--el-color-white);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition:
     box-shadow 0.2s,

@@ -21,13 +21,28 @@ _TYPES = {
 }
 ALL_TYPES = tuple(_TYPES.keys())
 
-#: 类型默认图标（Element Plus 图标组件名；条目未设 icon/avatar 时用于卡片展示）
+#: 类型默认图标（Element Plus 图标组件名；条目未设 icon/avatar 或设为非图片图标时用于卡片展示）
 _TYPE_ICON = {
     "agent": "User",
-    "workflow": "Share",
+    "workflow": "Connection",
     "app": "Monitor",
     "cron": "Timer",
 }
+
+
+def _is_image_icon(icon: str) -> bool:
+    """判断图标是否为图片路径（http(s)/图片扩展名/agent-icons 等），非图片则用类型默认图标。"""
+    i = (icon or "").strip()
+    return bool(
+        i
+        and (
+            i.startswith("http://")
+            or i.startswith("https://")
+            or i.endswith((".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"))
+            or i.startswith("market-icons/")
+            or i.startswith("agent-icons/")
+        )
+    )
 
 
 class WorkspaceService:
@@ -153,8 +168,8 @@ class WorkspaceService:
     @staticmethod
     def _to_item(kind: str, row, label: str, name_field: str) -> dict:
         icon = getattr(row, "icon", "") or (getattr(row, "avatar", "") or "")
-        if not icon:
-            icon = _TYPE_ICON.get(kind, "")
+        if not _is_image_icon(icon):
+            icon = _TYPE_ICON.get(kind, icon or "")
         base = {
             "type": kind,
             "id": row.id,
@@ -290,6 +305,8 @@ class WorkspaceService:
         import asyncio
         from datetime import datetime
 
+        from loguru import logger
+
         aiokill = False
         while not aiokill:
             try:
@@ -304,7 +321,9 @@ class WorkspaceService:
                         )
                     ).scalars().all()
                     for r in rows:
-                        if r.next_run_time is not None and r.next_run_time <= now:
+                        # 统一为无时区的本地时间再比较，避免 aware/naive 混用抛异常
+                        due = r.next_run_time.replace(tzinfo=None) if r.next_run_time else None
+                        if due is not None and due <= now:
                             # 标记运行并计算下一次
                             r.last_run_time = now
                             try:
@@ -315,9 +334,9 @@ class WorkspaceService:
                             try:
                                 await cls._run_target(r.target_type, r.target_id)
                             except Exception as exc:  # noqa: BLE001
-                                print(f"⚠️ 定时任务 #{r.id} 执行失败：{exc}", flush=True)
+                                logger.error(f"定时任务 #{r.id} 执行失败：{exc}")
             except Exception as exc:  # noqa: BLE001
-                print(f"⚠️ 定时任务调度异常：{exc}", flush=True)
+                logger.error(f"定时任务调度异常：{exc}")
             await asyncio.sleep(60)
 
     @classmethod
