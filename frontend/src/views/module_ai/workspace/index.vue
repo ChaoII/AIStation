@@ -190,6 +190,9 @@
       </template>
     </el-dialog>
 
+    <!-- 智能体内嵌新建/编辑 -->
+    <AgentFormDialog v-model="agentDialogVisible" :agent="agentEditItem" @refresh="loadItems" />
+
     <!-- 工作流内嵌编辑器 -->
     <WorkflowEditor
       v-model:visible="workflowEditVisible"
@@ -216,11 +219,12 @@ import {
   type WorkspaceCategory,
   type WorkspaceItem,
 } from "@/api/module_ai/workspace";
-import { deleteAiAgent } from "@/api/module_ai/agent";
+import { deleteAiAgent, getAiAgentDetail } from "@/api/module_ai/agent";
 import { deleteAiWorkflow, getAiWorkflowDetail } from "@/api/module_ai/workflow";
 import { deleteAiApp } from "@/api/module_ai/app";
 import IconTile from "@/views/module_ai/market/components/IconTile.vue";
 import WorkflowEditor from "@/views/module_ai/workflow/components/WorkflowEditor.vue";
+import AgentFormDialog from "@/views/module_ai/workspace/components/AgentFormDialog.vue";
 
 defineOptions({ name: "AiWorkbench" });
 
@@ -352,7 +356,7 @@ function openChat(it: WorkspaceItem) {
 // 卡片「更多」：编辑（跳转对应管理页） + 删除（确认后按类型删）
 async function onCardMore(it: WorkspaceItem, cmd: string) {
   if (cmd === "edit") {
-    if (it.type === "agent") router.push("/ai/agent");
+    if (it.type === "agent") openAgentEdit(it);
     else if (it.type === "workflow") await openWorkflowEdit(it);
     else if (it.type === "app") router.push("/ai/app");
     else if (it.type === "cron") ElMessage.info("点到对应条目编辑");
@@ -380,10 +384,25 @@ async function onCardMore(it: WorkspaceItem, cmd: string) {
 }
 
 function onCreate(cmd: string) {
-  if (cmd === "agent") router.push("/ai/agent");
-  else if (cmd === "workflow") router.push("/ai/workflow");
+  if (cmd === "agent") openAgentCreate();
+  else if (cmd === "workflow") openWorkflowCreate();
   else if (cmd === "app") router.push("/ai/app");
   else if (cmd === "cron") openCronCreate();
+}
+
+// 智能体内嵌编辑/新建（菜单已并入工作台，不再跳 /ai/agent）
+const agentDialogVisible = ref(false);
+const agentEditItem = ref<any>(null);
+function openAgentCreate() {
+  agentEditItem.value = null;
+  agentDialogVisible.value = true;
+}
+async function openAgentEdit(it: WorkspaceItem) {
+  const res: any = await getAiAgentDetail(it.id);
+  const d = res.data?.data;
+  if (!d) return ElMessage.error("智能体不存在");
+  agentEditItem.value = d;
+  agentDialogVisible.value = true;
 }
 
 function toggleEnable(it: WorkspaceItem, val: boolean) {
@@ -399,6 +418,10 @@ async function openWorkflowEdit(it: WorkspaceItem) {
   const d = res.data?.data;
   if (!d) return ElMessage.error("工作流不存在");
   workflowEditItem.value = d;
+  workflowEditVisible.value = true;
+}
+function openWorkflowCreate() {
+  workflowEditItem.value = null; // 新建模式：WorkflowEditor 无 workflow 时走 create
   workflowEditVisible.value = true;
 }
 
