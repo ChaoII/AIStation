@@ -1264,15 +1264,6 @@ async def access_remove(id: int, auth: Annotated[AuthSchema, Depends(AuthPermiss
     return SuccessResponse(data=None, msg="已删除")
 
 
-async def kg_stats(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
-) -> JSONResponse:
-    from .agno_kg import _stats
-
-    await _stats()
-    return SuccessResponse(data=await _stats(), msg="查询成功")
-
-
 @AiQueryRouter.get("/assets/kg/stats", summary="统一图谱统计(节点/边/实体/关系)")
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

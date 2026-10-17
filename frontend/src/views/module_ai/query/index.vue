@@ -253,6 +253,38 @@
       </template>
     </el-dialog>
 
+    <!-- 报表建议：未命中时，推荐已沉淀的报表供用户选择执行 -->
+    <el-dialog v-model="reportSuggestVisible" title="帮你找到相关报表" width="560px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="系统没有直接命中指标，但有已沉淀的报表可能正好覆盖你的问题，选一个即可直接出结果。"
+        class="q-fb-tip"
+      />
+      <div class="q-report-suggest">
+        <div
+          v-for="r in reportSuggestList"
+          :key="r.id"
+          class="q-report-item"
+          @click="pickReport(r)"
+        >
+          <div class="q-report-item__head">
+            <span class="q-report-item__name">{{ r.name }}</span>
+            <el-tag v-if="r.params" size="small" type="warning" effect="plain">
+              {{ r.params }} 参数
+            </el-tag>
+            <el-tag v-else size="small" type="success" effect="plain">直接出结果</el-tag>
+          </div>
+          <div v-if="r.description" class="q-report-item__desc">{{ r.description }}</div>
+          <div v-if="r.question" class="q-report-item__q">对应问题：{{ r.question }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="reportSuggestVisible = false">算了，继续用问答</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="srVisible" title="存为报表" width="520px" append-to-body>
       <el-alert
         type="info"
@@ -367,6 +399,7 @@ import {
   getQuerySessions,
   getQuerySettings,
   queryFeedback,
+  runQueryReport,
   saveQueryReport,
   saveQuerySetting,
   streamQuery,
@@ -403,11 +436,13 @@ function rowsOf(m: any) {
   });
 }
 
-/** 生成路径标签：指标模板 / 对象查询 / NL2SQL。 */
+/** 生成路径标签：指标模板 / 对象查询 / NL2SQL / 报表。 */
 function pathLabel(m: any): string {
   if (m?.path === "fast") return "指标";
   if (m?.path === "object") return "对象查询";
   if (m?.path === "slow") return "NL2SQL";
+  if (m?.path === "report") return "报表";
+  if (m?.path === "report_suggest") return "报表建议";
   return m?.path || "查询";
 }
 
@@ -520,6 +555,9 @@ async function ask() {
         cur.ontology = d.ontology || cur.ontology;
         hasResult = true;
         flush();
+      } else if (t === "report_suggest") {
+        cur.path = "report_suggest";
+        cur.reports = d.reports || [];
       } else if (t === "answer") {
         cur.summary = d.summary || "";
         flush();
@@ -531,6 +569,11 @@ async function ask() {
     cur.streaming = false;
     flush();
     question.value = "";
+    if (cur.path === "report_suggest" && cur.reports?.length) {
+      reportSuggestList.value = cur.reports;
+      reportSuggestVisible.value = true;
+      return;
+    }
     if (cur.is_error) ElMessage.error(cur.summary || "查询失败");
     else ElMessage.success(hasResult ? "查询完成" : "已完成");
     await loadSessions();
@@ -754,6 +797,35 @@ const fbMsg = ref<any>(null);
 
 // 澄清反问（系统不确定时先问，不猜）
 const clarifyVisible = ref(false);
+const reportSuggestVisible = ref(false);
+const reportSuggestList = ref<any[]>([]);
+
+async function pickReport(r: any) {
+  if (r.params) {
+    ElMessage.info("该报表带参数，请到「自定义报表」页运行并填写参数");
+    return;
+  }
+  try {
+    const res: any = await runQueryReport(r.id, {});
+    const d = res.data?.data;
+    reportSuggestVisible.value = false;
+    messages.value = [
+      ...messages.value,
+      {
+        question: `[报表] ${r.name}`,
+        path: "report",
+        columns: d?.columns || [],
+        rows: d?.rows || [],
+        summary: d?.summary || (d?.ok === false ? d?.msg : `已执行报表「${r.name}」`),
+        sql: d?.sql || "",
+        is_error: d?.ok === false,
+      },
+    ];
+    await loadSessions();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "报表执行失败");
+  }
+}
 const clarifyPick = ref("");
 const clarify = ref<any>(null);
 
@@ -921,6 +993,45 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 6px;
+}
+
+.q-report-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.q-report-item {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  &:hover {
+    border-color: var(--el-color-primary-light-5);
+    background: var(--el-color-primary-light-9);
+  }
+}
+.q-report-item__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.q-report-item__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-report-item__desc {
+  margin-top: 4px;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.q-report-item__q {
+  margin-top: 2px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .q-msg__meta {

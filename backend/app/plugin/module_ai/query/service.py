@@ -6156,6 +6156,61 @@ class AiQueryService:
 
     # ---- 核心：问答入口 ----
     @classmethod
+    async def report_suggest(cls, question: str, datasource: str | None = None) -> list[dict]:
+        """按问题检索已确认启用的报表（澄清后选择，不自动执行，避免误命中/参数对不上）。"""
+        try:
+            async with async_db_session() as db:
+                rows = (
+                    await db.execute(
+                        text(
+                            "SELECT id,name,description,question,params FROM ai_query_reports "
+                            "WHERE is_deleted=false AND verified=true AND enabled=true AND datasource=:d "
+                            "ORDER BY sort, id"
+                        ),
+                        {"d": datasource or "system"},
+                    )
+                ).fetchall()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] report_suggest 拉取报表失败：{e!r}")
+            return []
+        if not rows:
+            return []
+        reports = []
+        for r in rows:
+            import json as _j
+
+            params = r[4] if isinstance(r[4], list) else (_j.loads(r[4]) if r[4] else [])
+            reports.append({"id": r[0], "name": r[1] or "", "description": r[2] or "",
+                            "question": r[3] or "", "params": params})
+        q = (question or "").lower().strip()
+        if not q:
+            return []
+        scored = []
+        for r in reports:
+            name = (r.get("name") or "").lower()
+            desc = (r.get("description") or "").lower()
+            rq = (r.get("question") or "").lower()
+            score = 0
+            if name and (name in q or q in name):
+                score += 4
+            if rq and (rq in q or q in rq):
+                score += 4
+            if desc:
+                for i in range(max(1, len(q) - 1)):
+                    sub = q[i : i + 2]
+                    if sub and sub in desc:
+                        score += 1
+            if score >= 3:
+                scored.append({
+                    "id": r["id"], "name": r["name"],
+                    "description": r.get("description") or "",
+                    "question": r.get("question") or "",
+                    "params": len(r.get("params") or []),
+                    "_score": score,
+                })
+        scored.sort(key=lambda x: -x["_score"])
+        return scored[:3]
+
     async def ask(cls, question: str, auth, session_id: int | None = None,
                   datasource: str | None = None, redis=None, force_slow: bool = False,
                   object_code: str | None = None, object_key: str | None = None) -> dict:
@@ -6261,6 +6316,17 @@ class AiQueryService:
                     summary=f"快路径执行失败：{reason}",
                 )
                 return await cls._slow_path(question, sess["id"], metric["datasource"], auth)
+
+        # 报表建议（澄清后选择）：未命中指标时，把相关已确认报表作为候选推荐，不自动执行。
+        # 放在对象查询前：沉淀的"困难题"比现推更贴近用户意图；关键词命中率高才推荐（防误命中）。
+        try:
+            sugg = await cls.report_suggest(question, datasource or None)
+            if sugg:
+                return {"path": "report_suggest", "question": question, "reports": sugg,
+                        "is_error": False, "sql": "", "columns": [], "rows": [],
+                        "took_ms": 0, "metric": None, "ontology_used": []}
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 报表建议失败（忽略，继续对象/NL2SQL）: {str(e)[:100]}")
 
         # 对象查询（语义执行层）：LLM 出 IR → 本体实例层执行；任何失败自动降级
         cfg = await cls._cfg()
@@ -7265,6 +7331,16 @@ class AiQueryService:
                 # 快路径失败**不得中断 SSE** → 记录并继续走对象/NL2SQL 流式
                 log.warning("[query] 流式指标快路径失败，降级：[{}] {}",
                             type(e).__name__, str(e)[:120])
+
+        # ---- 报表建议（澄清后选择）：未命中指标时推荐相关报表，不自动执行、不打断 SSE ----
+        try:
+            sugg = await cls.report_suggest(question, datasource or None)
+            if sugg:
+                yield {"type": "report_suggest", "reports": sugg}
+                yield {"type": "done", "path": "report_suggest", "session_id": sess["id"]}
+                return
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 流式报表建议失败（忽略）：{e!r}")
 
         # ---- 对象查询（语义执行层）：能出合法 IR 就流式返回，否则继续 NL2SQL 流式 ----
         cfg0 = await cls._cfg()
