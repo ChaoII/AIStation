@@ -111,6 +111,17 @@
                 <span v-if="categoryName(it.category_id)" class="ws-card__cat">
                   {{ categoryName(it.category_id) }}
                 </span>
+                <el-dropdown trigger="click" @command="(cmd: string) => onCardMore(it, cmd)">
+                  <el-button size="small" circle :icon="MoreFilled" @click.stop />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                      <el-dropdown-item command="delete" style="color: #f56c6c" divided>
+                        删除
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
             </div>
           </el-col>
@@ -190,12 +201,16 @@ import {
   createWorkspaceCategory,
   createWorkspaceCron,
   deleteWorkspaceCategory,
+  deleteWorkspaceCron,
   getWorkspaceCategoryTree,
   getWorkspaceItems,
   updateWorkspaceCategory,
   type WorkspaceCategory,
   type WorkspaceItem,
 } from "@/api/module_ai/workspace";
+import { deleteAiAgent } from "@/api/module_ai/agent";
+import { deleteAiWorkflow } from "@/api/module_ai/workflow";
+import { deleteAiApp } from "@/api/module_ai/app";
 import IconTile from "@/views/module_ai/market/components/IconTile.vue";
 
 defineOptions({ name: "AiWorkbench" });
@@ -296,6 +311,36 @@ function onCatClick(data: WorkspaceCategory) {
 
 function openChat(it: WorkspaceItem) {
   router.push(`/ai/workspace/chat/${it.type}/${it.id}`);
+}
+
+// 卡片「更多」：编辑（跳转对应管理页） + 删除（确认后按类型删）
+async function onCardMore(it: WorkspaceItem, cmd: string) {
+  if (cmd === "edit") {
+    if (it.type === "agent") router.push("/ai/agent");
+    else if (it.type === "workflow") router.push("/ai/workflow");
+    else if (it.type === "app") router.push("/ai/app");
+    else if (it.type === "cron") ElMessage.info("点到对应条目编辑");
+    return;
+  }
+  if (cmd === "delete") {
+    await ElMessageBox.confirm(`将删除「${it.name}」，是否继续？`, "删除确认", {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+    const del = {
+      agent: deleteAiAgent,
+      workflow: deleteAiWorkflow,
+      app: deleteAiApp,
+      cron: deleteWorkspaceCron,
+    }[it.type];
+    if (del) {
+      if (it.type === "cron") await (del as any)(it.id);
+      else await (del as any)([it.id]);
+      ElMessage.success("已删除");
+      loadItems();
+    }
+  }
 }
 
 function onCreate(cmd: string) {
