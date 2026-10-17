@@ -492,6 +492,75 @@
           <el-table-column prop="time" label="时间" min-width="150" show-overflow-tooltip />
         </el-table>
       </el-tab-pane>
+
+      <!-- 交付命题：五步交付 / 影子校验（原 FDE 后端能力接入） -->
+      <el-tab-pane label="交付命题" name="fde">
+        <div class="gp-bar">
+          <el-button type="primary" size="small" :icon="Plus" @click="openFde()">
+            新建命题
+          </el-button>
+          <el-button size="small" @click="loadFde">刷新</el-button>
+          <el-tag size="small" type="info" effect="plain">
+            共 {{ fdeList.length }} 个交付命题
+          </el-tag>
+        </div>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 10px"
+          title="交付命题：诊断→建模→装配→影子校验→交接 五步交付跟踪；影子校验用黄金标准比对影子指标实际值。"
+        />
+        <el-table :data="fdeList" size="small" border>
+          <template #empty>
+            <el-empty description="暂无交付命题" :image-size="60" />
+          </template>
+          <el-table-column prop="title" label="命题" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="owner" label="负责人" width="100" show-overflow-tooltip />
+          <el-table-column label="五步" min-width="240">
+            <template #default="{ row }">
+              <el-tag
+                v-for="(v, k) in row.steps"
+                :key="k"
+                size="small"
+                :type="v === 'done' ? 'success' : v === 'doing' ? 'warning' : 'info'"
+                effect="plain"
+                style="margin: 0 2px"
+              >
+                {{ FDE_STEP_LABELS[k] || k }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="影子" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag
+                v-if="row.shadow_result"
+                size="small"
+                :type="row.shadow_result === 'pass' ? 'success' : 'danger'"
+                effect="plain"
+              >
+                {{ row.shadow_result }}
+              </el-tag>
+              <span v-else class="gp-empty">未跑</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="190" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="openFde(row)">编辑</el-button>
+              <el-button
+                link
+                type="primary"
+                size="small"
+                :disabled="!row.shadow_metric"
+                @click="runFdeShadow(row)"
+              >
+                影子校验
+              </el-button>
+              <el-button link type="danger" size="small" @click="removeFde(row)">删</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 权限策略编辑 -->
@@ -663,6 +732,62 @@
       <el-empty v-else description="选择用户或角色后点「预览」" :image-size="60" />
     </el-dialog>
 
+    <!-- 交付命题编辑 -->
+    <el-dialog
+      v-model="fdeDlg"
+      :title="fdeForm.id ? '编辑交付命题' : '新建交付命题'"
+      width="620px"
+      append-to-body
+    >
+      <el-form :model="fdeForm" label-width="100px">
+        <el-form-item label="命题标题" required>
+          <el-input v-model="fdeForm.title" placeholder="如：燃煤配煤优化交付" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="fdeForm.description" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="验收标准">
+          <el-input v-model="fdeForm.criteria" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="负责人">
+          <el-input v-model="fdeForm.owner" />
+        </el-form-item>
+        <el-form-item label="五步进度">
+          <div class="gp-fde-steps">
+            <div v-for="(label, k) in FDE_STEP_LABELS" :key="k" class="gp-fde-step">
+              <span>{{ label }}</span>
+              <el-select v-model="fdeForm.steps[k]" size="small" style="width: 100px">
+                <el-option label="待办" value="todo" />
+                <el-option label="进行中" value="doing" />
+                <el-option label="完成" value="done" />
+              </el-select>
+            </div>
+          </div>
+        </el-form-item>
+        <el-form-item label="影子指标">
+          <el-input v-model="fdeForm.shadow_metric" placeholder="指标编码（用于影子校验）" />
+        </el-form-item>
+        <el-form-item label="黄金标准">
+          <el-input v-model="fdeForm.shadow_golden" placeholder="期望值" />
+        </el-form-item>
+        <el-form-item label="容差">
+          <el-input v-model="fdeForm.shadow_tolerance" placeholder="如 0.01 或 1%" />
+        </el-form-item>
+        <el-form-item label="交付资产">
+          <el-input
+            v-model="fdeAssetsText"
+            type="textarea"
+            :rows="2"
+            placeholder="每行一个交付资产"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="fdeDlg = false">取消</el-button>
+        <el-button type="primary" :loading="savingFde" @click="saveFde">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 数据域编辑 -->
     <el-dialog v-model="domainDialog" title="数据域" width="520px" append-to-body>
       <el-form :model="domainForm" label-width="100px">
@@ -738,6 +863,10 @@ import {
   getActionLogs,
   approveAction,
   rejectAction,
+  getFdeList,
+  saveFdeProposition,
+  deleteFdePropositions,
+  fdeShadowCheck,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "GovernancePanel" });
@@ -814,6 +943,117 @@ async function runSandboxRole() {
     sandboxLoading.value = false;
   }
 }
+
+// 交付命题（原 FDE 后端能力接入治理面板）
+const FDE_STEP_LABELS: Record<string, string> = {
+  diagnosis: "诊断",
+  modeling: "建模",
+  assembly: "装配",
+  shadow: "影子",
+  handover: "交接",
+};
+const fdeList = ref<any[]>([]);
+const fdeDlg = ref(false);
+const fdeForm = ref<any>({});
+const fdeAssetsText = ref("");
+const savingFde = ref(false);
+
+async function loadFde() {
+  try {
+    const r = await getFdeList();
+    fdeList.value = r.data?.data || [];
+  } catch {
+    fdeList.value = [];
+  }
+}
+
+function openFde(row?: any) {
+  fdeForm.value = row
+    ? { ...row, steps: { ...(row.steps || {}) } }
+    : {
+        title: "",
+        description: "",
+        criteria: "",
+        owner: "",
+        steps: {
+          diagnosis: "todo",
+          modeling: "todo",
+          assembly: "todo",
+          shadow: "todo",
+          handover: "todo",
+        },
+        shadow_metric: "",
+        shadow_golden: "",
+        shadow_tolerance: "",
+      };
+  fdeAssetsText.value = (row?.delivery_assets || []).join("\n");
+  fdeDlg.value = true;
+}
+
+async function saveFde() {
+  if (!fdeForm.value.title?.trim()) {
+    ElMessage.warning("请填写命题标题");
+    return;
+  }
+  savingFde.value = true;
+  try {
+    const s = fdeForm.value.steps || {};
+    await saveFdeProposition({
+      ...fdeForm.value,
+      step_diagnosis: s.diagnosis,
+      step_modeling: s.modeling,
+      step_assembly: s.assembly,
+      step_shadow: s.shadow,
+      step_handover: s.handover,
+      delivery_assets: fdeAssetsText.value
+        .split("\n")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    });
+    ElMessage.success("已保存");
+    fdeDlg.value = false;
+    await loadFde();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    savingFde.value = false;
+  }
+}
+
+async function removeFde(row: any) {
+  await ElMessageBox.confirm(`将删除交付命题「${row.title}」，且不可恢复。`, "删除交付命题", {
+    type: "warning",
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+  });
+  try {
+    await deleteFdePropositions([row.id]);
+    ElMessage.success("已删除");
+    await loadFde();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "删除失败");
+  }
+}
+
+async function runFdeShadow(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `将对「${row.title}」用黄金标准（${row.shadow_golden || "-"}）比对影子指标实际值，是否继续？`,
+      "影子校验",
+      { type: "warning", confirmButtonText: "校验", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    const r = await fdeShadowCheck(row.id);
+    const d = r.data?.data || {};
+    ElMessage.success(`影子校验：${d.result || "完成"}`);
+    await loadFde();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "校验失败");
+  }
+}
 const dqData = ref<any>({ avg_score: 0, healthy: 0, risk: 0, items: [] });
 const dqAlerts = ref<any[]>([]);
 const dqScanning = ref(false);
@@ -863,6 +1103,7 @@ function onTab(name: any) {
   } else if (name === "domain") loadDomain();
   else if (name === "ontgov") loadOntGov();
   else if (name === "action") loadAction();
+  else if (name === "fde") loadFde();
 }
 
 // 动作审批：待审批/定义/日志
@@ -1027,6 +1268,18 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.gp-fde-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.gp-fde-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
 }
 .gp-alert {
   border: 1px solid var(--el-color-warning-light-5);

@@ -653,6 +653,14 @@
                     生成对象/属性标注
                   </el-button>
                 </el-form-item>
+                <el-form-item>
+                  <el-button :loading="semanticLoading" @click="handleExtractObjects">
+                    语义抽取对象
+                  </el-button>
+                  <el-button :loading="semanticLoading" @click="handleInferRelations">
+                    推断表间关系
+                  </el-button>
+                </el-form-item>
               </el-form>
               <el-descriptions v-if="modelingResult" :column="3" border>
                 <el-descriptions-item label="解析（候选）">
@@ -1177,6 +1185,8 @@ import {
   rebuildQueryKg,
   runModelingMetrics,
   runModelingAnnotate,
+  extractQueryObjects,
+  inferQueryAssetRelations,
 } from "@/api/module_ai/query";
 import { getOntDomains } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
@@ -2180,6 +2190,55 @@ async function handleModeling(kind: "metrics" | "annotate") {
     ElMessage.error(e?.message || "生成失败");
   } finally {
     modelingLoading.value = false;
+  }
+}
+
+// 语义抽取对象 / 推断表间关系（此前有 API 无入口，此处接入「语义建模」）
+const semanticLoading = ref(false);
+
+async function handleExtractObjects() {
+  try {
+    await ElMessageBox.confirm(
+      "将对已纳入的资产表用大模型抽取「业务对象」并写入语义层，可能耗时较长，是否继续？",
+      "语义抽取对象",
+      { type: "warning", confirmButtonText: "开始", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  semanticLoading.value = true;
+  try {
+    const r: any = await extractQueryObjects();
+    const d = r?.data?.data ?? r?.data ?? {};
+    ElMessage.success(`已抽取对象：${d.saved ?? d.count ?? 0} 个`);
+    await loadMisc();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "抽取失败");
+  } finally {
+    semanticLoading.value = false;
+  }
+}
+
+async function handleInferRelations() {
+  try {
+    await ElMessageBox.confirm(
+      "将用大模型推断资产表之间的关系并写入血缘/图谱，可能耗时较长，是否继续？",
+      "推断表间关系",
+      { type: "warning", confirmButtonText: "开始", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  semanticLoading.value = true;
+  try {
+    const r: any = await inferQueryAssetRelations();
+    const d = r?.data?.data ?? r?.data ?? {};
+    ElMessage.success(`已推断关系：${d.saved ?? d.count ?? 0} 条`);
+    await loadMisc();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "推断失败");
+  } finally {
+    semanticLoading.value = false;
   }
 }
 </script>
