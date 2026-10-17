@@ -1,165 +1,160 @@
 <!-- AI 工作台：左侧树形分类 + 右侧多类型卡片区（智能体/工作流/定时任务/应用） -->
 <template>
   <div class="app-container ai-workspace-page">
-    <!-- 顶部标题区（白底卡片，蓝灰边框） -->
-    <div class="ws-toolbar">
-      <div class="ws-toolbar__left">
-        <span class="ws-title">工作台</span>
-        <el-tag size="small" effect="plain" type="info">{{ currentCatName }}</el-tag>
-      </div>
-    </div>
-
-    <!-- 类型 tab（左）+ 右侧搜索/新增 -->
-    <div class="ws-type-bar">
-      <el-tabs v-model="typeFilter" class="ws-type-tabs">
-        <el-tab-pane v-for="t in typeOptions" :key="t.value" :label="t.label" :name="t.value" />
-      </el-tabs>
-      <div class="ws-type-actions">
-        <el-input
-          v-model="keyword"
-          placeholder="搜索条目"
-          clearable
-          :prefix-icon="Search"
-          style="width: 200px"
-        />
-        <el-dropdown trigger="click" @command="onCreate">
-          <el-button type="primary" :icon="Plus">新建</el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="agent">智能体</el-dropdown-item>
-              <el-dropdown-item command="workflow">工作流</el-dropdown-item>
-              <el-dropdown-item command="app">应用</el-dropdown-item>
-              <el-dropdown-item command="cron">定时任务</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
-    </div>
-
-    <!-- 主体：左分类树 + 右卡片区（同高） -->
-    <div class="ws-main">
-      <!-- 左：分类树 -->
-      <div class="ws-side">
-        <div class="ws-tree-card">
-          <div class="ws-tree-head">
-            <span>分类</span>
-            <el-button link type="primary" :icon="Plus" @click="openCatCreate(null)" />
-          </div>
-          <el-tree
-            :data="treeData"
-            node-key="id"
-            :props="{ label: 'name', children: 'children' }"
-            :current-node-key="currentCategoryId ?? undefined"
-            highlight-current
-            @node-click="onCatClick"
-          >
-            <template #default="{ data }">
-              <span class="ws-tree-node">
-                <span class="ws-tree-label">{{ data.name }}</span>
-                <el-dropdown trigger="click" @command="(c: string) => onCatCmd(data, c)">
-                  <el-icon class="ws-tree-more" @click.stop><MoreFilled /></el-icon>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="addchild">新建子分类</el-dropdown-item>
-                      <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                      <el-dropdown-item command="delete" style="color: #f56c6c" divided>
-                        删除
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-              </span>
+    <!-- 白色面板：铺满可用区域，四周蓝灰边框；类型 tab 在顶部，右侧搜索/新增 -->
+    <el-card shadow="never" class="ws-shell" :body-style="{ padding: '0 16px 12px' }">
+      <!-- 类型 tab（左）+ 右侧搜索/新增 -->
+      <div class="ws-tabbar">
+        <el-tabs v-model="typeFilter" class="ws-main-tabs">
+          <el-tab-pane v-for="t in typeOptions" :key="t.value" :label="t.label" :name="t.value" />
+        </el-tabs>
+        <div class="ws-tab-actions">
+          <el-input
+            v-model="keyword"
+            placeholder="搜索条目"
+            clearable
+            :prefix-icon="Search"
+            style="width: 200px"
+          />
+          <el-dropdown trigger="click" @command="onCreate">
+            <el-button type="primary" :icon="Plus">新建</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="agent">智能体</el-dropdown-item>
+                <el-dropdown-item command="workflow">工作流</el-dropdown-item>
+                <el-dropdown-item command="app">应用</el-dropdown-item>
+                <el-dropdown-item command="cron">定时任务</el-dropdown-item>
+              </el-dropdown-menu>
             </template>
-          </el-tree>
+          </el-dropdown>
         </div>
       </div>
 
-      <!-- 右：卡片区 -->
-      <div class="ws-content">
-        <el-row v-loading="loading" :gutter="16">
-          <el-col
-            v-for="it in pagedItems"
-            :key="`${it.type}-${it.id}`"
-            :xs="24"
-            :sm="12"
-            :md="8"
-            :lg="6"
-          >
-            <div class="ws-card" @click="openChat(it)">
-              <div class="ws-card__head">
-                <IconTile :item="{ icon: it.icon, asset_type: it.type }" :size="'sm'" />
-                <div class="ws-card__title">
-                  <div class="ws-card__name">{{ it.name }}</div>
-                  <el-tag size="small" :type="typeTag[it.type]" effect="plain">
-                    {{ it.label }}
-                  </el-tag>
-                </div>
-                <el-switch
-                  :model-value="it.enabled"
-                  size="small"
-                  @click.stop
-                  @change="(v: any) => toggleEnable(it, v)"
-                />
-              </div>
-              <div class="ws-card__desc">{{ it.description || "暂无描述" }}</div>
-              <!-- 能力标签：模型/工具/节点/知识库/MCP/技能/问数 -->
-              <div v-if="capTags(it).length" class="ws-card__tags">
-                <el-tag
-                  v-for="t in capTags(it)"
-                  :key="t.text"
-                  size="small"
-                  :type="t.type"
-                  effect="plain"
-                >
-                  {{ t.text }}
-                </el-tag>
-              </div>
-              <div class="ws-card__foot">
-                <span class="ws-card__cat">
-                  <span v-if="categoryName(it.category_id)" class="ws-card__cat-name">
-                    {{ categoryName(it.category_id) }}
-                  </span>
-                  <span class="ws-card__time">{{ fmtTime(it.created_time) }}</span>
-                </span>
-                <div class="ws-card__actions">
-                  <el-button
-                    type="primary"
-                    size="small"
-                    :icon="ChatDotRound"
-                    @click.stop="openChat(it)"
-                  >
-                    对话
-                  </el-button>
-                  <el-dropdown trigger="click" @command="(cmd: string) => onCardMore(it, cmd)">
-                    <el-button size="small" circle :icon="MoreFilled" @click.stop />
+      <!-- 主体：左分类树 + 右卡片区（同高） -->
+      <div class="ws-main">
+        <!-- 左：分类树 -->
+        <div class="ws-side">
+          <div class="ws-tree-card">
+            <div class="ws-tree-head">
+              <span>分类</span>
+              <el-button link type="primary" :icon="Plus" @click="openCatCreate(null)" />
+            </div>
+            <el-tree
+              :data="treeData"
+              node-key="id"
+              :props="{ label: 'name', children: 'children' }"
+              :current-node-key="currentCategoryId ?? undefined"
+              highlight-current
+              @node-click="onCatClick"
+            >
+              <template #default="{ data }">
+                <span class="ws-tree-node">
+                  <span class="ws-tree-label">{{ data.name }}</span>
+                  <el-dropdown trigger="click" @command="(c: string) => onCatCmd(data, c)">
+                    <el-icon class="ws-tree-more" @click.stop><MoreFilled /></el-icon>
                     <template #dropdown>
                       <el-dropdown-menu>
-                        <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                        <el-dropdown-item command="addchild">新建子分类</el-dropdown-item>
+                        <el-dropdown-item command="rename">重命名</el-dropdown-item>
                         <el-dropdown-item command="delete" style="color: #f56c6c" divided>
                           删除
                         </el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
+                </span>
+              </template>
+            </el-tree>
+          </div>
+        </div>
+
+        <!-- 右：卡片区 -->
+        <div class="ws-content">
+          <el-row v-loading="loading" :gutter="16">
+            <el-col
+              v-for="it in pagedItems"
+              :key="`${it.type}-${it.id}`"
+              :xs="24"
+              :sm="12"
+              :md="8"
+              :lg="6"
+            >
+              <div class="ws-card" @click="openChat(it)">
+                <div class="ws-card__head">
+                  <IconTile :item="{ icon: it.icon, asset_type: it.type }" :size="'sm'" />
+                  <div class="ws-card__title">
+                    <div class="ws-card__name">{{ it.name }}</div>
+                    <el-tag size="small" :type="typeTag[it.type]" effect="plain">
+                      {{ it.label }}
+                    </el-tag>
+                  </div>
+                  <el-switch
+                    :model-value="it.enabled"
+                    size="small"
+                    @click.stop
+                    @change="(v: any) => toggleEnable(it, v)"
+                  />
+                </div>
+                <div class="ws-card__desc">{{ it.description || "暂无描述" }}</div>
+                <!-- 能力标签：模型/工具/节点/知识库/MCP/技能/问数 -->
+                <div v-if="capTags(it).length" class="ws-card__tags">
+                  <el-tag
+                    v-for="t in capTags(it)"
+                    :key="t.text"
+                    size="small"
+                    :type="t.type"
+                    effect="plain"
+                  >
+                    {{ t.text }}
+                  </el-tag>
+                </div>
+                <div class="ws-card__foot">
+                  <span class="ws-card__cat">
+                    <span v-if="categoryName(it.category_id)" class="ws-card__cat-name">
+                      {{ categoryName(it.category_id) }}
+                    </span>
+                    <span class="ws-card__time">{{ fmtTime(it.created_time) }}</span>
+                  </span>
+                  <div class="ws-card__actions">
+                    <el-button
+                      type="primary"
+                      size="small"
+                      :icon="ChatDotRound"
+                      @click.stop="openChat(it)"
+                    >
+                      对话
+                    </el-button>
+                    <el-dropdown trigger="click" @command="(cmd: string) => onCardMore(it, cmd)">
+                      <el-button size="small" circle :icon="MoreFilled" @click.stop />
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                          <el-dropdown-item command="delete" style="color: #f56c6c" divided>
+                            删除
+                          </el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                  </div>
                 </div>
               </div>
-            </div>
-          </el-col>
-          <el-col v-if="!loading && !pagedItems.length" :span="24">
-            <el-empty description="当前分类暂无条目" />
-          </el-col>
-        </el-row>
-        <div v-if="pagedItems.length > pageSize" class="ws-pagination">
-          <el-pagination
-            v-model:current-page="page"
-            :page-size="pageSize"
-            :total="filteredItems.length"
-            layout="total, prev, pager, next"
-            background
-          />
+            </el-col>
+            <el-col v-if="!loading && !pagedItems.length" :span="24">
+              <el-empty description="当前分类暂无条目" />
+            </el-col>
+          </el-row>
+          <div v-if="pagedItems.length > pageSize" class="ws-pagination">
+            <el-pagination
+              v-model:current-page="page"
+              :page-size="pageSize"
+              :total="filteredItems.length"
+              layout="total, prev, pager, next"
+              background
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </el-card>
 
     <!-- 新建/重命名分类弹窗 -->
     <el-dialog v-model="catDialogVisible" :title="catDialogTitle" width="420px">
@@ -333,18 +328,6 @@ const filteredItems = computed(() => {
 const pagedItems = computed(() =>
   filteredItems.value.slice((page.value - 1) * pageSize, page.value * pageSize)
 );
-
-const currentCatName = computed(() => {
-  if (!currentCategoryId.value) return "全部";
-  const target = currentCategoryId.value;
-  return treeData.value.find((n) => findCat(n, target))?.name || "全部";
-});
-
-function findCat(node: WorkspaceCategory, id: number | null): boolean {
-  if (id == null) return false;
-  if (node.id === id) return true;
-  return (node.children || []).some((c) => findCat(c, id));
-}
 
 function categoryName(id?: number | null) {
   if (!id) return "";
@@ -564,95 +547,82 @@ async function saveCron() {
 }
 </script>
 
-<style lang="scss" scoped>
-.ai-workspace-page {
-  height: 100%;
+<style lang="scss">
+.app-container.ai-workspace-page {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
   padding: 12px;
   box-sizing: border-box;
-  background: var(--el-color-white);
 }
 
-/* 顶部标题区 */
-.ws-toolbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--el-fill-color-blank);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  margin-bottom: 12px;
-}
-
-.ws-title {
-  font-size: var(--el-font-size-large);
-  font-weight: 600;
-}
-
-.ws-toolbar__left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* 类型 tab + 右侧操作 */
-.ws-type-bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 16px;
-  background: var(--el-fill-color-blank);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  margin-bottom: 12px;
-}
-
-.ws-type-tabs {
+/* 白色面板：铺满剩余高度，蓝灰边框（参考能力市场） */
+.ai-workspace-page .ws-shell {
   flex: 1 1 auto;
-  :deep(.el-tabs__header) {
-    margin-bottom: 0;
-  }
-  :deep(.el-tabs__nav-wrap::after) {
-    height: 1px;
-  }
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
 }
 
-.ws-type-actions {
+.ai-workspace-page .ws-shell > .el-card__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* tab 行：tabs 左，搜索/新增 右侧 */
+.ai-workspace-page .ws-tabbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ai-workspace-page .ws-main-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ai-workspace-page .ws-main-tabs > .el-tabs__header {
+  margin-bottom: 8px;
+}
+
+.ai-workspace-page .ws-tab-actions {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 0;
 }
 
 /* 主体：左树 + 右卡片，同高 */
-.ws-main {
+.ai-workspace-page .ws-main {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   gap: 12px;
 }
 
-.ws-side {
+.ai-workspace-page .ws-side {
   flex: 0 0 220px;
   min-width: 0;
   min-height: 0;
 }
 
-.ws-content {
+.ai-workspace-page .ws-content {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow: auto;
 }
 
-.ws-tree-card {
+.ai-workspace-page .ws-tree-card {
   height: 100%;
   overflow: auto;
   background: var(--el-fill-color-blank);
@@ -661,7 +631,7 @@ async function saveCron() {
   padding: 12px;
 }
 
-.ws-tree-head {
+.ai-workspace-page .ws-tree-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -669,7 +639,7 @@ async function saveCron() {
   margin-bottom: 8px;
 }
 
-.ws-tree-node {
+.ai-workspace-page .ws-tree-node {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -677,15 +647,15 @@ async function saveCron() {
   padding-right: 4px;
 }
 
-.ws-tree-more {
+.ai-workspace-page .ws-tree-more {
   opacity: 0;
   cursor: pointer;
 }
-.ws-tree-node:hover .ws-tree-more {
+.ai-workspace-page .ws-tree-node:hover .ws-tree-more {
   opacity: 1;
 }
 
-.ws-card {
+.ai-workspace-page .ws-card {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -706,18 +676,18 @@ async function saveCron() {
   }
 }
 
-.ws-card__head {
+.ai-workspace-page .ws-card__head {
   display: flex;
   align-items: flex-start;
   gap: 12px;
 }
 
-.ws-card__title {
+.ai-workspace-page .ws-card__title {
   min-width: 0;
   flex: 1;
 }
 
-.ws-card__name {
+.ai-workspace-page .ws-card__name {
   font-weight: 600;
   font-size: var(--el-font-size-base);
   line-height: 1.5;
@@ -728,7 +698,7 @@ async function saveCron() {
   overflow: hidden;
 }
 
-.ws-card__desc {
+.ai-workspace-page .ws-card__desc {
   margin: 12px 0 8px;
   color: var(--el-text-color-regular);
   font-size: var(--el-font-size-base);
@@ -741,7 +711,7 @@ async function saveCron() {
 }
 
 /* 能力标签区 */
-.ws-card__tags {
+.ai-workspace-page .ws-card__tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -749,7 +719,7 @@ async function saveCron() {
   margin-bottom: 10px;
 }
 
-.ws-card__foot {
+.ai-workspace-page .ws-card__foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -759,7 +729,7 @@ async function saveCron() {
   border-top: 1px solid var(--el-border-color-lighter);
 }
 
-.ws-card__cat {
+.ai-workspace-page .ws-card__cat {
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -768,25 +738,25 @@ async function saveCron() {
   color: var(--el-text-color-secondary);
 }
 
-.ws-card__cat-name {
+.ai-workspace-page .ws-card__cat-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 120px;
 }
 
-.ws-card__time {
+.ai-workspace-page .ws-card__time {
   white-space: nowrap;
 }
 
-.ws-card__actions {
+.ai-workspace-page .ws-card__actions {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.ws-pagination {
+.ai-workspace-page .ws-pagination {
   display: flex;
   justify-content: flex-end;
   padding: 4px 0;
