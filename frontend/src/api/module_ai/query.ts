@@ -527,6 +527,9 @@ export function workshopPreview(app_id: number, limit = 50) {
 export function deleteWorkshopApp(id: number) {
   return request({ url: `${API_PATH}/workshop/delete`, method: "delete", data: id });
 }
+export function submitWorkshopApp(app_id: number, data: any) {
+  return request({ url: `${API_PATH}/workshop/submit`, method: "post", data: { app_id, data } });
+}
 export function getAssetLineage(table: string) {
   return request({ url: `${API_PATH}/assets/${table}/lineage`, method: "get" });
 }

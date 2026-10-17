@@ -1050,6 +1050,15 @@ async def workshop_delete(
     return SuccessResponse(data=None, msg="删除成功")
 
 
+@AiQueryRouter.post("/workshop/submit", summary="对象应用表单提交(写入对象表)")
+async def workshop_submit(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.workshop_submit(int(data.get("app_id", 0)), data.get("data") or {})
+    return SuccessResponse(data=r, msg="保存成功")
+
+
 @AiQueryRouter.get("/assets/{table_name}/lineage", summary="完整血缘图(表→字段/指标/对象/管道/概念)")
 async def asset_lineage(
     table_name: str,

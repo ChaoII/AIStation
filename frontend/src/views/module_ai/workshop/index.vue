@@ -194,7 +194,7 @@
             </el-select>
             <div class="ws-run__switch">
               <el-tag
-                v-for="v in ['table', 'kanban']"
+                v-for="v in ['table', 'kanban', 'form']"
                 :key="v"
                 class="ws-run__switch-item"
                 :class="{ 'is-active': runView === v }"
@@ -227,11 +227,19 @@
           </el-table>
         </div>
 
-        <!-- 看板视图：按分组字段分列 -->
-        <div v-else class="ws-run__kanban">
+        <!-- 看板视图：按分组字段分列，支持拖拽移动卡片 -->
+        <div v-else-if="runView === 'kanban'" class="ws-run__kanban">
           <div v-if="runCols.length" class="ws-kanban">
-            <div v-for="g in kanbanGroups" :key="g.key" class="ws-kb-col">
+            <div
+              v-for="g in kanbanGroups"
+              :key="g.key"
+              class="ws-kb-col"
+              :style="{ '--kb-color': cardColor(g.key) }"
+              @dragover.prevent
+              @drop="onDrop(g.key)"
+            >
               <div class="ws-kb-head">
+                <span class="ws-kb-head__bar" />
                 <span class="ws-kb-head__title">{{ g.key === "" ? "未分组" : String(g.key) }}</span>
                 <span class="ws-kb-head__count">{{ g.items.length }}</span>
               </div>
@@ -239,8 +247,10 @@
                 <div
                   v-for="(row, i) in g.items"
                   :key="i"
+                  draggable="true"
                   class="ws-kb-card"
                   :style="{ borderLeft: `4px solid ${cardColor(g.key)}` }"
+                  @dragstart="onDragStart(row)"
                 >
                   <div class="ws-kb-card__main">
                     {{ row[runGroupBy] ?? row[runCols[0]] ?? "—" }}
@@ -252,11 +262,49 @@
                     </span>
                   </div>
                 </div>
-                <div v-if="!g.items.length" class="ws-kb-card ws-kb-card--empty">无记录</div>
+                <div v-if="!g.items.length" class="ws-kb-card ws-kb-card--empty">拖卡片到这里</div>
               </div>
             </div>
           </div>
           <el-empty v-else description="该对象没有可用字段" />
+        </div>
+
+        <!-- 表单视图：填写并保存到对象表 -->
+        <div v-else class="ws-run__form">
+          <el-form
+            v-if="runFields.length"
+            :model="formData"
+            label-width="130px"
+            class="ws-run-form"
+          >
+            <el-form-item v-for="f in runFields" :key="f.name" :label="f.label || f.name">
+              <el-input
+                v-if="!isNum(f) && !isDate(f) && !isBool(f)"
+                v-model="formData[f.name]"
+                clearable
+              />
+              <el-input-number
+                v-else-if="isNum(f)"
+                v-model="formData[f.name]"
+                :controls="false"
+                style="width: 100%"
+              />
+              <el-date-picker
+                v-else-if="isDate(f)"
+                v-model="formData[f.name]"
+                type="datetime"
+                style="width: 100%"
+              />
+              <el-switch v-else-if="isBool(f)" v-model="formData[f.name]" />
+            </el-form-item>
+          </el-form>
+          <el-empty v-else :image-size="60" description="该应用未配置字段" />
+          <div class="ws-run-form-actions">
+            <el-button type="primary" :loading="formSubmitting" @click="submitForm">
+              保存到对象表
+            </el-button>
+            <span class="ws-run-form-hint">演示：仅 ont_orders 支持写入</span>
+          </div>
         </div>
       </div>
     </el-drawer>
@@ -282,6 +330,7 @@ import {
   getWorkshopList,
   getWorkshopObjects,
   saveWorkshopApp,
+  submitWorkshopApp,
   workshopPreview,
 } from "@/api/module_ai/query";
 
@@ -317,9 +366,13 @@ const runApp = ref<any>(null);
 const runLoading = ref(false);
 const runRows = ref<any[]>([]);
 const runCols = ref<string[]>([]);
-const runView = ref<"table" | "kanban">("table");
+const runView = ref<"table" | "kanban" | "form">("table");
 const runKeyword = ref("");
 const runGroupBy = ref("");
+// 表单视图状态
+const runFields = ref<any[]>([]);
+const formData = ref<any>({});
+const formSubmitting = ref(false);
 
 const filteredApps = computed(() => {
   if (!keyword.value) return apps.value;
@@ -388,6 +441,18 @@ function cardColor(k: any) {
   const s = String(k ?? "");
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return palette[h % palette.length];
+}
+
+// 看板拖拽（前端重排，不落库，刷新还原）
+const dragRow = ref<any>(null);
+function onDragStart(row: any) {
+  dragRow.value = row;
+}
+function onDrop(key: any) {
+  if (!dragRow.value) return;
+  const k = runGroupBy.value || runCols.value[0] || "";
+  if (k) dragRow.value[k] = key;
+  dragRow.value = null;
 }
 
 async function load() {
@@ -467,7 +532,7 @@ async function save() {
 async function openRun(a: any) {
   runApp.value = a;
   runVisible.value = true;
-  runView.value = (a.view_type === "form" ? "table" : a.view_type) as "table" | "kanban";
+  runView.value = (a.view_type === "form" ? "form" : a.view_type) as "table" | "kanban" | "form";
   runKeyword.value = "";
   runGroupBy.value = "";
   runLoading.value = true;
@@ -479,7 +544,20 @@ async function openRun(a: any) {
       runRows.value = (d.rows || []).map((row: any[]) =>
         Object.fromEntries((d.columns || []).map((c: string, i: number) => [c, row[i]]))
       );
-      runGroupBy.value = a.columns?.[0] || runCols.value[0] || "";
+      runGroupBy.value =
+        ["status", "location", "state", "type", "category"].find((f) => (a.columns || []).includes(f)) ||
+        a.columns?.[0] ||
+        runCols.value[0] ||
+        "";
+      // 准备表单字段（带类型/中文名，供 form 视图渲染）；对象不在元数据时用实际列兜底
+      let obj = objectOptions.value.find((o) => o.table === a.object_table);
+      if (!obj) {
+        await loadObjects();
+        obj = objectOptions.value.find((o) => o.table === a.object_table);
+      }
+      const fmap = new Map((obj?.fields || []).map((f: any) => [f.name, f]));
+      runFields.value = runCols.value.map((c: string) => fmap.get(c) || { name: c, type: "", label: "" });
+      formData.value = {};
     } else {
       runCols.value = [];
       runRows.value = [];
@@ -489,6 +567,31 @@ async function openRun(a: any) {
     ElMessage.error(e?.message || "加载失败");
   } finally {
     runLoading.value = false;
+  }
+}
+
+// 表单字段类型判断（按字段 type 推断控件）
+function isNum(field: any) {
+  return /(int|numeric|double|real|decimal)/i.test(field.type || "");
+}
+function isDate(field: any) {
+  return /(timestamp|date|time)/i.test(field.type || "");
+}
+function isBool(field: any) {
+  return /bool/i.test(field.type || "");
+}
+
+async function submitForm() {
+  if (!runApp.value) return;
+  formSubmitting.value = true;
+  try {
+    await submitWorkshopApp(runApp.value.id, formData.value);
+    ElMessage.success("已保存到对象表");
+    await openRun(runApp.value);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "提交失败");
+  } finally {
+    formSubmitting.value = false;
   }
 }
 
@@ -774,6 +877,19 @@ onMounted(() => {
 .ws-run__table {
   overflow: auto;
 }
+.ws-run__table :deep(.el-table) {
+  border-radius: 10px;
+}
+.ws-run__table :deep(.el-table th.el-table__cell) {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+.ws-run__table :deep(.el-table__row) {
+  &:hover > td {
+    background: var(--el-color-primary-light-9);
+  }
+}
 .ws-run__kanban {
   overflow: auto;
   flex: 1;
@@ -786,20 +902,39 @@ onMounted(() => {
   padding-bottom: 12px;
 }
 .ws-kb-col {
-  flex: 0 0 260px;
+  position: relative;
+  flex: 0 0 264px;
   background: var(--el-fill-color-light);
-  border-radius: 10px;
-  padding: 10px;
+  border-radius: 12px;
+  padding: 12px 10px 10px;
   min-height: 200px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  transition: background 0.2s;
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--kb-color, #409eff), transparent);
+  }
 }
 .ws-kb-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   margin-bottom: 10px;
   font-weight: 600;
+}
+.ws-kb-head__bar {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--kb-color, #409eff);
+  flex: 0 0 auto;
 }
 .ws-kb-head__title {
   overflow: hidden;
@@ -807,6 +942,7 @@ onMounted(() => {
   white-space: nowrap;
 }
 .ws-kb-head__count {
+  margin-left: auto;
   font-size: 12px;
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color);
@@ -820,9 +956,20 @@ onMounted(() => {
 }
 .ws-kb-card {
   background: var(--el-color-white);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px 12px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 6%);
+  cursor: grab;
+  transition:
+    box-shadow 0.2s,
+    transform 0.2s;
+  &:hover {
+    box-shadow: 0 4px 12px rgb(0 0 0 / 10%);
+    transform: translateY(-1px);
+  }
+  &:active {
+    cursor: grabbing;
+  }
 }
 .ws-kb-card__main {
   font-weight: 600;
@@ -850,5 +997,28 @@ onMounted(() => {
 .ws-kb-card--empty {
   color: var(--el-text-color-placeholder);
   text-align: center;
+}
+
+/* 表单视图 */
+.ws-run__form {
+  padding: 4px 8px;
+  max-width: 640px;
+}
+.ws-run-form {
+  background: var(--el-color-white);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
+  padding: 20px 24px 4px;
+}
+.ws-run-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 0 2px;
+}
+.ws-run-form-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

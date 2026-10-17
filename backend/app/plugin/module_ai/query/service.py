@@ -4064,6 +4064,39 @@ class AiQueryService:
                 "UPDATE ai_workshop_app SET is_deleted=true, deleted_time=now() WHERE id=:i"
             ), {"i": app_id})
 
+    #: 允许表单写入的对象表（演示安全白名单）
+    _WORKSHOP_WRITABLE = {"ont_orders"}
+
+    @classmethod
+    async def workshop_submit(cls, app_id: int, data: dict) -> dict:
+        """把表单数据写入对象表（仅限白名单对象，字段须属于应用配置的列）。"""
+        async with async_db_session() as db:
+            row = (await db.execute(
+                text("SELECT object_table, columns FROM ai_workshop_app WHERE id=:i AND is_deleted=false"),
+                {"i": app_id})).fetchone()
+        if not row:
+            raise CustomException(msg="应用不存在")
+        table = row[0]
+        if table not in cls._WORKSHOP_WRITABLE:
+            raise CustomException(msg="该对象暂不支持表单写入")
+        cols = row[1] if isinstance(row[1], list) else []
+        if not cols:
+            raise CustomException(msg="应用未配置字段")
+        allowed = set(cols)
+        payload = {k: v for k, v in (data or {}).items() if k in allowed}
+        if not payload:
+            raise CustomException(msg="请填写至少一个字段")
+        keys = list(payload.keys())
+        quoted = ", ".join(f'"{k}"' for k in keys)
+        ph = ", ".join(":" + k for k in keys)
+        sql = f'INSERT INTO "{table}" ({quoted}) VALUES ({ph})'
+        try:
+            async with async_db_session.begin() as db:
+                await db.execute(text(sql), {k: payload[k] for k in keys})
+        except Exception as exc:  # noqa: BLE001
+            raise CustomException(msg=f"写入失败：{str(exc)[:120]}") from exc
+        return {"ok": True}
+
     @classmethod
     async def list_workshop_apps(cls) -> list[dict]:
         async with async_db_session() as db:
