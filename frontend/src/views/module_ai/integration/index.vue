@@ -360,6 +360,7 @@
                 <el-button type="primary" size="small" :icon="Plus" @click="openPipe()">
                   新建管道
                 </el-button>
+                <el-button size="small" @click="openPipeGraph">管道图</el-button>
                 <el-tag size="small" type="info" effect="plain">
                   源表 → 目标对象，运行后落到管道物化表
                 </el-tag>
@@ -783,6 +784,23 @@
       </template>
     </el-dialog>
 
+    <!-- 管道编排图 -->
+    <el-dialog
+      v-model="pipeGraphVisible"
+      title="管道编排图（源表 → 管道 → 本体对象）"
+      width="820px"
+    >
+      <GraphCanvas
+        v-if="pipeGraphNodes.length"
+        :nodes="pipeGraphNodes"
+        :edges="pipeGraphEdges"
+        height="520px"
+        layout-name="breadthfirst"
+        :node-style="nodeStyle"
+      />
+      <el-empty v-else description="暂无管道，先新建管道" :image-size="60" />
+    </el-dialog>
+
     <!-- 查看管道落库数据 -->
     <el-dialog v-model="pipeDataDlg" :title="`管道数据：${pipeDataName}`" width="720px">
       <el-table :data="pipeDataRows" size="small" border max-height="420">
@@ -1170,6 +1188,7 @@ import {
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
+  getPipelineGraph,
   getPipelineList,
   savePipeline,
   runPipeline,
@@ -1317,6 +1336,10 @@ const dsForm = ref<any>({ type: "postgres", port: 5432, read_only: true });
 // 管道编排
 const pipeDlg = ref(false);
 const savingPipe = ref(false);
+// 管道编排图
+const pipeGraphVisible = ref(false);
+const pipeGraphNodes = ref<any[]>([]);
+const pipeGraphEdges = ref<any[]>([]);
 const pipeForm = ref<any>({ enabled: true, mappings_text: "" });
 const pipeDataDlg = ref(false);
 const pipeDataName = ref("");
@@ -1833,6 +1856,28 @@ function parseMappings(text: string): any[] {
       const m = line.match(/^(\S+)[\s,]+(\S+)$/);
       return m ? { from: m[1], to: m[2] } : { from: line, to: line };
     });
+}
+
+async function openPipeGraph() {
+  pipeGraphVisible.value = true;
+  try {
+    const r = await getPipelineGraph();
+    const d = r.data?.data || { nodes: [], edges: [] };
+    pipeGraphNodes.value = (d.nodes || []).map((n: any) => ({
+      id: String(n.id),
+      name: n.name,
+      etype: n.etype,
+      category: n.etype,
+    }));
+    pipeGraphEdges.value = (d.edges || []).map((e: any) => ({
+      source: String(e.source),
+      target: String(e.target),
+      rtype: e.rtype,
+    }));
+  } catch {
+    pipeGraphNodes.value = [];
+    pipeGraphEdges.value = [];
+  }
 }
 
 function openPipe(row?: any) {
