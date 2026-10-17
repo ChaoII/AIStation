@@ -159,10 +159,13 @@
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="90" align="center" fixed="right">
+                  <el-table-column label="操作" width="150" align="center" fixed="right">
                     <template #default="{ row }">
                       <el-button link type="primary" size="small" @click="openFieldDrawer(row)">
                         字段
+                      </el-button>
+                      <el-button link type="primary" size="small" @click="openVersions(row)">
+                        版本
                       </el-button>
                     </template>
                   </el-table-column>
@@ -586,6 +589,7 @@
       <el-alert
         type="info"
         :closable="false"
+        show-icon
         class="ig-note"
         title="每行一条，用「表名 中文名」或「表名,中文名,业务域」的格式。只填中文名时不会清空已填的描述。"
       />
@@ -983,6 +987,9 @@
         <el-button type="primary" :loading="savingDs" @click="saveDs">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 资产版本管理 -->
+    <AssetVersionsDialog v-model="versionsVisible" :table="versionsTable" />
   </div>
 </template>
 
@@ -1026,6 +1033,7 @@ import {
 import { getOntDomains } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
 import GovernancePanel from "./components/GovernancePanel.vue";
+import AssetVersionsDialog from "./components/AssetVersionsDialog.vue";
 
 const tab = ref("table");
 const datasources = ref<any[]>([]);
@@ -1057,6 +1065,12 @@ const savingCol = ref("");
 const savingDs = ref(false);
 const dsDlg = ref(false);
 const fieldDrawer = ref(false);
+const versionsVisible = ref(false);
+const versionsTable = ref("");
+function openVersions(row: any) {
+  versionsTable.value = row.table || row.table_name || "";
+  versionsVisible.value = true;
+}
 const batchDlg = ref(false);
 const batchText = ref("");
 const batchSaving = ref(false);
