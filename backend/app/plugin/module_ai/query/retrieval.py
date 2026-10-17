@@ -10,12 +10,16 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
+from app.core.logger import log
+
 # 检索权重（语义为主，关键词为辅）
 SEMANTIC_WEIGHT = 0.6
 KEYWORD_WEIGHT = 0.4
 
 _CN_RE = re.compile(r"[\u4e00-\u9fa5]+")
 _LATIN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{1,}")
+
+_jieba_warned = False
 
 
 def _latin_tokens(text: str) -> list[str]:
@@ -28,12 +32,23 @@ def _cn_chunks(text: str) -> list[str]:
 
 @lru_cache(maxsize=128)
 def _jieba_cut(text: str) -> tuple[str, ...]:
-    """jieba 中文分词（失败回退到逐字/连续块）。"""
+    """jieba 中文分词（失败回退到逐字/连续块）。
+
+    ⚠️ 必须用 ``jieba.cut`` 而**不是** ``jieba.lcut``：``jieba3k``（``newspaper3k``
+    的传递依赖）与 ``jieba`` 共用同一个 ``jieba/`` 包目录、安装时互相覆盖文件；
+    实测被覆盖后 ``lcut`` 消失（AttributeError）而 ``cut`` 仍可用。若用 ``lcut``，
+    这里会**静默**回退成整块分词，中文关键词打分退化为 0（检索召回变差但不报错）。
+    """
+    global _jieba_warned
     try:
         import jieba as _jieba
 
-        return tuple(w for w in _jieba.lcut(text) if w.strip())
-    except Exception:  # noqa: BLE001
+        return tuple(w for w in _jieba.cut(text) if w.strip())
+    except Exception as e:  # noqa: BLE001
+        if not _jieba_warned:  # 只告警一次，避免刷屏
+            _jieba_warned = True
+            log.warning("[retrieval] jieba 分词不可用，已回退整块分词（关键词召回会退化）：{}",
+                        str(e)[:120])
         return tuple(_cn_chunks(text))
 
 
