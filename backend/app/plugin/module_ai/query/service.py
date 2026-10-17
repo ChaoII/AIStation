@@ -5778,30 +5778,6 @@ class AiQueryService:
                 if t:
                     await db.delete(t)
 
-    @classmethod
-    async def list_roles(cls) -> list[dict]:
-        """获取系统角色（用于数据源授权选择）。"""
-        try:
-            from app.api.v1.module_system.role.model import RoleModel
-
-            async with async_db_session() as db:
-                from sqlalchemy import select
-
-                rows = (
-                    await db.execute(
-                        select(RoleModel).where(RoleModel.is_deleted.is_(False))
-                        .order_by(RoleModel.id)
-                        .limit(200)
-                    )
-                ).scalars().all()
-                return [
-                    {"id": r.id, "name": r.name, "code": getattr(r, "code", "") or r.name}
-                    for r in rows
-                ]
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 获取角色列表失败: {e}")
-            return []
-
     # ---- 数据源 ----
     @classmethod
     async def connector_types(cls) -> list[dict]:

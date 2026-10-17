@@ -96,14 +96,6 @@ export function deleteQueryMetrics(ids: number[]) {
 }
 
 // 大模型自动建模（S4）
-export function getModelingObjects(datasource: string) {
-  return request({
-    url: `${API_PATH}/modeling/objects`,
-    method: "get",
-    params: { datasource },
-    timeout: 30000,
-  });
-}
 export function runModelingMetrics(data: {
   datasource: string;
   max_objects?: number;
@@ -132,9 +124,6 @@ export function deleteQueryTerms(ids: number[]) {
 // 数据源
 export function getQueryDatasources() {
   return request({ url: `${API_PATH}/datasources/list`, method: "get" });
-}
-export function getConnectorTypes() {
-  return request({ url: `${API_PATH}/connector-types`, method: "get" });
 }
 export function getDatasourceDetail(id: number) {
   return request({ url: `${API_PATH}/datasources/${id}/detail`, method: "get" });
@@ -181,9 +170,6 @@ export function importDsAsOntologyBatch(
     method: "post",
     data: { datasource_id, tables: tables || null, include_technical, domain_code },
   });
-}
-export function getQueryRoles() {
-  return request({ url: `${API_PATH}/datasources/roles`, method: "get" });
 }
 /** 筛选规则预览：提交筛选规则并返回命中/预览结果，rules 可为空（区分 None 与显式空规则）。 */
 export function previewFilterRules(datasource_id: number, rules?: any) {

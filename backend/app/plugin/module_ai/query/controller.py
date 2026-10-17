@@ -115,17 +115,6 @@ async def delete_metrics(
 
 
 # ---- 大模型自动建模（S4） ----
-@AiQueryRouter.get("/modeling/objects", summary="建模：预览可用对象")
-async def modeling_objects(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
-    datasource: str = "system",
-) -> JSONResponse:
-    from . import modeling as _m
-
-    return SuccessResponse(
-        data={"objects": await _m.collect_objects(datasource, 12)}, msg="查询成功")
-
-
 @AiQueryRouter.post("/modeling/metrics", summary="建模：生成绑定型指标")
 async def modeling_metrics(
     data: QueryModelingUpsert,
@@ -173,25 +162,11 @@ async def delete_terms(
 
 
 # ---- 数据源 ----
-@AiQueryRouter.get("/datasources/roles", summary="可授权角色列表")
-async def list_query_roles(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
-) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.list_roles(), msg="查询成功")
-
-
 @AiQueryRouter.get("/datasources/list", summary="数据源列表")
 async def list_datasources(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.list_datasources(), msg="查询成功")
-
-
-@AiQueryRouter.get("/connector-types", summary="数据连接器目录")
-async def connector_types(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
-) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.connector_types(), msg="查询成功")
 
 
 @AiQueryRouter.get("/autopilot", summary="治理巡检中心(候选行动)")
