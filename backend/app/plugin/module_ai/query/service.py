@@ -2469,17 +2469,21 @@ class AiQueryService:
         if not need_tables and not colmap:
             return {"tables": 0, "columns": 0}
         runtime = await cls._get_runtime()
-        try:
-            from openai import AsyncOpenAI
+        # 统一走 agno（AGENTS.md：AI 调用一律走 agno，禁止原始 OpenAI 客户端平行实现）
+        from agno.agent import Agent
+        from agno.models.openai.like import OpenAILike
 
-            from app.plugin.module_ai.models.service import build_headers
+        from app.plugin.module_ai.models.service import build_headers
 
-            client = AsyncOpenAI(
-                base_url=runtime["base_url"], api_key=runtime["api_key"] or "sk-none",
-                default_headers=build_headers(runtime["base_url"], runtime.get("extra_headers"), "aistation-dict"),
-            )
-        except Exception as e:  # noqa: BLE001
-            raise CustomException(msg=f"问答模型不可用：{e}")
+        model = OpenAILike(
+            id=runtime["model"], base_url=runtime["base_url"],
+            api_key=runtime.get("api_key") or "sk-none",
+            temperature=0, max_tokens=2000, timeout=90,
+            extra_body={"reasoning_effort": "low"},
+            default_headers=build_headers(
+                runtime["base_url"], runtime.get("extra_headers"), "aistation-dict"),
+        )
+        agent = Agent(model=model, telemetry=False, markdown=False)
         updated_tables = updated_cols = 0
         # 按表批量生成（带数据画像）
         for tname, trow in need_tables:
@@ -2500,12 +2504,8 @@ class AiQueryService:
                 f"表名：{tname}\n字段：{', '.join(cols)}\n数据画像：\n" + "\n".join(prof_lines)
             )
             try:
-                resp = await client.chat.completions.create(
-                    model=runtime["model"], messages=[{"role": "user", "content": prompt}],
-                    temperature=0, max_tokens=800,
-                )
-                text = (resp.choices[0].message.content or "")
-                data = cls._parse_dict(text)
+                resp = await agent.arun(prompt)
+                data = cls._parse_dict(getattr(resp, "content", "") or "")
             except Exception as e:  # noqa: BLE001
                 log.warning(f"[query] 生成表描述失败 {tname}: {e}")
                 continue
