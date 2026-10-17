@@ -54,6 +54,19 @@
                 <el-button link type="primary" size="small" @click="openSettings">
                   问数设置
                 </el-button>
+                <el-dropdown @command="goSub">
+                  <el-button link type="primary" size="small">
+                    <el-icon style="margin-right: 4px"><Grid /></el-icon>
+                    数据管理
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="/ai/integration">数据与集成</el-dropdown-item>
+                      <el-dropdown-item command="/ai/eval">问数评测</el-dropdown-item>
+                      <el-dropdown-item command="/ai/query/reports">自定义报表</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
             </div>
           </template>
@@ -69,11 +82,13 @@
           />
 
           <el-alert
+            v-if="!tipHidden"
             type="info"
-            :closable="false"
+            :closable="true"
             show-icon
             class="q-tip"
             title="问数会复用本体的语义与权限：业务对象名、字段中文名、表间关系都来自本体；行级/列级策略会在生成 SQL 时下推到子查询。"
+            @close="hideTip"
           />
 
           <div class="q-ask">
@@ -653,6 +668,14 @@ function ontologyOf(m: any): string[] {
 function goOntology() {
   router.push("/ai/ontology");
 }
+function goSub(path: string) {
+  router.push(path);
+}
+const tipHidden = ref(localStorage.getItem("q_tip_hidden") === "1");
+function hideTip() {
+  tipHidden.value = true;
+  localStorage.setItem("q_tip_hidden", "1");
+}
 
 // ---------------------------------------------------------------------------
 // 问数设置（工程开关）：对象查询（语义执行）等
@@ -960,16 +983,29 @@ onMounted(async () => {
 }
 
 .q-msg {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  padding: 12px 0;
 }
 
 .q-msg__q {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
-  align-items: baseline;
-  margin-bottom: 8px;
-  font-weight: 500;
+  margin-bottom: 10px;
+  .el-tag {
+    flex: 0 0 auto;
+  }
+  span {
+    max-width: 78%;
+    background: var(--el-color-primary-light-9);
+    border: 1px solid var(--el-color-primary-light-7);
+    border-radius: var(--el-border-radius-base) var(--el-border-radius-base) 0
+      var(--el-border-radius-base);
+    padding: 8px 12px;
+    color: var(--el-text-color-primary);
+    font-weight: 500;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
 }
 
 .q-msg__sum {
