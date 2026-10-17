@@ -91,7 +91,10 @@ def build_agent(
         "enable_agentic_memory": True,
         "update_memory_on_run": True,
         "add_memories_to_context": True,
-        # agno 原生特性：让模型可读取历史 / 输出结构化结果
+        "add_learnings_to_context": True,
+        # agno 原生特性：会话摘要/状态注入上下文 + 读历史 + 结构化输出
+        "add_session_summary_to_context": True,
+        "add_session_state_to_context": True,
         "read_chat_history": True,
         "structured_outputs": True,
     }
