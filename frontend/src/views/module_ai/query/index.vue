@@ -50,9 +50,7 @@
                     :value="d.code || `ds:${d.id}`"
                   />
                 </el-select>
-                <el-button link type="primary" size="small" @click="goOntology">
-                  查看本体
-                </el-button>
+                <el-button link type="primary" size="small" @click="goOntology">查看本体</el-button>
                 <el-button link type="primary" size="small" @click="openSettings">
                   问数设置
                 </el-button>
@@ -120,6 +118,26 @@
               class="q-msg__err"
             />
             <template v-else>
+              <div v-if="m.reasoning" class="q-msg__reason">
+                <el-collapse v-model="reasonOpen">
+                  <el-collapse-item title="思考过程" name="r">
+                    <pre class="q-sql">{{ m.reasoning }}</pre>
+                  </el-collapse-item>
+                </el-collapse>
+              </div>
+              <div v-if="m.tools?.length" class="q-msg__tools">
+                <el-tag
+                  v-for="(t, ti) in m.tools"
+                  :key="ti"
+                  size="small"
+                  effect="plain"
+                  :type="
+                    t.status === 'error' ? 'danger' : t.status === 'running' ? 'warning' : 'success'
+                  "
+                >
+                  {{ t.name }}{{ t.status === "running" ? "…" : "" }}
+                </el-tag>
+              </div>
               <div v-if="m.summary" class="q-msg__sum">{{ m.summary }}</div>
               <div class="q-msg__meta">
                 <el-tag size="small" effect="plain">
@@ -145,7 +163,7 @@
                   <pre class="q-sql">{{ JSON.stringify(irOf(m), null, 2) }}</pre>
                   <div class="q-msg__ir-note">
                     由本体实例层确定性执行（不生成 SQL）；对象/字段均来自授权且检索命中的范围。
-                    <span v-if="m.object_query?.note"> · {{ m.object_query.note }}</span>
+                    <span v-if="m.object_query?.note">· {{ m.object_query.note }}</span>
                   </div>
                 </el-collapse-item>
               </el-collapse>
@@ -255,7 +273,8 @@
             {{ k }}
           </el-tag>
           <div class="q-sr__hint">
-            模板里检测到 {{ srParams.length }} 个参数；保存后可在「自定义报表」页调整中文名/类型/必填
+            模板里检测到
+            {{ srParams.length }} 个参数；保存后可在「自定义报表」页调整中文名/类型/必填
           </div>
         </el-form-item>
       </el-form>
@@ -347,10 +366,10 @@ import {
   getQueryMessages,
   getQuerySessions,
   getQuerySettings,
-  queryAsk,
   queryFeedback,
   saveQueryReport,
   saveQuerySetting,
+  streamQuery,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiQuery" });
@@ -360,6 +379,7 @@ const route = useRoute();
 
 const sessions = ref<any[]>([]);
 const messages = ref<any[]>([]);
+const reasonOpen = ref<any[]>([]);
 const datasources = ref<any[]>([]);
 const sessionId = ref<number | null>(null);
 const datasource = ref("system");
@@ -440,30 +460,85 @@ async function ask() {
     return;
   }
   asking.value = true;
+  const cur: any = {
+    question: q,
+    streaming: true,
+    reasoning: "",
+    tools: [],
+    sql: "",
+    columns: [],
+    rows: [],
+    result_rows: 0,
+    summary: "",
+    path: "",
+  };
+  messages.value = [...messages.value, cur];
+  // 局部刷新占位消息（触发渲染）
+  const flush = () => {
+    messages.value = messages.value.map((x) => (x === cur ? { ...cur } : x));
+  };
   try {
-    const r = await queryAsk({
+    let hasResult = false;
+    for await (const ev of streamQuery({
       question: q,
-      session_id: sessionId.value,
+      session_id: sessionId.value || null,
       datasource: datasource.value || null,
       object_code: objectCode.value || null,
       object_key: objectKey.value || null,
-    });
-    const d = r.data?.data || {};
-    if (d.session_id && !sessionId.value) sessionId.value = d.session_id;
-    // 澄清反问：系统不确定（如"按原煤仓分组"而表里有名称/编号两列）→ 先问用户，不猜
-    if (d.path === "clarify" && d.clarify) {
-      clarify.value = { ...d.clarify, _q: q };
-      clarifyPick.value = "";
-      clarifyVisible.value = true;
-      return;
+    })) {
+      const t = ev?.type;
+      const d = ev?.data || {};
+      if (t === "meta") {
+        if (d.session_id && !sessionId.value) sessionId.value = d.session_id;
+        cur.datasource = d.datasource || cur.datasource;
+      } else if (t === "reasoning") {
+        cur.reasoning += d.delta || "";
+      } else if (t === "reasoning_done") {
+        flush();
+      } else if (t === "sql_delta") {
+        cur.sql += d.delta || "";
+      } else if (t === "sql_final") {
+        cur.sql = d.sql || cur.sql;
+        cur.path = "slow";
+      } else if (t === "tool_start") {
+        cur.tools.push({ name: d.name || "工具", status: "running" });
+      } else if (t === "tool_result" || t === "tool_error") {
+        const last = cur.tools[cur.tools.length - 1];
+        if (last) last.status = t === "tool_result" ? "done" : "error";
+      } else if (t === "ir") {
+        cur.ir = d.ir || {};
+        cur.path = "object";
+        if (d.pending_clarify) cur.pending_clarify = d.pending_clarify;
+        flush();
+      } else if (t === "result") {
+        cur.columns = d.columns || [];
+        cur.rows = d.rows || [];
+        cur.result_rows = d.result_rows ?? (d.rows || []).length;
+        cur.took_ms = d.took_ms;
+        cur.path = cur.path || d.path || "result";
+        cur.recalled = d.recalled || cur.recalled;
+        cur.ontology = d.ontology || cur.ontology;
+        hasResult = true;
+        flush();
+      } else if (t === "answer") {
+        cur.summary = d.summary || "";
+        flush();
+      } else if (t === "error") {
+        cur.is_error = true;
+        cur.summary = d.message || d || "查询失败";
+      }
     }
-    // 局部刷新：只把这一条问答追加进列表，不重拉整个会话
-    messages.value = [...messages.value, { ...d, question: q }];
+    cur.streaming = false;
+    flush();
     question.value = "";
-    if (d.is_error) ElMessage.error(d.summary || d.answer || "查询失败");
-    else ElMessage.success("查询完成");
+    if (cur.is_error) ElMessage.error(cur.summary || "查询失败");
+    else ElMessage.success(hasResult ? "查询完成" : "已完成");
     await loadSessions();
   } catch (e: any) {
+    cur.streaming = false;
+    cur.is_error = true;
+    cur.summary = e?.msg || e?.message || "提问失败";
+    flush();
     ElMessage.error(e?.msg || "提问失败");
   } finally {
     asking.value = false;
@@ -474,8 +549,8 @@ async function ask() {
 async function answerClarify() {
   const c = clarify.value;
   if (!c || !clarifyPick.value) return;
-  const label = (c.options || []).find((o: any) => o.value === clarifyPick.value)?.label
-    || clarifyPick.value;
+  const label =
+    (c.options || []).find((o: any) => o.value === clarifyPick.value)?.label || clarifyPick.value;
   clarifyVisible.value = false;
   question.value = `${c._q}\n【澄清】分组口径使用 ${label}`;
   await ask();
@@ -828,6 +903,24 @@ onMounted(async () => {
 .q-msg__sum {
   margin-bottom: 6px;
   color: var(--el-text-color-regular);
+}
+
+.q-msg__reason {
+  margin-bottom: 6px;
+}
+.q-msg__reason :deep(.el-collapse) {
+  border: none;
+}
+.q-msg__reason :deep(.el-collapse-item__header) {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  background: transparent;
+}
+.q-msg__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
 }
 
 .q-msg__meta {

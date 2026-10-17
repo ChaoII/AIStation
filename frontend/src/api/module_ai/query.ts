@@ -26,6 +26,8 @@ export async function* streamQuery(data: {
   question: string;
   session_id?: number | null;
   datasource?: string | null;
+  object_code?: string | null;
+  object_key?: string | null;
 }): AsyncGenerator<{ type: string; data: any }, void, unknown> {
   const base = import.meta.env.VITE_APP_BASE_API || "";
   const token = Auth.getAccessToken();
