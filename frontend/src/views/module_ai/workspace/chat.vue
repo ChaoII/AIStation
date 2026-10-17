@@ -3,10 +3,10 @@
   <div class="app-container ai-workspace-chat">
     <!-- 左：会话列表 -->
     <aside class="chat-side">
-      <button class="chat-new-session" @click="newSession">
-        <el-icon><Plus /></el-icon>
-        <span>新建会话</span>
-      </button>
+      <div class="chat-side-head">
+        <span class="chat-side-name">{{ assetLabel }}</span>
+        <el-button size="small" type="primary" :icon="Plus" @click="newSession">新建会话</el-button>
+      </div>
       <div class="chat-search">
         <el-input
           v-model="sessionSearch"
@@ -18,7 +18,18 @@
       </div>
       <el-scrollbar class="chat-side-scroll">
         <template v-for="group in sessionGroups" :key="group.label">
-          <div class="chat-group-label">{{ group.label }}</div>
+          <div class="chat-group-head">
+            <span class="chat-group-label">{{ group.label }}</span>
+            <el-button
+              v-if="group.label === '今天' && todaySessions.length"
+              link
+              size="small"
+              class="chat-group-del"
+              @click="delToday"
+            >
+              删除今天
+            </el-button>
+          </div>
           <div
             v-for="s in group.items"
             :key="s.id"
@@ -37,20 +48,43 @@
         <div v-if="!sessionGroups.length" class="chat-side-empty">暂无会话，点「新建会话」开始</div>
       </el-scrollbar>
       <div class="chat-side-foot">
-        <el-button size="small" plain :disabled="!todaySessions.length" @click="delToday">
-          删除当天会话
+        <el-button
+          size="small"
+          plain
+          type="danger"
+          :disabled="!sessions.length"
+          @click="delAllSessions"
+        >
+          删除全部
         </el-button>
       </div>
     </aside>
 
     <!-- 右：对话区 -->
     <main class="chat-main">
+      <div class="chat-main-head">
+        <span class="chat-main-title">{{ currentSessionTitle }}</span>
+        <div class="chat-main-actions">
+          <el-tooltip content="导出会话为 Markdown" placement="top">
+            <el-button
+              size="small"
+              text
+              :icon="Download"
+              :disabled="!chat.messages.value.length"
+              @click="exportSession"
+            >
+              导出
+            </el-button>
+          </el-tooltip>
+        </div>
+      </div>
       <ChatMessages
         ref="msgRef"
         :messages="chat.messages.value"
         :error="chat.error.value || ''"
         :is-streaming="chat.isStreaming.value"
         @prompt-click="onPrompt"
+        @resend="onSend"
       />
       <ChatInput
         :disabled="chat.isStreaming.value"
@@ -63,7 +97,8 @@
 </template>
 
 <script setup lang="ts">
-import { Delete, Plus, Search } from "@element-plus/icons-vue";
+import { Delete, Download, Plus, Search } from "@element-plus/icons-vue";
+import { ElMessageBox } from "element-plus";
 import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 
@@ -89,6 +124,9 @@ const pathMap: Record<string, string> = {
   app: `/ai/apps/${assetId}/run/stream`,
   workflow: `/ai/workflows/${assetId}/run/stream`,
 };
+const assetLabel = computed(
+  () => ({ agent: "智能体", app: "应用", workflow: "工作流", cron: "定时任务" })[kind] || "对话"
+);
 // ---- 会话 ----
 const sessions = ref<AiSessionItem[]>([]);
 const currentSessionId = ref<number | null>(null);
@@ -181,12 +219,57 @@ async function delSession(id: number) {
 async function delToday() {
   const ids = todaySessions.value.map((s) => s.id);
   if (!ids.length) return;
+  await ElMessageBox.confirm(`将删除今天的 ${ids.length} 个会话，是否继续？`, "删除今天", {
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+    type: "warning",
+  });
   await deleteAiSessions(ids);
   sessions.value = sessions.value.filter((s) => !ids.includes(s.id));
   if (currentSessionId.value && ids.includes(currentSessionId.value)) {
     currentSessionId.value = null;
     initialMessages.value = [];
   }
+}
+
+async function delAllSessions() {
+  if (!sessions.value.length) return;
+  await ElMessageBox.confirm(`将删除全部 ${sessions.value.length} 个会话，是否继续？`, "删除全部", {
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+    type: "warning",
+  });
+  await deleteAiSessions(sessions.value.map((s) => s.id));
+  sessions.value = [];
+  currentSessionId.value = null;
+  initialMessages.value = [];
+}
+
+const currentSessionTitle = computed(() => {
+  const s = sessions.value.find((x) => x.id === currentSessionId.value);
+  return s?.title || "新会话";
+});
+
+/** 导出当前会话为 Markdown 文件（用于数据训练/标注）。 */
+function exportSession() {
+  const msgs = chat.messages.value;
+  const lines: string[] = [`# ${currentSessionTitle.value}\n`];
+  for (const m of msgs) {
+    const role = m.role === "user" ? "用户" : "AI";
+    const text = (m.parts || [])
+      .filter((p: any) => p.type === "text")
+      .map((p: any) => p.text || "")
+      .join("");
+    lines.push(`## ${role}\n\n${text || ""}\n`);
+  }
+  const content = lines.join("\n");
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${currentSessionTitle.value || "会话"}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function onPrompt(p: string) {
@@ -216,30 +299,21 @@ loadSessions();
   flex-direction: column;
   background: var(--el-fill-color-blank);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
+  border-radius: 6px;
   overflow: hidden;
 }
 
-.chat-new-session {
+.chat-side-head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 12px;
-  padding: 10px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 10px;
-  background: var(--el-fill-color-blank);
-  color: var(--el-text-color-primary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  &:hover {
-    border-color: var(--el-color-primary);
-    color: var(--el-color-primary);
-    box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
-  }
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.chat-side-name {
+  font-weight: 600;
+  font-size: var(--el-font-size-base);
 }
 
 .chat-search {
@@ -251,8 +325,19 @@ loadSessions();
   min-height: 0;
 }
 
-.chat-group-label {
+.chat-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 14px 4px;
+}
+
+.chat-group-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.chat-group-del {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
@@ -330,7 +415,27 @@ loadSessions();
   flex-direction: column;
   background: var(--el-fill-color-blank);
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
+  border-radius: 6px;
   overflow: hidden;
+}
+
+.chat-main-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.chat-main-title {
+  font-weight: 600;
+  font-size: var(--el-font-size-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-main-actions {
+  flex-shrink: 0;
 }
 </style>

@@ -11,14 +11,26 @@
     <div class="message-content">
       <div class="message-header">
         <strong class="sender-name">{{ roleLabel }}</strong>
-        <el-button
-          v-if="fullText"
-          text
-          size="small"
-          :icon="CopyDocument"
-          class="copy-button"
-          @click="handleCopy"
-        ></el-button>
+        <span class="message-header-actions">
+          <el-button
+            v-if="message.role === 'user' && fullText"
+            text
+            size="small"
+            :icon="Refresh"
+            class="copy-button"
+            title="重新发送"
+            @click="emit('resend', fullText)"
+          ></el-button>
+          <el-button
+            v-if="fullText"
+            text
+            size="small"
+            :icon="CopyDocument"
+            class="copy-button"
+            title="复制"
+            @click="handleCopy"
+          ></el-button>
+        </span>
       </div>
       <div class="message-body">
         <!-- Agent 工具调用时间线（通常先于正文，置于顶部） -->
@@ -74,7 +86,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { ElMessage } from "element-plus";
-import { User, ChatDotRound, CopyDocument, Document } from "@element-plus/icons-vue";
+import { User, ChatDotRound, CopyDocument, Document, Refresh } from "@element-plus/icons-vue";
 import type { UIMessage } from "ai";
 import RichContent from "./RichContent.vue";
 import ReasoningBlock from "./ReasoningBlock.vue";
@@ -89,6 +101,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const emit = defineEmits<{ resend: [text: string] }>();
 
 const userStore = useUserStoreHook();
 

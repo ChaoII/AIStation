@@ -7,6 +7,7 @@
         :key="message.id"
         :message="message"
         :streaming="isStreaming && i === messages.length - 1"
+        @resend="(text: string) => emit('resend', text)"
       />
     </div>
     <div v-if="error" class="error-banner">
@@ -31,6 +32,7 @@ interface Props {
 interface Emits {
   (e: "prompt-click", prompt: string): void;
   (e: "error-close"): void;
+  (e: "resend", text: string): void;
 }
 
 const props = defineProps<Props>();

@@ -392,7 +392,7 @@ defineExpose({
       padding: 16px 20px;
       background: var(--el-bg-color-overlay);
       border: 1px solid var(--el-border-color-light);
-      border-radius: 16px;
+      border-radius: 8px;
       box-shadow: var(--el-box-shadow-light);
       transition:
         border-color 0.2s ease,
