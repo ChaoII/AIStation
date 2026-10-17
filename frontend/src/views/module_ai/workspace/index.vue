@@ -1,13 +1,20 @@
 <!-- AI 工作台：左侧树形分类 + 右侧多类型卡片区（智能体/工作流/定时任务/应用） -->
 <template>
   <div class="app-container ai-workspace-page">
-    <!-- 顶部工具条（白底，不落蓝灰底） -->
+    <!-- 顶部标题区（白底卡片，蓝灰边框） -->
     <div class="ws-toolbar">
       <div class="ws-toolbar__left">
         <span class="ws-title">工作台</span>
         <el-tag size="small" effect="plain" type="info">{{ currentCatName }}</el-tag>
       </div>
-      <div class="ws-toolbar__right">
+    </div>
+
+    <!-- 类型 tab（左）+ 右侧搜索/新增 -->
+    <div class="ws-type-bar">
+      <el-tabs v-model="typeFilter" class="ws-type-tabs">
+        <el-tab-pane v-for="t in typeOptions" :key="t.value" :label="t.label" :name="t.value" />
+      </el-tabs>
+      <div class="ws-type-actions">
         <el-input
           v-model="keyword"
           placeholder="搜索条目"
@@ -29,9 +36,10 @@
       </div>
     </div>
 
-    <el-row :gutter="12" class="ws-body">
+    <!-- 主体：左分类树 + 右卡片区（同高） -->
+    <div class="ws-main">
       <!-- 左：分类树 -->
-      <el-col :xs="24" :sm="6" :md="5" :lg="4" class="ws-tree-col">
+      <div class="ws-side">
         <div class="ws-tree-card">
           <div class="ws-tree-head">
             <span>分类</span>
@@ -64,15 +72,10 @@
             </template>
           </el-tree>
         </div>
-      </el-col>
+      </div>
 
       <!-- 右：卡片区 -->
-      <el-col :xs="24" :sm="18" :md="19" :lg="20">
-        <div class="ws-type-bar">
-          <el-tabs v-model="typeFilter" class="ws-type-tabs">
-            <el-tab-pane v-for="t in typeOptions" :key="t.value" :label="t.label" :name="t.value" />
-          </el-tabs>
-        </div>
+      <div class="ws-content">
         <el-row v-loading="loading" :gutter="16">
           <el-col
             v-for="it in pagedItems"
@@ -99,30 +102,46 @@
                 />
               </div>
               <div class="ws-card__desc">{{ it.description || "暂无描述" }}</div>
-              <div v-if="metaText(it)" class="ws-card__meta">{{ metaText(it) }}</div>
-              <div class="ws-card__foot">
-                <el-button
-                  type="primary"
+              <!-- 能力标签：模型/工具/节点/知识库/MCP/技能/问数 -->
+              <div v-if="capTags(it).length" class="ws-card__tags">
+                <el-tag
+                  v-for="t in capTags(it)"
+                  :key="t.text"
                   size="small"
-                  :icon="ChatDotRound"
-                  @click.stop="openChat(it)"
+                  :type="t.type"
+                  effect="plain"
                 >
-                  对话
-                </el-button>
-                <span v-if="categoryName(it.category_id)" class="ws-card__cat">
-                  {{ categoryName(it.category_id) }}
+                  {{ t.text }}
+                </el-tag>
+              </div>
+              <div class="ws-card__foot">
+                <span class="ws-card__cat">
+                  <span v-if="categoryName(it.category_id)" class="ws-card__cat-name">
+                    {{ categoryName(it.category_id) }}
+                  </span>
+                  <span class="ws-card__time">{{ fmtTime(it.created_time) }}</span>
                 </span>
-                <el-dropdown trigger="click" @command="(cmd: string) => onCardMore(it, cmd)">
-                  <el-button size="small" circle :icon="MoreFilled" @click.stop />
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item command="edit">编辑</el-dropdown-item>
-                      <el-dropdown-item command="delete" style="color: #f56c6c" divided>
-                        删除
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
+                <div class="ws-card__actions">
+                  <el-button
+                    type="primary"
+                    size="small"
+                    :icon="ChatDotRound"
+                    @click.stop="openChat(it)"
+                  >
+                    对话
+                  </el-button>
+                  <el-dropdown trigger="click" @command="(cmd: string) => onCardMore(it, cmd)">
+                    <el-button size="small" circle :icon="MoreFilled" @click.stop />
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                        <el-dropdown-item command="delete" style="color: #f56c6c" divided>
+                          删除
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </div>
               </div>
             </div>
           </el-col>
@@ -139,8 +158,8 @@
             background
           />
         </div>
-      </el-col>
-    </el-row>
+      </div>
+    </div>
 
     <!-- 新建/重命名分类弹窗 -->
     <el-dialog v-model="catDialogVisible" :title="catDialogTitle" width="420px">
@@ -222,6 +241,7 @@ import {
 import { deleteAiAgent, getAiAgentDetail } from "@/api/module_ai/agent";
 import { deleteAiWorkflow, getAiWorkflowDetail } from "@/api/module_ai/workflow";
 import { deleteAiApp } from "@/api/module_ai/app";
+import { getAiModelList } from "@/api/module_ai/model";
 import IconTile from "@/views/module_ai/market/components/IconTile.vue";
 import WorkflowEditor from "@/views/module_ai/workflow/components/WorkflowEditor.vue";
 import AgentFormDialog from "@/views/module_ai/workspace/components/AgentFormDialog.vue";
@@ -254,31 +274,54 @@ const typeTag: Record<string, "primary" | "success" | "warning" | "info" | "dang
   app: "info",
 };
 
-function metaText(it: WorkspaceItem): string {
+// 模型列表（用于卡片显示模型名）
+const modelOptions = ref<{ id: number; name: string }[]>([]);
+function modelName(id?: number | null): string {
+  if (!id) return "";
+  return modelOptions.value.find((m) => m.id === id)?.name || "";
+}
+async function loadModelOptions() {
+  try {
+    const res: any = await getAiModelList({});
+    modelOptions.value = (res.data?.data || []).map((m: any) => ({ id: m.id, name: m.name }));
+  } catch {
+    modelOptions.value = [];
+  }
+}
+
+// 卡片能力标签：按类型展示模型/工具/节点/知识库/MCP/技能/问数等
+function capTags(it: WorkspaceItem): { text: string; type: string }[] {
   const m = it.meta || {};
+  const tags: { text: string; type: string }[] = [];
   if (it.type === "agent") {
-    if (m.role) return m.role;
-    const parts: string[] = [];
-    if (m.tools) parts.push(`${m.tools} 工具`);
-    if (m.skills) parts.push(`${m.skills} 技能`);
-    if (m.mcp) parts.push(`${m.mcp} MCP`);
-    if (m.knowledge) parts.push(`${m.knowledge} 知识库`);
-    return parts.join(" · ");
+    const mn = modelName(m.model_id);
+    if (mn) tags.push({ text: mn, type: "primary" });
+    if (m.tools) tags.push({ text: `${m.tools} 工具`, type: "warning" });
+    if (m.skills) tags.push({ text: `${m.skills} 技能`, type: "success" });
+    if (m.knowledge) tags.push({ text: `${m.knowledge} 知识库`, type: "success" });
+    if (m.mcp) tags.push({ text: `${m.mcp} MCP`, type: "danger" });
+  } else if (it.type === "workflow") {
+    if (m.nodes) tags.push({ text: `${m.nodes} 节点`, type: "success" });
+  } else if (it.type === "app") {
+    const mn = modelName(m.model_id);
+    if (m.app_type) tags.push({ text: m.app_type, type: "info" });
+    if (mn) tags.push({ text: mn, type: "primary" });
+    if (m.tools) tags.push({ text: `${m.tools} 工具`, type: "warning" });
+  } else if (it.type === "cron") {
+    if (m.cron) tags.push({ text: m.cron, type: "info" });
+    if (m.target_type) tags.push({ text: `目标 ${m.target_type}`, type: "warning" });
+    if (m.next_run_time) tags.push({ text: fmtTime(m.next_run_time), type: "success" });
   }
-  if (it.type === "workflow") return m.nodes ? `${m.nodes} 节点` : "";
-  if (it.type === "app") {
-    const parts: string[] = [];
-    if (m.app_type) parts.push(m.app_type);
-    if (m.tools) parts.push(`${m.tools} 工具`);
-    return parts.join(" · ");
-  }
-  if (it.type === "cron") {
-    const parts: string[] = [];
-    if (m.cron) parts.push(m.cron);
-    if (m.target_type) parts.push(`目标 ${m.target_type}`);
-    return parts.join(" · ");
-  }
-  return "";
+  return tags;
+}
+
+// 时间格式化（YYYY-MM-DD HH:mm）
+function fmtTime(t?: string | null): string {
+  if (!t) return "";
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return String(t);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 const filteredItems = computed(() => {
@@ -341,6 +384,7 @@ async function loadItems() {
 onMounted(() => {
   loadTree();
   loadItems();
+  loadModelOptions();
 });
 
 function onCatClick(data: WorkspaceCategory) {
@@ -530,19 +574,7 @@ async function saveCron() {
   background: var(--el-color-white);
 }
 
-.ws-type-bar {
-  margin-bottom: 12px;
-}
-
-.ws-type-tabs {
-  :deep(.el-tabs__header) {
-    margin-bottom: 0;
-  }
-  :deep(.el-tabs__nav-wrap::after) {
-    height: 1px;
-  }
-}
-
+/* 顶部标题区 */
 .ws-toolbar {
   flex: 0 0 auto;
   display: flex;
@@ -561,16 +593,63 @@ async function saveCron() {
   font-weight: 600;
 }
 
-.ws-toolbar__left,
-.ws-toolbar__right {
+.ws-toolbar__left {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.ws-body {
+/* 类型 tab + 右侧操作 */
+.ws-type-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.ws-type-tabs {
+  flex: 1 1 auto;
+  :deep(.el-tabs__header) {
+    margin-bottom: 0;
+  }
+  :deep(.el-tabs__nav-wrap::after) {
+    height: 1px;
+  }
+}
+
+.ws-type-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+/* 主体：左树 + 右卡片，同高 */
+.ws-main {
   flex: 1 1 auto;
   min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+
+.ws-side {
+  flex: 0 0 220px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ws-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .ws-tree-card {
@@ -611,7 +690,7 @@ async function saveCron() {
   flex-direction: column;
   height: 100%;
   margin-bottom: 16px;
-  padding: 18px 20px;
+  padding: 16px 18px;
   background: var(--el-color-white);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
@@ -650,7 +729,7 @@ async function saveCron() {
 }
 
 .ws-card__desc {
-  margin: 12px 0 6px;
+  margin: 12px 0 8px;
   color: var(--el-text-color-regular);
   font-size: var(--el-font-size-base);
   line-height: 1.7;
@@ -661,14 +740,13 @@ async function saveCron() {
   overflow: hidden;
 }
 
-.ws-card__meta {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+/* 能力标签区 */
+.ws-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
   margin-bottom: 10px;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .ws-card__foot {
@@ -682,8 +760,30 @@ async function saveCron() {
 }
 
 .ws-card__cat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.ws-card__cat-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.ws-card__time {
+  white-space: nowrap;
+}
+
+.ws-card__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .ws-pagination {

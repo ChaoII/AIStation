@@ -22,6 +22,7 @@ export interface WorkspaceItem {
   color?: string;
   category_id?: number | null;
   label: string;
+  created_time?: string | null;
   meta?: Record<string, any>;
 }
 

@@ -2,11 +2,13 @@
 <template>
   <span class="icon-tile" :class="`icon-tile--${size}`">
     <img v-if="isImage && !broken" :src="src" alt="" class="icon-tile__img" @error="onImgError" />
+    <el-icon v-else-if="isElIcon" class="icon-tile__el"><component :is="icon" /></el-icon>
     <span v-else class="icon-tile__emoji">{{ emoji }}</span>
   </span>
 </template>
 
 <script setup lang="ts">
+import * as ElementPlusIconsVue from "@element-plus/icons-vue";
 import { computed, ref, watch } from "vue";
 
 const props = withDefaults(
@@ -61,6 +63,13 @@ const emoji = computed(() => {
   return (broken.value ? "" : icon.value) || fallback;
 });
 
+/** Element Plus 图标名：非图片且存在于已全局注册的图标集中时，用 el-icon 渲染 */
+const isElIcon = computed(() => {
+  const i = icon.value;
+  if (!i || isImage.value) return false;
+  return typeof ElementPlusIconsVue[i as keyof typeof ElementPlusIconsVue] !== "undefined";
+});
+
 function onImgError() {
   broken.value = true;
 }
@@ -94,6 +103,12 @@ function onImgError() {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.icon-tile__el {
+  width: 100%;
+  height: 100%;
+  font-size: inherit;
 }
 
 .icon-tile__emoji {

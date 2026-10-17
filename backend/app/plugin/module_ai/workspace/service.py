@@ -21,6 +21,14 @@ _TYPES = {
 }
 ALL_TYPES = tuple(_TYPES.keys())
 
+#: 类型默认图标（Element Plus 图标组件名；条目未设 icon/avatar 时用于卡片展示）
+_TYPE_ICON = {
+    "agent": "User",
+    "workflow": "Share",
+    "app": "Monitor",
+    "cron": "Timer",
+}
+
 
 class WorkspaceService:
 
@@ -144,16 +152,20 @@ class WorkspaceService:
 
     @staticmethod
     def _to_item(kind: str, row, label: str, name_field: str) -> dict:
+        icon = getattr(row, "icon", "") or (getattr(row, "avatar", "") or "")
+        if not icon:
+            icon = _TYPE_ICON.get(kind, "")
         base = {
             "type": kind,
             "id": row.id,
             "name": getattr(row, name_field) or "",
             "description": getattr(row, "description", "") or "",
             "enabled": bool(getattr(row, "enabled", True)),
-            "icon": getattr(row, "icon", "") or (getattr(row, "avatar", "") or ""),
+            "icon": icon,
             "color": getattr(row, "color", "") or "",
             "category_id": getattr(row, "category_id", None),
             "label": label,
+            "created_time": getattr(row, "created_time", None),
         }
         # 类型专属元信息（供卡片展示更饱满）
         if kind == "agent":
