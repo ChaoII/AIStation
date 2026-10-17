@@ -501,6 +501,62 @@
               </el-table>
             </el-tab-pane>
 
+            <!-- 示例工程（few-shot） -->
+            <el-tab-pane label="示例工程" name="fewshot">
+              <div class="ig-bar">
+                <el-button type="primary" size="small" :icon="Plus" @click="openFewshot()">
+                  新建示例
+                </el-button>
+                <el-tag size="small" type="info" effect="plain">
+                  NL2SQL 少样本示例：教模型这类问题怎么写 SQL（不是指标）
+                </el-tag>
+              </div>
+              <el-table :data="fewshots" size="small" border height="100%">
+                <template #empty>
+                  <el-empty description="暂无示例" :image-size="60" />
+                </template>
+                <el-table-column
+                  prop="question"
+                  label="问题"
+                  min-width="200"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  prop="sql"
+                  label="示例 SQL"
+                  min-width="260"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  prop="datasource"
+                  label="数据源"
+                  width="110"
+                  show-overflow-tooltip
+                />
+                <el-table-column label="启用" width="70" align="center">
+                  <template #default="{ row }">
+                    <el-tag
+                      size="small"
+                      :type="row.enabled === false ? 'info' : 'success'"
+                      effect="plain"
+                    >
+                      {{ row.enabled === false ? "否" : "是" }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="110" align="center">
+                  <template #default="{ row }">
+                    <el-button link type="primary" size="small" @click="openFewshot(row)">
+                      编辑
+                    </el-button>
+                    <el-button link type="danger" size="small" @click="removeFewshot(row)">
+                      删除
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
+
             <!-- 血缘 -->
             <el-tab-pane label="血缘" name="kg">
               <el-alert
@@ -770,6 +826,46 @@
       <template #footer>
         <el-button @click="metricDlg = false">取消</el-button>
         <el-button type="primary" :loading="savingMetric" @click="saveMetric">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 新建/编辑示例工程 -->
+    <el-dialog v-model="fewshotDlg" :title="fewshotForm.id ? '编辑示例' : '新建示例'" width="620px">
+      <el-form :model="fewshotForm" label-width="90px" size="small">
+        <el-form-item label="数据源">
+          <el-select v-model="fewshotForm.datasource" style="width: 100%">
+            <el-option label="系统库（本体支撑表）" value="system" />
+            <el-option
+              v-for="d in datasources"
+              :key="d.code || d.id"
+              :label="d.name"
+              :value="d.code || `ds:${d.id}`"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="问题" required>
+          <el-input
+            v-model="fewshotForm.question"
+            type="textarea"
+            :rows="2"
+            placeholder="自然语言问题，如：统计摄像机的状态分布"
+          />
+        </el-form-item>
+        <el-form-item label="示例 SQL" required>
+          <el-input
+            v-model="fewshotForm.sql"
+            type="textarea"
+            :rows="6"
+            placeholder="SELECT status, count(*) FROM video_cameras GROUP BY status"
+          />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="fewshotForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="fewshotDlg = false">取消</el-button>
+        <el-button type="primary" :loading="savingFewshot" @click="saveFewshot">保存</el-button>
       </template>
     </el-dialog>
 
@@ -1060,6 +1156,9 @@ import {
   getQueryAssets,
   addFavorite,
   createShare,
+  getQueryFewshots,
+  saveQueryFewshot,
+  deleteQueryFewshots,
   getPipelineList,
   savePipeline,
   runPipeline,
@@ -1097,6 +1196,10 @@ const pipelines = ref<any[]>([]);
 const metrics = ref<any[]>([]);
 const terms = ref<any[]>([]);
 const concepts = ref<any[]>([]);
+const fewshots = ref<any[]>([]);
+const fewshotDlg = ref(false);
+const fewshotForm = ref<any>({});
+const savingFewshot = ref(false);
 const kg = ref<any>({});
 const kgNodes = ref<any[]>([]);
 const kgEdges = ref<any[]>([]);
@@ -1831,6 +1934,52 @@ async function removeMetric(row: any) {
   }
 }
 
+// ---- 示例工程（few-shot）----
+function openFewshot(row?: any) {
+  fewshotForm.value = row
+    ? { ...row }
+    : { datasource: "system", question: "", sql: "", enabled: true };
+  fewshotDlg.value = true;
+}
+
+async function saveFewshot() {
+  const f = fewshotForm.value;
+  if (!f.question?.trim()) {
+    ElMessage.warning("请填写问题");
+    return;
+  }
+  if (!f.sql?.trim()) {
+    ElMessage.warning("请填写示例 SQL");
+    return;
+  }
+  savingFewshot.value = true;
+  try {
+    await saveQueryFewshot({ ...f });
+    ElMessage.success("示例已保存");
+    fewshotDlg.value = false;
+    await loadMisc();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    savingFewshot.value = false;
+  }
+}
+
+async function removeFewshot(row: any) {
+  await ElMessageBox.confirm(
+    `将删除示例「${(row.question || "").slice(0, 20)}」，问数将不再参考该样例，且不可恢复。`,
+    "删除示例",
+    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+  );
+  try {
+    await deleteQueryFewshots([row.id]);
+    ElMessage.success("已删除");
+    await loadMisc();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "删除失败");
+  }
+}
+
 // ---- 术语 ----
 function openTerm(row?: any) {
   termForm.value = row
@@ -1961,6 +2110,7 @@ async function loadMisc() {
   await safe(getQueryMetrics, (v) => (metrics.value = v));
   await safe(getQueryTerms, (v) => (terms.value = v));
   await safe(getQueryConcepts, (v) => (concepts.value = v));
+  await safe(getQueryFewshots, (v) => (fewshots.value = v));
   await safe(getQueryKgStats, (v) => (kg.value = v));
   await loadUnified();
 }
