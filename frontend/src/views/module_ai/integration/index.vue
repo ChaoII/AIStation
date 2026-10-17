@@ -509,16 +509,44 @@
                 <el-descriptions-item label="关系边">{{ kg.edges ?? "-" }}</el-descriptions-item>
                 <el-descriptions-item label="实体">{{ kg.entities ?? "-" }}</el-descriptions-item>
               </el-descriptions>
+              <div class="ig-kg-filter">
+                <span class="ig-kg-filter__label">类型：</span>
+                <el-checkbox-group v-model="kgTypeFilter" size="small">
+                  <el-checkbox
+                    v-for="t in kgTypeOptions"
+                    :key="t.value"
+                    :value="t.value"
+                    :label="t.value"
+                  >
+                    {{ t.label }}
+                  </el-checkbox>
+                </el-checkbox-group>
+                <el-select
+                  v-model="kgTableFocus"
+                  clearable
+                  filterable
+                  size="small"
+                  placeholder="按表聚焦（只看该表血缘）"
+                  style="width: 210px"
+                >
+                  <el-option v-for="tb in kgTableOptions" :key="tb" :label="tb" :value="tb" />
+                </el-select>
+                <span class="ig-kg-filter__hint">当前 {{ filteredKgNodes.length }} 节点</span>
+              </div>
               <GraphCanvas
-                v-if="kgNodes.length"
-                :nodes="kgNodes"
-                :edges="kgEdges"
+                v-if="filteredKgNodes.length"
+                :nodes="filteredKgNodes"
+                :edges="filteredKgEdges"
                 height="560px"
                 layout-name="grid"
                 :node-style="nodeStyle"
                 class="ig-kg-graph"
               />
-              <el-empty v-else :image-size="60" description="暂无图谱，可点击「重建图谱」生成" />
+              <el-empty
+                v-else
+                :image-size="60"
+                description="暂无图谱，点击「重建图谱」或调整筛选"
+              />
             </el-tab-pane>
 
             <!-- 筛选规则工作台 -->
@@ -1068,6 +1096,43 @@ const nodeStyle = {
   colorMode: "type",
   labelSize: 11,
 };
+// 血缘图过滤：按节点类型 / 按表聚焦（性能优化，避免大图全渲染又密又慢）
+const kgTypeFilter = ref<string[]>([]);
+const kgTypeOptions = [
+  { value: "table", label: "表" },
+  { value: "field", label: "字段" },
+  { value: "metric", label: "指标" },
+  { value: "term", label: "术语" },
+  { value: "domain", label: "域" },
+  { value: "concept", label: "概念" },
+];
+const kgTableFocus = ref("");
+const kgTableOptions = ref<any[]>([]);
+const filteredKgNodes = computed(() => {
+  let list = kgNodes.value;
+  if (kgTypeFilter.value.length) {
+    list = list.filter((n) => kgTypeFilter.value.includes(n.etype));
+  }
+  if (kgTableFocus.value) {
+    // 按表定位：保留该表（etype=table 且 name 含所选表名）+ 其 1 跳邻接
+    const name = kgTableFocus.value;
+    const focus = list.filter(
+      (n) => n.etype === "table" && (n.name.includes(name) || name.includes(n.name))
+    );
+    const ids = new Set(focus.map((n) => n.name));
+    const edges = kgEdges.value.filter((e) => ids.has(e.source) || ids.has(e.target));
+    edges.forEach((e) => {
+      ids.add(e.source);
+      ids.add(e.target);
+    });
+    list = list.filter((n) => ids.has(n.name));
+  }
+  return list;
+});
+const filteredKgEdges = computed(() => {
+  const nodeNames = new Set(filteredKgNodes.value.map((n) => n.name));
+  return kgEdges.value.filter((e) => nodeNames.has(e.source) && nodeNames.has(e.target));
+});
 const assets = ref<any[]>([]);
 const domains = ref<any[]>([]);
 
@@ -1880,9 +1945,13 @@ async function loadUnified() {
     }));
     kgNodes.value = nodes;
     kgEdges.value = edges;
+    kgTableOptions.value = nodes
+      .filter((n: any) => n.etype === "table")
+      .map((n: any) => (n.name as string).replace(/^表:/, ""));
   } catch {
     kgNodes.value = [];
     kgEdges.value = [];
+    kgTableOptions.value = [];
   }
 }
 
@@ -2114,5 +2183,22 @@ async function handleModeling(kind: "metrics" | "annotate") {
 }
 .ig-bar__domain {
   width: 150px;
+}
+.ig-kg-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  margin-bottom: 6px;
+}
+.ig-kg-filter__label {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.ig-kg-filter__hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-left: auto;
 }
 </style>
