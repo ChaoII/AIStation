@@ -901,7 +901,7 @@ import {
   saveFdeProposition,
   deleteFdePropositions,
   fdeShadowCheck,
-  getObjectsLifecycle,
+  getObjectLifecycle,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "GovernancePanel" });
@@ -1094,7 +1094,7 @@ const lifecycle = ref<any>(null);
 
 async function loadLifecycle() {
   try {
-    const r = await getObjectsLifecycle();
+    const r = await getObjectLifecycle();
     lifecycle.value = r.data?.data || null;
   } catch {
     lifecycle.value = null;
