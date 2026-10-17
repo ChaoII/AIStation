@@ -1089,7 +1089,7 @@ onMounted(async () => {
 .q-report-item__desc {
   margin-top: 4px;
   color: var(--el-text-color-regular);
-  font-size: 13px;
+  font-size: var(--el-font-size-base);
 }
 .q-report-item__q {
   margin-top: 2px;

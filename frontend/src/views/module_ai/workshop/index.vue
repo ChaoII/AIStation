@@ -745,7 +745,7 @@ onMounted(() => {
 }
 .ws-intro__desc {
   color: var(--el-text-color-regular);
-  font-size: 13px;
+  font-size: var(--el-font-size-base);
   line-height: 1.6;
   margin-bottom: 8px;
 }
@@ -765,7 +765,7 @@ onMounted(() => {
 }
 .ws-toolbar__count {
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: 12px;
 }
 .ws-toolbar__right {
   display: flex;
@@ -828,7 +828,7 @@ onMounted(() => {
   gap: 6px;
   margin: 12px 0 8px;
   color: var(--el-text-color-regular);
-  font-size: 13px;
+  font-size: var(--el-font-size-base);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -856,7 +856,7 @@ onMounted(() => {
 }
 .ws-empty-suggest {
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 /* 新建表单 */
@@ -935,7 +935,7 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   font-weight: 600;
 }
 .ws-run__count {
@@ -972,7 +972,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
   margin-bottom: 8px;
   b {
@@ -1136,7 +1136,7 @@ onMounted(() => {
   margin-bottom: 14px;
 }
 .ws-form-section__title {
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
@@ -1147,7 +1147,7 @@ onMounted(() => {
   padding: 20px 24px 8px;
 }
 .ws-run-form :deep(.el-form-item__label) {
-  font-size: 13px;
+  font-size: var(--el-font-size-base);
   color: var(--el-text-color-regular);
 }
 .ws-run-form-actions {

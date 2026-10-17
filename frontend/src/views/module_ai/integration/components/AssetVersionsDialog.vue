@@ -135,7 +135,7 @@ function rollback(row: any) {
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 12px;
-  font-size: 13px;
+  font-size: 12px;
 }
 .av-releases__label {
   color: var(--el-text-color-secondary);

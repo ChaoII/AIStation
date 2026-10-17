@@ -2228,7 +2228,7 @@ async function handleModeling(kind: "metrics" | "annotate") {
   margin-bottom: 6px;
 }
 .ig-kg-filter__label {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 .ig-kg-filter__hint {
