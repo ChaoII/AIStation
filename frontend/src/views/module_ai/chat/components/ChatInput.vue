@@ -27,19 +27,6 @@
         </div>
 
         <div class="input-footer">
-          <el-dropdown trigger="click" @command="(c: string) => insertToken(`#${c}`)">
-            <span class="chips-toggle">
-              <el-icon><Plus /></el-icon>
-              快捷指令
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item v-for="chip in quickChips" :key="chip" :command="chip">
-                  # {{ chip }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
           <div class="input-actions">
             <el-upload
               :auto-upload="false"
@@ -105,7 +92,6 @@ import {
   Promotion,
   Paperclip,
   Picture,
-  Plus,
   Document,
   Close,
   VideoPause,
@@ -119,7 +105,7 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import { EditorState, Prec, RangeSetBuilder } from "@codemirror/state";
-import { basicSetup } from "codemirror";
+import { minimalSetup } from "codemirror";
 import { insertNewlineAndIndent } from "@codemirror/commands";
 import type { UploadedFile } from "@/views/module_ai/chat/types";
 
@@ -157,8 +143,6 @@ const atMenuStyle = computed(() => ({
   left: "12px",
   bottom: `${(editorEl.value?.clientHeight || 120) + 44}px`,
 }));
-
-const quickChips = ["联网搜索", "生成报告", "创建数据集", "创建标注任务"];
 
 const atCommands = [
   { name: "联网搜索", desc: "联网检索最新信息" },
@@ -209,9 +193,9 @@ onMounted(() => {
     state: EditorState.create({
       doc: "",
       extensions: [
-        basicSetup,
+        minimalSetup,
         EditorView.lineWrapping,
-        placeholder("输入消息…（Enter 发送 / Shift+Enter 换行，@ 唤起快捷指令）"),
+        placeholder("输入消息…"),
         mentionHighlight,
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
@@ -289,17 +273,6 @@ function chooseAt(cmd: { name: string }) {
   atMenuVisible.value = false;
   atAnchor = null;
   atQuery.value = "";
-  view.focus();
-}
-
-function insertToken(token: string) {
-  if (!view) return;
-  const head = view.state.selection.main.head;
-  view.dispatch({
-    changes: { from: head, to: head, insert: `${token} ` },
-    selection: { anchor: head + token.length + 1 },
-  });
-  inputMessage.value = view.state.doc.toString();
   view.focus();
 }
 
@@ -528,27 +501,8 @@ defineExpose({
       .input-footer {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-end;
         gap: 12px;
-
-        .chips-toggle {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          padding: 4px 10px;
-          font-size: 12px;
-          color: var(--el-text-color-secondary);
-          border: 1px solid var(--el-border-color-lighter);
-          border-radius: 6px;
-          cursor: pointer;
-          transition: all 0.2s;
-
-          &:hover {
-            color: var(--el-color-primary);
-            border-color: var(--el-color-primary-light-5);
-            background: var(--el-color-primary-light-9);
-          }
-        }
 
         .input-actions {
           display: flex;
