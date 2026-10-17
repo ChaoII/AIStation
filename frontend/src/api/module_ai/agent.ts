@@ -20,6 +20,14 @@ export function getAiAgentDetail(id: number) {
   return request({ url: `${API_PATH}/detail/${id}`, method: "get" });
 }
 
+export function getToolApprovals() {
+  return request({ url: `${API_PATH}/tool-approvals`, method: "get" });
+}
+
+export function setToolApproval(data: { tool_name: string; authorized: boolean }) {
+  return request({ url: `${API_PATH}/tool-approvals`, method: "post", data });
+}
+
 export function createAiAgent(data: any) {
   return request({ url: `${API_PATH}/create`, method: "post", data });
 }

@@ -11,6 +11,7 @@ from app.core.router_class import OperationLogRoute
 from app.plugin.module_ai.assistant.agno_service import agno_stream_response
 
 from .schema import (
+    AgentToolApprovalSchema,
     AiAgentCategoryCreateSchema,
     AiAgentCategoryUpdateSchema,
     AiAgentCreateSchema,
@@ -205,3 +206,21 @@ async def run_agent_stream(
             agent_id, data.messages, auth, data.variables, data.session_id
         )
     )
+
+
+@AiAgentRouter.get("/tool-approvals", summary="我的危险工具授权列表")
+async def list_tool_approvals(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:query"]))],
+) -> JSONResponse:
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    return SuccessResponse(data=await AiAgentService.list_tool_approvals(uid or 0), msg="查询成功")
+
+
+@AiAgentRouter.post("/tool-approvals", summary="设置危险工具授权")
+async def set_tool_approval(
+    data: AgentToolApprovalSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:update"]))],
+) -> JSONResponse:
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    await AiAgentService.set_tool_approval(uid or 0, data.tool_name, data.authorized)
+    return SuccessResponse(msg="设置成功")

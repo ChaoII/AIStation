@@ -258,6 +258,7 @@ async def run_agno_tool_stream(
     mcp_tools: list | None = None,
     state: dict | None = None,
     skills=None,
+    requires_confirmation_fn=None,
 ) -> AsyncIterator[str]:
     """app/agent 运行台共用：用 Agno Agent 驱动“模型 + 提示词 + 动态工具”。
 
@@ -274,7 +275,7 @@ async def run_agno_tool_stream(
 
     from app.plugin.module_ai.agno_tools.dynamic import build_dynamic_tools
 
-    tools = build_dynamic_tools(tool_schemas or [], dispatch) if tool_schemas else []
+    tools = build_dynamic_tools(tool_schemas or [], dispatch, requires_confirmation_fn=requires_confirmation_fn) if tool_schemas else []
     instructions: list[str] = []
     if system_prompt:
         instructions.append(system_prompt)

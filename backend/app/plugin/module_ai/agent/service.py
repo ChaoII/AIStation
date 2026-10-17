@@ -13,7 +13,7 @@ from app.plugin.module_ai.mcp.model import AiMcpServerModel
 from app.plugin.module_ai.skill.model import AiSkillModel
 from app.plugin.module_ai.tools_catalog.model import AiToolModel
 
-from .model import AiAgentCategoryModel, AiAgentModel
+from .model import AiAgentCategoryModel, AiAgentModel, AiToolApprovalModel
 
 # 输入护栏（Guardrail，平台层）：空/超长/提示注入基础检测。返回 None 表示通过，否则返回错误文案。
 _MAX_INPUT_LEN = 20000
@@ -34,6 +34,38 @@ def _agent_guardrail(text: str) -> str | None:
         if p in low:
             return "检测到疑似提示注入/越权指令，已拦截"
     return None
+
+
+# 危险工具（HITL）：名字暗示真实变更类操作的工具需人工确认（propose_* 只提议，不算）
+_DANGEROUS_FRAGMENTS = (
+    "create", "update", "delete", "remove", "execute", "send", "export",
+    "write", "edit", "publish", "deploy", "stop", "restart", "archive",
+    "run_", "train", "task", "drop", "clear", "reset", "save",
+)
+
+
+def _is_dangerous_tool(name: str) -> bool:
+    n = (name or "").lower()
+    if n.startswith("propose_") or "query" in n or "list" in n or "get_" in n:
+        return False
+    return any(frag in n for frag in _DANGEROUS_FRAGMENTS)
+
+
+async def load_user_approved_tools(user_id: int | None) -> set[str]:
+    """当前用户已授权直接执行（免确认）的工具名集合。"""
+    if not user_id:
+        return set()
+    async with async_db_session() as db:
+        rows = (
+            await db.execute(
+                select(AiToolApprovalModel.tool_name).where(
+                    AiToolApprovalModel.user_id == user_id,
+                    AiToolApprovalModel.authorized.is_(True),
+                    AiToolApprovalModel.is_deleted.is_(False),
+                )
+            )
+        ).scalars().all()
+        return set(rows)
 
 
 async def _validate_agent_bindings(
@@ -365,6 +397,50 @@ class AiAgentService:
                 if a:
                     await db.delete(a)
 
+    # ---------- 危险工具授权（HITL，按用户） ----------
+
+    @classmethod
+    async def list_tool_approvals(cls, user_id: int) -> dict:
+        """列出启用工具中的「危险工具」，并标记当前用户是否已授权直接执行。"""
+        async with async_db_session() as db:
+            names = (
+                await db.execute(
+                    select(AiToolModel.name).where(
+                        AiToolModel.is_deleted.is_(False),
+                        AiToolModel.enabled.is_(True),
+                    )
+                )
+            ).scalars().all()
+        dangerous = sorted({n for n in names if _is_dangerous_tool(n)})
+        approved = await load_user_approved_tools(user_id)
+        return {
+            "items": [{"name": n, "authorized": n in approved} for n in dangerous],
+        }
+
+    @classmethod
+    async def set_tool_approval(cls, user_id: int, tool_name: str, authorized: bool) -> dict:
+        """设置当前用户对某危险工具的授权（授权后无需 HITL 确认）。"""
+        async with async_db_session.begin() as db:
+            row = (
+                await db.execute(
+                    select(AiToolApprovalModel).where(
+                        AiToolApprovalModel.user_id == user_id,
+                        AiToolApprovalModel.tool_name == tool_name,
+                        AiToolApprovalModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if row:
+                row.authorized = authorized
+            else:
+                db.add(
+                    AiToolApprovalModel(
+                        user_id=user_id, tool_name=tool_name, authorized=authorized
+                    )
+                )
+            await db.flush()
+        return {"name": tool_name, "authorized": authorized}
+
     @classmethod
     async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:
         """批量启用/停用智能体。"""
@@ -591,6 +667,12 @@ class AiAgentService:
             try:
                 from app.plugin.module_ai.assistant.agno_service import run_agno_tool_stream
 
+                # HITL：危险工具且当前用户未授权 → 需人工确认；已授权的直接执行
+                approved = await load_user_approved_tools(uid)
+
+                def _requires_confirmation(name: str) -> bool:
+                    return _is_dangerous_tool(name) and name not in approved
+
                 async for frame in run_agno_tool_stream(
                     model_config=runtime,
                     system_prompt=system_prompt,
@@ -604,6 +686,7 @@ class AiAgentService:
                     mcp_tools=mcp_tools or None,
                     state=state,
                     skills=agno_skills,
+                    requires_confirmation_fn=_requires_confirmation,
                 ):
                     yield frame
             finally:
