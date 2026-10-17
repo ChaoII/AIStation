@@ -13,20 +13,6 @@
       <div ref="containerRef" class="input-container" :class="{ 'is-locked': disabled || sending }">
         <div class="editor-wrap">
           <div ref="editorEl" class="cm-host" :class="{ 'is-readonly': disabled || sending }"></div>
-
-          <div class="quick-chips">
-            <el-tag
-              v-for="chip in quickChips"
-              :key="chip"
-              size="small"
-              effect="plain"
-              class="chip"
-              @click="insertToken(`#${chip}`)"
-            >
-              #{{ chip }}
-            </el-tag>
-          </div>
-
           <div v-if="atMenuVisible" class="at-menu" :style="atMenuStyle">
             <div class="at-menu__title">快捷指令</div>
             <div
@@ -42,32 +28,55 @@
           </div>
         </div>
 
-        <div class="input-actions">
-          <el-upload
-            ref="uploadRef"
-            :auto-upload="false"
-            :show-file-list="false"
-            :on-change="handleFileChange"
-            :accept="acceptTypes"
-            :multiple="true"
-          >
-            <el-button :icon="Paperclip" class="upload-btn" circle />
-          </el-upload>
-          <el-button v-if="sending" class="stop-button" type="danger" circle @click="emit('stop')">
-            <el-icon><VideoPause /></el-icon>
-          </el-button>
-          <el-button
-            v-else
-            :disabled="(!inputMessage.trim() && uploadedFiles.length === 0) || disabled || sending"
-            class="send-button"
-            type="primary"
-            circle
-            @click="handleSend"
-          >
-            <el-icon><Promotion /></el-icon>
-          </el-button>
+        <div class="input-footer">
+          <div class="quick-chips">
+            <el-tag
+              v-for="chip in quickChips"
+              :key="chip"
+              size="small"
+              effect="plain"
+              class="chip"
+              @click="insertToken(`#${chip}`)"
+            >
+              #{{ chip }}
+            </el-tag>
+          </div>
+          <div class="input-actions">
+            <el-upload
+              ref="uploadRef"
+              :auto-upload="false"
+              :show-file-list="false"
+              :on-change="handleFileChange"
+              :accept="acceptTypes"
+              :multiple="true"
+            >
+              <el-button :icon="Paperclip" class="upload-btn" circle />
+            </el-upload>
+            <el-button
+              v-if="sending"
+              class="stop-button"
+              type="danger"
+              circle
+              @click="emit('stop')"
+            >
+              <el-icon><VideoPause /></el-icon>
+            </el-button>
+            <el-button
+              v-else
+              :disabled="
+                (!inputMessage.trim() && uploadedFiles.length === 0) || disabled || sending
+              "
+              class="send-button"
+              type="primary"
+              circle
+              @click="handleSend"
+            >
+              <el-icon><Promotion /></el-icon>
+            </el-button>
+          </div>
         </div>
       </div>
+      <div class="input-hint">按 Enter 发送消息，Shift + Enter 换行，@ 唤起快捷指令</div>
     </div>
   </div>
 </template>
@@ -381,18 +390,24 @@ defineExpose({
     .input-container {
       position: relative;
       display: flex;
-      gap: 8px;
-      align-items: flex-end;
-      padding: 8px 12px;
+      flex-direction: column;
+      gap: 10px;
+      padding: 16px 20px;
       background: var(--el-bg-color-overlay);
       border: 1px solid var(--el-border-color-light);
-      border-radius: 8px;
+      border-radius: 16px;
       box-shadow: var(--el-box-shadow-light);
       transition:
         border-color 0.2s ease,
-        box-shadow 0.2s ease;
+        box-shadow 0.2s ease,
+        transform 0.2s ease;
 
-      &:hover,
+      &:hover {
+        border-color: var(--el-color-primary);
+        box-shadow: var(--el-box-shadow);
+        transform: translateY(-2px);
+      }
+
       &:focus-within {
         border-color: var(--el-color-primary);
         box-shadow: 0 0 0 1px var(--el-color-primary);
@@ -402,11 +417,11 @@ defineExpose({
       &.is-locked:focus-within {
         border-color: var(--el-border-color-light);
         box-shadow: var(--el-box-shadow-light);
+        transform: none;
       }
 
       .editor-wrap {
         position: relative;
-        flex: 1;
         min-width: 0;
 
         .cm-host {
@@ -438,17 +453,6 @@ defineExpose({
             font-weight: 600;
             background: var(--el-color-primary-light-9);
             border-radius: 3px;
-          }
-        }
-
-        .quick-chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-          margin-top: 6px;
-
-          .chip {
-            cursor: pointer;
           }
         }
 
@@ -501,28 +505,53 @@ defineExpose({
         }
       }
 
-      .input-actions {
+      .input-footer {
         display: flex;
-        flex-shrink: 0;
-        gap: 8px;
         align-items: center;
+        justify-content: space-between;
+        gap: 12px;
 
-        .upload-btn {
-          font-size: var(--el-font-size-large);
-          color: var(--el-text-color-secondary);
+        .quick-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
 
-          &:hover {
-            color: var(--el-color-primary);
+          .chip {
+            cursor: pointer;
           }
         }
 
-        .send-button,
-        .stop-button {
+        .input-actions {
+          display: flex;
           flex-shrink: 0;
-          border-radius: 50%;
-          box-shadow: var(--el-box-shadow-light);
+          gap: 8px;
+          align-items: center;
+
+          .upload-btn {
+            font-size: var(--el-font-size-large);
+            color: var(--el-text-color-secondary);
+
+            &:hover {
+              color: var(--el-color-primary);
+            }
+          }
+
+          .send-button,
+          .stop-button {
+            flex-shrink: 0;
+            border-radius: 50%;
+            box-shadow: var(--el-box-shadow-light);
+          }
         }
       }
+    }
+
+    .input-hint {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--el-text-color-placeholder);
+      text-align: center;
+      letter-spacing: 0.3px;
     }
   }
 
