@@ -211,6 +211,15 @@
                 >
                   存为报表
                 </el-button>
+                <el-button
+                  v-if="m.sql && !m.is_error"
+                  link
+                  type="primary"
+                  size="small"
+                  @click="openPromote(m)"
+                >
+                  沉淀为指标
+                </el-button>
               </div>
               <div v-if="recalledOf(m).length || ontologyOf(m).length" class="q-msg__ont">
                 <template v-if="ontologyOf(m).length">
@@ -333,6 +342,31 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="pmVisible" title="沉淀为指标" width="520px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="把这条已验证问答沉淀为「可复用指标」：同类问题下次直接走确定性快路径（秒级、口径统一），不再依赖模型生成。"
+        class="q-fb-tip"
+      />
+      <el-form label-width="80px">
+        <el-form-item label="指标显示名">
+          <el-input v-model="pmName" placeholder="例如：各煤种月度化验汇总" />
+        </el-form-item>
+        <el-form-item label="指标编码">
+          <el-input v-model="pmKey" placeholder="仅字母/数字/下划线，如 assay_by_coal_type" />
+        </el-form-item>
+        <el-form-item label="来源问题">
+          <el-input :model-value="pmMsg?.question || ''" readonly />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="pmVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pmLoading" @click="submitPromote">沉淀</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="fbVisible" title="纠正这次查询" width="600px" append-to-body>
       <el-alert
         type="info"
@@ -415,6 +449,7 @@ import {
   getQuerySessions,
   getQuerySettings,
   queryFeedback,
+  promoteQueryMetric,
   runQueryReport,
   saveQueryReport,
   saveQuerySetting,
@@ -820,6 +855,45 @@ async function saveSettings() {
     ElMessage.error(e?.msg || "保存设置失败");
   } finally {
     setSaving.value = false;
+  }
+}
+
+// 沉淀为指标（FDE 复用闭环）：把已验证问答落为确定性指标
+const pmVisible = ref(false);
+const pmName = ref("");
+const pmKey = ref("");
+const pmMsg = ref<any>(null);
+const pmLoading = ref(false);
+
+function openPromote(m: any) {
+  pmMsg.value = m;
+  pmName.value = m?.question ? String(m.question).slice(0, 30) : "";
+  pmKey.value = "";
+  pmVisible.value = true;
+}
+
+async function submitPromote() {
+  if (!pmName.value.trim() || !pmKey.value.trim()) {
+    ElMessage.warning("请填写指标显示名与编码");
+    return;
+  }
+  if (!/^[A-Za-z0-9_]+$/.test(pmKey.value.trim())) {
+    ElMessage.warning("指标编码仅允许字母/数字/下划线");
+    return;
+  }
+  pmLoading.value = true;
+  try {
+    await promoteQueryMetric({
+      message_id: pmMsg.value.id,
+      name: pmName.value.trim(),
+      key: pmKey.value.trim(),
+    });
+    ElMessage.success("已沉淀为指标，同类问题将走确定性快路径");
+    pmVisible.value = false;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "沉淀失败");
+  } finally {
+    pmLoading.value = false;
   }
 }
 
