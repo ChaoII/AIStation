@@ -319,7 +319,7 @@ def test_ask_falls_back_to_slow_path_on_metric_crash(monkeypatch):
     monkeypatch.setattr(svc.AiQueryService, "list_terms", classmethod(_terms))
     monkeypatch.setattr(svc.AiQueryService, "_save_message", classmethod(_saved))
     monkeypatch.setattr(svc.AiQueryService, "_slow_path", classmethod(_slow))
-    monkeypatch.setattr(svc, "_match_metric", lambda q, m, t: metric)
+    monkeypatch.setattr(svc, "_match_metric", lambda q, m, t, c=None: metric)
     monkeypatch.setattr(svc, "_execute_metric", _boom)
 
     out = asyncio.run(

@@ -41,9 +41,19 @@ def _use_warmable_postgres(monkeypatch, size: int = 5) -> _FakeEngine:
 
 
 def test_warmup_acquires_and_returns_pool_size_connections(monkeypatch):
-    """启动期并发签出 POOL_SIZE 条连接，并全部归还（防止顺序复用只建一条）。"""
+    """启动期并发签出 POOL_SIZE 条连接，并全部归还（防止顺序复用只建一条）。
+
+    预热是**后台任务**（不阻塞启动），所以必须在**同一个事件循环内** await 该任务
+    后再断言；否则 asyncio.run 一结束就把未完成的任务取消，conns 恒为空。
+    """
     engine = _use_warmable_postgres(monkeypatch, size=5)
-    asyncio.run(database.async_pool_warmup(app=None, status=True))
+
+    async def _run():
+        await database.async_pool_warmup(app=None, status=True)
+        assert database._warmup_task is not None, "预热应创建后台任务"
+        await database._warmup_task
+
+    asyncio.run(_run())
     assert len(engine.conns) == 5
     assert all(conn.closed for conn in engine.conns)
 

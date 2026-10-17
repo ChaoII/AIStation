@@ -24,13 +24,25 @@ def _toggle(test_client, auth_headers, tool_id: int, enabled: bool) -> None:
     assert r.status_code == 200, r.text
 
 
-def test_tool_specs_readiness():
-    """calculator 无依赖应就绪；缺依赖项应未就绪且给出原因。"""
+def test_tool_specs_readiness(monkeypatch):
+    """calculator 无依赖应就绪；缺依赖项应未就绪且给出原因。
+
+    ⚠️ 依赖缺失**必须伪造**（``find_spec`` 返回 None）：本机装了 duckdb，真实探测下
+    csv_toolkit 也是就绪的；依赖机器上恰好装了什么，测试会随环境漂移（实测踩过）。
+    """
+    import importlib.util as ilu
+
+    real = ilu.find_spec
+    monkeypatch.setattr(
+        ilu, "find_spec",
+        lambda name, *a, **k: None if name == "duckdb" else real(name, *a, **k),
+    )
+
     specs = _specs()
     assert specs["calculator"]["ready"] is True
     assert specs["calculator"]["source"] == "agno"
 
-    missing = specs["csv_toolkit"]  # requires duckdb（本机未安装）
+    missing = specs["csv_toolkit"]  # requires duckdb（此处伪造为未安装）
     assert missing["ready"] is False
     assert missing["reason"]
 
@@ -224,27 +236,26 @@ def test_disabled_toolkit_contributes_no_schemas(test_client, auth_headers):
 
 
 def test_agno_catalog_endpoint(test_client, auth_headers):
-    """精选工具规格接口返回 ready/config_fields 元数据。"""
+    """精选工具规格接口返回 ready/config_fields 元数据，且只含**免密钥**工具。"""
     r = test_client.get("/api/v1/ai/tools/agno", headers=auth_headers)
     assert r.status_code == 200, r.text
     specs = {s["key"]: s for s in r.json()["data"]}
     assert specs["calculator"]["ready"] is True
-    assert specs["tavily"]["config_fields"][0]["key"] == "api_key"
-    # openweather 无 pip 依赖但缺必填 api_key，应判未就绪且 reason 提到字段
-    assert specs["openweather"]["ready"] is False
-    assert "api_key" in specs["openweather"]["reason"]
+    assert specs["calculator"]["config_fields"] == []
+    # 免密钥策略（commit b0c80f92）：需 api_key 的工具已从精选清单移除，勿再引入
+    assert "tavily" not in specs and "openweather" not in specs and "serpapi" not in specs
 
 
 def test_list_tools_includes_agno_metadata(test_client, auth_headers):
-    """工具列表对 agno 行合并 config_fields/group/risk/title；非 agno 行字段为空。"""
-    row = _tool_row(test_client, auth_headers, "openweather")
+    """工具列表对 agno 行合并 group/risk/title/config_fields；非 agno 行字段为空。"""
+    row = _tool_row(test_client, auth_headers, "newspaper")
     assert row is not None
     assert row["source"] == "agno"
-    assert row["group"] == "网络"
+    assert row["group"] == "资讯"
     assert row["risk"] == "low"
-    assert row["title"] == "城市天气"
-    fields = row["config_fields"]
-    assert fields and fields[0]["key"] == "api_key" and fields[0]["secret"] is True
+    assert row["title"] == "新闻抓取"
+    # 免密钥精选工具的 config_fields 为空（需配置的工具已移除）
+    assert row["config_fields"] == []
 
     rows = test_client.get("/api/v1/ai/tools/list", headers=auth_headers).json()["data"]
     builtin = next(r for r in rows if r["kind"] == "builtin")
@@ -252,9 +263,30 @@ def test_list_tools_includes_agno_metadata(test_client, auth_headers):
     assert builtin["group"] is None
 
 
+def _spec_with_required_config(key: str = "synthetic_cfg") -> dict:
+    """构造「依赖可用但必填配置缺失」的假规格。
+
+    内置精选工具已全为**免密钥**（commit b0c80f92），真实注册表里不再有必填配置项，
+    故「必填配置」这条分支需自造场景覆盖；``module``/``class_name`` 取一定存在的对象，
+    使依赖探测必然通过，只留配置这一变量。
+    """
+    return {
+        "key": key,
+        "title": "合成工具",
+        "module": "json",
+        "class_name": "dumps",
+        "requires": None,
+        "config_fields": [
+            {"key": "api_key", "label": "API Key", "required": True, "secret": True},
+        ],
+        "group": "网络",
+        "risk": "low",
+    }
+
+
 def test_readiness_required_config_fields():
     """必填配置缺失 → 未就绪且 reason 提到字段；提供后 → 就绪。"""
-    spec = agno.get_spec("openweather")
+    spec = _spec_with_required_config()
     ready, reason = agno.readiness(spec, None)
     assert ready is False
     assert "api_key" in reason
@@ -264,26 +296,29 @@ def test_readiness_required_config_fields():
     assert reason2 == ""
 
 
-def test_get_tool_specs_consumes_config_map():
+def test_get_tool_specs_consumes_config_map(monkeypatch):
     """get_tool_specs 接受 ``{key: config}`` 映射，据此判定 ready/reason。"""
+    spec = _spec_with_required_config()
+    monkeypatch.setattr(agno, "AGNO_CATALOG", [spec])
+
     no_cfg = {s["key"]: s for s in agno.get_tool_specs()}
-    assert no_cfg["openweather"]["ready"] is False
+    assert no_cfg[spec["key"]]["ready"] is False
 
     with_cfg = {
-        s["key"]: s
-        for s in agno.get_tool_specs({"openweather": {"api_key": "k"}})
+        s["key"]: s for s in agno.get_tool_specs({spec["key"]: {"api_key": "k"}})
     }
-    assert with_cfg["openweather"]["ready"] is True
+    assert with_cfg[spec["key"]]["ready"] is True
 
 
 def test_registry_requires_are_import_module_names():
     """requires 必须是 import 模块名；pip 分发名放 pip_name 仅供展示。"""
-    assert agno.get_spec("tavily")["requires"] == "tavily"
-    assert agno.get_spec("serpapi")["requires"] == "serpapi"
+    # newspaper：import 名与 pip 分发名不同（newspaper3k），是这条约束的关键样本
     assert agno.get_spec("newspaper")["requires"] == "newspaper"
-    assert agno.get_spec("tavily").get("pip_name") == "tavily-python"
-    assert agno.get_spec("serpapi").get("pip_name") == "google-search-results"
     assert agno.get_spec("newspaper").get("pip_name") == "newspaper3k"
+    # duckduckgo：import 名是 ddgs（不是包名 duckduckgo）
+    assert agno.get_spec("duckduckgo")["requires"] == "ddgs"
+    assert agno.get_spec("wikipedia")["requires"] == "wikipedia"
+    assert agno.get_spec("arxiv")["requires"] == "arxiv"
 
 
 def test_probe_uses_import_name(monkeypatch):
@@ -291,19 +326,14 @@ def test_probe_uses_import_name(monkeypatch):
     import importlib.util as ilu
 
     seen: list[str] = []
-    real = ilu.find_spec
-
-    def _fake(name, *a, **k):
-        seen.append(name)
-        return real(name, *a, **k)
-
-    monkeypatch.setattr(ilu, "find_spec", _fake)
-    ready, reason = agno._probe(agno.get_spec("tavily"))
+    # 伪造「模块不存在」，从而走到缺依赖分支（本机 newspaper 实际是装了的）
+    monkeypatch.setattr(ilu, "find_spec", lambda name, *a, **k: seen.append(name))
+    ready, reason = agno._probe(agno.get_spec("newspaper"))
     assert ready is False
-    assert "tavily" in seen
-    assert "tavily-python" not in seen
+    assert "newspaper" in seen
+    assert "newspaper3k" not in seen
     # 提示文案仍用 pip 分发名，便于用户安装
-    assert "tavily-python" in reason
+    assert "newspaper3k" in reason
 
 
 def test_enabled_schemas_respect_readiness(monkeypatch, test_client, auth_headers):
@@ -330,38 +360,6 @@ def test_enabled_schemas_respect_readiness(monkeypatch, test_client, auth_header
         assert "add" not in names2
     finally:
         _toggle(test_client, auth_headers, row["id"], original)
-
-
-def test_agno_endpoint_uses_stored_config(test_client, auth_headers):
-    """精选规格接口会结合 ai_tools 已存 config 判定 ready。"""
-    row = _tool_row(test_client, auth_headers, "openweather")
-    assert row is not None
-    original = _stored_tool(row["id"])["config"]
-    try:
-        upd = test_client.put(
-            f"/api/v1/ai/tools/update/{row['id']}",
-            json={"config": {"api_key": "k"}},
-            headers=auth_headers,
-        )
-        assert upd.status_code == 200, upd.text
-        specs = {
-            s["key"]: s
-            for s in test_client.get(
-                "/api/v1/ai/tools/agno", headers=auth_headers
-            ).json()["data"]
-        }
-        assert specs["openweather"]["ready"] is True
-    finally:
-        secret_keys = ("key", "secret", "token", "password")
-        restore = {
-            k: ("****" if any(h in k.lower() for h in secret_keys) else v)
-            for k, v in (original or {}).items()
-        }
-        test_client.put(
-            f"/api/v1/ai/tools/update/{row['id']}",
-            json={"config": restore},
-            headers=auth_headers,
-        )
 
 
 def test_load_tool_schemas_no_fallback_when_all_disabled(monkeypatch):

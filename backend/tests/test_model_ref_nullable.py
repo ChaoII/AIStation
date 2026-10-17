@@ -164,10 +164,9 @@ def test_migration_chain_has_single_head_and_no_cycle():
 
     assert len(roots) == 1, f"迁移链有 {len(roots)} 个根：{roots}（应恰好 1 个）"
     assert len(heads) == 1, f"迁移链有 {len(heads)} 个头：{heads}（应恰好 1 个）"
-    assert heads[0] == "b6a11c0ffee2", (
-        f"当前 head 是 {heads[0]}，但仓库里最新的迁移是 b6a11c0ffee2——"
-        f"新迁移的 down_revision 可能写错"
-    )
+    # ⚠️ 这里**不要**再断言 head 等于某个写死的 revision id：每加一条迁移它就会过期，
+    #    实测已静默过期多轮（期望值停在 b6a11c0ffee2，真实 head 早已前移）。
+    #    down_revision 写错（指向非 head 或 None）会直接造成多头/多根，上面两条断言即可捕获。
 
 
 def test_model_reference_points_at_version_row_not_repo():

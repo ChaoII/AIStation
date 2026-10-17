@@ -25,7 +25,7 @@ def test_stream_hits_metric_fast_path(monkeypatch):
         async def _metrics(ds=None):
             return [{"key": "batch_count", "name": "批次量", "agg": "count",
                      "datasource": "system", "sql_template": "SELECT 1 AS 数值",
-                     "params": [], "cache_ttl": 0}]
+                     "params": [], "cache_ttl": 0, "enabled": True}]
 
         async def _terms(ds=None):
             return []
@@ -54,7 +54,7 @@ def test_stream_hits_metric_fast_path(monkeypatch):
         monkeypatch.setattr(S.AiQueryService, "_summarize",
                             classmethod(lambda cls, m, r: "s"))
         monkeypatch.setattr(S, "_execute_metric", _exec_metric)
-        monkeypatch.setattr(S, "_match_metric", lambda q, m, t: m[0] if m else None)
+        monkeypatch.setattr(S, "_match_metric", lambda q, m, t, c=None: m[0] if m else None)
         monkeypatch.setattr(S, "_is_listing_question", lambda q: False)
         monkeypatch.setattr(S, "_wants_grouping", lambda q: False)
 

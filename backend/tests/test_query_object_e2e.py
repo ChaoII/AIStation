@@ -156,7 +156,7 @@ def test_object_path_attempts_custom_datasource(monkeypatch):
 # ---------------------------------------------------------------------------
 def _patch_ask_plumbing(monkeypatch):
     """关掉指标快路径与澄清检测，让 ask() 走到我们要测的分支。"""
-    def _no_metric(question, metrics, terms):   # ⚠️ `_match_metric` 是**同步**函数
+    def _no_metric(question, metrics, terms, concepts=None):  # ⚠️ `_match_metric` 是**同步**函数
         return None
 
     def _no_clarify(question, schema_map):
