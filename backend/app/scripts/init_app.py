@@ -702,7 +702,7 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
-REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
+REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory", "Chat"]
 
 # 已并入「能力市场」统一维护的页面：存量库隐藏并重定向到能力市场
 # （技能广场 / 能力插件 / 工具管理 / MCP管理 不再作为独立维护入口，全部在「能力市场 → 我的资产」维护）
@@ -742,35 +742,14 @@ async def _ensure_ai_menus() -> None:
                 log.warning("⚠️  未找到 AI 父菜单，跳过 AI 菜单注册")
                 return
 
-            # 父菜单固定落地 AI 控制台；chat 保持可见，已下线页面统一隐藏
+            # 父菜单固定落地 AI 控制台
             await db.execute(
                 update(MenuModel)
                 .where(MenuModel.route_name == "AI", MenuModel.type == 1)
                 .values(redirect="/ai/overview")
             )
-            await db.execute(
-                update(MenuModel)
-                .where(MenuModel.component_path == "module_ai/chat/index")
-                .values(hidden=False)
-            )
-            # 智能助手菜单权限与流式/会话接口对齐（旧的 module_ai:chat:* 页面已不再使用）
-            await db.execute(
-                update(MenuModel)
-                .where(MenuModel.route_name == "Chat")
-                .values(permission="module_ai:assistant:query")
-            )
-            chat_menu = await db.scalar(
-                select(MenuModel).where(MenuModel.route_name == "Chat")
-            )
-            if chat_menu:
-                link = await db.scalar(
-                    select(RoleMenusModel).where(
-                        RoleMenusModel.role_id == 1,
-                        RoleMenusModel.menu_id == chat_menu.id,
-                    )
-                )
-                if not link:
-                    db.add(RoleMenusModel(role_id=1, menu_id=chat_menu.id))
+            # 智能助手独立页面已下线：前端 module_ai/chat/index 已删除（助手改由 AI 控制台 +
+            # 全局助手浮窗承载），菜单随 REMOVED_ROUTE_NAMES 统一隐藏，避免指向不存在的组件。
             await db.execute(
                 update(MenuModel)
                 .where(MenuModel.route_name.in_(REMOVED_ROUTE_NAMES))
