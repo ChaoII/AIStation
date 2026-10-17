@@ -15,6 +15,26 @@ from app.plugin.module_ai.tools_catalog.model import AiToolModel
 
 from .model import AiAgentCategoryModel, AiAgentModel
 
+# 输入护栏（Guardrail，平台层）：空/超长/提示注入基础检测。返回 None 表示通过，否则返回错误文案。
+_MAX_INPUT_LEN = 20000
+_INJECTION_PATTERNS = (
+    "忽略以上指令", "忽略之前的所有", "ignore all previous", "ignore the above",
+    "你是", "system prompt", "system 提示", "你已经不是", "假装", "扮演系统",
+    "你的系统提示是", "disregard", "now act as", "bypass", "jailbreak",
+)
+
+
+def _agent_guardrail(text: str) -> str | None:
+    if not text or not text.strip():
+        return "输入不能为空"
+    if len(text) > _MAX_INPUT_LEN:
+        return f"输入过长（{len(text)} 字符，上限 {_MAX_INPUT_LEN}）"
+    low = text.lower()
+    for p in _INJECTION_PATTERNS:
+        if p in low:
+            return "检测到疑似提示注入/越权指令，已拦截"
+    return None
+
 
 async def _validate_agent_bindings(
     db,
@@ -436,6 +456,15 @@ class AiAgentService:
         t0 = time.perf_counter()
         uid = getattr(getattr(auth, "user", None), "id", None)
         user_text = last_user_text(ui_messages)
+        # Guardrail：输入安全校验（空/超长/提示注入）
+        _gap = _agent_guardrail(user_text)
+        if _gap:
+            yield ms.start()
+            yield ms.error(_gap)
+            yield ms.data("finish", empty_finish)
+            yield ms.finish()
+            yield ms.done()
+            return
         empty_finish = {"reply": "", "tool_calls": [], "action": None, "report_id": None}
         state: dict = {
             "assistant_text": "", "reply": "", "tool_calls": [],
