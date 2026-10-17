@@ -1,4 +1,4 @@
-"""AI 会话（ai_sessions/ai_messages）与调用日志查询。"""
+"""AI 会话（ai_assistant_sessions/ai_assistant_messages）与调用日志查询。"""
 import asyncio
 import json
 import uuid

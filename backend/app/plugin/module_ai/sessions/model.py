@@ -8,7 +8,7 @@ from app.core.base_model import ModelMixin
 class AiSessionModel(ModelMixin):
     """AI 会话：按应用/用户分组的对话，记录消息数量。"""
 
-    __tablename__ = "ai_sessions"
+    __tablename__ = "ai_assistant_sessions"
     __table_args__ = ({"comment": "AI 会话表"},)
 
     app_id: Mapped[int | None] = mapped_column(
@@ -24,7 +24,7 @@ class AiSessionModel(ModelMixin):
 class AiMessageModel(ModelMixin):
     """AI 会话消息：存储 AI SDK UI Message 的 parts。"""
 
-    __tablename__ = "ai_messages"
+    __tablename__ = "ai_assistant_messages"
     __table_args__ = ({"comment": "AI 会话消息表"},)
 
     session_id: Mapped[int] = mapped_column(

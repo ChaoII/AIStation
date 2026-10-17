@@ -1,5 +1,5 @@
 """AI 概览统计与调用日志。"""
-from sqlalchemy import desc, func, select
+from sqlalchemy import func, select
 
 from app.core.database import async_db_session
 
@@ -35,7 +35,9 @@ class AiOverviewService:
     async def health_check(cls, days: int = 7) -> dict:
         """AI 健康/异常监控：聚合近 N 天调用量/错误率/平均延迟/成本 + 健康状态与告警。"""
         from datetime import datetime, timedelta
-        from sqlalchemy import func as _f, select as _sel
+
+        from sqlalchemy import func as _f
+        from sqlalchemy import select as _sel
         since = datetime.utcnow() - timedelta(days=max(1, days))
         async with async_db_session() as db:
             base = _sel(
@@ -52,9 +54,9 @@ class AiOverviewService:
         error_rate = round(errors / calls, 4) if calls else 0.0
         alerts = []
         if error_rate > 0.05:
-            alerts.append({"level": "critical", "msg": f"近{days}天错误率 {error_rate*100:.1f}% 超过 5%"})
+            alerts.append({"level": "critical", "msg": f"近{days}天错误率 {error_rate * 100:.1f}% 超过 5%"})
         elif error_rate > 0.02:
-            alerts.append({"level": "warning", "msg": f"近{days}天错误率 {error_rate*100:.1f}% 超过 2%"})
+            alerts.append({"level": "warning", "msg": f"近{days}天错误率 {error_rate * 100:.1f}% 超过 2%"})
         if avg_latency > 5000:
             alerts.append({"level": "warning", "msg": f"近{days}天平均延迟 {avg_latency}ms 超过 5s"})
         if alerts:
@@ -69,7 +71,9 @@ class AiOverviewService:
     async def audit_check(cls, days: int = 7) -> dict:
         """AI 调用合规审计：未鉴权(user_id 为空)调用/失败调用/高成本调用，输出合规报告。"""
         from datetime import datetime, timedelta
-        from sqlalchemy import func as _f, select as _sel
+
+        from sqlalchemy import func as _f
+        from sqlalchemy import select as _sel
         since = datetime.utcnow() - timedelta(days=max(1, days))
         async with async_db_session() as db:
             total = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
@@ -97,11 +101,13 @@ class AiOverviewService:
     @classmethod
     async def runtime_status(cls) -> dict:
         """系统运行监控（Palantir Observability）：聚合 应用/工作流/模型/Agent/管道 运行状态 + AI 健康。"""
-        from app.plugin.module_ai.apps.model import AiAppModel
-        from app.plugin.module_ai.workflow.model import AiWorkflowModel
-        from app.plugin.module_ai.models.model import AiModelModel
+        from sqlalchemy import func as _f
+        from sqlalchemy import select as _sel
+
         from app.plugin.module_ai.agent.model import AiAgentModel
-        from sqlalchemy import select as _sel, func as _f
+        from app.plugin.module_ai.apps.model import AiAppModel
+        from app.plugin.module_ai.models.model import AiModelModel
+        from app.plugin.module_ai.workflow.model import AiWorkflowModel
         async with async_db_session() as db:
             apps = (await db.execute(_sel(_f.count()).select_from(AiAppModel).where(AiAppModel.is_deleted.is_(False)))).scalar() or 0
             workflows = (await db.execute(_sel(_f.count()).select_from(AiWorkflowModel).where(AiWorkflowModel.is_deleted.is_(False)))).scalar() or 0
@@ -215,7 +221,9 @@ class AiOverviewService:
     async def anomaly_detect(cls, days: int = 7) -> dict:
         """AI 异常检测：按日聚合调用，对比基线识别错误率/延迟异常。"""
         from datetime import datetime, timedelta
-        from sqlalchemy import func as _f, select as _sel
+
+        from sqlalchemy import func as _f
+        from sqlalchemy import select as _sel
         since = datetime.utcnow() - timedelta(days=max(1, days))
         async with async_db_session() as db:
             rows = (await db.execute(
@@ -236,7 +244,7 @@ class AiOverviewService:
             if er > 0.10:
                 anomalies.append({"date": d, "type": "error_rate", "severity": "high",
                                   "value": round(er * 100, 1),
-                                  "msg": f"{d} 错误率 {er*100:.1f}% 异常升高（>10%）"})
+                                  "msg": f"{d} 错误率 {er * 100:.1f}% 异常升高（>10%）"})
             if base_lat > 0 and lat > base_lat * 3:
                 anomalies.append({"date": d, "type": "latency", "severity": "medium",
                                   "value": lat,
@@ -298,6 +306,7 @@ class AiOverviewService:
     async def activity_timeline(cls, days: int = 7, limit: int = 60) -> dict:
         """统一活动时间线：聚合 AI 调用 / 动作 / 审批为时间线视图。"""
         from datetime import datetime, timedelta
+
         from sqlalchemy import select as _sel
         since = datetime.utcnow() - timedelta(days=max(1, days))
         events: list[dict] = []
@@ -317,7 +326,7 @@ class AiOverviewService:
                 from sqlalchemy import text as _t
                 al = (await db.execute(_t(
                     "SELECT action_name, object_table, result, operator, created_time "
-                    "FROM ai_action_log WHERE is_deleted=0 ORDER BY id DESC LIMIT :n"),
+                    "FROM ai_query_writeback_log WHERE is_deleted=0 ORDER BY id DESC LIMIT :n"),
                     {"n": limit})).fetchall()
                 for r in al:
                     events.append({"time": str(r[4]), "kind": "action",
@@ -381,7 +390,9 @@ class AiOverviewService:
     async def unified_audit(cls, days: int = 7) -> dict:
         """跨模块统一审计：AI 调用 / 动作写回 / 本体发布 / 审批 / 敏感扫描 全链路一处看。"""
         from datetime import datetime, timedelta
-        from sqlalchemy import func as _f, select as _sel
+
+        from sqlalchemy import func as _f
+        from sqlalchemy import select as _sel
         since = datetime.utcnow() - timedelta(days=max(1, days))
         async with async_db_session() as db:
             ai_calls = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
@@ -393,9 +404,9 @@ class AiOverviewService:
             try:
                 from sqlalchemy import text as _t
                 actions = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_action WHERE is_deleted=0")).scalar() or 0)
+                    "SELECT COUNT(*) FROM ai_query_writeback WHERE is_deleted=0")).scalar() or 0)
                 approvals = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_action_log WHERE is_deleted=0 AND result='pending'")).scalar() or 0)
+                    "SELECT COUNT(*) FROM ai_query_writeback_log WHERE is_deleted=0 AND result='pending'")).scalar() or 0)
                 publishes = (await db.execute(_t(
                     "SELECT COUNT(*) FROM ai_ont_version WHERE is_deleted=0 AND status='pending'")).scalar() or 0)
             except Exception:  # noqa: BLE001

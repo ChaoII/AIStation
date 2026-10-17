@@ -93,8 +93,9 @@ def validate_params(defs: list[dict] | None, params: dict | None) -> dict:
             out[key] = str(val).strip()
     return out
 
+
 _DDL = (
-    "CREATE TABLE IF NOT EXISTS ai_query_reports ("
+    "CREATE TABLE IF NOT EXISTS ai_report_template ("
     "id SERIAL PRIMARY KEY, key VARCHAR(64) NOT NULL, name VARCHAR(120) NOT NULL, "
     "description TEXT, datasource VARCHAR(32) NOT NULL DEFAULT 'system', "
     "question TEXT, params JSONB, sql_template TEXT NOT NULL, columns JSONB, chart JSONB, "
@@ -149,7 +150,7 @@ async def list_reports(datasource: str | None = None, verified_only: bool = Fals
     async with async_db_session() as db:
         rows = (
             await db.execute(
-                text(f"SELECT {_COLS} FROM ai_query_reports WHERE {' AND '.join(conds)} "
+                text(f"SELECT {_COLS} FROM ai_report_template WHERE {' AND '.join(conds)} "
                      "ORDER BY sort, id"),
                 params,
             )
@@ -166,7 +167,7 @@ async def get_report(report_id: int) -> dict | None:
     async with async_db_session() as db:
         r = (
             await db.execute(
-                text(f"SELECT {_COLS} FROM ai_query_reports WHERE id=:i AND is_deleted=false"),
+                text(f"SELECT {_COLS} FROM ai_report_template WHERE id=:i AND is_deleted=false"),
                 {"i": report_id},
             )
         ).fetchone()
@@ -202,14 +203,14 @@ async def upsert_report(data: dict, auth=None) -> dict:
     async with async_db_session.begin() as db:
         existing = (
             await db.execute(
-                text("SELECT id FROM ai_query_reports WHERE key=:k AND is_deleted=false"),
+                text("SELECT id FROM ai_report_template WHERE key=:k AND is_deleted=false"),
                 {"k": key},
             )
         ).fetchone()
         if existing:
             await db.execute(
                 text(
-                    "UPDATE ai_query_reports SET name=:n, description=:d, datasource=:ds, "
+                    "UPDATE ai_report_template SET name=:n, description=:d, datasource=:ds, "
                     "question=:q, params=CAST(:p AS jsonb), sql_template=:sql, "
                     "columns=CAST(:cols AS jsonb), chart=CAST(:ch AS jsonb), verified=:v, "
                     "enabled=:en, sort=:so, updated_id=:uid, updated_time=CURRENT_TIMESTAMP WHERE id=:i"
@@ -220,7 +221,7 @@ async def upsert_report(data: dict, auth=None) -> dict:
         else:
             await db.execute(
                 text(
-                    "INSERT INTO ai_query_reports(key,name,description,datasource,question,params,"
+                    "INSERT INTO ai_report_template(key,name,description,datasource,question,params,"
                     "sql_template,columns,chart,verified,enabled,sort,uuid,status,is_deleted,"
                     "created_time,updated_time,created_id,updated_id) "
                     "VALUES(:k,:n,:d,:ds,:q,CAST(:p AS jsonb),:sql,CAST(:cols AS jsonb),"
@@ -232,7 +233,7 @@ async def upsert_report(data: dict, auth=None) -> dict:
             # 不用 RETURNING（测试库兼容性）：插完回查
             rid = (
                 await db.execute(
-                    text("SELECT id FROM ai_query_reports WHERE key=:k AND is_deleted=false"),
+                    text("SELECT id FROM ai_report_template WHERE key=:k AND is_deleted=false"),
                     {"k": key},
                 )
             ).scalar()
@@ -250,7 +251,7 @@ async def delete_reports(ids: list[int]) -> int:
     async with async_db_session.begin() as db:
         r = await db.execute(
             text(
-                "UPDATE ai_query_reports SET is_deleted=true, updated_time=CURRENT_TIMESTAMP "
+                "UPDATE ai_report_template SET is_deleted=true, updated_time=CURRENT_TIMESTAMP "
                 "WHERE id = ANY(:ids)"
             ),
             {"ids": list(ids)},
@@ -261,7 +262,11 @@ async def delete_reports(ids: list[int]) -> int:
 async def run_report(report_id: int, params: dict | None = None, auth=None) -> dict:
     """带参数执行报表（**复用指标执行链路**：渲染 → 校验 → 加引号 → 执行）。"""
     from .service import (
-        SYSTEM_DS, _execute_custom_ds_sql, _execute_sql, _render_template, _system_allowed,
+        SYSTEM_DS,
+        _execute_custom_ds_sql,
+        _execute_sql,
+        _render_template,
+        _system_allowed,
         validate_sql,
     )
 

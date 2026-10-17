@@ -1133,7 +1133,7 @@ async def _log_action_result(action_name: str, table: str, object_key: str, para
                              operator: str, result: str, detail: str) -> int:
     async with async_db_session.begin() as db:
         res = await db.execute(_t(
-            "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,"
+            "INSERT INTO ai_query_writeback_log(action_name,object_table,object_key,params,operator,"
             "result,detail) VALUES (:n,:t,:k,:p,:o,:r,:d) RETURNING id"),
             {"n": action_name, "t": table, "k": str(object_key),
              "p": json.dumps(params, ensure_ascii=False), "o": operator or "",
@@ -1245,8 +1245,8 @@ async def execute_ontology_action(code: str, object_key: str, params: dict,
     6. 执行**副作用**（通知 / Webhook）
     7. 审计留痕（提交条件结果、规则、副作用一并记录）
 
-    本体动作（ai_ont_action）与问数模块的动作（ai_action）各管一套定义，
-    但**共用同一张审计表 ai_action_log**。
+    本体动作（ai_ont_action）与问数模块的动作（ai_query_writeback）各管一套定义，
+    但**共用同一张审计表 ai_query_writeback_log**。
     """
     act = await _find_action(code)
     if not act:
@@ -2376,7 +2376,7 @@ async def ontology_usage(object_code: str | None = None) -> dict:
 
     数据来自既有日志表，不额外埋点：
     - 读数：``ai_call_logs`` 中工具名以 ont_fn__ / ont_action__ / list_ontology 开头的调用
-    - 写入：``ai_action_log`` 中动作执行记录
+    - 写入：``ai_query_writeback_log`` 中动作执行记录
     - 交互：``ai_ont_change_log`` 中定义改动记录
     """
     read_where = ("WHERE (tool_name LIKE 'ont_fn__%' OR tool_name LIKE 'ont_action__%' "
@@ -2390,11 +2390,11 @@ async def ontology_usage(object_code: str | None = None) -> dict:
     try:
         if object_code:
             writes = int((await _exec(
-                "SELECT count(*) FROM ai_action_log WHERE object_table=:c AND is_deleted=false",
+                "SELECT count(*) FROM ai_query_writeback_log WHERE object_table=:c AND is_deleted=false",
                 {"c": object_code})).scalar() or 0)
         else:
             writes = int((await _exec(
-                "SELECT count(*) FROM ai_action_log WHERE is_deleted=false")).scalar() or 0)
+                "SELECT count(*) FROM ai_query_writeback_log WHERE is_deleted=false")).scalar() or 0)
     except Exception:  # noqa: BLE001
         writes = 0
     edits = 0
@@ -3103,7 +3103,7 @@ async def writeback_instance(object_code: str, key: str, props: dict,
     2. 只能写"本体里声明的、非 edit_only、非 sensitive"的属性
     3. **（P4）** 具备对象类型的编辑权限；写"策略属性"需要管理权限；
        不能写自己都读不到的列（否则是隐蔽提权）
-    4. 全部留痕（ai_action_log + ai_ont_change_log）
+    4. 全部留痕（ai_query_writeback_log + ai_ont_change_log）
     """
     meta = await _instance_meta(object_code)
     if not meta or meta.get("error"):
@@ -3160,10 +3160,10 @@ async def writeback_instance(object_code: str, key: str, props: dict,
 
 async def _log_action(object_code: str, object_key: str, action_name: str,
                       result: str, detail: str, operator: str) -> None:
-    """写 ai_action_log（动作执行 / 属性写回统一留痕）。"""
+    """写 ai_query_writeback_log（动作执行 / 属性写回统一留痕）。"""
     try:
         await _exec_write(
-            "INSERT INTO ai_action_log(object_table,object_key,action_name,result,detail,operator) "
+            "INSERT INTO ai_query_writeback_log(object_table,object_key,action_name,result,detail,operator) "
             "VALUES (:t,:k,:a,:r,:d,:o)",
             {"t": object_code, "k": object_key, "a": action_name,
              "r": result, "d": detail, "o": operator})

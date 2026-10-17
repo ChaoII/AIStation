@@ -62,8 +62,8 @@ _VECTOR_SEEDED = False
 # ---------------------------------------------------------------------------
 # 建表入口：问数侧历史影子表
 #
-# 历史遗留：ai_pipeline / ai_pipeline_run / ai_domain / ai_workshop_app /
-# ai_access_rule / ai_action / ai_action_log / ai_fde_proposition / ai_dq_report
+# 历史遗留：ai_pipeline / ai_pipeline_run / ai_data_domain / ai_workshop_app /
+# ai_access_rule / ai_query_writeback / ai_query_writeback_log / ai_delivery_proposition / ai_dq_report
 # 此前只在开发库中手工创建，代码里没有建表语句，新环境部署会直接失败。
 # 这里补齐统一的运行时建表（幂等、best-effort），并在应用启动时调用一次。
 # SQLite（单元测试库）不支持 BIGSERIAL，由测试自身 DDL 提供结构，此处失败不影响功能。
@@ -79,7 +79,7 @@ _QUERY_TABLES_SQL = (
     "CREATE TABLE IF NOT EXISTS ai_pipeline_run ("
     "id BIGSERIAL PRIMARY KEY, pipeline_id BIGINT, status VARCHAR(20), message TEXT, "
     "ran_at TIMESTAMP DEFAULT now(), is_deleted BOOLEAN DEFAULT false, rows INTEGER DEFAULT 0)",
-    "CREATE TABLE IF NOT EXISTS ai_domain ("
+    "CREATE TABLE IF NOT EXISTS ai_data_domain ("
     "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), code VARCHAR(60), description VARCHAR(255), "
     "tables JSONB DEFAULT '[]', members JSONB DEFAULT '[]', enabled BOOLEAN DEFAULT true, "
     "is_deleted BOOLEAN DEFAULT false, created_time TIMESTAMP DEFAULT now())",
@@ -94,7 +94,7 @@ _QUERY_TABLES_SQL = (
     "value VARCHAR(120), allowed_tables JSONB DEFAULT '[]', sensitive_ok BOOLEAN DEFAULT false, "
     "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
     "created_time TIMESTAMP DEFAULT now())",
-    "CREATE TABLE IF NOT EXISTS ai_fde_proposition ("
+    "CREATE TABLE IF NOT EXISTS ai_delivery_proposition ("
     "id BIGSERIAL PRIMARY KEY, title VARCHAR(200), description TEXT, criteria TEXT, "
     "owner VARCHAR(100), step_diagnosis VARCHAR(12) DEFAULT 'todo', "
     "step_modeling VARCHAR(12) DEFAULT 'todo', step_assembly VARCHAR(12) DEFAULT 'todo', "
@@ -107,13 +107,13 @@ _QUERY_TABLES_SQL = (
     "shadow_golden VARCHAR(64) DEFAULT '', shadow_tolerance VARCHAR(32) DEFAULT '', "
     "shadow_result VARCHAR(32) DEFAULT '', shadow_actual VARCHAR(64) DEFAULT '', "
     "shadow_at TIMESTAMP)",
-    "CREATE TABLE IF NOT EXISTS ai_action ("
+    "CREATE TABLE IF NOT EXISTS ai_query_writeback ("
     "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), object_table VARCHAR(120), "
     "writable_cols JSONB DEFAULT '[]', validation TEXT, approve BOOLEAN DEFAULT true, "
     "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
     "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now(), "
     "writable_by_role JSONB)",
-    "CREATE TABLE IF NOT EXISTS ai_action_log ("
+    "CREATE TABLE IF NOT EXISTS ai_query_writeback_log ("
     "id BIGSERIAL PRIMARY KEY, action_name VARCHAR(120), object_table VARCHAR(120), "
     "object_key VARCHAR(120), params JSONB, operator VARCHAR(100), result VARCHAR(20), "
     "detail TEXT, created_time TIMESTAMP DEFAULT now(), is_deleted BOOLEAN DEFAULT false)",
@@ -185,7 +185,7 @@ _COMMENT_RE = re.compile(r"(--.*$)|(/\*.*?\*/)", re.MULTILINE | re.DOTALL)
 
 # 本系统可查询表（白名单，用于系统数据源的安全校验）
 SYSTEM_ALLOWED_TABLES = {
-    "ai_call_logs", "ai_messages", "ai_sessions", "ai_apps", "ai_agents",
+    "ai_call_logs", "ai_assistant_messages", "ai_assistant_sessions", "ai_apps", "ai_agents",
     "ai_models", "ai_providers", "ai_skills", "ai_tools", "ai_prompts",
     "ai_reports", "ai_workflows", "annotation_dataset", "annotation_record",
     "annotation_task", "synthesis_job",
@@ -1398,7 +1398,7 @@ _ONT_IMPORT_EXCLUDE: set[str] = {
     # 代码生成器脚手架
     "gen_demo", "gen_demo01",
     # 会话/消息运行时
-    "ai_sessions", "ai_messages",
+    "ai_assistant_sessions", "ai_assistant_messages",
     # 向量 / schema 注册 / 配置 / 前端布局
     "ai_query_asset_vectors", "ai_query_schema", "ai_query_settings", "ai_query_kg_layout",
     # 纯多对多关联表
@@ -2934,7 +2934,7 @@ class AiQueryService:
                 "step_assembly,step_shadow,step_handover,gap,delivery_assets,status,created_time,"
                 "fde_translator,fde_data,fde_app,shadow_metric,shadow_golden,shadow_tolerance,"
                 "shadow_result,shadow_actual,shadow_at "
-                "FROM ai_fde_proposition WHERE is_deleted=false ORDER BY id DESC"))
+                "FROM ai_delivery_proposition WHERE is_deleted=false ORDER BY id DESC"))
             rows = res.fetchall()
         import json as _json
         return [{
@@ -2961,7 +2961,7 @@ class AiQueryService:
             assets = _json.dumps(data.get("delivery_assets") or [], ensure_ascii=False)
             if pid:
                 await db.execute(_t(
-                    "UPDATE ai_fde_proposition SET title=:t, description=:d, criteria=:c, owner=:o, "
+                    "UPDATE ai_delivery_proposition SET title=:t, description=:d, criteria=:c, owner=:o, "
                     "step_diagnosis=:s1, step_modeling=:s2, step_assembly=:s3, step_shadow=:s4, "
                     "step_handover=:s5, gap=:g, delivery_assets=:a, status=:st, "
                     "fde_translator=:ft, fde_data=:fd, fde_app=:fa, "
@@ -2980,7 +2980,7 @@ class AiQueryService:
                     "sg": data.get("shadow_golden", ""), "stl": data.get("shadow_tolerance", "")})
             else:
                 res = await db.execute(_t(
-                    "INSERT INTO ai_fde_proposition(title,description,criteria,owner,step_diagnosis,"
+                    "INSERT INTO ai_delivery_proposition(title,description,criteria,owner,step_diagnosis,"
                     "step_modeling,step_assembly,step_shadow,step_handover,gap,delivery_assets,status,"
                     "fde_translator,fde_data,fde_app,shadow_metric,shadow_golden,shadow_tolerance) "
                     "VALUES (:t,:d,:c,:o,:s1,:s2,:s3,:s4,:s5,:g,:a,:st,:ft,:fd,:fa,:sm,:sg,:stl) RETURNING id"), {
@@ -3004,7 +3004,7 @@ class AiQueryService:
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             row = (await db.execute(_t(
-                "SELECT shadow_metric,shadow_golden,shadow_tolerance FROM ai_fde_proposition WHERE id=:i"),
+                "SELECT shadow_metric,shadow_golden,shadow_tolerance FROM ai_delivery_proposition WHERE id=:i"),
                 {"i": proposition_id})).fetchone()
         if not row or not row[0]:
             return {"ok": False, "msg": "未配置校验指标/黄金标准"}
@@ -3034,7 +3034,7 @@ class AiQueryService:
             async with async_db_session.begin() as db:
                 from sqlalchemy import text as _t
                 await db.execute(_t(
-                    "UPDATE ai_fde_proposition SET shadow_result=:r, shadow_actual=:a, "
+                    "UPDATE ai_delivery_proposition SET shadow_result=:r, shadow_actual=:a, "
                     "step_shadow=:ss, shadow_at=now() WHERE id=:i"), {
                     "r": result, "a": str(actual), "ss": "done" if ok else "doing", "i": proposition_id})
             return {"ok": True, "result": result, "actual": actual, "golden": golden, "tolerance": tol}
@@ -3046,7 +3046,7 @@ class AiQueryService:
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
 
-            await db.execute(_t("UPDATE ai_fde_proposition SET is_deleted=true WHERE id=:pid"), {"pid": pid})
+            await db.execute(_t("UPDATE ai_delivery_proposition SET is_deleted=true WHERE id=:pid"), {"pid": pid})
 
     @classmethod
     async def list_actions(cls) -> list[dict]:
@@ -3055,7 +3055,7 @@ class AiQueryService:
 
             res = await db.execute(_t(
                 "SELECT id,name,object_table,writable_cols,writable_by_role,validation,approve,enabled "
-                "FROM ai_action WHERE is_deleted=false ORDER BY id DESC"))
+                "FROM ai_query_writeback WHERE is_deleted=false ORDER BY id DESC"))
             rows = res.fetchall()
         import json as _json
         return [{
@@ -3075,14 +3075,14 @@ class AiQueryService:
 
             if data.get("id"):
                 await db.execute(_t(
-                    "UPDATE ai_action SET name=:n, object_table=:o, writable_cols=:w, writable_by_role=:wr, "
+                    "UPDATE ai_query_writeback SET name=:n, object_table=:o, writable_cols=:w, writable_by_role=:wr, "
                     "validation=:v, approve=:a, enabled=:e, updated_time=now() WHERE id=:i"), {
                     "n": data.get("name", ""), "o": data.get("object_table", ""), "w": cols, "wr": wr,
                     "v": data.get("validation", ""), "a": bool(data.get("approve", True)),
                     "e": bool(data.get("enabled", True)), "i": data["id"]})
                 return {"id": data["id"]}
             res = await db.execute(_t(
-                "INSERT INTO ai_action(name,object_table,writable_cols,writable_by_role,validation,approve,enabled) "
+                "INSERT INTO ai_query_writeback(name,object_table,writable_cols,writable_by_role,validation,approve,enabled) "
                 "VALUES (:n,:o,:w,:wr,:v,:a,:e) ON CONFLICT (name) DO UPDATE SET object_table=:o, "
                 "writable_cols=:w, writable_by_role=:wr, validation=:v, approve=:a, enabled=:e RETURNING id"), {
                 "n": data.get("name", ""), "o": data.get("object_table", ""), "w": cols, "wr": wr,
@@ -3146,7 +3146,7 @@ class AiQueryService:
             import json as _json
             async with async_db_session.begin() as db:
                 pres = await db.execute(_t(
-                    "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,result,detail) "
+                    "INSERT INTO ai_query_writeback_log(action_name,object_table,object_key,params,operator,result,detail) "
                     "VALUES (:n,:t,:k,:p,:o,'pending','待审批') RETURNING id"), {
                     "n": name, "t": table, "k": object_key,
                     "p": _json.dumps(params, ensure_ascii=False), "o": operator or ""})
@@ -3170,7 +3170,7 @@ class AiQueryService:
             import json as _json
             async with async_db_session.begin() as db2:
                 await db2.execute(_t(
-                    "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,result,detail) "
+                    "INSERT INTO ai_query_writeback_log(action_name,object_table,object_key,params,operator,result,detail) "
                     "VALUES (:n,:t,:k,:p,:o,:r,:d)"), {
                     "n": name, "t": table, "k": object_key,
                     "p": _json.dumps(params, ensure_ascii=False), "o": operator or "",
@@ -3204,7 +3204,7 @@ class AiQueryService:
             from sqlalchemy import text as _t
             res = await db.execute(_t(
                 "SELECT id,action_name,object_table,object_key,params,operator,created_time "
-                "FROM ai_action_log WHERE result='pending' AND is_deleted=false "
+                "FROM ai_query_writeback_log WHERE result='pending' AND is_deleted=false "
                 "ORDER BY id DESC LIMIT :n"), {"n": max(1, min(limit, 200))})
             rows = res.fetchall()
         return [{
@@ -3226,7 +3226,7 @@ class AiQueryService:
         from sqlalchemy import text as _t
         async with async_db_session() as db:
             row = (await db.execute(_t(
-                "SELECT action_name,object_table,object_key,params FROM ai_action_log "
+                "SELECT action_name,object_table,object_key,params FROM ai_query_writeback_log "
                 "WHERE id=:i AND result='pending' AND is_deleted=false"), {"i": approval_id})).fetchone()
         if not row:
             return {"ok": False, "msg": "审批单不存在或已处理"}
@@ -3250,13 +3250,13 @@ class AiQueryService:
                     f'UPDATE "{table}" SET {sets} WHERE "id"::text = :__k'),
                     {**params, "__k": str(key)})
                 await db.execute(_t(
-                    "UPDATE ai_action_log SET result='approved', detail=:d, operator=:o WHERE id=:i"),
+                    "UPDATE ai_query_writeback_log SET result='approved', detail=:d, operator=:o WHERE id=:i"),
                     {"d": f"已批准，影响 {res.rowcount} 行", "o": operator or "", "i": approval_id})
             return {"ok": True, "rows": int(res.rowcount or 0), "msg": "已批准并执行留痕"}
         except Exception as e:  # noqa: BLE001
             async with async_db_session.begin() as db:
                 await db.execute(_t(
-                    "UPDATE ai_action_log SET result='rejected', detail=:d WHERE id=:i"),
+                    "UPDATE ai_query_writeback_log SET result='rejected', detail=:d WHERE id=:i"),
                     {"d": f"批准执行失败：{str(e)[:100]}", "i": approval_id})
             return {"ok": False, "msg": f"执行失败：{str(e)[:120]}"}
 
@@ -3268,7 +3268,7 @@ class AiQueryService:
         from sqlalchemy import text as _t
         async with async_db_session.begin() as db:
             await db.execute(_t(
-                "UPDATE ai_action_log SET result='rejected', detail=:d WHERE id=:i AND result='pending'"),
+                "UPDATE ai_query_writeback_log SET result='rejected', detail=:d WHERE id=:i AND result='pending'"),
                 {"d": f"已驳回 by {operator or ''}", "i": approval_id})
         return {"ok": True, "msg": "已驳回"}
 
@@ -3279,7 +3279,7 @@ class AiQueryService:
 
             res = await db.execute(_t(
                 "SELECT id,action_name,object_table,object_key,params,operator,result,detail,created_time "
-                "FROM ai_action_log WHERE is_deleted=false ORDER BY id DESC LIMIT :n"), {"n": max(1, min(limit, 200))})
+                "FROM ai_query_writeback_log WHERE is_deleted=false ORDER BY id DESC LIMIT :n"), {"n": max(1, min(limit, 200))})
             rows = res.fetchall()
         import json as _json
         return [{
@@ -4804,7 +4804,7 @@ class AiQueryService:
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             rows = (await db.execute(_t(
-                "SELECT id,name,code,description,tables,members,enabled FROM ai_domain "
+                "SELECT id,name,code,description,tables,members,enabled FROM ai_data_domain "
                 "WHERE is_deleted=false ORDER BY id DESC"))).fetchall()
         import json as _json
         return [{
@@ -4823,13 +4823,13 @@ class AiQueryService:
             from sqlalchemy import text as _t
             if data.get("id"):
                 await db.execute(_t(
-                    "UPDATE ai_domain SET name=:n, code=:c, description=:d, tables=:t, members=:m, enabled=:e "
+                    "UPDATE ai_data_domain SET name=:n, code=:c, description=:d, tables=:t, members=:m, enabled=:e "
                     "WHERE id=:i"), {"n": data.get("name", ""), "c": data.get("code", ""),
                     "d": data.get("description", ""), "t": tables, "m": members,
                     "e": bool(data.get("enabled", True)), "i": data["id"]})
                 return {"id": data["id"]}
             res = await db.execute(_t(
-                "INSERT INTO ai_domain(name,code,description,tables,members,enabled) "
+                "INSERT INTO ai_data_domain(name,code,description,tables,members,enabled) "
                 "VALUES (:n,:c,:d,:t,:m,:e) RETURNING id"), {
                 "n": data.get("name", ""), "c": data.get("code", ""),
                 "d": data.get("description", ""), "t": tables, "m": members,
@@ -5130,9 +5130,9 @@ class AiQueryService:
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             act = (await db.execute(_t(
-                "SELECT count(*) FROM ai_action WHERE is_deleted=false"))).scalar() or 0
+                "SELECT count(*) FROM ai_query_writeback WHERE is_deleted=false"))).scalar() or 0
             act_logs = (await db.execute(_t(
-                "SELECT count(*) FROM ai_action_log WHERE is_deleted=false"))).scalar() or 0
+                "SELECT count(*) FROM ai_query_writeback_log WHERE is_deleted=false"))).scalar() or 0
             agent = (await db.execute(_t(
                 "SELECT count(*) FROM ai_agents WHERE is_deleted=false"))).scalar() or 0
         return {
@@ -5164,7 +5164,7 @@ class AiQueryService:
     async def delete_domain(cls, id: int) -> None:
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
-            await db.execute(_t("UPDATE ai_domain SET is_deleted=true WHERE id=:id"), {"id": id})
+            await db.execute(_t("UPDATE ai_data_domain SET is_deleted=true WHERE id=:id"), {"id": id})
 
     @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
@@ -6268,7 +6268,7 @@ class AiQueryService:
                 rows = (
                     await db.execute(
                         text(
-                            "SELECT id,name,description,question,params FROM ai_query_reports "
+                            "SELECT id,name,description,question,params FROM ai_report_template "
                             "WHERE is_deleted=false AND verified=true AND enabled=true AND datasource=:d "
                             "ORDER BY sort, id"
                         ),

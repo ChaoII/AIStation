@@ -2,7 +2,7 @@ import request from "@/utils/request";
 
 const API_PATH = "/ai/sessions";
 
-/** ai_sessions 会话行（运行时助手/应用持久化，主键为整数） */
+/** ai_assistant_sessions 会话行（运行时助手/应用持久化，主键为整数） */
 export interface AiSessionItem {
   id: number;
   app_id: number | null;

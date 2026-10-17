@@ -471,7 +471,7 @@ async def execute_decision(code: str, actor_id: int | None = None, actor_name: s
     eid = 0
     try:
         row = (await _svc._exec(
-            "SELECT id FROM ai_action_log WHERE object_table<>'' "
+            "SELECT id FROM ai_query_writeback_log WHERE object_table<>'' "
             "ORDER BY id DESC LIMIT 1", {})).fetchone()
         eid = int(row[0]) if row else 0
     except Exception:  # noqa: BLE001

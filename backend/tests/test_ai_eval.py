@@ -35,9 +35,10 @@ class TestAiEval:
         assert "total" in r and "anonymous_calls" in r and "compliant" in r and "issues" in r
 
     def test_pipeline_graph_shape(self):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
@@ -52,13 +53,14 @@ class TestAiEval:
         assert "nodes" in g and "edges" in g
 
     def test_approval_center_shape(self):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
-                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_action_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action_name TEXT, object_table TEXT, object_key TEXT, params TEXT, operator TEXT, result TEXT, detail TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)"))
+                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_query_writeback_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action_name TEXT, object_table TEXT, object_key TEXT, params TEXT, operator TEXT, result TEXT, detail TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)"))
                 await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_ont_change_log (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, kind TEXT, action TEXT, detail TEXT, created_id INTEGER, created_time TEXT, is_deleted INTEGER DEFAULT 0)"))
             return await AiQueryService.approval_center()
         r = asyncio.run(_go())
@@ -75,14 +77,15 @@ class TestAiEval:
         assert any("password" in (i["column"] or "").lower() for i in r["identified"])
 
     def test_permission_check(self, test_client):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
                 await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_access_rule (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, attribute TEXT, value TEXT, allowed_tables TEXT, sensitive_ok INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
-                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_domain (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, code TEXT, description TEXT, tables TEXT, members TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
+                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_data_domain (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, code TEXT, description TEXT, tables TEXT, members TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
             # 超管（user 1）对任意表全可见
             r = await AiQueryService.permission_check(1, "video_cameras")
             assert r["allowed"] is True and r["sensitive_visible"] is True
@@ -218,9 +221,10 @@ class TestAiEval:
         assert isinstance(r["results"], list)
 
     def test_favorites_and_plugins(self):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
@@ -258,9 +262,10 @@ class TestAiEval:
         assert bad["ok"] is False
 
     def test_export_asset(self):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
@@ -316,9 +321,10 @@ class TestAiEval:
         assert "data_nodes" in ks and "entities" in ks and "relations" in ks
 
     def test_version_diff(self, test_client):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
@@ -338,10 +344,12 @@ class TestAiEval:
         assert asyncio.run(_go())
 
     def test_asset_publish(self, test_client):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from types import SimpleNamespace as SN
+
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:

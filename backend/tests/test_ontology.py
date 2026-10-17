@@ -188,8 +188,9 @@ class TestBusinessSensitiveColAcl:
         """在字段资产目录标记一张业务表的敏感字段（sys_user.password）。"""
         async def _go():
             from sqlalchemy import select as _sel
-            from app.plugin.module_ai.query.model import AiQueryAssetColumnModel
+
             from app.core.database import async_db_session
+            from app.plugin.module_ai.query.model import AiQueryAssetColumnModel
             async with async_db_session.begin() as db:
                 existing = (await db.execute(
                     _sel(AiQueryAssetColumnModel).where(
@@ -234,8 +235,9 @@ class TestTableLevelAcl:
     @pytest.fixture(scope="class")
     def viewer_rule(self, test_client):
         async def _go():
-            from app.core.database import async_db_session
             from sqlalchemy import text as _t
+
+            from app.core.database import async_db_session
             async with async_db_session.begin() as db:
                 await db.execute(_t("DELETE FROM ai_access_rule WHERE value='viewer'"))
                 await db.execute(_t(
@@ -266,15 +268,16 @@ class TestTableLevelAcl:
         assert "video_alarm_records" in s
 
     def test_domain_member_restricted(self, test_client):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
-                await db.execute(_t("DELETE FROM ai_domain WHERE code='prod'"))
+                await db.execute(_t("DELETE FROM ai_data_domain WHERE code='prod'"))
                 await db.execute(_t(
-                    "INSERT INTO ai_domain(name,code,description,tables,members,enabled,is_deleted) "
+                    "INSERT INTO ai_data_domain(name,code,description,tables,members,enabled,is_deleted) "
                     "VALUES ('生产域','prod','x','[\"video_cameras\"]','[99]',1,0)"))
             # 用户 id=99 属于 prod 域 → 仅 video_cameras
             s = await AiQueryService._allowed_for_user(self._auth(False, [], uid=99))
@@ -286,16 +289,16 @@ class TestTableLevelAcl:
         asyncio.run(_go())
 
     def test_access_preview(self, test_client):
-        from types import SimpleNamespace
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
-                await db.execute(_t("DELETE FROM ai_domain WHERE code='prod'"))
+                await db.execute(_t("DELETE FROM ai_data_domain WHERE code='prod'"))
                 await db.execute(_t(
-                    "INSERT INTO ai_domain(name,code,description,tables,members,enabled,is_deleted) "
+                    "INSERT INTO ai_data_domain(name,code,description,tables,members,enabled,is_deleted) "
                     "VALUES ('生产域','prod','x','[\"video_cameras\"]','[99]',1,0)"))
             r = await AiQueryService.access_preview(99)
             assert r["domain_restricted"] is True
@@ -304,9 +307,10 @@ class TestTableLevelAcl:
         asyncio.run(_go())
 
     def test_access_preview_role(self, test_client):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
@@ -322,12 +326,14 @@ class TestTableLevelAcl:
         asyncio.run(_go())
 
     def test_dq_warning(self, test_client):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             from sqlalchemy import select as _sel
+
             from app.plugin.module_ai.query.model import AiQueryAssetModel
             async with async_db_session.begin() as db:
                 await db.execute(_t("DELETE FROM ai_dq_report WHERE table_name='video_cameras'"))
@@ -354,10 +360,12 @@ class TestTableLevelAcl:
 class TestPromoteReuse:
     def test_promote_creates_metric_and_term(self, test_client):
         from types import SimpleNamespace
+
         from sqlalchemy import select as _sel
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.plugin.module_ai.query.model import AiQueryMetricModel, AiQueryDictionaryModel
+
         from app.core.database import async_db_session
+        from app.plugin.module_ai.query.model import AiQueryDictionaryModel, AiQueryMetricModel
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             msg = await AiQueryService._save_message(
@@ -384,9 +392,10 @@ class TestPromoteReuse:
 # ---------------------------------------------------------------------------
 class TestOntVersionPublish:
     def test_publish_writes_changelog(self, test_client):
-        from app.plugin.module_ai.ontology import service as osvc
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.ontology import service as osvc
 
         async def _go():
             async with async_db_session() as db:
@@ -410,9 +419,10 @@ class TestOntVersionPublish:
         asyncio.run(_go())
 
     def test_superuser_approve_publish(self, test_client):
-        from app.plugin.module_ai.ontology import service as osvc
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.ontology import service as osvc
 
         async def _go():
             async with async_db_session() as db:
@@ -455,16 +465,18 @@ class TestActionApproval:
             w = await AiQueryService._action_writable_for(act, "0")  # 无角色
             assert set(["description", "location"]) == w
         asyncio.run(_go())
+
     def test_pending_list_and_reject(self, test_client):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
-                await db.execute(_t("DELETE FROM ai_action_log WHERE action_name='t2'"))
+                await db.execute(_t("DELETE FROM ai_query_writeback_log WHERE action_name='t2'"))
                 await db.execute(_t(
-                    "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,result,detail,is_deleted) "
+                    "INSERT INTO ai_query_writeback_log(action_name,object_table,object_key,params,operator,result,detail,is_deleted) "
                     "VALUES ('t2','video_cameras','1','{}','u','pending','x',0)"))
                 su = (await db.execute(_t(
                     "SELECT id FROM sys_user WHERE is_superuser=1 AND is_deleted=0 LIMIT 1"))).fetchone()
@@ -478,15 +490,16 @@ class TestActionApproval:
         asyncio.run(_go())
 
     def test_non_superuser_cannot_approve(self, test_client):
-        from app.plugin.module_ai.query.service import AiQueryService
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
             async with async_db_session.begin() as db:
-                await db.execute(_t("DELETE FROM ai_action_log WHERE action_name='t3'"))
+                await db.execute(_t("DELETE FROM ai_query_writeback_log WHERE action_name='t3'"))
                 await db.execute(_t(
-                    "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,result,detail,is_deleted) "
+                    "INSERT INTO ai_query_writeback_log(action_name,object_table,object_key,params,operator,result,detail,is_deleted) "
                     "VALUES ('t3','video_cameras','1','{}','u','pending','x',0)"))
             p = await AiQueryService.list_pending_actions()
             rid = next((x["id"] for x in p if x["action"] == "t3"), None)
@@ -497,10 +510,12 @@ class TestActionApproval:
         asyncio.run(_go())
 
     def test_analyze_ontology(self, test_client):
-        from app.plugin.module_ai.ontology import service as ont_svc
-        from app.core.database import async_db_session
-        from sqlalchemy import text as _t
         import asyncio
+
+        from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.ontology import service as ont_svc
 
         async def _go():
             async with async_db_session.begin() as db:
