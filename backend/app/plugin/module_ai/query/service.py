@@ -1315,8 +1315,9 @@ def _wants_grouping(question: str) -> bool:
     return bool(_GROUPING_RE.search(question or ""))
 
 
-def _match_metric(question: str, metrics: list[dict], terms: list[dict]) -> dict | None:
-    """按得分选指标：**指标自己的用词**命中 + 术语绑定 + 时间语境对齐。
+def _match_metric(question: str, metrics: list[dict], terms: list[dict],
+                  concepts: list[dict] | None = None) -> dict | None:
+    """按得分选指标：**指标自己的用词**命中 + 术语绑定 + 概念(含同义词)绑定 + 时间语境对齐。
 
     打分（实测调过）：
       - 指标名整体出现在问句：+6；key 出现：+4；绑定术语命中：+3；
@@ -1331,6 +1332,17 @@ def _match_metric(question: str, metrics: list[dict], terms: list[dict]) -> dict
     q = question.lower()
     q_grams = _bigrams(question)
     frame = _detect_time_frame(question)
+    # 业务概念（含同义词）→ 指标：与术语同等参与快路径匹配，闭合「概念→指标」
+    concept_bind: list[tuple[str, str]] = []
+    for c in concepts or []:
+        mk = (c.get("metric_key") or "").strip()
+        if not mk:
+            continue
+        syns = c.get("synonyms") or ""
+        syn_list = [x.strip() for x in str(syns).split(",") if x.strip()] if syns else []
+        for nm in [c.get("name"), *syn_list]:
+            if nm:
+                concept_bind.append((str(nm).lower(), mk))
     best = None
     best_score = 0
     for m in metrics:
@@ -1348,6 +1360,9 @@ def _match_metric(question: str, metrics: list[dict], terms: list[dict]) -> dict
             word += 4
         for t in terms:
             if t.get("metric_key") == m["key"] and t.get("term") and t["term"].lower() in q:
+                word += 3
+        for nm, mk in concept_bind:
+            if mk == m["key"] and nm in q:
                 word += 3
         # 时间语境：指标自身的时间维度与问句一致（允许"只靠时间维度"选中，
         # 如「这个月…报警」→ 本月告警数，其名称与问句没有共同词）
@@ -6367,7 +6382,11 @@ class AiQueryService:
 
         # 列举类问题不走指标模板（快路径只认指标聚合），强制走 NL2SQL
         if not _is_listing_question(question):
-            metric = _match_metric(question, metrics, terms)
+            try:
+                _concepts = await cls.list_concepts()
+            except Exception:  # noqa: BLE001
+                _concepts = []
+            metric = _match_metric(question, metrics, terms, _concepts)
             # 「每个/各/按X分组」是**分组诉求**：单值指标答不了 →
             # 除非命中本身就是「分组型」指标（agg=group），否则让位给慢路径。
             # 实测 bug：问「统计每个摄像头的告警数量」被 alert_count_today 抢答成
@@ -6925,7 +6944,9 @@ class AiQueryService:
         metrics_map = {m["key"]: m for m in metrics_list}
         # 检索优化（S4）：问题命中某个指标时，把其对象排到最前并显式建议用 metric
         try:
-            matched = _match_metric(question, metrics_list, await cls.list_terms(datasource))
+            matched = _match_metric(
+                question, metrics_list, await cls.list_terms(datasource),
+                await cls.list_concepts())
         except Exception:  # noqa: BLE001
             matched = None
 
@@ -7424,7 +7445,11 @@ class AiQueryService:
             try:
                 metrics = await cls.list_metrics(datasource)
                 terms = await cls.list_terms(datasource)
-                metric = _match_metric(question, metrics, terms)
+                try:
+                    _concepts = await cls.list_concepts()
+                except Exception:  # noqa: BLE001
+                    _concepts = []
+                metric = _match_metric(question, metrics, terms, _concepts)
                 if metric and metric.get("agg") != "group" and _wants_grouping(question):
                     metric = None
                 if metric:
@@ -7749,6 +7774,26 @@ class AiQueryService:
             from sqlalchemy import text as _text2
 
             async with async_db_session() as db:
+                # 人工维护的字段枚举优先（ai_query_asset_columns.enum）：人工枚举 > 真实库 DISTINCT
+                manual_enum: dict = {}
+                try:
+                    from sqlalchemy import select as _sel2
+
+                    _rows = (
+                        await db.execute(
+                            _sel2(
+                                AiQueryAssetColumnModel.table_name,
+                                AiQueryAssetColumnModel.column_name,
+                                AiQueryAssetColumnModel.enum,
+                            ).where(AiQueryAssetColumnModel.is_deleted.is_(False))
+                        )
+                    ).all()
+                    for _tn, _cn, _ev in _rows:
+                        _vs = _ev if isinstance(_ev, list) else (json.loads(_ev) if _ev else [])
+                        if _vs:
+                            manual_enum[(_tn, _cn)] = [str(x) for x in _vs]
+                except Exception:  # noqa: BLE001
+                    manual_enum = {}
                 for t, labels in list(schema.items()):
                     for i, lab in enumerate(labels):
                         c = lab.split("(")[0]
@@ -7759,6 +7804,11 @@ class AiQueryService:
                             "json", "jsonb", "text", "bytea", "character varying[]",
                             "jsonb[]", "uuid",
                         }:
+                            continue
+                        # 人工维护的枚举优先，其次回退真实库 DISTINCT
+                        _me = manual_enum.get((t, c))
+                        if _me:
+                            labels[i] = lab + f"【取值:{','.join(_me[:16])}】"
                             continue
                         try:
                             vals = await db.execute(
