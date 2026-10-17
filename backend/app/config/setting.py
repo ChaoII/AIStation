@@ -161,6 +161,9 @@ class Settings(BaseSettings):
     # 启动期并发预热异步连接池：把「一次性建连」代价放到启动阶段，
     # 让首个接入突发只复用已建好的保留连接（审计·并发 #11）。
     DB_POOL_WARMUP: bool = True
+    # Agno OpenTelemetry 追踪：把 agent/模型/工具运行写入 agno 运行态库
+    # （agno_traces/agno_spans），用于定位慢调用与异常。可观测性增强，默认开。
+    AGNO_TRACING: bool = True
     FUTURE: bool = True  # 是否使用SQLAlchemy 2.0特性
     AUTOCOMMIT: bool = False  # 是否自动提交
     AUTOFETCH: bool = False  # 是否自动刷新

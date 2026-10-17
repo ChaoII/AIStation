@@ -13,13 +13,16 @@ import re
 import time
 from contextvars import ContextVar
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
 from .dialect import build_system_prompt, dialect_name, templated_note
 from .filtering import (
@@ -28,6 +31,13 @@ from .filtering import (
     classify_tables,
     is_audit_field,
     is_system_table,
+)
+from .llm_schemas import (
+    AssetDescriptionOut,
+    ClassifyAdviseOut,
+    FilterRulesOut,
+    MetricsTermsOut,
+    PlanOut,
 )
 from .model import (
     AiQueryAssetColumnModel,
@@ -2468,22 +2478,6 @@ class AiQueryService:
                 colmap.setdefault(c.table_name, []).append((c.column_name, c))
         if not need_tables and not colmap:
             return {"tables": 0, "columns": 0}
-        runtime = await cls._get_runtime()
-        # 统一走 agno（AGENTS.md：AI 调用一律走 agno，禁止原始 OpenAI 客户端平行实现）
-        from agno.agent import Agent
-        from agno.models.openai.like import OpenAILike
-
-        from app.plugin.module_ai.models.service import build_headers
-
-        model = OpenAILike(
-            id=runtime["model"], base_url=runtime["base_url"],
-            api_key=runtime.get("api_key") or "sk-none",
-            temperature=0, max_tokens=2000, timeout=90,
-            extra_body={"reasoning_effort": "low"},
-            default_headers=build_headers(
-                runtime["base_url"], runtime.get("extra_headers"), "aistation-dict"),
-        )
-        agent = Agent(model=model, telemetry=False, markdown=False)
         updated_tables = updated_cols = 0
         # 按表批量生成（带数据画像）
         for tname, trow in need_tables:
@@ -2499,13 +2493,13 @@ class AiQueryService:
                 prof_lines.append(seg)
             prompt = (
                 "你是数据库元数据专家。请根据字段名与数据画像，为这张数据库表及字段生成简洁的中文业务描述"
-                "（每个不超过30字，只说业务含义）。严格返回 JSON，格式："
-                "{\"table\":\"<表描述>\",\"columns\":{\"字段名\":\"<字段描述>\"}}。\n"
+                "（每个不超过30字，只说业务含义）。\n"
                 f"表名：{tname}\n字段：{', '.join(cols)}\n数据画像：\n" + "\n".join(prof_lines)
             )
             try:
-                resp = await agent.arun(prompt)
-                data = cls._parse_dict(getattr(resp, "content", "") or "")
+                out = await cls._llm_structured(prompt, AssetDescriptionOut, temperature=0,
+                                                max_tokens=2000, tag="aistation-dict")
+                data = out.model_dump()
             except Exception as e:  # noqa: BLE001
                 log.warning(f"[query] 生成表描述失败 {tname}: {e}")
                 continue
@@ -5238,60 +5232,20 @@ class AiQueryService:
         for t in tables:
             dict_lines.append(f"表 {t.table_name}：{(t.description or '').strip() or '-'} | 字段: {', '.join(colmap.get(t.table_name, []))}")
         dict_text = "\n".join(dict_lines[:120])
-        # 2) LLM 生成建议
-        runtime = await cls._get_runtime()
-        # 统一走 agno（AGENTS.md：AI 调用一律走 agno，禁止原始 OpenAI 客户端平行实现）
-        from agno.agent import Agent
-        from agno.models.openai.like import OpenAILike
-
-        from app.plugin.module_ai.models.service import build_headers
-
-        model = OpenAILike(
-            id=runtime["model"], base_url=runtime["base_url"],
-            api_key=runtime.get("api_key") or "sk-none",
-            temperature=0.2, max_tokens=4000, timeout=90,
-            extra_body={"reasoning_effort": "low"},
-            default_headers=build_headers(
-                runtime["base_url"], runtime.get("extra_headers"), "aistation-suggest"),
+        # 2) LLM 生成建议（agno 结构化输出：结构由模型侧 JSON schema 约束）
+        prompt = (
+            "你是数据分析师。根据下面的数据库表/字段中文词典，推荐 6~10 个高频业务指标和 6~10 个业务术语。"
+            "指标必须是常见统计口径(总数/某类型数量/平均/分布)，且能用给出的表/字段实现；"
+            "指标的 sql 必须是可执行的 SELECT COUNT/AVG 等聚合语句，agg 取 count|avg|group；"
+            "术语的 type 取 metric|dimension，target 写指标名或「表.字段」。"
+            f"\n数据字典：\n{dict_text}"
         )
-        agent = Agent(model=model, telemetry=False, markdown=False)
-        data: dict = {}
-        for attempt in range(2):
-            prompt = (
-                "你是数据分析师。根据下面的数据库表/字段中文词典，推荐 6~10 个高频业务指标和 6~10 个业务术语。"
-                "指标必须是常见统计口径(总数/某类型数量/平均/分布)，且能用给出的表/字段实现。"
-                "**只返回一个 JSON 对象，不要任何解释、不要 markdown 代码块**，格式严格为："
-                '{"metrics":[{"name":"<指标名>","sql":"<SELECT COUNT/AVG> FROM <表>...","agg":"count|avg|group"}],'
-                '"terms":[{"term":"<口语叫法>","type":"metric|dimension","target":"<指标名或 表.字段>"}]}'
-                + ("\n\n注意：你上次输出不是合法 JSON，请严格按上面的 JSON 结构重新输出，不要多余文字。\n" if attempt else "")
-                + f"\n数据字典：\n{dict_text}"
-            )
-            try:
-                resp = await agent.arun(prompt)
-            except Exception as e:  # noqa: BLE001
-                raise CustomException(msg=f"推荐失败：{e}") from e
-            data = cls._parse_dict(getattr(resp, "content", "") or "")
-            if data or attempt == 1:
-                break
+        out = await cls._llm_structured(prompt, MetricsTermsOut, temperature=0.2,
+                                        max_tokens=4000, tag="aistation-suggest")
         return {
-            "metrics": data.get("metrics") or [],
-            "terms": data.get("terms") or [],
+            "metrics": [m.model_dump() for m in out.metrics],
+            "terms": [t.model_dump() for t in out.terms],
         }
-
-    @staticmethod
-    def _parse_dict(text: str) -> dict:
-        import json
-        import re
-
-        text = re.sub(r"```(?:json)?", "", text).strip()
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            text = text[start : end + 1]
-        try:
-            return json.loads(text)
-        except Exception:  # noqa: BLE001
-            return {}
 
     @classmethod
     async def infer_asset_relations(cls, auth) -> dict:
@@ -5939,44 +5893,63 @@ class AiQueryService:
 
     # ---- 大模型辅助：筛选规则（suggest / parse / classify-advise） ----
     @classmethod
-    async def _llm_json(cls, prompt: str, temperature: float = 0.2) -> str:
-        """大模型辅助统一入口（走 agno，且 agno 外 wait_for 兜底超时）。
+    async def _llm_structured(cls, prompt: str, schema: type[BaseModel], *,
+                              temperature: float = 0.2, max_tokens: int = 4000,
+                              runtime: dict | None = None,
+                              tag: str = "aistation-suggest") -> Any:
+        """结构化输出：走 agno ``output_schema``，由模型侧 JSON schema 约束结果。
 
-        - 复用 ``_get_runtime()`` + ``build_headers`` + ``OpenAILike`` + ``Agent``；
-        - 只在 agno **之外**用 ``asyncio.wait_for`` 兜底超时（agno 的 timeout 只是单次 HTTP）；
-        - 返回 ``resp.content``（str），异常统一上报可读的 CustomException。
+        相比「提示词里要求 JSON + 事后手工解析」（旧 ``_llm_json`` 路径），
+        这里把结构约束交给模型服务端，返回**已校验**的 ``schema`` 实例。
+
+        - ``runtime`` 为空时自行 ``_get_runtime()``（调用方已有 runtime 时可传入复用）；
+        - 超时只在 agno **之外**用 ``asyncio.wait_for`` 兜底（agno 的 timeout 仅单次 HTTP）；
+        - 网关不回原生结构时，兼容 dict / JSON 文本两种形态兜底解析。
         """
         from agno.agent import Agent
         from agno.models.openai.like import OpenAILike
 
         from app.plugin.module_ai.models.service import build_headers
 
-        try:
-            runtime = await cls._get_runtime()
-        except Exception as e:  # noqa: BLE001
-            raise CustomException(msg=f"未配置可用的辅助模型：{e}")
+        if runtime is None:
+            try:
+                runtime = await cls._get_runtime()
+            except Exception as e:  # noqa: BLE001
+                raise CustomException(msg=f"未配置可用的辅助模型：{e}")
         cfg = await cls._cfg()
         model = OpenAILike(
             id=runtime["model"], base_url=runtime["base_url"],
-            api_key=runtime["api_key"] or "sk-none",
-            temperature=temperature, max_tokens=4000, timeout=60,
-            # 辅助任务只要结果，压住思考避免长尾（参考 _nl2sql 的思考控制结论）
+            api_key=runtime.get("api_key") or "sk-none",
+            temperature=temperature, max_tokens=max_tokens, timeout=90,
+            # 辅助任务只要结果，压住思考避免长尾（与 NL2SQL 的思考控制结论一致）
             extra_body={"reasoning_effort": "low"},
             default_headers=build_headers(
-                runtime["base_url"], runtime.get("extra_headers"), "aistation-suggest"),
+                runtime["base_url"], runtime.get("extra_headers"), tag),
         )
-        agent = Agent(model=model, telemetry=False,
-                      instructions="只输出严格的 JSON，不要任何解释、不要 markdown 代码块以外的文字。")
+        agent = Agent(model=model, output_schema=schema, telemetry=False, markdown=False)
         try:
             resp = await asyncio.wait_for(
                 agent.arun(prompt),
                 timeout=cls._cfg_int(cfg, "nl2sql_call_timeout", 90),
             )
-            return (resp.content or "").strip()
         except asyncio.TimeoutError:
             raise CustomException(msg="大模型辅助调用超时，请稍后重试")
         except Exception as e:  # noqa: BLE001
             raise CustomException(msg=f"大模型辅助调用失败：{str(e)[:200]}")
+        content = getattr(resp, "content", None)
+        if isinstance(content, schema):
+            return content
+        if content is None or (isinstance(content, str) and not content.strip()):
+            # 实测：推理型模型可能把 max_tokens 全花在思考上，最终 content 为空
+            raise CustomException(msg="大模型未返回结构化结果（思考可能耗尽输出预算，请重试或减小输入规模）")
+        try:
+            if isinstance(content, dict):
+                return schema.model_validate(content)
+            return schema.model_validate(cls._parse_llm_json(str(content)))
+        except Exception as e:  # noqa: BLE001
+            log.warning("[query] 结构化输出解析失败：{}｜模型原文：{}",
+                        str(e)[:100], str(content)[:200])
+            raise CustomException(msg=f"大模型返回结构不完整：{str(e)[:100]}")
 
     @staticmethod
     def _first_balanced_brace(t: str) -> str | None:
@@ -6035,16 +6008,11 @@ class AiQueryService:
         return obj if obj is not None else t
 
     @classmethod
-    def _parse_llm_json(cls, raw: str, keys: list[str] | None = None,
-                        key_types: dict[str, type] | None = None) -> dict:
-        """解析 ``_llm_json`` 产出：``_extract_json`` + ``json.loads``。
+    def _parse_llm_json(cls, raw: str) -> dict:
+        """解析模型返回的 JSON 文本：``_extract_json`` + ``json.loads``。
 
-        - JSON 非法 → 抛 ``CustomException("大模型返回不是有效 JSON")``；
-        - ``keys`` 非空且结果缺任一关键键 → 抛
-          ``CustomException("大模型返回结构不完整：缺少 rules/system_suggest/audit_suggest 等")``
-          （避免模型返回合法 JSON 但缺键时泄漏 ``KeyError`` 变 500）；
-        - ``key_types`` 指定某键的期望类型（如 ``rules`` 应为 dict、
-          ``system_suggest`` 应为 list），值类型不符时抛可读错误，避免下游 `dict/list` 用法崩溃。
+        仅作为 ``_llm_structured`` 的兜底（网关未回原生结构化输出时用），
+        非法 JSON 或非对象 → 抛可读 ``CustomException``。
         """
         try:
             parsed = json.loads(cls._extract_json(raw))
@@ -6052,16 +6020,6 @@ class AiQueryService:
             raise CustomException(msg="大模型返回不是有效 JSON")
         if not isinstance(parsed, dict):
             raise CustomException(msg="大模型返回不是有效 JSON")
-        if keys:
-            missing = [k for k in keys if k not in parsed]
-            if missing:
-                raise CustomException(
-                    msg="大模型返回结构不完整：缺少 " + "/".join(missing))
-        if key_types:
-            for k, want in key_types.items():
-                if k in parsed and not isinstance(parsed[k], want):
-                    raise CustomException(
-                        msg=f"大模型返回结构不完整：{k} 类型错误")
         return parsed
 
     @classmethod
@@ -6078,8 +6036,12 @@ class AiQueryService:
         return saved or DEFAULT_FILTER_RULES
 
     @classmethod
-    async def _ds_samples(cls, datasource_id: int) -> tuple[list[str], list[str]]:
-        """取表名/字段名样例（各截断 400 条）。
+    async def _ds_samples(cls, datasource_id: int,
+                          limit: int = 400) -> tuple[list[str], list[str]]:
+        """取表名/字段名样例（各截断 ``limit`` 条，默认 400）。
+
+        ``limit`` 可按调用方收紧：**逐条推演型任务**（classify-advise）样例越多，
+        模型思考越久（实测 400 表会把 token 预算全烧在 reasoning 上），故需传小值。
 
         统一 try/except：``list_ds_schema`` 失败（如数据源不存在/DB 异常）时优雅降级为
         空样例 ``([], [])``，不阻断大模型调用（suggest/parse/classify-advise 三处行为一致）。
@@ -6088,11 +6050,11 @@ class AiQueryService:
             schema = await list_ds_schema(datasource_id)
         except Exception:  # noqa: BLE001
             return [], []
-        tables = [s["table"] for s in schema][:400]
+        tables = [s["table"] for s in schema][:limit]
         fields = [
             c.get("name") or c.get("column_name")
             for s in schema for c in (s.get("columns") or []) if isinstance(c, dict)
-        ][:400]
+        ][:limit]
         return tables, fields
 
     @classmethod
@@ -6119,9 +6081,8 @@ class AiQueryService:
             "必须输出完整 rules（含 enabled、system_table 四要素与 audit_fields），"
             "不要缺省字段，不要输出任何解释。"
         )
-        raw = await cls._llm_json(prompt)
-        parsed = cls._parse_llm_json(raw, keys=["rules"], key_types={"rules": dict})
-        return {"rules": parsed["rules"]}
+        out = await cls._llm_structured(prompt, FilterRulesOut, temperature=0.2)
+        return {"rules": out.rules.model_dump()}
 
     @classmethod
     async def parse_filter_rules(cls, datasource_id: int, text: str) -> dict:
@@ -6141,35 +6102,33 @@ class AiQueryService:
             "必须输出完整 rules（含 enabled、system_table 四要素与 audit_fields），"
             "不要缺省字段，不要输出任何解释。"
         )
-        raw = await cls._llm_json(prompt)
-        parsed = cls._parse_llm_json(raw, keys=["rules"], key_types={"rules": dict})
-        return {"rules": parsed["rules"]}
+        out = await cls._llm_structured(prompt, FilterRulesOut, temperature=0.2)
+        return {"rules": out.rules.model_dump()}
 
     @classmethod
     async def classify_advise(cls, datasource_id: int, rules: dict | None = None) -> dict:
         """逐表逐字段分类建议：根据当前规则推理哪些表可能为系统表、哪些字段为审计字段。
 
-        - 取表/字段样例（各截断 400 条）+ 当前规则作为推理依据；
+        - 样例**收紧到各 120 条**：逐条推演型任务给全量样例会让模型把 token 预算
+          全烧在 reasoning 上（实测 400 表 → content 为空、解析失败）；
         - 返回 ``{"system_suggest": [{"name","reason"}], "audit_suggest": [{"name","reason"}]}``。
         """
-        tables, fields = await cls._ds_samples(datasource_id)
+        tables, fields = await cls._ds_samples(datasource_id, limit=120)
         cur = await cls._ds_current_rules(datasource_id, rules)
         prompt = (
-            "你是数据库表/字段分类专家。根据给定的当前规则，逐表判断是否疑似系统表、"
-            "逐字段判断是否疑似审计字段，并为每项给出中文判断依据（reason，如「命名含 _BAK，疑似备份表」）。\n"
+            "你是数据库表/字段分类专家。根据给定的当前规则，判断哪些表疑似系统表、"
+            "哪些字段疑似审计字段，并为每项给出简短中文依据（reason 不超过 20 字）。\n"
             f"当前规则：{json.dumps(cur, ensure_ascii=False)}\n"
             f"表名样例（{len(tables)}）：{json.dumps(tables, ensure_ascii=False)}\n"
             f"字段样例（{len(fields)}）：{json.dumps(fields, ensure_ascii=False)}\n\n"
-            "请只输出严格的 JSON，结构为："
-            "{\"system_suggest\": [{\"name\": \"...\", \"reason\": \"...\"}], "
-            "\"audit_suggest\": [{\"name\": \"...\", \"reason\": \"...\"}]}\n"
-            "只列出你认为应归为系统表/审计字段的表与字段，不要输出任何解释。"
+            "**直接给结论，不要逐条推演**；每类最多 30 条（按置信度从高到低）。"
         )
-        raw = await cls._llm_json(prompt)
-        parsed = cls._parse_llm_json(
-            raw, keys=["system_suggest", "audit_suggest"],
-            key_types={"system_suggest": list, "audit_suggest": list})
-        return parsed
+        out = await cls._llm_structured(prompt, ClassifyAdviseOut, temperature=0.2,
+                                        max_tokens=12000)
+        return {
+            "system_suggest": [i.model_dump() for i in out.system_suggest],
+            "audit_suggest": [i.model_dump() for i in out.audit_suggest],
+        }
 
     # ---- 会话与问答 ----
     @classmethod
@@ -6301,6 +6260,7 @@ class AiQueryService:
         scored.sort(key=lambda x: -x["_score"])
         return scored[:3]
 
+    @classmethod
     async def ask(cls, question: str, auth, session_id: int | None = None,
                   datasource: str | None = None, redis=None, force_slow: bool = False,
                   object_code: str | None = None, object_key: str | None = None) -> dict:
@@ -7159,23 +7119,16 @@ class AiQueryService:
 
     @classmethod
     async def _plan_llm(cls, prompt: str, runtime: dict, temperature: float = 0.0) -> str:
-        """计划阶段的一次 LLM 调用（只出 JSON 计划，不写 SQL）。统一走 agno。"""
-        from agno.agent import Agent
-        from agno.models.openai.like import OpenAILike
+        """计划阶段的一次 LLM 调用（只出 JSON 计划，不写 SQL）。统一走 agno。
 
-        from app.plugin.module_ai.models.service import build_headers
-
-        model = OpenAILike(
-            id=runtime["model"], base_url=runtime["base_url"],
-            api_key=runtime.get("api_key") or "sk-none",
-            temperature=temperature, max_tokens=nl2sql_max_tokens(None), timeout=60,
-            extra_body={"reasoning_effort": "low"},
-            default_headers=build_headers(
-                runtime["base_url"], runtime.get("extra_headers"), "aistation-query-plan"),
-        )
-        agent = Agent(model=model, telemetry=False, markdown=False)
-        resp = await agent.arun(prompt)
-        return getattr(resp, "content", "") or ""
+        用 agno ``output_schema``（模型原生 JSON schema）约束计划结构，
+        返回规范化后的计划 JSON 文本，交由 ``plan.parse_plan`` 解析与表名过滤。
+        """
+        out = await cls._llm_structured(
+            prompt, PlanOut, temperature=temperature,
+            max_tokens=nl2sql_max_tokens(None), runtime=runtime,
+            tag="aistation-query-plan")
+        return json.dumps(out.model_dump(), ensure_ascii=False)
 
     @classmethod
     async def _resolve_dialect_info(cls, datasource: str) -> tuple[dict, str]:

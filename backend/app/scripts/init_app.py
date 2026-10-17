@@ -1527,6 +1527,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
             await _ensure_query_tables()
         except Exception as e:  # noqa: BLE001  建表失败不阻断启动
             log.warning(f"⚠️  问数侧影子表建表失败（不阻断启动）: {e}")
+        # Agno OpenTelemetry 追踪（幂等、best-effort）：agent/模型/工具调用链
+        try:
+            from app.plugin.module_ai.agno_tools.tracing import ensure_tracing
+
+            ensure_tracing()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"⚠️  Agno 追踪启用失败（不阻断启动）: {e}")
         # 能力市场官方种子（通用技能 + agno 免密钥工具 + 办公类 MCP），幂等
         try:
             from app.plugin.module_ai.market.seed import ensure_market_seed
