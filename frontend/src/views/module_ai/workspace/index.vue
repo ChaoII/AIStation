@@ -189,6 +189,13 @@
         <el-button type="primary" @click="saveCron">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 工作流内嵌编辑器 -->
+    <WorkflowEditor
+      v-model:visible="workflowEditVisible"
+      :workflow="workflowEditItem"
+      @refresh="loadItems"
+    />
   </div>
 </template>
 
@@ -210,9 +217,10 @@ import {
   type WorkspaceItem,
 } from "@/api/module_ai/workspace";
 import { deleteAiAgent } from "@/api/module_ai/agent";
-import { deleteAiWorkflow } from "@/api/module_ai/workflow";
+import { deleteAiWorkflow, getAiWorkflowDetail } from "@/api/module_ai/workflow";
 import { deleteAiApp } from "@/api/module_ai/app";
 import IconTile from "@/views/module_ai/market/components/IconTile.vue";
+import WorkflowEditor from "@/views/module_ai/workflow/components/WorkflowEditor.vue";
 
 defineOptions({ name: "AiWorkbench" });
 
@@ -345,7 +353,7 @@ function openChat(it: WorkspaceItem) {
 async function onCardMore(it: WorkspaceItem, cmd: string) {
   if (cmd === "edit") {
     if (it.type === "agent") router.push("/ai/agent");
-    else if (it.type === "workflow") router.push("/ai/workflow");
+    else if (it.type === "workflow") await openWorkflowEdit(it);
     else if (it.type === "app") router.push("/ai/app");
     else if (it.type === "cron") ElMessage.info("点到对应条目编辑");
     return;
@@ -381,6 +389,17 @@ function onCreate(cmd: string) {
 function toggleEnable(it: WorkspaceItem, val: boolean) {
   it.enabled = val;
   ElMessage.success("已更新启用状态");
+}
+
+// 工作流内嵌编辑
+const workflowEditVisible = ref(false);
+const workflowEditItem = ref<any>(null);
+async function openWorkflowEdit(it: WorkspaceItem) {
+  const res: any = await getAiWorkflowDetail(it.id);
+  const d = res.data?.data;
+  if (!d) return ElMessage.error("工作流不存在");
+  workflowEditItem.value = d;
+  workflowEditVisible.value = true;
 }
 
 // ---- 分类弹窗 ----
