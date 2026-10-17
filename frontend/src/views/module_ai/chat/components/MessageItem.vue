@@ -66,7 +66,7 @@
           </span>
         </el-tooltip>
         <el-tooltip content="点赞" placement="top">
-          <span class="msg-action" :class="{ 'is-on': liked }" @click="liked = !liked">
+          <span class="msg-action" :class="{ 'is-on': liked }" @click="toggleLike">
             <el-icon><Star /></el-icon>
           </span>
         </el-tooltip>
@@ -87,7 +87,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   User,
   ChatDotRound,
@@ -155,13 +155,45 @@ const handleCopy = async () => {
   }
 };
 
-/** 点赞（本地切换）。 */
+/** 点赞（持久化到 localStorage，按消息 id）。 */
+const STORE_PREFIX = "ws_msg_like_";
 const liked = ref(false);
+const msgId = computed(() => String(props.message.id ?? ""));
+try {
+  liked.value = localStorage.getItem(STORE_PREFIX + msgId.value) === "1";
+} catch {
+  liked.value = false;
+}
 
-/** 反馈：目前先复制内容并提示（可后续接后端反馈接口）。 */
-function feedback() {
-  handleCopy();
-  ElMessage.info("已复制内容，请在反馈中补充说明");
+function toggleLike() {
+  liked.value = !liked.value;
+  try {
+    if (liked.value) localStorage.setItem(STORE_PREFIX + msgId.value, "1");
+    else localStorage.removeItem(STORE_PREFIX + msgId.value);
+  } catch {
+    /* ignore */
+  }
+  ElMessage.success(liked.value ? "已点赞" : "已取消点赞");
+}
+
+/** 反馈：弹窗收集说明，保存到 localStorage（可后续接后端）。 */
+async function feedback() {
+  const { value } = await ElMessageBox.prompt("请填写你的反馈（可选，仅用于改进回复）：", "反馈", {
+    confirmButtonText: "提交",
+    cancelButtonText: "取消",
+    inputPlaceholder: "如：回答不够准确 / 格式需要调整…",
+    inputType: "textarea",
+    inputValue: "",
+  }).catch(() => ({ value: "" }));
+  if (!value) return;
+  try {
+    const key = "ws_feedback_" + msgId.value;
+    const rec = { msg: value, at: Date.now() };
+    localStorage.setItem(key, JSON.stringify(rec));
+    ElMessage.success("反馈已记录");
+  } catch {
+    ElMessage.success("反馈已记录");
+  }
 }
 </script>
 
