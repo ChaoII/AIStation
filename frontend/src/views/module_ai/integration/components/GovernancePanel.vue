@@ -389,6 +389,100 @@
           </el-table-column>
         </el-table>
       </el-tab-pane>
+
+      <!-- 动作审批：写回动作的待审批/定义/审计 -->
+      <el-tab-pane label="动作审批" name="action">
+        <div class="gp-bar">
+          <el-tag size="small" type="info" effect="plain">
+            待审批动作 {{ pendingActions.length }} · 动作定义 {{ actionList.length }}
+          </el-tag>
+        </div>
+        <div class="gp-section">待审批（写回需人工批准，批准后生效）</div>
+        <el-table :data="pendingActions" size="small" border style="margin-bottom: 16px">
+          <template #empty>
+            <el-empty description="暂无待审批动作" :image-size="50" />
+          </template>
+          <el-table-column prop="action" label="动作" width="120" show-overflow-tooltip />
+          <el-table-column prop="table" label="对象表" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="key" label="记录" width="80" />
+          <el-table-column label="参数" min-width="160">
+            <template #default="{ row }">
+              <div class="gp-params">{{ JSON.stringify(row.params || {}) }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="operator" label="操作人" width="80" />
+          <el-table-column prop="time" label="时间" min-width="150" show-overflow-tooltip />
+          <el-table-column label="操作" width="130" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="apAction(row, true)">
+                批准
+              </el-button>
+              <el-button link type="danger" size="small" @click="apAction(row, false)">
+                驳回
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="gp-section">动作定义（对象可写列 / 校验 / 是否需审批）</div>
+        <el-table :data="actionList" size="small" border>
+          <template #empty>
+            <el-empty description="暂无动作定义" :image-size="50" />
+          </template>
+          <el-table-column prop="name" label="动作" width="120" show-overflow-tooltip />
+          <el-table-column
+            prop="object_table"
+            label="对象表"
+            min-width="130"
+            show-overflow-tooltip
+          />
+          <el-table-column label="可写列" min-width="160">
+            <template #default="{ row }">
+              <el-tag
+                v-for="c in row.writable_cols"
+                :key="c"
+                size="small"
+                effect="plain"
+                style="margin: 0 2px"
+              >
+                {{ c }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="validation" label="校验" min-width="120" show-overflow-tooltip />
+          <el-table-column label="需审批" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.approve ? 'warning' : 'info'" effect="plain">
+                {{ row.approve ? "是" : "否" }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="启用" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.enabled ? 'success' : 'info'" effect="plain">
+                {{ row.enabled ? "是" : "否" }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="gp-section">审计日志（最近 50 条）</div>
+        <el-table :data="actionLogs" size="small" border max-height="260">
+          <template #empty>
+            <el-empty description="暂无审计日志" :image-size="50" />
+          </template>
+          <el-table-column prop="action" label="动作" width="120" show-overflow-tooltip />
+          <el-table-column label="结果" width="90">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.status === 'approved' ? 'success' : 'info'">
+                {{ row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="operator" label="操作人" width="80" />
+          <el-table-column prop="time" label="时间" min-width="150" show-overflow-tooltip />
+        </el-table>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 权限策略编辑 -->
@@ -501,6 +595,11 @@ import {
   removeAccessRule,
   removeDomain,
   getQueryObjects,
+  getActionList,
+  getPendingActions,
+  getActionLogs,
+  approveAction,
+  rejectAction,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "GovernancePanel" });
@@ -514,6 +613,10 @@ const dqScanning = ref(false);
 const domainView = ref<any>({ domains: [], unassigned: [], total_objects: 0 });
 const ontGov = ref<any>({ avg_score: 0, items: [] });
 const govObjects = ref<any[]>([]);
+// 动作审批
+const pendingActions = ref<any[]>([]);
+const actionList = ref<any[]>([]);
+const actionLogs = ref<any[]>([]);
 
 async function loadOverview() {
   const r = await getGovernanceOverview();
@@ -552,6 +655,35 @@ function onTab(name: any) {
     loadDqAlert();
   } else if (name === "domain") loadDomain();
   else if (name === "ontgov") loadOntGov();
+  else if (name === "action") loadAction();
+}
+
+// 动作审批：待审批/定义/日志
+async function loadAction() {
+  try {
+    const [pa, al, lg] = await Promise.all([
+      getPendingActions(50),
+      getActionList(),
+      getActionLogs(50),
+    ]);
+    pendingActions.value = pa.data?.data || [];
+    actionList.value = al.data?.data || [];
+    actionLogs.value = lg.data?.data || [];
+  } catch {
+    pendingActions.value = [];
+    actionList.value = [];
+    actionLogs.value = [];
+  }
+}
+
+async function apAction(row: any, approve: boolean) {
+  try {
+    await (approve ? approveAction : rejectAction)({ approval_id: row.id });
+    ElMessage.success(approve ? "已批准" : "已驳回");
+    await loadAction();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "操作失败");
+  }
 }
 async function scanAll() {
   dqScanning.value = true;
@@ -708,5 +840,11 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+.gp-params {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  font-family: monospace;
+  word-break: break-all;
 }
 </style>
