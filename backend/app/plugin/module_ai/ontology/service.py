@@ -1131,14 +1131,18 @@ async def _validate_params_by_value_type(action: dict, params: dict) -> list[str
 
 async def _log_action_result(action_name: str, table: str, object_key: str, params: dict,
                              operator: str, result: str, detail: str) -> int:
-    async with async_db_session.begin() as db:
-        res = await db.execute(_t(
-            "INSERT INTO ai_query_writeback_log(action_name,object_table,object_key,params,operator,"
-            "result,detail) VALUES (:n,:t,:k,:p,:o,:r,:d) RETURNING id"),
-            {"n": action_name, "t": table, "k": str(object_key),
-             "p": json.dumps(params, ensure_ascii=False), "o": operator or "",
-             "r": result, "d": detail[:500]})
-        return int(res.scalar() or 0)
+    """写「动作回写」审计并返回 id。
+
+    走共享 ``catalog`` 接口（``ai_query_writeback_log`` 归目录所有），本体不直写问数的表；
+    ``raise_on_error=True`` 保持历史语义（写失败向上抛）。
+    """
+    from app.plugin.module_ai import catalog
+
+    return await catalog.log_writeback(
+        action_name=action_name, object_table=table, object_key=object_key,
+        params=params, operator=operator, result=result, detail=detail,
+        raise_on_error=True,
+    )
 
 
 async def _fire_side_effects(effects: list[dict], table: str, object_key: str) -> dict:
@@ -2388,13 +2392,9 @@ async def ontology_usage(object_code: str | None = None) -> dict:
         reads = 0
     writes = 0
     try:
-        if object_code:
-            writes = int((await _exec(
-                "SELECT count(*) FROM ai_query_writeback_log WHERE object_table=:c AND is_deleted=false",
-                {"c": object_code})).scalar() or 0)
-        else:
-            writes = int((await _exec(
-                "SELECT count(*) FROM ai_query_writeback_log WHERE is_deleted=false")).scalar() or 0)
+        from app.plugin.module_ai import catalog
+
+        writes = await catalog.count_writebacks(object_code or None)
     except Exception:  # noqa: BLE001
         writes = 0
     edits = 0
@@ -3160,15 +3160,16 @@ async def writeback_instance(object_code: str, key: str, props: dict,
 
 async def _log_action(object_code: str, object_key: str, action_name: str,
                       result: str, detail: str, operator: str) -> None:
-    """写 ai_query_writeback_log（动作执行 / 属性写回统一留痕）。"""
-    try:
-        await _exec_write(
-            "INSERT INTO ai_query_writeback_log(object_table,object_key,action_name,result,detail,operator) "
-            "VALUES (:t,:k,:a,:r,:d,:o)",
-            {"t": object_code, "k": object_key, "a": action_name,
-             "r": result, "d": detail, "o": operator})
-    except Exception:  # noqa: BLE001
-        pass
+    """写「动作执行 / 属性写回」留痕。
+
+    走共享 ``catalog`` 接口（本体不直写问数的表）；失败只忽略，不影响主流程。
+    """
+    from app.plugin.module_ai import catalog
+
+    await catalog.log_writeback(
+        action_name=action_name, object_table=object_code, object_key=object_key,
+        operator=operator, result=result, detail=detail,
+    )
 
 
 # ---------------------------------------------------------------------------

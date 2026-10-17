@@ -105,3 +105,75 @@ async def included_tables() -> set[str]:
         log.warning(f"[catalog] 读取范围表失败: {str(e)[:120]}")
         return set()
     return {str(r[0]) for r in rows}
+
+
+async def log_writeback(*, action_name: str, object_table: str, object_key: str,
+                        params: dict | None = None, operator: str = "",
+                        result: str = "", detail: str = "",
+                        raise_on_error: bool = False) -> int:
+    """写一条「动作回写」审计记录（``ai_query_writeback_log``），返回新行 id。
+
+    ``ai_query_writeback_log`` 由本目录统一拥有：本体**只经本接口写**，
+    不再直写问数的表（直写会让本体的反向依赖复活，见模块 docstring）。
+
+    - ``params`` 为 ``None`` 时写 NULL（与历史行为一致），而非 ``{}``；
+    - ``raise_on_error=False``（默认）时吞掉异常并返回 0 —— 审计写入不该拖垮主流程；
+      历史上有调用点依赖「写失败即抛」，这类调用传 ``raise_on_error=True`` 保持原语义；
+    - 依赖 ``INSERT ... RETURNING id``（PostgreSQL / SQLite 3.35+；MySQL 不支持）。
+    """
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+
+    try:
+        async with async_db_session.begin() as db:
+            res = await db.execute(
+                text(
+                    "INSERT INTO ai_query_writeback_log"
+                    "(action_name,object_table,object_key,params,operator,result,detail) "
+                    "VALUES (:n,:t,:k,:p,:o,:r,:d) RETURNING id"
+                ),
+                {
+                    "n": action_name, "t": object_table, "k": str(object_key),
+                    "p": json.dumps(params, ensure_ascii=False) if params is not None else None,
+                    "o": operator or "", "r": result, "d": (detail or "")[:500],
+                },
+            )
+            return int(res.scalar() or 0)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[catalog] 写回写审计失败: {str(e)[:120]}")
+        if raise_on_error:
+            raise
+        return 0
+
+
+async def last_writeback_id() -> int:
+    """最近一条回写审计记录的 id（本体执行「决定」后回填 ``execution_id`` 用）。"""
+    try:
+        rows = await _rows(
+            "SELECT id FROM ai_query_writeback_log WHERE object_table<>'' "
+            "ORDER BY id DESC LIMIT 1"
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[catalog] 读取最近回写 id 失败: {str(e)[:120]}")
+        return 0
+    return int(rows[0][0]) if rows else 0
+
+
+async def count_writebacks(object_table: str | None = None) -> int:
+    """回写审计条数（可按对象过滤）——供本体侧统计展示。"""
+    try:
+        if object_table:
+            rows = await _rows(
+                "SELECT count(*) FROM ai_query_writeback_log "
+                "WHERE object_table=:c AND is_deleted=false",
+                c=object_table,
+            )
+        else:
+            rows = await _rows(
+                "SELECT count(*) FROM ai_query_writeback_log WHERE is_deleted=false"
+            )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[catalog] 统计回写条数失败: {str(e)[:120]}")
+        return 0
+    return int(rows[0][0]) if rows else 0

@@ -468,14 +468,10 @@ async def execute_decision(code: str, actor_id: int | None = None, actor_name: s
                          f"{d['object_code']} 执行了 {d['action_code']}",
                          before=before, after=after, note="执行成功但字段值无变化", auto=True)
 
-    eid = 0
-    try:
-        row = (await _svc._exec(
-            "SELECT id FROM ai_query_writeback_log WHERE object_table<>'' "
-            "ORDER BY id DESC LIMIT 1", {})).fetchone()
-        eid = int(row[0]) if row else 0
-    except Exception:  # noqa: BLE001
-        eid = 0
+    # 回填 execution_id：取刚写下的回写审计 id（走 catalog 接口，本体不直读问数的表）
+    from app.plugin.module_ai import catalog
+
+    eid = await catalog.last_writeback_id()
 
     await _svc._exec_write(
         "UPDATE ai_ont_decision SET status='executed', executed_at=now(), execution_id=:e, "
