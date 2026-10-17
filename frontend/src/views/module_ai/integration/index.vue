@@ -470,7 +470,7 @@
                   新建概念
                 </el-button>
                 <el-tag size="small" type="info" effect="plain">
-                  业务概念（语义层，非本体对象）
+                  业务概念（问数语义层；含本体对象别名）
                 </el-tag>
               </div>
               <el-table :data="concepts" size="small" border height="100%">
@@ -623,7 +623,7 @@
             </el-tab-pane>
 
             <!-- 语义建模：大模型自动生成指标/标注（S4） -->
-            <el-tab-pane label="语义建模" name="modeling">
+            <el-tab-pane label="AI 辅助建模" name="modeling">
               <el-alert
                 type="info"
                 :closable="false"
