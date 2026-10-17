@@ -1191,7 +1191,7 @@ import {
   extractQueryObjects,
   inferQueryAssetRelations,
 } from "@/api/module_ai/query";
-import { getOntDomains } from "@/api/module_ai/ontology";
+import { getOntDomains, saveOntObject } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
 import GovernancePanel from "./components/GovernancePanel.vue";
 import AssetVersionsDialog from "./components/AssetVersionsDialog.vue";
@@ -1515,6 +1515,23 @@ async function saveTable() {
   savingTable.value = true;
   try {
     await saveQueryAsset({ table_name: curTable.value, ...tmeta.value });
+    // 收敛（Object Type 单一真相源）：勾选「纳入本体对象」时，同步在本体生成 ObjectType（按 code 幂等 upsert）
+    if (tmeta.value.object_enabled) {
+      try {
+        await saveOntObject({
+          code: curTable.value,
+          name: tmeta.value.alias || curTable.value,
+          key_prop: tmeta.value.object_key_col || "id",
+          name_prop: tmeta.value.object_name_col || "name",
+          icon: tmeta.value.object_icon || "el-icon-Box",
+          backing_table: curTable.value,
+          datasource_id: curDs.value?.id,
+          domain_code: tmeta.value.domain || "",
+        });
+      } catch {
+        /* 本体对象创建失败不阻断表信息保存 */
+      }
+    }
     ElMessage.success("表信息已保存");
     await loadAssets();
   } catch (e: any) {

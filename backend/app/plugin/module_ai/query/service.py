@@ -2870,9 +2870,25 @@ class AiQueryService:
 
     @classmethod
     async def list_objects(cls) -> list[dict]:
-        """P0·业务对象(Object Type)：object_enabled 的表 + key/name 列 + 由字段关联推导的 Link Type。"""
+        """P0·业务对象(Object Type)：object_enabled 的表 + key/name 列 + 由字段关联推导的 Link Type。
+
+        收敛（Object Type 单一真相源）：本体 ``ai_ont_object`` 是对象类型的**权威元信息源**——
+        若某表已被纳入本体（``backing_table`` 匹配），其名称/主键/展示名/图标以本体为准；
+        ``object_enabled`` 仅决定「该表是否作为对象暴露」（兼容保留）。
+        """
         assets = await cls.list_assets()
         objs = [a for a in assets if a.get("object_enabled")]
+        # 本体对象（按 backing_table 建索引）：权威元信息源
+        ont_map: dict[str, dict] = {}
+        try:
+            from app.plugin.module_ai.ontology.service import list_objects as _ont_list
+
+            for _o in await _ont_list(None, None):
+                _bt = (_o.get("backing_table") or "").strip()
+                if _bt:
+                    ont_map[_bt] = _o
+        except Exception:  # noqa: BLE001  本体不可用则退回本地元信息
+            ont_map = {}
         # 收集对象间 Link：由字段 related_table 推导
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -2888,6 +2904,7 @@ class AiQueryService:
         obj_tables = {o["table_name"] for o in objs}
         out = []
         for o in objs:
+            ont = ont_map.get(o["table_name"]) or {}
             links = []
             for c in col_rows:
                 if c.table_name == o["table_name"] and c.related_table in obj_tables:
@@ -2897,10 +2914,12 @@ class AiQueryService:
                         "target_field": c.related_field,
                     })
             out.append({
-                "table": o["table_name"], "alias": o.get("alias") or o["table_name"],
-                "key_col": o.get("object_key_col") or "id",
-                "name_col": o.get("object_name_col") or "name",
-                "icon": o.get("object_icon") or "el-icon-Box",
+                "table": o["table_name"],
+                "alias": ont.get("name") or o.get("alias") or o["table_name"],
+                "key_col": ont.get("key_prop") or o.get("object_key_col") or "id",
+                "name_col": ont.get("name_prop") or o.get("object_name_col") or "name",
+                "icon": ont.get("icon") or o.get("object_icon") or "el-icon-Box",
+                "ont_code": ont.get("code") or "",
                 "links": links,
             })
         return out
