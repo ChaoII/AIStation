@@ -1539,6 +1539,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_ai_menus()
         await _ensure_ai_tools()
         await _ensure_agno_tools()
+        # 问数侧历史影子表建表（幂等）：新环境部署必需，否则管道/数据域/权限/动作等报错
+        try:
+            from app.plugin.module_ai.query.service import _ensure_query_tables
+
+            await _ensure_query_tables()
+        except Exception as e:  # noqa: BLE001  建表失败不阻断启动
+            log.warning(f"⚠️  问数侧影子表建表失败（不阻断启动）: {e}")
         # 能力市场官方种子（通用技能 + agno 免密钥工具 + 办公类 MCP），幂等
         try:
             from app.plugin.module_ai.market.seed import ensure_market_seed

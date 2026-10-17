@@ -58,6 +58,92 @@ _SCHEMA_CACHE: dict | None = None
 _SEMANTIC_INDEX: list | None = None
 # pgvector 是否已播种资产向量
 _VECTOR_SEEDED = False
+
+# ---------------------------------------------------------------------------
+# 建表入口：问数侧历史影子表
+#
+# 历史遗留：ai_pipeline / ai_pipeline_run / ai_domain / ai_workshop_app /
+# ai_access_rule / ai_action / ai_action_log / ai_fde_proposition / ai_dq_report
+# 此前只在开发库中手工创建，代码里没有建表语句，新环境部署会直接失败。
+# 这里补齐统一的运行时建表（幂等、best-effort），并在应用启动时调用一次。
+# SQLite（单元测试库）不支持 BIGSERIAL，由测试自身 DDL 提供结构，此处失败不影响功能。
+# ---------------------------------------------------------------------------
+_query_tables_ready = False
+
+_QUERY_TABLES_SQL = (
+    "CREATE TABLE IF NOT EXISTS ai_pipeline ("
+    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), source_connection VARCHAR(120), "
+    "source_table VARCHAR(120), target_object VARCHAR(120), mappings JSONB DEFAULT '[]', "
+    "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
+    "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now())",
+    "CREATE TABLE IF NOT EXISTS ai_pipeline_run ("
+    "id BIGSERIAL PRIMARY KEY, pipeline_id BIGINT, status VARCHAR(20), message TEXT, "
+    "ran_at TIMESTAMP DEFAULT now(), is_deleted BOOLEAN DEFAULT false, rows INTEGER DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS ai_domain ("
+    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), code VARCHAR(60), description VARCHAR(255), "
+    "tables JSONB DEFAULT '[]', members JSONB DEFAULT '[]', enabled BOOLEAN DEFAULT true, "
+    "is_deleted BOOLEAN DEFAULT false, created_time TIMESTAMP DEFAULT now())",
+    "CREATE TABLE IF NOT EXISTS ai_workshop_app ("
+    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), object_table VARCHAR(120), "
+    "view_type VARCHAR(20) DEFAULT 'table', columns JSONB DEFAULT '[]', "
+    "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
+    "deleted_time TIMESTAMP, created_time TIMESTAMP DEFAULT now(), "
+    "updated_time TIMESTAMP DEFAULT now())",
+    "CREATE TABLE IF NOT EXISTS ai_access_rule ("
+    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), attribute VARCHAR(60) DEFAULT 'role', "
+    "value VARCHAR(120), allowed_tables JSONB DEFAULT '[]', sensitive_ok BOOLEAN DEFAULT false, "
+    "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
+    "created_time TIMESTAMP DEFAULT now())",
+    "CREATE TABLE IF NOT EXISTS ai_fde_proposition ("
+    "id BIGSERIAL PRIMARY KEY, title VARCHAR(200), description TEXT, criteria TEXT, "
+    "owner VARCHAR(100), step_diagnosis VARCHAR(12) DEFAULT 'todo', "
+    "step_modeling VARCHAR(12) DEFAULT 'todo', step_assembly VARCHAR(12) DEFAULT 'todo', "
+    "step_shadow VARCHAR(12) DEFAULT 'todo', step_handover VARCHAR(12) DEFAULT 'todo', "
+    "gap JSONB DEFAULT '[]', delivery_assets JSONB DEFAULT '[]', "
+    "status VARCHAR(20) DEFAULT 'open', is_deleted BOOLEAN DEFAULT false, "
+    "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now(), "
+    "fde_translator VARCHAR(100) DEFAULT '', fde_data VARCHAR(100) DEFAULT '', "
+    "fde_app VARCHAR(100) DEFAULT '', shadow_metric VARCHAR(120) DEFAULT '', "
+    "shadow_golden VARCHAR(64) DEFAULT '', shadow_tolerance VARCHAR(32) DEFAULT '', "
+    "shadow_result VARCHAR(32) DEFAULT '', shadow_actual VARCHAR(64) DEFAULT '', "
+    "shadow_at TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS ai_action ("
+    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), object_table VARCHAR(120), "
+    "writable_cols JSONB DEFAULT '[]', validation TEXT, approve BOOLEAN DEFAULT true, "
+    "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
+    "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now(), "
+    "writable_by_role JSONB)",
+    "CREATE TABLE IF NOT EXISTS ai_action_log ("
+    "id BIGSERIAL PRIMARY KEY, action_name VARCHAR(120), object_table VARCHAR(120), "
+    "object_key VARCHAR(120), params JSONB, operator VARCHAR(100), result VARCHAR(20), "
+    "detail TEXT, created_time TIMESTAMP DEFAULT now(), is_deleted BOOLEAN DEFAULT false)",
+    "CREATE TABLE IF NOT EXISTS ai_dq_report ("
+    "id BIGSERIAL PRIMARY KEY, table_name VARCHAR(120), alias VARCHAR(120), "
+    "total INTEGER DEFAULT 0, score NUMERIC DEFAULT 0, completeness NUMERIC DEFAULT 0, "
+    "uniqueness NUMERIC DEFAULT 0, freshness NUMERIC DEFAULT 0, issues JSONB DEFAULT '[]', "
+    "checked_at TIMESTAMP DEFAULT now(), is_deleted BOOLEAN DEFAULT false)",
+)
+
+#: 存量库缺列补齐（SQLite 不支持 ADD COLUMN IF NOT EXISTS，失败忽略）
+_QUERY_ALTER_SQL = (
+    "ALTER TABLE ai_workshop_app ADD COLUMN IF NOT EXISTS deleted_time TIMESTAMP",
+)
+
+
+async def _ensure_query_tables() -> None:
+    """确保问数侧影子表与新增列存在（幂等、best-effort）。"""
+    global _query_tables_ready
+    if _query_tables_ready:
+        return
+    for sql in _QUERY_TABLES_SQL + _QUERY_ALTER_SQL:
+        try:
+            async with async_db_session.begin() as db:
+                await db.execute(text(sql))
+        except Exception:  # noqa: BLE001
+            pass
+    _query_tables_ready = True
+
+
 # Agno 向量库是否已播种语义单元
 _AGNO_SEEDED = False
 # Agno 语义单元是否正在后台播种
