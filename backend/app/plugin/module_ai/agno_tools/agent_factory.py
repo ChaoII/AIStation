@@ -87,6 +87,13 @@ def build_agent(
         "tools": tool_list,
         "markdown": True,
         "add_datetime_to_context": True,
+        # ---- agno 原生特性：长时记忆（跨会话记住用户偏好） ----
+        "enable_agentic_memory": True,
+        "update_memory_on_run": True,
+        "add_memories_to_context": True,
+        # agno 原生特性：让模型可读取历史 / 输出结构化结果
+        "read_chat_history": True,
+        "structured_outputs": True,
     }
     if user_id is not None:
         kwargs["user_id"] = str(user_id)
