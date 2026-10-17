@@ -587,6 +587,10 @@
               />
               <div class="ig-bar">
                 <el-button size="small" :icon="Refresh" @click="syncKg">重建图谱</el-button>
+                <el-button size="small" @click="autoLinkKg">自动打边</el-button>
+                <el-tag size="small" type="info" effect="plain">
+                  自动打边：知识库实体 ↔ schema 表/字段
+                </el-tag>
               </div>
               <el-descriptions :column="3" size="small" border>
                 <el-descriptions-item label="表节点">{{ kg.nodes ?? "-" }}</el-descriptions-item>
@@ -1221,6 +1225,7 @@ import {
   getQueryKgStats,
   getQueryKgUnified,
   rebuildQueryKg,
+  autoLinkQueryKg,
   runModelingMetrics,
   runModelingAnnotate,
   extractQueryObjects,
@@ -2176,6 +2181,26 @@ async function syncKg() {
     await loadMisc();
   } catch (e: any) {
     ElMessage.error(e?.msg || "失败");
+  }
+}
+
+async function autoLinkKg() {
+  try {
+    await ElMessageBox.confirm(
+      "将用大模型把知识库实体自动关联到 schema 表/字段（自动打边），可能耗时较长，是否继续？",
+      "自动打边",
+      { type: "warning", confirmButtonText: "开始", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    const r = await autoLinkQueryKg();
+    const d = r.data?.data || {};
+    ElMessage.success(`已打边：${d.linked ?? d.saved ?? d.count ?? 0} 条`);
+    await loadMisc();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "自动打边失败");
   }
 }
 
