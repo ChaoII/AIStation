@@ -1009,6 +1009,13 @@ async def eval_variance_report(
 
 
 # ---- P3-② Workshop 对象工作台(无代码应用) ----
+@AiQueryRouter.get("/workshop/objects", summary="对象应用可选对象与字段")
+async def workshop_objects(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.workshop_objects(), msg="查询成功")
+
+
 @AiQueryRouter.get("/workshop/list", summary="对象应用列表")
 async def workshop_list(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
@@ -1032,6 +1039,15 @@ async def workshop_preview(
 ) -> JSONResponse:
     r = await AiQueryService.workshop_preview(int(data.get("app_id", 0)), int(data.get("limit") or 50))
     return SuccessResponse(data=r, msg="预览完成")
+
+
+@AiQueryRouter.delete("/workshop/delete", summary="对象应用删除")
+async def workshop_delete(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    await AiQueryService.delete_workshop_app(int(data.get("id", 0)))
+    return SuccessResponse(data=None, msg="删除成功")
 
 
 @AiQueryRouter.get("/assets/{table_name}/lineage", summary="完整血缘图(表→字段/指标/对象/管道/概念)")

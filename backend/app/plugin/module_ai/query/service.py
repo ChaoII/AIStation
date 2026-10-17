@@ -4016,6 +4016,55 @@ class AiQueryService:
             return {"ok": False, "msg": f"暂无落库结果：{str(e)[:80]}"}
 
     @classmethod
+    async def workshop_objects(cls) -> list[dict]:
+        """对象应用可选的业务对象 + 字段（供「新建应用」表单选择）。"""
+        objs = await cls.list_objects()
+        async with async_db_session() as db:
+            from sqlalchemy import select as _sel
+            from sqlalchemy import text as _t
+            col_rows = (await db.execute(_t(
+                "SELECT table_name, column_name, data_type FROM information_schema.columns "
+                "WHERE table_schema='public' ORDER BY table_name, ordinal_position"))).fetchall()
+            ac_rows = (
+                await db.execute(
+                    _sel(AiQueryAssetColumnModel).where(AiQueryAssetColumnModel.is_deleted.is_(False))
+                )
+            ).scalars().all()
+        colmeta: dict[str, list[tuple[str, str]]] = {}
+        for tbl, col, dtype in col_rows:
+            colmeta.setdefault(tbl, []).append((col, dtype))
+        acmap = {(c.table_name, c.column_name): c for c in ac_rows}
+        out = []
+        for o in objs:
+            fields = []
+            for col, dtype in colmeta.get(o["table"], []):
+                ac = acmap.get((o["table"], col))
+                fields.append({
+                    "name": col,
+                    "type": (dtype or "").lower(),
+                    "label": (ac.description or "") if ac else "",
+                    "sensitive": bool(ac.sensitive) if ac else False,
+                })
+            out.append({
+                "table": o["table"],
+                "label": o.get("alias") or o["table"],
+                "key_col": o.get("key_col") or "id",
+                "name_col": o.get("name_col") or "name",
+                "icon": o.get("icon") or "",
+                "fields": fields,
+            })
+        return out
+
+    @classmethod
+    async def delete_workshop_app(cls, app_id: int) -> None:
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+
+            await db.execute(_t(
+                "UPDATE ai_workshop_app SET is_deleted=true, deleted_time=now() WHERE id=:i"
+            ), {"i": app_id})
+
+    @classmethod
     async def list_workshop_apps(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t

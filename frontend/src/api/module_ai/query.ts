@@ -185,19 +185,35 @@ export function getQueryRoles() {
 }
 /** 筛选规则预览：提交筛选规则并返回命中/预览结果，rules 可为空（区分 None 与显式空规则）。 */
 export function previewFilterRules(datasource_id: number, rules?: any) {
-  return request({ url: `${API_PATH}/datasources/${datasource_id}/rules/preview`, method: "post", data: { rules } });
+  return request({
+    url: `${API_PATH}/datasources/${datasource_id}/rules/preview`,
+    method: "post",
+    data: { rules },
+  });
 }
 /** 大模型生成候选筛选规则；rules 为当前草稿（可选） */
 export function suggestFilterRules(datasource_id: number, rules?: any) {
-  return request({ url: `${API_PATH}/datasources/${datasource_id}/rules/suggest`, method: "post", data: { rules } });
+  return request({
+    url: `${API_PATH}/datasources/${datasource_id}/rules/suggest`,
+    method: "post",
+    data: { rules },
+  });
 }
 /** 大模型把自然语言转成筛选规则 */
 export function parseFilterRules(datasource_id: number, text: string) {
-  return request({ url: `${API_PATH}/datasources/${datasource_id}/rules/parse`, method: "post", data: { text } });
+  return request({
+    url: `${API_PATH}/datasources/${datasource_id}/rules/parse`,
+    method: "post",
+    data: { text },
+  });
 }
 /** 大模型逐表逐字段分类建议 */
 export function classifyAdvise(datasource_id: number, rules?: any) {
-  return request({ url: `${API_PATH}/datasources/${datasource_id}/rules/classify-advise`, method: "post", data: { rules } });
+  return request({
+    url: `${API_PATH}/datasources/${datasource_id}/rules/classify-advise`,
+    method: "post",
+    data: { rules },
+  });
 }
 
 // 会话
@@ -499,11 +515,17 @@ export function getPipelineData(pipeline_id: number, limit = 50) {
 export function getWorkshopList() {
   return request({ url: `${API_PATH}/workshop/list`, method: "get" });
 }
+export function getWorkshopObjects() {
+  return request({ url: `${API_PATH}/workshop/objects`, method: "get" });
+}
 export function saveWorkshopApp(data: any) {
   return request({ url: `${API_PATH}/workshop/save`, method: "post", data });
 }
 export function workshopPreview(app_id: number, limit = 50) {
   return request({ url: `${API_PATH}/workshop/preview`, method: "post", data: { app_id, limit } });
+}
+export function deleteWorkshopApp(id: number) {
+  return request({ url: `${API_PATH}/workshop/delete`, method: "delete", data: id });
 }
 export function getAssetLineage(table: string) {
   return request({ url: `${API_PATH}/assets/${table}/lineage`, method: "get" });
