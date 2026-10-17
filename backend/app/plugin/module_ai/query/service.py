@@ -5249,7 +5249,8 @@ class AiQueryService:
         model = OpenAILike(
             id=runtime["model"], base_url=runtime["base_url"],
             api_key=runtime.get("api_key") or "sk-none",
-            temperature=0.2, max_tokens=1600, timeout=90,
+            temperature=0.2, max_tokens=4000, timeout=90,
+            extra_body={"reasoning_effort": "low"},
             default_headers=build_headers(
                 runtime["base_url"], runtime.get("extra_headers"), "aistation-suggest"),
         )
