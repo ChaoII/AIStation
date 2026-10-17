@@ -22,6 +22,7 @@ export interface WorkspaceItem {
   color?: string;
   category_id?: number | null;
   label: string;
+  meta?: Record<string, any>;
 }
 
 // ---------- 分类树 ----------

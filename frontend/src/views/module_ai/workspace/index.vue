@@ -99,6 +99,7 @@
                 />
               </div>
               <div class="ws-card__desc">{{ it.description || "暂无描述" }}</div>
+              <div v-if="metaText(it)" class="ws-card__meta">{{ metaText(it) }}</div>
               <div class="ws-card__foot">
                 <el-button
                   type="primary"
@@ -240,6 +241,33 @@ const typeTag: Record<string, "primary" | "success" | "warning" | "info" | "dang
   cron: "warning",
   app: "info",
 };
+
+function metaText(it: WorkspaceItem): string {
+  const m = it.meta || {};
+  if (it.type === "agent") {
+    if (m.role) return m.role;
+    const parts: string[] = [];
+    if (m.tools) parts.push(`${m.tools} 工具`);
+    if (m.skills) parts.push(`${m.skills} 技能`);
+    if (m.mcp) parts.push(`${m.mcp} MCP`);
+    if (m.knowledge) parts.push(`${m.knowledge} 知识库`);
+    return parts.join(" · ");
+  }
+  if (it.type === "workflow") return m.nodes ? `${m.nodes} 节点` : "";
+  if (it.type === "app") {
+    const parts: string[] = [];
+    if (m.app_type) parts.push(m.app_type);
+    if (m.tools) parts.push(`${m.tools} 工具`);
+    return parts.join(" · ");
+  }
+  if (it.type === "cron") {
+    const parts: string[] = [];
+    if (m.cron) parts.push(m.cron);
+    if (m.target_type) parts.push(`目标 ${m.target_type}`);
+    return parts.join(" · ");
+  }
+  return "";
+}
 
 const filteredItems = computed(() => {
   let list = allItems.value;
@@ -580,13 +608,23 @@ async function saveCron() {
 }
 
 .ws-card__desc {
-  margin: 12px 0;
+  margin: 12px 0 6px;
   color: var(--el-text-color-regular);
   font-size: var(--el-font-size-base);
   line-height: 1.7;
   min-height: 40px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ws-card__meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

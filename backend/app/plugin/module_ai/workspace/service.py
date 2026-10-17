@@ -144,7 +144,7 @@ class WorkspaceService:
 
     @staticmethod
     def _to_item(kind: str, row, label: str, name_field: str) -> dict:
-        return {
+        base = {
             "type": kind,
             "id": row.id,
             "name": getattr(row, name_field) or "",
@@ -155,6 +155,34 @@ class WorkspaceService:
             "category_id": getattr(row, "category_id", None),
             "label": label,
         }
+        # 类型专属元信息（供卡片展示更饱满）
+        if kind == "agent":
+            meta = {
+                "role": getattr(row, "agent_role", "") or "",
+                "model_id": getattr(row, "model_id", None),
+                "tools": len(getattr(row, "tool_ids", []) or []),
+                "skills": len(getattr(row, "skill_ids", []) or []),
+                "mcp": len(getattr(row, "mcp_ids", []) or []),
+                "knowledge": len(getattr(row, "knowledge_ids", []) or []),
+            }
+        elif kind == "workflow":
+            graph = getattr(row, "graph", None) or {}
+            meta = {"nodes": len(graph.get("nodes", []) or [])}
+        elif kind == "app":
+            meta = {
+                "model_id": getattr(row, "model_id", None),
+                "tools": len(getattr(row, "tools", []) or []),
+                "app_type": getattr(row, "app_type", "") or "",
+                "output_format": getattr(row, "output_format", "") or "",
+            }
+        else:  # cron
+            meta = {
+                "cron": getattr(row, "cron", "") or "",
+                "target_type": getattr(row, "target_type", "") or "",
+                "next_run_time": getattr(row, "next_run_time", None),
+            }
+        base["meta"] = meta
+        return base
 
     # ---------- 定时任务条目 ----------
 
