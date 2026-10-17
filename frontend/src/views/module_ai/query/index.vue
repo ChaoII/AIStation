@@ -54,6 +54,7 @@
                 <el-button link type="primary" size="small" @click="openSettings">
                   问数设置
                 </el-button>
+                <el-button link type="primary" size="small" @click="openStats">使用统计</el-button>
                 <el-dropdown @command="goSub">
                   <el-button link type="primary" size="small">
                     <el-icon style="margin-right: 4px"><Grid /></el-icon>
@@ -367,6 +368,24 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="statsVisible" title="问数使用统计" width="480px" append-to-body>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-statistic title="总问答" :value="stats.total" />
+        </el-col>
+        <el-col :span="12">
+          <el-statistic title="快路径（确定性）" :value="stats.fast" />
+        </el-col>
+        <el-col :span="12" style="margin-top: 12px">
+          <el-statistic title="慢路径（NL2SQL）" :value="stats.slow" />
+        </el-col>
+        <el-col :span="12" style="margin-top: 12px">
+          <el-statistic title="失败" :value="stats.errors" />
+        </el-col>
+      </el-row>
+      <div class="q-stats__hint">快路径占比 {{ fastPct }}%（越高说明语义层沉淀越充分）</div>
+    </el-dialog>
+
     <el-dialog v-model="fbVisible" title="纠正这次查询" width="600px" append-to-body>
       <el-alert
         type="info"
@@ -450,6 +469,7 @@ import {
   getQuerySettings,
   queryFeedback,
   promoteQueryMetric,
+  getQueryStats,
   runQueryReport,
   saveQueryReport,
   saveQuerySetting,
@@ -865,6 +885,22 @@ const pmKey = ref("");
 const pmMsg = ref<any>(null);
 const pmLoading = ref(false);
 
+// 使用统计
+const statsVisible = ref(false);
+const stats = ref<any>({ total: 0, fast: 0, slow: 0, errors: 0, ok: 0 });
+const fastPct = computed(() =>
+  stats.value.total ? Math.round((stats.value.fast / stats.value.total) * 100) : 0
+);
+async function openStats() {
+  statsVisible.value = true;
+  try {
+    const r = await getQueryStats();
+    stats.value = r.data?.data || stats.value;
+  } catch {
+    /* 忽略 */
+  }
+}
+
 function openPromote(m: any) {
   pmMsg.value = m;
   pmName.value = m?.question ? String(m.question).slice(0, 30) : "";
@@ -1230,6 +1266,12 @@ onMounted(async () => {
 
 .q-sr__hint {
   width: 100%;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.q-stats__hint {
+  margin-top: 12px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
