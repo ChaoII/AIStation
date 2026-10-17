@@ -332,19 +332,19 @@ export function fdeShadowCheck(proposition_id: number) {
   return request({ url: `${API_PATH}/fde/shadow`, method: "post", data: { proposition_id } });
 }
 export function getActionList() {
-  return request({ url: `${API_PATH}/action/list`, method: "get" });
+  return request({ url: `${API_PATH}/writeback/list`, method: "get" });
 }
 export function saveAction(data: any) {
-  return request({ url: `${API_PATH}/action/save`, method: "post", data });
+  return request({ url: `${API_PATH}/writeback/save`, method: "post", data });
 }
 export function executeAction(data: any) {
-  return request({ url: `${API_PATH}/action/execute`, method: "post", data });
+  return request({ url: `${API_PATH}/writeback/execute`, method: "post", data });
 }
 export function getActionLogs(limit = 100) {
-  return request({ url: `${API_PATH}/action/logs`, method: "get", params: { limit } });
+  return request({ url: `${API_PATH}/writeback/logs`, method: "get", params: { limit } });
 }
 export function getPendingActions(limit = 50) {
-  return request({ url: `${API_PATH}/action/pending`, method: "get", params: { limit } });
+  return request({ url: `${API_PATH}/writeback/pending`, method: "get", params: { limit } });
 }
 export function getApprovalCenter() {
   return request({ url: `${API_PATH}/approval/center`, method: "get" });
@@ -353,10 +353,10 @@ export function approveVersionPublish(pending_id: number) {
   return request({ url: `/ai/ontology/version/approve`, method: "post", data: { pending_id } });
 }
 export function approveAction(data: { approval_id: number }) {
-  return request({ url: `${API_PATH}/action/approve`, method: "post", data });
+  return request({ url: `${API_PATH}/writeback/approve`, method: "post", data });
 }
 export function rejectAction(data: { approval_id: number }) {
-  return request({ url: `${API_PATH}/action/reject`, method: "post", data });
+  return request({ url: `${API_PATH}/writeback/reject`, method: "post", data });
 }
 export function getAssetVersions(table: string) {
   return request({ url: `${API_PATH}/assets/${table}/versions`, method: "get" });

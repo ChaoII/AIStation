@@ -574,14 +574,16 @@ async def fde_shadow(
 
 
 # ---- P1·Action(写回+审计) ----
-@AiQueryRouter.get("/action/list", summary="动作列表")
+@AiQueryRouter.get("/writeback/list", summary="表级写回：动作列表")
+@AiQueryRouter.get("/action/list", summary="(deprecated) 表级写回：动作列表", deprecated=True)
 async def action_list(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.list_actions(), msg="查询成功")
 
 
-@AiQueryRouter.post("/action/save", summary="动作定义保存")
+@AiQueryRouter.post("/writeback/save", summary="表级写回：动作定义保存")
+@AiQueryRouter.post("/action/save", summary="(deprecated) 表级写回：动作定义保存", deprecated=True)
 async def action_save(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
@@ -590,7 +592,8 @@ async def action_save(
     return SuccessResponse(data=r, msg="保存成功")
 
 
-@AiQueryRouter.post("/action/execute", summary="执行动作(写回+审计)")
+@AiQueryRouter.post("/writeback/execute", summary="表级写回：执行动作(写回+审计)")
+@AiQueryRouter.post("/action/execute", summary="(deprecated) 表级写回：执行动作(写回+审计)", deprecated=True)
 async def action_execute(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
@@ -602,7 +605,8 @@ async def action_execute(
     return SuccessResponse(data=r, msg="执行完成")
 
 
-@AiQueryRouter.get("/action/logs", summary="动作审计日志")
+@AiQueryRouter.get("/writeback/logs", summary="表级写回：动作审计日志")
+@AiQueryRouter.get("/action/logs", summary="(deprecated) 表级写回：动作审计日志", deprecated=True)
 async def action_logs(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     limit: int = 100,
@@ -610,7 +614,8 @@ async def action_logs(
     return SuccessResponse(data=await AiQueryService.list_action_logs(limit), msg="查询成功")
 
 
-@AiQueryRouter.get("/action/pending", summary="待审批动作")
+@AiQueryRouter.get("/writeback/pending", summary="表级写回：待审批动作")
+@AiQueryRouter.get("/action/pending", summary="(deprecated) 表级写回：待审批动作", deprecated=True)
 async def action_pending(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     limit: int = 50,
@@ -625,7 +630,8 @@ async def approval_center(
     return SuccessResponse(data=await AiQueryService.approval_center(), msg="查询成功")
 
 
-@AiQueryRouter.post("/action/approve", summary="批准动作(写回+审计)")
+@AiQueryRouter.post("/writeback/approve", summary="表级写回：批准动作(写回+审计)")
+@AiQueryRouter.post("/action/approve", summary="(deprecated) 表级写回：批准动作(写回+审计)", deprecated=True)
 async def action_approve(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
@@ -634,7 +640,8 @@ async def action_approve(
     return SuccessResponse(data=await AiQueryService.approve_action(int(data.get("approval_id", 0)), str(uid or "")), msg="审批完成")
 
 
-@AiQueryRouter.post("/action/reject", summary="驳回动作")
+@AiQueryRouter.post("/writeback/reject", summary="表级写回：驳回动作")
+@AiQueryRouter.post("/action/reject", summary="(deprecated) 表级写回：驳回动作", deprecated=True)
 async def action_reject(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
