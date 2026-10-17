@@ -65,9 +65,6 @@
       <div class="chat-main-head">
         <span class="chat-main-title">{{ currentSessionTitle }}</span>
         <div class="chat-main-actions">
-          <el-tooltip content="危险工具授权（免人工确认）" placement="top">
-            <el-button size="small" text :icon="Lock" @click="openApprovals">授权</el-button>
-          </el-tooltip>
           <el-tooltip content="导出会话为 Markdown" placement="top">
             <el-button
               size="small"
@@ -102,39 +99,11 @@
       />
     </main>
   </div>
-
-  <!-- 危险工具授权弹窗 -->
-  <el-dialog v-model="approvalVisible" title="危险工具授权" width="560px">
-    <el-alert
-      title="危险操作（创建/删除/发送/执行等）默认需人工确认后才执行。授权后可直接执行，无需再确认。"
-      type="info"
-      :closable="false"
-      show-icon
-      style="margin-bottom: 12px"
-    />
-    <el-empty
-      v-if="approvalItems.length === 0 && !approvalLoading"
-      description="暂无可授权的危险工具"
-    />
-    <div v-loading="approvalLoading" class="approval-list">
-      <div v-for="item in approvalItems" :key="item.name" class="approval-item">
-        <span class="approval-name">{{ item.name }}</span>
-        <el-switch
-          :model-value="item.authorized"
-          @change="
-            (v: any) => {
-              void onToggleApproval(item, v);
-            }
-          "
-        />
-      </div>
-    </div>
-  </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { Delete, Download, Lock, Plus, Search } from "@element-plus/icons-vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { Delete, Download, Plus, Search } from "@element-plus/icons-vue";
+import { ElMessageBox } from "element-plus";
 import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 
@@ -148,7 +117,6 @@ import {
 import ChatInput from "@/views/module_ai/chat/components/ChatInput.vue";
 import ChatMessages from "@/views/module_ai/chat/components/ChatMessages.vue";
 import { getAiModelList } from "@/api/module_ai/model";
-import { getToolApprovals, setToolApproval } from "@/api/module_ai/agent";
 import { useAiChat } from "@/composables/ai/useAiChat";
 
 defineOptions({ name: "AiWorkspaceChat" });
@@ -304,29 +272,6 @@ const currentSessionTitle = computed(() => {
   const s = sessions.value.find((x) => x.id === currentSessionId.value);
   return s?.title || "新会话";
 });
-
-// 危险工具授权
-const approvalVisible = ref(false);
-const approvalItems = ref<Array<{ name: string; authorized: boolean }>>([]);
-const approvalLoading = ref(false);
-async function loadApprovals() {
-  approvalLoading.value = true;
-  try {
-    const res: any = await getToolApprovals();
-    approvalItems.value = res.data?.data?.items || [];
-  } finally {
-    approvalLoading.value = false;
-  }
-}
-function openApprovals() {
-  approvalVisible.value = true;
-  loadApprovals();
-}
-async function onToggleApproval(item: { name: string; authorized: boolean }, v: boolean) {
-  await setToolApproval({ tool_name: item.name, authorized: v });
-  item.authorized = v;
-  ElMessage.success(v ? `已授权「${item.name}」直接执行` : `已取消授权「${item.name}」`);
-}
 
 /** 导出当前会话为 Markdown 文件（用于数据训练/标注）。 */
 function exportSession() {

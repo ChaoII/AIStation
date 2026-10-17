@@ -4,11 +4,6 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class AgentToolApprovalSchema(BaseModel):
-    tool_name: str = Field(..., min_length=1, description="工具名")
-    authorized: bool = Field(default=True, description="是否授权直接执行（免HITL确认）")
-
-
 class AiAgentCreateSchema(BaseModel):
     agent_name: str = Field(..., max_length=128)
     category_id: int | None = None

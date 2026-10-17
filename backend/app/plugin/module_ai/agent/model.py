@@ -8,21 +8,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.base_model import ModelMixin, UserMixin
 
 
-class AiToolApprovalModel(ModelMixin):
-    """按用户对「危险工具」的授权：某用户已授权直接执行某工具（无需 HITL 确认）。"""
-
-    __tablename__ = "ai_tool_approvals"
-    __table_args__ = ({"comment": "AI 用户危险工具授权表"},)
-
-    user_id: Mapped[int] = mapped_column(
-        Integer, nullable=False, index=True, comment="用户ID"
-    )
-    tool_name: Mapped[str] = mapped_column(
-        String(128), nullable=False, index=True, comment="工具名"
-    )
-    authorized: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否已授权直接执行")
-
-
 class AiAgentCategoryModel(ModelMixin, UserMixin):
     """智能体分类（树形，parent_id 支持层级）。"""
 
