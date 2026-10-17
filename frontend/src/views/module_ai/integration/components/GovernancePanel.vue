@@ -132,7 +132,7 @@
             新建策略
           </el-button>
           <el-button size="small" @click="openMatrix">权限矩阵</el-button>
-          <el-button size="small" @click="openSandbox">权限沙箱</el-button>
+          <el-button size="small" @click="openSandbox">权限预览</el-button>
           <el-tag size="small" type="info" effect="plain">
             共 {{ accessRules.length }} 条 ABAC 策略
           </el-tag>
@@ -399,8 +399,15 @@
         </el-table>
       </el-tab-pane>
 
-      <!-- 动作审批：写回动作的待审批/定义/审计 -->
-      <el-tab-pane label="动作审批" name="action">
+      <!-- 表级写回（旧版）：写回动作的待审批/定义/审计；新动作请到 本体 → 动作类型 -->
+      <el-tab-pane label="表级写回（旧版）" name="action">
+        <el-alert
+          type="warning"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 10px"
+          title="此处为历史「表级写回」；新动作请在 本体 → 动作类型 定义（对齐 Palantir 语义），本模块逐步下线。"
+        />
         <div class="gp-bar">
           <el-tag size="small" type="info" effect="plain">
             待审批动作 {{ pendingActions.length }} · 动作定义 {{ actionList.length }}
@@ -692,8 +699,13 @@
       </el-table>
     </el-dialog>
 
-    <!-- 权限沙箱（按用户/角色预览可查表） -->
-    <el-dialog v-model="sandboxDialog" title="权限沙箱" width="720px" append-to-body>
+    <!-- 权限预览 Check Access（按用户/角色预览可查表） -->
+    <el-dialog
+      v-model="sandboxDialog"
+      title="权限预览（Check Access）"
+      width="720px"
+      append-to-body
+    >
       <el-form label-width="80px" inline>
         <el-form-item label="按用户">
           <el-input-number

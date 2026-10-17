@@ -721,7 +721,7 @@ QUERY_GROUP_MENUS: list[tuple[str, str, str, str, int, str]] = [
     ("数据与集成", "AiIntegration", "/ai/integration", "module_ai/integration/index", 1, "el-icon-Connection"),
     ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", 2, "el-icon-ChatDotRound"),
     ("问数评测", "AiEval", "/ai/eval", "module_ai/eval/index", 3, "el-icon-DataAnalysis"),
-    ("自定义报表", "AiQueryReports", "/ai/query/reports", "module_ai/query/reports", 4, "el-icon-Tickets"),
+    ("报表模板", "AiQueryReports", "/ai/query/reports", "module_ai/query/reports", 4, "el-icon-Tickets"),
 ]
 
 
@@ -835,6 +835,8 @@ async def _ensure_ai_menus() -> None:
                         update(MenuModel)
                         .where(MenuModel.id == _row.id)
                         .values(
+                            name=_title,
+                            title=_title,
                             hidden=False,
                             redirect=None,
                             component_path=_comp,

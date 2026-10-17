@@ -255,8 +255,11 @@
                     <el-divider content-position="left" class="ig-form__divider">
                       本体对象建模
                     </el-divider>
-                    <el-form-item label="业务对象">
+                    <el-form-item label="纳入本体对象">
                       <el-switch v-model="tmeta.object_enabled" />
+                      <el-text size="small" type="info" style="margin-left: 8px">
+                        生成 ObjectType，供本体/权限/动作消费
+                      </el-text>
                     </el-form-item>
                     <el-form-item label="主键列">
                       <el-input v-model="tmeta.object_key_col" :disabled="!tmeta.object_enabled" />
@@ -558,7 +561,7 @@
             </el-tab-pane>
 
             <!-- 血缘 -->
-            <el-tab-pane label="血缘" name="kg">
+            <el-tab-pane label="数据关系图" name="kg">
               <el-alert
                 type="info"
                 :closable="false"

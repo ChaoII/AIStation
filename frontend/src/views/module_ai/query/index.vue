@@ -63,7 +63,7 @@
                     <el-dropdown-menu>
                       <el-dropdown-item command="/ai/integration">数据与集成</el-dropdown-item>
                       <el-dropdown-item command="/ai/eval">问数评测</el-dropdown-item>
-                      <el-dropdown-item command="/ai/query/reports">自定义报表</el-dropdown-item>
+                      <el-dropdown-item command="/ai/query/reports">报表模板</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -321,7 +321,7 @@
           </el-tag>
           <div class="q-sr__hint">
             模板里检测到
-            {{ srParams.length }} 个参数；保存后可在「自定义报表」页调整中文名/类型/必填
+            {{ srParams.length }} 个参数；保存后可在「报表模板」页调整中文名/类型/必填
           </div>
         </el-form-item>
       </el-form>
@@ -851,7 +851,7 @@ const reportSuggestList = ref<any[]>([]);
 
 async function pickReport(r: any) {
   if (r.params) {
-    ElMessage.info("该报表带参数，请到「自定义报表」页运行并填写参数");
+    ElMessage.info("该报表带参数，请到「报表模板」页运行并填写参数");
     return;
   }
   try {

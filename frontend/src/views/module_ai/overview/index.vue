@@ -1197,7 +1197,7 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AIP 评测基准与统一审计</span>
+          <span>AI 能力评测与统一审计</span>
           <span class="ai-sub">制品化回归对比 · 跨模块全链路审计</span>
         </div>
       </template>
@@ -1268,7 +1268,7 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AI 能力评估（影子回归）</span>
+          <span>AI 能力评测（Capability Eval · 影子回归）</span>
           <span class="ai-sub">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
           </span>

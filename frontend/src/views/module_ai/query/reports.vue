@@ -3,7 +3,7 @@
     <el-card shadow="never">
       <template #header>
         <div class="r-head">
-          <span>自定义报表</span>
+          <span>报表模板</span>
           <div class="r-head__ops">
             <el-select
               v-model="datasource"
@@ -21,9 +21,7 @@
                 :value="d.code || `ds:${d.id}`"
               />
             </el-select>
-            <el-checkbox v-model="verifiedOnly" size="small" @change="load">
-              只看已确认
-            </el-checkbox>
+            <el-checkbox v-model="verifiedOnly" size="small" @change="load">只看已确认</el-checkbox>
             <el-button size="small" @click="load">刷新</el-button>
           </div>
         </div>
@@ -61,13 +59,7 @@
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openRun(row)">运行</el-button>
             <el-button link size="small" @click="openParams(row)">参数</el-button>
-            <el-button
-              v-if="!row.verified"
-              link
-              type="success"
-              size="small"
-              @click="verify(row)"
-            >
+            <el-button v-if="!row.verified" link type="success" size="small" @click="verify(row)">
               确认
             </el-button>
             <el-button link type="danger" size="small" @click="remove(row)">删除</el-button>
@@ -77,7 +69,12 @@
       <div class="r-total">共 {{ rows.length }} 个报表</div>
     </el-card>
 
-    <el-dialog v-model="runVisible" :title="`运行报表：${cur?.name || ''}`" width="720px" append-to-body>
+    <el-dialog
+      v-model="runVisible"
+      :title="`运行报表：${cur?.name || ''}`"
+      width="720px"
+      append-to-body
+    >
       <el-alert
         v-if="runError"
         type="error"
@@ -116,7 +113,14 @@
           />
         </el-form-item>
       </el-form>
-      <el-alert v-else type="info" :closable="false" show-icon title="该报表无需参数" class="r-tip" />
+      <el-alert
+        v-else
+        type="info"
+        :closable="false"
+        show-icon
+        title="该报表无需参数"
+        class="r-tip"
+      />
       <el-button type="primary" size="small" :loading="running" @click="doRun">执行</el-button>
       <el-table
         v-if="result.columns.length"
