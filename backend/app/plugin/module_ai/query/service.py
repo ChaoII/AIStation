@@ -2870,56 +2870,44 @@ class AiQueryService:
 
     @classmethod
     async def list_objects(cls) -> list[dict]:
-        """P0·业务对象(Object Type)：object_enabled 的表 + key/name 列 + 由字段关联推导的 Link Type。
+        """业务对象(Object Type)：**以本体为唯一真相源**（``ai_ont_object``，enabled 且可解析支撑表）。
 
-        收敛（Object Type 单一真相源）：本体 ``ai_ont_object`` 是对象类型的**权威元信息源**——
-        若某表已被纳入本体（``backing_table`` 匹配），其名称/主键/展示名/图标以本体为准；
-        ``object_enabled`` 仅决定「该表是否作为对象暴露」（兼容保留）。
+        与「对象查询白名单」（``_allowed_objects_for_query`` → ``semantic.semantic_context``）**同源**，
+        消除"对象列表里有、对象查询却不认"的断层。
+
+        - 未纳入本体的表**不再出现在对象列表**（仍可用自然语言 NL2SQL 查询）；
+          在「表与字段」勾选「纳入本体对象」即可把表纳入本体并出现在此列表。
+        - Link 来自本体关系类型（``ai_ont_link``），按 object_code → 支撑表映射。
         """
-        assets = await cls.list_assets()
-        objs = [a for a in assets if a.get("object_enabled")]
-        # 本体对象（按 backing_table 建索引）：权威元信息源
-        ont_map: dict[str, dict] = {}
+        from app.plugin.module_ai.ontology import semantic as _sem
+
         try:
-            from app.plugin.module_ai.ontology.service import list_objects as _ont_list
-
-            for _o in await _ont_list(None, None):
-                _bt = (_o.get("backing_table") or "").strip()
-                if _bt:
-                    ont_map[_bt] = _o
-        except Exception:  # noqa: BLE001  本体不可用则退回本地元信息
-            ont_map = {}
-        # 收集对象间 Link：由字段 related_table 推导
-        async with async_db_session() as db:
-            from sqlalchemy import select
-
-            col_rows = (
-                await db.execute(
-                    select(AiQueryAssetColumnModel).where(
-                        AiQueryAssetColumnModel.is_deleted.is_(False),
-                        AiQueryAssetColumnModel.related_table.is_not(None),
-                    )
-                )
-            ).scalars().all()
-        obj_tables = {o["table_name"] for o in objs}
+            ctx = await _sem.semantic_context(include_properties=False)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] list_objects 读取本体语义失败：{str(e)[:100]}")
+            return []
+        objs = [o for o in (ctx.get("objects") or []) if o.get("table")]
+        code2table = {str(o.get("code")): o.get("table") for o in objs}
+        relations = ctx.get("relations") or []
         out = []
         for o in objs:
-            ont = ont_map.get(o["table_name"]) or {}
             links = []
-            for c in col_rows:
-                if c.table_name == o["table_name"] and c.related_table in obj_tables:
+            for r in relations:
+                if str(r.get("source")) == str(o.get("code")) and code2table.get(
+                    str(r.get("target"))
+                ):
                     links.append({
-                        "target": c.related_table,
-                        "via": c.column_name,
-                        "target_field": c.related_field,
+                        "target": code2table[str(r.get("target"))],
+                        "via": r.get("source_field") or "",
+                        "target_field": r.get("target_field") or "",
                     })
             out.append({
-                "table": o["table_name"],
-                "alias": ont.get("name") or o.get("alias") or o["table_name"],
-                "key_col": ont.get("key_prop") or o.get("object_key_col") or "id",
-                "name_col": ont.get("name_prop") or o.get("object_name_col") or "name",
-                "icon": ont.get("icon") or o.get("object_icon") or "el-icon-Box",
-                "ont_code": ont.get("code") or "",
+                "table": o.get("table"),
+                "alias": o.get("name") or o.get("table"),
+                "key_col": o.get("key_prop") or "id",
+                "name_col": o.get("name_prop") or "name",
+                "icon": "el-icon-Box",
+                "ont_code": o.get("code") or "",
                 "links": links,
             })
         return out
@@ -4772,14 +4760,16 @@ class AiQueryService:
 
     @classmethod
     async def _objects_light(cls) -> list[dict]:
-        """轻量对象表：直查 ai_query_assets object_enabled（避免 list_assets 的 N+1）。"""
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            rows = (await db.execute(_t(
-                "SELECT table_name,alias,CAST(object_key_col AS VARCHAR),CAST(object_name_col AS VARCHAR) "
-                "FROM ai_query_assets WHERE object_enabled=true AND is_deleted=false"))).fetchall()
-        return [{"table": r[0], "alias": r[1] or r[0],
-                 "key_col": r[2] or "id", "name_col": r[3] or "name"} for r in rows]
+        """轻量对象表：以**本体为唯一源**（与 list_objects 同源），只保留 table/alias/key/name。
+
+        统一对象真相源后，治理/预警统计的对象与「对象列表」「对象查询白名单」完全一致。
+        """
+        objs = await cls.list_objects()
+        return [
+            {"table": o["table"], "alias": o["alias"],
+             "key_col": o["key_col"], "name_col": o["name_col"]}
+            for o in objs
+        ]
 
     @classmethod
     async def domain_reconcile(cls) -> dict:
