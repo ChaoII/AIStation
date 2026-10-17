@@ -159,13 +159,19 @@
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="150" align="center" fixed="right">
+                  <el-table-column label="操作" width="224" align="center" fixed="right">
                     <template #default="{ row }">
                       <el-button link type="primary" size="small" @click="openFieldDrawer(row)">
                         字段
                       </el-button>
                       <el-button link type="primary" size="small" @click="openVersions(row)">
                         版本
+                      </el-button>
+                      <el-button link type="primary" size="small" @click="addFav(row)">
+                        收藏
+                      </el-button>
+                      <el-button link type="primary" size="small" @click="shareTable(row)">
+                        分享
                       </el-button>
                     </template>
                   </el-table-column>
@@ -1050,6 +1056,8 @@ import {
   saveQueryAssetColumn,
   batchSaveQueryAssetMeta,
   getQueryAssets,
+  addFavorite,
+  createShare,
   getPipelineList,
   savePipeline,
   runPipeline,
@@ -1155,6 +1163,33 @@ const versionsTable = ref("");
 function openVersions(row: any) {
   versionsTable.value = row.table || row.table_name || "";
   versionsVisible.value = true;
+}
+async function addFav(row: any) {
+  try {
+    const r = await addFavorite("table", row.table || row.table_name);
+    ElMessage.success(r?.data?.msg || "已收藏");
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "收藏失败");
+  }
+}
+async function shareTable(row: any) {
+  try {
+    const r = await createShare(row.table || row.table_name);
+    const d = r?.data?.data || {};
+    const link = d.link ? window.location.origin + d.link : "";
+    if (link) {
+      try {
+        await navigator.clipboard.writeText(link);
+      } catch {
+        /* 剪贴板不可用时仅提示 */
+      }
+      ElMessage.success("已生成分享链接，并复制到剪贴板");
+    } else {
+      ElMessage.success("分享成功");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "分享失败");
+  }
 }
 const batchDlg = ref(false);
 const batchText = ref("");

@@ -2050,7 +2050,7 @@ class AiQueryService:
             await db.execute(_t(
                 "INSERT INTO ai_favorite(kind,ref,user_id,created_time) VALUES (:k,:r,:u,:now)"),
                 {"k": kind, "r": ref, "u": user_id,
-                 "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+                 "now": datetime.now()})
         return {"ok": True, "msg": "收藏成功"}
 
     @classmethod
