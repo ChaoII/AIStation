@@ -561,6 +561,40 @@
           </el-table-column>
         </el-table>
       </el-tab-pane>
+
+      <!-- 数据生命周期：对象发布/草稿/敏感/血缘概览 -->
+      <el-tab-pane label="生命周期" name="lifecycle">
+        <div class="gp-bar">
+          <el-button size="small" @click="loadLifecycle">刷新</el-button>
+          <el-tag size="small" type="info" effect="plain">对象生命周期看板</el-tag>
+        </div>
+        <el-descriptions v-if="lifecycle" :column="5" border size="small">
+          <el-descriptions-item label="对象总数">{{ lifecycle.objects }}</el-descriptions-item>
+          <el-descriptions-item label="已发布">{{ lifecycle.published }}</el-descriptions-item>
+          <el-descriptions-item label="草稿">{{ lifecycle.draft }}</el-descriptions-item>
+          <el-descriptions-item label="含敏感字段对象">
+            {{ lifecycle.sensitive_objects }}
+          </el-descriptions-item>
+          <el-descriptions-item label="血缘关系总数">
+            {{ lifecycle.total_lineage }}
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-table
+          :data="lifecycle?.objects_list || []"
+          size="small"
+          border
+          style="margin-top: 12px"
+          max-height="420"
+        >
+          <template #empty>
+            <el-empty description="暂无已发布对象" :image-size="60" />
+          </template>
+          <el-table-column prop="table" label="表" min-width="200" show-overflow-tooltip />
+          <el-table-column prop="alias" label="中文名" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="dq" label="质量分" width="90" align="center" />
+          <el-table-column prop="sens" label="敏感字段" width="100" align="center" />
+        </el-table>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 权限策略编辑 -->
@@ -867,6 +901,7 @@ import {
   saveFdeProposition,
   deleteFdePropositions,
   fdeShadowCheck,
+  getObjectsLifecycle,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "GovernancePanel" });
@@ -1055,6 +1090,16 @@ async function runFdeShadow(row: any) {
   }
 }
 const dqData = ref<any>({ avg_score: 0, healthy: 0, risk: 0, items: [] });
+const lifecycle = ref<any>(null);
+
+async function loadLifecycle() {
+  try {
+    const r = await getObjectsLifecycle();
+    lifecycle.value = r.data?.data || null;
+  } catch {
+    lifecycle.value = null;
+  }
+}
 const dqAlerts = ref<any[]>([]);
 const dqScanning = ref(false);
 const domainView = ref<any>({ domains: [], unassigned: [], total_objects: 0 });
@@ -1104,6 +1149,7 @@ function onTab(name: any) {
   else if (name === "ontgov") loadOntGov();
   else if (name === "action") loadAction();
   else if (name === "fde") loadFde();
+  else if (name === "lifecycle") loadLifecycle();
 }
 
 // 动作审批：待审批/定义/日志

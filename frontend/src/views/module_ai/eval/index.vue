@@ -16,6 +16,9 @@
       <el-tab-pane label="方差" name="variance">
         <EvalVariance />
       </el-tab-pane>
+      <el-tab-pane label="基准测试" name="benchmark">
+        <EvalBenchmark />
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -27,6 +30,7 @@ import EvalRunPanel from "./components/EvalRunPanel.vue";
 import EvalReport from "./components/EvalReport.vue";
 import EvalAblation from "./components/EvalAblation.vue";
 import EvalVariance from "./components/EvalVariance.vue";
+import EvalBenchmark from "./components/EvalBenchmark.vue";
 
 defineOptions({ name: "AiEval" });
 
