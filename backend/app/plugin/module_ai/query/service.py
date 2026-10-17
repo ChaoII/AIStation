@@ -5240,35 +5240,38 @@ class AiQueryService:
         dict_text = "\n".join(dict_lines[:120])
         # 2) LLM 生成建议
         runtime = await cls._get_runtime()
-        try:
-            from openai import AsyncOpenAI
+        # 统一走 agno（AGENTS.md：AI 调用一律走 agno，禁止原始 OpenAI 客户端平行实现）
+        from agno.agent import Agent
+        from agno.models.openai.like import OpenAILike
 
-            from app.plugin.module_ai.models.service import build_headers
+        from app.plugin.module_ai.models.service import build_headers
 
-            client = AsyncOpenAI(
-                base_url=runtime["base_url"], api_key=runtime["api_key"] or "sk-none",
-                default_headers=build_headers(runtime["base_url"], runtime.get("extra_headers"), "aistation-suggest"),
+        model = OpenAILike(
+            id=runtime["model"], base_url=runtime["base_url"],
+            api_key=runtime.get("api_key") or "sk-none",
+            temperature=0.2, max_tokens=1600, timeout=90,
+            default_headers=build_headers(
+                runtime["base_url"], runtime.get("extra_headers"), "aistation-suggest"),
+        )
+        agent = Agent(model=model, telemetry=False, markdown=False)
+        data: dict = {}
+        for attempt in range(2):
+            prompt = (
+                "你是数据分析师。根据下面的数据库表/字段中文词典，推荐 6~10 个高频业务指标和 6~10 个业务术语。"
+                "指标必须是常见统计口径(总数/某类型数量/平均/分布)，且能用给出的表/字段实现。"
+                "**只返回一个 JSON 对象，不要任何解释、不要 markdown 代码块**，格式严格为："
+                '{"metrics":[{"name":"<指标名>","sql":"<SELECT COUNT/AVG> FROM <表>...","agg":"count|avg|group"}],'
+                '"terms":[{"term":"<口语叫法>","type":"metric|dimension","target":"<指标名或 表.字段>"}]}'
+                + ("\n\n注意：你上次输出不是合法 JSON，请严格按上面的 JSON 结构重新输出，不要多余文字。\n" if attempt else "")
+                + f"\n数据字典：\n{dict_text}"
             )
-            data: dict = {}
-            for attempt in range(2):
-                prompt = (
-                    "你是数据分析师。根据下面的数据库表/字段中文词典，推荐 6~10 个高频业务指标和 6~10 个业务术语。"
-                    "指标必须是常见统计口径(总数/某类型数量/平均/分布)，且能用给出的表/字段实现。"
-                    "**只返回一个 JSON 对象，不要任何解释、不要 markdown 代码块**，格式严格为："
-                    '{"metrics":[{"name":"<指标名>","sql":"<SELECT COUNT/AVG> FROM <表>...","agg":"count|avg|group"}],'
-                    '"terms":[{"term":"<口语叫法>","type":"metric|dimension","target":"<指标名或 表.字段>"}]}'
-                    + ("\n\n注意：你上次输出不是合法 JSON，请严格按上面的 JSON 结构重新输出，不要多余文字。\n" if attempt else "")
-                    + f"\n数据字典：\n{dict_text}"
-                )
-                resp = await client.chat.completions.create(
-                    model=runtime["model"], messages=[{"role": "user", "content": prompt}],
-                    temperature=0.2, max_tokens=1600,
-                )
-                data = cls._parse_dict(resp.choices[0].message.content or "")
-                if data or attempt == 1:
-                    break
-        except Exception as e:  # noqa: BLE001
-            raise CustomException(msg=f"推荐失败：{e}")
+            try:
+                resp = await agent.arun(prompt)
+            except Exception as e:  # noqa: BLE001
+                raise CustomException(msg=f"推荐失败：{e}") from e
+            data = cls._parse_dict(getattr(resp, "content", "") or "")
+            if data or attempt == 1:
+                break
         return {
             "metrics": data.get("metrics") or [],
             "terms": data.get("terms") or [],
