@@ -7159,22 +7159,23 @@ class AiQueryService:
 
     @classmethod
     async def _plan_llm(cls, prompt: str, runtime: dict, temperature: float = 0.0) -> str:
-        """计划阶段的一次 LLM 调用（只出 JSON 计划，不写 SQL）。"""
-        from openai import AsyncOpenAI
+        """计划阶段的一次 LLM 调用（只出 JSON 计划，不写 SQL）。统一走 agno。"""
+        from agno.agent import Agent
+        from agno.models.openai.like import OpenAILike
 
         from app.plugin.module_ai.models.service import build_headers
 
-        client = AsyncOpenAI(
-            base_url=runtime["base_url"], api_key=runtime.get("api_key") or "sk-none",
-            timeout=60,
+        model = OpenAILike(
+            id=runtime["model"], base_url=runtime["base_url"],
+            api_key=runtime.get("api_key") or "sk-none",
+            temperature=temperature, max_tokens=nl2sql_max_tokens(None), timeout=60,
+            extra_body={"reasoning_effort": "low"},
             default_headers=build_headers(
                 runtime["base_url"], runtime.get("extra_headers"), "aistation-query-plan"),
         )
-        resp = await client.chat.completions.create(
-            model=runtime["model"], messages=[{"role": "user", "content": prompt}],
-            temperature=temperature, max_tokens=nl2sql_max_tokens(None),
-        )
-        return resp.choices[0].message.content or ""
+        agent = Agent(model=model, telemetry=False, markdown=False)
+        resp = await agent.arun(prompt)
+        return getattr(resp, "content", "") or ""
 
     @classmethod
     async def _resolve_dialect_info(cls, datasource: str) -> tuple[dict, str]:
