@@ -131,6 +131,8 @@
           <el-button type="primary" size="small" :icon="Plus" @click="openAccess()">
             新建策略
           </el-button>
+          <el-button size="small" @click="openMatrix">权限矩阵</el-button>
+          <el-button size="small" @click="openSandbox">权限沙箱</el-button>
           <el-tag size="small" type="info" effect="plain">
             共 {{ accessRules.length }} 条 ABAC 策略
           </el-tag>
@@ -528,6 +530,132 @@
       </template>
     </el-dialog>
 
+    <!-- 权限矩阵（按角色） -->
+    <el-dialog v-model="matrixDialog" title="数据域权限矩阵（按角色）" width="720px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 10px"
+        title="每个系统角色「合并后」可查询的对象清单；未命中策略即不受限（默认全部）。"
+      />
+      <el-table v-loading="matrixLoading" :data="matrixRows" size="small" border max-height="420">
+        <template #empty>
+          <el-empty description="暂无角色" :image-size="60" />
+        </template>
+        <el-table-column prop="name" label="角色" width="150" show-overflow-tooltip />
+        <el-table-column prop="code" label="编码" width="150" show-overflow-tooltip />
+        <el-table-column label="是否受限" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.restricted ? 'warning' : 'info'" effect="plain">
+              {{ row.restricted ? "受限" : "不限" }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="可查对象" min-width="200">
+          <template #default="{ row }">
+            <el-tag v-if="!row.restricted" size="small" type="info" effect="plain">全部</el-tag>
+            <template v-else>
+              <el-tag
+                v-for="t in row.tables.slice(0, 6)"
+                :key="t"
+                size="small"
+                effect="plain"
+                style="margin: 0 2px"
+              >
+                {{ t }}
+              </el-tag>
+              <el-text v-if="row.tables.length > 6" size="small" type="info">
+                +{{ row.tables.length - 6 }}
+              </el-text>
+              <el-text v-if="!row.tables.length" size="small" type="info">无</el-text>
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column label="敏感放行" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.sensitive_ok ? 'success' : 'info'" effect="plain">
+              {{ row.sensitive_ok ? "是" : "否" }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- 权限沙箱（按用户/角色预览可查表） -->
+    <el-dialog v-model="sandboxDialog" title="权限沙箱" width="720px" append-to-body>
+      <el-form label-width="80px" inline>
+        <el-form-item label="按用户">
+          <el-input-number
+            v-model="sandboxUserId"
+            :min="0"
+            :controls="false"
+            style="width: 110px"
+          />
+          <el-button
+            size="small"
+            type="primary"
+            :loading="sandboxLoading"
+            style="margin-left: 8px"
+            @click="runSandboxUser"
+          >
+            预览
+          </el-button>
+        </el-form-item>
+        <el-form-item label="按角色">
+          <el-select
+            v-model="sandboxRole"
+            size="small"
+            clearable
+            placeholder="选择角色"
+            style="width: 160px"
+          >
+            <el-option v-for="r in matrixRows" :key="r.code" :label="r.name" :value="r.code" />
+          </el-select>
+          <el-button
+            size="small"
+            type="primary"
+            :loading="sandboxLoading"
+            style="margin-left: 8px"
+            @click="runSandboxRole"
+          >
+            预览
+          </el-button>
+        </el-form-item>
+      </el-form>
+      <el-descriptions v-if="sandboxResult" :column="2" size="small" border>
+        <el-descriptions-item label="主体">{{ sandboxResult.label }}</el-descriptions-item>
+        <el-descriptions-item label="是否受限">
+          <el-tag size="small" :type="sandboxResult.restricted ? 'warning' : 'info'" effect="plain">
+            {{ sandboxResult.restricted ? "受限" : "不限" }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="可查对象数">{{ sandboxResult.count }}</el-descriptions-item>
+        <el-descriptions-item label="敏感放行">
+          <el-tag
+            size="small"
+            :type="sandboxResult.sensitive_ok ? 'success' : 'info'"
+            effect="plain"
+          >
+            {{ sandboxResult.sensitive_ok ? "是" : "否" }}
+          </el-tag>
+        </el-descriptions-item>
+      </el-descriptions>
+      <div v-if="sandboxResult" style="margin-top: 10px">
+        <el-tag
+          v-for="t in sandboxResult.tables"
+          :key="t"
+          size="small"
+          effect="plain"
+          style="margin: 2px"
+        >
+          {{ t }}
+        </el-tag>
+        <el-text v-if="!sandboxResult.tables.length" size="small" type="info">无可查对象</el-text>
+      </div>
+      <el-empty v-else description="选择用户或角色后点「预览」" :image-size="60" />
+    </el-dialog>
+
     <!-- 数据域编辑 -->
     <el-dialog v-model="domainDialog" title="数据域" width="520px" append-to-body>
       <el-form :model="domainForm" label-width="100px">
@@ -586,6 +714,9 @@ import {
   getGovernanceOverview,
   getOntologyGovernance,
   getAccessRules,
+  getAccessMatrix,
+  accessPreview,
+  accessPreviewRole,
   getDqOverview,
   getDqAlert,
   scanAllDq,
@@ -607,6 +738,75 @@ defineOptions({ name: "GovernancePanel" });
 const tab = ref("overview");
 const g = ref<any>({ overview: {} });
 const accessRules = ref<any[]>([]);
+// 权限矩阵 / 沙箱
+const matrixDialog = ref(false);
+const matrixRows = ref<any[]>([]);
+const matrixLoading = ref(false);
+const sandboxDialog = ref(false);
+const sandboxUserId = ref(1);
+const sandboxRole = ref("");
+const sandboxLoading = ref(false);
+const sandboxResult = ref<any>(null);
+
+async function openMatrix() {
+  matrixDialog.value = true;
+  matrixLoading.value = true;
+  try {
+    const r = await getAccessMatrix();
+    matrixRows.value = r.data?.data?.roles || [];
+  } catch {
+    matrixRows.value = [];
+  } finally {
+    matrixLoading.value = false;
+  }
+}
+
+function openSandbox() {
+  sandboxDialog.value = true;
+  sandboxResult.value = null;
+}
+
+async function runSandboxUser() {
+  sandboxLoading.value = true;
+  try {
+    const r = await accessPreview(sandboxUserId.value);
+    const d = r.data?.data || {};
+    sandboxResult.value = {
+      label: `用户 #${d.user_id}（${d.superuser ? "超管" : (d.roles || []).join("/") || "无角色"}）`,
+      restricted: !!d.domain_restricted,
+      count: d.count || 0,
+      sensitive_ok: !!d.superuser,
+      tables: d.allowed_tables || [],
+    };
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "预览失败");
+  } finally {
+    sandboxLoading.value = false;
+  }
+}
+
+async function runSandboxRole() {
+  if (!sandboxRole.value) {
+    ElMessage.warning("请选择角色");
+    return;
+  }
+  sandboxLoading.value = true;
+  try {
+    const r = await accessPreviewRole(sandboxRole.value);
+    const d = r.data?.data || {};
+    sandboxResult.value = {
+      label: `角色 ${d.role}`,
+      restricted: !!d.restricted,
+      count: d.count || 0,
+      sensitive_ok: !!d.sensitive_ok,
+      tables: d.allowed_tables || [],
+    };
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "预览失败");
+  } finally {
+    sandboxLoading.value = false;
+  }
+}
 const dqData = ref<any>({ avg_score: 0, healthy: 0, risk: 0, items: [] });
 const dqAlerts = ref<any[]>([]);
 const dqScanning = ref(false);
