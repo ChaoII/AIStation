@@ -793,8 +793,6 @@ async def _ensure_ai_menus() -> None:
                 ("工作台", "AiWorkbench", "/ai/workspace", "module_ai/workspace/index", "module_ai:workspace:query", 6, "el-icon-OfficeBuilding"),
                 ("AI 控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 7, "el-icon-Odometer"),
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10, "el-icon-Cpu"),
-                ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11, "el-icon-User"),
-                ("工作流", "AiWorkflow", "/ai/workflow", "module_ai/workflow/index", "module_ai:workflow:query", 12, "el-icon-Connection"),
                 ("知识库", "AiKnowledge", "/ai/knowledge", "module_ai/knowledge/index", "module_ai:knowledge:query", 14, "el-icon-Collection"),
                 ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 15, "el-icon-Document"),
                 ("能力市场", "AiMarket", "/ai/market", "module_ai/market/index", "module_ai:market:query", 20, "el-icon-Shop"),
