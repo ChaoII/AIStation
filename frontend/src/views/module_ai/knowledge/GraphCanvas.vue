@@ -16,6 +16,7 @@ import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
 import cytoscapeD3Force from "cytoscape-d3-force";
 import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { stableColor } from "../../../utils/color";
+import { NODE_TYPE_STYLE, EDGE_TYPE_STYLE } from "@/utils/graphTheme";
 
 cytoscape.use(cytoscapeD3Force);
 
@@ -173,24 +174,6 @@ const THEMES: Record<string, any> = {
   },
 };
 
-// 节点 / 边分类色（主题无关）：切换主题只改变背景网格，节点与边的分类颜色保持稳定。
-const NODE_COLORS: Record<string, string> = {
-  keyword: "#4a86f7",
-  annotation: "#f7a733",
-  custom: "#5ac66b",
-  other: "#a0a6ad",
-};
-const RELATION_COLORS: Record<string, string> = {
-  属于: "#5ac66b",
-  包含: "#4a86f7",
-  依赖: "#f7a733",
-  相关: "#a8abb3",
-  引用: "#7f8fa6",
-  位于: "#3f9ad6",
-  用于: "#e6b455",
-  关联: "#f7a733",
-  default: "#a8abb3",
-};
 const NS = computed(() => ({
   sizeMode: props.nodeStyle?.sizeMode || "weight",
   fixedSize: props.nodeStyle?.fixedSize || 22,
@@ -205,23 +188,27 @@ function palette() {
 }
 function nodeColorFor(etype?: string, hasChunk = false) {
   if (NS.value.colorMode === "single") return NS.value.singleColor;
-  if (hasChunk || etype === "annotation") return NODE_COLORS.annotation;
-  if (etype === "custom") return NODE_COLORS.custom;
-  if (etype === "keyword" || !etype) return NODE_COLORS.keyword;
-  return NODE_COLORS.other;
+  if (hasChunk || etype === "annotation") return NODE_TYPE_STYLE.annotation.color;
+  if (etype === "custom") return NODE_TYPE_STYLE.custom.color;
+  if (etype === "keyword" || !etype) return NODE_TYPE_STYLE.keyword.color;
+  // 扩展：数据血缘(表/字段/指标/…)/本体(对象/决策/证据)等类型走共享主题
+  const t = NODE_TYPE_STYLE[etype];
+  if (t) return t.color;
+  return NODE_TYPE_STYLE.other.color;
 }
 function edgeColor(rtype?: string) {
-  if (RELATION_COLORS[rtype || ""]) return RELATION_COLORS[rtype || ""];
-  return RELATION_COLORS.default || "#a8abb3";
+  if (EDGE_TYPE_STYLE[rtype || ""]) return EDGE_TYPE_STYLE[rtype || ""];
+  return EDGE_TYPE_STYLE.default || "#a8abb3";
 }
 function nodeSize(weight?: number) {
   return NS.value.sizeMode === "fixed" ? NS.value.fixedSize : 14 + Math.min(weight || 1, 20) * 1.2;
 }
 function nodeShape(etype?: string) {
   if (NS.value.shapeMode === "uniform") return NS.value.uniformShape;
-  const t = etype;
-  if (t === "annotation") return "round-rectangle";
-  if (t === "custom") return "diamond";
+  if (etype === "annotation") return "round-rectangle";
+  if (etype === "custom") return "diamond";
+  const t = NODE_TYPE_STYLE[etype || ""];
+  if (t?.shape) return t.shape;
   return "ellipse";
 }
 const bgStyle = computed(() => {

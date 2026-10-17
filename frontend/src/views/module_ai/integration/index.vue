@@ -514,7 +514,7 @@
                 :nodes="kgNodes"
                 :edges="kgEdges"
                 height="560px"
-                layout-name="cose"
+                layout-name="grid"
                 :node-style="nodeStyle"
                 class="ig-kg-graph"
               />
