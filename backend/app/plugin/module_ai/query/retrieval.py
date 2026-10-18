@@ -34,10 +34,14 @@ def _cn_chunks(text: str) -> list[str]:
 def _jieba_cut(text: str) -> tuple[str, ...]:
     """jieba 中文分词（失败回退到逐字/连续块）。
 
-    ⚠️ 必须用 ``jieba.cut`` 而**不是** ``jieba.lcut``：``jieba3k``（``newspaper3k``
-    的传递依赖）与 ``jieba`` 共用同一个 ``jieba/`` 包目录、安装时互相覆盖文件；
-    实测被覆盖后 ``lcut`` 消失（AttributeError）而 ``cut`` 仍可用。若用 ``lcut``，
-    这里会**静默**回退成整块分词，中文关键词打分退化为 0（检索召回变差但不报错）。
+    ⚠️ 必须用 ``jieba.cut`` 而**不是** ``jieba.lcut``。
+
+    历史根因：``newspaper3k`` 的传递依赖 ``jieba3k`` 与 ``jieba`` 共用同一个
+    ``jieba/`` 包目录、安装时互相覆盖文件；覆盖后 ``lcut`` 消失（AttributeError）
+    而 ``cut`` 仍可用。若用 ``lcut``，这里会**静默**回退成整块分词，中文关键词
+    打分退化为 0（检索召回变差但不报错）。该依赖已替换为 ``newspaper4k``（不再
+    拖 jieba3k），但**写法保留**：同目录同名冲突无法从根上杜绝，``cut`` 两边都有，
+    是零成本的防御。
     """
     global _jieba_warned
     try:

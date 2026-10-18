@@ -312,9 +312,9 @@ def test_get_tool_specs_consumes_config_map(monkeypatch):
 
 def test_registry_requires_are_import_module_names():
     """requires 必须是 import 模块名；pip 分发名放 pip_name 仅供展示。"""
-    # newspaper：import 名与 pip 分发名不同（newspaper3k），是这条约束的关键样本
+    # newspaper：import 名与 pip 分发名不同（newspaper4k），是这条约束的关键样本
     assert agno.get_spec("newspaper")["requires"] == "newspaper"
-    assert agno.get_spec("newspaper").get("pip_name") == "newspaper3k"
+    assert agno.get_spec("newspaper").get("pip_name") == "newspaper4k"
     # duckduckgo：import 名是 ddgs（不是包名 duckduckgo）
     assert agno.get_spec("duckduckgo")["requires"] == "ddgs"
     assert agno.get_spec("wikipedia")["requires"] == "wikipedia"
@@ -331,9 +331,9 @@ def test_probe_uses_import_name(monkeypatch):
     ready, reason = agno._probe(agno.get_spec("newspaper"))
     assert ready is False
     assert "newspaper" in seen
-    assert "newspaper3k" not in seen
+    assert "newspaper4k" not in seen
     # 提示文案仍用 pip 分发名，便于用户安装
-    assert "newspaper3k" in reason
+    assert "newspaper4k" in reason
 
 
 def test_enabled_schemas_respect_readiness(monkeypatch, test_client, auth_headers):

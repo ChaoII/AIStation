@@ -113,10 +113,13 @@ AGNO_CATALOG: list[dict] = [
     {
         "key": "newspaper",
         "title": "新闻抓取",
-        "module": "agno.tools.newspaper",
-        "class_name": "NewspaperTools",
+        "module": "agno.tools.newspaper4k",
+        "class_name": "Newspaper4kTools",
+        # ⚠️ requires 必须是**导入名**：newspaper4k 为兼容仍提供顶层包 `newspaper`；
+        #    pip 分发名是 newspaper4k，放 pip_name 供安装提示（不可用 newspaper3k：
+        #    它拖 jieba3k 与真 jieba 争同一目录，会把分词库覆盖坏）。
         "requires": "newspaper",
-        "pip_name": "newspaper3k",
+        "pip_name": "newspaper4k",
         "config_fields": [],
         "group": "资讯",
         "risk": "low",

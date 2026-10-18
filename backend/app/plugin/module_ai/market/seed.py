@@ -474,7 +474,7 @@ _TOOLS: list[dict] = [
     ("tool-duckduckgo", "duckduckgo", "网页搜索", "网络", "DuckDuckGo 实时网页搜索（免密钥，需 ddgs 依赖）"),
     ("tool-wikipedia", "wikipedia", "维基百科", "知识", "维基百科条目检索与摘要（免密钥，需 wikipedia 依赖）"),
     ("tool-arxiv", "arxiv", "arXiv 论文", "学术", "检索 arXiv 学术论文（免密钥，需 arxiv 依赖）"),
-    ("tool-newspaper", "newspaper", "新闻正文抓取", "资讯", "抓取新闻文章正文（免密钥，需 newspaper3k 依赖）"),
+    ("tool-newspaper", "newspaper", "新闻正文抓取", "资讯", "抓取新闻文章正文（免密钥，需 newspaper4k 依赖）"),
     ("tool-csv", "csv_toolkit", "CSV / Excel 查询", "数据", "用 SQL 查询 CSV/Excel（免密钥，需 duckdb 依赖）"),
     ("tool-visualization", "visualization", "图表生成", "数据", "生成折线/柱状/饼图（免密钥，需 matplotlib 依赖）"),
 ]
