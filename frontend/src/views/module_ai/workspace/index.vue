@@ -96,6 +96,31 @@
                   />
                 </div>
                 <div class="ws-card__desc">{{ it.description || "暂无描述" }}</div>
+                <!--
+                  定时任务：触发方式 / 描述 / 下次运行。
+                  三项都取自后端（`/cron/list` 的 trigger、trigger_args、next_run_time），前端**不自算**，
+                  否则会与调度器形成第二套口径；`needs_review` 为真表示该行按新校验不通过（或迁移被跳过），
+                  必须显式提示人工改写，否则会「有任务但调度不上」静默停摆。
+                -->
+                <div v-if="it.type === 'cron'" class="ws-card__cron">
+                  <div class="ws-card__cron-line">
+                    <span class="ws-card__cron-label">触发方式：</span>
+                    <el-tag size="small" effect="plain" :type="triggerMeta(cronTrigger(it)).type">
+                      {{ triggerMeta(cronTrigger(it)).text }}
+                    </el-tag>
+                    <el-tag v-if="cronNeedsReview(it)" size="small" type="warning">
+                      需人工确认
+                    </el-tag>
+                  </div>
+                  <div class="ws-card__cron-line">
+                    <span class="ws-card__cron-label">描述：</span>
+                    <span class="ws-card__cron-text">{{ cronArgsText(it) }}</span>
+                  </div>
+                  <div class="ws-card__cron-line">
+                    <span class="ws-card__cron-label">下次运行：</span>
+                    <span class="ws-card__cron-text">{{ cronNextRun(it) }}</span>
+                  </div>
+                </div>
                 <!-- 能力标签：模型/工具/节点/知识库/MCP/技能/问数 -->
                 <div v-if="capTags(it).length" class="ws-card__tags">
                   <el-tag
@@ -172,8 +197,8 @@
       </template>
     </el-dialog>
 
-    <!-- 新建定时任务弹窗 -->
-    <el-dialog v-model="cronDialogVisible" title="新建定时任务" width="480px">
+    <!-- 新建定时任务弹窗（触发方式统一走 TriggerEditor，描述与下次运行时间来自后端统一层） -->
+    <el-dialog v-model="cronDialogVisible" title="新建定时任务" width="600px">
       <el-form label-width="90px">
         <el-form-item label="任务名称">
           <el-input v-model="cronForm.name" placeholder="任务名称" />
@@ -181,8 +206,12 @@
         <el-form-item label="描述">
           <el-input v-model="cronForm.description" placeholder="任务描述" />
         </el-form-item>
-        <el-form-item label="Cron 表达式">
-          <el-input v-model="cronForm.cron" placeholder="如 0 9 * * 1-5（工作日 9 点）" />
+        <el-form-item label="触发方式">
+          <TriggerEditor
+            v-model:trigger="cronForm.trigger"
+            v-model:trigger-args="cronForm.trigger_args"
+            @error="cronError = $event"
+          />
         </el-form-item>
         <el-form-item label="执行目标">
           <el-select v-model="cronForm.target_type" style="width: 100%">
@@ -237,9 +266,11 @@ import { deleteAiAgent, getAiAgentDetail } from "@/api/module_ai/agent";
 import { deleteAiWorkflow, getAiWorkflowDetail } from "@/api/module_ai/workflow";
 import { deleteAiApp } from "@/api/module_ai/app";
 import { getAiModelList } from "@/api/module_ai/model";
+import request from "@/utils/request";
 import IconTile from "@/views/module_ai/market/components/IconTile.vue";
 import WorkflowEditor from "@/views/module_ai/workflow/components/WorkflowEditor.vue";
 import AgentFormDialog from "@/views/module_ai/workspace/components/AgentFormDialog.vue";
+import TriggerEditor from "@/components/TriggerEditor/index.vue";
 
 defineOptions({ name: "AiWorkbench" });
 
@@ -262,7 +293,10 @@ const typeOptions = [
   { label: "应用", value: "app" },
 ];
 
-const typeTag: Record<string, "primary" | "success" | "warning" | "info" | "danger"> = {
+/** el-tag 的主题类型（Element Plus 原生枚举） */
+type TagType = "primary" | "success" | "warning" | "info" | "danger";
+
+const typeTag: Record<string, TagType> = {
   agent: "primary",
   workflow: "success",
   cron: "warning",
@@ -285,9 +319,9 @@ async function loadModelOptions() {
 }
 
 // 卡片能力标签：按类型展示模型/工具/节点/知识库/MCP/技能/问数等
-function capTags(it: WorkspaceItem): { text: string; type: string }[] {
+function capTags(it: WorkspaceItem): { text: string; type: TagType }[] {
   const m = it.meta || {};
-  const tags: { text: string; type: string }[] = [];
+  const tags: { text: string; type: TagType }[] = [];
   if (it.type === "agent") {
     const mn = modelName(m.model_id);
     if (mn) tags.push({ text: mn, type: "primary" });
@@ -303,9 +337,8 @@ function capTags(it: WorkspaceItem): { text: string; type: string }[] {
     if (mn) tags.push({ text: mn, type: "primary" });
     if (m.tools) tags.push({ text: `${m.tools} 工具`, type: "warning" });
   } else if (it.type === "cron") {
-    if (m.cron) tags.push({ text: m.cron, type: "info" });
+    // 触发方式 / 描述 / 下次运行由卡片专属区块展示（见模板 ws-card__cron），这里只留执行目标
     if (m.target_type) tags.push({ text: `目标 ${m.target_type}`, type: "warning" });
-    if (m.next_run_time) tags.push({ text: fmtTime(m.next_run_time), type: "success" });
   }
   return tags;
 }
@@ -355,10 +388,12 @@ async function loadTree() {
 async function loadItems() {
   loading.value = true;
   try {
-    const res: any = await getWorkspaceItems({
-      category_id: currentCategoryId.value ?? undefined,
-    });
-    allItems.value = res.data?.data?.items || [];
+    // 聚合条目（卡片）+ 定时任务明细（触发方式/需人工确认）：并发取，避免串行等待
+    const [itemsRes] = await Promise.all([
+      getWorkspaceItems({ category_id: currentCategoryId.value ?? undefined }),
+      loadCronRows(),
+    ]);
+    allItems.value = itemsRes.data?.data?.items || [];
   } finally {
     loading.value = false;
   }
@@ -511,22 +546,105 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
 }
 
 // ---- 定时任务弹窗 ----
+
+/**
+ * 定时任务列表行（`/cron/list`）：卡片展示「触发方式 / 描述 / 下次运行 / 需人工确认」所需字段。
+ *
+ * 聚合条目接口 `/items` 的 cron 条目只带 `meta.cron`（= trigger_args）与 `meta.next_run_time`，
+ * 拿不到 `trigger`（触发类型）与 `needs_review`，故列表加载时并行取一次本模块自己的 `/cron/list`。
+ * 取值一律来自后端（`TriggerUtil` 口径），前端不自算。
+ */
+interface CronRow {
+  id: number;
+  trigger?: string | null;
+  trigger_args?: unknown;
+  next_run_time?: string | null;
+  needs_review?: boolean;
+}
+
+const cronRows = ref<Record<number, CronRow>>({});
+
+async function loadCronRows() {
+  try {
+    const res: any = await request({ url: "/ai/workspace/cron/list", method: "get" });
+    const rows: CronRow[] = res.data?.data?.items || [];
+    const map: Record<number, CronRow> = {};
+    for (const row of rows) map[row.id] = row;
+    cronRows.value = map;
+  } catch {
+    // 取不到明细不影响主列表：卡片按聚合条目的 meta 兜底展示（见 cronTrigger/cronArgsText）
+    cronRows.value = {};
+  }
+}
+
+/** 触发类型 → 中文名 + 标签色（与 TriggerEditor 的四种类型一一对应） */
+const TRIGGER_LABELS: Record<string, { text: string; type: TagType }> = {
+  cron: { text: "定时", type: "primary" },
+  interval: { text: "间隔", type: "success" },
+  date: { text: "单次", type: "warning" },
+  now: { text: "立即", type: "info" },
+};
+
+/** 未知/历史触发类型不做假设，原样显示（避免模板取不到标签色而报错） */
+function triggerMeta(trigger: string): { text: string; type: TagType } {
+  return TRIGGER_LABELS[trigger] || { text: trigger || "未配置", type: "info" };
+}
+
+function cronRow(it: WorkspaceItem): CronRow | null {
+  return cronRows.value[it.id] || null;
+}
+
+/** 触发类型：列表行缺失时按后端 `_cron_dict` 同口径兜底为 `cron` */
+function cronTrigger(it: WorkspaceItem): string {
+  return cronRow(it)?.trigger || "cron";
+}
+
+/** 描述：后端列表未回传「人话描述」，故按原样显示 `trigger_args`（保存时的同一份契约值） */
+function cronArgsText(it: WorkspaceItem): string {
+  const row = cronRow(it);
+  const args = row ? row.trigger_args : it.meta?.cron;
+  if (args === null || args === undefined || args === "") {
+    // 「立即」按契约无参数（不是缺配置），与真正的空表达式（迁移跳过）区分开
+    return cronTrigger(it) === "now" ? "—" : "未配置";
+  }
+  return typeof args === "string" ? args : JSON.stringify(args);
+}
+
+function cronNextRun(it: WorkspaceItem): string {
+  const row = cronRow(it);
+  return fmtTime((row ? row.next_run_time : it.meta?.next_run_time) as string | undefined) || "—";
+}
+
+/** 需人工确认：① 表达式为空（迁移跳过）② 表达式非空但按新校验不通过（后端统一层判定） */
+function cronNeedsReview(it: WorkspaceItem): boolean {
+  return Boolean(cronRow(it)?.needs_review);
+}
+
 const cronDialogVisible = ref(false);
 const cronForm = ref({
   name: "",
   description: "",
-  cron: "",
+  /** 触发类型：cron / interval / date / now（TriggerEditor 的四种类型） */
+  trigger: "cron",
+  /** 触发参数：cron 为 5 段表达式，interval 为 JSON，date 为时间字符串，now 为 null */
+  trigger_args: "" as unknown,
   target_type: "agent",
   target_id: 0,
   category_id: null as number | null,
   enabled: true,
 });
 
+/** TriggerEditor 上抛的非法原因（非空即拦截保存）；空串表示配置合法 */
+const cronError = ref("");
+
 function openCronCreate() {
+  cronError.value = "";
   cronForm.value = {
     name: "",
     description: "",
-    cron: "",
+    // 参数留空：TriggerEditor 会按类型回落到规范默认值（定时 → 每天 09:00）
+    trigger: "cron",
+    trigger_args: "",
     target_type: "agent",
     target_id: 0,
     category_id: currentCategoryId.value,
@@ -535,12 +653,43 @@ function openCronCreate() {
   cronDialogVisible.value = true;
 }
 
+/**
+ * 保存用的 `trigger_args`：与后端存储契约一致——
+ * interval 落 JSON 字符串（后端 `TriggerUtil` 两种形态都认），date 落时间字符串，now 无参数。
+ */
+function serializeTriggerArgs(trigger: string, args: unknown): string | null {
+  if (trigger === "now") return null;
+  if (trigger === "interval") return JSON.stringify(args ?? {});
+  return typeof args === "string" ? args : String(args ?? "");
+}
+
 async function saveCron() {
-  if (!cronForm.value.name.trim() || !cronForm.value.cron.trim()) {
-    ElMessage.warning("请填写任务名称与 cron 表达式");
+  if (!cronForm.value.name.trim()) {
+    ElMessage.warning("请填写任务名称");
     return;
   }
-  await createWorkspaceCron({ ...cronForm.value });
+  // 组件已判定非法（结论来自后端统一层）：不放行，并把可读原因提示出来
+  if (cronError.value) {
+    ElMessage.error(cronError.value);
+    return;
+  }
+  const trigger = cronForm.value.trigger;
+  const triggerArgs = serializeTriggerArgs(trigger, cronForm.value.trigger_args);
+  // 先落到变量再传参：绕开「对象字面量多余属性检查」（新字段尚未进 api 模块的类型声明）
+  const payload = {
+    name: cronForm.value.name,
+    description: cronForm.value.description,
+    // 新字段（统一层口径）：后端优先认这两个
+    trigger,
+    trigger_args: triggerArgs,
+    // 兼容字段：仅「定时」时带表达式，其余类型留空（避免旧后端把它当成另一套调度语义存下来）
+    cron: trigger === "cron" ? String(triggerArgs ?? "") : "",
+    target_type: cronForm.value.target_type,
+    target_id: cronForm.value.target_id,
+    category_id: cronForm.value.category_id,
+    enabled: cronForm.value.enabled,
+  };
+  await createWorkspaceCron(payload);
   cronDialogVisible.value = false;
   ElMessage.success("定时任务已创建");
   loadItems();
@@ -721,6 +870,35 @@ async function saveCron() {
   gap: 6px;
   min-height: 24px;
   margin-bottom: 10px;
+}
+
+/* 定时任务：触发方式 / 描述 / 下次运行（次要说明统一 12px） */
+.ai-workspace-page .ws-card__cron {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.ai-workspace-page .ws-card__cron-line {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.ai-workspace-page .ws-card__cron-label {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+}
+
+.ai-workspace-page .ws-card__cron-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--el-text-color-regular);
+  white-space: nowrap;
 }
 
 .ai-workspace-page .ws-card__foot {
