@@ -50,6 +50,15 @@ def _send_notify(user_id: int, title: str, content: str | None, type_: str, modu
 async def start_scheduler():
     global _scheduler_task
     if _scheduler_task is None or _scheduler_task.done():
+        # 启动期把库里「启用」的定时训练计划重新注册到中心调度器：业务作业存放在**内存**
+        # jobstore（func 多为模块级引用，但重启即丢），故每次启动都要按库重建一次。
+        # 同步只传本模块前缀，绝不触碰别的模块的业务作业；失败也不阻断维护循环启动。
+        try:
+            from .schedule_service import ScheduleService
+
+            await ScheduleService.sync_train_schedule_jobs()
+        except Exception as e:  # noqa: BLE001 - 启动同步失败不应让维护循环起不来
+            log.error(f"定时训练计划启动同步失败：{e!s}")
         _scheduler_task = asyncio.create_task(_scheduler_loop())
         log.info("train scheduler started")
 
@@ -66,47 +75,76 @@ def build_scheduled_task_data(schedule) -> SimpleNamespace:
     )
 
 
+class _ScheduleAuth:
+    """定时训练的执行身份：以「计划创建者」建任务，审计字段可追溯；创建者不可考时退化为 1。"""
+
+    def __init__(self, user_id: int | None) -> None:
+        self.user = SimpleNamespace(id=user_id or 1)
+
+
+async def run_scheduled_training(schedule_id: int) -> None:
+    """中心调度器触发的定时训练作业（`train_schedule:{id}` 的执行体）。
+
+    必须是**模块级函数**：中心调度器要按引用解析可调用对象（闭包会走降级路径、
+    执行日志落不进库），且日志/排查时要能从作业键定位到这个函数。
+
+    - 触发时**重新读库**确认「仍启用且有触发表达式」：作业与调度行之间存在窗口期
+      （禁用/删除请求刚提交、或同键替换前的最后一次触发），此时静默跳过，
+      绝不因为一条已被停用的计划而创建训练任务；
+    - 建任务 + 立即启动，最后回写 `last_run_at` / `last_task_id`（与旧自建轮询行为一致）；
+    - 单次触发失败只记日志，不抛出：调度器里抛错会污染作业状态并可能吞掉后续触发。
+    """
+    async with async_db_session() as db:
+        from .schedule_model import TrainScheduleModel
+
+        s = await db.get(TrainScheduleModel, schedule_id)
+        if s is None:
+            log.info(f"定时训练计划 {schedule_id} 已删除，跳过本次触发")
+            return
+        if not s.enabled or not s.trigger_args:
+            log.info(f"定时训练计划 {schedule_id} 未启用或未配置触发时间，跳过本次触发")
+            return
+        created_id = s.created_id
+        task_data = build_scheduled_task_data(s)
+
+    new_id = None
+    try:
+        from .service import TrainService
+
+        result = await TrainService.create_task(task_data, _ScheduleAuth(created_id))
+        new_id = result.get("id")
+        if new_id:
+            await start_training(new_id)
+    except Exception as e:
+        log.error(f"scheduled training failed for schedule {schedule_id}: {e}")
+    finally:
+        async with async_db_session.begin() as db:
+            from .schedule_model import TrainScheduleModel
+
+            await db.execute(
+                update(TrainScheduleModel)
+                .where(TrainScheduleModel.id == schedule_id)
+                .values(last_run_at=datetime.now(), last_task_id=new_id)
+            )
+
+
 async def _scheduler_loop():
-    """维护循环：触发定时训练 + 周期孤儿恢复（归并到唯一的 TorchKiln 执行器）。"""
+    """维护循环：周期孤儿恢复 + GPU/端口看门狗（定时触发已移交中心调度器）。
+
+    原先这里还有一段「读库判定到期 → 建任务」的轮询（`croniter` 自算到期），
+    A5 已按裁决把到期判定删除、B4 把定时训练并入中心调度器（`train_schedule:{id}`
+    业务作业，见 `run_scheduled_training`），故该段连同 `get_due_schedules()` 一并删除——
+    留着就是一条恒为空的死轮询路径。本循环只保留与「定时调度」无关的其它职责。
+    """
     while True:
         try:
-            # Check for due training schedules
-            try:
-                from .schedule_model import TrainScheduleModel
-                from .schedule_service import ScheduleService
-                due = await ScheduleService.get_due_schedules()
-                for s in due:
-                    try:
-                        from .service import TrainService
-                        # Create a mock auth object - schedules run as superuser
-
-                        class _ScheduleAuth:
-                            class user:
-                                id = s.created_id or 1
-                        task_data = build_scheduled_task_data(s)
-                        result = await TrainService.create_task(task_data, _ScheduleAuth())
-                        new_id = result.get("id")
-                        if new_id:
-                            await start_training(new_id)
-                    except Exception as e:
-                        new_id = None
-                        log.error(f"scheduled training failed for schedule {s.id}: {e}")
-                    finally:
-                        async with async_db_session.begin() as db:
-                            await db.execute(
-                                update(TrainScheduleModel).where(TrainScheduleModel.id == s.id).values(
-                                    last_run_at=datetime.now(), last_task_id=new_id
-                                )
-                            )
-            except Exception as e:
-                log.error(f"schedule check error: {e}")
-
             # Periodic orphan recovery (base executor owns registry/DB state)
             await _executor_for(None).recover_orphans()
 
             # GPU/端口看门狗：容器被强杀或后端崩溃时，任务终止路径上的 release
             # 不会执行，占用会一直挂到 24h TTL——单卡机器等于被占死。
             from . import gpu_pool
+
             try:
                 await gpu_pool.reap_stale()
             except Exception as e:
