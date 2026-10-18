@@ -1,5 +1,5 @@
 """提供商服务：CRUD、测试连接、拉取远端模型列表。"""
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
@@ -23,6 +23,21 @@ def _to_dict(p: AiProviderModel) -> dict:
 
 
 class AiProviderService:
+
+    @classmethod
+    async def count_providers(cls) -> int:
+        """未删除的提供商数量（控制台跨模块取数入口，不暴露模型）。"""
+        async with async_db_session() as db:
+            return int(
+                (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AiProviderModel)
+                        .where(AiProviderModel.is_deleted.is_(False))
+                    )
+                ).scalar()
+                or 0
+            )
 
     @classmethod
     async def list_providers(cls) -> list[dict]:

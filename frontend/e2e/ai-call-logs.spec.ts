@@ -45,9 +45,11 @@ test("AI 控制台：本轮收敛过的聚合接口全部 200，Agent 看板渲�
     const m = r.url().match(/\/api\/v1(\/ai\/[^?]+)/);
     if (m) seen.set(m[1], r.status());
   });
+  const statsP = page.waitForResponse((r) => r.url().includes("/ai/overview/stats"));
   const dashP = page.waitForResponse((r) => r.url().includes("/ai/agents/dashboard"));
   await openPage(page, "/#/ai/overview", ".ai-overview-page");
 
+  const stats = (await (await statsP).json()).data;
   const dash = (await (await dashP).json()).data;
   // 这些聚合本轮全部改走 logs_center（health/audit/unified-audit/aip-control 等）
   const wanted = [
@@ -70,6 +72,13 @@ test("AI 控制台：本轮收敛过的聚合接口全部 200，Agent 看板渲�
     .locator(".ai-overview-page .el-card", { hasText: "Agent 编排运行看板" })
     .first();
   await expect(agentCard).toBeVisible({ timeout: 25_000 });
+  // 顶部卡片 = 各模块自己的计数接口（本轮把 stats() 的 7 处直读全改成服务接口）
+  await expect(
+    page.locator(".ai-overview-page .el-statistic", { hasText: "模型配置" }).first()
+  ).toContainText(String(stats.models), { timeout: 20_000 });
+  await expect(
+    page.locator(".ai-overview-page .el-statistic", { hasText: "累计调用" }).first()
+  ).toContainText(String(stats.calls), { timeout: 20_000 });
   // 「累计运行」必须等于接口值：该聚合本轮已改走 logs_center.AiLogService.stats_by_app
   await expect(
     agentCard.locator(".el-statistic", { hasText: "累计运行" }).first()

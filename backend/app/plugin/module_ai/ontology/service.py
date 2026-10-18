@@ -589,6 +589,19 @@ async def list_objects_ungrouped_count() -> int:
     return int(r.scalar() or 0)
 
 
+async def count_pending_tasks() -> int:
+    """待审（=待发布）的本体变更条数——控制台统一审计取数入口。
+
+    注意语义与历史实现的差别：早先控制台数的是 ``ai_ont_version`` 的 ``status='pending'``，
+    但**该表根本没有 status 列**（只有 object_code/version/snapshot/is_deleted/created_time），
+    查询一直在 except 里报错、这个数字恒为 0。本体侧"待发布"的真实载体是提案任务
+    ``ai_ont_proposal_task``（status: pending/approved/rejected，且该表无 is_deleted 列）。
+    """
+    r = await _exec(
+        "SELECT count(*) FROM ai_ont_proposal_task WHERE COALESCE(status,'pending')='pending'")
+    return int(r.scalar() or 0)
+
+
 # ---------------------------------------------------------------------------
 # 业务语义回填：把「库表结构清单」升级成「业务本体」
 #

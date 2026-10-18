@@ -1440,6 +1440,40 @@ _ONT_IMPORT_EXCLUDE: set[str] = {
 class AiQueryService:
 
     @classmethod
+    async def count_writeback_actions(cls) -> int:
+        """动作回写（`ai_query_writeback`）条数——控制台统一审计的跨模块取数入口。
+
+        ⚠️ 该表 ``is_deleted`` 是 **boolean**，PG 下写 ``is_deleted=0`` 会直接报
+        ``operator does not exist: bool``（历史调用方在 except 里吞掉，导致这个数字
+        恒为 0）。
+        """
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            return int(
+                (
+                    await db.execute(
+                        _t("SELECT COUNT(*) FROM ai_query_writeback WHERE is_deleted=false")
+                    )
+                ).scalar()
+                or 0
+            )
+
+    @classmethod
+    async def pipeline_run_status(cls) -> dict[str, int]:
+        """数据管道运行状态分布（`ai_pipeline_run` 按 status 计数）。"""
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (
+                await db.execute(
+                    _t(
+                        "SELECT status, count(*) FROM ai_pipeline_run "
+                        "WHERE is_deleted=false GROUP BY status"
+                    )
+                )
+            ).fetchall()
+        return {str(r[0]): int(r[1]) for r in rows}
+
+    @classmethod
     async def ensure_system_seed(cls) -> None:
         """首次执行时写入系统数据源预置指标与术语；之后跳过（避免拖慢快路径）。"""
         global _SEED_DONE

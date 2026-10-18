@@ -4,7 +4,7 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
@@ -180,6 +180,21 @@ def _cat_dict(c: AiAgentCategoryModel) -> dict:
 
 
 class AiAgentService:
+
+    @classmethod
+    async def count_agents(cls) -> int:
+        """未删除的智能体数量（控制台/看板跨模块取数入口，不暴露模型）。"""
+        async with async_db_session() as db:
+            return int(
+                (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AiAgentModel)
+                        .where(AiAgentModel.is_deleted.is_(False))
+                    )
+                ).scalar()
+                or 0
+            )
 
     @classmethod
     async def agent_templates(cls) -> list[dict]:

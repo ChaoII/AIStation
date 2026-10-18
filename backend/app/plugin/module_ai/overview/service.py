@@ -1,5 +1,4 @@
 """AI 概览统计与调用日志。"""
-from sqlalchemy import func, select
 
 from app.core.database import async_db_session
 
@@ -86,26 +85,25 @@ class AiOverviewService:
 
     @classmethod
     async def runtime_status(cls) -> dict:
-        """系统运行监控（Palantir Observability）：聚合 应用/工作流/模型/Agent/管道 运行状态 + AI 健康。"""
-        from sqlalchemy import func as _f
-        from sqlalchemy import select as _sel
+        """系统运行监控（Palantir Observability）：聚合 应用/工作流/模型/Agent/管道 运行状态 + AI 健康。
 
-        from app.plugin.module_ai.agent.model import AiAgentModel
-        from app.plugin.module_ai.apps.model import AiAppModel
-        from app.plugin.module_ai.models.model import AiModelModel
-        from app.plugin.module_ai.workflow.model import AiWorkflowModel
-        async with async_db_session() as db:
-            apps = (await db.execute(_sel(_f.count()).select_from(AiAppModel).where(AiAppModel.is_deleted.is_(False)))).scalar() or 0
-            workflows = (await db.execute(_sel(_f.count()).select_from(AiWorkflowModel).where(AiWorkflowModel.is_deleted.is_(False)))).scalar() or 0
-            models = (await db.execute(_sel(_f.count()).select_from(AiModelModel).where(AiModelModel.is_deleted.is_(False)))).scalar() or 0
-            agents = (await db.execute(_sel(_f.count()).select_from(AiAgentModel).where(AiAgentModel.is_deleted.is_(False)))).scalar() or 0
-            try:
-                from sqlalchemy import text as _t
-                preset_status = (await db.execute(_t(
-                    "SELECT status, count(*) FROM ai_pipeline_run WHERE is_deleted=false GROUP BY status"))).fetchall()
-                pipeline_status = {r[0]: int(r[1]) for r in preset_status}
-            except Exception:  # noqa: BLE001
-                pipeline_status = {}
+        各计数走**各模块自己的取数入口**（apps/workflow/models/agent/query），
+        本模块不直读它们的表——否则任一模块改表都会连带打断控制台。
+        """
+        from app.plugin.module_ai.agent.service import AiAgentService
+        from app.plugin.module_ai.apps.service import AiAppService
+        from app.plugin.module_ai.models.service import AiModelService
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+        apps = await AiAppService.count_apps()
+        workflows = await AiWorkflowService.count_workflows()
+        models = await AiModelService.count_models()
+        agents = await AiAgentService.count_agents()
+        try:
+            pipeline_status = await AiQueryService.pipeline_run_status()
+        except Exception:  # noqa: BLE001
+            pipeline_status = {}
         health = await cls.health_check(7)
         return {"apps": apps, "workflows": workflows, "models": models, "agents": agents,
                 "pipeline_status": pipeline_status,
@@ -342,30 +340,26 @@ class AiOverviewService:
 
     @classmethod
     async def unified_audit(cls, days: int = 7) -> dict:
-        """跨模块统一审计：AI 调用 / 动作写回 / 本体发布 全链路一处看。
+        """跨模块统一审计：AI 调用 / 动作写回 / 本体待审 全链路一处看。
 
-        AI 调用取数走 `logs_center`（该表读 owner）。
-        注：`ai_query_writeback` / `ai_ont_version` 仍是就地计数——它们分属问数/本体的表，
-        要收敛得先在那两个模块开口子，留作后续（不属本次 ai_call_logs 收敛范围）。
+        全部走**各表 owner 的取数入口**（logs_center / query / ontology），本模块不直读它们的表。
+        ``publishes`` 为本体**待审（待发布）变更**数（``ai_ont_proposal_task`` 的 pending）。
         """
         from app.plugin.module_ai import catalog
         from app.plugin.module_ai.logs_center.service import AiLogService
+        from app.plugin.module_ai.ontology import service as ontology_service
+        from app.plugin.module_ai.query.service import AiQueryService
 
         agg = await AiLogService.health_aggregate(days)
         approvals = await catalog.count_writebacks(result="pending")
-        actions = 0
-        publishes = 0
         try:
-            async with async_db_session() as db:
-                from sqlalchemy import text as _t
-                actions = int((await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_query_writeback "
-                    "WHERE is_deleted=0"))).scalar() or 0)
-                publishes = int((await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_ont_version "
-                    "WHERE is_deleted=0 AND status='pending'"))).scalar() or 0)
+            actions = await AiQueryService.count_writeback_actions()
         except Exception:  # noqa: BLE001
-            pass
+            actions = 0
+        try:
+            publishes = await ontology_service.count_pending_tasks()
+        except Exception:  # noqa: BLE001
+            publishes = 0
         return {"days": days, "ai_calls": agg["calls"], "ai_errors": agg["errors"],
                 "actions": actions, "approvals": approvals,
                 "publishes": publishes,
@@ -423,55 +417,30 @@ class AiOverviewService:
     @classmethod
     async def stats(cls) -> dict:
         # 平台概览统计：AI 实体计数 + 调用概览。
-        # 职责边界：overview 负责平台实体计数与监控/治理；ai_call_logs 的读取、
-        # 统计与明细统一由 logs_center 提供（复用 AiLogService.console_overview），避免重复 SQL。
-        from app.plugin.module_ai.apps.model import AiAppModel
-        from app.plugin.module_ai.knowledge.model import AiKnowledgeBaseModel
+        # 职责边界：实体计数走**各模块自己的取数入口**（不直读它们的表）；ai_call_logs 的
+        # 读取/统计/明细统一由 logs_center 提供（复用 AiLogService.console_overview）。
+        from app.plugin.module_ai.apps.service import AiAppService
+        from app.plugin.module_ai.knowledge.service import AiKnowledgeService
         from app.plugin.module_ai.logs_center.service import AiLogService
-        from app.plugin.module_ai.models.model import AiModelModel
-        from app.plugin.module_ai.providers.model import AiProviderModel
-        from app.plugin.module_ai.report.model import AiReportModel
-        from app.plugin.module_ai.workflow.model import AiWorkflowModel
+        from app.plugin.module_ai.models.service import AiModelService
+        from app.plugin.module_ai.providers.service import AiProviderService
+        from app.plugin.module_ai.report.service import AiReportService
+        from app.plugin.module_ai.workflow.service import AiWorkflowService
 
-        async with async_db_session() as db:
-            providers = await db.scalar(
-                select(func.count()).select_from(AiProviderModel).where(
-                    AiProviderModel.is_deleted.is_(False)
-                )
-            )
-            models = await db.scalar(
-                select(func.count()).select_from(AiModelModel).where(
-                    AiModelModel.is_deleted.is_(False)
-                )
-            )
-            reports = await db.scalar(
-                select(func.count()).select_from(AiReportModel).where(
-                    AiReportModel.is_deleted.is_(False)
-                )
-            )
-            kbs = await db.scalar(
-                select(func.count()).select_from(AiKnowledgeBaseModel).where(
-                    AiKnowledgeBaseModel.is_deleted.is_(False)
-                )
-            )
-            apps = await db.scalar(
-                select(func.count()).select_from(AiAppModel).where(
-                    AiAppModel.is_deleted.is_(False)
-                )
-            )
-            workflows = await db.scalar(
-                select(func.count()).select_from(AiWorkflowModel).where(
-                    AiWorkflowModel.is_deleted.is_(False)
-                )
-            )
+        providers = await AiProviderService.count_providers()
+        models = await AiModelService.count_models()
+        reports = await AiReportService.count_reports()
+        kbs = await AiKnowledgeService.count_knowledge_bases()
+        apps = await AiAppService.count_apps()
+        workflows = await AiWorkflowService.count_workflows()
 
         call = await AiLogService.console_overview()
         return {
-            "providers": providers or 0,
-            "models": models or 0,
-            "reports": reports or 0,
-            "knowledge_bases": kbs or 0,
-            "apps": apps or 0,
-            "workflows": workflows or 0,
+            "providers": providers,
+            "models": models,
+            "reports": reports,
+            "knowledge_bases": kbs,
+            "apps": apps,
+            "workflows": workflows,
             **call,
         }

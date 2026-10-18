@@ -1,5 +1,5 @@
 """大模型配置服务：CRUD、运行时取用、连接测试。"""
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 
 from app.config.setting import settings
 from app.core.database import async_db_session
@@ -48,6 +48,21 @@ def _to_dict(m: AiModelModel) -> dict:
 
 
 class AiModelService:
+
+    @classmethod
+    async def count_models(cls) -> int:
+        """未删除的模型配置数量（控制台/看板跨模块取数入口，不暴露模型）。"""
+        async with async_db_session() as db:
+            return int(
+                (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AiModelModel)
+                        .where(AiModelModel.is_deleted.is_(False))
+                    )
+                ).scalar()
+                or 0
+            )
 
     @classmethod
     async def list_models(cls) -> list[dict]:

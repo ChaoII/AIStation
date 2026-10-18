@@ -4,7 +4,7 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.database import async_db_session
 
@@ -67,6 +67,21 @@ async def _ensure_app_columns() -> None:
 
 
 class AiAppService:
+
+    @classmethod
+    async def count_apps(cls) -> int:
+        """未删除的应用数量（控制台/看板跨模块取数入口，不暴露模型）。"""
+        async with async_db_session() as db:
+            return int(
+                (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AiAppModel)
+                        .where(AiAppModel.is_deleted.is_(False))
+                    )
+                ).scalar()
+                or 0
+            )
 
     @classmethod
     async def list_apps(cls) -> list[dict]:

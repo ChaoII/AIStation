@@ -1,5 +1,5 @@
 """AI 报告服务：保存/列表/详情/删除。"""
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from app.core.database import async_db_session
 
@@ -22,6 +22,21 @@ def _to_dict(r: AiReportModel, with_content: bool = True) -> dict:
 
 
 class AiReportService:
+
+    @classmethod
+    async def count_reports(cls) -> int:
+        """未删除的报告数量（控制台跨模块取数入口，不暴露模型）。"""
+        async with async_db_session() as db:
+            return int(
+                (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AiReportModel)
+                        .where(AiReportModel.is_deleted.is_(False))
+                    )
+                ).scalar()
+                or 0
+            )
 
     @classmethod
     async def create(

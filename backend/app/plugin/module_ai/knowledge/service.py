@@ -200,6 +200,21 @@ def _ds_to_dict(d: AiDatasourceModel) -> dict:
 
 class AiKnowledgeService:
 
+    @classmethod
+    async def count_knowledge_bases(cls) -> int:
+        """未删除的知识库数量（控制台跨模块取数入口，不暴露模型）。"""
+        async with async_db_session() as db:
+            return int(
+                (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AiKnowledgeBaseModel)
+                        .where(AiKnowledgeBaseModel.is_deleted.is_(False))
+                    )
+                ).scalar()
+                or 0
+            )
+
     # ------------------------------------------------------------ #
     # 知识库 CRUD
     # ------------------------------------------------------------ #
