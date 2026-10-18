@@ -56,6 +56,21 @@ def _version_dict(v: AiWorkflowVersionModel) -> dict:
 class AiWorkflowService:
 
     @classmethod
+    async def count_workflows(cls) -> int:
+        """未删除的工作流数量（控制台/看板跨模块取数入口，不暴露模型）。"""
+        async with async_db_session() as db:
+            return int(
+                (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AiWorkflowModel)
+                        .where(AiWorkflowModel.is_deleted.is_(False))
+                    )
+                ).scalar()
+                or 0
+            )
+
+    @classmethod
     async def list_workflows(cls) -> list[dict]:
         async with async_db_session() as db:
             rows = (
@@ -366,12 +381,19 @@ class AiWorkflowService:
                     state["cancelled"] = True
                     # 被**硬中断**时引擎来不及补 cancelled 帧（它是在 await 处被打断的），
                     # 由这里补齐：否则前端轨迹里被中断的节点会一直显示「执行中」。
+                    # ⚠️ trace 是**追加**的（同一节点会有 running/success 多条），必须按节点取
+                    #    **最后一条**判断当前状态；否则早已完成的节点（如「开始」）也会被补成
+                    #    已取消，前端轨迹里就凭空多出一行（实测踩过）。
+                    current: dict[str, dict] = {}
                     for t in trace:
+                        nid = t.get("nodeId")
+                        if nid:
+                            current[nid] = t
+                    for t in current.values():
                         if t.get("status") == "running":
                             yield ms.node_status(
                                 t.get("nodeId"), "cancelled", t.get("label") or t.get("nodeId")
                             )
-                            t["status"] = "cancelled"
                     yield ms.error("运行已取消")
                 elif outcome["kind"] == "error":
                     yield ms.error(f"运行失败：{state['error']}")
