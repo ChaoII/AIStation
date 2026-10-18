@@ -124,20 +124,35 @@ git commit -m "feat(cron): TriggerUtil 统一 cron 规范化与校验（标准 5
 ```python
 from datetime import datetime
 
+import pytest
 from croniter import croniter
 
 from app.utils.trigger_util import TriggerUtil
 
 BASE = datetime(2026, 10, 18, 12, 0)  # 2026-10-18 是周日
 
+#: 标准 crontab 语义下的期望下次触发（用于交叉验证，写死避免自证）
+EXPECTED = {
+    "0 9 * * 1": datetime(2026, 10, 19, 9, 0),
+    "0 9 * * 5": datetime(2026, 10, 23, 9, 0),
+    "0 9 * * 0": datetime(2026, 10, 25, 9, 0),
+    "0 9 * * 7": datetime(2026, 10, 25, 9, 0),
+    "0 9 * * 1-5": datetime(2026, 10, 19, 9, 0),
+}
 
-@pytest.mark.parametrize("expr", ["0 9 * * 1", "0 9 * * 5", "0 9 * * 0", "0 9 * * 7", "0 9 * * 1-5"])
-def test_next_run_matches_croniter(expr):
-    """同一表达式，统一层与 croniter（标准 crontab 语义）必须同一时刻 —— 锁死 D1。"""
+
+@pytest.mark.parametrize("expr", list(EXPECTED))
+def test_next_run_is_standard_crontab_semantics(expr):
+    """统一层的下次触发必须符合标准 crontab（锁死 D1：1=周一、0/7=周日）。"""
     ours = TriggerUtil.next_run("cron", expr, BASE)
-    theirs = croniter(TriggerUtil.normalize_cron(expr).replace("mon", "1").replace("sun", "0")
-                      .replace("tue", "2").replace("wed", "3").replace("thu", "4")
-                      .replace("fri", "5").replace("sat", "6"), BASE).get_next(datetime)
+    assert ours.replace(tzinfo=None) == EXPECTED[expr]
+
+
+@pytest.mark.parametrize("expr", ["0 9 * * 1", "0 9 * * 5", "0 9 * * 1-5"])
+def test_next_run_matches_croniter(expr):
+    """交叉验证：与 croniter（标准 crontab 实现）同一时刻。"""
+    ours = TriggerUtil.next_run("cron", expr, BASE)
+    theirs = croniter(expr, BASE).get_next(datetime)
     assert ours.replace(tzinfo=None) == theirs
 
 
@@ -265,18 +280,39 @@ git commit -m "feat(cron): 统一 interval/date/now 三类触发的规范化、�
 - Consumes: `TriggerUtil.to_trigger` / `validate`（Task A3）
 - Produces: `SchedulerUtil.add_cron_job(...)` / `add_interval_job(...)` / `add_date_job(...)` 接受新契约（interval 为 JSON）
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 写失败测试**（断言"旧口径已消失 + 解析必须走统一层"）
 
 ```python
-def test_ap_scheduler_accepts_new_contract_and_rejects_quartz():
-    """系统定时任务：新契约（5 段 + JSON 间隔）可建触发器；Quartz 专有语法被拒。"""
-    from app.core.ap_scheduler import SchedulerUtil
+def test_legacy_validators_are_gone():
+    """A4：旧校验器必须删除，避免两套口径并存。"""
+    import pytest as _pytest
+
+    with _pytest.raises(ImportError):
+        import app.utils.cron_util  # noqa: F401
+
+
+def test_add_cron_job_parses_via_trigger_util(monkeypatch, test_client):
+    """A4：add_cron_job 的解析必须走 TriggerUtil（用 spy 断言，不依赖作业能否注册成功）。"""
+    from types import SimpleNamespace
+
+    from app.core import ap_scheduler
     from app.utils.trigger_util import TriggerUtil
 
-    assert TriggerUtil.validate("cron", "0 9 * * mon-fri")[0] is True
-    assert TriggerUtil.validate("cron", "0 0 9 L * *")[0] is False
-    assert TriggerUtil.validate("interval", {"minutes": 30})[0] is True
-    assert callable(SchedulerUtil.add_cron_job)
+    seen: dict = {}
+    real = TriggerUtil.to_trigger
+
+    def _spy(trigger, args, **kw):
+        seen["trigger"], seen["args"] = trigger, args
+        return real(trigger, args)
+
+    monkeypatch.setattr(TriggerUtil, "to_trigger", staticmethod(_spy))
+    node = SimpleNamespace(id=1, code="t", name="t", trigger="cron", trigger_args="0 9 * * 1",
+                           jobstore="default", executor="default", func="app.core.logger:log")
+    try:
+        ap_scheduler.SchedulerUtil.add_cron_job(node)
+    except Exception:  # noqa: BLE001 只断言解析路径，作业注册失败与本测试无关
+        pass
+    assert seen.get("trigger") == "cron" and seen.get("args") == "0 9 * * 1"
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -702,24 +738,38 @@ git add frontend/package.json frontend/pnpm-lock.yaml frontend/src/components/Tr
 git commit -m "feat(ui): 新增 TriggerEditor（定时分支用 @vue-js-cron/element-plus）"
 ```
 
-### Task C2: `TriggerEditor` 四类型 + 实时预览 + 非法拦截
+### Task C2: `TriggerEditor` 四类型 + 实时预览 + 非法拦截（与 C3 合并验收）
+
+> **预检 ruling（2026-10-18）**：本任务原计划独立验收，但组件没有"真实页面"可供 e2e 驱动。
+> 决定：C2 只做组件实现 + `pnpm run type-check`；**交互与 e2e 一律在 C3（AI 工作台真实页面）验收**，
+> 避免为测试造临时页面。C3 的验收即覆盖 C2 的四类型、预览与非法拦截。
 
 **Files:**
-- Modify: `frontend/src/components/TriggerEditor/index.vue`、`frontend/src/api/module_ai/workspace.ts`（预览接口封装）
-- Test: `frontend/e2e/trigger-editor.spec.ts`
+- Modify: `frontend/src/components/TriggerEditor/index.vue`
+- Modify: `frontend/src/api/module_ai/workspace.ts`（预览接口封装）
 
 **Interfaces:**
 - Consumes: Task A7 预览接口
-- Produces: 组件内展示"人话描述 + 下次运行时间"，非法时 `@error` 有值
+- Produces: 组件内展示"人话描述 + 下次运行时间"；非法时 `@error` 有值
 
-- [ ] **Step 1: 写 e2e 失败用例**：打开任一含 `TriggerEditor` 的页面（Task C3 前先用独立测试页/组件挂载）→ 切到"间隔"→ 填 2 小时 → 断言预览文本含"每 2 小时"
-- [ ] **Step 2: 跑用例确认失败**：Run: `cd frontend && npx playwright test e2e/trigger-editor.spec.ts --project=chromium`；Expected: FAIL
-- [ ] **Step 3: 实现**：间隔（`el-input-number` × weeks/days/hours/minutes/seconds）、单次（`el-date-picker` datetime）、立即（说明文案）；输入变化后防抖调用预览接口，展示 `describe` 与 `next_run`；`valid=false` 时 `@error` 上抛原因
-- [ ] **Step 4: 跑用例确认通过**；Expected: PASS
-- [ ] **Step 5: 提交**
+- [ ] **Step 1: 实现间隔/单次/立即三个分支**
+
+间隔：`el-input-number` × weeks/days/hours/minutes/seconds；单次：`el-date-picker`（datetime，`value-format="YYYY-MM-DD HH:mm:ss"`）；
+立即：一行说明文案（"保存后立即执行一次"）。`trigger`/`triggerArgs` 通过 `update:` 事件上抛。
+
+- [ ] **Step 2: 接预览接口**
+
+输入变化后防抖 300ms 调预览接口，展示 `describe` 与 `next_run`；`valid=false` 时 `emit("error", reason)`。
+
+- [ ] **Step 3: 类型检查**
+
+Run: `cd frontend && pnpm run type-check`
+Expected: 无错误
+
+- [ ] **Step 4: 提交**
 
 ```bash
-git add frontend/src/components/TriggerEditor/index.vue frontend/src/api frontend/e2e/trigger-editor.spec.ts
+git add frontend/src/components/TriggerEditor/index.vue frontend/src/api
 git commit -m "feat(ui): TriggerEditor 支持四种触发类型 + 实时预览与非法拦截"
 ```
 
@@ -729,7 +779,15 @@ git commit -m "feat(ui): TriggerEditor 支持四种触发类型 + 实时预览�
 - Modify: `frontend/src/views/module_ai/workspace/index.vue`（弹窗 176-205、列表展示）
 - Test: `frontend/e2e/trigger-editor.spec.ts`
 
-- [ ] **Step 1: 写 e2e**：打开工作台 → 新建定时任务 → 选"定时/每周一 09:00" → 保存 → 断言列表出现"每周一 09:00"与下次运行时间
+- [ ] **Step 1: 写 e2e**（同时覆盖 C2 的四类型/预览/非法拦截）
+
+```ts
+// 1) 定时：选"每周一 09:00" → 保存 → 列表出现描述与下次运行时间
+// 2) 间隔：切"间隔"→ 填 2 小时 → 预览含"每 2 小时"
+// 3) 单次：切"单次"→ 选未来时间 → 保存成功
+// 4) 立即：切"立即"→ 保存成功（列表标"立即"）
+// 5) 非法：填 0 0 9 L * * → 断言前端提示非法且保存按钮被拦
+```
 - [ ] **Step 2: 跑用例确认失败**；Expected: FAIL
 - [ ] **Step 3: 实现**：`el-input` → `TriggerEditor`；保存体提交 `trigger`/`trigger_args`；列表列增加"触发方式/描述/下次运行"；"表达式需人工确认"的行用 `el-tag type="warning"` 标出（Review Focus 1）
 - [ ] **Step 4: 跑用例确认通过 + 截图核对**（`e2e/trigger-workspace.png`）
