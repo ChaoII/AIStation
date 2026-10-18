@@ -55,19 +55,37 @@ export function getWorkspaceItems(params?: { category_id?: number | null; asset_
 }
 
 // ---------- 定时任务 ----------
-export function createWorkspaceCron(data: {
+
+/** 触发类型（统一契约，与后端 `TriggerUtil` 一致） */
+export type TriggerType = "cron" | "interval" | "date" | "now";
+
+/**
+ * 定时任务写入体（统一契约）：`trigger` + `trigger_args` 为四类型的新字段，
+ * **显式提供时后端以它为准**；`cron` 仅为兼容字段（仅 cron 类型有值，
+ * 仅在 `trigger` 缺省时才被解读）。
+ *
+ * `trigger_args` 契约：cron 为 5 段串、interval 为对象或 JSON 串、date 为时间串、now 为 null。
+ */
+export interface WorkspaceCronPayload {
   name: string;
   description?: string;
-  cron: string;
-  target_type: string;
+  trigger?: TriggerType | string;
+  trigger_args?: unknown;
+  cron?: string;
+  target_type?: string;
   target_id?: number | null;
   category_id?: number | null;
   enabled?: boolean;
-}) {
+}
+
+/** 编辑定时任务：只提交本次要改的字段（触发配置同样走 `trigger` + `trigger_args`） */
+export type WorkspaceCronUpdatePayload = Partial<WorkspaceCronPayload>;
+
+export function createWorkspaceCron(data: WorkspaceCronPayload) {
   return request({ url: `${WS_PATH}/cron/create`, method: "post", data });
 }
 
-export function updateWorkspaceCron(id: number, data: Record<string, unknown>) {
+export function updateWorkspaceCron(id: number, data: WorkspaceCronUpdatePayload) {
   return request({ url: `${WS_PATH}/cron/update/${id}`, method: "put", data });
 }
 

@@ -73,7 +73,21 @@ export function getAiWorkflowSchedule(id: number) {
   return request({ url: `${API_PATH}/${id}/schedule`, method: "get" });
 }
 
-export function setAiWorkflowSchedule(id: number, data: { cron?: string; enabled: boolean }) {
+/**
+ * 定时调度写入体（统一契约）：`trigger` + `trigger_args` 为四类型（cron/interval/date/now）
+ * 的新字段，**显式提供时后端以它为准**；`cron` 仅为兼容字段（仅 cron 类型有值，
+ * 仅在 `trigger` 缺省时才被解读）。
+ *
+ * `trigger_args` 契约：cron 为 5 段串、interval 为对象或 JSON 串、date 为时间串、now 为 null。
+ */
+export interface WorkflowSchedulePayload {
+  trigger?: string;
+  trigger_args?: unknown;
+  cron?: string;
+  enabled: boolean;
+}
+
+export function setAiWorkflowSchedule(id: number, data: WorkflowSchedulePayload) {
   return request({ url: `${API_PATH}/${id}/schedule`, method: "put", data });
 }
 

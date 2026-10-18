@@ -1,6 +1,8 @@
 """AI 工作台分类/条目 schema。"""
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -22,7 +24,14 @@ class WorkspaceCategoryUpdateSchema(BaseModel):
 class WorkspaceCronCreateSchema(BaseModel):
     name: str = Field(..., min_length=1, max_length=128, description="任务名称")
     description: str = Field(default="", max_length=512)
-    cron: str = Field(..., description="cron 表达式（5 段）")
+    trigger: str | None = Field(default=None, description="触发类型：cron / interval / date / now")
+    trigger_args: Any | None = Field(
+        default=None,
+        description="触发参数：cron 5 段串 / interval 对象或 JSON 串 / date 时间串 / now 为 null",
+    )
+    cron: str | None = Field(
+        default=None, description="兼容字段：仅 cron 类型有值，仅在 trigger 缺省时解读"
+    )
     target_type: str = Field(default="agent", description="agent/workflow/app")
     target_id: int = Field(default=0, description="执行目标 ID")
     category_id: int | None = Field(default=None)
@@ -32,7 +41,11 @@ class WorkspaceCronCreateSchema(BaseModel):
 class WorkspaceCronUpdateSchema(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = None
-    cron: str | None = None
+    trigger: str | None = Field(default=None, description="触发类型：cron / interval / date / now")
+    trigger_args: Any | None = Field(default=None, description="触发参数（按 trigger 解释）")
+    cron: str | None = Field(
+        default=None, description="兼容字段（仅 cron 类型；仅在 trigger 缺省时解读）"
+    )
     target_type: str | None = None
     target_id: int | None = None
     category_id: int | None = None

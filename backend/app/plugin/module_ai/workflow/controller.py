@@ -149,7 +149,7 @@ async def set_schedule(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:update"]))],
 ) -> JSONResponse:
     try:
-        result = await AiWorkflowService.set_schedule(workflow_id, data.cron, data.enabled)
+        result = await AiWorkflowService.set_schedule(workflow_id, data)
     except RuntimeError as e:
         return ErrorResponse(msg=str(e))
     return SuccessResponse(data=result, msg="保存成功")

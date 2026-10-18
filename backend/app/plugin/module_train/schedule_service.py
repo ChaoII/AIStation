@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import desc, select
 
 from app.core.database import async_db_session
@@ -25,7 +27,7 @@ def train_schedule_job_key(schedule_id: int) -> str:
 
 
 def sync_train_schedule_job(
-    schedule_id: int, trigger: str | None, trigger_args: str | None, enabled: bool
+    schedule_id: int, trigger: str | None, trigger_args, enabled: bool
 ) -> None:
     """按调度行「生效后」的状态同步中心调度器里的作业（幂等）。
 
@@ -88,35 +90,101 @@ def _job_next_run_time(schedule_id: int) -> str | None:
     return next_fire.strftime(_DATETIME_FORMAT) if next_fire else None
 
 
-def _resolve_trigger(cron_expr: str | None, enabled: bool) -> tuple[str, str | None]:
-    """把 `cron_expr` 入参解析为 `(trigger, trigger_args)`（统一层是唯一口径）。
+def _resolve_trigger(
+    trigger: str | None, trigger_args, legacy_cron: str | None, enabled: bool
+) -> tuple[str, object | None]:
+    """把请求里的触发配置解析为落库值 `(trigger, trigger_args)`。
 
-    - 非空表达式：先 `TriggerUtil.validate`（非法 → 400，原因原样回显），再 `TriggerUtil.normalize`
-      —— 写入即规范化（`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）；
-    - 空值 + **启用中**：明确报错（不留「已启用但永不触发」的静默失效）；
-    - 空值 + 未启用：视为「未配置」（`trigger_args=None`），保住「关闭调度 / 清空配置」语义。
+    **字段优先**：`trigger` 显式提供（非空串）时以它为准；兼容字段 `cron_expr` **仅在
+    `trigger` 缺省时**才被解读 —— 非 cron 类型的前端仍会带上 `cron_expr: ""`，若先看旧字段
+    会把它误判成「空表达式 + 启用」而误报 400（C4 审查钉死的缺口）。
+
+    - cron 表达式为空（未提供 / 显式空串）：**启用中** → 400（`_EMPTY_TRIGGER_MSG`，不留
+      「已启用但永不触发」的静默失效）；**未启用** → `("cron", None)`（「未配置 / 清空配置」语义）；
+    - 其余情况：统一层 `TriggerUtil.validate`（非法 → 400，原因原样回显）+ `normalize`
+      （写入即规范化：`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）。
     """
-    if not cron_expr or not str(cron_expr).strip():
+    name = trigger.strip() if isinstance(trigger, str) else ""
+    args = trigger_args if name else legacy_cron
+    if not name:
+        name = "cron"
+    if name == "cron" and (args is None or (isinstance(args, str) and not args.strip())):
         if enabled:
             raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
         return "cron", None
-    ok, reason = TriggerUtil.validate("cron", cron_expr)
+    ok, reason = TriggerUtil.validate(name, args)
     if not ok:
         raise CustomException(msg=reason, code=400, status_code=400)
-    trigger, args = TriggerUtil.normalize("cron", cron_expr)
-    return trigger, args
+    return TriggerUtil.normalize(name, args)
+
+
+def _trigger_provided(trigger: str | None, legacy_cron: str | None) -> bool:
+    """请求里是否**提交了**触发配置（含显式空串 = 「清空配置」）。
+
+    编辑接口据此区分「没提交 → 保留库中原值」与「提交了空串 → 显式清空」。
+    """
+    return trigger is not None or legacy_cron is not None
+
+
+def _dump_trigger_args(trigger: str, args) -> str | None:
+    """按类型把统一层规范化后的参数序列化落库（TEXT 列）。
+
+    cron → 5 段串；interval → JSON 串；date → 时间串；now → NULL（按契约无参数）。
+    """
+    if trigger == "interval":
+        return json.dumps(args, ensure_ascii=False)
+    if trigger == "now":
+        return None
+    return args
+
+
+def _load_trigger_args(trigger: str, raw) -> object:
+    """响应里按类型把落库值还原成前端可直接使用的形态。
+
+    - interval：JSON 串 → 对象（脏数据解析不了就原样回显，不把列表打成 500）；
+    - now：按契约无参数 → `None`；未配置（空值）同样为 `None`（本模块既有口径）；
+    - cron / date：原样字符串。
+    """
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    if trigger == "interval" and isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            return raw
+        return parsed if isinstance(parsed, dict) else raw
+    return raw
+
+
+def _describe_trigger(trigger: str, args) -> str | None:
+    """统一层的「人话描述」（响应字段 `trigger_describe`，供列表「描述」列直接展示）。
+
+    未配置（空值）与脏数据（遗留 Quartz 写法等）无法描述时返回 `None`，由前端回退显示
+    原始参数；描述绝不在本模块自算，也不把列表打成 500。
+    """
+    if trigger != "now" and (args is None or (isinstance(args, str) and not args.strip())):
+        return None
+    try:
+        return TriggerUtil.describe(trigger, args)
+    except (ValueError, CustomException):
+        return None
 
 
 def _schedule_to_dict(row) -> dict:
     """仅导出列，避免 dict(__dict__) 带入 _sa_instance_state 导致序列化 500。
 
-    另附兼容字段 `cron_expr`（= `trigger` 为 `cron` 时的 `trigger_args`）：前端 C 阶段
-    切到 `trigger`/`trigger_args` 之前，列表与表单仍读旧字段名。`trigger` 为 NULL 的历史行
-    按 `cron` 兜底，与另两处响应（`_cron_dict` / `_schedule_dict`）口径一致。
+    - `trigger_args` 按类型还原（interval 的 JSON 串 → 对象，供前端组件直接用）；
+    - 新增 `trigger_describe`（统一层人话描述，空/脏数据无法描述时为 `None`）；
+    - 另附兼容字段 `cron_expr`（= `trigger` 为 `cron` 时的 `trigger_args`）：前端 C 阶段
+      切到 `trigger`/`trigger_args` 之前，列表与表单仍读旧字段名。`trigger` 为 NULL 的历史行
+      按 `cron` 兜底，与另两处响应（`_cron_dict` / `_schedule_dict`）口径一致。
     """
     data = {c.name: getattr(row, c.name) for c in row.__table__.columns}
-    is_cron = (data.get("trigger") or "cron") == "cron"
-    data["cron_expr"] = (data.get("trigger_args") or "") if is_cron else ""
+    trigger = data.get("trigger") or "cron"
+    raw_args = data.get("trigger_args")
+    data["trigger_args"] = _load_trigger_args(trigger, raw_args)
+    data["trigger_describe"] = _describe_trigger(trigger, raw_args)
+    data["cron_expr"] = (raw_args or "") if trigger == "cron" else ""
     return data
 
 
@@ -178,8 +246,13 @@ class ScheduleService:
         ensure_active(data.framework, action="定时训练")
 
         # 新建的定时计划默认启用（`TrainScheduleModel.enabled` 默认 True，创建 schema 无该字段），
-        # 因此空表达式必须当场报错，不能落一条永不触发的行。
-        trigger, trigger_args = _resolve_trigger(data.cron_expr, True)
+        # 因此未提供触发配置必须当场报错，不能落一条永不触发的行。
+        trigger, trigger_args = _resolve_trigger(
+            getattr(data, "trigger", None),
+            getattr(data, "trigger_args", None),
+            getattr(data, "cron_expr", None),
+            True,
+        )
         async with async_db_session.begin() as db:
             s = TrainScheduleModel(
                 name=data.name,
@@ -188,7 +261,7 @@ class ScheduleService:
                 framework=data.framework,
                 hyperparams=data.hyperparams,
                 trigger=trigger,
-                trigger_args=trigger_args,
+                trigger_args=_dump_trigger_args(trigger, trigger_args),
                 created_id=auth.user.id,
             )
             db.add(s)
@@ -222,10 +295,16 @@ class ScheduleService:
                 val = getattr(data, key, None)
                 if val is not None:
                     setattr(s, key, val)
-            new_cron = getattr(data, "cron_expr", None)
-            if new_cron is not None:
+            trigger_in = getattr(data, "trigger", None)
+            args_in = getattr(data, "trigger_args", None)
+            legacy_in = getattr(data, "cron_expr", None)
+            if _trigger_provided(trigger_in, legacy_in):
                 # `s.enabled` 已按本次请求更新（上面循环），故按「生效后是否启用」判定
-                s.trigger, s.trigger_args = _resolve_trigger(new_cron, bool(s.enabled))
+                trigger, trigger_args = _resolve_trigger(
+                    trigger_in, args_in, legacy_in, bool(s.enabled)
+                )
+                s.trigger = trigger
+                s.trigger_args = _dump_trigger_args(trigger, trigger_args)
             elif getattr(data, "enabled", None) is True and not s.trigger_args:
                 # 本次请求显式「启用」而库里没有表达式：同样不留「已启用但永不触发」的行
                 # （仅改名字等其它字段时不拦，避免把历史坏行变成改不动的行）

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -135,7 +136,14 @@ class TrainScheduleCreateSchema(BaseModel):
     annotation_task_id: int | None = None
     framework: str = "torchkiln"
     hyperparams: dict = {}
-    cron_expr: str
+    trigger: str | None = Field(default=None, description="触发类型：cron / interval / date / now")
+    trigger_args: Any | None = Field(
+        default=None,
+        description="触发参数：cron 5 段串 / interval 对象或 JSON 串 / date 时间串 / now 为 null",
+    )
+    cron_expr: str | None = Field(
+        default=None, description="兼容字段：仅 cron 类型有值，仅在 trigger 缺省时解读"
+    )
 
 
 class TrainScheduleUpdateSchema(BaseModel):
@@ -144,7 +152,11 @@ class TrainScheduleUpdateSchema(BaseModel):
     annotation_task_id: int | None = None
     framework: str | None = None
     hyperparams: dict | None = None
-    cron_expr: str | None = None
+    trigger: str | None = Field(default=None, description="触发类型：cron / interval / date / now")
+    trigger_args: Any | None = Field(default=None, description="触发参数（按 trigger 解释）")
+    cron_expr: str | None = Field(
+        default=None, description="兼容字段（仅 cron 类型；仅在 trigger 缺省时解读）"
+    )
     enabled: bool | None = None
 
 

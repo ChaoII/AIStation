@@ -1,6 +1,8 @@
 """工作流定义与运行的 Pydantic 模型。"""
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -51,9 +53,21 @@ class AiWorkflowShareRunSchema(BaseModel):
 
 
 class AiWorkflowScheduleSchema(BaseModel):
-    """定时调度配置：cron（5 段）+ 启用。"""
+    """定时调度配置：四种触发类型（`trigger` + `trigger_args`）+ 启用。
 
-    cron: str | None = Field(default=None, max_length=128)
+    **字段优先规则**：`trigger` 显式提供（非空串）时以它为准；`cron` 是兼容字段，
+    **仅在 `trigger` 缺省时**才被解读 —— 非 cron 类型的前端仍会带上 `cron: ""`，
+    若先看旧字段会把它误判成「空表达式 + 启用」而误报 400（C4 审查钉死的缺口）。
+    """
+
+    trigger: str | None = Field(
+        default=None, max_length=32, description="触发类型：cron / interval / date / now"
+    )
+    trigger_args: Any | None = Field(
+        default=None,
+        description="触发参数：cron 5 段串 / interval 对象或 JSON 串 / date 时间串 / now 为 null",
+    )
+    cron: str | None = Field(default=None, max_length=128, description="兼容字段（仅 cron 类型）")
     enabled: bool = False
 
 

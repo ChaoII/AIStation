@@ -75,6 +75,28 @@ export interface TorchKilnStatus {
   job?: Record<string, any>;
 }
 
+/**
+ * 定时训练计划写入体（统一契约）：`trigger` + `trigger_args` 为四类型
+ * （cron / interval / date / now）的新字段，**显式提供时后端以它为准**；
+ * `cron_expr` 仅为兼容字段（仅 cron 类型有值，仅在 `trigger` 缺省时才被解读）。
+ *
+ * `trigger_args` 契约：cron 为 5 段串、interval 为对象或 JSON 串、date 为时间串、now 为 null。
+ */
+export interface TrainSchedulePayload {
+  name: string;
+  dataset_id: number;
+  annotation_task_id?: number | null;
+  framework?: string;
+  hyperparams?: Record<string, any>;
+  trigger?: string;
+  trigger_args?: unknown;
+  cron_expr?: string;
+  enabled?: boolean;
+}
+
+/** 编辑定时训练计划：只提交本次要改的字段 */
+export type TrainScheduleUpdatePayload = Partial<TrainSchedulePayload>;
+
 export const TrainAPI = {
   getModelList(params?: Record<string, any>) {
     return request<ApiResponse<{ items: any[]; total: number }>>({
@@ -366,10 +388,10 @@ export const TrainAPI = {
   getTrainScheduleList() {
     return request<ApiResponse<any[]>>({ url: `${API_PATH}/schedule/list`, method: "get" });
   },
-  createTrainSchedule(data: any) {
+  createTrainSchedule(data: TrainSchedulePayload) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/schedule/create`, method: "post", data });
   },
-  updateTrainSchedule(id: number, data: any) {
+  updateTrainSchedule(id: number, data: TrainScheduleUpdatePayload) {
     return request<ApiResponse<any>>({
       url: `${API_PATH}/schedule/update/${id}`,
       method: "put",

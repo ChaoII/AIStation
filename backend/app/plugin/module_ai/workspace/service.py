@@ -1,6 +1,7 @@
 """AI 工作台服务：分类树 CRUD + 多类型条目聚合。"""
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -277,6 +278,10 @@ class WorkspaceService:
         else:  # cron
             meta = {
                 "cron": cls._g(row, "trigger_args", "") or "",
+                # 与 `/cron/list` 同口径：人话描述（聚合条目同样优先展示它）
+                "trigger_describe": WorkspaceService._describe_trigger(
+                    cls._g(row, "trigger", "cron") or "cron", cls._g(row, "trigger_args", None)
+                ),
                 "target_type": cls._g(row, "target_type", "") or "",
                 "next_run_time": cls._g(row, "next_run_time"),
             }
@@ -302,15 +307,18 @@ class WorkspaceService:
     @staticmethod
     def _cron_dict(r: AiWorkspaceCronModel) -> dict:
         trigger = r.trigger or "cron"
-        trigger_args = r.trigger_args or ""
+        raw_args = r.trigger_args
         return {
             "id": r.id,
             "name": r.name,
             "description": r.description or "",
             "trigger": trigger,
-            "trigger_args": trigger_args,
+            # interval 的 JSON 串还原为对象（前端组件直接用）；now 无参数 → null
+            "trigger_args": WorkspaceService._load_trigger_args(trigger, raw_args),
+            # 统一层人话描述（空/脏数据无法描述时为 None，前端回退显示原始参数）
+            "trigger_describe": WorkspaceService._describe_trigger(trigger, raw_args),
             # 兼容字段：前端 C 阶段切到 trigger/trigger_args 之前仍读 `cron`
-            "cron": trigger_args if trigger == "cron" else "",
+            "cron": (raw_args or "") if trigger == "cron" else "",
             "target_type": r.target_type or "agent",
             "target_id": r.target_id,
             "category_id": r.category_id,
@@ -320,24 +328,84 @@ class WorkspaceService:
         }
 
     @staticmethod
-    def _resolve_trigger(cron: str | None, enabled: bool) -> tuple[str, str | None]:
-        """把 `cron` 入参解析为 `(trigger, trigger_args)`（统一层是唯一口径）。
+    def _resolve_trigger(
+        trigger: str | None, trigger_args, legacy_cron: str | None, enabled: bool
+    ) -> tuple[str, object | None]:
+        """把请求里的触发配置解析为落库值 `(trigger, trigger_args)`。
 
-        - 非空表达式：先 `TriggerUtil.validate`（非法 → 400，原因原样回显），再 `TriggerUtil.normalize`
-          —— 写入即规范化（`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）；
-        - 空值 + **启用中**：明确报错。否则会落一条「已启用但永不触发」的行：建行成功、
-          `next_run_time` 为空、永不执行，用户完全无感知（静默失效）；
-        - 空值 + 未启用：视为「未配置」（`trigger_args=None`），保住「关闭调度 / 清空配置」语义。
+        **字段优先**：`trigger` 显式提供（非空串）时以它为准；兼容字段 `cron` **仅在 `trigger`
+        缺省时**才被解读 —— 非 cron 类型的前端仍会带上 `cron: ""`，若先看旧字段会把它误判成
+        「空表达式 + 启用」而误报 400（C4 审查钉死的缺口）。
+
+        - cron 表达式为空（未提供 / 显式空串）：**启用中** → 400（`_EMPTY_TRIGGER_MSG`，不留
+          「已启用但永不触发」的静默失效）；**未启用** → `("cron", None)`（「未配置 / 清空配置」语义）；
+        - 其余情况：统一层 `TriggerUtil.validate`（非法 → 400，原因原样回显）+ `normalize`
+          （写入即规范化：`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）。
         """
-        if not cron or not str(cron).strip():
+        name = trigger.strip() if isinstance(trigger, str) else ""
+        args = trigger_args if name else legacy_cron
+        if not name:
+            name = "cron"
+        if name == "cron" and (args is None or (isinstance(args, str) and not args.strip())):
             if enabled:
                 raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
             return "cron", None
-        ok, reason = TriggerUtil.validate("cron", cron)
+        ok, reason = TriggerUtil.validate(name, args)
         if not ok:
             raise CustomException(msg=reason, code=400, status_code=400)
-        trigger, args = TriggerUtil.normalize("cron", cron)
-        return trigger, args
+        return TriggerUtil.normalize(name, args)
+
+    @staticmethod
+    def _trigger_provided(trigger: str | None, legacy_cron: str | None) -> bool:
+        """请求里是否**提交了**触发配置（含显式空串 = 「清空配置」）。
+
+        编辑接口据此区分「没提交 → 保留库中原值」与「提交了空串 → 显式清空」。
+        """
+        return trigger is not None or legacy_cron is not None
+
+    @staticmethod
+    def _dump_trigger_args(trigger: str, args) -> str | None:
+        """按类型把统一层规范化后的参数序列化落库（TEXT 列）。
+
+        cron → 5 段串；interval → JSON 串；date → 时间串；now → NULL（按契约无参数）。
+        """
+        if trigger == "interval":
+            return json.dumps(args, ensure_ascii=False)
+        if trigger == "now":
+            return None
+        return args
+
+    @staticmethod
+    def _load_trigger_args(trigger: str, raw) -> object:
+        """响应里按类型把落库值还原成前端可直接使用的形态。
+
+        - interval：JSON 串 → 对象（脏数据解析不了就原样回显，不把列表打成 500）；
+        - now：按契约无参数 → `None`；
+        - cron / date：原样字符串；未配置（空值）沿用本模块既有口径 `""`。
+        """
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return None if trigger == "now" else ""
+        if trigger == "interval" and isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+            except ValueError:
+                return raw
+            return parsed if isinstance(parsed, dict) else raw
+        return raw
+
+    @staticmethod
+    def _describe_trigger(trigger: str, args) -> str | None:
+        """统一层的「人话描述」（响应字段 `trigger_describe`，供前端直接展示）。
+
+        未配置（空值）与脏数据（遗留 Quartz 写法等）无法描述时返回 `None`，由前端回退
+        显示原始参数；描述绝不在本模块自算，也不把列表打成 500。
+        """
+        if trigger != "now" and (args is None or (isinstance(args, str) and not args.strip())):
+            return None
+        try:
+            return TriggerUtil.describe(trigger, args)
+        except (ValueError, CustomException):
+            return None
 
     # ---------- 与中心调度器的同步 ----------
 
@@ -483,13 +551,18 @@ class WorkspaceService:
 
     @classmethod
     async def create_cron(cls, data, auth) -> dict:
-        trigger, trigger_args = cls._resolve_trigger(data.cron, bool(data.enabled))
+        trigger, trigger_args = cls._resolve_trigger(
+            getattr(data, "trigger", None),
+            getattr(data, "trigger_args", None),
+            getattr(data, "cron", None),
+            bool(data.enabled),
+        )
         async with async_db_session() as db:
             row = AiWorkspaceCronModel(
                 name=data.name,
                 description=data.description,
                 trigger=trigger,
-                trigger_args=trigger_args,
+                trigger_args=cls._dump_trigger_args(trigger, trigger_args),
                 target_type=data.target_type,
                 target_id=data.target_id,
                 category_id=data.category_id,
@@ -528,9 +601,17 @@ class WorkspaceService:
                 val = getattr(data, key, None)
                 if val is not None:
                     setattr(row, key, val)
-            if data.cron is not None:
-                row.trigger, row.trigger_args = cls._resolve_trigger(data.cron, bool(row.enabled))
-            elif data.enabled is True and not row.trigger_args:
+            trigger_in = getattr(data, "trigger", None)
+            args_in = getattr(data, "trigger_args", None)
+            legacy_in = getattr(data, "cron", None)
+            if cls._trigger_provided(trigger_in, legacy_in):
+                # `row.enabled` 已按本次请求更新（上面循环），故按「生效后是否启用」判定
+                trigger, trigger_args = cls._resolve_trigger(
+                    trigger_in, args_in, legacy_in, bool(row.enabled)
+                )
+                row.trigger = trigger
+                row.trigger_args = cls._dump_trigger_args(trigger, trigger_args)
+            elif row.enabled and not row.trigger_args:
                 # 只切「启用」而库里没有表达式：同样不留「已启用但永不触发」的行
                 raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
             row.updated_id = auth.user.id
