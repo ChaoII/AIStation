@@ -902,7 +902,12 @@ git commit -m "feat(ui): 系统定时任务节点页统一为 TriggerEditor，�
 ### Task C7: 四入口 e2e 汇总核对 + 全量回归
 
 **Files:**
-- Modify: `frontend/e2e/trigger-editor.spec.ts`
+- Modify: `frontend/e2e/trigger-*.spec.ts`（C3~C6 各自的 spec）
+- Modify: `frontend/src/components/TriggerEditor/index.vue`（收口 C2 审查的两条 Minor）
+
+**C2 审查遗留（随本任务一并收口）:**
+- Minor 1：`schedulePreview()`/`handleTriggerChange` 未作废在途响应 → 「cron 非法 → 切到间隔（error 已清空）→ 旧响应回来把 cron 的 reason 灌回」的瞬时回灌。修法：输入一变就 `previewSeq += 1`（作废在途响应）。
+- Minor 2：`now` 用 `v-else` 兜底 → 未知/遗留 `trigger` 会被渲染成「立即」外观且与预览区文案自相矛盾。修法：改 `v-else-if="trigger === 'now'"` + 显式兜底分支（不显示误导文案）。
 
 - [ ] **Step 1: 补一条"非法表达式被拦"的 e2e**：四处任选一处填 `0 0 9 L * *` → 断言前端提示非法且保存被拒（不落库）
 - [ ] **Step 2: 跑四个入口的 e2e**：Run: `cd frontend && npx playwright test e2e/trigger-editor.spec.ts --project=chromium`；Expected: 全绿
