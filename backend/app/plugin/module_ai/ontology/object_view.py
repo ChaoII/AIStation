@@ -194,15 +194,18 @@ _V_COLS = ("SELECT id,object_code,code,COALESCE(name,''),COALESCE(description,''
            "COALESCE(visibility,'normal'),COALESCE(created_by,''),created_time,"
            "updated_time FROM ai_ont_object_view ")
 _V_FIELDS = ("id", "object_code", "code", "name", "description", "view_type", "form_factor",
-             "is_default", "is_managed", "tabs", "version", "status", "visibility",
-             "created_by", "created_time", "updated_time")
+             "is_default", "is_managed", "tabs", "version", "filters", "share_roles",
+             "share_mode", "status", "visibility", "created_by", "created_time", "updated_time")
+#: JSON 列（读回来需要反序列化）。漏掉 `filters`/`share_roles` 会让 `update_view` 的
+#: `v.get("filters")` 兜底成空 ⇒ **每次编辑视图都静默清空筛选器与共享设置**。
+_V_JSON_FIELDS = ("tabs", "filters", "share_roles")
 
 
 def _row_to_view(row) -> dict:
     out: dict[str, Any] = {}
     for i, n in enumerate(_V_FIELDS):
         v = row[i]
-        if n == "tabs":
+        if n in _V_JSON_FIELDS:
             v = v if isinstance(v, list) else _svc._json_list(v)
         elif isinstance(v, datetime):
             v = v.strftime("%Y-%m-%d %H:%M:%S")

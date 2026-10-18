@@ -636,8 +636,51 @@ class TestViewFilterShareUrl:
         assert " " not in u and "&c" not in u.split("objectkey")[0].split("=")[-1]
 
     def test_share_mode_and_roles_validation(self):
-        """共享方式只允许 inherit / roles；按角色共享必须给角色。"""
-        assert "inherit" in ("inherit", "roles")
+        """共享方式只允许 inherit / roles；按角色共享必须给角色。
+
+        （原断言 `assert "inherit" in ("inherit","roles")` 是**恒真**的，等于没测；
+        真正的护栏见下面两条：字段表必须与列一一对应，编辑不得清空筛选/共享。）
+        """
+        assert set(OV._V_FIELDS) >= {"share_mode", "share_roles", "filters"}
+
+    def test_view_fields_align_with_columns(self):
+        """回归：`_V_FIELDS` 必须与 `_V_COLS` 的列**一一对应且同序**。
+
+        错位会让 `_row_to_view` 把 filters/share_roles/share_mode 映射到 status/visibility/
+        created_by 上，于是：① 这三个字段永远不出现在返回里；② `update_view` 用
+        `v.get("filters")` 兜底时拿到 None → **每次编辑视图都会静默清空筛选器与共享设置**。
+        """
+        assert OV._V_FIELDS == (
+            "id", "object_code", "code", "name", "description", "view_type", "form_factor",
+            "is_default", "is_managed", "tabs", "version", "filters", "share_roles",
+            "share_mode", "status", "visibility", "created_by", "created_time", "updated_time",
+        )
+
+    @pg_only
+    def test_edit_view_keeps_filters_and_share(self):
+        """编辑视图（只改名）**不得**清空已保存的筛选器与共享设置。"""
+        code = "reg_share_keep"
+        _run(OV.create_view({
+            "object_code": CAM, "code": code, "name": "共享保留回归",
+            "form_factor": "full",
+            "filters": [{"prop": "status", "op": "eq", "value": "ONLINE"}],
+            "share_roles": ["ops"],
+            "share_mode": "roles",
+            "tabs": [{"key": "f", "label": "F", "widgets": [
+                {"type": "table", "config": {"limit": 50}}]}],
+        }))
+        got = _run(OV.get_view(code))
+        assert got["share_mode"] == "roles", got
+        assert got["share_roles"] == ["ops"], got
+        assert got["filters"], got
+
+        _run(OV.update_view(code, {"name": "只改个名"}))
+        after = _run(OV.get_view(code))
+        assert after["name"] == "只改个名", after
+        assert after["share_mode"] == "roles", f"编辑后共享方式被清空：{after}"
+        assert after["share_roles"] == ["ops"], f"编辑后共享角色被清空：{after}"
+        assert after["filters"], f"编辑后筛选器被清空：{after}"
+        _run(OV.remove_view(code))
 
     def test_table_widget_is_registered(self):
         assert "table" in OV.ONT_WIDGET_TYPES
