@@ -65,6 +65,9 @@ importers:
       '@vue-flow/minimap':
         specifier: ^1.5.4
         version: 1.5.4(@vue-flow/core@1.48.2(vue@3.5.39(typescript@5.9.3)))(vue@3.5.39(typescript@5.9.3))
+      '@vue-js-cron/element-plus':
+        specifier: ^3.2.2
+        version: 3.2.2(vue@3.5.39(typescript@5.9.3))
       '@vueuse/core':
         specifier: ^13.5.0
         version: 13.9.0(vue@3.5.39(typescript@5.9.3))
@@ -1772,6 +1775,12 @@ packages:
     peerDependencies:
       '@vue-flow/core': ^1.23.0
       vue: ^3.3.0
+
+  '@vue-js-cron/core@6.5.0':
+    resolution: {integrity: sha512-2jp4ekoyC9LhnZsIdTdxWce3G6FK5CvYhyIXscnVdxnN6S3oi3uXWpGAuqF+RGhROtfBCuF/2QLPkg5YfZIbzg==}
+
+  '@vue-js-cron/element-plus@3.2.2':
+    resolution: {integrity: sha512-DBzvu0liGXG9ykUNU+zHAYn8gqAV4TVnGruhze3bc1yFrlH2ZjRyOPpatFzjfpHKIOkRb+piudPOx6tIRYyDtg==}
 
   '@vue/compiler-core@3.5.39':
     resolution: {integrity: sha512-16KBTEXAJCpDr0mwlw+AZyhu8iyC7R3S2vBwsI7QnWJU6X3WKc9VKeNEZpiMdZ569qWhz9574L3vV55qRL0Vtw==}
@@ -3612,6 +3621,10 @@ packages:
 
   muggle-string@0.4.1:
     resolution: {integrity: sha512-VNTrAak/KhO2i8dqqnqnAHOa3cYBwXEZe9h+D5h/1ZqFSTEFHdM65lR7RoIqq3tBBYavsOXV84NoHXZ0AkPyqQ==}
+
+  mustache@4.2.0:
+    resolution: {integrity: sha512-71ippSywq5Yb7/tVYyGbkBggbU8H3u5Rz56fH60jGFgr8uHwxs+aSKeqmluIVzM0m0kB7xQjKS6qPfd0b2ZoqQ==}
+    hasBin: true
 
   mute-stream@0.0.8:
     resolution: {integrity: sha512-nnbWWOkoWyUsTjKrhgD0dcz22mdkSnpYqbEjIm2nhwhuxlSkpywJmBo8h0ZqJdkp73mb90SssHkN4rsRaBAfAA==}
@@ -6296,6 +6309,18 @@ snapshots:
       d3-zoom: 3.0.0
       vue: 3.5.39(typescript@5.9.3)
 
+  '@vue-js-cron/core@6.5.0':
+    dependencies:
+      mustache: 4.2.0
+
+  '@vue-js-cron/element-plus@3.2.2(vue@3.5.39(typescript@5.9.3))':
+    dependencies:
+      '@element-plus/icons-vue': 2.3.2(vue@3.5.39(typescript@5.9.3))
+      '@vue-js-cron/core': 6.5.0
+      element-plus: 2.14.2(vue@3.5.39(typescript@5.9.3))
+    transitivePeerDependencies:
+      - vue
+
   '@vue/compiler-core@3.5.39':
     dependencies:
       '@babel/parser': 7.29.7
@@ -8262,6 +8287,8 @@ snapshots:
   ms@2.1.3: {}
 
   muggle-string@0.4.1: {}
+
+  mustache@4.2.0: {}
 
   mute-stream@0.0.8: {}
 
