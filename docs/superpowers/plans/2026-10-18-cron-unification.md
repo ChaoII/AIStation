@@ -676,18 +676,24 @@ git commit -m "refactor(cron): 触发序列化助手下沉统一层，消除三�
 - **执行体必须放行 `now` 行**（否则作业空转）——三处统一为「`enabled` 且（有表达式 **或** `trigger=="now"`）」才执行。
 - **启动期不重建 `now`**（三处一致，删掉工作流侧那个例外）：`DateTrigger` 在注册时算 `now+2s`，若每次重启都重建，等于**每次重启都重跑一次**。
 
-### Task A11: `now` 的执行体放行 + 启动期不重建
+### Task A11: `now` 的执行体放行 + 启动期不重建 + 更新守卫放行
 
 **Files:**
-- Modify: `backend/app/plugin/module_ai/workspace/service.py`（执行体 `:80`、`collect_job_specs`）
-- Modify: `backend/app/plugin/module_ai/workflow/service.py`（执行体 `:144`、`collect_job_specs` `:1411` 的例外）
-- Modify: `backend/app/plugin/module_train/scheduler.py`（执行体）、`backend/app/plugin/module_train/schedule_service.py`（`collect_job_specs`）
-- Test: 三个业务作业测试文件各自追加
+- Modify: `backend/app/plugin/module_ai/workspace/service.py`（执行体 `:80`、`collect_job_specs`、更新守卫 `:617`）
+- Modify: `backend/app/plugin/module_ai/workflow/service.py`（执行体 `:144`、`collect_job_specs` `:1411` 的例外、`set_schedule` 的空表达式守卫）
+- Modify: `backend/app/plugin/module_train/scheduler.py`（执行体）、`backend/app/plugin/module_train/schedule_service.py`（`collect_job_specs`、更新守卫 `:257`）
+- Test: 三个业务作业测试文件 + `test_trigger_types_api.py` 各自追加
+
+**第三处（A10 顾虑 1，控制者已核实）:** 更新守卫是「**显式启用** + 无表达式 → 400」，
+而 `now` 行的 `trigger_args` 按契约就是 NULL ⇒ **把一个 `now` 行显式启用（`enabled=True`）也会被 400 拦住**。
+三处（workspace `:617`、train `:257`、workflow 的 `set_schedule` 空表达式守卫）统一为：
+**`row.trigger == "now"` 时放行**（"已配置"包含"立即执行"）。
 
 - [ ] **Step 1: 写失败测试**（TDD）：
   1. `now` 行（`trigger="now"`, `trigger_args=NULL`, `enabled=True`）→ 执行体**不**提前 return（断言真的建了任务/跑了工作流/执行了工作台动作）
   2. `collect_job_specs` 的返回**不含** `now` 行（三处）；含 `cron`/`interval`/`date` 行
   3. 回归：`enabled=False` 或表达式为空的行仍被拦
+  4. **显式启用一个 `now` 行**（PATCH `{"enabled": true}`，无触发配置）→ **200**（不是 400「请先配置触发时间」）
   **注意**：修好后 `now` 行会在 ~2s 后真的执行 ⇒ 测试必须**打桩执行体的副作用**（照 B4 的做法 monkeypatch `create_task`/`start_training` 等）或注册后立刻移除作业，**不得**在测试里真的建训练任务/跑工作流。
 - [ ] **Step 2: 跑测试确认失败**
 - [ ] **Step 3: 实现**（三处执行体 + 三处 collect 口径统一）
