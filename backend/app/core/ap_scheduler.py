@@ -1049,7 +1049,7 @@ class SchedulerUtil:
     def add_interval_job(
         cls,
         job_info: NodeModel,
-        trigger_args: str | None = None,
+        trigger_args: str | dict | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> Job:
@@ -1058,7 +1058,7 @@ class SchedulerUtil:
 
         参数:
         - job_info (NodeModel): 任务信息。
-        - trigger_args (str | None): 间隔参数 JSON（如 `{"hours": 2, "minutes": 30}`），
+        - trigger_args (str | dict | None): 间隔参数 JSON（如 `{"hours": 2, "minutes": 30}`），
           兼容旧的「秒 分 时 天 周」字符串；默认取节点配置。
         - start_date (str | None): 开始时间。
         - end_date (str | None): 结束时间。
@@ -1098,7 +1098,7 @@ class SchedulerUtil:
         return cls._add_job_with_trigger(job_info, trigger)
 
     @classmethod
-    def resolve_interval_args(cls, interval_args) -> dict:
+    def resolve_interval_args(cls, interval_args: str | dict | None) -> dict:
         """
         把 interval 参数归一为统一层契约的 JSON 字典（兼容旧的「秒 分 时 天 周」字符串）。
 
@@ -1107,7 +1107,7 @@ class SchedulerUtil:
         避免契约变更导致既有任务无法注册。
 
         参数:
-        - interval_args (Any): JSON 字符串/dict，或旧的「秒 分 时 天 周」字符串。
+        - interval_args (str | dict | None): JSON 字符串/dict，或旧的「秒 分 时 天 周」字符串。
 
         返回:
         - dict: 间隔参数字典（如 `{"seconds": 30, "minutes": 5, ...}`）。

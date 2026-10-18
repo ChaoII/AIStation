@@ -645,6 +645,8 @@ def test_node_service_validates_via_trigger_util():
     source = inspect.getsource(node_service)
     assert "TriggerUtil.validate(trigger, trigger_args)" in source
     assert "CronUtil" not in source
+    # Minor #2：未知类型会先被 TriggerUtil.validate 拦下 → 「不支持的触发方式」死分支已删
+    assert "不支持的触发方式" not in source
 
 
 # ------------------------------------------------------------ A4 修正：节点校验兼容旧 interval 字符串
@@ -698,3 +700,77 @@ def test_node_validate_cron_and_date_still_use_unified_layer():
     with pytest.raises(CustomException) as date_past:
         NodeService._validate_trigger_args("date", past)
     assert "过去" in date_past.value.msg
+
+
+def test_node_validate_unknown_trigger_is_rejected_before_dispatch():
+    """Minor #2：未知类型在校验阶段就被拦下（因此 dispatch 的 else 死分支可删）。"""
+    from app.plugin.module_task.cronjob.node.service import NodeService
+
+    with pytest.raises(CustomException) as exc:
+        NodeService._validate_trigger_args("weekly", None)
+    assert "weekly" in exc.value.msg
+
+
+# ------------------------------------------------------------ A4 修正轮 2：节点校验兼容旧 Quartz cron 串
+def test_node_validate_cron_accepts_legacy_quartz_strings():
+    """A4 修正轮 2：节点页 `vue3-cron-plus` 输出的旧 Quartz 串在过渡期必须可用。
+
+    - 7 段（秒=0，末段年为 `*`）：裁掉「不限年份」后等价 5 段 → 合法；
+    - 6 段（秒=0，含 `?`）：去首段 + `?`→`*` → 合法；
+    - 5 段新契约：原样合法。
+    """
+    from app.plugin.module_task.cronjob.node.service import NodeService
+
+    NodeService._validate_trigger_args("cron", "0 0 9 * * ? *")
+    NodeService._validate_trigger_args("cron", "0 0 9 ? * *")
+    NodeService._validate_trigger_args("cron", "0 9 * * 1")
+
+
+def test_node_validate_returns_normalized_args_usable_for_registration():
+    """A4 修正轮 2：归一结果必须回传（否则校验通过、注册仍会因旧串报错）。"""
+    from app.plugin.module_task.cronjob.node.service import NodeService
+
+    # 7 段旧 Quartz 串 → 5 段，且能被统一层直接构造触发器（注册路径不会再报 7 段）
+    cron_args = NodeService._validate_trigger_args("cron", "0 0 9 * * ? *")
+    assert cron_args == "0 9 * * *"
+    assert str(TriggerUtil.to_trigger("cron", cron_args).timezone) == "Asia/Shanghai"
+
+    # 6 段含 `?` → 5 段
+    assert NodeService._validate_trigger_args("cron", "0 0 9 ? * *") == "0 9 * * *"
+    # 5 段新契约 → 规范化（周字段映射为星期名）
+    assert NodeService._validate_trigger_args("cron", "0 9 * * 1") == "0 9 * * mon"
+
+    # 旧 interval 串 → JSON 字典，且能被统一层直接构造触发器
+    interval_args = NodeService._validate_trigger_args("interval", "0 30 * * *")
+    assert interval_args == {"seconds": 0, "minutes": 30, "hours": 0, "days": 0, "weeks": 0}
+    TriggerUtil.to_trigger("interval", interval_args)
+
+    # date 原样返回
+    assert (
+        NodeService._validate_trigger_args("date", "2999-01-01 09:00:00") == "2999-01-01 09:00:00"
+    )
+
+
+def test_node_validate_cron_rejects_seconds_and_concrete_year_with_reason():
+    """A4 修正轮 2：秒位非 0 / 带具体年份 → 可读错误，并提示改用 5 段。"""
+    from app.plugin.module_task.cronjob.node.service import NodeService
+
+    with pytest.raises(CustomException) as seconds:
+        NodeService._validate_trigger_args("cron", "30 0 9 * * ? *")
+    assert "秒" in seconds.value.msg and "5 段" in seconds.value.msg
+
+    with pytest.raises(CustomException) as concrete_year:
+        NodeService._validate_trigger_args("cron", "0 0 9 * * ? 2026")
+    assert "7 段" in concrete_year.value.msg and "5 段" in concrete_year.value.msg
+
+
+def test_node_validate_cron_legacy_normalization_keeps_weekday_semantics():
+    """A4 修正轮 2：旧串规范化后周字段口径与统一层一致（1=周一、0/7=周日）。"""
+    from app.plugin.module_task.cronjob.node.service import NodeService
+
+    NodeService._validate_trigger_args("cron", "0 0 9 * * 2")  # 周二
+    with pytest.raises(CustomException) as weekday_bad:
+        NodeService._validate_trigger_args("cron", "0 0 9 * * 9")
+    assert "周字段" in weekday_bad.value.msg
+
+

@@ -1,8 +1,11 @@
+from typing import Any
+
 from apscheduler.jobstores.base import JobLookupError
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.core.ap_scheduler import SchedulerUtil
 from app.core.exceptions import CustomException
+from app.utils.trigger_migration import normalize_legacy
 from app.utils.trigger_util import TriggerUtil
 
 from .crud import NodeCRUD
@@ -227,8 +230,9 @@ class NodeService:
         else:
             if not trigger_args:
                 raise CustomException(msg="非立即执行时必须提供触发器参数")
-            # 校验统一走 TriggerUtil（全平台唯一口径），错误原因原样回传前端
-            cls._validate_trigger_args(trigger, trigger_args)
+            # 校验统一走 TriggerUtil（全平台唯一口径），错误原因原样回传前端；
+            # 过渡期兼容（旧 Quartz cron / 旧 interval 串）在此归一，归一结果**必须**用于注册
+            trigger_args = cls._validate_trigger_args(trigger, trigger_args)
 
             if trigger == "cron":
                 SchedulerUtil.add_cron_job(
@@ -246,26 +250,25 @@ class NodeService:
                 )
             elif trigger == "date":
                 SchedulerUtil.add_date_job(job_info=obj, run_date=trigger_args)
-            else:
-                raise CustomException(msg=f"不支持的触发方式: {trigger}")
 
         return {"job_id": id, "status": "executed", "trigger": trigger}
 
     @classmethod
-    def _validate_trigger_args(cls, trigger: str, trigger_args) -> None:
+    def _validate_trigger_args(cls, trigger: str, trigger_args) -> Any:
         """
         校验触发器参数（唯一口径 `TriggerUtil.validate`，错误原因原样回传）。
 
-        `interval` 额外兼容旧的「秒 分 时 天 周」字符串：服务层先按旧格式解析成
-        统一层契约的 JSON（`{weeks,days,hours,minutes,seconds}`）再校验，
-        因此统一层仍只认 JSON（**不在 `TriggerUtil` 里加第二套 interval 口径**）。
+        过渡期兼容（**只在本服务层**，统一层仍只认新契约）：
+        - `interval`：先按旧「秒 分 时 天 周」字符串解析成 JSON 再校验；
+        - `cron`：先按旧 Quartz 串（6/7 段、含 `?`）规范化成 5 段再校验。
 
         参数:
         - trigger (str): 触发方式（now/cron/interval/date）。
         - trigger_args (Any): 触发器参数。
 
         返回:
-        - None
+        - Any: **归一后**的参数（`cron` 为 5 段字符串、`interval` 为 JSON 字典、
+          `date` 原样）；调用方必须用它去注册作业，否则旧串会在注册时再次报错。
 
         异常:
         - CustomException: 参数非法，`msg` 为可读原因（直接回显前端）。
@@ -275,7 +278,44 @@ class NodeService:
                 trigger_args = SchedulerUtil.resolve_interval_args(trigger_args)
             except ValueError as exc:
                 raise CustomException(msg=str(exc)) from None
+        elif trigger == "cron":
+            trigger_args = cls._normalize_legacy_cron(trigger_args)
 
         ok, reason = TriggerUtil.validate(trigger, trigger_args)
         if not ok:
             raise CustomException(msg=reason)
+        return trigger_args
+
+    @classmethod
+    def _normalize_legacy_cron(cls, cron_expr) -> str:
+        """
+        把旧 Quartz cron 串转成统一层的 5 段标准 crontab（仅节点校验的过渡兼容）。
+
+        复用 A6 的 `normalize_legacy`：5 段原样规范化、`?`→`*`、6 段秒位为 0 去首段，
+        其余（秒位非 0 / 带具体年份）返回中文 `skip_reason` → 这里转成可读错误并提示改用 5 段。
+
+        唯一补充：节点页的 `vue3-cron-plus` **恒定**输出 7 段（末段为年份），而
+        `normalize_legacy` 对 7 段一律跳过；当末段为 `*`/`?`（不限年份）时先裁掉该段再交给它
+        ——「不限年份」的 7 段与去掉年份的写法**等值**，不做任何静默语义改写
+        （带具体年份仍会被拒绝并提示人工确认）。
+
+        参数:
+        - cron_expr (Any): 旧 Quartz 串或新的 5 段 crontab。
+
+        返回:
+        - str: 规范化后的 5 段 crontab。
+
+        异常:
+        - CustomException: 无法等值转换（原因原文 + 改用 5 段的提示）。
+        """
+        text = "" if cron_expr is None else str(cron_expr).strip()
+        fields = text.split()
+        if len(fields) == 7 and fields[-1] in ("*", "?"):
+            text = " ".join(fields[:6])
+
+        _, normalized, skip_reason = normalize_legacy(text)
+        if skip_reason:
+            raise CustomException(
+                msg=f"{skip_reason}；请改用 5 段标准 crontab「分 时 日 月 周」（如 0 9 * * 1）"
+            )
+        return normalized
