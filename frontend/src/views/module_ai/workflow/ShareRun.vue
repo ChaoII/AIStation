@@ -201,7 +201,7 @@ async function send() {
     }
     await stream(resp, (obj) => {
       if (obj.type === "text-delta") msg.text += obj.text;
-      else if (obj.type === "data-finish") msg.text = obj.reply || msg.text;
+      else if (obj.type === "data-finish") msg.text = obj.data?.reply || msg.text;
       else if (obj.type === "node-status") {
         msg.trace.push({
           label: obj.label || obj.nodeId,

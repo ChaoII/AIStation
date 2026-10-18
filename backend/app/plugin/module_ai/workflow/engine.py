@@ -101,6 +101,14 @@ _RESTRICTED_ALLOW = {
 }
 
 
+class WorkflowCancelled(Exception):
+    """运行被用户取消。
+
+    与普通异常区分开：调用方据此把运行记为 ``cancelled``（而不是 ``error``），
+    前端也据此提示「已取消」而非「运行失败」。
+    """
+
+
 def _snapshot(value: Any, limit: int = 500) -> Any:
     """输出快照：过大/二进制值截断转字符串，便于前端展示。"""
     if value is None:
@@ -141,6 +149,8 @@ class WorkflowEngine:
         restricted: bool = False,
         timeout_seconds: int | None = None,
         run_id: str | None = None,
+        cancel_key: str | None = None,
+        redis=None,
     ) -> None:
         self.graph = graph or {}
         self.nodes: dict[str, dict] = {
@@ -155,6 +165,9 @@ class WorkflowEngine:
         self.restricted = restricted
         self.run_id = run_id or uuid.uuid4().hex
         self.timeout_seconds = timeout_seconds
+        # 取消信号：cancel_key 为运行标识（用运行记录主键），redis 用于多 worker 广播
+        self.cancel_key = cancel_key
+        self.redis = redis
         self._deadline = (
             time.monotonic() + timeout_seconds if timeout_seconds else None
         )
@@ -210,6 +223,29 @@ class WorkflowEngine:
 
         _walk(data, "")
         return _snapshot(resolved, limit=800)
+
+    # ---------------------------- 取消信号 ---------------------------- #
+    async def _cancelled(self) -> bool:
+        """是否已请求取消本次运行（未配置 cancel_key 时恒为 False）。"""
+        if not self.cancel_key:
+            return False
+        from . import cancel as _cancel
+
+        return await _cancel.is_cancelled(self.cancel_key, self.redis)
+
+    async def _stream(self, gen: AsyncIterator[Any]) -> AsyncIterator[Any]:
+        """透传节点帧，并**逐帧**检查取消信号。
+
+        为什么逐帧查：节点边界检查只能"跑完当前节点再停"，而 LLM/知识检索等流式
+        节点可能连续输出几十秒——逐帧检查才能在用户点「停止」时**立即**中断
+        （抛 ``WorkflowCancelled`` 会关闭底层 ``agent.arun`` 异步生成器，
+        进而取消正在进行的 HTTP 请求）。非流式节点（工具/代码/HTTP）仍只能在
+        节点边界停下，这是单次 await 无法打断的固有限制。
+        """
+        async for frame in gen:
+            if await self._cancelled():
+                raise WorkflowCancelled("运行已取消")
+            yield frame
 
     # ---------------------------- 单节点调试 ---------------------------- #
     async def _exec_single(self, node: dict) -> AsyncIterator[Any]:
@@ -1303,6 +1339,12 @@ class WorkflowEngine:
                 self.state["error"] = "运行超时"
                 yield self.ms.error("运行超时")
                 break
+            # 取消检查（节点边界）：用户点「停止」后不再启动下一个节点
+            if await self._cancelled():
+                yield self.ms.node_status(
+                    node_id, "cancelled", label, input=self._node_input(node)
+                )
+                raise WorkflowCancelled("运行已取消")
             executed += 1
             # 受限模式：非白名单节点直接跳过（防匿名触发代码/网络/数据等高危操作）
             if self.restricted and ntype not in _RESTRICTED_ALLOW:
@@ -1335,7 +1377,7 @@ class WorkflowEngine:
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "llm":
-                    async for frame in self._exec_llm(node):
+                    async for frame in self._stream(self._exec_llm(node)):
                         yield frame
                     # HITL：LLM 节点挂起等待审批时停止后续节点执行
                     if self.state.get("halted"):
@@ -1372,7 +1414,7 @@ class WorkflowEngine:
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "knowledge":
-                    async for frame in self._exec_knowledge(node):
+                    async for frame in self._stream(self._exec_knowledge(node)):
                         yield frame
                     next_id = self._edge_target(node_id)
                     if next_id:
@@ -1411,19 +1453,19 @@ class WorkflowEngine:
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "answer":
-                    async for frame in self._exec_answer(node):
+                    async for frame in self._stream(self._exec_answer(node)):
                         yield frame
                     next_id = self._edge_target(node_id)
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "sub_workflow":
-                    async for frame in self._exec_sub_workflow(node):
+                    async for frame in self._stream(self._exec_sub_workflow(node)):
                         yield frame
                     next_id = self._edge_target(node_id)
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "agent":
-                    async for frame in self._exec_agent(node):
+                    async for frame in self._stream(self._exec_agent(node)):
                         yield frame
                     next_id = self._edge_target(node_id)
                     if next_id:
@@ -1455,6 +1497,9 @@ class WorkflowEngine:
                         stack.append(next_id)
                 elif ntype == "end":
                     await self._exec_end(node)
+            except WorkflowCancelled:
+                # 取消不是「节点失败」：不重试、不记 error，直接上抛给调用方按 cancelled 记录
+                raise
             except Exception as e:  # noqa: BLE001
                 retry_n = int((node.get("data") or {}).get("retry", 0) or 0)
                 ok = False
@@ -1466,6 +1511,8 @@ class WorkflowEngine:
                                 yield rf
                             ok = True
                             break
+                        except WorkflowCancelled:
+                            raise
                         except Exception:  # noqa: BLE001
                             continue
                 if ok:

@@ -10,7 +10,8 @@ from sqlalchemy import func, select
 
 from app.core.database import async_db_session
 
-from .engine import WorkflowEngine
+from .cancel import clear_cancel
+from .engine import WorkflowCancelled, WorkflowEngine
 from .model import (
     AiWorkflowModel,
     AiWorkflowRunLogModel,
@@ -250,7 +251,8 @@ class AiWorkflowService:
         uid = getattr(getattr(auth, "user", None), "id", None)
         user_text = last_user_text(ui_messages)
         trace: list = []
-        empty_finish = {"reply": "", "tool_calls": [], "action": None, "report_id": None}
+        log_id: int | None = None
+        run_id: str | None = None
         state: dict = {
             "assistant_text": "",
             "reply": "",
@@ -267,89 +269,64 @@ class AiWorkflowService:
             if not workflow or not workflow.get("enabled"):
                 state["error"] = "工作流不存在或未启用"
                 yield ms.error(state["error"])
-                yield ms.data("finish", empty_finish)
-                yield ms.finish()
-                yield ms.done()
-                return
-
-            graph = workflow.get("graph") or {}
-            openai_messages = extract_openai_messages(ui_messages)
-            run_id = uuid.uuid4().hex
-            engine = WorkflowEngine(
-                graph=graph,
-                variables=variables or {},
-                messages=openai_messages,
-                ms=ms,
-                state=state,
-                user_id=uid,
-                timeout_seconds=timeout_seconds,
-                run_id=run_id,
-            )
-            async for frame in engine.run():
-                yield frame
-                if '"type": "node-status"' in frame:
-                    try:
-                        trace.append(json.loads(frame[len("data: ") :].strip()))
-                    except Exception:  # noqa: BLE001
-                        pass
-
-            if state.get("halted") and state.get("pending_approval"):
-                # HITL：持久化运行状态，产出审批装载帧供前端确认后调 approve 续跑
-                await cls._persist_pending(redis, run_id, workflow_id, state, uid)
-                yield ms.data(
-                    "finish",
-                    {
-                        "reply": state.get("assistant_text") or "",
-                        "tool_calls": state["tool_calls"],
-                        "action": state["action"],
-                        "report_id": state["report_id"],
-                        "awaiting_approval": True,
-                        "run_id": run_id,
-                        "pending_tool_calls": [
-                            {
-                                "toolCallId": t["toolCallId"],
-                                "toolName": t["toolName"],
-                                "arguments": t.get("arguments"),
-                            }
-                            for t in state["pending_approval"].get("pending", [])
-                        ],
-                    },
+            else:
+                graph = workflow.get("graph") or {}
+                openai_messages = extract_openai_messages(ui_messages)
+                run_id = uuid.uuid4().hex
+                # 先落 running 记录：历史里能看到「运行中」，且它同时是取消信号标识
+                log_id = await cls._start_run(
+                    workflow_id,
+                    {"messages": ui_messages, "variables": variables or {},
+                     "user_text": user_text},
+                    uid,
                 )
-                yield ms.finish()
-                yield ms.done()
-                return
+                if log_id:
+                    # 把运行记录 id 下发给前端：它是取消运行的目标（run-log/{id}/cancel）
+                    yield ms.data("run", {"run_log_id": log_id, "run_id": run_id})
+                engine = WorkflowEngine(
+                    graph=graph,
+                    variables=variables or {},
+                    messages=openai_messages,
+                    ms=ms,
+                    state=state,
+                    user_id=uid,
+                    timeout_seconds=timeout_seconds,
+                    run_id=run_id,
+                    cancel_key=str(log_id) if log_id else None,
+                    redis=redis,
+                )
+                async for frame in engine.run():
+                    yield frame
+                    if '"type": "node-status"' in frame:
+                        try:
+                            trace.append(json.loads(frame[len("data: ") :].strip()))
+                        except Exception:  # noqa: BLE001
+                            pass
 
-            yield ms.data(
-                "finish",
-                {
-                    "reply": state["reply"] or state["assistant_text"],
-                    "tool_calls": state["tool_calls"],
-                    "action": state["action"],
-                    "report_id": state["report_id"],
-                },
-            )
-            yield ms.finish()
-            yield ms.done()
+                if state.get("halted") and state.get("pending_approval"):
+                    # HITL：持久化运行状态，供前端审批后调 approve 续跑
+                    await cls._persist_pending(redis, run_id, workflow_id, state, uid)
+                else:
+                    state["finished"] = True
+        except WorkflowCancelled:
+            # 用户点了「停止」：明确区分于失败，前端提示「已取消」而非「运行失败」
+            state["cancelled"] = True
+            yield ms.error("运行已取消")
         except Exception as e:  # noqa: BLE001
             state["error"] = str(e)
             yield ms.error(f"运行失败：{e}")
-            yield ms.data(
-                "finish",
-                {
-                    "reply": state["assistant_text"],
-                    "tool_calls": state["tool_calls"],
-                    "action": state["action"],
-                    "report_id": state["report_id"],
-                },
-            )
-            yield ms.finish()
-            yield ms.done()
-        finally:
+
+        # ⚠️ 收尾必须放在**终止帧之前**。终止帧（finish/done）一发出，客户端就会断开，
+        #    Starlette（BaseHTTPMiddleware）随即取消本任务；写在 finally 里的收尾
+        #    会被取消掉——实测表现为运行记录永远停在 running（历史整条丢失）。
+        status = cls._run_status(state)
+        try:
             await AiOverviewService.add_log(
                 runtime_model_name(workflow_id),
                 "workflow",
                 int((time.perf_counter() - t0) * 1000),
-                "success" if state["error"] is None and not state.get("halted") else "pending",
+                # 调用日志只有 success/error 两类语义：取消与失败都算 error，HITL 挂起算 pending
+                "success" if status == "success" else ("pending" if status == "pending" else "error"),
                 state["error"],
                 app_id=workflow_id,
                 user_id=uid,
@@ -361,16 +338,44 @@ class AiWorkflowService:
                 app_id=workflow_id,
                 user_id=uid,
             )
-            await cls._log_run(
-                workflow_id,
-                "success" if state["error"] is None and not state.get("halted") else ("pending" if state.get("halted") else "error"),
-                {"messages": ui_messages, "variables": variables or {}, "user_text": user_text},
-                {"reply": state["reply"] or state["assistant_text"], "tool_calls": state["tool_calls"]},
-                state["error"],
-                trace,
-                int((time.perf_counter() - t0) * 1000),
-                uid,
-            )
+        except Exception:  # noqa: BLE001 调用日志/会话落库失败不影响结果帧
+            pass
+        await cls._finish_run(
+            log_id,
+            status,
+            {"reply": state["reply"] or state["assistant_text"],
+             "tool_calls": state["tool_calls"]},
+            state["error"],
+            trace,
+            int((time.perf_counter() - t0) * 1000),
+        )
+        if log_id:
+            await clear_cancel(log_id, redis)
+
+        finish_payload = {
+            "reply": state["reply"] or state["assistant_text"],
+            "tool_calls": state["tool_calls"],
+            "action": state["action"],
+            "report_id": state["report_id"],
+        }
+        if state.get("halted") and state.get("pending_approval"):
+            finish_payload.update({
+                "awaiting_approval": True,
+                "run_id": run_id,
+                "pending_tool_calls": [
+                    {
+                        "toolCallId": t["toolCallId"],
+                        "toolName": t["toolName"],
+                        "arguments": t.get("arguments"),
+                    }
+                    for t in state["pending_approval"].get("pending", [])
+                ],
+            })
+        if status == "cancelled":
+            finish_payload["cancelled"] = True
+        yield ms.data("finish", finish_payload)
+        yield ms.finish()
+        yield ms.done()
 
     @classmethod
     async def debug_node_ui_stream(
@@ -537,35 +542,76 @@ class AiWorkflowService:
             return None
 
     @classmethod
-    async def _log_run(
+    async def _start_run(
+        cls, workflow_id: int, run_input: dict, uid: int | None
+    ) -> int | None:
+        """运行开始时先落一条 ``running`` 记录，返回其主键（同时作为取消信号标识）。
+
+        为什么必须先落 ``running``：只在结束时记录的话，「运行中」的运行在历史里
+        完全不可见，也没有可定位的取消目标；进程崩溃/客户端断连时更是直接丢失
+        （事后看不出是「中断了」还是「从没跑过」）。
+        """
+        try:
+            async with async_db_session() as db:
+                row = AiWorkflowRunLogModel(
+                    workflow_id=workflow_id,
+                    status="running",
+                    run_input=run_input,
+                    run_output=None,
+                    error=None,
+                    node_trace=[],
+                    duration_ms=0,
+                    created_id=uid,
+                )
+                db.add(row)
+                await db.commit()
+                await db.refresh(row)
+                return row.id
+        except Exception:  # noqa: BLE001 运行历史记录失败不影响主流程
+            return None
+
+    @classmethod
+    async def _finish_run(
         cls,
-        workflow_id: int,
+        log_id: int | None,
         status: str,
-        run_input: dict,
         run_output: dict,
         error: str | None,
         node_trace: list,
         duration_ms: int,
-        uid: int | None,
     ) -> None:
-        """持久化一次工作流运行的输入/输出/报错/节点轨迹。"""
+        """运行结束时更新记录（``success`` / ``error`` / ``cancelled`` / ``pending``）。"""
+        if not log_id:
+            return
         try:
-            async with async_db_session() as db:
-                db.add(
-                    AiWorkflowRunLogModel(
-                        workflow_id=workflow_id,
-                        status=status,
-                        run_input=run_input,
-                        run_output=run_output,
-                        error=(error or "")[:1024] or None,
-                        node_trace=node_trace,
-                        duration_ms=duration_ms,
-                        created_id=uid,
-                    )
-                )
-                await db.commit()
+            async with async_db_session.begin() as db:
+                row = await db.get(AiWorkflowRunLogModel, log_id)
+                if not row:
+                    return
+                row.status = status
+                row.run_output = run_output
+                row.error = (error or "")[:1024] or None
+                row.node_trace = node_trace
+                row.duration_ms = duration_ms
         except Exception:  # noqa: BLE001 运行历史记录失败不影响主流程
             pass
+
+    @staticmethod
+    def _run_status(state: dict) -> str:
+        """由运行态推导记录状态。
+
+        ``finished`` 未置位说明是**被中断**（客户端断连/任务被取消）——
+        此时必须记 ``cancelled``，否则会与「正常结束」混淆。
+        """
+        if state.get("cancelled"):
+            return "cancelled"
+        if state.get("error"):
+            return "error"
+        if state.get("halted"):
+            return "pending"
+        if not state.get("finished"):
+            return "cancelled"
+        return "success"
 
     @classmethod
     async def list_run_logs(cls, workflow_id: int, limit: int = 20) -> list[dict]:
@@ -610,6 +656,32 @@ class AiWorkflowService:
             "duration_ms": r.duration_ms,
             "created_time": r.created_time,
         }
+
+    @classmethod
+    async def cancel_run(cls, run_id: int, redis=None) -> dict:
+        """请求取消一次**运行中**的工作流。
+
+        - 只有 ``running`` 状态可取消；已完成/已取消/失败的直接如实告知
+          （避免前端提示"已停止"但其实什么都没发生）；
+        - 取消信号写内存 + Redis（多 worker 广播）；引擎在**节点边界**与
+          **每个流式帧**检查，因此 LLM/知识检索等流式节点可被立即中断。
+
+        注意：取消是**请求**而非瞬时结果——接口返回后引擎会在下一个检查点停下，
+        运行记录的 ``status`` 届时由运行方更新为 ``cancelled``。
+        """
+        from app.core.exceptions import CustomException
+
+        from .cancel import request_cancel
+
+        async with async_db_session() as db:
+            row = await db.get(AiWorkflowRunLogModel, run_id)
+        if not row:
+            raise CustomException(msg="运行记录不存在")
+        if row.status != "running":
+            return {"cancelled": False, "status": row.status,
+                    "msg": f"该运行状态为 {row.status}，无需取消"}
+        await request_cancel(run_id, redis)
+        return {"cancelled": True, "status": "running", "msg": "已发送取消请求"}
 
     @classmethod
     async def get_workflow_stats(cls, workflow_id: int) -> dict:
@@ -829,17 +901,20 @@ class AiWorkflowService:
             user_id=None,
             timeout_seconds=180,
         )
-        async for _ in engine.run():
-            pass
-        await cls._log_run(
-            workflow_id,
-            "success" if state["error"] is None else "error",
-            {"scheduled": True},
+        log_id = await cls._start_run(workflow_id, {"scheduled": True}, None)
+        try:
+            async for _ in engine.run():
+                pass
+            state["finished"] = True
+        except WorkflowCancelled:
+            state["cancelled"] = True
+        await cls._finish_run(
+            log_id,
+            cls._run_status(state),
             {"reply": state["reply"] or state["assistant_text"]},
             state["error"],
             [],
             0,
-            None,
         )
 
     @classmethod

@@ -293,6 +293,7 @@
                   <el-icon class="is-loading"><Loading /></el-icon>
                   执行中…
                 </div>
+                <div v-else-if="m.cancelled" class="chat-msg__cancel">已取消</div>
                 <div v-else-if="m.error" class="chat-msg__err">{{ m.error }}</div>
                 <div v-else class="chat-msg__ai">{{ m.content || "(无输出)" }}</div>
 
@@ -454,6 +455,9 @@
             />
             <el-button type="primary" :loading="running" :icon="Promotion" @click="sendChat">
               发送
+            </el-button>
+            <el-button v-if="running" type="danger" plain :icon="VideoPause" @click="stopRun">
+              停止
             </el-button>
           </div>
           <div class="chat-input__row chat-step-row">
@@ -625,6 +629,7 @@
         <el-statistic title="总运行" :value="runHistoryList.length" />
         <el-statistic title="成功" :value="historyStats.success" />
         <el-statistic title="失败" :value="historyStats.fail" />
+        <el-statistic title="已取消" :value="historyStats.cancelled" />
         <el-statistic title="平均耗时(ms)" :value="historyStats.avgMs" />
       </div>
       <div class="history-filter">
@@ -633,6 +638,7 @@
           <el-radio-button label="success">成功</el-radio-button>
           <el-radio-button label="error">失败</el-radio-button>
           <el-radio-button label="pending">审批中</el-radio-button>
+          <el-radio-button label="cancelled">已取消</el-radio-button>
         </el-radio-group>
       </div>
       <el-table
@@ -647,13 +653,8 @@
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
-            <el-tag
-              size="small"
-              :type="
-                row.status === 'success' ? 'success' : row.status === 'error' ? 'danger' : 'warning'
-              "
-            >
-              {{ row.status === "success" ? "成功" : row.status === "error" ? "失败" : "审批中" }}
+            <el-tag size="small" :type="runStatusTag(row.status)">
+              {{ runStatusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -863,6 +864,7 @@ import type { Node, Edge, DefaultEdgeOptions, MarkerType } from "@vue-flow/core"
 import {
   Promotion,
   VideoPlay,
+  VideoPause,
   Cpu,
   Document,
   DocumentCopy,
@@ -919,6 +921,7 @@ import {
   publishAiWorkflowVersion,
   listAiWorkflowRunLogs,
   getAiWorkflowRunLog,
+  cancelAiWorkflowRun,
   getAiWorkflowStats,
   createAiWorkflowShare,
   getAiWorkflowSchedule,
@@ -1076,10 +1079,20 @@ interface ChatMsg {
   approval?: { run_id: string; toolCalls: any[] };
   running?: boolean;
   error?: string;
+  cancelled?: boolean;
 }
 const chatMessages = ref<ChatMsg[]>([]);
 const activeMsg = ref<ChatMsg | null>(null);
 let chatSeq = 0;
+/** 当前运行的运行记录 id（后端 data-run 帧下发），停止运行时的取消目标 */
+const activeRunLogId = ref<number | null>(null);
+/** 运行请求的中止句柄：停止时同时掐断 SSE 读取 */
+let runAbort: AbortController | null = null;
+
+/** 取 data-* 帧的载荷（AI SDK 约定：`data-${NAME}` 的载荷在 data 字段里）。 */
+function dataOf(obj: any): any {
+  return obj?.data || {};
+}
 const chatVarsOpen = ref<string[]>([]);
 const traceOpen = ref<Record<string, boolean>>({});
 function toggleTraceOpen(key: string) {
@@ -1235,7 +1248,7 @@ const historyVisible = ref(false);
 const historyLoading = ref(false);
 const runHistoryList = ref<any[]>([]);
 const runDetail = ref<any>(null);
-const historyFilter = ref<"all" | "success" | "error" | "pending">("all");
+const historyFilter = ref<"all" | "success" | "error" | "pending" | "cancelled">("all");
 const filteredHistory = computed(() =>
   historyFilter.value === "all"
     ? runHistoryList.value
@@ -1522,7 +1535,8 @@ async function runShare() {
     }
     await readUiStream(resp, (obj) => {
       if (obj.type === "text-delta") shareOutput.value += obj.text;
-      else if (obj.type === "data-finish") shareOutput.value = obj.reply || shareOutput.value;
+      else if (obj.type === "data-finish")
+        shareOutput.value = dataOf(obj).reply || shareOutput.value;
       else if (obj.type === "node-status") {
         shareTrace.value.push({
           label: obj.label || obj.nodeId,
@@ -1546,11 +1560,34 @@ const historyStats = computed(() => {
   const list = runHistoryList.value;
   const success = list.filter((r) => r.status === "success").length;
   const fail = list.filter((r) => r.status === "error").length;
+  const cancelled = list.filter((r) => r.status === "cancelled").length;
   const ms = list.length
     ? Math.round(list.reduce((acc, r) => acc + (r.duration_ms || 0), 0) / list.length)
     : 0;
-  return { success, fail, avgMs: ms };
+  return { success, fail, cancelled, avgMs: ms };
 });
+
+/** 运行状态 → 中文标签（running/cancelled 是新增态，不能都落到"审批中"）。 */
+function runStatusLabel(status: string): string {
+  return (
+    {
+      success: "成功",
+      error: "失败",
+      pending: "审批中",
+      cancelled: "已取消",
+      running: "运行中",
+    }[status] || status
+  );
+}
+
+/** 运行状态 → el-tag 类型。 */
+function runStatusTag(status: string): "success" | "danger" | "warning" | "info" | "primary" {
+  if (status === "success") return "success";
+  if (status === "error") return "danger";
+  if (status === "cancelled") return "info";
+  if (status === "running") return "primary";
+  return "warning";
+}
 async function openRunHistory() {
   if (!workflowId.value) return;
   historyVisible.value = true;
@@ -3165,6 +3202,7 @@ async function sendChat() {
   chatMessages.value.push(msg);
   activeMsg.value = msg;
   running.value = true;
+  activeRunLogId.value = null;
   resetRunTrace();
   scrollRunBottom();
   try {
@@ -3175,12 +3213,14 @@ async function sendChat() {
       variables = {};
     }
     const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
+    runAbort = new AbortController();
     const resp = await fetch(`${base}/ai/workflows/${workflowId.value}/run/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${Auth.getAccessToken() || ""}`,
       },
+      signal: runAbort.signal,
       body: JSON.stringify({
         messages: [{ role: "user", parts: [{ type: "text", text }] }],
         variables,
@@ -3206,16 +3246,32 @@ async function sendChat() {
           duration: obj.duration_ms,
         });
         scrollRunBottom();
+      } else if (obj.type === "data-run") {
+        // 运行记录 id：停止运行时的取消目标
+        activeRunLogId.value = dataOf(obj).run_log_id ?? null;
       } else if (obj.type === "data-finish") {
-        if (obj.awaiting_approval && obj.run_id) {
-          msg.approval = { run_id: obj.run_id, toolCalls: obj.pending_tool_calls || [] };
+        const d = dataOf(obj);
+        if (d.awaiting_approval && d.run_id) {
+          msg.approval = { run_id: d.run_id, toolCalls: d.pending_tool_calls || [] };
         }
-        if (obj.reply != null) msg.content = obj.reply || msg.content;
+        if (d.reply != null) msg.content = d.reply || msg.content;
+        if (d.cancelled) {
+          msg.cancelled = true;
+          msg.running = false;
+        }
       }
     });
   } catch (e: any) {
-    msg.error = `运行失败：${e?.message || e}`;
+    if (e?.name === "AbortError") {
+      // 用户主动停止：不是失败
+      msg.cancelled = true;
+      msg.running = false;
+    } else {
+      msg.error = `运行失败：${e?.message || e}`;
+    }
   } finally {
+    runAbort = null;
+    activeRunLogId.value = null;
     msg.running = false;
     running.value = false;
     scrollRunBottom();
@@ -3223,6 +3279,29 @@ async function sendChat() {
       ElNotification({ title: "运行失败", message: msg.error, type: "warning", duration: 4500 });
     }
   }
+}
+
+/** 停止运行：二次确认 → 通知后端取消 → 掐断 SSE 读取。 */
+async function stopRun() {
+  try {
+    await ElMessageBox.confirm(
+      "将立即中断本次运行（当前节点会被打断），本次运行会记为「已取消」。是否继续？",
+      "停止运行",
+      { confirmButtonText: "停止运行", cancelButtonText: "继续运行", type: "warning" }
+    );
+  } catch {
+    return; // 用户取消
+  }
+  const logId = activeRunLogId.value;
+  if (logId) {
+    try {
+      await cancelAiWorkflowRun(logId);
+    } catch (e: any) {
+      ElMessage.warning(`取消请求失败：${e?.message || e}`);
+    }
+  }
+  runAbort?.abort();
+  ElMessage.info("已请求停止运行");
 }
 
 async function handleApprove(decision: "approve" | "reject") {
@@ -3260,7 +3339,7 @@ async function handleApprove(decision: "approve" | "reject") {
           error: obj.error,
           duration: obj.duration_ms,
         });
-      } else if (obj.type === "data-finish") am.content = obj.reply || am.content;
+      } else if (obj.type === "data-finish") am.content = dataOf(obj).reply || am.content;
       else if (obj.type === "error")
         am.error = obj.errorText || obj.msg || obj.message || "审批失败";
     });
@@ -3497,6 +3576,11 @@ async function handleApprove(decision: "approve" | "reject") {
     color: var(--el-color-danger);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  /* 用户主动停止：与"失败"区分开，用次要色而非危险色 */
+  .chat-msg__cancel {
+    color: var(--el-text-color-secondary);
   }
 
   .chat-sub-title {

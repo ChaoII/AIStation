@@ -244,6 +244,18 @@ async def run_workflow_stream(
     )
 
 
+@AiWorkflowRouter.post("/run-log/{run_id}/cancel", summary="取消运行中的工作流")
+async def cancel_workflow_run(
+    run_id: int,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiWorkflowService.cancel_run(run_id, redis=request.app.state.redis),
+        msg="已处理取消请求",
+    )
+
+
 @AiWorkflowRouter.post("/{workflow_id}/debug-node/stream", summary="单节点调试运行（流式）")
 async def debug_node_stream(
     workflow_id: int,

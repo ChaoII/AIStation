@@ -56,6 +56,11 @@ export function getAiWorkflowRunLog(runId: number) {
   return request({ url: `${API_PATH}/run-log/${runId}`, method: "get" });
 }
 
+/** 请求停止一次运行中的工作流（后端在节点边界/流式帧检查点中断）。 */
+export function cancelAiWorkflowRun(runId: number) {
+  return request({ url: `${API_PATH}/run-log/${runId}/cancel`, method: "post" });
+}
+
 export function getAiWorkflowStats(id: number) {
   return request({ url: `${API_PATH}/${id}/stats`, method: "get" });
 }
