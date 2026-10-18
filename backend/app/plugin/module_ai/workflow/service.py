@@ -6,11 +6,14 @@ import json
 import time
 import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime
 
 from sqlalchemy import func, select
 
 from app.core.database import async_db_session
+from app.core.exceptions import CustomException
 from app.core.logger import log
+from app.utils.trigger_util import TriggerUtil
 
 from .cancel import clear_cancel, is_cancelled, request_cancel
 from .engine import WorkflowCancelled, WorkflowEngine
@@ -996,18 +999,19 @@ class AiWorkflowService:
 
     @classmethod
     async def set_schedule(cls, workflow_id: int, cron: str | None, enabled: bool) -> dict:
-        """保存调度配置并计算下次运行时间。"""
-        from datetime import datetime
+        """保存调度配置：写入规范化后的表达式，下次运行时间来自统一层。
 
-        from apscheduler.triggers.cron import CronTrigger
-
-        next_run = None
-        if enabled and cron:
-            try:
-                CronTrigger.from_crontab(cron)
-                next_run = CronTrigger.from_crontab(cron).get_next_fire_time(None, datetime.now())
-            except Exception:  # noqa: BLE001
-                raise RuntimeError("cron 表达式无效")
+        入参仍是旧的 `cron` 单字段（前端 C 阶段才切到 `trigger`/`trigger_args`）；
+        空表达式视为「未配置」（清空调度），不调用校验——那会把「关闭调度」挡成错误。
+        """
+        if not cron or not str(cron).strip():
+            trigger, trigger_args = "cron", None
+        else:
+            ok, reason = TriggerUtil.validate("cron", cron)
+            if not ok:
+                raise CustomException(msg=reason)
+            trigger, trigger_args = TriggerUtil.normalize("cron", cron)
+        next_run = TriggerUtil.next_run(trigger, trigger_args) if enabled and trigger_args else None
         async with async_db_session() as db:
             row = (
                 await db.execute(
@@ -1019,12 +1023,27 @@ class AiWorkflowService:
             if not row:
                 row = AiWorkflowScheduleModel(workflow_id=workflow_id)
                 db.add(row)
-            row.cron = cron or ""
+            row.trigger = trigger
+            row.trigger_args = trigger_args
             row.enabled = enabled
             row.next_run_time = next_run
             await db.commit()
             await db.refresh(row)
-        return {"cron": row.cron, "enabled": row.enabled, "next_run_time": row.next_run_time}
+        return cls._schedule_dict(row)
+
+    @staticmethod
+    def _schedule_dict(row: AiWorkflowScheduleModel) -> dict:
+        """调度配置响应；`cron` 为兼容字段（前端 C 阶段切到 trigger/trigger_args 之前仍读它）。"""
+        trigger = row.trigger or "cron"
+        trigger_args = row.trigger_args or ""
+        return {
+            "trigger": trigger,
+            "trigger_args": trigger_args,
+            "cron": trigger_args if trigger == "cron" else "",
+            "enabled": row.enabled,
+            "next_run_time": row.next_run_time,
+            "last_run_time": row.last_run_time,
+        }
 
     @classmethod
     async def get_schedule(cls, workflow_id: int) -> dict:
@@ -1037,13 +1056,15 @@ class AiWorkflowService:
                 )
             ).scalar_one_or_none()
         if not row:
-            return {"cron": "", "enabled": False, "next_run_time": None}
-        return {
-            "cron": row.cron or "",
-            "enabled": row.enabled,
-            "next_run_time": row.next_run_time,
-            "last_run_time": row.last_run_time,
-        }
+            return {
+                "trigger": "cron",
+                "trigger_args": "",
+                "cron": "",
+                "enabled": False,
+                "next_run_time": None,
+                "last_run_time": None,
+            }
+        return cls._schedule_dict(row)
 
     @classmethod
     async def run_schedule(cls, workflow_id: int) -> None:
@@ -1093,11 +1114,14 @@ class AiWorkflowService:
     async def start_scheduler(cls) -> None:
         """后台轮询任务：每分钟检查到期调度并运行。"""
         import asyncio
-        from datetime import datetime
+        from zoneinfo import ZoneInfo
 
+        # 下次运行时间来自统一层（Asia/Shanghai）：比较统一到该时区的时刻，
+        # 避免 PG 的 timestamptz（aware）与 naive 混用抛异常
+        timezone = ZoneInfo(TriggerUtil.TIMEZONE)
         while True:
             try:
-                now = datetime.now()
+                now = datetime.now(timezone)
                 async with async_db_session() as db:
                     rows = (
                         await db.execute(
@@ -1107,21 +1131,20 @@ class AiWorkflowService:
                         )
                     ).scalars().all()
                 for row in rows:
-                    due = row.next_run_time is None or (
-                        row.next_run_time and row.next_run_time <= now
-                    )
+                    due_at = row.next_run_time
+                    if due_at is not None and due_at.tzinfo is None:
+                        due_at = due_at.replace(tzinfo=timezone)
+                    due = due_at is None or due_at <= now
                     if due:
                         try:
                             await cls.run_schedule(row.workflow_id)
                         except Exception:  # noqa: BLE001
                             pass
                         next_run = None
-                        if row.cron:
+                        if row.trigger_args:
                             try:
-                                from apscheduler.triggers.cron import CronTrigger
-
-                                next_run = CronTrigger.from_crontab(row.cron).get_next_fire_time(
-                                    None, datetime.now()
+                                next_run = TriggerUtil.next_run(
+                                    row.trigger or "cron", row.trigger_args
                                 )
                             except Exception:  # noqa: BLE001
                                 next_run = None

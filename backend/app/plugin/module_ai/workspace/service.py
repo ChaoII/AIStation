@@ -1,11 +1,14 @@
 """AI 工作台服务：分类树 CRUD + 多类型条目聚合。"""
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.utils.common_util import traversal_to_tree
+from app.utils.trigger_util import TriggerUtil
 
 from .model import AiWorkspaceCategoryModel, AiWorkspaceCronModel
 
@@ -230,7 +233,7 @@ class WorkspaceService:
             }
         else:  # cron
             meta = {
-                "cron": cls._g(row, "cron", "") or "",
+                "cron": cls._g(row, "trigger_args", "") or "",
                 "target_type": cls._g(row, "target_type", "") or "",
                 "next_run_time": cls._g(row, "next_run_time"),
             }
@@ -255,11 +258,16 @@ class WorkspaceService:
 
     @staticmethod
     def _cron_dict(r: AiWorkspaceCronModel) -> dict:
+        trigger = r.trigger or "cron"
+        trigger_args = r.trigger_args or ""
         return {
             "id": r.id,
             "name": r.name,
             "description": r.description or "",
-            "cron": r.cron or "",
+            "trigger": trigger,
+            "trigger_args": trigger_args,
+            # 兼容字段：前端 C 阶段切到 trigger/trigger_args 之前仍读 `cron`
+            "cron": trigger_args if trigger == "cron" else "",
             "target_type": r.target_type or "agent",
             "target_id": r.target_id,
             "category_id": r.category_id,
@@ -269,25 +277,40 @@ class WorkspaceService:
         }
 
     @staticmethod
-    def _compute_next_run(cron: str):
-        from datetime import datetime
+    def _resolve_trigger(cron: str | None) -> tuple[str, str | None]:
+        """把（当前仅有的）`cron` 入参解析为 `(trigger, trigger_args)`。
 
-        from apscheduler.triggers.cron import CronTrigger
+        - 非空表达式：先 `TriggerUtil.validate`（非法 → `CustomException`，原因原样回显），
+          再 `TriggerUtil.normalize` —— 写入即规范化（`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）；
+        - 空值：视为「未配置」，直接落 `trigger_args=None`。空串在前端是「清空调度配置」的既有
+          语义（未填表达式时点保存），而统一层把空表达式判为非法——若不特判，会把「关闭调度」
+          也挡成错误。
+        """
+        if not cron or not str(cron).strip():
+            return "cron", None
+        ok, reason = TriggerUtil.validate("cron", cron)
+        if not ok:
+            raise CustomException(msg=reason)
+        trigger, args = TriggerUtil.normalize("cron", cron)
+        return trigger, args
 
-        try:
-            trigger = CronTrigger.from_crontab(cron)
-        except Exception as exc:  # noqa: BLE001
-            raise CustomException(msg=f"cron 表达式无效：{exc}") from exc
-        return trigger.get_next_fire_time(None, datetime.now())
+    @staticmethod
+    def _next_run_time(trigger: str, trigger_args) -> datetime | None:
+        """下次运行时间一律来自统一层；未配置表达式（历史空行）返回 `None`。"""
+        if not trigger_args:
+            return None
+        return TriggerUtil.next_run(trigger, trigger_args)
 
     @classmethod
     async def create_cron(cls, data, auth) -> dict:
-        next_run = cls._compute_next_run(data.cron) if data.enabled else None
+        trigger, trigger_args = cls._resolve_trigger(data.cron)
+        next_run = cls._next_run_time(trigger, trigger_args) if data.enabled else None
         async with async_db_session.begin() as db:
             row = AiWorkspaceCronModel(
                 name=data.name,
                 description=data.description,
-                cron=data.cron,
+                trigger=trigger,
+                trigger_args=trigger_args,
                 target_type=data.target_type,
                 target_id=data.target_id,
                 category_id=data.category_id,
@@ -306,13 +329,24 @@ class WorkspaceService:
             row = await db.get(AiWorkspaceCronModel, cron_id)
             if not row or row.is_deleted:
                 return None
-            for key in ("name", "description", "cron", "target_type", "target_id", "category_id", "enabled"):
+            for key in (
+                "name",
+                "description",
+                "target_type",
+                "target_id",
+                "category_id",
+                "enabled",
+            ):
                 val = getattr(data, key, None)
                 if val is not None:
                     setattr(row, key, val)
-            # 重新计算下次运行
+            if data.cron is not None:
+                row.trigger, row.trigger_args = cls._resolve_trigger(data.cron)
+            # 重新计算下次运行（表达式或启停变化时；一律走统一层）
             if data.cron is not None or data.enabled is not None:
-                row.next_run_time = cls._compute_next_run(row.cron) if row.enabled else None
+                row.next_run_time = (
+                    cls._next_run_time(row.trigger, row.trigger_args) if row.enabled else None
+                )
             row.updated_id = auth.user.id
             await db.flush()
             return cls._cron_dict(row)
@@ -329,14 +363,17 @@ class WorkspaceService:
     async def cron_scheduler(cls) -> None:
         """后台轮询：每分钟检查到期定时任务并尝试执行。"""
         import asyncio
-        from datetime import datetime
+        from zoneinfo import ZoneInfo
 
         from loguru import logger
 
+        # 下次运行时间来自统一层（Asia/Shanghai），比较统一到该时区的墙上时间，
+        # 避免 aware（PG 的 timestamptz）与 naive 混用
+        timezone = ZoneInfo(TriggerUtil.TIMEZONE)
         aiokill = False
         while not aiokill:
             try:
-                now = datetime.now()
+                now = datetime.now(timezone).replace(tzinfo=None)
                 async with async_db_session() as db:
                     rows = (
                         await db.execute(
@@ -347,13 +384,12 @@ class WorkspaceService:
                         )
                     ).scalars().all()
                     for r in rows:
-                        # 统一为无时区的本地时间再比较，避免 aware/naive 混用抛异常
                         due = r.next_run_time.replace(tzinfo=None) if r.next_run_time else None
                         if due is not None and due <= now:
-                            # 标记运行并计算下一次
+                            # 标记运行并计算下一次（统一层）
                             r.last_run_time = now
                             try:
-                                r.next_run_time = cls._compute_next_run(r.cron)
+                                r.next_run_time = cls._next_run_time(r.trigger, r.trigger_args)
                             except Exception:  # noqa: BLE001
                                 r.enabled = False
                             await db.flush()

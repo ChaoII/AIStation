@@ -774,3 +774,236 @@ def test_node_validate_cron_legacy_normalization_keeps_weekday_semantics():
     assert "周字段" in weekday_bad.value.msg
 
 
+# ============================================================ Task A5：三处写入路径改走统一层
+# 口径：写入即规范化（`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）；「下次运行时间」
+# 一律来自 `TriggerUtil.next_run`（修 D5 周字段错位：旧实现用 `CronTrigger.from_crontab`
+# 解析，`1-5` 会按 APScheduler 的 mon=0 被读成周二~周六，比标准 crontab 整体后移一天）。
+
+
+def _croniter_next_in_shanghai(expr: str) -> datetime:
+    """标准 crontab 语义的**独立参照**（croniter），避免用统一层自证统一层。"""
+    from zoneinfo import ZoneInfo
+
+    base = datetime.now(ZoneInfo(TriggerUtil.TIMEZONE)).replace(tzinfo=None)
+    return croniter(expr, base).get_next(datetime)
+
+
+def _parse_response_datetime(value: str) -> datetime:
+    """响应里的 datetime 一律是 `%Y-%m-%d %H:%M:%S`（见 common/response.py 自定义编码器）。"""
+    return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S")
+
+
+def _minimal_workflow_graph() -> dict:
+    """最小可保存的工作流图（start → end）。"""
+    return {
+        "nodes": [
+            {"id": "start", "type": "start", "data": {"variables": []}},
+            {"id": "end", "type": "end", "data": {"output_template": "ok"}},
+        ],
+        "edges": [{"id": "e1", "source": "start", "target": "end"}],
+    }
+
+
+def test_workflow_schedule_next_run_is_monday(test_client, auth_headers):
+    """工作流定时调度：写入即规范化，下次运行时间来自统一层（改前周字段错位 → 周二）。"""
+    wf = test_client.post(
+        "/api/v1/ai/workflows/create",
+        json={"name": "pytest-A5-定时调度", "graph": _minimal_workflow_graph()},
+        headers=auth_headers,
+    ).json()["data"]["id"]
+    try:
+        url = f"/api/v1/ai/workflows/{wf}/schedule"
+        saved = test_client.put(
+            url,
+            json={"cron": "0 9 * * 1-5", "enabled": True},
+            headers=auth_headers,
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["data"]["cron"] == "0 9 * * mon,tue,wed,thu,fri"
+
+        d = test_client.get(url, headers=auth_headers).json()["data"]
+        assert d["cron"] == "0 9 * * mon,tue,wed,thu,fri"
+        assert d["trigger"] == "cron"
+        assert d["trigger_args"] == "0 9 * * mon,tue,wed,thu,fri"
+
+        next_run = _parse_response_datetime(d["next_run_time"])
+        # 与独立参照（croniter，标准 crontab）一致 → 周字段未错位；且必须落在工作日
+        assert next_run == _croniter_next_in_shanghai("0 9 * * mon,tue,wed,thu,fri")
+        assert next_run.weekday() < 5
+    finally:
+        test_client.request(
+            "DELETE", "/api/v1/ai/workflows/delete", json=[wf], headers=auth_headers
+        )
+
+
+def test_workflow_schedule_rejects_invalid_cron_with_unified_reason(test_client, auth_headers):
+    """工作流定时调度：非法表达式不落库，原因原样来自统一层（跨周区间）。"""
+    wf = test_client.post(
+        "/api/v1/ai/workflows/create",
+        json={"name": "pytest-A5-非法调度", "graph": _minimal_workflow_graph()},
+        headers=auth_headers,
+    ).json()["data"]["id"]
+    try:
+        url = f"/api/v1/ai/workflows/{wf}/schedule"
+        before = test_client.get(url, headers=auth_headers).json()["data"]
+        r = test_client.put(
+            url,
+            json={"cron": "0 9 * * 5-1", "enabled": True},
+            headers=auth_headers,
+        )
+        assert r.status_code != 200
+        assert "跨周" in r.json()["msg"]
+        # 非法表达式不落库：配置与提交前完全一致
+        after = test_client.get(url, headers=auth_headers).json()["data"]
+        assert after == before
+        assert after["trigger_args"] != "0 9 * * 5-1"
+    finally:
+        test_client.request(
+            "DELETE", "/api/v1/ai/workflows/delete", json=[wf], headers=auth_headers
+        )
+
+
+def test_workspace_cron_writes_normalized_cron_and_unified_next_run(test_client, auth_headers):
+    """工作台定时任务：写入即规范化（旧列已删，落 trigger/trigger_args），下次运行来自统一层。"""
+    r = test_client.post(
+        "/api/v1/ai/workspace/cron/create",
+        json={
+            "name": "pytest-A5-定时任务",
+            "description": "",
+            "cron": "0 9 * * 1-5",
+            "target_type": "workflow",
+            "target_id": 1,
+            "enabled": True,
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    created = r.json()["data"]
+    try:
+        assert created["trigger"] == "cron"
+        assert created["trigger_args"] == "0 9 * * mon,tue,wed,thu,fri"
+        assert created["cron"] == "0 9 * * mon,tue,wed,thu,fri"
+        assert _parse_response_datetime(created["next_run_time"]) == (
+            _croniter_next_in_shanghai("0 9 * * mon,tue,wed,thu,fri")
+        )
+
+        # 列表接口读到的是同一份规范化值（不再有自算实现）
+        listed = test_client.get("/api/v1/ai/workspace/cron/list", headers=auth_headers)
+        items = listed.json()["data"]["items"]
+        row = next(x for x in items if x["id"] == created["id"])
+        assert row["trigger_args"] == "0 9 * * mon,tue,wed,thu,fri"
+
+        # 非法表达式：不落库，原因来自统一层
+        bad = test_client.post(
+            "/api/v1/ai/workspace/cron/create",
+            json={
+                "name": "pytest-A5-非法任务",
+                "description": "",
+                "cron": "0 9 * * 5-1",
+                "target_type": "workflow",
+                "target_id": 1,
+                "enabled": True,
+            },
+            headers=auth_headers,
+        )
+        assert bad.status_code != 200
+        assert "跨周" in bad.json()["msg"]
+    finally:
+        test_client.request(
+            "DELETE",
+            "/api/v1/ai/workspace/cron/delete",
+            json=created["id"],
+            headers=auth_headers,
+        )
+
+
+def test_workspace_cron_disable_clears_next_run_via_unified_layer(test_client, auth_headers):
+    """工作台定时任务：禁用后下次运行时间为空（统一层口径），改回启用重新计算。"""
+    created = test_client.post(
+        "/api/v1/ai/workspace/cron/create",
+        json={
+            "name": "pytest-A5-启停",
+            "description": "",
+            "cron": "0 9 * * *",
+            "target_type": "workflow",
+            "target_id": 1,
+            "enabled": True,
+        },
+        headers=auth_headers,
+    ).json()["data"]
+    try:
+        off = test_client.put(
+            f"/api/v1/ai/workspace/cron/update/{created['id']}",
+            json={"enabled": False},
+            headers=auth_headers,
+        ).json()["data"]
+        assert off["enabled"] is False and off["next_run_time"] is None
+        assert off["trigger_args"] == "0 9 * * *"  # 表达式不因禁用被清掉
+
+        on = test_client.put(
+            f"/api/v1/ai/workspace/cron/update/{created['id']}",
+            json={"enabled": True},
+            headers=auth_headers,
+        ).json()["data"]
+        assert on["enabled"] is True
+        assert _parse_response_datetime(on["next_run_time"]) == (
+            _croniter_next_in_shanghai("0 9 * * *")
+        )
+    finally:
+        test_client.request(
+            "DELETE",
+            "/api/v1/ai/workspace/cron/delete",
+            json=created["id"],
+            headers=auth_headers,
+        )
+
+
+def test_train_schedule_writes_normalized_trigger_and_keeps_legacy_field():
+    """训练定时计划：写入即规范化（cron_expr → trigger/trigger_args），列表保留旧字段兼容。"""
+    import asyncio
+    from types import SimpleNamespace as SN
+
+    from app.plugin.module_train.schedule_service import ScheduleService
+
+    def _data(cron_expr: str) -> SN:
+        return SN(
+            name="pytest-A5-定时训练",
+            dataset_id=1,
+            annotation_task_id=None,
+            framework="torchkiln",
+            hyperparams={},
+            cron_expr=cron_expr,
+        )
+
+    auth = SN(user=SN(id=1))
+    created = asyncio.run(ScheduleService.create_schedule(_data("0 9 * * 1-5"), auth))
+    try:
+        rows = asyncio.run(ScheduleService.list_schedules())
+        row = next(r for r in rows if r["id"] == created["id"])
+        assert row["trigger"] == "cron"
+        assert row["trigger_args"] == "0 9 * * mon,tue,wed,thu,fri"
+        # 前端 C 阶段切到新字段之前，列表仍读旧字段 `cron_expr`
+        assert row["cron_expr"] == "0 9 * * mon,tue,wed,thu,fri"
+    finally:
+        asyncio.run(ScheduleService.delete_schedules([created["id"]]))
+
+    with pytest.raises(CustomException) as invalid:
+        asyncio.run(ScheduleService.create_schedule(_data("0 9 * * 5-1"), auth))
+    assert "跨周" in invalid.value.msg
+
+
+def test_write_paths_no_longer_parse_cron_themselves():
+    """源码级锁定：三处写入路径不得再出现旧解析器（from_crontab / croniter 自建判定）。"""
+    import inspect
+
+    from app.plugin.module_ai.workflow import service as workflow_service
+    from app.plugin.module_ai.workspace import service as workspace_service
+    from app.plugin.module_train import schedule_service
+
+    for module in (workspace_service, workflow_service, schedule_service):
+        source = inspect.getsource(module)
+        assert "from_crontab" not in source
+        assert "import croniter" not in source
+        assert "croniter(" not in source
+    assert "_compute_next_run" not in inspect.getsource(workspace_service)
+    assert "TriggerUtil.next_run" in inspect.getsource(workspace_service)
