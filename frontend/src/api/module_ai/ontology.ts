@@ -632,3 +632,26 @@ export function getOntObjectViewLink(code: string, objectKey = "") {
 export function getOntFilterOps() {
   return request({ url: `${API_PATH}/object-view-meta/filters`, method: "get" });
 }
+
+// ---- 大模型自动建模（两段式：预览 → 勾选 → 精确落库）----
+// 预览返回逐条候选（`items`），应用只落用户勾选的那批；**应用阶段不重跑大模型**。
+export function autoModelPreview(data: {
+  datasource: string;
+  scope: "metrics" | "annotations";
+  max_objects?: number;
+  offset?: number;
+}) {
+  return request({
+    url: `${API_PATH}/auto-model/preview`,
+    method: "post",
+    data,
+    timeout: 180000,
+  });
+}
+export function autoModelApply(data: {
+  datasource: string;
+  scope: "metrics" | "annotations";
+  items: any[];
+}) {
+  return request({ url: `${API_PATH}/auto-model/apply`, method: "post", data, timeout: 180000 });
+}

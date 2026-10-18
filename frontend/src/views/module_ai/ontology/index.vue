@@ -16,6 +16,7 @@
             <div class="ont-side__head">
               <span class="ont-side__title">本体</span>
               <el-button
+                v-hasPerm="'module_ai:ontology:edit'"
                 class="ont-side__add"
                 size="small"
                 type="primary"
@@ -49,7 +50,9 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                    <el-dropdown-item command="remove" divided>删除</el-dropdown-item>
+                    <el-dropdown-item v-hasPerm="'module_ai:ontology:edit'" command="remove" divided>
+                      删除
+                    </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -80,6 +83,7 @@
                 >
                   <el-badge :value="wipCount" :max="99" type="warning" class="ont-wip-badge">
                     <el-button
+                      v-hasPerm="'module_ai:ontology:edit'"
                       size="small"
                       type="primary"
                       :icon="Check"
@@ -104,7 +108,7 @@
                   概览
                 </el-button>
                 <el-dropdown trigger="click" @command="onMaint">
-                  <el-button size="small" :icon="Tools">
+                  <el-button v-hasPerm="'module_ai:ontology:edit'" size="small" :icon="Tools">
                     维护
                     <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                   </el-button>
@@ -259,7 +263,8 @@
       </el-form>
       <template #footer>
         <el-button @click="objDialog = false">取消</el-button>
-        <el-button type="primary" :loading="savingObj" @click="saveObj">保存</el-button>
+        <el-button
+        v-hasPerm="'module_ai:ontology:edit'" type="primary" :loading="savingObj" @click="saveObj">保存</el-button>
       </template>
     </el-dialog>
 
@@ -342,7 +347,8 @@
       </el-form>
       <template #footer>
         <el-button @click="linkDialog = false">取消</el-button>
-        <el-button type="primary" :loading="savingObj" @click="saveLink">保存</el-button>
+        <el-button
+        v-hasPerm="'module_ai:ontology:edit'" type="primary" :loading="savingObj" @click="saveLink">保存</el-button>
       </template>
     </el-dialog>
 
@@ -416,7 +422,8 @@
       </el-form>
       <template #footer>
         <el-button @click="actionDialog = false">取消</el-button>
-        <el-button type="primary" :loading="savingObj" @click="saveAction">保存</el-button>
+        <el-button
+        v-hasPerm="'module_ai:ontology:edit'" type="primary" :loading="savingObj" @click="saveAction">保存</el-button>
       </template>
     </el-dialog>
 
@@ -486,7 +493,8 @@
       </div>
       <template #footer>
         <el-button @click="reviewDialog = false">取消</el-button>
-        <el-button type="danger" plain :disabled="wipSaving" @click="discardWip">
+        <el-button
+        v-hasPerm="'module_ai:ontology:edit'" type="danger" plain :disabled="wipSaving" @click="discardWip">
           丢弃全部改动
         </el-button>
         <el-button
@@ -521,7 +529,8 @@
       </el-form>
       <template #footer>
         <el-button @click="domainDialog = false">取消</el-button>
-        <el-button type="primary" :loading="domainSaving" @click="saveDomain">保存</el-button>
+        <el-button
+        v-hasPerm="'module_ai:ontology:edit'" type="primary" :loading="domainSaving" @click="saveDomain">保存</el-button>
       </template>
     </el-dialog>
 

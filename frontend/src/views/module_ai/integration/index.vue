@@ -646,13 +646,13 @@
               <el-empty v-else description="请先选择左侧数据源" />
             </el-tab-pane>
 
-            <!-- 语义建模：大模型自动生成指标/标注（S4） -->
+            <!-- 语义建模：大模型自动生成指标/标注（S4）——**两段式：先预览，再勾选落库** -->
             <el-tab-pane label="AI 辅助建模" name="modeling">
               <el-alert
                 type="info"
                 :closable="false"
                 show-icon
-                title="用大模型对所选数据源自动生成「绑定型指标」与「对象/属性标注」；生成结果可到「指标」标签页查看。"
+                title="用大模型对所选数据源生成「绑定型指标」与「对象/属性标注」。流程是两段式：先「预览」出候选（不落库），你勾选后再精确落库——大模型不会重复跑，落库的就是你看到的那批。"
                 style="margin-bottom: 12px"
               />
               <el-form inline>
@@ -667,16 +667,11 @@
                   <el-button
                     type="primary"
                     :disabled="!curDs"
-                    :loading="modelingLoading"
-                    @click="handleModeling('metrics')"
+                    @click="openAutoModel('metrics')"
                   >
                     生成绑定型指标
                   </el-button>
-                  <el-button
-                    :disabled="!curDs"
-                    :loading="modelingLoading"
-                    @click="handleModeling('annotate')"
-                  >
+                  <el-button :disabled="!curDs" @click="openAutoModel('annotations')">
                     生成对象/属性标注
                   </el-button>
                 </el-form-item>
@@ -690,14 +685,14 @@
                 </el-form-item>
               </el-form>
               <el-descriptions v-if="modelingResult" :column="3" border>
-                <el-descriptions-item label="解析（候选）">
-                  {{ modelingResult.parsed ?? 0 }}
-                </el-descriptions-item>
-                <el-descriptions-item label="落库">
+                <el-descriptions-item label="本次落库">
                   {{ modelingResult.saved ?? 0 }}
                 </el-descriptions-item>
-                <el-descriptions-item label="拒绝">
-                  {{ modelingResult.rejected ?? 0 }}
+                <el-descriptions-item label="落库失败">
+                  {{ modelingResult.reasons?.length ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="范围">
+                  {{ modelingResult.scope === "annotations" ? "对象/属性标注" : "绑定型指标" }}
                 </el-descriptions-item>
               </el-descriptions>
               <el-table
@@ -706,10 +701,19 @@
                 size="small"
                 style="margin-top: 8px"
               >
-                <el-table-column label="拒绝原因" show-overflow-tooltip>
+                <el-table-column label="失败原因" show-overflow-tooltip>
                   <template #default="{ row }">{{ row }}</template>
                 </el-table-column>
               </el-table>
+
+              <!-- 预览 → 勾选 → 应用（对话框 append-to-body，放哪都不影响布局） -->
+              <AutoModelPreviewDialog
+                v-model="autoModelVisible"
+                :datasource="modelingDsCode"
+                :scope="autoModelScope"
+                :max-objects="modelingMax"
+                @applied="onAutoModelApplied"
+              />
             </el-tab-pane>
 
             <!-- 治理：驾驶舱/权限/数据质量/数据域/本体对象（原「治理」菜单并入） -->
@@ -1268,8 +1272,6 @@ import {
   getQueryKgUnified,
   rebuildQueryKg,
   autoLinkQueryKg,
-  runModelingMetrics,
-  runModelingAnnotate,
   extractQueryObjects,
   inferQueryAssetRelations,
 } from "@/api/module_ai/query";
@@ -1277,6 +1279,7 @@ import { getOntDomains, saveOntObject } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
 import GovernancePanel from "./components/GovernancePanel.vue";
 import AssetVersionsDialog from "./components/AssetVersionsDialog.vue";
+import AutoModelPreviewDialog from "./components/AutoModelPreviewDialog.vue";
 import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 
 const tab = ref("table");
@@ -2360,40 +2363,25 @@ onMounted(async () => {
 });
 
 // 语义建模（S4）：大模型自动生成指标/标注
+// **两段式**：按钮只负责打开预览对话框；大模型调用与落库都在 `AutoModelPreviewDialog` 里完成
+// （先预览出候选、用户勾选后精确落库；应用阶段不重跑大模型）。
 const modelingMax = ref(12);
-const modelingLoading = ref(false);
 const modelingResult = ref<any>(null);
 const modelingDsCode = computed(
   () => curDs.value?.code || (curDs.value ? `ds:${curDs.value.id}` : "")
 );
+const autoModelVisible = ref(false);
+const autoModelScope = ref<"metrics" | "annotations">("metrics");
 
-async function handleModeling(kind: "metrics" | "annotate") {
+function openAutoModel(scope: "metrics" | "annotations") {
   if (!curDs.value) return;
-  const label = kind === "metrics" ? "绑定型指标" : "对象/属性标注";
-  try {
-    await ElMessageBox.confirm(
-      `将对「${curDs.value.name}」用大模型自动生成${label}（写入本体/指标库），是否继续？`,
-      "确认生成",
-      { type: "warning", confirmButtonText: "生成", cancelButtonText: "取消" }
-    );
-  } catch {
-    return;
-  }
-  modelingLoading.value = true;
-  try {
-    const fn = kind === "metrics" ? runModelingMetrics : runModelingAnnotate;
-    const r: any = await fn({
-      datasource: modelingDsCode.value,
-      max_objects: modelingMax.value,
-    });
-    modelingResult.value = r?.data ?? r;
-    ElMessage.success("生成完成");
-    await loadMisc();
-  } catch (e: any) {
-    ElMessage.error(e?.message || "生成失败");
-  } finally {
-    modelingLoading.value = false;
-  }
+  autoModelScope.value = scope;
+  autoModelVisible.value = true;
+}
+
+function onAutoModelApplied(result: any) {
+  modelingResult.value = result;
+  void loadMisc();
 }
 
 // 语义抽取对象 / 推断表间关系（此前有 API 无入口，此处接入「语义建模」）

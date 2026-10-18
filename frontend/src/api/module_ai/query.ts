@@ -96,16 +96,9 @@ export function deleteQueryMetrics(ids: number[]) {
 }
 
 // 大模型自动建模（S4）
-export function runModelingMetrics(data: {
-  datasource: string;
-  max_objects?: number;
-  dry?: boolean;
-}) {
-  return request({ url: `${API_PATH}/modeling/metrics`, method: "post", data, timeout: 180000 });
-}
-export function runModelingAnnotate(data: { datasource: string; max_objects?: number }) {
-  return request({ url: `${API_PATH}/modeling/annotate`, method: "post", data, timeout: 180000 });
-}
+// 注意：前端走的是**两段式**入口 `@/api/module_ai/ontology` 的 `autoModelPreview/autoModelApply`
+// （先预览候选、勾选后精确落库）。后端另有 `POST /ai/query/modeling/{metrics,annotate}` 的
+// 「直接落库」路径，仅作程序化/脚本调用，界面不再使用 —— 所以这里不再重复导出。
 export function promoteQueryMetric(data: { message_id: number; name: string; key: string }) {
   return request({ url: `${API_PATH}/metrics/promote`, method: "post", data });
 }

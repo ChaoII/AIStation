@@ -49,6 +49,7 @@
       </el-button-group>
       <el-button
         v-if="multiSelect && selectedNames.length"
+        v-hasPerm="'module_ai:ontology:edit'"
         size="small"
         type="danger"
         plain
@@ -115,9 +116,11 @@
       />
       <el-empty v-else :image-size="70" description="该本体暂无对象类型，右键点空白处新建" />
 
-      <!-- 右键菜单 -->
+      <!-- 右键菜单（**全部是写操作**：编辑/物化/删除/新建 ⇒ 需 edit 权限；
+           只读用户看不到这个菜单，也不会点到会 403 的入口） -->
       <div
         v-if="ctxMenu.visible"
+        v-hasPerm="'module_ai:ontology:edit'"
         class="ont-gw__ctx"
         :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
         @click.stop

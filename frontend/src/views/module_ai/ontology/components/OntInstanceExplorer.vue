@@ -47,7 +47,13 @@
 
     <!-- 批量动作 -->
     <div class="ont-bar">
-      <el-button size="small" type="warning" :disabled="!selection.length" @click="openBulk">
+      <el-button
+        v-hasPerm="'module_ai:ontology:execute'"
+        size="small"
+        type="warning"
+        :disabled="!selection.length"
+        @click="openBulk"
+      >
         批量执行动作（已选 {{ selection.length }}）
       </el-button>
       <el-button size="small" :disabled="!selection.length" @click="openGraphOfSelected">
@@ -142,6 +148,7 @@
               </el-form-item>
             </el-form>
             <el-button
+              v-hasPerm="'module_ai:ontology:execute'"
               type="primary"
               size="small"
               :loading="savingWb"
@@ -176,6 +183,7 @@
           <div class="ont-view__title">可执行动作</div>
           <el-button
             v-for="a in inst.actions"
+            v-hasPerm="'module_ai:ontology:execute'"
             :key="a.code"
             size="small"
             class="ont-view__act"
