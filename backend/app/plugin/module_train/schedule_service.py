@@ -153,16 +153,21 @@ class ScheduleService:
 
     @classmethod
     async def collect_job_specs(cls) -> list[tuple]:
-        """收集「启用且有触发表达式」的计划规格，供启动期 `sync_business_jobs` 一次性注册。
+        """收集「启用且有触发表达式且非 `now`」的计划规格，供启动期 `sync_business_jobs` 注册。
 
         每项为 5 元组 `(job_key, trigger, trigger_args, func, func_args)`。脏表达式不在
         这里过滤：`sync_business_jobs` 会逐条跳过并告警，不会因一行坏配置抹掉其余作业。
+        **一律排除 `now`**（同工作台 / 工作流口径）：`now` 是「保存时的一次性事件」，
+        统一层在**注册时**才把它算成 `DateTrigger(now + 2s)` —— 启动期重建等于
+        「每次服务重启都重跑一次」。
         """
         from .scheduler import run_scheduled_training
 
         specs: list[tuple] = []
         for row in await cls.list_schedules():
-            if not row.get("enabled") or not row.get("trigger_args"):
+            if not row.get("enabled") or (row.get("trigger") or "cron") == "now":
+                continue
+            if not row.get("trigger_args"):
                 continue
             specs.append((
                 train_schedule_job_key(row["id"]),
@@ -254,9 +259,16 @@ class ScheduleService:
                 )
                 s.trigger = trigger
                 s.trigger_args = TriggerUtil.dump_args(trigger, trigger_args)
-            elif getattr(data, "enabled", None) is True and not s.trigger_args:
+            elif (
+                getattr(data, "enabled", None) is True
+                and not s.trigger_args
+                and (s.trigger or "cron") != "now"
+            ):
                 # 本次请求显式「启用」而库里没有表达式：同样不留「已启用但永不触发」的行
-                # （仅改名字等其它字段时不拦，避免把历史坏行变成改不动的行）
+                # （仅改名字等其它字段时不拦，避免把历史坏行变成改不动的行）。
+                # `now` 例外：它按契约**本就没有参数**（`trigger_args` 恒为 NULL），
+                # 不是「未配置」——否则 `now` 行连「重新启用」都会被误报 400
+                # （口径同工作台 `update_cron` / 工作流 `set_schedule`）。
                 raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
             # 提交前取值：会话关闭后实例已过期，属性访问会触发 DetachedInstanceError
             state = (s.trigger, s.trigger_args, bool(s.enabled))

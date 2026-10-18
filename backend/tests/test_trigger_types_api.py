@@ -23,6 +23,7 @@ import uuid
 # 先 import `module_task` 再 import `ap_scheduler` 才能成功。这里固定顺序。
 import app.plugin.module_task  # noqa: F401  解开既有循环导入（先 module_task 后 ap_scheduler）
 from app.core.ap_scheduler import SchedulerUtil
+from app.plugin.module_ai.workflow.service import AiWorkflowService
 from app.plugin.module_ai.workflow.service import _job_key as _workflow_job_key
 from app.plugin.module_ai.workspace.service import _job_key as _workspace_job_key
 from app.plugin.module_train.schedule_service import train_schedule_job_key
@@ -382,3 +383,106 @@ def test_train_schedule_rejects_enabled_empty_trigger(test_client, auth_headers)
     )
     assert r2.status_code == 400, r2.text
     assert r2.json()["msg"] == _EMPTY_TRIGGER_MSG
+
+
+# ============================================================ Task A11：`now` 的更新守卫放行
+
+
+def _stub_train_side_effects(monkeypatch) -> None:
+    """打桩训练执行体两侧：即使一次性作业真的触发，也不得在测试里建任务 / 起容器。"""
+    from app.plugin.module_train import scheduler as train_scheduler
+    from app.plugin.module_train.service import TrainService
+
+    async def _fake_create_task(data, auth):
+        return {"id": 0}
+
+    async def _fake_start_training(task_id):
+        return None
+
+    monkeypatch.setattr(TrainService, "create_task", _fake_create_task)
+    monkeypatch.setattr(train_scheduler, "start_training", _fake_start_training)
+
+
+def _stub_workflow_side_effects(monkeypatch) -> None:
+    """打桩工作流执行体：即使一次性作业真的触发，也不得在测试里真跑工作流。"""
+
+    async def _fake_run_schedule(workflow_id):
+        return None
+
+    monkeypatch.setattr(AiWorkflowService, "run_schedule", _fake_run_schedule)
+
+
+def test_train_schedule_enable_now_row_is_allowed(monkeypatch, test_client, auth_headers):
+    """A11 ③：显式启用一个 `now` 计划（不带触发配置）→ 200，不是 400「请先配置触发时间」。
+
+    更新守卫是「**显式启用** + 无表达式 → 400」，而 `now` 行按契约就是 `trigger_args=NULL`
+    ⇒ 没有 `now` 例外的话，这个行连「重新启用」都做不到。
+    """
+    _stub_train_side_effects(monkeypatch)
+    created = test_client.post(
+        "/api/v1/train/schedule/create",
+        json={
+            "name": _name("训练 now 启用"),
+            "dataset_id": 1,
+            "framework": "torchkiln",
+            "hyperparams": {},
+            "trigger": "now",
+            "trigger_args": None,
+            "cron_expr": "",
+        },
+        headers=auth_headers,
+    )
+    assert created.status_code == 200, created.text
+    sid = created.json()["data"]["id"]
+    SchedulerUtil.remove_business_job(train_schedule_job_key(sid))  # 注册后立刻移除
+    try:
+        off = test_client.put(
+            f"/api/v1/train/schedule/update/{sid}", json={"enabled": False}, headers=auth_headers
+        )
+        assert off.status_code == 200, off.text
+
+        on = test_client.put(
+            f"/api/v1/train/schedule/update/{sid}", json={"enabled": True}, headers=auth_headers
+        )
+        assert on.status_code == 200, on.text  # 不得 400「请先配置触发时间」
+        SchedulerUtil.remove_business_job(train_schedule_job_key(sid))  # 注册后立刻移除
+
+        rows = test_client.get("/api/v1/train/schedule/list", headers=auth_headers).json()["data"]
+        row = next(x for x in rows if x["id"] == sid)
+        assert row["enabled"] is True, row
+        assert row["trigger"] == "now" and row["trigger_args"] is None, row
+    finally:
+        test_client.request(
+            "DELETE", "/api/v1/train/schedule/delete", json=[sid], headers=auth_headers
+        )
+        SchedulerUtil.remove_business_job(train_schedule_job_key(sid))
+
+
+def test_workflow_schedule_enable_now_row_is_allowed(monkeypatch, test_client, auth_headers):
+    """A11 ③：`now` 调度行再次显式启用（不带触发配置）→ 200（`now` 不算「未配置」）。"""
+    _stub_workflow_side_effects(monkeypatch)
+    wid = _create_workflow(test_client, auth_headers)
+    url = f"/api/v1/ai/workflows/{wid}/schedule"
+    try:
+        on = test_client.put(
+            url,
+            json={"trigger": "now", "trigger_args": None, "cron": "", "enabled": True},
+            headers=auth_headers,
+        )
+        assert on.status_code == 200, on.text
+        assert on.json()["data"]["trigger"] == "now", on.text
+        SchedulerUtil.remove_business_job(_workflow_job_key(wid))  # 注册后立刻移除
+
+        # 只切「启用」、不带任何触发配置：`now` 行必须放行（否则永远无法重新启用）
+        re_enable = test_client.put(url, json={"enabled": True}, headers=auth_headers)
+        assert re_enable.status_code == 200, re_enable.text
+        SchedulerUtil.remove_business_job(_workflow_job_key(wid))
+
+        d = re_enable.json()["data"]
+        assert d["enabled"] is True and d["trigger"] == "now", d
+        assert d["trigger_args"] is None, d
+    finally:
+        test_client.request(
+            "DELETE", "/api/v1/ai/workflows/delete", json=[wid], headers=auth_headers
+        )
+        SchedulerUtil.remove_business_job(_workflow_job_key(wid))

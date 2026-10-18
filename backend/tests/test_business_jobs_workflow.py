@@ -364,3 +364,143 @@ def test_register_failure_reports_readable_error_and_clears_ghost_job(
         monkeypatch.undo()
         _delete_workflows(test_client, auth_headers, [wid])
         SchedulerUtil.remove_business_job(job_key)
+
+
+# ============================================================ Task A11：`now` 语义闭环
+
+
+def _put_schedule_trigger(
+    test_client, auth_headers, workflow_id: int, trigger: str, trigger_args, enabled: bool = True
+):
+    """按统一契约保存调度配置（`trigger` + `trigger_args`，兼容字段按类型给值）。"""
+    return test_client.put(
+        f"/api/v1/ai/workflows/{workflow_id}/schedule",
+        json={
+            "trigger": trigger,
+            "trigger_args": trigger_args,
+            "cron": trigger_args if trigger == "cron" else "",
+            "enabled": enabled,
+        },
+        headers=auth_headers,
+    )
+
+
+def _insert_schedule_row(
+    workflow_id: int, trigger: str, trigger_args, enabled: bool = True
+) -> None:
+    """直接落一条调度行（绕过写入口校验，构造「已启用但无表达式」的遗留坏行）。
+
+    直插**不注册作业**，因此不会在测试里被一次性作业意外触发。
+    """
+
+    async def _run() -> None:
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.workflow.model import AiWorkflowScheduleModel
+
+        async with async_db_session.begin() as db:
+            db.add(
+                AiWorkflowScheduleModel(
+                    workflow_id=workflow_id,
+                    trigger=trigger,
+                    trigger_args=trigger_args,
+                    enabled=enabled,
+                )
+            )
+
+    asyncio.run(_run())
+
+
+def test_run_scheduled_workflow_executes_now_row(monkeypatch, test_client, auth_headers):
+    """A11 ①：`trigger="now"`（按契约无参数）的调度行被触发时必须真的运行工作流。
+
+    缺口：执行体守卫写成 `not row.enabled or not row.trigger_args`，而 `now` 的
+    `trigger_args` 恒为 `None` ⇒ A9 把作业注册上了、**触发时又被拦下**，作业空转。
+    """
+    wid = _create_workflow(test_client, auth_headers)
+    job_key = _job_key(wid)
+    try:
+        r = _put_schedule_trigger(test_client, auth_headers, wid, "now", None, True)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["trigger"] == "now", r.text
+        # 立刻移除刚注册的一次性作业（本用例直接调执行体，且断言副作用已被打桩）
+        SchedulerUtil.remove_business_job(job_key)
+
+        calls: list[int] = []
+
+        async def _fake_run_schedule(workflow_id: int) -> None:
+            calls.append(workflow_id)
+
+        monkeypatch.setattr(AiWorkflowService, "run_schedule", _fake_run_schedule)
+        asyncio.run(run_scheduled_workflow(wid))
+        assert calls == [wid], "now 行必须真的运行工作流"
+        assert _get_schedule(test_client, auth_headers, wid)["last_run_time"] is not None
+    finally:
+        SchedulerUtil.remove_business_job(job_key)
+        _delete_workflows(test_client, auth_headers, [wid])
+
+
+def test_run_scheduled_workflow_still_skips_row_without_trigger(
+    monkeypatch, test_client, auth_headers
+):
+    """A11 ④回归：非 `now` 且无表达式的遗留坏行仍被拦（不得因放行 `now` 而放行静默失效）。"""
+    wid = _create_workflow(test_client, auth_headers)
+    job_key = _job_key(wid)
+    try:
+        _insert_schedule_row(wid, "cron", None, enabled=True)
+
+        calls: list[int] = []
+
+        async def _fake_run_schedule(workflow_id: int) -> None:
+            calls.append(workflow_id)
+
+        monkeypatch.setattr(AiWorkflowService, "run_schedule", _fake_run_schedule)
+        asyncio.run(run_scheduled_workflow(wid))
+        assert calls == [], "空表达式的行必须被拦下"
+        assert _get_schedule(test_client, auth_headers, wid)["last_run_time"] is None
+    finally:
+        SchedulerUtil.remove_business_job(job_key)
+        _delete_workflows(test_client, auth_headers, [wid])
+
+
+def test_workflow_collect_job_specs_excludes_now_rows(test_client, auth_headers):
+    """A11 ②：启动期不重建 `now` 行（`DateTrigger` 注册时算 `now + 2s` ⇒ 每次重启都重跑一次）。
+
+    口径：只收「启用且有触发表达式且非 `now`」的行；cron / interval / date 三类照收（回归）。
+    """
+    wf_now = _create_workflow(test_client, auth_headers)
+    wf_cron = _create_workflow(test_client, auth_headers)
+    wf_interval = _create_workflow(test_client, auth_headers)
+    wf_date = _create_workflow(test_client, auth_headers)
+    cases = (
+        (wf_now, "now", None),
+        (wf_cron, "cron", "0 9 * * mon"),
+        (wf_interval, "interval", {"minutes": 30}),
+        (wf_date, "date", "2999-01-01 09:00:00"),
+    )
+    try:
+        for wid, trigger, args in cases:
+            assert (
+                _put_schedule_trigger(
+                    test_client, auth_headers, wid, trigger, args, True
+                ).status_code
+                == 200
+            )
+        # 模拟「服务刚重启」：清掉进程内作业，再看启动同步能否按库里的启用行重建
+        for wid, _trigger, _args in cases:
+            SchedulerUtil.remove_business_job(_job_key(wid))
+
+        specs = asyncio.run(AiWorkflowService.collect_job_specs())
+        keys = {spec[0] for spec in specs}
+        assert _job_key(wf_now) not in keys, "启动期不得重建 now 行（否则每次重启都重跑一次）"
+        for wid, _trigger, _args in cases[1:]:
+            assert _job_key(wid) in keys, "cron / interval / date 行必须照常重建"
+
+        # 启动同步本身也不得把 now 行重新注册进调度器（端到端行为，不只是规格函数）
+        asyncio.run(AiWorkflowService.start_scheduler())
+        assert scheduler.get_job(_job_key(wf_now)) is None
+        for wid, _trigger, _args in cases[1:]:
+            assert scheduler.get_job(_job_key(wid)) is not None
+    finally:
+        for wid, _trigger, _args in cases:
+            SchedulerUtil.remove_business_job(_job_key(wid))
+        _delete_workflows(test_client, auth_headers, [w for w, _t, _a in cases])

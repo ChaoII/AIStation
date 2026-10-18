@@ -88,9 +88,11 @@ async def run_scheduled_training(schedule_id: int) -> None:
     必须是**模块级函数**：中心调度器要按引用解析可调用对象（闭包会走降级路径、
     执行日志落不进库），且日志/排查时要能从作业键定位到这个函数。
 
-    - 触发时**重新读库**确认「仍启用且有触发表达式」：作业与调度行之间存在窗口期
+    - 触发时**重新读库**确认「仍启用且已配置触发」：作业与调度行之间存在窗口期
       （禁用/删除请求刚提交、或同键替换前的最后一次触发），此时静默跳过，
-      绝不因为一条已被停用的计划而创建训练任务；
+      绝不因为一条已被停用的计划而创建训练任务；**`now`（立即执行）例外**：它按契约
+      本就没有参数（`trigger_args` 恒为 `None`），不是「未配置」，漏掉这个例外会让
+      A9 注册上的一次性作业触发时被再次拦下、作业空转；
     - 建任务 + 立即启动，最后回写 `last_run_at` / `last_task_id`（与旧自建轮询行为一致）；
     - 单次触发失败只记日志，不抛出（含回写失败）：调度器里抛错会污染作业状态并可能吞掉后续触发。
     """
@@ -101,8 +103,10 @@ async def run_scheduled_training(schedule_id: int) -> None:
         if s is None:
             log.info(f"定时训练计划 {schedule_id} 已删除，跳过本次触发")
             return
-        if not s.enabled or not s.trigger_args:
-            log.info(f"定时训练计划 {schedule_id} 未启用或未配置触发时间，跳过本次触发")
+        if not s.enabled or not (s.trigger_args or s.trigger == "now"):
+            log.info(
+                f"定时训练计划 {schedule_id} 未启用或未配置触发时间（且非「立即执行」），跳过本次触发"
+            )
             return
         created_id = s.created_id
         task_data = build_scheduled_task_data(s)

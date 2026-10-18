@@ -69,14 +69,22 @@ async def run_scheduled_workspace_cron(cron_id: int) -> None:
     日志里也有可读的函数名（闭包会走降级路径）。
 
     作业与库里的行之间存在窗口期（禁用/删除/改表达式后作业可能还没来得及移除），
-    因此触发时**以库为准**重新判定：行不存在、已删除、已禁用或未配置表达式都直接跳过。
+    因此触发时**以库为准**重新判定：行不存在、已删除、已禁用都直接跳过；
+    **未配置触发表达式也跳过，但 `now`（立即执行）例外** —— 它按契约本就没有参数
+    （`trigger_args` 恒为 `NULL`），不是「未配置」；漏掉这个例外，A9 注册上的一次性作业
+    触发时会被再次拦下，作业空转。
     `next_run_time` 一律由作业回写（单一真源）：运行结束后（无论成败）从作业读回，
     库里的值永远等于作业的值，业务侧不再自算。
     """
     started = datetime.now(ZoneInfo(TriggerUtil.TIMEZONE))
     async with async_db_session() as db:
         row = await db.get(AiWorkspaceCronModel, cron_id)
-        if not row or row.is_deleted or not row.enabled or not row.trigger_args:
+        if (
+            not row
+            or row.is_deleted
+            or not row.enabled
+            or not (row.trigger_args or row.trigger == "now")
+        ):
             return
         target_type, target_id = row.target_type, row.target_id
     try:
@@ -467,7 +475,12 @@ class WorkspaceService:
 
     @classmethod
     def _specs_of(cls, rows: list[AiWorkspaceCronModel]) -> list[tuple]:
-        """把启用行转成中心调度器的作业规格（5 元组，末项为传给作业函数的位置参数）。"""
+        """把启用行转成中心调度器的作业规格（5 元组，末项为传给作业函数的位置参数）。
+
+        **一律排除 `now`**（`trigger == "now"`）：`now` 是「保存时的一次性事件」，
+        统一层在**注册时**才把它算成 `DateTrigger(now + 2s)` —— 若启动期也重建，
+        每次服务重启都会把它重新算成「重启后 2 秒」＝**每次重启都重跑一次**。
+        """
         return [
             (
                 _job_key(r.id),
@@ -477,12 +490,12 @@ class WorkspaceService:
                 (r.id,),
             )
             for r in rows
-            if r.trigger_args
+            if r.trigger_args and (r.trigger or "cron") != "now"
         ]
 
     @classmethod
     async def collect_job_specs(cls) -> list[tuple]:
-        """收集「启用且有触发表达式」的定时任务规格，供启动期 `sync_business_jobs` 注册。
+        """收集「启用且有触发表达式且非 `now`」的定时任务规格，供启动期 `sync_business_jobs` 注册。
 
         每项为 5 元组 `(job_key, trigger, trigger_args, func, func_args)`。脏表达式不在
         这里过滤：`sync_business_jobs` 会逐条跳过并告警，不会因一行坏配置抹掉其余作业。

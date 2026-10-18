@@ -323,6 +323,111 @@ def test_run_scheduled_training_skips_deleted_row(monkeypatch):
     assert calls["created"] == [] and calls["started"] == []
 
 
+# ============================================================ Task A11：`now` 语义闭环
+
+
+def _insert_schedule_row_typed(trigger: str, trigger_args, name: str = "pytest-A11-直插") -> int:
+    """直接落一条指定触发类型的计划行（绕过写入口校验，构造 `now` / 空表达式等场景）。
+
+    直插**不注册作业**，因此不会在测试里被一次性作业意外触发。
+    """
+
+    async def _run() -> int:
+        from app.core.database import async_db_session
+        from app.plugin.module_train.schedule_model import TrainScheduleModel
+
+        async with async_db_session.begin() as db:
+            row = TrainScheduleModel(
+                name=name,
+                dataset_id=1,
+                framework="torchkiln",
+                trigger=trigger,
+                trigger_args=trigger_args,
+            )
+            db.add(row)
+            await db.flush()
+            return row.id
+
+    return asyncio.run(_run())
+
+
+def test_run_scheduled_training_executes_now_row(monkeypatch):
+    """A11 ①：`trigger="now"`（按契约无参数）的行被触发时必须真的建训练任务。
+
+    缺口：执行体守卫写成 `not s.enabled or not s.trigger_args`，而 `now` 的 `trigger_args`
+    恒为 `None` ⇒ A9 把作业注册上了、**触发时又被拦下**，作业空转。
+    """
+    sid = _insert_schedule_row_typed("now", None, name="pytest-A11-now 执行体")
+    calls = _patch_training_side(monkeypatch)
+    try:
+        asyncio.run(train_scheduler.run_scheduled_training(sid))
+        assert calls["created"], "now 行必须真的建训练任务（不得被「未配置触发时间」拦下）"
+        assert calls["started"] == [4242]
+        row = _read_row(sid)
+        assert row["last_task_id"] == 4242, "必须回写本次触发的任务 id"
+        assert row["last_run_at"] is not None, "必须回写执行时间"
+    finally:
+        asyncio.run(ScheduleService.delete_schedules([sid]))
+
+
+def test_run_scheduled_training_still_skips_enabled_row_without_trigger(monkeypatch):
+    """A11 ④回归：非 `now` 且无表达式的行仍被拦（放行 `now` 不等于放行「已启用但永不触发」）。"""
+    sid = _insert_schedule_row_typed("cron", None, name="pytest-A11-空表达式")
+    calls = _patch_training_side(monkeypatch)
+    try:
+        asyncio.run(train_scheduler.run_scheduled_training(sid))
+        assert calls["created"] == [] and calls["started"] == []
+        assert _read_row(sid)["last_run_at"] is None, "被跳过的行不记「刚跑过」"
+    finally:
+        asyncio.run(ScheduleService.delete_schedules([sid]))
+
+
+def test_train_collect_job_specs_excludes_now_rows():
+    """A11 ②：启动期不重建 `now` 行（`DateTrigger` 注册时算 `now + 2s` ⇒ 每次重启都重跑一次）。
+
+    口径：`collect_job_specs` 只收「启用且有触发表达式且非 `now`」的行；cron / interval /
+    date 三类照收（回归）。
+    """
+    now_id = _insert_schedule_row_typed("now", None, name="pytest-A11-now 启动")
+    cron_id = _insert_schedule_row("0 9 * * mon", name="pytest-A11-cron 启动")
+    interval_id = _insert_schedule_row_typed(
+        "interval", '{"minutes": 30}', name="pytest-A11-interval 启动"
+    )
+    date_id = _insert_schedule_row_typed("date", "2999-01-01 09:00:00", name="pytest-A11-date 启动")
+    try:
+        specs = asyncio.run(ScheduleService.collect_job_specs())
+        keys = {spec[0] for spec in specs}
+        assert _job_key(now_id) not in keys, "启动期不得重建 now 行（否则每次重启都重跑一次）"
+        for other in (cron_id, interval_id, date_id):
+            assert _job_key(other) in keys, "cron / interval / date 行必须照常重建"
+    finally:
+        asyncio.run(ScheduleService.delete_schedules([now_id, cron_id, interval_id, date_id]))
+
+
+def test_update_schedule_enabling_now_row_is_allowed():
+    """A11 ③：显式启用一个 `now` 计划（不带触发配置）不得被 400「请先配置触发时间」拦下。
+
+    更新守卫是「**显式启用** + 无表达式 → 400」，而 `now` 行按契约就是 `trigger_args=NULL`
+    ⇒ 没有 `now` 例外的话，这个行连「重新启用」都做不到。
+    """
+    from app.plugin.module_train.schedule_service import remove_train_schedule_job
+
+    sid = _insert_schedule_row_typed("now", None, name="pytest-A11-now 启用")
+    asyncio.run(ScheduleService.update_schedule(sid, SimpleNamespace(enabled=False)))
+    try:
+        # 不得抛 CustomException（400）
+        result = asyncio.run(ScheduleService.update_schedule(sid, SimpleNamespace(enabled=True)))
+        # 立刻移除刚注册的一次性作业：本用例只验证「显式启用不被拦」，不真跑训练
+        remove_train_schedule_job(sid)
+        assert result == {"id": sid}
+        rows = asyncio.run(ScheduleService.list_schedules())
+        row = next(r for r in rows if r["id"] == sid)
+        assert row["enabled"] is True
+        assert row["trigger"] == "now" and row["trigger_args"] is None
+    finally:
+        asyncio.run(ScheduleService.delete_schedules([sid]))
+
+
 def test_run_scheduled_training_swallows_failure_and_keeps_job_healthy(monkeypatch):
     """建任务抛异常：不冒出（只记日志）、回写 last_task_id=None、已注册作业仍健康。"""
     sid = _insert_schedule_row("0 9 * * mon", name="pytest-B4-执行体失败")

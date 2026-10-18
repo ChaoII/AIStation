@@ -363,3 +363,127 @@ def test_workspace_module_has_no_self_polling_and_init_app_registers_per_module(
     assert all("prefixes=" in line and "prefixes=None" not in line for line in sync_calls), (
         sync_calls
     )
+
+
+# ============================================================ Task A11：`now` 语义闭环
+
+
+def _create_cron_typed(test_client, auth_headers, trigger: str, trigger_args) -> int:
+    """按统一契约建一条指定触发类型的启用中定时任务（目标用不存在的 workflow#0）。"""
+    r = test_client.post(
+        "/api/v1/ai/workspace/cron/create",
+        json={
+            "name": _new_name(),
+            "description": "",
+            "trigger": trigger,
+            "trigger_args": trigger_args,
+            # 兼容字段：仅 cron 类型带表达式，其余类型带空串（前端 C4 之后的行为）
+            "cron": trigger_args if trigger == "cron" else "",
+            "target_type": "workflow",
+            "target_id": 0,
+            "enabled": True,
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["data"]["id"]
+
+
+def test_run_scheduled_workspace_cron_executes_now_row(monkeypatch, test_client, auth_headers):
+    """A11 ①：`trigger="now"`（按契约无参数）的行被触发时必须真的执行绑定的资产。
+
+    缺口：执行体守卫写成 `not row.enabled or not row.trigger_args`，而 `now` 的
+    `trigger_args` 恒为 `None` ⇒ A9 把作业注册上了、**触发时又被拦下**，作业空转。
+    """
+    cid = _create_cron_now(test_client, auth_headers, enabled=True)
+    job_key = _job_key(cid)
+    # 立刻移除刚注册的一次性作业（本用例直接调执行体，且断言副作用已被打桩）
+    SchedulerUtil.remove_business_job(job_key)
+
+    calls: list[tuple] = []
+
+    async def _fake_run_target(target_type: str, target_id: int) -> None:
+        calls.append((target_type, target_id))
+
+    monkeypatch.setattr(WorkspaceService, "_run_target", staticmethod(_fake_run_target))
+    try:
+        asyncio.run(run_scheduled_workspace_cron(cid))
+        assert calls == [("workflow", 0)], "now 行必须真的执行绑定的资产"
+        row = _list_row(test_client, auth_headers, cid)
+        assert row["last_run_time"] is not None, "真正执行过的这一轮才回写上次运行时间"
+    finally:
+        SchedulerUtil.remove_business_job(job_key)
+        _delete_cron(test_client, auth_headers, cid)
+
+
+def _insert_cron_row(trigger: str, trigger_args, enabled: bool = True) -> int:
+    """直接落一条指定触发类型的工作台定时任务行（绕过写入口校验，构造空表达式等场景）。
+
+    直插**不注册作业**，因此不会在测试里被一次性作业意外触发。
+    """
+
+    async def _run() -> int:
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.workspace.model import AiWorkspaceCronModel
+
+        async with async_db_session.begin() as db:
+            row = AiWorkspaceCronModel(
+                name=f"pytest-A11-直插-{uuid.uuid4().hex[:6]}",
+                trigger=trigger,
+                trigger_args=trigger_args,
+                target_type="workflow",
+                target_id=0,
+                enabled=enabled,
+            )
+            db.add(row)
+            await db.flush()
+            return row.id
+
+    return asyncio.run(_run())
+
+
+def test_run_scheduled_workspace_cron_still_skips_row_without_trigger(
+    monkeypatch, test_client, auth_headers
+):
+    """A11 ④回归：非 `now` 且无表达式的行仍被拦（不得因放行 `now` 而放行静默失效）。"""
+    cid = _insert_cron_row("cron", None, enabled=True)
+    calls: list[tuple] = []
+
+    async def _fake_run_target(target_type: str, target_id: int) -> None:
+        calls.append((target_type, target_id))
+
+    monkeypatch.setattr(WorkspaceService, "_run_target", staticmethod(_fake_run_target))
+    try:
+        asyncio.run(run_scheduled_workspace_cron(cid))
+        assert calls == [], "空表达式的行必须被拦下"
+        row = _list_row(test_client, auth_headers, cid)
+        assert row["last_run_time"] is None, "被跳过的行不记「刚跑过」"
+    finally:
+        _delete_cron(test_client, auth_headers, cid)
+
+
+def test_workspace_collect_job_specs_excludes_now_rows(test_client, auth_headers):
+    """A11 ②：启动期不重建 `now` 行（`DateTrigger` 注册时算 `now + 2s` ⇒ 每次重启都重跑一次）。
+
+    口径：只收「启用且有触发表达式且非 `now`」的行；cron / interval / date 三类照收（回归）。
+    """
+    cid_now = _create_cron_now(test_client, auth_headers, enabled=True)
+    cid_cron = _create_cron_typed(test_client, auth_headers, "cron", "0 9 * * mon")
+    cid_interval = _create_cron_typed(test_client, auth_headers, "interval", {"minutes": 30})
+    cid_date = _create_cron_typed(test_client, auth_headers, "date", "2999-01-01 09:00:00")
+    keys_all = [_job_key(x) for x in (cid_now, cid_cron, cid_interval, cid_date)]
+    try:
+        # 模拟「服务刚重启」：清掉进程内作业，再看启动同步能否按库里的启用行重建
+        for key in keys_all:
+            SchedulerUtil.remove_business_job(key)
+
+        specs = asyncio.run(WorkspaceService.collect_job_specs())
+        keys = {spec[0] for spec in specs}
+        assert _job_key(cid_now) not in keys, "启动期不得重建 now 行（否则每次重启都重跑一次）"
+        for other in (cid_cron, cid_interval, cid_date):
+            assert _job_key(other) in keys, "cron / interval / date 行必须照常重建"
+    finally:
+        for key in keys_all:
+            SchedulerUtil.remove_business_job(key)
+        for cron_id in (cid_now, cid_cron, cid_interval, cid_date):
+            _delete_cron(test_client, auth_headers, cron_id)
