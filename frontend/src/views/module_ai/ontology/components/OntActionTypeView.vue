@@ -357,7 +357,7 @@
           <el-input v-model="testForm.params[f.key]" :placeholder="f.key" />
         </el-form-item>
       </el-form>
-      <el-button type="primary" size="small" :loading="testing" @click="runTest">运行</el-button>
+      <el-button type="primary" size="small" :loading="testing" v-hasPerm="'module_ai:ontology:execute'" @click="runTest">运行</el-button>
       <template v-if="testResult">
         <el-divider />
         <el-alert
@@ -474,7 +474,7 @@
       />
       <template #footer>
         <el-button @click="execDialog = false">关闭</el-button>
-        <el-button type="primary" :loading="execLoading" @click="runExec">执行</el-button>
+        <el-button type="primary" :loading="execLoading" v-hasPerm="'module_ai:ontology:execute'" @click="runExec">执行</el-button>
       </template>
     </el-dialog>
   </div>

@@ -15,9 +15,9 @@
         <el-button class="ont-sec__op" size="small" type="primary" :icon="Plus" @click="openForm()">
           新建索引
         </el-button>
-        <el-button size="small" :icon="MagicStick" @click="openSuggest">索引建议</el-button>
-        <el-button size="small" :loading="busy" @click="doBuildAll">构建全部待建</el-button>
-        <el-button size="small" @click="doRetry">执行到期重试</el-button>
+        <el-button size="small" :icon="MagicStick" v-hasPerm="'module_ai:ontology:manage'" @click="openSuggest">索引建议</el-button>
+        <el-button size="small" :loading="busy" v-hasPerm="'module_ai:ontology:manage'" @click="doBuildAll">构建全部待建</el-button>
+        <el-button size="small" v-hasPerm="'module_ai:ontology:manage'" @click="doRetry">执行到期重试</el-button>
         <el-button size="small" :icon="Refresh" @click="load">刷新</el-button>
       </div>
       <el-alert
@@ -86,10 +86,10 @@
             </el-table-column>
             <el-table-column label="操作" width="150" align="center" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" :loading="busy" @click="doBuild(row)">
+                <el-button link type="primary" size="small" :loading="busy" v-hasPerm="'module_ai:ontology:manage'" @click="doBuild(row)">
                   构建
                 </el-button>
-                <el-button link type="danger" size="small" @click="doRemove(row)">删除</el-button>
+                <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:manage'" @click="doRemove(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -118,10 +118,10 @@
             <el-table-column prop="size_human" label="占用" width="110" align="right" />
             <el-table-column label="操作" width="180" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="doBuildObject(row)">
+                <el-button link type="primary" size="small" v-hasPerm="'module_ai:ontology:manage'" @click="doBuildObject(row)">
                   全部构建
                 </el-button>
-                <el-button link type="warning" size="small" @click="doStale(row)">
+                <el-button link type="warning" size="small" v-hasPerm="'module_ai:ontology:manage'" @click="doStale(row)">
                   标记过期
                 </el-button>
               </template>
@@ -173,7 +173,7 @@
       </el-form>
       <template #footer>
         <el-button @click="formVisible = false">取消</el-button>
-        <el-button type="primary" :loading="busy" @click="doSave">保存并构建</el-button>
+        <el-button type="primary" :loading="busy" v-hasPerm="'module_ai:ontology:manage'" @click="doSave">保存并构建</el-button>
       </template>
     </el-dialog>
 
@@ -207,8 +207,8 @@
       </el-table>
       <template #footer>
         <el-button @click="sugVisible = false">取消</el-button>
-        <el-button :loading="busy" @click="doApplySuggestions(false)">全部创建</el-button>
-        <el-button type="primary" :loading="busy" @click="doApplySuggestions(true)">
+        <el-button :loading="busy" v-hasPerm="'module_ai:ontology:manage'" @click="doApplySuggestions(false)">全部创建</el-button>
+        <el-button type="primary" :loading="busy" v-hasPerm="'module_ai:ontology:manage'" @click="doApplySuggestions(true)">
           只创建高优先级
         </el-button>
       </template>

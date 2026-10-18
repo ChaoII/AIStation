@@ -74,7 +74,7 @@
               type="success"
               size="small"
               :disabled="!row.can_merge"
-              @click="doMerge(row)"
+              v-hasPerm="'module_ai:ontology:manage'" @click="doMerge(row)"
             >
               合并
             </el-button>
@@ -83,7 +83,7 @@
               type="danger"
               size="small"
               :disabled="row.stage === 'merged' || row.stage === 'closed'"
-              @click="doClose(row)"
+              v-hasPerm="'module_ai:ontology:manage'" @click="doClose(row)"
             >
               关闭
             </el-button>
@@ -110,7 +110,7 @@
       />
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="busy" @click="doCreate">创建</el-button>
+        <el-button type="primary" :loading="busy" v-hasPerm="'module_ai:ontology:manage'" @click="doCreate">创建</el-button>
       </template>
     </el-dialog>
 
@@ -157,7 +157,7 @@
             size="small"
             type="success"
             :disabled="detail.stage === 'merged' || detail.stage === 'closed'"
-            @click="doReviewAll(true)"
+            v-hasPerm="'module_ai:ontology:manage'" @click="doReviewAll(true)"
           >
             批量批准
           </el-button>
@@ -166,7 +166,7 @@
             type="danger"
             plain
             :disabled="detail.stage === 'merged' || detail.stage === 'closed'"
-            @click="doReviewAll(false)"
+            v-hasPerm="'module_ai:ontology:manage'" @click="doReviewAll(false)"
           >
             批量拒绝
           </el-button>
@@ -205,7 +205,7 @@
                 type="success"
                 size="small"
                 :disabled="row.status === 'approved' || detail.stage === 'merged'"
-                @click="doReview(row, true)"
+                v-hasPerm="'module_ai:ontology:manage'" @click="doReview(row, true)"
               >
                 批准
               </el-button>
@@ -214,7 +214,7 @@
                 type="danger"
                 size="small"
                 :disabled="row.status === 'rejected' || detail.stage === 'merged'"
-                @click="doReview(row, false)"
+                v-hasPerm="'module_ai:ontology:manage'" @click="doReview(row, false)"
               >
                 拒绝
               </el-button>
@@ -223,7 +223,7 @@
                 type="info"
                 size="small"
                 :disabled="detail.stage === 'merged'"
-                @click="doDiscard(row)"
+                v-hasPerm="'module_ai:ontology:manage'" @click="doDiscard(row)"
               >
                 丢弃
               </el-button>
@@ -261,7 +261,7 @@
         </el-collapse>
 
         <div class="ont-pr__actions">
-          <el-button type="success" :disabled="!canMerge" @click="doMerge(detail)">
+          <el-button type="success" :disabled="!canMerge" v-hasPerm="'module_ai:ontology:manage'" @click="doMerge(detail)">
             合并到主本体
           </el-button>
           <el-button
@@ -274,7 +274,7 @@
             type="danger"
             plain
             :disabled="detail.stage === 'merged' || detail.stage === 'closed'"
-            @click="doClose(detail)"
+            v-hasPerm="'module_ai:ontology:manage'" @click="doClose(detail)"
           >
             关闭提案
           </el-button>
@@ -306,7 +306,7 @@
       />
       <template #footer>
         <el-button @click="reviewerVisible = false">取消</el-button>
-        <el-button type="primary" :loading="busy" @click="doRequestReview">请求审查</el-button>
+        <el-button type="primary" :loading="busy" v-hasPerm="'module_ai:ontology:manage'" @click="doRequestReview">请求审查</el-button>
       </template>
     </el-dialog>
   </div>

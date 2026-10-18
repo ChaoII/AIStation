@@ -16,7 +16,7 @@
         <el-button class="ont-sec__op" type="primary" size="small" :icon="Plus" @click="openForm()">
           新建场景
         </el-button>
-        <el-button size="small" :disabled="checked.length < 2" @click="doCompare">
+        <el-button size="small" :disabled="checked.length < 2" v-hasPerm="'module_ai:ontology:edit'" @click="doCompare">
           对比选中（{{ checked.length }}）
         </el-button>
         <el-button size="small" :icon="Refresh" @click="load">刷新</el-button>
@@ -82,21 +82,21 @@
               link
               type="success"
               size="small"
-              @click="doApply(row)"
+              v-hasPerm="'module_ai:ontology:edit'" @click="doApply(row)"
             >
               合并
             </el-button>
-            <el-button link type="primary" size="small" @click="doDuplicate(row)">复制</el-button>
+            <el-button link type="primary" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="doDuplicate(row)">复制</el-button>
             <el-button
               v-if="row.status === 'active'"
               link
               type="warning"
               size="small"
-              @click="doDiscard(row)"
+              v-hasPerm="'module_ai:ontology:edit'" @click="doDiscard(row)"
             >
               丢弃
             </el-button>
-            <el-button link type="danger" size="small" @click="doRemove(row)">删除</el-button>
+            <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="doRemove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -144,7 +144,7 @@
       </el-form>
       <template #footer>
         <el-button @click="formVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="doSave">保存</el-button>
+        <el-button type="primary" :loading="saving" v-hasPerm="'module_ai:ontology:edit'" @click="doSave">保存</el-button>
       </template>
     </el-dialog>
 
@@ -248,11 +248,11 @@
         </el-table>
 
         <div class="ont-scn__actions">
-          <el-button v-if="detail.status === 'active'" type="success" @click="doApply(detail)">
+          <el-button v-if="detail.status === 'active'" type="success" v-hasPerm="'module_ai:ontology:edit'" @click="doApply(detail)">
             合并到主本体
           </el-button>
-          <el-button v-if="detail.status === 'active'" @click="doDiscard(detail)">丢弃</el-button>
-          <el-button @click="doDuplicate(detail)">复制</el-button>
+          <el-button v-if="detail.status === 'active'" v-hasPerm="'module_ai:ontology:edit'" @click="doDiscard(detail)">丢弃</el-button>
+          <el-button v-hasPerm="'module_ai:ontology:edit'" @click="doDuplicate(detail)">复制</el-button>
         </div>
       </template>
     </el-drawer>

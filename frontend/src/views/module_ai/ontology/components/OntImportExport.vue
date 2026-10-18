@@ -37,10 +37,10 @@
         placeholder="粘贴本体 JSON，或点上方「选择 JSON 文件」读取。格式与导出一致。"
       />
       <div class="ont-imp__actions">
-        <el-button size="small" :loading="transferLoading" @click="doImport('stage')">
+        <el-button size="small" :loading="transferLoading" v-hasPerm="'module_ai:ontology:edit'" @click="doImport('stage')">
           暂存导入
         </el-button>
-        <el-button size="small" type="danger" :loading="transferLoading" @click="doImport('apply')">
+        <el-button size="small" type="danger" :loading="transferLoading" v-hasPerm="'module_ai:ontology:edit'" @click="doImport('apply')">
           直接导入
         </el-button>
       </div>

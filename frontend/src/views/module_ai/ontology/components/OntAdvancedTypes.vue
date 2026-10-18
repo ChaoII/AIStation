@@ -41,7 +41,7 @@
         <el-table-column label="操作" width="130" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openGroup(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="delGroup(row)">删</el-button>
+            <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="delGroup(row)">删</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -83,7 +83,7 @@
         <el-table-column label="操作" width="130" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openVt(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="delVt(row)">删</el-button>
+            <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="delVt(row)">删</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -130,7 +130,7 @@
         <el-table-column label="操作" width="130" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openSp(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="delSp(row)">删</el-button>
+            <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="delSp(row)">删</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -184,7 +184,7 @@
         <el-table-column label="操作" width="130" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openIf(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="delIf(row)">删</el-button>
+            <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="delIf(row)">删</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -332,7 +332,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dlg = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        <el-button type="primary" :loading="saving" v-hasPerm="'module_ai:ontology:edit'" @click="save">保存</el-button>
       </template>
     </el-dialog>
   </div>

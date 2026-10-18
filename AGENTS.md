@@ -461,6 +461,42 @@ curl http://127.0.0.1:8002/openapi.json   # 新字段/新路由是否出现？
 
 ---
 
+## 调试记忆：`v-hasPerm` 的值必须是**字符串表达式**（漏引号 = 整页白屏）
+
+给 Vue 模板批量插按钮权限时，**值要带内层单引号**：
+
+```html
+<!-- ✅ 正确：指令拿到的是字符串 'module_ai:ontology:manage' -->
+<el-button v-hasPerm="'module_ai:ontology:manage'" @click="save">保存</el-button>
+
+<!-- ❌ 错误：裸标识符带冒号，vue-tsc 报 TS1005（',' expected），页面白屏 -->
+<el-button v-hasPerm="module_ai:ontology:manage" @click="save">保存</el-button>
+```
+
+实测代价：脚本化批量插入（约 68 处）第一次写成后者，`pnpm run type-check` 报一堆 `TS1005`、
+e2e 连 `auth.setup` 都挂（前端编译不过），排查了一轮才发现是引号问题 —— **不是插入位置的问题**。
+
+排查提示：`TS1005: ',' expected` 出现在 `.vue` 的模板行上，优先怀疑**属性值不是合法 JS 表达式**
+（漏引号、裸冒号标识符），而不是模板结构被改坏。
+
+---
+
+## 调试记忆：dev server 会静默死掉，e2e 失败先查端口
+
+实测：前端 5181 / 后端 8002 都可能**无声无息地没了**（日志无 traceback）。此时 Playwright 报
+`net::ERR_CONNECTION_REFUSED`（连 `auth.setup` 登录都失败），很容易误判成"我刚改的代码坏了"。
+
+规矩：**e2e 报连接被拒时，先确认两个端口**，再怀疑代码：
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:5181/web/ -TimeoutSec 10      # 前端
+Invoke-WebRequest http://127.0.0.1:8002/api/v1/system/auth/auto-login/users -TimeoutSec 10  # 后端
+```
+
+后端重启后**要等约 60-90 秒**（含模型焐热）才算就绪，别在 30 秒时就断言"起不来"。
+
+---
+
 ## OCR 模型规格（pytorch-ocr）
 
 ### PP-OCRv6 det 规格（configs/det/PP-OCRv6/*.yml）

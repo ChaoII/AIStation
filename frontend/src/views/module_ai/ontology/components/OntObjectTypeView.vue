@@ -20,7 +20,7 @@
         </el-tag>
       </div>
       <div class="ont-obj__ops">
-        <el-button size="small" :icon="MagicStick" @click="doMaterialize">物化为表</el-button>
+        <el-button size="small" :icon="MagicStick" v-hasPerm="'module_ai:ontology:edit'" @click="doMaterialize">物化为表</el-button>
         <el-button size="small" :icon="Edit" @click="emit('edit-object')">编辑</el-button>
       </div>
     </div>
@@ -597,7 +597,7 @@
           </el-form-item>
           <el-form-item label="试算">
             <el-input v-model="derivedKey" placeholder="实例主键，如 1" style="width: 140px" />
-            <el-button size="small" :loading="derivedRunning" @click="tryDerived">试算</el-button>
+            <el-button size="small" :loading="derivedRunning" v-hasPerm="'module_ai:ontology:edit'" @click="tryDerived">试算</el-button>
             <span v-if="derivedResult !== null" class="ont-hint">结果：{{ derivedResult }}</span>
           </el-form-item>
           <el-alert
@@ -689,7 +689,7 @@
       />
       <template #footer>
         <el-button @click="execDialog = false">关闭</el-button>
-        <el-button type="primary" :loading="execLoading" @click="runExec">执行</el-button>
+        <el-button type="primary" :loading="execLoading" v-hasPerm="'module_ai:ontology:execute'" @click="runExec">执行</el-button>
       </template>
     </el-dialog>
   </div>

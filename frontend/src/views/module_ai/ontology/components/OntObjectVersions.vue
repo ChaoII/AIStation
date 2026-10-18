@@ -45,7 +45,7 @@
             type="primary"
             size="small"
             :loading="restoringId === row.id"
-            @click="restore(row)"
+            v-hasPerm="'module_ai:ontology:edit'" @click="restore(row)"
           >
             恢复
           </el-button>
