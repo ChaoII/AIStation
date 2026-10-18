@@ -6,19 +6,26 @@ from app.utils.trigger_util import TriggerUtil
 
 from .schedule_model import TrainScheduleModel
 
+#: 启用中的定时计划必须有触发表达式：空表达式 = 「已启用但永不触发」的静默失效。
+#: 三处写入路径（工作台 / 工作流 / 训练）口径必须一致（同文案）。
+_EMPTY_TRIGGER_MSG = "请先配置触发时间（分 时 日 月 周）"
 
-def _resolve_trigger(cron_expr: str | None) -> tuple[str, str | None]:
+
+def _resolve_trigger(cron_expr: str | None, enabled: bool) -> tuple[str, str | None]:
     """把 `cron_expr` 入参解析为 `(trigger, trigger_args)`（统一层是唯一口径）。
 
-    - 非空表达式：先 `TriggerUtil.validate`（非法 → `CustomException`，原因原样回显），
-      再 `TriggerUtil.normalize` —— 写入即规范化（`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）；
-    - 空值：视为「未配置」（`trigger_args=None`），不调用校验（空串是「清空配置」的既有语义）。
+    - 非空表达式：先 `TriggerUtil.validate`（非法 → 400，原因原样回显），再 `TriggerUtil.normalize`
+      —— 写入即规范化（`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）；
+    - 空值 + **启用中**：明确报错（不留「已启用但永不触发」的静默失效）；
+    - 空值 + 未启用：视为「未配置」（`trigger_args=None`），保住「关闭调度 / 清空配置」语义。
     """
     if not cron_expr or not str(cron_expr).strip():
+        if enabled:
+            raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
         return "cron", None
     ok, reason = TriggerUtil.validate("cron", cron_expr)
     if not ok:
-        raise CustomException(msg=reason)
+        raise CustomException(msg=reason, code=400, status_code=400)
     trigger, args = TriggerUtil.normalize("cron", cron_expr)
     return trigger, args
 
@@ -26,11 +33,13 @@ def _resolve_trigger(cron_expr: str | None) -> tuple[str, str | None]:
 def _schedule_to_dict(row) -> dict:
     """仅导出列，避免 dict(__dict__) 带入 _sa_instance_state 导致序列化 500。
 
-    另附兼容字段 `cron_expr`（= `trigger == "cron"` 时的 `trigger_args`）：前端 C 阶段
-    切到 `trigger`/`trigger_args` 之前，列表与表单仍读旧字段名。
+    另附兼容字段 `cron_expr`（= `trigger` 为 `cron` 时的 `trigger_args`）：前端 C 阶段
+    切到 `trigger`/`trigger_args` 之前，列表与表单仍读旧字段名。`trigger` 为 NULL 的历史行
+    按 `cron` 兜底，与另两处响应（`_cron_dict` / `_schedule_dict`）口径一致。
     """
     data = {c.name: getattr(row, c.name) for c in row.__table__.columns}
-    data["cron_expr"] = (data.get("trigger_args") or "") if data.get("trigger") == "cron" else ""
+    is_cron = (data.get("trigger") or "cron") == "cron"
+    data["cron_expr"] = (data.get("trigger_args") or "") if is_cron else ""
     return data
 
 
@@ -53,7 +62,9 @@ class ScheduleService:
         # 用户根本看不出根源是建计划时选了个已退场的框架。
         ensure_active(data.framework, action="定时训练")
 
-        trigger, trigger_args = _resolve_trigger(data.cron_expr)
+        # 新建的定时计划默认启用（`TrainScheduleModel.enabled` 默认 True，创建 schema 无该字段），
+        # 因此空表达式必须当场报错，不能落一条永不触发的行。
+        trigger, trigger_args = _resolve_trigger(data.cron_expr, True)
         async with async_db_session.begin() as db:
             s = TrainScheduleModel(
                 name=data.name,
@@ -95,7 +106,12 @@ class ScheduleService:
                     setattr(s, key, val)
             new_cron = getattr(data, "cron_expr", None)
             if new_cron is not None:
-                s.trigger, s.trigger_args = _resolve_trigger(new_cron)
+                # `s.enabled` 已按本次请求更新（上面循环），故按「生效后是否启用」判定
+                s.trigger, s.trigger_args = _resolve_trigger(new_cron, bool(s.enabled))
+            elif getattr(data, "enabled", None) is True and not s.trigger_args:
+                # 本次请求显式「启用」而库里没有表达式：同样不留「已启用但永不触发」的行
+                # （仅改名字等其它字段时不拦，避免把历史坏行变成改不动的行）
+                raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
             return {"id": s.id}
 
     @classmethod

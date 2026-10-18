@@ -30,6 +30,11 @@ _TYPE_ICON = {
 }
 
 
+#: 启用中的定时任务必须有触发表达式：空表达式 = 「已启用但永不触发」的静默失效，
+#: 用户看不到任何提示。三处写入路径（工作台 / 工作流 / 训练）口径必须一致。
+_EMPTY_TRIGGER_MSG = "请先配置触发时间（分 时 日 月 周）"
+
+
 def _is_image_icon(icon: str) -> bool:
     """判断图标是否为图片路径（http(s)/图片扩展名/agent-icons 等），非图片则用类型默认图标。"""
     i = (icon or "").strip()
@@ -277,33 +282,39 @@ class WorkspaceService:
         }
 
     @staticmethod
-    def _resolve_trigger(cron: str | None) -> tuple[str, str | None]:
-        """把（当前仅有的）`cron` 入参解析为 `(trigger, trigger_args)`。
+    def _resolve_trigger(cron: str | None, enabled: bool) -> tuple[str, str | None]:
+        """把 `cron` 入参解析为 `(trigger, trigger_args)`（统一层是唯一口径）。
 
-        - 非空表达式：先 `TriggerUtil.validate`（非法 → `CustomException`，原因原样回显），
-          再 `TriggerUtil.normalize` —— 写入即规范化（`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）；
-        - 空值：视为「未配置」，直接落 `trigger_args=None`。空串在前端是「清空调度配置」的既有
-          语义（未填表达式时点保存），而统一层把空表达式判为非法——若不特判，会把「关闭调度」
-          也挡成错误。
+        - 非空表达式：先 `TriggerUtil.validate`（非法 → 400，原因原样回显），再 `TriggerUtil.normalize`
+          —— 写入即规范化（`0 9 * * 1-5` → `0 9 * * mon,tue,wed,thu,fri`）；
+        - 空值 + **启用中**：明确报错。否则会落一条「已启用但永不触发」的行：建行成功、
+          `next_run_time` 为空、永不执行，用户完全无感知（静默失效）；
+        - 空值 + 未启用：视为「未配置」（`trigger_args=None`），保住「关闭调度 / 清空配置」语义。
         """
         if not cron or not str(cron).strip():
+            if enabled:
+                raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
             return "cron", None
         ok, reason = TriggerUtil.validate("cron", cron)
         if not ok:
-            raise CustomException(msg=reason)
+            raise CustomException(msg=reason, code=400, status_code=400)
         trigger, args = TriggerUtil.normalize("cron", cron)
         return trigger, args
 
     @staticmethod
-    def _next_run_time(trigger: str, trigger_args) -> datetime | None:
-        """下次运行时间一律来自统一层；未配置表达式（历史空行）返回 `None`。"""
+    def _next_run_time(trigger: str | None, trigger_args) -> datetime | None:
+        """下次运行时间一律来自统一层；未配置表达式（历史空行）返回 `None`。
+
+        `trigger` 为 NULL 的历史行按 `cron` 兜底（与 `_cron_dict` 同口径）：否则统一层会抛
+        「未知触发类型」，被调用方的 `except` 吞掉后**静默把用户任务置为禁用**。
+        """
         if not trigger_args:
             return None
-        return TriggerUtil.next_run(trigger, trigger_args)
+        return TriggerUtil.next_run(trigger or "cron", trigger_args)
 
     @classmethod
     async def create_cron(cls, data, auth) -> dict:
-        trigger, trigger_args = cls._resolve_trigger(data.cron)
+        trigger, trigger_args = cls._resolve_trigger(data.cron, bool(data.enabled))
         next_run = cls._next_run_time(trigger, trigger_args) if data.enabled else None
         async with async_db_session.begin() as db:
             row = AiWorkspaceCronModel(
@@ -341,7 +352,10 @@ class WorkspaceService:
                 if val is not None:
                     setattr(row, key, val)
             if data.cron is not None:
-                row.trigger, row.trigger_args = cls._resolve_trigger(data.cron)
+                row.trigger, row.trigger_args = cls._resolve_trigger(data.cron, bool(row.enabled))
+            elif data.enabled is True and not row.trigger_args:
+                # 只切「启用」而库里没有表达式：同样不留「已启用但永不触发」的行
+                raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
             # 重新计算下次运行（表达式或启停变化时；一律走统一层）
             if data.cron is not None or data.enabled is not None:
                 row.next_run_time = (

@@ -7,6 +7,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 
@@ -29,6 +30,9 @@ from .schema import AiWorkflowApproveSchema
 _ENGINE_END = object()
 #: 取消看门狗轮询间隔（秒）：查得勤才能做到「秒停」
 _WATCH_INTERVAL = 0.2
+#: 启用中的调度必须有触发表达式：空表达式 = 「已启用但永不触发」的静默失效。
+#: 三处写入路径（工作台 / 工作流 / 训练）口径必须一致（同文案）。
+_EMPTY_TRIGGER_MSG = "请先配置触发时间（分 时 日 月 周）"
 
 
 def _to_dict(w: AiWorkflowModel) -> dict:
@@ -1001,15 +1005,19 @@ class AiWorkflowService:
     async def set_schedule(cls, workflow_id: int, cron: str | None, enabled: bool) -> dict:
         """保存调度配置：写入规范化后的表达式，下次运行时间来自统一层。
 
-        入参仍是旧的 `cron` 单字段（前端 C 阶段才切到 `trigger`/`trigger_args`）；
-        空表达式视为「未配置」（清空调度），不调用校验——那会把「关闭调度」挡成错误。
+        入参仍是旧的 `cron` 单字段（前端 C 阶段才切到 `trigger`/`trigger_args`）：
+        - 非空表达式：`TriggerUtil.validate`（非法 → 400，原因原样回显）→ `normalize`；
+        - 空值 + **启用中**：明确报错（否则会落一条「已启用但永不触发」的行，用户无感知）；
+        - 空值 + 未启用：视为「未配置」（清空调度），保住「关闭调度」语义。
         """
         if not cron or not str(cron).strip():
+            if enabled:
+                raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
             trigger, trigger_args = "cron", None
         else:
             ok, reason = TriggerUtil.validate("cron", cron)
             if not ok:
-                raise CustomException(msg=reason)
+                raise CustomException(msg=reason, code=400, status_code=400)
             trigger, trigger_args = TriggerUtil.normalize("cron", cron)
         next_run = TriggerUtil.next_run(trigger, trigger_args) if enabled and trigger_args else None
         async with async_db_session() as db:
@@ -1110,14 +1118,26 @@ class AiWorkflowService:
             0,
         )
 
+    @staticmethod
+    def _is_due(next_run_time, now) -> bool:
+        """该调度是否到期。
+
+        **未配置（`next_run_time is None`）不算到期** —— 那是「不执行」，不是「每分钟执行」：
+        原先把它当到期，会让没配表达式的工作流每 60 秒跑一次。
+        `next_run_time` 为 naive（SQLite）时按 `Asia/Shanghai` 解释，与统一层的口径一致。
+        """
+        if next_run_time is None:
+            return False
+        if next_run_time.tzinfo is None:
+            next_run_time = next_run_time.replace(tzinfo=ZoneInfo(TriggerUtil.TIMEZONE))
+        return next_run_time <= now
+
     @classmethod
     async def start_scheduler(cls) -> None:
         """后台轮询任务：每分钟检查到期调度并运行。"""
         import asyncio
-        from zoneinfo import ZoneInfo
 
-        # 下次运行时间来自统一层（Asia/Shanghai）：比较统一到该时区的时刻，
-        # 避免 PG 的 timestamptz（aware）与 naive 混用抛异常
+        # 下次运行时间来自统一层（Asia/Shanghai）：比较统一到该时区的时刻
         timezone = ZoneInfo(TriggerUtil.TIMEZONE)
         while True:
             try:
@@ -1131,11 +1151,7 @@ class AiWorkflowService:
                         )
                     ).scalars().all()
                 for row in rows:
-                    due_at = row.next_run_time
-                    if due_at is not None and due_at.tzinfo is None:
-                        due_at = due_at.replace(tzinfo=timezone)
-                    due = due_at is None or due_at <= now
-                    if due:
+                    if cls._is_due(row.next_run_time, now):
                         try:
                             await cls.run_schedule(row.workflow_id)
                         except Exception:  # noqa: BLE001
