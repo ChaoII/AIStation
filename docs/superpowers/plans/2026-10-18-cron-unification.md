@@ -1143,6 +1143,9 @@ git commit -m "feat(ui): 系统定时任务节点页统一为 TriggerEditor，�
 - C6 审查 Minor 2：`trigger-node.spec.ts` 依赖「新节点落在列表第一页」，但列表默认 `id asc` + `pageSize: 10` → 建议按名称过滤或用接口查 id 直达。
 - C6 审查 Minor 3：补一条「旧编辑器已消失」断言（`.vue3-cron-plus-container` 计数为 0），姊妹 spec 已有此写法。
 - C6 审查 Minor 4：`trigger-node.spec.ts` 手写 login → 复用 `e2e/anno-helper.ts` 的 `login`；`request.delete(...).catch(() => {})` 是无效防御（对非 2xx 不抛异常）→ 删。
+- **C7a 审查 Minor 1（顺手收口）**：预览 URL 默认值**双源** —— `TriggerEditor/index.vue:144` 是字面量 `"/ai/workspace/trigger/preview"`，
+  而 `api/module_ai/workspace.ts:121` 是 `` `${WS_PATH}/trigger/preview` ``；今天相等，但 `WS_PATH` 一旦改名组件默认值会**静默漂移**且前端无单测可捕获。
+  修法：从 api 侧导出共享常量，组件默认值复用它（`withDefaults` 只在 `undefined` 时生效，故不要传空串）。
 
 - [ ] **Step 1: 补一条"非法表达式被拦"的 e2e**：四处任选一处填 `0 0 9 L * *` → 断言前端提示非法且保存被拒（不落库）
 - [ ] **Step 2: 顺序跑四个入口的 e2e**（**必须顺序**，并发会争用 `auth.setup` 的 storageState）：
