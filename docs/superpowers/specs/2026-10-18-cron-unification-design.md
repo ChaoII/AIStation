@@ -1,7 +1,7 @@
 # cron 表达式统一（5 段标准 crontab）设计规格
 
 日期：2026-10-18
-状态：待评审
+状态：待评审（阶段 A 口径统一 + 阶段 B 调度入口统一）
 
 ## 1. 背景
 
@@ -71,8 +71,14 @@
    同时接受名称 `mon…sun`（大小写不敏感）。
 3. **一处实现**：校验、规范化、触发器构造全部收敛到 `app/utils/cron_util.py`，
    调度入口收敛到 `app/core/ap_scheduler.py`。
-4. **修掉 D1~D6**。
-5. 前端三处 cron 输入换成**可视化选择器**（成熟第三方组件，见 §7）。
+4. **一套调度（阶段 B）**：凡按 cron 触发的定时任务（AI 工作台 / AI 工作流 / 训练调度）
+   一律注册到中心 APScheduler，删除各自的自建轮询（见 §9）。
+5. **修掉 D1~D6**。
+6. 前端三处 cron 输入换成**可视化选择器**（成熟第三方组件，见 §7）。
+
+### 分期
+- **阶段 A（口径统一）**：§4~§8。风险低、收益直接（消除"同一表达式三种含义"），先落地。
+- **阶段 B（调度入口统一）**：§9。把三处 cron 调度并入中心调度器，删除自建轮询。
 
 ### 非目标
 - 不改 `interval` 触发器（它是"时长"而非 cron；秒级需求由它承担）。
@@ -173,7 +179,64 @@
 | `vue-cron-editor-buefy` | MIT | 2021-04（停更） | ❌ Vue2 + Buefy |
 | `cronstrue` | MIT | 2026-10（15.7M 下载/月） | 备选补充（仅"表达式→人话"）：**本轮不引入**，选择器自带中文描述；若后续要做列表展示再评估 |
 
-## 8. 风险与回滚
+## 8. 风险与回滚（阶段 A：口径统一）
+
 - **风险**：统一后"6 段带秒"的写法会被拒绝（能力变化，属有意为之）；存量若有秒位非 0 的数据需人工确认。
 - **回滚**：迁移脚本只做"5 段规范化"，不改表结构；回滚即恢复 `from_crontab`/`CronTrigger` 旧调用（数据无需回滚）。
-- **部署注意**：APScheduler 是进程内调度，多副本部署时 `module_task` 定时任务会重复执行（既有问题，本次仅去掉秒级以降低频率与风险；如需彻底解决另立项）。
+- **部署注意**：APScheduler 是进程内调度，多副本部署时定时任务会重复执行（既有问题，阶段 B 的
+  `SCHEDULER_ENABLED` 开关可解决，见 §9.3.5）。
+
+## 9. 调度入口统一（阶段 B）——同一套调度
+
+### 9.1 现状
+中心调度器 `app/core/ap_scheduler.py` **已经存在且完整**：`AsyncIOScheduler` + 持久化
+`SQLAlchemyJobStore` + 执行日志事件监听 + `sync_jobs_to_db()` + 暂停/恢复，启动时由
+`init_app` 调 `SchedulerUtil.init_scheduler()` 拉起。
+
+但**按 cron 触发的三处各自写了轮询**，没走它：
+
+| 位置 | 现状实现 | 问题 |
+|---|---|---|
+| AI 工作台定时任务 | `workspace/service.py::cron_scheduler` 每分钟 `while True` 轮询，读 DB 行比对 `next_run_time` | 每个进程各跑一份（多副本重复触发）；无 coalesce/超时/最大并发控制；重启期间漏跑 |
+| AI 工作流定时调度 | `workflow/service.py` 内自行计算 `next_run`（`from_crontab`） | 同上，且口径与中心调度器不同源 |
+| 训练定时调度 | `module_train/scheduler.py` 自建循环 + `croniter` | 同上 |
+
+> 说明：项目里还有若干 `while True` 循环（训练任务状态轮询、评估/预测队列、视频推理/录制、
+> TTL 清理、连接池看门狗等）——它们是**状态/队列轮询**，不是 cron 触发，**不在本次范围**。
+
+### 9.2 目标
+**凡"按 cron 表达式触发"的定时任务，一律注册到中心调度器**，不再自建轮询。
+
+### 9.3 设计
+1. `SchedulerUtil` 增加**业务作业**通用入口（与现有 `NodeModel` 作业并列，互不干扰）：
+   - `register_business_cron(job_key, cron, func, args=(), replace=True) -> Job`
+     （`job_key` 形如 `ai_workspace_cron:12`、`ai_workflow_schedule:3`、`train_schedule:5`）
+   - `remove_business_job(job_key) -> bool`
+   - `sync_business_jobs() -> dict`（启动时按各表 `enabled` 行注册/清理，幂等）
+2. 三处调用方：
+   - **新增/修改/启停/删除**定时任务时同步作业（replace / remove）
+   - **启动时** `sync_business_jobs()` 注册全部启用行（替代各自的 `while True`）
+   - **执行体**复用现有逻辑（AI 走 `_run_target` / `run_schedule`，训练走原训练提交函数）
+3. **状态单一真源**：`next_run_time` / `last_run_time` 由作业（`job.next_run_time`）写回 DB 列，
+   供列表展示；不再由轮询循环推算（AI 侧现有 `_compute_next_run` 删除）。
+4. **行为参数显式化**（替代当前隐式行为）：
+   - `coalesce=True`（错过多次只补一次，与现有 `max_instances`/job_defaults 一致）
+   - `misfire_grace_time` 显式设置（建议 60s，避免默认 1s 导致轻微延迟即丢跑）
+   - `max_instances=1`（同一个定时任务不允许并发重叠，AI 侧尤其重要）
+5. **多副本开关（可选收益）**：新增 `SCHEDULER_ENABLED`（默认 true）。多副本部署时可只让一个实例
+   开启调度，避免重复触发（现状是每进程都轮询，同样重复——统一后才有地方加这个开关）。
+
+### 9.4 迁移
+- 首次启动 `sync_business_jobs()` 即完成注册（无需改表结构；DB 列继续保留，语义变为"调度器回写"）。
+- 灰度：先合并 AI 工作台一处（最小面）验证，再合并 AI 工作流与训练。
+
+### 9.5 验证
+- 单测：注册/替换/删除/同步幂等；`job_key` 与 DB 行一一对应
+- 联调：把某条定时任务的 cron 改为"下一分钟"，等待触发一次（断言执行体被调用、DB 回写 `last_run_time`）
+- 回归：AI 工作台/工作流/训练的既有定时行为不退化（含"禁用后不再触发"）
+- 全量 `uv run pytest -q -n 4` 通过
+
+### 9.6 风险
+- **行为差异**：`coalesce` / `misfire_grace_time` / `max_instances` 与自建轮询不同（需按业务显式设定，见 §9.3.4）
+- **重启语义**：APScheduler 持久化 jobstore 重启后按 `next_run_time` 恢复；自建轮询靠 DB 行比对（两者对"停机期间错过的任务"处理不同：前者按 misfire 规则，后者会立刻补跑）→ 迁移时需确认可接受
+- **多副本**：默认行为与现状同级（每进程都触发）；如需彻底避免，开启 §9.3.5 的单实例开关
