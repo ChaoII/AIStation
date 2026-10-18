@@ -73,50 +73,6 @@ def _resolve_trigger(
     return TriggerUtil.normalize(name, args)
 
 
-def _dump_trigger_args(trigger: str, args) -> str | None:
-    """按类型把统一层规范化后的参数序列化落库（TEXT 列）。
-
-    cron → 5 段串；interval → JSON 串；date → 时间串；now → NULL（按契约本就没有参数）。
-    """
-    if trigger == "interval":
-        return json.dumps(args, ensure_ascii=False)
-    if trigger == "now":
-        return None
-    return args
-
-
-def _load_trigger_args(trigger: str, raw) -> object:
-    """响应里按类型把落库值还原成前端可直接使用的形态。
-
-    - interval：JSON 串 → 对象（脏数据解析不了就原样回显，不把列表打成 500）；
-    - now：按契约无参数 → `None`；
-    - cron / date：原样字符串；未配置（空值）沿用本模块既有口径 `""`。
-    """
-    if raw is None or (isinstance(raw, str) and not raw.strip()):
-        return None if trigger == "now" else ""
-    if trigger == "interval" and isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except ValueError:
-            return raw
-        return parsed if isinstance(parsed, dict) else raw
-    return raw
-
-
-def _describe_trigger(trigger: str, args) -> str | None:
-    """统一层的「人话描述」（响应字段 `trigger_describe`，供前端直接展示）。
-
-    未配置（空值）与脏数据（遗留 Quartz 写法等）无法描述时返回 `None`，由前端回退显示
-    原始参数；描述绝不在本模块自算，也不把列表/详情打成 500。
-    """
-    if trigger != "now" and (args is None or (isinstance(args, str) and not args.strip())):
-        return None
-    try:
-        return TriggerUtil.describe(trigger, args)
-    except (ValueError, CustomException):
-        return None
-
-
 async def run_scheduled_workflow(workflow_id: int) -> None:
     """中心调度器作业入口：按调度运行工作流，并把调度状态回写库。
 
@@ -1158,7 +1114,7 @@ class AiWorkflowService:
             enabled_in = bool(getattr(data, "enabled", enabled))
 
         trigger, trigger_args = _resolve_trigger(trigger_in, args_in, cron_in, enabled_in)
-        stored_args = _dump_trigger_args(trigger, trigger_args)
+        stored_args = TriggerUtil.dump_args(trigger, trigger_args)
         async with async_db_session() as db:
             row = (
                 await db.execute(
@@ -1288,8 +1244,8 @@ class AiWorkflowService:
         raw_args = row.trigger_args or ""
         return {
             "trigger": trigger,
-            "trigger_args": _load_trigger_args(trigger, row.trigger_args),
-            "trigger_describe": _describe_trigger(trigger, raw_args),
+            "trigger_args": TriggerUtil.load_args(trigger, row.trigger_args),
+            "trigger_describe": TriggerUtil.describe_args(trigger, raw_args),
             "cron": raw_args if trigger == "cron" else "",
             "enabled": row.enabled,
             "next_run_time": row.next_run_time,

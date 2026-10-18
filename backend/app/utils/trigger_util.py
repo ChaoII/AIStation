@@ -29,6 +29,10 @@ cron 的**可调度性检查**（永不触发的日/月组合、日与周同时�
   四个入口的 `POST .../trigger/preview` 直接回显，前端**不自算**（避免第二套口径）；
 - `needs_review(trigger, args) -> bool`：列表行是否需要人工确认（迁移跳过 / 新校验不通过）。
 
+**序列化助手**（`dump_args` / `load_args` / `describe_args` / `args_provided`）：三处写入口
+（AI 工作台 / 工作流 / 训练）共用**同一份**落库序列化、响应还原、人话描述与「是否提交了触发配置」
+的实现，消除逐字复制与空值口径分叉（空值一律 `None`）。
+
 供 AI 工作台/工作流、训练调度、系统定时任务节点与中心调度器共用。
 """
 
@@ -482,6 +486,69 @@ class TriggerUtil:
             return cls.describe(trigger, args)
         except (ValueError, CustomException):
             return ""
+
+    # ------------------------------------------------------------------ 序列化助手（三处写入口共用）
+
+    @classmethod
+    def dump_args(cls, trigger: str, args) -> str | None:
+        """按类型把规范化后的参数序列化落库（TEXT 列）。
+
+        - `cron` → 5 段串；`interval` → JSON 串；`date` → 时间串；
+        - `now` → `None`（按契约本就没有参数，不是「未配置」）；
+        - 空值原样透传（未配置的行保持空，不发明值）。
+        """
+        if trigger == "interval":
+            return json.dumps(args, ensure_ascii=False)
+        if trigger == "now":
+            return None
+        return args
+
+    @classmethod
+    def load_args(cls, trigger: str, raw) -> object:
+        """响应里按类型把落库值还原成前端可直接使用的形态。
+
+        - `interval`：JSON 串 → 对象（脏数据解析不了就**原样回显**，不把列表打成 500）；
+        - `now`：按契约无参数 → `None`；
+        - `cron` / `date`：原样字符串；
+        - **空值（`None` / 空白串）统一返回 `None`** —— 三处写入口同一口径，
+          不再出现「有的返回 `""`、有的返回 `None`」的分叉。
+        """
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return None
+        if trigger == "interval" and isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+            except ValueError:
+                return raw
+            return parsed if isinstance(parsed, dict) else raw
+        return raw
+
+    @classmethod
+    def describe_args(cls, trigger: str, args) -> str | None:
+        """统一层的「人话描述」（响应字段 `trigger_describe`，供前端直接展示）。
+
+        未配置（空值）与脏数据（遗留 Quartz 写法等）无法描述时返回 `None`，由前端回退显示
+        原始参数；描述绝不在调用方自算，也不把列表/详情打成 500 —— 因此这里兜底
+        `except Exception`（`describe` 的异常形态不止 `ValueError` / `CustomException`）。
+        """
+        if trigger != "now" and (args is None or (isinstance(args, str) and not args.strip())):
+            return None
+        try:
+            return cls.describe(trigger, args)
+        except Exception:  # noqa: BLE001 - 单行脏数据不得让整个列表接口 500
+            logger.debug("触发参数无法描述（按「不可描述」处理）：%r %r", trigger, args)
+            return None
+
+    @classmethod
+    def args_provided(cls, trigger: str | None, args=None) -> bool:
+        """请求里是否**提交了**触发配置（含显式空串 = 「清空配置」）。
+
+        编辑接口据此区分「没提交 → 保留库中原值」与「提交了空串 → 显式清空」；
+        `now` 按契约本就没有参数，只要类型是 `now` 就视为「已提供」。
+        """
+        if isinstance(trigger, str) and trigger.strip() == "now":
+            return True
+        return trigger is not None or args is not None
 
     # ------------------------------------------------------------------ 分派层内部实现
 

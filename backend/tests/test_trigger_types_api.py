@@ -271,6 +271,83 @@ def test_train_schedule_accepts_four_trigger_types(test_client, auth_headers):
             SchedulerUtil.remove_business_job(train_schedule_job_key(sid))
 
 
+# ============================================================ A8 修正轮 I-1：`now` 行的部分更新
+
+
+def _create_workspace_now_cron(test_client, auth_headers) -> int:
+    """建一条 `trigger="now"`（立即执行）的启用中定时任务，返回 id。"""
+    r = test_client.post(
+        "/api/v1/ai/workspace/cron/create",
+        json={
+            "name": _name("now 部分更新"),
+            "description": "",
+            "trigger": "now",
+            "trigger_args": None,
+            # 兼容字段：非 cron 类型前端仍会带空串
+            "cron": "",
+            "target_type": "workflow",
+            "target_id": 0,
+            "enabled": True,
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    created = r.json()["data"]
+    assert created["trigger"] == "now" and created["trigger_args"] is None, created
+    return created["id"]
+
+
+def test_workspace_cron_now_row_partial_update_keeps_trigger(test_client, auth_headers):
+    """I-1：`now` 行（`trigger_args` 落 NULL）**只改 name** 必须 200，且触发配置不变。
+
+    `now` 按契约**本就没有参数**，`trigger_args` 为 NULL ≠「未配置」；旧守卫按「请求后的行状态」
+    判定（`row.enabled and not row.trigger_args`），会把这种部分更新误报成 400「请先配置触发时间」。
+    """
+    from app.plugin.module_ai.workspace.service import _EMPTY_TRIGGER_MSG
+
+    cron_id = _create_workspace_now_cron(test_client, auth_headers)
+    try:
+        new_name = _name("now 部分更新改后")
+        upd = test_client.put(
+            f"/api/v1/ai/workspace/cron/update/{cron_id}",
+            json={"name": new_name},
+            headers=auth_headers,
+        )
+        assert upd.status_code == 200, upd.text
+        assert upd.json()["msg"] != _EMPTY_TRIGGER_MSG
+        d = upd.json()["data"]
+        assert d["name"] == new_name, d
+        # 触发配置不被部分更新清掉/改掉
+        assert d["trigger"] == "now", d
+        assert d["trigger_args"] is None, d
+        assert d["trigger_describe"] == "保存后立即执行一次", d
+        assert d["enabled"] is True, d
+
+        # 显式切「启用」同样不得被误拦：`now` 不是「未配置」
+        re_enable = test_client.put(
+            f"/api/v1/ai/workspace/cron/update/{cron_id}",
+            json={"enabled": True},
+            headers=auth_headers,
+        )
+        assert re_enable.status_code == 200, re_enable.text
+        d2 = re_enable.json()["data"]
+        assert d2["trigger"] == "now" and d2["trigger_args"] is None, d2
+
+        # 守卫本身不回退：显式提交「cron + 空参数 + 启用」仍被 400 挡下
+        empty_on = test_client.put(
+            f"/api/v1/ai/workspace/cron/update/{cron_id}",
+            json={"trigger": "cron", "trigger_args": "", "cron": "", "enabled": True},
+            headers=auth_headers,
+        )
+        assert empty_on.status_code == 400, empty_on.text
+        assert empty_on.json()["msg"] == _EMPTY_TRIGGER_MSG, empty_on.text
+    finally:
+        test_client.request(
+            "DELETE", "/api/v1/ai/workspace/cron/delete", json=cron_id, headers=auth_headers
+        )
+        SchedulerUtil.remove_business_job(_workspace_job_key(cron_id))
+
+
 def test_train_schedule_rejects_enabled_empty_trigger(test_client, auth_headers):
     """定时训练计划默认启用：`trigger` 与旧字段都缺省 → 可读 400（不回退已落地语义）。"""
     from app.plugin.module_train.schedule_service import _EMPTY_TRIGGER_MSG

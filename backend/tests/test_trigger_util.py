@@ -893,7 +893,8 @@ def test_workflow_schedule_empty_cron_only_allowed_when_disabled(test_client, au
         assert off.status_code == 200, off.text
         d = off.json()["data"]
         assert d["enabled"] is False
-        assert d["trigger_args"] == "" and d["cron"] == ""
+        # A10：空值口径统一为 None（原 workflow 副本返回 ""）
+        assert d["trigger_args"] is None and d["cron"] == ""
         assert d["next_run_time"] is None
 
         # 未配置表达式时直接切「启用」同样被挡（只传 enabled，不传 cron）
@@ -1005,7 +1006,8 @@ def test_workspace_cron_empty_cron_only_allowed_when_disabled(test_client, auth_
     created = off.json()["data"]
     try:
         assert created["enabled"] is False
-        assert created["trigger_args"] == "" and created["cron"] == ""
+        # A10：空值口径统一为 None（原 workspace 副本返回 ""）
+        assert created["trigger_args"] is None and created["cron"] == ""
         assert created["next_run_time"] is None
 
         # 只切「启用」而库里没有表达式：同样被挡
@@ -1168,3 +1170,117 @@ def test_write_paths_no_longer_parse_cron_themselves():
         assert "croniter(" not in source
     assert "_compute_next_run" not in inspect.getsource(workspace_service)
     assert "TriggerUtil.next_run" in inspect.getsource(workspace_service)
+
+
+# ============================================================ Task A10：四个序列化助手下沉统一层
+# 审查 M-1：`_dump_trigger_args` / `_load_trigger_args` / `_describe_trigger` / `_trigger_provided`
+# 曾在工作流 / 工作台 / 训练三处**逐字复制**，且空值口径已分叉（`_load_trigger_args` 在
+# workflow / workspace 返回 `""`、在 train 返回 `None`）。以下用例钉住统一后的形态。
+
+
+def test_dump_args_dispatches_by_trigger():
+    """`dump_args` 按类型分派：interval → JSON 串、now → NULL、cron / date → 原样。"""
+    assert TriggerUtil.dump_args("interval", {"hours": 2, "minutes": 30}) == (
+        '{"hours": 2, "minutes": 30}'
+    )
+    assert TriggerUtil.dump_args("cron", "0 9 * * mon") == "0 9 * * mon"
+    assert TriggerUtil.dump_args("date", "2999-01-01 09:00:00") == "2999-01-01 09:00:00"
+    # now 按契约本就没有参数（落 NULL），不是「未配置」
+    assert TriggerUtil.dump_args("now", None) is None
+    # 空值原样透传（未配置的行保持空，不发明值）
+    assert TriggerUtil.dump_args("cron", None) is None
+
+
+def test_load_args_dispatches_by_trigger():
+    """`load_args` 按类型还原：interval 的 JSON 串 → 对象；cron / date 原样；now → None。"""
+    assert TriggerUtil.load_args("interval", '{"hours": 2, "minutes": 30}') == {
+        "hours": 2,
+        "minutes": 30,
+    }
+    # 已是对象（dict）时原样透传，供前端组件直接用
+    assert TriggerUtil.load_args("interval", {"hours": 1}) == {"hours": 1}
+    assert TriggerUtil.load_args("cron", "0 9 * * mon") == "0 9 * * mon"
+    assert TriggerUtil.load_args("date", "2999-01-01 09:00:00") == "2999-01-01 09:00:00"
+    assert TriggerUtil.load_args("now", None) is None
+
+
+@pytest.mark.parametrize("trigger", ["cron", "interval", "date", "now"])
+def test_load_args_empty_value_is_none_for_all_triggers(trigger):
+    """**空值口径统一为 `None`**（三处写入口一致，不再有的返回 `""`）。"""
+    assert TriggerUtil.load_args(trigger, None) is None
+    assert TriggerUtil.load_args(trigger, "") is None
+    assert TriggerUtil.load_args(trigger, "   ") is None
+
+
+def test_load_args_dirty_interval_json_is_echoed_without_raising():
+    """脏 interval JSON（迁移遗留）原样回显，绝不把列表接口打成 500。"""
+    assert TriggerUtil.load_args("interval", "{not json") == "{not json"
+    # 合法 JSON 但不是对象（旧数组写法）同样原样回显
+    assert TriggerUtil.load_args("interval", "[1, 2, 3]") == "[1, 2, 3]"
+    assert TriggerUtil.load_args("interval", '"30 5 2 1 0"') == '"30 5 2 1 0"'
+
+
+def test_describe_args_dispatches_by_trigger():
+    """`describe_args` 按类型给中文短句；空值 → None；now 无参数也算「已配置」。"""
+    assert TriggerUtil.describe_args("cron", "0 9 * * 1") == "每周一 09:00"
+    assert (
+        TriggerUtil.describe_args("interval", {"hours": 2, "minutes": 30}) == "每 2 小时 30 分一次"
+    )
+    assert TriggerUtil.describe_args("date", "2999-01-01 09:00:00") == "2999-01-01 09:00 执行一次"
+    assert TriggerUtil.describe_args("now", None) == "保存后立即执行一次"
+
+
+@pytest.mark.parametrize("trigger", ["cron", "interval", "date"])
+def test_describe_args_empty_value_is_none(trigger):
+    assert TriggerUtil.describe_args(trigger, None) is None
+    assert TriggerUtil.describe_args(trigger, "  ") is None
+
+
+@pytest.mark.parametrize(
+    ("trigger", "args"),
+    [
+        ("cron", "0 0 9 L * *"),  # 遗留 Quartz 写法
+        ("cron", "0 9 * * 5-1"),
+        ("interval", "{not json"),
+        ("interval", {"hours": 0}),  # 全 0 无法描述
+        ("date", "not-a-date"),
+    ],
+)
+def test_describe_args_dirty_data_returns_none_without_raising(trigger, args):
+    """脏数据不得把列表/详情打成 500（兜底 `except Exception`，不只捕可预期异常）。"""
+    assert TriggerUtil.describe_args(trigger, args) is None
+
+
+def test_args_provided_semantics():
+    """「请求是否提交了触发配置」：显式空串算提交；`now` 按契约视为已提供。"""
+    assert TriggerUtil.args_provided("cron", None) is True
+    assert TriggerUtil.args_provided(None, "0 9 * * mon") is True  # 只带旧字段
+    assert TriggerUtil.args_provided("", None) is True  # 显式空串 = 清空配置
+    assert TriggerUtil.args_provided(None, "") is True
+    assert TriggerUtil.args_provided(None, None) is False
+    # `now` 无参数：类型本身即「已提供」
+    assert TriggerUtil.args_provided("now", None) is True
+
+
+def test_three_services_no_longer_duplicate_trigger_helpers():
+    """源码级锁定：三处写入口不得再有本地副本（统一层是唯一口径）。"""
+    import inspect
+
+    from app.plugin.module_ai.workflow import service as workflow_service
+    from app.plugin.module_ai.workspace import service as workspace_service
+    from app.plugin.module_train import schedule_service
+
+    for module in (workspace_service, workflow_service, schedule_service):
+        source = inspect.getsource(module)
+        for helper in (
+            "_dump_trigger_args",
+            "_load_trigger_args",
+            "_describe_trigger",
+            "_trigger_provided",
+        ):
+            assert helper not in source, (module.__name__, helper)
+        assert "TriggerUtil.dump_args" in source
+        assert "TriggerUtil.load_args" in source
+        assert "TriggerUtil.describe_args" in source
+    assert "TriggerUtil.args_provided" in inspect.getsource(workspace_service)
+    assert "TriggerUtil.args_provided" in inspect.getsource(schedule_service)
