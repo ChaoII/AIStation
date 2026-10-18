@@ -989,6 +989,10 @@ git commit -m "feat(ui): 系统定时任务节点页统一为 TriggerEditor，�
    （后端也有权限校验）。修法：补 `module_train:task:{create,update,delete}`（以 controller 实际权限码为准）。
 5. **C5 Minor 1**：`SchedulePanel.vue:123` 用 `row?.trigger === "cron"` 严格等值，与 `triggerLabel`（`trigger || "cron"`）口径不一致 →
    对 `trigger` 为 NULL 的历史行会显示「—」。修法：统一为 `const t = row?.trigger || "cron"`。
+6. **C6 审查 Minor 1**：`node/index.vue` 的 date 分支在「未选时间 + 预览不可用」时会退化成笼统的「调试失败」
+   （`serializeTriggerArgs` 返回 `undefined` → 后端 422 的 `detail` 不是 `msg` → 前端兜底文案）。修法：date 分支加一句本地判空拦截，提示更准确。
+7. **C6 审查 Minor 5**：`node/index.vue:562` 的 `serializeTriggerArgs` 里「interval 已是字符串则原样透传」分支**已不可达**
+   （`TriggerEditor` 只 emit 对象），注释仍描述旧口径 → 删除该分支或改注为「防御性兜底（组件不会产出字符串）」。
 
 - [ ] **Step 1: 改组件与四页面**（只加 prop 与上述小修，不改其它行为）
 - [ ] **Step 2: `cd frontend && pnpm run type-check`**（四处页面零新增错误）
@@ -1012,6 +1016,14 @@ git commit -m "feat(ui): 系统定时任务节点页统一为 TriggerEditor，�
 - C5 Minor 5：`trigger-train.spec.ts:125` 用 `nth(2)` 定位「时」输入，与组件内字段顺序跨文件耦合 → 改 `.filter({ hasText: "时" })`。
 - C5 Minor 6：`trigger-train.spec.ts:75` 的 `page.locator(".el-dialog")` 未加标题过滤 → 按标题过滤，避免将来 strict 违规。
 - C4 Minor 2：cron 选择器的 DOM 断言依赖 `@vue-js-cron/element-plus` 内部类名（作者未真机验证）→ 首跑失败则放宽为「回显 + 接口回读」断言，不要为了过测而删掉核心断言。
+- **C6 审查 I1（Important，本任务必收）**：`trigger-node.spec.ts` 的 `waitPreview`（`:121-127`）注册监听后返回**第一个**匹配 `/trigger/preview` 的响应，
+  不区分触发类型；而组件每次切类型都重排 300ms 防抖 → 「单次」用例（`:204-229`）需要「点单选 + fill + Enter」三个动作都在 300ms 内完成，
+  否则会捕获到切换瞬间发出的**空值预览**（`valid:false`）→ `expect(preview.valid).toBeTruthy()` 抛硬币。
+  修法（二选一，只动 e2e）：① `waitPreview` 按**请求体**过滤并对该类型取「最后一次」/等待最终态
+  （`r.request().postDataJSON()?.trigger === "date"`）；② 「单次」用例直接填好时间再断言，非法拦截语义由「间隔」用例覆盖。
+- C6 审查 Minor 2：`trigger-node.spec.ts` 依赖「新节点落在列表第一页」，但列表默认 `id asc` + `pageSize: 10` → 建议按名称过滤或用接口查 id 直达。
+- C6 审查 Minor 3：补一条「旧编辑器已消失」断言（`.vue3-cron-plus-container` 计数为 0），姊妹 spec 已有此写法。
+- C6 审查 Minor 4：`trigger-node.spec.ts` 手写 login → 复用 `e2e/anno-helper.ts` 的 `login`；`request.delete(...).catch(() => {})` 是无效防御（对非 2xx 不抛异常）→ 删。
 
 - [ ] **Step 1: 补一条"非法表达式被拦"的 e2e**：四处任选一处填 `0 0 9 L * *` → 断言前端提示非法且保存被拒（不落库）
 - [ ] **Step 2: 顺序跑四个入口的 e2e**（**必须顺序**，并发会争用 `auth.setup` 的 storageState）：
