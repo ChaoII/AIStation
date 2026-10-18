@@ -57,8 +57,16 @@
     </div>
 
     <!-- 立即：无参数，保存后由中心调度器触发一次 -->
-    <div v-else class="trigger-editor__body">
+    <div v-else-if="trigger === 'now'" class="trigger-editor__body">
       <el-text type="info">保存后立即执行一次</el-text>
+    </div>
+
+    <!--
+      兜底：未知/遗留的 trigger（历史脏数据）不冒充「立即」外观——否则与预览区
+      后端返回的「非法」原因自相矛盾；此处只如实说明，不显示误导文案。
+    -->
+    <div v-else class="trigger-editor__body">
+      <el-text type="warning">未知触发类型：{{ trigger }}</el-text>
     </div>
 
     <!--
@@ -93,7 +101,8 @@
 <script setup lang="ts">
 import { CronElementPlus } from "@vue-js-cron/element-plus";
 import "@vue-js-cron/element-plus/dist/element-plus.css";
-import { previewTrigger, type TriggerPreview } from "@/api/module_ai/workspace";
+import request from "@/utils/request";
+import type { TriggerPreview } from "@/api/module_ai/workspace";
 
 /** 触发类型选项：与后端 TriggerUtil.TRIGGERS（cron / interval / date / now）一一对应 */
 const TRIGGER_TYPES = [
@@ -129,15 +138,33 @@ const EMPTY_INTERVAL: Record<IntervalKey, number> = {
 /** 预览防抖：输入停止 300ms 后再请求，避免每次按键都打后端 */
 const PREVIEW_DEBOUNCE_MS = 300;
 
+/**
+ * 预览接口缺省地址：AI 工作台路由（四个入口的预览契约完全一致，均为 `POST .../trigger/preview`）。
+ * 各业务页按自己模块的权限传 `previewUrl`，避免只有本模块权限的用户看到「预览暂不可用」。
+ */
+const DEFAULT_PREVIEW_URL = "/ai/workspace/trigger/preview";
+
 /** 后端 date 参数允许省略秒（`YYYY-MM-DD HH:mm`），补齐秒后才能被日期选择器正确回显 */
 const DATE_MINUTE_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
 
-const props = defineProps<{
-  /** 触发类型：cron / interval / date / now */
-  trigger: string;
-  /** 触发参数：cron 为 5 段表达式字符串，interval 为 JSON，date 为时间字符串，now 为 null */
-  triggerArgs: unknown;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** 触发类型：cron / interval / date / now */
+    trigger: string;
+    /** 触发参数：cron 为 5 段表达式字符串，interval 为 JSON，date 为时间字符串，now 为 null */
+    triggerArgs: unknown;
+    /**
+     * 预览接口地址：缺省为 AI 工作台路由（保持既有调用方零改动）。
+     * 四个业务页应各传本模块的预览路由，使预览受本模块权限管辖：
+     * - 工作台 `/ai/workspace/trigger/preview`（默认）
+     * - 工作流 `/ai/workflows/trigger/preview`
+     * - 训练 `/train/trigger/preview`
+     * - 节点 `/task/cronjob/node/trigger/preview`
+     */
+    previewUrl?: string;
+  }>(),
+  { previewUrl: DEFAULT_PREVIEW_URL }
+);
 
 const emit = defineEmits<{
   (e: "update:trigger", value: string): void;
@@ -208,9 +235,17 @@ const previewPayload = (): unknown => {
 const runPreview = async () => {
   const seq = ++previewSeq;
   try {
-    const res = await previewTrigger({
-      trigger: props.trigger,
-      trigger_args: previewPayload(),
+    // 统一预览契约（valid/reason/describe/next_run）四个入口完全一致，故组件直接按 prop 的
+    // 路由发起请求，使预览受调用方模块的权限管辖（不再硬编码 AI 工作台路由）。
+    // `_silent` 关闭全局提示：该接口随输入高频调用，错误由本组件内联展示。
+    const res = await request<ApiResponse<TriggerPreview>>({
+      url: props.previewUrl,
+      method: "post",
+      data: {
+        trigger: props.trigger,
+        trigger_args: previewPayload(),
+      },
+      headers: { _silent: "true" },
     });
     if (seq !== previewSeq) return;
     const data = res.data.data;
@@ -227,6 +262,9 @@ const runPreview = async () => {
 };
 
 const schedulePreview = () => {
+  // 输入一变就作废在途响应：否则「cron 非法 → 切到间隔（error 已清空）→ 旧响应回来」
+  // 会把上一个类型的原因回灌到已切换的新类型上。
+  previewSeq += 1;
   if (previewTimer !== undefined) clearTimeout(previewTimer);
   previewTimer = setTimeout(() => {
     previewTimer = undefined;
@@ -261,6 +299,8 @@ const defaultArgsOf = (trigger: string): unknown => {
  */
 const handleTriggerChange = (value: string | number | boolean | undefined) => {
   if (typeof value !== "string" || value === props.trigger) return;
+  // 立即作废在途预览响应：切换类型时旧类型的 reason 不得回灌到新类型
+  previewSeq += 1;
   emit("update:trigger", value);
   emit("update:triggerArgs", defaultArgsOf(value));
   emit("error", "");

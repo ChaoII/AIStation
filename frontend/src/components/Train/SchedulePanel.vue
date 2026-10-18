@@ -1,7 +1,9 @@
 <template>
   <div class="schedule-panel">
     <div class="toolbar">
-      <el-button type="primary" @click="openCreate">新建定时计划</el-button>
+      <el-button v-hasPerm="['module_train:task:create']" type="primary" @click="openCreate">
+        新建定时计划
+      </el-button>
       <el-button :loading="loading" @click="load">刷新</el-button>
     </div>
 
@@ -29,8 +31,24 @@
       <el-table-column label="上次运行" prop="last_run_at" min-width="170" />
       <el-table-column label="操作" width="140" align="center">
         <template #default="{ row }">
-          <el-button size="small" link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button size="small" link type="danger" @click="remove(row)">删除</el-button>
+          <el-button
+            v-hasPerm="['module_train:task:update']"
+            size="small"
+            link
+            type="primary"
+            @click="openEdit(row)"
+          >
+            编辑
+          </el-button>
+          <el-button
+            v-hasPerm="['module_train:task:delete']"
+            size="small"
+            link
+            type="danger"
+            @click="remove(row)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -67,6 +85,7 @@
           <TriggerEditor
             v-model:trigger="form.trigger"
             v-model:trigger-args="form.trigger_args"
+            preview-url="/train/trigger/preview"
             @error="form.triggerError = $event"
           />
         </el-form-item>
@@ -120,7 +139,10 @@ function triggerLabel(trigger?: string | null) {
 function triggerDesc(row: any) {
   const text = row?.trigger_describe ?? row?.describe;
   if (text) return String(text);
-  const args = row?.trigger_args ?? (row?.trigger === "cron" ? row?.cron_expr : "");
+  // 与 triggerLabel 同口径：`trigger` 为 NULL 的历史行按 cron 处理；否则回退不到 cron_expr，
+  // 会让这类行只显示「—」（与「触发方式」列的「定时」标签自相矛盾）。
+  const trigger = row?.trigger || "cron";
+  const args = row?.trigger_args ?? (trigger === "cron" ? row?.cron_expr : "");
   if (args === null || args === undefined || args === "") return "—";
   return typeof args === "string" ? args : JSON.stringify(args);
 }

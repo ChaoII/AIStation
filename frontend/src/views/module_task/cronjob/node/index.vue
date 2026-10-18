@@ -224,6 +224,7 @@
           <TriggerEditor
             v-model:trigger="executeFormData.trigger"
             v-model:trigger-args="executeFormData.trigger_args"
+            preview-url="/task/cronjob/node/trigger/preview"
             @error="handleTriggerError"
           />
         </el-form-item>
@@ -559,7 +560,7 @@ function handleTriggerError(message: string) {
  */
 function serializeTriggerArgs(trigger: TriggerType, args: unknown): string | undefined {
   if (trigger === "interval") {
-    // 组件产出的是对象；若已是字符串（JSON 或旧「秒 分 时 天 周」串）原样透传，后端两种都认
+    // 组件只 emit 对象；字符串分支仅作防御性兜底（兼容历史遗留的 JSON 串），正常不会走到
     return typeof args === "string" ? args : JSON.stringify(args ?? {});
   }
   return typeof args === "string" && args ? args : undefined;
@@ -588,6 +589,13 @@ async function handleExecuteNode() {
   // 触发配置非法（TriggerEditor 预览结论）时先拦截，避免把必然失败的请求打到后端
   if (triggerError.value) {
     ElMessage.error({ message: triggerError.value, type: "error", duration: 3000 });
+    return;
+  }
+
+  // 单次触发：未选时间时 serializeTriggerArgs 返回 undefined，后端 422 的 detail 不是 msg，
+  // 兜底只会显示笼统的「调试失败」；这里本地判空拦截并给出准确提示。
+  if (executeFormData.trigger === "date" && !executeFormData.trigger_args) {
+    ElMessage.error({ message: "请选择执行时间", type: "error", duration: 3000 });
     return;
   }
 

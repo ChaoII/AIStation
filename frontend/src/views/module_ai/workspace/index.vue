@@ -210,6 +210,7 @@
           <TriggerEditor
             v-model:trigger="cronForm.trigger"
             v-model:trigger-args="cronForm.trigger_args"
+            preview-url="/ai/workspace/trigger/preview"
             @error="cronError = $event"
           />
         </el-form-item>

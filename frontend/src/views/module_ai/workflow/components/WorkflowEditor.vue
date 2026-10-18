@@ -849,6 +849,7 @@
           <TriggerEditor
             v-model:trigger="scheduleTrigger"
             v-model:trigger-args="scheduleTriggerArgs"
+            preview-url="/ai/workflows/trigger/preview"
             @error="scheduleError = $event"
           />
         </el-form-item>
