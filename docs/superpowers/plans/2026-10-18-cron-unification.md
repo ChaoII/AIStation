@@ -526,7 +526,67 @@ git commit -m "feat(cron): 统一触发预览接口（四模块 thin route，后
 
 ---
 
-## 阶段 B：调度入口统一
+## 阶段 A 补丁：A8（规格缺口——四类型在接口层真正可用）
+
+> 来源：C4 实现时发现（并已由控制者核实）——三处的**请求 schema 仍是 cron-only**
+> （`AiWorkflowScheduleSchema` 只有 `cron`；工作台/训练的创建入参同理），因此
+> `interval`/`date`/`now` 在**启用**时会 400（"请先配置触发时间"）、在**未启用**时静默清空。
+> 规格 §5.2「四个入口都支持四种触发类型」因此未真正落地。
+
+### Task A8: 三处请求 schema 与写入路径接受 `trigger` + `trigger_args`
+
+**Files:**
+- Modify: `backend/app/plugin/module_ai/workflow/schema.py`、`backend/app/plugin/module_ai/workflow/service.py`（`set_schedule`）
+- Modify: `backend/app/plugin/module_ai/workspace/schema.py`、`backend/app/plugin/module_ai/workspace/service.py`（`create_cron` / `update_cron`）
+- Modify: `backend/app/plugin/module_train/schema.py`、`backend/app/plugin/module_train/schedule_service.py`
+- Test: `backend/tests/test_trigger_types_api.py`（新建）
+
+**已核实的确切缺口（控制者核过 schema）:**
+- `workspace/schema.py:22-35`：`WorkspaceCronCreateSchema.cron: str`（**必填**）、`WorkspaceCronUpdateSchema.cron: str | None` —— 均无 `trigger`/`trigger_args`
+- `workflow/schema.py:53-57`：`AiWorkflowScheduleSchema` 仅 `cron` + `enabled`
+- `train/schema.py:132-148`：`TrainScheduleCreateSchema.cron_expr: str`（**必填**）、`TrainScheduleUpdateSchema.cron_expr: str | None`
+
+**Interfaces:**
+- 请求体新增可选字段 `trigger: str | None`、`trigger_args: Any | None`；**旧字段（`cron` / `cron_expr`）继续兼容但改为可选**（去掉 Create 里的必填约束；只传旧字段 → 视为 `trigger="cron"`）
+- 落库：`cron` → 5 段字符串；`interval` → `json.dumps({weeks,days,hours,minutes,seconds})`；`date` → ISO 串；`now` → NULL
+- 读取（响应）把 `trigger_args` 反序列化回对象形态，供前端组件直接使用
+- **三处的列表/详情响应新增 `trigger_describe: str | None`**（= `TriggerUtil.describe(trigger, trigger_args)`；表达式为空/脏数据无法描述时为 `None`）——C3/C5 的「描述」列当前只能回退显示 `trigger_args` 原样，补此字段后前端自动优先展示（前端已按「`trigger_describe`/`describe` 优先，否则回退」实现）
+
+- [ ] **Step 1: 写失败测试**
+
+```python
+def test_workflow_schedule_accepts_four_trigger_types(test_client, auth_headers):
+    """四种触发类型都能保存并原样回读（修 C4 发现的接口缺口）。"""
+    cases = [
+        ("cron", "0 9 * * mon", "0 9 * * mon"),
+        ("interval", {"hours": 2}, '{"weeks": 0, "days": 0, "hours": 2, "minutes": 0, "seconds": 0}'),
+        ("date", "2999-01-01 09:00:00", "2999-01-01 09:00:00"),
+        ("now", None, None),
+    ]
+    for trigger, args, expect in cases:
+        r = test_client.put("/api/v1/ai/workflows/1/schedule", headers=auth_headers,
+                            json={"trigger": trigger, "trigger_args": args, "enabled": True})
+        assert r.status_code == 200, (trigger, r.text)
+        d = test_client.get("/api/v1/ai/workflows/1/schedule", headers=auth_headers).json()["data"]
+        assert d["trigger"] == trigger
+        if trigger == "interval":
+            assert d["trigger_args"] == {"weeks": 0, "days": 0, "hours": 2, "minutes": 0, "seconds": 0}
+        else:
+            assert d["trigger_args"] == expect
+```
+
+- [ ] **Step 2: 跑测试确认失败** → Run: `cd backend && .venv/Scripts/python.exe -m pytest tests/test_trigger_types_api.py -q`；Expected: FAIL（interval/date/now 400 或值丢失）
+- [ ] **Step 3: 实现**：三处 schema 加两个可选字段；service 写入统一走 `TriggerUtil.validate` + `normalize`，按类型序列化落库（interval 用 `json.dumps`）；读取按类型反序列化
+- [ ] **Step 4: 跑测试 + 相关回归** → Run: `pytest tests/test_trigger_types_api.py tests/test_trigger_util.py tests/test_business_jobs_workflow.py tests/test_business_jobs_train.py tests/test_business_jobs_workspace.py -q`；Expected: PASS
+- [ ] **Step 5: 提交**
+
+```bash
+git add backend/app/plugin/module_ai/workflow/schema.py backend/app/plugin/module_ai/workflow/service.py backend/app/plugin/module_ai/workspace/schema.py backend/app/plugin/module_ai/workspace/service.py backend/app/plugin/module_train/schema.py backend/app/plugin/module_train/schedule_service.py backend/tests/test_trigger_types_api.py
+git commit -m "fix(cron): 三处请求接口真正接受 trigger/trigger_args（修 C4 发现的四类型缺口）"
+```
+
+---
+
 
 ### Task B1: 中心调度器新增"业务作业"API
 
