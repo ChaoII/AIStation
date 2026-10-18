@@ -47,7 +47,7 @@
                     size="small"
                     link
                     icon="VideoPlay"
-                    @click="handleOpenExecuteDialog(scope.row)"
+                    @click="handleOpenExecuteDialog(scope.row as NodeTable)"
                   >
                     调试
                   </el-button>

@@ -101,8 +101,7 @@
 <script setup lang="ts">
 import { CronElementPlus } from "@vue-js-cron/element-plus";
 import "@vue-js-cron/element-plus/dist/element-plus.css";
-import request from "@/utils/request";
-import type { TriggerPreview } from "@/api/module_ai/workspace";
+import { previewTrigger, type TriggerPreview } from "@/api/module_ai/workspace";
 
 /** 触发类型选项：与后端 TriggerUtil.TRIGGERS（cron / interval / date / now）一一对应 */
 const TRIGGER_TYPES = [
@@ -235,18 +234,15 @@ const previewPayload = (): unknown => {
 const runPreview = async () => {
   const seq = ++previewSeq;
   try {
-    // 统一预览契约（valid/reason/describe/next_run）四个入口完全一致，故组件直接按 prop 的
-    // 路由发起请求，使预览受调用方模块的权限管辖（不再硬编码 AI 工作台路由）。
-    // `_silent` 关闭全局提示：该接口随输入高频调用，错误由本组件内联展示。
-    const res = await request<ApiResponse<TriggerPreview>>({
-      url: props.previewUrl,
-      method: "post",
-      data: {
+    // 统一预览契约（valid/reason/describe/next_run）四个入口完全一致，故按 prop 的路由调用：
+    // 缺省为 AI 工作台路由，各业务页传本模块路由，使预览受调用方模块的权限管辖。
+    const res = await previewTrigger(
+      {
         trigger: props.trigger,
         trigger_args: previewPayload(),
       },
-      headers: { _silent: "true" },
-    });
+      props.previewUrl
+    );
     if (seq !== previewSeq) return;
     const data = res.data.data;
     preview.value = data;

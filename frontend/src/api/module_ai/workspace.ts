@@ -108,15 +108,21 @@ export interface TriggerPreview {
 }
 
 /**
- * 触发预览（AI 侧统一入口）：回显「是否合法 / 可读原因 / 人话描述 / 下次运行时间」。
+ * 触发预览（全平台统一入口）：回显「是否合法 / 可读原因 / 人话描述 / 下次运行时间」。
  *
  * 参数契约与后端 `TriggerUtil` 一致：cron 为 5 段字符串、interval 为
  * `{weeks,days,hours,minutes,seconds}`、date 为 `YYYY-MM-DD HH:mm:ss`、now 为 null。
  * 该接口随输入变化高频调用，故带 `_silent` 关闭全局提示，错误由调用方内联展示。
+ *
+ * 四个业务入口的预览契约完全一致，仅路由/权限不同，故 `url` 可覆盖：缺省为
+ * AI 工作台路由（既有调用方零改动），工作流/训练/节点各自传入本模块预览路由。
  */
-export function previewTrigger(data: { trigger: string; trigger_args: unknown }) {
+export function previewTrigger(
+  data: { trigger: string; trigger_args: unknown },
+  url: string = `${WS_PATH}/trigger/preview`
+) {
   return request<ApiResponse<TriggerPreview>>({
-    url: `${WS_PATH}/trigger/preview`,
+    url,
     method: "post",
     data,
     headers: { _silent: "true" },
