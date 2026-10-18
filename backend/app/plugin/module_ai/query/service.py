@@ -163,6 +163,22 @@ _SETTINGS_CACHE: dict | None = None
 # 进程级缓存：表级资产元数据（中文名/业务域/描述/业务场景）
 _ASSET_TMETA: dict | None = None
 _ONT_ALLOW_CACHE: set | None = None
+#: 缓存建立时间（monotonic）与有效期。本体定义可能在**别的模块**里被改写
+#: （如「数据源→本体对象」导入），跨模块回调失效会引入循环依赖，故用 TTL 兜底：
+#: 最多 60 秒后重建；同模块的写入路径则**立即**失效（见 `invalidate_ont_allow_cache`）。
+_ONT_ALLOW_CACHE_AT: float = 0.0
+_ONT_ALLOW_TTL = 60.0
+
+
+def invalidate_ont_allow_cache() -> None:
+    """本体对象/支撑表变化后调用：让「可查询白名单」缓存立即失效。
+
+    原先该缓存**只在进程启动时建立、永不失效** ⇒ 导入本体后必须重启后端，
+    问数才认得新对象的支撑表（表现为「表 xxx 不在可查询白名单内」）。
+    """
+    global _ONT_ALLOW_CACHE, _ONT_ALLOW_CACHE_AT
+    _ONT_ALLOW_CACHE = None
+    _ONT_ALLOW_CACHE_AT = 0.0
 
 #: 当前对象上下文（对齐 Palantir Retrieval Context 的 Fixed Object Set）。
 #: 由 ``ask()`` / ``ask_stream()`` 在请求开始时**确定性注入**（不由模型决定是否检索），
@@ -1045,8 +1061,9 @@ async def _system_allowed() -> set[str]:
     旧实现只拼 ``ont_{code}``，于是这些表**根本查不到**
     （表现为「表 xxx 不在可查询白名单内」）。两种都收进来。
     """
-    global _ONT_ALLOW_CACHE
-    if _ONT_ALLOW_CACHE is not None:
+    global _ONT_ALLOW_CACHE, _ONT_ALLOW_CACHE_AT
+    now = time.monotonic()
+    if _ONT_ALLOW_CACHE is not None and (now - _ONT_ALLOW_CACHE_AT) < _ONT_ALLOW_TTL:
         return _ONT_ALLOW_CACHE
     # 走本体的统一语义接口拿"真实支撑表名 → code"，不再自己拼 SQL
     try:
@@ -1056,6 +1073,7 @@ async def _system_allowed() -> set[str]:
     except Exception:  # noqa: BLE001
         ont_tables = set()
     _ONT_ALLOW_CACHE = set(SYSTEM_ALLOWED_TABLES) | ont_tables
+    _ONT_ALLOW_CACHE_AT = now
     return _ONT_ALLOW_CACHE
 
 
@@ -5075,6 +5093,8 @@ class AiQueryService:
             m = {"ok": True, "table": f"ont_{table}", "columns": extra_cols}
         except Exception as e:  # noqa: BLE001
             m = {"ok": False, "msg": str(e)[:60]}
+        # 本体对象/支撑表变了 ⇒ 「可查询白名单」缓存立即失效（否则必须重启后端才问得到）
+        invalidate_ont_allow_cache()
         return {"ok": True, "object": table, "props": len(cols), "materialize": m}
 
     @classmethod

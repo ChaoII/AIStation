@@ -2680,6 +2680,21 @@ def _row_to_instance(meta: dict, row: object, columns: list[str]) -> dict:
     }
 
 
+async def _ensure_can_view(object_code: str, principal: Any) -> dict | None:
+    """读路径的**资源层可见性**检查（对象类型级 ACL）。
+
+    为什么必须有：读路径（实例查询/详情/跳转/图）原先只做「行策略 + 列掩码」，
+    **从不校验资源 ACL** ⇒ 「两层授权」只做了一半，被设为不可见的对象类型照样读得到。
+    `principal is None`（内部/系统上下文）时跳过，与既有行策略口径一致。
+    """
+    if principal is None:
+        return None
+    ok_v, why = await _sec.can_view_resource("object", object_code, principal)
+    if ok_v:
+        return None
+    return {"ok": False, "msg": f"无权查看对象类型 {object_code}：{why}"}
+
+
 async def instance_search(object_code: str, keyword: str = "", filters: dict | None = None,
                           limit: int = 50, offset: int = 0,
                           principal: Any = None,
@@ -2771,6 +2786,9 @@ async def instance_search(object_code: str, keyword: str = "", filters: dict | N
         sec_meta["scenario"] = scenario_code
         sec_meta["scenario_overlay"] = True
     if principal is not None:
+        deny = await _ensure_can_view(object_code, principal)
+        if deny:
+            return deny
         # 读时生效：先按行策略过滤，再掩掉不可读的列
         sec = await _sec.filter_instances(object_code, items, principal)
         items = sec["rows"]
@@ -2846,7 +2864,10 @@ async def instance_get(object_code: str, key: str, principal: Any = None,
             sec_meta["scenario"] = scenario_code
             sec_meta["scenario_overlay"] = True
     if principal is not None:
-        # 先判行级（不可读直接拒绝），再掩列级
+        # 资源层可见性（对象类型级 ACL）→ 再判行级（不可读直接拒绝）→ 再掩列级
+        deny = await _ensure_can_view(object_code, principal)
+        if deny:
+            return {**deny, "denied": True}
         ok_r, why_r = await _sec.row_allows(object_code, inst.get("props") or {}, principal)
         if not ok_r:
             return {"ok": False, "msg": f"无权查看该实例：{why_r}",
@@ -2997,6 +3018,10 @@ async def instance_pivot(object_code: str, key: str, link_id: int, limit: int = 
     other_field = lk["target_field"] if outgoing else lk["source_field"]
     my_field = lk["source_field"] if outgoing else lk["target_field"]
 
+    deny = await _ensure_can_view(object_code, principal)
+    if deny:
+        return {**deny, "items": []}
+
     mine = await _instance_meta(object_code)
     other = await _instance_meta(other_code)
     if not mine.get("materialized") or not other.get("materialized"):
@@ -3040,7 +3065,7 @@ async def instance_graph(object_code: str, key: str, link_ids: list[int] | None 
 
     返回 GraphCanvas 约定的 {nodes:[{id,name,etype,weight}], edges:[{source,target,rtype,weight}]}。
     """
-    root = await instance_get(object_code, key)
+    root = await instance_get(object_code, key, principal=principal)
     if not root.get("ok"):
         return {"ok": False, "msg": root.get("msg") or "实例不存在", "nodes": [], "edges": []}
     rels = await list_links(object_code)

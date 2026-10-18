@@ -1191,9 +1191,12 @@ async def domain_reconcile(
 
 
 # ---- P3-⑩ 治理驾驶舱 ----
+# 注意：这两个接口会**创建/改写本体对象与属性**（写操作），因此权限必须是
+# `module_ai:ontology:edit`，不能沿用问答的只读权限 `module_ai:query:ask`
+# ——否则「能问数」就等于「能改本体」（越权写入）。
 @AiQueryRouter.post("/ontology/import-from-ds", summary="数据源连接器→本体对象(把外部表结构生成本体对象)")
 async def import_ds_as_ontology(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:ontology:edit"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
     r = await AiQueryService.import_ds_table_as_ontology(
@@ -1204,7 +1207,7 @@ async def import_ds_as_ontology(
 
 @AiQueryRouter.post("/ontology/import-from-ds/batch", summary="数据源连接器→本体对象(批量,默认排除纯技术表)")
 async def import_ds_as_ontology_batch(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:ontology:edit"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
     r = await AiQueryService.import_ds_tables_as_ontology(

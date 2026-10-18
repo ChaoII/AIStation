@@ -433,3 +433,21 @@ class TestSemanticConvergence:
 
         src = inspect.getsource(Q.AiQueryService.scan_sensitive)
         assert "ai_ont_property" in src and "sensitive=true" in src
+
+    def test_ont_allow_cache_can_be_invalidated(self):
+        """回归：可查询白名单缓存必须**能失效**。
+
+        原先是进程级缓存且**永不失效** ⇒ 「数据源→本体对象」导入后必须重启后端，
+        问数才认得新对象的支撑表（表现为「表 xxx 不在可查询白名单内」）。
+        同模块写入路径会立即失效，跨模块改写靠 60 秒 TTL 兜底。
+        """
+        from app.plugin.module_ai.query import service as Q
+
+        Q._ONT_ALLOW_CACHE = {"stale_table"}
+        Q._ONT_ALLOW_CACHE_AT = 1e9
+        Q.invalidate_ont_allow_cache()
+        assert Q._ONT_ALLOW_CACHE is None, "失效后缓存应为空，下次访问重建"
+        assert Q._ONT_ALLOW_CACHE_AT == 0.0
+        # 导入路径必须调用它（否则又回到"必须重启"）
+        src = inspect.getsource(Q.AiQueryService._import_ont_table_core)
+        assert "invalidate_ont_allow_cache()" in src
