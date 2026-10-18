@@ -40,15 +40,21 @@ SSE_RESPONSE_HEADERS: dict[str, str] = {
 }
 
 
-def sse_response(gen, **kwargs) -> StreamingResponse:
+def sse_response(gen, *, extra_headers: dict[str, str] | None = None, **kwargs) -> StreamingResponse:
     """构造一个带完整 SSE 响应头的 :class:`StreamingResponse`。
 
     用它而不是 ``StreamingResponse(media_type="text/event-stream")``：后者不会
     带上 :data:`SSE_RESPONSE_HEADERS`，于是 SSE 会被 GZip 中间件压成"不推送"。
+
+    端点若需要额外头（如 ``Connection: keep-alive``），用 ``extra_headers`` 合并，
+    **不要**直接传 ``headers=``（会与本函数的 ``headers`` 重复传参报 TypeError）。
     """
+    headers = dict(SSE_RESPONSE_HEADERS)
+    if extra_headers:
+        headers.update(extra_headers)
     return StreamingResponse(
         gen,
         media_type="text/event-stream",
-        headers=dict(SSE_RESPONSE_HEADERS),
+        headers=headers,
         **kwargs,
     )

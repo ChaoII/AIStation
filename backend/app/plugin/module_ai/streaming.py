@@ -5,13 +5,14 @@ import json
 import uuid
 from collections.abc import AsyncIterator
 
+from app.core.sse import SSE_RESPONSE_HEADERS
+
+#: 本协议的头 = **共享 SSE 契约**（含 Content-Encoding: identity，缺了会被 GZip 缓冲）
+#: + UI Message Stream 版本标识。**不要再手抄一份**：改契约时只改 app/core/sse.py。
 UI_STREAM_HEADERS = {
-    "Cache-Control": "no-cache, no-transform",
+    **SSE_RESPONSE_HEADERS,
     "Connection": "keep-alive",
-    "X-Accel-Buffering": "no",
     "x-vercel-ai-ui-message-stream": "v1",
-    # 让 GZipMiddleware 跳过压缩（否则 SSE 被缓冲，前端无法逐字）
-    "Content-Encoding": "identity",
 }
 
 

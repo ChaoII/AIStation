@@ -77,6 +77,14 @@ test("工作流运行可停止：停止按钮 → 二次确认 → 已取消", a
   // 中断后显示「已取消」（不是「运行失败」）
   await expect(page.locator(".chat-msg__cancel").first()).toBeVisible({ timeout: 40_000 });
   await expect(page.locator(".chat-msg__err").first()).toHaveCount(0);
+
+  // 轨迹也不应出现重复行：前端本地标「已取消」+ 服务端补发终态，容易撞出两行
+  const cancelledLabels = await page
+    .locator(".chat-trace .trace-item__label")
+    .allInnerTexts();
+  expect(cancelledLabels.length).toBeGreaterThan(0);
+  expect(new Set(cancelledLabels).size).toBe(cancelledLabels.length);
+
   await page.screenshot({ path: "e2e/wf-cancel-3-cancelled.png", fullPage: false });
 
   // 后端记录应落成 cancelled（直接查运行历史接口核对）
@@ -90,6 +98,32 @@ test("工作流运行可停止：停止按钮 → 二次确认 → 已取消", a
   expect(res.ok()).toBeTruthy();
   const logs = (await res.json()).data as Array<{ id: number; status: string }>;
   expect(logs.some((l) => l.status === "cancelled")).toBeTruthy();
+});
+
+test("流式不被缓冲：运行中即可看到「执行中」节点与增量内容", async ({ page }) => {
+  await openRunDrawer(page);
+  await sendLongPrompt(page, "请分 10 段、每段不少于 100 字，详细介绍你自己，逐段输出，不要省略。");
+
+  const stop = page.getByRole("button", { name: /^停止$/ }).first();
+  await expect(stop).toBeVisible({ timeout: 25_000 });
+
+  // 关键断言：**运行尚未结束**时就能看到「执行中」的节点轨迹行。
+  // 若 SSE 被 GZip 缓冲（缺 Content-Encoding: identity），帧会在流结束时才一次性到达，
+  // 此处必然超时失败——这就是「流式被缓冲」的浏览器侧回归护栏。
+  const runningRow = page.locator(".chat-trace .trace-item__status", { hasText: "执行中" });
+  await expect(runningRow).toBeVisible({ timeout: 20_000 });
+  // 双保险：此刻仍在运行（停止按钮还在），排除"结束后才到"恰好满足上一条
+  await expect(stop).toBeVisible();
+
+  await page.screenshot({ path: "e2e/wf-streaming-inflight.png", fullPage: false });
+
+  // 收尾：停掉本次运行，避免留下长跑
+  await stop.click();
+  const box = page.locator(".el-message-box").first();
+  await expect(box).toBeVisible({ timeout: 10_000 });
+  await box.getByRole("button", { name: "停止运行" }).click();
+  await box.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
+  await expect(page.locator(".chat-msg__cancel").first()).toBeVisible({ timeout: 40_000 });
 });
 
 test("运行轨迹合并：同一节点只占一行，不留「执行中」", async ({ page }) => {

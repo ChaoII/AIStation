@@ -316,16 +316,10 @@ async def run_agno_tool_stream(
 
 
 def agno_stream_response(body: AsyncIterator[str]):
-    """Agno 原生事件流的 StreamingResponse（SSE 响应头）。"""
-    from fastapi.responses import StreamingResponse
+    """Agno 原生事件流的 StreamingResponse（**共享 SSE 契约**，勿手抄响应头）。"""
+    from app.core.sse import sse_response
 
-    headers = {
-        "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
-        "X-Accel-Buffering": "no",
-        "Content-Encoding": "identity",
-    }
-    return StreamingResponse(body, media_type="text/event-stream", headers=headers)
+    return sse_response(body, extra_headers={"Connection": "keep-alive"})
 
 
 def agno_error_frame(message: str) -> str:

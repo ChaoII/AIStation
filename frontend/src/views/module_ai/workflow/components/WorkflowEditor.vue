@@ -1164,11 +1164,18 @@ function pushNodeTrace(trace: TraceItem[] | undefined, obj: any) {
     duration: obj.duration_ms,
   };
   for (let i = trace.length - 1; i >= 0; i--) {
-    if (trace[i].nodeId === obj.nodeId) {
-      if (trace[i].status === "running") Object.assign(trace[i], item);
-      else trace.push(item);
-      return;
+    if (trace[i].nodeId !== obj.nodeId) continue;
+    const prev = trace[i].status;
+    // 就地更新的两种情形：
+    // 1) 该节点仍在跑 → 终态回填；
+    // 2) 前端已本地标成「已取消」（用户点停止时立即反馈）→ 服务端补发的终态回填，
+    //    否则会因为它"不再是 running"而**多出一行**（实测：取消后 LLM 出现两行）。
+    if (prev === "running" || (prev === "cancelled" && item.status !== "running")) {
+      Object.assign(trace[i], item);
+    } else {
+      trace.push(item); // 同节点再次执行（循环/迭代）→ 新起一行
     }
+    return;
   }
   trace.push(item);
 }
@@ -3163,7 +3170,7 @@ async function sendStep() {
   }
   const text = runInput.value.trim() || "继续";
   const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
-  const msg: ChatMsg = { id: ++chatSeq, role: "assistant", content: "", trace: [], running: true };
+  const msg = reactive<ChatMsg>({ id: ++chatSeq, role: "assistant", content: "", trace: [], running: true });
   chatMessages.value.push(msg);
   activeMsg.value = msg;
   running.value = true;
@@ -3244,10 +3251,12 @@ async function sendChat() {
     await handleSave();
     if (!workflowId.value) return;
   }
-  const userMsg: ChatMsg = { id: ++chatSeq, role: "user", content: text };
+  // 必须是 reactive：普通对象被 push 进 ref 数组后，对其字段的改动**不会**触发重渲染，
+  // 表现就是"运行中看不到增量、结束才一次性出现"（实测踩过）。
+  const userMsg = reactive<ChatMsg>({ id: ++chatSeq, role: "user", content: text });
   chatMessages.value.push(userMsg);
   runInput.value = "";
-  const msg: ChatMsg = { id: ++chatSeq, role: "assistant", content: "", trace: [], running: true };
+  const msg = reactive<ChatMsg>({ id: ++chatSeq, role: "assistant", content: "", trace: [], running: true });
   chatMessages.value.push(msg);
   activeMsg.value = msg;
   running.value = true;
@@ -3323,6 +3332,16 @@ async function sendChat() {
 }
 
 /** 停止运行：二次确认 → 通知后端取消 → 掐断 SSE 读取。 */
+/** 等 data-run 帧下发运行记录 id（「停止」按钮在发起请求前就已显示，可能还没到）。 */
+async function waitRunLogId(timeoutMs: number): Promise<number | null> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    if (activeRunLogId.value) return activeRunLogId.value;
+    await new Promise((r) => window.setTimeout(r, 100));
+  }
+  return activeRunLogId.value;
+}
+
 async function stopRun() {
   try {
     await ElMessageBox.confirm(
@@ -3333,24 +3352,36 @@ async function stopRun() {
   } catch {
     return; // 用户取消
   }
-  const logId = activeRunLogId.value;
-  if (logId) {
-    try {
-      await cancelAiWorkflowRun(logId);
-    } catch (e: any) {
-      ElMessage.warning(`取消请求失败：${e?.message || e}`);
-    }
-  }
-  runAbort?.abort();
-  // 本地收尾：abort 之后服务端补发的 cancelled 帧已无人接收，
-  // 若不在这里改，被中断的节点会一直显示「执行中」（实测踩过）。
+
+  // 本地即时反馈：被中断的节点立刻显示「已取消」，不等服务端帧
   const m = activeMsg.value;
   if (m?.trace) {
     m.trace.forEach((t) => {
       if (t.status === "running") t.status = "cancelled";
     });
   }
-  ElMessage.info("已请求停止运行");
+
+  // 关键：**先取到运行记录 id 再发取消**。此前直接 abort + 立刻读 id，
+  // 若 data-run 还没到（按钮显示早于请求），id 为 null → 取消请求根本不发，
+  // 服务端照跑完并记 success，而界面显示假的「已取消」（实测踩过）。
+  const logId = await waitRunLogId(3000);
+  if (logId) {
+    try {
+      await cancelAiWorkflowRun(logId);
+      ElMessage.info("已请求停止运行");
+      // 兜底：服务端若 3 秒内仍未收尾，就断开连接（不再干等）
+      window.setTimeout(() => {
+        if (running.value) runAbort?.abort();
+      }, 3000);
+    } catch (e: any) {
+      ElMessage.warning(`取消请求失败：${e?.message || e}`);
+      runAbort?.abort();
+    }
+  } else {
+    // 拿不到运行记录：只能断开连接（服务端能否停下取决于断开是否传播）
+    runAbort?.abort();
+    ElMessage.warning("未能定位本次运行，已断开连接");
+  }
 }
 
 async function handleApprove(decision: "approve" | "reject") {

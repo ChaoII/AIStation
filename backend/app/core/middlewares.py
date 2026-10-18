@@ -281,4 +281,16 @@ class CustomGZipMiddleware(GZipMiddleware):
             if any(path.startswith(p) for p in self._NO_COMPRESS_PREFIXES):
                 await self.app(scope, receive, send)
                 return
+            # SSE（text/event-stream）一律不压缩：GZip 会缓冲流式响应，把"逐帧到达"
+            # 变成"结束时一次性到达"（前端看不到实时进度）。此前只靠流式响应自带的
+            # `Content-Encoding: identity` 头让 GZip 跳过——那是**约定**，一旦该头被
+            # 改动就会静默退回缓冲，故这里按 Accept 再兜一道，不依赖约定。
+            accept = ""
+            for k, v in scope.get("headers") or []:
+                if k == b"accept":
+                    accept = v.decode("latin-1").lower()
+                    break
+            if "text/event-stream" in accept:
+                await self.app(scope, receive, send)
+                return
         await super().__call__(scope, receive, send)
