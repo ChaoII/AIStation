@@ -551,6 +551,8 @@ git commit -m "feat(cron): 统一触发预览接口（四模块 thin route，后
 - 落库：`cron` → 5 段字符串；`interval` → `json.dumps({weeks,days,hours,minutes,seconds})`；`date` → ISO 串；`now` → NULL
 - 读取（响应）把 `trigger_args` 反序列化回对象形态，供前端组件直接使用
 - **三处的列表/详情响应新增 `trigger_describe: str | None`**（= `TriggerUtil.describe(trigger, trigger_args)`；表达式为空/脏数据无法描述时为 `None`）——C3/C5 的「描述」列当前只能回退显示 `trigger_args` 原样，补此字段后前端自动优先展示（前端已按「`trigger_describe`/`describe` 优先，否则回退」实现）
+- **字段优先规则（C4 审查 Minor 4 钉死）**：`trigger` **显式提供**时以它为准；`cron` / `cron_expr` **仅在 `trigger` 缺省时**才被解读（**空串视为"未提供"**）。这样 C4/C5/C6 页面提交的 `cron: ""`（非 cron 类型）不会触发「空表达式 + 启用 → 400」的误报。
+- **前端 API 类型同步（C4 审查 Minor 3：类型撒谎）**：`frontend/src/api/module_ai/workflow.ts:76` 的 `setAiWorkflowSchedule` body 仍只声明 `{ cron?, enabled }`，调用点靠先赋给变量绕过 TS 多余属性检查；一并补 `trigger`/`trigger_args`。工作台与训练的对应 API 文件（`frontend/src/api/module_ai/workspace.ts`、训练 schedule 相关）同办。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -974,6 +976,9 @@ git commit -m "feat(ui): 系统定时任务节点页统一为 TriggerEditor，�
   于是工作流/训练/节点页只有本模块权限的用户会看到「预览暂不可用」——A7 交付的另外三条预览路由（`/ai/workflows/trigger/preview`、
   `/train/.../trigger/preview`、`/task/cronjob/node/trigger/preview`）**全部闲置**。
   修法：给组件加**可选** prop（如 `preview-url`，缺省仍为工作台路由以保持兼容），并让 C4/C5/C6 的页面各自传入本模块预览路由。
+- C4 审查 Minor 1：`frontend/e2e/trigger-workflow.spec.ts:190-198` 的注释声称「`destroy-on-close` 后重新挂载」，
+  但 `WorkflowEditor.vue:846` 的 `el-dialog` **没有** `destroy-on-close` → 断言无法区分「后端读回」与「内存残留」。
+  修法：要么给弹窗加 `destroy-on-close`（坐实注释），要么关闭前先用接口把值改成别的再重开断言 UI 变化。
 
 - [ ] **Step 1: 补一条"非法表达式被拦"的 e2e**：四处任选一处填 `0 0 9 L * *` → 断言前端提示非法且保存被拒（不落库）
 - [ ] **Step 2: 跑四个入口的 e2e**：Run: `cd frontend && npx playwright test e2e/trigger-editor.spec.ts --project=chromium`；Expected: 全绿
