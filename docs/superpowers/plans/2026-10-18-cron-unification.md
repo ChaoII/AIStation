@@ -131,6 +131,13 @@ git commit -m "feat(cron): TriggerUtil 统一 cron 规范化与校验（标准 5
 - Consumes: `TriggerUtil.normalize_cron` / `validate_cron`（Task A1）
 - Produces: `TriggerUtil.to_cron_trigger(expr: str) -> CronTrigger`、`TriggerUtil.next_run(trigger: str, args, base=None) -> datetime | None`、`TriggerUtil.describe_cron(expr: str) -> str`
 
+**A1 遗留小项（任务审查的 Minor 与 ⚠️，随本任务一并收口）:**
+- ⚠️ **下游可构造性**（审查无法从 A1 diff 判断）：本任务必须加一条**扫描式测试**——A1 判合法的表达式（含 `5-7`/`0-7`/`5-5`/`mon-fri`/`1,3,5` 等，至少 20 条参数化）规范化后**必须能被 `CronTrigger` 构造且被 `croniter` 解析**（这同时取代 A1 报告里那个未入库的临时探针）。
+- Minor：`validate_cron` 的宽 `except Exception` 收窄为只捕 `ValueError`（避免掩盖真实 bug），必要时 `logging.exception` 留痕。
+- Minor：`*,mon` / `1,*` 这类**通配与列表混写**归一为 `*`（见规格 §4.1）。
+- Minor：测试对关键反例（`L`/`15W`/`1#2`/`?`/7 段）断言**原因具体性**（`in` 断言关键短语），而不只是"原因非空"。
+- Minor：补步长写法的覆盖：`5-5/1`（等值区间带步长 → 非法）、`1/2`（单值带步长 → 非法）。
+
 - [ ] **Step 1: 写失败测试**（口径一致性 + 时区）
 
 ```python
