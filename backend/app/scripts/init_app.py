@@ -1475,6 +1475,55 @@ async def _ensure_script_safety_params() -> None:
     log.info("✅ 脚本安全配置参数已确保")
 
 
+async def _register_business_jobs_on_startup() -> None:
+    """启动期把三处业务作业（工作台 / 工作流 / 训练定时调度）注册到中心调度器。
+
+    **逐模块同步，每次只传自己的前缀**（B1 审查钉死的调用约定）：三个模块共用一个调度器，
+    用 `prefixes=None` 的聚合同步会把**列表外**其它模块的作业一并清掉——无告警、只在下次
+    触发时表现为「任务不再运行」。因此这里按模块分别调用，各自只清理自己的命名空间：
+
+    - 工作台 `ai_workspace_cron:`：`WorkspaceService.collect_job_specs()` + 显式前缀，
+      再把作业算出的 `next_run_time` 逐行回写（作业是唯一真源）；
+    - 工作流 `ai_workflow_schedule:`：`AiWorkflowService.start_scheduler()`（B3 保留的
+      启动期同步入口，内部已按本模块前缀同步并回写状态）；
+    - 训练 `train_schedule:`：`ScheduleService.collect_job_specs()` + 显式前缀。
+
+    业务作业存放在**内存** jobstore（func 多为闭包/模块级引用，重启即丢），所以每次启动都要
+    按库重建一次。任一模块失败只记 warning，**绝不阻断应用启动**——注册是幂等的尽力而为操作。
+    """
+    from app.core.ap_scheduler import SchedulerUtil
+
+    # 工作台定时任务（`ai_workspace_cron:`）
+    try:
+        from app.plugin.module_ai.workspace.service import WorkspaceService
+
+        specs = await WorkspaceService.collect_job_specs()
+        SchedulerUtil.sync_business_jobs(specs, prefixes=("ai_workspace_cron:",))
+        await WorkspaceService.write_back_cron_states()
+        log.info(f"✅ 工作台定时任务已注册到中心调度器（{len(specs)} 个）")
+    except Exception as e:  # noqa: BLE001 单模块失败不阻断启动
+        log.warning(f"⚠️  工作台定时任务启动期注册失败（忽略）：{str(e)[:200]}")
+
+    # 工作流定时调度（`ai_workflow_schedule:`）：模块自带的启动期同步入口
+    try:
+        from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+        await AiWorkflowService.start_scheduler()
+        log.info("✅ 工作流定时调度已注册到中心调度器")
+    except Exception as e:  # noqa: BLE001 单模块失败不阻断启动
+        log.warning(f"⚠️  工作流定时调度启动期注册失败（忽略）：{str(e)[:200]}")
+
+    # 训练定时调度（`train_schedule:`）
+    try:
+        from app.plugin.module_train.schedule_service import ScheduleService
+
+        specs = await ScheduleService.collect_job_specs()
+        SchedulerUtil.sync_business_jobs(specs, prefixes=("train_schedule:",))
+        log.info(f"✅ 训练定时调度已注册到中心调度器（{len(specs)} 个）")
+    except Exception as e:  # noqa: BLE001 单模块失败不阻断启动
+        log.warning(f"⚠️  训练定时调度启动期注册失败（忽略）：{str(e)[:200]}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
     """
@@ -1627,14 +1676,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_prediction_scheduler())
         log.info("✅ 预测调度器已启动")
 
-        from app.plugin.module_ai.workflow.service import AiWorkflowService
-        asyncio.create_task(AiWorkflowService.start_scheduler())
-        log.info("✅ 工作流定时调度器已启动")
-
-        from app.plugin.module_ai.workspace.service import WorkspaceService
-        asyncio.create_task(WorkspaceService.cron_scheduler())
-        log.info("✅ 工作台定时任务调度器已启动")
-
         from app.plugin.module_train.deploy_executor import start_deploy_recovery
         asyncio.create_task(start_deploy_recovery())
         log.info("✅ 部署孤儿回收已启动")
@@ -1716,6 +1757,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
                 )
         except Exception as e:
             log.warning(f"train migration warning: {e}")
+
+        # 启动期把三处业务作业（工作台 / 工作流 / 训练定时调度）注册到中心调度器。
+        # **逐模块同步，各自只清理自己的前缀**（B1 审查钉死的调用约定）：聚合同步
+        # （`prefixes=None`）会把列表外其它模块的作业一并清掉。单模块异常只记 warning，
+        # 绝不阻断应用启动。工作台原先的每分钟自建轮询与工作流的启动钩子都在这里统一收口，
+        # 不再有第二条注册路径（详见 `_register_business_jobs_on_startup`）。
+        # 放在启动序列末尾：此时各业务表/列已确保（如 `ensure_train_columns`），
+        # 且仍在对外提供服务之前，不会有「服务起来了但定时任务没注册」的窗口。
+        await _register_business_jobs_on_startup()
 
         # 导入并显示最终的启动信息面板
         from app.common.enums import EnvironmentEnum

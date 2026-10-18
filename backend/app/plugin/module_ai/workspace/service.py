@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
+from app.core.logger import log
 from app.utils.common_util import traversal_to_tree
 from app.utils.trigger_util import TriggerUtil
 
@@ -34,6 +36,16 @@ _TYPE_ICON = {
 #: 用户看不到任何提示。三处写入路径（工作台 / 工作流 / 训练）口径必须一致。
 _EMPTY_TRIGGER_MSG = "请先配置触发时间（分 时 日 月 周）"
 
+#: 本模块在中心调度器里的作业键前缀（与 `ap_scheduler._BUSINESS_JOB_PREFIXES` 同口径）：
+#: 三个模块共用一个调度器，作业键必须带自己的前缀，同步时也只能清理自己的前缀范围
+#: （否则会把别的模块的定时任务一并删掉——无告警、只在下次触发时表现为「任务不再运行」）。
+_JOB_PREFIX = "ai_workspace_cron:"
+
+
+def _job_key(cron_id: int) -> str:
+    """本模块在中心调度器里的作业键（`ai_workspace_cron:{id}`）。"""
+    return f"{_JOB_PREFIX}{cron_id}"
+
 
 def _is_image_icon(icon: str) -> bool:
     """判断图标是否为图片路径（http(s)/图片扩展名/agent-icons 等），非图片则用类型默认图标。"""
@@ -48,6 +60,32 @@ def _is_image_icon(icon: str) -> bool:
             or i.startswith("agent-icons/")
         )
     )
+
+
+async def run_scheduled_workspace_cron(cron_id: int) -> None:
+    """中心调度器作业入口：执行工作台定时任务绑定的资产，并回写运行状态。
+
+    刻意用**模块级函数**（而非闭包）：`obj_to_ref` 能解析出引用，作业状态可完整序列化，
+    日志里也有可读的函数名（闭包会走降级路径）。
+
+    作业与库里的行之间存在窗口期（禁用/删除/改表达式后作业可能还没来得及移除），
+    因此触发时**以库为准**重新判定：行不存在、已删除、已禁用或未配置表达式都直接跳过。
+    `next_run_time` 一律由作业回写（单一真源）：运行结束后（无论成败）从作业读回，
+    库里的值永远等于作业的值，业务侧不再自算。
+    """
+    started = datetime.now(ZoneInfo(TriggerUtil.TIMEZONE))
+    async with async_db_session() as db:
+        row = await db.get(AiWorkspaceCronModel, cron_id)
+        if not row or row.is_deleted or not row.enabled or not row.trigger_args:
+            return
+        target_type, target_id = row.target_type, row.target_id
+    try:
+        await WorkspaceService._run_target(target_type, target_id)
+    except Exception as exc:  # noqa: BLE001 单次执行失败不抛出，避免污染作业状态
+        log.error(f"工作台定时任务 #{cron_id} 执行失败：{exc}")
+    finally:
+        # 只有真正执行过的这一轮才回写 `last_run_time`（被跳过的行不记「刚跑过」）
+        await WorkspaceService.write_back_cron_state(cron_id, ran_at=started)
 
 
 class WorkspaceService:
@@ -301,22 +339,152 @@ class WorkspaceService:
         trigger, args = TriggerUtil.normalize("cron", cron)
         return trigger, args
 
-    @staticmethod
-    def _next_run_time(trigger: str | None, trigger_args) -> datetime | None:
-        """下次运行时间一律来自统一层；未配置表达式（历史空行）返回 `None`。
+    # ---------- 与中心调度器的同步 ----------
 
-        `trigger` 为 NULL 的历史行按 `cron` 兜底（与 `_cron_dict` 同口径）：否则统一层会抛
-        「未知触发类型」，被调用方的 `except` 吞掉后**静默把用户任务置为禁用**。
+    @staticmethod
+    def _scheduler_running() -> bool:
+        """中心调度器是否在运行（调度关闭的部署里没有任何作业）。"""
+        from app.core.ap_scheduler import scheduler
+
+        return bool(getattr(scheduler, "running", False))
+
+    @staticmethod
+    def _preview_next_run(trigger: str | None, trigger_args) -> datetime | None:
+        """统一层的「下次运行时间」预览（`TriggerUtil.next_run`，cron 语义的唯一口径）。
+
+        只在**作业不存在且调度器未运行**时用于回显（如 `SCHEDULER_ENABLED=False` 的部署：
+        没有作业，但界面仍应看到「本来会在什么时候跑」）。正常路径一律以作业的值为准
+        （作业是唯一真源）。遗留脏表达式（Quartz 写法等）返回 `None` 而不抛。
         """
         if not trigger_args:
             return None
-        return TriggerUtil.next_run(trigger or "cron", trigger_args)
+        try:
+            return TriggerUtil.next_run(trigger or "cron", trigger_args)
+        except Exception as e:  # noqa: BLE001 脏表达式没有有效的下次运行时间
+            log.debug(f"无法计算下次运行时间（{trigger} {trigger_args!r}）：{e!s}")
+            return None
+
+    @classmethod
+    def _resolve_next_run(cls, job, trigger, trigger_args, enabled: bool) -> datetime | None:
+        """该行应有的 `next_run_time`：作业优先（唯一真源），调度器未运行时回退统一层预览。
+
+        - 作业在 → 用作业算出的时刻（改表达式 / 启停后随作业同步刷新）；
+        - 作业不在 + 调度器**在运行** → `None`：禁用、未配置、或注册失败（脏表达式由列表的
+          `needs_review` 标出），绝不显示一个凭空的时刻；
+        - 作业不在 + 调度器**未运行**（调度关闭的部署）→ 统一层预览值。
+        """
+        job_next = getattr(job, "next_run_time", None) if job else None
+        if job_next is not None:
+            return job_next
+        if enabled and not cls._scheduler_running():
+            return cls._preview_next_run(trigger, trigger_args)
+        return None
+
+    @classmethod
+    def _sync_cron_job(cls, cron_id: int, trigger: str | None, trigger_args, enabled: bool):
+        """把定时任务行同步到中心调度器（幂等），返回注册后的作业（未注册时为 `None`）。
+
+        - 启用 + 已配置表达式 → 注册/替换作业（同键替换，改表达式即换触发器）；
+        - 禁用 / 未配置表达式 → 移除作业（幂等，不留幽灵触发）；
+        - 遗留脏表达式（迁移被跳过、Quartz 写法）注册失败：**不留幽灵作业、也不把请求打成 500**
+          ——该行在列表里由统一层标 `needs_review`，提示人工改写。
+
+        **刻意不用 `sync_business_jobs`**：那是「按整表同步」的接口（会清理列表外的同前缀
+        作业），单行增改用它会把本模块其它定时任务的作业一并删掉。
+        `next_run_time` 从返回的作业读回（作业是唯一真源）。
+        """
+        from app.core.ap_scheduler import SchedulerUtil
+
+        job_key = _job_key(cron_id)
+        if not enabled or not trigger_args:
+            SchedulerUtil.remove_business_job(job_key)
+            return None
+        try:
+            return SchedulerUtil.register_business_trigger(
+                job_key,
+                trigger or "cron",
+                trigger_args,
+                run_scheduled_workspace_cron,
+                args=(cron_id,),
+            )
+        except Exception as e:  # noqa: BLE001 - 单行脏配置不得拖垮增改接口
+            SchedulerUtil.remove_business_job(job_key)
+            log.warning(f"工作台定时任务 #{cron_id} 的触发配置无法注册作业，已跳过：{e!s}")
+            return None
+
+    @classmethod
+    async def write_back_cron_state(cls, cron_id: int, ran_at: datetime | None = None) -> None:
+        """把作业的 `next_run_time` 回写定时任务行（状态单一真源）。
+
+        取值口径见 `_resolve_next_run`：作业在就用作业的值；作业不在且调度器在运行则回写
+        `None`（禁用 / 未配置 / 注册失败），避免库里残留一个凭空的「下次运行」时刻。
+        `ran_at` 刻意做成可选：启动期同步只回写下次运行时间，**不得**把启动时刻误记成
+        「上次运行」（否则界面会把「服务重启过」显示成「任务刚跑过」）。
+        """
+        from app.core.ap_scheduler import scheduler
+
+        job = scheduler.get_job(_job_key(cron_id))
+        try:
+            async with async_db_session.begin() as db:
+                row = await db.get(AiWorkspaceCronModel, cron_id)
+                if not row or row.is_deleted:
+                    return
+                if ran_at is not None:
+                    row.last_run_time = ran_at
+                row.next_run_time = cls._resolve_next_run(
+                    job, row.trigger, row.trigger_args, bool(row.enabled)
+                )
+        except Exception as e:  # noqa: BLE001 状态回写失败不影响本次运行结果
+            log.warning(f"工作台定时任务 #{cron_id} 状态回写失败：{str(e)[:200]}")
+
+    @classmethod
+    async def _enabled_cron_rows(cls) -> list[AiWorkspaceCronModel]:
+        """启用且未删除的定时任务行（启动期同步的唯一数据源）。"""
+        async with async_db_session() as db:
+            stmt = select(AiWorkspaceCronModel).where(
+                AiWorkspaceCronModel.enabled.is_(True),
+                AiWorkspaceCronModel.is_deleted.is_(False),
+            )
+            return (await db.execute(stmt)).scalars().all()
+
+    @classmethod
+    def _specs_of(cls, rows: list[AiWorkspaceCronModel]) -> list[tuple]:
+        """把启用行转成中心调度器的作业规格（5 元组，末项为传给作业函数的位置参数）。"""
+        return [
+            (
+                _job_key(r.id),
+                r.trigger or "cron",
+                r.trigger_args,
+                run_scheduled_workspace_cron,
+                (r.id,),
+            )
+            for r in rows
+            if r.trigger_args
+        ]
+
+    @classmethod
+    async def collect_job_specs(cls) -> list[tuple]:
+        """收集「启用且有触发表达式」的定时任务规格，供启动期 `sync_business_jobs` 注册。
+
+        每项为 5 元组 `(job_key, trigger, trigger_args, func, func_args)`。脏表达式不在
+        这里过滤：`sync_business_jobs` 会逐条跳过并告警，不会因一行坏配置抹掉其余作业。
+        """
+        return cls._specs_of(await cls._enabled_cron_rows())
+
+    @classmethod
+    async def write_back_cron_states(cls) -> None:
+        """启动期把启用行的 `next_run_time` 逐行从作业读回（作业是唯一真源）。
+
+        重启后内存 jobstore 里的作业会按库重建，作业算出的下次触发时刻与库里上次落的值
+        可能不同（时间已经走过），不刷新就会在列表里显示一个过去的时刻。
+        """
+        for row in await cls._enabled_cron_rows():
+            await cls.write_back_cron_state(row.id)
 
     @classmethod
     async def create_cron(cls, data, auth) -> dict:
         trigger, trigger_args = cls._resolve_trigger(data.cron, bool(data.enabled))
-        next_run = cls._next_run_time(trigger, trigger_args) if data.enabled else None
-        async with async_db_session.begin() as db:
+        async with async_db_session() as db:
             row = AiWorkspaceCronModel(
                 name=data.name,
                 description=data.description,
@@ -326,17 +494,26 @@ class WorkspaceService:
                 target_id=data.target_id,
                 category_id=data.category_id,
                 enabled=data.enabled,
-                next_run_time=next_run,
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )
             db.add(row)
             await db.flush()
-            return cls._cron_dict(row)
+            cron_id = row.id
+            # 先落库再注册作业：作业触发时按库里的行取状态，避免「作业已注册、库还没写」
+            await db.commit()
+            job = cls._sync_cron_job(cron_id, trigger, trigger_args, bool(data.enabled))
+            # next_run_time 由作业回写（单一真源）：业务侧不再自算，两套口径必然漂移
+            row.next_run_time = cls._resolve_next_run(
+                job, trigger, trigger_args, bool(data.enabled)
+            )
+            await db.commit()
+            await db.refresh(row)
+        return cls._cron_dict(row)
 
     @classmethod
     async def update_cron(cls, cron_id: int, data, auth) -> dict | None:
-        async with async_db_session.begin() as db:
+        async with async_db_session() as db:
             row = await db.get(AiWorkspaceCronModel, cron_id)
             if not row or row.is_deleted:
                 return None
@@ -356,14 +533,16 @@ class WorkspaceService:
             elif data.enabled is True and not row.trigger_args:
                 # 只切「启用」而库里没有表达式：同样不留「已启用但永不触发」的行
                 raise CustomException(msg=_EMPTY_TRIGGER_MSG, code=400, status_code=400)
-            # 重新计算下次运行（表达式或启停变化时；一律走统一层）
-            if data.cron is not None or data.enabled is not None:
-                row.next_run_time = (
-                    cls._next_run_time(row.trigger, row.trigger_args) if row.enabled else None
-                )
             row.updated_id = auth.user.id
-            await db.flush()
-            return cls._cron_dict(row)
+            # 先落库再同步作业（同 create）：作业触发时按库里的行取状态
+            trigger, trigger_args, enabled = row.trigger, row.trigger_args, bool(row.enabled)
+            await db.commit()
+            job = cls._sync_cron_job(cron_id, trigger, trigger_args, enabled)
+            # next_run_time 由作业回写（单一真源）：禁用 / 未配置 / 注册失败一律回落 None
+            row.next_run_time = cls._resolve_next_run(job, trigger, trigger_args, enabled)
+            await db.commit()
+            await db.refresh(row)
+        return cls._cron_dict(row)
 
     @classmethod
     async def delete_cron(cls, cron_id: int, auth) -> None:
@@ -372,48 +551,10 @@ class WorkspaceService:
             if not row or row.is_deleted:
                 raise CustomException(msg="定时任务不存在")
             await db.delete(row)
+        # 行已删除后再移除作业（幂等）：不留「行已没了、作业还在跑」的幽灵触发
+        from app.core.ap_scheduler import SchedulerUtil
 
-    @classmethod
-    async def cron_scheduler(cls) -> None:
-        """后台轮询：每分钟检查到期定时任务并尝试执行。"""
-        import asyncio
-        from zoneinfo import ZoneInfo
-
-        from loguru import logger
-
-        # 下次运行时间来自统一层（Asia/Shanghai），比较统一到该时区的墙上时间，
-        # 避免 aware（PG 的 timestamptz）与 naive 混用
-        timezone = ZoneInfo(TriggerUtil.TIMEZONE)
-        aiokill = False
-        while not aiokill:
-            try:
-                now = datetime.now(timezone).replace(tzinfo=None)
-                async with async_db_session() as db:
-                    rows = (
-                        await db.execute(
-                            select(AiWorkspaceCronModel).where(
-                                AiWorkspaceCronModel.enabled.is_(True),
-                                AiWorkspaceCronModel.is_deleted.is_(False),
-                            )
-                        )
-                    ).scalars().all()
-                    for r in rows:
-                        due = r.next_run_time.replace(tzinfo=None) if r.next_run_time else None
-                        if due is not None and due <= now:
-                            # 标记运行并计算下一次（统一层）
-                            r.last_run_time = now
-                            try:
-                                r.next_run_time = cls._next_run_time(r.trigger, r.trigger_args)
-                            except Exception:  # noqa: BLE001
-                                r.enabled = False
-                            await db.flush()
-                            try:
-                                await cls._run_target(r.target_type, r.target_id)
-                            except Exception as exc:  # noqa: BLE001
-                                logger.error(f"定时任务 #{r.id} 执行失败：{exc}")
-            except Exception as exc:  # noqa: BLE001
-                logger.error(f"定时任务调度异常：{exc}")
-            await asyncio.sleep(60)
+        SchedulerUtil.remove_business_job(_job_key(cron_id))
 
     @classmethod
     async def _run_target(cls, target_type: str, target_id: int) -> None:
