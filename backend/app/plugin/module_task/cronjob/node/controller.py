@@ -9,6 +9,7 @@ from app.core.base_params import PaginationQueryParam
 from app.core.dependencies import AuthPermission
 from app.core.logger import log
 from app.core.router_class import OperationLogRoute
+from app.utils.trigger_util import TriggerUtil
 
 from .schema import (
     NodeCreateSchema,
@@ -99,8 +100,40 @@ async def get_obj_list_controller(
         search=search,
         order_by=page.order_by,
     )
+    # 逐行标注「需人工确认」：迁移被跳过（无参数）或参数按新校验不通过的行（遗留 Quartz
+    # 6/7 段等），否则会以「有节点但调度不上」静默停摆。口径来自统一层，不在本模块自算。
+    for item in result_dict.get("items", []):
+        item["needs_review"] = TriggerUtil.needs_review(
+            item.get("trigger"), item.get("trigger_args")
+        )
     log.info("查询节点列表成功")
     return SuccessResponse(data=result_dict, msg="查询节点列表成功")
+
+
+@NodeRouter.post(
+    "/trigger/preview",
+    summary="触发预览（人话描述 + 下次运行时间）",
+    description="统一预览：描述与下次运行时间一律由后端统一层产出，前端不自算",
+    response_model=ResponseSchema[dict],
+)
+async def trigger_preview_controller(
+    data: Annotated[dict, Body(description="trigger 与 trigger_args")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_task:cronjob:node:query"]))],
+) -> JSONResponse:
+    """
+    触发预览
+
+    参数:
+    - data (dict): trigger 与 trigger_args
+    - auth (AuthSchema): 认证信息模型
+
+    返回:
+    - JSONResponse: 成功响应，data 为 {valid, reason, describe, next_run}
+    """
+    return SuccessResponse(
+        data=TriggerUtil.preview(data.get("trigger"), data.get("trigger_args")),
+        msg="预览成功",
+    )
 
 
 @NodeRouter.post(

@@ -8,6 +8,7 @@ from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import ErrorResponse, SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
+from app.utils.trigger_util import TriggerUtil
 
 from .schema import (
     WorkspaceCategoryCreateSchema,
@@ -75,8 +76,25 @@ async def cron_list(
     category_id: int | None = None,
     target_type: str | None = None,
 ) -> JSONResponse:
+    data = await WorkspaceService.list_cron(category_id, target_type)
+    # 逐行标注「需人工确认」：迁移被跳过（无表达式）或表达式按新校验不通过的行，
+    # 否则会以「有任务但调度不上」静默停摆。口径来自统一层，不在本模块自算。
+    for item in data.get("items", []):
+        item["needs_review"] = TriggerUtil.needs_review(
+            item.get("trigger"), item.get("trigger_args")
+        )
+    return SuccessResponse(data=data, msg="查询成功")
+
+
+@WorkspaceRouter.post("/trigger/preview", summary="触发预览（人话描述 + 下次运行时间）")
+async def trigger_preview(
+    data: Annotated[dict, Body(description="trigger 与 trigger_args")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workspace:query"]))],
+) -> JSONResponse:
+    """统一预览：描述与下次运行时间一律由后端统一层产出，前端不自算。"""
     return SuccessResponse(
-        data=await WorkspaceService.list_cron(category_id, target_type), msg="查询成功"
+        data=TriggerUtil.preview(data.get("trigger"), data.get("trigger_args")),
+        msg="预览成功",
     )
 
 

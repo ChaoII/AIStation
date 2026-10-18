@@ -9,6 +9,7 @@ from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.sse import sse_response
+from app.utils.trigger_util import TriggerUtil
 
 from .paths import shared_root, work_dir
 from .schema import (
@@ -581,8 +582,27 @@ async def create_schedule(
 @router.get("/schedule/list", summary="定时训练计划列表")
 async def list_schedules(auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"]))):
     from .schedule_service import ScheduleService
+
     data = await ScheduleService.list_schedules()
+    # 逐行标注「需人工确认」：迁移被跳过（无表达式）或表达式按新校验不通过的行，
+    # 否则会以「有计划但调度不上」静默停摆。口径来自统一层，不在本模块自算。
+    for item in data:
+        item["needs_review"] = TriggerUtil.needs_review(
+            item.get("trigger"), item.get("trigger_args")
+        )
     return SuccessResponse(data=data)
+
+
+@router.post("/trigger/preview", summary="触发预览（人话描述 + 下次运行时间）")
+async def trigger_preview(
+    data: Annotated[dict, Body(description="trigger 与 trigger_args")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_train:task:query"]))],
+):
+    """统一预览：描述与下次运行时间一律由后端统一层产出，前端不自算。"""
+    return SuccessResponse(
+        data=TriggerUtil.preview(data.get("trigger"), data.get("trigger_args")),
+        msg="预览成功",
+    )
 
 
 @router.put("/schedule/update/{schedule_id}", summary="更新定时训练计划")

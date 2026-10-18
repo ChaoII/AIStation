@@ -13,7 +13,8 @@
 - 触发器构造（`to_cron_trigger`）、中文描述（`describe_cron`）与「下次运行时间」（`next_run`）
   同源复用规范化结果，时区固定 `Asia/Shanghai`。
 
-**分派层**（`normalize` / `validate` / `describe` / `to_trigger` / `next_run`）按 `trigger` 分派：
+**分派层**（`normalize` / `validate` / `describe` / `to_trigger` / `next_run` / `preview` /
+`needs_review`）按 `trigger` 分派：
 - `interval`：参数为 JSON `{"weeks":0,"days":0,"hours":2,"minutes":30,"seconds":0}`（**全 0 判非法**）；
 - `date`：参数为 `"YYYY-MM-DD HH:mm:ss"`（**过去时间判非法**）；
 - `now`：参数为 `null`，构造 `DateTrigger(now + 2s)` 的一次性作业。
@@ -21,6 +22,12 @@
 **唯一校验入口是 `validate`**：`normalize` / `describe` / `to_trigger` 只做解析级检查
 （非法输入抛 `ValueError`，未知 `trigger` 抛 `CustomException`）；`validate` 额外做
 cron 的**可调度性检查**（永不触发的日/月组合、日与周同时为非 `*`）并返回可读原因。
+其中「日」字段为 `*` / `*/1` / `1-31` 视为**覆盖全集**（等价「不限制日」），不算「日与周同时指定」。
+
+**面向接口的两个入口**：
+- `preview(trigger, args) -> dict`：一次产出「是否合法 / 可读原因 / 人话描述 / 下次运行时间」，
+  四个入口的 `POST .../trigger/preview` 直接回显，前端**不自算**（避免第二套口径）；
+- `needs_review(trigger, args) -> bool`：列表行是否需要人工确认（迁移跳过 / 新校验不通过）。
 
 供 AI 工作台/工作流、训练调度、系统定时任务节点与中心调度器共用。
 """
@@ -64,8 +71,11 @@ class TriggerUtil:
         "seconds": "秒",
     }
 
+    #: date 参数与预览输出的统一时间格式
+    _DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
     #: date 参数可接受的格式（秒可省略）
-    _DATE_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M")
+    _DATE_FORMATS = (_DATETIME_FORMAT, "%Y-%m-%d %H:%M")
 
     #: `now` 的延迟秒数：先让保存接口返回，再触发一次性作业
     _NOW_DELAY_SECONDS = 2
@@ -108,6 +118,19 @@ class TriggerUtil:
     )
 
     _SEGMENT_REASON = "只支持 5 段标准 crontab（分 时 日 月 周）"
+
+    #: 「日」字段中语义等价于「不限制日」的写法（生成式 UI 常写 `1-31`）：
+    #: 只有**真正受限**的日字段（如 `1`、`15`、`1-15`）才构成「日与周同时指定」。
+    _FULL_DAY_FIELDS = ("*", "*/1", "1-31")
+
+    #: 「校验通过却没有下次运行时间」的分类型可读提示
+    #: （cron 永不触发 ≠ date 已过期，预览不得笼统写「表达式非法」）
+    _NO_NEXT_RUN_REASON = {
+        "cron": "该表达式在可预见的未来不会触发（请检查「日」与「月」的组合，如 6 月 31 日）",
+        "date": "该单次执行时间已过（如需立即执行请选择「立即执行」）",
+        "interval": "间隔时长无效，没有下次运行时间",
+        "now": "「立即执行」只在保存后触发一次，没有下次运行时间",
+    }
 
     #: 星期名 → 中文标签（`describe_cron` 用）
     _WEEKDAY_LABEL = {
@@ -241,7 +264,8 @@ class TriggerUtil:
 
         分派到各类型的校验规则：
         - `cron`：语法校验（同 `validate_cron`）+ 两条收紧——
-          「日」与「周」不得同时为非 `*`（APScheduler 取 AND、croniter 取 OR，语义不一致）、
+          「日」与「周」不得同时为非 `*`（APScheduler 取 AND、croniter 取 OR，语义不一致；
+          日字段为 `*` / `*/1` / `1-31` 时视为**覆盖全集**，不算同时指定）、
           可调度性检查（4 年窗口内找不到下次触发即非法，如 6 月 31 日）；
         - `interval`：字段非负整数，且**至少一项大于 0**（全 0 会被 APScheduler 视为 1 秒，
           产生每秒触发的无效作业）；
@@ -371,6 +395,94 @@ class TriggerUtil:
             return None
         return next_fire
 
+    @classmethod
+    def preview(cls, trigger: str, args) -> dict:
+        """触发预览：一次调用产出「是否合法 / 可读原因 / 人话描述 / 下次运行时间」。
+
+        四个入口的 `POST .../trigger/preview` 都直接回显本方法的结果——描述与下次运行时间
+        **一律由后端产出**，前端不自算（否则又会冒出第二套口径）。
+
+        返回 `{"valid": bool, "reason": str, "describe": str, "next_run": str | None}`：
+        - 合法：`valid=True`、`reason=""`、`describe` 为人话短句、
+          `next_run` 为 `"YYYY-MM-DD HH:mm:ss"`（`Asia/Shanghai` 墙钟时间，可直接展示）；
+        - 非法：`valid=False`、`reason` 为可读原因、`next_run=None`；
+          `describe` **尽力而为**（能解析出描述就给，解析不了为空串）。
+
+        三处统一适配（A3 审查遗留）：
+        - `next_run is None` 的两种语义**分别提示** —— cron 永不触发（日/月组合不存在）
+          与 date 已过期（过去时间）文案不同，不笼统写「表达式非法」；
+        - `validate` 返回元组、`describe` / `next_run` 抛异常的**双形态在本方法内收敛**，
+          调用方（接口层）只面对返回值一种形态，无需 try/except；
+        - 任何脏数据都收敛成 `valid=False` + `reason`，不把预览变成 500。
+        """
+        ok, reason = cls.validate(trigger, args)
+        if not ok:
+            return {
+                "valid": False,
+                "reason": reason,
+                "describe": cls._safe_describe(trigger, args),
+                "next_run": None,
+            }
+
+        try:
+            describe = cls.describe(trigger, args)
+            next_fire = cls.next_run(trigger, args)
+        except (ValueError, CustomException) as exc:
+            # validate 已通过却在描述/构造阶段失败：属边界数据，收敛为「非法 + 原因」而不是 500
+            logger.warning("触发预览失败（validate 已通过）：%r %r → %s", trigger, args, exc)
+            return {"valid": False, "reason": str(exc), "describe": "", "next_run": None}
+
+        if next_fire is None:
+            # 校验通过却算不出下次运行：按类型给出可读原因（cron 永不触发 ≠ date 已过期）
+            return {
+                "valid": False,
+                "reason": cls._NO_NEXT_RUN_REASON.get(trigger, "该触发配置没有下次运行时间"),
+                "describe": describe,
+                "next_run": None,
+            }
+
+        return {
+            "valid": True,
+            "reason": "",
+            "describe": describe,
+            "next_run": next_fire.strftime(cls._DATETIME_FORMAT),
+        }
+
+    @classmethod
+    def needs_review(cls, trigger: str | None, args) -> bool:
+        """列表行是否需要人工确认（供各模块列表接口逐行标注 `needs_review`）。
+
+        两类（都必须显式提示，否则会以「有任务但调度不上」静默停摆）：
+
+        ① **迁移跳过 / 未配置**：`trigger_args` 为空 —— 迁移时无法等值转换的行会被跳过
+           （旧 6 段秒位非 0、7 段带年、解析失败），列表里的空值同样意味着「调度不上」。
+           `now` 是唯一例外：它按契约**本就没有参数**，不算被跳过；
+        ② **有表达式但按新校验不通过**：遗留 Quartz 写法（`0 0 9 L * *`）、永不触发的
+           日/月组合（`0 9 31 6 *`）等 —— 这类行「看起来有调度」，必须人工确认后改写。
+
+        任何解析异常都按「需人工确认」处理：列表接口不得因单行脏数据 500。
+        """
+        name = "" if trigger is None else str(trigger).strip()
+        name = name or "cron"
+        if name == "now":
+            return False
+        if args is None or (isinstance(args, str) and not args.strip()):
+            return True
+        try:
+            ok, _ = cls.validate(name, args)
+        except Exception:  # noqa: BLE001 - 单行脏数据不得让整个列表接口 500
+            logger.exception("触发参数校验异常，按「需人工确认」处理：%r %r", trigger, args)
+            return True
+        return not ok
+
+    @classmethod
+    def _safe_describe(cls, trigger: str, args) -> str:
+        """尽力给出人话描述（供非法输入的预览回显）：解析不了返回空串，绝不抛异常。"""
+        try:
+            return cls.describe(trigger, args)
+        except (ValueError, CustomException):
+            return ""
+
     # ------------------------------------------------------------------ 分派层内部实现
 
     @classmethod
@@ -399,11 +511,22 @@ class TriggerUtil:
         )
 
     @classmethod
+    def _day_covers_all(cls, day: str) -> bool:
+        """「日」字段是否覆盖全月（`*` / `*/1` / `1-31`），即语义上「不限制日」。
+
+        这三种写法文本不同但语义相同（`1-31` 是生成式 UI 常见的「任意日」写法）：
+        若按文本判定「日/周同时指定」，`0 9 1-31 * mon`、`0 9 */1 * mon` 会被误判非法，
+        且提示里给出的「改写建议」与输入自相矛盾（A3 审查遗留）。
+        只有**真正受限**的日字段（如 `1`、`15`、`1-15`）才触发该规则。
+        """
+        return day in cls._FULL_DAY_FIELDS
+
+    @classmethod
     def _check_cron_schedulable(cls, expr: str) -> tuple[bool, str]:
         """cron 的可调度性检查（`validate("cron", ...)` 专用，`validate_cron` 不做）。"""
         minute, hour, day, month, day_of_week = cls.normalize_cron(expr).split()
 
-        if day != "*" and day_of_week != "*":
+        if not cls._day_covers_all(day) and day_of_week != "*":
             # APScheduler 对「日」「周」取 AND，Vixie cron / croniter 取 OR（实测 `0 9 1 * mon` 两边不同）
             # → 实现间语义不一致，判非法并引导只指定其一
             return (
@@ -520,6 +643,10 @@ class TriggerUtil:
     @classmethod
     def _describe_period(cls, day: str, month: str, day_of_week: str) -> str:
         """描述「周期」（每天 / 每周一、周三 / 每月 1 日 / 每年 3 月 15 日）。"""
+        if cls._day_covers_all(day):
+            # 「覆盖全集」的日字段（`*` / `*/1` / `1-31`）等价于 `*`：按周描述才与实际触发一致
+            # （`0 9 1-31 * mon` 实际按周触发，写成「每月 1-31 日」会误导用户）
+            day = "*"
         month_step = cls._field_step(month)
         if month_step is not None:
             if day == "*":

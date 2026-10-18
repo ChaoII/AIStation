@@ -9,6 +9,7 @@ from app.common.response import ErrorResponse, SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 from app.plugin.module_ai.streaming import ui_stream_response
+from app.utils.trigger_util import TriggerUtil
 
 from .schema import (
     AiWorkflowApproveSchema,
@@ -127,6 +128,18 @@ async def get_schedule(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiWorkflowService.get_schedule(workflow_id), msg="查询成功")
+
+
+@AiWorkflowRouter.post("/trigger/preview", summary="触发预览（人话描述 + 下次运行时间）")
+async def trigger_preview(
+    data: Annotated[dict, Body(description="trigger 与 trigger_args")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    """统一预览：描述与下次运行时间一律由后端统一层产出，前端不自算。"""
+    return SuccessResponse(
+        data=TriggerUtil.preview(data.get("trigger"), data.get("trigger_args")),
+        msg="预览成功",
+    )
 
 
 @AiWorkflowRouter.put("/{workflow_id}/schedule", summary="保存定时调度配置")
