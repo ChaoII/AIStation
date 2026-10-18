@@ -284,6 +284,139 @@ class AiLogService:
             }
         return out
 
+    @staticmethod
+    def _since(days: int) -> datetime:
+        """近 N 天的起点。
+
+        统一用 ``datetime.now()``（本地时区）：库里写的是本地时间。历史上有的调用方用
+        ``datetime.utcnow()``，在 +08:00 下窗口整体差 8 小时（两个页面统计口径对不上），
+        且 ``utcnow()`` 自 Python 3.12 起已废弃。
+        """
+        return datetime.now() - timedelta(days=max(int(days or 7), 1))
+
+    @classmethod
+    async def health_aggregate(cls, days: int = 7) -> dict:
+        """近 N 天健康取数：调用量/错误数/平均延迟/成本合计。
+
+        **只取数、不判定**：健康阈值与告警文案属于调用方（`overview`）的业务语义。
+        """
+        since = cls._since(days)
+        async with async_db_session() as db:
+            row = (
+                await db.execute(
+                    select(
+                        func.count().label("n"),
+                        func.count().filter(AiCallLogModel.result == "error").label("e"),
+                        func.avg(AiCallLogModel.latency_ms).label("lat"),
+                        func.sum(AiCallLogModel.cost).label("cost"),
+                    ).where(
+                        AiCallLogModel.is_deleted.is_(False),
+                        AiCallLogModel.created_time >= since,
+                    )
+                )
+            ).one()
+        return {
+            "calls": int(row.n or 0),
+            "errors": int(row.e or 0),
+            "avg_latency_ms": int(row.lat or 0),
+            "total_cost": round(float(row.cost or 0), 2),
+        }
+
+    @classmethod
+    async def audit_aggregate(cls, days: int = 7) -> dict:
+        """近 N 天合规取数：总量/未鉴权/失败/高成本（成本阈值 1 元，判定在调用方）。"""
+        since = cls._since(days)
+
+        async def _count(*conds) -> int:
+            async with async_db_session() as db:
+                return int(
+                    (
+                        await db.execute(
+                            select(func.count())
+                            .select_from(AiCallLogModel)
+                            .where(
+                                AiCallLogModel.is_deleted.is_(False),
+                                AiCallLogModel.created_time >= since,
+                                *conds,
+                            )
+                        )
+                    ).scalar()
+                    or 0
+                )
+
+        return {
+            "total": await _count(),
+            "anonymous_calls": await _count(AiCallLogModel.user_id.is_(None)),
+            "error_calls": await _count(AiCallLogModel.result == "error"),
+            "high_cost_calls": await _count(AiCallLogModel.cost > 1.0),
+        }
+
+    @classmethod
+    async def recent_runs(cls, limit: int = 20, days: int | None = None) -> list[dict]:
+        """最近若干条运行明细（含 tokens/成本；``days`` 给定时只取近 N 天）。
+
+        供 AIP 控制台、活动时间线等跨模块消费；``created_time`` 保留原始时间串，
+        ``time`` 是给人看的短格式。
+        """
+        stmt = select(AiCallLogModel).where(AiCallLogModel.is_deleted.is_(False))
+        if days is not None:
+            stmt = stmt.where(AiCallLogModel.created_time >= cls._since(days))
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    stmt.order_by(desc(AiCallLogModel.created_time))
+                    .limit(min(int(limit or 20), 200))
+                )
+            ).scalars().all()
+        return [
+            {
+                "id": r.id,
+                "model": r.model_name,
+                "usage": r.usage,
+                "latency_ms": r.latency_ms,
+                "result": r.result,
+                "user_id": r.user_id,
+                "prompt_tokens": r.prompt_tokens,
+                "completion_tokens": r.completion_tokens,
+                "cost": round(float(r.cost or 0), 4),
+                "error": r.error,
+                "created_time": str(r.created_time) if r.created_time else "",
+                "time": r.created_time.strftime("%m-%d %H:%M") if r.created_time else "",
+            }
+            for r in rows
+        ]
+
+    @classmethod
+    async def daily_trend(cls, days: int = 7) -> list[dict]:
+        """近 N 天按日聚合：条数/错误数/平均延迟（异常检测用）。"""
+        since = cls._since(days)
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(
+                        func.date(AiCallLogModel.created_time).label("d"),
+                        func.count().label("n"),
+                        func.count().filter(AiCallLogModel.result == "error").label("e"),
+                        func.avg(AiCallLogModel.latency_ms).label("lat"),
+                    )
+                    .where(
+                        AiCallLogModel.is_deleted.is_(False),
+                        AiCallLogModel.created_time >= since,
+                    )
+                    .group_by(func.date(AiCallLogModel.created_time))
+                    .order_by(func.date(AiCallLogModel.created_time))
+                )
+            ).fetchall()
+        return [
+            {
+                "date": str(r[0]),
+                "count": int(r[1] or 0),
+                "error": int(r[2] or 0),
+                "avg_latency_ms": int(r[3] or 0),
+            }
+            for r in rows
+        ]
+
     @classmethod
     async def export(cls, days: int = 30, usage: str | None = None, result: str | None = None) -> list[dict]:
         """导出日志（供前端生成 CSV）。"""

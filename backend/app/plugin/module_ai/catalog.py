@@ -160,19 +160,50 @@ async def last_writeback_id() -> int:
     return int(rows[0][0]) if rows else 0
 
 
-async def count_writebacks(object_table: str | None = None) -> int:
-    """回写审计条数（可按对象过滤）——供本体侧统计展示。"""
+async def list_writebacks(limit: int = 60) -> list[dict]:
+    """最近若干条回写审计记录（活动时间线等展示用）。
+
+    与 ``log_writeback``/``count_writebacks`` 同属本目录对 ``ai_query_writeback_log``
+    的统一出口：调用方**不直读**该表（历史上有模块直接写 SQL 读它）。
+    """
     try:
+        rows = await _rows(
+            "SELECT action_name, object_table, object_key, result, operator, created_time "
+            "FROM ai_query_writeback_log WHERE is_deleted=false ORDER BY id DESC LIMIT :n",
+            n=max(1, min(int(limit or 60), 500)),
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[catalog] 读取回写审计失败: {str(e)[:120]}")
+        return []
+    return [
+        {
+            "action_name": r[0] or "",
+            "object_table": r[1] or "",
+            "object_key": str(r[2] or ""),
+            "result": r[3] or "",
+            "operator": str(r[4] or ""),
+            "created_time": str(r[5]) if r[5] else "",
+        }
+        for r in rows
+    ]
+
+
+async def count_writebacks(object_table: str | None = None,
+                           result: str | None = None) -> int:
+    """回写审计条数（可按对象/结果过滤）——供本体侧统计与统一审计展示。"""
+    try:
+        where = ["is_deleted=false"]
+        params: dict = {}
         if object_table:
-            rows = await _rows(
-                "SELECT count(*) FROM ai_query_writeback_log "
-                "WHERE object_table=:c AND is_deleted=false",
-                c=object_table,
-            )
-        else:
-            rows = await _rows(
-                "SELECT count(*) FROM ai_query_writeback_log WHERE is_deleted=false"
-            )
+            where.append("object_table=:c")
+            params["c"] = object_table
+        if result:
+            where.append("result=:r")
+            params["r"] = result
+        rows = await _rows(
+            "SELECT count(*) FROM ai_query_writeback_log WHERE " + " AND ".join(where),
+            **params,
+        )
     except Exception as e:  # noqa: BLE001
         log.warning(f"[catalog] 统计回写条数失败: {str(e)[:120]}")
         return 0

@@ -89,13 +89,6 @@ class TestSSEHeaders:
         assert "no-transform" in got["cache-control"]
 
 
-class _FakeRequest:
-    """最小 Request 替身：端点只用 ``is_disconnected()``。"""
-
-    async def is_disconnected(self) -> bool:
-        return False
-
-
 def _drain(response) -> str:
     """把 StreamingResponse 的 body 迭代器跑完，返回拼接文本。
 
@@ -144,7 +137,7 @@ class TestSSEEndpoint:
         monkeypatch.setattr(te, "task_is_terminal", fake_terminal, raising=False)
         monkeypatch.setattr(te, "subscribe_metrics", _boom)
 
-        resp = asyncio.run(ctrl.stream_task_metrics(123, _FakeRequest(), -1, None))
+        resp = asyncio.run(ctrl.stream_task_metrics(123, -1, None))
         text = _drain(resp)
 
         assert "retry: 3000" in text
@@ -179,7 +172,7 @@ class TestSSEEndpoint:
         monkeypatch.setattr(te, "task_is_terminal", fake_terminal, raising=False)
         monkeypatch.setattr(te, "subscribe_metrics", _boom)
 
-        resp = asyncio.run(ctrl.stream_task_metrics(123, _FakeRequest(), 1, None))
+        resp = asyncio.run(ctrl.stream_task_metrics(123, 1, None))
         text = _drain(resp)
 
         # offset 的语义是「最后已消费的 seq」，所以 seq<=1 都不再补发
@@ -210,7 +203,7 @@ class TestSSEEndpoint:
         monkeypatch.setattr(te, "task_is_terminal", fake_terminal, raising=False)
         monkeypatch.setattr(te, "subscribe_metrics", _boom)
 
-        resp = asyncio.run(ctrl.stream_task_metrics(123, _FakeRequest(), -1, None))
+        resp = asyncio.run(ctrl.stream_task_metrics(123, -1, None))
         text = _drain(resp)
         payload = json.loads(text.split("event: end", 1)[1].split("data: ", 1)[1].strip())
         assert payload["_kind"] == "end"

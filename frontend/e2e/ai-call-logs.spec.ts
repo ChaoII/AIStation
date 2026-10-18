@@ -39,11 +39,33 @@ test("AI 调用日志页：统计卡与明细表正常渲染，数字与接口�
   await page.screenshot({ path: "e2e/ai-logs-page.png", fullPage: false });
 });
 
-test("AI 控制台：Agent 运行看板正常渲染（聚合已收敛到 logs_center）", async ({ page }) => {
+test("AI 控制台：本轮收敛过的聚合接口全部 200，Agent 看板渲染正常", async ({ page }) => {
+  const seen = new Map<string, number>();
+  page.on("response", (r) => {
+    const m = r.url().match(/\/api\/v1(\/ai\/[^?]+)/);
+    if (m) seen.set(m[1], r.status());
+  });
   const dashP = page.waitForResponse((r) => r.url().includes("/ai/agents/dashboard"));
   await openPage(page, "/#/ai/overview", ".ai-overview-page");
 
   const dash = (await (await dashP).json()).data;
+  // 这些聚合本轮全部改走 logs_center（health/audit/unified-audit/aip-control 等）
+  const wanted = [
+    "/ai/overview/stats",
+    "/ai/overview/health",
+    "/ai/overview/audit",
+    "/ai/overview/aip-control",
+    "/ai/overview/anomaly",
+    "/ai/overview/unified-audit",
+    "/ai/overview/activity-timeline",
+  ];
+  await expect
+    .poll(() => wanted.every((w) => seen.has(w)), { timeout: 30_000 })
+    .toBe(true);
+  for (const w of wanted) {
+    expect(seen.get(w), `${w} 应返回 200`).toBe(200);
+  }
+
   const agentCard = page
     .locator(".ai-overview-page .el-card", { hasText: "Agent 编排运行看板" })
     .first();

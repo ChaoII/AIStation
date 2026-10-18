@@ -3,7 +3,7 @@ import json
 import os
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, File, Query, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Query, UploadFile
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
@@ -322,7 +322,6 @@ def _row_seq(row: dict):
 @router.get("/task/{task_id}/metrics/stream", summary="训练指标实时流（SSE）")
 async def stream_task_metrics(
     task_id: int,
-    request: Request,
     offset: int = Query(-1, ge=-1, description="先补发 seq>offset 的历史，再切实时"),
     auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"])),
 ):
@@ -330,6 +329,11 @@ async def stream_task_metrics(
 
     ⚠️ 响应头走 :func:`app.core.sse.sse_response`，**不要就地手写**：SSE 有两个坑
     都不在端点代码里（见该模块 docstring），手写必漏其中一个。
+
+    客户端断开**无需在这里轮询**：``RequestLogMiddleware`` 已改为纯 ASGI，
+    ``http.disconnect`` 会透传到 ``StreamingResponse.listen_for_disconnect``，
+    生成器随即被取消，``finally`` 里的退订照常执行（此前中间件吞掉断开，
+    才不得不用 ``request.is_disconnected()`` 兜底）。
     """
     from .torchkiln_client import EVENT_END
     from .torchkiln_executor import (
@@ -362,8 +366,6 @@ async def stream_task_metrics(
         q = subscribe_metrics(task_id)
         try:
             while True:
-                if await request.is_disconnected():
-                    break
                 try:
                     ev = await asyncio.wait_for(q.get(), timeout=15.0)
                 except asyncio.TimeoutError:

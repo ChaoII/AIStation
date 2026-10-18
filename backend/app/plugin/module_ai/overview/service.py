@@ -33,24 +33,17 @@ class AiOverviewService:
 
     @classmethod
     async def health_check(cls, days: int = 7) -> dict:
-        """AI 健康/异常监控：聚合近 N 天调用量/错误率/平均延迟/成本 + 健康状态与告警。"""
-        from datetime import datetime, timedelta
+        """AI 健康/异常监控：聚合近 N 天调用量/错误率/平均延迟/成本 + 健康状态与告警。
 
-        from sqlalchemy import func as _f
-        from sqlalchemy import select as _sel
-        since = datetime.utcnow() - timedelta(days=max(1, days))
-        async with async_db_session() as db:
-            base = _sel(
-                _f.count().label("n"),
-                _f.count().filter(AiCallLogModel.result == "error").label("e"),
-                _f.avg(AiCallLogModel.latency_ms).label("lat"),
-                _f.sum(AiCallLogModel.cost).label("cost"),
-            ).where(AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since)
-            row = (await db.execute(base)).one()
-        calls = int(row.n or 0)
-        errors = int(row.e or 0)
-        avg_latency = int(row.lat or 0)
-        total_cost = round(float(row.cost or 0), 2)
+        取数走 `logs_center`（`ai_call_logs` 的读 owner），本方法只负责阈值判定与告警文案。
+        """
+        from app.plugin.module_ai.logs_center.service import AiLogService
+
+        agg = await AiLogService.health_aggregate(days)
+        calls = agg["calls"]
+        errors = agg["errors"]
+        avg_latency = agg["avg_latency_ms"]
+        total_cost = agg["total_cost"]
         error_rate = round(errors / calls, 4) if calls else 0.0
         alerts = []
         if error_rate > 0.05:
@@ -69,24 +62,17 @@ class AiOverviewService:
 
     @classmethod
     async def audit_check(cls, days: int = 7) -> dict:
-        """AI 调用合规审计：未鉴权(user_id 为空)调用/失败调用/高成本调用，输出合规报告。"""
-        from datetime import datetime, timedelta
+        """AI 调用合规审计：未鉴权(user_id 为空)调用/失败调用/高成本调用，输出合规报告。
 
-        from sqlalchemy import func as _f
-        from sqlalchemy import select as _sel
-        since = datetime.utcnow() - timedelta(days=max(1, days))
-        async with async_db_session() as db:
-            total = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
-                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since))).scalar() or 0
-            anon = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
-                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since,
-                AiCallLogModel.user_id.is_(None)))).scalar() or 0
-            errs = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
-                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since,
-                AiCallLogModel.result == "error"))).scalar() or 0
-            high_cost = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
-                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since,
-                AiCallLogModel.cost > 1.0))).scalar() or 0
+        取数走 `logs_center`，本方法只负责合规判定与问题文案。
+        """
+        from app.plugin.module_ai.logs_center.service import AiLogService
+
+        agg = await AiLogService.audit_aggregate(days)
+        total = agg["total"]
+        anon = agg["anonymous_calls"]
+        errs = agg["error_calls"]
+        high_cost = agg["high_cost_calls"]
         issues = []
         if anon:
             issues.append({"level": "warning", "msg": f"近{days}天有 {anon} 条未鉴权调用（缺用户ID）"})
@@ -129,23 +115,9 @@ class AiOverviewService:
     @classmethod
     async def aip_control(cls, limit: int = 20) -> dict:
         """AIP 控制台（Palantir AIP Control）：Agent/AI 运行追踪 + 用途分布 + 人工审核队列。"""
-        from sqlalchemy import select as _sel
-        async with async_db_session() as db:
-            rows = (await db.execute(
-                _sel(AiCallLogModel)
-                .where(AiCallLogModel.is_deleted.is_(False))
-                .order_by(AiCallLogModel.created_time.desc())
-                .limit(min(limit, 50))
-            )).scalars().all()
-        runs = []
-        for r in rows:
-            runs.append({
-                "id": r.id, "model": r.model_name, "usage": r.usage,
-                "latency_ms": r.latency_ms, "result": r.result, "user_id": r.user_id,
-                "prompt_tokens": r.prompt_tokens, "completion_tokens": r.completion_tokens,
-                "cost": round(float(r.cost or 0), 4), "error": r.error,
-                "time": r.created_time.strftime("%m-%d %H:%M") if r.created_time else "",
-            })
+        from app.plugin.module_ai.logs_center.service import AiLogService
+
+        runs = await AiLogService.recent_runs(limit)
         usage_dist: dict[str, int] = {}
         for r in runs:
             usage_dist[r["usage"]] = usage_dist.get(r["usage"], 0) + 1
@@ -220,26 +192,17 @@ class AiOverviewService:
     @classmethod
     async def anomaly_detect(cls, days: int = 7) -> dict:
         """AI 异常检测：按日聚合调用，对比基线识别错误率/延迟异常。"""
-        from datetime import datetime, timedelta
+        from app.plugin.module_ai.logs_center.service import AiLogService
 
-        from sqlalchemy import func as _f
-        from sqlalchemy import select as _sel
-        since = datetime.utcnow() - timedelta(days=max(1, days))
-        async with async_db_session() as db:
-            rows = (await db.execute(
-                _sel(_f.date(AiCallLogModel.created_time).label("d"),
-                     _f.count().label("n"),
-                     _f.count().filter(AiCallLogModel.result == "error").label("e"),
-                     _f.avg(AiCallLogModel.latency_ms).label("lat"))
-                .where(AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since)
-                .group_by(_f.date(AiCallLogModel.created_time))
-                .order_by(_f.date(AiCallLogModel.created_time))
-            )).fetchall()
-        lats = [int(r[3] or 0) for r in rows]
+        rows = await AiLogService.daily_trend(days)
+        lats = [r["avg_latency_ms"] for r in rows]
         base_lat = sum(lats) / len(lats) if lats else 0
         anomalies = []
         for r in rows:
-            d = str(r[0]); n = int(r[1] or 0); e = int(r[2] or 0); lat = int(r[3] or 0)
+            d = r["date"]
+            n = r["count"]
+            e = r["error"]
+            lat = r["avg_latency_ms"]
             er = e / n if n else 0
             if er > 0.10:
                 anomalies.append({"date": d, "type": "error_rate", "severity": "high",
@@ -304,37 +267,28 @@ class AiOverviewService:
 
     @classmethod
     async def activity_timeline(cls, days: int = 7, limit: int = 60) -> dict:
-        """统一活动时间线：聚合 AI 调用 / 动作 / 审批为时间线视图。"""
-        from datetime import datetime, timedelta
+        """统一活动时间线：聚合 AI 调用 / 动作回写为时间线视图。
 
-        from sqlalchemy import select as _sel
-        since = datetime.utcnow() - timedelta(days=max(1, days))
+        取数分别走 `logs_center`（调用日志）与 `catalog`（回写审计）：跨模块共享表不直读。
+        """
+        from app.plugin.module_ai import catalog
+        from app.plugin.module_ai.logs_center.service import AiLogService
+
         events: list[dict] = []
-        async with async_db_session() as db:
-            rows = (await db.execute(
-                _sel(AiCallLogModel)
-                .where(AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since)
-                .order_by(AiCallLogModel.created_time.desc())
-                .limit(limit)
-            )).scalars().all()
-            for r in rows:
-                events.append({"time": str(r.created_time), "kind": "ai_call",
-                               "title": f"{r.model_name} · {r.usage}",
-                               "result": r.result, "detail": f"延迟 {r.latency_ms}ms",
-                               "actor": f"user#{r.user_id}" if r.user_id else "匿名"})
-            try:
-                from sqlalchemy import text as _t
-                al = (await db.execute(_t(
-                    "SELECT action_name, object_table, result, operator, created_time "
-                    "FROM ai_query_writeback_log WHERE is_deleted=0 ORDER BY id DESC LIMIT :n"),
-                    {"n": limit})).fetchall()
-                for r in al:
-                    events.append({"time": str(r[4]), "kind": "action",
-                                   "title": f"动作 {r[0]}", "result": r[2] or "",
-                                   "detail": f"对象 {r[1] or ''}",
-                                   "actor": str(r[3] or "系统")})
-            except Exception:  # noqa: BLE001
-                pass
+        for r in await AiLogService.recent_runs(limit, days=days):
+            events.append({
+                "time": r["created_time"], "kind": "ai_call",
+                "title": f"{r['model']} · {r['usage']}",
+                "result": r["result"], "detail": f"延迟 {r['latency_ms']}ms",
+                "actor": f"user#{r['user_id']}" if r["user_id"] else "匿名",
+            })
+        for r in await catalog.list_writebacks(limit):
+            events.append({
+                "time": r["created_time"], "kind": "action",
+                "title": f"动作 {r['action_name']}", "result": r["result"],
+                "detail": f"对象 {r['object_table']}",
+                "actor": r["operator"] or "系统",
+            })
         events.sort(key=lambda e: str(e["time"]), reverse=True)
         return {"total": len(events), "events": events[:limit]}
 
@@ -388,32 +342,33 @@ class AiOverviewService:
 
     @classmethod
     async def unified_audit(cls, days: int = 7) -> dict:
-        """跨模块统一审计：AI 调用 / 动作写回 / 本体发布 / 审批 / 敏感扫描 全链路一处看。"""
-        from datetime import datetime, timedelta
+        """跨模块统一审计：AI 调用 / 动作写回 / 本体发布 全链路一处看。
 
-        from sqlalchemy import func as _f
-        from sqlalchemy import select as _sel
-        since = datetime.utcnow() - timedelta(days=max(1, days))
-        async with async_db_session() as db:
-            ai_calls = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
-                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since))).scalar() or 0
-            ai_errs = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
-                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since,
-                AiCallLogModel.result == "error"))).scalar() or 0
-            actions = 0; approvals = 0; publishes = 0; sens_scans = 0
-            try:
+        AI 调用取数走 `logs_center`（该表读 owner）。
+        注：`ai_query_writeback` / `ai_ont_version` 仍是就地计数——它们分属问数/本体的表，
+        要收敛得先在那两个模块开口子，留作后续（不属本次 ai_call_logs 收敛范围）。
+        """
+        from app.plugin.module_ai import catalog
+        from app.plugin.module_ai.logs_center.service import AiLogService
+
+        agg = await AiLogService.health_aggregate(days)
+        approvals = await catalog.count_writebacks(result="pending")
+        actions = 0
+        publishes = 0
+        try:
+            async with async_db_session() as db:
                 from sqlalchemy import text as _t
-                actions = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_query_writeback WHERE is_deleted=0")).scalar() or 0)
-                approvals = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_query_writeback_log WHERE is_deleted=0 AND result='pending'")).scalar() or 0)
-                publishes = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_ont_version WHERE is_deleted=0 AND status='pending'")).scalar() or 0)
-            except Exception:  # noqa: BLE001
-                pass
-        return {"days": days, "ai_calls": int(ai_calls), "ai_errors": int(ai_errs),
-                "actions": int(actions), "approvals": int(approvals),
-                "publishes": int(publishes),
+                actions = int((await db.execute(_t(
+                    "SELECT COUNT(*) FROM ai_query_writeback "
+                    "WHERE is_deleted=0"))).scalar() or 0)
+                publishes = int((await db.execute(_t(
+                    "SELECT COUNT(*) FROM ai_ont_version "
+                    "WHERE is_deleted=0 AND status='pending'"))).scalar() or 0)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"days": days, "ai_calls": agg["calls"], "ai_errors": agg["errors"],
+                "actions": actions, "approvals": approvals,
+                "publishes": publishes,
                 "audit_log": (await cls.activity_timeline(days, 30))["events"]}
 
     @classmethod
