@@ -5,18 +5,30 @@
 - 规范化后周字段统一输出**星期名列表**（区间展开为显式列表，如 `1-5` → `mon,tue,wed,thu,fri`）：
   两套下游库（APScheduler 的 `mon=0…sun=6` 与 croniter 的 `sun=0…sat=6`）对名称区间的解释相反，
   只有展开成显式列表才能消除这种口径不一致；
-- 不支持 Quartz 专有语法（`?`/`L`/`W`/`#`）与 6/7 段（秒、年份）写法，一律明确报错。
+- 不支持 Quartz 专有语法（`?`/`L`/`W`/`#`）与 6/7 段（秒、年份）写法，一律明确报错；
+- 通配与列表混写（`*,mon`、`1,*`）归一为 `*`；
+- 触发器构造（`to_cron_trigger`）、中文描述（`describe_cron`）与「下次运行时间」（`next_run`）
+  同源复用规范化结果，时区固定 `Asia/Shanghai`。
 
 供 AI 工作台/工作流、训练调度、系统定时任务节点与中心调度器共用。
 """
 
 from __future__ import annotations
 
+import logging
 import re
+from datetime import datetime
+
+from apscheduler.triggers.cron import CronTrigger
+
+logger = logging.getLogger(__name__)
 
 
 class TriggerUtil:
-    """触发器工具类（当前只实现 cron 的规范化与校验）。"""
+    """触发器工具类（cron 的规范化、校验、构造、描述与下次运行时间）。"""
+
+    #: 统一时区：全平台一律 `Asia/Shanghai`，避免「同表达式不同机器不同触发时刻」
+    TIMEZONE = "Asia/Shanghai"
 
     # 周字段映射表：标准 crontab（0/7=周日）→ 调度器可读的星期名
     _WEEKDAY_MAP = {
@@ -52,6 +64,17 @@ class TriggerUtil:
 
     _SEGMENT_REASON = "只支持 5 段标准 crontab（分 时 日 月 周）"
 
+    #: 星期名 → 中文标签（`describe_cron` 用）
+    _WEEKDAY_LABEL = {
+        "sun": "周日",
+        "mon": "周一",
+        "tue": "周二",
+        "wed": "周三",
+        "thu": "周四",
+        "fri": "周五",
+        "sat": "周六",
+    }
+
     # ------------------------------------------------------------------ 对外 API
 
     @classmethod
@@ -63,7 +86,9 @@ class TriggerUtil:
         """
         try:
             ok, reason, _ = cls._parse_cron(expr)
-        except Exception:  # noqa: BLE001 —— 校验接口不应抛错，兜底给通用原因
+        except ValueError:
+            # 只兜底解析层可预期的数值转换错误；其它异常照常抛出，不掩盖真实 bug
+            logger.exception("cron 表达式解析异常：%r", expr)
             return False, "cron 表达式解析失败"
         return ok, reason
 
@@ -78,6 +103,145 @@ class TriggerUtil:
         if not ok:
             raise ValueError(reason)
         return normalized
+
+    @classmethod
+    def to_cron_trigger(cls, expr: str) -> CronTrigger:
+        """构造 APScheduler 的 `CronTrigger`（时区固定 `Asia/Shanghai`）。
+
+        输入先经 `normalize_cron` 规范化（周字段已是标准 crontab 语义的星期名列表），
+        因此「校验通过 ⇒ 一定能构造成功」（同源约束）。
+        表达式非法时抛 `ValueError`。
+        """
+        minute, hour, day, month, day_of_week = cls.normalize_cron(expr).split()
+        return CronTrigger(
+            minute=minute,
+            hour=hour,
+            day=day,
+            month=month,
+            day_of_week=day_of_week,
+            timezone=cls.TIMEZONE,
+        )
+
+    @classmethod
+    def next_run(cls, trigger: str, args, base: datetime | None = None) -> datetime | None:
+        """统一的「下次运行时间」（列表与预览共用）。
+
+        - `trigger="cron"`：`args` 为 5 段 cron 表达式，返回带 `Asia/Shanghai` 时区的时刻；
+        - `base` 为参照时刻（缺省为当前时间）；**朴素时间按 `Asia/Shanghai` 解释**，
+          保证同一输入在不同机器时区下结果一致；
+        - 其它触发类型（interval / date / now）由后续任务扩展，此处显式抛 `NotImplementedError`
+          （不静默返回 `None`，以免掩盖「类型未实现」）。
+        """
+        if trigger != "cron":
+            raise NotImplementedError(f"next_run 暂不支持触发器类型：{trigger}")
+
+        cron_trigger = cls.to_cron_trigger(args)
+        if base is None:
+            now = datetime.now(cron_trigger.timezone)
+        elif base.tzinfo is None:
+            now = base.replace(tzinfo=cron_trigger.timezone)
+        else:
+            now = base
+        return cron_trigger.get_next_fire_time(None, now)
+
+    @classmethod
+    def describe_cron(cls, expr: str) -> str:
+        """把 cron 表达式描述成中文短句（如「每周一 09:00」「每天 09:00」「每小时第 15 分」）。
+
+        表达式非法时抛 `ValueError`（与 `normalize_cron` 同源）。
+        """
+        minute, hour, day, month, day_of_week = cls.normalize_cron(expr).split()
+        period = cls._describe_period(day, month, day_of_week)
+
+        if hour == "*" and minute == "*":
+            return "每分钟" if period == "每天" else f"{period}每分钟"
+
+        hour_step = cls._field_step(hour)
+        if hour_step is not None:
+            if minute == "0":
+                text = f"每 {hour_step} 小时整点"
+            elif minute == "*":
+                text = f"每 {hour_step} 小时每分钟"
+            else:
+                text = f"每 {hour_step} 小时第 {cls._join_values(minute)} 分"
+            return text if period == "每天" else f"{period}{text}"
+
+        minute_step = cls._field_step(minute)
+        if minute_step is not None:
+            text = f"每 {minute_step} 分钟"
+            if hour == "*":
+                return text if period == "每天" else f"{period}{text}"
+            text = f"{cls._join_values(hour)} 点的每 {minute_step} 分钟"
+            return text if period == "每天" else f"{period} {text}"
+
+        if hour == "*":
+            text = "每小时整点" if minute == "0" else f"每小时第 {cls._join_values(minute)} 分"
+            return text if period == "每天" else f"{period}{text}"
+
+        if minute == "*":
+            text = f"{cls._join_values(hour)} 点的每分钟"
+            return text if period == "每天" else f"{period} {text}"
+
+        if cls._is_number_list(minute) and cls._is_number_list(hour):
+            return f"{period} {cls._describe_time(minute, hour)}"
+
+        # 兜底：区间等无法写成 `HH:MM` 的写法，按原样字段描述（不猜语义）
+        return f"{period} {cls._join_values(hour)} 点的第 {cls._join_values(minute)} 分"
+
+    # ------------------------------------------------------------------ 描述内部实现
+
+    @classmethod
+    def _describe_period(cls, day: str, month: str, day_of_week: str) -> str:
+        """描述「周期」（每天 / 每周一、周三 / 每月 1 日 / 每年 3 月 15 日）。"""
+        month_step = cls._field_step(month)
+        if month_step is not None:
+            if day == "*":
+                return f"每 {month_step} 月"
+            return f"每 {month_step} 月的{cls._describe_day(day)}"
+        if month != "*":
+            if day == "*":
+                return f"每年 {cls._join_values(month)} 月"
+            return f"每年 {cls._join_values(month)} 月 {cls._describe_day(day)}"
+        day_step = cls._field_step(day)
+        if day_step is not None:
+            return f"每 {day_step} 日"
+        if day != "*":
+            return f"每月 {cls._describe_day(day)}"
+        if day_of_week != "*":
+            labels = "、".join(cls._WEEKDAY_LABEL[name] for name in day_of_week.split(","))
+            return f"每{labels}"
+        return "每天"
+
+    @classmethod
+    def _describe_day(cls, day: str) -> str:
+        """日字段的中文（`1` → `1 日`；`1-15` 原样保留区间）。"""
+        return f"{cls._join_values(day)} 日"
+
+    @staticmethod
+    def _field_step(field: str) -> int | None:
+        """字段为 `*/n` 时返回步长 `n`，否则返回 `None`。"""
+        matched = re.fullmatch(r"\*/(\d+)", field)
+        return int(matched.group(1)) if matched else None
+
+    @staticmethod
+    def _is_number_list(field: str) -> bool:
+        """字段是否为纯数字列表（`9`、`1,15`），即能安全写成 `HH:MM`。"""
+        return all(part.isdigit() for part in field.split(","))
+
+    @staticmethod
+    def _join_values(field: str) -> str:
+        """规范化字段的逗号列表换成中文顿号（`1,15` → `1、15`）。"""
+        return field.replace(",", "、")
+
+    @staticmethod
+    def _describe_time(minute: str, hour: str) -> str:
+        """描述 `HH:MM` 时刻（时/分为列表时取叉积，如 `09:00、09:30、18:00、18:30`）。"""
+        combos = [
+            f"{int(hour_value):02d}:{int(minute_value):02d}"
+            for hour_value in hour.split(",")
+            for minute_value in minute.split(",")
+        ]
+        return "、".join(combos)
 
     # ------------------------------------------------------------------ 内部解析
 
@@ -133,7 +297,10 @@ class TriggerUtil:
     def _parse_number_field(
         cls, field: str, low: int, high: int, label: str
     ) -> tuple[bool, str, str]:
-        """校验数值字段（分/时/日/月），支持 `*`、`a`、`a-b`、`a,b,c`、`*/n`、`a-b/n`。"""
+        """校验数值字段（分/时/日/月），支持 `*`、`a`、`a-b`、`a,b,c`、`*/n`、`a-b/n`。
+
+        通配与列表混写（`*,5`、`1,*`）归一为 `*`。
+        """
         if "?" in field:
             return False, f"{label}字段不支持 ?（Quartz 专有语法，请用 * 表示不限制）", ""
         if "#" in field:
@@ -149,6 +316,9 @@ class TriggerUtil:
             if not ok:
                 return False, reason, ""
             values.append(value)
+        if "*" in values:
+            # 通配与列表混写（`*,5`）归一为 `*`：`*` 已包含其余取值（规格 §4.1）
+            return True, "", "*"
         return True, "", ",".join(values)
 
     @classmethod
@@ -168,6 +338,9 @@ class TriggerUtil:
                 if step < 1 or step > span:
                     return False, f"{label}字段步长非法（*/n 的 n 应在 1-{span} 之间）：{item}", ""
                 return True, "", f"*/{step}"
+            if "-" not in base:
+                # 单值带步长（`1/2`）无标准 crontab 语义，不发明含义
+                return False, f"{label}字段步长写法非法（仅支持 */n 与 a-b/n）：{item}", ""
             ok, reason, _ = cls._check_range(base, low, high, label)
             if not ok:
                 return False, reason, ""
@@ -218,7 +391,10 @@ class TriggerUtil:
 
     @classmethod
     def _parse_weekday(cls, field: str) -> tuple[bool, str, str]:
-        """校验周字段并映射为星期名列表（不支持步长；区间展开为显式列表）。"""
+        """校验周字段并映射为星期名列表（不支持步长；区间展开为显式列表）。
+
+        通配与列表混写（`*,mon`）归一为 `*`。
+        """
         if "?" in field:
             return False, "周字段不支持 ?（Quartz 专有语法，请用 * 表示每天）", ""
         if "#" in field:
@@ -266,6 +442,9 @@ class TriggerUtil:
             if value is None:
                 return False, f"周字段取值非法：{item}（支持 0-7 或 mon…sun）", ""
             _append(value)
+        if "*" in values:
+            # 通配与列表混写（`*,mon`）归一为 `*`：`*` 已包含其余取值（规格 §4.1）
+            return True, "", "*"
         return True, "", ",".join(values)
 
     @classmethod
