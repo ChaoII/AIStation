@@ -1146,6 +1146,33 @@ function resetRunTrace() {
   edges.value.forEach((e: any) => (e.class = ""));
 }
 
+/** 把 node-status 帧并入对话轨迹（同一节点的 running 与终态合并成一行）。
+ *
+ * 同一节点会先后收到 running 与终态两帧；直接 push 会让轨迹出现「执行中」+
+ * 「完成」两行（既有显示瑕疵，实测截图可见）。合并规则：若该节点**最近一行**仍是
+ * running，就地更新为终态；否则新起一行——循环/迭代重复执行同一节点时仍需多行。
+ */
+function pushNodeTrace(trace: TraceItem[] | undefined, obj: any) {
+  if (!trace) return;
+  const item: TraceItem = {
+    nodeId: obj.nodeId,
+    status: obj.status || "success",
+    label: obj.label || obj.nodeId,
+    input: obj.input,
+    output: obj.output,
+    error: obj.error,
+    duration: obj.duration_ms,
+  };
+  for (let i = trace.length - 1; i >= 0; i--) {
+    if (trace[i].nodeId === obj.nodeId) {
+      if (trace[i].status === "running") Object.assign(trace[i], item);
+      else trace.push(item);
+      return;
+    }
+  }
+  trace.push(item);
+}
+
 function onNodeStatus(ns: any) {
   const status = ns.status || "success";
   nodeRunStates.value[ns.nodeId] = status;
@@ -3161,15 +3188,7 @@ async function sendStep() {
       if (obj.type === "text-delta") msg.content += obj.text;
       else if (obj.type === "node-status") {
         onNodeStatus(obj);
-        msg.trace?.push({
-          nodeId: obj.nodeId,
-          status: obj.status || "success",
-          label: obj.label || obj.nodeId,
-          input: obj.input,
-          output: obj.output,
-          error: obj.error,
-          duration: obj.duration_ms,
-        });
+        pushNodeTrace(msg.trace, obj);
         scrollRunBottom();
       } else if (obj.type === "data-step") {
         stepRunId.value = obj.data?.run_id || stepRunId.value;
@@ -3266,15 +3285,7 @@ async function sendChat() {
       else if (obj.type === "sources") msg.sources = obj.sources || [];
       else if (obj.type === "node-status") {
         onNodeStatus(obj);
-        msg.trace?.push({
-          nodeId: obj.nodeId,
-          status: obj.status || "success",
-          label: obj.label || obj.nodeId,
-          input: obj.input,
-          output: obj.output,
-          error: obj.error,
-          duration: obj.duration_ms,
-        });
+        pushNodeTrace(msg.trace, obj);
         scrollRunBottom();
       } else if (obj.type === "data-run") {
         // 运行记录 id：停止运行时的取消目标
@@ -3368,15 +3379,7 @@ async function handleApprove(decision: "approve" | "reject") {
       if (obj.type === "text-delta") am.content += obj.text;
       else if (obj.type === "node-status") {
         onNodeStatus(obj);
-        am.trace?.push({
-          nodeId: obj.nodeId,
-          status: obj.status || "success",
-          label: obj.label || obj.nodeId,
-          input: obj.input,
-          output: obj.output,
-          error: obj.error,
-          duration: obj.duration_ms,
-        });
+        pushNodeTrace(am.trace, obj);
       } else if (obj.type === "data-finish") am.content = dataOf(obj).reply || am.content;
       else if (obj.type === "error")
         am.error = obj.errorText || obj.msg || obj.message || "审批失败";
