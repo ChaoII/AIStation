@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .cancel import clear_cancel, request_cancel
+from .cancel import clear_cancel, is_cancelled, request_cancel
 from .engine import WorkflowCancelled, WorkflowEngine
 from .model import (
     AiWorkflowModel,
@@ -21,6 +21,11 @@ from .model import (
     AiWorkflowVersionModel,
 )
 from .schema import AiWorkflowApproveSchema
+
+#: 引擎任务结束哨兵（经帧队列传给消费端）
+_ENGINE_END = object()
+#: 取消看门狗轮询间隔（秒）：取消信号查得勤（做到「秒停」），断开每 5 次查一次
+_WATCH_INTERVAL = 0.2
 
 
 def _to_dict(w: AiWorkflowModel) -> dict:
@@ -257,6 +262,7 @@ class AiWorkflowService:
         log_id: int | None = None
         run_id: str | None = None
         watcher: asyncio.Task | None = None
+        engine_task: asyncio.Task | None = None
         state: dict = {
             "assistant_text": "",
             "reply": "",
@@ -288,22 +294,6 @@ class AiWorkflowService:
                     # 把运行记录 id 下发给前端：它是取消运行的目标（run-log/{id}/cancel）
                     yield ms.data("run", {"run_log_id": log_id, "run_id": run_id})
 
-                # 客户端断开看门狗：BaseHTTPMiddleware（RequestLogMiddleware）**不会**把
-                # http.disconnect 透传给下游，SSE 生成器收不到断开 → 关页面后运行会白跑
-                # 到底（实测：断开 10s 后记录仍是 running）。这里主动轮询，发现断开即走
-                # 已验证的「取消信号」通道，让运行在下个检查点停下并记 cancelled。
-                if log_id and is_disconnected is not None:
-                    async def _watch_disconnect() -> None:
-                        while not state.get("finished") and not state.get("cancelled"):
-                            await asyncio.sleep(1.0)
-                            try:
-                                if await is_disconnected():
-                                    await request_cancel(log_id, redis)
-                                    return
-                            except BaseException:  # noqa: BLE001 轮询失败即放弃（不误杀运行）
-                                return
-
-                    watcher = asyncio.create_task(_watch_disconnect())
                 engine = WorkflowEngine(
                     graph=graph,
                     variables=variables or {},
@@ -316,7 +306,65 @@ class AiWorkflowService:
                     cancel_key=str(log_id) if log_id else None,
                     redis=redis,
                 )
-                async for frame in engine.run():
+
+                # 引擎放进**独立任务**，帧经队列转出。
+                # 为什么必须这样：取消原来只在引擎里**逐帧**检查，而节点可能长时间不产帧
+                # （LLM 思考期、非流式工具调用），逐帧检查要等下一帧才生效——用户点了
+                # 「停止」却半天没反应（实测：静默期要等首个 token）。放进任务后，取消/
+                # 断开可以**直接 cancel 这个任务**，立刻打断节点里正在进行的 await。
+                queue: asyncio.Queue = asyncio.Queue()
+                outcome: dict = {"kind": None}  # None=正常结束 / "cancelled" / "error"
+
+                async def _drive_engine() -> None:
+                    try:
+                        async for frame in engine.run():
+                            queue.put_nowait(frame)
+                    except WorkflowCancelled:
+                        outcome["kind"] = "cancelled"
+                    except asyncio.CancelledError:
+                        # 被看门狗/断开直接打断：必须记 cancelled（不能当失败）
+                        outcome["kind"] = "cancelled"
+                        raise
+                    except Exception as e:  # noqa: BLE001
+                        outcome["kind"] = "error"
+                        state["error"] = str(e)
+                    finally:
+                        queue.put_nowait(_ENGINE_END)
+
+                engine_task = asyncio.create_task(_drive_engine())
+
+                # 取消看门狗（取消信号 + 客户端断开）：
+                # - 取消信号每 0.2s 查一次（内存+Redis，多 worker 也能收到），
+                # - 断开每 1s 查一次（BaseHTTPMiddleware 不会把 http.disconnect 透传给
+                #   下游，SSE 生成器收不到断开 → 关页面后运行会白跑到底，实测断开 12s
+                #   后记录仍是 running）。
+                # 命中任一条件即直接 cancel 引擎任务，做到「秒停」。
+                async def _watch_cancel() -> None:
+                    tick = 0
+                    while not engine_task.done():
+                        await asyncio.sleep(_WATCH_INTERVAL)
+                        tick += 1
+                        try:
+                            if engine.cancel_key and await is_cancelled(
+                                engine.cancel_key, redis
+                            ):
+                                engine_task.cancel()
+                                return
+                            if is_disconnected is not None and tick % 5 == 0:
+                                if await is_disconnected():
+                                    if log_id:
+                                        await request_cancel(log_id, redis)
+                                    engine_task.cancel()
+                                    return
+                        except BaseException:  # noqa: BLE001 轮询失败即放弃（不误杀运行）
+                            return
+
+                watcher = asyncio.create_task(_watch_cancel())
+
+                while True:
+                    frame = await queue.get()
+                    if frame is _ENGINE_END:
+                        break
                     yield frame
                     if '"type": "node-status"' in frame:
                         try:
@@ -324,7 +372,20 @@ class AiWorkflowService:
                         except Exception:  # noqa: BLE001
                             pass
 
-                if state.get("halted") and state.get("pending_approval"):
+                if outcome["kind"] == "cancelled":
+                    state["cancelled"] = True
+                    # 被**硬中断**时引擎来不及补 cancelled 帧（它是在 await 处被打断的），
+                    # 由这里补齐：否则前端轨迹里被中断的节点会一直显示「执行中」。
+                    for t in trace:
+                        if t.get("status") == "running":
+                            yield ms.node_status(
+                                t.get("nodeId"), "cancelled", t.get("label") or t.get("nodeId")
+                            )
+                            t["status"] = "cancelled"
+                    yield ms.error("运行已取消")
+                elif outcome["kind"] == "error":
+                    yield ms.error(f"运行失败：{state['error']}")
+                elif state.get("halted") and state.get("pending_approval"):
                     # HITL：持久化运行状态，供前端审批后调 approve 续跑
                     await cls._persist_pending(redis, run_id, workflow_id, state, uid)
                 else:
@@ -334,11 +395,14 @@ class AiWorkflowService:
             # 任何 await 都会立刻再抛，收尾写库必然丢失 → 运行记录永远停在 running
             # （实测：前端点「停止」后 abort SSE，记录卡在 running）。
             # 只能**另起任务**补写（独立任务不受本任务取消影响）。
+            # 引擎现在是**独立任务**，必须显式取消，否则客户端走了它还在白跑。
+            if engine_task and not engine_task.done():
+                engine_task.cancel()
+            if watcher:
+                watcher.cancel()
             if log_id and not state.get("finished"):
                 state["cancelled"] = True
                 cls._finalize_run_detached(log_id, state, trace, t0, redis)
-            if watcher:
-                watcher.cancel()
             raise
         except WorkflowCancelled:
             # 用户点了「停止」：明确区分于失败，前端提示「已取消」而非「运行失败」

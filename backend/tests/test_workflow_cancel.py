@@ -227,6 +227,87 @@ def test_reconcile_stale_runs_marks_only_old_running(test_client):
     assert n >= 1
 
 
+# ---------------------------- 立即中断（任务级取消） ---------------------------- #
+
+def test_run_ui_stream_interrupts_silent_node_immediately(monkeypatch):
+    """节点**长时间不产帧**时，取消也必须立即生效（不能等下一帧）。
+
+    背景：取消原来只在引擎里**逐帧**检查；节点若在等 LLM 思考或做非流式调用（几十秒
+    不产帧），「停止」要等第一个 token 才生效——用户点了停止却没反应。修法是把引擎放进
+    独立任务，取消时直接 ``cancel()`` 该任务（打断 await）。本用例锁住「静默期也能秒停」。
+    """
+    import time
+
+    from app.plugin.module_ai.workflow.service import AiWorkflowService as S
+
+    graph = {
+        "nodes": [{"id": "s", "type": "start", "data": {}},
+                  {"id": "l", "type": "llm", "data": {}}],
+        "edges": [{"source": "s", "target": "l"}],
+    }
+
+    async def _silent_llm(self, node):
+        entered.append(node.get("id"))
+        await asyncio.sleep(30)  # 静默：30 秒内不产任何帧
+        yield "never"
+
+    async def _get_workflow(cls, workflow_id):
+        return {"graph": graph, "enabled": True}
+
+    async def _start_run(cls, workflow_id, payload, uid):
+        return 4242  # 假运行记录 id
+
+    finished: list = []
+    entered: list = []
+
+    async def _finish_run(cls, log_id, status, payload, error, trace, duration_ms):
+        finished.append((log_id, status, error))
+
+    async def _noop(*a, **k):
+        return None
+
+    monkeypatch.setattr(S, "get_workflow", classmethod(_get_workflow))
+    monkeypatch.setattr(S, "_start_run", classmethod(_start_run))
+    monkeypatch.setattr(S, "_finish_run", classmethod(_finish_run))
+    monkeypatch.setattr(WorkflowEngine, "_exec_llm", _silent_llm)
+    monkeypatch.setattr(
+        "app.plugin.module_ai.overview.service.AiOverviewService.add_log", _noop
+    )
+    monkeypatch.setattr(
+        "app.plugin.module_ai.sessions.service.persist_session_exchange", _noop
+    )
+
+    class _Auth:
+        class user:  # noqa: N801
+            id = 1
+
+    async def _run():
+        await cancel_mod.clear_cancel(4242)
+        frames: list[str] = []
+        t0 = time.perf_counter()
+        async for f in S.run_ui_stream(
+            1, [{"role": "user", "parts": [{"text": "hi"}]}], _Auth()
+        ):
+            frames.append(f)
+            # 等 LLM 节点**已开始**（它随即进入 30s 静默）再请求取消：
+            # 取消落在节点边界就测不到"静默期中断"了（那时引擎本来就会停）
+            if '"nodeId": "l"' in f and '"status": "running"' in f:
+                await asyncio.sleep(0.3)
+                await cancel_mod.request_cancel(4242)
+        await cancel_mod.clear_cancel(4242)
+        return frames, time.perf_counter() - t0
+
+    frames, elapsed = asyncio.run(asyncio.wait_for(_run(), timeout=10))
+
+    assert entered == ["l"], f"静默节点必须真的被执行到（否则测的是真 LLM）：{entered}"
+    assert elapsed < 5, f"静默节点未被立即打断（耗时 {elapsed:.1f}s，节点要睡 30s）"
+    assert finished and finished[-1][1] == "cancelled", finished
+    assert any('"status": "cancelled"' in f for f in frames), (
+        "被中断的节点必须补一个 cancelled 帧，否则前端轨迹一直显示「执行中」"
+    )
+    assert any('"type": "finish"' in f for f in frames), "取消后仍须正常收尾（终止帧）"
+
+
 # ---------------------------- 运行状态映射 ---------------------------- #
 
 def test_run_status_mapping():
