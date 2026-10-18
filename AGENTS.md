@@ -413,6 +413,54 @@ Dashboard `index.vue` 图表区使用自定义 CSS Grid (`display: grid; grid-te
 
 ---
 
+## 调试记忆：后端热重载（reload）是陷阱，开发时禁止开
+
+### 现象与代价（2026-10-18 实测，代价：约 1 小时的错误排查）
+
+`main.py run --env=dev` 在 dev 下**硬编码** `reload=True`（`backend/main.py:99`）。它的 reloader 父进程持有端口 socket 并把 fd 交给子 worker，由此产生两个致命假象：
+
+- **杀掉父进程后，孤儿 worker 会继续占着同一个端口、用旧代码服务**。实测：杀掉 reloader 后旧 worker 又跑了 1 小时，
+  接口一律按**旧代码**返回 400「请先配置触发时间」，我据此误判「代码有 bug」，实际代码早已正确。
+- **reload 失败时只记一行 `Reloading...` 然后静默保留旧进程**，后续改动也不再重载（`StatReload` 的检测日志会一起停）。
+
+结论：**"我改了代码但接口行为没变"这类假象几乎无法从行为上分辨**，只能靠下面第 2 条的两步验证。
+
+### 规矩（强制）
+
+1. **开发时不要用 reload 启动**：`uv run main.py run --env=dev --no-reload`（等价 `RELOAD=false`）。
+2. **改完后端代码必须彻底重启，并且必须验证新代码真的生效**（两步都做，缺一不可）：
+
+```powershell
+# 1) 按命令行精确杀干净（只杀监听 PID 是不够的，会留下孤儿 worker）
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+  Where-Object { $_.CommandLine -like '*main.py*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+# 2) 确认端口已空（还有 OwningProcess 说明没杀干净）
+Get-NetTCPConnection -LocalPort 8002 -State Listen -ErrorAction SilentlyContinue
+# 3) 重启（不开 reload）
+cd backend; uv run main.py run --env=dev --no-reload
+# 4) 验证新代码生效——不要只看"端口有响应"
+curl http://127.0.0.1:8002/openapi.json   # 新字段/新路由是否出现？
+```
+
+3. **不要用「接口返回 400/404」直接推断代码有问题**：先用 `/openapi.json` 或启动日志确认在跑的是哪份代码。
+
+---
+
+## 调试记忆：asyncpg 读回的 `timestamptz` 一律是 UTC（差 8 小时）
+
+`DateTime(timezone=True)` 的列用 asyncpg 读回来**永远是 UTC 的 tz-aware datetime**；而
+`app/core/validator.py` 的 `DateTimeStr` 只做 `strftime`、**不做时区换算**。
+
+于是由调度器写入的时间（值是 `Asia/Shanghai` 的 tz-aware）直接格式化会**早 8 小时**：
+实测同一条定时任务，列表接口返回 `next_run_time = 2026-10-19 01:00:00`，而预览接口返回 `next_run = 2026-10-19 09:00:00`。
+
+**规则**：凡是**来自调度器/APScheduler** 的时间（`next_run_time` / `last_run_time`），
+出接口前必须 `.astimezone(ZoneInfo(TriggerUtil.TIMEZONE))` —— 统一走 `TriggerUtil.to_local_str()`，
+不要各处自己 `strftime`。应用自己写入的 `created_time` 一类（naive 本地时间）不适用本条。
+
+---
+
 ## OCR 模型规格（pytorch-ocr）
 
 ### PP-OCRv6 det 规格（configs/det/PP-OCRv6/*.yml）

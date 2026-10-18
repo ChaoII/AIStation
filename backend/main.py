@@ -60,12 +60,21 @@ def run(
     env: Annotated[
         EnvironmentEnum, typer.Option("--env", help="运行环境 (dev, prod)")
     ] = EnvironmentEnum.DEV,
+    reload: Annotated[
+        bool,
+        typer.Option(
+            "--reload/--no-reload",
+            help="是否开启热重载（默认关闭：reload 会留下占着端口的孤儿 worker、用旧代码服务，"
+            "造成「改了代码但行为没变」的假象；需要时显式 --reload）",
+        ),
+    ] = False,
 ) -> None:
     """
-    按指定环境加载配置并启动 Uvicorn（开发环境开启 reload）。
+    按指定环境加载配置并启动 Uvicorn。
 
     参数:
     - env (EnvironmentEnum): 运行环境，对应 `--env`。
+    - reload (bool): 热重载开关，对应 `--reload` / `--no-reload`，**默认关闭**。
 
     返回:
     - None
@@ -91,12 +100,12 @@ def run(
 
         worship(env.value)
 
-        # 启动uvicorn服务
+        # 启动uvicorn服务（reload 由 --reload 显式开启，见 AGENTS.md「后端热重载是陷阱」）
         uvicorn.run(
             app="main:create_app",
             host=settings.SERVER_HOST,
             port=settings.SERVER_PORT,
-            reload=env.value == EnvironmentEnum.DEV.value,
+            reload=reload,
             factory=True,
             log_config=None,
         )

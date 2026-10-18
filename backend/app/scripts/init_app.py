@@ -1773,7 +1773,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         console_run(
             host=settings.SERVER_HOST,
             port=settings.SERVER_PORT,
-            reload=settings.ENVIRONMENT == EnvironmentEnum.DEV,
+            # 热重载现由 `main.py run --reload` 显式开启、默认关闭（见 AGENTS.md
+            # 「后端热重载是陷阱」）；横幅按默认值显示，避免再次出现「显示开着、实际是旧代码」的误导。
+            reload=False,
             database_ready=True,
             redis_ready=True,
             scheduler_ready=SchedulerUtil.is_running(),
