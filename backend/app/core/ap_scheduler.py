@@ -1281,7 +1281,9 @@ class SchedulerUtil:
         参数:
         - jobs: 业务作业规格序列，每项为 `(job_key, trigger, trigger_args, func)`，
           或 `(job_key, trigger, trigger_args, func, func_args)`（第五项为传给 `func` 的位置参数）。
-        - prefixes (tuple[str, ...] | None): 清理范围前缀；None 表示全部业务前缀。
+        - prefixes (tuple[str, ...] | str | None): 清理范围前缀；None 表示全部业务前缀；
+          **传裸字符串时按单个前缀处理**（`"train_schedule:"` 等价于 `("train_schedule:",)`，
+          不会被拆成字符集）。
 
         返回:
         - dict[str, int]: `{"registered": 本轮成功注册的作业数（含幂等替换）, "removed": 清理数}`。
@@ -1300,6 +1302,9 @@ class SchedulerUtil:
                 continue
             registered += 1
 
+        # 裸字符串兜底：`tuple("train_schedule:")` 会拆成 ('t','r','a',…) 命中大量无关 id
+        if isinstance(prefixes, str):
+            prefixes = (prefixes,)
         scope = _BUSINESS_JOB_PREFIXES if prefixes is None else tuple(prefixes)
         removed = 0
         for job in cls.get_all_jobs():
