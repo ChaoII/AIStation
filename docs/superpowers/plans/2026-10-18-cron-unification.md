@@ -961,32 +961,67 @@ git add frontend/src/views/module_task/cronjob/node/index.vue frontend/src/compo
 git commit -m "feat(ui): 系统定时任务节点页统一为 TriggerEditor，删除 IntervalTab 与停更 Quartz 组件"
 ```
 
-### Task C7: 四入口 e2e 汇总核对 + 全量回归
+### Task C7a: 前端统一收口（组件 prop 化 + 四页面接线 + 累积 Minor）
+
+> **拆分理由**：C2/C4/C5/C6 审查累积的收口项已超出「跑 e2e」的范围，单独成任务以便 diff 可审。
+> 本任务**不跑 e2e**（交 C7b，避免与后续小修互相干扰）。
+
+**Files:**
+- Modify: `frontend/src/components/TriggerEditor/index.vue`
+- Modify: `frontend/src/views/module_ai/workspace/index.vue`、`frontend/src/views/module_ai/workflow/components/WorkflowEditor.vue`、
+  `frontend/src/components/Train/SchedulePanel.vue`、`frontend/src/views/module_task/cronjob/node/index.vue`（仅加预览路由 prop）
+- Modify: `frontend/src/components/Train/SchedulePanel.vue`（权限与口径小修）
+
+**收口清单（逐条来自任务审查，均已裁决）:**
+
+1. **组件预览路由 prop 化（C6 顾虑 1）**：`TriggerEditor` 现把预览接口硬编码为 `POST /ai/workspace/trigger/preview`
+   （权限 `module_ai:workspace:query`），A7 交付的另外三条预览路由全部闲置 ⇒ 只有节点/训练/工作流权限的用户会看到「预览暂不可用」。
+   修法：加**可选** prop `previewUrl`（缺省仍为工作台路由，保持向后兼容），四个页面各自传本模块路由：
+   - 工作台 `/ai/workspace/trigger/preview`（可省略）
+   - 工作流 `/ai/workflows/trigger/preview`
+   - 训练 `/train/schedule/trigger/preview`（**以 A7 实际注册的路由为准，动手前先读 controller 确认**）
+   - 节点 `/task/cronjob/node/trigger/preview`
+2. **C2 Minor 1**：`schedulePreview()`/`handleTriggerChange` 未作废在途响应 → 「cron 非法 → 切到间隔（error 已清空）→ 旧响应回来把 cron 的 reason 灌回」的瞬时回灌。
+   修法：输入一变就 `previewSeq += 1`（作废在途响应）。
+3. **C2 Minor 2**：`now` 用 `v-else` 兜底 → 未知/遗留 `trigger` 会被渲染成「立即」外观且与预览区文案自相矛盾。
+   修法：改 `v-else-if="trigger === 'now'"` + 显式兜底分支（不显示误导文案）。
+4. **C5 Minor 3（AGENTS.md 强制项）**：`SchedulePanel.vue` 的 新建/编辑/删除 三个按钮**都没有 `v-hasPerm`**，而同模块其它页面都有
+   （后端也有权限校验）。修法：补 `module_train:task:{create,update,delete}`（以 controller 实际权限码为准）。
+5. **C5 Minor 1**：`SchedulePanel.vue:123` 用 `row?.trigger === "cron"` 严格等值，与 `triggerLabel`（`trigger || "cron"`）口径不一致 →
+   对 `trigger` 为 NULL 的历史行会显示「—」。修法：统一为 `const t = row?.trigger || "cron"`。
+
+- [ ] **Step 1: 改组件与四页面**（只加 prop 与上述小修，不改其它行为）
+- [ ] **Step 2: `cd frontend && pnpm run type-check`**（四处页面零新增错误）
+- [ ] **Step 3: 本任务触及文件的 eslint/prettier/stylelint 只读检查**（不要跑全仓 `pnpm run lint`）
+- [ ] **Step 4: 提交**（只 add 自己改的文件，中文提交信息）
+
+---
+
+### Task C7b: 四入口 e2e 汇总核对 + 全量回归
 
 **Files:**
 - Modify: `frontend/e2e/trigger-*.spec.ts`（C3~C6 各自的 spec）
-- Modify: `frontend/src/components/TriggerEditor/index.vue`（收口 C2 审查的两条 Minor）
 
-**C2 审查遗留（随本任务一并收口）:**
-- Minor 1：`schedulePreview()`/`handleTriggerChange` 未作废在途响应 → 「cron 非法 → 切到间隔（error 已清空）→ 旧响应回来把 cron 的 reason 灌回」的瞬时回灌。修法：输入一变就 `previewSeq += 1`（作废在途响应）。
-- Minor 2：`now` 用 `v-else` 兜底 → 未知/遗留 `trigger` 会被渲染成「立即」外观且与预览区文案自相矛盾。修法：改 `v-else-if="trigger === 'now'"` + 显式兜底分支（不显示误导文案）。
+**前置**：控制者会先**重启后端**（8002 上原为 A7 之前的旧进程，预览路由 404）——本任务开始前先确认预览接口可达。
 
-**C6 暴露的跨模块耦合（随本任务一并收口）:**
-- `TriggerEditor` 把预览接口**硬编码**为 `POST /ai/workspace/trigger/preview`（权限 `module_ai:workspace:query`），
-  于是工作流/训练/节点页只有本模块权限的用户会看到「预览暂不可用」——A7 交付的另外三条预览路由（`/ai/workflows/trigger/preview`、
-  `/train/.../trigger/preview`、`/task/cronjob/node/trigger/preview`）**全部闲置**。
-  修法：给组件加**可选** prop（如 `preview-url`，缺省仍为工作台路由以保持兼容），并让 C4/C5/C6 的页面各自传入本模块预览路由。
-- C4 审查 Minor 1：`frontend/e2e/trigger-workflow.spec.ts:190-198` 的注释声称「`destroy-on-close` 后重新挂载」，
-  但 `WorkflowEditor.vue:846` 的 `el-dialog` **没有** `destroy-on-close` → 断言无法区分「后端读回」与「内存残留」。
-  修法：要么给弹窗加 `destroy-on-close`（坐实注释），要么关闭前先用接口把值改成别的再重开断言 UI 变化。
+**e2e 健壮性小修（来自任务审查，均已裁决）:**
+- C4 Minor 1：`trigger-workflow.spec.ts:190-198` 注释称「`destroy-on-close` 后重新挂载」，但弹窗**没有**该属性 →
+  要么给弹窗加 `destroy-on-close`，要么关闭前先用接口把值改成别的再重开断言 UI 变化（**二选一，别只改注释**）。
+- C5 Minor 4：`trigger-train.spec.ts:40-46` 的 `dismissTour` 找 `.el-tour__close`，而 `components/Guide/index.vue:3` 是 `:show-close="false"` →
+  该元素永不渲染（死代码）；改用既有用例的做法 `page.addInitScript` 预置 `guideVisible=false`。
+- C5 Minor 5：`trigger-train.spec.ts:125` 用 `nth(2)` 定位「时」输入，与组件内字段顺序跨文件耦合 → 改 `.filter({ hasText: "时" })`。
+- C5 Minor 6：`trigger-train.spec.ts:75` 的 `page.locator(".el-dialog")` 未加标题过滤 → 按标题过滤，避免将来 strict 违规。
+- C4 Minor 2：cron 选择器的 DOM 断言依赖 `@vue-js-cron/element-plus` 内部类名（作者未真机验证）→ 首跑失败则放宽为「回显 + 接口回读」断言，不要为了过测而删掉核心断言。
 
 - [ ] **Step 1: 补一条"非法表达式被拦"的 e2e**：四处任选一处填 `0 0 9 L * *` → 断言前端提示非法且保存被拒（不落库）
-- [ ] **Step 2: 跑四个入口的 e2e**：Run: `cd frontend && npx playwright test e2e/trigger-editor.spec.ts --project=chromium`；Expected: 全绿
-- [ ] **Step 3: 截图核对四入口风格一致**（`e2e/trigger-*.png`，与既有页面并排看）
+- [ ] **Step 2: 顺序跑四个入口的 e2e**（**必须顺序**，并发会争用 `auth.setup` 的 storageState）：
+  Run: `cd frontend && npx playwright test e2e/trigger-workspace.spec.ts e2e/trigger-workflow.spec.ts e2e/trigger-train.spec.ts e2e/trigger-node.spec.ts --project=chromium`
+  Expected: 全绿
+- [ ] **Step 3: 截图核对四入口风格一致**（`e2e/trigger-*.png`，**用模型自身多模态能力读图**与既有页面对照，不依赖 vision-recognition 技能）
 - [ ] **Step 4: 全量后端回归**：Run: `cd backend && uv run pytest -q -n 4`；Expected: 全部通过
 - [ ] **Step 5: 提交**
 
 ```bash
-git add frontend/e2e/trigger-editor.spec.ts
-git commit -m "test(e2e): 四入口触发配置统一核对（含非法拦截）"
+git add frontend/e2e/trigger-workspace.spec.ts frontend/e2e/trigger-workflow.spec.ts frontend/e2e/trigger-train.spec.ts frontend/e2e/trigger-node.spec.ts
+git commit -m "test(e2e): 四入口触发配置统一核对（含非法拦截与截图）"
 ```
