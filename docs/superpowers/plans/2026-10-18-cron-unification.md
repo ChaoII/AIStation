@@ -794,6 +794,13 @@ git commit -m "feat(ui): 新增 TriggerEditor（定时分支用 @vue-js-cron/ele
 - Consumes: Task A7 预览接口
 - Produces: 组件内展示"人话描述 + 下次运行时间"；非法时 `@error` 有值
 
+**A3/A7/C1 交接（随本任务一并落地）:**
+- 空值规范化默认值改为 **`0 9 * * *`**（每天 09:00，与既有存量数据一致），不要用 `* * * * *`（每分钟）
+- **切类型时必须重置 `triggerArgs`**（否则从 cron 切到"间隔"会带着旧 cron 串 → 后端 interval 校验失败）
+- 页面/组件需在 `trigger` 变化时**清空 error 提示**（cron 分支卸载后不再有事件，否则"非法表达式"标签残留）
+- 非法输入的 `describe` 是**尽力而为非空**（如 `0 9 31 6 *` 回显"每年 6 月 31 日 09:00"）→ 预览区不要断言"非法 ⇒ 描述为空"，应同时展示 `reason`
+- `preview` 的 `trigger_args` 为空时 `valid=false`；`trigger="now"` 不算需确认
+
 - [ ] **Step 1: 实现间隔/单次/立即三个分支**
 
 间隔：`el-input-number` × weeks/days/hours/minutes/seconds；单次：`el-date-picker`（datetime，`value-format="YYYY-MM-DD HH:mm:ss"`）；
