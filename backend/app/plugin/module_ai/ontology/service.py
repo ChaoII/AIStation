@@ -4292,16 +4292,39 @@ async def upsert_capability(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 # 本体驱动表：把对象 + 属性物化成真实表（Palantir「本体驱动数据」）
 # ---------------------------------------------------------------------------
+#: 物化时同步数据的行数上限（避免误把百万行表整表搬进平台库）
+_MATERIALIZE_MAX_ROWS = 20000
+
+
 async def materialize_object(code: str) -> dict:
-    obj = (await _exec("SELECT code,name FROM ai_ont_object WHERE code=:c AND is_deleted=false", {"c": code})).fetchone()
-    if not obj:
+    """把对象 + 属性物化成平台库里的真实表 `ont_{code}`，**并同步数据、回写绑定**。
+
+    为什么要回写 `backing_table`：实例层取表名的口径是 `backing_table or code`，
+    原先物化只建表不回写 ⇒ 实例层永远去读 `{code}` 那张表，**物化等于空操作**
+    （Palantir「本体驱动数据」这条主线实际是断的）。
+
+    为什么还要**同步数据**：只回写绑定会把对象从"读源表"切到"读空表"，等于把数据看没了。
+    源表口径与实例层一致（`backing_table or code`）；跨数据源时经 `_exec_on` 读、逐批写主库。
+    同步成功后 `datasource_id` 置空（数据已在平台库，绑定随之落到本地）。
+    """
+    r = await _exec(
+        "SELECT code,COALESCE(backing_table,''),COALESCE(datasource_id,0) "
+        "FROM ai_ont_object WHERE code=:c AND is_deleted=false",
+        {"c": code},
+    )
+    row = r.fetchone()
+    if not row:
         return {"ok": False, "msg": f"对象 {code} 不存在"}
+    src_table = str(row[1] or "")
+    ds_id = int(row[2] or 0)
+
     props = await list_properties(code)
     if not props:
         return {"ok": False, "msg": "对象没有属性，无法物化"}
     table = f"ont_{code}"
     col_map = []
     cols_ddl = []
+    pg_of: dict[str, str] = {}
     for p in props:
         t = p["prop_type"]
         col_map.append({"prop": p["code"], "col": p["code"], "type": t})
@@ -4314,12 +4337,64 @@ async def materialize_object(code: str) -> dict:
             pg = "BOOLEAN"
         elif t == "object_ref" or t == "enum":
             pg = "TEXT"
+        pg_of[p["code"]] = pg
         cols_ddl.append(f'"{p["code"]}" {pg}')
     ddl = f'CREATE TABLE IF NOT EXISTS "{table}" (id BIGSERIAL PRIMARY KEY, {", ".join(cols_ddl)})'
     async with async_db_session() as db:
         await db.execute(_t(ddl))
+
+    # ---- 同步数据：从源表把行搬进物化表（源表口径与实例层一致）----
+    src = src_table or code
+    copied = 0
+    notes: list[str] = []
+    if not _IDENT.match(src or ""):
+        notes.append(f"源表名 {src!r} 不合法，未同步数据")
+    else:
+        src_cols = await _table_columns(src, datasource_id=ds_id or None)
+        if not src_cols:
+            notes.append(f"源表 {src} 不存在，物化表为空")
+        else:
+            shared = [p["code"] for p in props if p["code"] in src_cols and _IDENT.match(p["code"])]
+            if not shared:
+                notes.append(f"源表 {src} 与对象属性没有同名列，物化表为空")
+            else:
+                collist = ", ".join(f'"{c}"' for c in shared)
+                rows = await _exec_on(ds_id or None, f'SELECT {collist} FROM "{src}"')
+                all_rows = rows.fetchall()
+                data = all_rows[:_MATERIALIZE_MAX_ROWS]
+                if len(all_rows) > _MATERIALIZE_MAX_ROWS:
+                    notes.append(f"源表行数超过 {_MATERIALIZE_MAX_ROWS}，只同步了前 {_MATERIALIZE_MAX_ROWS} 行")
+                if data:
+                    # 统一按**文本**绑定 + SQL 里显式 CAST 到目标列类型：
+                    # 源列类型与本体属性类型不一定一致（实测 int 往 TEXT 列插会报
+                    # `expected str, got int`），文本 + CAST 对数值/时间/布尔都安全。
+                    marks = ", ".join(
+                        f"CAST(:p{i} AS {pg_of[shared[i]]})" for i in range(len(shared))
+                    )
+                    payload = [
+                        {
+                            f"p{i}": (None if rec[i] is None else str(rec[i]))
+                            for i in range(len(shared))
+                        }
+                        for rec in data
+                    ]
+                    async with async_db_session() as db:
+                        await db.execute(
+                            _t(f'INSERT INTO "{table}" ({collist}) VALUES ({marks})'), payload
+                        )
+                    copied = len(payload)
+
+    # ---- 回写绑定：这一步缺了，物化出来的表永远读不到 ----
+    await _exec_write(
+        "UPDATE ai_ont_object SET backing_table=:t, datasource_id=NULL, updated_time=now() "
+        "WHERE code=:c",
+        {"t": table, "c": code},
+    )
+    msg = f"对象 {code} 已物化为表 {table}（同步 {copied} 行，绑定已切到该表）"
+    if notes:
+        msg += "；" + "；".join(notes)
     return {"ok": True, "table": table, "columns": [c["col"] for c in col_map],
-            "msg": f"对象 {code} 已物化为表 {table}"}
+            "rows_copied": copied, "msg": msg}
 
 
 async def object_full(code: str, owner_id: int | None = None) -> dict:
