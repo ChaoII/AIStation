@@ -637,24 +637,11 @@ class AiAgentService:
     @classmethod
     async def agent_dashboard(cls) -> dict:
         """Agent 编排运行看板：每个 Agent 的运行量/错误率/延迟 + 绑定工具技能能力矩阵。"""
-        from sqlalchemy import func as _f
-        from sqlalchemy import select as _sel
         stats: dict[int, dict] = {}
         try:
-            from app.plugin.module_ai.overview.model import AiCallLogModel
-            async with async_db_session() as db:
-                rows = (await db.execute(
-                    _sel(AiCallLogModel.app_id, _f.count().label("n"),
-                         _f.count().filter(AiCallLogModel.result == "error").label("e"),
-                         _f.avg(AiCallLogModel.latency_ms).label("lat"))
-                    .where(AiCallLogModel.usage == "agent",
-                           AiCallLogModel.app_id.isnot(None),
-                           AiCallLogModel.is_deleted.is_(False))
-                    .group_by(AiCallLogModel.app_id)
-                )).fetchall()
-            for r in rows:
-                stats[int(r[0])] = {"runs": int(r[1] or 0), "errors": int(r[2] or 0),
-                                    "avg_latency": int(r[3] or 0)}
+            # 经 logs_center 的取数接口，不直读 ai_call_logs（守卫见 test_call_logs_ownership）
+            from app.plugin.module_ai.logs_center.service import AiLogService
+            stats = await AiLogService.stats_by_app("agent")
         except Exception:  # noqa: BLE001
             stats = {}
         agents = await cls.list_agents()

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import desc, func, or_, select
 
 from app.core.database import async_db_session
+from app.core.logger import log
 from app.plugin.module_ai.overview.model import AiCallLogModel
 
 
@@ -244,6 +245,44 @@ class AiLogService:
             ],
             "recent_calls": [_log_dict(r) for r in rows],
         }
+
+    @classmethod
+    async def stats_by_app(cls, usage: str = "agent") -> dict[int, dict]:
+        """按 ``app_id`` 聚合调用量/错误数/平均延迟（跨模块取数入口）。
+
+        职责边界：``ai_call_logs`` 的读取/统计**只在本模块实现**，其他模块（如 Agent
+        运行看板）一律经本接口取数，不直读表（守卫见 tests/test_call_logs_ownership.py）。
+        统计失败返回空表而非抛错：看板不该因为统计查不到就整体挂掉（与历史行为一致）。
+        """
+        out: dict[int, dict] = {}
+        try:
+            async with async_db_session() as db:
+                rows = (
+                    await db.execute(
+                        select(
+                            AiCallLogModel.app_id,
+                            func.count().label("n"),
+                            func.count().filter(AiCallLogModel.result == "error").label("e"),
+                            func.avg(AiCallLogModel.latency_ms).label("lat"),
+                        )
+                        .where(
+                            AiCallLogModel.usage == usage,
+                            AiCallLogModel.app_id.isnot(None),
+                            AiCallLogModel.is_deleted.is_(False),
+                        )
+                        .group_by(AiCallLogModel.app_id)
+                    )
+                ).fetchall()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[logs_center] 按应用聚合调用日志失败: {str(e)[:120]}")
+            return out
+        for r in rows:
+            out[int(r[0])] = {
+                "runs": int(r[1] or 0),
+                "errors": int(r[2] or 0),
+                "avg_latency": int(r[3] or 0),
+            }
+        return out
 
     @classmethod
     async def export(cls, days: int = 30, usage: str | None = None, result: str | None = None) -> list[dict]:
