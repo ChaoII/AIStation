@@ -231,3 +231,24 @@ def test_describe_cron_raises_on_invalid():
 def test_to_cron_trigger_raises_on_invalid():
     with pytest.raises(ValueError):
         TriggerUtil.to_cron_trigger("0 9 * * 5-1")
+
+
+# ------------------------------------------------------------ 永不触发的日/月组合（契约：返回 None）
+@pytest.mark.parametrize("expr", ["0 9 31 6 *", "0 9 30 2 *", "0 9 31 2 *"])
+def test_next_run_returns_none_for_never_firing_day_month(expr):
+    """契约是 `datetime | None`：永不触发的日/月组合必须返回 None，而不是抛 OSError。
+
+    注意：校验层此刻仍判其**合法**（「永不触发组合判非法」由后续任务在 validate 分派层收紧），
+    因此这里同时锁定「validate 通过 + next_run 返回 None」这一组合。
+    """
+    ok, reason = TriggerUtil.validate_cron(expr)
+    assert ok is True and reason == ""
+    assert TriggerUtil.next_run("cron", expr, BASE) is None
+
+
+def test_next_run_leap_day_is_asia_shanghai():
+    """闰年 2 月 29 日可触发：返回 Asia/Shanghai 的 2028-02-29 09:00。"""
+    result = TriggerUtil.next_run("cron", "0 9 29 2 *", BASE)
+    assert result is not None
+    assert str(result.tzinfo) == "Asia/Shanghai"
+    assert result.replace(tzinfo=None) == datetime(2028, 2, 29, 9, 0)

@@ -129,6 +129,8 @@ class TriggerUtil:
         - `trigger="cron"`：`args` 为 5 段 cron 表达式，返回带 `Asia/Shanghai` 时区的时刻；
         - `base` 为参照时刻（缺省为当前时间）；**朴素时间按 `Asia/Shanghai` 解释**，
           保证同一输入在不同机器时区下结果一致；
+        - **永不触发的日/月组合（如 `0 9 31 6 *`、`0 9 30 2 *`）返回 `None`**
+          （APScheduler 内部构造非法日期会抛错；契约是「没有下次触发」，由调用方决定如何提示）；
         - 其它触发类型（interval / date / now）由后续任务扩展，此处显式抛 `NotImplementedError`
           （不静默返回 `None`，以免掩盖「类型未实现」）。
         """
@@ -142,7 +144,13 @@ class TriggerUtil:
             now = base.replace(tzinfo=cron_trigger.timezone)
         else:
             now = base
-        return cron_trigger.get_next_fire_time(None, now)
+        try:
+            return cron_trigger.get_next_fire_time(None, now)
+        except (ValueError, OSError):
+            # 日/月组合永不发生（如 6 月 31 日）：APScheduler 内部会一路推进到 3001 年并抛错。
+            # 按 `datetime | None` 契约返回 None，不把「表达式不触发」升级成 500。
+            logger.debug("cron 表达式无有效下次触发时间：%r", args)
+            return None
 
     @classmethod
     def describe_cron(cls, expr: str) -> str:
