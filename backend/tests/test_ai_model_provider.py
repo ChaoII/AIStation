@@ -9,6 +9,40 @@ def _cleanup(test_client, auth_headers, ids):
         )
 
 
+def test_import_models_is_idempotent(test_client, auth_headers):
+    """「一键导入远端模型」经 `AiModelService.import_models` 落库：按 base_url+model 去重、可重复调用。
+
+    回归守卫：providers 曾自己 `db.add(AiModelModel(...))`（跨模块直写模型表），
+    现改走 models 模块的写接口——本用例锁住去重语义与返回结构。
+    """
+    from app.plugin.module_ai.models.service import AiModelService
+
+    items = [
+        {
+            "name": "t-import-model",
+            "model": "t-import-1",
+            "base_url": "http://t.local/v1",
+            "usage": "chat",
+            "provider_id": None,
+        }
+    ]
+
+    async def _run():
+        return (
+            await AiModelService.import_models(items, user_id=1),
+            await AiModelService.import_models(items, user_id=1),
+        )
+
+    first, second = asyncio.run(_run())
+    assert first == {"imported": 1, "skipped": 0, "total": 1}, first
+    assert second == {"imported": 0, "skipped": 1, "total": 1}, second
+
+    r = test_client.get("/api/v1/ai/models/list", headers=auth_headers)
+    ids = [m["id"] for m in (r.json().get("data") or []) if m.get("model") == "t-import-1"]
+    assert ids, "导入后应能在模型列表里查到"
+    _cleanup(test_client, auth_headers, ids)
+
+
 def test_ai_model_crud_and_mask(test_client, auth_headers):
     r = test_client.post(
         "/api/v1/ai/models/create",

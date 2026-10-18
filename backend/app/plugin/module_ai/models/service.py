@@ -65,6 +65,51 @@ class AiModelService:
             )
 
     @classmethod
+    async def import_models(cls, items: list[dict], user_id: int | None = None) -> dict:
+        """批量导入模型配置（按 ``base_url + model`` 去重），返回 ``{imported, skipped, total}``。
+
+        **跨模块写 `ai_models` 的唯一入口**：providers 的「一键导入远端模型」只经本接口落库，
+        不自己建模型行——表结构/默认值变更才只需改这一处。
+        """
+        imported = skipped = 0
+        todo = [it for it in (items or []) if (it.get("model") or "").strip()]
+        async with async_db_session.begin() as db:
+            for it in todo:
+                base_url = it.get("base_url") or ""
+                mid = str(it["model"]).strip()
+                exists = (
+                    await db.execute(
+                        select(AiModelModel).where(
+                            AiModelModel.base_url == base_url,
+                            AiModelModel.model == mid,
+                            AiModelModel.is_deleted.is_(False),
+                        )
+                    )
+                ).scalar_one_or_none()
+                if exists:
+                    skipped += 1
+                    continue
+                db.add(
+                    AiModelModel(
+                        name=it.get("name") or mid,
+                        provider=it.get("provider") or "openai_compatible",
+                        provider_id=it.get("provider_id"),
+                        usage=it.get("usage") or "chat",
+                        base_url=base_url,
+                        api_key=it.get("api_key") or "",
+                        model=mid,
+                        temperature=it.get("temperature", 0.3),
+                        max_tokens=it.get("max_tokens", 2048),
+                        enabled=True,
+                        extra_headers=it.get("extra_headers"),
+                        created_id=user_id,
+                        updated_id=user_id,
+                    )
+                )
+                imported += 1
+        return {"imported": imported, "skipped": skipped, "total": len(todo)}
+
+    @classmethod
     async def list_models(cls) -> list[dict]:
         async with async_db_session() as db:
             rows = (

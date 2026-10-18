@@ -144,47 +144,29 @@ class AiProviderService:
 
     @classmethod
     async def import_remote_models(cls, provider_id: int, usage: str, auth) -> dict:
-        """把供应商的远端模型一键导入为模型配置（自动去重）。"""
-        from sqlalchemy import select as _select
+        """把供应商的远端模型一键导入为模型配置（自动去重）。
 
-        from app.plugin.module_ai.models.model import AiModelModel
+        落库走 `AiModelService.import_models`（`ai_models` 的写 owner），本模块不直建模型行。
+        """
+        from app.plugin.module_ai.models.service import AiModelService
 
         p = await cls._load(provider_id)
         remote = await cls.remote_models(provider_id)
-        imported = skipped = 0
-        async with async_db_session.begin() as db:
-            for mid in remote:
-                exists = (
-                    await db.execute(
-                        _select(AiModelModel).where(
-                            AiModelModel.base_url == (p.base_url or ""),
-                            AiModelModel.model == mid,
-                            AiModelModel.is_deleted.is_(False),
-                        )
-                    )
-                ).scalar_one_or_none()
-                if exists:
-                    skipped += 1
-                    continue
-                db.add(
-                    AiModelModel(
-                        name=mid,
-                        provider="openai_compatible",
-                        provider_id=p.id,
-                        usage=usage,
-                        base_url=p.base_url or "",
-                        api_key=p.api_key or "",
-                        model=mid,
-                        temperature=0.3,
-                        max_tokens=2048,
-                        enabled=True,
-                        extra_headers=p.extra_headers,
-                        created_id=auth.user.id,
-                        updated_id=auth.user.id,
-                    )
-                )
-                imported += 1
-        return {"imported": imported, "skipped": skipped, "total": len(remote)}
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        items = [
+            {
+                "name": mid,
+                "provider": "openai_compatible",
+                "provider_id": p.id,
+                "usage": usage,
+                "base_url": p.base_url or "",
+                "api_key": p.api_key or "",
+                "model": mid,
+                "extra_headers": p.extra_headers,
+            }
+            for mid in remote
+        ]
+        return await AiModelService.import_models(items, user_id=uid)
 
     @classmethod
     async def test(cls, provider_id: int) -> dict:

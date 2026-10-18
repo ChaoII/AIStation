@@ -16,6 +16,7 @@ def _to_dict(a: AiAppModel) -> dict:
         "id": a.id,
         "name": a.name,
         "icon": a.icon or "",
+        "category_id": a.category_id,
         "description": a.description,
         "model_id": a.model_id,
         "prompt_id": a.prompt_id,

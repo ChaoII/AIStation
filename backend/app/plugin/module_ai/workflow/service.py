@@ -33,6 +33,7 @@ def _to_dict(w: AiWorkflowModel) -> dict:
         "id": w.id,
         "name": w.name,
         "description": w.description or "",
+        "category_id": w.category_id,
         "graph": w.graph or {"nodes": [], "edges": []},
         "version": w.version or 1,
         "enabled": w.enabled,

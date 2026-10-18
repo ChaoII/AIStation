@@ -5,21 +5,18 @@ from sqlalchemy import select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
-from app.plugin.module_ai.agent.model import AiAgentModel
-from app.plugin.module_ai.apps.model import AiAppModel
-from app.plugin.module_ai.workflow.model import AiWorkflowModel
 from app.utils.common_util import traversal_to_tree
 
 from .model import AiWorkspaceCategoryModel, AiWorkspaceCronModel
 
-#: 可聚合的类型 → (模型, 名称字段, 中文名)
+#: 可聚合的类型 → (本模块模型, 名称字段, 中文名)。
+#: agent/workflow/app 的表**不在这里**——它们由各模块的 list_* 接口取数（见 items()）；
+#: 这里只留本模块自己的 cron 表。
 _TYPES = {
-    "agent": (AiAgentModel, "agent_name", "智能体"),
-    "workflow": (AiWorkflowModel, "name", "工作流"),
-    "app": (AiAppModel, "name", "应用"),
     "cron": (AiWorkspaceCronModel, "name", "定时任务"),
 }
-ALL_TYPES = tuple(_TYPES.keys())
+#: 全部可聚合类型（跨模块的三种 + 本模块的 cron）
+ALL_TYPES = ("agent", "workflow", "app", "cron")
 
 #: 类型默认图标（Element Plus 图标组件名；条目未设 icon/avatar 或设为非图片图标时用于卡片展示）
 _TYPE_ICON = {
@@ -120,9 +117,24 @@ class WorkspaceService:
 
     @classmethod
     async def items(cls, category_id: int | None = None, asset_type: str | None = None) -> dict:
-        """按分类/全部聚合 agent/workflow/app/cron 为统一条目。"""
+        """按分类/全部聚合 agent/workflow/app/cron 为统一条目。
+
+        跨模块取数走**各模块自己的接口**（``list_agents`` / ``list_workflows`` / ``list_apps``），
+        不直读它们的表；分类与启用过滤在本模块内做（条目量小，不值得给 owner 加过滤参数）。
+        ``cron`` 是本模块自己的表，保持直读。
+        """
+        from app.plugin.module_ai.agent.service import AiAgentService
+        from app.plugin.module_ai.apps.service import AiAppService
+        from app.plugin.module_ai.workflow.service import AiWorkflowService
+
         if asset_type and asset_type not in ALL_TYPES:
             raise CustomException(msg=f"不支持的条目类型：{asset_type}")
+        #: 跨模块类型 → (取数接口, 名称字段, 中文名)
+        cross = {
+            "agent": (AiAgentService.list_agents, "agent_name", "智能体"),
+            "workflow": (AiWorkflowService.list_workflows, "name", "工作流"),
+            "app": (AiAppService.list_apps, "name", "应用"),
+        }
         async with async_db_session() as db:
             # 若选中父分类，则包含其所有后代分类
             cat_ids = None
@@ -132,14 +144,19 @@ class WorkspaceService:
             for kind in ALL_TYPES:
                 if asset_type and asset_type != kind:
                     continue
-                model, name_field, label = _TYPES[kind]
-                stmt = select(model).where(model.is_deleted.is_(False))
-                if hasattr(model, "enabled"):
-                    stmt = stmt.where(model.enabled.is_(True))
-                if cat_ids is not None:
-                    stmt = stmt.where(model.category_id.in_(cat_ids))
-                rows = (await db.execute(stmt)).scalars().all()
-                for r in rows:
+                if kind == "cron":  # 本模块自己的表
+                    model, name_field, label = _TYPES[kind]
+                    rows = (
+                        await db.execute(select(model).where(model.is_deleted.is_(False)))
+                    ).scalars().all()
+                    out.extend(cls._to_item(kind, r, label, name_field) for r in rows)
+                    continue
+                fetch, name_field, label = cross[kind]
+                for r in await fetch():
+                    if not r.get("enabled", True):
+                        continue
+                    if cat_ids is not None and r.get("category_id") not in cat_ids:
+                        continue
                     out.append(cls._to_item(kind, r, label, name_field))
             out.sort(key=lambda x: (x["category_id"] or 0, x["id"] or 0))
             return {"total": len(out), "items": out}
@@ -166,47 +183,56 @@ class WorkspaceService:
         return ids
 
     @staticmethod
-    def _to_item(kind: str, row, label: str, name_field: str) -> dict:
-        icon = getattr(row, "icon", "") or (getattr(row, "avatar", "") or "")
+    def _g(row, key: str, default=None):
+        """条目取值：他模块接口返回 **dict**，本模块 cron 是 **ORM 行**，统一取值。"""
+        if isinstance(row, dict):
+            v = row.get(key, default)
+        else:
+            v = getattr(row, key, default)
+        return default if v is None else v
+
+    @classmethod
+    def _to_item(cls, kind: str, row, label: str, name_field: str) -> dict:
+        icon = cls._g(row, "icon", "") or cls._g(row, "avatar", "")
         if not _is_image_icon(icon):
             icon = _TYPE_ICON.get(kind, icon or "")
         base = {
             "type": kind,
-            "id": row.id,
-            "name": getattr(row, name_field) or "",
-            "description": getattr(row, "description", "") or "",
-            "enabled": bool(getattr(row, "enabled", True)),
+            "id": cls._g(row, "id"),
+            "name": cls._g(row, name_field, "") or "",
+            "description": cls._g(row, "description", "") or "",
+            "enabled": bool(cls._g(row, "enabled", True)),
             "icon": icon,
-            "color": getattr(row, "color", "") or "",
-            "category_id": getattr(row, "category_id", None),
+            "color": cls._g(row, "color", "") or "",
+            "category_id": cls._g(row, "category_id"),
             "label": label,
-            "created_time": getattr(row, "created_time", None),
+            "created_time": cls._g(row, "created_time"),
         }
         # 类型专属元信息（供卡片展示更饱满）
         if kind == "agent":
             meta = {
-                "role": getattr(row, "agent_role", "") or "",
-                "model_id": getattr(row, "model_id", None),
-                "tools": len(getattr(row, "tool_ids", []) or []),
-                "skills": len(getattr(row, "skill_ids", []) or []),
-                "mcp": len(getattr(row, "mcp_ids", []) or []),
-                "knowledge": len(getattr(row, "knowledge_ids", []) or []),
+                "role": cls._g(row, "agent_role", "") or "",
+                "model_id": cls._g(row, "model_id"),
+                "tools": len(cls._g(row, "tool_ids", []) or []),
+                "skills": len(cls._g(row, "skill_ids", []) or []),
+                "mcp": len(cls._g(row, "mcp_ids", []) or []),
+                "knowledge": len(cls._g(row, "knowledge_ids", []) or []),
             }
         elif kind == "workflow":
-            graph = getattr(row, "graph", None) or {}
+            graph = cls._g(row, "graph", {}) or {}
             meta = {"nodes": len(graph.get("nodes", []) or [])}
         elif kind == "app":
             meta = {
-                "model_id": getattr(row, "model_id", None),
-                "tools": len(getattr(row, "tools", []) or []),
-                "app_type": getattr(row, "app_type", "") or "",
-                "output_format": getattr(row, "output_format", "") or "",
+                "model_id": cls._g(row, "model_id"),
+                "tools": len(cls._g(row, "tools", []) or []),
+                "app_type": cls._g(row, "app_type", "") or "",
+                "output_format": cls._g(row, "output_format", "") or "",
             }
         else:  # cron
             meta = {
-                "cron": getattr(row, "cron", "") or "",
-                "target_type": getattr(row, "target_type", "") or "",
-                "next_run_time": getattr(row, "next_run_time", None),
+                "cron": cls._g(row, "cron", "") or "",
+                "target_type": cls._g(row, "target_type", "") or "",
+                "next_run_time": cls._g(row, "next_run_time"),
             }
         base["meta"] = meta
         return base
