@@ -13,9 +13,9 @@
 ## Global Constraints
 
 - **cron 唯一格式**：5 段标准 crontab `分 时 日 月 周`；周字段 `0`/`7`=周日，接受 `mon…sun`（大小写不敏感）。
-- **周字段映射**（交 APScheduler 前必须转换，修 D1）：`0|7|sun→sun`、`1|mon→mon`、`2|tue`、`3|wed`、`4|thu`、`5|fri`、`6|sat`；区间 `1-5→mon-fri`；列表 `1,3→mon,wed`。
-- **周字段不支持 `/` 步长**（`*/2`、`mon/2` 一律报错）。
-- **必须判非法**：`L`、`15W`、`1#2`、`?`、7 段（带年）、6 段且秒位非 `0`。
+- **周字段映射**（交 APScheduler 前必须转换，修 D1）：`0|7|sun→sun`、`1|mon→mon`、`2|tue`、`3|wed`、`4|thu`、`5|fri`、`6|sat`；**区间展开为显式名称列表**（`1-5→mon,tue,wed,thu,fri`、`0-6→sun,mon,tue,wed,thu,fri,sat`）；列表 `1,3→mon,wed`。
+- **周字段不支持 `/` 步长**（`*/2`、`mon/2` 一律报错）；**跨周区间**（`start > end`，如 `fri-mon`、`6-0`）一律报错并提示改用列表。
+- **必须判非法**：`L`、`15W`、`1#2`、`?`、7 段（带年）、6 段（**含秒位为 0**——唯一合法形式就是 5 段；6 段秒位为 0 的宽容转换只存在于迁移路径 `normalize_legacy`）。
 - **必须判合法**：`0 9 * * 7`（标准 crontab 的周日）。
 - **触发类型**：`cron` / `interval` / `date` / `now`，四个入口（系统定时任务节点、AI 工作台、AI 工作流、训练调度）全部支持。
 - **interval 参数**：JSON `{"weeks":0,"days":0,"hours":2,"minutes":30,"seconds":0}`（全 0 → 报错）。
@@ -65,14 +65,23 @@ def test_normalize_cron_maps_weekday_numbers_to_names():
     assert TriggerUtil.normalize_cron("0 9 * * 1") == "0 9 * * mon"
     assert TriggerUtil.normalize_cron("0 9 * * 0") == "0 9 * * sun"
     assert TriggerUtil.normalize_cron("0 9 * * 7") == "0 9 * * sun"
-    assert TriggerUtil.normalize_cron("0 9 * * 1-5") == "0 9 * * mon-fri"
+    # 区间展开为显式列表（避免两套库对名称区间解释相反）
+    assert TriggerUtil.normalize_cron("0 9 * * 1-5") == "0 9 * * mon,tue,wed,thu,fri"
+    assert TriggerUtil.normalize_cron("0 9 * * 0-6") == "0 9 * * sun,mon,tue,wed,thu,fri,sat"
+    # 7 与 0 同为周日：区间按原始数字 0..7 判定，展开后去重
+    assert TriggerUtil.normalize_cron("0 9 * * 5-7") == "0 9 * * fri,sat,sun"
+    assert TriggerUtil.normalize_cron("0 9 * * 0-7") == "0 9 * * sun,mon,tue,wed,thu,fri,sat"
     assert TriggerUtil.normalize_cron("0 9 * * 1,3,5") == "0 9 * * mon,wed,fri"
     assert TriggerUtil.normalize_cron("0  9   *  *  SUN ") == "0 9 * * sun"
+    # 数值字段等值区间收敛为单值（与周字段 1-1→mon 对称）
+    assert TriggerUtil.normalize_cron("0 9 5-5 * *") == "0 9 5 * *"
 
 
 @pytest.mark.parametrize("expr", [
     "0 0 9 L * *", "0 0 9 15W * *", "0 0 9 * * 1#2", "0 0 9 ? * *",
-    "0 0 9 * * * 2030", "30 * * * * *", "0 9 * * */2", "0 9 * * mon/2",
+    "0 0 9 * * * 2030", "30 * * * * *", "0 0 9 * * *",
+    "0 9 * * */2", "0 9 * * mon/2", "0 9 * * 5-1", "0 9 * * 6-0",
+    "0 9 * * 7-1", "0 9 * * fri-mon", "0 9 * * 5-5/1",
     "0 9 * * 9", "0 9 * *", "0 9 * * 1 2 3",
 ])
 def test_validate_cron_rejects(expr):
@@ -80,7 +89,10 @@ def test_validate_cron_rejects(expr):
     assert ok is False and reason
 
 
-@pytest.mark.parametrize("expr", ["0 9 * * *", "0 9 * * 7", "*/15 * * * *", "0 9 1,15 * *", "0 9 * * mon-fri"])
+@pytest.mark.parametrize("expr", [
+    "0 9 * * *", "0 9 * * 7", "*/15 * * * *", "0 9 1,15 * *", "0 9 * * mon-fri",
+    "0 9 * * 5-7", "0 9 * * 0-7", "0 9 5-5 * *",
+])
 def test_validate_cron_accepts(expr):
     ok, reason = TriggerUtil.validate_cron(expr)
     assert ok is True and reason == ""
@@ -357,7 +369,7 @@ def test_workflow_schedule_next_run_is_monday(test_client, auth_headers):
     test_client.post("/api/v1/ai/workflows/1/schedule", headers=auth_headers,
                      json={"cron": "0 9 * * 1-5", "enabled": True})
     d = test_client.get("/api/v1/ai/workflows/1/schedule", headers=auth_headers).json()["data"]
-    assert d["cron"] == "0 9 * * mon-fri"          # 写入即规范化
+    assert d["cron"] == "0 9 * * mon,tue,wed,thu,fri"   # 写入即规范化（区间展开为列表）
     assert "Mon" in d["next_run"] or "周一" in str(d)
 ```
 
