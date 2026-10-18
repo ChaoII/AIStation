@@ -471,6 +471,15 @@ git commit -m "feat(cron): 三表统一 trigger/trigger_args 列（手写迁移�
   响应 `SuccessResponse(data={"valid": bool, "reason": str, "describe": str, "next_run": str | None})`；
   统一层新增 `TriggerUtil.preview(trigger: str, args) -> dict`（返回上述四个字段）
 
+**A3 审查遗留（随本任务一并收口）:**
+- Minor：**「日/周同时非 `*`」的判定应按"是否覆盖全集"而非文本**——`0 9 1-31 * mon`、`0 9 */1 * mon`
+  语义上等于"每天 + 周一"，现被判非法且提示自相矛盾（建议改写 `0 9 1-31 * *`）。改为：日字段为
+  `*`/`*/1`/`1-31` 视为"覆盖全集"，只有**真正受限**时才触发该规则。补测试覆盖三种等价写法。
+- Minor：`preview` 必须区分 `next_run is None` 的两种语义（cron 永不触发 vs date 已过期），
+  在 `reason` 里分别给出可读提示（不能笼统"表达式非法"）。
+- Minor：`validate` 返回 `(False, reason)` 而 `describe/to_trigger` 抛 `CustomException` 的**双形态**，
+  在 `preview` 内统一适配（调用方只面对一种形态）。
+
 - [ ] **Step 1: 写失败测试**
 
 ```python
