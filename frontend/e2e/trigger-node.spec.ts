@@ -121,7 +121,7 @@ test("定时：默认 5 段 crontab 可直接调试提交", async ({ page }) => 
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ code: 200, msg: "调试节点成功", data: { job_id: nodeId } }),
+      body: JSON.stringify({ code: 0, msg: "调试节点成功", data: { job_id: nodeId } }),
     })
   );
 
@@ -144,7 +144,7 @@ test("间隔：参数提交为新契约 JSON 字符串", async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ code: 200, msg: "调试节点成功", data: { job_id: nodeId } }),
+      body: JSON.stringify({ code: 0, msg: "调试节点成功", data: { job_id: nodeId } }),
     })
   );
 
@@ -181,7 +181,7 @@ test("单次：选定时间后可调试提交", async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ code: 200, msg: "调试节点成功", data: { job_id: nodeId } }),
+      body: JSON.stringify({ code: 0, msg: "调试节点成功", data: { job_id: nodeId } }),
     })
   );
 
@@ -208,7 +208,7 @@ test("立即：无参数直接调试提交", async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ code: 200, msg: "调试节点成功", data: { job_id: nodeId } }),
+      body: JSON.stringify({ code: 0, msg: "调试节点成功", data: { job_id: nodeId } }),
     })
   );
 
