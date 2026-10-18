@@ -3193,7 +3193,13 @@ async function sendStep() {
   }
   const text = runInput.value.trim() || "继续";
   const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
-  const msg = reactive<ChatMsg>({ id: ++chatSeq, role: "assistant", content: "", trace: [], running: true });
+  const msg = reactive<ChatMsg>({
+    id: ++chatSeq,
+    role: "assistant",
+    content: "",
+    trace: [],
+    running: true,
+  });
   chatMessages.value.push(msg);
   activeMsg.value = msg;
   running.value = true;
@@ -3279,7 +3285,13 @@ async function sendChat() {
   const userMsg = reactive<ChatMsg>({ id: ++chatSeq, role: "user", content: text });
   chatMessages.value.push(userMsg);
   runInput.value = "";
-  const msg = reactive<ChatMsg>({ id: ++chatSeq, role: "assistant", content: "", trace: [], running: true });
+  const msg = reactive<ChatMsg>({
+    id: ++chatSeq,
+    role: "assistant",
+    content: "",
+    trace: [],
+    running: true,
+  });
   chatMessages.value.push(msg);
   activeMsg.value = msg;
   running.value = true;
