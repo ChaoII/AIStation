@@ -689,6 +689,12 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:market:submit", "提交资产到市场"),
     ("module_ai:market:share", "分享市场商品"),
     ("module_ai:market:review", "审核市场商品"),
+    # 本体（Ontology）：读写分离 + 执行与治理分级。
+    # 原先 90 个接口共用 `module_ai:query:ask`，等于「能问数就能改本体定义」（安全洞）。
+    ("module_ai:ontology:query", "查看本体"),
+    ("module_ai:ontology:edit", "编辑本体定义"),
+    ("module_ai:ontology:execute", "执行本体动作"),
+    ("module_ai:ontology:manage", "治理本体（发布/权限/审批）"),
     # MCP 服务器管理
     ("module_ai:mcp:query", "查询 MCP 服务器"),
     ("module_ai:mcp:create", "新增 MCP 服务器"),
@@ -778,7 +784,7 @@ async def _ensure_ai_menus() -> None:
                 ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 17, "el-icon-Monitor"),
                 ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 18, "el-icon-DataLine"),
                 ("模型供应商", "AiProviderManage", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 19, "el-icon-Service"),
-                ("本体", "AiOntology", "/ai/ontology", "module_ai/ontology/index", "module_ai:query:ask", 9, "el-icon-Files"),
+                ("本体", "AiOntology", "/ai/ontology", "module_ai/ontology/index", "module_ai:ontology:query", 9, "el-icon-Files"),
                 ("无代码应用", "AiWorkshop", "/ai/workshop", "module_ai/workshop/index", "module_ai:query:ask", 22, "el-icon-Monitor"),
             ]
             # 问数链路：本体 → 问数 → 评测/报表（data 产生方「存为报表」唯一入口，曾因隐藏断闭环）。
@@ -871,6 +877,15 @@ async def _ensure_ai_menus() -> None:
                 update(MenuModel)
                 .where(MenuModel.route_name == "AiAsset")
                 .values(hidden=True, redirect="/ai/integration")
+            )
+
+            # 3.1) 本体菜单的权限码从「问数」改为独立的 `module_ai:ontology:query`。
+            # `pages` 循环对**已存在**的菜单是 `continue`（不更新），存量库必须定向修，
+            # 否则老库里它仍挂在 `module_ai:query:ask` 上 —— 权限分级形同没做。
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.route_name == "AiOntology")
+                .values(permission="module_ai:ontology:query")
             )
 
             # 4) 已并入「能力市场」统一维护的页面：技能广场 / 能力插件（隐藏 + 重定向）

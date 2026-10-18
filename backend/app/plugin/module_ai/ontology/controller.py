@@ -21,7 +21,21 @@ from . import service as _svc
 
 OntologyRouter = APIRouter(route_class=OperationLogRoute, prefix="/ontology", tags=["AI-本体"])
 
-AuthDep = Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))]
+AuthDep = Annotated[AuthSchema, Depends(AuthPermission(["module_ai:ontology:query"]))]
+"""**只读**：查看本体/实例/图谱/预览/用量。GET 一律用这个。"""
+
+AuthEdit = Annotated[AuthSchema, Depends(AuthPermission(["module_ai:ontology:edit"]))]
+"""改**定义**：对象/属性/关系/动作/函数/值类型/接口/组/场景/对象视图的 save/remove、物化、
+导入、工作副本、函数试跑。**不含**对真实数据的写入。"""
+
+AuthExecute = Annotated[AuthSchema, Depends(AuthPermission(["module_ai:ontology:execute"]))]
+"""对**真实数据/外部系统**动手：动作执行与试跑、实例写回、决策执行。
+
+与 `edit` 分开的理由：能改定义 ≠ 能对生产数据落笔（写回会进业务库/触发外部系统）。"""
+
+AuthManage = Annotated[AuthSchema, Depends(AuthPermission(["module_ai:ontology:manage"]))]
+"""治理：版本发布/回滚/审批、行级安全策略与资源 ACL、分支/提案评审、索引流水线、
+清理、演示数据、决策审批与结果登记。"""
 
 
 def _uid(auth: AuthSchema) -> int:
@@ -41,7 +55,7 @@ async def list_domains(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/domain/save", summary="本体保存")
-async def upsert_domain(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def upsert_domain(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_domain(data)
     await _svc._log_change(str(data.get("code", "")), "domain", "save",
                            f"本体 {data.get('name', data.get('code'))}")
@@ -49,7 +63,7 @@ async def upsert_domain(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRes
 
 
 @OntologyRouter.delete("/domain/remove", summary="本体删除(其下对象退回未分组)")
-async def remove_domain(id: int, auth: AuthDep) -> JSONResponse:
+async def remove_domain(id: int, auth: AuthEdit) -> JSONResponse:
     r = await _svc.delete_domain(int(id))
     await _svc._log_change("", "domain", "delete",
                            f"删除本体 #{id}，{r.get('moved_objects', 0)} 个对象退回未分组")
@@ -57,7 +71,7 @@ async def remove_domain(id: int, auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/domain/assign", summary="把对象类型归入本体(批量)")
-async def assign_domain(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def assign_domain(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.assign_objects_to_domain(
         str(data.get("domain_code", "")), data.get("object_codes") or [])
     await _svc._log_change("", "domain", "assign",
@@ -66,7 +80,7 @@ async def assign_domain(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRes
 
 
 @OntologyRouter.post("/object/save", summary="对象类型保存")
-async def upsert_object(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def upsert_object(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_object(data)
     await _svc._log_change(str(data.get("code", "")), "object", "save", f"对象 {data.get('name', data.get('code'))}")
     return SuccessResponse(data=r, msg="保存成功")
@@ -88,7 +102,7 @@ async def list_properties(auth: AuthDep, object_code: str = "") -> JSONResponse:
 
 
 @OntologyRouter.post("/property/save", summary="属性类型保存")
-async def upsert_property(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def upsert_property(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_property(data)
     await _svc._log_change(str(data.get("object_code", "")), "property", "save", f"属性 {data.get('name', data.get('code'))}")
     return SuccessResponse(data=r, msg="保存成功")
@@ -100,7 +114,7 @@ async def list_links(auth: AuthDep, object_code: str = "") -> JSONResponse:
 
 
 @OntologyRouter.post("/link/save", summary="关联类型保存")
-async def upsert_link(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def upsert_link(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_link(data)
     await _svc._log_change(str(data.get("source_object", "")), "link", "save", f"关联 {data.get('name', '')} → {data.get('target_object', '')}")
     return SuccessResponse(data=r, msg="保存成功")
@@ -112,14 +126,14 @@ async def list_actions(auth: AuthDep, object_code: str = "") -> JSONResponse:
 
 
 @OntologyRouter.post("/action/save", summary="动作类型保存")
-async def upsert_action(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def upsert_action(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_action(data)
     await _svc._log_change(str(data.get("object_code", "")), "action", "save", f"动作 {data.get('name', data.get('code'))}")
     return SuccessResponse(data=r, msg="保存成功")
 
 
 @OntologyRouter.delete("/remove", summary="删除(对象/属性/Link/Action)")
-async def remove(kind: str, id: int, auth: AuthDep) -> JSONResponse:
+async def remove(kind: str, id: int, auth: AuthEdit) -> JSONResponse:
     table = {"object": "ai_ont_object", "property": "ai_ont_property",
              "link": "ai_ont_link", "action": "ai_ont_action",
              "function": "ai_ont_function"}.get(kind)
@@ -144,7 +158,7 @@ async def changelog(auth: AuthDep, object_code: str = "", limit: int = 50) -> JS
 
 
 @OntologyRouter.post("/version/publish", summary="发布本体对象定义版本(快照)")
-async def publish_version(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def publish_version(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     uid = getattr(getattr(auth, "user", None), "id", None)
     r = await _svc.publish_version(str(data.get("code", "")), operator=int(uid or 0))
     return SuccessResponse(data=r, msg=r.get("msg", "已发布"))
@@ -156,7 +170,7 @@ async def version_list(auth: AuthDep, object_code: str = "") -> JSONResponse:
 
 
 @OntologyRouter.post("/version/rollback", summary="本体对象定义回滚到版本")
-async def rollback_version(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def rollback_version(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.rollback_version(int(data.get("version_id", 0)))
     return SuccessResponse(data=r, msg=r.get("msg", "已回滚"))
 
@@ -175,7 +189,7 @@ async def version_pending(
 
 @OntologyRouter.post("/version/approve", summary="超管批准本体发布")
 async def version_approve(
-    auth: AuthDep,
+    auth: AuthManage,
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
     uid = getattr(getattr(auth, "user", None), "id", None)
@@ -184,9 +198,51 @@ async def version_approve(
 
 
 @OntologyRouter.post("/materialize", summary="本体驱动表：对象+属性物化成真实表")
-async def materialize(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def materialize(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.materialize_object(str(data.get("code", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已物化"))
+
+
+# ---- 大模型自动建模（两段式：预览 → 勾选 → 精确落库）----
+@OntologyRouter.post("/auto-model/preview", summary="自动建模预览（生成候选，不落库）")
+async def auto_model_preview(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
+    """大模型对指定数据源生成「绑定型指标 / 对象标注」候选，**只预览、不落库**。
+
+    返回的 `items` 是逐条候选；界面勾选后走 `/auto-model/apply` 精确落库。
+    应用阶段**不重跑大模型** —— 重跑结果会漂移，用户勾的就不是落库的那批。
+    """
+    from app.plugin.module_ai.query import modeling as _modeling
+
+    scope = str(data.get("scope") or "metrics")
+    datasource = str(data.get("datasource") or "system")
+    max_objects = max(1, min(int(data.get("max_objects") or 12), 50))
+    offset = max(0, int(data.get("offset") or 0))
+    if scope == "annotations":
+        r = await _modeling.generate_annotations(
+            datasource, auth, max_objects=max_objects, offset=offset, dry=True
+        )
+    else:
+        r = await _modeling.generate_metrics(
+            datasource, auth, max_objects=max_objects, dry=True, offset=offset
+        )
+    return SuccessResponse(data={"scope": scope, **r}, msg="分析完成")
+
+
+@OntologyRouter.post("/auto-model/apply", summary="自动建模落库（只落用户勾选的候选）")
+async def auto_model_apply(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
+    """把预览里勾选的候选精确落库（指标走 `upsert_metric`；标注走定向更新，不动数据源绑定）。"""
+    from app.plugin.module_ai.query import modeling as _modeling
+
+    scope = str(data.get("scope") or "metrics")
+    datasource = str(data.get("datasource") or "system")
+    items = data.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise CustomException(msg="没有可应用的候选（items 为空）", code=400, status_code=400)
+    if scope == "annotations":
+        r = await _modeling.save_annotations(items)
+    else:
+        r = await _modeling.save_metrics(items, datasource, auth)
+    return SuccessResponse(data={"scope": scope, **r}, msg=f"已落库 {r.get('saved', 0)} 条")
 
 
 @OntologyRouter.get("/functions", summary="本体计算函数列表")
@@ -195,14 +251,14 @@ async def list_functions(auth: AuthDep, object_code: str = "") -> JSONResponse:
 
 
 @OntologyRouter.post("/function/save", summary="本体计算函数保存")
-async def upsert_function(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def upsert_function(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_function(data, _uid(auth))
     await _svc._log_change(str(data.get("object_code", "")), "function", "save", f"函数 {data.get('name', data.get('code'))}")
     return SuccessResponse(data=r, msg="保存成功")
 
 
 @OntologyRouter.post("/function/run", summary="执行本体函数(表达式/关联聚合/外部服务/模型)")
-async def run_function(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def run_function(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _svc.run_ontology_function(
         str(data.get("code", "")),
@@ -215,7 +271,7 @@ async def run_function(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResp
 
 
 @OntologyRouter.post("/function/check", summary="校验函数定义（不保存）")
-async def check_function(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def check_function(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     errs = _svc._fe.validate_function(data or {})
     return SuccessResponse(data={"ok": not errs, "errors": errs},
                            msg="定义正确" if not errs else f"发现 {len(errs)} 处问题")
@@ -237,7 +293,7 @@ async def list_row_policies(auth: AuthDep, object_code: str = "") -> JSONRespons
 
 
 @OntologyRouter.post("/security/row-policy/save", summary="保存行级安全策略")
-async def save_row_policy(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_row_policy(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _sec.upsert_row_policy(data or {})
     if not r.get("ok"):
         raise CustomException(msg=r.get("msg", "保存失败"))
@@ -245,13 +301,13 @@ async def save_row_policy(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONR
 
 
 @OntologyRouter.post("/security/row-policy/remove", summary="删除行级安全策略")
-async def remove_row_policy(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def remove_row_policy(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _sec.remove_row_policy(int(data.get("id") or 0))
     return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
 
 
 @OntologyRouter.post("/security/policy-check", summary="校验策略表达式（不保存）")
-async def check_policy(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def check_policy(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     import ast as _ast
 
     expr = str(data.get("expression") or "").strip()
@@ -286,7 +342,7 @@ async def get_resource_acl(auth: AuthDep, resource_kind: str = "",
 
 
 @OntologyRouter.post("/security/resource-acl/save", summary="保存本体资源权限")
-async def save_resource_acl(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_resource_acl(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _sec.set_resource_acl(
         str(data.get("resource_kind", "")), str(data.get("resource_code", "")),
         data.get("view_roles") or [], data.get("edit_roles") or [],
@@ -297,7 +353,7 @@ async def save_resource_acl(auth: AuthDep, data: Annotated[dict, Body()]) -> JSO
 
 
 @OntologyRouter.post("/security/resource-acl/clear", summary="清除资源权限（恢复公开）")
-async def clear_resource_acl(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def clear_resource_acl(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _sec.clear_resource_acl(str(data.get("resource_kind", "")),
                                       str(data.get("resource_code", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已恢复"))
@@ -339,7 +395,7 @@ async def explain_access(auth: AuthDep, object_code: str = "", object_key: str =
 
 
 @OntologyRouter.post("/security/enforce-preview", summary="预览某用户对某对象的读权限与可见列")
-async def enforce_preview(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def enforce_preview(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     target = int(data.get("user_id") or 0) or _uid(auth)
     p = await _sec.load_principal(target)
     object_code = str(data.get("object_code", ""))
@@ -393,7 +449,7 @@ async def get_decision(auth: AuthDep, code: str) -> JSONResponse:
 
 
 @OntologyRouter.post("/decision/save", summary="新建/修改决策")
-async def save_decision(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_decision(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _dec.upsert_decision(data, _uid(auth),
                                    str(getattr(user, "name", None) or ""))
@@ -401,13 +457,13 @@ async def save_decision(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRes
 
 
 @OntologyRouter.post("/decision/remove", summary="删除决策")
-async def remove_decision(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def remove_decision(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _dec.remove_decision(str(data.get("code", "")), _uid(auth))
     return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
 
 
 @OntologyRouter.post("/decision/decide", summary="拍板（批准/否决）")
-async def decide_decision(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def decide_decision(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _dec.decide(str(data.get("code", "")), bool(data.get("approve", True)),
                           str(data.get("note", "")), _uid(auth),
@@ -416,7 +472,7 @@ async def decide_decision(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONR
 
 
 @OntologyRouter.post("/decision/execute", summary="执行决策（走动作七道闸并自动捕获下游影响）")
-async def execute_decision(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def execute_decision(auth: AuthExecute, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _dec.execute_decision(str(data.get("code", "")), _uid(auth),
                                     str(getattr(user, "name", None) or ""),
@@ -426,7 +482,7 @@ async def execute_decision(auth: AuthDep, data: Annotated[dict, Body()]) -> JSON
 
 
 @OntologyRouter.post("/decision/outcome", summary="记录决策的事后结果")
-async def decision_outcome(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def decision_outcome(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _dec.record_outcome(str(data.get("code", "")), data.get("outcome") or {},
                                   str(getattr(user, "name", None) or ""))
@@ -453,7 +509,7 @@ async def decision_stats(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/decision/init-object-type", summary="把「决策」注册为本体对象类型")
-async def init_decision_object_type(auth: AuthDep) -> JSONResponse:
+async def init_decision_object_type(auth: AuthEdit) -> JSONResponse:
     r = await _dec.ensure_decision_object_type()
     return SuccessResponse(data=r, msg=r.get("msg", "已处理"))
 
@@ -464,7 +520,7 @@ async def list_capabilities(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/capability/save", summary="本体能力保存")
-async def upsert_capability(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def upsert_capability(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_capability(data)
     return SuccessResponse(data=r, msg="保存成功")
 
@@ -475,7 +531,7 @@ async def analyze_ontology(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/enrich", summary="业务语义回填(注释→业务名/枚举, 真实外键→Link)")
-async def enrich_semantics(auth: AuthDep) -> JSONResponse:
+async def enrich_semantics(auth: AuthEdit) -> JSONResponse:
     r = await _svc.enrich_ontology_semantics()
     if not r.get("ok"):
         return SuccessResponse(data=r, msg=r.get("msg", "回填失败"))
@@ -490,7 +546,7 @@ async def enrich_semantics(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/seed-examples", summary="写入本体示例能力(函数+对象动作)")
-async def seed_examples(auth: AuthDep) -> JSONResponse:
+async def seed_examples(auth: AuthEdit) -> JSONResponse:
     uid = getattr(getattr(auth, "user", None), "id", None)
     r = await _svc.seed_ontology_examples(operator=int(uid or 0))
     fn, ac = r["functions"], r["actions"]
@@ -502,7 +558,7 @@ async def seed_examples(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/action/execute", summary="执行本体动作(提交条件+值类型+白名单+审批门禁+规则+副作用)")
-async def execute_ontology_action(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def execute_ontology_action(auth: AuthExecute, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     operator = str(getattr(user, "name", None) or getattr(user, "id", None) or "")
     uid = getattr(user, "id", None)
@@ -522,7 +578,7 @@ async def execute_ontology_action(auth: AuthDep, data: Annotated[dict, Body()]) 
 
 
 @OntologyRouter.post("/action/test-run", summary="试运行本体动作（评估提交条件/规则/副作用，不写库）")
-async def test_run_action(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def test_run_action(auth: AuthExecute, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _svc.plan_ontology_action(
         str(data.get("code", "")),
@@ -541,7 +597,7 @@ async def list_wip(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/wip/stage", summary="工作副本：暂存一条改动")
-async def stage_wip(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def stage_wip(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.stage_change(
         _uid(auth),
         str(data.get("kind", "")),
@@ -553,13 +609,13 @@ async def stage_wip(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRespons
 
 
 @OntologyRouter.post("/wip/discard", summary="工作副本：丢弃全部改动")
-async def discard_wip(auth: AuthDep) -> JSONResponse:
+async def discard_wip(auth: AuthEdit) -> JSONResponse:
     n = await _svc.discard_wip(_uid(auth))
     return SuccessResponse(data={"discarded": n}, msg=f"已丢弃 {n} 处改动")
 
 
 @OntologyRouter.post("/wip/save", summary="工作副本：保存全部改动（含错误/破坏性校验）")
-async def save_wip(auth: AuthDep, data: Annotated[dict, Body()] = None) -> JSONResponse:
+async def save_wip(auth: AuthEdit, data: Annotated[dict, Body()] = None) -> JSONResponse:
     r = await _svc.save_wip(_uid(auth), str((data or {}).get("confirm_name") or ""))
     return SuccessResponse(data=r, msg=r.get("msg", "已保存"))
 
@@ -585,7 +641,7 @@ async def export_ontology(auth: AuthDep, domain_code: str | None = None) -> JSON
 
 
 @OntologyRouter.post("/import", summary="导入本体定义（默认入工作副本）")
-async def import_ontology(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def import_ontology(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     payload = data.get("payload") or {}
     mode = str(data.get("mode") or "stage")
     r = await _svc.import_ontology(payload, _uid(auth), mode)
@@ -665,7 +721,7 @@ async def instance_graph(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRe
 
 
 @OntologyRouter.post("/instance/writeback", summary="属性写回（Writeback，需开启可编辑）")
-async def instance_writeback(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def instance_writeback(auth: AuthExecute, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     operator = str(getattr(user, "name", None) or getattr(user, "id", None) or "")
     r = await _svc.writeback_instance(
@@ -681,12 +737,12 @@ async def list_groups(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/group/save", summary="对象类型组保存（含成员）")
-async def save_group(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_group(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     return SuccessResponse(data=await _svc.upsert_group(data), msg="已保存")
 
 
 @OntologyRouter.delete("/group/remove", summary="删除对象类型组")
-async def remove_group(auth: AuthDep, id: int) -> JSONResponse:
+async def remove_group(auth: AuthEdit, id: int) -> JSONResponse:
     await _svc.delete_group(id)
     return SuccessResponse(data=None, msg="已删除")
 
@@ -698,18 +754,18 @@ async def list_value_types(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/value-type/save", summary="值类型保存")
-async def save_value_type(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_value_type(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     return SuccessResponse(data=await _svc.upsert_value_type(data, _uid(auth)), msg="已保存")
 
 
 @OntologyRouter.delete("/value-type/remove", summary="删除值类型（有引用则拒绝）")
-async def remove_value_type(auth: AuthDep, id: int) -> JSONResponse:
+async def remove_value_type(auth: AuthEdit, id: int) -> JSONResponse:
     r = await _svc.delete_value_type(id, _uid(auth))
     return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
 
 
 @OntologyRouter.post("/value-type/validate", summary="按值类型约束校验一个值")
-async def validate_value(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def validate_value(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.validate_value(str(data.get("code", "")), data.get("value"))
     return SuccessResponse(data=r, msg="校验完成" if r.get("ok") else "校验未通过")
 
@@ -721,12 +777,12 @@ async def list_shared_properties(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/shared-property/save", summary="共享属性保存（同步元数据到引用方）")
-async def save_shared_property(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_shared_property(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     return SuccessResponse(data=await _svc.upsert_shared_property(data, _uid(auth)), msg="已保存")
 
 
 @OntologyRouter.delete("/shared-property/remove", summary="删除共享属性（有引用则拒绝）")
-async def remove_shared_property(auth: AuthDep, id: int) -> JSONResponse:
+async def remove_shared_property(auth: AuthEdit, id: int) -> JSONResponse:
     r = await _svc.delete_shared_property(id)
     return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
 
@@ -738,18 +794,18 @@ async def list_interfaces(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/interface/save", summary="接口保存")
-async def save_interface(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_interface(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     return SuccessResponse(data=await _svc.upsert_interface(data), msg="已保存")
 
 
 @OntologyRouter.delete("/interface/remove", summary="删除接口（有实现者则拒绝）")
-async def remove_interface(auth: AuthDep, id: int) -> JSONResponse:
+async def remove_interface(auth: AuthEdit, id: int) -> JSONResponse:
     r = await _svc.delete_interface(id)
     return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
 
 
 @OntologyRouter.post("/interface/impls", summary="设置接口实现者（不满足约束会被拒绝）")
-async def set_interface_impls(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def set_interface_impls(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.set_interface_impls(
         str(data.get("code", "")), data.get("object_codes") or [])
     return SuccessResponse(data=r, msg=r.get("msg", "已保存"))
@@ -769,7 +825,7 @@ async def derived_issues(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/derived/compute", summary="计算派生属性的值")
-async def compute_derived(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def compute_derived(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.compute_derived(
         str(data.get("object_code", "")), str(data.get("key", "")),
         str(data.get("property", "")), data.get("limit"))
@@ -800,7 +856,7 @@ async def get_scenario(auth: AuthDep, code: str) -> JSONResponse:
 
 
 @OntologyRouter.post("/scenario/save", summary="新建/修改场景")
-async def save_scenario(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_scenario(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     who = str(getattr(user, "name", None) or "")
     if data.get("code"):
@@ -811,7 +867,7 @@ async def save_scenario(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRes
 
 
 @OntologyRouter.post("/scenario/apply", summary="合并场景到主本体（单事务，失败全回滚）")
-async def apply_scenario(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def apply_scenario(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _scn.apply_scenario(str(data.get("code", "")), _uid(auth),
                                   str(getattr(user, "name", None) or ""))
@@ -819,7 +875,7 @@ async def apply_scenario(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRe
 
 
 @OntologyRouter.post("/scenario/discard", summary="丢弃场景")
-async def discard_scenario(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def discard_scenario(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _scn.discard_scenario(str(data.get("code", "")),
                                     str(getattr(user, "name", None) or ""))
@@ -827,7 +883,7 @@ async def discard_scenario(auth: AuthDep, data: Annotated[dict, Body()]) -> JSON
 
 
 @OntologyRouter.post("/scenario/duplicate", summary="复制场景（连同其编辑）")
-async def duplicate_scenario(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def duplicate_scenario(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _scn.duplicate_scenario(str(data.get("code", "")),
                                       str(data.get("name", "")),
@@ -836,7 +892,7 @@ async def duplicate_scenario(auth: AuthDep, data: Annotated[dict, Body()]) -> JS
 
 
 @OntologyRouter.post("/scenario/remove", summary="删除场景")
-async def remove_scenario(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def remove_scenario(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _scn.remove_scenario(str(data.get("code", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
 
@@ -850,7 +906,7 @@ async def scenario_diff(auth: AuthDep, code: str) -> JSONResponse:
 
 
 @OntologyRouter.post("/scenario/compare", summary="多场景并排对比")
-async def compare_scenarios(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def compare_scenarios(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _scn.compare_scenarios(data.get("codes") or [])
     if not r.get("ok"):
         raise CustomException(msg=r.get("msg", "对比失败"))
@@ -858,7 +914,7 @@ async def compare_scenarios(auth: AuthDep, data: Annotated[dict, Body()]) -> JSO
 
 
 @OntologyRouter.post("/scenario/expire", summary="清理过期场景（官方默认寿命 31 天）")
-async def expire_scenarios(auth: AuthDep) -> JSONResponse:
+async def expire_scenarios(auth: AuthEdit) -> JSONResponse:
     r = await _scn.expire_scenarios()
     return SuccessResponse(data=r, msg=r.get("msg", "已清理"))
 
@@ -899,7 +955,7 @@ async def render_object_view(auth: AuthDep, code: str, object_key: str,
 
 
 @OntologyRouter.post("/object-view/save", summary="新建/修改对象视图")
-async def save_object_view(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     who = str(getattr(user, "name", None) or "")
     if data.get("code") and data.get("_mode") != "create":
@@ -912,14 +968,14 @@ async def save_object_view(auth: AuthDep, data: Annotated[dict, Body()]) -> JSON
 
 
 @OntologyRouter.post("/object-view/default", summary="设为默认视图")
-async def set_default_object_view(auth: AuthDep,
+async def set_default_object_view(auth: AuthEdit,
                                   data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ov.set_default_view(str(data.get("code", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已设置"))
 
 
 @OntologyRouter.post("/object-view/remove", summary="删除对象视图")
-async def remove_object_view(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def remove_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ov.remove_view(str(data.get("code", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
 
@@ -930,7 +986,7 @@ async def object_view_versions(auth: AuthDep, code: str) -> JSONResponse:
 
 
 @OntologyRouter.post("/object-view/restore", summary="回滚到某个视图版本")
-async def restore_object_view(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def restore_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _ov.restore_view_version(str(data.get("code", "")),
                                        int(data.get("version") or 0),
@@ -939,7 +995,7 @@ async def restore_object_view(auth: AuthDep, data: Annotated[dict, Body()]) -> J
 
 
 @OntologyRouter.post("/object-view/sync-defaults", summary="给所有对象类型补齐默认视图")
-async def sync_default_object_views(auth: AuthDep) -> JSONResponse:
+async def sync_default_object_views(auth: AuthEdit) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _ov.sync_default_views(str(getattr(user, "name", None) or "system"))
     return SuccessResponse(data=r, msg=r.get("msg", "已补齐"))
@@ -977,38 +1033,38 @@ async def index_summary(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/index/save", summary="新建/修改索引定义")
-async def save_index(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_index(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ix.upsert_index(data)
     return SuccessResponse(data=r, msg=r.get("msg", "已保存"))
 
 
 @OntologyRouter.post("/index/build", summary="构建索引（真的建库索引）")
-async def build_index(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def build_index(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ix.build_index(int(data.get("id") or 0))
     return SuccessResponse(data=r, msg=r.get("msg", "已处理"))
 
 
 @OntologyRouter.post("/index/build-all", summary="构建某对象类型/全部的待建索引")
-async def build_all_indexes(auth: AuthDep,
+async def build_all_indexes(auth: AuthManage,
                             data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ix.build_all(str(data.get("object_code") or ""))
     return SuccessResponse(data=r, msg=r.get("msg", "已处理"))
 
 
 @OntologyRouter.post("/index/retry", summary="执行到期的自动重试")
-async def retry_indexes(auth: AuthDep) -> JSONResponse:
+async def retry_indexes(auth: AuthManage) -> JSONResponse:
     r = await _ix.retry_due_indexes()
     return SuccessResponse(data=r, msg=r.get("msg", "已处理"))
 
 
 @OntologyRouter.post("/index/remove", summary="删除索引")
-async def remove_index(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def remove_index(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ix.remove_index(int(data.get("id") or 0))
     return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
 
 
 @OntologyRouter.post("/index/mark-stale", summary="把某对象类型的索引标记为过期")
-async def mark_index_stale(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def mark_index_stale(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ix.mark_stale(str(data.get("object_code") or ""))
     return SuccessResponse(data=r, msg=r.get("msg", "已处理"))
 
@@ -1019,7 +1075,7 @@ async def suggest_indexes(auth: AuthDep, object_code: str) -> JSONResponse:
 
 
 @OntologyRouter.post("/index/apply-suggestions", summary="按建议批量建索引并构建")
-async def apply_index_suggestions(auth: AuthDep,
+async def apply_index_suggestions(auth: AuthManage,
                                   data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ix.apply_suggestions(str(data.get("object_code") or ""),
                                     bool(data.get("only_high", True)))
@@ -1043,7 +1099,7 @@ async def get_branch(auth: AuthDep, code: str) -> JSONResponse:
 
 
 @OntologyRouter.post("/branch/create", summary="创建分支（自动生成提案）")
-async def create_branch(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def create_branch(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _pr.create_branch(str(data.get("title") or ""),
                                 str(data.get("description") or ""),
@@ -1052,7 +1108,7 @@ async def create_branch(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRes
 
 
 @OntologyRouter.post("/branch/save", summary="在分支上暂存一处定义改动")
-async def save_on_branch(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def save_on_branch(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _pr.save_on_branch(str(data.get("branch_code") or ""),
                                  str(data.get("kind") or ""),
@@ -1083,7 +1139,7 @@ async def get_proposal(auth: AuthDep, code: str) -> JSONResponse:
 
 
 @OntologyRouter.post("/proposal/request-review", summary="请求审查（通知审查者）")
-async def request_review(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def request_review(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _pr.request_review(str(data.get("code") or ""),
                                  data.get("reviewers") or [],
@@ -1092,7 +1148,7 @@ async def request_review(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRe
 
 
 @OntologyRouter.post("/proposal/review-task", summary="批准/拒绝一个任务")
-async def review_task(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def review_task(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _pr.review_task(int(data.get("task_id") or 0),
                               bool(data.get("approve", True)),
@@ -1104,7 +1160,7 @@ async def review_task(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRespo
 
 
 @OntologyRouter.post("/proposal/review-all", summary="批量批准/拒绝所有待审任务")
-async def review_all(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def review_all(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _pr.review_all(str(data.get("code") or ""),
                              bool(data.get("approve", True)),
@@ -1113,7 +1169,7 @@ async def review_all(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRespon
 
 
 @OntologyRouter.post("/proposal/merge", summary="合并提案到主本体")
-async def merge_proposal(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def merge_proposal(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _pr.merge_proposal(str(data.get("code") or ""),
                                  str(getattr(user, "name", None) or ""), _uid(auth))
@@ -1121,7 +1177,7 @@ async def merge_proposal(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRe
 
 
 @OntologyRouter.post("/proposal/close", summary="关闭提案（不可重新打开）")
-async def close_proposal(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def close_proposal(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _pr.close_proposal(str(data.get("code") or ""),
                                  str(getattr(user, "name", None) or ""))
@@ -1129,14 +1185,14 @@ async def close_proposal(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRe
 
 
 @OntologyRouter.post("/proposal/discard-task", summary="丢弃某个任务的改动")
-async def discard_proposal_task(auth: AuthDep,
+async def discard_proposal_task(auth: AuthManage,
                                 data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _pr.discard_task(int(data.get("task_id") or 0))
     return SuccessResponse(data=r, msg=r.get("msg", "已丢弃"))
 
 
 @OntologyRouter.post("/proposal/comment", summary="在提案/任务下留言")
-async def proposal_comment(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def proposal_comment(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _pr.comment(str(data.get("code") or ""), str(data.get("body") or ""),
                           str(getattr(user, "name", None) or ""),
@@ -1163,7 +1219,7 @@ async def demo_report(auth: AuthDep) -> JSONResponse:
 
 
 @OntologyRouter.post("/demo/load", summary="载入演示数据")
-async def demo_load(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def demo_load(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     who = str(getattr(user, "name", None) or "admin")
     r = await _demo.load_demo(who, bool(data.get("force", False)))
@@ -1173,13 +1229,13 @@ async def demo_load(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRespons
 
 
 @OntologyRouter.post("/demo/clear", summary="清除演示数据（只删登记过的）")
-async def demo_clear(auth: AuthDep) -> JSONResponse:
+async def demo_clear(auth: AuthManage) -> JSONResponse:
     r = await _demo.clear_demo()
     return SuccessResponse(data=r, msg=r.get("msg", "已清除"))
 
 
 @OntologyRouter.post("/object-view/share", summary="设置视图共享方式（跟随对象类型 / 按角色）")
-async def share_object_view(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+async def share_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ov.share_view(str(data.get("code") or ""),
                              str(data.get("share_mode") or "inherit"),
                              data.get("share_roles") or [])

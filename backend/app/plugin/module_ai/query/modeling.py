@@ -226,21 +226,19 @@ async def generate_metrics(datasource: str, auth, max_objects: int = 12,
                            dry: bool = False, offset: int = 0) -> dict:
     """一轮「生成→验证→落库」绑定型指标。
 
-    ``dry=True`` 只生成+验证、不落库（用于预览）。
-    返回 ``{parsed, verified, saved, rejected, reasons}``。
+    ``dry=True`` 只生成+验证、不落库（用于预览），并在 `items` 里返回**逐条候选**，
+    供界面勾选后走 `save_metrics` 精确落库。
+    返回 ``{parsed, verified, saved, rejected, reasons, items}``。
     """
-    from types import SimpleNamespace
-
-    from .service import AiQueryService
-
     objects = await collect_objects(datasource, max_objects, offset)
     if not objects:
         return {"parsed": 0, "verified": 0, "saved": 0, "rejected": 0,
-                "reasons": ["无可用对象"]}
+                "reasons": ["无可用对象"], "items": []}
     text = await model_llm(build_metric_prompt(objects))
     valid = {o["code"]: o for o in objects}
     metrics = parse_metrics(text, valid)
-    saved = rejected = 0
+    approved: list[dict] = []
+    rejected = 0
     reasons: list[str] = []
     for m in metrics:
         v = await verify_metric(m)
@@ -248,7 +246,33 @@ async def generate_metrics(datasource: str, auth, max_objects: int = 12,
             rejected += 1
             reasons.append(f"{m['key']} → {v.get('reason')}")
             continue
-        if not dry:
+        approved.append(m)
+    if dry:
+        saved = len(approved)
+    else:
+        saved = (await save_metrics(approved, datasource, auth))["saved"]
+    log.info(f"[modeling] 指标生成：解析 {len(metrics)}，通过/落库 {saved}，拒绝 {rejected}")
+    return {"parsed": len(metrics), "verified": len(approved), "saved": saved,
+            "rejected": rejected, "reasons": reasons[:10],
+            # 预览时带上逐条候选：界面勾选后精确落库，**不重跑大模型**
+            # （重跑结果会漂移，用户勾的就不是落库的那批）
+            "items": approved if dry else []}
+
+
+async def save_metrics(items: list[dict], datasource: str, auth) -> dict:
+    """把（已通过校验的）指标候选落库，返回 ``{saved, reasons}``。
+
+    与 `generate_metrics` 分开，以支持「**先预览 → 用户勾选 → 精确落库**」两段式流程。
+    单条失败只记原因、不拖垮整批（逐条回显，符合本项目「坏规格逐条容错」的惯例）。
+    """
+    from types import SimpleNamespace
+
+    from .service import AiQueryService
+
+    saved = 0
+    reasons: list[str] = []
+    for m in items:
+        try:
             await AiQueryService.upsert_metric(
                 SimpleNamespace(
                     datasource=datasource, key=m["key"], name=m["name"],
@@ -258,10 +282,11 @@ async def generate_metrics(datasource: str, auth, max_objects: int = 12,
                     object_code=m["object_code"], property_code=m["property_code"],
                     agg_fn=m["agg_fn"], bound_dimensions=m["bound_dimensions"]),
                 auth)
+        except Exception as e:  # noqa: BLE001 - 单条失败不拖垮整批
+            reasons.append(f"{m.get('key')} → 落库失败：{e!s}")
+            continue
         saved += 1
-    log.info(f"[modeling] 指标生成：解析 {len(metrics)}，通过/落库 {saved}，拒绝 {rejected}")
-    return {"parsed": len(metrics), "verified": saved, "saved": saved,
-            "rejected": rejected, "reasons": reasons[:10]}
+    return {"saved": saved, "reasons": reasons[:10]}
 
 
 def build_annotate_prompt(objects: list[dict]) -> str:
@@ -366,22 +391,37 @@ async def _annotate_property(object_code: str, code: str, name: str,
 
 
 async def generate_annotations(datasource: str, auth, max_objects: int = 12,
-                                offset: int = 0) -> dict:
-    """一轮「生成→落库」对象/属性标注。返回 ``{parsed, saved}``。"""
+                                offset: int = 0, dry: bool = False) -> dict:
+    """一轮「生成→（可选）落库」对象/属性标注。
+
+    ``dry=True`` 只生成、不落库，并在 `items` 里返回逐条候选（供界面勾选后精确落库）。
+    返回 ``{parsed, saved, reasons, items}``。
+    """
     objects = await collect_objects(datasource, max_objects, offset)
     if not objects:
-        return {"parsed": 0, "saved": 0, "reasons": ["无可用对象"]}
+        return {"parsed": 0, "saved": 0, "reasons": ["无可用对象"], "items": []}
     text = await model_llm(build_annotate_prompt(objects))
     valid = {o["code"]: o for o in objects}
     anns = parse_annotations(text, valid)
+    if dry:
+        return {"parsed": len(anns), "saved": 0, "reasons": [], "items": anns}
+    saved = (await save_annotations(anns))["saved"]
+    log.info(f"[modeling] 标注生成：解析 {len(anns)}，落库 {saved}")
+    return {"parsed": len(anns), "saved": saved, "reasons": [], "items": []}
+
+
+async def save_annotations(items: list[dict]) -> dict:
+    """把标注候选落库（**定向更新**对象/属性的中文名与描述，不动数据源绑定）。
+
+    与 `generate_annotations` 分开，支持「先预览 → 用户勾选 → 精确落库」两段式流程。
+    """
     saved = 0
-    for a in anns:
+    for a in items:
         await _annotate_object(a["object_code"], a["object_name"], a["description"])
         for f in a["fields"]:
             await _annotate_property(a["object_code"], f["code"], f["name"], f["options"])
         saved += 1
-    log.info(f"[modeling] 标注生成：解析 {len(anns)}，落库 {saved}")
-    return {"parsed": len(anns), "saved": saved}
+    return {"saved": saved}
 
 
 async def model_llm(prompt: str, *, max_tokens: int = 8000, timeout: int = 180) -> str:
