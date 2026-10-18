@@ -228,9 +228,7 @@ class NodeService:
             if not trigger_args:
                 raise CustomException(msg="非立即执行时必须提供触发器参数")
             # 校验统一走 TriggerUtil（全平台唯一口径），错误原因原样回传前端
-            ok, reason = TriggerUtil.validate(trigger, trigger_args)
-            if not ok:
-                raise CustomException(msg=reason)
+            cls._validate_trigger_args(trigger, trigger_args)
 
             if trigger == "cron":
                 SchedulerUtil.add_cron_job(
@@ -252,3 +250,32 @@ class NodeService:
                 raise CustomException(msg=f"不支持的触发方式: {trigger}")
 
         return {"job_id": id, "status": "executed", "trigger": trigger}
+
+    @classmethod
+    def _validate_trigger_args(cls, trigger: str, trigger_args) -> None:
+        """
+        校验触发器参数（唯一口径 `TriggerUtil.validate`，错误原因原样回传）。
+
+        `interval` 额外兼容旧的「秒 分 时 天 周」字符串：服务层先按旧格式解析成
+        统一层契约的 JSON（`{weeks,days,hours,minutes,seconds}`）再校验，
+        因此统一层仍只认 JSON（**不在 `TriggerUtil` 里加第二套 interval 口径**）。
+
+        参数:
+        - trigger (str): 触发方式（now/cron/interval/date）。
+        - trigger_args (Any): 触发器参数。
+
+        返回:
+        - None
+
+        异常:
+        - CustomException: 参数非法，`msg` 为可读原因（直接回显前端）。
+        """
+        if trigger == "interval":
+            try:
+                trigger_args = SchedulerUtil.resolve_interval_args(trigger_args)
+            except ValueError as exc:
+                raise CustomException(msg=str(exc)) from None
+
+        ok, reason = TriggerUtil.validate(trigger, trigger_args)
+        if not ok:
+            raise CustomException(msg=reason)

@@ -1070,7 +1070,7 @@ class SchedulerUtil:
         if not interval_args:
             raise ValueError("interval触发器缺少参数")
 
-        trigger = TriggerUtil.to_trigger("interval", cls._resolve_interval_args(interval_args))
+        trigger = TriggerUtil.to_trigger("interval", cls.resolve_interval_args(interval_args))
         cls._apply_trigger_bounds(
             trigger,
             start_date or getattr(job_info, "start_date", None),
@@ -1098,11 +1098,11 @@ class SchedulerUtil:
         return cls._add_job_with_trigger(job_info, trigger)
 
     @classmethod
-    def _resolve_interval_args(cls, interval_args) -> dict:
+    def resolve_interval_args(cls, interval_args) -> dict:
         """
-        把 interval 参数归一为统一层契约的 JSON 字典。
+        把 interval 参数归一为统一层契约的 JSON 字典（兼容旧的「秒 分 时 天 周」字符串）。
 
-        新契约是 JSON 对象；存量数据是旧的「秒 分 时 天 周」五段字符串，
+        新契约是 JSON 对象；存量数据/旧前端是旧的「秒 分 时 天 周」五段字符串，
         这里兼容解析（字段顺序与旧格式一致）并在日志里提示一次，
         避免契约变更导致既有任务无法注册。
 
@@ -1112,6 +1112,9 @@ class SchedulerUtil:
         返回:
         - dict: 间隔参数字典（如 `{"seconds": 30, "minutes": 5, ...}`）。
         """
+        if isinstance(interval_args, dict):
+            return dict(interval_args)
+
         text = str(interval_args).strip()
         try:
             parsed = json.loads(text)
@@ -1122,14 +1125,12 @@ class SchedulerUtil:
 
         fields = text.split()
         if len(fields) != 5:
-            raise ValueError(
-                f"无效的 interval 表达式（应为 JSON 或旧的「秒 分 时 天 周」）：{text}"
-            )
+            raise ValueError(f"间隔参数应为 JSON 对象或旧格式「秒 分 时 天 周」字符串：{text}")
         try:
             values = [int(field) if field != "*" else 0 for field in fields]
         except ValueError:
             raise ValueError(
-                f"无效的 interval 表达式（应为 JSON 或旧的「秒 分 时 天 周」）：{text}"
+                f"间隔参数应为 JSON 对象或旧格式「秒 分 时 天 周」字符串：{text}"
             ) from None
 
         if not cls._legacy_interval_warned:

@@ -567,8 +567,8 @@ def test_interval_legacy_string_warns_only_once():
     messages: list[str] = []
     sink_id = _logger.add(lambda message: messages.append(message), level="WARNING")
     try:
-        first = scheduler_util._resolve_interval_args("30 5 2 1 0")
-        second = scheduler_util._resolve_interval_args("0 0 1 0 0")
+        first = scheduler_util.resolve_interval_args("30 5 2 1 0")
+        second = scheduler_util.resolve_interval_args("0 0 1 0 0")
     finally:
         _logger.remove(sink_id)
         scheduler_util._legacy_interval_warned = False
@@ -582,10 +582,15 @@ def test_resolve_interval_args_rejects_bad_input():
     """A4：既不是 JSON 对象、也不是 5 段旧字符串的输入必须报错（不静默吞掉）。"""
     scheduler_util = _scheduler_util()
 
+    with pytest.raises(ValueError) as not_five_fields:
+        scheduler_util.resolve_interval_args("0 0 1")
+    assert "秒 分 时 天 周" in str(not_five_fields.value)
+
     with pytest.raises(ValueError):
-        scheduler_util._resolve_interval_args("0 0 1")
-    with pytest.raises(ValueError):
-        scheduler_util._resolve_interval_args("[1, 2, 3]")
+        scheduler_util.resolve_interval_args("[1, 2, 3]")
+
+    # dict 直接可用（统一层同样接受 dict）
+    assert scheduler_util.resolve_interval_args({"minutes": 30}) == {"minutes": 30}
 
 
 def test_add_date_job_parses_via_trigger_util(monkeypatch):
@@ -640,3 +645,56 @@ def test_node_service_validates_via_trigger_util():
     source = inspect.getsource(node_service)
     assert "TriggerUtil.validate(trigger, trigger_args)" in source
     assert "CronUtil" not in source
+
+
+# ------------------------------------------------------------ A4 修正：节点校验兼容旧 interval 字符串
+def test_node_validate_interval_accepts_legacy_string_and_json():
+    """A4 修正：节点校验对旧「秒 分 时 天 周」字符串与新 JSON 都判合法。
+
+    C6 把节点页换成 `TriggerEditor` 之前，`IntervalTab` 仍 emit 旧串，
+    因此服务层必须先按旧格式解析再交给统一层校验（统一层只认 JSON）。
+    """
+    from app.plugin.module_task.cronjob.node.service import NodeService
+
+    # 旧串「秒 分 时 天 周」：30 分钟一次
+    NodeService._validate_trigger_args("interval", "0 30 * * *")
+    # 新契约 JSON：同样 30 分钟一次
+    NodeService._validate_trigger_args("interval", '{"minutes": 30}')
+    NodeService._validate_trigger_args("interval", {"minutes": 30})
+
+
+def test_node_validate_interval_all_zero_reason_is_readable():
+    """A4 修正：旧串全 0 / JSON 全 0 都给出可读原因（不产生每秒触发的无效作业）。"""
+    from app.plugin.module_task.cronjob.node.service import NodeService
+
+    with pytest.raises(CustomException) as legacy_all_zero:
+        NodeService._validate_trigger_args("interval", "0 0 0 0 0")
+    assert "至少" in legacy_all_zero.value.msg
+
+    with pytest.raises(CustomException) as json_all_zero:
+        NodeService._validate_trigger_args("interval", '{"hours": 0}')
+    assert "至少" in json_all_zero.value.msg
+
+
+def test_node_validate_interval_bad_input_reason_is_readable():
+    """A4 修正：既非 JSON 对象也非旧串时，错误原因必须说明两种合法格式。"""
+    from app.plugin.module_task.cronjob.node.service import NodeService
+
+    with pytest.raises(CustomException) as exc:
+        NodeService._validate_trigger_args("interval", "0 0 1")
+    assert "JSON" in exc.value.msg and "秒 分 时 天 周" in exc.value.msg
+
+
+def test_node_validate_cron_and_date_still_use_unified_layer():
+    """A4 修正：cron / date 分支仍原样回传统一层原因（未因 interval 兼容而放松）。"""
+    from app.plugin.module_task.cronjob.node.service import NodeService
+
+    NodeService._validate_trigger_args("cron", "0 9 * * 1")
+    with pytest.raises(CustomException) as cron_bad:
+        NodeService._validate_trigger_args("cron", "0 9 * * 5-1")
+    assert "跨周" in cron_bad.value.msg
+
+    past = (datetime.now() - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+    with pytest.raises(CustomException) as date_past:
+        NodeService._validate_trigger_args("date", past)
+    assert "过去" in date_past.value.msg
