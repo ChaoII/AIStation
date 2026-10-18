@@ -37,8 +37,10 @@ class TriggerUtil:
         "sat": "sat",
     }
 
-    # 周字段的标准数字序（0=周日…6=周六；`7` 亦指周日）：区间按此序展开为显式名称列表
-    _WEEKDAY_ORDER = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
+    # 周字段的标准数字序：0=周日…6=周六；`7` 亦指周日（区间比较按**原始数字** 0..7 处理）
+    _WEEKDAY_NUMBER = {"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
+    # 数字 → 名称（下标 7 亦为周日，展开时靠去重收敛为一次）
+    _WEEKDAY_BY_NUMBER = ("sun", "mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
     # 数值字段取值范围：(最小, 最大, 字段名)
     _FIELD_RANGES = (
@@ -166,10 +168,12 @@ class TriggerUtil:
                 if step < 1 or step > span:
                     return False, f"{label}字段步长非法（*/n 的 n 应在 1-{span} 之间）：{item}", ""
                 return True, "", f"*/{step}"
-            ok, reason = cls._check_range(base, low, high, label)
+            ok, reason, _ = cls._check_range(base, low, high, label)
             if not ok:
                 return False, reason, ""
             start, end = (int(part) for part in base.split("-"))
+            if start == end:
+                return False, f"{label}字段等值区间无需步长（请直接写 {start}）：{item}", ""
             if step < 1 or step > end - start:
                 return (
                     False,
@@ -182,10 +186,10 @@ class TriggerUtil:
             return False, f"{label}字段步长写法非法（仅支持 */n 与 a-b/n）：{item}", ""
 
         if "-" in item:
-            ok, reason = cls._check_range(item, low, high, label)
+            ok, reason, canonical = cls._check_range(item, low, high, label)
             if not ok:
                 return False, reason, ""
-            return True, "", item
+            return True, "", canonical
 
         if re.fullmatch(r"\d+", item):
             number = int(item)
@@ -196,17 +200,21 @@ class TriggerUtil:
         return False, f"{label}字段格式非法：{item}", ""
 
     @classmethod
-    def _check_range(cls, item: str, low: int, high: int, label: str) -> tuple[bool, str]:
-        """校验 `a-b` 区间片段。"""
+    def _check_range(cls, item: str, low: int, high: int, label: str) -> tuple[bool, str, str]:
+        """校验 `a-b` 区间片段。
+
+        返回 `(是否合法, 原因, 规范化片段)`：等值区间（`5-5`）等价单值，规范化为 `5`；
+        `start > end`（跨周/倒序）判非法。
+        """
         matched = re.fullmatch(r"(\d+)-(\d+)", item)
         if not matched:
-            return False, f"{label}字段区间格式非法：{item}"
+            return False, f"{label}字段区间格式非法：{item}", ""
         start, end = int(matched.group(1)), int(matched.group(2))
         if not (low <= start <= high and low <= end <= high):
-            return False, f"{label}字段取值超出范围（{low}-{high}）：{item}"
-        if start >= end:
-            return False, f"{label}字段区间起点必须小于终点：{item}"
-        return True, ""
+            return False, f"{label}字段取值超出范围（{low}-{high}）：{item}", ""
+        if start > end:
+            return False, f"{label}字段区间起点不能大于终点：{item}", ""
+        return True, "", str(start) if start == end else item
 
     @classmethod
     def _parse_weekday(cls, field: str) -> tuple[bool, str, str]:
@@ -222,9 +230,15 @@ class TriggerUtil:
             return False, "周字段不支持步长（*/2、mon/2 一律非法）", ""
 
         values: list[str] = []
+
+        def _append(name: str) -> None:
+            # 去重（`0` 与 `7` 都指周日；区间展开与列表项统一处理）
+            if name not in values:
+                values.append(name)
+
         for item in field.split(","):
             if item == "*":
-                values.append("*")
+                _append("*")
                 continue
             if "-" in item:
                 parts = item.split("-")
@@ -232,27 +246,38 @@ class TriggerUtil:
                     return False, f"周字段区间格式非法：{item}", ""
                 start = cls._weekday_value(parts[0])
                 end = cls._weekday_value(parts[1])
-                if start is None or end is None:
+                start_number = cls._weekday_number(parts[0])
+                end_number = cls._weekday_number(parts[1])
+                if None in (start, end, start_number, end_number):
                     return False, f"周字段取值非法：{item}（支持 0-7 或 mon…sun）", ""
-                start_index = cls._WEEKDAY_ORDER.index(start)
-                end_index = cls._WEEKDAY_ORDER.index(end)
-                if start_index > end_index:
-                    # 跨周区间：不发明"环绕"语义，只提示两个端点的列表写法
+                # 跨周判断用**原始数字** 0..7 比较（`7` 不折成 `0`）：`5-7` 合法（fri,sat,sun）
+                if start_number > end_number:
+                    # 不发明"环绕"语义，只提示两个端点的列表写法
                     return (
                         False,
-                        f"周字段跨周区间不受支持（起点必须在终点之前，按 0=周日…6=周六）：{item}；"
+                        f"周字段跨周区间不受支持（起点必须在终点之前，按 0=周日…7=周日）：{item}；"
                         f"请改用列表写法（如 {start},{end}）",
                         "",
                     )
-                values.extend(cls._WEEKDAY_ORDER[start_index : end_index + 1])
+                for number in range(start_number, end_number + 1):
+                    _append(cls._WEEKDAY_BY_NUMBER[number])
                 continue
             value = cls._weekday_value(item)
             if value is None:
                 return False, f"周字段取值非法：{item}（支持 0-7 或 mon…sun）", ""
-            values.append(value)
+            _append(value)
         return True, "", ",".join(values)
 
     @classmethod
     def _weekday_value(cls, token: str) -> str | None:
         """周字段取值 → 星期名；无法识别返回 `None`。"""
         return cls._WEEKDAY_MAP.get(token.strip().lower())
+
+    @classmethod
+    def _weekday_number(cls, token: str) -> int | None:
+        """周字段取值 → 原始数字（`7` 保持为 `7`，不折成 `0`）；无法识别返回 `None`。"""
+        text = token.strip().lower()
+        if text.isdigit():
+            number = int(text)
+            return number if 0 <= number <= 7 else None
+        return cls._WEEKDAY_NUMBER.get(text)
