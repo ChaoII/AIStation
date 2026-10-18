@@ -559,6 +559,8 @@ interface CronRow {
   id: number;
   trigger?: string | null;
   trigger_args?: unknown;
+  /** 后端统一层产出的「人话描述」（如「每天 09:00」）；空/脏数据时为 null */
+  trigger_describe?: string | null;
   next_run_time?: string | null;
   needs_review?: boolean;
 }
@@ -600,9 +602,12 @@ function cronTrigger(it: WorkspaceItem): string {
   return cronRow(it)?.trigger || "cron";
 }
 
-/** 描述：后端列表未回传「人话描述」，故按原样显示 `trigger_args`（保存时的同一份契约值） */
+/** 描述：优先用后端统一层下发的「人话描述」（`trigger_describe`，A8 起 `/cron/list` 与聚合条目都带），
+ *  没有时回退按原样显示 `trigger_args`（保存时的同一份契约值）。前端一律不自算。 */
 function cronArgsText(it: WorkspaceItem): string {
   const row = cronRow(it);
+  const desc = row?.trigger_describe ?? it.meta?.trigger_describe;
+  if (desc) return desc;
   const args = row ? row.trigger_args : it.meta?.cron;
   if (args === null || args === undefined || args === "") {
     // 「立即」按契约无参数（不是缺配置），与真正的空表达式（迁移跳过）区分开

@@ -584,7 +584,7 @@ const modelVersionsLoading = ref(false);
 async function loadModelVersions() {
   modelVersionsLoading.value = true;
   try {
-    const res = await TrainAPI.getModelList({ page_no: 1, page_size: 200 });
+    const res = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
     modelVersions.value = res.data?.data?.items || [];
   } catch {
     modelVersions.value = [];

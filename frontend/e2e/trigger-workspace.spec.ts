@@ -100,7 +100,9 @@ test("C3-1 定时：默认每天 09:00，预览有描述与下次运行，保存
   const card = await cronCard(page, name);
   await expect(card).toContainText("触发方式");
   await expect(card).toContainText("定时");
-  await expect(card).toContainText("描述：0 9 * * *");
+  // 描述优先展示后端统一层下发的人话描述（`trigger_describe`，A8 起聚合条目也带），
+  // 拿不到时才回退原始 `trigger_args`（见 cronArgsText）
+  await expect(card).toContainText("描述：每天 09:00");
   await expect(card).toContainText("下次运行：");
   // 健康行不得被误标「需人工确认」
   await expect(card).not.toContainText("需人工确认");
