@@ -84,6 +84,8 @@ class SchedulerUtil:
     _job_name_cache: dict[str, str | tuple[str, str]] = {}
     # 旧 interval 字符串的兼容提示是否已打印（只提示一次，避免每次注册都刷屏）
     _legacy_interval_warned: bool = False
+    # 「作业状态无法序列化」的降级提示是否已打印（业务作业的闭包 func 属正常情况，只提示一次）
+    _unserializable_state_warned: bool = False
 
     @classmethod
     def scheduler_event_listener(cls, event: JobEvent | JobExecutionEvent) -> None:
@@ -686,7 +688,19 @@ class SchedulerUtil:
         if not job:
             return None
 
-        state = job.__getstate__()
+        try:
+            state = job.__getstate__()
+        except (AttributeError, ValueError, TypeError) as e:
+            # 状态序列化失败**不应**让执行日志整体失败（可观测性优先于状态完整度）：
+            # - `Job.__getstate__` 对非模块级引用的 callable（业务作业的闭包 `func`）抛 ValueError；
+            # - 作业在调度器启动前添加、`job_defaults` 尚未套用时缺 `misfire_grace_time` 等属性。
+            # 退化为「不含 callable 的最小状态」，且**不打 ERROR 日志**（一次性 warning 提示即可）。
+            if not cls._unserializable_state_warned:
+                cls._unserializable_state_warned = True
+                log.warning(
+                    f"作业 {getattr(job, 'id', '?')} 的状态无法序列化，已退化为最小状态：{e!s}"
+                )
+            state = cls._minimal_job_state(job)
 
         def serialize_value(obj):
             """
@@ -725,6 +739,34 @@ class SchedulerUtil:
 
         parsed_state = serialize_value(state)
         return json.dumps(parsed_state, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _minimal_job_state(job) -> dict:
+        """
+        状态序列化失败时的降级：只保留可 JSON 化的调度元信息（不含 callable）。
+
+        全部字段用 `getattr` 兜底：本方法正是「取状态失败」的兜底路径，自身不得再抛错
+        （作业可能缺 `misfire_grace_time` 等属性，如调度器启动前添加的作业）。
+
+        参数:
+        - job (Job): APScheduler 作业对象。
+
+        返回:
+        - dict: `id` / `name` / `func`（名称，非 callable 本身）/ `trigger` / `next_run_time`
+          与调度参数。
+        """
+        next_run_time = getattr(job, "next_run_time", None)
+        func = getattr(job, "func", None)
+        return {
+            "id": getattr(job, "id", None),
+            "name": getattr(job, "name", None),
+            "func": getattr(func, "__qualname__", None) or repr(func),
+            "trigger": str(getattr(job, "trigger", "")) or None,
+            "next_run_time": str(next_run_time) if next_run_time else None,
+            "coalesce": getattr(job, "coalesce", None),
+            "misfire_grace_time": getattr(job, "misfire_grace_time", None),
+            "max_instances": getattr(job, "max_instances", None),
+        }
 
     @classmethod
     def get_job_state_from_blob(cls, blob_data: bytes) -> Any:
