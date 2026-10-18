@@ -839,29 +839,32 @@
       </div>
     </el-dialog>
 
-    <!-- 定时调度 -->
-    <el-dialog v-model="scheduleVisible" title="定时调度" width="500px" append-to-body>
+    <!--
+      定时调度：触发配置统一走 TriggerEditor（定时/间隔/单次/立即 + 实时预览 + 非法拦截），
+      不再自造 cron 输入框与「常用模板」——全平台只有这一套触发编辑口径。
+    -->
+    <el-dialog v-model="scheduleVisible" title="定时调度" width="520px" append-to-body>
       <el-form label-position="top" size="small">
-        <el-form-item label="常用模板">
-          <el-radio-group v-model="scheduleCron" size="small" class="schedule-presets">
-            <el-radio-button label="0 9 * * *">每天 09:00</el-radio-button>
-            <el-radio-button label="0 */30 * * * ?">每 30 分钟</el-radio-button>
-            <el-radio-button label="0 0 * * *">每天 00:00</el-radio-button>
-            <el-radio-button label="0 9 * * 1">每周一 09:00</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="cron 表达式（秒 分 时 日 月 周）">
-          <el-input v-model="scheduleCron" placeholder="如：0 9 * * *（每天 09:00）" />
+        <el-form-item label="触发方式">
+          <TriggerEditor
+            v-model:trigger="scheduleTrigger"
+            v-model:trigger-args="scheduleTriggerArgs"
+            @error="scheduleError = $event"
+          />
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="scheduleEnabled" />
         </el-form-item>
       </el-form>
-      <div v-if="scheduleNext" class="schedule-next">下次运行：{{ scheduleNext }}</div>
+      <!--
+        与 TriggerEditor 的「下次运行」预览区分：上面是**待保存草稿**的下次运行，
+        这里是**已保存调度作业**的下次运行（唯一真源，保存/打开后回读）。
+      -->
+      <div v-if="scheduleNext" class="schedule-next">当前已保存：下次运行 {{ scheduleNext }}</div>
       <template #footer>
         <el-button @click="scheduleVisible = false">关闭</el-button>
         <el-button @click="runScheduleNow">立即运行</el-button>
-        <el-button type="primary" @click="saveSchedule">保存</el-button>
+        <el-button type="primary" :disabled="!!scheduleError" @click="saveSchedule">保存</el-button>
       </template>
     </el-dialog>
   </el-drawer>
@@ -923,6 +926,7 @@ import "@vue-flow/minimap/dist/style.css";
 import WorkflowNode from "./WorkflowNode.vue";
 import NodeConfigPanel from "./NodeConfigPanel.vue";
 import TopoView from "./TopoView.vue";
+import TriggerEditor from "@/components/TriggerEditor/index.vue";
 import { NODE_DEFS, NODE_CATEGORIES, nodeDefOf, categoryOf, type WorkflowNodeType } from "../nodes";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiToolList } from "@/api/module_ai/tool";
@@ -1511,7 +1515,12 @@ async function openShare() {
 
 // ---------- 定时调度 ----------
 const scheduleVisible = ref(false);
-const scheduleCron = ref("");
+/** 触发类型：cron / interval / date / now（与 TriggerEditor、后端 TriggerUtil 一一对应） */
+const scheduleTrigger = ref("cron");
+/** 触发参数：cron 为 5 段表达式、interval 为对象、date 为时间串、now 为 null */
+const scheduleTriggerArgs = ref<unknown>(null);
+/** TriggerEditor 上抛的非法原因：非空时拦截保存（保存按钮同时置灰） */
+const scheduleError = ref("");
 const scheduleEnabled = ref(false);
 const scheduleNext = ref("");
 async function openSchedule() {
@@ -1519,7 +1528,10 @@ async function openSchedule() {
   try {
     const res = await getAiWorkflowSchedule(workflowId.value);
     const d = res.data?.data || {};
-    scheduleCron.value = d.cron || "";
+    scheduleTrigger.value = d.trigger || "cron";
+    // `trigger_args` 是统一字段；`cron` 是后端给旧前端的兼容字段（两者都返回，优先新字段）
+    scheduleTriggerArgs.value = d.trigger_args ?? d.cron ?? null;
+    scheduleError.value = ""; // 换配置前先清残留的非法提示，避免挡住合法配置的保存
     scheduleEnabled.value = !!d.enabled;
     scheduleNext.value = d.next_run_time
       ? String(d.next_run_time).replace("T", " ").slice(0, 19)
@@ -1531,18 +1543,28 @@ async function openSchedule() {
 }
 async function saveSchedule() {
   if (!workflowId.value) return;
+  // 前端预校验（预览接口的结论）非空即拦截：不把非法配置打到后端换一个 400
+  if (scheduleError.value) {
+    ElMessage.warning(scheduleError.value);
+    return;
+  }
   try {
-    const res = await setAiWorkflowSchedule(workflowId.value, {
-      cron: scheduleCron.value,
+    const payload = {
+      // 新契约优先：trigger + trigger_args；`cron` 保留兼容（仅定时类型有值）
+      trigger: scheduleTrigger.value,
+      trigger_args: scheduleTriggerArgs.value,
+      cron: scheduleTrigger.value === "cron" ? String(scheduleTriggerArgs.value ?? "") : "",
       enabled: scheduleEnabled.value,
-    });
+    };
+    const res = await setAiWorkflowSchedule(workflowId.value, payload);
     const d = res.data?.data || {};
+    // 局部刷新：只更新本面板需要的「已保存下次运行」，不重拉列表/画布
     scheduleNext.value = d.next_run_time
       ? String(d.next_run_time).replace("T", " ").slice(0, 19)
       : "";
     ElMessage.success("调度已保存");
   } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败（cron 可能无效）");
+    ElMessage.error(e?.message || "保存失败（触发配置可能无效）");
   }
 }
 async function runScheduleNow() {
@@ -3996,9 +4018,6 @@ async function handleApprove(decision: "approve" | "reject") {
   margin-top: 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
-}
-.schedule-presets {
-  flex-wrap: wrap;
 }
 
 .history-detail {
