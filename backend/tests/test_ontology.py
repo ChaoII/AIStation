@@ -398,7 +398,10 @@ class TestOntVersionPublish:
         from app.plugin.module_ai.ontology import service as osvc
 
         async def _go():
-            async with async_db_session() as db:
+            # ⚠️ 必须用 .begin()（提交）：用 async_db_session() 时写入不提交，
+            #    后续 object_full 读不到 → 本用例会依赖「同模块更早的用例碰巧提交过
+            #    orders」而时绿时红（-n 并行下按 worker 分配顺序翻车，实测踩过）。
+            async with async_db_session.begin() as db:
                 await db.execute(_t("DELETE FROM ai_ont_object WHERE code='orders'"))
                 await db.execute(_t("INSERT INTO ai_ont_object(code,name,is_deleted) VALUES ('orders','订单',0)"))
                 su = (await db.execute(_t("SELECT id FROM sys_user WHERE is_superuser=1 AND is_deleted=0 LIMIT 1"))).fetchone()
@@ -425,7 +428,8 @@ class TestOntVersionPublish:
         from app.plugin.module_ai.ontology import service as osvc
 
         async def _go():
-            async with async_db_session() as db:
+            # ⚠️ 同 test_publish_writes_changelog：必须 .begin() 提交，否则读不到
+            async with async_db_session.begin() as db:
                 await db.execute(_t("DELETE FROM ai_ont_object WHERE code='orders'"))
                 await db.execute(_t("INSERT INTO ai_ont_object(code,name,is_deleted) VALUES ('orders','订单',0)"))
                 su = (await db.execute(_t("SELECT id FROM sys_user WHERE is_superuser=1 AND is_deleted=0 LIMIT 1"))).fetchone()
