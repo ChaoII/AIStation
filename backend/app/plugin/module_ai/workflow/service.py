@@ -34,6 +34,32 @@ _WATCH_INTERVAL = 0.2
 #: 三处写入路径（工作台 / 工作流 / 训练）口径必须一致（同文案）。
 _EMPTY_TRIGGER_MSG = "请先配置触发时间（分 时 日 月 周）"
 
+#: 本模块在中心调度器里的作业键前缀（与 `ap_scheduler._BUSINESS_JOB_PREFIXES` 同口径）：
+#: 三个模块共用一个调度器，作业键必须带自己的前缀，同步时也只能清理自己的前缀范围
+#: （否则会把别的模块的定时任务一并删掉——无告警、只在下次触发时表现为「任务不再运行」）。
+_JOB_PREFIX = "ai_workflow_schedule:"
+
+
+def _job_key(workflow_id: int) -> str:
+    """本模块在中心调度器里的作业键（`ai_workflow_schedule:{id}`）。"""
+    return f"{_JOB_PREFIX}{workflow_id}"
+
+
+async def run_scheduled_workflow(workflow_id: int) -> None:
+    """中心调度器作业入口：按调度运行工作流，并把调度状态回写库。
+
+    刻意用**模块级函数**（而非闭包）：`obj_to_ref` 能解析出引用，作业状态可完整序列化，
+    日志里也有可读的函数名（闭包会走降级路径）。
+
+    `next_run_time` 一律由作业回写（单一真源）：运行结束后（无论成败）都从作业读回，
+    库里的值永远等于作业的值，业务侧不再自算。
+    """
+    started = datetime.now(ZoneInfo(TriggerUtil.TIMEZONE))
+    try:
+        await AiWorkflowService.run_schedule(workflow_id)
+    finally:
+        await AiWorkflowService.write_back_schedule_state(workflow_id, ran_at=started)
+
 
 def _to_dict(w: AiWorkflowModel) -> dict:
     return {
@@ -172,6 +198,19 @@ class AiWorkflowService:
                 w = await db.get(AiWorkflowModel, wid)
                 if w:
                     await db.delete(w)
+                # 调度行没有 FK 级联：随工作流一并清理，并移除中心调度器里的作业。
+                # 否则「已删除的工作流」会留下一条启用中的调度行 + 一个照常触发的作业
+                # （幽灵作业：每次触发都空跑一遍，用户侧看不出任何东西）。
+                row = (
+                    await db.execute(
+                        select(AiWorkflowScheduleModel).where(
+                            AiWorkflowScheduleModel.workflow_id == wid
+                        )
+                    )
+                ).scalar_one_or_none()
+                if row:
+                    await db.delete(row)
+                cls._remove_schedule_job(wid)
 
     # ---------- 版本 / 发布 / 回滚 ----------
     @classmethod
@@ -1003,12 +1042,15 @@ class AiWorkflowService:
 
     @classmethod
     async def set_schedule(cls, workflow_id: int, cron: str | None, enabled: bool) -> dict:
-        """保存调度配置：写入规范化后的表达式，下次运行时间来自统一层。
+        """保存调度配置：写入规范化后的表达式，并同步中心调度器作业。
 
         入参仍是旧的 `cron` 单字段（前端 C 阶段才切到 `trigger`/`trigger_args`）：
         - 非空表达式：`TriggerUtil.validate`（非法 → 400，原因原样回显）→ `normalize`；
         - 空值 + **启用中**：明确报错（否则会落一条「已启用但永不触发」的行，用户无感知）；
         - 空值 + 未启用：视为「未配置」（清空调度），保住「关闭调度」语义。
+
+        启停/增改一律同步作业（启用 → 注册/替换，禁用或清空 → 移除）；`next_run_time`
+        **不再自算**，而是注册后从作业读回（作业是唯一真源，两套口径必然漂移）。
         """
         if not cron or not str(cron).strip():
             if enabled:
@@ -1019,7 +1061,6 @@ class AiWorkflowService:
             if not ok:
                 raise CustomException(msg=reason, code=400, status_code=400)
             trigger, trigger_args = TriggerUtil.normalize("cron", cron)
-        next_run = TriggerUtil.next_run(trigger, trigger_args) if enabled and trigger_args else None
         async with async_db_session() as db:
             row = (
                 await db.execute(
@@ -1034,10 +1075,78 @@ class AiWorkflowService:
             row.trigger = trigger
             row.trigger_args = trigger_args
             row.enabled = enabled
-            row.next_run_time = next_run
+            # 先落库再注册作业：作业触发时按库里的行取状态，避免「作业已注册、库还没写」
+            await db.commit()
+            # 启停/增改一律同步作业；next_run_time 由作业回写（单一真源，不再自算）
+            job = cls._sync_schedule_job(workflow_id, trigger, trigger_args, enabled)
+            row.next_run_time = getattr(job, "next_run_time", None) if job else None
             await db.commit()
             await db.refresh(row)
         return cls._schedule_dict(row)
+
+    @classmethod
+    def _sync_schedule_job(cls, workflow_id: int, trigger: str, trigger_args, enabled: bool):
+        """把调度行同步到中心调度器：启用 → 注册/替换作业；禁用或未配置 → 移除作业。
+
+        返回注册后的作业（未注册时为 `None`）——`next_run_time` 从它读回，保证「作业是唯一真源」。
+
+        **不调用 `sync_business_jobs`**：那是「按整表同步」的接口（会清理列表外的同前缀作业），
+        单行增改用它会把同一模块其它工作流的作业一并删掉；单行用 `register_business_trigger`
+        / `remove_business_job`（都是幂等的）。
+        """
+        from app.core.ap_scheduler import SchedulerUtil
+
+        job_key = _job_key(workflow_id)
+        if enabled and (trigger_args or trigger == "now"):
+            return SchedulerUtil.register_business_trigger(
+                job_key,
+                trigger or "cron",
+                trigger_args,
+                run_scheduled_workflow,
+                args=(workflow_id,),
+            )
+        cls._remove_schedule_job(workflow_id)
+        return None
+
+    @staticmethod
+    def _remove_schedule_job(workflow_id: int) -> bool:
+        """移除本模块的中心调度器作业（不存在时返回 `False`，不抛）。"""
+        from app.core.ap_scheduler import SchedulerUtil
+
+        return SchedulerUtil.remove_business_job(_job_key(workflow_id))
+
+    @classmethod
+    async def write_back_schedule_state(
+        cls, workflow_id: int, ran_at: datetime | None = None
+    ) -> None:
+        """把作业的 `next_run_time` 回写调度行（状态单一真源）；给了 `ran_at` 才记 `last_run_time`。
+
+        作业执行时 APScheduler 已算好下一次触发时刻并写回作业对象，这里读回来落库——
+        库里的 `next_run_time` 永远等于作业的，不再由业务侧自算。
+
+        `ran_at` 刻意做成可选：启动期同步只回写下次运行时间，**不得**把启动时刻误记成
+        「上次运行」（否则界面会把「服务重启过」显示成「任务刚跑过」）。
+        """
+        from app.core.ap_scheduler import scheduler
+
+        job = scheduler.get_job(_job_key(workflow_id))
+        next_run = getattr(job, "next_run_time", None) if job else None
+        try:
+            async with async_db_session.begin() as db:
+                row = (
+                    await db.execute(
+                        select(AiWorkflowScheduleModel).where(
+                            AiWorkflowScheduleModel.workflow_id == workflow_id
+                        )
+                    )
+                ).scalar_one_or_none()
+                if not row:
+                    return
+                if ran_at is not None:
+                    row.last_run_time = ran_at
+                row.next_run_time = next_run
+        except Exception as e:  # noqa: BLE001 状态回写失败不影响本次运行结果
+            log.warning(f"[workflow] 调度状态回写失败（workflow_id={workflow_id}）：{str(e)[:200]}")
 
     @staticmethod
     def _schedule_dict(row: AiWorkflowScheduleModel) -> dict:
@@ -1120,11 +1229,14 @@ class AiWorkflowService:
 
     @staticmethod
     def _is_due(next_run_time, now) -> bool:
-        """该调度是否到期。
+        """该调度是否到期（口径判定，供列表/排障与单测复用）。
 
         **未配置（`next_run_time is None`）不算到期** —— 那是「不执行」，不是「每分钟执行」：
         原先把它当到期，会让没配表达式的工作流每 60 秒跑一次。
         `next_run_time` 为 naive（SQLite）时按 `Asia/Shanghai` 解释，与统一层的口径一致。
+
+        自建轮询已删除（到期运行归中心调度器的作业），本方法保留为**纯函数**口径：
+        「空 next_run_time 不触发」这条语义仍是对外承诺（回写逻辑同样不得把空值当到期）。
         """
         if next_run_time is None:
             return False
@@ -1134,45 +1246,42 @@ class AiWorkflowService:
 
     @classmethod
     async def start_scheduler(cls) -> None:
-        """后台轮询任务：每分钟检查到期调度并运行。"""
-        import asyncio
+        """启动期把「启用中的调度行」同步进中心调度器（一次性，不再自建轮询）。
 
-        # 下次运行时间来自统一层（Asia/Shanghai）：比较统一到该时区的时刻
-        timezone = ZoneInfo(TriggerUtil.TIMEZONE)
-        while True:
-            try:
-                now = datetime.now(timezone)
-                async with async_db_session() as db:
-                    rows = (
-                        await db.execute(
-                            select(AiWorkflowScheduleModel).where(
-                                AiWorkflowScheduleModel.enabled.is_(True)
-                            )
-                        )
-                    ).scalars().all()
-                for row in rows:
-                    if cls._is_due(row.next_run_time, now):
-                        try:
-                            await cls.run_schedule(row.workflow_id)
-                        except Exception:  # noqa: BLE001
-                            pass
-                        next_run = None
-                        if row.trigger_args:
-                            try:
-                                next_run = TriggerUtil.next_run(
-                                    row.trigger or "cron", row.trigger_args
-                                )
-                            except Exception:  # noqa: BLE001
-                                next_run = None
-                        async with async_db_session() as db2:
-                            r = await db2.get(AiWorkflowScheduleModel, row.id)
-                            if r:
-                                r.last_run_time = now
-                                r.next_run_time = next_run
-                                await db2.commit()
-            except Exception:  # noqa: BLE001
-                pass
-            await asyncio.sleep(60)
+        到期运行与 `next_run_time` 都归中心调度器的作业：作业触发时运行工作流并回写
+        `last_run_time` / `next_run_time`（单一真源）。本方法只做启动期注册（幂等），
+        且**只清理本模块前缀**的残留作业——三个模块共用一个调度器，不得跨模块误删。
+        """
+        from app.core.ap_scheduler import SchedulerUtil
+
+        try:
+            async with async_db_session() as db:
+                result = await db.execute(
+                    select(AiWorkflowScheduleModel).where(AiWorkflowScheduleModel.enabled.is_(True))
+                )
+                rows = result.scalars().all()
+        except Exception as e:  # noqa: BLE001 启动期同步失败不得阻断启动
+            log.warning(f"[workflow] 启动期读取定时调度失败（忽略）：{str(e)[:200]}")
+            return
+
+        specs = [
+            (
+                _job_key(row.workflow_id),
+                row.trigger or "cron",
+                row.trigger_args,
+                run_scheduled_workflow,
+                (row.workflow_id,),
+            )
+            for row in rows
+            if row.trigger_args or (row.trigger or "cron") == "now"
+        ]
+        try:
+            # 同步范围只限本模块前缀：绝不清理工作台/训练的作业
+            SchedulerUtil.sync_business_jobs(specs, prefixes=(_JOB_PREFIX,))
+        except Exception as e:  # noqa: BLE001 注册失败不阻断启动
+            log.warning(f"[workflow] 启动期注册定时调度失败（忽略）：{str(e)[:200]}")
+        for row in rows:
+            await cls.write_back_schedule_state(row.workflow_id)
 
     @staticmethod
     async def _persist_pending(redis, run_id: str, workflow_id: int, state: dict, uid) -> None:
