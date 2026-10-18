@@ -2379,15 +2379,18 @@ async def ontology_usage(object_code: str | None = None) -> dict:
     """本体用量：读数（Agent 工具调用）/ 写入（动作执行）/ 交互（本体页改动）。
 
     数据来自既有日志表，不额外埋点：
-    - 读数：``ai_call_logs`` 中工具名以 ont_fn__ / ont_action__ / list_ontology 开头的调用
-    - 写入：``ai_query_writeback_log`` 中动作执行记录
+    - 读数：``ai_ont_change_log`` 中 ``kind='tool_call'`` 的记录（本体工具入口自动记）
+    - 写入：``ai_query_writeback_log`` 中动作执行记录（走 catalog 接口）
     - 交互：``ai_ont_change_log`` 中定义改动记录
     """
-    read_where = ("WHERE (tool_name LIKE 'ont_fn__%' OR tool_name LIKE 'ont_action__%' "
-                  "OR tool_name = 'list_ontology')")
     reads = 0
     try:
-        reads = int((await _exec(f"SELECT count(*) FROM ai_call_logs {read_where}")).scalar() or 0)
+        # 读数：本体工具调用次数 —— 记在本体自己的留痕表里（kind='tool_call'），
+        # 不再直读 AI 调用日志模块的 ai_call_logs（那张表也没有工具名字段，
+        # 历史实现查不存在的列 → 恒为 0）。
+        reads = int((await _exec(
+            "SELECT count(*) FROM ai_ont_change_log WHERE kind='tool_call' AND is_deleted=false"
+        )).scalar() or 0)
     except Exception:  # noqa: BLE001
         reads = 0
     writes = 0

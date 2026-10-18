@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import operator as op
+import time
 from typing import Any
 
 
@@ -288,7 +289,46 @@ def _visible(item: dict) -> bool:
     return (item.get("status") or "experimental") != "deprecated"
 
 
+async def _log_tool_call(name: str, latency_ms: int, result: str,
+                         error: str | None = None) -> None:
+    """把本体工具调用记到**本体自己的留痕表**（``ai_ont_change_log``，kind='tool_call'）。
+
+    为什么记这里而不是 ``ai_call_logs``：那张表属于 AI 调用日志模块，且**没有工具名字段**
+    （历史实现查的是不存在的 ``tool_name`` 列 → 被裸 except 吞掉 → 「读数」永远是 0）。
+    工具调用是本体自己的用量事实，记在自己表里既内聚、又彻底消除跨模块直读。
+    """
+    try:
+        from app.plugin.module_ai.ontology import service as ont
+
+        detail = f"{name} {latency_ms}ms" + (f" error={error[:120]}" if error else "")
+        await ont._log_change("-", "tool_call", result, detail)
+    except Exception:  # noqa: BLE001 用量统计失败不影响工具执行
+        pass
+
+
+def _call_result(out: Any) -> tuple[str, str | None]:
+    """按返回值判定调用结果：工具实现多以 ``{"error": ...}`` 返回失败而非抛异常。"""
+    if isinstance(out, dict):
+        err = out.get("error")
+        if err:
+            return "error", str(err)
+    return "success", None
+
+
 async def run_ontology_tool(name: str, args: dict, user_id: int | None = None) -> Any:
+    """本体通用工具入口（计时 + 记用量，供「用量-读数」统计）。"""
+    t0 = time.perf_counter()
+    try:
+        out = await _run_ontology_tool_impl(name, args, user_id)
+    except Exception as e:  # noqa: BLE001
+        await _log_tool_call(name, int((time.perf_counter() - t0) * 1000), "error", str(e))
+        raise
+    result, err = _call_result(out)
+    await _log_tool_call(name, int((time.perf_counter() - t0) * 1000), result, err)
+    return out
+
+
+async def _run_ontology_tool_impl(name: str, args: dict, user_id: int | None = None) -> Any:
     """本体通用工具派发。
 
     **P4**：带 ``user_id`` 时会按该用户的本体权限过滤可发现的资源
@@ -607,6 +647,19 @@ async def build_selected_ontology_tools(codes: list[str],
 
 
 async def run_selected_ontology_tool(name: str, args: dict, user_id: int | None = None) -> Any:
+    """选定本体工具入口（计时 + 记用量，供「用量-读数」统计）。"""
+    t0 = time.perf_counter()
+    try:
+        out = await _run_selected_ontology_tool_impl(name, args, user_id)
+    except Exception as e:  # noqa: BLE001
+        await _log_tool_call(name, int((time.perf_counter() - t0) * 1000), "error", str(e))
+        raise
+    result, err = _call_result(out)
+    await _log_tool_call(name, int((time.perf_counter() - t0) * 1000), result, err)
+    return out
+
+
+async def _run_selected_ontology_tool_impl(name: str, args: dict, user_id: int | None = None) -> Any:
     """选中本体工具的派发（函数求值 / 动作提议）。
 
     **P4**：Agent 代表某个用户行事，因此这里必须按**该用户的权限**门控——

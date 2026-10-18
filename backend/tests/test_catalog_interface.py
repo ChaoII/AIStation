@@ -75,12 +75,16 @@ def test_catalog_mark_sensitive_is_idempotent():
 
 
 def test_ontology_does_not_directly_query_query_tables():
-    """回归守卫：本体模块里不应再出现对 ai_query_* 的直读/直写 SQL。"""
+    """回归守卫：本体模块里不应再出现对 ai_query_* / ai_call_logs 的直读/直写 SQL。
+
+    跨模块共享表（问数的 ai_query_*、调用日志的 ai_call_logs）一律走 catalog 接口，
+    或记在本体自己的表里（工具调用用量即如此）。
+    """
     import pathlib
     import re
 
     base = pathlib.Path(__file__).resolve().parents[1] / "app" / "plugin" / "module_ai" / "ontology"
-    pattern = re.compile(r"(FROM|INTO|UPDATE|JOIN)\s+ai_query_", re.IGNORECASE)
+    pattern = re.compile(r"(FROM|INTO|UPDATE|JOIN)\s+(ai_query_|ai_call_logs)", re.IGNORECASE)
     hits: list[str] = []
     for f in base.glob("*.py"):
         for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
@@ -88,4 +92,4 @@ def test_ontology_does_not_directly_query_query_tables():
                 continue
             if pattern.search(line):
                 hits.append(f"{f.name}:{i}: {line.strip()}")
-    assert not hits, "本体不得直读/直写问数的表，应走 catalog 接口：\n" + "\n".join(hits)
+    assert not hits, "本体不得直读/直写跨模块共享表，应走 catalog 接口：\n" + "\n".join(hits)
