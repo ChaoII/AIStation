@@ -509,7 +509,8 @@ Expected: FAIL（404）
 四个控制器各加一条路由（各自 `AuthPermission`，各自前缀），函数体只做一件事：
 `return SuccessResponse(data=TriggerUtil.preview(trigger, trigger_args))`；
 `TriggerUtil.preview` 在统一层实现（`validate` + `describe` + `next_run`），返回上述结构。
-列表接口顺带把"表达式需人工确认"的行标出（Review Focus 1）：`needs_review: bool`。
+列表接口顺带把**两类**行标为需人工确认（`needs_review: bool`）：① 迁移时被跳过（`trigger_args` 为 NULL）；
+② **`trigger_args` 非空但按新校验不通过**（如 5 段的 `0 9 31 6 *`、`0 9 1 * mon`）——否则会以"有表达式但调度不上"静默停摆。
 
 - [ ] **Step 4: 跑测试 + 全量**
 
