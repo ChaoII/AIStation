@@ -92,11 +92,11 @@ async def run_scheduled_training(schedule_id: int) -> None:
       （禁用/删除请求刚提交、或同键替换前的最后一次触发），此时静默跳过，
       绝不因为一条已被停用的计划而创建训练任务；
     - 建任务 + 立即启动，最后回写 `last_run_at` / `last_task_id`（与旧自建轮询行为一致）；
-    - 单次触发失败只记日志，不抛出：调度器里抛错会污染作业状态并可能吞掉后续触发。
+    - 单次触发失败只记日志，不抛出（含回写失败）：调度器里抛错会污染作业状态并可能吞掉后续触发。
     """
-    async with async_db_session() as db:
-        from .schedule_model import TrainScheduleModel
+    from .schedule_model import TrainScheduleModel
 
+    async with async_db_session() as db:
         s = await db.get(TrainScheduleModel, schedule_id)
         if s is None:
             log.info(f"定时训练计划 {schedule_id} 已删除，跳过本次触发")
@@ -118,14 +118,16 @@ async def run_scheduled_training(schedule_id: int) -> None:
     except Exception as e:
         log.error(f"scheduled training failed for schedule {schedule_id}: {e}")
     finally:
-        async with async_db_session.begin() as db:
-            from .schedule_model import TrainScheduleModel
-
-            await db.execute(
-                update(TrainScheduleModel)
-                .where(TrainScheduleModel.id == schedule_id)
-                .values(last_run_at=datetime.now(), last_task_id=new_id)
-            )
+        # 回写自身也要保护：docstring 承诺「只记日志不抛出」，回写失败同样不得把异常抛回调度器
+        try:
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    update(TrainScheduleModel)
+                    .where(TrainScheduleModel.id == schedule_id)
+                    .values(last_run_at=datetime.now(), last_task_id=new_id)
+                )
+        except Exception as e:
+            log.error(f"定时训练计划 {schedule_id} 回写执行状态失败：{e!s}")
 
 
 async def _scheduler_loop():

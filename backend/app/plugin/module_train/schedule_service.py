@@ -40,7 +40,7 @@ def sync_train_schedule_job(
 
     job_key = train_schedule_job_key(schedule_id)
     if not enabled or not trigger_args:
-        SchedulerUtil.remove_business_job(job_key)
+        remove_train_schedule_job(schedule_id)
         return
     try:
         SchedulerUtil.register_business_trigger(
@@ -51,15 +51,23 @@ def sync_train_schedule_job(
             args=(schedule_id,),
         )
     except Exception as e:  # noqa: BLE001 - 单行脏配置不得拖垮增改接口
-        SchedulerUtil.remove_business_job(job_key)
+        remove_train_schedule_job(schedule_id)
         log.warning(f"定时训练计划 {schedule_id} 的触发配置无法注册作业，已跳过：{e!s}")
 
 
 def remove_train_schedule_job(schedule_id: int) -> bool:
-    """移除某计划的作业（计划删除时调用；不存在也返回 False 而不抛）。"""
+    """移除某计划的作业（计划删除时调用；不存在也返回 False 而不抛）。
+
+    调度器未启动时 APScheduler 抛的是 `SchedulerNotRunningError`（**不是** `JobLookupError`），
+    一并吞掉：调度器不可用不得把「删除计划 / 禁用计划」的请求打成 500。
+    """
     from app.core.ap_scheduler import SchedulerUtil
 
-    return SchedulerUtil.remove_business_job(train_schedule_job_key(schedule_id))
+    try:
+        return SchedulerUtil.remove_business_job(train_schedule_job_key(schedule_id))
+    except Exception as e:  # noqa: BLE001 - 调度器不可用只记日志，接口照常成功
+        log.warning(f"移除定时训练计划 {schedule_id} 的作业失败（调度器不可用？）：{e!s}")
+        return False
 
 
 def _job_next_run_time(schedule_id: int) -> str | None:
@@ -72,8 +80,9 @@ def _job_next_run_time(schedule_id: int) -> str | None:
         from app.core.ap_scheduler import scheduler
 
         job = scheduler.get_job(train_schedule_job_key(schedule_id))
-    except Exception:  # noqa: BLE001 - 调度器不可用不得让列表接口 500
-        log.exception("读取定时训练计划 %s 的作业失败", schedule_id)
+    except Exception as e:  # noqa: BLE001 - 调度器不可用不得让列表接口 500
+        # 用 warning 而非 exception：列表逐行调用，调度器不可用时会刷出 N 条完整 traceback
+        log.warning(f"读取定时训练计划 {schedule_id} 的作业失败（调度器不可用？）：{e!s}")
         return None
     next_fire = getattr(job, "next_run_time", None)
     return next_fire.strftime(_DATETIME_FORMAT) if next_fire else None

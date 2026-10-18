@@ -155,24 +155,141 @@ def test_sync_train_schedule_jobs_only_touches_own_prefix():
 def test_due_schedule_polling_path_is_removed():
     """A5 遗留的 `croniter` 到期判定死轮询路径必须彻底删除（不是留个恒返回 [] 的方法）。
 
-    用 AST 检查**真实使用**（属性访问 / 导入），不检查注释与文档字符串：
+    用 AST 检查**真实使用**（属性访问 / 导入 / 调用），不检查注释与文档字符串：
     删除原因写在注释里是有价值的，不该被这种守卫测试逼着删掉。
     """
     import ast
 
     assert not hasattr(ScheduleService, "get_due_schedules"), "死方法必须删除，而不是留着被继续调用"
 
-    def _names(module) -> set[str]:
-        tree = ast.parse(inspect.getsource(module))
-        used = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
-        used |= {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
-        used |= {n.name for n in ast.walk(tree) if isinstance(n, ast.alias)}
-        return used
+    tree = ast.parse(inspect.getsource(train_scheduler))
+    names = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    names |= {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    names |= {n.name for n in ast.walk(tree) if isinstance(n, ast.alias)}
+    assert "get_due_schedules" not in names, "scheduler.py 不得再调用到期判定轮询"
+    assert "croniter" not in names, "训练定时不再用 croniter 自判到期"
 
-    train_names = _names(train_scheduler)
-    assert "get_due_schedules" not in train_names, "scheduler.py 不得再调用到期判定轮询"
-    assert "croniter" not in train_names, "训练定时不再用 croniter 自判到期"
-    # 只删「定时调度」这一条路径：训练模块的其它轮询职责必须保留
-    src = inspect.getsource(train_scheduler)
-    assert "recover_orphans()" in src
-    assert "reap_stale()" in src
+    # 只删「定时调度」这一条路径：训练模块的其它轮询职责必须保留（同样按 AST 真实调用判定）
+    called = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "recover_orphans" in called, "周期孤儿恢复轮询必须保留"
+    assert "reap_stale" in called, "GPU/端口看门狗必须保留"
+
+
+def test_remove_train_schedule_job_survives_scheduler_not_running(monkeypatch):
+    """调度器未启动时 APScheduler 抛 `SchedulerNotRunningError`（不是 `JobLookupError`）：
+    移除作业不得把「删除/禁用计划」的请求打成 500。"""
+    from apscheduler.schedulers.base import SchedulerNotRunningError
+
+    from app.core.ap_scheduler import SchedulerUtil
+    from app.plugin.module_train import schedule_service as sched_svc
+
+    def _boom(_job_key):
+        raise SchedulerNotRunningError
+
+    monkeypatch.setattr(SchedulerUtil, "remove_business_job", _boom)
+    assert sched_svc.remove_train_schedule_job(123456) is False  # 吞掉异常，接口照常成功
+    sched_svc.sync_train_schedule_job(123456, "cron", "0 9 * * mon", enabled=False)  # 同样不得抛
+
+
+# ---------------------------------------------------------------- 作业执行体行为
+#
+# 旧轮询路径自 A5 起恒返回 []，等于「定时训练真的被触发」这条语义**从未被测过**——
+# 而这正是本任务存在的意义。下面直接执行作业函数（两侧副作用打桩），覆盖：
+# 启用行 → 建任务 + 启动 + 回写；禁用行 → 不建不回写；已删除行 → 静默跳过；建任务失败 → 吞掉且作业仍健康。
+
+
+def _read_row(schedule_id: int) -> dict:
+    """读回计划行的执行状态（作业回写断言用）。"""
+
+    async def _run() -> dict:
+        from app.core.database import async_db_session
+        from app.plugin.module_train.schedule_model import TrainScheduleModel
+
+        async with async_db_session() as db:
+            row = await db.get(TrainScheduleModel, schedule_id)
+            return {
+                "enabled": row.enabled,
+                "last_run_at": row.last_run_at,
+                "last_task_id": row.last_task_id,
+            }
+
+    return asyncio.run(_run())
+
+
+def _patch_training_side(monkeypatch, *, new_task_id: int | None = 4242) -> dict:
+    """把执行体两侧（建任务 / 启动训练）换成记录器：不落库、不起容器。"""
+    from app.plugin.module_train.service import TrainService
+
+    calls: dict = {"created": [], "started": []}
+
+    async def _fake_create_task(data, auth):
+        calls["created"].append((data.name, auth.user.id))
+        if new_task_id is None:
+            raise RuntimeError("模拟建任务失败")
+        return {"id": new_task_id}
+
+    async def _fake_start_training(task_id):
+        calls["started"].append(task_id)
+
+    monkeypatch.setattr(TrainService, "create_task", _fake_create_task)
+    monkeypatch.setattr(train_scheduler, "start_training", _fake_start_training)
+    return calls
+
+
+def test_run_scheduled_training_creates_task_and_writes_back(monkeypatch):
+    """启用行：真的建训练任务（以计划创建者身份）+ 立即启动 + 回写执行状态。"""
+    sid = _insert_schedule_row("0 9 * * mon", name="pytest-B4-执行体")
+    calls = _patch_training_side(monkeypatch)
+    try:
+        asyncio.run(train_scheduler.run_scheduled_training(sid))
+        # 直插行没有 created_id → 退化为 1（admin），与旧轮询口径一致
+        assert calls["created"] == [("[定时] pytest-B4-执行体", 1)]
+        assert calls["started"] == [4242]
+        row = _read_row(sid)
+        assert row["last_task_id"] == 4242, "必须回写本次触发的任务 id"
+        assert row["last_run_at"] is not None, "必须回写执行时间"
+    finally:
+        asyncio.run(ScheduleService.delete_schedules([sid]))
+
+
+def test_run_scheduled_training_skips_disabled_row(monkeypatch):
+    """禁用行：不建任务、不回写（作业与调度行之间有窗口期，不得误触发已停用的计划）。"""
+    sid = _insert_schedule_row("0 9 * * mon", name="pytest-B4-执行体禁用")
+    asyncio.run(ScheduleService.update_schedule(sid, SimpleNamespace(enabled=False)))
+    calls = _patch_training_side(monkeypatch)
+    try:
+        asyncio.run(train_scheduler.run_scheduled_training(sid))
+        assert calls["created"] == [] and calls["started"] == []
+        row = _read_row(sid)
+        assert row["last_run_at"] is None and row["last_task_id"] is None
+    finally:
+        asyncio.run(ScheduleService.delete_schedules([sid]))
+
+
+def test_run_scheduled_training_skips_deleted_row(monkeypatch):
+    """计划已被删除：静默跳过，不抛异常、不建任务。"""
+    calls = _patch_training_side(monkeypatch)
+    asyncio.run(train_scheduler.run_scheduled_training(10**9))
+    assert calls["created"] == [] and calls["started"] == []
+
+
+def test_run_scheduled_training_swallows_failure_and_keeps_job_healthy(monkeypatch):
+    """建任务抛异常：不冒出（只记日志）、回写 last_task_id=None、已注册作业仍健康。"""
+    sid = _insert_schedule_row("0 9 * * mon", name="pytest-B4-执行体失败")
+    asyncio.run(ScheduleService.sync_train_schedule_jobs())  # 先有作业，才能断言失败后仍健康
+    calls = _patch_training_side(monkeypatch, new_task_id=None)
+    try:
+        asyncio.run(train_scheduler.run_scheduled_training(sid))  # 不得抛出
+        assert calls["created"], "应已尝试建任务（随后失败）"
+        assert calls["started"] == [], "建任务失败 → 不得启动训练"
+        row = _read_row(sid)
+        assert row["last_task_id"] is None
+        assert row["last_run_at"] is not None, "失败也记录执行时间（与旧轮询行为一致）"
+        job = scheduler.get_job(_job_key(sid))
+        assert job is not None and job.next_run_time is not None, "作业不得因一次失败而失效/被移除"
+    finally:
+        asyncio.run(ScheduleService.delete_schedules([sid]))
