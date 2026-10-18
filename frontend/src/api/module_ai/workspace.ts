@@ -74,3 +74,33 @@ export function updateWorkspaceCron(id: number, data: Record<string, unknown>) {
 export function deleteWorkspaceCron(id: number) {
   return request({ url: `${WS_PATH}/cron/delete`, method: "delete", data: id });
 }
+
+// ---------- 触发预览 ----------
+
+/** 触发预览结果：描述与下次运行时间由后端统一层（TriggerUtil）产出，前端不自算 */
+export interface TriggerPreview {
+  /** 配置是否合法 */
+  valid: boolean;
+  /** 非法时的可读原因（合法时为空串） */
+  reason: string;
+  /** 人话描述；非法时为「尽力而为」，可能为空串 */
+  describe: string;
+  /** 下次运行时间（Asia/Shanghai 墙钟，`YYYY-MM-DD HH:mm:ss`）；无下次运行时为 null */
+  next_run: string | null;
+}
+
+/**
+ * 触发预览（AI 侧统一入口）：回显「是否合法 / 可读原因 / 人话描述 / 下次运行时间」。
+ *
+ * 参数契约与后端 `TriggerUtil` 一致：cron 为 5 段字符串、interval 为
+ * `{weeks,days,hours,minutes,seconds}`、date 为 `YYYY-MM-DD HH:mm:ss`、now 为 null。
+ * 该接口随输入变化高频调用，故带 `_silent` 关闭全局提示，错误由调用方内联展示。
+ */
+export function previewTrigger(data: { trigger: string; trigger_args: unknown }) {
+  return request<ApiResponse<TriggerPreview>>({
+    url: `${WS_PATH}/trigger/preview`,
+    method: "post",
+    data,
+    headers: { _silent: "true" },
+  });
+}
