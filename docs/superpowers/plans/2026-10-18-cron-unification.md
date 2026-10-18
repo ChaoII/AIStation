@@ -969,6 +969,12 @@ git commit -m "feat(ui): 系统定时任务节点页统一为 TriggerEditor，�
 - Minor 1：`schedulePreview()`/`handleTriggerChange` 未作废在途响应 → 「cron 非法 → 切到间隔（error 已清空）→ 旧响应回来把 cron 的 reason 灌回」的瞬时回灌。修法：输入一变就 `previewSeq += 1`（作废在途响应）。
 - Minor 2：`now` 用 `v-else` 兜底 → 未知/遗留 `trigger` 会被渲染成「立即」外观且与预览区文案自相矛盾。修法：改 `v-else-if="trigger === 'now'"` + 显式兜底分支（不显示误导文案）。
 
+**C6 暴露的跨模块耦合（随本任务一并收口）:**
+- `TriggerEditor` 把预览接口**硬编码**为 `POST /ai/workspace/trigger/preview`（权限 `module_ai:workspace:query`），
+  于是工作流/训练/节点页只有本模块权限的用户会看到「预览暂不可用」——A7 交付的另外三条预览路由（`/ai/workflows/trigger/preview`、
+  `/train/.../trigger/preview`、`/task/cronjob/node/trigger/preview`）**全部闲置**。
+  修法：给组件加**可选** prop（如 `preview-url`，缺省仍为工作台路由以保持兼容），并让 C4/C5/C6 的页面各自传入本模块预览路由。
+
 - [ ] **Step 1: 补一条"非法表达式被拦"的 e2e**：四处任选一处填 `0 0 9 L * *` → 断言前端提示非法且保存被拒（不落库）
 - [ ] **Step 2: 跑四个入口的 e2e**：Run: `cd frontend && npx playwright test e2e/trigger-editor.spec.ts --project=chromium`；Expected: 全绿
 - [ ] **Step 3: 截图核对四入口风格一致**（`e2e/trigger-*.png`，与既有页面并排看）
