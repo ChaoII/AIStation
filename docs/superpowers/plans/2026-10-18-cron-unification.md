@@ -621,6 +621,41 @@ git commit -m "fix(cron): 工作台/训练的「立即执行」真正注册一�
 
 ---
 
+## 阶段 A 补丁：A10（三处复制的触发序列化助手下沉到统一层）
+
+> 来源：A8 审查 Minor M-1。`_dump_trigger_args` / `_load_trigger_args` / `_describe_trigger` / `_trigger_provided`
+> 四个助手在 `workflow/service.py:76-118`、`workspace/service.py:367-405`、`train/schedule_service.py:129-171`
+> **逐字复制了三份**，且**空值口径已经分叉**：`_load_trigger_args` 在 workflow/workspace 返回 `""`、
+> 在 train 返回 `None` ⇒ 同一条 DB 数据在三处 API 里形态不同。这正是本计划要消灭的「各成一体」。
+> （另：`workspace/service.py:614` 的更新守卫被 A8 从 `data.enabled is True` 改成 `row.enabled`，
+> 使 `now` 行（`trigger_args` 为 NULL）做**部分更新**时被误报 400「请先配置触发时间」——该回归在 A8 修正轮里先修。）
+
+### Task A10: 四个触发序列化助手下沉 `TriggerUtil`（唯一口径）
+
+**Files:**
+- Modify: `backend/app/utils/trigger_util.py`（新增四个类方法：dump/load/describe/provided）
+- Modify: `backend/app/plugin/module_ai/workflow/service.py`、`backend/app/plugin/module_ai/workspace/service.py`、`backend/app/plugin/module_train/schedule_service.py`（删掉本地副本，改调统一层）
+- Test: `backend/tests/test_trigger_util.py`（追加）、`backend/tests/test_trigger_types_api.py`（回归）
+
+**Interfaces:**
+- `TriggerUtil.dump_args(trigger, args) -> str | None`：interval → `json.dumps`；now → `None`；其余原样
+- `TriggerUtil.load_args(trigger, raw) -> object`：interval 反序列化为 dict（脏 JSON 原样回显不抛）；**空值口径统一为 `None`**（三处一致）
+- `TriggerUtil.describe_args(trigger, args) -> str | None`：脏数据/不可描述 → `None`，`except Exception`（不把列表打成 500）
+- `TriggerUtil.args_provided(trigger, args) -> bool`：`now` 视为「已提供」
+
+- [ ] **Step 1: 写失败测试**（`test_trigger_util.py`）：四方法的类型分派 + **空值统一返回 `None`**（当前 train 与 workflow 不一致，测试钉住统一后的形态）+ 脏 interval JSON 不抛
+- [ ] **Step 2: 跑测试确认失败**
+- [ ] **Step 3: 实现**：下沉四方法；三处 service 删本地副本改调统一层（**行为等价**，唯一差异是空值从 `""` 统一为 `None`）
+- [ ] **Step 4: 跑回归** → Run: `pytest tests/test_trigger_util.py tests/test_trigger_types_api.py tests/test_business_jobs_workflow.py tests/test_business_jobs_train.py tests/test_business_jobs_workspace.py tests/test_trigger_preview_api.py -q`；Expected: PASS
+- [ ] **Step 5: 提交**
+
+```bash
+git add backend/app/utils/trigger_util.py backend/app/plugin/module_ai/workflow/service.py backend/app/plugin/module_ai/workspace/service.py backend/app/plugin/module_train/schedule_service.py backend/tests/test_trigger_util.py
+git commit -m "refactor(cron): 触发序列化助手下沉统一层，消除三处副本与空值分叉"
+```
+
+---
+
 ## 阶段 B：调度入口统一
 
 ### Task B1: 中心调度器新增"业务作业"API
