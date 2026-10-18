@@ -84,7 +84,11 @@
           <el-input v-model="importForm.name" placeholder="留空则用文档中的 name" maxlength="128" />
         </el-form-item>
         <el-form-item label="分类">
-          <el-input v-model="importForm.category" placeholder="如：办公效率（留空归入「导入技能」）" maxlength="64" />
+          <el-input
+            v-model="importForm.category"
+            placeholder="如：办公效率（留空归入「导入技能」）"
+            maxlength="64"
+          />
         </el-form-item>
         <el-form-item label="来源">
           <el-input v-model="importForm.source" placeholder="SkillHub" maxlength="64" />
@@ -104,14 +108,21 @@
         :on-remove="() => (zipFiles = [])"
       >
         <el-icon class="upload-icon"><Upload /></el-icon>
-        <div class="el-upload__text">把技能 Zip 拖到此处，或<em>点击选择</em></div>
+        <div class="el-upload__text">
+          把技能 Zip 拖到此处，或
+          <em>点击选择</em>
+        </div>
         <template #tip>
           <div class="el-upload__tip">平台只读取其中的 SKILL.md 与文本文件，不落盘、不执行脚本</div>
         </template>
       </el-upload>
       <el-form label-width="80px" class="import-meta">
         <el-form-item label="分类">
-          <el-input v-model="importForm.category" placeholder="如：办公效率（留空归入「导入技能」）" maxlength="64" />
+          <el-input
+            v-model="importForm.category"
+            placeholder="如：办公效率（留空归入「导入技能」）"
+            maxlength="64"
+          />
         </el-form-item>
         <el-form-item label="来源">
           <el-input v-model="importForm.source" placeholder="SkillHub" maxlength="64" />

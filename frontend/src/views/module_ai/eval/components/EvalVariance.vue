@@ -87,7 +87,12 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="question" label="不稳定题（跨次翻转）" min-width="360" show-overflow-tooltip />
+        <el-table-column
+          prop="question"
+          label="不稳定题（跨次翻转）"
+          min-width="360"
+          show-overflow-tooltip
+        />
       </el-table>
 
       <el-table :data="rep.pairs" size="small" border class="ev-mt">
@@ -112,11 +117,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
-import {
-  getEvalVariance,
-  getQueryDatasources,
-  startEvalVariance,
-} from "@/api/module_ai/query";
+import { getEvalVariance, getQueryDatasources, startEvalVariance } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiEvalVariance" });
 

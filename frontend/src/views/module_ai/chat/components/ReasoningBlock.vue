@@ -12,7 +12,10 @@
       </el-icon>
     </div>
     <div class="reasoning-body" :class="{ collapsed: !expanded }">
-      <div class="reasoning-text">{{ text }}<span v-if="streaming" class="cursor">▍</span></div>
+      <div class="reasoning-text">
+        {{ text }}
+        <span v-if="streaming" class="cursor">▍</span>
+      </div>
     </div>
   </div>
 </template>

@@ -211,8 +211,10 @@ const degenerateNote = computed(() => {
   const s = report.value?.summary;
   if (!s || !s.degenerate_n) return "";
   const all = s.all_total ?? s.total + s.degenerate_n;
-  return `共 ${all} 题，其中 ${s.degenerate_n} 题为退化题（金标为空/NULL/单值 0），`
-    + `已排除在准确率之外；实际参与统计 ${s.total} 题。`;
+  return (
+    `共 ${all} 题，其中 ${s.degenerate_n} 题为退化题（金标为空/NULL/单值 0），` +
+    `已排除在准确率之外；实际参与统计 ${s.total} 题。`
+  );
 });
 
 const filteredResults = computed(() => {

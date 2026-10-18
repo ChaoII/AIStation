@@ -22,7 +22,7 @@ async function dismissTour(page: Page) {
     .catch(() => {});
 }
 
-test("AI 菜单：智能问数为唯一问数入口，已合并页面不出现在菜单", async ({ page }) => {
+test("AI 菜单：智能问数为独立目录，展开含 4 个子菜单，数据资产已并入", async ({ page }) => {
   await page.goto("/#/ai/query", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
@@ -30,19 +30,25 @@ test("AI 菜单：智能问数为唯一问数入口，已合并页面不出现�
   const aiSub = page.locator('.el-sub-menu[data-path="/ai"]').first();
   await expect(aiSub).toBeVisible({ timeout: 10_000 });
 
-  // 若子菜单未展开则点击标题展开
-  const queryItem = aiSub.locator(".el-menu-item", { hasText: /智能问数/ });
-  if (!(await queryItem.isVisible().catch(() => false))) {
-    await aiSub.locator(".el-sub-menu__title").click();
+  // 「智能问数」应为 AI 下的可展开目录（二级子菜单）
+  const group = aiSub.locator(".el-sub-menu", { hasText: /智能问数/ }).first();
+  if (!(await group.isVisible().catch(() => false))) {
+    await aiSub.locator(":scope > .el-sub-menu__title").first().click();
+    await page.waitForTimeout(400);
+  }
+  await expect(group.locator(":scope > .el-sub-menu__title")).toContainText("智能问数", {
+    timeout: 10_000,
+  });
+
+  // 展开目录，断言 4 个子菜单均出现
+  await group.locator(":scope > .el-sub-menu__title").click();
+  await page.waitForTimeout(500);
+  for (const item of ["数据与集成", "智能问数", "问数评测", "自定义报表"]) {
+    await expect(group.locator(".el-menu-item", { hasText: item }).first()).toBeVisible();
   }
 
-  // 智能问数必须出现在菜单中（唯一的问数入口）
-  await expect(aiSub.getByText("智能问数", { exact: true })).toBeVisible();
-
-  // 已并入工作台的四个功能页不再出现在菜单中
-  for (const merged of ["数据与集成", "问数评测", "自定义报表", "数据资产"]) {
-    await expect(aiSub.getByText(merged, { exact: true })).toHaveCount(0);
-  }
+  // 数据资产已并入「数据与集成」，不出现在菜单
+  await expect(aiSub.getByText("数据资产", { exact: true })).toHaveCount(0);
 
   // 已下线页面不出现在菜单中
   for (const removed of ["运行台", "AI报告", "会话记忆"]) {

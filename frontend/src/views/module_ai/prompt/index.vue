@@ -128,42 +128,71 @@
       append-to-body
       @close="handleCloseDialog"
     >
-      <el-row :gutter="12">
-        <el-col :xs="24" :sm="24" :md="6" :lg="6">
-          <el-card shadow="never" class="col-card">
-            <template #header>提示词块</template>
-            <draggable
-              v-model="form.blocks"
-              item-key="key"
-              handle=".drag-handle"
-              :animation="150"
-              ghost-class="block-item--ghost"
-            >
-              <template #item="{ element, index }">
-                <div
-                  class="block-item"
-                  :class="{ 'block-item--active': index === activeIndex }"
-                  @click="activeIndex = index"
-                >
-                  <span class="drag-handle">☰</span>
-                  <div class="block-item__body">
-                    <el-tag size="small" effect="plain">{{ typeLabel(element.type) }}</el-tag>
-                    <div class="block-item__preview">{{ element.content || "（空）" }}</div>
-                  </div>
-                  <el-button
-                    v-hasPerm="['module_ai:prompt:update']"
-                    link
-                    type="danger"
-                    size="small"
-                    @click.stop="removeBlock(index)"
+      <!-- 编辑区：顶部信息条 + 左块导航 / 中主编辑 / 右助手面板 -->
+      <div class="prompt-editor">
+        <!-- 顶部信息条：名称 / 分类 / 启用 -->
+        <div class="prompt-editor__meta">
+          <el-input
+            v-model="form.name"
+            placeholder="提示词名称（唯一）"
+            clearable
+            class="prompt-editor__name"
+          />
+          <el-input
+            v-model="form.category"
+            placeholder="分类，如：qa / 摘要 / 报表"
+            clearable
+            class="prompt-editor__category"
+          />
+          <div class="prompt-editor__enabled">
+            <span>启用</span>
+            <el-switch v-model="form.enabled" />
+          </div>
+        </div>
+
+        <div class="prompt-editor__body">
+          <!-- 左：块导航（排序 / 增删 / 选中） -->
+          <div class="prompt-editor__nav">
+            <div class="prompt-editor__nav-head">
+              <span>提示词块</span>
+              <el-tag size="small" effect="plain">{{ form.blocks.length }}</el-tag>
+            </div>
+            <div class="prompt-editor__nav-list">
+              <draggable
+                v-model="form.blocks"
+                item-key="key"
+                handle=".drag-handle"
+                :animation="150"
+                ghost-class="block-item--ghost"
+              >
+                <template #item="{ element, index }">
+                  <div
+                    class="nav-item"
+                    :class="{ 'nav-item--active': index === activeIndex }"
+                    @click="activeIndex = index"
                   >
-                    删
-                  </el-button>
-                </div>
-              </template>
-            </draggable>
-            <div class="add-block">
-              <el-select v-model="newBlockType" class="add-block__select">
+                    <span class="drag-handle">⠿</span>
+                    <el-tag size="small" effect="plain" class="nav-item__tag">
+                      {{ typeLabel(element.type) }}
+                    </el-tag>
+                    <span class="nav-item__preview">{{ element.content || "（空）" }}</span>
+                    <el-button
+                      v-hasPerm="['module_ai:prompt:update']"
+                      link
+                      type="danger"
+                      size="small"
+                      class="nav-item__del"
+                      @click.stop="removeBlock(index)"
+                    >
+                      删
+                    </el-button>
+                  </div>
+                </template>
+              </draggable>
+              <el-empty v-if="!form.blocks.length" :image-size="40" description="暂无块" />
+            </div>
+            <div class="prompt-editor__add">
+              <el-select v-model="newBlockType" class="prompt-editor__add-select">
                 <el-option
                   v-for="opt in blockTypeOptions"
                   :key="opt.value"
@@ -180,75 +209,81 @@
                 添加块
               </el-button>
             </div>
-          </el-card>
-        </el-col>
+          </div>
 
-        <el-col :xs="24" :sm="24" :md="12" :lg="12">
-          <el-card shadow="never" class="col-card">
-            <template #header>编辑</template>
-            <el-form :model="form" label-width="64px">
-              <el-form-item label="名称">
-                <el-input v-model="form.name" placeholder="提示词名称（唯一）" />
-              </el-form-item>
-              <el-form-item label="分类">
-                <el-input v-model="form.category" placeholder="如：qa / 摘要 / 报表" />
-              </el-form-item>
-              <el-form-item label="启用">
-                <el-switch v-model="form.enabled" />
-              </el-form-item>
-            </el-form>
-
-            <div
-              v-for="(block, index) in form.blocks"
-              :key="block.key"
-              class="block-editor"
-              :class="{ 'block-editor--active': index === activeIndex }"
-              @click="activeIndex = index"
-            >
-              <div class="block-editor__head">
-                <el-tag size="small">{{ typeLabel(block.type) }}</el-tag>
-                <span class="block-editor__index">#{{ index + 1 }}</span>
+          <!-- 中：主编辑区（编辑当前选中块） -->
+          <div class="prompt-editor__main">
+            <template v-if="currentBlock">
+              <div class="prompt-editor__main-head">
+                <div class="prompt-editor__main-title">
+                  <el-tag size="small">{{ typeLabel(currentBlock.type) }}</el-tag>
+                  <span class="prompt-editor__index">
+                    第 {{ activeIndex + 1 }} / {{ form.blocks.length }} 块
+                  </span>
+                </div>
+                <el-select
+                  v-model="currentBlock.type"
+                  size="small"
+                  class="prompt-editor__type-select"
+                >
+                  <el-option
+                    v-for="opt in blockTypeOptions"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
               </div>
               <el-input
-                v-model="block.content"
+                v-model="currentBlock.content"
                 type="textarea"
-                :rows="3"
-                :placeholder="`${typeLabel(block.type)}内容，支持 {{变量名}}`"
+                :autosize="{ minRows: 8, maxRows: 24 }"
+                :placeholder="`${typeLabel(currentBlock.type)}内容，支持 {{变量名}} 插值`"
+                class="prompt-editor__textarea"
               />
-            </div>
-            <el-empty
-              v-if="!form.blocks.length"
-              :image-size="60"
-              description="暂无块，请从左侧添加"
-            />
-          </el-card>
-        </el-col>
+              <div class="prompt-editor__hint">
+                <el-text size="small" type="info">
+                  支持
+                  <code>&#123;&#123;变量名&#125;&#125;</code>
+                  插值；左侧拖拽调整块顺序，右侧可填写示例值并实时预览
+                </el-text>
+              </div>
+            </template>
+            <el-empty v-else :image-size="60" description="暂无块，请从左侧添加" />
+          </div>
 
-        <el-col :xs="24" :sm="24" :md="6" :lg="6">
-          <el-card shadow="never" class="col-card">
-            <template #header>变量</template>
-            <el-empty
-              v-if="!detectedVariables.length"
-              :image-size="50"
-              description="未检测到 {{变量}}"
-            />
-            <div v-for="name in detectedVariables" :key="name" class="var-row">
-              <el-tag size="small">{{ name }}</el-tag>
-              <el-input
-                v-model="variableValues[name]"
-                size="small"
-                placeholder="示例值"
-                class="var-row__input"
-              />
-            </div>
-          </el-card>
-          <el-card shadow="never" class="col-card">
-            <template #header>预览</template>
-            <div v-if="preview" class="preview" v-html="renderMd(preview)"></div>
-            <div v-else class="preview muted">（暂无内容）</div>
-          </el-card>
-        </el-col>
-      </el-row>
+          <!-- 右：助手面板（变量 / 预览） -->
+          <div class="prompt-editor__aside">
+            <el-tabs v-model="asideTab">
+              <el-tab-pane label="变量" name="vars">
+                <el-empty
+                  v-if="!detectedVariables.length"
+                  :image-size="50"
+                  description="未检测到变量"
+                />
+                <div v-for="name in detectedVariables" :key="name" class="var-row">
+                  <el-tag size="small">{{ name }}</el-tag>
+                  <el-input
+                    v-model="variableValues[name]"
+                    size="small"
+                    placeholder="示例值"
+                    class="var-row__input"
+                  />
+                </div>
+                <el-text v-if="!detectedVariables.length" size="small" type="info" class="var-tip">
+                  在块内容中写入
+                  <code>&#123;&#123;变量名&#125;&#125;</code>
+                  后会自动识别
+                </el-text>
+              </el-tab-pane>
+              <el-tab-pane label="预览" name="preview">
+                <div v-if="preview" class="preview" v-html="renderMd(preview)"></div>
+                <div v-else class="preview muted">（暂无内容）</div>
+              </el-tab-pane>
+            </el-tabs>
+          </div>
+        </div>
+      </div>
 
       <template #footer>
         <el-button @click="handleCloseDialog">取消</el-button>
@@ -419,6 +454,7 @@ const dialogTitle = ref("新增提示词");
 const currentId = ref<number | undefined>(undefined);
 const activeIndex = ref(0);
 const newBlockType = ref("instruction");
+const asideTab = ref("vars");
 const saving = ref(false);
 
 const form = reactive({
@@ -427,6 +463,9 @@ const form = reactive({
   enabled: true,
   blocks: [] as PromptBlock[],
 });
+
+/** 当前选中块（左导航 → 中栏主编辑区联动） */
+const currentBlock = computed(() => form.blocks[activeIndex.value]);
 
 const variableValues = reactive<Record<string, string>>({});
 
@@ -633,11 +672,7 @@ async function handleSave() {
 }
 </script>
 
-<style scoped>
-.col-card {
-  margin-bottom: 12px;
-}
-
+<style scoped lang="scss">
 .batch-ac {
   margin-left: 8px;
 }
@@ -651,6 +686,231 @@ async function handleSave() {
 .muted {
   color: var(--el-text-color-placeholder);
 }
+
+/* ===== 编辑区：顶部信息条 + 左导航 / 主编辑 / 右助手 ===== */
+.prompt-editor {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 200px);
+  min-height: 480px;
+}
+
+.prompt-editor__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+
+  .prompt-editor__name {
+    width: 300px;
+  }
+
+  .prompt-editor__category {
+    width: 220px;
+  }
+
+  .prompt-editor__enabled {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    color: var(--el-text-color-regular);
+  }
+}
+
+/* 编辑台：三栏融合为一个整体（分隔线分隔），不再三块盒子拼贴 */
+.prompt-editor__body {
+  display: flex;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  margin-top: 14px;
+  overflow: hidden;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+/* ---- 左：块导航 ---- */
+.prompt-editor__nav {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 250px;
+  min-height: 0;
+  padding: 12px;
+  border-right: 1px solid var(--el-border-color-lighter);
+
+  &-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  &-list {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+
+  &:hover {
+    border-color: var(--el-color-primary-light-5);
+  }
+
+  &--active {
+    border-color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+  }
+
+  &__tag {
+    flex-shrink: 0;
+  }
+
+  &__preview {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__del {
+    flex-shrink: 0;
+  }
+}
+
+.drag-handle {
+  color: var(--el-text-color-secondary);
+  cursor: grab;
+  user-select: none;
+}
+
+.block-item--ghost {
+  opacity: 0.5;
+  background: var(--el-color-primary-light-8);
+}
+
+.prompt-editor__add {
+  display: flex;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+
+  &-select {
+    flex: 1;
+  }
+}
+
+/* ---- 中：主编辑区 ---- */
+.prompt-editor__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+
+  &-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  &-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &-index {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  &-type-select {
+    flex-shrink: 0;
+    width: 160px;
+  }
+
+  &-textarea {
+    flex: 1;
+    min-height: 0;
+
+    :deep(.el-textarea) {
+      height: 100%;
+    }
+
+    :deep(.el-textarea__inner) {
+      height: 100%;
+      min-height: 100%;
+      font-family: var(--el-font-family-mono, monospace);
+    }
+  }
+
+  &-hint {
+    margin-top: 8px;
+
+    code {
+      padding: 0 4px;
+      color: var(--el-color-primary);
+      background: var(--el-fill-color-light);
+      border-radius: 4px;
+      font-family: var(--el-font-family-mono, monospace);
+    }
+  }
+}
+
+/* ---- 右：助手面板（变量 / 预览） ---- */
+.prompt-editor__aside {
+  flex-shrink: 0;
+  width: 300px;
+  min-height: 0;
+  padding: 0 12px 12px;
+  overflow: auto;
+  border-left: 1px solid var(--el-border-color-lighter);
+
+  :deep(.el-tabs__header) {
+    margin-bottom: 10px;
+  }
+}
+
+.var-tip {
+  display: block;
+  margin-top: 4px;
+
+  code {
+    padding: 0 4px;
+    color: var(--el-color-primary);
+    background: var(--el-fill-color-light);
+    border-radius: 4px;
+    font-family: var(--el-font-family-mono, monospace);
+  }
+}
+
+/* ===== 详情抽屉（保留） ===== */
 .prompt-block-list {
   display: flex;
   flex-direction: column;
@@ -677,81 +937,7 @@ async function handleSave() {
   margin: 0.5em 0;
 }
 
-.block-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  margin-bottom: 6px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
-  cursor: pointer;
-  background: var(--el-bg-color);
-}
-
-.block-item--active {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-
-.block-item--ghost {
-  opacity: 0.5;
-  background: var(--el-color-primary-light-8);
-}
-
-.drag-handle {
-  color: var(--el-text-color-secondary);
-  cursor: grab;
-  user-select: none;
-}
-
-.block-item__body {
-  flex: 1;
-  min-width: 0;
-}
-
-.block-item__preview {
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.add-block {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.add-block__select {
-  flex: 1;
-}
-
-.block-editor {
-  padding: 8px;
-  margin-bottom: 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
-}
-
-.block-editor--active {
-  border-color: var(--el-color-primary);
-}
-
-.block-editor__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.block-editor__index {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-
+/* ===== 变量 / 预览（共用） ===== */
 .var-row {
   display: flex;
   align-items: center;

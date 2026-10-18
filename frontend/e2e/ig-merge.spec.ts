@@ -24,27 +24,34 @@ async function dismissTour(page: Page) {
   await tour.waitFor({ state: "detached", timeout: 5_000 }).catch(() => {});
 }
 
-test("数据资产/数据与集成已并入智能问数工作台", async ({ page }) => {
+test("数据资产并入数据与集成；智能问数为独立目录含 4 个子菜单", async ({ page }) => {
   test.setTimeout(120_000);
-  // ① 老地址 /ai/asset 与 /ai/integration 应重定向到工作台「数据与集成」页签
-  for (const from of ["/#/ai/asset", "/#/ai/integration"]) {
+  // ① /ai/asset 应重定向到数据与集成页；/ai/integration 直接可访问
+  for (const [from, urlPart] of [
+    ["/#/ai/asset", "/ai/integration"],
+    ["/#/ai/integration", "/ai/integration"],
+  ] as Array<[string, string]>) {
     await page.goto(from, { waitUntil: "domcontentloaded", timeout: 30000 });
     await dismissTour(page);
     await expect(page.locator(".ai-integration-page")).toBeVisible({ timeout: 20_000 });
-    expect(page.url()).toContain("tab=integration");
+    expect(page.url()).toContain(urlPart);
   }
-  // ② 菜单里不应再有「数据资产」/「数据与集成」/「问数评测」，但「智能问数」仍在
+
+  // ② 菜单：智能问数为独立目录，展开含 4 个子菜单；数据资产不在菜单
   await page.goto("/#/ai/query", { waitUntil: "domcontentloaded", timeout: 30000 });
   await dismissTour(page);
-  await expect(page.locator(".ai-query-workspace")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".ai-query-page")).toBeVisible({ timeout: 20_000 });
   const aiSub = page.locator('.el-sub-menu[data-path="/ai"]').first();
   await expect(aiSub).toBeVisible({ timeout: 10_000 });
-  const queryItem = aiSub.locator(".el-menu-item", { hasText: /智能问数/ });
-  if (!(await queryItem.isVisible().catch(() => false))) {
-    await aiSub.locator(".el-sub-menu__title").click();
+  const group = aiSub.locator(".el-sub-menu", { hasText: /智能问数/ }).first();
+  if (!(await group.isVisible().catch(() => false))) {
+    await aiSub.locator(":scope > .el-sub-menu__title").first().click();
+    await page.waitForTimeout(400);
   }
-  await expect(aiSub.getByText("智能问数", { exact: true })).toBeVisible();
-  for (const merged of ["数据资产", "数据与集成", "问数评测"]) {
-    await expect(aiSub.getByText(merged, { exact: true })).toHaveCount(0);
+  await group.locator(":scope > .el-sub-menu__title").click();
+  await page.waitForTimeout(500);
+  for (const item of ["数据与集成", "智能问数", "问数评测", "自定义报表"]) {
+    await expect(group.locator(".el-menu-item", { hasText: item }).first()).toBeVisible();
   }
+  await expect(aiSub.getByText("数据资产", { exact: true })).toHaveCount(0);
 });

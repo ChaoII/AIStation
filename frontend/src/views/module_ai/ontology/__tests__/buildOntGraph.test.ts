@@ -6,9 +6,7 @@ const objs = [
   { code: "B", name: "订单", link_count: 1 },
   { code: "C", name: "孤儿", link_count: 0 },
 ];
-const links = [
-  { source_object: "A", target_object: "B", name: "下单" },
-];
+const links = [{ source_object: "A", target_object: "B", name: "下单" }];
 
 describe("buildOntGraph", () => {
   it("默认返回所有对象作为节点", () => {

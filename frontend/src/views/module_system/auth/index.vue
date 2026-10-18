@@ -137,7 +137,12 @@ const loginPreset = reactive<{ username: string; password: string }>({
     pointer-events: none;
     content: "";
     // 深蓝黑氛围罩：贴合深蓝科幻底图，柔和铺底不冲淡
-    background: linear-gradient(120deg, rgba(6, 12, 24, 0.38), rgba(6, 12, 24, 0.06) 55%, rgba(6, 12, 24, 0.24));
+    background: linear-gradient(
+      120deg,
+      rgba(6, 12, 24, 0.38),
+      rgba(6, 12, 24, 0.06) 55%,
+      rgba(6, 12, 24, 0.24)
+    );
   }
 }
 

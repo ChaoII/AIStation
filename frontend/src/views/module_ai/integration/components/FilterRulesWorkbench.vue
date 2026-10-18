@@ -54,13 +54,13 @@
       <!-- 1) 规则配置 -->
       <el-tab-pane label="规则配置" name="config">
         <div v-loading="loading" class="frwb-pane">
-          <el-form :model="rules" label-width="110px" size="small" class="frwb-form">
-            <el-form-item label="启用规则">
+          <ElForm :model="rules" label-width="110px" size="small" class="frwb-form">
+            <ElFormItem label="启用规则">
               <el-switch v-model="rules.enabled" @change="scheduleRefresh" />
               <span class="frwb-hint">关闭后不按规则自动打标系统表 / 审计字段</span>
-            </el-form-item>
+            </ElFormItem>
             <el-divider content-position="left" class="frwb-divider">系统表识别</el-divider>
-            <el-form-item label="表名前缀">
+            <ElFormItem label="表名前缀">
               <el-select
                 v-model="rules.system_table.prefixes"
                 multiple
@@ -79,8 +79,8 @@
                   :value="p"
                 />
               </el-select>
-            </el-form-item>
-            <el-form-item label="表名关键词">
+            </ElFormItem>
+            <ElFormItem label="表名关键词">
               <el-select
                 v-model="rules.system_table.keywords"
                 multiple
@@ -99,8 +99,8 @@
                   :value="k"
                 />
               </el-select>
-            </el-form-item>
-            <el-form-item label="精确表名">
+            </ElFormItem>
+            <ElFormItem label="精确表名">
               <el-select
                 v-model="rules.system_table.exact"
                 multiple
@@ -112,23 +112,18 @@
                 style="width: 100%"
                 @change="scheduleRefresh"
               >
-                <el-option
-                  v-for="e in rules.system_table.exact"
-                  :key="e"
-                  :label="e"
-                  :value="e"
-                />
+                <el-option v-for="e in rules.system_table.exact" :key="e" :label="e" :value="e" />
               </el-select>
-            </el-form-item>
-            <el-form-item label="表名正则">
+            </ElFormItem>
+            <ElFormItem label="表名正则">
               <el-input
                 v-model="rules.system_table.regex"
                 placeholder="可空，如 ^TMP_"
                 @change="scheduleRefresh"
               />
-            </el-form-item>
+            </ElFormItem>
             <el-divider content-position="left" class="frwb-divider">审计字段识别</el-divider>
-            <el-form-item label="审计字段">
+            <ElFormItem label="审计字段">
               <el-select
                 v-model="rules.audit_fields"
                 multiple
@@ -140,15 +135,10 @@
                 style="width: 100%"
                 @change="scheduleRefresh"
               >
-                <el-option
-                  v-for="a in rules.audit_fields"
-                  :key="a"
-                  :label="a"
-                  :value="a"
-                />
+                <el-option v-for="a in rules.audit_fields" :key="a" :label="a" :value="a" />
               </el-select>
-            </el-form-item>
-          </el-form>
+            </ElFormItem>
+          </ElForm>
           <div class="frwb-foot">
             <el-tag size="small" type="info" effect="plain">
               当前草稿：{{ enabledText }}；保存后可作为「前后对比」基准
@@ -227,7 +217,12 @@
       <el-tab-pane label="前后对比" name="compare">
         <div v-loading="compareLoading" class="frwb-pane">
           <div class="frwb-bar frwb-bar--left">
-            <el-button size="small" :icon="Refresh" :loading="compareLoading" @click="loadSavedPreview">
+            <el-button
+              size="small"
+              :icon="Refresh"
+              :loading="compareLoading"
+              @click="loadSavedPreview"
+            >
               刷新对比
             </el-button>
             <el-tag size="small" type="info" effect="plain">
@@ -265,19 +260,17 @@
             class="frwb-note"
             title="已保存规则与当前草稿一致，无命中变化。"
           />
-          <el-table
-            v-else
-            :data="compareItems"
-            size="small"
-            border
-            height="320"
-          >
+          <el-table v-else :data="compareItems" size="small" border height="320">
             <template #empty>
               <el-empty description="暂无差异（先点「刷新对比」或修改草稿规则）" :image-size="50" />
             </template>
             <el-table-column label="类型" width="80" align="center">
               <template #default="{ row }">
-                <el-tag size="small" :type="row.kind === '表' ? 'warning' : 'primary'" effect="plain">
+                <el-tag
+                  size="small"
+                  :type="row.kind === '表' ? 'warning' : 'primary'"
+                  effect="plain"
+                >
                   {{ row.kind }}
                 </el-tag>
               </template>
@@ -294,7 +287,11 @@
                 <span class="frwb-change frwb-change--to">{{ row.to }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="命中规则（已保存 → 草稿）" min-width="300" show-overflow-tooltip>
+            <el-table-column
+              label="命中规则（已保存 → 草稿）"
+              min-width="300"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">
                 {{ row.reason || "—" }}
               </template>
@@ -354,7 +351,9 @@
             <template #header>
               <div class="frwb-llm__head">
                 <span class="frwb-card__title">生成候选规则</span>
-                <el-button size="small" :loading="llmLoading" @click="doSuggest">生成候选规则</el-button>
+                <el-button size="small" :loading="llmLoading" @click="doSuggest">
+                  生成候选规则
+                </el-button>
               </div>
             </template>
             <template v-if="suggestResult">
@@ -370,7 +369,11 @@
                 </el-button>
               </div>
             </template>
-            <el-empty v-else description="点「生成候选规则」让大模型给出候选规则" :image-size="60" />
+            <el-empty
+              v-else
+              description="点「生成候选规则」让大模型给出候选规则"
+              :image-size="60"
+            />
           </el-card>
 
           <!-- 5.2) 自然语言配置 -->
@@ -408,7 +411,11 @@
                 </el-button>
               </div>
             </template>
-            <el-empty v-else description="输入自然语言后点「解析」转换为筛选规则" :image-size="60" />
+            <el-empty
+              v-else
+              description="输入自然语言后点「解析」转换为筛选规则"
+              :image-size="60"
+            />
           </el-card>
 
           <!-- 5.3) 逐表逐字段建议 -->
@@ -416,19 +423,35 @@
             <template #header>
               <div class="frwb-llm__head">
                 <span class="frwb-card__title">逐表逐字段建议</span>
-                <el-button size="small" :loading="llmLoading" @click="doClassify">获取分类建议</el-button>
+                <el-button size="small" :loading="llmLoading" @click="doClassify">
+                  获取分类建议
+                </el-button>
               </div>
             </template>
             <template v-if="classifyResult">
-              <div class="frwb-llm__subtitle">系统表建议（{{ classifyResult.system_suggest?.length || 0 }}）</div>
+              <div class="frwb-llm__subtitle">
+                系统表建议（{{ classifyResult.system_suggest?.length || 0 }}）
+              </div>
               <el-table :data="classifyResult.system_suggest || []" size="small" border>
                 <el-table-column label="表名" prop="name" min-width="200" show-overflow-tooltip />
-                <el-table-column label="建议原因" prop="reason" min-width="260" show-overflow-tooltip />
+                <el-table-column
+                  label="建议原因"
+                  prop="reason"
+                  min-width="260"
+                  show-overflow-tooltip
+                />
               </el-table>
-              <div class="frwb-llm__subtitle">审计字段建议（{{ classifyResult.audit_suggest?.length || 0 }}）</div>
+              <div class="frwb-llm__subtitle">
+                审计字段建议（{{ classifyResult.audit_suggest?.length || 0 }}）
+              </div>
               <el-table :data="classifyResult.audit_suggest || []" size="small" border>
                 <el-table-column label="字段名" prop="name" min-width="200" show-overflow-tooltip />
-                <el-table-column label="建议原因" prop="reason" min-width="260" show-overflow-tooltip />
+                <el-table-column
+                  label="建议原因"
+                  prop="reason"
+                  min-width="260"
+                  show-overflow-tooltip
+                />
               </el-table>
               <el-alert
                 type="warning"
@@ -505,8 +528,7 @@ const RulePreview = defineComponent({
   props: { rules: { type: Object, required: true } },
   setup(props) {
     // 数组字段取空串兜底，避免展示 undefined
-    const fmt = (arr: any) =>
-      Array.isArray(arr) && arr.length ? arr.join("、") : "—";
+    const fmt = (arr: any) => (Array.isArray(arr) && arr.length ? arr.join("、") : "—");
     return () =>
       h(ElForm, { labelWidth: "110px", size: "small", class: "frwb-llm__preview" }, () => [
         h(ElFormItem, { label: "启用" }, () => [
@@ -524,9 +546,7 @@ const RulePreview = defineComponent({
         h(ElFormItem, { label: "表名正则" }, () => [
           h("span", props.rules?.system_table?.regex || "—"),
         ]),
-        h(ElFormItem, { label: "审计字段" }, () => [
-          h("span", fmt(props.rules?.audit_fields)),
-        ]),
+        h(ElFormItem, { label: "审计字段" }, () => [h("span", fmt(props.rules?.audit_fields))]),
       ]);
   },
 });
@@ -687,7 +707,9 @@ function scheduleRefresh() {
 function applyRules(r: any) {
   // 空对象保护：后端可能返回空对象/缺 rules，避免把草稿重置为全默认规则
   const hasRules =
-    r && typeof r === "object" && Object.values(r).some((v) => v !== undefined && v !== null && v !== "");
+    r &&
+    typeof r === "object" &&
+    Object.values(r).some((v) => v !== undefined && v !== null && v !== "");
   if (!hasRules) {
     ElMessage.warning("未返回有效规则，已取消应用");
     return;
@@ -800,7 +822,11 @@ async function confirmSave(apply: boolean) {
     await ElMessageBox.confirm(
       "将用当前草稿覆盖该数据源已保存的筛选规则，保存后原规则将被替换且不可恢复，是否继续？",
       apply ? "保存并应用" : "保存规则",
-      { type: "warning", confirmButtonText: apply ? "保存并应用" : "保存", cancelButtonText: "取消" }
+      {
+        type: "warning",
+        confirmButtonText: apply ? "保存并应用" : "保存",
+        cancelButtonText: "取消",
+      }
     );
   } catch {
     return;

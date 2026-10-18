@@ -16,7 +16,6 @@ export function resolveSiteLogo(cfgValue?: string | null): string {
 }
 // SVG 通过 new URL() 引入会被 Vite 内联；改动 logo.svg 后需让本模块重新编译（HMR 可能不失效资产）
 
-
 /** 登录页背景：配置为空时回落内置 login-bg-blue.png（深蓝黑科幻，青蓝点缀） */
 export function resolveLoginBackground(cfgValue?: string | null): string {
   const cfg = String(cfgValue || "").trim();
