@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from croniter import croniter
 
+from app.core.exceptions import CustomException
 from app.utils.trigger_util import TriggerUtil
 
 
@@ -252,3 +253,181 @@ def test_next_run_leap_day_is_asia_shanghai():
     assert result is not None
     assert str(result.tzinfo) == "Asia/Shanghai"
     assert result.replace(tzinfo=None) == datetime(2028, 2, 29, 9, 0)
+
+
+# ============================================================ Task A3：分派层（interval / date / now）
+# Review Focus 2（date 填过去时间必须报错）、3（interval 全 0 必须报错）、5（时区必须 Asia/Shanghai）
+
+
+def test_interval_normalize_fills_defaults():
+    t, args = TriggerUtil.normalize("interval", {"hours": 2, "minutes": 30})
+    assert t == "interval"
+    assert args == {"weeks": 0, "days": 0, "hours": 2, "minutes": 30, "seconds": 0}
+
+
+def test_interval_all_zero_is_invalid():
+    ok, reason = TriggerUtil.validate(
+        "interval", {"weeks": 0, "days": 0, "hours": 0, "minutes": 0, "seconds": 0}
+    )
+    assert ok is False and "至少" in reason
+
+
+def test_date_in_the_past_is_invalid():
+    past = (datetime.now() - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+    ok, reason = TriggerUtil.validate("date", past)
+    assert ok is False and "过去" in reason
+
+
+def test_date_future_is_valid_and_asia_shanghai():
+    future = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    ok, reason = TriggerUtil.validate("date", future)
+    assert ok is True and reason == ""
+    trig = TriggerUtil.to_trigger("date", future)
+    # APScheduler 3.11 的 DateTrigger 只存 run_date（无 timezone 属性），时区体现在 run_date.tzinfo
+    assert str(trig.run_date.tzinfo) == "Asia/Shanghai"
+
+
+def test_now_has_no_args_and_fires_once_soon():
+    ok, reason = TriggerUtil.validate("now", None)
+    assert ok is True and reason == ""
+    trig = TriggerUtil.to_trigger("now", None)
+    assert trig.run_date - datetime.now(trig.run_date.tzinfo) < timedelta(seconds=10)
+
+
+def test_unknown_trigger_type_raises():
+    with pytest.raises(CustomException):
+        TriggerUtil.to_trigger("weekly", None)
+
+
+# ------------------------------------------------------------ 分派层：normalize
+def test_normalize_dispatches_by_trigger():
+    assert TriggerUtil.normalize("cron", "0 9 * * 1") == ("cron", "0 9 * * mon")
+    assert TriggerUtil.normalize("interval", {"hours": 2, "minutes": 30}) == (
+        "interval",
+        {"weeks": 0, "days": 0, "hours": 2, "minutes": 30, "seconds": 0},
+    )
+    assert TriggerUtil.normalize("date", "2026-10-20 09:00:00") == ("date", "2026-10-20 09:00:00")
+    assert TriggerUtil.normalize("now", None) == ("now", None)
+
+
+def test_normalize_unknown_trigger_raises_custom_exception():
+    with pytest.raises(CustomException):
+        TriggerUtil.normalize("weekly", None)
+
+
+# ------------------------------------------------------------ 分派层：validate
+def test_validate_cron_valid_and_invalid():
+    assert TriggerUtil.validate("cron", "0 9 * * 1") == (True, "")
+    ok, reason = TriggerUtil.validate("cron", "0 9 * * 5-1")
+    assert ok is False and "跨周" in reason
+
+
+def test_validate_interval_positive_is_valid():
+    assert TriggerUtil.validate("interval", {"hours": 2}) == (True, "")
+
+
+def test_validate_now_is_always_valid():
+    assert TriggerUtil.validate("now", None) == (True, "")
+
+
+def test_validate_unknown_trigger_returns_false_not_raises():
+    """未知类型在唯一校验入口返回可读原因（供接口 400 直接回显），不抛异常。"""
+    ok, reason = TriggerUtil.validate("weekly", None)
+    assert ok is False and "weekly" in reason
+
+
+# ------------------------------------------------------------ 分派层：describe
+@pytest.mark.parametrize(
+    ("trigger", "args", "expected"),
+    [
+        ("cron", "0 9 * * 1", "每周一 09:00"),
+        (
+            "interval",
+            {"weeks": 0, "days": 0, "hours": 2, "minutes": 30, "seconds": 0},
+            "每 2 小时 30 分一次",
+        ),
+        ("interval", {"days": 1}, "每 1 天一次"),
+        ("date", "2026-10-20 09:00:00", "2026-10-20 09:00 执行一次"),
+        ("now", None, "保存后立即执行一次"),
+    ],
+)
+def test_describe_dispatch_zh(trigger, args, expected):
+    assert TriggerUtil.describe(trigger, args) == expected
+
+
+def test_describe_unknown_trigger_raises_custom_exception():
+    with pytest.raises(CustomException):
+        TriggerUtil.describe("weekly", None)
+
+
+# ------------------------------------------------------------ 分派层：to_trigger
+def test_to_trigger_interval_is_asia_shanghai():
+    trig = TriggerUtil.to_trigger("interval", {"hours": 2, "minutes": 30})
+    assert str(trig.timezone) == "Asia/Shanghai"
+    assert trig.interval.total_seconds() == 2 * 3600 + 30 * 60
+
+
+def test_to_trigger_cron_matches_legacy():
+    trig = TriggerUtil.to_trigger("cron", "0 9 * * mon")
+    assert str(trig.timezone) == "Asia/Shanghai"
+
+
+# ------------------------------------------------------------ 分派层：next_run 非 cron 分支可达（A2 遗留 Minor）
+def test_next_run_interval():
+    result = TriggerUtil.next_run("interval", {"hours": 2}, BASE)
+    assert result is not None
+    assert str(result.tzinfo) == "Asia/Shanghai"
+    assert result.replace(tzinfo=None) == BASE + timedelta(hours=2)
+
+
+def test_next_run_date_future_and_past():
+    future = (datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    result = TriggerUtil.next_run("date", future, datetime.now())
+    assert result is not None
+    assert result.replace(tzinfo=None) == datetime.strptime(future, "%Y-%m-%d %H:%M:%S")
+    # 过去时间：DateTrigger 无下次触发 → None（不抛异常）
+    past = (datetime.now() - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+    assert TriggerUtil.next_run("date", past, datetime.now()) is None
+
+
+def test_next_run_now_is_soon():
+    result = TriggerUtil.next_run("now", None)
+    assert result is not None
+    assert result - datetime.now(result.tzinfo) < timedelta(seconds=10)
+
+
+# ------------------------------------------------------------ A2 遗留 Minor：next_run 的「基准命中」边界
+def test_next_run_base_hit_returns_base_itself():
+    """基准时刻正好命中触发点：APScheduler `get_next_fire_time` 返回基准本身（不是下一分钟）。
+
+    锁定 A2 报告 Minor #3 的既有口径（brief 明确要求 `get_next_fire_time(None, base or now)`）。
+    """
+    result = TriggerUtil.next_run("cron", "* * * * *", datetime(2026, 10, 18, 12, 0, 0))
+    assert result is not None
+    assert result.replace(tzinfo=None) == datetime(2026, 10, 18, 12, 0, 0)
+
+
+# ------------------------------------------------------------ A2 遗留裁决：永不触发的日/月组合判非法
+@pytest.mark.parametrize("expr", ["0 9 31 6 *", "0 9 30 2 *"])
+def test_validate_cron_rejects_never_firing_day_month(expr):
+    """可调度性检查：4 年窗口内找不到下次触发即非法（validate_cron 仍只做语法校验）。"""
+    ok, reason = TriggerUtil.validate("cron", expr)
+    assert ok is False and "永远不会触发" in reason
+
+
+def test_validate_cron_accepts_leap_day():
+    """闰年 2 月 29 日可触发（4 年窗口内含 2028-02-29）→ 合法。"""
+    assert TriggerUtil.validate("cron", "0 9 29 2 *") == (True, "")
+
+
+# ------------------------------------------------------------ A2 遗留裁决：日与周不得同时为非 *
+@pytest.mark.parametrize("expr", ["0 9 1 * mon", "0 9 15 * 1-5"])
+def test_validate_cron_rejects_day_and_weekday_together(expr):
+    """APScheduler 取 AND、croniter 取 OR → 语义不一致，判非法并引导只指定其一。"""
+    ok, reason = TriggerUtil.validate("cron", expr)
+    assert ok is False and "只指定其一" in reason
+
+
+@pytest.mark.parametrize("expr", ["0 9 1 * *", "0 9 * * mon", "0 9 1 1 *"])
+def test_validate_cron_accepts_single_of_day_or_weekday(expr):
+    assert TriggerUtil.validate("cron", expr) == (True, "")

@@ -1,6 +1,9 @@
-"""统一触发器工具（cron 口径）。
+"""统一触发器工具（全平台唯一口径）。
 
-本模块是全平台唯一的 cron 口径：**标准 5 段 crontab** `分 时 日 月 周`。
+本模块是四种触发类型（`cron` / `interval` / `date` / `now`）的**唯一实现**，
+规范化、校验、中文描述、APScheduler 触发器构造与「下次运行时间」都收敛于此。
+
+**cron 口径**：**标准 5 段 crontab** `分 时 日 月 周`。
 - 周字段按标准 crontab 语义：`0`/`7` = 周日，也接受 `mon…sun`（大小写不敏感）；
 - 规范化后周字段统一输出**星期名列表**（区间展开为显式列表，如 `1-5` → `mon,tue,wed,thu,fri`）：
   两套下游库（APScheduler 的 `mon=0…sun=6` 与 croniter 的 `sun=0…sat=6`）对名称区间的解释相反，
@@ -10,16 +13,32 @@
 - 触发器构造（`to_cron_trigger`）、中文描述（`describe_cron`）与「下次运行时间」（`next_run`）
   同源复用规范化结果，时区固定 `Asia/Shanghai`。
 
+**分派层**（`normalize` / `validate` / `describe` / `to_trigger` / `next_run`）按 `trigger` 分派：
+- `interval`：参数为 JSON `{"weeks":0,"days":0,"hours":2,"minutes":30,"seconds":0}`（**全 0 判非法**）；
+- `date`：参数为 `"YYYY-MM-DD HH:mm:ss"`（**过去时间判非法**）；
+- `now`：参数为 `null`，构造 `DateTrigger(now + 2s)` 的一次性作业。
+
+**唯一校验入口是 `validate`**：`normalize` / `describe` / `to_trigger` 只做解析级检查
+（非法输入抛 `ValueError`，未知 `trigger` 抛 `CustomException`）；`validate` 额外做
+cron 的**可调度性检查**（永不触发的日/月组合、日与周同时为非 `*`）并返回可读原因。
+
 供 AI 工作台/工作流、训练调度、系统定时任务节点与中心调度器共用。
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, tzinfo
+from zoneinfo import ZoneInfo
 
+from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
+from apscheduler.triggers.interval import IntervalTrigger
+
+from app.core.exceptions import CustomException
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +48,32 @@ class TriggerUtil:
 
     #: 统一时区：全平台一律 `Asia/Shanghai`，避免「同表达式不同机器不同触发时刻」
     TIMEZONE = "Asia/Shanghai"
+
+    #: 支持的触发类型（顺序即 UI 展示顺序）
+    TRIGGERS = ("cron", "interval", "date", "now")
+
+    #: interval 参数字段（顺序即描述拼装顺序）
+    _INTERVAL_FIELDS = ("weeks", "days", "hours", "minutes", "seconds")
+
+    #: interval 字段 → 中文单位（`describe` 用）
+    _INTERVAL_LABELS = {
+        "weeks": "周",
+        "days": "天",
+        "hours": "小时",
+        "minutes": "分",
+        "seconds": "秒",
+    }
+
+    #: date 参数可接受的格式（秒可省略）
+    _DATE_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M")
+
+    #: `now` 的延迟秒数：先让保存接口返回，再触发一次性作业
+    _NOW_DELAY_SECONDS = 2
+
+    #: cron 可调度性检查窗口（天）：4 年 + 1 天，覆盖闰年 2/29（如 2028-02-29）
+    _SCHEDULABLE_WINDOW_DAYS = 365 * 4 + 1
+
+    _UNKNOWN_TRIGGER_HINT = "支持 cron / interval / date / now"
 
     # 周字段映射表：标准 crontab（0/7=周日）→ 调度器可读的星期名
     _WEEKDAY_MAP = {
@@ -123,36 +168,6 @@ class TriggerUtil:
         )
 
     @classmethod
-    def next_run(cls, trigger: str, args, base: datetime | None = None) -> datetime | None:
-        """统一的「下次运行时间」（列表与预览共用）。
-
-        - `trigger="cron"`：`args` 为 5 段 cron 表达式，返回带 `Asia/Shanghai` 时区的时刻；
-        - `base` 为参照时刻（缺省为当前时间）；**朴素时间按 `Asia/Shanghai` 解释**，
-          保证同一输入在不同机器时区下结果一致；
-        - **永不触发的日/月组合（如 `0 9 31 6 *`、`0 9 30 2 *`）返回 `None`**
-          （APScheduler 内部构造非法日期会抛错；契约是「没有下次触发」，由调用方决定如何提示）；
-        - 其它触发类型（interval / date / now）由后续任务扩展，此处显式抛 `NotImplementedError`
-          （不静默返回 `None`，以免掩盖「类型未实现」）。
-        """
-        if trigger != "cron":
-            raise NotImplementedError(f"next_run 暂不支持触发器类型：{trigger}")
-
-        cron_trigger = cls.to_cron_trigger(args)
-        if base is None:
-            now = datetime.now(cron_trigger.timezone)
-        elif base.tzinfo is None:
-            now = base.replace(tzinfo=cron_trigger.timezone)
-        else:
-            now = base
-        try:
-            return cron_trigger.get_next_fire_time(None, now)
-        except (ValueError, OSError):
-            # 日/月组合永不发生（如 6 月 31 日）：APScheduler 内部会一路推进到 3001 年并抛错。
-            # 按 `datetime | None` 契约返回 None，不把「表达式不触发」升级成 500。
-            logger.debug("cron 表达式无有效下次触发时间：%r", args)
-            return None
-
-    @classmethod
     def describe_cron(cls, expr: str) -> str:
         """把 cron 表达式描述成中文短句（如「每周一 09:00」「每天 09:00」「每小时第 15 分」）。
 
@@ -195,6 +210,310 @@ class TriggerUtil:
 
         # 兜底：区间等无法写成 `HH:MM` 的写法，按原样字段描述（不猜语义）
         return f"{period} {cls._join_values(hour)} 点的第 {cls._join_values(minute)} 分"
+
+    # ------------------------------------------------------------------ 分派层（四种触发类型）
+
+    @classmethod
+    def normalize(cls, trigger: str, args) -> tuple[str, object]:
+        """按 `trigger` 规范化参数，返回 `(trigger, 规范化后的参数)`。
+
+        - `cron` → 5 段规范化字符串（周字段为星期名列表）；
+        - `interval` → 补齐缺省字段后的 dict（`{"weeks":0,...,"seconds":0}`）；
+        - `date` → `"YYYY-MM-DD HH:mm:ss"` 字符串；
+        - `now` → `None`。
+
+        只做**解析级**规范化（不校验可调度性/过去时间，那是 `validate` 的职责）；
+        参数非法抛 `ValueError`，`trigger` 未知抛 `CustomException`。
+        """
+        if trigger == "cron":
+            return "cron", cls.normalize_cron(args)
+        if trigger == "interval":
+            return "interval", cls._parse_interval_args(args)
+        if trigger == "date":
+            return "date", cls._parse_date_args(args).strftime(cls._DATE_FORMATS[0])
+        if trigger == "now":
+            return "now", None
+        raise cls._unknown_trigger(trigger)
+
+    @classmethod
+    def validate(cls, trigger: str, args) -> tuple[bool, str]:
+        """**唯一对外校验入口**：返回 `(是否合法, 可读原因)`（合法时原因为空串）。
+
+        分派到各类型的校验规则：
+        - `cron`：语法校验（同 `validate_cron`）+ 两条收紧——
+          「日」与「周」不得同时为非 `*`（APScheduler 取 AND、croniter 取 OR，语义不一致）、
+          可调度性检查（4 年窗口内找不到下次触发即非法，如 6 月 31 日）；
+        - `interval`：字段非负整数，且**至少一项大于 0**（全 0 会被 APScheduler 视为 1 秒，
+          产生每秒触发的无效作业）；
+        - `date`：格式合法且**不能是过去时间**（要立即执行请用 `now`）；
+        - `now`：恒合法（无参数）。
+
+        未知 `trigger` 返回 `(False, 原因)` 而**不抛异常**，便于接口 400 直接回显。
+        """
+        if trigger == "cron":
+            ok, reason = cls.validate_cron(args)
+            if not ok:
+                return False, reason
+            return cls._check_cron_schedulable(args)
+        if trigger == "interval":
+            try:
+                data = cls._parse_interval_args(args)
+            except ValueError as exc:
+                return False, str(exc)
+            if cls._interval_total_seconds(data) <= 0:
+                return False, "间隔时长至少需要一项大于 0（全 0 会产生无效作业）"
+            return True, ""
+        if trigger == "date":
+            try:
+                run_at = cls._parse_date_args(args)
+            except ValueError as exc:
+                return False, str(exc)
+            timezone = ZoneInfo(cls.TIMEZONE)
+            if run_at.replace(tzinfo=timezone) <= datetime.now(timezone):
+                return False, "单次执行时间不能是过去时间（如需立即执行请选择「立即执行」）"
+            return True, ""
+        if trigger == "now":
+            return True, ""
+        return False, f"未知的触发类型：{trigger}（{cls._UNKNOWN_TRIGGER_HINT}）"
+
+    @classmethod
+    def describe(cls, trigger: str, args) -> str:
+        """按 `trigger` 输出中文短句（如「每 2 小时 30 分一次」「2026-10-20 09:00 执行一次」）。
+
+        参数非法抛 `ValueError`，`trigger` 未知抛 `CustomException`。
+        """
+        if trigger == "cron":
+            return cls.describe_cron(args)
+        if trigger == "interval":
+            data = cls._parse_interval_args(args)
+            if cls._interval_total_seconds(data) <= 0:
+                raise ValueError("间隔时长至少需要一项大于 0（全 0 会产生无效作业）")
+            parts = [
+                f"{data[field]} {cls._INTERVAL_LABELS[field]}"
+                for field in cls._INTERVAL_FIELDS
+                if data[field]
+            ]
+            return f"每 {' '.join(parts)}一次"
+        if trigger == "date":
+            run_at = cls._parse_date_args(args)
+            return f"{run_at.strftime('%Y-%m-%d %H:%M')} 执行一次"
+        if trigger == "now":
+            return "保存后立即执行一次"
+        raise cls._unknown_trigger(trigger)
+
+    @classmethod
+    def to_trigger(cls, trigger: str, args) -> BaseTrigger:
+        """按 `trigger` 构造 APScheduler 触发器（时区固定 `Asia/Shanghai`）。
+
+        - `cron` → `CronTrigger`；`interval` → `IntervalTrigger`；
+        - `date` / `now` → `DateTrigger`（`now` 为 `now + 2s`）。
+
+        参数非法抛 `ValueError`，`trigger` 未知抛 `CustomException`。
+        """
+        if trigger == "cron":
+            return cls.to_cron_trigger(args)
+        if trigger == "interval":
+            data = cls._parse_interval_args(args)
+            if cls._interval_total_seconds(data) <= 0:
+                raise ValueError("间隔时长至少需要一项大于 0（全 0 会产生无效作业）")
+            return cls._to_interval_trigger(data)
+        if trigger == "date":
+            return DateTrigger(run_date=cls._parse_date_args(args), timezone=cls.TIMEZONE)
+        if trigger == "now":
+            run_date = datetime.now(ZoneInfo(cls.TIMEZONE)) + timedelta(
+                seconds=cls._NOW_DELAY_SECONDS
+            )
+            return DateTrigger(run_date=run_date, timezone=cls.TIMEZONE)
+        raise cls._unknown_trigger(trigger)
+
+    @classmethod
+    def next_run(cls, trigger: str, args, base: datetime | None = None) -> datetime | None:
+        """统一的「下次运行时间」（列表与预览共用），四种触发类型都支持。
+
+        - `trigger="cron"`：`args` 为 5 段 cron 表达式，返回带 `Asia/Shanghai` 时区的时刻；
+        - `trigger="interval"`：以基准时刻为起点，返回「起点 + 一个间隔」（与 APScheduler
+          `IntervalTrigger` 的默认起点约定一致）；
+        - `trigger="date"` / `"now"`：一次性触发器，基准时刻之后才有下次触发，否则 `None`；
+        - `base` 为参照时刻（缺省为当前时间）；**朴素时间按 `Asia/Shanghai` 解释**，
+          保证同一输入在不同机器时区下结果一致；
+        - **永不触发的日/月组合（如 `0 9 31 6 *`、`0 9 30 2 *`）返回 `None`**
+          （APScheduler 内部构造非法日期会抛错；契约是「没有下次触发」，由调用方决定如何提示）；
+        - `trigger` 未知抛 `CustomException`，参数非法抛 `ValueError`。
+        """
+        if trigger == "interval":
+            data = cls._parse_interval_args(args)
+            interval_seconds = cls._interval_total_seconds(data)
+            if interval_seconds <= 0:
+                raise ValueError("间隔时长至少需要一项大于 0（全 0 会产生无效作业）")
+            timezone = ZoneInfo(cls.TIMEZONE)
+            now = cls._resolve_base(timezone, base)
+            # APScheduler 的起点约定是「起点 + 一个间隔」：显式锚定到基准时刻，
+            # 否则 start_date 会在构造时被设为「真实当前时间 + 间隔」，预览结果随机器时间漂移
+            trigger_obj = cls._to_interval_trigger(
+                data, start_date=now + timedelta(seconds=interval_seconds)
+            )
+        else:
+            trigger_obj = cls.to_trigger(trigger, args)
+            timezone = cls._trigger_timezone(trigger_obj)
+            now = cls._resolve_base(timezone, base)
+
+        try:
+            next_fire = trigger_obj.get_next_fire_time(None, now)
+        except (ValueError, OSError):
+            # 日/月组合永不发生（如 6 月 31 日）：APScheduler 内部会一路推进到 3001 年并抛错。
+            # 按 `datetime | None` 契约返回 None，不把「表达式不触发」升级成 500。
+            logger.debug("%s 触发器无有效下次触发时间：%r", trigger, args)
+            return None
+
+        if next_fire is not None and next_fire < now:
+            # DateTrigger 的 `get_next_fire_time` 不与 now 比较、直接返回 run_date（APScheduler 3.11），
+            # 过去的一次性时刻按「没有下次触发」处理（契约 datetime | None，供预览显示「永不触发」）
+            return None
+        return next_fire
+
+    # ------------------------------------------------------------------ 分派层内部实现
+
+    @classmethod
+    def _resolve_base(cls, timezone: tzinfo, base: datetime | None) -> datetime:
+        """把参照时刻归一为带时区的时刻；朴素时间按该时区解释（跨机器结果一致）。"""
+        if base is None:
+            return datetime.now(timezone)
+        if base.tzinfo is None:
+            return base.replace(tzinfo=timezone)
+        return base
+
+    @classmethod
+    def _to_interval_trigger(
+        cls, data: dict[str, int], start_date: datetime | None = None
+    ) -> IntervalTrigger:
+        """构造 `IntervalTrigger`（`start_date` 缺省由 APScheduler 取「当前时间 + 间隔」）。"""
+        return IntervalTrigger(timezone=cls.TIMEZONE, start_date=start_date, **data)
+
+    @classmethod
+    def _unknown_trigger(cls, trigger: str) -> CustomException:
+        """未知触发类型的统一异常（400，原因可直接回显给前端）。"""
+        return CustomException(
+            msg=f"未知的触发类型：{trigger}（{cls._UNKNOWN_TRIGGER_HINT}）",
+            code=400,
+            status_code=400,
+        )
+
+    @classmethod
+    def _check_cron_schedulable(cls, expr: str) -> tuple[bool, str]:
+        """cron 的可调度性检查（`validate("cron", ...)` 专用，`validate_cron` 不做）。"""
+        minute, hour, day, month, day_of_week = cls.normalize_cron(expr).split()
+
+        if day != "*" and day_of_week != "*":
+            # APScheduler 对「日」「周」取 AND，Vixie cron / croniter 取 OR（实测 `0 9 1 * mon` 两边不同）
+            # → 实现间语义不一致，判非法并引导只指定其一
+            return (
+                False,
+                "「日」与「周」不能同时指定（只指定其一）："
+                f"要按日请写 {minute} {hour} {day} {month} *，"
+                f"要按周请写 {minute} {hour} * {month} {day_of_week}",
+            )
+
+        if cls._has_next_fire(expr):
+            return True, ""
+        return False, "该日/月组合永远不会触发（如 6 月 31 日）"
+
+    @classmethod
+    def _has_next_fire(cls, expr: str) -> bool:
+        """有限窗口（4 年）内是否存在下次触发；永不触发的组合返回 `False`。"""
+        trigger = cls.to_cron_trigger(expr)
+        now = datetime.now(trigger.timezone)
+        horizon = now + timedelta(days=cls._SCHEDULABLE_WINDOW_DAYS)
+        try:
+            next_fire = trigger.get_next_fire_time(None, now)
+        except (ValueError, OSError):
+            # 6 月 31 日之类的组合：APScheduler 一路推进到 3001 年并抛错
+            return False
+        return next_fire is not None and next_fire <= horizon
+
+    @classmethod
+    def _parse_interval_args(cls, args) -> dict[str, int]:
+        """解析 interval 参数并补齐缺省字段（不校验是否全 0）。
+
+        接受 dict 或 JSON 字符串（兼容 TEXT 列里的旧字符串）；字段必须是非负整数。
+        """
+        data = cls._as_mapping(args, "间隔参数")
+        result: dict[str, int] = {}
+        for field in cls._INTERVAL_FIELDS:
+            raw = data.get(field, 0)
+            if raw is None:
+                raw = 0
+            if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+                raise ValueError(f"间隔参数 {field} 必须是数字：{raw!r}")
+            if isinstance(raw, float) and not raw.is_integer():
+                raise ValueError(f"间隔参数 {field} 必须是整数：{raw!r}")
+            try:
+                value = int(raw)
+            except ValueError:
+                raise ValueError(f"间隔参数 {field} 必须是数字：{raw!r}") from None
+            if value < 0:
+                raise ValueError(f"间隔参数 {field} 不能为负数：{value}")
+            result[field] = value
+        return result
+
+    @classmethod
+    def _as_mapping(cls, args, label: str) -> dict:
+        """把参数归一为 dict（`None` → `{}`；JSON 字符串 → `dict`）。"""
+        if args is None:
+            return {}
+        if isinstance(args, dict):
+            return dict(args)
+        if isinstance(args, str):
+            text = args.strip()
+            if not text:
+                return {}
+            try:
+                parsed = json.loads(text)
+            except ValueError:
+                raise ValueError(f"{label}必须是 JSON 对象：{text[:80]}") from None
+            if not isinstance(parsed, dict):
+                raise ValueError(f"{label}必须是 JSON 对象：{text[:80]}")
+            return parsed
+        raise ValueError(f"{label}必须是 JSON 对象：{args!r}")
+
+    @classmethod
+    def _parse_date_args(cls, args) -> datetime:
+        """解析 date 参数为**朴素** `datetime`（时区由 `DateTrigger`/调用方按 Asia/Shanghai 附加）。"""
+        if isinstance(args, datetime):
+            if args.tzinfo is not None:
+                args = args.astimezone(ZoneInfo(cls.TIMEZONE))
+            return args.replace(tzinfo=None)
+
+        text = "" if args is None else str(args).strip().replace("T", " ")
+        if not text:
+            raise ValueError("单次执行时间不能为空")
+        for date_format in cls._DATE_FORMATS:
+            try:
+                return datetime.strptime(text, date_format)
+            except ValueError:
+                continue
+        raise ValueError(f"单次执行时间格式非法（应为 YYYY-MM-DD HH:mm:ss）：{text}")
+
+    @classmethod
+    def _interval_total_seconds(cls, data: dict[str, int]) -> int:
+        """间隔时长的总秒数（用于「全 0 判非法」）。"""
+        return (
+            data["weeks"] * 604800
+            + data["days"] * 86400
+            + data["hours"] * 3600
+            + data["minutes"] * 60
+            + data["seconds"]
+        )
+
+    @staticmethod
+    def _trigger_timezone(trigger_obj: BaseTrigger) -> tzinfo:
+        """取触发器的时区：优先 `.timezone`，`DateTrigger` 无该属性则取 `run_date.tzinfo`。"""
+        timezone = getattr(trigger_obj, "timezone", None)
+        if timezone is not None:
+            return timezone
+        run_date = getattr(trigger_obj, "run_date", None)
+        if run_date is not None and run_date.tzinfo is not None:
+            return run_date.tzinfo
+        return ZoneInfo(TriggerUtil.TIMEZONE)
 
     # ------------------------------------------------------------------ 描述内部实现
 
