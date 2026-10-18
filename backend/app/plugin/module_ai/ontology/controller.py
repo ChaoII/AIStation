@@ -620,8 +620,11 @@ async def save_wip(auth: AuthEdit, data: Annotated[dict, Body()] = None) -> JSON
     return SuccessResponse(data=r, msg=r.get("msg", "已保存"))
 
 
-@OntologyRouter.get("/wip/restore/{version_id}", summary="工作副本：把恢复历史版本暂存为改动")
-async def stage_restore(version_id: int, auth: AuthDep) -> JSONResponse:
+@OntologyRouter.post("/wip/restore/{version_id}", summary="工作副本：把恢复历史版本暂存为改动")
+async def stage_restore(version_id: int, auth: AuthEdit) -> JSONResponse:
+    # 必须是 **POST**：它**有副作用**（往工作副本里暂存一条改动）。原先声明成 GET 有两个后果：
+    # ① 前端按 POST 调 → 405（「恢复」按钮点了必失败）；② GET 只要求只读权限 ⇒
+    # 只读用户也能暂存改动（越权写入）。
     vs = await _svc.list_versions()
     v = next((x for x in vs if x["id"] == version_id), None)
     if not v:

@@ -620,6 +620,8 @@ async function delSp(row: any) {
   await load();
 }
 async function delIf(row: any) {
+  // 与同文件 delGroup/delVt/delSp 一致：删除必须二次确认（此前是唯一漏掉的删除入口）
+  if (!(await guardDelete("interface", row.code, row.name))) return;
   const r = await removeOntInterface(row.id);
   const d = r.data?.data || {};
   if (!d.ok) return ElMessage.warning(r.data?.msg || "删除失败");

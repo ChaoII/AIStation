@@ -481,6 +481,7 @@ import {
   getOntObjectViewMeta,
   getOntObjectViewVersions,
   getOntObjectViews,
+  getOntProperties,
   getOntSecuritySubjects,
   getOntStandardView,
   removeOntObjectView,
@@ -496,13 +497,26 @@ import { useOntologyData } from "../composables/useOntologyData";
 const props = defineProps<{ code: string; presetView?: string; presetKey?: string }>();
 
 const {
-  scopedProperties,
   links: allLinks,
   actions: allActions,
   functions: allFuncs,
 } = useOntologyData();
-// 只取本对象类型的属性/关系/动作/函数
-const props_ = computed(() => scopedProperties.value || []);
+/** 本对象类型的属性列表（供「属性 / 图表分组 / 筛选字段」三个下拉使用）。
+ *
+ *  ⚠️ 不能用 composable 的 `scopedProperties`：它是**属性总数（number）**，
+ *  拿它做 `v-for` 会渲染出 N 个「标签与值全空」的选项，等于配置对象视图时选不了任何属性
+ *  （实测 bug）。这里按当前对象类型单独取真实属性列表。
+ */
+const propsList = ref<any[]>([]);
+async function loadProperties() {
+  try {
+    const r = await getOntProperties(props.code);
+    propsList.value = r.data?.data || [];
+  } catch {
+    propsList.value = [];
+  }
+}
+const props_ = computed(() => propsList.value);
 const links = computed(() =>
   (allLinks.value || []).filter((x: any) => x.source_object === props.code)
 );
@@ -539,6 +553,7 @@ async function pickFirstKey() {
 
 async function reload() {
   try {
+    await loadProperties();
     const [v, m] = await Promise.all([
       getOntObjectViews({ object_code: props.code, form_factor: formFactor.value }),
       meta.value.widgets?.length ? Promise.resolve(null) : getOntObjectViewMeta(),

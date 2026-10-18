@@ -133,6 +133,19 @@
             </div>
           </template>
 
+          <!-- 维护动作（回填/写入示例）的**结果回显**：原先只写进 maintMsg 却从不渲染，
+               用户点完"成功"却看不到任何反馈（实测缺口感） -->
+          <el-alert
+            v-if="maintMsg"
+            type="success"
+            :closable="true"
+            show-icon
+            class="ont-maint-msg"
+            @close="maintMsg = ''"
+          >
+            {{ maintMsg }}
+          </el-alert>
+
           <!-- ============ 图谱工作区 ============ -->
           <OntGraphWorkspace
             @node-tap="onGraphNodeTap"
@@ -163,11 +176,14 @@
         :key="`objdetail-${selKey}`"
         :code="selKey"
         :page="objPage"
+        :view-code="objectViewCode"
+        :view-key="objectViewKey"
         @update:page="objPage = $event"
         @edit-object="openObjectEdit(selObject)"
         @new-action="openActionEdit()"
         @new-link="openLinkEdit()"
         @go-properties="goObjectProperties"
+        @open-object="onGraphNodeTap"
         @refresh="reloadAll"
       />
     </el-drawer>
@@ -574,7 +590,15 @@
         <el-table-column prop="created_time" label="申请时间" min-width="170" />
         <el-table-column label="操作" width="100" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="doApprove(row)">批准发布</el-button>
+            <el-button
+              link
+              type="primary"
+              size="small"
+              :loading="approveLoading"
+              @click="doApprove(row)"
+            >
+              批准发布
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -838,6 +862,7 @@ const maintMsg = ref("");
 const assignDialog = ref(false);
 const assignTarget = ref("");
 const assignLoading = ref(false);
+const approveLoading = ref(false);
 const pendingDialog = ref(false);
 const domainDialog = ref(false);
 const domainSaving = ref(false);
@@ -908,11 +933,28 @@ async function doAssign() {
   }
 }
 async function doApprove(row: any) {
-  const r = await approveOntVersion(row.id);
-  ElMessage.success(r.data?.msg || "已批准");
-  const p = await getOntVersionPending();
-  pendingVersions.value = p.data?.data || [];
-  await reloadAll();
+  // 发布是**不可逆**动作：先二次确认（原先点了就直接发，无确认、无 loading、无失败处理）
+  try {
+    await ElMessageBox.confirm(
+      `将把「${row.object_code}」的 v${row.version} 批准发布为正式版本，发布后所有消费方按新定义生效，是否继续？`,
+      "批准发布",
+      { type: "warning", confirmButtonText: "批准发布", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  approveLoading.value = true;
+  try {
+    const r = await approveOntVersion(row.id);
+    ElMessage.success(r.data?.msg || "已批准");
+    const p = await getOntVersionPending();
+    pendingVersions.value = p.data?.data || [];
+    await reloadAll();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "批准失败");
+  } finally {
+    approveLoading.value = false;
+  }
 }
 /* ---------------- 对象类型 CRUD ---------------- */
 const objDialog = ref(false);
