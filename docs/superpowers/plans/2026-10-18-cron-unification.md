@@ -377,6 +377,10 @@ git commit -m "refactor(cron): ap_scheduler 与节点校验改走 TriggerUtil，
 - Consumes: `TriggerUtil.normalize/validate/next_run`（Task A1-A3）
 - Produces: 三处写入均落"规范化后的 5 段 cron"；下次运行时间一律来自 `TriggerUtil.next_run`
 
+**A6 遗留（随本任务一并修）:**
+- `backend/tests/test_train_schedule.py:23` 用旧构造参数 `cron_expr=` 已失败 → 改为
+  `trigger="cron", trigger_args="0 2 * * 0"`（该测试文件不在 A6 清单内，由本任务负责）。
+
 - [ ] **Step 1: 写失败测试**（针对**调用方**行为，不是 helper 本身）
 
 ```python
