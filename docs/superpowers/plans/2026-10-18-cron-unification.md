@@ -636,7 +636,7 @@ Expected: FAIL（作业不存在）
 - [ ] **Step 3: 实现**
 
 增改删/启停处调用 `register_business_trigger`/`remove_business_job`；删除 `cron_scheduler` 轮询与
-`init_app` 里的启动项；`init_app` 启动序列改为 `await SchedulerUtil.sync_business_jobs()`。
+`init_app` 里的启动项；`init_app` 启动序列改为 `SchedulerUtil.sync_business_jobs(<本模块收集的作业列表>)`。
 
 - [ ] **Step 4: 跑测试 + 回归**
 
