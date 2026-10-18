@@ -2,7 +2,9 @@
 
 本模块是全平台唯一的 cron 口径：**标准 5 段 crontab** `分 时 日 月 周`。
 - 周字段按标准 crontab 语义：`0`/`7` = 周日，也接受 `mon…sun`（大小写不敏感）；
-- 规范化后周字段统一输出星期名（`sun`/`mon`/…），避免 APScheduler「0 = 周一」的错位；
+- 规范化后周字段统一输出**星期名列表**（区间展开为显式列表，如 `1-5` → `mon,tue,wed,thu,fri`）：
+  两套下游库（APScheduler 的 `mon=0…sun=6` 与 croniter 的 `sun=0…sat=6`）对名称区间的解释相反，
+  只有展开成显式列表才能消除这种口径不一致；
 - 不支持 Quartz 专有语法（`?`/`L`/`W`/`#`）与 6/7 段（秒、年份）写法，一律明确报错。
 
 供 AI 工作台/工作流、训练调度、系统定时任务节点与中心调度器共用。
@@ -35,6 +37,9 @@ class TriggerUtil:
         "sat": "sat",
     }
 
+    # 周字段的标准数字序（0=周日…6=周六；`7` 亦指周日）：区间按此序展开为显式名称列表
+    _WEEKDAY_ORDER = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
+
     # 数值字段取值范围：(最小, 最大, 字段名)
     _FIELD_RANGES = (
         (0, 59, "分"),
@@ -42,19 +47,6 @@ class TriggerUtil:
         (1, 31, "日"),
         (1, 12, "月"),
     )
-
-    # 周字段区间排序用的周序（周一=0…周日=6，与 APScheduler 一致）。
-    # 区间要求「起点周序 < 终点周序」：这是 APScheduler 与 croniter 都能构造的交集，
-    # 跨周区间（如 `sun-sat`、`fri-mon`）两边都无法构造，直接报错并提示改用列表写法。
-    _WEEKDAY_ORDER = {
-        "mon": 0,
-        "tue": 1,
-        "wed": 2,
-        "thu": 3,
-        "fri": 4,
-        "sat": 5,
-        "sun": 6,
-    }
 
     _SEGMENT_REASON = "只支持 5 段标准 crontab（分 时 日 月 周）"
 
@@ -75,7 +67,7 @@ class TriggerUtil:
 
     @classmethod
     def normalize_cron(cls, expr: str) -> str:
-        """规范化 cron 表达式（周字段映射为星期名，输出标准 5 段）。
+        """规范化 cron 表达式（周字段映射为星期名列表，区间展开；输出标准 5 段）。
 
         与 `validate_cron` 同源：校验通过 ⇒ 本方法一定不抛错。
         表达式非法时抛 `ValueError`，异常信息即 `validate_cron` 的原因文案。
@@ -218,7 +210,7 @@ class TriggerUtil:
 
     @classmethod
     def _parse_weekday(cls, field: str) -> tuple[bool, str, str]:
-        """校验周字段并映射为星期名（不支持步长）。"""
+        """校验周字段并映射为星期名列表（不支持步长；区间展开为显式列表）。"""
         if "?" in field:
             return False, "周字段不支持 ?（Quartz 专有语法，请用 * 表示每天）", ""
         if "#" in field:
@@ -242,14 +234,17 @@ class TriggerUtil:
                 end = cls._weekday_value(parts[1])
                 if start is None or end is None:
                     return False, f"周字段取值非法：{item}（支持 0-7 或 mon…sun）", ""
-                if cls._WEEKDAY_ORDER[start] >= cls._WEEKDAY_ORDER[end]:
+                start_index = cls._WEEKDAY_ORDER.index(start)
+                end_index = cls._WEEKDAY_ORDER.index(end)
+                if start_index > end_index:
+                    # 跨周区间：不发明"环绕"语义，只提示两个端点的列表写法
                     return (
                         False,
-                        f"周字段区间起点必须小于终点（按 周一=0…周日=6）：{item}；"
-                        "跨周请改用列表写法（如 5,6,0）",
+                        f"周字段跨周区间不受支持（起点必须在终点之前，按 0=周日…6=周六）：{item}；"
+                        f"请改用列表写法（如 {start},{end}）",
                         "",
                     )
-                values.append(f"{start}-{end}")
+                values.extend(cls._WEEKDAY_ORDER[start_index : end_index + 1])
                 continue
             value = cls._weekday_value(item)
             if value is None:
