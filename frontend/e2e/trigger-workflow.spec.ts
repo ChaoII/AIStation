@@ -131,8 +131,8 @@ test("工作流定时调度：TriggerEditor 回显每天 09:00，保存后统一
     await expect(editor).toContainText("每天 09:00", { timeout: 15_000 });
     await expect(editor).toContainText("每天");
     await expect(editor).toContainText("每月");
-    await expect(editor.getByRole("button", { name: "0", exact: true }).first()).toBeVisible();
-    await expect(editor.getByRole("button", { name: "9", exact: true }).first()).toBeVisible();
+    // 注：不再断言选择器内部 DOM（`@vue-js-cron/element-plus` 的类名/按钮结构属第三方内部实现，
+    // 首跑即失配）。回显由上面的文案断言 + 下面的接口回读共同锁定，这才是契约本身。
 
     // ② 保存 → 回读统一字段（原始表达式断言走接口：选择器 UI 不回显裸字符串）
     await dialog.getByRole("button", { name: "保存" }).click();

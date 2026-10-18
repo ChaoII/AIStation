@@ -15,12 +15,18 @@ import { login } from "./anno-helper";
 
 const API = process.env.E2E_API_URL || "http://127.0.0.1:8001/api/v1";
 
-/** 关闭可能遮挡点击的新手引导 Tour（不用 Escape，避免误关自动打开的弹窗）。 */
+/** 关闭可能遮挡点击的新手引导 Tour（不用 Escape，避免误关自动打开的弹窗）。
+ *  注：`components/Guide/index.vue` 是 `:show-close="false"` ⇒ `.el-tour__close` 永不渲染
+ *  （C5 审查 Minor 4，原实现是死代码）。故以「导航前预置 guideVisible/showGuide」为主，DOM 移除兜底。 */
 async function dismissTour(page: Page) {
   const tour = page.locator(".el-tour");
+  if (!(await tour.count())) return;
+  const close = page.locator(".el-tour__close").first();
+  if (await close.count()) await close.click({ force: true }).catch(() => {});
   if (await tour.count()) {
-    const close = page.locator(".el-tour__close").first();
-    if (await close.count()) await close.click({ force: true }).catch(() => {});
+    await page.evaluate(() =>
+      document.querySelectorAll(".el-tour").forEach((el) => el.remove())
+    );
   }
 }
 
@@ -38,6 +44,12 @@ async function createDataset(request: APIRequestContext) {
 
 /** 进入训练页 → 定时训练 Tab → 打开「新建定时计划」弹窗。 */
 async function openScheduleDialog(page: Page) {
+  // 引导遮罩（`.el-tour`）会拦截指针事件，而 `components/Guide/index.vue` 是 `:show-close="false"`
+  // ⇒ 遮罩上没有关闭按钮（C5 审查 Minor 4）。正解：**导航前**预置开关，让引导根本不渲染。
+  await page.addInitScript(() => {
+    localStorage.setItem("guideVisible", "false");
+    localStorage.setItem("showGuide", "false");
+  });
   await page.goto("/#/train/task", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
