@@ -219,87 +219,17 @@
         <el-form-item label="节点名称">
           <el-input :value="currentExecuteNode?.name" disabled />
         </el-form-item>
-        <el-form-item label="执行方式" prop="trigger">
-          <el-radio-group v-model="executeFormData.trigger">
-            <el-radio value="now">立即执行</el-radio>
-            <el-radio value="cron">Cron表达式</el-radio>
-            <el-radio value="interval">时间间隔</el-radio>
-            <el-radio value="date">固定日期</el-radio>
-          </el-radio-group>
-        </el-form-item>
-
-        <el-form-item
-          v-if="executeFormData.trigger === 'cron'"
-          label="Cron表达式"
-          prop="trigger_args"
-        >
-          <el-popover
-            :visible="openCron"
-            width="700px"
-            trigger="click"
-            :persistent="false"
-            placement="auto-end"
-            popper-class="node-cron-popover-fix"
-          >
-            <template #reference>
-              <el-input
-                v-model="executeFormData.trigger_args"
-                placeholder="请输入 * * * * * ? *"
-                @click="openCron = true"
-              />
-            </template>
-            <vue3CronPlus i18n="cn" @change="handlechangeCron" @close="openCron = false" />
-          </el-popover>
-        </el-form-item>
-
-        <el-form-item
-          v-else-if="executeFormData.trigger === 'interval'"
-          label="间隔时间"
-          prop="trigger_args"
-        >
-          <el-popover
-            :visible="openInterval"
-            width="600px"
-            trigger="click"
-            :persistent="false"
-            placement="auto-end"
-          >
-            <template #reference>
-              <el-input
-                v-model="executeFormData.trigger_args"
-                placeholder="请点击设置间隔时间"
-                @click="openInterval = true"
-              />
-            </template>
-            <IntervalTab
-              :cron-value="executeFormData.trigger_args"
-              @confirm="handleIntervalConfirm"
-              @cancel="openInterval = false"
-            />
-          </el-popover>
-        </el-form-item>
-
-        <el-form-item
-          v-else-if="executeFormData.trigger === 'date'"
-          label="执行时间"
-          prop="trigger_args"
-        >
-          <el-date-picker
-            v-model="executeFormData.trigger_args"
-            type="datetime"
-            format="YYYY-MM-DD HH:mm:ss"
-            value-format="YYYY-MM-DD HH:mm:ss"
-            placeholder="请选择执行时间"
-            style="width: 100%"
+        <!-- 触发配置统一走 TriggerEditor（四类型 + 预览 + 非法拦截），不再各自维护输入控件 -->
+        <el-form-item label="触发方式" prop="trigger">
+          <TriggerEditor
+            v-model:trigger="executeFormData.trigger"
+            v-model:trigger-args="executeFormData.trigger_args"
+            @error="handleTriggerError"
           />
         </el-form-item>
 
         <template
-          v-if="
-            executeFormData.trigger &&
-            executeFormData.trigger !== 'now' &&
-            executeFormData.trigger !== 'date'
-          "
+          v-if="executeFormData.trigger === 'cron' || executeFormData.trigger === 'interval'"
         >
           <el-form-item label="开始时间" prop="start_date">
             <el-date-picker
@@ -345,6 +275,7 @@ import NodeAPI, {
   NodeForm,
   NodePageQuery,
   TriggerType,
+  ExecuteNodeParams,
 } from "@/api/module_task/cronjob/node";
 import { useDictStore } from "@/store/index";
 import PageSearch from "@/components/CURD/PageSearch.vue";
@@ -354,10 +285,8 @@ import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { vue3CronPlus } from "vue3-cron-plus";
-import "vue3-cron-plus/dist/index.css";
 import OperationColumn from "@/components/OperationColumn/index.vue";
-import IntervalTab from "@/components/IntervalTab/index.vue";
+import TriggerEditor from "@/components/TriggerEditor/index.vue";
 import CodeEditor from "@/components/CodeEditor/index.vue";
 
 const dictStore = useDictStore();
@@ -366,9 +295,9 @@ const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList }
 const dataFormRef = ref();
 const executeFormRef = ref();
 const submitLoading = ref(false);
-const openCron = ref(false);
-const openInterval = ref(false);
 const codeEditorRef = ref();
+/** TriggerEditor 上抛的非法原因（非空时拦截调试提交） */
+const triggerError = ref("");
 
 const searchConfig = reactive<ISearchConfig>({
   permPrefix: "module_task:cronjob:node",
@@ -499,12 +428,13 @@ const executeDialogVisible = ref(false);
 const currentExecuteNode = ref<NodeTable | null>(null);
 const executeFormData = reactive<{
   trigger: TriggerType;
-  trigger_args?: string;
+  /** 触发参数：cron 为 5 段字符串、interval 为对象、date 为时间字符串、now 为 null */
+  trigger_args?: unknown;
   start_date?: string;
   end_date?: string;
 }>({
   trigger: "now",
-  trigger_args: undefined,
+  trigger_args: null,
   start_date: undefined,
   end_date: undefined,
 });
@@ -521,8 +451,7 @@ const rules = reactive({
 });
 
 const executeRules = reactive({
-  trigger: [{ required: true, message: "请选择执行方式", trigger: "change" }],
-  trigger_args: [{ required: true, message: "请设置执行参数", trigger: "blur" }],
+  trigger: [{ required: true, message: "请选择触发方式", trigger: "change" }],
 });
 
 function handleRowDelete(id: number) {
@@ -617,35 +546,51 @@ async function handleSubmit() {
   });
 }
 
-const handlechangeCron = (cronStr: string) => {
-  if (typeof cronStr == "string") {
-    executeFormData.trigger_args = cronStr;
-  }
-};
+/** TriggerEditor 的非法原因：非空即拦截调试提交并就地提示 */
+function handleTriggerError(message: string) {
+  triggerError.value = message;
+}
 
-const handleIntervalConfirm = (value: string) => {
-  executeFormData.trigger_args = value;
-  openInterval.value = false;
-};
+/**
+ * 把 TriggerEditor 的参数收敛成接口契约：
+ * - interval 为对象 → 序列化成 JSON 字符串（后端 schema 的 `trigger_args` 是字符串）；
+ * - cron / date 已是字符串，原样透传；
+ * - now 无参数。
+ */
+function serializeTriggerArgs(trigger: TriggerType, args: unknown): string | undefined {
+  if (trigger === "interval") {
+    // 组件产出的是对象；若已是字符串（JSON 或旧「秒 分 时 天 周」串）原样透传，后端两种都认
+    return typeof args === "string" ? args : JSON.stringify(args ?? {});
+  }
+  return typeof args === "string" && args ? args : undefined;
+}
 
 function handleOpenExecuteDialog(row: NodeTable) {
   currentExecuteNode.value = row;
   executeFormData.trigger = "now";
-  executeFormData.trigger_args = undefined;
+  executeFormData.trigger_args = null;
   executeFormData.start_date = undefined;
   executeFormData.end_date = undefined;
+  triggerError.value = "";
   executeDialogVisible.value = true;
 }
 
 function handleCloseExecuteDialog() {
   executeDialogVisible.value = false;
   currentExecuteNode.value = null;
+  triggerError.value = "";
   if (executeFormRef.value) {
     executeFormRef.value.resetFields();
   }
 }
 
 async function handleExecuteNode() {
+  // 触发配置非法（TriggerEditor 预览结论）时先拦截，避免把必然失败的请求打到后端
+  if (triggerError.value) {
+    ElMessage.error({ message: triggerError.value, type: "error", duration: 3000 });
+    return;
+  }
+
   if (executeFormData.trigger !== "now") {
     const valid = await executeFormRef.value?.validate().catch(() => false);
     if (!valid) return;
@@ -653,12 +598,15 @@ async function handleExecuteNode() {
 
   try {
     submitLoading.value = true;
-    const params: any = {
+    const params: ExecuteNodeParams = {
       trigger: executeFormData.trigger,
     };
 
     if (executeFormData.trigger !== "now") {
-      params.trigger_args = executeFormData.trigger_args;
+      params.trigger_args = serializeTriggerArgs(
+        executeFormData.trigger,
+        executeFormData.trigger_args
+      );
       params.start_date = executeFormData.start_date;
       params.end_date = executeFormData.end_date;
     }
@@ -742,35 +690,5 @@ onMounted(async () => {
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
-}
-</style>
-
-<!-- popover 挂载到 body，需单独写；修复 vue3-cron-plus 全局 .el-tag--info { margin-left: -60px } 误伤多选下拉里 tag -->
-<style lang="scss">
-.node-cron-popover-fix {
-  .vue3-cron-plus-container .el-select .el-tag {
-    margin-left: 0 !important;
-  }
-
-  /* 具体秒数等多选行：避免文案与选择器挤在同一行错位 */
-  .vue3-cron-plus-container .tabBody .el-radio.long {
-    align-items: flex-start;
-    height: auto;
-    white-space: normal;
-
-    .el-radio__label {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px 8px;
-      align-items: center;
-      line-height: 1.5;
-    }
-
-    .el-select {
-      flex: 1 1 200px;
-      min-width: 180px;
-      max-width: 100%;
-    }
-  }
 }
 </style>
