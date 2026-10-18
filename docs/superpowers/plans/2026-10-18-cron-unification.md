@@ -630,12 +630,19 @@ git commit -m "fix(cron): 工作台/训练的「立即执行」真正注册一�
 > （另：`workspace/service.py:614` 的更新守卫被 A8 从 `data.enabled is True` 改成 `row.enabled`，
 > 使 `now` 行（`trigger_args` 为 NULL）做**部分更新**时被误报 400「请先配置触发时间」——该回归在 A8 修正轮里先修。）
 
-### Task A10: 四个触发序列化助手下沉 `TriggerUtil`（唯一口径）
+### Task A10: 四个触发序列化助手下沉 `TriggerUtil`（唯一口径）+ A8 修正轮
 
 **Files:**
 - Modify: `backend/app/utils/trigger_util.py`（新增四个类方法：dump/load/describe/provided）
 - Modify: `backend/app/plugin/module_ai/workflow/service.py`、`backend/app/plugin/module_ai/workspace/service.py`、`backend/app/plugin/module_train/schedule_service.py`（删掉本地副本，改调统一层）
-- Test: `backend/tests/test_trigger_util.py`（追加）、`backend/tests/test_trigger_types_api.py`（回归）
+- Test: `backend/tests/test_trigger_util.py`（追加）、`backend/tests/test_trigger_types_api.py`（追加 A8 修正轮用例 + 回归）
+
+**A8 修正轮（审查 I-1，**必须随本任务一并修**）:** `workspace/service.py:617` 的更新守卫被 A8 从基线的
+`data.enabled is True`（本次**显式**启用）改成了 `row.enabled`（请求后的行状态）⇒ `now` 行（`trigger_args` 落 NULL）
+做**部分更新**（改名/描述/target）会被 400「请先配置触发时间」，而该行其实已配置。训练侧刻意保留了显式判定
+（`train/schedule_service.py:308` `getattr(data, "enabled", None) is True`）并注明「避免把历史坏行变成改不动的行」。
+修法：与训练对齐（显式判定），或在该分支放行 `row.trigger == "now"`。
+**并补用例**（审查 M-4）：已启用的 `now` 行做部分更新（只改 name）→ 200 且触发配置不变。
 
 **Interfaces:**
 - `TriggerUtil.dump_args(trigger, args) -> str | None`：interval → `json.dumps`；now → `None`；其余原样
@@ -652,6 +659,44 @@ git commit -m "fix(cron): 工作台/训练的「立即执行」真正注册一�
 ```bash
 git add backend/app/utils/trigger_util.py backend/app/plugin/module_ai/workflow/service.py backend/app/plugin/module_ai/workspace/service.py backend/app/plugin/module_train/schedule_service.py backend/tests/test_trigger_util.py
 git commit -m "refactor(cron): 触发序列化助手下沉统一层，消除三处副本与空值分叉"
+```
+
+---
+
+## 阶段 A 补丁：A11（`now` 语义闭环——注册上了却永不执行）
+
+> 来源：A9 实现的顾虑 1/2，控制者已核实：三处**执行体**仍是 `not row.trigger_args → return`
+> （`workspace/service.py:80`、`workflow/service.py:144`、`module_train/scheduler.py:104`），
+> 而 `now` 的 `trigger_args` 恒为 `None` ⇒ A9 把作业注册上了，**触发时又被拦下**，
+> 「保存后立即执行一次」实际什么也不做。另：三处启动期 `collect_job_specs` 也按 `trigger_args` 过滤
+> （工作流侧 `:1411` 反而多写了 `or trigger == "now"`）。
+
+**控制者的裁决（`now` 的完整语义）:**
+- `now` = **保存时的一次性事件**：注册 `DateTrigger(now + 2s)`，触发一次即止（APScheduler 会在无下次触发时自动移除该作业）。
+- **执行体必须放行 `now` 行**（否则作业空转）——三处统一为「`enabled` 且（有表达式 **或** `trigger=="now"`）」才执行。
+- **启动期不重建 `now`**（三处一致，删掉工作流侧那个例外）：`DateTrigger` 在注册时算 `now+2s`，若每次重启都重建，等于**每次重启都重跑一次**。
+
+### Task A11: `now` 的执行体放行 + 启动期不重建
+
+**Files:**
+- Modify: `backend/app/plugin/module_ai/workspace/service.py`（执行体 `:80`、`collect_job_specs`）
+- Modify: `backend/app/plugin/module_ai/workflow/service.py`（执行体 `:144`、`collect_job_specs` `:1411` 的例外）
+- Modify: `backend/app/plugin/module_train/scheduler.py`（执行体）、`backend/app/plugin/module_train/schedule_service.py`（`collect_job_specs`）
+- Test: 三个业务作业测试文件各自追加
+
+- [ ] **Step 1: 写失败测试**（TDD）：
+  1. `now` 行（`trigger="now"`, `trigger_args=NULL`, `enabled=True`）→ 执行体**不**提前 return（断言真的建了任务/跑了工作流/执行了工作台动作）
+  2. `collect_job_specs` 的返回**不含** `now` 行（三处）；含 `cron`/`interval`/`date` 行
+  3. 回归：`enabled=False` 或表达式为空的行仍被拦
+  **注意**：修好后 `now` 行会在 ~2s 后真的执行 ⇒ 测试必须**打桩执行体的副作用**（照 B4 的做法 monkeypatch `create_task`/`start_training` 等）或注册后立刻移除作业，**不得**在测试里真的建训练任务/跑工作流。
+- [ ] **Step 2: 跑测试确认失败**
+- [ ] **Step 3: 实现**（三处执行体 + 三处 collect 口径统一）
+- [ ] **Step 4: 跑回归** → Run: `pytest tests/test_business_jobs_workspace.py tests/test_business_jobs_workflow.py tests/test_business_jobs_train.py tests/test_trigger_types_api.py tests/test_trigger_util.py -q`；Expected: PASS
+- [ ] **Step 5: 提交**
+
+```bash
+git add backend/app/plugin/module_ai/workspace/service.py backend/app/plugin/module_ai/workflow/service.py backend/app/plugin/module_train/scheduler.py backend/app/plugin/module_train/schedule_service.py backend/tests/test_business_jobs_workspace.py backend/tests/test_business_jobs_workflow.py backend/tests/test_business_jobs_train.py
+git commit -m "fix(cron): 「立即执行」语义闭环（执行体放行 now、启动期不重建）"
 ```
 
 ---
