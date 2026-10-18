@@ -97,7 +97,10 @@ test("工作流运行可停止：停止按钮 → 二次确认 → 已取消", a
   });
   expect(res.ok()).toBeTruthy();
   const logs = (await res.json()).data as Array<{ id: number; status: string }>;
-  expect(logs.some((l) => l.status === "cancelled")).toBeTruthy();
+  // 必须核对**最新一条**：只查"存在 cancelled"会被历史记录蒙混过关（实测踩过——
+  // 取消请求根本没发出去，测试却因旧记录里有 cancelled 而通过）
+  expect(logs.length).toBeGreaterThan(0);
+  expect(logs[0].status).toBe("cancelled");
 });
 
 test("流式不被缓冲：运行中即可看到「执行中」节点与增量内容", async ({ page }) => {
@@ -130,7 +133,7 @@ test("运行轨迹合并：同一节点只占一行，不留「执行中」", as
   await openRunDrawer(page);
   await sendLongPrompt(page, "用一句话说明什么是工作流。");
 
-  // 轨迹在运行结束后才渲染（帧有缓冲），这里就是完成信号
+  // 等这次运行**结束**（轨迹行渲染出终态即完成信号）
   const trace = page.locator(".chat-trace .trace-item");
   await expect(trace.first()).toBeVisible({ timeout: 90_000 });
 
@@ -141,4 +144,47 @@ test("运行轨迹合并：同一节点只占一行，不留「执行中」", as
   await expect(
     page.locator(".chat-trace .trace-item__status", { hasText: "执行中" })
   ).toHaveCount(0);
+});
+
+test("关页面（断开连接）后服务端停止运行并记「已取消」", async ({ page }) => {
+  await openRunDrawer(page);
+
+  const token = await page.evaluate(() => {
+    const raw = localStorage.getItem("access_token");
+    return raw ? (JSON.parse(raw) as string) : "";
+  });
+  const auth = { Authorization: `Bearer ${token}` };
+  const listRuns = async () => {
+    const res = await page.request.get(`${API}/ai/workflows/1/run-logs`, { headers: auth });
+    return ((await res.json()).data as Array<{ id: number; status: string }>) ?? [];
+  };
+  // 先记下当前最大运行记录 id：本次运行必然是更大的 id。
+  // （不要直接读 logs[0]——「停止」按钮在运行记录落库前就已显示，
+  //   此时读到的可能是上一条记录，断言会假失败。）
+  const prevMaxId = Math.max(0, ...(await listRuns()).map((r) => r.id));
+
+  await sendLongPrompt(page, "请分 10 段、每段不少于 100 字，详细介绍你自己，逐段输出，不要省略。");
+
+  let runId = 0;
+  await expect
+    .poll(async () => {
+      const row = (await listRuns()).find((r) => r.id > prevMaxId);
+      runId = row?.id ?? 0;
+      return row?.status;
+    }, { timeout: 20_000, intervals: [500] })
+    .toBe("running");
+  const stop = page.getByRole("button", { name: /^停止$/ }).first();
+  await expect(stop).toBeVisible({ timeout: 15_000 });
+
+  // 模拟「关掉页面 / 关掉标签」：导航离开会中断在途 SSE。
+  // 服务端必须**自己**发现断开并把运行停掉——此前它收不到断开通知（BaseHTTPMiddleware
+  // 不透传 http.disconnect），会白跑到底、记录一直卡在 running。
+  await page.goto("about:blank");
+
+  await expect
+    .poll(async () => (await listRuns()).find((r) => r.id === runId)?.status, {
+      timeout: 40_000,
+      intervals: [1_000],
+    })
+    .toBe("cancelled");
 });

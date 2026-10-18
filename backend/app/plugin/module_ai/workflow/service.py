@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .cancel import clear_cancel
+from .cancel import clear_cancel, request_cancel
 from .engine import WorkflowCancelled, WorkflowEngine
 from .model import (
     AiWorkflowModel,
@@ -234,6 +234,7 @@ class AiWorkflowService:
         session_id: int | None = None,
         redis=None,
         timeout_seconds: int | None = None,
+        is_disconnected=None,
     ) -> AsyncIterator[str]:
         """运行工作流：实例化引擎并流式产出 UI Message Stream 帧。
 
@@ -255,6 +256,7 @@ class AiWorkflowService:
         trace: list = []
         log_id: int | None = None
         run_id: str | None = None
+        watcher: asyncio.Task | None = None
         state: dict = {
             "assistant_text": "",
             "reply": "",
@@ -285,6 +287,23 @@ class AiWorkflowService:
                 if log_id:
                     # 把运行记录 id 下发给前端：它是取消运行的目标（run-log/{id}/cancel）
                     yield ms.data("run", {"run_log_id": log_id, "run_id": run_id})
+
+                # 客户端断开看门狗：BaseHTTPMiddleware（RequestLogMiddleware）**不会**把
+                # http.disconnect 透传给下游，SSE 生成器收不到断开 → 关页面后运行会白跑
+                # 到底（实测：断开 10s 后记录仍是 running）。这里主动轮询，发现断开即走
+                # 已验证的「取消信号」通道，让运行在下个检查点停下并记 cancelled。
+                if log_id and is_disconnected is not None:
+                    async def _watch_disconnect() -> None:
+                        while not state.get("finished") and not state.get("cancelled"):
+                            await asyncio.sleep(1.0)
+                            try:
+                                if await is_disconnected():
+                                    await request_cancel(log_id, redis)
+                                    return
+                            except BaseException:  # noqa: BLE001 轮询失败即放弃（不误杀运行）
+                                return
+
+                    watcher = asyncio.create_task(_watch_disconnect())
                 engine = WorkflowEngine(
                     graph=graph,
                     variables=variables or {},
@@ -318,6 +337,8 @@ class AiWorkflowService:
             if log_id and not state.get("finished"):
                 state["cancelled"] = True
                 cls._finalize_run_detached(log_id, state, trace, t0, redis)
+            if watcher:
+                watcher.cancel()
             raise
         except WorkflowCancelled:
             # 用户点了「停止」：明确区分于失败，前端提示「已取消」而非「运行失败」
@@ -331,6 +352,8 @@ class AiWorkflowService:
         #    Starlette（BaseHTTPMiddleware）随即取消本任务；写在 finally 里的收尾
         #    会被取消掉——实测表现为运行记录永远停在 running（历史整条丢失）。
         status = cls._run_status(state)
+        if watcher:
+            watcher.cancel()  # 运行已收尾，看门狗没用了
         try:
             await AiOverviewService.add_log(
                 runtime_model_name(workflow_id),
