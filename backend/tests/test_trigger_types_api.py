@@ -349,6 +349,53 @@ def test_workspace_cron_now_row_partial_update_keeps_trigger(test_client, auth_h
         SchedulerUtil.remove_business_job(_workspace_job_key(cron_id))
 
 
+def test_workspace_list_next_run_time_is_local_timezone(test_client, auth_headers):
+    """列表的「下次运行」必须是**本地时区**，且与预览接口同口径（回归 asyncpg 读回 UTC 的坑）。
+
+    背景：`next_run_time` 是 `DateTime(timezone=True)`，asyncpg 读回来**一律是 UTC**，
+    而 `DateTimeStr` 只做 `strftime`、不换算 ⇒ 直接格式化会早 8 小时
+    （实测：列表 `01:00`、预览 `09:00`，同一条任务两个口径）。
+    """
+    r = test_client.post(
+        "/api/v1/ai/workspace/cron/create",
+        json={
+            "name": _name("时区"),
+            "trigger": "cron",
+            "trigger_args": "0 9 * * *",
+            "cron": "0 9 * * *",
+            "target_type": "workflow",
+            "target_id": 0,
+            "enabled": True,
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    cron_id = r.json()["data"]["id"]
+    try:
+        items = test_client.get("/api/v1/ai/workspace/cron/list", headers=auth_headers).json()[
+            "data"
+        ]["items"]
+        row = next(x for x in items if x["id"] == cron_id)
+        # 「每天 09:00」的本地下次运行必然落在 09:00（写成 UTC 会是 01:00）
+        assert row["next_run_time"].endswith("09:00:00"), row["next_run_time"]
+
+        preview = test_client.post(
+            "/api/v1/ai/workspace/trigger/preview",
+            json={"trigger": "cron", "trigger_args": "0 9 * * *"},
+            headers=auth_headers,
+        ).json()["data"]
+        # 与预览接口同口径（比对时刻部分，避免跨 09:00 边界的极窄竞态）
+        assert row["next_run_time"].split(" ")[1] == preview["next_run"].split(" ")[1], (
+            row["next_run_time"],
+            preview["next_run"],
+        )
+    finally:
+        test_client.request(
+            "DELETE", "/api/v1/ai/workspace/cron/delete", json=cron_id, headers=auth_headers
+        )
+        SchedulerUtil.remove_business_job(_workspace_job_key(cron_id))
+
+
 def test_train_schedule_rejects_enabled_empty_trigger(test_client, auth_headers):
     """定时训练计划默认启用：`trigger` 与旧字段都缺省 → 可读 400（不回退已落地语义）。"""
     from app.plugin.module_train.schedule_service import _EMPTY_TRIGGER_MSG

@@ -524,6 +524,27 @@ class TriggerUtil:
         return raw
 
     @classmethod
+    def to_local_str(cls, value) -> str | None:
+        """把**调度器/数据库**取回的时间统一成本地（`TIMEZONE`）字符串。
+
+        为什么必须有它：`DateTime(timezone=True)` 的列经 asyncpg 读回来**一律是 UTC**
+        （tz-aware），而 `app/core/validator.py` 的 `DateTimeStr` 只做 `strftime`、
+        不做时区换算 ⇒ 直接格式化会让「下次运行」比真实时间**早 8 小时**
+        （实测：列表 `01:00`、预览 `09:00`，同一条任务两个口径）。
+
+        - tz-aware（来自 APScheduler 或 timestamptz 列）：换算到 `TIMEZONE` 后格式化；
+        - naive（应用自己写入的本地时间，如 `created_time` 一类）：**不做换算**，避免反向偏移；
+        - `None`：原样返回 `None`（前端显示「—」）。
+        """
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.strftime(cls._DATETIME_FORMAT)
+            return value.astimezone(ZoneInfo(cls.TIMEZONE)).strftime(cls._DATETIME_FORMAT)
+        return str(value)
+
+    @classmethod
     def describe_args(cls, trigger: str, args) -> str | None:
         """统一层的「人话描述」（响应字段 `trigger_describe`，供前端直接展示）。
 

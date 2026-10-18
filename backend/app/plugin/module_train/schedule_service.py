@@ -88,7 +88,9 @@ def _job_next_run_time(schedule_id: int) -> str | None:
         log.warning(f"读取定时训练计划 {schedule_id} 的作业失败（调度器不可用？）：{e!s}")
         return None
     next_fire = getattr(job, "next_run_time", None)
-    return next_fire.strftime(_DATETIME_FORMAT) if next_fire else None
+    # 统一层换算：作业时间戳是 tz-aware，直接 strftime 虽也是本地，但一律走 `to_local_str`
+    # 才能保证三处（工作台/工作流/训练）与预览接口同口径。
+    return TriggerUtil.to_local_str(next_fire)
 
 
 def _resolve_trigger(

@@ -290,7 +290,8 @@ class WorkspaceService:
                     cls._g(row, "trigger", "cron") or "cron", cls._g(row, "trigger_args", None)
                 ),
                 "target_type": cls._g(row, "target_type", "") or "",
-                "next_run_time": cls._g(row, "next_run_time"),
+                # 时间统一走 `to_local_str`：timestamptz 经 asyncpg 读回是 UTC，直接格式化会早 8 小时
+                "next_run_time": TriggerUtil.to_local_str(cls._g(row, "next_run_time")),
             }
         base["meta"] = meta
         return base
@@ -330,8 +331,8 @@ class WorkspaceService:
             "target_id": r.target_id,
             "category_id": r.category_id,
             "enabled": bool(r.enabled),
-            "last_run_time": r.last_run_time,
-            "next_run_time": r.next_run_time,
+            "last_run_time": TriggerUtil.to_local_str(r.last_run_time),
+            "next_run_time": TriggerUtil.to_local_str(r.next_run_time),
         }
 
     @staticmethod

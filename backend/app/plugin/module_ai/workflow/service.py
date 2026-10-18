@@ -1268,8 +1268,8 @@ class AiWorkflowService:
             "trigger_describe": TriggerUtil.describe_args(trigger, raw_args),
             "cron": raw_args if trigger == "cron" else "",
             "enabled": row.enabled,
-            "next_run_time": row.next_run_time,
-            "last_run_time": row.last_run_time,
+            "next_run_time": TriggerUtil.to_local_str(row.next_run_time),
+            "last_run_time": TriggerUtil.to_local_str(row.last_run_time),
         }
 
     @classmethod
