@@ -89,3 +89,11 @@ pytorch-ocr/*.egg-info
 node_modules/
 test-results/
 playwright-report/
+
+# 工具本地状态（各 agent/工具自己的配置，不入库）
+.commandcode/
+
+# 后端调试产物（临时输出/转储，不入库；2026-10-18 曾误提交过一个 11.7MB 的 .out）
+backend/_*.out
+backend/tmp_500.txt
+backend/tmp_500_bytes.bin
