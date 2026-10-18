@@ -18,6 +18,10 @@ test("本体页渲染 + 图谱工作区就位（按钮门禁后不白屏）", as
   await expect(page.locator(".ont-gw")).toBeVisible({ timeout: 15_000 });
   // 图谱工具条的读控件（布局/缩放/导出）对只读用户也必须可见 —— 门禁只针对写操作
   await expect(page.locator(".ont-gw__bar")).toContainText("只显示有关联");
+  // ⚠️ 必须等**首屏异步加载**结束再截图/断言：`useOntologyData.reloadAll()` 会并发拉 7 个接口，
+  // 早于它完成时页面处于空态（"还没有本体"），截图会误导成"功能坏了"（实测踩过）。
+  await expect(page.locator(".ont-dom-item").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".ont-gw__bar")).not.toContainText("0 类型");
   expect(errors, `页面运行时报错：${errors.join(" | ")}`).toHaveLength(0);
 
   await page.screenshot({ path: "e2e/ontology-page.png" });
