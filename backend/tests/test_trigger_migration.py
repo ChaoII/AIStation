@@ -230,11 +230,54 @@ def test_upgrade_is_idempotent(monkeypatch):
     assert _trigger_rows(engine, "ai_workspace_cron") == first
 
 
+def test_backfill_uses_returned_trigger_not_hardcoded_cron(monkeypatch):
+    """回填必须写 `normalize_legacy` **返回的** trigger（不得硬编码 `"cron"`）。
+
+    用替身让助手返回非 cron 触发：若实现里写死 `"cron"`，本用例必失败。
+    """
+    migration = _migration_module()
+    engine = create_engine("sqlite://", poolclass=StaticPool)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE ai_workspace_cron ("
+                "id INTEGER PRIMARY KEY, cron VARCHAR(128), "
+                "trigger VARCHAR(16) NOT NULL DEFAULT 'cron', trigger_args TEXT)"
+            )
+        )
+        conn.execute(text("INSERT INTO ai_workspace_cron (id, cron) VALUES (1, 'any')"))
+
+    monkeypatch.setattr(
+        migration, "normalize_legacy", lambda value: ("interval", '{"hours": 2}', None)
+    )
+    with engine.begin() as conn:
+        assert migration._backfill_from_legacy(conn, "ai_workspace_cron", "cron") == []
+
+    assert _trigger_rows(engine, "ai_workspace_cron") == {1: ("interval", '{"hours": 2}')}
+
+
 @requires_drop_column
 def test_downgrade_rebuilds_legacy_columns_and_backfills(monkeypatch):
-    """`downgrade()`：反向重建旧列并从 `trigger_args` 回填，随后删除新列。"""
+    """`downgrade()`：反向重建旧列并从 `trigger_args` 回填，随后删除新列。
+
+    非 cron 触发（interval/date）在旧列里没有对应值 → 写空串（旧列非空约束）。
+    """
     engine = _legacy_engine()
     _run_migration(engine, monkeypatch, "upgrade")
+    # 模拟迁移后由写入路径（A5）新建的非 cron 触发行
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO ai_workspace_cron (id, trigger, trigger_args) "
+                "VALUES (7, 'interval', '{\"hours\": 2}')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO train_schedules (id, trigger, trigger_args) "
+                "VALUES (3, 'date', '2999-01-01 09:00:00')"
+            )
+        )
     _run_migration(engine, monkeypatch, "downgrade")
 
     assert _columns(engine, "ai_workspace_cron") == {"id", "cron"}
@@ -245,11 +288,16 @@ def test_downgrade_rebuilds_legacy_columns_and_backfills(monkeypatch):
         4: "",
         5: "0 9 * * *",
         6: "0 9 * * *",
+        7: "",  # interval 触发 → 旧 cron 列写空串
     }
     assert _columns(engine, "ai_workflow_schedules") == {"id", "cron"}
     assert _legacy_rows(engine, "ai_workflow_schedules", "cron") == {1: "0 9 * * *"}
     assert _columns(engine, "train_schedules") == {"id", "cron_expr"}
-    assert _legacy_rows(engine, "train_schedules", "cron_expr") == {1: "0 2 * * sun", 2: ""}
+    assert _legacy_rows(engine, "train_schedules", "cron_expr") == {
+        1: "0 2 * * sun",
+        2: "",
+        3: "",  # date 触发 → 旧 cron 列写空串
+    }
 
 
 @requires_drop_column

@@ -73,6 +73,9 @@ def _backfill_from_legacy(bind, table: str, legacy_col: str) -> list[str]:
 
     可等值转换的行写回规范化后的 5 段；其余行**保持 trigger_args 为空**并记日志，
     绝不写一个"看起来能跑"的表达式（那才是静默语义改写）。
+
+    写回时使用 `normalize_legacy` 返回的 `trigger`（而不是硬编码 `"cron"`）：
+    触发类型由统一层决定，本函数不替它做决定。
     """
     logs: list[str] = []
     rows = bind.execute(sa.text(f"SELECT id, {legacy_col} FROM {table}")).fetchall()
@@ -85,7 +88,7 @@ def _backfill_from_legacy(bind, table: str, legacy_col: str) -> list[str]:
             sa.text(
                 f"UPDATE {table} SET trigger = :trigger, trigger_args = :args WHERE id = :row_id"
             ),
-            {"trigger": "cron", "args": args, "row_id": row_id},
+            {"trigger": trigger, "args": args, "row_id": row_id},
         )
     return logs
 
