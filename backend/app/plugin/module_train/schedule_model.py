@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,7 +20,13 @@ class TrainScheduleModel(ModelMixin, UserMixin):
     # 挡退场框架（见 schedule_service.py），不能依赖默认值兜底。
     framework: Mapped[str] = mapped_column(String(16), default="torchkiln", comment="训练框架")
     hyperparams: Mapped[dict] = mapped_column(JSONB, default=dict, comment="超参数")
-    cron_expr: Mapped[str] = mapped_column(String(64), comment="Cron 表达式, 如 0 2 * * 0 (每周日凌晨2点)")
+    trigger: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="cron", server_default="cron",
+        comment="触发类型 cron/interval/date/now",
+    )
+    trigger_args: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, comment="触发参数（cron 5 段 / interval JSON / date 时间）"
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="上次执行时间")
     last_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="上次触发的训练任务ID")

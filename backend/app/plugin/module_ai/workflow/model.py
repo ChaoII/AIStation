@@ -1,7 +1,7 @@
 """低代码工作流定义模型。"""
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -92,8 +92,12 @@ class AiWorkflowScheduleModel(ModelMixin):
     workflow_id: Mapped[int] = mapped_column(
         Integer, nullable=False, index=True, comment="所属工作流 ID"
     )
-    cron: Mapped[str | None] = mapped_column(
-        String(128), nullable=True, default="", comment="cron 表达式（5 段）"
+    trigger: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="cron", server_default="cron",
+        comment="触发类型 cron/interval/date/now",
+    )
+    trigger_args: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, comment="触发参数（cron 5 段 / interval JSON / date 时间）"
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否启用")
     last_run_time: Mapped[datetime | None] = mapped_column(

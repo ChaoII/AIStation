@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.base_model import ModelMixin, UserMixin
@@ -30,7 +30,7 @@ class AiWorkspaceCategoryModel(ModelMixin, UserMixin):
 
 
 class AiWorkspaceCronModel(ModelMixin, UserMixin):
-    """工作台定时任务：按 cron 周期执行绑定的资产（agent/workflow/app）。"""
+    """工作台定时任务：按统一触发器（cron/interval/date/now）执行绑定的资产（agent/workflow/app）。"""
 
     __tablename__ = "ai_workspace_cron"
     __table_args__ = ({"comment": "AI 工作台定时任务表"},)
@@ -39,7 +39,13 @@ class AiWorkspaceCronModel(ModelMixin, UserMixin):
     description: Mapped[str | None] = mapped_column(
         String(512), nullable=True, default="", comment="任务描述"
     )
-    cron: Mapped[str | None] = mapped_column(String(128), nullable=True, default="", comment="cron 表达式（5 段）")
+    trigger: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="cron", server_default="cron",
+        comment="触发类型 cron/interval/date/now",
+    )
+    trigger_args: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, comment="触发参数（cron 5 段 / interval JSON / date 时间）"
+    )
     target_type: Mapped[str | None] = mapped_column(
         String(32), nullable=True, default="agent", comment="执行目标类型 agent/workflow/app"
     )
