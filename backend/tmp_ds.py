@@ -1,4 +1,5 @@
 import psycopg
+
 conn = psycopg.connect("host=127.0.0.1 port=5432 user=root password=ServBay.dev dbname=aistation")
 cur = conn.cursor()
 cur.execute('SELECT id,code,name,type,host,database FROM ai_query_datasources WHERE is_deleted=false ORDER BY id')

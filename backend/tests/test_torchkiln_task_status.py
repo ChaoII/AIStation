@@ -79,4 +79,3 @@ def test_wait_hint_reports_busy_count():
 def test_executor_source_is_parseable():
     """占位：确保本文件读的是真实实现而不是被移动/删除后的残骸。"""
     assert "async def _execute" in EXECUTOR.read_text(encoding="utf-8")
-

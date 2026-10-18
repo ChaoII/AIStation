@@ -50,7 +50,10 @@ async def main(datasource: str, run_id: str | None, dry: bool) -> None:
     print(f"用 run={run_id}（datasource={datasource}）")
     if dry:
         from app.plugin.module_ai.query.eval_curate import (
-            _list_cases, _list_fewshots, _load_results, select_fewshot_candidates,
+            _list_cases,
+            _list_fewshots,
+            _load_results,
+            select_fewshot_candidates,
         )
 
         results = await _load_results(run_id)

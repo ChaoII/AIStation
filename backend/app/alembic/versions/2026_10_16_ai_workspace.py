@@ -35,8 +35,12 @@ def upgrade() -> None:
             sa.Column("color", sa.String(length=32), nullable=True, comment="主题色"),
             sa.Column("sort", sa.Integer(), nullable=True, comment="排序"),
             sa.Column(
-                "status", sa.String(length=16), nullable=True, default="1", comment="状态"
+                "uuid", sa.String(length=64), nullable=True, comment="UUID"
             ),
+            sa.Column(
+                "status", sa.String(length=10), nullable=True, default="0", comment="状态(0:正常 1:禁用)"
+            ),
+            sa.Column("description", sa.Text(), nullable=True, comment="备注/描述"),
             sa.Column("created_time", sa.DateTime(), nullable=True),
             sa.Column("updated_time", sa.DateTime(), nullable=True),
             sa.Column("is_deleted", sa.Boolean(), nullable=True, default=False),
@@ -44,7 +48,6 @@ def upgrade() -> None:
             sa.Column("created_id", sa.Integer(), nullable=True),
             sa.Column("updated_id", sa.Integer(), nullable=True),
             sa.Column("deleted_id", sa.Integer(), nullable=True),
-            sa.Column("uuid", sa.String(length=36), nullable=True),
         )
 
     if "ai_workspace_cron" not in insp.get_table_names():

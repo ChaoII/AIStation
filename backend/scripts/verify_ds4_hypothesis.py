@@ -27,8 +27,8 @@ async def main() -> None:
     create_app()
     from app.plugin.module_ai.query.service import (
         AiQueryService,
-        _match_metric,
         _execute_custom_ds_sql,
+        _match_metric,
     )
 
     metrics = await AiQueryService.list_metrics("ds:4")

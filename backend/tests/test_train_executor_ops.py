@@ -7,13 +7,8 @@
 """
 
 import asyncio
-from types import SimpleNamespace
-
-import pytest
 
 from app.plugin.module_train import docker_utils as du
-from app.plugin.module_train import scheduler as sch
-from app.plugin.module_train.model import TrainFramework, TrainStatus
 
 
 class _FakeBegin:

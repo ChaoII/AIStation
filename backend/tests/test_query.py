@@ -5,14 +5,14 @@ from types import SimpleNamespace
 import pytest
 
 from app.plugin.module_ai.query.service import (
-    _match_metric,
-    _render_template,
     _SYSTEM_METRICS,
     _SYSTEM_TERMS,
+    SYSTEM_ALLOWED_TABLES,
+    AiQueryService,
+    _match_metric,
+    _render_template,
     parse_time_range,
     validate_sql,
-    AiQueryService,
-    SYSTEM_ALLOWED_TABLES,
 )
 
 

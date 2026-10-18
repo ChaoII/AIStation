@@ -22,8 +22,8 @@ def _patch_build_agent(monkeypatch):
     from agno.run.agent import (
         RunCompletedEvent,
         RunContentEvent,
-        RunStartedEvent,
         RunEvent,
+        RunStartedEvent,
     )
 
     async def _agen():

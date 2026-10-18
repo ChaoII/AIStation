@@ -22,10 +22,11 @@ async def main() -> None:
     from sqlalchemy import text
 
     from app.core.database import async_db_session
-    from app.plugin.module_ai.query import executor as _ex
     from app.plugin.module_ai.query.benchmark import lenient_match
     from app.plugin.module_ai.query.service import (
-        _ds_cfg_from_model, _execute_custom_ds_sql, _load_ds,
+        _ds_cfg_from_model,
+        _execute_custom_ds_sql,
+        _load_ds,
     )
 
     ds = await _load_ds(4)

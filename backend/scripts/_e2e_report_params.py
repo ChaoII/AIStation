@@ -25,7 +25,10 @@ async def main() -> None:
 
     create_app()
     from app.plugin.module_ai.query.report import (
-        delete_reports, get_report, list_reports, run_report, upsert_report,
+        delete_reports,
+        list_reports,
+        run_report,
+        upsert_report,
     )
 
     # 0) 清理历史

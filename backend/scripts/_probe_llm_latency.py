@@ -37,14 +37,14 @@ async def main() -> None:
             out = await AiQueryService._plan_llm("只回答：1+1=?", runtime, 0.0)
             dt = time.perf_counter() - t0
             ts.append(dt)
-            print(f"  #{i+1} {dt:7.2f}s  回答={str(out)[:30]!r}", flush=True)
+            print(f"  #{i + 1} {dt:7.2f}s  回答={str(out)[:30]!r}", flush=True)
         except Exception as e:  # noqa: BLE001
             dt = time.perf_counter() - t0
             ts.append(dt)
-            print(f"  #{i+1} {dt:7.2f}s  失败={type(e).__name__}: {str(e)[:60]}", flush=True)
+            print(f"  #{i + 1} {dt:7.2f}s  失败={type(e).__name__}: {str(e)[:60]}", flush=True)
 
     ts.sort()
-    print(f"\n极小请求：中位={ts[len(ts)//2]:.2f}s 最短={ts[0]:.2f}s 最长={ts[-1]:.2f}s", flush=True)
+    print(f"\n极小请求：中位={ts[len(ts) // 2]:.2f}s 最短={ts[0]:.2f}s 最长={ts[-1]:.2f}s", flush=True)
     if ts[-1] > 30:
         print("→ **极小请求也偶发 30s+** ⇒ 网关/推理侧排队或 stall，与 prompt 大小无关", flush=True)
     else:

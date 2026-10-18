@@ -28,13 +28,12 @@ async def main() -> None:
     from main import create_app
 
     create_app()
-    from app.plugin.module_ai.query.eval_set import load_results
-    from app.plugin.module_ai.query.service import AiQueryService
-
     # 找最近两轮 run（A/B）
     from sqlalchemy import text
 
     from app.core.database import async_db_session
+    from app.plugin.module_ai.query.eval_set import load_results
+    from app.plugin.module_ai.query.service import AiQueryService
 
     async with async_db_session() as db:
         runs = (

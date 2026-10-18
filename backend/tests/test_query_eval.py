@@ -245,6 +245,7 @@ def test_verify_and_save_generation_only_rejects_metric_eligible(monkeypatch):
 
         monkeypatch.setattr(G, "_run_gold", fake_run)
         # 让"今日告警数"命中指标（快路径能答），"各部门平均单价"答不了
+
         async def _elig(q, ds):
             return "告警" in q
 
@@ -696,7 +697,6 @@ def test_nl2sql_two_stage_keeps_only_real_tables(monkeypatch):
     monkeypatch.setattr(S.AiQueryService, "_ds_schema_map", staticmethod(_fake_schema))
     monkeypatch.setattr(S.AiQueryService, "_get_runtime", staticmethod(_fake_runtime))
 
-    import asyncio
     import inspect
 
     src = inspect.getsource(S.AiQueryService._nl2sql)

@@ -5,9 +5,8 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from app.plugin.module_train import docker_utils as du
-from app.plugin.module_train import scheduler as sch
 from app.plugin.module_train import task_executor as te
-from app.plugin.module_train.model import TrainFramework, TrainStatus, TrainTask
+from app.plugin.module_train.model import TrainStatus, TrainTask
 from app.plugin.module_train.task_executor import TaskExecutor, recovery_decision
 
 

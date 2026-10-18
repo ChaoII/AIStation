@@ -5,12 +5,8 @@
 - 导出产物缺失 -> 回退原始权重与真实格式 "pytorch"；
 - 模型本身即为原始格式 -> 始终返回原始权重与 "pytorch"。
 """
-import asyncio
-import io
 
-from app.plugin.module_train import export_service
 from app.plugin.module_train.export_service import resolve_download_target
-from app.utils.s3_client import s3_client
 
 
 def test_download_target_export_when_exists():
@@ -55,5 +51,3 @@ class _FakeAsyncSession:
 
     async def execute(self, *args, **kwargs):
         return None
-
-

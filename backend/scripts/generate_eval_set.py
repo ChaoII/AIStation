@@ -73,7 +73,10 @@ async def generate_for(datasource: str, target: int, per_round: int, auth,
                        generation_only: bool = False,
                        forms: list[str] | None = None) -> dict:
     from app.plugin.module_ai.query.eval_generate import (
-        build_prompt, call_llm, parse_cases, verify_and_save,
+        build_prompt,
+        call_llm,
+        parse_cases,
+        verify_and_save,
     )
     from app.plugin.module_ai.query.eval_set import list_cases
     from app.plugin.module_ai.query.service import SYSTEM_DS, AiQueryService

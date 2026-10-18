@@ -19,7 +19,6 @@ def test_build_business_tools_returns_agno_functions():
 def test_business_tool_user_id_injected():
     """业务工具运行时应注入 user_id；模型侧 schema 不应出现 user_id 参数。"""
     from app.plugin.module_ai.agno_tools.business import (
-        USER_ID_CONTEXT,
         build_business_tools,
         reset_user_context,
         set_user_context,

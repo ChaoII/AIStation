@@ -1,11 +1,11 @@
 """AnyLabeling 导出 cuboid 形状单测：底部旋转矩形顶点 + 3D 参数附加字段。"""
 import math
 
-from app.plugin.module_train.exporter import xany_shapes
 from app.api.v1.module_annotation.dataset.x_anylabeling_importer import (
     _infer_task_type,
     _shape_to_annotation,
 )
+from app.plugin.module_train.exporter import xany_shapes
 
 
 def test_xany_shapes_cuboid():

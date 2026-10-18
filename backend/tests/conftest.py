@@ -62,6 +62,7 @@ def _register_sqlite_now(dbapi_conn, _rec):  # pragma: no cover - 运行时钩�
     except Exception:  # noqa: BLE001
         pass
 
+
 # 应用实例与会话级客户端（默认构造；PYTEST_NO_APP=1 时跳过）
 app = create_app() if not _SKIP_APP else None
 _client = None

@@ -75,9 +75,9 @@ def test_purge_expired_selects_soft_deleted_older_than(test_client, auth_headers
     test_client.request("DELETE", "/api/v1/annotation/dataset/delete",
                         json=[ds_id], headers=auth_headers)
 
-    from app.core.database import async_db_session
     from app.api.v1.module_annotation.dataset.model import DatasetModel
     from app.api.v1.module_annotation.dataset.retention import purge_expired_datasets
+    from app.core.database import async_db_session
 
     async def _backdate():
         async with async_db_session.begin() as db:

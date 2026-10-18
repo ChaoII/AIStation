@@ -29,7 +29,8 @@ async def main(datasource: str, dry: bool) -> None:
 
     from app.core.database import async_db_session
     from app.plugin.module_ai.query.eval_generate import (
-        _entity_table_map, missing_entity_tables,
+        _entity_table_map,
+        missing_entity_tables,
     )
     from app.plugin.module_ai.query.eval_set import list_cases
 

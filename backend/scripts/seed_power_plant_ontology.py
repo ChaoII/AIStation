@@ -145,10 +145,13 @@ async def step_columns(ctx: Ctx, records: list[dict], auth) -> None:
 
 
 async def step_ontology(ctx: Ctx, records: list[dict], auth) -> None:
-    from app.plugin.module_ai.query.power_plant import (
-        build_entity_index, find_key_col, find_name_col, infer_links,
-    )
     from app.plugin.module_ai.ontology import service as ont
+    from app.plugin.module_ai.query.power_plant import (
+        build_entity_index,
+        find_key_col,
+        find_name_col,
+        infer_links,
+    )
 
     tables = [r["table"] for r in records]
     index = build_entity_index(tables)

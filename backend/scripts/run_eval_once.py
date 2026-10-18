@@ -39,7 +39,7 @@ async def main(run_limit: int, abl_limit: int, skip_run: bool = False,
     create_app()
     from app.plugin.module_ai.query import eval_runner as R
     from app.plugin.module_ai.query.eval_metrics import group_by
-    from app.plugin.module_ai.query.eval_set import load_results, list_cases
+    from app.plugin.module_ai.query.eval_set import list_cases, load_results
     from app.plugin.module_ai.query.service import AiQueryService
 
     total = len(await list_cases())

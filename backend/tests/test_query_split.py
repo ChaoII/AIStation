@@ -1,5 +1,4 @@
 """留出法：近义题必须同集（否则错题沉淀会从"近义题"泄漏答案）。"""
-import asyncio
 
 
 def test_similarity_detects_near_duplicates():

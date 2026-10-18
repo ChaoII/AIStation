@@ -22,7 +22,12 @@ import pytest
 
 from app.plugin.module_train import gpu_pool
 from app.plugin.module_train.gpu_pool import (
-    _store, alloc, device, lease, readiness, watchdog,
+    _store,
+    alloc,
+    device,
+    lease,
+    readiness,
+    watchdog,
 )
 
 SUBMODULES = ("_store", "port", "device", "alloc", "lease", "readiness", "watchdog")

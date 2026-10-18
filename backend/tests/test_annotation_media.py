@@ -59,6 +59,7 @@ def test_upload_fileobj_passes_content_type(monkeypatch):
 
 def _png_bytes(w: int, h: int) -> bytes:
     import io as _io
+
     from PIL import Image
 
     buf = _io.BytesIO()
@@ -72,8 +73,9 @@ def test_process_image_returns_dims_and_thumbnail():
     w, h, thumb = process_image(_png_bytes(1200, 600))
     assert (w, h) == (1200, 600)
     assert thumb is not None
-    from PIL import Image
     import io as _io
+
+    from PIL import Image
 
     with Image.open(_io.BytesIO(thumb)) as t:
         assert t.format == "JPEG"

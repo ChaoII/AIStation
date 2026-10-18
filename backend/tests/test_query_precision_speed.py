@@ -168,17 +168,22 @@ class TestContextBlockFilter:
             full = await S.context_block()
             # 用**测试库里真实存在**的对象表，而不是写死一张业务表
             if not ctx["objects"]:
-                return full, "", None
+                return full, "", None, 0
             tbl = ctx["objects"][0]["table"]
             small = await S.context_block(only_tables={tbl})
-            return full, small, tbl
+            return full, small, tbl, len(ctx["objects"])
 
         try:
-            full, small, tbl = asyncio.run(go())
+            full, small, tbl, n_objs = asyncio.run(go())
         except Exception:  # noqa: BLE001
             pytest.skip("测试库无本体数据")
         if not full or tbl is None:
             pytest.skip("测试库无本体数据")
+        if n_objs < 2:
+            # 全库只有 1 个对象时，"按表过滤"不可能比全量更小 —— 断言无意义。
+            # 测试库是**会话级共享**的：单独跑本文件时通常只有 1 个对象，
+            # 而被 test_ontology_query_bridge.py 等创建过对象后才会 ≥2（实测）。
+            pytest.skip(f"测试库只有 {n_objs} 个本体对象，过滤效果无从体现")
         assert "本体对象" in small, f"按表 {tbl} 过滤后应仍有内容"
         assert len(small) < len(full), "过滤后必须更小"
 

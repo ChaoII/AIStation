@@ -80,17 +80,17 @@ def main(path: str) -> None:
     print(f"样本 {len(recs)} 次提问")
     for name, xs in (("生成(LLM)", gen), ("执行(SQL)", exe), ("收尾(检索+DQ)", tail), ("总计", tot)):
         print(f"  {name:14s} 中位={median(xs):>8.0f}ms  P95={pct(xs, 0.95):>8.0f}ms  "
-              f"最长={max(xs):>8.0f}ms  占总计={sum(xs)/max(1,sum(tot))*100:5.1f}%")
+              f"最长={max(xs):>8.0f}ms  占总计={sum(xs) / max(1, sum(tot)) * 100:5.1f}%")
 
     # 分段归因：生成 计时里，schema 构建 vs agno 调用各占多少
     if schema_times or agno_times:
         print("\n分段归因（新增计时）：")
         if schema_times:
             print(f"  schema 构建(含检索) n={len(schema_times)}  中位={median(schema_times):>7.0f}ms  "
-                  f"P95={pct(schema_times,0.95):>7.0f}ms  最长={max(schema_times):>7.0f}ms")
+                  f"P95={pct(schema_times, 0.95):>7.0f}ms  最长={max(schema_times):>7.0f}ms")
         if agno_times:
             print(f"  agno 阶段          n={len(agno_times)}  中位={median(agno_times):>7.0f}ms  "
-                  f"P95={pct(agno_times,0.95):>7.0f}ms  最长={max(agno_times):>7.0f}ms")
+                  f"P95={pct(agno_times, 0.95):>7.0f}ms  最长={max(agno_times):>7.0f}ms")
 
     # 相关性：prompt 长度 vs 生成耗时
     xs = [r["prompt"] for r in recs]
@@ -107,13 +107,13 @@ def main(path: str) -> None:
     for lo, hi, tag in ((0, 10000, "<10K"), (10000, 14000, "10-14K"), (14000, 10**9, ">14K")):
         g = [r["gen"] for r in recs if lo <= r["prompt"] < hi]
         if g:
-            print(f"  {tag:8s} n={len(g):>3}  中位={median(g):>7.0f}ms  P95={pct(g,0.95):>7.0f}ms")
+            print(f"  {tag:8s} n={len(g):>3}  中位={median(g):>7.0f}ms  P95={pct(g, 0.95):>7.0f}ms")
 
     # 重试 vs 不重试
     for flag, tag in ((True, "有自纠错重试"), (False, "无重试")):
         g = [r["gen"] for r in recs if r["retry"] == flag]
         if g:
-            print(f"  {tag:10s} n={len(g):>3}  中位={median(g):>7.0f}ms  P95={pct(g,0.95):>7.0f}ms")
+            print(f"  {tag:10s} n={len(g):>3}  中位={median(g):>7.0f}ms  P95={pct(g, 0.95):>7.0f}ms")
 
     # 最慢的 8 次
     print("\n最慢 8 次：")
@@ -124,7 +124,7 @@ def main(path: str) -> None:
     # 长尾占比：>30s 的总时间占多少
     slow = [r for r in recs if r["gen"] > 30000]
     print(f"\n>30s 的 {len(slow)} 次调用，占总生成时间的 "
-          f"{sum(r['gen'] for r in slow)/max(1,sum(gen))*100:.1f}%（{len(slow)}/{len(recs)} 次调用）")
+          f"{sum(r['gen'] for r in slow) / max(1, sum(gen)) * 100:.1f}%（{len(slow)}/{len(recs)} 次调用）")
 
 
 if __name__ == "__main__":

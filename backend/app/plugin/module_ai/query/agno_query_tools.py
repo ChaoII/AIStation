@@ -70,7 +70,7 @@ async def semantic_search(question: str) -> str:
 
 async def table_metadata(table: str) -> str:
     """返回指定数据表的元数据标注：表描述/业务域/业务场景 + 字段业务场景/敏感/关联/枚举取值。"""
-    from .service import _system_allowed, AiQueryService
+    from .service import AiQueryService, _system_allowed
 
     table = (table or "").strip()
     allowed = await _system_allowed()
