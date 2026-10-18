@@ -52,35 +52,13 @@ async function readSchedule(page: Page, headers: Record<string, string>, id: num
 }
 
 /**
- * 在 cron 选择器里把某个字段改为指定值。
+ * 在 cron 选择器里把某个字段改为指定值 —— **已删除**。
  *
- * 字段顺序（`format="crontab"` 5 段）：0=分、1=时、2=日、3=月、4=周。
- * 组件最前面那个「周期」选择器不带 `.vcron-el-spacer` 包裹，故按 `.vcron-el-spacer .custom-select`
- * 取到的正好是这 5 个字段。
- *
- * 该库的下拉 `hideOnClick:false`（选完不自动收起），因此选完点面板空白处收起，
- * 避免下拉浮层盖住弹窗底部的保存/关闭按钮。
+ * 原实现依赖 `@vue-js-cron/element-plus` 的**内部类名**（`.vcron-el-spacer .custom-select`、
+ * `.vcron-el-col`）与「下拉不自动收起」等实现细节，首跑即失配（C4 审查 Minor 2）。
+ * 现在改配置→保存体的验证改用「间隔」分支（`.trigger-editor__interval-item` 是本项目
+ * 自己的 DOM，见用例第 ③ 步），不再耦合第三方内部结构。
  */
-async function pickCronOption(page: Page, field: number, option: string) {
-  const editor = page.locator(".trigger-editor").first();
-  await editor
-    .locator(".vcron-el-spacer .custom-select")
-    .nth(field)
-    .locator("button")
-    .first()
-    .click();
-  const menu = page
-    .locator(".el-dropdown-menu")
-    .filter({ has: page.locator(".vcron-el-col") })
-    .last();
-  await expect(menu).toBeVisible({ timeout: 10_000 });
-  await menu
-    .locator(".vcron-el-col")
-    .filter({ hasText: new RegExp(`^${option}$`) })
-    .first()
-    .click();
-  await page.locator(".trigger-editor__preview-label").first().click();
-}
 
 test("工作流定时调度：TriggerEditor 回显每天 09:00，保存后统一字段为 0 9 * * *", async ({
   page,
@@ -149,33 +127,46 @@ test("工作流定时调度：TriggerEditor 回显每天 09:00，保存后统一
     expect(saved.cron).toBe("0 9 * * *"); // 兼容字段与统一字段同值
     expect(saved.enabled).toBe(false);
 
-    // ③ 选择器改动进入保存体：「时」改 10 → 预览跟着变 → 改回 9 再存
-    await pickCronOption(page, 1, "10");
-    await expect(editor).toContainText("每天 10:00", { timeout: 15_000 });
-    await pickCronOption(page, 1, "9");
-    await expect(editor).toContainText("每天 09:00", { timeout: 15_000 });
+    // ③ 选择器改动进入保存体：改用「间隔」分支验证（它是**我们自己的 DOM**），
+    //    不再驱动第三方 cron 组件的内部结构（`.vcron-el-col` 一类类名属库实现细节，
+    //    首跑即失配，见 C4 审查 Minor 2）。契约本身不变：改配置 → 预览变 → 保存体变。
+    await dialog.locator(".el-radio-button").filter({ hasText: "间隔" }).first().click();
+    const hourInput = dialog
+      .locator(".trigger-editor__interval-item")
+      .filter({ hasText: "时" })
+      .first()
+      .locator("input");
+    await hourInput.fill("2");
+    await hourInput.press("Tab");
+    await expect(editor).toContainText("每 2 小时", { timeout: 15_000 });
     await dialog.getByRole("button", { name: "保存" }).click();
     await expect(
       page.locator(".el-message--success", { hasText: "调度已保存" }).first()
     ).toBeVisible({ timeout: 15_000 });
     await expect
-      .poll(async () => (await readSchedule(page, headers, workflowId)).trigger_args, {
+      .poll(async () => (await readSchedule(page, headers, workflowId)).trigger, {
         timeout: 15_000,
       })
-      .toBe("0 9 * * *");
+      .toBe("interval");
+    const savedInterval = await readSchedule(page, headers, workflowId);
+    expect(savedInterval.trigger_args).toMatchObject({ hours: 2 });
+    // 兼容字段在非 cron 类型必须为空（旧前端不会把 interval 误读成 cron）
+    expect(savedInterval.cron).toBe("");
 
     await page.screenshot({ path: "e2e/trigger-workflow.png", fullPage: false });
 
-    // ④ 关掉重开：回显来自后端读回（destroy-on-close 后重新挂载）
-    await dialog.getByRole("button", { name: "关闭" }).click();
+    // ④ 关掉重开：回显来自后端读回（不是内存残留）
+    // 「关闭」按钮在弹窗里不止一个（面板本身 + 抽屉/弹窗框架），用 `.first()` 明确取第一个
+    await dialog.getByRole("button", { name: "关闭" }).first().click();
     await dialog.waitFor({ state: "hidden", timeout: 10_000 }).catch(() => {});
     await planBtn.click();
     const reopened = page.locator(".el-dialog", { hasText: "定时调度" }).first();
     await expect(reopened).toBeVisible({ timeout: 10_000 });
-    await expect(reopened.locator(".trigger-editor")).toContainText("每天 09:00", {
+    // 上一步保存的是「每 2 小时」，重开后必须回显它（说明值来自后端读回）
+    await expect(reopened.locator(".trigger-editor")).toContainText("每 2 小时", {
       timeout: 15_000,
     });
-    await reopened.getByRole("button", { name: "关闭" }).click();
+    await reopened.getByRole("button", { name: "关闭" }).first().click();
   } finally {
     // 清场：先清空调度（避免留一行无主调度），再删除本次专用工作流
     await page.request
