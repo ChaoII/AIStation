@@ -216,6 +216,15 @@ git commit -m "feat(cron): 统一触发器构造/描述/下次运行时间（周
 **Interfaces:**
 - Produces: `TriggerUtil.normalize(trigger: str, args) -> tuple[str, object]`、`TriggerUtil.validate(trigger: str, args) -> tuple[bool, str]`、`TriggerUtil.describe(trigger: str, args) -> str`、`TriggerUtil.to_trigger(trigger: str, args) -> BaseTrigger`（`trigger` 非法时抛 `CustomException`）
 
+**A2 遗留裁决（随本任务一并落地）:**
+- **永不触发的日/月组合判非法**：`validate("cron", ...)` 除语法外还要做**可调度性检查**——在有限窗口
+  （如 4 年）内用 `to_trigger` 找不到下次触发即非法，原因写"该日/月组合永远不会触发（如 6 月 31 日）"。
+  测试：`0 9 31 6 *`、`0 9 30 2 *` 判非法；`0 9 29 2 *`（闰年 2/29）判**合法**。
+  同时 `next_run` **不得抛异常**：捕获后返回 `None`（A7 的预览据此给出"永不触发"提示，不 500）。
+- **「日」与「周」同时为非 `*` 判非法**：APScheduler 取 AND、Vixie/croniter 取 OR（实测
+  `0 9 1 * mon` 两边不同），实现间语义不一致。测试：`0 9 1 * mon` 判非法且原因含"只指定其一"；
+  `0 9 1 * *`、`0 9 * * mon` 判合法。
+
 - [ ] **Step 1: 写失败测试**（含 Review Focus 2、3、5）
 
 ```python
