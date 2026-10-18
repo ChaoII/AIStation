@@ -1,5 +1,9 @@
 # 智能问数工作台 Implementation Plan
 
+> **⚠️ 状态：已废弃（2026-10-15 晚）**。该方案（单入口 + 页签工作台）已被用户否决，
+> 改为「智能问数」独立菜单目录 + 4 个独立子菜单页面（见 `2026-10-15-ai-query-group-design.md`）。
+> 本文仅作历史记录。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把「数据与集成 / 智能问数 / 问数评测 / 自定义报表」四个独立菜单页收敛为「智能问数」单入口 + 页内四个页签，旧地址全部重定向到 `/ai/query?tab=xxx`。

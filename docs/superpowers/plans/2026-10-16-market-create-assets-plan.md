@@ -11,14 +11,14 @@
 - 前端动态路由由后端菜单驱动；菜单下线后路由不可达。
 
 ## 待办
-- [ ] 后端 `init_app.py`：`AI_MERGED_INTO_MARKET` 增加 `AiTool`/`AiMcp`（隐藏+重定向 /ai/market）
-- [ ] 后端 `init_app.py`：四类菜单条目不再创建/隐藏（AiTool/AiMcp 已在下线清单中）
-- [ ] 前端组件 `CreateToolDialog.vue`（HTTP/脚本/Agno 配置 + 测试/试运行）
-- [ ] 前端组件 `CreateMcpDialog.vue`（stdio/sse/http + 连接测试）
-- [ ] 前端组件 `CreateSkillDialog.vue`（新建 + 导入 SKILL.md/Zip）
-- [ ] 前端组件 `CreatePluginDialog.vue`（JSON 配置）
-- [ ] `MarketMine.vue`：各类型页签加「新建XX」按钮 + 卡片加「编辑」按钮，挂载 4 个 Dialog
-- [ ] 物理删除四个独立页 `frontend/src/views/module_ai/{tool,mcp,skill,plugin}/index.vue`
-- [ ] 前端 type-check 无新增错误
-- [ ] 后端启动、浏览器截图视觉确认（四页签新建/编辑/配置/测试）
-- [ ] 提交：`feat(ui): 能力市场我的资产集成四类资产创建/编辑与高阶操作`
+- [x] 后端 `init_app.py`：`AI_MERGED_INTO_MARKET` 增加 `AiTool`/`AiMcp`（隐藏+重定向 /ai/market）
+- [x] 后端 `init_app.py`：四类菜单条目不再创建/隐藏（AiTool/AiMcp 已在下线清单中）
+- [x] 前端组件 `CreateToolDialog.vue`（HTTP/脚本/Agno 配置 + 测试/试运行）
+- [x] 前端组件 `CreateMcpDialog.vue`（stdio/sse/http + 连接测试）
+- [x] 前端组件 `CreateSkillDialog.vue`（新建 + 导入 SKILL.md/Zip）
+- [x] 前端组件 `CreatePluginDialog.vue`（JSON 配置）
+- [x] `MarketMine.vue`：各类型页签加「新建XX」按钮 + 卡片加「编辑」按钮，挂载 4 个 Dialog
+- [x] 物理删除四个独立页 `frontend/src/views/module_ai/{tool,mcp,skill,plugin}/index.vue`
+- [x] 前端 type-check 无新增错误
+- [x] 后端启动、浏览器截图视觉确认（四页签新建/编辑/配置/测试）
+- [x] 提交：`feat(ui): 能力市场我的资产集成四类资产创建/编辑与高阶操作`
