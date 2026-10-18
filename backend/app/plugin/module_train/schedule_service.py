@@ -5,6 +5,8 @@ from app.core.exceptions import CustomException
 from app.core.logger import log
 from app.utils.trigger_util import TriggerUtil
 
+from .framework_utils import framework_value
+from .model import TrainFramework
 from .schedule_model import TrainScheduleModel
 
 #: 启用中的定时计划必须有触发表达式：空表达式 = 「已启用但永不触发」的静默失效。
@@ -214,7 +216,7 @@ class ScheduleService:
                 name=data.name,
                 dataset_id=data.dataset_id,
                 annotation_task_id=getattr(data, "annotation_task_id", None),
-                framework=data.framework,
+                framework=TrainFramework(framework_value(data.framework)),
                 hyperparams=data.hyperparams,
                 trigger=trigger,
                 trigger_args=TriggerUtil.dump_args(trigger, trigger_args),
@@ -249,8 +251,13 @@ class ScheduleService:
                 "enabled",
             ):
                 val = getattr(data, key, None)
-                if val is not None:
-                    setattr(s, key, val)
+                if val is None:
+                    continue
+                # 枚举列必须写 `TrainFramework` 成员：库里那列是 PG 枚举 `trainframework`，
+                # 直接写字符串会 `DatatypeMismatchError`（见 schedule_model.py 的说明）。
+                if key == "framework":
+                    val = TrainFramework(framework_value(val))
+                setattr(s, key, val)
             trigger_in = getattr(data, "trigger", None)
             args_in = getattr(data, "trigger_args", None)
             legacy_in = getattr(data, "cron_expr", None)

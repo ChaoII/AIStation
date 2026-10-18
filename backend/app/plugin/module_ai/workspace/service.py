@@ -613,5 +613,8 @@ class WorkspaceService:
 
             await AiWorkflowService.run_schedule(target_id)
             return
-        # agent / app：暂不做非流式执行，仅记录（后续接入）
-        print(f"ℹ️ 定时任务目标 {target_type}#{target_id} 执行（非流式执行待接入）", flush=True)
+        # agent / app：暂不做非流式执行，仅记录（后续接入）。
+        # ⚠️ 必须用 log 而不是 print：Windows 控制台是 GBK，`print("ℹ️ …")` 会抛
+        # `UnicodeEncodeError: 'gbk' codec can't encode character '\u2139'`，
+        # 作业被执行器记为**失败**（实测「立即执行」的工作台任务因此跑不起来）。
+        log.info(f"[workspace] 定时任务目标 {target_type}#{target_id} 执行（非流式执行待接入）")

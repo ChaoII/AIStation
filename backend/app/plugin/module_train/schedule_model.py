@@ -1,10 +1,12 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.base_model import ModelMixin, UserMixin
+
+from .model import TrainFramework
 
 
 class TrainScheduleModel(ModelMixin, UserMixin):
@@ -18,7 +20,15 @@ class TrainScheduleModel(ModelMixin, UserMixin):
     # 该列在 PG 里**没有 server_default**（实测 column_default 为 NULL），所以新建行
     # 会拿到下面的 Python 侧默认值；但创建/更新定时计划的 service 仍必须显式赋值并
     # 挡退场框架（见 schedule_service.py），不能依赖默认值兜底。
-    framework: Mapped[str] = mapped_column(String(16), default="torchkiln", comment="训练框架")
+    #
+    # ⚠️ 映射必须与库里一致：该列在 PG 里是**枚举类型 `trainframework`**（与
+    # `TrainTask`/`TrainModel` 等同款），此处若写成 `String(16)`，插入时会报
+    # `column "framework" is of type trainframework but expression is of type character varying`
+    # ——「定时训练计划创建不了」的既有 bug（2026-10-18 由 e2e 暴露）。写入方须传
+    # `TrainFramework` 成员（见 `framework_utils.framework_value`）。
+    framework: Mapped[TrainFramework] = mapped_column(
+        SAEnum(TrainFramework), default=TrainFramework.TORKILN, comment="训练框架"
+    )
     hyperparams: Mapped[dict] = mapped_column(JSONB, default=dict, comment="超参数")
     trigger: Mapped[str] = mapped_column(
         String(16), nullable=False, default="cron", server_default="cron",
