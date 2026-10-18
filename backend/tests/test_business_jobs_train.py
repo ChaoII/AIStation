@@ -15,6 +15,7 @@ import inspect
 from types import SimpleNamespace
 
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 
 # `ap_scheduler` 与 `app.plugin.module_task` 存在**既有**循环导入：先 import `module_task`
 # 则成功（同 tests/test_business_scheduler.py 的处理，非本任务引入）。
@@ -36,6 +37,20 @@ def _data(cron_expr: str, name: str = "pytest-B4-定时训练") -> SimpleNamespa
         framework="torchkiln",
         hyperparams={},
         cron_expr=cron_expr,
+    )
+
+
+def _data_now(name: str = "pytest-A9-立即执行") -> SimpleNamespace:
+    """构造 `trigger="now"`（立即执行）的入参：按契约**无参数**（`trigger_args` 为 None）。"""
+    return SimpleNamespace(
+        name=name,
+        dataset_id=1,
+        annotation_task_id=None,
+        framework="torchkiln",
+        hyperparams={},
+        trigger="now",
+        trigger_args=None,
+        cron_expr=None,
     )
 
 
@@ -81,6 +96,37 @@ def test_create_schedule_registers_business_job():
     finally:
         asyncio.run(ScheduleService.delete_schedules([sid]))
     assert scheduler.get_job(_job_key(sid)) is None, "删除计划后作业必须移除（不留幽灵作业）"
+
+
+def test_create_schedule_with_now_trigger_registers_one_shot_job():
+    """`trigger="now"`（立即执行）必须真的注册一次性作业（Task A9）。
+
+    缺口：守卫曾写成 `not enabled or not trigger_args`，而 `now` 按契约**无参数**
+    （`trigger_args` 恒为 `None`）⇒ 作业永远注册不上，「保存后立即执行一次」静默失效。
+    口径与工作流侧逐字一致：`enabled and (trigger_args or trigger == "now")`。
+
+    刻意**不触发**作业去真跑（只断言注册结果与触发器类型）。
+    """
+    from app.plugin.module_train.schedule_service import sync_train_schedule_job
+
+    created = asyncio.run(ScheduleService.create_schedule(_data_now(), _AUTH))
+    sid = created["id"]
+    try:
+        job = scheduler.get_job(_job_key(sid))
+        assert job is not None, "「立即执行」必须注册一次性作业（now 按契约无参数）"
+        assert job.func is train_scheduler.run_scheduled_training  # 模块级执行体
+        assert job.args == (sid,)
+        # 触发器由统一层构造：`now` → `DateTrigger(now + 2s)`
+        assert isinstance(job.trigger, DateTrigger)
+
+        asyncio.run(ScheduleService.update_schedule(sid, SimpleNamespace(enabled=False)))
+        assert scheduler.get_job(_job_key(sid)) is None, "禁用后一次性作业必须移除"
+
+        # 守卫的另一半：未启用时同步同键不得注册（不留幽灵触发）
+        sync_train_schedule_job(sid, "now", None, enabled=False)
+        assert scheduler.get_job(_job_key(sid)) is None, "未启用不得注册作业"
+    finally:
+        asyncio.run(ScheduleService.delete_schedules([sid]))
 
 
 def test_disable_reenable_and_reconfigure_sync_job():

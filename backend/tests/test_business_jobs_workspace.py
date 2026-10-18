@@ -18,6 +18,8 @@ import inspect
 import uuid
 from zoneinfo import ZoneInfo
 
+from apscheduler.triggers.date import DateTrigger
+
 # `ap_scheduler` 与 `app.plugin.module_task` 存在**既有**循环导入（B1 已记录）：
 # 先 import `module_task` 再 import `ap_scheduler` 才能成功。这里固定顺序，
 # 使本文件在 `PYTEST_NO_APP=1` 快速模式下也能导入（该循环导入非本任务引入）。
@@ -67,6 +69,28 @@ def _update_cron(test_client, auth_headers, cron_id: int, payload: dict):
     return test_client.put(
         f"/api/v1/ai/workspace/cron/update/{cron_id}", json=payload, headers=auth_headers
     )
+
+
+def _create_cron_now(test_client, auth_headers, enabled: bool = True) -> int:
+    """建一条 `trigger="now"`（立即执行）的工作台定时任务：按契约**无参数**。
+
+    目标同样用不存在的 workflow#0（作业执行时静默跳过）。
+    """
+    r = test_client.post(
+        "/api/v1/ai/workspace/cron/create",
+        json={
+            "name": _new_name(),
+            "description": "",
+            "trigger": "now",
+            "trigger_args": None,
+            "target_type": "workflow",
+            "target_id": 0,
+            "enabled": enabled,
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["data"]["id"]
 
 
 def _delete_cron(test_client, auth_headers, cron_id: int) -> None:
@@ -278,6 +302,38 @@ def test_startup_registration_helper_registers_workspace_jobs(test_client, auth_
         except Exception:  # noqa: BLE001 作业已不在
             pass
         _delete_cron(test_client, auth_headers, cid)
+
+
+def test_workspace_cron_now_trigger_registers_one_shot_job(test_client, auth_headers):
+    """`trigger="now"`（立即执行）必须真的注册一次性作业（Task A9）。
+
+    缺口：守卫曾写成 `not enabled or not trigger_args`，而 `now` 按契约**无参数**
+    （`trigger_args` 恒为 `None`）⇒ 作业永远注册不上，「保存后立即执行一次」静默失效。
+    口径与工作流侧逐字一致：`enabled and (trigger_args or trigger == "now")`。
+
+    刻意**不触发**作业去真跑（只断言注册结果与触发器类型）。
+    """
+    cid = _create_cron_now(test_client, auth_headers, enabled=True)
+    cid_off = _create_cron_now(test_client, auth_headers, enabled=False)
+    job_key = _job_key(cid)
+    off_key = _job_key(cid_off)
+    try:
+        job = scheduler.get_job(job_key)
+        assert job is not None, "「立即执行」必须注册一次性作业（now 按契约无参数）"
+        assert job.func is run_scheduled_workspace_cron  # 模块级执行体（可日志/可序列化）
+        assert job.args == (cid,)
+        # 触发器由统一层构造：`now` → `DateTrigger(now + 2s)`
+        assert isinstance(job.trigger, DateTrigger)
+        assert scheduler.get_job(off_key) is None, "未启用不得注册作业"
+
+        r = _update_cron(test_client, auth_headers, cid, {"enabled": False})
+        assert r.status_code == 200, r.text
+        assert scheduler.get_job(job_key) is None, "禁用后一次性作业必须移除（不留幽灵触发）"
+    finally:
+        for key in (job_key, off_key):
+            SchedulerUtil.remove_business_job(key)
+        _delete_cron(test_client, auth_headers, cid)
+        _delete_cron(test_client, auth_headers, cid_off)
 
 
 def test_workspace_module_has_no_self_polling_and_init_app_registers_per_module():

@@ -453,6 +453,9 @@ class WorkspaceService:
         """把定时任务行同步到中心调度器（幂等），返回注册后的作业（未注册时为 `None`）。
 
         - 启用 + 已配置表达式 → 注册/替换作业（同键替换，改表达式即换触发器）；
+        - 启用 + `trigger="now"`（立即执行）→ 同样注册：`now` 按契约**无参数**
+          （`trigger_args` 恒为 `None`），由统一层构造 `DateTrigger(now + 2s)` 的一次性作业
+          （守卫口径与工作流侧逐字一致，A9 修「立即执行」静默失效）；
         - 禁用 / 未配置表达式 → 移除作业（幂等，不留幽灵触发）；
         - 遗留脏表达式（迁移被跳过、Quartz 写法）注册失败：**不留幽灵作业、也不把请求打成 500**
           ——该行在列表里由统一层标 `needs_review`，提示人工改写。
@@ -464,7 +467,7 @@ class WorkspaceService:
         from app.core.ap_scheduler import SchedulerUtil
 
         job_key = _job_key(cron_id)
-        if not enabled or not trigger_args:
+        if not (enabled and (trigger_args or trigger == "now")):
             SchedulerUtil.remove_business_job(job_key)
             return None
         try:
