@@ -184,6 +184,54 @@
         @new-link="openLinkEdit()"
         @go-properties="goObjectProperties"
         @open-object="onGraphNodeTap"
+        @open-link="openLinkDetail"
+        @open-action="openActionDetail"
+        @refresh="reloadAll"
+      />
+    </el-drawer>
+
+    <!-- ================= 关系类型详情（此前 OntLinkTypeView 无任何入口） ================= -->
+    <el-drawer
+      v-model="linkDrawer"
+      :size="'48%'"
+      :with-header="true"
+      title="关系类型详情"
+      destroy-on-close
+    >
+      <el-tabs v-model="linkPage" class="ont-detail-tabs">
+        <el-tab-pane label="概览" name="overview" />
+        <el-tab-pane label="安全" name="security" />
+        <el-tab-pane label="数据源" name="datasources" />
+      </el-tabs>
+      <OntLinkTypeView
+        v-if="linkDrawer && selLinkId"
+        :key="`linkdetail-${selLinkId}`"
+        :id="selLinkId"
+        :page="linkPage"
+        @edit="editCurrentLink"
+        @refresh="reloadAll"
+      />
+    </el-drawer>
+
+    <!-- ================= 动作类型详情（此前 OntActionTypeView 无任何入口） ================= -->
+    <el-drawer
+      v-model="actionDrawer"
+      :size="'48%'"
+      :with-header="true"
+      title="动作类型详情"
+      destroy-on-close
+    >
+      <el-tabs v-model="actionPage" class="ont-detail-tabs">
+        <el-tab-pane label="概览" name="overview" />
+        <el-tab-pane label="规则" name="rules" />
+        <el-tab-pane label="参数" name="parameters" />
+      </el-tabs>
+      <OntActionTypeView
+        v-if="actionDrawer && selActionCode"
+        :key="`actdetail-${selActionCode}`"
+        :code="selActionCode"
+        :page="actionPage"
+        @edit="editCurrentAction"
         @refresh="reloadAll"
       />
     </el-drawer>
@@ -643,6 +691,10 @@ import OntGraphWorkspace from "./components/OntGraphWorkspace.vue";
 import OntOverviewDrawer from "./components/OntOverviewDrawer.vue";
 import OntMaintenanceDrawer from "./components/OntMaintenanceDrawer.vue";
 import OntObjectTypeView from "./components/OntObjectTypeView.vue";
+// 关系类型 / 动作类型详情：这两个组件此前**全仓无人引用**（孤儿），
+// 导致关系与动作只能新建、看不了详情、也删不掉。
+import OntLinkTypeView from "./components/OntLinkTypeView.vue";
+import OntActionTypeView from "./components/OntActionTypeView.vue";
 import { getOntObjectView } from "@/api/module_ai/ontology";
 import {
   ONT_CARDINALITY,
@@ -667,6 +719,7 @@ const {
   currentDomain,
   currentDomainName,
   scopedLinks,
+  actions,
   wip,
   refreshWip,
   stage,
@@ -1042,6 +1095,37 @@ const linkBlank = () => ({
   description: "",
 });
 const linkForm = reactive<any>(linkBlank());
+/* ---------- 关系类型 / 动作类型详情抽屉（承接 OntObjectTypeView 的「详情」上抛） ---------- */
+const linkDrawer = ref(false);
+const selLinkId = ref<number | null>(null);
+const linkPage = ref("overview");
+const actionDrawer = ref(false);
+const selActionCode = ref("");
+const actionPage = ref("overview");
+
+function openLinkDetail(id: number) {
+  selLinkId.value = id;
+  linkPage.value = "overview";
+  linkDrawer.value = true;
+}
+
+function openActionDetail(code: string) {
+  selActionCode.value = code;
+  actionPage.value = "overview";
+  actionDrawer.value = true;
+}
+
+/** 详情里的「编辑」→ 复用既有编辑弹窗（两者都接受整行对象做回填） */
+function editCurrentLink() {
+  const row = (scopedLinks.value || []).find((l: any) => l.id === selLinkId.value);
+  if (row) openLinkEdit({ ...row });
+}
+
+function editCurrentAction() {
+  const row = (actions.value || []).find((a: any) => a.code === selActionCode.value);
+  if (row) openActionEdit({ ...row });
+}
+
 function openLinkEdit(l?: any) {
   Object.assign(linkForm, linkBlank(), l ? { ...l } : {});
   linkDialog.value = true;

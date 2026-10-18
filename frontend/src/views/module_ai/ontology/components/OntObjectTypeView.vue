@@ -240,6 +240,30 @@
         @node-tap="(c: string) => emit('open-object', c)"
         @create="emit('new-link')"
       />
+
+      <!-- 关系类型列表：**详情 / 删除**入口。
+           此前关系类型只能「新建」——详情组件（OntLinkTypeView）全仓无人引用，
+           既看不了元数据/安全/用量，也删不掉。 -->
+      <el-table :data="rels" size="small" border max-height="360" style="margin-top: 12px">
+        <template #empty><el-empty :image-size="40" description="暂无关系类型" /></template>
+        <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
+        <el-table-column label="方向" width="80">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain">{{ relDir(row) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="对端对象类型" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ relPeer(row) }}</template>
+        </el-table-column>
+        <el-table-column prop="card" label="基数" width="90" show-overflow-tooltip />
+        <el-table-column prop="join_method" label="连接方式" width="120" show-overflow-tooltip />
+        <el-table-column label="操作" width="130" align="center">
+          <template #default="{ row }">
+            <el-button size="small" link @click="emit('open-link', row.id)">详情</el-button>
+            <el-button size="small" type="danger" link @click="removeRel(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </section>
 
     <!-- ============ Properties 子页 ============ -->
@@ -364,9 +388,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="description" label="描述" min-width="160" show-overflow-tooltip />
-        <el-table-column label="操作" width="90" align="center">
+        <el-table-column label="操作" width="170" align="center">
           <template #default="{ row }">
             <el-button size="small" type="success" link @click="openExec(row)">执行</el-button>
+            <el-button size="small" link @click="emit('open-action', row.code)">详情</el-button>
+            <el-button size="small" type="danger" link @click="removeAction(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -735,6 +761,8 @@ import {
 const props = defineProps<{ code: string; page: string; viewCode?: string; viewKey?: string }>();
 const emit = defineEmits<{
   (e: "open-object", code: string): void;
+  (e: "open-link", id: number): void;
+  (e: "open-action", code: string): void;
   (e: "edit-object"): void;
   (e: "new-action"): void;
   (e: "new-link"): void;
@@ -1029,6 +1057,56 @@ function removeProp(p: any) {
       code: p.code,
       object_code: p.object_code,
       name: p.name,
+    });
+    await loadDetail();
+    emit("refresh");
+  });
+}
+
+/* ---------- 关系类型 / 动作类型：详情入口与删除 ---------- */
+
+/** 关系方向（相对当前对象类型）：出/入/自反 */
+function relDir(row: any): string {
+  const src = row?.source_object === props.code;
+  const tgt = row?.target_object === props.code;
+  if (src && tgt) return "自反";
+  return src ? "出" : "入";
+}
+
+/** 对端对象类型（相对当前对象类型取另一头） */
+function relPeer(row: any): string {
+  const src = row?.source_object === props.code;
+  return String((src ? row?.target_object : row?.source_object) || "");
+}
+
+function removeRel(row: any) {
+  ElMessageBox.confirm(
+    `将删除关系类型「${row?.name || row?.id}」（影响该关系的实例层跳转与图谱连线；改动先进入待保存列表）。确认删除？`,
+    "删除关系类型",
+    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+  ).then(async () => {
+    await stage("link", "delete", {
+      id: row?.id,
+      name: row?.name,
+      source_object: row?.source_object,
+      target_object: row?.target_object,
+    });
+    await loadDetail();
+    emit("refresh");
+  });
+}
+
+function removeAction(row: any) {
+  ElMessageBox.confirm(
+    `将删除动作类型「${row?.name || row?.code}」（其写回/审批配置一并移除；改动先进入待保存列表）。确认删除？`,
+    "删除动作类型",
+    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+  ).then(async () => {
+    await stage("action", "delete", {
+      id: row?.id,
+      code: row?.code,
+      object_code: row?.object_code || props.code,
+      name: row?.name,
     });
     await loadDetail();
     emit("refresh");
