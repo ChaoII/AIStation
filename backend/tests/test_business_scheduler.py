@@ -1,7 +1,8 @@
 """中心调度器「业务作业」API：注册 / 移除 / 同步（Task B1）。
 
-覆盖 Review Focus 4：删除或禁用任务后作业不得残留（无幽灵触发），
-且 `sync_business_jobs` 只清理业务前缀的作业，绝不触碰 `NodeModel` 的系统定时任务。
+覆盖 Review Focus 4：删除或禁用任务后作业不得残留（无幽灵触发）；`sync_business_jobs` 的
+清理范围由 `prefixes` 限定（多调用方只管自己的命名空间，绝不跨模块误删），且绝不触碰
+`NodeModel` 的系统定时任务（其 id 为纯数字）。
 
 可 ``PYTEST_NO_APP=1`` 快速跑（纯逻辑，约 2 秒）；默认模式（调度器已启动）同样通过。
 """
@@ -15,6 +16,11 @@ from apscheduler.jobstores.base import JobLookupError
 # 使本文件的用例在 `PYTEST_NO_APP=1` 快速模式下也能运行（该循环导入非本任务引入）。
 import app.plugin.module_task  # noqa: F401  解开既有循环导入（先 module_task 后 ap_scheduler）
 from app.core.ap_scheduler import SchedulerUtil, scheduler
+
+
+def _job_ids() -> set[str]:
+    """当前调度器里的全部作业 id（基线差集断言用，避免依赖进程内全局计数）。"""
+    return {str(job.id) for job in scheduler.get_jobs()}
 
 
 def test_register_and_remove_business_job_is_idempotent():
@@ -57,7 +63,11 @@ def test_business_job_defaults_are_explicit():
 
 
 def test_sync_business_jobs_registers_listed_and_prunes_only_business_jobs():
-    """同步按规格列表注册；清理列表外的业务作业残留；系统作业（纯数字 id）不受影响。"""
+    """同步按规格列表注册；清理列表外的业务作业残留；系统作业（纯数字 id）不受影响。
+
+    断言一律按**具体 key / 基线差集**，不依赖进程内全局计数：启动期可能已注册真实业务作业
+    （B2/B3/B4 落地后），全局计数会假失败并误伤后续用例。
+    """
 
     async def _job():
         return None
@@ -75,15 +85,21 @@ def test_sync_business_jobs_registers_listed_and_prunes_only_business_jobs():
         ("ai_workspace_cron:12", "interval", {"minutes": 5}, _job),
         ("train_schedule:5", "cron", "0 9 * * mon", _job_with_arg, (5,)),
     ]
+    before = _job_ids()
     try:
-        assert SchedulerUtil.sync_business_jobs(specs) == {"registered": 2, "removed": 1}
-        assert scheduler.get_job("ai_workspace_cron:12") is not None
-        assert scheduler.get_job("train_schedule:5") is not None
-        assert scheduler.get_job("ai_workflow_schedule:404") is None  # 残留被清理
-        assert scheduler.get_job("987654") is not None  # 系统作业不受影响
+        result = SchedulerUtil.sync_business_jobs(specs)
+        after = _job_ids()
+        removed_keys = before - after
+
+        assert {"ai_workspace_cron:12", "train_schedule:5"} <= after  # 列表内已注册
+        assert "ai_workflow_schedule:404" in removed_keys  # 残留被清理
+        assert "987654" in after  # 系统作业不受影响
+        assert result["registered"] == 2
+        assert result["removed"] == len(removed_keys)
 
         # 幂等：再同步一次不重复注册（registered 为「本轮注册数」，含幂等替换）、无可清理项
         assert SchedulerUtil.sync_business_jobs(specs) == {"registered": 2, "removed": 0}
+        assert _job_ids() == after
     finally:
         for job_key in ("ai_workspace_cron:12", "train_schedule:5", "ai_workflow_schedule:404"):
             SchedulerUtil.remove_business_job(job_key)
@@ -109,6 +125,8 @@ def test_unserializable_business_func_keeps_job_log_and_logs_no_error(monkeypatc
 
     spy = MagicMock()
     monkeypatch.setattr(ap_scheduler, "log", spy)
+    # 「降级只提示一次」是类级标志，可能已被本文件更早的用例置位 → 先复位再断言（否则恒真）
+    monkeypatch.setattr(SchedulerUtil, "_unserializable_state_warned", False)
 
     job_key = "ai_workspace_cron:9001"
 
@@ -120,6 +138,11 @@ def test_unserializable_business_func_keeps_job_log_and_logs_no_error(monkeypatc
     try:
         assert scheduler.get_job(job_key) is not None
         assert spy.error.call_count == 0, spy.error.call_args_list  # 不得打 ERROR 日志
+        assert spy.warning.call_count == 1, spy.warning.call_args_list  # 降级只提示一次
+
+        # 再取一次状态：类级标志生效，不重复刷屏
+        assert SchedulerUtil._get_job_state(scheduler.get_job(job_key)) is not None
+        assert spy.warning.call_count == 1
 
         # 执行日志（pending）必须落库，且 job_state 是降级后的最小状态
         with Session(engine) as session:
@@ -186,3 +209,89 @@ def test_serializable_system_job_state_stays_full(monkeypatch, test_client):
         with Session(engine) as session:
             session.query(JobModel).filter(JobModel.job_id == job_key).delete()
             session.commit()
+
+
+def test_sync_business_jobs_prefixes_scope_cleanup(monkeypatch):
+    """Important I1：`prefixes` 限定清理范围（多调用方只管自己的命名空间），None 保持旧语义。
+
+    用「记录 `remove_business_job` 调用」的方式断言**清理候选集**：既精确验证范围判定，
+    又不会真删掉别的模块（可能由启动期注册的）作业而污染后续用例。
+    """
+    from app.core import ap_scheduler
+
+    async def _job():
+        return None
+
+    planted = ("ai_workspace_cron:701", "ai_workflow_schedule:702", "train_schedule:703")
+    for job_key in planted:
+        SchedulerUtil.register_business_trigger(job_key, "interval", {"minutes": 7}, _job)
+    scheduler.add_job(_job, "interval", minutes=30, id="987657", coalesce=True)  # 系统作业
+
+    removed_calls: list[str] = []
+
+    def _record_remove(job_key):
+        removed_calls.append(job_key)
+        return True
+
+    monkeypatch.setattr(
+        ap_scheduler.SchedulerUtil,
+        "remove_business_job",
+        classmethod(lambda cls, key: _record_remove(key)),
+    )
+    try:
+        # ① 指定前缀：清理候选只含该前缀的作业（工作流/训练的残留绝不被清理）
+        removed_calls.clear()
+        result = SchedulerUtil.sync_business_jobs([], prefixes=("ai_workspace_cron:",))
+        assert removed_calls == ["ai_workspace_cron:701"]
+        assert result == {"registered": 0, "removed": 1}
+
+        # ③ 空列表 + 指定前缀：只清该前缀的作业
+        removed_calls.clear()
+        result = SchedulerUtil.sync_business_jobs([], prefixes=("train_schedule:",))
+        assert removed_calls == ["train_schedule:703"]
+        assert result == {"registered": 0, "removed": 1}
+
+        # 空前缀元组：不清理任何作业（安全默认）
+        removed_calls.clear()
+        assert SchedulerUtil.sync_business_jobs([], prefixes=()) == {"registered": 0, "removed": 0}
+        assert removed_calls == []
+
+        # ② prefixes=None：清理全部业务前缀（启动期聚合同步的旧语义），系统作业仍不在范围内
+        removed_calls.clear()
+        result = SchedulerUtil.sync_business_jobs([])
+        assert set(planted) <= set(removed_calls)
+        assert "987657" not in removed_calls
+        assert result == {"registered": 0, "removed": len(removed_calls)}
+    finally:
+        monkeypatch.undo()
+        for job_key in (*planted, "987657"):
+            SchedulerUtil.remove_business_job(job_key)
+        try:
+            scheduler.remove_job("987657")
+        except JobLookupError:
+            pass
+
+
+def test_sync_business_jobs_skips_malformed_spec_without_aborting(monkeypatch):
+    """M1：坏规格（元组长度不对）只跳过该条并记一次 warning，不中断整轮同步。"""
+    from unittest.mock import MagicMock
+
+    from app.core import ap_scheduler
+
+    spy = MagicMock()
+    monkeypatch.setattr(ap_scheduler, "log", spy)
+
+    async def _job():
+        return None
+
+    result = SchedulerUtil.sync_business_jobs([
+        ("ai_workspace_cron:801", "interval", {"minutes": 5}),  # 坏规格：3 元组
+        ("ai_workspace_cron:802", "interval", {"minutes": 5}, _job),
+    ])
+    try:
+        assert result["registered"] == 1  # 坏规格被跳过，好规格照常注册
+        assert scheduler.get_job("ai_workspace_cron:802") is not None
+        assert spy.warning.call_count == 1, spy.warning.call_args_list
+        assert spy.error.call_count == 0, spy.error.call_args_list
+    finally:
+        SchedulerUtil.remove_business_job("ai_workspace_cron:802")

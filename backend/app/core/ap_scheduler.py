@@ -1262,41 +1262,49 @@ class SchedulerUtil:
         return True
 
     @classmethod
-    def sync_business_jobs(cls, jobs) -> dict[str, int]:
+    def sync_business_jobs(cls, jobs, prefixes: tuple[str, ...] | None = None) -> dict[str, int]:
         """
-        按给定规格同步业务作业：注册列表内的、清理列表外残留的（幂等，可反复调用）。
+        按给定规格同步业务作业：注册列表内的、清理「清理范围」内列表外残留的（幂等，可反复调用）。
 
         库表读取（AI 工作台定时任务 / AI 工作流定时调度 / 训练定时调度）由各业务模块负责，
         本方法只处理传入的规格，避免中心调度器反向依赖各业务模型。
 
-        **只清理业务前缀的作业**（见 `_BUSINESS_JOB_PREFIXES`），绝不触碰 `NodeModel`
-        的系统定时任务（其 id 为纯数字）。
+        **清理范围（`prefixes`）**：
+        - `prefixes` 给定时，只清理 id 以这些前缀开头的作业 —— **多调用方（B2/B3/B4 各自启停时）
+          必须传自己的 prefixes**，否则会把别的模块的作业一并删掉（无告警、无异常，只在下次
+          触发时表现为「任务不再运行」）；空元组表示不清理任何作业；
+        - `prefixes=None` 时清理全部业务前缀（见 `_BUSINESS_JOB_PREFIXES`），
+          供**启动期一次性聚合同步**使用。
+
+        无论哪种范围，都绝不触碰 `NodeModel` 的系统定时任务（其 id 为纯数字）。
 
         参数:
         - jobs: 业务作业规格序列，每项为 `(job_key, trigger, trigger_args, func)`，
           或 `(job_key, trigger, trigger_args, func, func_args)`（第五项为传给 `func` 的位置参数）。
+        - prefixes (tuple[str, ...] | None): 清理范围前缀；None 表示全部业务前缀。
 
         返回:
         - dict[str, int]: `{"registered": 本轮成功注册的作业数（含幂等替换）, "removed": 清理数}`。
         """
-        specs = [cls._split_business_spec(item) for item in jobs]
         # 「列表」是作业是否该存在的唯一真源：列表内的键一律保留（注册失败也不清理，
-        # 避免单条坏配置把既有作业一并抹掉），列表外的业务作业才是残留
-        desired = {job_key for job_key, _, _, _, _ in specs}
-
+        # 避免单条坏配置把既有作业一并抹掉），列表外的「清理范围内」作业才是残留
+        desired: set[str] = set()
         registered = 0
-        for job_key, trigger, trigger_args, func, func_args in specs:
+        for item in jobs:
             try:
+                job_key, trigger, trigger_args, func, func_args = cls._split_business_spec(item)
+                desired.add(job_key)
                 cls.register_business_trigger(job_key, trigger, trigger_args, func, args=func_args)
-            except Exception as e:  # noqa: BLE001 单条坏配置不能拖垮整轮同步
-                log.error(f"业务作业 {job_key} 注册失败，已跳过：{e!s}")
+            except Exception as e:  # noqa: BLE001 单条坏规格/坏配置不能拖垮整轮同步
+                log.warning(f"业务作业规格 {item!r} 同步失败，已跳过：{e!s}")
                 continue
             registered += 1
 
+        scope = _BUSINESS_JOB_PREFIXES if prefixes is None else tuple(prefixes)
         removed = 0
         for job in cls.get_all_jobs():
             job_id = str(job.id)
-            if job_id in desired or not job_id.startswith(_BUSINESS_JOB_PREFIXES):
+            if job_id in desired or not job_id.startswith(scope):
                 continue
             if cls.remove_business_job(job_id):
                 removed += 1
