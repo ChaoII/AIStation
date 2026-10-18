@@ -62,7 +62,7 @@
           <el-descriptions-item label="目标侧复数名">
             {{ link.target_plural_name || "—" }}
           </el-descriptions-item>
-          <el-descriptions-item label="所属本体">{{ domainLabel }}</el-descriptions-item>
+          <el-descriptions-item label="所属本体">{{ domainLabel() }}</el-descriptions-item>
           <el-descriptions-item label="描述" :span="2">
             <span :class="{ 'ont-none': !link.description }">
               {{ link.description || "未填写" }}
