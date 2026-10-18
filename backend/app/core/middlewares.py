@@ -3,15 +3,11 @@ import json
 import time
 from contextlib import suppress
 
-from starlette.middleware.base import (
-    BaseHTTPMiddleware,
-    RequestResponseEndpoint,
-)
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.v1.module_system.params.service import ParamsService
 from app.common.response import ErrorResponse
@@ -49,13 +45,135 @@ class CustomCORSMiddleware(CORSMiddleware):
         )
 
 
-class RequestLogMiddleware(BaseHTTPMiddleware):
-    """
-    记录请求日志中间件: 提供一个基础的中间件类，允许你自定义请求和响应处理逻辑。
+class RequestLogMiddleware:
+    """请求日志中间件（**纯 ASGI**，不要改回 BaseHTTPMiddleware）。
+
+    为什么必须纯 ASGI：``BaseHTTPMiddleware`` 把下游放进**新任务**执行，而且 starlette 的
+    ``_CachedRequest`` **只在中间件自己先看到断开时**，才把 ``http.disconnect`` 转发给下游
+    （源码里的 ``_is_disconnected`` 判断）。本中间件从不消费 ``receive``，于是流式端点（SSE）
+    永远收不到断开通知：客户端关掉页面后，服务端既不会抛 ``GeneratorExit``，也不会被
+    ``StreamingResponse.listen_for_disconnect`` 取消——运行会白跑到底（实测：断开 12 秒后
+    运行记录仍是 running）。纯 ASGI 直接透传 ``receive``，断开照常传播，这类问题从根上消失。
+
+    职责：请求日志、演示模式/IP 黑白名单拦截、``X-Process-Time`` 响应头、响应日志。
     """
 
     def __init__(self, app: ASGIApp) -> None:
-        super().__init__(app)
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # 非 HTTP（lifespan / websocket）直接透传
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive)
+        start_time = time.time()
+        session_id = self._extract_session_id_from_request(request)
+
+        log.info(
+            f"请求来源: {request.client.host if request.client else '未知'},"
+            f"请求方法: {request.method},"
+            f"请求路径: {request.url.path}"
+        )
+
+        started = False
+        try:
+            blocked = await self._blocked_response(request, session_id)
+            if blocked is not None:
+                await blocked(scope, receive, send)
+                return
+
+            async def send_wrapper(message: Message) -> None:
+                nonlocal started
+                if message["type"] == "http.response.start":
+                    started = True
+                    process_time = round(time.time() - start_time, 5)
+                    # 补处理耗时头（原实现是改 Response 对象，纯 ASGI 只能改响应消息头）
+                    MutableHeaders(scope=message)["X-Process-Time"] = str(process_time)
+                    content_length = Headers(raw=message["headers"]).get("content-length", "0")
+                    log.info(
+                        f"响应状态: {message['status']}, 响应内容长度: {content_length}, "
+                        f"处理时间: {round(process_time * 1000, 3)}ms"
+                    )
+                await send(message)
+
+            await self.app(scope, receive, send_wrapper)
+        except CustomException as e:
+            log.exception(f"中间件处理异常: {e!s}")
+            # 不回显异常细节，避免泄露内部实现/敏感信息；已开始发送响应就不能再发错误响应
+            if not started:
+                await ErrorResponse(msg="系统异常，请联系管理员")(scope, receive, send)
+
+    async def _blocked_response(self, request: Request, session_id: str | None):
+        """演示模式 / IP 黑白名单拦截：返回响应表示拦截，``None`` 表示放行。"""
+        path = request.scope.get("path")
+        request_ip = (
+            x_forwarded_for.split(",")[0].strip()
+            if (x_forwarded_for := request.headers.get("X-Forwarded-For"))
+            else request.client.host
+            if request.client
+            else None
+        )
+
+        demo_enable = False
+        ip_white_list: list = []
+        white_api_list_path: list = []
+        ip_black_list: list = []
+
+        try:
+            # 从应用实例获取Redis连接
+            redis = request.app.state.redis
+            if not redis:
+                raise CustomException(msg="无法获取Redis连接")
+
+            # 使用ParamsService获取系统配置
+            system_config = await ParamsService.get_system_config_for_middleware(redis)
+            # 提取配置值
+            demo_enable = system_config["demo_enable"]
+            ip_white_list = system_config["ip_white_list"]
+            white_api_list_path = system_config["white_api_list_path"]
+            ip_black_list = system_config["ip_black_list"]
+        except Exception as e:  # noqa: BLE001
+            log.error(f"获取系统配置失败: {e}")
+
+        should_block = False
+        block_reason = ""
+
+        # 1. 首先检查IP是否在黑名单中
+        if request_ip and request_ip in ip_black_list:
+            should_block = True
+            block_reason = f"IP地址 {request_ip} 在黑名单中"
+
+        # 2. 如果不在黑名单中，检查是否在演示模式下需要拦截
+        elif demo_enable in ["true", "True"] and request.method != "GET":
+            # 在演示模式下，非GET请求需要检查白名单
+            is_ip_whitelisted = request_ip in ip_white_list
+            is_path_whitelisted = path in white_api_list_path
+
+            if not is_ip_whitelisted and not is_path_whitelisted:
+                should_block = True
+                block_reason = f"演示模式下拦截非GET请求，IP: {request_ip}, 路径: {path}"
+
+        if not should_block:
+            return None
+
+        # 增强安全审计：记录详细的拦截日志
+        log.warning(
+            " | ".join(
+                [
+                    f"会话ID: {session_id or '未认证'}",
+                    f"请求被拦截: {block_reason}",
+                    f"请求来源: {request_ip}",
+                    f"请求方法: {request.method}",
+                    f"请求路径: {path}",
+                    f"用户代理: {request.headers.get('user-agent', '未知')}",
+                    f"演示模式: {demo_enable}",
+                ]
+            )
+        )
+        # 拦截请求
+        return ErrorResponse(msg="演示环境，禁止操作")
 
     @staticmethod
     def _extract_session_id_from_request(request: Request) -> str | None:
@@ -99,119 +217,6 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         except Exception:
             # 解析失败静默处理，返回None（可能是未认证请求）
             return None
-
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        # WebSocket 连接不走 BaseHTTPMiddleware，直接透传
-        if request.scope.get("type") == "websocket":
-            return await self.app(request.scope, None, None)
-
-        start_time = time.time()
-
-        # 尝试提取session_id
-        session_id = self._extract_session_id_from_request(request)
-
-        # 组装请求日志字段
-        log_fields = (
-            f"请求来源: {request.client.host if request.client else '未知'},"
-            f"请求方法: {request.method},"
-            f"请求路径: {request.url.path}"
-        )
-        log.info(log_fields)
-
-        try:
-            # 初始化响应变量
-            response = None
-
-            # 获取请求路径
-            path = request.scope.get("path")
-
-            # 尝试获取客户端真实IP
-            request_ip = None
-            request_ip = (
-                x_forwarded_for.split(",")[0].strip()
-                if (x_forwarded_for := request.headers.get("X-Forwarded-For"))
-                else request.client.host
-                if request.client
-                else None
-            )
-            # 检查是否启用演示模式
-            demo_enable = False
-            ip_white_list = []
-            white_api_list_path = []
-            ip_black_list = []
-
-            try:
-                # 从应用实例获取Redis连接
-                redis = request.app.state.redis
-                if not redis:
-                    raise CustomException(msg="无法获取Redis连接")
-
-                # 使用ParamsService获取系统配置
-                system_config = await ParamsService.get_system_config_for_middleware(redis)
-                # 提取配置值
-                demo_enable = system_config["demo_enable"]
-                ip_white_list = system_config["ip_white_list"]
-                white_api_list_path = system_config["white_api_list_path"]
-                ip_black_list = system_config["ip_black_list"]
-
-            except Exception as e:
-                log.error(f"获取系统配置失败: {e}")
-
-            # 检查是否需要拦截请求
-            should_block = False
-            block_reason = ""
-
-            # 1. 首先检查IP是否在黑名单中
-            if request_ip and request_ip in ip_black_list:
-                should_block = True
-                block_reason = f"IP地址 {request_ip} 在黑名单中"
-
-            # 2. 如果不在黑名单中，检查是否在演示模式下需要拦截
-            elif demo_enable in ["true", "True"] and request.method != "GET":
-                # 在演示模式下，非GET请求需要检查白名单
-                is_ip_whitelisted = request_ip in ip_white_list
-                is_path_whitelisted = path in white_api_list_path
-
-                if not is_ip_whitelisted and not is_path_whitelisted:
-                    should_block = True
-                    block_reason = f"演示模式下拦截非GET请求，IP: {request_ip}, 路径: {path}"
-
-            if should_block:
-                # 增强安全审计：记录详细的拦截日志
-                log.warning(
-                    " | ".join(
-                        [
-                            f"会话ID: {session_id or '未认证'}",
-                            f"请求被拦截: {block_reason}",
-                            f"请求来源: {request_ip}",
-                            f"请求方法: {request.method}",
-                            f"请求路径: {path}",
-                            f"用户代理: {request.headers.get('user-agent', '未知')}",
-                            f"演示模式: {demo_enable}",
-                        ]
-                    )
-                )
-                # 拦截请求
-                return ErrorResponse(msg="演示环境，禁止操作")
-            # 正常处理请求
-            response = await call_next(request)
-
-            # 计算处理时间并添加到响应头
-            process_time = round(time.time() - start_time, 5)
-            response.headers["X-Process-Time"] = str(process_time)
-
-            # 构建响应日志信息
-
-            content_length = response.headers.get("content-length", "0")
-            response_info = f"响应状态: {response.status_code}, 响应内容长度: {content_length}, 处理时间: {round(process_time * 1000, 3)}ms"
-            log.info(response_info)
-
-            return response
-
-        except CustomException as e:
-            log.exception(f"中间件处理异常: {e!s}")
-            # 不回显异常细节，避免泄露内部实现/敏感信息
-            return ErrorResponse(msg="系统异常，请联系管理员")
 
 
 class DBSessionMiddleware:

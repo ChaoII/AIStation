@@ -240,9 +240,6 @@ async def run_workflow_stream(
             data.session_id,
             redis=request.app.state.redis,
             timeout_seconds=data.timeout_seconds,
-            # 客户端断开看门狗：BaseHTTPMiddleware 不会把 http.disconnect 透传给下游，
-            # 故在 SSE 侧主动轮询，发现断开即走「取消信号」把运行停掉（否则会白跑）。
-            is_disconnected=request.is_disconnected,
         )
     )
 

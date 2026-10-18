@@ -24,7 +24,7 @@ from .schema import AiWorkflowApproveSchema
 
 #: 引擎任务结束哨兵（经帧队列传给消费端）
 _ENGINE_END = object()
-#: 取消看门狗轮询间隔（秒）：取消信号查得勤（做到「秒停」），断开每 5 次查一次
+#: 取消看门狗轮询间隔（秒）：查得勤才能做到「秒停」
 _WATCH_INTERVAL = 0.2
 
 
@@ -239,7 +239,6 @@ class AiWorkflowService:
         session_id: int | None = None,
         redis=None,
         timeout_seconds: int | None = None,
-        is_disconnected=None,
     ) -> AsyncIterator[str]:
         """运行工作流：实例化引擎并流式产出 UI Message Stream 帧。
 
@@ -333,29 +332,20 @@ class AiWorkflowService:
 
                 engine_task = asyncio.create_task(_drive_engine())
 
-                # 取消看门狗（取消信号 + 客户端断开）：
-                # - 取消信号每 0.2s 查一次（内存+Redis，多 worker 也能收到），
-                # - 断开每 1s 查一次（BaseHTTPMiddleware 不会把 http.disconnect 透传给
-                #   下游，SSE 生成器收不到断开 → 关页面后运行会白跑到底，实测断开 12s
-                #   后记录仍是 running）。
-                # 命中任一条件即直接 cancel 引擎任务，做到「秒停」。
+                # 取消看门狗：每 0.2s 查一次取消信号（内存+Redis，多 worker 也能收到），
+                # 命中即**直接 cancel 引擎任务**，做到「秒停」。
+                # 客户端断开不走这里：中间件已改为纯 ASGI，``http.disconnect`` 能透传到
+                # StreamingResponse（``listen_for_disconnect``），生成器随即被取消，
+                # 下面的 ``except (GeneratorExit, CancelledError)`` 会取消引擎任务并补写记录。
                 async def _watch_cancel() -> None:
-                    tick = 0
                     while not engine_task.done():
                         await asyncio.sleep(_WATCH_INTERVAL)
-                        tick += 1
                         try:
                             if engine.cancel_key and await is_cancelled(
                                 engine.cancel_key, redis
                             ):
                                 engine_task.cancel()
                                 return
-                            if is_disconnected is not None and tick % 5 == 0:
-                                if await is_disconnected():
-                                    if log_id:
-                                        await request_cancel(log_id, redis)
-                                    engine_task.cancel()
-                                    return
                         except BaseException:  # noqa: BLE001 轮询失败即放弃（不误杀运行）
                             return
 
@@ -831,8 +821,6 @@ class AiWorkflowService:
         运行记录的 ``status`` 届时由运行方更新为 ``cancelled``。
         """
         from app.core.exceptions import CustomException
-
-        from .cancel import request_cancel
 
         async with async_db_session() as db:
             row = await db.get(AiWorkflowRunLogModel, run_id)
