@@ -31,7 +31,7 @@ from apscheduler.events import (
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.executors.pool import ProcessPoolExecutor, ThreadPoolExecutor
 from apscheduler.job import Job
-from apscheduler.jobstores.base import ConflictingIdError
+from apscheduler.jobstores.base import ConflictingIdError, JobLookupError
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -49,6 +49,10 @@ from app.utils.trigger_util import TriggerUtil
 
 #: 旧 interval 字符串（「秒 分 时 天 周」）的字段顺序 → 统一层 JSON 的字段名
 _LEGACY_INTERVAL_FIELDS = ("seconds", "minutes", "hours", "days", "weeks")
+
+#: 业务作业的 job_key 前缀：AI 工作台定时任务 / AI 工作流定时调度 / 训练定时调度。
+#: `sync_business_jobs` 只按这些前缀清理残留，绝不触碰 `NodeModel` 的系统定时任务（其 id 为纯数字）。
+_BUSINESS_JOB_PREFIXES = ("ai_workspace_cron:", "ai_workflow_schedule:", "train_schedule:")
 
 scheduler = AsyncIOScheduler()
 scheduler.configure(
@@ -1140,6 +1144,146 @@ class SchedulerUtil:
                 f"检测到旧「秒 分 时 天 周」字符串 {text!r}，已按旧格式解析，请尽快更新为 JSON"
             )
         return dict(zip(_LEGACY_INTERVAL_FIELDS, values, strict=True))
+
+    @classmethod
+    def register_business_trigger(
+        cls,
+        job_key: str,
+        trigger: str,
+        trigger_args,
+        func,
+        args=(),
+        replace: bool = True,
+    ) -> Job:
+        """
+        注册（或替换）一个业务作业到中心调度器。
+
+        业务作业（AI 工作台定时任务、AI 工作流定时调度、训练定时调度）统一注册到**内存 jobstore**
+        （`default`）：它们的 `func` 多为闭包，无法被持久化 jobstore 序列化；重启后由
+        `sync_business_jobs` 按库里「启用」的行重新注册。
+
+        调度参数显式固定为 `coalesce=True`、`misfire_grace_time=60`、`max_instances=1`
+        （APScheduler 默认 misfire 宽限仅 1 秒，调度器繁忙时会静默丢跑）。
+
+        参数:
+        - job_key (str): 作业唯一键，形如 `ai_workspace_cron:12`。
+        - trigger (str): 触发类型（cron / interval / date / now，口径由 `TriggerUtil` 统一负责）。
+        - trigger_args: 触发参数（cron 为 5 段表达式、interval 为 JSON 对象等）。
+        - func: 作业函数（可为协程函数）。
+        - args (tuple): 传给 `func` 的位置参数。
+        - replace (bool): 同键作业已存在时是否替换（默认 True，幂等）。
+
+        返回:
+        - Job: 已注册的 APScheduler Job。
+        """
+        if not job_key:
+            raise ValueError("业务作业的 job_key 不能为空")
+
+        trigger_obj = TriggerUtil.to_trigger(trigger, trigger_args)
+
+        if replace:
+            # 调度器未启动时 APScheduler 把作业放进 pending 队列且**不做同 id 去重**，
+            # 此时 `replace_existing` 形同虚设（留下重复项，删一次删不干净）；
+            # 这里先显式移除同键作业，保证「幂等替换」在调度器启动前后行为一致。
+            cls.remove_business_job(job_key)
+
+        job = scheduler.add_job(
+            func=func,
+            trigger=trigger_obj,
+            args=tuple(args or ()),
+            id=job_key,
+            name=job_key,
+            replace_existing=replace,
+            coalesce=True,
+            misfire_grace_time=60,
+            max_instances=1,
+        )
+        log.info(f"业务作业 {job_key} 已注册（{trigger}）")
+        return job
+
+    @classmethod
+    def remove_business_job(cls, job_key: str) -> bool:
+        """
+        移除业务作业；作业不存在时返回 False 而不抛（便于增改删/启停处幂等调用）。
+
+        参数:
+        - job_key (str): 作业唯一键。
+
+        返回:
+        - bool: 是否真的移除了作业（False 表示本来就没有，不留幽灵作业）。
+        """
+        try:
+            scheduler.remove_job(job_key)
+        except JobLookupError:
+            return False
+        log.info(f"业务作业 {job_key} 已移除")
+        return True
+
+    @classmethod
+    def sync_business_jobs(cls, jobs) -> dict[str, int]:
+        """
+        按给定规格同步业务作业：注册列表内的、清理列表外残留的（幂等，可反复调用）。
+
+        库表读取（AI 工作台定时任务 / AI 工作流定时调度 / 训练定时调度）由各业务模块负责，
+        本方法只处理传入的规格，避免中心调度器反向依赖各业务模型。
+
+        **只清理业务前缀的作业**（见 `_BUSINESS_JOB_PREFIXES`），绝不触碰 `NodeModel`
+        的系统定时任务（其 id 为纯数字）。
+
+        参数:
+        - jobs: 业务作业规格序列，每项为 `(job_key, trigger, trigger_args, func)`，
+          或 `(job_key, trigger, trigger_args, func, func_args)`（第五项为传给 `func` 的位置参数）。
+
+        返回:
+        - dict[str, int]: `{"registered": 本轮成功注册的作业数（含幂等替换）, "removed": 清理数}`。
+        """
+        specs = [cls._split_business_spec(item) for item in jobs]
+        # 「列表」是作业是否该存在的唯一真源：列表内的键一律保留（注册失败也不清理，
+        # 避免单条坏配置把既有作业一并抹掉），列表外的业务作业才是残留
+        desired = {job_key for job_key, _, _, _, _ in specs}
+
+        registered = 0
+        for job_key, trigger, trigger_args, func, func_args in specs:
+            try:
+                cls.register_business_trigger(job_key, trigger, trigger_args, func, args=func_args)
+            except Exception as e:  # noqa: BLE001 单条坏配置不能拖垮整轮同步
+                log.error(f"业务作业 {job_key} 注册失败，已跳过：{e!s}")
+                continue
+            registered += 1
+
+        removed = 0
+        for job in cls.get_all_jobs():
+            job_id = str(job.id)
+            if job_id in desired or not job_id.startswith(_BUSINESS_JOB_PREFIXES):
+                continue
+            if cls.remove_business_job(job_id):
+                removed += 1
+
+        log.info(f"业务作业同步完成：注册 {registered} 个，清理 {removed} 个")
+        return {"registered": registered, "removed": removed}
+
+    @staticmethod
+    def _split_business_spec(spec) -> tuple[str, str, Any, Callable, tuple]:
+        """
+        把 `sync_business_jobs` 的规格项拆成 `(job_key, trigger, trigger_args, func, func_args)`。
+
+        参数:
+        - spec: 4 元组 `(job_key, trigger, trigger_args, func)` 或 5 元组（末项为 func 位置参数）。
+
+        返回:
+        - tuple: 归一后的五元组（`func_args` 恒为 tuple）。
+        """
+        items = tuple(spec)
+        if len(items) == 4:
+            job_key, trigger, trigger_args, func = items
+            return job_key, trigger, trigger_args, func, ()
+        if len(items) == 5:
+            job_key, trigger, trigger_args, func, func_args = items
+            return job_key, trigger, trigger_args, func, tuple(func_args or ())
+        raise ValueError(
+            "业务作业规格应为 4 元组或 5 元组"
+            f"（job_key, trigger, trigger_args, func[, func_args]）：{spec!r}"
+        )
 
     @staticmethod
     def _apply_trigger_bounds(trigger, start_date, end_date) -> None:
