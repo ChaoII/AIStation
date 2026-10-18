@@ -5,7 +5,9 @@
 - 5 段标准 crontab → 原样规范化（周字段映射为星期名列表，与写入口径完全一致）；
 - `?` → `*`（Quartz 专有语法**仅在读旧数据/迁移时容错**，写入接口一律拒绝）；
 - 6 段且秒位为 `0` → 去掉首段后按 5 段规范化；
-- **6 段秒位非 `0`、7 段（带年）→ 跳过**（返回中文原因，由迁移日志逐条记录、人工确认）；
+- 7 段且末段（年份）为 `*` / `?` → 等价于「无年份」，去掉该段后按 6 段处理
+  （Quartz 默认会写 `0 0 9 * * ? *` 这种"年份通配"形式，语义上就是 5 段 cron）；
+- **6 段秒位非 `0`、7 段带具体年份 → 跳过**（返回中文原因，由迁移日志逐条记录、人工确认）；
 - 空值与解析失败的 5 段 → 跳过（同样记日志），不猜语义。
 
 规范化的唯一实现是 :class:`~app.utils.trigger_util.TriggerUtil`——本模块**只做段数裁剪与 `?` 容错**，
@@ -33,26 +35,28 @@ def normalize_legacy(value) -> tuple[str, str | None, str | None]:
     fields = text.split()
     count = len(fields)
     if count == 7:
-        return "cron", None, f"7 段（带年份）表达式不受支持，跳过待人工确认：{text}"
+        if fields[-1] not in ("*", "?"):
+            return "cron", None, f"7 段（带年份）表达式不受支持，跳过待人工确认：{text}"
+        # 年份通配（`*` / `?`）与「无年份」等价：裁掉该段后按 6 段处理
+        fields = fields[:6]
+        count = 6
     if count == 6:
-        if not _is_zero(fields[0]):
+        # 秒位判定复用统一层（唯一口径）：该方法在 TriggerUtil 内为私有，
+        # 但语义与写入路径完全一致，这里刻意不另写一份，避免又出现"两套口径"
+        if not TriggerUtil._is_zero(fields[0]):
             return (
                 "cron",
                 None,
                 f"6 段表达式秒位非 0（秒级需求请改用 interval），跳过待人工确认：{text}",
             )
-        text = " ".join(fields[1:])
-    elif count != 5:
+        fields = fields[1:]
+        count = 5
+    if count != 5:
         return "cron", None, f"段数不为 5（{count} 段），跳过待人工确认：{text}"
 
     # `?` → `*`：仅迁移路径容错（写入接口仍拒绝 Quartz 专有语法）
-    text = text.replace("?", "*")
+    expr = " ".join(fields).replace("?", "*")
     try:
-        return "cron", TriggerUtil.normalize_cron(text), None
+        return "cron", TriggerUtil.normalize_cron(expr), None
     except ValueError as exc:
         return "cron", None, f"cron 表达式无法规范化（{exc}），跳过待人工确认：{text}"
-
-
-def _is_zero(token: str) -> bool:
-    """秒位是否为全 0（`0` / `00`）；与 `TriggerUtil` 的判定同义。"""
-    return bool(token) and token.strip("0") == ""

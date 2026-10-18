@@ -32,7 +32,7 @@ down_revision: str | None = "e2f3a4b5c6d7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-#: (表名, 旧列名, 旧列长度, 旧列是否非空)——降级时按此还原旧列
+#: (表名, 旧列名, 旧列长度, 旧列是否可空)——降级时按此还原旧列
 LEGACY_COLUMNS: tuple[tuple[str, str, int, bool], ...] = (
     ("ai_workspace_cron", "cron", 128, True),
     ("ai_workflow_schedules", "cron", 128, True),
@@ -77,7 +77,7 @@ def _backfill_from_legacy(bind, table: str, legacy_col: str) -> list[str]:
     logs: list[str] = []
     rows = bind.execute(sa.text(f"SELECT id, {legacy_col} FROM {table}")).fetchall()
     for row_id, legacy in rows:
-        _trigger, args, skip = normalize_legacy(legacy)
+        trigger, args, skip = normalize_legacy(legacy)
         if skip:
             logs.append(f"{table}#{row_id}：{skip}")
             continue
