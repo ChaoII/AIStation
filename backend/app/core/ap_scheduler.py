@@ -38,13 +38,17 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.util import convert_to_datetime
 from redis.asyncio import Redis
 
 from app.config.setting import settings
 from app.core.database import engine
 from app.core.logger import log
 from app.plugin.module_task.cronjob.node.model import NodeModel
-from app.utils.cron_util import CronUtil
+from app.utils.trigger_util import TriggerUtil
+
+#: 旧 interval 字符串（「秒 分 时 天 周」）的字段顺序 → 统一层 JSON 的字段名
+_LEGACY_INTERVAL_FIELDS = ("seconds", "minutes", "hours", "days", "weeks")
 
 scheduler = AsyncIOScheduler()
 scheduler.configure(
@@ -74,6 +78,8 @@ class SchedulerUtil:
     # 临时存储 job_name，用于在 EVENT_JOB_SUBMITTED 时获取
     # 格式可以是: str (任务名称) 或 tuple[str, str] (原任务ID, 任务名称)
     _job_name_cache: dict[str, str | tuple[str, str]] = {}
+    # 旧 interval 字符串的兼容提示是否已打印（只提示一次，避免每次注册都刷屏）
+    _legacy_interval_warned: bool = False
 
     @classmethod
     def scheduler_event_listener(cls, event: JobEvent | JobExecutionEvent) -> None:
@@ -1016,7 +1022,7 @@ class SchedulerUtil:
         end_date: str | None = None,
     ) -> Job:
         """
-        创建 Cron 定时任务。
+        创建 Cron 定时任务（cron 口径由统一层 `TriggerUtil` 负责，5 段标准 crontab）。
 
         参数:
         - job_info (NodeModel): 任务信息。
@@ -1031,32 +1037,11 @@ class SchedulerUtil:
         if not cron_expr:
             raise ValueError("Cron触发器缺少参数")
 
-        fields = cron_expr.strip().split()
-        if len(fields) not in (6, 7):
-            raise ValueError("无效的 Cron 表达式")
-        if not CronUtil.validate_cron_expression(cron_expr):
-            raise ValueError(f"Cron表达式不正确: {cron_expr}")
-
-        parsed_fields = [field if field != "?" else "*" for field in fields]
-        if len(fields) == 6:
-            parsed_fields.append("*")
-
-        second, minute, hour, day, month, day_of_week, year = tuple(parsed_fields)
-
-        if second == "*" and minute == "*" and hour == "*" and day == "*" and month == "*" and day_of_week in ("*", "?"):
-            raise ValueError("Cron表达式不允许每秒执行，请至少指定秒数（如：0 * * * * ? * 表示每分钟执行）")
-
-        trigger = CronTrigger(
-            second=second,
-            minute=minute,
-            hour=hour,
-            day=day,
-            month=month,
-            day_of_week=day_of_week,
-            year=year,
-            start_date=start_date or job_info.start_date,
-            end_date=end_date or job_info.end_date,
-            timezone="Asia/Shanghai",
+        trigger = TriggerUtil.to_trigger("cron", cron_expr)
+        cls._apply_trigger_bounds(
+            trigger,
+            start_date or getattr(job_info, "start_date", None),
+            end_date or getattr(job_info, "end_date", None),
         )
         return cls._add_job_with_trigger(job_info, trigger)
 
@@ -1069,11 +1054,12 @@ class SchedulerUtil:
         end_date: str | None = None,
     ) -> Job:
         """
-        创建间隔执行任务。
+        创建间隔执行任务（参数契约由统一层 `TriggerUtil` 负责：JSON 对象）。
 
         参数:
         - job_info (NodeModel): 任务信息。
-        - trigger_args (str | None): 间隔参数「秒 分 时 天 周」，默认取节点配置。
+        - trigger_args (str | None): 间隔参数 JSON（如 `{"hours": 2, "minutes": 30}`），
+          兼容旧的「秒 分 时 天 周」字符串；默认取节点配置。
         - start_date (str | None): 开始时间。
         - end_date (str | None): 结束时间。
 
@@ -1084,29 +1070,18 @@ class SchedulerUtil:
         if not interval_args:
             raise ValueError("interval触发器缺少参数")
 
-        fields = interval_args.strip().split()
-        if len(fields) != 5:
-            raise ValueError("无效的 interval 表达式，格式: 秒 分 时 天 周")
-
-        second, minute, hour, day, week = tuple(
-            int(field) if field != "*" else 0 for field in fields
-        )
-        trigger = IntervalTrigger(
-            weeks=week,
-            days=day,
-            hours=hour,
-            minutes=minute,
-            seconds=second,
-            start_date=start_date or job_info.start_date,
-            end_date=end_date or job_info.end_date,
-            timezone="Asia/Shanghai",
+        trigger = TriggerUtil.to_trigger("interval", cls._resolve_interval_args(interval_args))
+        cls._apply_trigger_bounds(
+            trigger,
+            start_date or getattr(job_info, "start_date", None),
+            end_date or getattr(job_info, "end_date", None),
         )
         return cls._add_job_with_trigger(job_info, trigger)
 
     @classmethod
     def add_date_job(cls, job_info: NodeModel, run_date: str | None = None) -> Job:
         """
-        创建指定时刻执行一次的任务。
+        创建指定时刻执行一次的任务（参数契约由统一层 `TriggerUtil` 负责）。
 
         参数:
         - job_info (NodeModel): 任务信息。
@@ -1119,8 +1094,72 @@ class SchedulerUtil:
         if not date_str:
             raise ValueError("date触发器缺少执行时间参数")
 
-        trigger = DateTrigger(run_date=date_str, timezone="Asia/Shanghai")
+        trigger = TriggerUtil.to_trigger("date", date_str)
         return cls._add_job_with_trigger(job_info, trigger)
+
+    @classmethod
+    def _resolve_interval_args(cls, interval_args) -> dict:
+        """
+        把 interval 参数归一为统一层契约的 JSON 字典。
+
+        新契约是 JSON 对象；存量数据是旧的「秒 分 时 天 周」五段字符串，
+        这里兼容解析（字段顺序与旧格式一致）并在日志里提示一次，
+        避免契约变更导致既有任务无法注册。
+
+        参数:
+        - interval_args (Any): JSON 字符串/dict，或旧的「秒 分 时 天 周」字符串。
+
+        返回:
+        - dict: 间隔参数字典（如 `{"seconds": 30, "minutes": 5, ...}`）。
+        """
+        text = str(interval_args).strip()
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+
+        fields = text.split()
+        if len(fields) != 5:
+            raise ValueError(
+                f"无效的 interval 表达式（应为 JSON 或旧的「秒 分 时 天 周」）：{text}"
+            )
+        try:
+            values = [int(field) if field != "*" else 0 for field in fields]
+        except ValueError:
+            raise ValueError(
+                f"无效的 interval 表达式（应为 JSON 或旧的「秒 分 时 天 周」）：{text}"
+            ) from None
+
+        if not cls._legacy_interval_warned:
+            cls._legacy_interval_warned = True
+            log.warning(
+                'interval 参数已改为 JSON 契约（如 {"hours": 2, "minutes": 30}）；'
+                f"检测到旧「秒 分 时 天 周」字符串 {text!r}，已按旧格式解析，请尽快更新为 JSON"
+            )
+        return dict(zip(_LEGACY_INTERVAL_FIELDS, values, strict=True))
+
+    @staticmethod
+    def _apply_trigger_bounds(trigger, start_date, end_date) -> None:
+        """
+        把节点配置的开始/结束时间套到统一层构造出的触发器上。
+
+        统一层的 `to_trigger` 只负责触发规则；开始/结束时间是调度入口的附加约束，
+        沿用 APScheduler 的 `convert_to_datetime`（接受字符串或 datetime）。
+
+        参数:
+        - trigger (BaseTrigger): 统一层构造出的触发器。
+        - start_date (str | datetime | None): 开始时间。
+        - end_date (str | datetime | None): 结束时间。
+
+        返回:
+        - None
+        """
+        if start_date:
+            trigger.start_date = convert_to_datetime(start_date, trigger.timezone, "start_date")
+        if end_date:
+            trigger.end_date = convert_to_datetime(end_date, trigger.timezone, "end_date")
 
     @classmethod
     def _add_job_with_trigger(cls, job_info: NodeModel, trigger) -> Job:

@@ -3,7 +3,7 @@ from apscheduler.jobstores.base import JobLookupError
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.core.ap_scheduler import SchedulerUtil
 from app.core.exceptions import CustomException
-from app.utils.cron_util import CronUtil
+from app.utils.trigger_util import TriggerUtil
 
 from .crud import NodeCRUD
 from .schema import (
@@ -224,31 +224,31 @@ class NodeService:
 
         if trigger == "now":
             SchedulerUtil.add_and_run_job_now(job_info=obj)
-        elif trigger == "cron":
-            if not trigger_args:
-                raise CustomException(msg="Cron执行需要提供Cron表达式")
-            if not CronUtil.validate_cron_expression(trigger_args):
-                raise CustomException(msg=f"Cron表达式不正确: {trigger_args}")
-            SchedulerUtil.add_cron_job(
-                job_info=obj,
-                trigger_args=trigger_args,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        elif trigger == "interval":
-            if not trigger_args:
-                raise CustomException(msg="间隔执行需要提供间隔参数")
-            SchedulerUtil.add_interval_job(
-                job_info=obj,
-                trigger_args=trigger_args,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        elif trigger == "date":
-            if not trigger_args:
-                raise CustomException(msg="指定时间执行需要提供执行时间")
-            SchedulerUtil.add_date_job(job_info=obj, run_date=trigger_args)
         else:
-            raise CustomException(msg=f"不支持的触发方式: {trigger}")
+            if not trigger_args:
+                raise CustomException(msg="非立即执行时必须提供触发器参数")
+            # 校验统一走 TriggerUtil（全平台唯一口径），错误原因原样回传前端
+            ok, reason = TriggerUtil.validate(trigger, trigger_args)
+            if not ok:
+                raise CustomException(msg=reason)
+
+            if trigger == "cron":
+                SchedulerUtil.add_cron_job(
+                    job_info=obj,
+                    trigger_args=trigger_args,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            elif trigger == "interval":
+                SchedulerUtil.add_interval_job(
+                    job_info=obj,
+                    trigger_args=trigger_args,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            elif trigger == "date":
+                SchedulerUtil.add_date_job(job_info=obj, run_date=trigger_args)
+            else:
+                raise CustomException(msg=f"不支持的触发方式: {trigger}")
 
         return {"job_id": id, "status": "executed", "trigger": trigger}

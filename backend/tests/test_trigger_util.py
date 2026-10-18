@@ -431,3 +431,212 @@ def test_validate_cron_rejects_day_and_weekday_together(expr):
 @pytest.mark.parametrize("expr", ["0 9 1 * *", "0 9 * * mon", "0 9 1 1 *"])
 def test_validate_cron_accepts_single_of_day_or_weekday(expr):
     assert TriggerUtil.validate("cron", expr) == (True, "")
+
+
+# ============================================================ Task A4：ap_scheduler 改走统一层
+
+
+def _scheduler_util():
+    """取中心调度器工具类。
+
+    `ap_scheduler` 与 `app.plugin.module_task`（其 job controller 反向 import 调度器）存在**既有**
+    循环导入：先 import `ap_scheduler` 会失败，先 import `module_task` 则成功。这里固定顺序，
+    使本文件的用例在 `PYTEST_NO_APP=1` 快速模式下也能运行（该循环导入非本任务引入）。
+    """
+    import app.plugin.module_task  # noqa: F401  解开既有循环导入（先 module_task 后 ap_scheduler）
+    from app.core import ap_scheduler
+
+    return ap_scheduler.SchedulerUtil
+
+
+def test_legacy_validators_are_gone():
+    """A4：旧校验器必须删除，避免两套口径并存。"""
+    import pytest as _pytest
+
+    with _pytest.raises(ImportError):
+        import app.utils.cron_util  # noqa: F401
+
+    from app.utils.time_util import TimeUtil
+
+    assert not hasattr(TimeUtil, "validate_cron_expression")
+
+
+def test_add_cron_job_parses_via_trigger_util(monkeypatch, test_client):
+    """A4：add_cron_job 的解析必须走 TriggerUtil（用 spy 断言，不依赖作业能否注册成功）。"""
+    from types import SimpleNamespace
+
+    from app.core import ap_scheduler
+    from app.utils.trigger_util import TriggerUtil
+
+    seen: dict = {}
+    real = TriggerUtil.to_trigger
+
+    def _spy(trigger, args, **kw):
+        seen["trigger"], seen["args"] = trigger, args
+        return real(trigger, args)
+
+    monkeypatch.setattr(TriggerUtil, "to_trigger", staticmethod(_spy))
+    node = SimpleNamespace(
+        id=1,
+        code="t",
+        name="t",
+        trigger="cron",
+        trigger_args="0 9 * * 1",
+        jobstore="default",
+        executor="default",
+        func="app.core.logger:log",
+    )
+    try:
+        ap_scheduler.SchedulerUtil.add_cron_job(node)
+    except Exception:  # noqa: BLE001 只断言解析路径，作业注册失败与本测试无关
+        pass
+    assert seen.get("trigger") == "cron" and seen.get("args") == "0 9 * * 1"
+
+
+def test_add_interval_job_parses_json_via_trigger_util(monkeypatch):
+    """A4：interval 新契约是 JSON，解析必须走 TriggerUtil（spy 断言收到的已是 dict）。"""
+    from types import SimpleNamespace
+
+    from app.utils.trigger_util import TriggerUtil
+
+    scheduler_util = _scheduler_util()
+    seen: dict = {}
+    real = TriggerUtil.to_trigger
+
+    def _spy(trigger, args, **kw):
+        seen["trigger"], seen["args"] = trigger, args
+        return real(trigger, args)
+
+    monkeypatch.setattr(TriggerUtil, "to_trigger", staticmethod(_spy))
+    node = SimpleNamespace(
+        id=2,
+        code="t",
+        name="t",
+        trigger="interval",
+        trigger_args='{"hours": 2, "minutes": 30}',
+        jobstore="default",
+        executor="default",
+        func="app.core.logger:log",
+    )
+    try:
+        scheduler_util.add_interval_job(node)
+    except Exception:  # noqa: BLE001 只断言解析路径，作业注册失败与本测试无关
+        pass
+    assert seen.get("trigger") == "interval"
+    assert seen.get("args") == {"hours": 2, "minutes": 30}
+
+
+def test_add_interval_job_accepts_legacy_string_args(monkeypatch):
+    """A4：旧的「秒 分 时 天 周」字符串必须仍可解析（兼容存量数据）。"""
+    from types import SimpleNamespace
+
+    from app.utils.trigger_util import TriggerUtil
+
+    scheduler_util = _scheduler_util()
+    seen: dict = {}
+    real = TriggerUtil.to_trigger
+
+    def _spy(trigger, args, **kw):
+        seen["trigger"], seen["args"] = trigger, args
+        return real(trigger, args)
+
+    monkeypatch.setattr(TriggerUtil, "to_trigger", staticmethod(_spy))
+    node = SimpleNamespace(
+        id=3,
+        code="t",
+        name="t",
+        trigger="interval",
+        trigger_args="30 5 2 1 0",  # 秒 分 时 天 周
+        jobstore="default",
+        executor="default",
+        func="app.core.logger:log",
+    )
+    try:
+        scheduler_util.add_interval_job(node)
+    except Exception:  # noqa: BLE001 只断言解析路径，作业注册失败与本测试无关
+        pass
+    assert seen.get("args") == {"seconds": 30, "minutes": 5, "hours": 2, "days": 1, "weeks": 0}
+
+
+def test_interval_legacy_string_warns_only_once():
+    """A4：旧字符串解析只在日志里提示一次（避免每次注册都刷屏）。"""
+    from loguru import logger as _logger
+
+    scheduler_util = _scheduler_util()
+    scheduler_util._legacy_interval_warned = False
+    messages: list[str] = []
+    sink_id = _logger.add(lambda message: messages.append(message), level="WARNING")
+    try:
+        first = scheduler_util._resolve_interval_args("30 5 2 1 0")
+        second = scheduler_util._resolve_interval_args("0 0 1 0 0")
+    finally:
+        _logger.remove(sink_id)
+        scheduler_util._legacy_interval_warned = False
+
+    assert first == {"seconds": 30, "minutes": 5, "hours": 2, "days": 1, "weeks": 0}
+    assert second == {"seconds": 0, "minutes": 0, "hours": 1, "days": 0, "weeks": 0}
+    assert sum("interval" in message for message in messages) == 1
+
+
+def test_resolve_interval_args_rejects_bad_input():
+    """A4：既不是 JSON 对象、也不是 5 段旧字符串的输入必须报错（不静默吞掉）。"""
+    scheduler_util = _scheduler_util()
+
+    with pytest.raises(ValueError):
+        scheduler_util._resolve_interval_args("0 0 1")
+    with pytest.raises(ValueError):
+        scheduler_util._resolve_interval_args("[1, 2, 3]")
+
+
+def test_add_date_job_parses_via_trigger_util(monkeypatch):
+    """A4：add_date_job 的解析必须走 TriggerUtil。"""
+    from types import SimpleNamespace
+
+    from app.utils.trigger_util import TriggerUtil
+
+    scheduler_util = _scheduler_util()
+    seen: dict = {}
+    real = TriggerUtil.to_trigger
+
+    def _spy(trigger, args, **kw):
+        seen["trigger"], seen["args"] = trigger, args
+        return real(trigger, args)
+
+    monkeypatch.setattr(TriggerUtil, "to_trigger", staticmethod(_spy))
+    node = SimpleNamespace(
+        id=4,
+        code="t",
+        name="t",
+        trigger="date",
+        trigger_args="2999-01-01 09:00:00",
+        jobstore="default",
+        executor="default",
+        func="app.core.logger:log",
+    )
+    try:
+        scheduler_util.add_date_job(node)
+    except Exception:  # noqa: BLE001 只断言解析路径，作业注册失败与本测试无关
+        pass
+    assert seen.get("trigger") == "date" and seen.get("args") == "2999-01-01 09:00:00"
+
+
+def test_apply_trigger_bounds_keeps_start_end_date():
+    """A4：节点配置的开始/结束时间仍要套到统一层构造的触发器上（对外签名与行为不变）。"""
+    scheduler_util = _scheduler_util()
+
+    trigger = TriggerUtil.to_trigger("cron", "0 9 * * mon")
+    scheduler_util._apply_trigger_bounds(trigger, "2026-11-01 00:00:00", "2026-12-01 00:00:00")
+    assert trigger.start_date.strftime("%Y-%m-%d %H:%M:%S") == "2026-11-01 00:00:00"
+    assert trigger.end_date.strftime("%Y-%m-%d %H:%M:%S") == "2026-12-01 00:00:00"
+    assert str(trigger.start_date.tzinfo) == "Asia/Shanghai"
+
+
+def test_node_service_validates_via_trigger_util():
+    """A4：节点调试的校验改走 TriggerUtil.validate（源码级锁定，避免旧口径回流）。"""
+    import inspect
+
+    from app.plugin.module_task.cronjob.node import service as node_service
+
+    source = inspect.getsource(node_service)
+    assert "TriggerUtil.validate(trigger, trigger_args)" in source
+    assert "CronUtil" not in source
