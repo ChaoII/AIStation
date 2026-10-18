@@ -589,6 +589,39 @@ git commit -m "fix(cron): 三处请求接口真正接受 trigger/trigger_args（
 
 ---
 
+## 阶段 A 补丁：A9（`now` 在工作台/训练两处静默失效）
+
+> 来源：A8 实现者的顾虑 3，控制者已核实：工作流侧写的是
+> `if enabled and (trigger_args or trigger == "now")`（`workflow/service.py:1202`），
+> 而工作台 `workspace/service.py:467` 与训练 `module_train/schedule_service.py:44` 写的是
+> `if not enabled or not trigger_args` ⇒ `now` 的 `trigger_args` 恒为 `None`，**永远注册不上作业**，
+> 「保存后立即执行一次」在两处静默失效（规格：四入口都支持四种触发类型）。
+
+### Task A9: 工作台/训练的 `now` 触发真正注册作业
+
+**Files:**
+- Modify: `backend/app/plugin/module_ai/workspace/service.py`（`_sync_cron_job` 守卫）
+- Modify: `backend/app/plugin/module_train/schedule_service.py`（`sync_train_schedule_job` 守卫）
+- Test: `backend/tests/test_business_jobs_workspace.py`、`backend/tests/test_business_jobs_train.py`（各自追加）
+
+**Interfaces:** 守卫统一为工作流侧口径：`enabled and (trigger_args or trigger == "now")`；
+`now` 走 `TriggerUtil.to_trigger` → `DateTrigger(now + 2s)` 一次性作业（统一层已实现，不要另写）。
+
+- [ ] **Step 1: 写失败测试**（两处各一条）：保存 `trigger="now"` + `enabled=True` → 断言作业存在、`job.func` 是模块级执行体、`args` 正确、触发器是 `DateTrigger`；
+  再断言 `enabled=False` 时**不**注册。**不要启动调度器去真跑**（避免测试期真的建训练任务）：只断言注册结果与触发器类型。
+- [ ] **Step 2: 跑测试确认失败** → Run: `cd backend && .venv/Scripts/python.exe -m pytest tests/test_business_jobs_workspace.py tests/test_business_jobs_train.py -q`；Expected: FAIL
+- [ ] **Step 3: 改两处守卫**（与工作流逐字一致）
+- [ ] **Step 4: 跑回归** → Run: `pytest tests/test_business_jobs_workspace.py tests/test_business_jobs_train.py tests/test_trigger_types_api.py tests/test_trigger_util.py tests/test_train_schedule.py -q`；Expected: PASS
+- [ ] **Step 5: 提交**
+
+```bash
+git add backend/app/plugin/module_ai/workspace/service.py backend/app/plugin/module_train/schedule_service.py backend/tests/test_business_jobs_workspace.py backend/tests/test_business_jobs_train.py
+git commit -m "fix(cron): 工作台/训练的「立即执行」真正注册一次性作业"
+```
+
+---
+
+## 阶段 B：调度入口统一
 
 ### Task B1: 中心调度器新增"业务作业"API
 
