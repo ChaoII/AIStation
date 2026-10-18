@@ -706,10 +706,24 @@
             <el-tag
               size="small"
               :type="
-                tr.status === 'success' ? 'success' : tr.status === 'error' ? 'danger' : 'primary'
+                tr.status === 'success'
+                  ? 'success'
+                  : tr.status === 'error'
+                    ? 'danger'
+                    : tr.status === 'cancelled'
+                      ? 'info'
+                      : 'primary'
               "
             >
-              {{ tr.status === "success" ? "完成" : tr.status === "error" ? "失败" : "执行中" }}
+              {{
+                tr.status === "success"
+                  ? "完成"
+                  : tr.status === "error"
+                    ? "失败"
+                    : tr.status === "cancelled"
+                      ? "已取消"
+                      : "执行中"
+              }}
             </el-tag>
           </div>
           <div v-if="tr.error" class="hd-err">{{ tr.error }}</div>
@@ -1154,7 +1168,15 @@ function onNodeStatus(ns: any) {
 }
 
 function statusText(s: string) {
-  return s === "running" ? "执行中" : s === "error" ? "失败" : s === "skipped" ? "已跳过" : "完成";
+  return s === "running"
+    ? "执行中"
+    : s === "error"
+      ? "失败"
+      : s === "skipped"
+        ? "已跳过"
+        : s === "cancelled"
+          ? "已取消"
+          : "完成";
 }
 
 function formatJson(v: any): string {
@@ -1261,7 +1283,15 @@ const replayIdx = ref(-1);
 const replayInfo = ref<any>(null);
 let replayTimer = 0;
 function replayStatusText(s: string) {
-  return s === "success" ? "完成" : s === "error" ? "失败" : s === "skipped" ? "已跳过" : "执行中";
+  return s === "success"
+    ? "完成"
+    : s === "error"
+      ? "失败"
+      : s === "skipped"
+        ? "已跳过"
+        : s === "cancelled"
+          ? "已取消"
+          : "执行中";
 }
 function startReplay() {
   const trace = runDetail.value?.node_trace || [];
@@ -3301,6 +3331,14 @@ async function stopRun() {
     }
   }
   runAbort?.abort();
+  // 本地收尾：abort 之后服务端补发的 cancelled 帧已无人接收，
+  // 若不在这里改，被中断的节点会一直显示「执行中」（实测踩过）。
+  const m = activeMsg.value;
+  if (m?.trace) {
+    m.trace.forEach((t) => {
+      if (t.status === "running") t.status = "cancelled";
+    });
+  }
   ElMessage.info("已请求停止运行");
 }
 

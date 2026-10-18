@@ -189,6 +189,44 @@ def test_engine_reraises_cancel_during_node(monkeypatch):
     assert state.get("cancelled") is None  # 由调用方（service）负责标记
 
 
+def test_reconcile_stale_runs_marks_only_old_running(test_client):
+    """启动兜底：超龄 ``running`` 记 cancelled；新近的 ``running`` 不动。
+
+    为什么按时间阈值：多 worker 下别的进程可能正在正常跑，不能一启动就把所有
+    running 清掉（会误伤活着的运行）。进程重启导致的僵尸记录才会超龄。
+    """
+    from datetime import datetime, timedelta
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.workflow.model import AiWorkflowRunLogModel
+    from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+    async def _go():
+        async with async_db_session.begin() as db:
+            old_row = AiWorkflowRunLogModel(workflow_id=1, status="running", duration_ms=0)
+            fresh_row = AiWorkflowRunLogModel(workflow_id=1, status="running", duration_ms=0)
+            db.add(old_row)
+            db.add(fresh_row)
+            await db.flush()
+            old_id, fresh_id = old_row.id, fresh_row.id
+            old_row.created_time = datetime.now() - timedelta(hours=2)  # 模拟僵尸记录
+        n = await AiWorkflowService.reconcile_stale_runs()
+        async with async_db_session() as db:
+            old_status = (await db.get(AiWorkflowRunLogModel, old_id)).status
+            fresh_status = (await db.get(AiWorkflowRunLogModel, fresh_id)).status
+        async with async_db_session.begin() as db:  # 清理测试数据
+            for i in (old_id, fresh_id):
+                r = await db.get(AiWorkflowRunLogModel, i)
+                if r:
+                    await db.delete(r)
+        return n, old_status, fresh_status
+
+    n, old_status, fresh_status = asyncio.run(_go())
+    assert old_status == "cancelled"
+    assert fresh_status == "running"
+    assert n >= 1
+
+
 # ---------------------------- 运行状态映射 ---------------------------- #
 
 def test_run_status_mapping():

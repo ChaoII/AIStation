@@ -1534,6 +1534,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
             ensure_tracing()
         except Exception as e:  # noqa: BLE001
             log.warning(f"⚠️  Agno 追踪启用失败（不阻断启动）: {e}")
+        # 工作流僵尸运行兜底：进程重启后，在途运行的 running 记录没人收尾
+        try:
+            from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+            n = await AiWorkflowService.reconcile_stale_runs()
+            if n:
+                log.warning(f"🧹 已把 {n} 条超龄「运行中」工作流记录标记为已取消")
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"⚠️  工作流僵尸运行清理失败（不阻断启动）: {e}")
         # 能力市场官方种子（通用技能 + agno 免密钥工具 + 办公类 MCP），幂等
         try:
             from app.plugin.module_ai.market.seed import ensure_market_seed

@@ -233,7 +233,8 @@ class WorkflowEngine:
 
         return await _cancel.is_cancelled(self.cancel_key, self.redis)
 
-    async def _stream(self, gen: AsyncIterator[Any]) -> AsyncIterator[Any]:
+    async def _stream(self, gen: AsyncIterator[Any], node_id: str | None = None,
+                      label: str = "") -> AsyncIterator[Any]:
         """透传节点帧，并**逐帧**检查取消信号。
 
         为什么逐帧查：节点边界检查只能"跑完当前节点再停"，而 LLM/知识检索等流式
@@ -241,9 +242,14 @@ class WorkflowEngine:
         （抛 ``WorkflowCancelled`` 会关闭底层 ``agent.arun`` 异步生成器，
         进而取消正在进行的 HTTP 请求）。非流式节点（工具/代码/HTTP）仍只能在
         节点边界停下，这是单次 await 无法打断的固有限制。
+
+        中断时补一个 ``cancelled`` 节点状态帧：否则被中断的节点在前端轨迹里
+        会**一直显示「执行中」**（它只发过 running，没等到终态）。
         """
         async for frame in gen:
             if await self._cancelled():
+                if node_id:
+                    yield self.ms.node_status(node_id, "cancelled", label or node_id)
                 raise WorkflowCancelled("运行已取消")
             yield frame
 
@@ -1377,7 +1383,7 @@ class WorkflowEngine:
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "llm":
-                    async for frame in self._stream(self._exec_llm(node)):
+                    async for frame in self._stream(self._exec_llm(node), node_id, label):
                         yield frame
                     # HITL：LLM 节点挂起等待审批时停止后续节点执行
                     if self.state.get("halted"):
@@ -1414,7 +1420,7 @@ class WorkflowEngine:
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "knowledge":
-                    async for frame in self._stream(self._exec_knowledge(node)):
+                    async for frame in self._stream(self._exec_knowledge(node), node_id, label):
                         yield frame
                     next_id = self._edge_target(node_id)
                     if next_id:
@@ -1453,19 +1459,19 @@ class WorkflowEngine:
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "answer":
-                    async for frame in self._stream(self._exec_answer(node)):
+                    async for frame in self._stream(self._exec_answer(node), node_id, label):
                         yield frame
                     next_id = self._edge_target(node_id)
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "sub_workflow":
-                    async for frame in self._stream(self._exec_sub_workflow(node)):
+                    async for frame in self._stream(self._exec_sub_workflow(node), node_id, label):
                         yield frame
                     next_id = self._edge_target(node_id)
                     if next_id:
                         stack.append(next_id)
                 elif ntype == "agent":
-                    async for frame in self._stream(self._exec_agent(node)):
+                    async for frame in self._stream(self._exec_agent(node), node_id, label):
                         yield frame
                     next_id = self._edge_target(node_id)
                     if next_id:

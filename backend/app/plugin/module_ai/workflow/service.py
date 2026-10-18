@@ -1,6 +1,7 @@
 """工作流服务：CRUD 与流式运行（AI SDK UI Message Stream）。"""
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -9,6 +10,7 @@ from collections.abc import AsyncIterator
 from sqlalchemy import func, select
 
 from app.core.database import async_db_session
+from app.core.logger import log
 
 from .cancel import clear_cancel
 from .engine import WorkflowCancelled, WorkflowEngine
@@ -308,6 +310,15 @@ class AiWorkflowService:
                     await cls._persist_pending(redis, run_id, workflow_id, state, uid)
                 else:
                     state["finished"] = True
+        except (GeneratorExit, asyncio.CancelledError):
+            # 客户端断开（关页面 / 前端 abort SSE）或任务被取消：此刻本任务已被取消，
+            # 任何 await 都会立刻再抛，收尾写库必然丢失 → 运行记录永远停在 running
+            # （实测：前端点「停止」后 abort SSE，记录卡在 running）。
+            # 只能**另起任务**补写（独立任务不受本任务取消影响）。
+            if log_id and not state.get("finished"):
+                state["cancelled"] = True
+                cls._finalize_run_detached(log_id, state, trace, t0, redis)
+            raise
         except WorkflowCancelled:
             # 用户点了「停止」：明确区分于失败，前端提示「已取消」而非「运行失败」
             state["cancelled"] = True
@@ -656,6 +667,69 @@ class AiWorkflowService:
             "duration_ms": r.duration_ms,
             "created_time": r.created_time,
         }
+
+    @classmethod
+    async def reconcile_stale_runs(cls, max_age_minutes: int = 30) -> int:
+        """把**超龄的 ``running`` 运行**标记为 ``cancelled``，返回处理条数。
+
+        为什么需要：运行开始时就会落 ``running`` 记录；若进程在运行途中重启/被杀，
+        收尾写不进去，这条记录会**永远停在 running**（前端一直显示"运行中"）。
+        启动时清一次即可。
+
+        只清「创建时间早于 ``max_age_minutes``」的行：多 worker 下别的进程可能正在
+        正常跑，按时间阈值避开误伤（单次运行不可能超过这么久——节点超时远小于它）。
+        """
+        from datetime import datetime, timedelta
+
+        from sqlalchemy import select
+
+        cutoff = datetime.now() - timedelta(minutes=max_age_minutes)
+        try:
+            async with async_db_session.begin() as db:
+                rows = (
+                    await db.execute(
+                        select(AiWorkflowRunLogModel).where(
+                            AiWorkflowRunLogModel.status == "running",
+                            AiWorkflowRunLogModel.created_time < cutoff,
+                        )
+                    )
+                ).scalars().all()
+                for r in rows:
+                    r.status = "cancelled"
+                    r.error = "运行未正常结束（进程重启或中断）"
+                return len(rows)
+        except Exception as e:  # noqa: BLE001 兜底清理失败不阻断启动
+            log.warning(f"[workflow] 清理僵尸 running 记录失败（忽略）：{str(e)[:120]}")
+            return 0
+
+    @classmethod
+    def _finalize_run_detached(cls, log_id: int, state: dict, trace: list,
+                               t0: float, redis=None) -> None:
+        """客户端断开/任务被取消时，**另起任务**把运行记录补写成 ``cancelled``。
+
+        为什么不能直接 await：此刻本任务已被取消（``GeneratorExit`` /
+        ``CancelledError``），任何 ``await`` 都会立刻再抛，收尾写库必然丢失。
+        独立任务不受本任务取消影响，能把记录补完（尽力而为，失败只忽略）。
+        """
+        async def _run() -> None:
+            try:
+                await cls._finish_run(
+                    log_id,
+                    "cancelled",
+                    {"reply": state.get("reply") or state.get("assistant_text") or "",
+                     "tool_calls": state.get("tool_calls") or []},
+                    None,
+                    trace,
+                    int((time.perf_counter() - t0) * 1000),
+                )
+                await clear_cancel(log_id, redis)
+            except Exception:  # noqa: BLE001 尽力而为，不向外抛
+                pass
+
+        try:
+            asyncio.create_task(_run())
+        except RuntimeError:  # 事件循环已关闭：放弃补写
+            pass
 
     @classmethod
     async def cancel_run(cls, run_id: int, redis=None) -> dict:
