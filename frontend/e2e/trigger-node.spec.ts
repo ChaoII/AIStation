@@ -131,6 +131,8 @@ test("定时：默认 5 段 crontab 可直接调试提交", async ({ page }) => 
   const preview = await waitPreview(page);
   expect(preview.valid).toBeTruthy();
 
+  await page.screenshot({ path: "e2e/trigger-node.png" });
+
   const body = await confirmAndCapture(page);
   expect(body).not.toBeNull();
   expect(body.trigger).toBe("cron");
