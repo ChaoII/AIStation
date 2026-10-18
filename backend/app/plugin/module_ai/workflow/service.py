@@ -51,9 +51,28 @@ async def run_scheduled_workflow(workflow_id: int) -> None:
     刻意用**模块级函数**（而非闭包）：`obj_to_ref` 能解析出引用，作业状态可完整序列化，
     日志里也有可读的函数名（闭包会走降级路径）。
 
+    触发时**重新读库**确认「调度行仍启用且有触发表达式」（口径同训练模块
+    `run_scheduled_training`）：作业与调度行之间存在窗口期（禁用/删除请求刚提交、
+    或同键替换前的最后一次触发），此时静默跳过——绝不因为一条已被停用的调度而运行工作流。
+
     `next_run_time` 一律由作业回写（单一真源）：运行结束后（无论成败）都从作业读回，
     库里的值永远等于作业的值，业务侧不再自算。
     """
+    async with async_db_session() as db:
+        row = (
+            await db.execute(
+                select(AiWorkflowScheduleModel).where(
+                    AiWorkflowScheduleModel.workflow_id == workflow_id
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            log.info(f"[workflow] 工作流 {workflow_id} 的调度已删除，跳过本次触发")
+            return
+        if not row.enabled or not row.trigger_args:
+            log.info(f"[workflow] 工作流 {workflow_id} 的调度已停用或未配置触发时间，跳过本次触发")
+            return
+
     started = datetime.now(ZoneInfo(TriggerUtil.TIMEZONE))
     try:
         await AiWorkflowService.run_schedule(workflow_id)
@@ -1093,27 +1112,53 @@ class AiWorkflowService:
         **不调用 `sync_business_jobs`**：那是「按整表同步」的接口（会清理列表外的同前缀作业），
         单行增改用它会把同一模块其它工作流的作业一并删掉；单行用 `register_business_trigger`
         / `remove_business_job`（都是幂等的）。
+
+        注册失败（脏配置 / 调度器不可用）**必须兜底**（口径同训练模块 `sync_train_schedule_job`）：
+        先清掉同键残留作业（注册可能是「写了一半才失败」），再给可读错误——绝不能留下
+        「已启用但没有作业」的静默失效，也不能让异常原样冒成 500。
         """
         from app.core.ap_scheduler import SchedulerUtil
 
         job_key = _job_key(workflow_id)
         if enabled and (trigger_args or trigger == "now"):
-            return SchedulerUtil.register_business_trigger(
-                job_key,
-                trigger or "cron",
-                trigger_args,
-                run_scheduled_workflow,
-                args=(workflow_id,),
-            )
+            try:
+                return SchedulerUtil.register_business_trigger(
+                    job_key,
+                    trigger or "cron",
+                    trigger_args,
+                    run_scheduled_workflow,
+                    args=(workflow_id,),
+                )
+            except Exception as e:  # noqa: BLE001 单行坏配置不得拖垮增改接口
+                cls._remove_schedule_job(workflow_id)
+                log.warning(
+                    f"[workflow] 工作流 {workflow_id} 的触发配置无法注册作业，已清理残留：{e!s}"
+                )
+                raise CustomException(
+                    msg=f"触发配置无法注册到调度器，调度未生效：{e!s}",
+                    code=400,
+                    status_code=400,
+                ) from e
         cls._remove_schedule_job(workflow_id)
         return None
 
     @staticmethod
     def _remove_schedule_job(workflow_id: int) -> bool:
-        """移除本模块的中心调度器作业（不存在时返回 `False`，不抛）。"""
+        """移除本模块的中心调度器作业（不存在时返回 `False`，不抛）。
+
+        调度器不可用（未启动/已关闭）时 `remove_job` 抛的不是 `JobLookupError`：
+        一并吞掉——调度器不可用不得把「保存/禁用调度」「删除工作流」的请求打成 500
+        （口径同训练模块 `remove_train_schedule_job`）。
+        """
         from app.core.ap_scheduler import SchedulerUtil
 
-        return SchedulerUtil.remove_business_job(_job_key(workflow_id))
+        try:
+            return SchedulerUtil.remove_business_job(_job_key(workflow_id))
+        except Exception as e:  # noqa: BLE001 调度器不可用只记日志，调用方照常继续
+            log.warning(
+                f"[workflow] 移除工作流 {workflow_id} 的调度作业失败（调度器不可用？）：{e!s}"
+            )
+            return False
 
     @classmethod
     async def write_back_schedule_state(
@@ -1127,9 +1172,13 @@ class AiWorkflowService:
         `ran_at` 刻意做成可选：启动期同步只回写下次运行时间，**不得**把启动时刻误记成
         「上次运行」（否则界面会把「服务重启过」显示成「任务刚跑过」）。
         """
-        from app.core.ap_scheduler import scheduler
+        try:
+            from app.core.ap_scheduler import scheduler
 
-        job = scheduler.get_job(_job_key(workflow_id))
+            job = scheduler.get_job(_job_key(workflow_id))
+        except Exception as e:  # noqa: BLE001 调度器不可用不得让调用方 500，也不得把库里的值抹成空
+            log.warning(f"[workflow] 读取工作流 {workflow_id} 的作业失败（调度器不可用？）：{e!s}")
+            return
         next_run = getattr(job, "next_run_time", None) if job else None
         try:
             async with async_db_session.begin() as db:

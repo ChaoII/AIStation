@@ -245,3 +245,122 @@ def test_workflow_delete_removes_business_job_and_schedule_row(test_client, auth
     finally:
         _delete_workflows(test_client, auth_headers, [wid])
         SchedulerUtil.remove_business_job(job_key)
+
+
+# ============================================================ 审查收口（Minor 1/2 + 行为测试缺口）
+
+
+def test_invalid_cron_is_rejected_and_registers_no_job(test_client, auth_headers):
+    """非法表达式：400（原因来自统一层）**且不注册作业**、不落库。"""
+    wid = _create_workflow(test_client, auth_headers)
+    job_key = _job_key(wid)
+    try:
+        before = _get_schedule(test_client, auth_headers, wid)
+
+        r = _put_schedule(test_client, auth_headers, wid, "0 9 * * 5-1", True)
+        assert r.status_code == 400, r.text
+        assert "跨周" in r.json()["msg"]
+        assert scheduler.get_job(job_key) is None, "非法表达式不得注册作业"
+        assert _get_schedule(test_client, auth_headers, wid) == before, "非法表达式不得落库"
+    finally:
+        _delete_workflows(test_client, auth_headers, [wid])
+        SchedulerUtil.remove_business_job(job_key)
+
+
+def test_enable_with_empty_cron_is_rejected_and_not_persisted(test_client, auth_headers):
+    """「启用 + 空表达式」：400（不留「已启用但永不触发」）且不落库、不注册作业。"""
+    from app.plugin.module_ai.workflow.service import _EMPTY_TRIGGER_MSG
+
+    wid = _create_workflow(test_client, auth_headers)
+    job_key = _job_key(wid)
+    try:
+        before = _get_schedule(test_client, auth_headers, wid)
+
+        r = _put_schedule(test_client, auth_headers, wid, "", True)
+        assert r.status_code == 400, r.text
+        assert r.json()["msg"] == _EMPTY_TRIGGER_MSG
+        assert scheduler.get_job(job_key) is None
+        after = _get_schedule(test_client, auth_headers, wid)
+        assert after == before
+        assert after["enabled"] is False
+        assert after["trigger_args"] == ""
+        assert after["next_run_time"] is None
+    finally:
+        _delete_workflows(test_client, auth_headers, [wid])
+        SchedulerUtil.remove_business_job(job_key)
+
+
+def test_resaving_schedule_replaces_trigger_under_same_key(test_client, auth_headers):
+    """改表达式 = 同键替换作业（触发器真的换了，不是留着旧触发器）。"""
+    wid = _create_workflow(test_client, auth_headers)
+    job_key = _job_key(wid)
+    try:
+        r1 = _put_schedule(test_client, auth_headers, wid, "0 9 * * mon", True)
+        assert r1.status_code == 200, r1.text
+        job_before = scheduler.get_job(job_key)
+        assert job_before is not None
+
+        r2 = _put_schedule(test_client, auth_headers, wid, "0 23 * * mon", True)
+        assert r2.status_code == 200, r2.text
+        job_after = scheduler.get_job(job_key)
+        assert job_after is not None and job_after is not job_before
+        # 触发器确实换成了新表达式：字符串描述变化 + 下次触发时刻跟着变（23 点而非 9 点）
+        assert str(job_after.trigger) != str(job_before.trigger)
+        assert _fmt(job_after.next_run_time) != _fmt(job_before.next_run_time)
+        assert _fmt(job_after.next_run_time).endswith("23:00:00")
+        assert _fmt(r2.json()["data"]["next_run_time"]) == _fmt(job_after.next_run_time)
+    finally:
+        _delete_workflows(test_client, auth_headers, [wid])
+        SchedulerUtil.remove_business_job(job_key)
+
+
+def test_stale_trigger_is_skipped_when_schedule_disabled(test_client, auth_headers):
+    """Minor 2：作业入口重读调度行——禁用后即使作业被直接调用（窗口期）也不运行工作流。"""
+    wid = _create_workflow(test_client, auth_headers)
+    job_key = _job_key(wid)
+    try:
+        assert _put_schedule(test_client, auth_headers, wid, "0 9 * * mon", True).status_code == 200
+        logs_before = test_client.get(
+            f"/api/v1/ai/workflows/{wid}/run-logs", headers=auth_headers
+        ).json()["data"]
+
+        r_off = _put_schedule(test_client, auth_headers, wid, "0 9 * * mon", False)
+        assert r_off.status_code == 200, r_off.text
+        assert scheduler.get_job(job_key) is None
+
+        # 模拟「禁用请求刚提交、作业已在执行队列里」的最后一次触发
+        asyncio.run(run_scheduled_workflow(wid))
+
+        logs_after = test_client.get(
+            f"/api/v1/ai/workflows/{wid}/run-logs", headers=auth_headers
+        ).json()["data"]
+        assert len(logs_after) == len(logs_before), "已停用的调度不得再运行工作流"
+        assert _get_schedule(test_client, auth_headers, wid)["last_run_time"] is None
+    finally:
+        _delete_workflows(test_client, auth_headers, [wid])
+        SchedulerUtil.remove_business_job(job_key)
+
+
+def test_register_failure_reports_readable_error_and_clears_ghost_job(
+    monkeypatch, test_client, auth_headers
+):
+    """Minor 1：注册作业失败必须兜底——可读 400（不是 500）、清掉残留作业（无幽灵作业）。"""
+    wid = _create_workflow(test_client, auth_headers)
+    job_key = _job_key(wid)
+    try:
+        assert _put_schedule(test_client, auth_headers, wid, "0 9 * * mon", True).status_code == 200
+        assert scheduler.get_job(job_key) is not None  # 先有一个真实作业，验证失败时被清理
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("调度器不可用")
+
+        monkeypatch.setattr(SchedulerUtil, "register_business_trigger", staticmethod(_boom))
+        r = _put_schedule(test_client, auth_headers, wid, "0 9 * * mon", True)
+
+        assert r.status_code == 400, r.text  # 可读错误，而不是未处理的 500
+        assert "调度" in r.json()["msg"]
+        assert scheduler.get_job(job_key) is None, "注册失败后不得留下残留作业"
+    finally:
+        monkeypatch.undo()
+        _delete_workflows(test_client, auth_headers, [wid])
+        SchedulerUtil.remove_business_job(job_key)
