@@ -400,6 +400,20 @@ class Settings(BaseSettings):
     # 并让训练容器挂载到同一位置。
     TORKILN_SHARED_DATA_ROOT: str = ''
 
+    # ---- simple mode（子进程直调模式）的配置 ----
+    # 训练框架运行形态开关：
+    # - container（默认）：每任务一 Docker 容器，跑完整的 TorchKiln HTTP 服务（存量行为）；
+    # - simple：后端直接以子进程方式拉起训练进程，无容器依赖，回调经共享令牌鉴权，
+    #   适合无 Docker 环境。两种模式共用同一套训练链路，仅运行形态不同。
+    TORKILN_MODE: Literal["container", "simple"] = "container"
+    # simple 模式回调共享密钥：默认空并 fail-closed（未配置时拒绝回调）。
+    TORKILN_SIMPLE_CALLBACK_TOKEN: str = ""
+    # simple 模式训练环境（子进程）健康检查轮询间隔（秒）。
+    TORKILN_SIMPLE_ENV_INTERVAL: float = 5.0
+    # simple 模式最大并发：同一时刻最多同时运行的子进程训练数（与 job 容器
+    # 模式端口段容量建议 1~4 一致）。
+    TORKILN_SIMPLE_MAX_CONCURRENT: int = 4
+
     # ================================================= #
     # ******************* AI推理引擎配置 ****************** #
     # ================================================= #
