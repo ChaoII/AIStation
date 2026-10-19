@@ -1269,6 +1269,16 @@ async def execute_ontology_action(code: str, object_key: str, params: dict,
     if not act:
         return {"ok": False, "msg": f"本体动作 {code} 不存在"}
     table = (act.get("target_table") or "").strip()
+    # P0-1（执行侧兜底）：target_table 直接拼进 UPDATE/INSERT/DELETE 的表名位置，
+    # 无法参数化。存量坏数据 / 绕过保存校验时，这里必须拦住 —— 否则一次执行就能
+    # 以应用 DB 身份跑任意 SQL，白名单/敏感字段/行列表策略/审批七道闸全部失效。
+    if table:
+        try:
+            _safe_ident(table)
+        except CustomException:
+            return {"ok": False, "blocked_by": "target_table",
+                    "msg": f"非法标识符：动作目标表 {table[:60]} 不符合表名规则"
+                           f"（仅允许字母/数字/下划线），拒绝执行"}
     method = (act.get("method") or "update").lower()
     act_name = act.get("name") or code
     rules = act.get("rules") or []
@@ -1338,9 +1348,15 @@ async def execute_ontology_action(code: str, object_key: str, params: dict,
         return {"ok": False, "msg": "缺少对象关键值（目标行 id）"}
 
     # ---- 4) 审批门禁 ----
+    # P0-2：approve **不接受客户端传入**（HTTP 入口恒为 False），批准必须走独立的
+    # /action/approve（AuthManage）。待审批单里记下执行载荷，批准时原样回放。
+    # 修前 approve 直接取自请求体，任何持 execute 权限的人都能在 body 里带
+    # approve=true 自我批准 —— 审批形同虚设，且不产生 pending 单、事后无痕迹。
     if act.get("approval") and not approve:
+        payload = json.dumps({"action_code": code, "object_key": str(object_key),
+                              "params": params or {}}, ensure_ascii=False)
         pid = await _log_action_result(act_name, table, object_key, params, operator,
-                                       "pending", "待审批（本体动作）")
+                                       "pending", payload)
         return {"ok": False, "needs_approval": True, "approval_id": pid,
                 "msg": "该本体动作需人工审批后执行（已生成待审批单）"}
 
@@ -1448,6 +1464,60 @@ async def execute_ontology_action(code: str, object_key: str, params: dict,
         "msg": "已写回并留痕"
                + (f"（{len(fx['sent'])} 项副作用已执行）" if fx["sent"] else ""),
     }
+
+
+async def approve_pending_action(approval_id: int, operator: str = "",
+                                 user_id: int | None = None,
+                                 principal: Any = None) -> dict:
+    """批准一条待审批的本体动作（P0-2 的批准入口）。
+
+    待审批单落在共享审计表 ``ai_query_writeback_log``（``result='pending'``），
+    其 ``detail`` 字段存的是执行载荷 ``{action_code, object_key, params}``。
+    批准 = 读回该载荷 → 带 ``approve=True`` 原样回放执行 → 把单子置为 approved。
+
+    该表由 ``catalog`` 统一拥有，本体**只经 catalog 接口读写**（架构约束由
+    ``tests/test_catalog_interface.py`` 强制）。
+
+    权限：本函数只能由 ``AuthManage`` 的入口调用（见 controller 的
+    ``/action/approve``）；``approve`` 参数**不再**接受 HTTP 请求体传入。
+    """
+    import json as _json
+
+    from app.plugin.module_ai import catalog
+
+    row = await catalog.get_writeback(int(approval_id))
+    if not row:
+        return {"ok": False, "msg": "审批单不存在"}
+    act_name, tbl, obj_key, result, detail = (
+        row["action_name"], row["object_table"], row["object_key"],
+        row["result"], row["detail"])
+    if result != "pending":
+        return {"ok": False, "msg": f"该审批单已处理（当前状态：{result}）"}
+    try:
+        payload = _json.loads(detail) if isinstance(detail, str) else (detail or {})
+    except Exception:  # noqa: BLE001
+        payload = {}
+    code = str((payload or {}).get("action_code") or "").strip()
+    if not code:
+        # 老单子没有载荷（修复前写的是纯文本提示），无法回放
+        return {"ok": False, "msg": "审批单缺少执行载荷（历史数据），请让发起人重新提交"}
+    r = await execute_ontology_action(
+        code=code,
+        object_key=str((payload or {}).get("object_key") or obj_key or ""),
+        params=(payload or {}).get("params") or {},
+        operator=operator, approve=True, user_id=user_id, principal=principal)
+    if r.get("ok"):
+        await catalog.update_writeback_result(
+            int(approval_id), "approved",
+            f"{act_name or code}#{tbl}#{obj_key} 经批准执行：" + (r.get("msg") or ""))
+    elif r.get("needs_approval"):
+        # 理论不可达（approve=True 不会再落单），保险起见不让它无限循环
+        return {"ok": False, "msg": "批准后仍需要审批，疑似动作配置异常"}
+    else:
+        await catalog.update_writeback_result(
+            int(approval_id), "rejected",
+            f"{act_name or code}#{tbl}#{obj_key} 批准后执行失败：" + (r.get("msg") or ""))
+    return r
 
 
 async def can_assign_value_type(vt_code: str, user_id: int | None) -> tuple[bool, str]:
@@ -1863,12 +1933,18 @@ async def upsert_action(data: dict) -> dict:
     obj = (data.get("object_code") or "").strip()
     if not code or not obj:
         raise CustomException(msg="动作编码/对象编码必填")
+    # P0-1：target_table 会被直接拼进 UPDATE/INSERT/DELETE 的**表名位置**（无法参数化），
+    # 必须过标识符白名单。否则存一个恶意表名就是存储型 SQL 注入 —— 绕过白名单、
+    # 敏感字段兜底、行/列策略、审批等全部执行闸门。列名已有 _safe_ident，表名此前没有。
+    raw_table = (data.get("target_table") or "").strip()
+    if raw_table:
+        _safe_ident(raw_table)
     common = {
         "n": data.get("name", code),
         # 显式传入 parameters 时同步生成 input_schema（工具 JSON Schema 的来源）
         "i": json.dumps(data.get("input_schema") or data.get("parameters") or [], ensure_ascii=False),
         "w": json.dumps(data.get("white_fields") or [], ensure_ascii=False),
-        "a": bool(data.get("approval")), "t": data.get("target_table", ""),
+        "a": bool(data.get("approval")), "t": raw_table,
         "m": data.get("method", "update"), "d": data.get("description", ""),
         "td": data.get("tool_description", ""),
         "rl": json.dumps(data.get("rules") or [], ensure_ascii=False),

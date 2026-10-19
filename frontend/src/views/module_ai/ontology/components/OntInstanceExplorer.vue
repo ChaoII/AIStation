@@ -299,9 +299,13 @@
         >
           <el-input v-model="actForm[f]" />
         </el-form-item>
-        <el-form-item v-if="actTarget?.approval" label="已确认">
-          <el-switch v-model="actApprove" />
-        </el-form-item>
+        <el-alert
+          v-if="actTarget?.approval"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="该动作需人工审批：提交后只会生成待审批单，由管理员批准后才会真正执行（执行人不能自我批准）。"
+        />
         <el-form-item label="作用实例">
           <el-tag size="small" type="info" effect="plain">
             {{ actKeys.length }} 个：{{ actKeys.slice(0, 6).join("、")
@@ -540,7 +544,6 @@ const actTarget = ref<any>(null);
 const actKeys = ref<string[]>([]);
 const actForm = ref<Record<string, string>>({});
 const actFields = ref<string[]>([]);
-const actApprove = ref(false);
 const actRunning = ref(false);
 
 function fieldLabel(f: string) {
@@ -566,7 +569,6 @@ async function openAction(a: any, keys: string[]) {
   }
   actForm.value = f;
   actKeys.value = keys;
-  actApprove.value = false;
   actTitle.value = `${detail.name || a.name}（${keys.length} 个实例）`;
   actDialog.value = true;
 }
@@ -603,7 +605,6 @@ async function runAction() {
         object_key:
           actTarget.value.method === "update" ? String(k) : String(actForm.value.object_key || k),
         params,
-        approve: actApprove.value,
       });
       const d = r.data?.data || {};
       if (d.ok) ok += 1;

@@ -437,3 +437,184 @@ class TestDbDefects:
 
         codes = _run(go())
         assert len(set(codes)) == 3, f"编码撞车：{codes}"
+
+
+class TestP0ActionSecurity:
+    """P0：本体动作执行链的两个安全缺陷（2026-10-19 排查）。
+
+    P0-1  动作的 target_table 没过标识符白名单 ⇒ 存储型 SQL 注入，
+          可绕过白名单/敏感字段/行列表策略/审批**全部七道闸**。
+    P0-2  审批门禁的 approve 直接取自 HTTP 请求体 ⇒ 任何持 execute 权限的人
+          在 body 里带 approve=true 即可自我批准，审批形同虚设。
+    """
+
+    def test_p0a_action_save_rejects_malicious_target_table(self):
+        """P0-1（保存侧）：target_table 必须过 _safe_ident，非法即拒绝。"""
+        async def go():
+            return await svc.upsert_action({
+                "object_code": "reg_obj", "name": "注入动作",
+                "code": "reg_inject_action",
+                "target_table": 'video_cameras" SET name=(SELECT 1) WHERE "id"="1',
+            })
+
+        with pytest.raises(Exception) as ei:
+            _run(go())
+        assert "非法标识符" in str(ei.value), (
+            f"保存时没拦住非法表名（注入可落库）：{ei.value}")
+
+    def test_p0b_execute_rejects_malicious_target_table(self):
+        """P0-1（执行侧兜底）：存量坏数据 / 绕过保存校验时，执行也必须拒绝。
+
+        用直接 UPDATE 的方式把表名改坏，模拟「库里已有恶意 target_table」。
+        """
+        from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+
+        async def go():
+            code = "reg_inject_exec"
+            await svc.upsert_action({
+                "object_code": "reg_obj", "name": "正常动作", "code": code,
+                "target_table": "reg_target_tbl", "white_fields": ["name"],
+            })
+            # 绕过 upsert 的校验，直接把表名改坏（模拟存量坏数据）
+            async with async_db_session.begin() as db:
+                await db.execute(_t(
+                    "UPDATE ai_ont_action SET target_table=:t WHERE code=:c"),
+                    {"t": 'reg_target_tbl" WHERE "id"="1', "c": code})
+            return await svc.execute_ontology_action(
+                code=code, object_key="1", params={"name": "x"}, operator="回归")
+
+        r = _run(go())
+        assert r.get("ok") is False, f"执行了注入表名（危险）：{r}"
+        assert "非法标识符" in str(r.get("msg", "")), (
+            f"没给出非法表名的原因：{r}")
+
+    def test_p0c_execute_cannot_self_approve_via_request_body(self):
+        """P0-2：请求体里的 approve 不能绕过审批门禁。
+
+        修前：controller 直接 `approve=bool(data.get('approve', False))`，
+        带 approve=true 就直接执行，**不产生 pending 单、事后无痕迹**。
+        修后：执行入口不接受客户端 approve，需审批动作一律落待审批单。
+        """
+        from types import SimpleNamespace
+
+        from app.plugin.module_ai.ontology import controller as C
+
+        async def go():
+            code = "reg_selfapprove_action"
+            await svc.upsert_action({
+                "object_code": "reg_obj", "name": "需审批动作", "code": code,
+                "target_table": "reg_target_tbl", "approval": True,
+                "white_fields": ["name"],
+            })
+            auth = SimpleNamespace(user=SimpleNamespace(id=1, name="回归管理员"))
+            resp = await C.execute_ontology_action(auth, {
+                "code": code, "object_key": "1",
+                "params": {"name": "x"}, "approve": True})
+            return json.loads(bytes(resp.body).decode())
+
+        body = _run(go())
+        d = body.get("data") or {}
+        assert d.get("needs_approval") is True, (
+            f"请求体 approve=true 绕过了审批门禁：{d}")
+        assert d.get("ok") is False, f"需审批动作不该直接执行成功：{d}"
+
+    def test_p0d_approve_endpoint_requires_manage_and_consumes_pending(self):
+        """P0-2（修复配套）：必须存在独立的批准入口，且只能批准 pending 单。
+
+        这条同时保证「删掉客户端 approve 之后」待审批动作不会永久卡死。
+        """
+        import inspect
+
+        from app.plugin.module_ai.ontology import controller as C
+
+        src = inspect.getsource(C)
+        assert "/action/approve" in src, "没有独立的动作批准入口"
+
+        # 执行入口不再从请求体取 approve
+        fn_src = inspect.getsource(C.execute_ontology_action)
+        assert 'data.get("approve"' not in fn_src, (
+            "执行入口仍在读请求体的 approve —— P0-2 未修")
+
+    def test_p0e_approve_roundtrip_executes_pending(self):
+        """P0-2（行为级）：落待审批单 → 管理员批准 → 真正执行成功。
+
+        这条保证「删掉客户端 approve 之后」需审批动作**不会永久卡死**：
+        批准入口必须能把 pending 单读回来并原样回放。
+        """
+        from types import SimpleNamespace
+
+        from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.ontology import controller as C
+
+        code = "reg_roundtrip_action"
+        tbl = "reg_rt_target"
+
+        async def go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t(
+                    f"CREATE TABLE IF NOT EXISTS {tbl} "
+                    "(id INTEGER PRIMARY KEY, name TEXT, status TEXT)"))
+                await db.execute(_t(f"DELETE FROM {tbl} WHERE id=1"))
+                await db.execute(_t(f"INSERT INTO {tbl}(id,name,status) VALUES(1,'旧','a')"))
+            await svc.upsert_action({
+                "object_code": "reg_obj", "name": "回路动作", "code": code,
+                "target_table": tbl, "approval": True, "white_fields": ["name"],
+            })
+            admin = SimpleNamespace(user=SimpleNamespace(id=1, name="回归管理员"))
+
+            # 1) 发起执行 → 只落单，不写库
+            r1 = json.loads(bytes((await C.execute_ontology_action(admin, {
+                "code": code, "object_key": "1",
+                "params": {"name": "新"}})).body).decode())["data"]
+            assert r1.get("needs_approval") is True, r1
+            assert r1.get("approval_id"), r1
+
+            # 2) 批准 → 真正执行
+            r2 = json.loads(bytes((await C.approve_ontology_action(admin, {
+                "approval_id": r1["approval_id"]})).body).decode())["data"]
+            async with async_db_session.begin() as db:
+                row = (await db.execute(_t(
+                    f"SELECT name FROM {tbl} WHERE id=1"))).fetchone()
+                st = (await db.execute(_t(
+                    "SELECT result FROM ai_query_writeback_log WHERE id=:i"),
+                    {"i": r1["approval_id"]})).fetchone()
+            return r1, r2, row[0] if row else None, st[0] if st else None
+
+        r1, r2, name_after, result = _run(go())
+        assert r2.get("ok") is True, f"批准后执行失败：{r2}"
+        assert name_after == "新", f"批准后没真正写库：name={name_after}"
+        assert result == "approved", f"审批单状态没更新：{result}"
+
+    def test_p0f_approve_cannot_replay_already_processed(self):
+        """P0-2（防重）：已处理的审批单不能被重复批准。"""
+        from types import SimpleNamespace
+
+        from app.plugin.module_ai.ontology import controller as C
+
+        async def go():
+            code = "reg_replay_action"
+            await svc.upsert_action({
+                "object_code": "reg_obj", "name": "防重动作", "code": code,
+                "target_table": "reg_target_tbl", "approval": True,
+                "white_fields": ["name"],
+            })
+            admin = SimpleNamespace(user=SimpleNamespace(id=1, name="回归管理员"))
+            r1 = json.loads(bytes((await C.execute_ontology_action(admin, {
+                "code": code, "object_key": "1",
+                "params": {"name": "x"}})).body).decode())["data"]
+            pid = r1["approval_id"]
+            # 批准两次：第二次必须被拒（单子已不是 pending）
+            first = json.loads(bytes((await C.approve_ontology_action(
+                admin, {"approval_id": pid})).body).decode())["data"]
+            second = json.loads(bytes((await C.approve_ontology_action(
+                admin, {"approval_id": pid})).body).decode())["data"]
+            return first, second
+
+        first, second = _run(go())
+        assert first.get("ok") is True or first.get("msg"), first
+        assert second.get("ok") is False, f"重复批准没被拦住：{second}"
+        assert "已处理" in str(second.get("msg", "")), second

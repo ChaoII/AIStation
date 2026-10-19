@@ -279,7 +279,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="审批门禁">
           <el-tag size="small" :type="act.approval ? 'warning' : 'info'" effect="plain">
-            {{ act.approval ? "需审批（未带 approve 只生成待审单）" : "无需审批" }}
+            {{ act.approval ? "需审批（只生成待审批单，由管理员批准）" : "无需审批" }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="提交条件">
@@ -469,9 +469,13 @@
         <el-form-item v-for="f in fields" :key="f.key" :label="f.label || f.key">
           <el-input v-model="execForm.params[f.key]" :placeholder="f.key" />
         </el-form-item>
-        <el-form-item v-if="act.approval" label="审批">
-          <el-checkbox v-model="execForm.approve">已获审批，直接执行</el-checkbox>
-        </el-form-item>
+        <el-alert
+          v-if="act.approval"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="该动作需人工审批：提交后只会生成待审批单，由管理员批准后才会真正执行（执行人不能自我批准）。"
+        />
       </el-form>
       <el-alert
         v-if="execResult"
@@ -826,13 +830,12 @@ const execOk = ref(false);
 const execForm = reactive<any>({
   object_key: "",
   params: {} as Record<string, any>,
-  approve: false,
 });
 
 function openExec() {
   const params: Record<string, any> = {};
   fields.value.forEach((f: any) => (params[f.key] = ""));
-  Object.assign(execForm, { object_key: "", params, approve: false });
+  Object.assign(execForm, { object_key: "", params });
   execResult.value = "";
   execOk.value = false;
   execDialog.value = true;
@@ -851,7 +854,6 @@ async function runExec() {
       code: props.code,
       object_key: execForm.object_key,
       params,
-      approve: execForm.approve,
     });
     const d = r.data?.data || {};
     execOk.value = !!d.ok;

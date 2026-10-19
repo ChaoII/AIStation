@@ -410,13 +410,19 @@ export function enrichOntology() {
 export function seedOntologyExamples() {
   return request({ url: `${API_PATH}/seed-examples`, method: "post" });
 }
+/** 执行本体动作。**不接受 approve 参数**：需审批的动作一律生成待审批单，
+ *  由管理员走 {@link approveOntAction} 批准。原先的 approve 入参可由请求体携带，
+ *  任何持 execute 权限的人都能自我批准（P0-2），故移除。 */
 export function executeOntAction(data: {
   code: string;
   object_key: string;
   params: Record<string, any>;
-  approve?: boolean;
 }) {
   return request({ url: `${API_PATH}/action/execute`, method: "post", data });
+}
+/** 批准一条待审批的本体动作（AuthManage；读回待审批单并原样回放执行） */
+export function approveOntAction(approval_id: number) {
+  return request({ url: `${API_PATH}/action/approve`, method: "post", data: { approval_id } });
 }
 /** 试运行本体动作：评估提交条件/规则/副作用，**不写库** */
 export function testRunOntAction(data: {

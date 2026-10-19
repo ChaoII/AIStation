@@ -208,3 +208,51 @@ async def count_writebacks(object_table: str | None = None,
         log.warning(f"[catalog] 统计回写条数失败: {str(e)[:120]}")
         return 0
     return int(rows[0][0]) if rows else 0
+
+
+async def get_writeback(approval_id: int) -> dict | None:
+    """按 id 读一条回写审计记录（本体动作审批读回执行载荷用）。
+
+    与 ``log_writeback`` 同属本目录对 ``ai_query_writeback_log`` 的统一出口：
+    调用方**不直读**该表（架构约束由 ``tests/test_catalog_interface.py`` 强制）。
+    """
+    try:
+        rows = await _rows(
+            "SELECT id, action_name, object_table, object_key, result, detail "
+            "FROM ai_query_writeback_log WHERE id=:i AND is_deleted=false",
+            i=int(approval_id),
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[catalog] 读取回写记录失败: {str(e)[:120]}")
+        return None
+    if not rows:
+        return None
+    r = rows[0]
+    return {
+        "id": int(r[0] or 0), "action_name": r[1] or "", "object_table": r[2] or "",
+        "object_key": str(r[3] or ""), "result": r[4] or "", "detail": r[5] or "",
+    }
+
+
+async def update_writeback_result(approval_id: int, result: str, detail: str = "") -> bool:
+    """更新一条回写审计记录的状态（pending → approved/rejected）与说明。
+
+    只允许把 **pending** 单改为终态，避免重复批准/覆盖已执行记录。
+    """
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+
+    try:
+        async with async_db_session.begin() as db:
+            res = await db.execute(
+                text(
+                    "UPDATE ai_query_writeback_log SET result=:r, detail=:d "
+                    "WHERE id=:i AND result='pending' AND is_deleted=false"
+                ),
+                {"r": result, "d": (detail or "")[:500], "i": int(approval_id)},
+            )
+            return bool(getattr(res, "rowcount", 0))
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[catalog] 更新回写状态失败: {str(e)[:120]}")
+        return False

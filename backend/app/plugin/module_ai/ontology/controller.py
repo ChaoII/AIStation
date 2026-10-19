@@ -567,7 +567,11 @@ async def execute_ontology_action(auth: AuthExecute, data: Annotated[dict, Body(
         object_key=str(data.get("object_key", "")),
         params=data.get("params") or {},
         operator=operator,
-        approve=bool(data.get("approve", False)),
+        # P0-2：**不接受**请求体里的 approve。原先直接取 data["approve"]，
+        # 任何持 execute 权限的人在 body 里带 approve=true 就能自我批准，
+        # 审批门禁形同虚设（且不产生 pending 单、事后无痕迹）。
+        # 需审批的动作一律落待审批单，由管理员走 /action/approve 批准。
+        approve=False,
         user_id=uid,
         # P4：按调用者权限门控（少了这一句，权限在 HTTP 路径上就是不生效的）
         principal=await _sec.load_principal(uid),
@@ -575,6 +579,22 @@ async def execute_ontology_action(auth: AuthExecute, data: Annotated[dict, Body(
         scenario_code=str(data.get("scenario", "")),
     )
     return SuccessResponse(data=r, msg=r.get("msg", "已执行"))
+
+
+@OntologyRouter.post("/action/approve", summary="批准待审批的本体动作（P0-2 修复后唯一批准入口）")
+async def approve_ontology_action(auth: AuthManage, data: Annotated[dict, Body()]) -> JSONResponse:
+    """管理员批准一条待审批的本体动作：读回待审批单里的执行载荷，原样回放执行。
+
+    待审批单由 ``/action/execute`` 生成（``ai_query_writeback_log.result='pending'``）。
+    ``approve`` 参数**只能**从这里传入（AuthManage），不能由执行入口的请求体携带。
+    """
+    user = getattr(auth, "user", None)
+    operator = str(getattr(user, "name", None) or getattr(user, "id", None) or "")
+    uid = getattr(user, "id", None)
+    r = await _svc.approve_pending_action(
+        int(data.get("approval_id", 0)), operator=operator, user_id=uid,
+        principal=await _sec.load_principal(uid))
+    return SuccessResponse(data=r, msg=r.get("msg", "已批准"))
 
 
 @OntologyRouter.post("/action/test-run", summary="试运行本体动作（评估提交条件/规则/副作用，不写库）")

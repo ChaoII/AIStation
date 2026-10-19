@@ -716,9 +716,13 @@
         <el-form-item v-for="f in execForm.fields" :key="f.key" :label="f.label || f.key">
           <el-input v-model="execForm.params[f.key]" :placeholder="f.key" />
         </el-form-item>
-        <el-form-item v-if="execForm.approval" label="审批">
-          <el-checkbox v-model="execForm.approve">已获审批，直接执行</el-checkbox>
-        </el-form-item>
+        <el-alert
+          v-if="execForm.approval"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="该动作需人工审批：提交后只会生成待审批单，由管理员批准后才会真正执行（执行人不能自我批准）。"
+        />
       </el-form>
       <el-alert
         v-if="execResult"
@@ -1154,7 +1158,6 @@ const execForm = reactive<any>({
   object_key: "",
   params: {} as Record<string, any>,
   fields: [] as any[],
-  approve: false,
 });
 function openExec(a: any) {
   const wf = (a.white_fields || []).map((w: any) => (typeof w === "string" ? w : w.key));
@@ -1172,7 +1175,6 @@ function openExec(a: any) {
     object_key: "",
     params,
     fields,
-    approve: false,
   });
   execResult.value = "";
   execOk.value = false;
@@ -1192,7 +1194,6 @@ async function runExec() {
       code: execForm.code,
       object_key: execForm.object_key,
       params,
-      approve: execForm.approve,
     });
     const d = r.data?.data || {};
     execOk.value = !!d.ok;
