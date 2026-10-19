@@ -2,14 +2,23 @@
 
 用途
 ----
-用 CPU + 合成小数据集（128×128 PNG，YOLO txt 归一化标签），以本地 subprocess
+用合成小数据集（128×128 PNG，YOLO txt 归一化标签），以本地 subprocess
 方式跑通 TorchKiln ``simple_run`` 的四条链路，并把事件通过本地 HTTP 回调
 （``X-Torchkiln-Token`` 鉴权）收集回来做**事件级断言**（不只信退出码）：
 
     train    yolo11-det，1 epoch，batch 2，8 图训练 / 3 图验证
     eval     加载训练产物权重，对验证集出指标（main_value 可解析）
     predict  加载权重对 3 张图推理，逐图 ``predict`` 进度事件
-    export   子进程 ``tools/export.py`` 导出 TorchScript + 推理权重
+    export   子进程 ``tools/export.py`` 导出 ONNX（交付标准，``model.onnx``；
+             TorchScript 仅兼容保留）
+
+设备
+----
+**默认用 GPU**（``resources.gpu=1``、``Global.device=cuda:0``）：
+- ``--cpu`` 强制 CPU（``gpu=0``、``Global.device=cpu``）；
+- 无 CUDA（``torch.cuda.is_available()`` 为 False）且未显式指定时，
+  打印提示并**自动回退 CPU**（跨机器通用）；
+- 汇总输出中明确标注本次运行设备（GPU 型号 / CPU）。
 
 前置依赖（simple extra）
 ------------------------
@@ -21,10 +30,18 @@ smoke 失败）::
     uv sync --extra simple
 
 说明：
-- 本机走清华镜像装 torch **CPU 轮子**（较大，需耐心等待）；CUDA 用户按
-  AGENTS.md 另装清华 ``pytorch-wheels`` 的 CUDA 轮子，本脚本只验证 CPU 链路。
+- ``uv sync --extra simple`` 装的是清华镜像的 **CPU 版 torch**（体积较大，
+  需耐心等待）；本机要跑 GPU 需另装 CUDA 轮子（会覆盖 CPU 版），例如本机
+  （阿里云 pytorch-wheels/cu132）：::
+
+      uv pip install --no-deps --find-links \
+          https://mirrors.aliyun.com/pytorch-wheels/cu132/ \
+          "torch==2.14.1+cu132" "torchvision==0.29.1+cu132"
+
+  ⚠️ **之后不要执行 ``uv sync``**：锁文件里记的是 PyPI 的 CPU 版 torch，
+  重新 sync 会用 CPU 轮子覆盖 CUDA 版；补包请用 ``uv pip install``。
 - ``torchkiln`` 来自本地 submodule（``backend/submodules/torchkiln``），
-  ``uv sync --extra simple`` 会以本地路径安装，**不要**再 pip 装别的版本。
+  由 uv 以本地路径安装，**不要**再 pip 装别的版本。
 
 运行
 ----
@@ -32,7 +49,8 @@ smoke 失败）::
 bash/docker）::
 
     cd backend
-    .venv/Scripts/python.exe scripts/smoke_simple_mode.py
+    .venv/Scripts/python.exe scripts/smoke_simple_mode.py            # 默认 GPU
+    .venv/Scripts/python.exe scripts/smoke_simple_mode.py --cpu      # 强制 CPU
 
 Linux 同理：``.venv/bin/python scripts/smoke_simple_mode.py``。
 
@@ -45,11 +63,13 @@ Linux 同理：``.venv/bin/python scripts/smoke_simple_mode.py``。
 - eval：≥1 条 ``eval`` 事件且 ``main_value`` 可解析为数字；
 - predict：≥1 条 ``predict`` 事件且末条 ``images_done == images_total``，
   输出目录逐图落 ``.jpg``；
-- export：``output_dir`` 存在且包含导出产物（TorchScript ``model.pt`` /
-  推理权重 ``inference.pth``）。
+- export：``output_dir`` 存在且包含 **ONNX 交付产物 ``model.onnx``（存在
+  且非空）**，``end.onnx_path`` 指向该文件（TorchScript/推理权重仅作兼容
+  保留，不再是通过依据）。
 
-末尾打印每链路一行汇总（链路 / 退出码 / end / 事件计数 / 耗时 / PASS|FAIL）
-与 ``ALL PASS`` / ``FAILED``：全过 exit 0，任一失败 exit 1。
+末尾打印每链路一行汇总（链路 / 退出码 / end / 事件计数 / 耗时 / PASS|FAIL，
+含运行设备与总耗时）与 ``ALL PASS`` / ``FAILED``：全过 exit 0，任一失败
+exit 1。
 
 产物位置
 --------
@@ -81,7 +101,7 @@ REPO_ROOT = BACKEND_ROOT / "submodules" / "torchkiln"
 #: yolo11-det 配置名（相对 TorchKiln configs/ 根，走 resolve_config）
 CONFIG_NAME = "yolo/yolo11-det.yml"
 
-IMG_SIZE = 128          # 训练/评估/导出统一 128（32 的倍数，CPU 快）
+IMG_SIZE = 128          # 训练/评估/导出统一 128（32 的倍数，smoke 要快）
 BATCH = 2
 N_TRAIN = 8             # 训练图数（batch 2 → 每 epoch 4 个 step）
 N_VAL = 3               # 验证图数
@@ -112,13 +132,46 @@ def ensure_deps() -> None:
     print("    uv sync --extra simple")
     print("")
     print("说明：")
-    print("  - 本机默认安装清华镜像的 torch CPU 轮子（体积较大，请耐心等待）；")
-    print("  - CUDA 用户请按 AGENTS.md 从清华 pytorch-wheels 索引另装 CUDA 轮子；")
+    print("  - uv sync 默认安装清华镜像的 torch CPU 轮子（体积较大，请耐心等待）；")
+    print("    本机要跑 GPU 需另装 CUDA 轮子（会覆盖 CPU 版），例如：")
+    print("      uv pip install --no-deps --find-links "
+          "https://mirrors.aliyun.com/pytorch-wheels/cu132/ "
+          "\"torch==2.14.1+cu132\" \"torchvision==0.29.1+cu132\"")
+    print("    ⚠️ 装 CUDA 轮子后不要再执行 uv sync（锁文件记的是 CPU 版，")
+    print("    重新 sync 会用 CPU 轮子覆盖 CUDA 版）；补包请用 uv pip install。")
     print("  - torchkiln 来自本地 submodule（backend/submodules/torchkiln），")
     print("    由 uv 以本地路径安装，不要从 PyPI 另装。")
     print("")
     print("exit 2（未安装依赖不算 smoke 失败）")
     sys.exit(2)
+
+
+# ---------------------------------------------------------------- 设备选择
+def resolve_device(force_cpu: bool) -> tuple:
+    """返回 (use_gpu, 设备描述)。
+
+    - ``--cpu`` 强制 CPU；
+    - 否则 ``torch.cuda.is_available()`` 可用 → GPU（默认）；
+    - 无 CUDA → 打印提示并自动回退 CPU（跨机器通用）。
+    """
+    import torch
+
+    if force_cpu:
+        return False, "CPU（--cpu 指定）"
+    try:
+        cuda_ok = bool(torch.cuda.is_available())
+    except Exception:  # noqa: BLE001
+        cuda_ok = False
+    if cuda_ok:
+        try:
+            name = torch.cuda.get_device_name(0)
+        except Exception:  # noqa: BLE001
+            name = "CUDA device"
+        return True, f"GPU: {name}"
+    print("[提示] 未检测到 CUDA（torch.cuda.is_available()=False），"
+          "自动回退 CPU。本脚本默认在有 CUDA 的机器上用 GPU 运行，"
+          "或用 --cpu 显式指定 CPU。")
+    return False, "CPU（无 CUDA，自动回退）"
 
 
 # ---------------------------------------------------------------- 合成数据集
@@ -287,16 +340,16 @@ class EventCollector:
 
 
 # ---------------------------------------------------------------- spec 构造
-def _base_params(ws: Path) -> dict:
-    """四链路共用的 CPU 小配置覆盖（点分键 → -o k=v）。
+def _base_params(ws: Path, use_gpu: bool) -> dict:
+    """四链路共用的小配置覆盖（点分键 → -o k=v）。
 
-    覆盖 yml 默认里的 GPU/大尺寸/大类数；数据集键（data_dir /
+    覆盖 yml 默认里的设备/大尺寸/大类数；数据集键（data_dir /
     label_file_list / names / image_size）都走 spec.params，
     torchkiln 侧 merge_config 会把列表字段自动包成 list。
     """
     return {
-        "Global.use_gpu": False,
-        "Global.device": "cpu",
+        "Global.use_gpu": use_gpu,
+        "Global.device": "cuda:0" if use_gpu else "cpu",
         "Architecture.Head.num_classes": 1,
         "Train.dataset.transform.image_size": IMG_SIZE,
         "Eval.dataset.transform.image_size": IMG_SIZE,
@@ -305,11 +358,13 @@ def _base_params(ws: Path) -> dict:
     }
 
 
-def build_specs(ws: Path, ds: dict):
+def build_specs(ws: Path, ds: dict, use_gpu: bool):
     """按固定顺序生成四链路 JobSpec（dict 形态，写盘即 simple_run 输入）。
 
-    eval / predict / export 的 ``weights_path`` 初始为 None，train 结束后
-    用返回的 ``fill_weights`` 回填真实权重路径。
+    ``use_gpu`` 决定 ``resources.gpu``（predict 链路据此自动选
+    cuda:0 / cpu）与 Global.use_gpu / Global.device。eval / predict /
+    export 的 ``weights_path`` 初始为 None，train 结束后用返回的
+    ``fill_weights`` 回填真实权重路径。
     """
     out = ws / "out"
     out.mkdir(parents=True, exist_ok=True)
@@ -320,8 +375,8 @@ def build_specs(ws: Path, ds: dict):
             "framework": "torchkiln",
             "kind": kind,
             "config_path": CONFIG_NAME,
-            "params": _base_params(ws),
-            "resources": {"gpu": 0},
+            "params": _base_params(ws, use_gpu),
+            "resources": {"gpu": 1 if use_gpu else 0},
             "seed": 42,
         }
 
@@ -487,17 +542,25 @@ def check_predict(name, proc, collector):
 
 
 def check_export(name, proc, collector):
+    """export 专属：ONNX 是交付标准——model.onnx 必须存在且非空，
+    且 end 事件的 onnx_path 指向该文件（TorchScript/推理权重仅兼容保留）。"""
     checks = check_end(name, proc, collector)
-    out_dir = (collector.end_events() or [{}])[0].get("output_dir")
+    end = (collector.end_events() or [{}])[0]
+    out_dir = end.get("output_dir")
     ok_dir = bool(out_dir and Path(out_dir).is_dir())
     checks.append(("output_dir 存在", ok_dir, f"output_dir={out_dir}"))
-    has_artifact, files = False, []
-    if ok_dir:
-        files = sorted(p.name for p in Path(out_dir).iterdir())
-        # 按实际产物判断：TorchScript model.pt 与/或推理权重 inference.pth
-        has_artifact = any(f in ("model.pt", "inference.pth") for f in files)
-    checks.append(("包含导出产物（model.pt / inference.pth）",
-                   ok_dir and has_artifact, f"文件：{files}"))
+    onnx_file = Path(out_dir) / "model.onnx" if ok_dir else None
+    size = (onnx_file.stat().st_size
+            if onnx_file is not None and onnx_file.is_file() else 0)
+    files = sorted(p.name for p in Path(out_dir).iterdir()) if ok_dir else []
+    checks.append(("ONNX 交付产物 model.onnx 存在且非空", bool(size > 0),
+                   f"model.onnx={size} bytes，文件：{files}"))
+    end_onnx = end.get("onnx_path")
+    if end_onnx:
+        same = bool(onnx_file is not None and size > 0
+                    and Path(end_onnx).resolve() == onnx_file.resolve())
+        checks.append(("end.onnx_path 指向该 ONNX 文件", same,
+                       f"onnx_path={end_onnx}"))
     return checks
 
 
@@ -513,9 +576,13 @@ def _print_checks(name: str, checks: list) -> bool:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="simple mode 四链路 smoke（CPU）")
+    parser = argparse.ArgumentParser(
+        description="simple mode 四链路 smoke（默认 GPU；--cpu 强制 CPU，"
+                    "无 CUDA 时自动回退 CPU）")
     parser.add_argument("--keep", action="store_true",
                         help="保留临时工作目录（默认结束清理）")
+    parser.add_argument("--cpu", action="store_true",
+                        help="强制 CPU（默认有 CUDA 时用 GPU）")
     args = parser.parse_args(argv)
 
     ensure_deps()
@@ -524,10 +591,13 @@ def main(argv=None) -> int:
               "git submodule update --init --recursive）")
         return 1
 
+    use_gpu, device_desc = resolve_device(args.cpu)
+
     ws = Path(tempfile.mkdtemp(prefix="tk-smoke-"))
     print(f"工作区：{ws}")
+    print(f"运行设备：{device_desc}")
     ds = make_dataset(ws)
-    specs, fill_weights = build_specs(ws, ds)
+    specs, fill_weights = build_specs(ws, ds, use_gpu)
     print(f"合成数据集：train {N_TRAIN} 张 / val {N_VAL} 张 / 推理 {N_PREDICT} 张（{IMG_SIZE}×{IMG_SIZE} PNG，1 类）")
 
     collector = EventCollector(token=f"smoke-{random.getrandbits(32)}")
@@ -535,6 +605,7 @@ def main(argv=None) -> int:
 
     # 结果：name -> dict(ok, rc, end_reason, elapsed, counts)
     results = {}
+    t_all = time.time()
     try:
         for name, task_id, spec in specs:
             t0 = time.time()
@@ -584,6 +655,7 @@ def main(argv=None) -> int:
     # ------------------------------------------------------------ 汇总
     print("")
     print("=" * 76)
+    print(f"运行设备：{device_desc}")
     print("链路汇总：")
     print("{:<10} {:<8} {:<18} {:<28} {:<10} {}".format(
         "链路", "退出码", "end", "事件计数", "耗时", "结果"))
@@ -602,7 +674,8 @@ def main(argv=None) -> int:
             "{:.1f}s".format(r["elapsed"]), "PASS" if r["ok"] else "FAIL"))
         all_ok = all_ok and r["ok"]
     print("-" * 76)
-    print("结论：{}".format("ALL PASS" if all_ok else "FAILED"))
+    print("结论：{}（总耗时 {:.1f}s，设备：{}）".format(
+        "ALL PASS" if all_ok else "FAILED", time.time() - t_all, device_desc))
     print("=" * 76)
 
     if args.keep:
