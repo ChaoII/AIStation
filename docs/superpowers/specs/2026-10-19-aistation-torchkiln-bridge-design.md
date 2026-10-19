@@ -184,3 +184,18 @@ TORKILN_SIMPLE_MAX_CONCURRENT: int = 4                       # 并发硬上限�
 
 - **风险**：TorchKiln Windows 化可能遇到未知平台假设——阶段 1 以「兼容清单 + 回归测试」兜底，遇到障碍逐条解决并回写清单；torch CUDA wheel 依赖清华 `pytorch-wheels` 镜像（AGENTS.md 已实测可用）；submodule pin 与 TorchKiln 演进节奏需手动协调；常驻部署服务第一版不并入 simple（后续真实需求再扩）。
 - **开放问题**：无（核心取舍均已在本文定稿：统一事件表、HTTP loopback 回调、动态并发、四链路范围、按需依赖、Windows 目标）。
+
+## 九、简单模式 smoke（Task 8）
+
+> 注：本节编号顺延——原文末节「八、风险与开放问题」已占用「八」。
+
+- **用途**：一键 smoke 脚本 `backend/scripts/smoke_simple_mode.py`，CPU + 合成小数据集（128×128 PNG，8 训练 / 3 验证 / 3 推理，YOLO txt 归一化标签，1 类）跑通 `simple_run` 的 train → eval → predict → export 四链路；事件经本地 HTTP 回调（`X-Torchkiln-Token` 鉴权）收集，做**事件级断言**（退出码 0 + 有且仅 1 条合法 `end` + 各链路专属事件/产物），不只信退出码。
+- **前置**：backend 虚拟环境已装 simple 依赖组——`cd backend && uv sync --extra simple`（清华镜像装 torch CPU 轮子；CUDA 用户按 AGENTS.md 另装清华 `pytorch-wheels` 轮子；torchkiln 为本地 submodule，由 uv 按路径安装）。缺依赖时脚本打印中文引导并 **exit 2**（不算 smoke 失败）。
+- **命令**：`cd backend && .venv/Scripts/python.exe scripts/smoke_simple_mode.py`（Windows 原生可跑，不依赖 bash/docker；`--keep` 保留临时工作目录）。
+- **通过标准**：
+  - train：`step` ≥1、`eval` ≥1、权重产物（`best_accuracy.pth` / `final.pth` / `latest.pth`）落盘；
+  - eval：`eval` 事件 `main_value` 可解析；
+  - predict：末条 `predict` 事件 `images_done == images_total`，输出目录逐图落 `.jpg`；
+  - export：`output_dir` 存在且含 TorchScript `model.pt` / 推理权重 `inference.pth`；
+  - 末尾逐链路汇总（退出码 / end / 事件计数 / 耗时 / PASS|FAIL）+ `ALL PASS`（exit 0）。
+- **与容器模式并行验证**：smoke 走 direct CLI（`python -m torchkiln.simple_run`，等价 executor 的 simple 分支），与容器模式共用同一事件契约（`end` 终态、`step/eval/predict` 事件、`metrics.jsonl` 同形）；四链路全 PASS 后，平台侧再经训练任务 UI 走 executor 端到端复核（事件落 `train_metric_events` 表）。
