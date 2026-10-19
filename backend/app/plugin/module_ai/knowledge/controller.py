@@ -314,17 +314,18 @@ async def upload_document(
     chunk_size: Annotated[int, Form()] = 500,
     overlap: Annotated[int, Form()] = 50,
     strategy: Annotated[str, Form()] = "fixed",
+    use_ocr: Annotated[bool, Form()] = True,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))] = None,
 ) -> JSONResponse:
     data = await file.read()
     try:
         result = await AiKnowledgeService.upload_document(
             kb_id, file.filename or "文档", data, auth,
-            chunk_size=chunk_size, overlap=overlap, strategy=strategy,
+            chunk_size=chunk_size, overlap=overlap, strategy=strategy, use_ocr=use_ocr,
         )
     except ValueError as e:
         return ErrorResponse(msg=str(e))
-    return SuccessResponse(data=result, msg="已上传并索引")
+    return SuccessResponse(data=result, msg="已上传，正在后台解析")
 
 
 @KnowledgeRouter.delete("/bases/{kb_id}/documents/{doc_id}", summary="删除文档")
@@ -635,3 +636,52 @@ async def sync_datasource(
         return SuccessResponse(data=result, msg="同步成功")
     except ValueError as e:
         return ErrorResponse(msg=str(e))
+
+
+# ---------------------------------------------------------------------------
+# RAG 后台任务（进度轮询 / 列表 / 取消）
+# ---------------------------------------------------------------------------
+
+
+@KnowledgeRouter.get("/tasks/{task_id}", summary="查询 RAG 任务进度")
+async def get_rag_task(
+    task_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    from . import tasks as rag_tasks
+
+    data = await rag_tasks.get_task(task_id)
+    if data is None:
+        return ErrorResponse(msg="任务不存在")
+    return SuccessResponse(data=data)
+
+
+@KnowledgeRouter.get("/tasks", summary="RAG 任务列表")
+async def list_rag_tasks(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+    kb_id: int | None = None,
+    status: str | None = None,
+    page_no: int = 1,
+    page_size: int = 20,
+) -> JSONResponse:
+    from . import tasks as rag_tasks
+
+    return SuccessResponse(
+        data=await rag_tasks.list_tasks(
+            kb_id=kb_id, status=status, page_no=page_no, page_size=page_size
+        )
+    )
+
+
+@KnowledgeRouter.post("/tasks/{task_id}/cancel", summary="取消 RAG 任务")
+async def cancel_rag_task(
+    task_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    from . import tasks as rag_tasks
+
+    try:
+        data = await rag_tasks.cancel_task(task_id)
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+    return SuccessResponse(data=data, msg="已取消")

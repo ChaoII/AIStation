@@ -25,6 +25,21 @@ def _delete_base(test_client, auth_headers, ids) -> None:
         )
 
 
+def _wait_task(task_id: int, limit: int = 30) -> dict:
+    """同步驱动 RAG worker 直到目标任务进入终态（上传/重解析已改为后台任务）。"""
+    import asyncio
+
+    from app.plugin.module_ai.knowledge import tasks
+    from app.plugin.module_ai.knowledge.tasks import worker
+
+    for _ in range(limit):
+        cur = asyncio.run(tasks.get_task(task_id))
+        if cur and cur["status"] in ("succeeded", "failed", "canceled"):
+            return cur
+        asyncio.run(worker.run_worker(max_iterations=1))
+    return asyncio.run(tasks.get_task(task_id))
+
+
 def test_chunk_text():
     """分块：按大小切分且带重叠，不做无谓分块。"""
     text = "ABCDEFGHIJ"
@@ -205,6 +220,8 @@ def test_delete_document_cascades_chunks(test_client, auth_headers):
         )
         assert up.status_code == 200, up.text
         doc_id = up.json()["data"]["id"]
+        tr = _wait_task(up.json()["data"]["task_id"])
+        assert tr["status"] == "succeeded", tr
 
         before = test_client.get(
             f"/api/v1/ai/knowledge/bases/{kb_id}/chunks", headers=auth_headers
@@ -238,6 +255,7 @@ def test_reparse_is_idempotent(test_client, auth_headers):
         )
         assert up.status_code == 200, up.text
         doc_id = up.json()["data"]["id"]
+        assert _wait_task(up.json()["data"]["task_id"])["status"] == "succeeded"
         n1 = len(
             test_client.get(
                 f"/api/v1/ai/knowledge/bases/{kb_id}/chunks", headers=auth_headers
@@ -249,6 +267,7 @@ def test_reparse_is_idempotent(test_client, auth_headers):
                 headers=auth_headers,
             )
             assert r.status_code == 200, r.text
+            assert _wait_task(r.json()["data"]["task_id"])["status"] == "succeeded"
         chunks = test_client.get(
             f"/api/v1/ai/knowledge/bases/{kb_id}/chunks", headers=auth_headers
         ).json()["data"]
@@ -258,5 +277,52 @@ def test_reparse_is_idempotent(test_client, auth_headers):
             f"/api/v1/ai/knowledge/bases/{kb_id}/quality", headers=auth_headers
         ).json()["data"]
         assert q["chunks"] == n1, "库的 chunk_count 口径应与实际分块数一致"
+    finally:
+        _delete_base(test_client, auth_headers, [kb_id])
+
+
+def test_upload_returns_task_and_worker_finishes(test_client, auth_headers):
+    """上传必须立即返回 task_id，由后台 worker 完成解析与入库。"""
+    kb_id = _create_base(test_client, auth_headers)
+    try:
+        up = test_client.post(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/documents/upload",
+            files={"file": ("bg.txt", b"background ingest content", "text/plain")},
+            data={"strategy": "fixed", "chunk_size": "50", "overlap": "0"},
+            headers=auth_headers,
+        )
+        assert up.status_code == 200, up.text
+        body = up.json()["data"]
+        assert body["task_id"] and body["id"]
+        assert body["status"] == "pending"
+
+        tr = _wait_task(body["task_id"])
+        assert tr["status"] == "succeeded", tr
+        assert tr["progress"] == 100
+        chunks = test_client.get(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/chunks", headers=auth_headers
+        ).json()["data"]
+        assert chunks, "任务完成后应有分块"
+    finally:
+        _delete_base(test_client, auth_headers, [kb_id])
+
+
+def test_canceled_task_does_not_write_chunks(test_client, auth_headers):
+    """取消的任务不得继续写入分块（Review Focus: 任务取消）。"""
+    import asyncio
+
+    from app.plugin.module_ai.knowledge import tasks
+
+    kb_id = _create_base(test_client, auth_headers)
+    try:
+        t = asyncio.run(tasks.create_task("kb_rebuild", kb_id=kb_id))
+        asyncio.run(tasks.cancel_task(t["id"]))
+        assert _wait_task(t["id"])["status"] == "canceled"
+        assert (
+            test_client.get(
+                f"/api/v1/ai/knowledge/bases/{kb_id}/chunks", headers=auth_headers
+            ).json()["data"]
+            == []
+        )
     finally:
         _delete_base(test_client, auth_headers, [kb_id])

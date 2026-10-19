@@ -1320,38 +1320,57 @@ class AiKnowledgeService:
     async def upload_document(
         cls, kb_id: int, filename: str, data: bytes, auth,
         chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed",
+        use_ocr: bool = True,
     ) -> dict:
-        """上传文档→提取全文→分块向量化→入库。"""
-        text, page_offsets = cls._extract_doc(filename, data)
-        if not text.strip():
-            raise ValueError("文档无有效文本")
-        ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
+        """上传文档：落库 + 上传原始文件 + 入队后台解析（不再同步解析阻塞请求）。"""
+        from .tasks import create_task
+
         async with async_db_session.begin() as db:
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if not b or b.is_deleted:
+                raise ValueError("知识库不存在")
+            # 先做一次「快速文本层」提取：常见格式（txt/docx/pdf 文本层）无需等后台；
+            # 扫描件/图片会得到空文本，由 worker 从 RustFS 取原始字节走 OCR。
+            try:
+                text, page_offsets = await asyncio.to_thread(
+                    cls._extract_doc, filename or "文档", data
+                )
+            except Exception:  # noqa: BLE001  解析失败交由后台任务报错
+                text, page_offsets = "", [0]
+            ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
             doc = AiKnowledgeDocumentModel(
                 knowledge_base_id=kb_id,
                 name=filename or "文档",
                 file_type=ext,
                 size=len(data),
                 content=text,
-                doc_status="ready",
+                doc_status="pending",
             )
             db.add(doc)
             await db.flush()
             doc_id = doc.id
             doc.object_key = await cls._upload_to_rustfs(kb_id, filename or "文档", data)
-        # 计算每块的起始行/页码，用于引用溯源
-        chunks = chunk_text(text, chunk_size, overlap, strategy)
-        start_lines, pages = cls._chunk_spans(text, chunks, page_offsets)
-        # 分块向量化入库
-        result = await cls.ingest_text(
-            kb_id, text, file_name=filename or "文档", auth=auth,
-            chunk_size=chunk_size, overlap=overlap, strategy=strategy,
-            document_id=doc_id, start_lines=start_lines, pages=pages,
+        task = await create_task(
+            "document_ingest",
+            kb_id=kb_id,
+            document_id=doc_id,
+            payload={
+                "filename": filename or "文档",
+                "chunk_size": chunk_size,
+                "overlap": overlap,
+                "strategy": strategy,
+                "use_ocr": bool(use_ocr),
+                "page_offsets": list(page_offsets or [0]),
+            },
+            auth=auth,
         )
-        async with async_db_session.begin() as db:
-            d = await db.get(AiKnowledgeDocumentModel, doc_id)
-            d.chunk_count = result.get("chunks", 0)
-        return {"id": doc_id, "name": filename or "文档", "chunks": result.get("chunks", 0)}
+        return {
+            "id": doc_id,
+            "name": filename or "文档",
+            "chunks": 0,
+            "task_id": task["id"],
+            "status": "pending",
+        }
 
     @staticmethod
     async def _upload_to_rustfs(kb_id: int, filename: str, data: bytes) -> str | None:
@@ -1540,29 +1559,25 @@ class AiKnowledgeService:
 
     @classmethod
     async def reparse_document(cls, kb_id: int, doc_id: int, auth) -> dict:
-        """重新解析文档：**替换式**重建分块（先清旧分块再入库）与图谱。"""
+        """重新解析（后台任务）：先清旧分块，再由 worker 按原文重建。"""
+        from .tasks import create_task
+
         name = "文档"
-        text = ""
         async with async_db_session.begin() as db:
             d = await db.get(AiKnowledgeDocumentModel, doc_id)
             if not d or d.knowledge_base_id != kb_id or d.is_deleted:
                 raise ValueError("文档不存在")
-            text = d.content or ""
-            name = d.name or "文档"
             purged = await cls._purge_document_chunks(db, doc_id)
             b = await db.get(AiKnowledgeBaseModel, kb_id)
             if b:
                 b.chunk_count = max(0, (b.chunk_count or 0) - purged["chunks"])
-        if not text.strip():
-            raise ValueError("文档无有效文本")
-        result = await cls.ingest_text(
-            kb_id, text, file_name=name, auth=auth, document_id=doc_id,
+            name = d.name or "文档"
+            d.doc_status = "pending"
+        task = await create_task(
+            "document_ingest", kb_id=kb_id, document_id=doc_id,
+            payload={"filename": name}, auth=auth,
         )
-        async with async_db_session.begin() as db:
-            dd = await db.get(AiKnowledgeDocumentModel, doc_id)
-            if dd:
-                dd.chunk_count = result.get("chunks", 0)
-        return {"id": doc_id, "chunks": result.get("chunks", 0)}
+        return {"id": doc_id, "task_id": task["id"], "status": "pending"}
 
     @classmethod
     async def ingest_text(
@@ -1613,7 +1628,8 @@ class AiKnowledgeService:
             await db.flush()
             await vector_store.write_vectors(db, rows, vectors, model_name=model_name)
             b.chunk_count = (b.chunk_count or 0) + saved
-            b.updated_id = auth.user.id
+            if auth is not None:
+                b.updated_id = auth.user.id
         if rebuild_graph:
             await cls._rebuild_graph(kb_id)
         return {"chunks": saved}
@@ -2199,31 +2215,54 @@ class AiKnowledgeService:
 
     @classmethod
     async def sync_datasource(cls, ds_id: int, data, auth) -> dict:
-        """数据源 → 目标知识库 同步入库。"""
+        """数据源 → 目标知识库 同步入库（后台任务）：立即返回 task_id。"""
+        from .tasks import create_task
+
         async with async_db_session() as db:
             d = await db.get(AiDatasourceModel, ds_id)
-            kb_id = d.knowledge_base_id if d else None
         if not d or d.is_deleted:
             raise ValueError("数据源不存在")
+        if not d.knowledge_base_id:
+            raise ValueError("数据源未绑定目标知识库")
+        table = getattr(data, "table", None)
+        if d.ds_type == "db" and not (table or "").strip():
+            raise ValueError("数据库同步需指定表名/查询")
+        task = await create_task(
+            "datasource_sync",
+            kb_id=d.knowledge_base_id,
+            payload={"ds_id": ds_id, "table": table, "limit": int(getattr(data, "limit", 50) or 50)},
+            auth=auth,
+        )
+        return {"task_id": task["id"], "rows": 0, "chunks": 0, "status": "pending"}
+
+    @classmethod
+    async def _sync_datasource_rows(
+        cls, ds_id: int, *, table: str | None, limit: int = 50
+    ) -> dict:
+        """数据源同步的同步实现（供 worker 调用）：批量入库，图谱只重建一次。"""
+        async with async_db_session() as db:
+            d = await db.get(AiDatasourceModel, ds_id)
+        if not d or d.is_deleted:
+            raise ValueError("数据源不存在")
+        kb_id = d.knowledge_base_id
         if not kb_id:
             raise ValueError("数据源未绑定目标知识库")
         if d.ds_type == "db":
-            if not (data.table or "").strip():
+            if not (table or "").strip():
                 raise ValueError("数据库同步需指定表名/查询")
-            texts = await cls._db_rows(d.uri or "", data.table.strip(), data.limit)
+            texts = await cls._db_rows(d.uri or "", table.strip(), limit)
         else:
-            texts = await cls._api_rows(d.uri or "", d.api_config, data.limit)
+            texts = await cls._api_rows(d.uri or "", d.api_config, limit)
 
-        async with async_db_session.begin() as db:
-            b = await db.get(AiKnowledgeBaseModel, kb_id)
-            if b:
-                pass  # 校验存在
         total = 0
-        for txt in texts:
-            if not txt.strip():
+        for text in texts:
+            if not text.strip():
                 continue
-            # 使用轻量导入：直接按每条入库（避免跨函数 session 复用问题）
-            total += await cls._ingest_single(kb_id, d.name, txt, auth)
+            total += await cls._ingest_single(
+                kb_id, d.name, text, auth=None, rebuild_graph=False
+            )
+        if texts:
+            await cls._rebuild_graph(kb_id)
         return {"rows": len(texts), "chunks": total}
 
     @classmethod
@@ -2296,7 +2335,15 @@ class AiKnowledgeService:
 
     @classmethod
     async def rebuild_index(cls, kb_id: int) -> dict:
-        """重建索引：重新向量化所有（子）分块 + 重建图谱。"""
+        """重建索引（后台任务）：立即返回 task_id。"""
+        from .tasks import create_task
+
+        task = await create_task("kb_rebuild", kb_id=kb_id)
+        return {"task_id": task["id"], "status": "pending"}
+
+    @classmethod
+    async def _rebuild_index_sync(cls, kb_id: int) -> dict:
+        """重建索引的同步实现（供 worker 调用）：重新向量化子分块 + 重建图谱。"""
         async with async_db_session() as db:
             ids = (
                 (

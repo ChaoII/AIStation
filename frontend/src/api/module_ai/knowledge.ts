@@ -269,3 +269,18 @@ export function testAiDatasource(id: number) {
 export function syncAiDatasource(id: number, data: any) {
   return request({ url: `${DS}/${id}/sync`, method: "post", data });
 }
+
+// ---------- RAG 后台任务 ----------
+const TASK = "/ai/knowledge/tasks";
+
+export function getAiRagTask(taskId: number) {
+  return request({ url: `${TASK}/${taskId}`, method: "get" });
+}
+
+export function getAiRagTaskList(params?: Record<string, any>) {
+  return request({ url: TASK, method: "get", params });
+}
+
+export function cancelAiRagTask(taskId: number) {
+  return request({ url: `${TASK}/${taskId}/cancel`, method: "post" });
+}

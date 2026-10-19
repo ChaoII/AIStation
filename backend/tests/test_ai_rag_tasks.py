@@ -169,3 +169,31 @@ def test_worker_unknown_kind_fails():
     t = _run(tasks.create_task("unit_test_unknown_kind"))
     assert _run_until_done(t["id"]) == "failed"
     assert "未知任务类型" in (_run(tasks.get_task(t["id"]))["error"] or "")
+
+
+def test_task_endpoints(test_client, auth_headers):
+    """任务查询/列表/取消接口（前端轮询与取消按钮依赖）。"""
+    from app.plugin.module_ai.knowledge import tasks
+
+    t = _run(tasks.create_task("kb_rebuild", kb_id=1))
+    detail = test_client.get(
+        f"/api/v1/ai/knowledge/tasks/{t['id']}", headers=auth_headers
+    )
+    assert detail.status_code == 200 and detail.json()["data"]["id"] == t["id"]
+
+    lst = test_client.get(
+        "/api/v1/ai/knowledge/tasks", params={"kb_id": 1}, headers=auth_headers
+    ).json()["data"]
+    assert {"page_no", "page_size", "total", "has_next", "items"} <= set(lst)
+    assert any(item["id"] == t["id"] for item in lst["items"])
+
+    c = test_client.post(
+        f"/api/v1/ai/knowledge/tasks/{t['id']}/cancel", headers=auth_headers
+    )
+    assert c.status_code == 200 and c.json()["data"]["status"] == "canceled"
+
+    missing = test_client.get(
+        "/api/v1/ai/knowledge/tasks/99999999", headers=auth_headers
+    )
+    assert missing.status_code == 400
+    assert missing.json()["success"] is False
