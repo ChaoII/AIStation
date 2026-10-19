@@ -9,6 +9,7 @@ from sqlalchemy import func, select, text
 from app.core.database import async_db_session
 
 from . import embedding, graphrag
+from .embeddings import persist as vector_store
 from .model import (
     AiChunkAnnotationLogModel,
     AiDatasourceModel,
@@ -380,6 +381,19 @@ class AiKnowledgeService:
                 .limit(1)
             )
             return b.model_id if b else None
+
+    @classmethod
+    async def _vector_model_name(cls, model_id: int | None) -> str:
+        """向量来源模型名（供换模型失效判定；解析不到时返回 ``unknown``）。"""
+        resolver = getattr(embedding, "current_model_name", None)
+        if callable(resolver):
+            try:
+                name = await resolver(model_id=model_id)
+                if name:
+                    return str(name)
+            except Exception:  # noqa: BLE001
+                pass
+        return "unknown"
 
     @classmethod
     async def ingest(cls, kb_id: int, data, auth) -> dict:
@@ -804,36 +818,32 @@ class AiKnowledgeService:
 
     @classmethod
     async def _ensure_vector_col(cls, db, dim: int | None = None) -> None:
-        """惰性：为 chunk 表加 pgvector embedding 列 + HNSW 索引（幂等，异常忽略）。
+        """惰性：确保 pgvector 列（vector + halfvec）与 HNSW 索引，并从 JSONB 回填一次。
 
-        dim 超过 2000 时 HNSW 无法建索引，退化为顺序扫描（用小库可接受）。
+        2560 维超过 ``vector`` 的 HNSW 上限（2000），因此真正建索引的是半精度列
+        ``embedding_hv``（上限 4000）；``vector`` 列仅作兼容保留。
         """
         from . import embedding as _emb
 
         dim = dim or _emb.EMBED_DIM
+        if not await vector_store.ensure_pg_vector_columns(db, dim):
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return
         try:
+            # 从现有 JSONB vector 迁移一次（维度必须严格等于列维度）
             await db.execute(
                 text(
-                    f"ALTER TABLE ai_knowledge_chunks "
-                    f"ADD COLUMN IF NOT EXISTS embedding vector({dim})"
-                )
-            )
-            if dim <= 2000:
-                await db.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS idx_chunk_embedding "
-                        "ON ai_knowledge_chunks USING hnsw (embedding vector_cosine_ops)"
-                    )
-                )
-            # 从现有 JSONB vector 迁移一次（<=dim 维才填，避免缩小）
-            await db.execute(
-                text(
-                    "UPDATE ai_knowledge_chunks SET embedding = vector(v.vec::text) "
+                    "UPDATE ai_knowledge_chunks SET embedding = CAST(v.vec::text AS vector), "
+                    "embedding_hv = CAST(v.vec::text AS halfvec) "
                     "FROM (SELECT id, vector AS vec FROM ai_knowledge_chunks "
-                    "      WHERE vector IS NOT NULL AND embedding IS NULL) v "
+                    "      WHERE vector IS NOT NULL AND embedding_hv IS NULL) v "
                     "WHERE ai_knowledge_chunks.id = v.id AND "
-                    f"      jsonb_array_length(v.vec::jsonb) BETWEEN 1 AND {dim}"
-                )
+                    "      jsonb_array_length(v.vec::jsonb) = :dim"
+                ),
+                {"dim": dim},
             )
             await db.commit()
         except Exception:  # noqa: BLE001
@@ -1563,13 +1573,18 @@ class AiKnowledgeService:
         document_id: int | None = None,
         start_lines: list[int] | None = None,
         pages: list[int] | None = None,
+        rebuild_graph: bool = True,
     ) -> dict:
-        """文本→分块→向量化→入库（文档复用）。支持引用溯源字段。"""
+        """文本→分块→向量化→入库（文档复用）。支持引用溯源字段。
+
+        ``rebuild_graph=False`` 供批量入库（后台任务）在末尾只重建一次图谱。
+        """
         chunks = chunk_text(text, chunk_size, overlap, strategy)
         if not chunks:
             return {"chunks": 0}
         model_id = await cls._kb_model_id([kb_id])
         vectors = await embedding.embed_texts(chunks, model_id=model_id)
+        model_name = await cls._vector_model_name(model_id)
         saved = 0
         async with async_db_session.begin() as db:
             b = await db.get(AiKnowledgeBaseModel, kb_id)
@@ -1582,25 +1597,27 @@ class AiKnowledgeService:
                     )
                 )
             ).scalar() or 0
-            for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False), start=existing + 1):
-                db.add(
-                    AiKnowledgeChunkModel(
-                        knowledge_base_id=kb_id,
-                        file_name=file_name,
-                        document_id=document_id,
-                        start_line=(start_lines[i - existing - 1] if start_lines and i - existing - 1 < len(start_lines) else None),
-                        page=(pages[i - existing - 1] if pages and i - existing - 1 < len(pages) else None),
-                        chunk_index=i,
-                        content=chunk,
-                        meta={"file_name": file_name},
-                        vector=vec,
-                        dimension=len(vec) if vec else None,
-                    )
+            rows: list[AiKnowledgeChunkModel] = []
+            for i, chunk in enumerate(chunks, start=existing + 1):
+                row = AiKnowledgeChunkModel(
+                    knowledge_base_id=kb_id,
+                    file_name=file_name,
+                    document_id=document_id,
+                    start_line=(start_lines[i - existing - 1] if start_lines and i - existing - 1 < len(start_lines) else None),
+                    page=(pages[i - existing - 1] if pages and i - existing - 1 < len(pages) else None),
+                    chunk_index=i,
+                    content=chunk,
+                    meta={"file_name": file_name},
                 )
+                db.add(row)
+                rows.append(row)
                 saved += 1
+            await db.flush()
+            await vector_store.write_vectors(db, rows, vectors, model_name=model_name)
             b.chunk_count = (b.chunk_count or 0) + saved
             b.updated_id = auth.user.id
-        await cls._rebuild_graph(kb_id)
+        if rebuild_graph:
+            await cls._rebuild_graph(kb_id)
         return {"chunks": saved}
 
     @classmethod
@@ -2198,11 +2215,13 @@ class AiKnowledgeService:
         return {"rows": len(texts), "chunks": total}
 
     @classmethod
-    async def _ingest_single(cls, kb_id: int, file_name: str, text: str, auth) -> int:
+    async def _ingest_single(cls, kb_id: int, file_name: str, text: str, auth, rebuild_graph: bool = True) -> int:
         chunks = chunk_text(text)
         if not chunks:
             return 0
-        vectors = await embedding.embed_texts(chunks, model_id=await cls._kb_model_id([kb_id]))
+        model_id = await cls._kb_model_id([kb_id])
+        vectors = await embedding.embed_texts(chunks, model_id=model_id)
+        model_name = await cls._vector_model_name(model_id)
         async with async_db_session.begin() as db:
             b = await db.get(AiKnowledgeBaseModel, kb_id)
             if not b:
@@ -2214,20 +2233,22 @@ class AiKnowledgeService:
                     )
                 )
             ).scalar() or 0
-            for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False), start=existing + 1):
-                db.add(
-                    AiKnowledgeChunkModel(
-                        knowledge_base_id=kb_id,
-                        file_name=file_name,
-                        chunk_index=i,
-                        content=chunk,
-                        meta={"source": "datasource", "file_name": file_name},
-                        vector=vec,
-                        dimension=len(vec) if vec else None,
-                    )
+            rows: list[AiKnowledgeChunkModel] = []
+            for i, chunk in enumerate(chunks, start=existing + 1):
+                row = AiKnowledgeChunkModel(
+                    knowledge_base_id=kb_id,
+                    file_name=file_name,
+                    chunk_index=i,
+                    content=chunk,
+                    meta={"source": "datasource", "file_name": file_name},
                 )
+                db.add(row)
+                rows.append(row)
+            await db.flush()
+            await vector_store.write_vectors(db, rows, vectors, model_name=model_name)
             b.chunk_count = (b.chunk_count or 0) + len(chunks)
-        await cls._rebuild_graph(kb_id)
+        if rebuild_graph:
+            await cls._rebuild_graph(kb_id)
         return len(chunks)
 
     @classmethod
@@ -2263,32 +2284,50 @@ class AiKnowledgeService:
 
     @classmethod
     async def rebuild_index(cls, kb_id: int) -> dict:
-        """重建索引：重新向量化所有分块 + 重建图谱。"""
+        """重建索引：重新向量化所有（子）分块 + 重建图谱。"""
         async with async_db_session() as db:
-            chunks = (
+            ids = (
                 (
                     await db.execute(
-                        select(AiKnowledgeChunkModel).where(
+                        select(AiKnowledgeChunkModel.id).where(
                             AiKnowledgeChunkModel.knowledge_base_id == kb_id,
                             AiKnowledgeChunkModel.is_deleted.is_(False),
+                            AiKnowledgeChunkModel.is_parent.is_not(True),
                         )
                     )
                 )
                 .scalars()
                 .all()
             )
-        if not chunks:
-            return {"chunks": 0}
-        texts = [c.content for c in chunks]
+            if not ids:
+                return {"chunks": 0, "vectors": 0}
+            texts = list(
+                (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel.content).where(
+                            AiKnowledgeChunkModel.id.in_(ids)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
         model_id = await cls._kb_model_id([kb_id])
         vecs = await embedding.embed_texts(texts, model_id=model_id)
+        model_name = await cls._vector_model_name(model_id)
         async with async_db_session.begin() as db:
-            for c, v in zip(chunks, vecs, strict=False):
-                row = await db.get(AiKnowledgeChunkModel, c.id)
-                row.vector = v
-                row.dimension = len(v) if v else None
+            rows = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel).where(AiKnowledgeChunkModel.id.in_(ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            written = await vector_store.write_vectors(db, rows, vecs, model_name=model_name)
         await cls._rebuild_graph(kb_id)
-        return {"chunks": len(chunks)}
+        return {"chunks": len(ids), "vectors": written}
 
 
 async def _probe_db(d: AiDatasourceModel) -> list[str]:

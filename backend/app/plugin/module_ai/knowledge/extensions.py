@@ -91,3 +91,37 @@ async def ensure_extensions() -> None:
     )
     await _run_sql("ALTER TABLE ai_knowledge_documents ADD COLUMN IF NOT EXISTS file_path VARCHAR(512)")
     await _run_sql("ALTER TABLE ai_knowledge_documents ADD COLUMN IF NOT EXISTS object_key VARCHAR(512)")
+
+    # ---- 检索链路 v2：分块新列（幂等；非 PG 会静默跳过） ----
+    for col, ddl in (
+        ("parent_id", "integer"),
+        ("is_parent", "boolean DEFAULT false"),
+        ("content_hash", "varchar(64)"),
+        ("vector_model", "varchar(128)"),
+        ("token_count", "integer"),
+        ("char_start", "integer"),
+        ("char_end", "integer"),
+        ("search_text", "text"),
+    ):
+        await _run_sql(f"ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS {col} {ddl}")
+    # 半精度向量列 + HNSW（2560 维超过 vector 的 2000 上限，故用 halfvec）
+    await _run_sql(
+        "ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS embedding_hv halfvec(2560)"
+    )
+    await _run_sql(
+        "CREATE INDEX IF NOT EXISTS idx_chunk_embedding_hv "
+        "ON ai_knowledge_chunks USING hnsw (embedding_hv halfvec_cosine_ops) "
+        "WITH (m = 16, ef_construction = 64)"
+    )
+    # search_text 回填（正文 + 标注；索引表达式不能含子查询，故落列）
+    await _run_sql(
+        "UPDATE ai_knowledge_chunks SET search_text = trim("
+        "coalesce(content, '') || ' ' || "
+        "COALESCE((SELECT string_agg(a->>'text', ' ') FROM "
+        "jsonb_array_elements(coalesce(annotations, '[]'::jsonb)) a), '')) "
+        "WHERE search_text IS NULL"
+    )
+    await _run_sql(
+        "CREATE INDEX IF NOT EXISTS idx_chunk_fts "
+        "ON ai_knowledge_chunks USING gin (to_tsvector('jiebacfg', search_text))"
+    )
