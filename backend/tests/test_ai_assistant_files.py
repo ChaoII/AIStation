@@ -1,4 +1,5 @@
-"""AI 助手上传文件处理：data URL 解析、文档文本抽取、图片识别（纯逻辑，无需 app）。"""
+"""AI 助手上传文件处理：data URL 解析、文档文本抽取、图片识别、个人空间引用（纯逻辑，无需 app）。"""
+import asyncio
 import base64
 
 from app.plugin.module_ai.assistant.agno_service import (
@@ -32,30 +33,112 @@ def test_extract_doc_text_unknown_format_returns_empty():
     assert _extract_doc_text(b"whatever", "application/octet-stream", "a.bin") == ""
 
 
+def test_extract_doc_text_plain_text_formats():
+    """常见纯文本格式（md/csv/json/yaml/log 等）应直接解码，不再返回空串。"""
+    assert _extract_doc_text("# 标题".encode(), "text/markdown", "a.md") == "# 标题"
+    assert _extract_doc_text(b"a,b\n1,2", "text/csv", "a.csv") == "a,b\n1,2"
+    assert _extract_doc_text(b'{"k": 1}', "application/json", "a.json") == '{"k": 1}'
+    assert _extract_doc_text(b"k: v", "application/x-yaml", "a.yaml") == "k: v"
+    assert _extract_doc_text(b"info", "text/markdown", "noext") == "info"
+
+
 def test_process_files_image_returns_agno_image():
     data_url = f"data:image/jpeg;base64,{_B64('img')}"
-    imgs, doc = _process_uploaded_files([{"name": "a.jpg", "type": "image/jpeg", "dataUrl": data_url}])
+    imgs, doc = asyncio.run(
+        _process_uploaded_files([{"name": "a.jpg", "type": "image/jpeg", "dataUrl": data_url}])
+    )
     assert len(imgs) == 1
     assert doc == ""
 
 
 def test_process_files_doc_extracts_text_context():
     data_url = f"data:text/plain;base64,{_B64('这里是文档内容')}"
-    imgs, doc = _process_uploaded_files(
-        [{"name": "说明.txt", "type": "text/plain", "dataUrl": data_url}]
+    imgs, doc = asyncio.run(
+        _process_uploaded_files(
+            [{"name": "说明.txt", "type": "text/plain", "dataUrl": data_url}]
+        )
     )
     assert imgs == []
     assert "这里是文档内容" in doc
 
 
 def test_process_files_none_or_empty():
-    assert _process_uploaded_files(None) == ([], "")
-    assert _process_uploaded_files([]) == ([], "")
+    assert asyncio.run(_process_uploaded_files(None)) == ([], "")
+    assert asyncio.run(_process_uploaded_files([])) == ([], "")
 
 
 def test_process_files_invalid_data_url_skipped():
-    imgs, doc = _process_uploaded_files(
-        [{"name": "a.png", "type": "image/png", "dataUrl": "not-a-data-url"}]
+    imgs, doc = asyncio.run(
+        _process_uploaded_files(
+            [{"name": "a.png", "type": "image/png", "dataUrl": "not-a-data-url"}]
+        )
     )
     assert imgs == []
-    assert doc == ""
+
+
+def test_process_files_workspace_image(monkeypatch):
+    """个人空间引用：图片 → Agno Image。"""
+    import app.plugin.module_ai.assistant.agno_service as svc
+
+    async def fake(file_id, user_id):
+        return {"data": b"img", "mime_type": "image/png", "name": "a.png", "file_type": "image"}
+
+    monkeypatch.setattr(svc, "_resolve_workspace_file", fake)
+    imgs, doc = asyncio.run(
+        _process_uploaded_files([{"type": "workspace", "file_id": 1, "name": "a.png"}], user_id=7)
+    )
+    assert len(imgs) == 1 and doc == ""
+
+
+def test_process_files_workspace_doc_extracts_text(monkeypatch):
+    """个人空间引用：文档 → 抽取文本进上下文。"""
+    import app.plugin.module_ai.assistant.agno_service as svc
+
+    async def fake(file_id, user_id):
+        return {
+            "data": "这是文档内容".encode(),
+            "mime_type": "text/plain",
+            "name": "说明.txt",
+            "file_type": "txt",
+        }
+
+    monkeypatch.setattr(svc, "_resolve_workspace_file", fake)
+    imgs, doc = asyncio.run(
+        _process_uploaded_files(
+            [{"type": "workspace", "file_id": 1, "name": "说明.txt"}], user_id=7
+        )
+    )
+    assert imgs == [] and "这是文档内容" in doc
+
+
+def test_process_files_workspace_missing_skipped(monkeypatch):
+    """个人空间引用失败（越权/不存在）→ 返回 None → 跳过不阻断对话。"""
+    import app.plugin.module_ai.assistant.agno_service as svc
+
+    async def fake(file_id, user_id):
+        return None
+
+    monkeypatch.setattr(svc, "_resolve_workspace_file", fake)
+    imgs, doc = asyncio.run(
+        _process_uploaded_files([{"type": "workspace", "file_id": 99}], user_id=7)
+    )
+    assert imgs == [] and doc == ""
+
+
+def test_process_files_workspace_md_extracts_text(monkeypatch):
+    """个人空间引用 Markdown/JSON 等纯文本 → 抽取进上下文。"""
+    import app.plugin.module_ai.assistant.agno_service as svc
+
+    async def fake(file_id, user_id):
+        return {
+            "data": "# 验收\n\n段落内容".encode(),
+            "mime_type": "text/markdown",
+            "name": "note.md",
+            "file_type": "md",
+        }
+
+    monkeypatch.setattr(svc, "_resolve_workspace_file", fake)
+    imgs, doc = asyncio.run(
+        _process_uploaded_files([{"type": "workspace", "file_id": 1, "name": "note.md"}], user_id=7)
+    )
+    assert imgs == [] and "段落内容" in doc

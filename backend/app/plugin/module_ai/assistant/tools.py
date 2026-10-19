@@ -522,4 +522,79 @@ async def data_pipeline(pipeline_id: int, user_id: int | None = None) -> object:
     return await run_data_pipeline({"pipeline_id": pipeline_id})
 
 
+# ---------------------------------------------------------------- 个人工作空间
+
+
+@tool(
+    "workspace_save_file",
+    "把一段文本/代码/报告保存到用户的个人工作空间，返回文件ID与名称。"
+    "适合保存输出结果、报告草稿、数据摘要等给用户留档。",
+    _obj(
+        {
+            "name": {"type": "string", "description": "文件名（含扩展名，如 report.md / data.csv）"},
+            "content": {"type": "string", "description": "文件内容（UTF-8 文本）"},
+            "file_type": {"type": "string", "description": "可选：md/txt/csv/json 等；文件名无扩展名时用于补全"},
+        },
+        ["name", "content"],
+    ),
+    kind="action",
+)
+async def workspace_save_file(
+    name: str, content: str, file_type: str | None = None, user_id: int | None = None
+) -> dict:
+    from app.plugin.module_ai.space.service import SpaceService
+
+    try:
+        result = await SpaceService.save_agent_file(user_id, name, content, file_type)
+        return {
+            "file_id": result["id"],
+            "name": result["name"],
+            "size": result["size"],
+        }
+    except Exception as exc:  # noqa: BLE001 工具失败以 error 返回，不阻断对话
+        return {"error": f"保存到个人空间失败：{str(getattr(exc, 'msg', exc))[:200]}"}
+
+
+@tool(
+    "workspace_list_files",
+    "列出用户个人工作空间中的文件（可按关键词过滤），返回文件ID、名称、类型、大小，"
+    "供后续读取或引用。",
+    _obj(
+        {
+            "keyword": {"type": "string", "description": "可选：文件名关键词"},
+            "limit": {"type": "integer", "description": "可选：最多返回条数（默认20，最多50）"},
+        },
+    ),
+    kind="read",
+)
+async def workspace_list_files(
+    keyword: str | None = None, limit: int = 20, user_id: int | None = None
+) -> list[dict]:
+    from app.plugin.module_ai.space.service import SpaceService
+
+    try:
+        return await SpaceService.list_for_agent(user_id, keyword=keyword, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        return [{"error": f"查询个人空间失败：{str(getattr(exc, 'msg', exc))[:200]}"}]
+
+
+@tool(
+    "workspace_read_file",
+    "读取用户在个人工作空间中某个文件的内容（文本类原文；PDF/Word 自动抽取文字；"
+    "图片不支持文本读取）。超长内容会被截断。",
+    _obj(
+        {"file_id": {"type": "integer", "description": "文件ID（来自 workspace_list_files）"}},
+        ["file_id"],
+    ),
+    kind="read",
+)
+async def workspace_read_file(file_id: int, user_id: int | None = None) -> str:
+    from app.plugin.module_ai.space.service import SpaceService
+
+    try:
+        return await SpaceService.read_for_agent(user_id, file_id)
+    except Exception as exc:  # noqa: BLE001
+        return f"读取失败：{str(getattr(exc, 'msg', exc))[:200]}"
+
+
 TOOL_SCHEMAS = [t["schema"] for t in TOOL_REGISTRY.values()]

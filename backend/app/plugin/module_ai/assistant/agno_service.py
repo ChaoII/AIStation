@@ -32,9 +32,26 @@ def _parse_data_uri(data_url: str) -> tuple[bytes, str]:
         return b"", ""
 
 
+#: 纯文本扩展名（无需解析器，直接 UTF-8 解码）
+_TEXT_EXTS = {
+    "txt", "md", "markdown", "csv", "json", "log", "yaml", "yml", "ini", "toml",
+    "xml", "html", "htm", "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "java",
+    "c", "h", "cpp", "hpp", "go", "rs", "sql", "sh", "bat", "ps1", "conf",
+    "properties", "env", "graphql", "vue", "css", "scss",
+}
+#: 纯文本 MIME（含带 charset 后缀的，如 text/plain; charset=utf-8）
+_TEXT_MIME_PREFIX = ("text/", "application/json", "application/xml", "application/csv",
+                     "application/yaml", "application/x-yaml", "application/x-www-form-urlencoded")
+
+
 def _extract_doc_text(raw: bytes, mime: str, name: str = "") -> str:
-    """抽取文档纯文本（txt/pdf/docx）。老 .doc / 未知格式返回空串。"""
+    """抽取文档纯文本（txt/md/csv/json 等直接解码；pdf/docx 解析）。
+
+    老 .doc / 未知格式返回空串。
+    """
     ext = (name.rsplit(".", 1)[-1] if "." in name else "").lower()
+    if ext in _TEXT_EXTS or mime.lower().startswith(_TEXT_MIME_PREFIX):
+        return raw.decode("utf-8", errors="ignore")
     if ext == "txt" or "text/plain" in mime:
         return raw.decode("utf-8", errors="ignore")
     if ext == "pdf" or "application/pdf" in mime:
@@ -56,11 +73,31 @@ def _extract_doc_text(raw: bytes, mime: str, name: str = "") -> str:
     return ""
 
 
-def _process_uploaded_files(files: list[dict] | None) -> tuple[list, str]:
-    """把上传文件拆成 `(images, doc_context)`。
+async def _resolve_workspace_file(file_id: int, user_id: int | None) -> dict | None:
+    """按 file_id 读取用户个人空间文件字节；越权/不存在/读取失败统一返回 None。
 
-    - 图片（mime 以 ``image/`` 开头）→ Agno ``Image``（原始字节）。
+    供 ``_process_uploaded_files`` 处理「对话引用个人空间文件」；返回
+    ``{"data": bytes, "mime_type": str, "name": str, "file_type": str}``。
+    """
+    if not user_id:
+        return None
+    try:
+        from app.plugin.module_ai.space.service import SpaceService
+
+        return await SpaceService.get_file_bytes(user_id, file_id)
+    except Exception:  # noqa: BLE001 单个引用失败不阻断对话
+        return None
+
+
+async def _process_uploaded_files(
+    files: list[dict] | None, user_id: int | None = None
+) -> tuple[list, str]:
+    """把上传/引用文件拆成 `(images, doc_context)`。
+
+    - 图片（mime 以 ``image/`` 开头，或 workspace 引用中的图片类型）→ Agno ``Image``（原始字节）。
     - 文档 → 抽取文本拼到 ``doc_context``，作为输入上下文。
+    - 个人空间引用（``{"type": "workspace", "file_id": ...}``）→ 经
+      ``_resolve_workspace_file`` 读取，失败自动跳过。
     - 非图片非文档（含 .doc 老格式/未知）→ 忽略。
     """
     if not files:
@@ -74,6 +111,24 @@ def _process_uploaded_files(files: list[dict] | None) -> tuple[list, str]:
             continue
         name = str(f.get("name") or "")
         ftype = str(f.get("type") or f.get("mime_type") or "").lower()
+        # 个人空间引用：读取真实字节后再按类型处理
+        if f.get("type") == "workspace" and f.get("file_id"):
+            got = await _resolve_workspace_file(int(f["file_id"]), user_id)
+            if not got:
+                continue
+            raw = got.get("data") or b""
+            mime = got.get("mime_type") or ""
+            name = got.get("name") or name
+            ftype = got.get("file_type") or ftype
+            if not raw:
+                continue
+            if ftype == "image" or mime.startswith("image/"):
+                images.append(Image(content=raw, mime_type=mime or "image/png", format=((mime.split("/")[-1]) or None)))
+            else:
+                text = _extract_doc_text(raw, mime, name)
+                if text.strip():
+                    doc_chunks.append(f"【{name or '个人空间文件'}】\n{text.strip()}")
+            continue
         data_url = str(f.get("dataUrl") or f.get("data_url") or f.get("data") or "")
         if not data_url:
             continue
@@ -203,8 +258,8 @@ async def run_agno_stream(
     input_text = user_text
     if system_ctx:
         input_text = f"【参考知识】\n{system_ctx}\n\n问题：{user_text}"
-    # 上传文件：图片转 Agno Image，文档文本抽取注入上下文
-    images, doc_ctx = _process_uploaded_files(files)
+    # 上传文件：图片转 Agno Image，文档文本抽取注入上下文（含个人空间引用）
+    images, doc_ctx = await _process_uploaded_files(files, user_id=user_id)
     if doc_ctx:
         input_text = f"{input_text}\n\n【上传文档】\n{doc_ctx}"
     if not input_text.strip() and images:
@@ -272,9 +327,12 @@ async def run_agno_tool_stream(
     """
     import json as _json
 
+    from app.plugin.module_ai.agno_tools.business import build_workspace_tools
     from app.plugin.module_ai.agno_tools.dynamic import build_dynamic_tools
 
     tools = build_dynamic_tools(tool_schemas or [], dispatch) if tool_schemas else []
+    # 运行台传入 tools 会覆盖默认业务工具 → 显式并入个人空间工具
+    tools.extend(build_workspace_tools())
     instructions: list[str] = []
     if system_prompt:
         instructions.append(system_prompt)
