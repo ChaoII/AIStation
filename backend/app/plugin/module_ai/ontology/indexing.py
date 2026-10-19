@@ -15,7 +15,10 @@
 
 **我们的实现**：索引是**真的**——在对象类型的支撑表上建 PostgreSQL 索引
 （`CREATE INDEX`），并记录行数、大小、构建次数与失败原因。
-状态机与自动重试策略照官方语义实现。
+状态机与官方一致（not_started/building/ready/failed/stale）。
+**但"自动"没有落地**：官方的"5 分钟自动重试 / 新数据触发重试 / 定义变更自动标过期"
+在我们这里都只有常量与时间戳、**没有任何调度器**，实际要靠人点按钮
+（详见 `_fail` / `retry_due_indexes` / `mark_stale` 的诚实标注）。
 """
 from __future__ import annotations
 
@@ -45,10 +48,14 @@ ONT_INDEX_KIND_LABEL = {
     "full_text": "全文索引", "link": "关系索引",
 }
 
-#: 官方：失败后约 5 分钟自动重试
+#: 官方：失败后约 5 分钟自动重试。
+#: 我们只用它给 ``auto_retry_at`` 打点 —— **没有调度器到点执行**，
+#: 到期重试靠 ``POST /index/retry``（前端按钮）手动触发。
 AUTO_RETRY_MINUTES = 5
-#: 官方：streaming 每对象类型 2 MB/s
-STREAMING_MAX_BYTES_PER_SEC = 2 * 1024 * 1024
+#: 官方：streaming 每对象类型限速 2 MB/s。
+#: 原先这里定义了 ``STREAMING_MAX_BYTES_PER_SEC``，但**全仓无任何限流逻辑消费它**，
+#: 连 ``pipeline_kind='streaming'`` 也只是个标签 —— 死常量已于 2026-10-19 删除，
+#: 因为留着它会让人误以为限流已实现。
 
 
 def _now() -> str:
@@ -221,7 +228,9 @@ async def build_index(index_id: int) -> dict:
     """构建一个索引（**真的执行 CREATE INDEX**）。
 
     官方语义：成功后状态变为就绪（绿勾）；失败分两类——
-    瞬时错误排 5 分钟后自动重试；终态错误只等新数据。
+    瞬时错误可重试、终态错误只等新数据。
+    **我们的落地**：只写 ``auto_retry_at`` 时间戳；重试本身要手动触发
+    （见 ``retry_due_indexes`` 的诚实标注）。
     """
     row = (await _svc._exec(
         "SELECT object_code,COALESCE(prop_code,''),COALESCE(index_kind,'property'),"
@@ -285,7 +294,11 @@ async def _fail(index_id: int, object_code: str, name: str, err: str,
                 terminal: bool) -> dict:
     """记录失败。
 
-    官方：瞬时错误约 5 分钟后自动重试；终态错误只在有新数据时重试。
+    **诚实标注（2026-10-19）**：官方语义是"瞬时错误约 5 分钟后**自动**重试、
+    终态错误只在有新数据时重试"。我们只写了 ``auto_retry_at`` 时间戳，但
+    **全仓没有任何调度器/cron 调用 ``retry_due_indexes``** —— 到期重试要靠人去
+    点「执行到期重试」；"新数据触发重试"也完全没有触发器。
+    原注释把官方行为写得像已实现，比直接说"需手动触发"更具误导性。
     """
     retry = None if terminal else (datetime.now() + timedelta(minutes=AUTO_RETRY_MINUTES))
     await _svc._exec_write(
@@ -296,8 +309,8 @@ async def _fail(index_id: int, object_code: str, name: str, err: str,
     return {"ok": False, "status": "failed", "terminal": terminal,
             "auto_retry_at": retry.strftime("%Y-%m-%d %H:%M:%S") if retry else None,
             "msg": f"索引构建失败：{err}"
-                   + ("（终态错误，仅在有新数据时重试）" if terminal
-                      else f"（约 {AUTO_RETRY_MINUTES} 分钟后自动重试）")}
+                   + ("（终态错误，不会自动重试）" if terminal
+                      else "（已记到期时间，需手动点「执行到期重试」触发）")}
 
 
 async def build_all(object_code: str = "") -> dict:
@@ -314,7 +327,11 @@ async def build_all(object_code: str = "") -> dict:
 
 
 async def retry_due_indexes() -> dict:
-    """执行到期的自动重试（官方：瞬时失败约 5 分钟后重试）。"""
+    """执行到期的重试。
+
+    **诚实标注（2026-10-19）**：官方是"约 5 分钟后自动重试"，我们这里是**手动**的 ——
+    只有 ``POST /index/retry``（前端「执行到期重试」按钮）会调进来，没有定时任务。
+    """
     rows = (await _svc._exec(
         "SELECT id FROM ai_ont_index WHERE is_deleted=false AND status='failed' "
         "AND auto_retry_at IS NOT NULL AND auto_retry_at <= now()", {})).fetchall()

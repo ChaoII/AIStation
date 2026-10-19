@@ -244,9 +244,14 @@ class TestIndexing:
         """官方：瞬时失败约 **5 分钟**后自动重试。"""
         assert IX.AUTO_RETRY_MINUTES == 5
 
-    def test_streaming_throughput_limit_documented(self):
-        """官方：streaming 每对象类型 2 MB/s。"""
-        assert IX.STREAMING_MAX_BYTES_PER_SEC == 2 * 1024 * 1024
+    def test_streaming_throughput_limit_removed(self):
+        """官方确有 2 MB/s 限流，但我们**从未实现** ⇒ 死常量应删除而非留着骗人。
+
+        修前：``STREAMING_MAX_BYTES_PER_SEC`` 只被本测试断言，全仓无限流逻辑消费，
+        连 ``pipeline_kind='streaming'`` 也只是标签 —— 留着它会让人误以为限流已实现。
+        """
+        assert not hasattr(IX, "STREAMING_MAX_BYTES_PER_SEC"), (
+            "死常量不该复活；若真要实现限流，先写消费它的代码再恢复常量")
 
     @pg_only
     def test_build_creates_real_pg_index(self):
