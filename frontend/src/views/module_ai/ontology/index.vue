@@ -316,7 +316,7 @@
         </el-form-item>
         <el-form-item label="可编辑">
           <el-switch v-model="objForm.edits_enabled" />
-          <span class="ont-hint">开启后允许终端用户编辑该类型对象（Writeback）</span>
+          <span class="ont-hint">开启后允许终端用户编辑该类型对象（写回）</span>
         </el-form-item>
         <el-form-item label="图标">
           <el-input v-model="objForm.icon" placeholder="Box" />

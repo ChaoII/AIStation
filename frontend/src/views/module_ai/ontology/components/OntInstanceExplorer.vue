@@ -130,7 +130,7 @@
         <!-- Writeback -->
         <div class="ont-view__sec">
           <div class="ont-view__title">
-            编辑属性（Writeback）
+            编辑属性（写回）
             <el-tag v-if="!inst.edits_enabled" size="small" type="info" effect="plain">
               未开启
             </el-tag>
@@ -139,7 +139,7 @@
             v-if="!inst.edits_enabled"
             type="info"
             :closable="false"
-            title="该对象类型未开启可编辑。在对象类型详情里打开「可编辑（Writeback）」后，这里就能直接改属性值。"
+            title="该对象类型未开启可编辑。在对象类型详情里打开「可编辑（写回）」后，这里就能直接改属性值。"
           />
           <template v-else>
             <el-form label-width="120px" size="small">
@@ -163,7 +163,7 @@
 
         <!-- 关系跳转（Pivot） -->
         <div class="ont-view__sec">
-          <div class="ont-view__title">关系跳转（Search Around）</div>
+          <div class="ont-view__title">关系跳转</div>
           <div v-for="lk in inst.links" :key="lk.id" class="ont-view__link">
             <el-tag
               size="small"

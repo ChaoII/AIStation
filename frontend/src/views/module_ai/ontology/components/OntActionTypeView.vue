@@ -144,7 +144,7 @@
           type="info"
           :closable="false"
           class="ont-note"
-          title="智能体、工作流等外部依赖将在 P2 阶段接入。"
+          title="智能体、工作流等外部依赖暂未接入。"
         />
       </section>
     </template>
@@ -244,7 +244,7 @@
         type="info"
         :closable="false"
         class="ont-note"
-        title="官方参数支持默认值、下拉过滤、安全策略、覆盖与性能等配置，并会生成工具 JSON Schema。P1/P2 阶段补齐。"
+        title="官方参数支持默认值、下拉过滤、安全策略、覆盖与性能等配置，并会生成工具 JSON Schema。当前版本尚未支持齐。"
       />
     </section>
 

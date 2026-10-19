@@ -82,12 +82,12 @@
             </template>
             <span v-else class="ont-none">无</span>
           </el-descriptions-item>
-          <el-descriptions-item label="可编辑（Writeback）">
+          <el-descriptions-item label="可编辑（写回）">
             <el-tag size="small" effect="plain" :type="obj.edits_enabled ? 'success' : 'info'">
               {{ obj.edits_enabled ? "Enabled" : "Disabled" }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="所属本体（Groups）">
+          <el-descriptions-item label="所属本体">
             {{ obj.domain_code ? domainName(obj.domain_code) : "未分组" }}
           </el-descriptions-item>
           <el-descriptions-item label="编码（ID）">
@@ -122,7 +122,7 @@
           <el-descriptions-item label="启用">
             {{ obj.enabled ? "是" : "否" }}
           </el-descriptions-item>
-          <el-descriptions-item label="主键属性（Primary key）">
+          <el-descriptions-item label="主键属性（主键）">
             <span class="ont-mono">{{ obj.key_prop || "—" }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="标题属性（Title key）">

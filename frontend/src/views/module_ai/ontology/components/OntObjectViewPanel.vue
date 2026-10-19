@@ -201,7 +201,7 @@
                   </el-tag>
                 </div>
               </div>
-              <div v-else class="ont-hint">该 widget 类型暂无预览</div>
+              <div v-else class="ont-hint">该组件类型暂无预览</div>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -226,7 +226,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="tab/widget" width="110" align="center">
+          <el-table-column label="页签/组件" width="110" align="center">
             <template #default="{ row }">{{ row.tab_count }} / {{ row.widget_count }}</template>
           </el-table-column>
           <el-table-column prop="version" label="版本" width="70" align="center" />

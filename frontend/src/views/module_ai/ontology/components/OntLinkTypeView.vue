@@ -121,7 +121,7 @@
               <el-icon><component :is="iconName(tgtObj?.icon)" /></el-icon>
               <span>{{ tgtObj?.name || link.target_object }}</span>
               <el-tag v-if="tgtObj?.key_prop" size="small" type="warning" effect="plain">
-                Primary key: {{ tgtObj.key_prop }}
+                主键: {{ tgtObj.key_prop }}
               </el-tag>
             </div>
             <el-select
@@ -172,7 +172,7 @@
         </div>
         <el-empty
           :image-size="50"
-          description="关系类型自身的属性（object-backed link）将在 P5 阶段提供"
+          description="关系类型自身的属性（object-backed link）暂未支持"
         />
       </section>
     </template>
@@ -242,14 +242,14 @@
         type="info"
         :closable="false"
         class="ont-note"
-        title="many-to-many 必须由连接表数据集支撑；object-backed link 需要中间对象类型。相关配置将在 P1/P5 阶段补齐。"
+        title="many-to-many 必须由连接表数据集支撑；object-backed link 需要中间对象类型。相关配置当前版本尚未支持齐。"
       />
     </section>
 
     <!-- ============ Usage ============ -->
     <section v-else class="ont-sec">
       <div class="ont-sec__head"><span class="ont-sec__title">使用量</span></div>
-      <el-empty :image-size="60" description="用量统计将在 P3 阶段提供" />
+      <el-empty :image-size="60" description="用量统计暂未接入" />
     </section>
   </div>
   <el-empty v-else description="未找到该关系类型" />
@@ -275,7 +275,7 @@ const emit = defineEmits<{
   (e: "refresh"): void;
 }>();
 
-const { links, objectByCode, stage } = useOntologyData();
+const { links, domains, objectByCode, stage } = useOntologyData();
 
 const link = computed(() => links.value.find((l: any) => l.id === props.id) || null);
 const srcObj = computed(() => (link.value ? objectByCode(link.value.source_object) : null));
@@ -303,11 +303,19 @@ const joinHint = computed(() => {
   return "用中间对象类型承载关系，可附加额外元数据与受限视图。";
 });
 
+/** 所属本体：显示**中文名**而不是原始 code（与对象类型详情的 `domainName()` 同口径）。
+ *  原先这里直接回显 `domain_code`（如 `data_table`），同一概念在另一处却显示中文名。 */
+function domainName(code?: string): string {
+  if (!code) return "未分组";
+  const hit = (domains.value || []).find((d: any) => d.code === code);
+  return hit?.name || code;
+}
+
 function domainLabel() {
   const a = srcObj.value?.domain_code;
   const b = tgtObj.value?.domain_code;
   if (!a && !b) return "未分组";
-  return a && a === b ? a : `${a || "未分组"} / ${b || "未分组"}`;
+  return a && a === b ? domainName(a) : `${domainName(a)} / ${domainName(b)}`;
 }
 function iconName(raw?: string) {
   const s = (raw || "Box").trim();

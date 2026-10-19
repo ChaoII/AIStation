@@ -135,7 +135,7 @@
           >
             <el-option v-for="o in objects" :key="o.code" :label="o.name" :value="o.code" />
           </el-select>
-          <div class="ont-hint">官方：创建合并动作时要划定场景编辑的 Object types 范围</div>
+          <div class="ont-hint">官方：创建合并动作时要划定场景编辑的 对象类型范围</div>
         </el-form-item>
         <el-form-item label="寿命（天）">
           <el-input-number v-model="form.ttl_days" :min="1" :max="365" />
