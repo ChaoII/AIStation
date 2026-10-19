@@ -176,3 +176,24 @@ service.py:1910  ft  = await cls._pg_search([kb_id], query, top_n * 3, False, "f
 - 上面 §7.1 的死代码清理；
 - 合并回 main；
 - rerank 提升数字（需构造有区分度的评测集，现有 2 条太简单）。
+
+## 8. 手写 alembic 迁移（已补，2026-10-19）
+
+新增 `backend/app/alembic/versions/2026_10_19_rag_retrieval_v2.py`
+（`revision=b1c2d3e4f5a6`，`down_revision=f6b7c8d9e0a1`）：
+
+- 分块增列 8 个（parent_id / is_parent / content_hash / vector_model / token_count /
+  char_start / char_end / search_text）+ PG 专有的 `embedding_hv halfvec(2560)`；
+- PG 索引：`idx_chunk_embedding_hv`（HNSW）、`idx_chunk_fts`（`jiebacfg` GIN）；
+- `search_text` 回填（PG 用 jsonb 拼接「正文+标注」，其它方言退化 content）；
+- 4 张新表：`ai_rag_tasks` / `ai_eval_sets` / `ai_eval_items` / `ai_eval_runs`；
+- 插件表先 `sa.inspect(bind).has_table()` 判定，DDL 失败只打印跳过
+  （启动期 `knowledge/extensions.py` 幂等补齐）——与既有迁移风格一致。
+
+验证（实测）：
+```
+py_compile → OK
+迁移链 head 检测 → total_revisions 47, heads ['b1c2d3e4f5a6']   # 单 head，链未分叉
+ruff check → All checks passed!
+```
+未跑 `main.py upgrade`（会改真实 dev 库；该库已由启动期 extensions 生效）。
