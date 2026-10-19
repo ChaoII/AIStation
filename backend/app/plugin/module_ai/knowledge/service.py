@@ -1532,20 +1532,28 @@ class AiKnowledgeService:
 
     @classmethod
     async def reparse_document(cls, kb_id: int, doc_id: int, auth) -> dict:
-        """重新解析文档：基于全文重建分块向量化与图谱。"""
-        async with async_db_session() as db:
+        """重新解析文档：**替换式**重建分块（先清旧分块再入库）与图谱。"""
+        name = "文档"
+        text = ""
+        async with async_db_session.begin() as db:
             d = await db.get(AiKnowledgeDocumentModel, doc_id)
             if not d or d.knowledge_base_id != kb_id or d.is_deleted:
                 raise ValueError("文档不存在")
             text = d.content or ""
+            name = d.name or "文档"
+            purged = await cls._purge_document_chunks(db, doc_id)
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if b:
+                b.chunk_count = max(0, (b.chunk_count or 0) - purged["chunks"])
         if not text.strip():
             raise ValueError("文档无有效文本")
         result = await cls.ingest_text(
-            kb_id, text, file_name=d.name or "文档", auth=auth,
+            kb_id, text, file_name=name, auth=auth, document_id=doc_id,
         )
         async with async_db_session.begin() as db:
             dd = await db.get(AiKnowledgeDocumentModel, doc_id)
-            dd.chunk_count = result.get("chunks", 0)
+            if dd:
+                dd.chunk_count = result.get("chunks", 0)
         return {"id": doc_id, "chunks": result.get("chunks", 0)}
 
     @classmethod

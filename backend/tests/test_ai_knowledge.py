@@ -224,3 +224,39 @@ def test_delete_document_cascades_chunks(test_client, auth_headers):
         assert after == [], "该库仅有此文档，删除后不应残留分块"
     finally:
         _delete_base(test_client, auth_headers, [kb_id])
+
+
+def test_reparse_is_idempotent(test_client, auth_headers):
+    """重新解析必须替换旧分块（而不是追加），否则检索结果会重复。"""
+    kb_id = _create_base(test_client, auth_headers)
+    try:
+        up = test_client.post(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/documents/upload",
+            files={"file": ("re.txt", b"reparse same content twice", "text/plain")},
+            data={"chunk_size": "100", "overlap": "0", "strategy": "fixed"},
+            headers=auth_headers,
+        )
+        assert up.status_code == 200, up.text
+        doc_id = up.json()["data"]["id"]
+        n1 = len(
+            test_client.get(
+                f"/api/v1/ai/knowledge/bases/{kb_id}/chunks", headers=auth_headers
+            ).json()["data"]
+        )
+        for _ in range(2):
+            r = test_client.post(
+                f"/api/v1/ai/knowledge/bases/{kb_id}/documents/{doc_id}/reparse",
+                headers=auth_headers,
+            )
+            assert r.status_code == 200, r.text
+        chunks = test_client.get(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/chunks", headers=auth_headers
+        ).json()["data"]
+        assert len(chunks) == n1, f"重解析不应累加分块：{n1} -> {len(chunks)}"
+
+        q = test_client.get(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/quality", headers=auth_headers
+        ).json()["data"]
+        assert q["chunks"] == n1, "库的 chunk_count 口径应与实际分块数一致"
+    finally:
+        _delete_base(test_client, auth_headers, [kb_id])
