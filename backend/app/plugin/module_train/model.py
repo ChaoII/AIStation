@@ -1,12 +1,23 @@
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    select,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import MappedBase, ModelMixin, UserMixin
 
 
 class TrainStatus(str, enum.Enum):
@@ -152,3 +163,104 @@ class TrainDeploy(ModelMixin, UserMixin):
     error_log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="错误日志")
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="开始时间")
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="完成时间")
+
+
+class TrainMetricEvent(MappedBase):
+    """训练结构化事件表（简单模式 bridge）。
+
+    每行一个事件，``(task_id, seq)`` 唯一 → 幂等插入（重试不重复落库）。
+    裸 ``MappedBase``（无软删/用户审计字段），故需自行声明 ``id`` + ``created_time``。
+    """
+    __tablename__ = "train_metric_events"
+    __table_args__ = (
+        UniqueConstraint("task_id", "seq", name="uq_tme_task_seq"),
+        Index("idx_tme_task_type_ts", "task_id", "type", "ts"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="主键ID")
+    task_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("train_tasks.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+        comment="训练任务ID",
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, comment="事件序号（任务内单调递增）")
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, comment="事件时间（UTC aware）")
+    # 列名 "type" 是规格约定；属性名用 event_type 避免遮蔽内建
+    event_type: Mapped[str] = mapped_column(
+        "type", String(16), nullable=False, comment="事件类型: env/step/log/...")
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, comment="事件载荷")
+    created_time: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now, comment="创建时间")
+
+
+async def insert_event(
+    session: AsyncSession,
+    task_id: int,
+    seq: int,
+    ts: float | datetime,
+    type_: str,
+    payload: dict,
+) -> bool:
+    """幂等插入一条训练事件。
+
+    ``ts`` 接受 ``float``（epoch 秒，按 UTC aware 换算）或 ``datetime``（直接存）。
+    float 转 UTC aware 是为了规避 asyncpg 读回 ``timestamptz`` 一律 UTC 的坑
+    （统一存 UTC，读侧自行换算时区）。
+
+    幂等：同 ``(task_id, seq)`` 唯一冲突时 ROLLBACK 后返回 False（不落库）。
+
+    返回:
+        bool: 是否新插入（True=新插入，False=重复事件）。
+    """
+    if isinstance(ts, (int, float)):
+        ts = datetime.fromtimestamp(ts, tz=timezone.utc)
+    session.add(TrainMetricEvent(
+        task_id=task_id, seq=seq, ts=ts, event_type=type_, payload=payload))
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        return False
+    return True
+
+
+async def list_events(
+    session: AsyncSession,
+    task_id: int,
+    type_: str | None = None,
+    limit: int = 5000,
+    offset: int | None = None,
+) -> list[dict]:
+    """读取某任务的结构化事件（供任务 6 消费）。
+
+    按 ``seq`` 升序；``type_`` 可选类型过滤；``limit`` 默认 5000；``offset`` 可选分页偏移。
+
+    返回:
+        list[dict]: 每项键为 ``{"id", "task_id", "seq", "ts", "type", "payload"}``，
+        其中 ``ts`` 为 datetime 对象（调用方自行转字符串）。
+    """
+    stmt = (
+        select(TrainMetricEvent)
+        .where(TrainMetricEvent.task_id == task_id)
+        .order_by(TrainMetricEvent.seq.asc())
+        .limit(limit)
+    )
+    if type_ is not None:
+        stmt = stmt.where(TrainMetricEvent.event_type == type_)
+    if offset is not None:
+        stmt = stmt.offset(offset)
+    rows = (await session.execute(stmt)).scalars().all()
+    return [
+        {
+            "id": r.id,
+            "task_id": r.task_id,
+            "seq": r.seq,
+            "ts": r.ts,
+            "type": r.event_type,
+            "payload": r.payload,
+        }
+        for r in rows
+    ]
