@@ -212,10 +212,36 @@ async def set_job_id(task_id: int, job_id: str) -> None:
         row.hyperparams = hp
 
 
+def task_uses_events(task) -> bool:
+    """判断任务的指标是否应从**事件表**读取（simple 模式）。
+
+    以 hyperparams 里的 ``__tk_mode`` 标记为唯一依据（Task 5 在 spawn 前写回，R7）。
+    **不读全局开关** ``TORKILN_MODE``：该开关只影响新任务走哪条执行路径（写侧），
+    读侧必须按任务创建时实际落库的介质决定——若开关后来被切换，存量任务仍要
+    从它真正写过数据的地方读，否则会"读空"。
+    """
+    hp = getattr(task, "hyperparams", None)
+    return (hp or {}).get(SIMPLE_MODE_KEY) == "simple"
+
+
 async def load_metrics_rows(task_id: int) -> list[dict]:
+    """读取指标行——``/metrics`` 与 ``/metrics/stream`` 的唯一补发入口。
+
+    - simple 任务（``__tk_mode`` 标记）：从**事件表**按 seq 升序物化
+      （``render_event_row`` 渲染，未知类型跳过）；
+    - 容器/存量任务：读传统 ``metrics_log`` 列（兼容回退）。
+    """
     async with async_db_session() as db:
         task = await db.get(TrainTask, task_id)
-        return list(task.metrics_log or []) if task else []
+        if task is None:
+            return []
+        if task_uses_events(task):
+            from .event_ingest import render_event_row
+
+            events = await list_events(db, task_id)
+            return [r for ev in events
+                    if (r := render_event_row(ev["payload"])) is not None]
+        return list(task.metrics_log or [])
 
 
 async def task_is_terminal(task_id: int) -> bool:

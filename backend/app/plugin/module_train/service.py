@@ -100,11 +100,27 @@ def _model_to_dict(row, exclude: set[str] | None = None) -> dict:
     return cols
 
 
-def _enrich_task(row, dataset_names: dict[int, str] | None = None,
-                 exclude: set[str] | None = None) -> dict:
+async def _live_task_progress(task_id: int, row) -> int | None:
+    """running 任务的实时进度。
+
+    simple 任务（``__tk_mode`` 标记）：无容器 train.log（或格式不同），日志解析
+    不适用——改由**事件表物化行**经 ``progress_from_rows`` 推算；
+    容器/存量任务：保留原有 train.log 尾部解析。
+    """
+    from .torchkiln_executor import task_uses_events
+
+    if task_uses_events(row):
+        from .torchkiln_executor import load_metrics_rows, progress_from_rows
+
+        return progress_from_rows(await load_metrics_rows(task_id))
+    return _calc_progress_from_log(task_id)
+
+
+async def _enrich_task(row, dataset_names: dict[int, str] | None = None,
+                       exclude: set[str] | None = None) -> dict:
     d = _model_to_dict(row, exclude=exclude)
     if d.get("status") == "running":
-        live = _calc_progress_from_log(d.get("id", 0))
+        live = await _live_task_progress(d.get("id", 0), row)
         if live is not None:
             d["progress"] = live
     if dataset_names:
@@ -429,7 +445,7 @@ class TrainService:
             result = await db.execute(stmt)
             rows = result.scalars().all()
             name_map = await _dataset_name_map(db, [r.dataset_id for r in rows])
-            return [_enrich_task(r, name_map, exclude=LIST_EXCLUDED_COLUMNS)
+            return [await _enrich_task(r, name_map, exclude=LIST_EXCLUDED_COLUMNS)
                     for r in rows], total
 
     @classmethod
@@ -439,7 +455,16 @@ class TrainService:
             if not t:
                 return None
             name_map = await _dataset_name_map(db, [t.dataset_id])
-            return _enrich_task(t, name_map)
+            d = await _enrich_task(t, name_map)
+            # 延迟 import 与模块内既有风格一致（torchkiln_executor 依赖较重）
+            from .torchkiln_executor import load_metrics_rows, task_uses_events
+
+            if task_uses_events(t):
+                # detail 契约里 metrics_log 统一是"物化指标行"：容器任务=列值，
+                # simple 任务=事件表物化。这是一次性一致性补齐（打开详情时），
+                # 逐步/轮询指标仍走 /metrics 与 SSE（见 /status 端点警告）。
+                d["metrics_log"] = await load_metrics_rows(task_id)
+            return d
 
     @classmethod
     async def get_task_status(cls, task_id: int) -> dict | None:
@@ -448,7 +473,10 @@ class TrainService:
         progress 需要与 detail 保持同一套算法，否则轮询时进度会来回跳。
         """
         want = ("id", "status", "progress", "started_at", "finished_at",
-                "error_log", "model_repo_id", "best_metrics", "last_metrics")
+                "error_log", "model_repo_id", "best_metrics", "last_metrics",
+                # hyperparams 仅用于 simple 判定（事件进度），不出现在响应里
+                # （下方 exclude 仍剔除它）
+                "hyperparams")
         # ⚠️ load_only 只接受 **ORM 属性**，传列名字符串会抛
         #    "expected ORM mapped attribute for loader strategy argument"（500）
         attrs = [getattr(TrainTask, n) for n in want]
@@ -457,7 +485,7 @@ class TrainService:
             t = (await db.execute(stmt)).scalar_one_or_none()
             if not t:
                 return None
-            d = _enrich_task(t, exclude={"hyperparams", "metrics_log"})
+            d = await _enrich_task(t, exclude={"hyperparams", "metrics_log"})
             # error_log 只在失败时有值，且可能很长；成功时不给，省带宽
             if d.get("status") != "failed":
                 d.pop("error_log", None)

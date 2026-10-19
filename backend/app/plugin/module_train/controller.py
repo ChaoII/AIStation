@@ -294,7 +294,7 @@ async def get_task_metrics(
     offset: int = Query(-1, ge=-1, description="只返回 seq 大于该值的事件；-1 表示全部"),
     auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"])),
 ):
-    """从 ``TrainTask.metrics_log`` 补发指标。
+    """补发指标（simple 任务由事件表物化，容器/存量任务读 ``metrics_log``）。
 
     前端刷新/断线重连时带 ``offset``（= 已收到的最大 seq）即可**不丢不重**——
     这是替代「每 N 秒整表重拉」的关键：整表重拉会闪烁、丢滚动与选中态。
@@ -319,6 +319,63 @@ def _row_seq(row: dict):
     if isinstance(v, int):
         return v
     return -1
+
+
+@router.get("/task/{task_id}/env-metrics", summary="训练环境指标（按时间区间）")
+async def get_task_env_metrics(
+    task_id: int,
+    start: int | None = Query(None, description="起始 epoch 秒（含）"),
+    end: int | None = Query(None, description="结束 epoch 秒（含）"),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"])),
+):
+    """简单模式环境指标（env 事件）：从事件表按 ``type='env'`` 区间返回。
+
+    - ``ts`` 统一换算为 **epoch 秒**（float）返回，前端直接作 x 轴；
+    - env 行保留 gpu/cpu/cpu_per_core/mem/disk/net 嵌套结构（不摊平）；
+    - ``start`` / ``end`` 均可选，缺省全量（受事件表 5000 行上限约束）；
+    - 响应结构与 ``/metrics`` 一致（task_id/status/items/total）。
+    """
+    from app.core.database import async_db_session
+
+    from .event_ingest import render_event_row
+    from .model import TrainTask, list_events
+
+    async with async_db_session() as db:
+        events = await list_events(db, task_id, type_="env")
+        task = await db.get(TrainTask, task_id)
+
+    rows = []
+    for ev in events:
+        row = render_event_row(ev["payload"])
+        if row is None:
+            continue
+        ts = _event_ts_epoch(ev["ts"])
+        if start is not None and ts < start:
+            continue
+        if end is not None and ts > end:
+            continue
+        row["ts"] = ts
+        rows.append(row)
+    return SuccessResponse(data={
+        "task_id": task_id,
+        "status": task.status if task else None,
+        "items": rows,   # list_events 已保证 seq 升序
+        "total": len(rows),
+    })
+
+
+def _event_ts_epoch(ts) -> float:
+    """事件表 ``ts``（datetime）→ epoch 秒。
+
+    PG 的 ``timestamptz`` 读回 UTC aware；SQLite 读回 naive 但语义是 UTC
+    （Task 3 已验证）。naive 必须按 UTC 解释，否则 ``.timestamp()`` 会按
+    本地时区换算、差出整个时区偏移。
+    """
+    if ts.tzinfo is None:
+        from datetime import timezone as _tz
+
+        ts = ts.replace(tzinfo=_tz.utc)
+    return ts.timestamp()
 
 
 @router.get("/task/{task_id}/metrics/stream", summary="训练指标实时流（SSE）")
