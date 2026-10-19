@@ -78,10 +78,15 @@ export function getSpaceFileList(params: {
   page_no?: number;
   page_size?: number;
 }) {
+  const clean: Record<string, unknown> = { ...params };
+  // axios 会把 null 序列化为空串（如 folder_id=），后端 int 校验 422 → 直接剔除空值
+  for (const k of Object.keys(clean)) {
+    if (clean[k] == null || clean[k] === "") delete clean[k];
+  }
   return request<ApiResponse<SpaceFileListResult>>({
     url: `${SPACE_PATH}/files/list`,
     method: "get",
-    params,
+    params: clean,
   });
 }
 
