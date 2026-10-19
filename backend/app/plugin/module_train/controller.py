@@ -3,7 +3,7 @@ import json
 import os
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Query, Request, UploadFile
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
@@ -11,6 +11,7 @@ from app.core.dependencies import AuthPermission
 from app.core.sse import sse_response
 from app.utils.trigger_util import TriggerUtil
 
+from .event_ingest import EventIngestBody
 from .paths import shared_root, work_dir
 from .schema import (
     DatasetExportSchema,
@@ -391,6 +392,66 @@ def _sse(event: str, data: dict, event_id=None) -> str:
     for line in json.dumps(data, ensure_ascii=False).split("\n"):
         out.append(f"data: {line}")
     return "\n".join(out) + "\n\n"
+
+
+# ==================================================================
+# 简单模式（子进程直调）训练事件回调 —— 内部端点
+# ------------------------------------------------------------------
+# 简单模式下训练进程不经过容器，指标/环境事件由 TorchKiln 侧直接 HTTP 回调。
+# 鉴权与限流要点：
+# - **不挂 AuthPermission**：调用方是训练子进程，无用户态；改用共享令牌
+#   ``X-Torchkiln-Token`` 与 ``settings.TORKILN_SIMPLE_CALLBACK_TOKEN`` 做
+#   ``hmac.compare_digest`` 校验，fail-closed（未配置令牌一律 401）；
+# - 限流豁免：机队流量走 ``settings.RATE_LIMIT_PATH_OVERRIDES`` 的独立限额
+#   （1200/10s），不受 train 模块级 60/10s 误伤（见 setting.py）；
+# - 幂等：落库前不做其它校验，重复 ``(task_id, seq)`` 由唯一约束兜底
+#   （``insert_event`` 返回 False）——不重复落库也不重复 SSE 扇出，仍回 201。
+# ==================================================================
+
+
+@router.post("/internal/events", summary="TorchKiln 简单模式训练事件回调（内部）", include_in_schema=False)
+async def receive_simple_events(
+    request: Request,
+    body: EventIngestBody,
+):
+    """接收训练事件：token 校验 → 幂等落库 → SSE 扇出 → 201（重复 seq 同样 201）。"""
+    import hmac
+
+    from app.config.setting import settings
+    from app.core.database import async_db_session
+    from app.core.exceptions import CustomException
+
+    # fail-closed：未配置共享密钥也拒绝（与录像 webhook 同风格，状态码按 plan 用 401）
+    expected = (settings.TORKILN_SIMPLE_CALLBACK_TOKEN or "").strip()
+    if not expected:
+        raise CustomException(msg="简单模式回调未配置共享密钥，已拒绝", code=401, status_code=401)
+    provided = (request.headers.get("X-Torchkiln-Token") or "").strip()
+    if not provided or not hmac.compare_digest(provided, expected):
+        raise CustomException(msg="无效的回调凭证", code=401, status_code=401)
+
+    # ⚠️ publish_metric 必须**函数体内延迟 import**（与既有端点风格一致），
+    # 测试才能 monkeypatch ``app.plugin.module_train.torchkiln_executor.publish_metric``
+    from .event_ingest import render_event_row, update_usage_tasks
+    from .model import insert_event
+    from .torchkiln_executor import publish_metric
+
+    ev = body.model_dump()
+    # 统一先落库（幂等）再按行发布；未知 type 渲染为 None 时跳过扇出
+    row = render_event_row(ev)
+    async with async_db_session() as db:
+        inserted = await insert_event(
+            db, task_id=ev["task_id"], seq=ev["seq"], ts=ev["ts"],
+            type_=ev["type"], payload=ev,
+        )
+    if inserted and row is not None:
+        publish_metric(ev["task_id"], row)
+    # 环境指标台账更新钩子（Task 5 接线，第一版 no-op）
+    await update_usage_tasks(ev)
+    return SuccessResponse(
+        status_code=201,
+        data={"task_id": ev["task_id"], "seq": ev["seq"], "inserted": inserted},
+        msg="事件已接收",
+    )
 
 
 @router.post("/eval/create", summary="创建评估任务")

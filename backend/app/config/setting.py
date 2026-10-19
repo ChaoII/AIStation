@@ -532,6 +532,13 @@ class Settings(BaseSettings):
             "times": EDGE_INGEST_RATE_LIMIT_TIMES,
             "seconds": EDGE_INGEST_RATE_LIMIT_SECONDS,
         },
+        # TorchKiln 简单模式训练事件回调（内部端点）：X-Torchkiln-Token 鉴权，
+        # 训练进程高频推 step/env 事件，属机队流量，不能共用 train 模块级 60/10s
+        # （否则单任务密集指标就 429 丢事件），与既有回调路径同口径 1200/10s。
+        "POST /train/internal/events": {
+            "times": EDGE_INGEST_RATE_LIMIT_TIMES,
+            "seconds": EDGE_INGEST_RATE_LIMIT_SECONDS,
+        },
     }
 
     # ================================================= #
