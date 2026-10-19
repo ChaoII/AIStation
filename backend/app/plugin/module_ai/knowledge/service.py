@@ -1452,21 +1452,75 @@ class AiKnowledgeService:
             return None
 
     @classmethod
-    async def delete_document(cls, kb_id: int, doc_id: int) -> None:
+    async def _purge_document_chunks(cls, db, doc_id: int) -> dict:
+        """清理某文档的全部分块及其绑定/标记录（供删除与重解析复用）。
+
+        返回 ``{"chunks": n, "bindings": m, "annotations": k}``：
+        - 实体-分块绑定为物理删除（无软删语义）；
+        - 标记录软删（保留台账可追溯）；
+        - 分块本身物理删除（与 ``delete_chunk`` 一致，避免孤儿分块继续被检索命中）。
+        """
+        from sqlalchemy import delete as _delete
+        from sqlalchemy import update as _update
+
+        ids = (
+            (
+                await db.execute(
+                    select(AiKnowledgeChunkModel.id).where(
+                        AiKnowledgeChunkModel.document_id == doc_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not ids:
+            return {"chunks": 0, "bindings": 0, "annotations": 0}
+        bindings = (
+            await db.execute(
+                _delete(AiKnowledgeEntityChunkModel).where(
+                    AiKnowledgeEntityChunkModel.chunk_id.in_(ids)
+                )
+            )
+        ).rowcount or 0
+        annotations = (
+            await db.execute(
+                _update(AiChunkAnnotationLogModel)
+                .where(
+                    AiChunkAnnotationLogModel.chunk_id.in_(ids),
+                    AiChunkAnnotationLogModel.is_deleted.is_(False),
+                )
+                .values(is_deleted=True, deleted_time=func.now())
+            )
+        ).rowcount or 0
+        await db.execute(_delete(AiKnowledgeChunkModel).where(AiKnowledgeChunkModel.id.in_(ids)))
+        return {"chunks": len(ids), "bindings": int(bindings), "annotations": int(annotations)}
+
+    @classmethod
+    async def delete_document(cls, kb_id: int, doc_id: int) -> dict:
+        """删除文档：级联清理分块/绑定/标注，并释放 S3 对象。"""
         import asyncio
 
         from app.utils.s3_client import s3_client
 
+        object_key: str | None = None
+        purged = {"chunks": 0, "bindings": 0, "annotations": 0}
         async with async_db_session.begin() as db:
             d = await db.get(AiKnowledgeDocumentModel, doc_id)
-            if d and d.knowledge_base_id == kb_id:
-                ok = d.object_key
-                await db.delete(d)
-        if ok:
+            if not d or d.knowledge_base_id != kb_id or d.is_deleted:
+                raise ValueError("文档不存在")
+            object_key = d.object_key
+            purged = await cls._purge_document_chunks(db, doc_id)
+            await db.delete(d)
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if b:
+                b.chunk_count = max(0, (b.chunk_count or 0) - purged["chunks"])
+        if object_key:
             try:
-                await asyncio.to_thread(s3_client.delete_object, ok)
-            except Exception:  # noqa: BLE001
+                await asyncio.to_thread(s3_client.delete_object, object_key)
+            except Exception:  # noqa: BLE001  S3 删除失败不影响元数据一致性
                 pass
+        return purged
 
     @classmethod
     async def get_document_content(cls, kb_id: int, doc_id: int) -> dict:

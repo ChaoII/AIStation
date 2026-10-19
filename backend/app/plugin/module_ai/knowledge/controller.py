@@ -333,8 +333,11 @@ async def delete_document(
     doc_id: int,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:delete"]))],
 ) -> JSONResponse:
-    await AiKnowledgeService.delete_document(kb_id, doc_id)
-    return SuccessResponse(msg="已删除")
+    try:
+        data = await AiKnowledgeService.delete_document(kb_id, doc_id)
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+    return SuccessResponse(data=data, msg="已删除")
 
 
 @KnowledgeRouter.get("/bases/{kb_id}/documents/{doc_id}/content", summary="文档内容(在线预览)")

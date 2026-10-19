@@ -191,3 +191,36 @@ def test_kb_quality_returns_200(test_client, auth_headers):
         assert isinstance(data["statuses"], dict)
     finally:
         _delete_base(test_client, auth_headers, [kb_id])
+
+
+def test_delete_document_cascades_chunks(test_client, auth_headers):
+    """删除文档必须级联清掉它的分块，否则孤儿分块会继续被检索命中。"""
+    kb_id = _create_base(test_client, auth_headers)
+    try:
+        up = test_client.post(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/documents/upload",
+            files={"file": ("del.txt", b"delete me content for cascade", "text/plain")},
+            data={"chunk_size": "100", "overlap": "0", "strategy": "fixed"},
+            headers=auth_headers,
+        )
+        assert up.status_code == 200, up.text
+        doc_id = up.json()["data"]["id"]
+
+        before = test_client.get(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/chunks", headers=auth_headers
+        ).json()["data"]
+        assert before, "上传后应有分块"
+
+        d = test_client.delete(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/documents/{doc_id}", headers=auth_headers
+        )
+        assert d.status_code == 200, d.text
+        assert d.json()["data"]["chunks"] == len(before)
+
+        after = test_client.get(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/chunks", headers=auth_headers
+        ).json()["data"]
+        assert [c for c in after if c.get("document_id") == doc_id] == []
+        assert after == [], "该库仅有此文档，删除后不应残留分块"
+    finally:
+        _delete_base(test_client, auth_headers, [kb_id])
