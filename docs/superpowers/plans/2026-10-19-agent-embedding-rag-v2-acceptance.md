@@ -197,3 +197,24 @@ py_compile → OK
 ruff check → All checks passed!
 ```
 未跑 `main.py upgrade`（会改真实 dev 库；该库已由启动期 extensions 生效）。
+
+## 9. 死代码清理（已完成，2026-10-19）
+
+按 §7.1 的正确顺序执行：
+
+1. `service.suggest_annotate` 的两处 `_pg_search(...)` 改为调用
+   `search.engines.vector_search / fulltext_search`（保持「向量召回 + 全文判命中」语义，
+   且自动获得非 PG 回退与阈值/过滤能力）；
+2. 删除 `_pg_search` / `_minmax_scores` / `_fuse_weighted` / `_fuse_rrf` 连续区域，
+   **共 228 行**（脚本先删后校验：删除后若仍存在这些符号则不写盘）。
+
+实测：
+```
+removed 228 lines (623..850)；删除后无残留引用，语法校验通过
+ruff check → All checks passed!
+pytest tests/test_ai_knowledge.py tests/test_ai_rag_search.py tests/test_ai_rag_parent_child.py
+→ 19 passed
+```
+
+`_py_search` / `_py_search_vector` 保留（`_py_search` 已无调用点，但 `_py_search_vector`
+作为旧回退仍可能被外部调用点引用，留到合并后统一评估）。
