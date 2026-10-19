@@ -35,6 +35,20 @@
       <el-button size="small" type="primary" :icon="Search" :loading="loading" @click="doSearch(0)">
         搜索
       </el-button>
+      <!-- 场景（P5）：选中后所有实例读/图谱/动作执行都读写该场景的差异 -->
+      <el-select
+        v-model="scen"
+        size="small"
+        clearable
+        placeholder="主本体"
+        class="ont-explore__scen"
+        @visible-change="onScenOpen"
+        @change="doSearch(0)"
+      >
+        <el-option label="主本体（不叠加场景）" value="" />
+        <el-option v-for="s in scenOptions" :key="s.code" :label="s.name" :value="s.code" />
+      </el-select>
+      <el-tag v-if="scen" size="small" type="warning" effect="plain">场景中</el-tag>
       <el-tag v-if="total" size="small" type="info" effect="plain">共 {{ total }}</el-tag>
       <span class="ont-hint">
         这里是
@@ -332,6 +346,7 @@ import {
   getOntActions,
   getOntInstance,
   getOntInstanceGraph,
+  getOntScenarios,
   pivotOntInstance,
   searchOntInstances,
   writebackOntInstance,
@@ -362,6 +377,22 @@ const materializedObjects = computed(() =>
 
 const code = ref("");
 const keyword = ref("");
+// 场景（P5）：留空 = 主本体；选中后所有实例读/图谱/动作执行都读写该场景的差异
+const scen = ref("");
+const scenOptions = ref<{ code: string; name: string; status: string }[]>([]);
+
+/** 下拉打开时才拉场景列表（避免组件一进来就多打一个接口）。 */
+async function onScenOpen(open: boolean) {
+  if (!open || scenOptions.value.length) return;
+  try {
+    const r = await getOntScenarios({ limit: 300 });
+    scenOptions.value = ((r.data?.data || []) as any[])
+      .filter((s: any) => s.status === "active")
+      .map((s: any) => ({ code: s.code, name: s.name, status: s.status }));
+  } catch {
+    scenOptions.value = [];
+  }
+}
 const items = ref<any[]>([]);
 const total = ref(0);
 const loading = ref(false);
@@ -385,6 +416,7 @@ async function doSearch(offset = 0) {
       keyword: keyword.value,
       limit: pageSize,
       offset,
+      scenario: scen.value,
     });
     const d = r.data?.data || {};
     notMaterialized.value = !d.ok && /物化/.test(d.msg || "");
@@ -432,7 +464,7 @@ function display(v: any, pm: any) {
   return String(v);
 }
 async function openView(row: any) {
-  const r = await getOntInstance(code.value, row.key);
+  const r = await getOntInstance(code.value, row.key, scen.value);
   const d = r.data?.data || {};
   if (!d.ok) return ElMessage.error(d.msg || "读取实例失败");
   inst.value = d;
@@ -474,7 +506,7 @@ const pivotItems = ref<any[]>([]);
 const pivotTitle = ref("");
 const pivotCode = ref("");
 async function doPivot(lk: any) {
-  const r = await pivotOntInstance(code.value, inst.value.key, lk.id, 100);
+  const r = await pivotOntInstance(code.value, inst.value.key, lk.id, 100, scen.value);
   const d = r.data?.data || {};
   if (!d.ok) return ElMessage.warning(d.msg || "跳转失败");
   if (!d.items?.length) return ElMessage.info(d.msg || "没有关联实例");
@@ -503,7 +535,7 @@ const graphRoot = ref<{ code: string; key: string } | null>(null);
 
 async function openGraph(row: any) {
   // 关系列表来自该实例详情（这样就知道有哪些可扩展的关系）
-  const r = await getOntInstance(code.value, row.key);
+  const r = await getOntInstance(code.value, row.key, scen.value);
   const d = r.data?.data || {};
   if (!d.ok) return ElMessage.error(d.msg || "读取实例失败");
   graphLinks.value = d.links || [];
@@ -520,6 +552,7 @@ async function reloadGraph() {
     link_ids: graphLinkIds.value.length ? graphLinkIds.value : undefined,
     depth: graphDepth.value,
     limit: 150,
+    scenario: scen.value,
   });
   const d = r.data?.data || {};
   graphNodes.value = d.nodes || [];
@@ -605,6 +638,7 @@ async function runAction() {
         object_key:
           actTarget.value.method === "update" ? String(k) : String(actForm.value.object_key || k),
         params,
+        scenario: scen.value,
       });
       const d = r.data?.data || {};
       if (d.ok) ok += 1;
@@ -633,6 +667,9 @@ async function runAction() {
 }
 .ont-explore__kw {
   width: 240px;
+}
+.ont-explore__scen {
+  width: 160px;
 }
 .ont-explore__page {
   justify-content: flex-end;
