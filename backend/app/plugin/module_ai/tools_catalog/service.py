@@ -1,11 +1,13 @@
 """AI 工具服务：内置工具开关 + 自定义 HTTP 工具执行。"""
 import json
+from datetime import datetime
 
 from sqlalchemy import select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
+from app.plugin.module_ai.bindings import detach_from_agents
 
 from .model import AiToolModel
 
@@ -619,12 +621,24 @@ class AiToolService:
             return _to_dict(t)
 
     @classmethod
-    async def delete(cls, ids: list[int]) -> None:
+    async def delete(cls, ids: list[int], user_id: int) -> None:
+        """软删除工具：保留行，避免市场安装关系悬垂（列表已按 is_deleted 过滤）。"""
         async with async_db_session.begin() as db:
+            now = datetime.now()
+            deleted_names: list[str] = []
             for tid in ids:
                 t = await db.get(AiToolModel, tid)
-                if t:
-                    await db.delete(t)
+                if t and not t.is_deleted:
+                    deleted_names.append(t.name)
+                    t.is_deleted = True
+                    t.deleted_time = now
+                    t.deleted_id = user_id
+                    t.updated_id = user_id
+                    # 释放唯一名：否则同名工具无法重新创建（软删除行仍占用 unique 约束）
+                    suffix = f"__deleted_{t.id}_{int(now.timestamp())}"
+                    t.name = f"{(t.name or '')[: 128 - len(suffix)]}{suffix}"
+            # 智能体按工具名绑定，删除后一并摘除，避免运行期静默失效
+            await detach_from_agents(db, tool_names=deleted_names)
 
     @classmethod
     async def toggle(cls, tool_id: int, enabled: bool, auth) -> dict | None:

@@ -4,11 +4,13 @@
 连接测试只做“可达性探测”，不建立真实 MCP 会话（真实会话在 Agent 运行时由 agno 建立）。
 """
 import shutil
+from datetime import datetime
 
 from sqlalchemy import select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
+from app.plugin.module_ai.bindings import detach_from_agents
 
 from .model import AiMcpServerModel
 
@@ -163,11 +165,23 @@ class McpService:
 
     @classmethod
     async def delete(cls, ids: list[int], user_id: int) -> None:
+        """软删除本人的 MCP 服务器（他人行静默跳过；列表已按 is_deleted 过滤）。"""
         async with async_db_session.begin() as db:
+            now = datetime.now()
+            deleted_ids: list[int] = []
             for sid in ids:
                 s = await db.get(AiMcpServerModel, sid)
-                if s and s.created_id == user_id:
-                    await db.delete(s)
+                if s and not s.is_deleted and s.created_id == user_id:
+                    deleted_ids.append(s.id)
+                    s.is_deleted = True
+                    s.deleted_time = now
+                    s.deleted_id = user_id
+                    s.updated_id = user_id
+                    # 释放唯一名：允许重新创建同名 MCP 服务器
+                    suffix = f"__deleted_{s.id}_{int(now.timestamp())}"
+                    s.name = f"{(s.name or '')[: 128 - len(suffix)]}{suffix}"
+            # 智能体按 MCP id 绑定，删除后一并摘除
+            await detach_from_agents(db, mcp_ids=deleted_ids)
 
     @classmethod
     async def toggle(cls, server_id: int, enabled: bool, auth) -> dict | None:

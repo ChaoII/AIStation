@@ -7,11 +7,13 @@
 - Agent 绑定零侵入：工具/技能/插件绑定用户自己的真实记录，MCP 通过 mcp_ids。
 """
 import re
+from datetime import datetime
 
 from sqlalchemy import func, or_, select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
+from app.plugin.module_ai.bindings import detach_from_agents
 from app.plugin.module_ai.mcp.model import AiMcpServerModel
 from app.plugin.module_ai.plugins.model import AiPluginModel
 from app.plugin.module_ai.skill.model import AiSkillModel
@@ -55,6 +57,14 @@ _TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 字符串值里的令牌（不含 `<...>` 占位符）：逐个替换为空，避免把技能正文里的
+# HTML 标签/占位符误删；用于 URL、webhook、config 等「值里内嵌密钥」的场景。
+_SECRET_VALUE_RE = re.compile(
+    r"(?:sk-[A-Za-z0-9_-]{8,}|gh[pous]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
+    r"|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{8,}|Bearer\s+\S+)",
+    re.IGNORECASE,
+)
+
 
 def _blank_secret(value):
     """清空凭证值：标量置空，容器递归清空。"""
@@ -82,6 +92,10 @@ def _sanitize_node(node, key):
         return out
     if isinstance(node, list):
         return [_sanitize_list_item(v) for v in node]
+    if isinstance(node, str):
+        # 值里内嵌的令牌（如 URL/webhook/config 中的 sk-xxx、Bearer xxx）逐段清除；
+        # 只清令牌本身、保留其余文本与结构，避免把整条地址清空。
+        return _SECRET_VALUE_RE.sub("", node)
     return node
 
 
@@ -101,7 +115,8 @@ def _sanitize_payload(payload):
 
     - 键名命中 ``_SECRET_KEY_RE`` 的字段：值清空（容器递归）；
     - ``headers``/``env`` 整包凭证束：所有值清空、保留键名；
-    - ``args`` 等列表元素命中疑似令牌串：清空；
+    - 任意字符串值内嵌的令牌（``sk-...``/``ghp_...``/``Bearer ...`` 等）逐段清除；
+    - ``args`` 等列表元素命中疑似令牌串：整项清空；
     - 其余非敏感字段（url/method/params_schema/code/description 等）原样保留。
     """
     if payload is None:
@@ -228,6 +243,15 @@ async def _unique_name(db, model, base: str, field: str = "name") -> str:
         idx += 1
 
 
+async def _asset_alive(db, asset_type: str, real_id: int | None) -> bool:
+    """真实资产是否仍存在且未软删（用于校验 installed 关系是否还有效）。"""
+    model = _ASSET_MODELS.get(asset_type)
+    if model is None or not real_id:
+        return False
+    row = await db.get(model, real_id)
+    return bool(row and not row.is_deleted)
+
+
 class _BundleChild:
     """能力包（bundle）内的子项：借用父商品的名称/图标，复用 _materialize 递归安装。"""
 
@@ -266,20 +290,26 @@ async def _materialize(
 
     幂等性由调用方（relations installed 记录）保证；此函数只负责“复制出一份”。
 
-    ``reuse_by_name``：工具类型为 True 时，若已存在同名工具（平台内置/他人生成）则复用，
+    ``reuse_by_name``：工具类型为 True 时，若存在**平台内置**（created_id 为空）或**本人**同名工具则复用，
     安装即“启用”、不再复制带后缀新行；为 False 时（个人资产分享）强制给接收方新建一份。
     """
     payload = item.payload or {}
     asset_type = item.asset_type
     if asset_type == "tool":
         want_name = payload.get("name") or item.name
-        # 平台已内置同名工具（agno/system）或用户已有同名行：直接复用，安装即"启用"，
+        # 平台已内置同名工具（created_id 为空）或**本人**已有同名行：直接复用，安装即"启用"，
         # 不再复制出带后缀的新行（否则派发时按名字找不到 agno 工具）。
+        # ⚠️ 不能复用他人的同名工具：否则安装者既无法维护该行（非本人），
+        # 又会把别人停用的工具顺手启用（跨用户写）。
         if reuse_by_name:
             existing = await db.scalar(
                 select(AiToolModel).where(
                     AiToolModel.name == want_name,
                     AiToolModel.is_deleted.is_(False),
+                    or_(
+                        AiToolModel.created_id == user_id,
+                        AiToolModel.created_id.is_(None),
+                    ),
                 )
             )
             if existing is not None:
@@ -446,7 +476,7 @@ class MarketService:
                 "featured": [
                     _to_dict(
                         i,
-                        *await cls._relation_flags(db, user_id, i.id),
+                        *await cls._relation_flags(db, user_id, i.id, i.asset_type),
                         names.get(i.owner_id, ""),
                     )
                     for i in featured
@@ -455,18 +485,39 @@ class MarketService:
             }
 
     @classmethod
-    async def _relation_flags(cls, db, user_id: int, item_id: int) -> tuple[bool, bool]:
-        """查询某商品对某用户的 installed/favorited 标志。"""
+    async def _relation_flags(
+        cls, db, user_id: int, item_id: int, asset_type: str
+    ) -> tuple[bool, bool]:
+        """查询某商品对某用户的 installed/favorited 标志。
+
+        installed 额外校验副本仍存在且未软删：副本可能从工具/技能/MCP/插件管理页删除，
+        此时不能继续显示「已安装」（install 时会自动重建关系）。
+        """
         rows = (
             await db.execute(
-                select(AiMarketRelationModel.kind).where(
+                select(
+                    AiMarketRelationModel.kind,
+                    AiMarketRelationModel.description,
+                ).where(
                     AiMarketRelationModel.user_id == user_id,
                     AiMarketRelationModel.item_id == item_id,
                     AiMarketRelationModel.is_deleted.is_(False),
                 )
             )
-        ).scalars().all()
-        return "installed" in rows, "favorited" in rows
+        ).all()
+        favorited = any(kind == "favorited" for kind, _ in rows)
+        installed = False
+        for kind, desc in rows:
+            if kind != "installed":
+                continue
+            try:
+                real_id = int(desc) if desc else None
+            except (TypeError, ValueError):
+                continue
+            if await _asset_alive(db, asset_type, real_id):
+                installed = True
+                break
+        return installed, favorited
 
     @classmethod
     async def list_items(cls, query, user_id: int) -> dict:
@@ -563,12 +614,16 @@ class MarketService:
 
     @classmethod
     async def detail(cls, item_id: int, user_id: int) -> dict | None:
-        """商品详情（任何状态可见，带安装/收藏标志）。"""
+        """商品详情：已上架对所有人可见；未上架（pending/rejected/offline）仅提交者本人可见。"""
         async with async_db_session() as db:
             item = await db.get(AiMarketItemModel, item_id)
             if not item or item.is_deleted:
                 return None
-            installed, favorited = await cls._relation_flags(db, user_id, item_id)
+            if item.status != "approved" and item.owner_id != user_id:
+                return None
+            installed, favorited = await cls._relation_flags(
+                db, user_id, item_id, item.asset_type
+            )
             owner_name = ""
             if item.owner_id:
                 from app.api.v1.module_system.user.model import UserModel
@@ -639,12 +694,17 @@ class MarketService:
                     real_id = int(rel.description) if rel.description else None
                 except (TypeError, ValueError):
                     real_id = None
-                return {
-                    "installed": False,
-                    "exists": True,
-                    "real_id": real_id,
-                    "asset_type": item.asset_type,
-                }
+                if await _asset_alive(db, item.asset_type, real_id):
+                    return {
+                        "installed": False,
+                        "exists": True,
+                        "real_id": real_id,
+                        "asset_type": item.asset_type,
+                    }
+                # 副本已被删除（本模块或其他模块页删除）：解除旧关系，重新复制一份，
+                # 否则会一直返回一个不存在的 real_id，且市场永远显示「已安装」。
+                rel.is_deleted = True
+                rel.deleted_time = datetime.now()
             real_id = await _materialize(db, item, user_id)
             db.add(
                 AiMarketRelationModel(
@@ -677,6 +737,7 @@ class MarketService:
                 raise CustomException(msg="只能提交自己的资产")
             dup = await db.scalar(
                 select(AiMarketItemModel).where(
+                    AiMarketItemModel.owner_id == user_id,
                     AiMarketItemModel.asset_type == data.asset_type,
                     AiMarketItemModel.name == name,
                     AiMarketItemModel.status.in_(("pending", "approved")),
@@ -828,18 +889,27 @@ class MarketService:
 
     @classmethod
     async def review(cls, item_id: int, action: str, remark: str, user_id: int) -> dict:
-        """审核商品：approve 上架 / reject 驳回（带意见）。已审核商品拒绝再审。"""
-        if action not in ("approve", "reject"):
+        """审核商品：approve 上架 / reject 驳回 / offline 下架（带意见）。
+
+        状态机（避免重复审核与「撤回后被复活」）：
+        - ``pending`` → ``approved`` / ``rejected``；
+        - ``approved`` → ``offline``（管理员下架）。
+        其余组合一律拒绝。
+        """
+        if action not in ("approve", "reject", "offline"):
             raise CustomException(msg="审核动作不合法")
         async with async_db_session.begin() as db:
             item = await db.get(AiMarketItemModel, item_id)
             if not item or item.is_deleted:
                 raise CustomException(msg="商品不存在")
-            if item.status in ("approved", "rejected"):
-                raise CustomException(msg="该商品已审核，请勿重复审核")
-            from datetime import datetime
-
-            item.status = "approved" if action == "approve" else "rejected"
+            if action == "offline":
+                if item.status != "approved":
+                    raise CustomException(msg="只有已上架商品才能下架")
+                item.status = "offline"
+            else:
+                if item.status != "pending":
+                    raise CustomException(msg="该商品已审核，请勿重复审核")
+                item.status = "approved" if action == "approve" else "rejected"
             item.audit_remark = remark or ""
             item.audit_user = user_id
             item.audit_time = datetime.now()
@@ -892,6 +962,9 @@ class MarketService:
                 item = await db.get(AiMarketItemModel, data.item_id)
                 if not item or item.is_deleted:
                     raise CustomException(msg="商品不存在")
+                # 与详情一致：未上架商品仅提交者本人可见，禁止他人借分享接口窥探
+                if item.status != "approved" and item.owner_id != user_id:
+                    raise CustomException(msg="商品未上架，无法分享")
                 dup = await db.scalar(
                     select(AiMarketShareModel).where(
                         AiMarketShareModel.item_id == item.id,
@@ -1106,7 +1179,14 @@ class MarketService:
 
     @classmethod
     async def delete_asset(cls, asset_type: str, real_id: int, user_id: int) -> dict:
-        """统一删除入口（软删除真实资产，仅限本人）。"""
+        """统一删除入口：软删除真实资产（仅限本人），并处理市场/安装关系。
+
+        - 该资产作为来源提交过市场：对应商品一并置 ``offline``，避免留下
+          「用户已看不到、但市场仍可安装」的孤儿商品；
+        - 该资产是用户从市场安装的副本：解除 installed 关系，市场不再显示
+          「已安装」，之后可重新安装；
+        - 该资产被智能体绑定：同步从 ``ai_agents`` 的 tool/skill/mcp 绑定中摘除。
+        """
         model = _ASSET_MODELS.get(asset_type)
         if model is None:
             raise CustomException(msg=f"不支持的资产类型：{asset_type}")
@@ -1116,5 +1196,73 @@ class MarketService:
                 raise CustomException(msg="资产不存在")
             if getattr(row, "created_id", None) != user_id:
                 raise CustomException(msg="只能删除自己的资产")
-            await db.delete(row)
-            return {"asset_type": asset_type, "real_id": real_id, "deleted": True}
+
+            now = datetime.now()
+            row.is_deleted = True
+            row.deleted_time = now
+            if hasattr(row, "deleted_id"):
+                row.deleted_id = user_id
+            if hasattr(row, "updated_id"):
+                row.updated_id = user_id
+
+            # 0) 摘除智能体绑定：工具按名（tool_ids），技能/MCP 按 id
+            await detach_from_agents(
+                db,
+                tool_names=(row.name,) if asset_type == "tool" else (),
+                skill_ids=(real_id,) if asset_type == "skill" else (),
+                mcp_ids=(real_id,) if asset_type == "mcp" else (),
+            )
+
+            # 0.1) 释放唯一约束：软删除行仍占用 unique，不改名则同名资产无法重建
+            suffix = f"__deleted_{row.id}_{int(now.timestamp())}"
+            if asset_type == "plugin":
+                base_key = getattr(row, "key", "") or ""
+                row.key = f"{base_key[: max(0, 64 - len(suffix))]}{suffix}"
+            else:
+                base_name = getattr(row, "name", "") or ""
+                row.name = f"{base_name[: max(0, 128 - len(suffix))]}{suffix}"
+
+            # 1) 作为来源已上架/待审的商品：一并下架
+            source_items = (
+                (
+                    await db.execute(
+                        select(AiMarketItemModel).where(
+                            AiMarketItemModel.owner_id == user_id,
+                            AiMarketItemModel.asset_type == asset_type,
+                            AiMarketItemModel.source_id == real_id,
+                            AiMarketItemModel.is_deleted.is_(False),
+                            AiMarketItemModel.status.in_(("pending", "approved")),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for item in source_items:
+                item.status = "offline"
+
+            # 2) 作为安装副本：解除 installed 关系（否则永远显示已安装、real_id 失效）
+            rels = (
+                (
+                    await db.execute(
+                        select(AiMarketRelationModel).where(
+                            AiMarketRelationModel.user_id == user_id,
+                            AiMarketRelationModel.kind == "installed",
+                            AiMarketRelationModel.description == str(real_id),
+                            AiMarketRelationModel.is_deleted.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for rel in rels:
+                rel.is_deleted = True
+                rel.deleted_time = now
+
+            return {
+                "asset_type": asset_type,
+                "real_id": real_id,
+                "deleted": True,
+                "offlined_items": [i.id for i in source_items],
+            }

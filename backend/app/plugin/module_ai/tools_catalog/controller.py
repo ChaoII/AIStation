@@ -85,7 +85,7 @@ async def delete_tools(
     ids: Annotated[list[int], Body(description="ID列表")],
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:delete"]))],
 ) -> JSONResponse:
-    await AiToolService.delete(ids)
+    await AiToolService.delete(ids, auth.user.id)
     return SuccessResponse(msg="删除成功")
 
 

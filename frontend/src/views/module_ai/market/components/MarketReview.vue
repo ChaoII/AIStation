@@ -7,6 +7,7 @@
           <el-radio-button value="pending">待审核</el-radio-button>
           <el-radio-button value="approved">已上架</el-radio-button>
           <el-radio-button value="rejected">已驳回</el-radio-button>
+          <el-radio-button value="offline">已下架</el-radio-button>
         </el-radio-group>
         <el-tag size="small" type="info" effect="plain">共 {{ total }} 条</el-tag>
         <div v-if="status === 'pending'" class="batch-actions">
@@ -38,6 +39,18 @@
         stripe
         @selection-change="onSelectionChange"
       >
+        <el-table-column type="expand" width="40">
+          <template #default="{ row }">
+            <div class="payload-panel">
+              <div class="payload-meta">
+                <el-tag size="small" effect="plain">{{ assetLabel(row.asset_type) }}</el-tag>
+                <span>版本：{{ row.version || "—" }}</span>
+                <span>提交者：{{ row.owner_name || (row.is_official ? "官方" : "—") }}</span>
+              </div>
+              <pre class="payload-pre">{{ prettyPayload(row as any) }}</pre>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column v-if="status === 'pending'" type="selection" width="48" />
         <el-table-column label="商品" min-width="200">
           <template #default="{ row }">
@@ -88,9 +101,10 @@
             </template>
             <el-button
               v-else-if="row.status === 'approved'"
+              v-hasPerm="'module_ai:market:review'"
               size="small"
               :icon="Remove"
-              @click="openReview(row as any, 'reject')"
+              @click="openReview(row as any, 'offline')"
             >
               下架
             </el-button>
@@ -123,7 +137,7 @@
             :rows="3"
             maxlength="500"
             show-word-limit
-            :placeholder="action === 'reject' ? '请说明驳回/下架原因' : '可选'"
+            :placeholder="action === 'approve' ? '可选' : '请说明驳回/下架原因'"
           />
         </el-form-item>
       </el-form>
@@ -164,13 +178,30 @@ const current = ref<MarketItem | null>(null);
 const action = ref("approve");
 const remark = ref("");
 
+/** 批量审核单条结果（后端逐条返回，不因单条失败中断） */
+interface BatchResult {
+  item_id: number;
+  ok: boolean;
+  msg?: string;
+}
+
 const dialogTitle = computed(() => {
   if (action.value === "approve") return "审核通过";
-  return current.value?.status === "approved" ? "下架商品" : "驳回商品";
+  if (action.value === "offline") return "下架商品";
+  return "驳回商品";
 });
 
 function assetLabel(type: string) {
   return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+}
+
+/** 审核时展示提交快照（后端已脱敏），未展开不请求接口 */
+function prettyPayload(row: MarketItem) {
+  try {
+    return JSON.stringify(row.payload ?? {}, null, 2);
+  } catch {
+    return String(row.payload ?? "");
+  }
 }
 
 function statusLabel(s: string) {
@@ -215,21 +246,41 @@ async function batchReview(act: "approve" | "reject") {
     act === "approve"
       ? `将批量通过并上架 ${selectedRows.value.length} 个商品：${names}。是否继续？`
       : `将批量驳回 ${selectedRows.value.length} 个商品：${names}（可在意见中说明原因）。是否继续？`;
-  await ElMessageBox.confirm(confirmText, "批量审核确认", {
+  const confirmed = await ElMessageBox.confirm(confirmText, "批量审核确认", {
     confirmButtonText: act === "approve" ? "批量通过" : "批量驳回",
     cancelButtonText: "取消",
     type: "warning",
-  });
-  await reviewMarketBatch({
-    items: selectedRows.value.map((r) => ({
-      item_id: r.id,
-      action: act,
-      remark: act === "reject" ? "批量驳回" : "",
-    })),
-  });
-  ElMessage.success(`已批量${act === "approve" ? "通过" : "驳回"}`);
-  selectedRows.value = [];
-  load();
+  })
+    .then(() => true)
+    .catch(() => false);
+  if (!confirmed) return;
+  const byId = new Map(selectedRows.value.map((r) => [r.id, r.name]));
+  try {
+    const res: any = await reviewMarketBatch({
+      items: selectedRows.value.map((r) => ({
+        item_id: r.id,
+        action: act,
+        remark: act === "reject" ? "批量驳回" : "",
+      })),
+    });
+    const results: BatchResult[] = res.data?.data?.results || [];
+    const failed = results.filter((r) => !r.ok);
+    const okCount = results.length - failed.length;
+    if (failed.length) {
+      const detail = failed
+        .slice(0, 3)
+        .map((f) => `${byId.get(f.item_id) || `#${f.item_id}`}：${f.msg || "未知原因"}`)
+        .join("；");
+      ElMessage.warning(
+        `成功 ${okCount} 个，失败 ${failed.length} 个。${detail}${failed.length > 3 ? "…" : ""}`
+      );
+    } else {
+      ElMessage.success(`已批量${act === "approve" ? "通过" : "驳回"} ${okCount} 个商品`);
+    }
+  } finally {
+    selectedRows.value = [];
+    load();
+  }
 }
 
 function openReview(row: MarketItem, act: string) {
@@ -241,7 +292,7 @@ function openReview(row: MarketItem, act: string) {
 
 async function confirmReview() {
   if (!current.value) return;
-  if (action.value === "reject" && !remark.value.trim()) {
+  if (action.value !== "approve" && !remark.value.trim()) {
     ElMessage.warning("驳回/下架请填写原因");
     return;
   }
@@ -252,7 +303,9 @@ async function confirmReview() {
       action: action.value,
       remark: remark.value,
     });
-    ElMessage.success(action.value === "approve" ? "已通过并上架" : "已驳回/下架");
+    ElMessage.success(
+      action.value === "approve" ? "已通过并上架" : action.value === "offline" ? "已下架" : "已驳回"
+    );
     dialogVisible.value = false;
     load();
   } finally {
@@ -263,11 +316,14 @@ async function confirmReview() {
 async function toggleFeatured(row: MarketItem, value: any) {
   const on = Boolean(value);
   if (on) {
-    await ElMessageBox.confirm(
+    const confirmed = await ElMessageBox.confirm(
       `将「${row.name}」设为精选后会展示在能力市场首页推荐位。是否继续？`,
       "精选确认",
       { confirmButtonText: "设为精选", cancelButtonText: "取消", type: "info" }
-    );
+    )
+      .then(() => true)
+      .catch(() => false);
+    if (!confirmed) return;
   }
   await setMarketFeatured(row.id, on);
   row.featured = on;
@@ -309,5 +365,31 @@ onMounted(load);
 
 .done-text {
   color: var(--el-text-color-secondary);
+}
+
+.payload-panel {
+  padding: 4px 16px;
+}
+
+.payload-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+  color: var(--el-text-color-secondary);
+}
+
+.payload-pre {
+  margin: 0;
+  padding: 12px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--el-fill-color-light);
+  border-radius: var(--el-border-radius-base);
+  color: var(--el-text-color-primary);
+  font-size: var(--el-font-size-small);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>
