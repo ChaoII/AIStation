@@ -89,3 +89,24 @@ def build_business_tools() -> list:
         if agno_fn is not None:
             out.append(agno_fn)
     return out
+
+
+def build_workspace_tools() -> list:
+    """返回个人空间相关业务工具（``workspace_*`` 前缀）对应的 Agno Function 列表。
+
+    供 app/agent 运行台在 ``run_agno_tool_stream`` 中显式并入——该入口传入
+    ``tools`` 会覆盖默认业务工具，因此需单独合并个人空间工具。
+    """
+    try:
+        from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
+    except Exception:  # noqa: BLE001
+        return []
+
+    out: list = []
+    for name, entry in TOOL_REGISTRY.items():
+        if not name.startswith("workspace_"):
+            continue
+        agno_fn = _build_agno_tool(entry)
+        if agno_fn is not None:
+            out.append(agno_fn)
+    return out

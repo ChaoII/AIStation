@@ -272,9 +272,12 @@ async def run_agno_tool_stream(
     """
     import json as _json
 
+    from app.plugin.module_ai.agno_tools.business import build_workspace_tools
     from app.plugin.module_ai.agno_tools.dynamic import build_dynamic_tools
 
     tools = build_dynamic_tools(tool_schemas or [], dispatch) if tool_schemas else []
+    # 运行台传入 tools 会覆盖默认业务工具 → 显式并入个人空间工具
+    tools.extend(build_workspace_tools())
     instructions: list[str] = []
     if system_prompt:
         instructions.append(system_prompt)
