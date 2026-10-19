@@ -22,9 +22,19 @@ def _clean_space():
 
 
 def _admin_id(test_client, auth_headers) -> int:
-    r = test_client.get("/api/v1/system/user/current/info", headers=auth_headers)
-    assert r.status_code == 200, r.text
-    return r.json()["data"]["id"]
+    """管理员用户 ID：直接查库（不依赖 current/info——其菜单输出会被菜单类测试构造的脏行影响）。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.user.model import UserModel
+    from app.core.database import async_db_session
+
+    async def _run():
+        async with async_db_session() as db:
+            u = await db.scalar(select(UserModel).where(UserModel.username == "admin"))
+            assert u is not None, "admin 用户不存在（种子数据未初始化）"
+            return u.id
+
+    return asyncio.run(_run())
 
 
 # ---------------------------------------------------------------- #
