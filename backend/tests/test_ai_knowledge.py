@@ -167,3 +167,27 @@ def test_knowledge_graphrag(test_client, auth_headers):
         assert res, "应检索到结果"
     finally:
         _delete_base(test_client, auth_headers, [kb_id])
+
+
+def test_kb_quality_returns_200(test_client, auth_headers):
+    """质量接口：字段名修正后必须可用，并给出父块计数与需重建标记。"""
+    kb_id = _create_base(test_client, auth_headers)
+    try:
+        test_client.post(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/ingest",
+            json={"file_name": "q.txt", "content": "知识库质量接口回归测试内容"},
+            headers=auth_headers,
+        )
+        r = test_client.get(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/quality", headers=auth_headers
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["chunks"] >= 1
+        assert data["parents"] == 0
+        assert 0.0 <= data["embedded_rate"] <= 1.0
+        assert isinstance(data["needs_rebuild"], bool)
+        assert data["score"] >= 0.0
+        assert isinstance(data["statuses"], dict)
+    finally:
+        _delete_base(test_client, auth_headers, [kb_id])

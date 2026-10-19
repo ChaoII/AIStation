@@ -55,6 +55,31 @@ class AiKnowledgeChunkModel(ModelMixin):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, comment="分块序号")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="分块内容")
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="父块 ID（子块指向父块）"
+    )
+    is_parent: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="是否父块（父块不参与召回，仅用于上下文回填）"
+    )
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default=None, comment="内容哈希（去重/幂等）"
+    )
+    vector_model: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default=None, comment="生成该向量的模型名（换模型失效判定）"
+    )
+    token_count: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="token 估算数（上下文预算用）"
+    )
+    char_start: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="原文起始字符偏移"
+    )
+    char_end: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="原文结束字符偏移"
+    )
+    search_text: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None,
+        comment="正文+标注的可索引文本（全文检索唯一入口）",
+    )
     annotations: Mapped[list | None] = mapped_column(
         JSONB, nullable=True, default=None,
         comment="用户标注（[{text,kind}]），参与向量+全文+grep 检索以提升召回",

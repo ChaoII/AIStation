@@ -421,7 +421,11 @@ class AiKnowledgeService:
 
     @classmethod
     async def kb_quality(cls, kb_id: int) -> dict:
-        """知识库质量治理：文档数/分块数/分块嵌入率/文档状态 + 健康分。"""
+        """知识库质量治理：文档数/分块数/分块嵌入率/文档状态 + 健康分 + 需重建标记。
+
+        口径：`chunks` 与 `embedded_rate` 只统计**子块**（父块不生成向量，另计入
+        `parents`），避免「父块拉低嵌入率」的假报警。
+        """
         from sqlalchemy import func as _f
         from sqlalchemy import select as _sel
 
@@ -429,25 +433,76 @@ class AiKnowledgeService:
 
         from .model import AiKnowledgeDocumentModel
 
+        chunk_filter = (
+            AiKnowledgeChunkModel.knowledge_base_id == kb_id,
+            AiKnowledgeChunkModel.is_deleted.is_(False),
+            AiKnowledgeChunkModel.is_parent.is_not(True),
+        )
         async with async_db_session() as db:
-            docs = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeDocumentModel).where(
-                AiKnowledgeDocumentModel.kb_id == kb_id,
-                AiKnowledgeDocumentModel.is_deleted.is_(False)))).scalar() or 0
-            chunks = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeChunkModel).where(
-                AiKnowledgeChunkModel.kb_id == kb_id,
-                AiKnowledgeChunkModel.is_deleted.is_(False)))).scalar() or 0
-            # 已嵌入分块（vector 非空）
-            try:
-                embedded = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeChunkModel).where(
-                    AiKnowledgeChunkModel.kb_id == kb_id,
-                    AiKnowledgeChunkModel.is_deleted.is_(False),
-                    AiKnowledgeChunkModel.vector.isnot(None)))).scalar() or 0
-            except Exception:  # noqa: BLE001
-                embedded = 0
-            status_rows = (await db.execute(_sel(AiKnowledgeDocumentModel.doc_status, _f.count())
-                            .where(AiKnowledgeDocumentModel.kb_id == kb_id,
-                                   AiKnowledgeDocumentModel.is_deleted.is_(False))
-                            .group_by(AiKnowledgeDocumentModel.doc_status))).all()
+            docs = (
+                await db.execute(
+                    _sel(_f.count())
+                    .select_from(AiKnowledgeDocumentModel)
+                    .where(
+                        AiKnowledgeDocumentModel.knowledge_base_id == kb_id,
+                        AiKnowledgeDocumentModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar() or 0
+            chunks = (
+                await db.execute(
+                    _sel(_f.count()).select_from(AiKnowledgeChunkModel).where(*chunk_filter)
+                )
+            ).scalar() or 0
+            parents = (
+                await db.execute(
+                    _sel(_f.count())
+                    .select_from(AiKnowledgeChunkModel)
+                    .where(
+                        AiKnowledgeChunkModel.knowledge_base_id == kb_id,
+                        AiKnowledgeChunkModel.is_deleted.is_(False),
+                        AiKnowledgeChunkModel.is_parent.is_(True),
+                    )
+                )
+            ).scalar() or 0
+            embedded = (
+                await db.execute(
+                    _sel(_f.count())
+                    .select_from(AiKnowledgeChunkModel)
+                    .where(*chunk_filter, AiKnowledgeChunkModel.vector.isnot(None))
+                )
+            ).scalar() or 0
+            status_rows = (
+                await db.execute(
+                    _sel(AiKnowledgeDocumentModel.doc_status, _f.count())
+                    .where(
+                        AiKnowledgeDocumentModel.knowledge_base_id == kb_id,
+                        AiKnowledgeDocumentModel.is_deleted.is_(False),
+                    )
+                    .group_by(AiKnowledgeDocumentModel.doc_status)
+                )
+            ).all()
+            stored_model = (
+                await db.execute(
+                    _sel(AiKnowledgeChunkModel.vector_model)
+                    .where(
+                        AiKnowledgeChunkModel.knowledge_base_id == kb_id,
+                        AiKnowledgeChunkModel.is_deleted.is_(False),
+                        AiKnowledgeChunkModel.vector_model.isnot(None),
+                    )
+                    .order_by(AiKnowledgeChunkModel.id.desc())
+                    .limit(1)
+                )
+            ).scalar()
+
+        current_model: str | None = None
+        try:
+            resolver = getattr(embedding, "current_model_name", None)
+            if callable(resolver):
+                current_model = await resolver(model_id=await cls._kb_model_id([kb_id]))
+        except Exception:  # noqa: BLE001  解析失败不能拖垮质量接口
+            current_model = None
+
         statuses = {r[0]: int(r[1]) for r in status_rows}
         embedded_rate = round(embedded / chunks, 4) if chunks else 0.0
         failed = int(statuses.get("failed", 0) or 0)
@@ -458,9 +513,21 @@ class AiKnowledgeService:
             score = 50.0
         elif failed and failed / max(docs, 1) > 0.2:
             score = 60.0
-        return {"kb_id": kb_id, "docs": docs, "chunks": chunks,
-                "embedded_rate": embedded_rate, "statuses": statuses,
-                "score": score, "healthy": score >= 80}
+        needs_rebuild = bool(chunks) and (
+            stored_model is None or current_model is None or stored_model != current_model
+        )
+        return {
+            "kb_id": kb_id,
+            "docs": docs,
+            "chunks": chunks,
+            "parents": parents,
+            "embedded_rate": embedded_rate,
+            "statuses": statuses,
+            "score": score,
+            "healthy": score >= 80,
+            "needs_rebuild": needs_rebuild,
+            "vector_model": stored_model,
+        }
 
     @classmethod
     async def search(
