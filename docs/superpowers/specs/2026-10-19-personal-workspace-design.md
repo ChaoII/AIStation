@@ -114,11 +114,10 @@ AIStation 平台在 AI 管理模块下已有「AI 工作台」（资产聚合 + 
 - `POST /files/upload` — `UploadFile` + `folder_id?`，返回文件元信息
 - `GET /files/{id}/download` — `StreamingResponse`（attachment + UTF-8 文件名，参考知识库 `download_document`）
 - `GET /files/{id}/preview` — 按 `file_type`：
-  - 文本类（txt/md/csv/json）→ 返回 `{content}`（文本/JSON，前端渲染）
+  - 文本类（txt/md/csv/json）→ 返回 `{content}`（文本/JSON，前端渲染；>500KB 截断并带 `truncated` 标记）
   - 图片 → 返回流 `image/*`（前端 `<img>`）
-  - PDF → 返回流 `application/pdf`（前端 `vue-pdf-embed`，知识库已用）
-  - docx → 后端解析为 HTML（与知识库预览策略对齐；实现前读 `knowledge/service.py::get_document_content` 细节）
-  - 其他类型 → 400「该类型暂不支持预览」
+  - PDF / docx → 前端下载 blob：PDF 用 `vue-pdf-embed`（objectURL），docx 用 `mammoth.convertToHtml` —— **与知识库预览策略完全一致**（知识库即前端 mammoth，非后端转 HTML）
+  - 其他类型 → 400「该类型暂不支持预览」（提示可下载后查看）
 - `PUT /files/rename` — `{file_id, name}`（仅改 DB 记录，不动 S3 对象）
 - `POST /files/move` — `{file_id, folder_id}`（folder_id 可为 null 根目录；校验目标文件夹属于同一用户）
 - `DELETE /files/delete` — body 传 ids 列表；软删 DB + 删 S3 对象
