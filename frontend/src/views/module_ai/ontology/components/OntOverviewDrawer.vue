@@ -16,19 +16,31 @@
         </div>
       </template>
       <div class="ont-overview__row">
-        <el-button size="small" type="primary" :loading="demoBusy" v-hasPerm="'module_ai:ontology:manage'" @click="doLoadDemo(false)">
+        <el-button
+          v-hasPerm="'module_ai:ontology:manage'"
+          size="small"
+          type="primary"
+          :loading="demoBusy"
+          @click="doLoadDemo(false)"
+        >
           载入演示数据
         </el-button>
-        <el-button size="small" :loading="demoBusy" v-hasPerm="'module_ai:ontology:manage'" @click="doLoadDemo(true)">
+        <el-button
+          v-hasPerm="'module_ai:ontology:manage'"
+          size="small"
+          :loading="demoBusy"
+          @click="doLoadDemo(true)"
+        >
           先清除再载入
         </el-button>
         <el-button
+          v-hasPerm="'module_ai:ontology:manage'"
           size="small"
           type="danger"
           plain
           :disabled="!demoStatus?.loaded"
           :loading="demoBusy"
-          v-hasPerm="'module_ai:ontology:manage'" @click="doClearDemo"
+          @click="doClearDemo"
         >
           清除演示数据
         </el-button>

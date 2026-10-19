@@ -141,7 +141,9 @@
       </el-form>
       <template #footer>
         <el-button @click="funcDialog = false">取消</el-button>
-        <el-button :loading="fnChecking" v-hasPerm="'module_ai:ontology:edit'" @click="checkFunc">校验定义</el-button>
+        <el-button v-hasPerm="'module_ai:ontology:edit'" :loading="fnChecking" @click="checkFunc">
+          校验定义
+        </el-button>
         <el-button type="primary" :loading="savingObj" @click="saveFunc">保存</el-button>
       </template>
     </el-dialog>
@@ -175,7 +177,14 @@
         class="ont-note"
         title="该函数未声明入参，下面按表达式里的变量推断。建议到「编辑」里正式声明入参，这样 AI 调用时也能正确传值。"
       />
-      <el-button type="primary" :loading="fnRunning" v-hasPerm="'module_ai:ontology:edit'" @click="runFunc">运行</el-button>
+      <el-button
+        v-hasPerm="'module_ai:ontology:edit'"
+        type="primary"
+        :loading="fnRunning"
+        @click="runFunc"
+      >
+        运行
+      </el-button>
       <template v-if="fnRunResult">
         <el-divider />
         <el-alert

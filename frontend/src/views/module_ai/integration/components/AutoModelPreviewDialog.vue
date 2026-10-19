@@ -41,14 +41,39 @@
           <template v-if="scope === 'metrics'">
             <el-table-column prop="name" label="指标名" min-width="140" show-overflow-tooltip />
             <el-table-column prop="key" label="标识" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="object_code" label="对象" min-width="110" show-overflow-tooltip />
-            <el-table-column prop="property_code" label="属性" min-width="110" show-overflow-tooltip />
+            <el-table-column
+              prop="object_code"
+              label="对象"
+              min-width="110"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              prop="property_code"
+              label="属性"
+              min-width="110"
+              show-overflow-tooltip
+            />
             <el-table-column prop="agg_fn" label="聚合" width="80" />
           </template>
           <template v-else>
-            <el-table-column prop="object_name" label="对象" min-width="130" show-overflow-tooltip />
-            <el-table-column prop="object_code" label="标识" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
+            <el-table-column
+              prop="object_name"
+              label="对象"
+              min-width="130"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              prop="object_code"
+              label="标识"
+              min-width="120"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              prop="description"
+              label="描述"
+              min-width="200"
+              show-overflow-tooltip
+            />
             <el-table-column label="字段数" width="80">
               <template #default="{ row }">{{ (row.fields || []).length }}</template>
             </el-table-column>

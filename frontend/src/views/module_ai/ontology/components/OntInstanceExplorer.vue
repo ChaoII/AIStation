@@ -183,8 +183,8 @@
           <div class="ont-view__title">可执行动作</div>
           <el-button
             v-for="a in inst.actions"
-            v-hasPerm="'module_ai:ontology:execute'"
             :key="a.code"
+            v-hasPerm="'module_ai:ontology:execute'"
             size="small"
             class="ont-view__act"
             @click="openAction(a, [inst.key])"

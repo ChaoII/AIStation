@@ -17,10 +17,18 @@
             未配置（公开）
           </el-tag>
           <template v-else>
-            <el-button class="ont-sec__op" size="small" type="primary" v-hasPerm="'module_ai:ontology:manage'" @click="saveAcl">
+            <el-button
+              v-hasPerm="'module_ai:ontology:manage'"
+              class="ont-sec__op"
+              size="small"
+              type="primary"
+              @click="saveAcl"
+            >
               保存
             </el-button>
-            <el-button size="small" v-hasPerm="'module_ai:ontology:manage'" @click="resetAcl">恢复默认</el-button>
+            <el-button v-hasPerm="'module_ai:ontology:manage'" size="small" @click="resetAcl">
+              恢复默认
+            </el-button>
           </template>
         </template>
       </div>
@@ -136,7 +144,15 @@
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openPolicy(row)">编辑</el-button>
-            <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:manage'" @click="doRemovePolicy(row)">删除</el-button>
+            <el-button
+              v-hasPerm="'module_ai:ontology:manage'"
+              link
+              type="danger"
+              size="small"
+              @click="doRemovePolicy(row)"
+            >
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -285,7 +301,12 @@
           <el-switch v-model="policyForm.enabled" />
         </el-form-item>
         <el-form-item label="">
-          <el-button size="small" :loading="policyChecking" v-hasPerm="'module_ai:ontology:manage'" @click="doCheckPolicy">
+          <el-button
+            v-hasPerm="'module_ai:ontology:manage'"
+            size="small"
+            :loading="policyChecking"
+            @click="doCheckPolicy"
+          >
             校验表达式
           </el-button>
           <span v-if="policyCheckMsg" class="ont-secview__reason">{{ policyCheckMsg }}</span>
@@ -293,7 +314,14 @@
       </el-form>
       <template #footer>
         <el-button @click="policyDialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" v-hasPerm="'module_ai:ontology:manage'" @click="savePolicy">保存</el-button>
+        <el-button
+          v-hasPerm="'module_ai:ontology:manage'"
+          type="primary"
+          :loading="saving"
+          @click="savePolicy"
+        >
+          保存
+        </el-button>
       </template>
     </el-dialog>
   </div>

@@ -86,7 +86,11 @@
     >
       <el-alert v-if="diffLoading" type="info" :closable="false" show-icon title="正在计算差异……" />
       <template v-else>
-        <el-empty v-if="!diffItems.length && !diffRaw" :image-size="50" description="该版本与当前定义没有差异" />
+        <el-empty
+          v-if="!diffItems.length && !diffRaw"
+          :image-size="50"
+          description="该版本与当前定义没有差异"
+        />
         <el-table v-else :data="diffItems" size="small" border max-height="360">
           <el-table-column prop="kind" label="类型" width="90" />
           <el-table-column prop="target" label="对象" min-width="140" show-overflow-tooltip />

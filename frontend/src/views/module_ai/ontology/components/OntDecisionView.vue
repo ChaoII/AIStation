@@ -152,16 +152,25 @@
             </el-button>
             <el-button
               v-if="row.status === 'approved'"
+              v-hasPerm="'module_ai:ontology:execute'"
               link
               type="success"
               size="small"
-              v-hasPerm="'module_ai:ontology:execute'" @click="doExecute(row)"
+              @click="doExecute(row)"
             >
               执行
             </el-button>
             <el-button link type="primary" size="small" @click="openLineage(row)">谱系</el-button>
             <el-button link type="primary" size="small" @click="openForm(row)">编辑</el-button>
-            <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="doRemove(row)">删除</el-button>
+            <el-button
+              v-hasPerm="'module_ai:ontology:edit'"
+              link
+              type="danger"
+              size="small"
+              @click="doRemove(row)"
+            >
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -332,7 +341,12 @@
           <el-button v-if="detail.status === 'proposed'" type="primary" @click="openDecide(detail)">
             拍板
           </el-button>
-          <el-button v-if="detail.status === 'approved'" type="success" v-hasPerm="'module_ai:ontology:execute'" @click="doExecute(detail)">
+          <el-button
+            v-if="detail.status === 'approved'"
+            v-hasPerm="'module_ai:ontology:execute'"
+            type="success"
+            @click="doExecute(detail)"
+          >
             执行决策
           </el-button>
           <el-button v-if="detail.status === 'executed'" @click="openOutcome(detail)">
@@ -417,7 +431,14 @@
       </el-form>
       <template #footer>
         <el-button @click="formVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" v-hasPerm="'module_ai:ontology:edit'" @click="doSave">保存</el-button>
+        <el-button
+          v-hasPerm="'module_ai:ontology:edit'"
+          type="primary"
+          :loading="saving"
+          @click="doSave"
+        >
+          保存
+        </el-button>
       </template>
     </el-dialog>
 
@@ -442,7 +463,14 @@
       </el-form>
       <template #footer>
         <el-button @click="decideVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" v-hasPerm="'module_ai:ontology:manage'" @click="doDecide">提交</el-button>
+        <el-button
+          v-hasPerm="'module_ai:ontology:manage'"
+          type="primary"
+          :loading="saving"
+          @click="doDecide"
+        >
+          提交
+        </el-button>
       </template>
     </el-dialog>
 
@@ -464,7 +492,14 @@
       </el-form>
       <template #footer>
         <el-button @click="outcomeVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" v-hasPerm="'module_ai:ontology:manage'" @click="doOutcome">保存</el-button>
+        <el-button
+          v-hasPerm="'module_ai:ontology:manage'"
+          type="primary"
+          :loading="saving"
+          @click="doOutcome"
+        >
+          保存
+        </el-button>
       </template>
     </el-dialog>
 

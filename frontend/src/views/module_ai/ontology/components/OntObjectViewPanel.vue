@@ -234,18 +234,27 @@
             <template #default="{ row }">
               <el-button link type="primary" size="small" @click="openEditor(row)">编辑</el-button>
               <el-button
+                v-hasPerm="'module_ai:ontology:edit'"
                 link
                 type="primary"
                 size="small"
                 :disabled="row.is_default"
-                v-hasPerm="'module_ai:ontology:edit'" @click="doSetDefault(row)"
+                @click="doSetDefault(row)"
               >
                 设为默认
               </el-button>
               <el-button link type="primary" size="small" @click="openVersions(row)">
                 版本
               </el-button>
-              <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="doRemove(row)">删除</el-button>
+              <el-button
+                v-hasPerm="'module_ai:ontology:edit'"
+                link
+                type="danger"
+                size="small"
+                @click="doRemove(row)"
+              >
+                删除
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -423,7 +432,14 @@
       </el-collapse>
       <template #footer>
         <el-button @click="editorVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" v-hasPerm="'module_ai:ontology:edit'" @click="doSave">保存</el-button>
+        <el-button
+          v-hasPerm="'module_ai:ontology:edit'"
+          type="primary"
+          :loading="saving"
+          @click="doSave"
+        >
+          保存
+        </el-button>
       </template>
     </el-dialog>
 
@@ -450,7 +466,14 @@
       />
       <template #footer>
         <el-button @click="shareVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" v-hasPerm="'module_ai:ontology:edit'" @click="doShare">保存</el-button>
+        <el-button
+          v-hasPerm="'module_ai:ontology:edit'"
+          type="primary"
+          :loading="saving"
+          @click="doShare"
+        >
+          保存
+        </el-button>
       </template>
     </el-dialog>
     <!-- 版本 -->
@@ -463,7 +486,15 @@
         <el-table-column prop="created_time" label="时间" width="160" />
         <el-table-column label="操作" width="90" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="doRestore(row)">回滚</el-button>
+            <el-button
+              v-hasPerm="'module_ai:ontology:edit'"
+              link
+              type="primary"
+              size="small"
+              @click="doRestore(row)"
+            >
+              回滚
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -496,11 +527,7 @@ import { useOntologyData } from "../composables/useOntologyData";
 
 const props = defineProps<{ code: string; presetView?: string; presetKey?: string }>();
 
-const {
-  links: allLinks,
-  actions: allActions,
-  functions: allFuncs,
-} = useOntologyData();
+const { links: allLinks, actions: allActions, functions: allFuncs } = useOntologyData();
 /** 本对象类型的属性列表（供「属性 / 图表分组 / 筛选字段」三个下拉使用）。
  *
  *  ⚠️ 不能用 composable 的 `scopedProperties`：它是**属性总数（number）**，

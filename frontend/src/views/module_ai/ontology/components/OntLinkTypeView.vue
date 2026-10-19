@@ -170,10 +170,7 @@
           <span class="ont-sec__title">关系属性</span>
           <el-tag size="small" type="info" effect="plain">0</el-tag>
         </div>
-        <el-empty
-          :image-size="50"
-          description="关系类型自身的属性（object-backed link）暂未支持"
-        />
+        <el-empty :image-size="50" description="关系类型自身的属性（object-backed link）暂未支持" />
       </section>
     </template>
 
