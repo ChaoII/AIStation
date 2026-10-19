@@ -196,3 +196,64 @@ def test_model_change_marks_rebuild_needed(test_client, auth_headers, monkeypatc
             json=[kb_id],
             headers=auth_headers,
         )
+
+
+def test_search_log_records_embed_ms(test_client, auth_headers):
+    """检索日志要带耗时/重排状态（统计接口本身依赖 PG 的 make_interval）。"""
+    import asyncio
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.knowledge.model import AiSearchLogModel
+    from app.plugin.module_ai.knowledge.service import AiKnowledgeService
+
+    kb_id = test_client.post(
+        "/api/v1/ai/knowledge/bases/create",
+        json={"name": f"pytest_log_{uuid.uuid4().hex[:8]}", "enabled": True},
+        headers=auth_headers,
+    ).json()["data"]["id"]
+    try:
+        asyncio.run(
+            AiKnowledgeService.log_search(
+                kb_id,
+                "查询",
+                "hybrid",
+                5,
+                [{"engine": "pgvector"}],
+                embed_ms=12.3,
+                rerank="applied",
+                engine_counts={"pgvector": 1},
+            )
+        )
+
+        async def _rows():
+            async with async_db_session() as db:
+                return (
+                    (
+                        await db.execute(
+                            select(AiSearchLogModel.engines).where(
+                                AiSearchLogModel.knowledge_base_id == kb_id
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+        rows = asyncio.run(_rows())
+        assert rows, "应写入检索日志"
+        payload = rows[0]
+        assert isinstance(payload, dict)
+        assert payload["engines"] == ["pgvector"]
+        assert payload["embed_ms"] == 12.3
+        assert payload["rerank"] == "applied"
+        assert payload["engine_counts"] == {"pgvector": 1}
+    finally:
+        test_client.request(
+            "DELETE",
+            "/api/v1/ai/knowledge/bases/delete",
+            json=[kb_id],
+            headers=auth_headers,
+        )

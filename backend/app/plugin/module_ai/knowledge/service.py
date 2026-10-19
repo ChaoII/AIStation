@@ -1776,18 +1776,30 @@ class AiKnowledgeService:
     async def log_search(
         cls, kb_id: int, query: str, mode: str, top_k: int,
         results: list[dict], user_id: int | None = None,
+        embed_ms: float = 0.0, rerank: str | None = None,
+        engine_counts: dict | None = None,
     ) -> None:
-        """记录一次检索（供检索趋势统计）。"""
+        """记录一次检索（供检索趋势统计与质量分析）。
+
+        ``engines`` 统一存对象：``{"engines": [...], "embed_ms": ..., "rerank": ...,
+        "engine_counts": {...}}``，便于前端展示耗时分解与降级情况。
+        """
         try:
 
             async with async_db_session() as db:
                 engines = list(
                     dict.fromkeys(r.get("engine") for r in results if r.get("engine"))
                 )
+                payload = {
+                    "engines": engines,
+                    "embed_ms": round(float(embed_ms or 0.0), 1),
+                    "rerank": rerank or "off",
+                    "engine_counts": dict(engine_counts or {}),
+                }
                 db.add(
                     AiSearchLogModel(
                         knowledge_base_id=kb_id, query=query, mode=mode,
-                        top_k=top_k, hit_count=len(results), engines=engines,
+                        top_k=top_k, hit_count=len(results), engines=payload,
                         user_id=user_id,
                     )
                 )
@@ -1833,7 +1845,9 @@ class AiKnowledgeService:
             ).all()
             engine_dist: dict[str, int] = {}
             for eng, cnt in en_rows:
-                for e in (eng or []):
+                # 兼容旧格式（list）与新格式（{"engines": [...]}）
+                names = eng.get("engines") if isinstance(eng, dict) else eng
+                for e in (names or []):
                     engine_dist[e] = engine_dist.get(e, 0) + int(cnt)
             # 按天趋势
             day_rows = (
