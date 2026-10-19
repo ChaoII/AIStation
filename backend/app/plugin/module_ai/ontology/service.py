@@ -1760,7 +1760,34 @@ async def list_properties(object_code: str = "", owner_id: int | None = None) ->
     return out
 
 
+async def _mark_indexes_stale(object_code: str) -> None:
+    """定义（属性等）变更后，把该对象的索引标为过期。
+
+    官方：定义变了索引需重建。修前**只靠人手动点「标记过期」**，属性改完索引仍显示
+    `ready`，而列已变化的索引查询计划可能已不匹配（数据正确但性能退化，且看不出来）。
+    失败只记日志：标记过期不该阻断属性保存。
+    """
+    if not object_code:
+        return
+    try:
+        from . import indexing as _ix
+
+        await _ix.mark_stale(object_code)
+    except Exception as e:  # noqa: BLE001
+        from app.core.logger import log
+
+        log.warning(f"[ontology] 标记索引过期失败（不影响保存）：{str(e)[:80]}")
+
+
 async def upsert_property(data: dict, actor_id: int | None = None) -> dict:
+    """保存属性 —— 成功后把该对象的索引标为过期（见 ``_mark_indexes_stale``）。"""
+    obj = (data.get("object_code") or "").strip()
+    result = await _upsert_property_impl(data, actor_id)
+    await _mark_indexes_stale(obj)
+    return result
+
+
+async def _upsert_property_impl(data: dict, actor_id: int | None = None) -> dict:
     code = (data.get("code") or "").strip()
     obj = (data.get("object_code") or "").strip()
     if not code or not obj:
