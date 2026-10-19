@@ -118,11 +118,30 @@ def test_revision_ids_are_unique_across_migrations():
 
 
 def test_migration_chain_has_single_head_and_no_cycle():
-    """迁移链必须无环且单头——否则连 ``alembic heads`` 都跑不了。"""
-    revs: dict[str, str | None] = {}
+    """迁移链必须无环且单头——否则连 ``alembic heads`` 都跑不了。
+
+    ``down_revision`` 既可能是单个字符串，也可能是 Alembic **merge 迁移**的
+    元组（多父，如 ``down_revision = (a, b)``）——两个并行特性分支各自加迁移后
+    必须用 merge revision 合流。这里按多父图遍历，否则会把 merge 节点误判成
+    根节点（down=None），进而误报「多个头」。
+    """
+    revs: dict[str, list[str]] = {}
+
+    def _parents(node: ast.AST) -> list[str]:
+        """把 down_revision 的值节点解析成父 revision 列表。"""
+        if isinstance(node, ast.Constant):
+            return [node.value] if isinstance(node.value, str) else []
+        if isinstance(node, (ast.Tuple, ast.List)):
+            return [e.value for e in node.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        if isinstance(node, ast.BinOp):  # `str | Sequence[str] | None = (...)` 的注解简写
+            return _parents(node.right)
+        return []
+
     for py in VERSIONS_DIR.glob("*.py"):
         tree = ast.parse(py.read_text(encoding="utf-8"))
-        rev = down = None
+        rev = None
+        parents: list[str] = []
         for node in tree.body:
             # 兼容两种写法：带注解 `revision: str = "x"` 与普通赋值 `revision = "x"`
             # （后者曾因只认 AnnAssign 被漏读，导致误报"两个头"——实测踩过）。
@@ -136,30 +155,35 @@ def test_migration_chain_has_single_head_and_no_cycle():
             if name == "revision" and isinstance(value, ast.Constant):
                 rev = value.value
             elif name == "down_revision":
-                if isinstance(value, ast.Constant):
-                    down = value.value
-                else:  # `str | Sequence[str] | None = "x"` 这类带注解的简写
-                    val = value
-                    if isinstance(val, ast.BinOp):
-                        val = val.right
-                    down = val.value if isinstance(val, ast.Constant) else None
+                parents = _parents(value)
         if rev:
-            revs[rev] = down
+            revs[rev] = parents
 
-    # 无环：每个 revision 沿 down 走必须能走到 None
+    # 无环：DFS 三色标记（当前路径栈判环 + 已完成集合剪枝）。
+    # ⚠️ 不能用一个全局 visited 判环：merge 迁移会让同一个祖先被两条分支
+    #    分别到达（菱形），那是合法的 DAG，不是环。
+    done: set[str] = set()
+
+    def _visit(node: str, stack: set[str]) -> None:
+        if node in stack:
+            raise AssertionError(f"迁移链成环：{node}（沿父边绕回当前路径）")
+        if node in done:
+            return
+        stack.add(node)
+        for parent in revs.get(node, []):
+            _visit(parent, stack)
+        stack.discard(node)
+        done.add(node)
+
     for start in revs:
-        seen, cur = set(), start
-        while cur:
-            assert cur not in seen, f"迁移链成环：{cur}（从 {start} 出发绕回来了）"
-            seen.add(cur)
-            cur = revs.get(cur)
+        _visit(start, set())
 
     # head 的定义：**没有任何其它迁移以它为 down_revision**（即没人从它继续往下建）。
     # ⚠️ 别写成「它的 down 指向谁」——链是单根的，除根外每个节点的 down 都存在，
     #    那样算出来 head 恒为 0（实测踩过一次）。
     # ⚠️ 也别把 down=None 的**根**当 head（另一个踩过的坑）：根是链的起点。
-    roots = [r for r, d in revs.items() if d is None]
-    built_on = {d for d in revs.values() if d is not None}
+    roots = [r for r, ds in revs.items() if not ds]
+    built_on = {d for ds in revs.values() for d in ds}
     heads = [r for r in revs if r not in built_on]
 
     assert len(roots) == 1, f"迁移链有 {len(roots)} 个根：{roots}（应恰好 1 个）"
