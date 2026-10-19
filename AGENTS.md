@@ -92,6 +92,24 @@ pnpm run lint                  # eslint + prettier + stylelint
 - PyPI 同步源（清华/阿里云 simple）里**没有** CUDA 轮子，这是独立索引，需单独指定
 - 探测可用性必须 GET 一次看正文，`-Method Head` 的 200 不可信
 
+#### 2026-10-20 实测修正（simple 模式 GPU 安装）
+
+- ⚠️ **清华/中科大的 `pytorch-wheels/cu132/` 现已 404**（2026-10-20 GET 探测）；当前可用的是
+  **阿里云** `https://mirrors.aliyun.com/pytorch-wheels/cu132/`（实测列出 480 个轮子，
+  `torch-2.14.1+cu132-cp313-cp313-win_amd64`、`torchvision-0.29.1+cu132-cp313-cp313-win_amd64` 齐全），
+  官方 `https://download.pytorch.org/whl/cu132` 作兜底。
+- 安装命令（版本必须与 `backend/uv.lock` 对齐；`--no-deps` 防止 resolver 动其它包）：
+  ```powershell
+  cd backend
+  uv pip install --no-deps --find-links https://mirrors.aliyun.com/pytorch-wheels/cu132/ `
+    "torch==2.14.1+cu132" "torchvision==0.29.1+cu132"
+  ```
+- ⚠️ **装完 CUDA 轮子后不要再执行 `uv sync`**：它会按锁文件把 PyPI 的 CPU 版 torch 装回来、
+  覆盖 CUDA 轮子（实测踩过）。需要补包用 `uv pip install`；若不得不 `uv sync`，**同步后必须
+  重跑上面两条安装命令**再验证。
+- 验证：`.venv\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available())"`。
+- `backend/scripts/smoke_simple_mode.py` 默认用 GPU（无 CUDA 自动回退 CPU），`--cpu` 可强制 CPU。
+
 ## Architecture
 
 **Monorepo**: `backend/` (FastAPI + SQLAlchemy 2.0 + Pydantic v2), `frontend/` (Vue 3 + Vite + Element Plus + TypeScript).
