@@ -19,6 +19,15 @@
         <el-button size="small" :disabled="checked.length < 2" v-hasPerm="'module_ai:ontology:edit'" @click="doCompare">
           对比选中（{{ checked.length }}）
         </el-button>
+        <el-button
+          size="small"
+          :icon="Delete"
+          :loading="expiring"
+          v-hasPerm="'module_ai:ontology:edit'"
+          @click="doExpire"
+        >
+          清理过期场景
+        </el-button>
         <el-button size="small" :icon="Refresh" @click="load">刷新</el-button>
       </div>
       <el-alert
@@ -294,12 +303,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Refresh } from "@element-plus/icons-vue";
+import { Delete, Plus, Refresh } from "@element-plus/icons-vue";
 import {
   applyOntScenario,
   compareOntScenarios,
   discardOntScenario,
   duplicateOntScenario,
+  expireOntScenarios,
   getOntScenario,
   getOntScenarios,
   removeOntScenario,
@@ -469,6 +479,29 @@ async function doCompare() {
     compareVisible.value = true;
   } catch (e: any) {
     ElMessage.error(e?.msg || "对比失败");
+  }
+}
+
+/* ---------------- 过期清理（TTL） ---------------- */
+const expiring = ref(false);
+async function doExpire() {
+  await ElMessageBox.confirm(
+    "将把所有**已超过寿命（TTL）**的场景置为「已过期」，并删除它们的编辑记录（官方默认寿命 31 天）。" +
+      "过期的改动不会生效，且不可恢复。确认清理？",
+    "清理过期场景",
+    { type: "warning", confirmButtonText: "清理", cancelButtonText: "取消" }
+  );
+  expiring.value = true;
+  try {
+    const r = await expireOntScenarios();
+    const n = r.data?.data?.expired ?? 0;
+    if (n > 0) ElMessage.success(r.data?.msg || `已过期 ${n} 个场景`);
+    else ElMessage.info("没有已过期的场景，无需清理");
+    await load();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "清理失败");
+  } finally {
+    expiring.value = false;
   }
 }
 

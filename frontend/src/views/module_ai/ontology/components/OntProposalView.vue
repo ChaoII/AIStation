@@ -260,6 +260,45 @@
           </el-collapse-item>
         </el-collapse>
 
+        <div class="ont-sec__head ont-sec__head--mt">
+          <span class="ont-sec__title">讨论</span>
+          <el-tag size="small" effect="plain">{{ (detail.comments || []).length }} 条留言</el-tag>
+        </div>
+        <el-empty
+          v-if="!(detail.comments || []).length"
+          :image-size="50"
+          description="还没有留言"
+        />
+        <div v-else class="ont-pr__comments">
+          <div v-for="c in detail.comments" :key="c.id" class="ont-pr__comment">
+            <div class="ont-pr__comment-head">
+              <span class="ont-pr__comment-author">{{ c.author || "匿名" }}</span>
+              <span class="ont-hint">{{ c.created_time }}</span>
+              <el-tag v-if="c.task_id" size="small" effect="plain">任务 #{{ c.task_id }}</el-tag>
+            </div>
+            <div class="ont-pr__comment-body">{{ c.body }}</div>
+          </div>
+        </div>
+        <div class="ont-pr__comment-form">
+          <el-input
+            v-model="commentBody"
+            type="textarea"
+            :rows="3"
+            maxlength="2000"
+            show-word-limit
+            placeholder="写下你的意见、审查结论或补充说明…"
+          />
+          <el-button
+            type="primary"
+            :loading="commenting"
+            :disabled="!commentBody.trim()"
+            v-hasPerm="'module_ai:ontology:manage'"
+            @click="doComment"
+          >
+            留言
+          </el-button>
+        </div>
+
         <div class="ont-pr__actions">
           <el-button type="success" :disabled="!canMerge" v-hasPerm="'module_ai:ontology:manage'" @click="doMerge(detail)">
             合并到主本体
@@ -318,6 +357,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Refresh } from "@element-plus/icons-vue";
 import {
   closeOntProposal,
+  commentOntProposal,
   createOntBranch,
   discardOntProposalTask,
   getOntProposal,
@@ -409,10 +449,31 @@ const canMerge = computed(() => {
   );
 });
 
+/* ---------------- 留言（讨论） ---------------- */
+const commentBody = ref("");
+const commenting = ref(false);
+
 async function openDetail(row: any) {
   const r = await getOntProposal(row.code);
   detail.value = r.data?.data || null;
+  commentBody.value = "";
   detailVisible.value = true;
+}
+
+async function doComment() {
+  const body = commentBody.value.trim();
+  if (!body) return ElMessage.warning("请先写留言内容");
+  commenting.value = true;
+  try {
+    const r = await commentOntProposal(detail.value.code, body);
+    ElMessage.success(r.data?.msg || "已留言");
+    commentBody.value = "";
+    await refreshDetail();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "留言失败");
+  } finally {
+    commenting.value = false;
+  }
 }
 
 /* ---------------- 审查 ---------------- */
@@ -530,5 +591,47 @@ onMounted(load);
 
 .ont-pr__ml {
   margin-left: 8px;
+}
+
+.ont-pr .ont-sec__head .ont-hint {
+  margin-left: 8px;
+}
+
+.ont-pr__comments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.ont-pr__comment {
+  padding: 8px;
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-light);
+}
+
+.ont-pr__comment-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ont-pr__comment-author {
+  font-weight: 600;
+}
+
+.ont-pr__comment-body {
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ont-pr__comment-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 </style>
