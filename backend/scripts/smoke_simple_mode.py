@@ -576,6 +576,13 @@ def _print_checks(name: str, checks: list) -> bool:
 
 
 def main(argv=None) -> int:
+    # GBK 控制台/重定向兼容：⚠️ 等非 BMP/GBK 外字符在 `> log.txt` 重定向下会
+    # UnicodeEncodeError（交互控制台走 UTF-16 看不出）。放最前，连 --help 也覆盖。
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")   # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 - 无 reconfigure 的流静默跳过
+            pass
     parser = argparse.ArgumentParser(
         description="simple mode 四链路 smoke（默认 GPU；--cpu 强制 CPU，"
                     "无 CUDA 时自动回退 CPU）")
