@@ -505,8 +505,10 @@ export function saveWorkshopApp(data: any) {
 export function workshopPreview(app_id: number, limit = 50) {
   return request({ url: `${API_PATH}/workshop/preview`, method: "post", data: { app_id, limit } });
 }
+// 后端 `/workshop/delete` 声明的是 `data: dict`；原先这里传裸数字 `id`，
+// FastAPI 解不出 dict 直接 422 ⇒ 界面上点「删除应用」永远删不掉。
 export function deleteWorkshopApp(id: number) {
-  return request({ url: `${API_PATH}/workshop/delete`, method: "delete", data: id });
+  return request({ url: `${API_PATH}/workshop/delete`, method: "delete", data: { id } });
 }
 export function submitWorkshopApp(app_id: number, data: any) {
   return request({ url: `${API_PATH}/workshop/submit`, method: "post", data: { app_id, data } });

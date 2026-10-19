@@ -664,11 +664,7 @@
                   <el-input-number v-model="modelingMax" :min="1" :max="50" />
                 </el-form-item>
                 <el-form-item>
-                  <el-button
-                    type="primary"
-                    :disabled="!curDs"
-                    @click="openAutoModel('metrics')"
-                  >
+                  <el-button type="primary" :disabled="!curDs" @click="openAutoModel('metrics')">
                     生成绑定型指标
                   </el-button>
                   <el-button :disabled="!curDs" @click="openAutoModel('annotations')">
@@ -1306,7 +1302,7 @@ const nodeStyle = {
   fixedSize: 36,
   colorMode: "type",
   labelSize: 11,
-};
+} as const;
 // 血缘图过滤：按节点类型 / 按表聚焦（性能优化，避免大图全渲染又密又慢）
 const kgTypeFilter = ref<string[]>([]);
 const kgTypeOptions = [

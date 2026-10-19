@@ -7,8 +7,8 @@
     @clear-click="handleClearSelection"
   >
     <template #status="scope">
-      <el-tag :type="scope.row[scope.prop] === '0' ? 'success' : 'danger'">
-        {{ scope.row[scope.prop] === "0" ? "启用" : "停用" }}
+      <el-tag :type="scope.row[scope.prop ?? ''] === '0' ? 'success' : 'danger'">
+        {{ scope.row[scope.prop ?? ""] === "0" ? "启用" : "停用" }}
       </el-tag>
     </template>
   </table-select>

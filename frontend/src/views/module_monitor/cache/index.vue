@@ -160,7 +160,7 @@
                         v-hasPerm="['module_monitor:cache:query']"
                         type="primary"
                         link
-                        @click="getCacheKeyList(row)"
+                        @click="getCacheKeyList(row as CacheInfo)"
                       >
                         {{ row.cache_name }}
                       </el-button>
@@ -173,7 +173,7 @@
                         class="box-item"
                         :title="`确认删除缓存 ${row.cache_name} 吗？`"
                         placement="top"
-                        @confirm="handleClearCacheName(row)"
+                        @confirm="handleClearCacheName(row as CacheInfo)"
                       >
                         <template #reference>
                           <el-button

@@ -752,10 +752,12 @@ const handleClose = () => {
 };
 
 // 历史记录管理
-const history = ref<{ nodes: Node[]; edges: Edge[] }[]>([]);
+// 撤销/重做快照。vue-flow 的 Node/Edge 泛型嵌套极深，直接写进 ref 会触发
+// TS2589（类型实例化过深）；调用方本来就统一传 `as any`，故这里按 any[] 存。
+const history = ref<{ nodes: any[]; edges: any[] }[]>([]);
 const historyIndex = ref(-1);
 
-function saveToHistory(nodesData: Node[], edgesData: Edge[]) {
+function saveToHistory(nodesData: any[], edgesData: any[]) {
   history.value = history.value.slice(0, historyIndex.value + 1);
   history.value.push({ nodes: nodesData, edges: edgesData });
   historyIndex.value = history.value.length - 1;

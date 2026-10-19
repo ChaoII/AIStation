@@ -141,7 +141,7 @@
                   link
                   type="primary"
                   :icon="MagicStick"
-                  @click="handlePreviewTable(scope.row)"
+                  @click="handlePreviewTable(scope.row as GenTableSchema)"
                 >
                   代码生成
                 </el-button>
@@ -150,7 +150,7 @@
                   link
                   type="danger"
                   icon="Delete"
-                  @click="handleDelete(scope.row)"
+                  @click="handleDelete(scope.row as GenTableSchema)"
                 >
                   删除
                 </el-button>
@@ -159,7 +159,7 @@
                   link
                   type="success"
                   icon="Refresh"
-                  @click="handleSynchDb(scope.row)"
+                  @click="handleSynchDb(scope.row as GenTableSchema)"
                 >
                   同步
                 </el-button>

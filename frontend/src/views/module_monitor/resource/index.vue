@@ -113,7 +113,10 @@
                     <Folder v-if="row.is_dir" />
                     <Document v-else />
                   </el-icon>
-                  <span class="file-name-clickable" @click="handleFileNameClick(row)">
+                  <span
+                    class="file-name-clickable"
+                    @click="handleFileNameClick(row as ResourceItem)"
+                  >
                     {{ row.name }}
                   </span>
                 </div>
@@ -140,7 +143,7 @@
                   size="small"
                   link
                   icon="download"
-                  @click="handleDownload(row)"
+                  @click="handleDownload(row as ResourceItem)"
                 >
                   下载
                 </el-button>
@@ -150,7 +153,7 @@
                   size="small"
                   link
                   icon="edit"
-                  @click="handleRename(row)"
+                  @click="handleRename(row as ResourceItem)"
                 >
                   重命名
                 </el-button>
@@ -160,7 +163,7 @@
                   size="small"
                   link
                   icon="delete"
-                  @click="handleDelete(row)"
+                  @click="handleDelete(row as ResourceItem)"
                 >
                   删除
                 </el-button>

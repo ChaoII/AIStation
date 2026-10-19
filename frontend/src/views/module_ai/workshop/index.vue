@@ -177,7 +177,7 @@
           </div>
           <div class="ws-run__switch">
             <el-tag
-              v-for="v in ['table', 'kanban', 'form']"
+              v-for="v in RUN_VIEWS"
               :key="v"
               class="ws-run__switch-item"
               :class="{ 'is-active': runView === v }"
@@ -421,6 +421,8 @@ const runLoading = ref(false);
 const runRows = ref<any[]>([]);
 const runCols = ref<string[]>([]);
 const runView = ref<"table" | "kanban" | "form">("table");
+//: 运行视图形态（用 as const 保留字面量类型，避免 v-for 变量退化成 string）
+const RUN_VIEWS = ["table", "kanban", "form"] as const;
 const runKeyword = ref("");
 const runGroupBy = ref("");
 const runPage = ref(1);
@@ -445,7 +447,12 @@ function viewLabel(v: string) {
   return { table: "表格", kanban: "看板", form: "表单" }[v] || v;
 }
 function viewTag(v: string) {
-  return { table: "success", kanban: "warning", form: "primary" }[v] || "info";
+  const MAP: Record<string, "success" | "warning" | "primary" | "info"> = {
+    table: "success",
+    kanban: "warning",
+    form: "primary",
+  };
+  return MAP[v] || "info";
 }
 function viewIcon(v: string) {
   return { table: Grid, kanban: Menu, form: Edit }[v] || Grid;
@@ -470,7 +477,7 @@ const pagedRunRows = computed(() => {
   const start = (runPage.value - 1) * runPageSize;
   return filteredRunRows.value.slice(start, start + runPageSize);
 });
-const filteredRunCols = computed(() => {
+const filteredRunCols = computed<string[]>(() => {
   if (!runApp.value?.columns?.length) return runCols.value;
   return runApp.value.columns;
 });
