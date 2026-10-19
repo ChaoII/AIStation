@@ -717,13 +717,15 @@ async def instance_get(code: str, key: str, auth: AuthDep,
 
 @OntologyRouter.get("/instance/{code}/{key}/pivot", summary="沿关系跳转到关联实例")
 async def instance_pivot(
-    code: str, key: str, auth: AuthDep, link_id: int = 0, limit: int = 50
+    code: str, key: str, auth: AuthDep, link_id: int = 0, limit: int = 50,
+    scenario: str = "",
 ) -> JSONResponse:
     if not link_id:
         return SuccessResponse(data={"ok": False, "msg": "缺少 link_id", "items": []}, msg="参数缺失")
     return SuccessResponse(
         data=await _svc.instance_pivot(code, key, link_id, limit,
-                                       principal=await _principal(auth)),
+                                       principal=await _principal(auth),
+                                       scenario_code=scenario),
         msg="查询成功")
 
 
@@ -736,6 +738,7 @@ async def instance_graph(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRe
         int(data.get("depth") or 1),
         int(data.get("limit") or 120),
         principal=await _principal(auth),
+        scenario_code=str(data.get("scenario", "")),
     )
     return SuccessResponse(data=r, msg=r.get("msg", "查询成功"))
 
