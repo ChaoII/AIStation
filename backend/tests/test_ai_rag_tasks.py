@@ -91,3 +91,81 @@ def test_list_tasks_filters_and_pages():
     assert {"page_no", "page_size", "total", "has_next", "items"} <= set(page)
     assert any(item["id"] == t["id"] for item in page["items"])
     assert page["total"] >= 1
+
+
+def _run_until_done(task_id: int, limit: int = 30):
+    """同步驱动 worker 直到目标任务进入终态。"""
+    from app.plugin.module_ai.knowledge import tasks
+    from app.plugin.module_ai.knowledge.tasks import worker
+
+    for _ in range(limit):
+        status = _run(tasks.get_task(task_id))["status"]
+        if status in ("succeeded", "failed", "canceled"):
+            return status
+        _run(worker.run_worker(max_iterations=1))
+    return _run(tasks.get_task(task_id))["status"]
+
+
+def test_worker_marks_failed_on_handler_error():
+    from app.plugin.module_ai.knowledge import tasks
+    from app.plugin.module_ai.knowledge.tasks import jobs
+
+    t = _run(tasks.create_task("unit_test_fail"))
+
+    async def boom(task):
+        raise RuntimeError("故意失败")
+
+    jobs.register("unit_test_fail", boom)
+    try:
+        assert _run_until_done(t["id"]) == "failed"
+        cur = _run(tasks.get_task(t["id"]))
+        assert "故意失败" in (cur["error"] or "")
+    finally:
+        jobs.JOB_HANDLERS.pop("unit_test_fail", None)
+
+
+def test_worker_marks_succeeded_and_reports_progress():
+    from app.plugin.module_ai.knowledge import tasks
+    from app.plugin.module_ai.knowledge.tasks import jobs
+
+    t = _run(tasks.create_task("unit_test_ok"))
+
+    async def ok(task):
+        await tasks.report_progress(task["id"], progress=50, step="一半")
+
+    jobs.register("unit_test_ok", ok)
+    try:
+        assert _run_until_done(t["id"]) == "succeeded"
+        cur = _run(tasks.get_task(t["id"]))
+        assert cur["progress"] == 100
+        assert cur["step"] == "一半"
+    finally:
+        jobs.JOB_HANDLERS.pop("unit_test_ok", None)
+
+
+def test_worker_cancel_before_run_does_not_execute():
+    from app.plugin.module_ai.knowledge import tasks
+    from app.plugin.module_ai.knowledge.tasks import jobs
+
+    executed = {"n": 0}
+    t = _run(tasks.create_task("unit_test_cancel"))
+
+    async def handler(task):
+        executed["n"] += 1
+
+    jobs.register("unit_test_cancel", handler)
+    try:
+        _run(tasks.cancel_task(t["id"]))
+        _run_until_done(t["id"])
+        assert _run(tasks.get_task(t["id"]))["status"] == "canceled"
+        assert executed["n"] == 0
+    finally:
+        jobs.JOB_HANDLERS.pop("unit_test_cancel", None)
+
+
+def test_worker_unknown_kind_fails():
+    from app.plugin.module_ai.knowledge import tasks
+
+    t = _run(tasks.create_task("unit_test_unknown_kind"))
+    assert _run_until_done(t["id"]) == "failed"
+    assert "未知任务类型" in (_run(tasks.get_task(t["id"]))["error"] or "")

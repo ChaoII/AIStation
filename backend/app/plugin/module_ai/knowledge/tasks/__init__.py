@@ -24,6 +24,24 @@ from ..model import AiRagTaskModel
 TERMINAL_STATUSES = ("succeeded", "failed", "canceled")
 
 
+class TaskCanceled(RuntimeError):
+    """任务被请求取消（handler 在检查点抛出，由 worker 置 ``canceled``）。"""
+
+
+async def report_progress(
+    task_id: int,
+    *,
+    progress: int | None = None,
+    step: str | None = None,
+    message: str | None = None,
+) -> None:
+    """上报进度；若已请求取消则抛 :class:`TaskCanceled` 终止 handler。"""
+    current = await get_task(task_id)
+    if current and current.get("cancel_requested"):
+        raise TaskCanceled(f"任务 {task_id} 已取消")
+    await update_task(task_id, progress=progress, step=step, message=message)
+
+
 def _to_dict(task: AiRagTaskModel) -> dict:
     return {
         "id": task.id,
