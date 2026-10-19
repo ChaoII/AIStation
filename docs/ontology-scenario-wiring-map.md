@@ -1,3 +1,10 @@
+```yaml
+status: 已完成 (2026-10-19)
+commits: [e6754422 后端接线, f2a7c8cf 实例探索器, 8acaa8dc 端到端证明, 8c7b822e 对象视图切换器, e41a1bfb 动作对话框]
+e2e: frontend/e2e/scenario-e2e.spec.ts (建场景→场景内执行→编辑数>0→合并后真实表变化)
+remaining: instance_aggregate 的场景支持(需把场景差异下推进 SQL, 已改为显式拒绝)
+```
+
 # 本体场景（Scenario）链路接线图 —— 第四批实施依据
 
 > 2026-10-19 调查产出。后端沙箱/读时叠加/单事务合并**已经写完**，

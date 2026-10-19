@@ -7,26 +7,34 @@
  *
  * 统一规则：配置为空 → 回落内置资源（logo.svg / login-bg-blue.png / favicon.svg）;
  * 非空 → 使用配置值。登录页、AppLogo、main.ts、配置中心预览 多处复用。
+ *
+ * 兜底资源一律采用「静态 import」而非 `new URL("@/...", import.meta.url)`：
+ * Vite 对静态 import 的资产引用会将其内联/哈希化并纳入模块依赖图，
+ * 文件变化会可靠触发重编译；而 `new URL()` 的转换在旧 dev server 上
+ * 存在 HMR 缓存陷阱（SVG 引入后模块不重编译 → 拿到失效地址 → 破损图）。
  */
+
+import logoFallback from "@/assets/images/logo.svg";
+import loginBgFallback from "@/assets/images/login-bg-blue.png";
+import faviconFallback from "@/assets/images/favicon.svg";
 
 /** 站点 logo：配置为空时回落内置 logo.svg（透明背景，亮/暗主题自适应） */
 export function resolveSiteLogo(cfgValue?: string | null): string {
   const cfg = String(cfgValue || "").trim();
-  return cfg || new URL("@/assets/images/logo.svg", import.meta.url).href;
+  return cfg || logoFallback;
 }
-// SVG 通过 new URL() 引入会被 Vite 内联；改动 logo.svg 后需让本模块重新编译（HMR 可能不失效资产）
 
 /** 登录页背景：配置为空时回落内置 login-bg-blue.png（深蓝黑科幻，青蓝点缀） */
 export function resolveLoginBackground(cfgValue?: string | null): string {
   const cfg = String(cfgValue || "").trim();
-  return cfg || new URL("@/assets/images/login-bg-blue.png", import.meta.url).href;
+  return cfg || loginBgFallback;
 }
 
 /**
  * 站点 favicon（浏览器标签页图标）：配置为空或指向失效地址时回落内置 favicon.svg。
- * 与 logo 走同一套 `new URL()` 资源机制（避免 import.meta.env.BASE_URL 拼接出错）。
+ * 与 logo 走同一套静态资源机制（避免 import.meta.env.BASE_URL 拼接出错）。
  */
 export function resolveSiteFavicon(cfgValue?: string | null): string {
   const cfg = String(cfgValue || "").trim();
-  return cfg || new URL("@/assets/images/favicon.svg", import.meta.url).href;
+  return cfg || faviconFallback;
 }

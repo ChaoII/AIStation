@@ -28,7 +28,7 @@
         <div class="auth-panel__brand">
           <div class="auth-panel__logo-wrap">
             <!-- logo -->
-            <el-image :src="loginLogoUrl" class="auth-panel__logo" />
+            <el-image :src="logoDisplayUrl" class="auth-panel__logo" @error="onLogoError" />
           </div>
           <div class="auth-panel__meta">
             <div class="auth-panel__title-row">
@@ -69,6 +69,7 @@
 import CommonWrapper from "@/components/CommonWrapper/index.vue";
 import { useConfigStore } from "@/store";
 import { resolveLoginBackground, resolveSiteLogo } from "@/utils/siteLogo";
+import fallbackLogo from "@/assets/images/logo.svg";
 
 const configStore = useConfigStore();
 
@@ -77,10 +78,17 @@ const loginBackgroundUrl = computed(() =>
   resolveLoginBackground(configStore.configData?.sys_login_background?.config_value)
 );
 
-// logo 兜底：配置为空时用内置 logo（此前配置指向失效地址 → 登录页显示"加载失败"）
-const loginLogoUrl = computed(() =>
-  resolveSiteLogo(configStore.configData?.sys_web_logo?.config_value)
-);
+// logo 兜底：配置为空时用内置 logo（此前配置指向失效地址 → 登录页显示"加载失败"）；
+// 配置值失效（图片加载失败）时同样切换回内置 logo
+const logoError = ref(false);
+const logoDisplayUrl = computed(() => {
+  if (logoError.value) return fallbackLogo;
+  return resolveSiteLogo(configStore.configData?.sys_web_logo?.config_value);
+});
+
+function onLogoError() {
+  logoError.value = true;
+}
 
 type LayoutMap = "login" | "register" | "resetPwd";
 
@@ -220,6 +228,9 @@ const loginPreset = reactive<{ username: string; password: string }>({
   --el-border-color-light: rgba(140, 170, 220, 0.22);
   --el-border-color-lighter: rgba(120, 150, 200, 0.18);
   --el-fill-color-lighter: rgba(255, 255, 255, 0.06);
+  // 给自身设置浅色文字：h3 标题等裸文本不经过 Element Plus 组件，
+  // 需继承本卡片颜色而非 body 的黑色（此前"登录"标题黑色不可见）
+  color: var(--el-text-color-primary);
   background: linear-gradient(
     165deg,
     rgba(18, 28, 48, 0.66),

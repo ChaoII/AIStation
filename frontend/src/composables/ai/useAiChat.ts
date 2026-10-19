@@ -10,6 +10,15 @@ export interface AiChatFilePayload {
   dataUrl: string;
 }
 
+/** 引用个人空间文件的载荷（后端 _process_uploaded_files 按 type=workspace 处理）。 */
+export interface AiChatWorkspaceFilePayload {
+  type: "workspace";
+  file_id: number;
+  name: string;
+}
+
+export type AiChatAnyFilePayload = AiChatFilePayload | AiChatWorkspaceFilePayload;
+
 export interface UseAiChatOptions {
   /** 相对 VITE_APP_BASE_API 的流式路径，默认助手流。 */
   path?: string;
@@ -56,7 +65,7 @@ export function useAiChat(options: UseAiChatOptions | (() => UseAiChatOptions) =
 
   const isStreaming = computed(() => status.value === "submitted" || status.value === "streaming");
 
-  async function sendMessage(input: { text: string; files?: AiChatFilePayload[] }) {
+  async function sendMessage(input: { text: string; files?: AiChatAnyFilePayload[] }) {
     const opts: ChatRequestOptions = {};
     if (input.files?.length) opts.body = { files: input.files };
     await chat.sendMessage({ text: input.text }, opts);

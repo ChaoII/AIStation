@@ -244,9 +244,14 @@ class TestIndexing:
         """官方：瞬时失败约 **5 分钟**后自动重试。"""
         assert IX.AUTO_RETRY_MINUTES == 5
 
-    def test_streaming_throughput_limit_documented(self):
-        """官方：streaming 每对象类型 2 MB/s。"""
-        assert IX.STREAMING_MAX_BYTES_PER_SEC == 2 * 1024 * 1024
+    def test_streaming_throughput_limit_removed(self):
+        """官方确有 2 MB/s 限流，但我们**从未实现** ⇒ 死常量应删除而非留着骗人。
+
+        修前：``STREAMING_MAX_BYTES_PER_SEC`` 只被本测试断言，全仓无限流逻辑消费，
+        连 ``pipeline_kind='streaming'`` 也只是标签 —— 留着它会让人误以为限流已实现。
+        """
+        assert not hasattr(IX, "STREAMING_MAX_BYTES_PER_SEC"), (
+            "死常量不该复活；若真要实现限流，先写消费它的代码再恢复常量")
 
     @pg_only
     def test_build_creates_real_pg_index(self):
@@ -746,3 +751,72 @@ class TestViewFilterShareUrl:
         tbl = r["tabs"][0]["widgets"][0]
         assert tbl["count"] == 2, f"无筛选应返回全部 2 行，实际 {tbl['count']}"
         _run(OV.remove_view(code))
+
+
+class TestIndexStaleOnDefinitionChange:
+    """定义变更 → 索引自动标过期（官方语义，修前只有手动按钮）。"""
+
+    def test_upsert_property_marks_indexes_stale(self):
+        """改属性后，该对象原本 ready 的索引必须变成 stale。
+
+        修前：``mark_stale`` 只有 ``POST /index/mark-stale`` 一个手动入口，
+        属性改完索引仍显示 ready —— 列变了索引计划可能已不匹配，看不出来。
+        """
+        from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+
+        obj, ix_id = "reg_stale_obj", None
+
+        async def _setup():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DELETE FROM ai_ont_index WHERE object_code=:c"),
+                                 {"c": obj})
+                res = await db.execute(_t(
+                    "INSERT INTO ai_ont_index(object_code,prop_code,index_kind,status) "
+                    "VALUES(:c,:p,'property','ready') RETURNING id"),
+                    {"c": obj, "p": "name"})
+                return res.scalar()
+        ix_id = _run(_setup())
+        assert ix_id, "测试索引没建出来"
+
+        # 保存属性（无 id、且同 key 不存在 → 走新增分支）
+        _run(svc.upsert_property({"object_code": obj, "name": "名称",
+                                  "code": "name", "prop_type": "string"}))
+
+        async def _st():
+            async with async_db_session() as db:
+                return (await db.execute(_t(
+                    "SELECT status FROM ai_ont_index WHERE id=:i"), {"i": ix_id})).scalar()
+        status = _run(_st())
+
+        async def _cleanup():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DELETE FROM ai_ont_index WHERE id=:i"), {"i": ix_id})
+                await db.execute(_t("DELETE FROM ai_ont_property WHERE object_code=:c"),
+                                 {"c": obj})
+        _run(_cleanup())
+
+        assert status == "stale", (
+            f"改属性后索引状态仍是 {status!r}（修前的缺陷：定义变了索引不过期）")
+
+    def test_mark_failure_does_not_break_property_save(self):
+        """标记过期失败不得阻断属性保存（它是旁路，不是主流程）。"""
+        import app.plugin.module_ai.ontology.service as S
+
+        async def _boom(code):
+            raise RuntimeError("标记失败")
+
+        async def _scenario():
+            import app.plugin.module_ai.ontology.indexing as IX
+            orig = IX.mark_stale
+            IX.mark_stale = _boom
+            try:
+                return await S.upsert_property(
+                    {"object_code": "reg_stale_obj2", "name": "名称",
+                     "code": "name2", "prop_type": "string"})
+            finally:
+                IX.mark_stale = orig
+
+        r = _run(_scenario())
+        assert r.get("id"), f"标记失败把属性保存也带崩了：{r}"

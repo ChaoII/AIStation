@@ -103,43 +103,6 @@ async def _validate_agent_bindings(
             raise CustomException(msg=f"绑定的 MCP 服务器不存在或不属于当前用户：{bad}")
 
 
-async def _cap_names(caps: list[str]) -> list[str]:
-    """本体能力 code → name（供 Agent 运行时注入能力上下文）。"""
-    if not caps:
-        return []
-    try:
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            rows = (await db.execute(_t(
-                "SELECT code,name FROM ai_ont_capability WHERE code = ANY(:codes) AND is_deleted=false"),
-                {"codes": caps})).fetchall()
-        m = {r[0]: r[1] for r in rows}
-        return [m.get(c, c) for c in caps]
-    except Exception:  # noqa: BLE001
-        return caps
-
-
-async def _cap_types(caps: list[str]) -> set[str]:
-    """本体能力 code → type（驱动工具分组：governance 等）。"""
-    if not caps:
-        return set()
-    try:
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-
-            rows = (
-                await db.execute(
-                    _t(
-                        "SELECT type FROM ai_ont_capability WHERE code = ANY(:codes) AND is_deleted=false"
-                    ),
-                    {"codes": caps},
-                )
-            ).fetchall()
-        return {str(r[0]) for r in rows if r[0]}
-    except Exception:  # noqa: BLE001
-        return set()
-
-
 def _to_dict(a: AiAgentModel) -> dict:
     return {
         "id": a.id,

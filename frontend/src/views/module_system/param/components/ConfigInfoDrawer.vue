@@ -434,7 +434,7 @@ import SingleImageUpload from "@/components/Upload/SingleImageUpload.vue";
 import { useAppStore } from "@/store/modules/app.store";
 import { DeviceEnum } from "@/enums/settings/device.enum";
 import { testNotification } from "@/api/module_video/alarm";
-import { resolveSiteFavicon } from "@/utils/siteLogo";
+import { resolveSiteFavicon, resolveSiteLogo, resolveLoginBackground } from "@/utils/siteLogo";
 
 // 定义列表项类型
 interface ListItem {
@@ -866,7 +866,7 @@ const logoConfigs = computed(() => ({
     ...configStore.configData.sys_web_logo,
     maxFileSize: 5,
     // 值为空/失效时展示内置默认 logo
-    placeholderUrl: new URL("@/assets/images/logo.svg", import.meta.url).href,
+    placeholderUrl: resolveSiteLogo(),
   },
   sys_web_favicon: {
     ...configStore.configData.sys_web_favicon,
@@ -878,7 +878,7 @@ const logoConfigs = computed(() => ({
     ...configStore.configData.sys_login_background,
     maxFileSize: 10,
     // 值为空/失效时展示内置默认登录背景
-    placeholderUrl: new URL("@/assets/images/login-bg-blue.png", import.meta.url).href,
+    placeholderUrl: resolveLoginBackground(),
   },
 }));
 

@@ -59,7 +59,14 @@ export function getOntCleanup() {
 /* ---------------- 实例层（对象探索 / 实例图 / 对象视图 / Writeback） ---------------- */
 export function searchOntInstances(
   code: string,
-  params: { keyword?: string; limit?: number; offset?: number; filters?: Record<string, any> } = {}
+  params: {
+    keyword?: string;
+    limit?: number;
+    offset?: number;
+    filters?: Record<string, any>;
+    /** 场景编码：在场景内读时叠加该场景编辑（留空 = 主本体） */
+    scenario?: string;
+  } = {}
 ) {
   return request({
     url: `${API_PATH}/instances/${code}`,
@@ -69,17 +76,28 @@ export function searchOntInstances(
       limit: params.limit ?? 50,
       offset: params.offset ?? 0,
       filters: params.filters ? JSON.stringify(params.filters) : "",
+      scenario: params.scenario || "",
     },
   });
 }
-export function getOntInstance(code: string, key: string) {
-  return request({ url: `${API_PATH}/instance/${code}/${key}`, method: "get" });
+export function getOntInstance(code: string, key: string, scenario = "") {
+  return request({
+    url: `${API_PATH}/instance/${code}/${key}`,
+    method: "get",
+    params: scenario ? { scenario } : {},
+  });
 }
-export function pivotOntInstance(code: string, key: string, link_id: number, limit = 50) {
+export function pivotOntInstance(
+  code: string,
+  key: string,
+  link_id: number,
+  limit = 50,
+  scenario = ""
+) {
   return request({
     url: `${API_PATH}/instance/${code}/${key}/pivot`,
     method: "get",
-    params: { link_id, limit },
+    params: scenario ? { link_id, limit, scenario } : { link_id, limit },
   });
 }
 export function getOntInstanceGraph(data: {
@@ -88,6 +106,8 @@ export function getOntInstanceGraph(data: {
   link_ids?: number[];
   depth?: number;
   limit?: number;
+  /** 场景编码：在场景内展开图谱（邻居也读叠加数据） */
+  scenario?: string;
 }) {
   return request({ url: `${API_PATH}/instance/graph`, method: "post", data });
 }
@@ -414,6 +434,8 @@ export function executeOntAction(data: {
   code: string;
   object_key: string;
   params: Record<string, any>;
+  /** 场景编码：在场景内执行则只暂存、不写真实表 */
+  scenario?: string;
 }) {
   return request({ url: `${API_PATH}/action/execute`, method: "post", data });
 }
@@ -441,46 +463,46 @@ export function getOntObjectViews(params: Record<string, any> = {}) {
   return request({ url: `${API_PATH}/object-views`, method: "get", params });
 }
 export function getOntObjectView(code: string) {
-  return request({ url: `${API_PATH}/object-view/${encodeURIComponent(code)}`, method: "get" });
+  return request({ url: `${API_PATH}/object-views/${encodeURIComponent(code)}`, method: "get" });
 }
 export function getOntStandardView(objectCode: string, formFactor = "full") {
   return request({
-    url: `${API_PATH}/object-view/standard/${encodeURIComponent(objectCode)}`,
+    url: `${API_PATH}/object-views/standard/${encodeURIComponent(objectCode)}`,
     method: "get",
     params: { form_factor: formFactor },
   });
 }
 export function renderOntObjectView(code: string, objectKey: string, scenario = "") {
   return request({
-    url: `${API_PATH}/object-view/render/${encodeURIComponent(code)}/${encodeURIComponent(objectKey)}`,
+    url: `${API_PATH}/object-views/render/${encodeURIComponent(code)}/${encodeURIComponent(objectKey)}`,
     method: "get",
     params: { scenario },
   });
 }
 export function saveOntObjectView(data: Record<string, any>) {
-  return request({ url: `${API_PATH}/object-view/save`, method: "post", data });
+  return request({ url: `${API_PATH}/object-views/save`, method: "post", data });
 }
 export function setDefaultOntObjectView(code: string) {
-  return request({ url: `${API_PATH}/object-view/default`, method: "post", data: { code } });
+  return request({ url: `${API_PATH}/object-views/default`, method: "post", data: { code } });
 }
 export function removeOntObjectView(code: string) {
-  return request({ url: `${API_PATH}/object-view/remove`, method: "post", data: { code } });
+  return request({ url: `${API_PATH}/object-views/remove`, method: "post", data: { code } });
 }
 export function getOntObjectViewVersions(code: string) {
   return request({
-    url: `${API_PATH}/object-view/${encodeURIComponent(code)}/versions`,
+    url: `${API_PATH}/object-views/${encodeURIComponent(code)}/versions`,
     method: "get",
   });
 }
 export function restoreOntObjectView(code: string, version: number) {
   return request({
-    url: `${API_PATH}/object-view/restore`,
+    url: `${API_PATH}/object-views/restore`,
     method: "post",
     data: { code, version },
   });
 }
 export function syncDefaultOntObjectViews() {
-  return request({ url: `${API_PATH}/object-view/sync-defaults`, method: "post" });
+  return request({ url: `${API_PATH}/object-views/sync-defaults`, method: "post" });
 }
 export function getOntObjectViewMeta() {
   return request({ url: `${API_PATH}/object-view-meta`, method: "get" });
@@ -620,14 +642,14 @@ export function clearOntDemo() {
 
 export function shareOntObjectView(code: string, shareMode: string, shareRoles: string[] = []) {
   return request({
-    url: `${API_PATH}/object-view/share`,
+    url: `${API_PATH}/object-views/share`,
     method: "post",
     data: { code, share_mode: shareMode, share_roles: shareRoles },
   });
 }
 export function getOntObjectViewLink(code: string, objectKey = "") {
   return request({
-    url: `${API_PATH}/object-view/${encodeURIComponent(code)}/link`,
+    url: `${API_PATH}/object-views/${encodeURIComponent(code)}/link`,
     method: "get",
     params: { object_key: objectKey },
   });

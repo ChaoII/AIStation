@@ -95,7 +95,7 @@ async def market_submit(
 async def market_toggle_asset(
     asset_type: str,
     real_id: int,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:manage"]))],
     enabled: Annotated[bool, Query(description="是否启用")] = True,
 ) -> JSONResponse:
     return SuccessResponse(
@@ -108,7 +108,7 @@ async def market_toggle_asset(
 async def market_delete_asset(
     asset_type: str,
     real_id: int,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:manage"]))],
 ) -> JSONResponse:
     return SuccessResponse(
         data=await MarketService.delete_asset(asset_type, real_id, auth.user.id),
@@ -209,7 +209,7 @@ async def market_shares(
 @MarketRouter.post("/shares/{share_id}/accept", summary="接收分享")
 async def market_share_accept(
     share_id: int,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:manage"]))],
 ) -> JSONResponse:
     return SuccessResponse(
         data=await MarketService.accept_share(share_id, auth.user.id), msg="已接收"
@@ -219,7 +219,7 @@ async def market_share_accept(
 @MarketRouter.post("/shares/{share_id}/reject", summary="拒绝分享")
 async def market_share_reject(
     share_id: int,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:query"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:market:manage"]))],
 ) -> JSONResponse:
     return SuccessResponse(
         data=await MarketService.reject_share(share_id, auth.user.id), msg="已拒绝"

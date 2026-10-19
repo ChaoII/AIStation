@@ -173,12 +173,23 @@
                 :rows="3"
                 readonly
               />
-              <el-alert
+              <el-select
                 v-else-if="w.type === 'scenario'"
-                type="info"
-                :closable="false"
-                :title="`可选场景 ${(w.items || []).length} 个；当前：${w.current || '主本体'}`"
-              />
+                v-model="viewScen"
+                size="small"
+                clearable
+                placeholder="主本体"
+                class="ont-ov__scen"
+                @change="doRender"
+              >
+                <el-option label="主本体（不叠加场景）" value="" />
+                <el-option
+                  v-for="s in w.items || []"
+                  :key="s.code"
+                  :label="s.name || s.code"
+                  :value="s.code"
+                />
+              </el-select>
               <!-- 筛选器：列出条件，并说明它作用于同标签页的数据组件 -->
               <div v-else-if="w.type === 'filter'" class="ont-ov__filters">
                 <div v-for="(f, fi) in w.filters || []" :key="fi" class="ont-ov__frow">
@@ -562,6 +573,8 @@ const previewMode = ref("configured");
 const objectKey = ref("1");
 const rendering = ref(false);
 const rendered = ref<any>(null);
+// 场景（P5）：对象视图里切换场景后，渲染走「基线 + 场景差异」
+const viewScen = ref("");
 const stdView = ref<any>(null);
 const activeRenderTab = ref("");
 
@@ -626,7 +639,11 @@ async function doRender() {
       tabsShown.value = stdView.value?.tabs || [];
       activeRenderTab.value = tabsShown.value[0]?.key || "";
     } else if (current.value) {
-      const r = await renderOntObjectView(current.value.code, objectKey.value || "1");
+      const r = await renderOntObjectView(
+        current.value.code,
+        objectKey.value || "1",
+        viewScen.value || ""
+      );
       rendered.value = r.data?.data || null;
       tabsShown.value = rendered.value?.tabs || [];
       activeRenderTab.value = tabsShown.value[0]?.key || "";

@@ -49,8 +49,18 @@ cd backend && uv run main.py upgrade --env=dev
 | `module_ai:market:submit` | 提交个人资产到市场、撤回自己的商品 |
 | `module_ai:market:share` | 发起分享 |
 | `module_ai:market:review` | 审核（通过/驳回/下架/精选）——**建议只给管理员** |
+| `module_ai:market:manage` | 维护我的资产（启停/删除）与接收/拒绝分享——**写操作权限** |
 | `module_ai:mcp:query/create/update/delete` | MCP 服务器管理 |
 | `module_ai:plugin:query/create/update/delete` | 能力插件管理 |
+
+> 商品状态机：`pending → approved|rejected`；`approved → offline`（管理员下架或提交者撤回）。
+> 非 `approved` 商品仅提交者本人可读；`offline` 不能被再次审核通过（防止撤回后「复活」）。
+> 未上架商品的 `detail` 对普通用户返回不存在（审核中心走 `review/list`）。
+> 未上架商品也不能被他人通过「分享」接口窥探：分享市场商品要求已上架，或操作者是提交者本人。
+> 商品名去重按**提交者**隔离：同一提交者不能重复提交同名/同资产商品，不同用户可以发布同名商品。
+> 审核中心支持展开行查看 `payload` 快照（后端已脱敏），审核通过/驳回/下架前可核对实际内容。
+> 删除资产（市场「我的资产」或目录页）为**软删除**，并联动：下架其来源商品、解除 installed 关系、
+> 从 `ai_agents` 的 `tool_ids`/`skill_ids`/`mcp_ids` 中摘除绑定。
 
 菜单：`能力市场`（`/ai/market`）、`MCP 管理`（`/ai/mcp`）、`能力插件`（`/ai/plugin`）。
 
@@ -156,14 +166,16 @@ POST   /api/v1/ai/market/items/{id}/favorite     收藏
 DELETE /api/v1/ai/market/items/{id}/favorite     取消收藏
 POST   /api/v1/ai/market/submit                  提交个人资产到市场
 GET    /api/v1/ai/market/mine                    我的资产（含市场状态）
+PUT    /api/v1/ai/market/mine/{type}/{id}/toggle 启停我的资产（manage）
+DELETE /api/v1/ai/market/mine/{type}/{id}        删除我的资产（manage，软删除并联动下架/解除安装）
 POST   /api/v1/ai/market/items/{id}/withdraw     撤回（下架）
 GET    /api/v1/ai/market/review/list             审核列表（review 权限）
-POST   /api/v1/ai/market/review                  审核（approve/reject）
+POST   /api/v1/ai/market/review                  审核（approve/reject/offline）
 POST   /api/v1/ai/market/items/{id}/feature      设置精选
 POST   /api/v1/ai/market/shares/share            分享给用户
 GET    /api/v1/ai/market/shares?direction=in|out 分享列表（严格按 from/to 过滤）
-POST   /api/v1/ai/market/shares/{id}/accept      接收（复制资产给自己）
-POST   /api/v1/ai/market/shares/{id}/reject      拒绝
+POST   /api/v1/ai/market/shares/{id}/accept      接收（manage，复制资产给自己）
+POST   /api/v1/ai/market/shares/{id}/reject      拒绝（manage）
 
 # MCP
 GET/POST/PUT/DELETE /api/v1/ai/mcp/...           配置 CRUD（按 created_id 隔离）

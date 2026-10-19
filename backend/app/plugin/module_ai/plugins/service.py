@@ -1,4 +1,6 @@
 """AI 能力插件服务：内置预置 + CRUD + 启停 + 执行器就绪判定。"""
+from datetime import datetime
+
 from sqlalchemy import select
 
 from app.core.database import async_db_session
@@ -106,12 +108,20 @@ class PluginService:
             return _to_dict(p)
 
     @classmethod
-    async def delete(cls, ids: list[int]) -> None:
+    async def delete(cls, ids: list[int], user_id: int) -> None:
+        """软删除插件：保留行，避免市场安装关系悬垂（列表已按 is_deleted 过滤）。"""
         async with async_db_session.begin() as db:
+            now = datetime.now()
             for pid in ids:
                 p = await db.get(AiPluginModel, pid)
-                if p:
-                    await db.delete(p)
+                if p and not p.is_deleted:
+                    p.is_deleted = True
+                    p.deleted_time = now
+                    p.deleted_id = user_id
+                    p.updated_id = user_id
+                    # 释放唯一 key：允许重新创建同 key 插件
+                    suffix = f"__deleted_{p.id}_{int(now.timestamp())}"
+                    p.key = f"{(p.key or '')[: 64 - len(suffix)]}{suffix}"
 
     @classmethod
     async def toggle(cls, plugin_id: int, enabled: bool, auth) -> dict | None:

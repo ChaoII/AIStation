@@ -96,7 +96,7 @@ async def delete_skills(
     ids: Annotated[list[int], Body(description="ID列表")],
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:skill:delete"]))],
 ) -> JSONResponse:
-    await AiSkillService.delete(ids)
+    await AiSkillService.delete(ids, auth.user.id)
     return SuccessResponse(msg="删除成功")
 
 

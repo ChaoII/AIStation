@@ -1,9 +1,12 @@
 """技能广场服务：CRUD、分类统计、精选、安装计数、按技能注入内容。"""
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 
 from app.core.database import async_db_session
+from app.plugin.module_ai.bindings import detach_from_agents
 
 from .model import AiSkillModel
 
@@ -135,12 +138,24 @@ class AiSkillService:
             return _to_dict(s)
 
     @classmethod
-    async def delete(cls, ids: list[int]) -> None:
+    async def delete(cls, ids: list[int], user_id: int) -> None:
+        """软删除技能：保留行，避免市场安装关系悬垂（列表已按 is_deleted 过滤）。"""
         async with async_db_session.begin() as db:
+            now = datetime.now()
+            deleted_ids: list[int] = []
             for sid in ids:
                 s = await db.get(AiSkillModel, sid)
-                if s:
-                    await db.delete(s)
+                if s and not s.is_deleted:
+                    deleted_ids.append(s.id)
+                    s.is_deleted = True
+                    s.deleted_time = now
+                    s.deleted_id = user_id
+                    s.updated_id = user_id
+                    # 释放唯一名：允许重新导入/创建同名技能
+                    suffix = f"__deleted_{s.id}_{int(now.timestamp())}"
+                    s.name = f"{(s.name or '')[: 128 - len(suffix)]}{suffix}"
+            # 智能体按技能 id 绑定，删除后一并摘除
+            await detach_from_agents(db, skill_ids=deleted_ids)
 
     @classmethod
     async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:

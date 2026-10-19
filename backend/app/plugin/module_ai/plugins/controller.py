@@ -47,7 +47,7 @@ async def delete_plugins(
     ids: Annotated[list[int], Body(description="ID列表")],
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:plugin:delete"]))],
 ) -> JSONResponse:
-    await PluginService.delete(ids)
+    await PluginService.delete(ids, auth.user.id)
     return SuccessResponse(msg="删除成功")
 
 

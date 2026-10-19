@@ -46,13 +46,21 @@
               </div>
             </div>
             <div class="mine-head-actions">
-              <el-tooltip :content="row.enabled ? '停用' : '启用'" placement="top">
+              <el-tooltip
+                v-if="hasPerm('module_ai:market:manage')"
+                :content="row.enabled ? '停用' : '启用'"
+                placement="top"
+              >
                 <el-switch
                   :model-value="row.enabled"
                   @change="(v: any) => toggleAsset(row as any, v)"
                 />
               </el-tooltip>
-              <el-tooltip content="编辑" placement="top">
+              <el-tooltip
+                v-if="hasPerm(`module_ai:${row.asset_type}:update`)"
+                content="编辑"
+                placement="top"
+              >
                 <el-button size="small" circle :icon="Edit" @click="openEdit(row as any)" />
               </el-tooltip>
               <el-tooltip content="提交市场" placement="top">
@@ -87,7 +95,7 @@
                   @click="withdraw(row as any)"
                 />
               </el-tooltip>
-              <el-tooltip content="删除" placement="top">
+              <el-tooltip v-if="hasPerm('module_ai:market:manage')" content="删除" placement="top">
                 <el-button
                   size="small"
                   circle
@@ -207,7 +215,7 @@
 <script setup lang="ts">
 import { Delete, Edit, Plus, Remove, Share, Upload } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
-import { nextTick, onMounted, reactive, ref, watch } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 
 import {
   deleteMyAsset,

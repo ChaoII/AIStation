@@ -293,6 +293,12 @@ class Settings(BaseSettings):
     # ================================================= #
     UPLOAD_FILE_PATH: Path = Path("static/upload")  # 上传目录
     UPLOAD_MACHINE: str = "A"  # 上传机器标识
+
+    # ================================================= #
+    # *************** 个人工作空间配置 ************** #
+    # ================================================= #
+    AI_SPACE_MAX_FILE_MB: int = 200  # 个人空间单文件上限（MB）
+    AI_SPACE_QUOTA_MB: int = 10240  # 个人空间每用户总配额（MB，默认 10GB）
     ALLOWED_EXTENSIONS: list[str] = [  # 允许的文件类型
         ".gif",
         ".jpg",

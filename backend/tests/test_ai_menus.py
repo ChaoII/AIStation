@@ -86,6 +86,23 @@ def _fetch_menus():
     return asyncio.run(_run())
 
 
+def test_ai_space_menu_registered(test_client):
+    """_ensure_ai_menus 后：个人工作空间菜单落地且可见，按钮权限已注册。"""
+    asyncio.run(init_app._ensure_ai_menus())
+    menus = _fetch_menus()
+    m = menus["AiPersonalSpace"]
+    assert m.hidden is False and m.route_path == "/ai/space"
+    assert m.component_path == "module_ai/space/index"
+    perms = {c for c, _ in init_app.AI_BUTTON_PERMS}
+    assert {
+        "module_ai:space:query",
+        "module_ai:space:upload",
+        "module_ai:space:download",
+        "module_ai:space:delete",
+        "module_ai:space:manage",
+    } <= perms
+
+
 def test_ai_menus_collapsed(test_client):
     """_ensure_ai_menus 后：控制台页可见并落地，富功能页保留，下线页 hidden。"""
     _ensure_removed_rows_visible()

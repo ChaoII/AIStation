@@ -85,6 +85,11 @@
                 </span>
               </el-tooltip>
             </el-upload>
+            <el-tooltip v-if="showSpace" content="从个人空间选择文件" placement="top">
+              <span class="upload-btn" @click="emit('space')">
+                <el-icon><FolderOpened /></el-icon>
+              </span>
+            </el-tooltip>
             <el-button
               v-if="sending"
               class="stop-button"
@@ -97,7 +102,11 @@
             <el-button
               v-else
               :disabled="
-                (!inputMessage.trim() && uploadedFiles.length === 0) || disabled || sending
+                (!inputMessage.trim() &&
+                  uploadedFiles.length === 0 &&
+                  (props.externalFilesCount ?? 0) === 0) ||
+                disabled ||
+                sending
               "
               class="send-button"
               type="primary"
@@ -126,6 +135,7 @@ import {
   Close,
   VideoPause,
   ArrowDown,
+  FolderOpened,
 } from "@element-plus/icons-vue";
 import {
   EditorView,
@@ -149,6 +159,10 @@ interface Props {
   modelId?: number | null;
   /** 思考模式 */
   thinking?: "quick" | "deep";
+  /** 是否显示「从个人空间选择文件」入口（助手浮窗等场景） */
+  showSpace?: boolean;
+  /** 外部已选文件数（如个人空间引用），用于发送按钮启用判断 */
+  externalFilesCount?: number;
 }
 
 interface Emits {
@@ -156,6 +170,7 @@ interface Emits {
   (e: "stop"): void;
   (e: "update:modelId", id: number): void;
   (e: "update:thinking", mode: "quick" | "deep"): void;
+  (e: "space"): void;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -164,6 +179,8 @@ const props = withDefaults(defineProps<Props>(), {
   models: () => [],
   modelId: null,
   thinking: "quick",
+  showSpace: false,
+  externalFilesCount: 0,
 });
 
 const emit = defineEmits<Emits>();
@@ -381,8 +398,8 @@ defineExpose({
 .chat-input {
   .input-wrapper {
     max-width: 800px;
-    margin: 0 auto;
     padding: 12px 16px;
+    margin: 0 auto;
 
     .uploaded-files {
       display: flex;
@@ -421,8 +438,8 @@ defineExpose({
         }
 
         .file-remove {
-          cursor: pointer;
           color: var(--el-text-color-secondary);
+          cursor: pointer;
 
           &:hover {
             color: var(--el-color-danger);
@@ -472,8 +489,8 @@ defineExpose({
         line-height: 1.6;
 
         &.is-readonly {
-          opacity: 0.6;
           pointer-events: none;
+          opacity: 0.6;
         }
 
         :deep(.cm-editor) {
@@ -485,13 +502,13 @@ defineExpose({
         }
 
         :deep(.cm-scroller) {
-          font-family: inherit;
           overflow: auto;
+          font-family: inherit;
         }
 
         :deep(.mention) {
-          color: var(--el-color-primary);
           font-weight: 600;
+          color: var(--el-color-primary);
           background: var(--el-color-primary-light-9);
           border-radius: 3px;
         }
@@ -547,32 +564,32 @@ defineExpose({
 
       .input-footer {
         display: flex;
+        gap: 12px;
         align-items: center;
         justify-content: flex-end;
-        gap: 12px;
 
         .input-tools {
           display: flex;
-          align-items: center;
           gap: 6px;
+          align-items: center;
           margin-right: auto;
 
           .model-trigger {
             display: inline-flex;
-            align-items: center;
             gap: 5px;
+            align-items: center;
             padding: 3px 8px;
             font-size: 12px;
             color: var(--el-text-color-secondary);
+            cursor: pointer;
             border: 1px solid var(--el-border-color-lighter);
             border-radius: 6px;
-            cursor: pointer;
             transition: all 0.2s;
 
             &:hover {
               color: var(--el-color-primary);
-              border-color: var(--el-color-primary-light-5);
               background: var(--el-color-primary-light-9);
+              border-color: var(--el-color-primary-light-5);
             }
           }
 
@@ -582,11 +599,11 @@ defineExpose({
             justify-content: center;
             width: 15px;
             height: 15px;
-            border-radius: 50%;
-            background: var(--el-fill-color-light);
-            color: var(--el-text-color-secondary);
             font-size: 9px;
             font-weight: 600;
+            color: var(--el-text-color-secondary);
+            background: var(--el-fill-color-light);
+            border-radius: 50%;
           }
 
           .model-name {
@@ -606,10 +623,10 @@ defineExpose({
             justify-content: center;
             width: 22px;
             height: 22px;
-            border-radius: 6px;
-            border: 1px solid var(--el-border-color-lighter);
             font-size: 11px;
             cursor: pointer;
+            border: 1px solid var(--el-border-color-lighter);
+            border-radius: 6px;
             transition: all 0.2s;
 
             &:hover {

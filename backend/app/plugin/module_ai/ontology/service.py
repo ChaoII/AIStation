@@ -1760,7 +1760,34 @@ async def list_properties(object_code: str = "", owner_id: int | None = None) ->
     return out
 
 
+async def _mark_indexes_stale(object_code: str) -> None:
+    """定义（属性等）变更后，把该对象的索引标为过期。
+
+    官方：定义变了索引需重建。修前**只靠人手动点「标记过期」**，属性改完索引仍显示
+    `ready`，而列已变化的索引查询计划可能已不匹配（数据正确但性能退化，且看不出来）。
+    失败只记日志：标记过期不该阻断属性保存。
+    """
+    if not object_code:
+        return
+    try:
+        from . import indexing as _ix
+
+        await _ix.mark_stale(object_code)
+    except Exception as e:  # noqa: BLE001
+        from app.core.logger import log
+
+        log.warning(f"[ontology] 标记索引过期失败（不影响保存）：{str(e)[:80]}")
+
+
 async def upsert_property(data: dict, actor_id: int | None = None) -> dict:
+    """保存属性 —— 成功后把该对象的索引标为过期（见 ``_mark_indexes_stale``）。"""
+    obj = (data.get("object_code") or "").strip()
+    result = await _upsert_property_impl(data, actor_id)
+    await _mark_indexes_stale(obj)
+    return result
+
+
+async def _upsert_property_impl(data: dict, actor_id: int | None = None) -> dict:
     code = (data.get("code") or "").strip()
     obj = (data.get("object_code") or "").strip()
     if not code or not obj:
@@ -3031,9 +3058,17 @@ async def instance_aggregate(object_code: str, group_by: str = "",
 
     ``aggs`` 形如 ``[{"fn": "count"}, {"fn": "sum", "prop": "amount"}]``；
     默认 ``count(*)``。
+
+    ``scenario_code``：**目前不支持**。这里的聚合是在 SQL 里做的（含行策略下推），
+    要支持场景就得把场景差异也下推进 SQL（像 ``security.row_filter_sql`` 那样），
+    那是个独立工程量。修前它**收了参数却不用** ⇒ 在场景里看图表会静默显示基线数据，
+    比报错更危险；现在改为显式拒绝，宁可让人看到「不支持」也不要给错数。
     """
     from . import security as _sec
 
+    if scenario_code:
+        return {"ok": False, "blocked_by": "scenario_unsupported",
+                "msg": "场景内的聚合暂不支持：图表会显示基线数据，请切回「主本体」查看"}
     meta = await _instance_meta(object_code)
     if not meta or meta.get("error"):
         return {"ok": False, "msg": f"对象类型 {object_code} 不可用"}
@@ -3104,7 +3139,7 @@ async def instance_aggregate(object_code: str, group_by: str = "",
 
 
 async def instance_pivot(object_code: str, key: str, link_id: int, limit: int = 50,
-                        principal: Any = None) -> dict:
+                        principal: Any = None, scenario_code: str = "") -> dict:
     """沿一条关系从某个实例跳到关联实例（Search Around 的一步）。
 
     关系有方向，两个方向都要支持：
@@ -3156,6 +3191,13 @@ async def instance_pivot(object_code: str, key: str, link_id: int, limit: int = 
         items = sec["rows"]
         sec_meta = {"policy_filtered": True, "dropped_by_policy": sec["dropped"],
                     "hidden_columns": sec["hidden_columns"]}
+    if scenario_code:
+        # P5 接线：在场景内跳转时，对侧实例同样读「基线 + 场景差异」，
+        # 与 instance_search / instance_get 的读时叠加口径一致。
+        from . import scenario as _sc
+
+        items = await _sc.overlay_edits(scenario_code, other_code, items)
+        sec_meta = {**sec_meta, "scenario": scenario_code, "scenario_overlay": True}
     return {"ok": True, "items": items, "total": len(items), "link": lk,
             "other_object": other_code, "other_name": other.get("name"),
             "direction": "out" if outgoing else "in", **sec_meta}
@@ -3163,12 +3205,13 @@ async def instance_pivot(object_code: str, key: str, link_id: int, limit: int = 
 
 async def instance_graph(object_code: str, key: str, link_ids: list[int] | None = None,
                          depth: int = 1, limit: int = 120,
-                         principal: Any = None) -> dict:
+                         principal: Any = None, scenario_code: str = "") -> dict:
     """实例层图：以真实数据行为节点、关系为边，支持多步扩展（Search Around）。
 
     返回 GraphCanvas 约定的 {nodes:[{id,name,etype,weight}], edges:[{source,target,rtype,weight}]}。
     """
-    root = await instance_get(object_code, key, principal=principal)
+    root = await instance_get(object_code, key, principal=principal,
+                                 scenario_code=scenario_code)
     if not root.get("ok"):
         return {"ok": False, "msg": root.get("msg") or "实例不存在", "nodes": [], "edges": []}
     rels = await list_links(object_code)
@@ -3207,7 +3250,8 @@ async def instance_graph(object_code: str, key: str, link_ids: list[int] | None 
                 if len(nodes) >= cap:
                     truncated = True
                     break
-                piv = await instance_pivot(code, k, lk["id"], limit=40, principal=principal)
+                piv = await instance_pivot(code, k, lk["id"], limit=40, principal=principal,
+                               scenario_code=scenario_code)
                 if not piv.get("ok"):
                     continue
                 for inst in piv["items"][:20]:
@@ -4378,7 +4422,6 @@ async def object_dependents(code: str) -> dict:
 # 而且本项目里 Agent 装配能力走的是 ai_agents.capabilities（函数/动作 code 列表，
 # 见 agent/service.py:567-587），与这张登记表零关联 —— 纯 CRUD 的登记表只会误导。
 # 注意：ai_agents.capabilities 与本体函数/动作的绑定是**另一回事**，保留不动。
-
 
 
 # ---------------------------------------------------------------------------
