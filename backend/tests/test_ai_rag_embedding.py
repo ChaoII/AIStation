@@ -151,3 +151,48 @@ def test_stats_report_cache_hits(monkeypatch):
     assert s1["cache_hits"] == 0 and s2["cache_hits"] == 1
     assert s1["dim"] == 2 and s1["batches"] >= 1
     assert s1["ms"] >= 0.0
+
+
+def test_model_change_marks_rebuild_needed(test_client, auth_headers, monkeypatch):
+    """换嵌入模型后，质量接口必须提示「需要重建索引」。"""
+    import uuid
+
+    from app.plugin.module_ai.knowledge import embedding as emb
+
+    async def fake_embed(texts, model_id=None):
+        return [[1.0, 0.0, 0.0] for _ in texts]
+
+    monkeypatch.setattr(emb, "embed_texts", fake_embed)
+    kb_id = test_client.post(
+        "/api/v1/ai/knowledge/bases/create",
+        json={"name": f"pytest_rebuild_{uuid.uuid4().hex[:8]}", "enabled": True},
+        headers=auth_headers,
+    ).json()["data"]["id"]
+    try:
+        test_client.post(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/ingest",
+            json={"file_name": "m.txt", "content": "换模型需要重建索引"},
+            headers=auth_headers,
+        )
+        before = test_client.get(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/quality", headers=auth_headers
+        ).json()["data"]
+        assert before["needs_rebuild"] is False, before
+        assert before["vector_model"]
+
+        test_client.put(
+            f"/api/v1/ai/knowledge/bases/update/{kb_id}",
+            json={"model_id": 999999},
+            headers=auth_headers,
+        )
+        after = test_client.get(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/quality", headers=auth_headers
+        ).json()["data"]
+        assert after["needs_rebuild"] is True, after
+    finally:
+        test_client.request(
+            "DELETE",
+            "/api/v1/ai/knowledge/bases/delete",
+            json=[kb_id],
+            headers=auth_headers,
+        )

@@ -39,14 +39,16 @@ async def resolve_embedder(model_id: int | None = None) -> ResolvedEmbedder:
     from app.plugin.module_ai.models.service import AiModelService, build_headers
 
     runtime = (
-        await AiModelService.get_runtime_model(model_id=model_id)
+        await AiModelService.get_runtime_model(model_id=model_id, allow_env_fallback=False)
         if model_id is not None
         else await AiModelService.get_runtime_model(usage="embedding")
     )
+    if not runtime and model_id is None:
+        runtime = await AiModelService.get_runtime_model()
     if not runtime:
-        runtime = await AiModelService.get_runtime_model(model_id=model_id)
-    if not runtime:
-        raise RuntimeError("未配置嵌入模型")
+        raise RuntimeError(
+            f"未配置嵌入模型或模型 {model_id} 已失效" if model_id is not None else "未配置嵌入模型"
+        )
     base = str(runtime.get("base_url") or "").rstrip("/")
     headers = build_headers(base, runtime.get("extra_headers"), "aistation-rag") or {}
     return ResolvedEmbedder(

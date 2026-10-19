@@ -260,17 +260,36 @@ class AiKnowledgeService:
             return _kb_to_dict(b)
 
     @classmethod
+    async def mark_rebuild_needed(cls, kb_id: int) -> None:
+        """标记知识库「需要重建索引」（换嵌入模型后旧向量与新查询不在同一语义空间）。
+
+        不新增列：``needs_rebuild`` 由 ``kb_quality`` 依据分块 ``vector_model``
+        与当前模型动态比对；这里刷新 ``updated_time`` 作为显式信号并留痕。
+        """
+        from datetime import datetime
+
+        async with async_db_session.begin() as db:
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if b is not None:
+                b.updated_time = datetime.now()
+
+    @classmethod
     async def update_base(cls, kb_id: int, data, auth) -> dict | None:
         async with async_db_session.begin() as db:
             b = await db.get(AiKnowledgeBaseModel, kb_id)
             if not b or b.is_deleted:
                 return None
+            old_model_id = b.model_id
             for key in ("name", "description", "model_id", "file_type", "enabled"):
                 if getattr(data, key) is not None:
                     setattr(b, key, getattr(data, key))
             b.updated_id = auth.user.id
             await db.flush()
-            return _kb_to_dict(b)
+            changed = old_model_id != b.model_id
+            result = _kb_to_dict(b)
+        if changed:
+            await cls.mark_rebuild_needed(kb_id)
+        return result
 
     @classmethod
     async def delete_bases(cls, ids: list[int]) -> None:
@@ -397,41 +416,20 @@ class AiKnowledgeService:
 
     @classmethod
     async def ingest(cls, kb_id: int, data, auth) -> dict:
-        """文本 → 分块 → 向量化 → 入库，返回写入分块数。"""
-        chunks = chunk_text(data.content, data.chunk_size, data.overlap, data.strategy)
-        if not chunks:
-            return {"chunks": 0}
-        model_id = await cls._kb_model_id([kb_id])
-        vectors = await embedding.embed_texts(chunks, model_id=model_id)
-        saved = 0
-        async with async_db_session.begin() as db:
-            b = await db.get(AiKnowledgeBaseModel, kb_id)
-            if not b or b.is_deleted:
-                raise ValueError("知识库不存在")
-            existing = (
-                await db.execute(
-                    select(func.max(AiKnowledgeChunkModel.chunk_index)).where(
-                        AiKnowledgeChunkModel.knowledge_base_id == kb_id
-                    )
-                )
-            ).scalar() or 0
-            for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False), start=existing + 1):
-                db.add(
-                    AiKnowledgeChunkModel(
-                        knowledge_base_id=kb_id,
-                        file_name=data.file_name or "文本",
-                        chunk_index=i,
-                        content=chunk,
-                        meta={"file_name": data.file_name or "文本"},
-                        vector=vec,
-                        dimension=len(vec) if vec else None,
-                    )
-                )
-                saved += 1
-            b.chunk_count = (b.chunk_count or 0) + saved
-            b.updated_id = auth.user.id
-        await cls._rebuild_graph(kb_id)
-        return {"chunks": saved}
+        """文本 → 分块 → 向量化 → 入库，返回写入分块数。
+
+        统一委托 ``ingest_text``（同一条写入路径），避免出现「只写了 JSONB、
+        没有 vector_model/search_text」的第三套实现。
+        """
+        return await cls.ingest_text(
+            kb_id,
+            data.content,
+            data.file_name or "文本",
+            auth,
+            chunk_size=data.chunk_size,
+            overlap=data.overlap,
+            strategy=data.strategy,
+        )
 
     @classmethod
     async def kb_quality(cls, kb_id: int) -> dict:
