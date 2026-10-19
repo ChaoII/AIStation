@@ -221,6 +221,14 @@ def test_preview_truncates_large_text(test_client, auth_headers, monkeypatch):
     assert pv["truncated"] is True
 
 
+def test_preview_md_and_json_content(test_client, auth_headers, monkeypatch):
+    """md/csv/json 属文本类：预览应返回真实内容（_extract_doc_text 需支持）。"""
+    _mock_s3(monkeypatch, content="# 标题\n正文".encode())
+    fid = _upload(test_client, auth_headers, name="note.md", content="# 标题\n正文".encode()).json()["data"]["id"]
+    pv = test_client.get(f"/api/v1/ai/space/files/{fid}/preview", headers=auth_headers).json()["data"]
+    assert pv["kind"] == "text" and "正文" in pv["content"]
+
+
 def test_get_file_rejects_other_user(test_client, auth_headers, monkeypatch):
     """用户隔离：以其他 user_id 直接调服务读取 → 抛 ValueError（不影响他人记录）。"""
     _mock_s3(monkeypatch)

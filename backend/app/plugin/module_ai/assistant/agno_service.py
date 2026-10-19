@@ -32,9 +32,26 @@ def _parse_data_uri(data_url: str) -> tuple[bytes, str]:
         return b"", ""
 
 
+#: 纯文本扩展名（无需解析器，直接 UTF-8 解码）
+_TEXT_EXTS = {
+    "txt", "md", "markdown", "csv", "json", "log", "yaml", "yml", "ini", "toml",
+    "xml", "html", "htm", "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "java",
+    "c", "h", "cpp", "hpp", "go", "rs", "sql", "sh", "bat", "ps1", "conf",
+    "properties", "env", "graphql", "vue", "css", "scss",
+}
+#: 纯文本 MIME（含带 charset 后缀的，如 text/plain; charset=utf-8）
+_TEXT_MIME_PREFIX = ("text/", "application/json", "application/xml", "application/csv",
+                     "application/yaml", "application/x-yaml", "application/x-www-form-urlencoded")
+
+
 def _extract_doc_text(raw: bytes, mime: str, name: str = "") -> str:
-    """抽取文档纯文本（txt/pdf/docx）。老 .doc / 未知格式返回空串。"""
+    """抽取文档纯文本（txt/md/csv/json 等直接解码；pdf/docx 解析）。
+
+    老 .doc / 未知格式返回空串。
+    """
     ext = (name.rsplit(".", 1)[-1] if "." in name else "").lower()
+    if ext in _TEXT_EXTS or mime.lower().startswith(_TEXT_MIME_PREFIX):
+        return raw.decode("utf-8", errors="ignore")
     if ext == "txt" or "text/plain" in mime:
         return raw.decode("utf-8", errors="ignore")
     if ext == "pdf" or "application/pdf" in mime:
