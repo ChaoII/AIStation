@@ -208,7 +208,7 @@ async def file_delete(
     )
 
 
-@SpaceRouter.get("/space/quota", summary="个人空间配额")
+@SpaceRouter.get("/quota", summary="个人空间配额")
 async def space_quota(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:space:query"]))],
 ) -> JSONResponse:
