@@ -68,6 +68,20 @@
             <el-option v-for="t in toolOptions" :key="t.name" :label="t.name" :value="t.name" />
           </el-select>
         </el-form-item>
+        <el-form-item label="本体工具">
+          <el-select
+            v-model="form.capabilities"
+            multiple
+            filterable
+            placeholder="绑定本体函数/动作（Agent 装配工具时按此生成）"
+            style="width: 100%"
+          >
+            <el-option v-for="c in ontToolOptions" :key="c.code" :label="c.label" :value="c.code" />
+          </el-select>
+          <div class="ws-form-hint">
+            勾选后 Agent 会得到对应的本体函数/动作工具；执行时仍按调用者本人的本体权限校验
+          </div>
+        </el-form-item>
         <el-form-item label="技能">
           <el-select
             v-model="form.skill_ids"
@@ -157,6 +171,7 @@ import { getAiSkillList } from "@/api/module_ai/skill";
 import { getMcpList } from "@/api/module_ai/mcp";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
 import { getQueryDatasources } from "@/api/module_ai/query";
+import { getOntActions, getOntFunctions } from "@/api/module_ai/ontology";
 
 defineOptions({ name: "AgentFormDialog" });
 
@@ -174,6 +189,9 @@ const workflowOptions = ref<{ id: number; name: string }[]>([]);
 const skillOptions = ref<{ id: number; name: string }[]>([]);
 const knowledgeOptions = ref<{ id: number; name: string }[]>([]);
 const mcpOptions = ref<{ id: number; name: string; transport: string; enabled: boolean }[]>([]);
+
+// 本体工具：本体函数/动作的编码（Agent 按此装配 ont_fn__* / ont_action__* 工具）
+const ontToolOptions = ref<{ code: string; label: string }[]>([]);
 const queryDatasources = ref<any[]>([]);
 
 const form = reactive<any>({});
@@ -188,6 +206,7 @@ function resetForm() {
     model_id: null,
     prompt_id: null,
     tool_ids: [],
+    capabilities: [],
     skill_ids: [],
     knowledge_ids: [],
     mcp_ids: [],
@@ -229,6 +248,22 @@ async function loadOptions() {
       enabled: m.enabled !== false,
     }));
     queryDatasources.value = dr.data?.data || [];
+    // 本体工具选项：函数 + 动作（修前智能体表单**没有**本体能力入口，
+    // 想让 Agent 用本体工具只能改数据库）
+    try {
+      const [fnr, actr] = await Promise.all([getOntFunctions(), getOntActions()]);
+      const fns = ((fnr.data?.data || []) as any[]).map((f: any) => ({
+        code: f.code,
+        label: `函数：${f.name || f.code}`,
+      }));
+      const acts = ((actr.data?.data || []) as any[]).map((a: any) => ({
+        code: a.code,
+        label: `动作：${a.name || a.code}`,
+      }));
+      ontToolOptions.value = [...fns, ...acts];
+    } catch {
+      ontToolOptions.value = [];
+    }
   } catch (e: any) {
     ElMessage.error(e?.message || "加载选项失败");
   } finally {
@@ -263,6 +298,7 @@ function onRunModeChange(mode: any) {
     form.model_id = null;
     form.prompt_id = null;
     form.tool_ids = [];
+    form.capabilities = [];
   }
 }
 
@@ -281,6 +317,7 @@ async function save() {
       workflow_id: isModel ? null : form.workflow_id,
       model_id: isModel ? form.model_id : null,
       prompt_id: isModel ? form.prompt_id : null,
+      capabilities: isModel ? form.capabilities || [] : [],
       tool_ids: isModel ? form.tool_ids : [],
       skill_ids: isModel ? form.skill_ids : [],
       knowledge_ids: isModel ? form.knowledge_ids : [],

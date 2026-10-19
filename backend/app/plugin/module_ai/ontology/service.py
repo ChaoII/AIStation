@@ -1177,6 +1177,11 @@ async def _fire_side_effects(effects: list[dict], table: str, object_key: str) -
             except Exception as ex:  # noqa: BLE001
                 errors.append(f"通知发送失败：{str(ex)[:80]}")
         else:
+            # SSRF（修）：Webhook 目标与 http 形态函数同口径，拦环回/链路本地/云元数据
+            bad = _fe.is_forbidden_url(e.get("url") or "")
+            if bad:
+                errors.append(f"Webhook 目标被拒：{bad}")
+                continue
             try:
                 import httpx
 

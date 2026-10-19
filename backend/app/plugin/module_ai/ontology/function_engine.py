@@ -488,10 +488,84 @@ async def run_function(
     }
 
 
+#: SSRF 防护：明确禁止的目标类别。
+#:
+#: 取舍说明：平台自己就连着内网 LLM 网关（172.168.x），http 形态函数与 Webhook
+#: 调用内网服务是**合法用法**，因此**放行私有网段**；只拦
+#: 环回 / 链路本地(含云元数据 169.254.169.254) / 保留 / 组播 / 未指定 ——
+#: 这几类正是"把平台当内网探针、窃取云凭证"的入口，且响应原文会回传给调用方。
+_SSRF_BLOCKED_HOSTS = {"localhost", "metadata.google.internal", "instance-data"}
+
+#: 测试/本地联调逃生阀：置 1 时放行环回地址。**默认关闭，生产不得设置**。
+#: 为什么需要它：`tests/test_function_engine.py` 的 `local_server` 夹具会起一个
+#: 真实的 127.0.0.1 HTTPServer 来验证 http 形态函数，那是单元测试的合法用法；
+#: 与其削弱生产防护，不如让例外显式且只在测试里生效。
+_ALLOW_LOOPBACK_ENV = "AISTATION_ALLOW_LOOPBACK_HTTP"
+
+
+def is_forbidden_url(url: str) -> str:
+    """返回禁止原因；允许访问则返回空串。
+
+    http 形态函数与 Webhook 都由持 edit 权限的用户配置，修前只校验 scheme
+    ⇒ 可配 ``http://127.0.0.1:8002/...`` 探测本机端口、配 ``http://169.254.169.254/``
+    窃取云元数据凭证，而且**响应原文会回传**（可读回的 SSRF）。
+
+    域名会先解析再判（防 DNS rebinding 指向内网）；解析不了则放行，交给 httpx
+    自己失败——不因为一次 DNS 故障就阻断合法调用。
+    """
+    import os
+
+    import ipaddress
+    from urllib.parse import urlparse
+
+    if os.getenv(_ALLOW_LOOPBACK_ENV, "").strip() == "1":
+        return ""
+    try:
+        parsed = urlparse(url or "")
+    except ValueError:
+        return "URL 无法解析"
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return "URL 缺少主机名"
+    if host in _SSRF_BLOCKED_HOSTS:
+        return f"禁止访问该地址：{host}"
+
+    def _blocked(a: ipaddress._BaseAddress) -> bool:
+        return bool(a.is_loopback or a.is_link_local or a.is_reserved
+                    or a.is_multicast or a.is_unspecified)
+
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None:
+        return f"禁止访问内网/保留地址：{host}" if _blocked(ip) else ""
+
+    # 域名：解析后逐个地址判断
+    try:
+        import socket
+
+        infos = socket.getaddrinfo(host, None)
+    except Exception:  # noqa: BLE001  解析不了就放行，交给 httpx
+        return ""
+    for info in infos:
+        try:
+            a = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if _blocked(a):
+            return f"禁止访问内网/保留地址：{host} → {info[4][0]}"
+    return ""
+
+
 async def _run_http(cfg: dict, values: dict, ctx: FunctionContext) -> dict:
     url = interp(str(cfg.get("url") or ""), values, ctx).strip()
     if not url.lower().startswith(("http://", "https://")):
         return {"ok": False, "msg": "外部服务的 URL 必须是 http/https"}
+    # SSRF（修）：拦环回/链路本地(含云元数据)/保留地址，防把平台当内网探针
+    bad = is_forbidden_url(url)
+    if bad:
+        return {"ok": False, "msg": bad}
     method = str(cfg.get("method") or "GET").upper()
     if method not in ("GET", "POST", "PUT", "PATCH"):
         return {"ok": False, "msg": f"不支持的方法：{method}"}
@@ -591,6 +665,10 @@ def validate_function(fn: dict, prop_keys: set[str] | None = None) -> list[str]:
         url = str(cfg.get("url") or "").strip()
         if not url.lower().startswith(("http://", "https://")):
             errs.append("外部服务的 URL 必须是 http/https")
+        # SSRF（修）：保存时就拒绝危险目标，不让它落库（运行时 _run_http 还会再拦一次）
+        forbidden = is_forbidden_url(url) if url else ""
+        if forbidden:
+            errs.append(forbidden)
         m = str(cfg.get("method") or "GET").upper()
         if m not in ("GET", "POST", "PUT", "PATCH"):
             errs.append(f"不支持的 HTTP 方法：{m}")

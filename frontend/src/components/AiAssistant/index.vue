@@ -96,6 +96,9 @@ import {
   type AiSessionItem,
 } from "@/api/module_ai/session";
 import { AnnotationAPI } from "@/api/module_annotation";
+// 本体动作执行（Agent 动作提议的确认落点）。修前 AiAssistant 不认识
+// api === "ontologyAction"，用户点「确认」后什么也不会发生。
+import { executeOntAction } from "@/api/module_ai/ontology";
 import ChatMessages from "@/views/module_ai/chat/components/ChatMessages.vue";
 import ChatInput from "@/views/module_ai/chat/components/ChatInput.vue";
 import SessionSidebar from "@/views/module_ai/chat/components/SessionSidebar.vue";
@@ -266,6 +269,33 @@ const confirmAssistantAction = async (action: any) => {
     } else if (action.api === "createAnnotationTask") {
       await AnnotationAPI.createTask(action.payload);
       ElMessage.success("标注任务已创建");
+    } else if (action.api === "ontologyAction") {
+      // 本体动作（后端 agent_tools.propose_ontology_action 的确认载荷）。
+      // 修前这里没有分支 ⇒ 用户点「确认」后什么也不会发生（后端能力吃灰）。
+      // 动作必须知道**改哪一行**，而 Agent 提议时并不知道 ⇒ 让人工填目标行主键。
+      const payload = action.payload || {};
+      const obj = await ElMessageBox.prompt(
+        `动作「${payload.code}」将写回本体对象表，请填目标行的主键（如 id）。`,
+        "确认执行本体动作",
+        {
+          inputPattern: /\S/,
+          inputErrorMessage: "目标行主键不能为空",
+          type: "warning",
+        }
+      );
+      const r = await executeOntAction({
+        code: payload.code,
+        object_key: String(obj.value).trim(),
+        params: payload.args || {},
+      });
+      const d = r.data?.data || {};
+      if (d.needs_approval) {
+        ElMessage.warning(d.msg || "已生成待审批单，需管理员批准后执行");
+      } else if (d.ok === false) {
+        ElMessage.error(d.msg || "本体动作执行失败");
+      } else {
+        ElMessage.success(d.msg || "本体动作已执行");
+      }
     }
   } catch (e: any) {
     ElMessage.error(e?.msg || e?.message || "操作失败");

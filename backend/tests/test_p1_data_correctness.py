@@ -307,3 +307,64 @@ def test_agent_function_tool_respects_visibility_and_acl(monkeypatch):
     text = str(out)
     assert "不该被执行" not in text, f"隐藏/无权函数被 Agent 执行了：{out}"
     assert "error" in out, f"应返回可读错误而非执行结果：{out}"
+
+
+# ===========================================================================
+# 5) SSRF：http 形态函数不得打本机/云元数据
+# ===========================================================================
+def test_http_function_blocks_loopback_and_metadata():
+    """http 形态函数的 URL 必须拒绝环回 / 链路本地 / 云元数据地址。
+
+    修前只校验 scheme：持 edit 权限的人可配 ``http://127.0.0.1:8002/...`` 或
+    ``http://169.254.169.254/latest/meta-data/``，把平台当内网探针、窃取云凭证，
+    而且**响应原文会回传给调用方**（可读回的 SSRF）。
+
+    取舍说明：平台自己就连着内网 LLM 网关（私有网段），因此**放行私有网段**，
+    只拦 环回/链路本地/保留/组播/未指定 —— 这三类正是凭据窃取与本机探测的入口。
+    """
+    from app.plugin.module_ai.ontology import function_engine as FE
+
+    bad = [
+        "http://127.0.0.1:8002/openapi.json",
+        "http://localhost:5181/web",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[::1]:8002/",
+        "http://0.0.0.0:8002/",
+    ]
+    for url in bad:
+        msg = FE.is_forbidden_url(url)
+        assert msg, f"未拦住明显危险的 URL：{url}"
+
+    # 内网服务（平台自己的网关就在 172.168.x）必须仍然可用
+    assert FE.is_forbidden_url("http://172.168.100.146:5000/v1/chat/completions") == "", (
+        "内网私有网段被误拦（平台自己的网关就在这里）")
+    assert FE.is_forbidden_url("https://api.example.com/v1") == ""
+
+
+def test_http_function_rejects_dangerous_url_on_save():
+    """保存时就该拒绝（不让危险配置落库），而不只是运行时。"""
+    async def _scenario():
+        from app.core.exceptions import CustomException
+        from app.plugin.module_ai.ontology import service as svc
+
+        try:
+            await svc.upsert_function({
+                "object_code": "p1_obj", "name": "SSRF探针函数", "code": "p1_ssrf_fn",
+                "kind": "http", "config": {"url": "http://169.254.169.254/latest/meta-data/"},
+            })
+            return None
+        except CustomException as e:
+            return str(e)
+
+    msg = _run(_scenario())
+    assert msg and "内网" in msg or "禁止" in str(msg), f"保存时没拦住危险 URL：{msg}"
+
+    async def _cleanup():
+        from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+
+        async with async_db_session.begin() as db:
+            await db.execute(_t("DELETE FROM ai_ont_function WHERE code='p1_ssrf_fn'"))
+
+    _run(_cleanup())

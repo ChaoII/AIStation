@@ -252,13 +252,32 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
+@pytest.fixture
+def allow_loopback():
+    """显式打开**仅供测试**的 SSRF 逃生阀（生产不得设置该环境变量）。
+
+    需要打 127.0.0.1 的用例必须声明依赖它 —— 让"为什么例外"在用例处可见，
+    而不是隐式放宽防护。函数级作用域：用例结束即恢复，不会泄漏给其它模块。
+    """
+    import os
+
+    os.environ["AISTATION_ALLOW_LOOPBACK_HTTP"] = "1"
+    yield
+    os.environ.pop("AISTATION_ALLOW_LOOPBACK_HTTP", None)
+
+
 @pytest.fixture(scope="module")
 def local_server():
+    """本地 HTTPServer：供 http 形态函数用例打真实请求（打的也是 127.0.0.1）。"""
+    import os
+
+    os.environ["AISTATION_ALLOW_LOOPBACK_HTTP"] = "1"
     srv = HTTPServer(("127.0.0.1", 0), _Handler)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     yield f"http://127.0.0.1:{srv.server_port}"
     srv.shutdown()
+    os.environ.pop("AISTATION_ALLOW_LOOPBACK_HTTP", None)
 
 
 def test_http_function_get_with_result_path(local_server):
@@ -277,7 +296,8 @@ def test_http_function_post_and_template(local_server):
     assert r["ok"] and r["value"] == "东门-1号"
 
 
-def test_http_function_validates_and_handles_unreachable():
+def test_http_function_validates_and_handles_unreachable(allow_loopback):
+    # 该用例专门测"连接被拒"路径，必须打 127.0.0.1 ⇒ 显式打开测试逃生阀
     bad = asyncio.run(F.run_function(
         {"kind": "http", "config": {"url": "ftp://x"}}, {}))
     assert not bad["ok"] and "http" in bad["msg"]
