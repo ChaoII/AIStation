@@ -70,11 +70,32 @@
             />
           </div>
           <div class="assistant-input">
-            <ChatInput :sending="isSending" @send="handleSend" @stop="handleStop" />
+            <div v-if="spaceFiles.length" class="space-ref-bar">
+              <el-tag
+                v-for="(f, i) in spaceFiles"
+                :key="i"
+                size="small"
+                effect="plain"
+                closable
+                @close="spaceFiles.splice(i, 1)"
+              >
+                {{ f.name }}
+              </el-tag>
+              <el-button link size="small" type="primary" @click="spaceFiles = []">清空</el-button>
+            </div>
+            <ChatInput
+              :sending="isSending"
+              :show-space="canUseSpace"
+              :external-files-count="spaceFiles.length"
+              @send="handleSend"
+              @stop="handleStop"
+              @space="spacePickerVisible = true"
+            />
           </div>
         </div>
       </div>
     </el-dialog>
+    <SpaceFilePicker v-model:visible="spacePickerVisible" :multiple="true" @confirm="onSpacePick" />
   </div>
 </template>
 
@@ -83,8 +104,13 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue"
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useStorage } from "@vueuse/core";
-import { useSettingsStore } from "@/store";
-import { useAiChat, type AiChatFilePayload } from "@/composables/ai/useAiChat";
+import { useSettingsStore, useUserStore } from "@/store";
+import {
+  useAiChat,
+  type AiChatAnyFilePayload,
+  type AiChatFilePayload,
+  type AiChatWorkspaceFilePayload,
+} from "@/composables/ai/useAiChat";
 import { isToolPart } from "@/composables/ai/uiMessage";
 import { Menu } from "@element-plus/icons-vue";
 import {
@@ -102,10 +128,13 @@ import { executeOntAction } from "@/api/module_ai/ontology";
 import ChatMessages from "@/views/module_ai/chat/components/ChatMessages.vue";
 import ChatInput from "@/views/module_ai/chat/components/ChatInput.vue";
 import SessionSidebar from "@/views/module_ai/chat/components/SessionSidebar.vue";
+import SpaceFilePicker from "@/views/module_ai/space/components/SpaceFilePicker.vue";
 import type { UploadedFile } from "@/views/module_ai/chat/types";
+import { ROLE_ROOT } from "@/constants";
 
 const router = useRouter();
 const settingsStore = useSettingsStore();
+const userStore = useUserStore();
 
 // 状态
 const dialogVisible = ref(false);
@@ -122,6 +151,21 @@ const chat = useAiChat(() => ({
   initialMessages: sessionMessages,
   body: () => (currentSessionId.value != null ? { session_id: currentSessionId.value } : {}),
 }));
+
+// ---------------------------------------------------------------- 个人空间引用
+const spacePickerVisible = ref(false);
+const spaceFiles = ref<AiChatWorkspaceFilePayload[]>([]);
+
+// 是否显示「个人空间」入口（根管理员或拥有查询权限）
+const canUseSpace = computed(() => {
+  const { roles } = userStore.basicInfo;
+  if (roles && roles.map((r) => r.code).includes(ROLE_ROOT)) return true;
+  return userStore.prems.includes("module_ai:space:query");
+});
+
+function onSpacePick(files: { file_id: number; name: string; file_type: string }[]) {
+  spaceFiles.value = files.map((f) => ({ type: "workspace", file_id: f.file_id, name: f.name }));
+}
 
 const isSending = computed(
   () => chat.status.value === "submitted" || chat.status.value === "streaming"
@@ -384,7 +428,9 @@ const handleSend = async (message: string, files?: UploadedFile[]) => {
   }
 
   const payload = await toFilePayload(files);
-  await chat.sendMessage({ text, files: payload.length ? payload : undefined });
+  const merged: AiChatAnyFilePayload[] = [...payload, ...spaceFiles.value];
+  await chat.sendMessage({ text, files: merged.length ? merged : undefined });
+  spaceFiles.value = [];
   await handleAssistantAction();
 };
 
@@ -580,8 +626,8 @@ onBeforeUnmount(() => {
     .chat-area {
       display: flex;
       flex: 1;
-      min-width: 0;
       flex-direction: column;
+      min-width: 0;
 
       /* 与「AI 聊天」页一致的聊天区（共享 ChatMessages/ChatInput 组件） */
       .assistant-chat {
@@ -594,6 +640,14 @@ onBeforeUnmount(() => {
 
       .assistant-input {
         margin-top: 8px;
+      }
+
+      .space-ref-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+        margin-bottom: 6px;
       }
     }
   }
