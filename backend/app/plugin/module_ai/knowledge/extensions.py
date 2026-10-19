@@ -91,3 +91,69 @@ async def ensure_extensions() -> None:
     )
     await _run_sql("ALTER TABLE ai_knowledge_documents ADD COLUMN IF NOT EXISTS file_path VARCHAR(512)")
     await _run_sql("ALTER TABLE ai_knowledge_documents ADD COLUMN IF NOT EXISTS object_key VARCHAR(512)")
+
+    # ---- 检索链路 v2：分块新列（幂等；非 PG 会静默跳过） ----
+    for col, ddl in (
+        ("parent_id", "integer"),
+        ("is_parent", "boolean DEFAULT false"),
+        ("content_hash", "varchar(64)"),
+        ("vector_model", "varchar(128)"),
+        ("token_count", "integer"),
+        ("char_start", "integer"),
+        ("char_end", "integer"),
+        ("search_text", "text"),
+    ):
+        await _run_sql(f"ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS {col} {ddl}")
+    # 半精度向量列 + HNSW（2560 维超过 vector 的 2000 上限，故用 halfvec）
+    await _run_sql(
+        "ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS embedding_hv halfvec(2560)"
+    )
+    await _run_sql(
+        "CREATE INDEX IF NOT EXISTS idx_chunk_embedding_hv "
+        "ON ai_knowledge_chunks USING hnsw (embedding_hv halfvec_cosine_ops) "
+        "WITH (m = 16, ef_construction = 64)"
+    )
+    # search_text 回填（正文 + 标注；索引表达式不能含子查询，故落列）
+    await _run_sql(
+        "UPDATE ai_knowledge_chunks SET search_text = trim("
+        "coalesce(content, '') || ' ' || "
+        "COALESCE((SELECT string_agg(a->>'text', ' ') FROM "
+        "jsonb_array_elements(coalesce(annotations, '[]'::jsonb)) a), '')) "
+        "WHERE search_text IS NULL"
+    )
+    await _run_sql(
+        "CREATE INDEX IF NOT EXISTS idx_chunk_fts "
+        "ON ai_knowledge_chunks USING gin (to_tsvector('jiebacfg', search_text))"
+    )
+    # ---- RAG 后台任务表（幂等；ORM 会建，这里为存量库补） ----
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_rag_tasks ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(16) DEFAULT 'pending', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, created_id INTEGER, updated_id INTEGER, deleted_id INTEGER, "
+        "kind VARCHAR(32), kb_id INTEGER, document_id INTEGER, payload JSONB, "
+        "progress INTEGER DEFAULT 0, step VARCHAR(64), message TEXT, error TEXT, "
+        "cancel_requested BOOLEAN DEFAULT false, started_time TIMESTAMP, finished_time TIMESTAMP)"
+    )
+    # ---- 检索评测表（幂等） ----
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_eval_sets ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(16) DEFAULT '0', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, created_id INTEGER, updated_id INTEGER, deleted_id INTEGER, "
+        "name VARCHAR(128), description TEXT, kb_ids JSONB)"
+    )
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_eval_items ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(16) DEFAULT '0', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, set_id INTEGER, query TEXT, "
+        "expected_chunk_ids JSONB, expected_files JSONB, note TEXT)"
+    )
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_eval_runs ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(16) DEFAULT 'running', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, created_id INTEGER, updated_id INTEGER, deleted_id INTEGER, "
+        "set_id INTEGER, kb_id INTEGER, config JSONB, metrics JSONB, error TEXT)"
+    )

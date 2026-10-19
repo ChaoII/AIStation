@@ -19,6 +19,9 @@ os.environ["DATABASE_TYPE"] = "sqlite"
 os.environ["LOGGER_LEVEL"] = "WARNING"
 os.environ["DATABASE_ECHO"] = "0"
 os.environ["ECHO_POOL"] = "0"
+# 测试环境允许嵌入了「无模型可用」时的确定性哈希回退：
+# 生产默认关闭（失败必须可见），但测试不希望依赖真实嵌入网关。
+os.environ.setdefault("RAG_ALLOW_HASH_FALLBACK", "true")
 # 每个 pytest 会话使用独立临时 SQLite 库：避免历史行跨运行累积，
 # 以及与并发运行的测试进程共用同一文件导致的计数漂移/写锁竞争。
 # 路径不含 ".db"，下游按 `{DATABASE_NAME}.db` 拼接（与源码约定一致）。

@@ -123,11 +123,17 @@ class AiModelService:
 
     @classmethod
     async def get_runtime_model(
-        cls, usage: str | None = None, model_id: int | None = None
+        cls,
+        usage: str | None = None,
+        model_id: int | None = None,
+        *,
+        allow_env_fallback: bool = True,
     ) -> dict | None:
         """取默认且启用的模型（可按用途过滤）；解析所属提供商；无则回退 env。
 
         给定 ``model_id`` 时按指定模型解析（仍要求启用且未删除），跳过 ``usage`` 过滤。
+        ``allow_env_fallback=False`` 用于「指定模型已失效就报错」的场景（如知识库
+        绑定了一个已被删除的嵌入模型，不应悄悄改用全局 env 模型）。
         """
         async with async_db_session() as db:
             if model_id is not None:
@@ -172,7 +178,7 @@ class AiModelService:
                         "max_tokens": m.max_tokens,
                         "extra_headers": headers or None,
                     }
-        if settings.OPENAI_BASE_URL and settings.OPENAI_MODEL:
+        if allow_env_fallback and settings.OPENAI_BASE_URL and settings.OPENAI_MODEL:
             return {
                 "base_url": settings.OPENAI_BASE_URL,
                 "api_key": settings.OPENAI_API_KEY,

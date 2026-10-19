@@ -520,6 +520,11 @@
               <el-option label="定长+重叠" value="fixed" />
               <el-option label="按段落" value="paragraph" />
               <el-option label="按句子" value="sentence" />
+              <el-option label="按标题树" value="heading" />
+            </el-select>
+            <el-select v-model="docUseOcr" size="small" style="width: 130px">
+              <el-option label="自动解析" :value="true" />
+              <el-option label="仅文本层" :value="false" />
             </el-select>
             <el-button
               size="small"
@@ -549,6 +554,23 @@
               <template #default="{ row }">{{ fmtSize(row.size) }}</template>
             </el-table-column>
             <el-table-column prop="chunk_count" label="分块" width="70" align="center" />
+            <el-table-column label="进度" width="150" align="center">
+              <template #default="{ row }">
+                <template v-if="row.task">
+                  <el-progress
+                    :percentage="row.task.progress || 0"
+                    :status="taskStatusType(row.task.status)"
+                    :stroke-width="6"
+                  />
+                  <el-tooltip v-if="row.task.error" :content="row.task.error" placement="top">
+                    <el-tag size="small" type="danger" effect="plain">失败原因</el-tag>
+                  </el-tooltip>
+                </template>
+                <el-tag v-else size="small" type="success" effect="plain">
+                  {{ row.doc_status === "ready" ? "就绪" : row.doc_status || "就绪" }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="时间" width="150">
               <template #default="{ row }">{{ row.created_time }}</template>
             </el-table-column>
@@ -621,6 +643,14 @@
           </div>
           <el-table v-loading="loadingChunks" :data="detailChunks" size="small" max-height="60vh">
             <el-table-column prop="chunk_index" label="#" width="60" align="center" />
+            <el-table-column label="类型" width="70" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.is_parent ? 'info' : 'primary'" effect="plain">
+                  {{ row.is_parent ? "父块" : "子块" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="token_count" label="Token" width="76" align="center" />
             <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
             <el-table-column label="内容" min-width="200">
               <template #default="{ row }">
@@ -700,6 +730,32 @@
             />
             <span class="dt-weight-label">全文</span>
           </div>
+          <div class="dt-weights">
+            <span class="dt-weight-label">相似度下限</span>
+            <el-input-number
+              v-model="detailMinScore"
+              :min="0"
+              :max="1"
+              :step="0.05"
+              size="small"
+              controls-position="right"
+            />
+            <span class="dt-weight-label">文件过滤</span>
+            <el-input
+              v-model="detailFileFilter"
+              size="small"
+              placeholder="文件名（可空）"
+              style="width: 180px"
+            />
+            <span class="dt-weight-label">Rerank</span>
+            <el-switch v-model="detailUseRerank" size="small" />
+            <span class="dt-weight-label">查询改写</span>
+            <el-select v-model="detailRewrite" size="small" style="width: 130px">
+              <el-option label="关闭" value="off" />
+              <el-option label="multi-query" value="multi_query" />
+              <el-option label="HyDE" value="hyde" />
+            </el-select>
+          </div>
           <el-empty
             v-if="!detailSearchResults.length"
             description="输入查询后检索"
@@ -709,6 +765,10 @@
             <div class="search-hit__meta">
               <span class="search-hit__file">{{ h.file_name || "未知" }}</span>
               <span class="search-hit__score">得分 {{ h.score }}</span>
+              <span v-if="h.timings" class="search-hit__score">
+                耗时 {{ h.timings.total_ms }}ms · 嵌入 {{ h.timings.embed_ms }}ms · 重排
+                {{ rerankLabel(h.timings.rerank) }}
+              </span>
               <el-tag size="small" effect="plain" :type="engineType(h.engine)">
                 {{ engineLabel(h.engine) }}
               </el-tag>
@@ -891,6 +951,85 @@
           <el-empty
             v-if="!(searchStats.trend || []).length"
             description="暂无检索记录"
+            :image-size="60"
+          />
+        </el-tab-pane>
+
+        <!-- 评测（数据集 / 配置 / 运行记录） -->
+        <el-tab-pane label="评测" name="eval">
+          <el-form inline size="small" class="stats-days">
+            <el-form-item label="数据集">
+              <el-select
+                v-model="evalSetId"
+                size="small"
+                placeholder="选择评测集"
+                style="width: 220px"
+                @change="loadEvalRuns"
+              >
+                <el-option
+                  v-for="s in evalSets"
+                  :key="s.id"
+                  :label="`${s.name}（${(s.kb_ids || []).length} 库）`"
+                  :value="s.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="TopK">
+              <el-input-number v-model="evalConfig.top_k" :min="1" :max="20" size="small" />
+            </el-form-item>
+            <el-form-item label="Rerank">
+              <el-switch v-model="evalConfig.use_rerank" size="small" />
+            </el-form-item>
+            <el-form-item>
+              <el-button
+                v-hasPerm="'module_ai:knowledge:update'"
+                :loading="evalRunning"
+                @click="startEval"
+              >
+                运行评测
+              </el-button>
+            </el-form-item>
+            <el-form-item>
+              <el-button size="small" @click="loadEvalSets">刷新数据集</el-button>
+            </el-form-item>
+          </el-form>
+          <el-progress
+            v-if="evalTask"
+            :percentage="evalTask.progress || 0"
+            :status="taskStatusType(evalTask.status)"
+            :stroke-width="8"
+            class="eval-progress"
+          />
+          <el-table :data="evalRuns" size="small" max-height="50vh">
+            <el-table-column prop="id" label="#" width="60" align="center" />
+            <el-table-column label="配置" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ evalConfigLabel(row.config) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="Recall@K" width="110" align="center">
+              <template #default="{ row }">{{ metricPct(row.metrics?.recall) }}</template>
+            </el-table-column>
+            <el-table-column label="MRR" width="90" align="center">
+              <template #default="{ row }">{{ metricPct(row.metrics?.mrr) }}</template>
+            </el-table-column>
+            <el-table-column label="NDCG@K" width="100" align="center">
+              <template #default="{ row }">{{ metricPct(row.metrics?.ndcg) }}</template>
+            </el-table-column>
+            <el-table-column label="状态" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.status === 'succeeded' ? 'success' : 'info'">
+                  {{ row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="时间" width="160">
+              <template #default="{ row }">{{ row.created_time }}</template>
+            </el-table-column>
+          </el-table>
+          <el-empty
+            v-if="!evalRuns.length"
+            description="选择数据集后运行评测，或用接口创建评测集与条目"
             :image-size="60"
           />
         </el-tab-pane>
@@ -1683,7 +1822,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import GraphCanvas from "./GraphCanvas.vue";
 import VuePdfEmbed from "vue-pdf-embed";
 import mammoth from "mammoth";
@@ -1736,6 +1875,10 @@ import {
   deleteAiRelationType,
   getAiKnowledgeDocuments,
   uploadAiKnowledgeDocument,
+  getAiRagTask,
+  getAiEvalSets,
+  runAiEval,
+  getAiEvalRuns,
   deleteAiKnowledgeDocument,
   getAiKnowledgeDocumentContent,
   reparseAiKnowledgeDocument,
@@ -2403,6 +2546,15 @@ const detailSearching = ref(false);
 const detailSearchResults = ref<any[]>([]);
 const detailVectorWeight = ref(0.5);
 const detailFulltextWeight = ref(0.5);
+const detailMinScore = ref(0);
+const detailFileFilter = ref("");
+const detailUseRerank = ref(true);
+const detailRewrite = ref("off");
+function rerankLabel(status?: string) {
+  if (status === "applied") return "已精排";
+  if (status === "skipped") return "已跳过";
+  return "未启用";
+}
 
 async function loadDetailStats(kbId: number) {
   const [chunksR, graphR] = await Promise.all([
@@ -2441,6 +2593,8 @@ async function openDetail(row: any) {
   loadLogs();
   loadStats();
   loadDocs();
+  loadEvalSets();
+  loadEvalRuns();
 }
 
 async function saveDetailOverview() {
@@ -2669,6 +2823,39 @@ const uploadingDoc = ref(false);
 const docChunkSize = ref(500);
 const docOverlap = ref(50);
 const docStrategy = ref("fixed");
+const docUseOcr = ref(true);
+const docTaskTimers = new Map<number, ReturnType<typeof setInterval>>();
+function taskStatusType(status?: string): "" | "success" | "exception" | "warning" {
+  if (status === "failed") return "exception";
+  if (status === "succeeded") return "success";
+  if (status === "canceled") return "warning";
+  return "";
+}
+function attachDocTask(docId: number, taskId?: number) {
+  if (!taskId) return;
+  const row = documents.value.find((d) => d.id === docId);
+  if (row) row.task = { id: taskId, progress: 0, status: "pending" };
+  const old = docTaskTimers.get(docId);
+  if (old) clearInterval(old);
+  const timer = setInterval(async () => {
+    try {
+      const r = await getAiRagTask(taskId);
+      const task = r.data?.data;
+      const target = documents.value.find((d) => d.id === docId);
+      if (task && target) target.task = task;
+      if (task && ["succeeded", "failed", "canceled"].includes(task.status)) {
+        clearInterval(timer);
+        docTaskTimers.delete(docId);
+        await loadDocs();
+        if (detailKb.value) await loadDetailStats(detailKb.value.id);
+      }
+    } catch {
+      clearInterval(timer);
+      docTaskTimers.delete(docId);
+    }
+  }, 1000);
+  docTaskTimers.set(docId, timer);
+}
 function fmtSize(n: number) {
   if (!n) return "0B";
   if (n < 1024) return `${n}B`;
@@ -2691,16 +2878,18 @@ async function onUploadFile(file: any) {
   if (!detailKb.value) return;
   uploadingDoc.value = true;
   try {
-    await uploadAiKnowledgeDocument(
+    const r = await uploadAiKnowledgeDocument(
       detailKb.value.id,
       file.raw,
       docChunkSize.value,
       docOverlap.value,
-      docStrategy.value
+      docStrategy.value,
+      docUseOcr.value
     );
-    ElMessage.success(`已上传「${file.name}」并索引`);
+    const data = r.data?.data || {};
+    ElMessage.success(`已上传「${file.name}」，正在后台解析`);
     await loadDocs();
-    await loadDetailStats(detailKb.value.id);
+    attachDocTask(data.id, data.task_id);
   } catch (e: any) {
     ElMessage.error(e?.message || "上传失败");
   } finally {
@@ -2797,9 +2986,10 @@ async function reparseDoc(row: any) {
   if (!detailKb.value) return;
   try {
     const r = await reparseAiKnowledgeDocument(detailKb.value.id, row.id);
-    ElMessage.success(`已重新解析，分块 ${r.data?.data?.chunks || 0}`);
+    const data = r.data?.data || {};
+    ElMessage.success("已开始重新解析");
     await loadDocs();
-    await loadDetailStats(detailKb.value.id);
+    attachDocTask(row.id, data.task_id);
   } catch (e: any) {
     ElMessage.error(e?.message || "重建失败");
   }
@@ -3218,7 +3408,15 @@ async function doDetailSearch() {
       true,
       detailSearchMode.value,
       detailVectorWeight.value,
-      detailFulltextWeight.value
+      detailFulltextWeight.value,
+      {
+        min_score: detailMinScore.value,
+        use_rerank: detailUseRerank.value,
+        rewrite: detailRewrite.value,
+        filters: detailFileFilter.value.trim()
+          ? { file_name: detailFileFilter.value.trim() }
+          : null,
+      }
     );
     detailSearchResults.value = r.data?.data || [];
     // 检索后自动推测相关分块（若未命中/少命中则提示可标注）
@@ -3240,6 +3438,92 @@ function highlight(text: string, q: string): string {
   const escq = esc(qq).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return et.replace(new RegExp(`(${escq})`, "gi"), "<mark>$1</mark>");
 }
+
+// ---------- 评测 ----------
+const evalSets = ref<any[]>([]);
+const evalSetId = ref<number | undefined>(undefined);
+const evalRuns = ref<any[]>([]);
+const evalRunning = ref(false);
+const evalTask = ref<any>(null);
+const evalConfig = reactive({ top_k: 5, use_rerank: true, mode: "hybrid", min_score: 0 });
+let evalTimer: ReturnType<typeof setInterval> | null = null;
+
+function metricPct(v?: number) {
+  if (v === undefined || v === null) return "—";
+  return `${(Number(v) * 100).toFixed(1)}%`;
+}
+function evalConfigLabel(cfg: any) {
+  if (!cfg) return "—";
+  const parts = [`mode=${cfg.mode || "hybrid"}`, `top_k=${cfg.top_k ?? 5}`];
+  parts.push(`rerank=${cfg.use_rerank ? "on" : "off"}`);
+  if (cfg.min_score) parts.push(`min_score=${cfg.min_score}`);
+  return parts.join(" · ");
+}
+async function loadEvalSets() {
+  try {
+    const r = await getAiEvalSets();
+    evalSets.value = r.data?.data || [];
+    if (!evalSetId.value && evalSets.value.length) {
+      evalSetId.value = evalSets.value[0].id;
+    }
+  } catch {
+    evalSets.value = [];
+  }
+}
+async function loadEvalRuns() {
+  if (!detailKb.value) return;
+  try {
+    const r = await getAiEvalRuns(detailKb.value.id);
+    evalRuns.value = r.data?.data || [];
+  } catch {
+    evalRuns.value = [];
+  }
+}
+async function startEval() {
+  if (!detailKb.value) return;
+  if (!evalSetId.value) {
+    ElMessage.warning("请先创建并选择评测集");
+    return;
+  }
+  evalRunning.value = true;
+  try {
+    const r = await runAiEval(detailKb.value.id, {
+      set_id: evalSetId.value,
+      config: { ...evalConfig },
+    });
+    const taskId = r.data?.data?.task_id;
+    evalTask.value = { id: taskId, progress: 0, status: "pending" };
+    await loadEvalRuns();
+    if (evalTimer) clearInterval(evalTimer);
+    evalTimer = setInterval(async () => {
+      try {
+        const t = await getAiRagTask(taskId);
+        const task = t.data?.data;
+        if (task) evalTask.value = task;
+        if (task && ["succeeded", "failed", "canceled"].includes(task.status)) {
+          if (evalTimer) clearInterval(evalTimer);
+          evalTimer = null;
+          await loadEvalRuns();
+          if (task.status === "succeeded") ElMessage.success("评测完成");
+          else ElMessage.error(task.error || "评测失败");
+        }
+      } catch {
+        if (evalTimer) clearInterval(evalTimer);
+        evalTimer = null;
+      }
+    }, 1500);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "运行评测失败");
+  } finally {
+    evalRunning.value = false;
+  }
+}
+onUnmounted(() => {
+  docTaskTimers.forEach((timer) => clearInterval(timer));
+  docTaskTimers.clear();
+  if (evalTimer) clearInterval(evalTimer);
+  evalTimer = null;
+});
 
 // ---------- 分块 ----------
 const chunksVisible = ref(false);

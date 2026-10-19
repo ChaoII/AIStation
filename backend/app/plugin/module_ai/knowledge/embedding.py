@@ -1,113 +1,40 @@
-"""知识分块嵌入：优先走 Agno ``OpenAILikeEmbedder``（OpenAI 兼容 ``/embeddings``），
-失败回退确定性哈希向量。
+"""嵌入链路兼容门面（历史导入路径 ``knowledge.embedding``）。
 
-回退向量用于离线 / 无嵌入模型 / 测试环境，保证 RAG 流水线始终可运行；
-生产建议配置真正的 embedding 模型以提升语义召回质量。
+实际实现已拆分到 ``knowledge/embeddings/``；本模块只做转发，保证：
+- ``service`` / ``query`` 等既有调用点，以及测试里的
+  ``monkeypatch.setattr(embedding, "embed_texts", ...)`` 继续有效；
+- 取消旧的「静默截断补零 + 静默哈希降级」——失败会抛出，除非显式开启回退。
 """
 from __future__ import annotations
 
-import hashlib
-import math
+from .embeddings.client import (  # noqa: F401  （兼容导出）
+    EMBED_DIM,
+    FALLBACK_DIM,
+    _hash_embed,
+    _tokenize,
+    current_model_name,
+    embed_query,
+    embed_texts,
+    embed_texts_with_stats,
+    hash_embed,
+)
+from .embeddings.dims import (  # noqa: F401  （兼容导出）
+    EmbeddingDimensionError,
+    get_dimension,
+    resolve_embedder,
+    verify_dimension,
+)
 
-#: 回退哈希向量的固定维度
-FALLBACK_DIM = 256
-
-#: 知识库向量入库的统一维度（用户指定 2560；注意 pgvector HNSW 索引上限 2000，
-#: 该维度下将顺序扫描而非 ANN 索引）
-EMBED_DIM = 2560
-
-
-def _fit_dim(v: list[float]) -> list[float]:
-    """把向量统一到 EMBED_DIM 维（超出截断、不足补零），保证入库维度一致。"""
-    if len(v) >= EMBED_DIM:
-        return v[:EMBED_DIM]
-    return list(v) + [0.0] * (EMBED_DIM - len(v))
-
-
-async def embed_texts(texts: list[str], model_id: int | None = None) -> list[list[float]]:
-    """把文本列表转为向量列表。
-
-    优先用知识库配置的嵌入模型（OpenAI 兼容 ``/embeddings``）；
-    任意环节失败则回退为确定性哈希向量（特征哈希 + L2 归一化）。
-    统一输出 ``EMBED_DIM`` 维。
-    """
-    if not texts:
-        return []
-    try:
-        vectors = await _embed_agno(texts, model_id)
-        if vectors and any(v for v in vectors):
-            return [_fit_dim(v) for v in vectors]
-    except Exception:  # noqa: BLE001
-        pass
-    return [_fit_dim(_hash_embed(t)) for t in texts]
-
-
-async def _embed_agno(texts: list[str], model_id: int | None) -> list[list[float]]:
-    """用 Agno ``OpenAILikeEmbedder`` 批量向量化（OpenAI 兼容 ``/embeddings``）。
-
-    通过 ``async_client`` 注入 base_url 与自定义请求头；embedder 的 ``base_url`` 留空，
-    避免 Agno 对第三方模型额外下发 ``dimensions`` 参数。
-    """
-    from agno.knowledge.embedder.openai_like import OpenAILikeEmbedder
-    from openai import AsyncOpenAI
-
-    from app.plugin.module_ai.models.service import AiModelService, build_headers
-
-    runtime = (
-        await AiModelService.get_runtime_model(model_id=model_id)
-        if model_id is not None
-        else await AiModelService.get_runtime_model(usage="embedding")
-    )
-    if not runtime:  # 兜底：未标注 usage=embedding 时退回默认模型
-        runtime = await AiModelService.get_runtime_model(model_id=model_id)
-    if not runtime:
-        raise RuntimeError("未配置嵌入模型")
-    base = runtime["base_url"].rstrip("/")
-    client = AsyncOpenAI(
-        base_url=base,
-        api_key=runtime.get("api_key") or "sk-none",
-        default_headers=build_headers(base, runtime.get("extra_headers"), "aistation-rag")
-        or None,
-    )
-    embedder = OpenAILikeEmbedder(id=runtime["model"], async_client=client)
-    embeddings, _usage = await embedder.async_get_embeddings_batch_and_usage(texts)
-    return embeddings
-
-
-def _hash_embed(text: str) -> list[float]:
-    """确定性特征哈希向量（bag-of-words 哈希 + 符号 + L2 归一化）。
-
-    语义质量有限，但可移植、无需模型，保证检索链路可用。
-    """
-    vec = [0.0] * FALLBACK_DIM
-    tokens = _tokenize(text)
-    for tok in tokens:
-        h = int(hashlib.md5(tok.encode("utf-8")).hexdigest(), 16)
-        idx = h % FALLBACK_DIM
-        sign = 1.0 if (h >> 8) % 2 == 0 else -1.0
-        vec[idx] += sign
-    norm = math.sqrt(sum(v * v for v in vec))
-    if norm <= 0.0:
-        return vec
-    return [v / norm for v in vec]
-
-
-def _tokenize(text: str) -> list[str]:
-    """分词：jieba 中文分词 + 拼音/数字切分，补充 2-gram 增强中文关联。"""
-    import re
-
-    tokens: list[str] = []
-    try:
-        import jieba
-
-        for w in jieba.cut(text or ""):
-            w = w.strip()
-            if w and re.search(r"[\w\u4e00-\u9fa5]", w):
-                tokens.append(w)
-    except Exception:  # noqa: BLE001
-        parts = re.split(r"[\s\W_]+", text or "", flags=re.UNICODE)
-        tokens = [p for p in parts if p]
-    compact = "".join(tokens)
-    for i in range(len(compact) - 1):
-        tokens.append(compact[i : i + 2])
-    return tokens
+__all__ = [
+    "EMBED_DIM",
+    "FALLBACK_DIM",
+    "EmbeddingDimensionError",
+    "current_model_name",
+    "embed_query",
+    "embed_texts",
+    "embed_texts_with_stats",
+    "get_dimension",
+    "hash_embed",
+    "resolve_embedder",
+    "verify_dimension",
+]

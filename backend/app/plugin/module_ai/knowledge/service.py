@@ -1,6 +1,7 @@
 """知识库 / 数据源 RAG 服务：分块、嵌入、入库、余弦检索、数据源同步。"""
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 
@@ -9,6 +10,8 @@ from sqlalchemy import func, select, text
 from app.core.database import async_db_session
 
 from . import embedding, graphrag
+from .chunking import chunk_drafts, chunk_text
+from .embeddings import persist as vector_store
 from .model import (
     AiChunkAnnotationLogModel,
     AiDatasourceModel,
@@ -34,54 +37,6 @@ def _cosine(a: list[float], b: list[float]) -> float | None:
         return None
     sim = dot / (na * nb)
     return max(-1.0, min(1.0, sim))
-
-
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed") -> list[str]:
-    """分块：fixed(定长+重叠) / paragraph(按段落) / sentence(按句子)。"""
-    text = (text or "").strip()
-    if not text:
-        return []
-    if strategy == "paragraph":
-        paras = re.split(r"\n\s*\n", text)
-        out: list[str] = []
-        for p in paras:
-            p = p.strip()
-            if p:
-                if len(p) > chunk_size:
-                    out.extend(_fixed_chunk(p, chunk_size, overlap))
-                else:
-                    out.append(p)
-        return out
-    if strategy == "sentence":
-        sents = re.split(r"(?<=[。！？!?；;])", text)
-        out = []
-        buf = ""
-        for s in sents:
-            s = s.strip()
-            if not s:
-                continue
-            if len(buf) + len(s) > chunk_size and buf:
-                out.append(buf.strip())
-                buf = ""
-            buf += s
-        if buf.strip():
-            out.append(buf.strip())
-        if len(out) > 1 and len(out[-1]) <= overlap:
-            out.pop()
-        return out
-    return _fixed_chunk(text, chunk_size, overlap)
-
-
-def _fixed_chunk(text: str, chunk_size: int, overlap: int) -> list[str]:
-    step = max(1, chunk_size - overlap)
-    chunks: list[str] = []
-    for i in range(0, len(text), step):
-        piece = text[i : i + chunk_size].strip()
-        if piece:
-            chunks.append(piece)
-    if len(chunks) > 1 and len(chunks[-1]) <= overlap:
-        chunks.pop()
-    return chunks
 
 
 def _annotation_text(annotations: list | None) -> str:
@@ -175,11 +130,20 @@ def _chunk_to_dict(c: AiKnowledgeChunkModel) -> dict:
         "id": c.id,
         "knowledge_base_id": c.knowledge_base_id,
         "file_name": c.file_name or "",
+        "document_id": c.document_id,
+        "parent_id": c.parent_id,
+        "is_parent": bool(c.is_parent),
         "chunk_index": c.chunk_index or 0,
         "content": c.content,
         "annotations": c.annotations or [],
         "meta": c.meta,
         "dimension": c.dimension,
+        "token_count": c.token_count,
+        "char_start": c.char_start,
+        "char_end": c.char_end,
+        "start_line": c.start_line,
+        "page": c.page,
+        "vector_model": c.vector_model,
     }
 
 
@@ -259,17 +223,36 @@ class AiKnowledgeService:
             return _kb_to_dict(b)
 
     @classmethod
+    async def mark_rebuild_needed(cls, kb_id: int) -> None:
+        """标记知识库「需要重建索引」（换嵌入模型后旧向量与新查询不在同一语义空间）。
+
+        不新增列：``needs_rebuild`` 由 ``kb_quality`` 依据分块 ``vector_model``
+        与当前模型动态比对；这里刷新 ``updated_time`` 作为显式信号并留痕。
+        """
+        from datetime import datetime
+
+        async with async_db_session.begin() as db:
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if b is not None:
+                b.updated_time = datetime.now()
+
+    @classmethod
     async def update_base(cls, kb_id: int, data, auth) -> dict | None:
         async with async_db_session.begin() as db:
             b = await db.get(AiKnowledgeBaseModel, kb_id)
             if not b or b.is_deleted:
                 return None
+            old_model_id = b.model_id
             for key in ("name", "description", "model_id", "file_type", "enabled"):
                 if getattr(data, key) is not None:
                     setattr(b, key, getattr(data, key))
             b.updated_id = auth.user.id
             await db.flush()
-            return _kb_to_dict(b)
+            changed = old_model_id != b.model_id
+            result = _kb_to_dict(b)
+        if changed:
+            await cls.mark_rebuild_needed(kb_id)
+        return result
 
     @classmethod
     async def delete_bases(cls, ids: list[int]) -> None:
@@ -280,7 +263,24 @@ class AiKnowledgeService:
                 b = await db.get(AiKnowledgeBaseModel, kid)
                 if not b:
                     continue
-                # 级联删除子数据（分块 / 图谱实体 / 关系），避免外键 IntegrityError
+                # 级联删除子数据（分块 / 图谱实体 / 关系 / 绑定 / 标注台账 / 检索日志），
+                # 避免外键 IntegrityError 与「删库后 id 复用导致串库日志」。
+                chunk_ids = select(AiKnowledgeChunkModel.id).where(
+                    AiKnowledgeChunkModel.knowledge_base_id == kid
+                )
+                entity_ids = select(AiKnowledgeEntityModel.id).where(
+                    AiKnowledgeEntityModel.knowledge_base_id == kid
+                )
+                await db.execute(
+                    _delete(AiKnowledgeEntityChunkModel).where(
+                        AiKnowledgeEntityChunkModel.entity_id.in_(entity_ids)
+                    )
+                )
+                await db.execute(
+                    _delete(AiKnowledgeEntityChunkModel).where(
+                        AiKnowledgeEntityChunkModel.chunk_id.in_(chunk_ids)
+                    )
+                )
                 await db.execute(
                     _delete(AiKnowledgeChunkModel).where(
                         AiKnowledgeChunkModel.knowledge_base_id == kid
@@ -294,6 +294,22 @@ class AiKnowledgeService:
                 await db.execute(
                     _delete(AiKnowledgeRelationModel).where(
                         AiKnowledgeRelationModel.knowledge_base_id == kid
+                    )
+                )
+                await db.execute(
+                    _delete(AiChunkAnnotationLogModel).where(
+                        AiChunkAnnotationLogModel.knowledge_base_id == kid
+                    )
+                )
+                await db.execute(
+                    _delete(AiSearchLogModel).where(
+                        AiSearchLogModel.knowledge_base_id == kid
+                    )
+                )
+                # 文档行也要删：否则删库后遗留的后台任务仍会按 document_id 写入分块
+                await db.execute(
+                    _delete(AiKnowledgeDocumentModel).where(
+                        AiKnowledgeDocumentModel.knowledge_base_id == kid
                     )
                 )
                 await db.delete(b)
@@ -382,46 +398,44 @@ class AiKnowledgeService:
             return b.model_id if b else None
 
     @classmethod
+    async def _vector_model_name(cls, model_id: int | None) -> str:
+        """向量来源模型名（供换模型失效判定；解析不到时返回 ``unknown``）。"""
+        resolver = getattr(embedding, "current_model_name", None)
+        if callable(resolver):
+            try:
+                name = await resolver(model_id=model_id)
+                if name:
+                    return str(name)
+            except Exception:  # noqa: BLE001
+                pass
+        return "unknown"
+
+    @classmethod
     async def ingest(cls, kb_id: int, data, auth) -> dict:
-        """文本 → 分块 → 向量化 → 入库，返回写入分块数。"""
-        chunks = chunk_text(data.content, data.chunk_size, data.overlap, data.strategy)
-        if not chunks:
-            return {"chunks": 0}
-        model_id = await cls._kb_model_id([kb_id])
-        vectors = await embedding.embed_texts(chunks, model_id=model_id)
-        saved = 0
-        async with async_db_session.begin() as db:
-            b = await db.get(AiKnowledgeBaseModel, kb_id)
-            if not b or b.is_deleted:
-                raise ValueError("知识库不存在")
-            existing = (
-                await db.execute(
-                    select(func.max(AiKnowledgeChunkModel.chunk_index)).where(
-                        AiKnowledgeChunkModel.knowledge_base_id == kb_id
-                    )
-                )
-            ).scalar() or 0
-            for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False), start=existing + 1):
-                db.add(
-                    AiKnowledgeChunkModel(
-                        knowledge_base_id=kb_id,
-                        file_name=data.file_name or "文本",
-                        chunk_index=i,
-                        content=chunk,
-                        meta={"file_name": data.file_name or "文本"},
-                        vector=vec,
-                        dimension=len(vec) if vec else None,
-                    )
-                )
-                saved += 1
-            b.chunk_count = (b.chunk_count or 0) + saved
-            b.updated_id = auth.user.id
-        await cls._rebuild_graph(kb_id)
-        return {"chunks": saved}
+        """文本 → 分块 → 向量化 → 入库，返回写入分块数。
+
+        统一委托 ``ingest_text``（同一条写入路径），避免出现「只写了 JSONB、
+        没有 vector_model/search_text」的第三套实现。
+        """
+        return await cls.ingest_text(
+            kb_id,
+            data.content,
+            data.file_name or "文本",
+            auth,
+            chunk_size=data.chunk_size,
+            overlap=data.overlap,
+            strategy=data.strategy,
+            parent_child=bool(getattr(data, "parent_child", False)),
+            chunk_unit=str(getattr(data, "chunk_unit", "char") or "char"),
+        )
 
     @classmethod
     async def kb_quality(cls, kb_id: int) -> dict:
-        """知识库质量治理：文档数/分块数/分块嵌入率/文档状态 + 健康分。"""
+        """知识库质量治理：文档数/分块数/分块嵌入率/文档状态 + 健康分 + 需重建标记。
+
+        口径：`chunks` 与 `embedded_rate` 只统计**子块**（父块不生成向量，另计入
+        `parents`），避免「父块拉低嵌入率」的假报警。
+        """
         from sqlalchemy import func as _f
         from sqlalchemy import select as _sel
 
@@ -429,25 +443,76 @@ class AiKnowledgeService:
 
         from .model import AiKnowledgeDocumentModel
 
+        chunk_filter = (
+            AiKnowledgeChunkModel.knowledge_base_id == kb_id,
+            AiKnowledgeChunkModel.is_deleted.is_(False),
+            AiKnowledgeChunkModel.is_parent.is_not(True),
+        )
         async with async_db_session() as db:
-            docs = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeDocumentModel).where(
-                AiKnowledgeDocumentModel.kb_id == kb_id,
-                AiKnowledgeDocumentModel.is_deleted.is_(False)))).scalar() or 0
-            chunks = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeChunkModel).where(
-                AiKnowledgeChunkModel.kb_id == kb_id,
-                AiKnowledgeChunkModel.is_deleted.is_(False)))).scalar() or 0
-            # 已嵌入分块（vector 非空）
-            try:
-                embedded = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeChunkModel).where(
-                    AiKnowledgeChunkModel.kb_id == kb_id,
-                    AiKnowledgeChunkModel.is_deleted.is_(False),
-                    AiKnowledgeChunkModel.vector.isnot(None)))).scalar() or 0
-            except Exception:  # noqa: BLE001
-                embedded = 0
-            status_rows = (await db.execute(_sel(AiKnowledgeDocumentModel.doc_status, _f.count())
-                            .where(AiKnowledgeDocumentModel.kb_id == kb_id,
-                                   AiKnowledgeDocumentModel.is_deleted.is_(False))
-                            .group_by(AiKnowledgeDocumentModel.doc_status))).all()
+            docs = (
+                await db.execute(
+                    _sel(_f.count())
+                    .select_from(AiKnowledgeDocumentModel)
+                    .where(
+                        AiKnowledgeDocumentModel.knowledge_base_id == kb_id,
+                        AiKnowledgeDocumentModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar() or 0
+            chunks = (
+                await db.execute(
+                    _sel(_f.count()).select_from(AiKnowledgeChunkModel).where(*chunk_filter)
+                )
+            ).scalar() or 0
+            parents = (
+                await db.execute(
+                    _sel(_f.count())
+                    .select_from(AiKnowledgeChunkModel)
+                    .where(
+                        AiKnowledgeChunkModel.knowledge_base_id == kb_id,
+                        AiKnowledgeChunkModel.is_deleted.is_(False),
+                        AiKnowledgeChunkModel.is_parent.is_(True),
+                    )
+                )
+            ).scalar() or 0
+            embedded = (
+                await db.execute(
+                    _sel(_f.count())
+                    .select_from(AiKnowledgeChunkModel)
+                    .where(*chunk_filter, AiKnowledgeChunkModel.vector.isnot(None))
+                )
+            ).scalar() or 0
+            status_rows = (
+                await db.execute(
+                    _sel(AiKnowledgeDocumentModel.doc_status, _f.count())
+                    .where(
+                        AiKnowledgeDocumentModel.knowledge_base_id == kb_id,
+                        AiKnowledgeDocumentModel.is_deleted.is_(False),
+                    )
+                    .group_by(AiKnowledgeDocumentModel.doc_status)
+                )
+            ).all()
+            stored_model = (
+                await db.execute(
+                    _sel(AiKnowledgeChunkModel.vector_model)
+                    .where(
+                        AiKnowledgeChunkModel.knowledge_base_id == kb_id,
+                        AiKnowledgeChunkModel.is_deleted.is_(False),
+                        AiKnowledgeChunkModel.vector_model.isnot(None),
+                    )
+                    .order_by(AiKnowledgeChunkModel.id.desc())
+                    .limit(1)
+                )
+            ).scalar()
+
+        current_model: str | None = None
+        try:
+            resolver = getattr(embedding, "current_model_name", None)
+            if callable(resolver):
+                current_model = await resolver(model_id=await cls._kb_model_id([kb_id]))
+        except Exception:  # noqa: BLE001  解析失败不能拖垮质量接口
+            current_model = None
+
         statuses = {r[0]: int(r[1]) for r in status_rows}
         embedded_rate = round(embedded / chunks, 4) if chunks else 0.0
         failed = int(statuses.get("failed", 0) or 0)
@@ -458,9 +523,21 @@ class AiKnowledgeService:
             score = 50.0
         elif failed and failed / max(docs, 1) > 0.2:
             score = 60.0
-        return {"kb_id": kb_id, "docs": docs, "chunks": chunks,
-                "embedded_rate": embedded_rate, "statuses": statuses,
-                "score": score, "healthy": score >= 80}
+        needs_rebuild = bool(chunks) and (
+            stored_model is None or current_model is None or stored_model != current_model
+        )
+        return {
+            "kb_id": kb_id,
+            "docs": docs,
+            "chunks": chunks,
+            "parents": parents,
+            "embedded_rate": embedded_rate,
+            "statuses": statuses,
+            "score": score,
+            "healthy": score >= 80,
+            "needs_rebuild": needs_rebuild,
+            "vector_model": stored_model,
+        }
 
     @classmethod
     async def search(
@@ -472,15 +549,51 @@ class AiKnowledgeService:
         mode: str = "hybrid",
         vector_weight: float = 0.5,
         fulltext_weight: float = 0.5,
+        *,
+        min_score: float = 0.0,
+        use_rerank: bool = True,
+        filters: dict | None = None,
+        context_tokens: int | None = None,
+        use_weighted: bool = False,
+        rewrite: str | None = None,
+        user_id: int | None = None,
     ) -> list[dict]:
-        """知识检索（多模态，自动选路）。mode: vector/fulltext/hybrid/graph/grep。"""
-        if not kb_ids or not query:
-            return []
-        if cls._is_postgres():
-            return await cls._pg_search(
-                kb_ids, query, top_k, use_graph, mode, vector_weight, fulltext_weight
+        """知识检索（统一走检索管线；历史参数保持兼容）。
+
+        新增参数全部为关键字参数，避免打断 agent/助手/工作流的位置参数调用。
+        """
+        from .config import rag_config
+        from .search import SearchOptions
+        from .search import search as pipeline_search
+
+        options = SearchOptions(
+            mode=mode,
+            use_graph=use_graph,
+            min_score=min_score,
+            use_rerank=use_rerank,
+            vector_weight=(vector_weight if use_weighted else None),
+            fulltext_weight=(fulltext_weight if use_weighted else None),
+            rewrite=rewrite or rag_config.rewrite,
+            filters=filters,
+            context_tokens=context_tokens,
+        )
+        stats: dict = {}
+        results = await pipeline_search(kb_ids, query, top_k, options, stats_out=stats)
+        try:
+            await cls.log_search(
+                kb_ids[0],
+                query,
+                mode,
+                top_k,
+                results,
+                user_id=user_id,
+                embed_ms=float(stats.get("embed_ms") or 0.0),
+                rerank=stats.get("rerank"),
+                engine_counts=stats.get("engine_counts"),
             )
-        return await cls._py_search(kb_ids, query, top_k, use_graph, mode)
+        except Exception:  # noqa: BLE001  日志失败不影响检索
+            pass
+        return results
 
     @staticmethod
     def _is_postgres() -> bool:
@@ -508,265 +621,33 @@ class AiKnowledgeService:
             return False
 
     @classmethod
-    async def _pg_search(
-        cls,
-        kb_ids: list[int],
-        query: str,
-        top_k: int,
-        use_graph: bool,
-        mode: str = "hybrid",
-        vector_weight: float = 0.5,
-        fulltext_weight: float = 0.5,
-    ) -> list[dict]:
-        """PostgreSQL 多模态检索：vector / fulltext(jiebacfg) / hybrid(加权融合) / graph / grep(ILIKE)。"""
-        results: list[dict] = []
-        seen: set[int] = set()
-        do_ft = mode in ("fulltext", "hybrid")
-        do_vec = mode in ("vector", "hybrid")
-        do_graph = mode == "graph" or (mode == "hybrid" and use_graph)
-
-        # grep / 子串全文（WikiLLM 式）：拆词后任一命中即返回（简单问题兜底）
-        if mode == "grep":
-            try:
-                terms = _grep_terms(query)
-                if not terms:
-                    terms = [query]
-                conds = " OR ".join(
-                    [f"(content ILIKE :t{i} OR {_ANN_SQL} ILIKE :t{i})" for i in range(len(terms))]
-                )
-                params: dict = {"ids": kb_ids, "k": top_k}
-                for i, t in enumerate(terms):
-                    params[f"t{i}"] = f"%{t}%"
-                async with async_db_session() as db:
-                    rows = (
-                        await db.execute(
-                            text(
-                                "SELECT id, knowledge_base_id, file_name, document_id, start_line, page, content, 1.0 AS score "
-                                "FROM ai_knowledge_chunks "
-                                "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
-                                f"AND ({conds}) "
-                                "ORDER BY id LIMIT :k"
-                            ),
-                            params,
-                        )
-                    ).mappings().all()
-                    for r in rows:
-                        results.append(
-                            {
-                                "chunk_id": int(r["id"]),
-                                "knowledge_base_id": int(r["knowledge_base_id"]),
-                                "file_name": r["file_name"] or "",
-                                "document_id": r["document_id"],
-                                "start_line": r["start_line"],
-                                "page": r["page"],
-                                "content": r["content"],
-                                "score": round(float(r["score"] or 0), 4),
-                                "engine": "grep",
-                            }
-                        )
-            except Exception:  # noqa: BLE001
-                pass
-            return results[:top_k]
-
-        ft_list: list[dict] = []
-        vec_list: list[dict] = []
-
-        # fulltext / jieba 中文全文
-        if do_ft:
-            try:
-                if await cls._pg_ext("pg_jieba"):
-                    async with async_db_session() as db:
-                        rows = (
-                            await db.execute(
-                                text(
-                                    "SELECT id, knowledge_base_id, file_name, document_id, start_line, page, content, "
-                                    "ts_rank(to_tsvector('jiebacfg', content || ' ' || " + _ANN_SQL + "), plainto_tsquery('jiebacfg', :q)) AS score "
-                                    "FROM ai_knowledge_chunks "
-                                    "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
-                                    "AND to_tsvector('jiebacfg', content || ' ' || " + _ANN_SQL + ") @@ plainto_tsquery('jiebacfg', :q) "
-                                    "ORDER BY score DESC LIMIT :k"
-                                ),
-                                {"ids": kb_ids, "q": query, "k": top_k},
-                            )
-                        ).mappings().all()
-                        for r in rows:
-                            ft_list.append(
-                                {
-                                    "chunk_id": int(r["id"]),
-                                    "knowledge_base_id": int(r["knowledge_base_id"]),
-                                    "file_name": r["file_name"] or "",
-                                    "document_id": r["document_id"],
-                                    "start_line": r["start_line"],
-                                    "page": r["page"],
-                                    "content": r["content"],
-                                    "score": round(float(r["score"] or 0), 4),
-                                    "engine": "jieba_fulltext",
-                                }
-                            )
-            except Exception:  # noqa: BLE001
-                pass
-            if mode == "fulltext":
-                return ft_list[:top_k]
-
-        # vector / pgvector
-        if do_vec:
-            try:
-                qvec = (await embedding.embed_texts([query], model_id=await cls._kb_model_id(kb_ids)))[0]
-                async with async_db_session() as db:
-                    await cls._ensure_vector_col(db)
-                    rows = (
-                        await db.execute(
-                            text(
-                                "SELECT id, knowledge_base_id, file_name, document_id, start_line, page, content, "
-                                "(1 - (embedding <=> :qv)) AS score "
-                                "FROM ai_knowledge_chunks "
-                                "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false AND embedding IS NOT NULL "
-                                "ORDER BY embedding <=> :qv LIMIT :k"
-                            ),
-                            {"ids": kb_ids, "qv": str(qvec), "k": top_k},
-                        )
-                    ).mappings().all()
-                    for r in rows:
-                        vec_list.append(
-                            {
-                                "chunk_id": int(r["id"]),
-                                "knowledge_base_id": int(r["knowledge_base_id"]),
-                                "file_name": r["file_name"] or "",
-                                "document_id": r["document_id"],
-                                "start_line": r["start_line"],
-                                "page": r["page"],
-                                "content": r["content"],
-                                "score": round(float(r["score"] or 0), 4),
-                                "engine": "pgvector",
-                            }
-                        )
-            except Exception:  # noqa: BLE001
-                vec_list = await cls._py_search_vector(kb_ids, query, top_k)
-            if mode == "vector":
-                return vec_list[:top_k]
-
-        # hybrid：向量 + 全文 RRF 融合（各引擎按排名倒数加权，鲁棒且不惩罚缺失引擎）
-        if mode == "hybrid":
-            results = cls._fuse_rrf(vec_list, ft_list)
-            seen = {r["chunk_id"] for r in results}
-        else:
-            results = vec_list + ft_list
-            seen = {r["chunk_id"] for r in results}
-
-        # graph 多跳
-        if do_graph:
-            try:
-                gh = await graphrag.graph_retrieve(kb_ids, query, top_k)
-                for hit in gh:
-                    for c in hit.get("chunks") or []:
-                        rid = c.get("chunk_id")
-                        if rid in seen:
-                            continue
-                        seen.add(rid)
-                        results.append(
-                            {
-                                "chunk_id": rid,
-                                "knowledge_base_id": kb_ids[0],
-                                "file_name": c.get("file_name") or "",
-                                "content": c["content"],
-                                "score": 0,
-                                "graph_entity": hit.get("name"),
-                                "engine": "graphrag",
-                            }
-                        )
-            except Exception:  # noqa: BLE001
-                pass
-        return results[: top_k * 3]
-
-    @staticmethod
-    def _minmax_scores(items: list[dict]) -> dict[int, float]:
-        """按分块得分清单做 max 归一分（score/max，命中最大者=1，单命中不再归零）。"""
-        if not items:
-            return {}
-        hi = max(it.get("score", 0.0) or 0.0 for it in items)
-        if hi <= 0.0:
-            return {it["chunk_id"]: 0.0 for it in items}
-        return {it["chunk_id"]: ((it.get("score", 0.0) or 0.0) / hi) for it in items}
-
-    @classmethod
-    def _fuse_weighted(
-        cls,
-        vec_list: list[dict],
-        ft_list: list[dict],
-        vec_w: float,
-        ft_w: float,
-    ) -> list[dict]:
-        """混合检索：向量 + 全文按权重融合（缺失侧贡献 0）。"""
-        vn = cls._minmax_scores(vec_list)
-        fn = cls._minmax_scores(ft_list)
-        info: dict[int, dict] = {}
-        for it in vec_list + ft_list:
-            info.setdefault(it["chunk_id"], it)
-        fused: list[dict] = []
-        for cid, it in info.items():
-            combined = vn.get(cid, 0.0) * vec_w + fn.get(cid, 0.0) * ft_w
-            fused.append({**it, "engine": "hybrid", "score": round(combined, 4)})
-        fused.sort(key=lambda x: x["score"], reverse=True)
-        return fused
-
-    @classmethod
-    def _fuse_rrf(
-        cls,
-        vec_list: list[dict],
-        ft_list: list[dict],
-        k: int = 60,
-    ) -> list[dict]:
-        """RRF（Reciprocal Rank Fusion）：多引擎按排名倒数融合。
-
-        分数 = Σ 1/(k + rank)，不依赖各引擎分数尺度，也不因某引擎缺失而
-        惩罚命中项；比加权归一化更鲁棒，是主流混合检索的标准融合法。
-        """
-        scores: dict[int, float] = {}
-        info: dict[int, dict] = {}
-        for lst in (vec_list, ft_list):
-            for rank, it in enumerate(lst, start=1):
-                cid = it["chunk_id"]
-                scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank)
-                info.setdefault(cid, it)
-        fused = [
-            {**info[cid], "engine": "hybrid", "score": round(s, 4)}
-            for cid, s in scores.items()
-        ]
-        fused.sort(key=lambda x: x["score"], reverse=True)
-        return fused
-
-    @classmethod
     async def _ensure_vector_col(cls, db, dim: int | None = None) -> None:
-        """惰性：为 chunk 表加 pgvector embedding 列 + HNSW 索引（幂等，异常忽略）。
+        """惰性：确保 pgvector 列（vector + halfvec）与 HNSW 索引，并从 JSONB 回填一次。
 
-        dim 超过 2000 时 HNSW 无法建索引，退化为顺序扫描（用小库可接受）。
+        2560 维超过 ``vector`` 的 HNSW 上限（2000），因此真正建索引的是半精度列
+        ``embedding_hv``（上限 4000）；``vector`` 列仅作兼容保留。
         """
         from . import embedding as _emb
 
         dim = dim or _emb.EMBED_DIM
+        if not await vector_store.ensure_pg_vector_columns(db, dim):
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return
         try:
+            # 从现有 JSONB vector 迁移一次（维度必须严格等于列维度）
             await db.execute(
                 text(
-                    f"ALTER TABLE ai_knowledge_chunks "
-                    f"ADD COLUMN IF NOT EXISTS embedding vector({dim})"
-                )
-            )
-            if dim <= 2000:
-                await db.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS idx_chunk_embedding "
-                        "ON ai_knowledge_chunks USING hnsw (embedding vector_cosine_ops)"
-                    )
-                )
-            # 从现有 JSONB vector 迁移一次（<=dim 维才填，避免缩小）
-            await db.execute(
-                text(
-                    "UPDATE ai_knowledge_chunks SET embedding = vector(v.vec::text) "
+                    "UPDATE ai_knowledge_chunks SET embedding = CAST(v.vec::text AS vector), "
+                    "embedding_hv = CAST(v.vec::text AS halfvec) "
                     "FROM (SELECT id, vector AS vec FROM ai_knowledge_chunks "
-                    "      WHERE vector IS NOT NULL AND embedding IS NULL) v "
+                    "      WHERE vector IS NOT NULL AND embedding_hv IS NULL) v "
                     "WHERE ai_knowledge_chunks.id = v.id AND "
-                    f"      jsonb_array_length(v.vec::jsonb) BETWEEN 1 AND {dim}"
-                )
+                    "      jsonb_array_length(v.vec::jsonb) = :dim"
+                ),
+                {"dim": dim},
             )
             await db.commit()
         except Exception:  # noqa: BLE001
@@ -1245,38 +1126,62 @@ class AiKnowledgeService:
     async def upload_document(
         cls, kb_id: int, filename: str, data: bytes, auth,
         chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed",
+        use_ocr: bool = True,
     ) -> dict:
-        """上传文档→提取全文→分块向量化→入库。"""
-        text, page_offsets = cls._extract_doc(filename, data)
-        if not text.strip():
-            raise ValueError("文档无有效文本")
-        ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
+        """上传文档：落库 + 上传原始文件 + 入队后台解析（不再同步解析阻塞请求）。"""
+        from .tasks import create_task
+
         async with async_db_session.begin() as db:
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if not b or b.is_deleted:
+                raise ValueError("知识库不存在")
+            # 先做一次「快速文本层」提取：常见格式（txt/docx/pdf 文本层）无需等后台；
+            # 扫描件/图片会得到空文本，由 worker 从 RustFS 取原始字节走 OCR。
+            # 图片等二进制不能走文本解码（会产生 NUL，PG text 列拒绝）。
+            suffix = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else ""
+            if suffix in ("png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp", "gif"):
+                text, page_offsets = "", [0]
+            else:
+                try:
+                    text, page_offsets = await asyncio.to_thread(
+                        cls._extract_doc, filename or "文档", data
+                    )
+                except Exception:  # noqa: BLE001  解析失败交由后台任务报错
+                    text, page_offsets = "", [0]
+            ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
             doc = AiKnowledgeDocumentModel(
                 knowledge_base_id=kb_id,
                 name=filename or "文档",
                 file_type=ext,
                 size=len(data),
                 content=text,
-                doc_status="ready",
+                doc_status="pending",
             )
             db.add(doc)
             await db.flush()
             doc_id = doc.id
             doc.object_key = await cls._upload_to_rustfs(kb_id, filename or "文档", data)
-        # 计算每块的起始行/页码，用于引用溯源
-        chunks = chunk_text(text, chunk_size, overlap, strategy)
-        start_lines, pages = cls._chunk_spans(text, chunks, page_offsets)
-        # 分块向量化入库
-        result = await cls.ingest_text(
-            kb_id, text, file_name=filename or "文档", auth=auth,
-            chunk_size=chunk_size, overlap=overlap, strategy=strategy,
-            document_id=doc_id, start_lines=start_lines, pages=pages,
+        task = await create_task(
+            "document_ingest",
+            kb_id=kb_id,
+            document_id=doc_id,
+            payload={
+                "filename": filename or "文档",
+                "chunk_size": chunk_size,
+                "overlap": overlap,
+                "strategy": strategy,
+                "use_ocr": bool(use_ocr),
+                "page_offsets": list(page_offsets or [0]),
+            },
+            auth=auth,
         )
-        async with async_db_session.begin() as db:
-            d = await db.get(AiKnowledgeDocumentModel, doc_id)
-            d.chunk_count = result.get("chunks", 0)
-        return {"id": doc_id, "name": filename or "文档", "chunks": result.get("chunks", 0)}
+        return {
+            "id": doc_id,
+            "name": filename or "文档",
+            "chunks": 0,
+            "task_id": task["id"],
+            "status": "pending",
+        }
 
     @staticmethod
     async def _upload_to_rustfs(kb_id: int, filename: str, data: bytes) -> str | None:
@@ -1385,21 +1290,118 @@ class AiKnowledgeService:
             return None
 
     @classmethod
-    async def delete_document(cls, kb_id: int, doc_id: int) -> None:
+    async def _extract_doc_async(
+        cls, filename: str, data: bytes, *, use_ocr: bool = True, kb_id: int | None = None
+    ) -> tuple[str, list[int], dict]:
+        """异步解析（供后台任务）：支持 OCR、表格、网页等完整解析能力。"""
+        from .parsing import parse_document
+
+        doc = await parse_document(filename, data, use_ocr=use_ocr, kb_id=kb_id)
+        return doc.text, doc.page_offsets, doc.meta
+
+    @classmethod
+    async def web_import(cls, kb_id: int, url: str, auth) -> dict:
+        """网页导入：抓正文 → 建文档 → 入队后台分块/向量化。"""
+        from .parsing.web import parse_url
+        from .tasks import create_task
+
+        text, offsets, meta = await parse_url(url, kb_id=kb_id)
+        if not text.strip():
+            raise ValueError("网页抓取失败或无正文")
+        async with async_db_session.begin() as db:
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if not b or b.is_deleted:
+                raise ValueError("知识库不存在")
+            doc = AiKnowledgeDocumentModel(
+                knowledge_base_id=kb_id,
+                name=(url or "网页")[:200],
+                file_type="html",
+                size=len(text),
+                content=text,
+                doc_status="pending",
+            )
+            db.add(doc)
+            await db.flush()
+            doc_id = doc.id
+        task = await create_task(
+            "document_ingest",
+            kb_id=kb_id,
+            document_id=doc_id,
+            payload={"filename": url, "page_offsets": offsets, "url": url},
+            auth=auth,
+        )
+        return {"id": doc_id, "task_id": task["id"], "status": "pending", "meta": meta}
+
+    @classmethod
+    async def _purge_document_chunks(cls, db, doc_id: int) -> dict:
+        """清理某文档的全部分块及其绑定/标记录（供删除与重解析复用）。
+
+        返回 ``{"chunks": n, "bindings": m, "annotations": k}``：
+        - 实体-分块绑定为物理删除（无软删语义）；
+        - 标记录软删（保留台账可追溯）；
+        - 分块本身物理删除（与 ``delete_chunk`` 一致，避免孤儿分块继续被检索命中）。
+        """
+        from sqlalchemy import delete as _delete
+        from sqlalchemy import update as _update
+
+        ids = (
+            (
+                await db.execute(
+                    select(AiKnowledgeChunkModel.id).where(
+                        AiKnowledgeChunkModel.document_id == doc_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not ids:
+            return {"chunks": 0, "bindings": 0, "annotations": 0}
+        bindings = (
+            await db.execute(
+                _delete(AiKnowledgeEntityChunkModel).where(
+                    AiKnowledgeEntityChunkModel.chunk_id.in_(ids)
+                )
+            )
+        ).rowcount or 0
+        annotations = (
+            await db.execute(
+                _update(AiChunkAnnotationLogModel)
+                .where(
+                    AiChunkAnnotationLogModel.chunk_id.in_(ids),
+                    AiChunkAnnotationLogModel.is_deleted.is_(False),
+                )
+                .values(is_deleted=True, deleted_time=func.now())
+            )
+        ).rowcount or 0
+        await db.execute(_delete(AiKnowledgeChunkModel).where(AiKnowledgeChunkModel.id.in_(ids)))
+        return {"chunks": len(ids), "bindings": int(bindings), "annotations": int(annotations)}
+
+    @classmethod
+    async def delete_document(cls, kb_id: int, doc_id: int) -> dict:
+        """删除文档：级联清理分块/绑定/标注，并释放 S3 对象。"""
         import asyncio
 
         from app.utils.s3_client import s3_client
 
+        object_key: str | None = None
+        purged = {"chunks": 0, "bindings": 0, "annotations": 0}
         async with async_db_session.begin() as db:
             d = await db.get(AiKnowledgeDocumentModel, doc_id)
-            if d and d.knowledge_base_id == kb_id:
-                ok = d.object_key
-                await db.delete(d)
-        if ok:
+            if not d or d.knowledge_base_id != kb_id or d.is_deleted:
+                raise ValueError("文档不存在")
+            object_key = d.object_key
+            purged = await cls._purge_document_chunks(db, doc_id)
+            await db.delete(d)
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if b:
+                b.chunk_count = max(0, (b.chunk_count or 0) - purged["chunks"])
+        if object_key:
             try:
-                await asyncio.to_thread(s3_client.delete_object, ok)
-            except Exception:  # noqa: BLE001
+                await asyncio.to_thread(s3_client.delete_object, object_key)
+            except Exception:  # noqa: BLE001  删除对象失败不影响元数据一致性
                 pass
+        return purged
 
     @classmethod
     async def get_document_content(cls, kb_id: int, doc_id: int) -> dict:
@@ -1411,21 +1413,25 @@ class AiKnowledgeService:
 
     @classmethod
     async def reparse_document(cls, kb_id: int, doc_id: int, auth) -> dict:
-        """重新解析文档：基于全文重建分块向量化与图谱。"""
-        async with async_db_session() as db:
+        """重新解析（后台任务）：先清旧分块，再由 worker 按原文重建。"""
+        from .tasks import create_task
+
+        name = "文档"
+        async with async_db_session.begin() as db:
             d = await db.get(AiKnowledgeDocumentModel, doc_id)
             if not d or d.knowledge_base_id != kb_id or d.is_deleted:
                 raise ValueError("文档不存在")
-            text = d.content or ""
-        if not text.strip():
-            raise ValueError("文档无有效文本")
-        result = await cls.ingest_text(
-            kb_id, text, file_name=d.name or "文档", auth=auth,
+            purged = await cls._purge_document_chunks(db, doc_id)
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if b:
+                b.chunk_count = max(0, (b.chunk_count or 0) - purged["chunks"])
+            name = d.name or "文档"
+            d.doc_status = "pending"
+        task = await create_task(
+            "document_ingest", kb_id=kb_id, document_id=doc_id,
+            payload={"filename": name}, auth=auth,
         )
-        async with async_db_session.begin() as db:
-            dd = await db.get(AiKnowledgeDocumentModel, doc_id)
-            dd.chunk_count = result.get("chunks", 0)
-        return {"id": doc_id, "chunks": result.get("chunks", 0)}
+        return {"id": doc_id, "task_id": task["id"], "status": "pending"}
 
     @classmethod
     async def ingest_text(
@@ -1434,13 +1440,34 @@ class AiKnowledgeService:
         document_id: int | None = None,
         start_lines: list[int] | None = None,
         pages: list[int] | None = None,
+        rebuild_graph: bool = True,
+        parent_child: bool = False,
+        chunk_unit: str = "char",
+        page_offsets: list[int] | None = None,
     ) -> dict:
-        """文本→分块→向量化→入库（文档复用）。支持引用溯源字段。"""
-        chunks = chunk_text(text, chunk_size, overlap, strategy)
-        if not chunks:
+        """文本→分块→向量化→入库（文档复用）。支持引用溯源与父子分块。
+
+        - ``parent_child=True`` 时父块只存文本（不向量化），子块带 ``parent_id``；
+        - ``chunk_unit="token"`` 时按 token 窗口切分；
+        - ``rebuild_graph=False`` 供批量入库在末尾只重建一次图谱。
+        """
+        drafts = chunk_drafts(
+            text,
+            strategy=strategy,
+            chunk_size=chunk_size,
+            overlap=overlap,
+            unit=chunk_unit,
+            page_offsets=page_offsets,
+            parent_child=parent_child,
+        )
+        child_drafts = [draft for draft in drafts if not draft.is_parent]
+        if not child_drafts:
             return {"chunks": 0}
         model_id = await cls._kb_model_id([kb_id])
-        vectors = await embedding.embed_texts(chunks, model_id=model_id)
+        vectors = await embedding.embed_texts(
+            [draft.content for draft in child_drafts], model_id=model_id
+        )
+        model_name = await cls._vector_model_name(model_id)
         saved = 0
         async with async_db_session.begin() as db:
             b = await db.get(AiKnowledgeBaseModel, kb_id)
@@ -1453,25 +1480,66 @@ class AiKnowledgeService:
                     )
                 )
             ).scalar() or 0
-            for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False), start=existing + 1):
-                db.add(
-                    AiKnowledgeChunkModel(
-                        knowledge_base_id=kb_id,
-                        file_name=file_name,
-                        document_id=document_id,
-                        start_line=(start_lines[i - existing - 1] if start_lines and i - existing - 1 < len(start_lines) else None),
-                        page=(pages[i - existing - 1] if pages and i - existing - 1 < len(pages) else None),
-                        chunk_index=i,
-                        content=chunk,
-                        meta={"file_name": file_name},
-                        vector=vec,
-                        dimension=len(vec) if vec else None,
-                    )
+            parent_rows: list[AiKnowledgeChunkModel] = []
+            for offset, draft in enumerate([d for d in drafts if d.is_parent]):
+                row = AiKnowledgeChunkModel(
+                    knowledge_base_id=kb_id,
+                    file_name=file_name,
+                    document_id=document_id,
+                    chunk_index=existing + offset + 1,
+                    content=draft.content,
+                    is_parent=True,
+                    page=draft.page,
+                    char_start=draft.char_start,
+                    char_end=draft.char_end,
+                    token_count=draft.token_count,
+                    meta={"file_name": file_name, "is_parent": True},
                 )
+                db.add(row)
+                parent_rows.append(row)
+            if parent_rows:
+                await db.flush()
+            parent_ids = [row.id for row in parent_rows]
+            rows: list[AiKnowledgeChunkModel] = []
+            for offset, (draft, _vec) in enumerate(
+                zip(child_drafts, vectors, strict=False)
+            ):
+                index = existing + len(parent_rows) + offset + 1
+                parent_id = None
+                if draft.parent_index is not None and draft.parent_index < len(parent_ids):
+                    parent_id = parent_ids[draft.parent_index]
+                row = AiKnowledgeChunkModel(
+                    knowledge_base_id=kb_id,
+                    file_name=file_name,
+                    document_id=document_id,
+                    parent_id=parent_id,
+                    start_line=(
+                        text[: draft.char_start].count("\n") + 1
+                        if draft.char_start is not None
+                        else None
+                    ),
+                    page=(
+                        draft.page
+                        if draft.page is not None
+                        else (pages[offset] if pages and offset < len(pages) else None)
+                    ),
+                    chunk_index=index,
+                    content=draft.content,
+                    char_start=draft.char_start,
+                    char_end=draft.char_end,
+                    token_count=draft.token_count,
+                    meta={"file_name": file_name},
+                )
+                db.add(row)
+                rows.append(row)
                 saved += 1
+            await db.flush()
+            await vector_store.write_vectors(db, rows, vectors, model_name=model_name)
             b.chunk_count = (b.chunk_count or 0) + saved
-            b.updated_id = auth.user.id
-        await cls._rebuild_graph(kb_id)
+            if auth is not None:
+                b.updated_id = auth.user.id
+        if rebuild_graph:
+            await cls._rebuild_graph(kb_id)
         return {"chunks": saved}
 
     @classmethod
@@ -1605,13 +1673,16 @@ class AiKnowledgeService:
         if not query:
             return []
         # 向量召回（含标注）
+        from .search.engines import fulltext_search, vector_search
+
+        model_id = await cls._kb_model_id([kb_id])
         try:
-            vec = await cls._pg_search([kb_id], query, top_n, False, "vector")
+            vec = await vector_search([kb_id], query, top_n, model_id=model_id)
         except Exception:  # noqa: BLE001
             vec = []
         # 全文命中的分块 id
         try:
-            ft = await cls._pg_search([kb_id], query, top_n * 3, False, "fulltext")
+            ft = await fulltext_search([kb_id], query, top_n * 3)
         except Exception:  # noqa: BLE001
             ft = []
         ft_ids = {r["chunk_id"] for r in ft}
@@ -1632,18 +1703,30 @@ class AiKnowledgeService:
     async def log_search(
         cls, kb_id: int, query: str, mode: str, top_k: int,
         results: list[dict], user_id: int | None = None,
+        embed_ms: float = 0.0, rerank: str | None = None,
+        engine_counts: dict | None = None,
     ) -> None:
-        """记录一次检索（供检索趋势统计）。"""
+        """记录一次检索（供检索趋势统计与质量分析）。
+
+        ``engines`` 统一存对象：``{"engines": [...], "embed_ms": ..., "rerank": ...,
+        "engine_counts": {...}}``，便于前端展示耗时分解与降级情况。
+        """
         try:
 
             async with async_db_session() as db:
                 engines = list(
                     dict.fromkeys(r.get("engine") for r in results if r.get("engine"))
                 )
+                payload = {
+                    "engines": engines,
+                    "embed_ms": round(float(embed_ms or 0.0), 1),
+                    "rerank": rerank or "off",
+                    "engine_counts": dict(engine_counts or {}),
+                }
                 db.add(
                     AiSearchLogModel(
                         knowledge_base_id=kb_id, query=query, mode=mode,
-                        top_k=top_k, hit_count=len(results), engines=engines,
+                        top_k=top_k, hit_count=len(results), engines=payload,
                         user_id=user_id,
                     )
                 )
@@ -1689,7 +1772,9 @@ class AiKnowledgeService:
             ).all()
             engine_dist: dict[str, int] = {}
             for eng, cnt in en_rows:
-                for e in (eng or []):
+                # 兼容旧格式（list）与新格式（{"engines": [...]}）
+                names = eng.get("engines") if isinstance(eng, dict) else eng
+                for e in (names or []):
                     engine_dist[e] = engine_dist.get(e, 0) + int(cnt)
             # 按天趋势
             day_rows = (
@@ -2041,39 +2126,64 @@ class AiKnowledgeService:
 
     @classmethod
     async def sync_datasource(cls, ds_id: int, data, auth) -> dict:
-        """数据源 → 目标知识库 同步入库。"""
+        """数据源 → 目标知识库 同步入库（后台任务）：立即返回 task_id。"""
+        from .tasks import create_task
+
         async with async_db_session() as db:
             d = await db.get(AiDatasourceModel, ds_id)
-            kb_id = d.knowledge_base_id if d else None
         if not d or d.is_deleted:
             raise ValueError("数据源不存在")
+        if not d.knowledge_base_id:
+            raise ValueError("数据源未绑定目标知识库")
+        table = getattr(data, "table", None)
+        if d.ds_type == "db" and not (table or "").strip():
+            raise ValueError("数据库同步需指定表名/查询")
+        task = await create_task(
+            "datasource_sync",
+            kb_id=d.knowledge_base_id,
+            payload={"ds_id": ds_id, "table": table, "limit": int(getattr(data, "limit", 50) or 50)},
+            auth=auth,
+        )
+        return {"task_id": task["id"], "rows": 0, "chunks": 0, "status": "pending"}
+
+    @classmethod
+    async def _sync_datasource_rows(
+        cls, ds_id: int, *, table: str | None, limit: int = 50
+    ) -> dict:
+        """数据源同步的同步实现（供 worker 调用）：批量入库，图谱只重建一次。"""
+        async with async_db_session() as db:
+            d = await db.get(AiDatasourceModel, ds_id)
+        if not d or d.is_deleted:
+            raise ValueError("数据源不存在")
+        kb_id = d.knowledge_base_id
         if not kb_id:
             raise ValueError("数据源未绑定目标知识库")
         if d.ds_type == "db":
-            if not (data.table or "").strip():
+            if not (table or "").strip():
                 raise ValueError("数据库同步需指定表名/查询")
-            texts = await cls._db_rows(d.uri or "", data.table.strip(), data.limit)
+            texts = await cls._db_rows(d.uri or "", table.strip(), limit)
         else:
-            texts = await cls._api_rows(d.uri or "", d.api_config, data.limit)
+            texts = await cls._api_rows(d.uri or "", d.api_config, limit)
 
-        async with async_db_session.begin() as db:
-            b = await db.get(AiKnowledgeBaseModel, kb_id)
-            if b:
-                pass  # 校验存在
         total = 0
-        for txt in texts:
-            if not txt.strip():
+        for row_text in texts:
+            if not row_text.strip():
                 continue
-            # 使用轻量导入：直接按每条入库（避免跨函数 session 复用问题）
-            total += await cls._ingest_single(kb_id, d.name, txt, auth)
+            total += await cls._ingest_single(
+                kb_id, d.name, row_text, auth=None, rebuild_graph=False
+            )
+        if texts:
+            await cls._rebuild_graph(kb_id)
         return {"rows": len(texts), "chunks": total}
 
     @classmethod
-    async def _ingest_single(cls, kb_id: int, file_name: str, text: str, auth) -> int:
+    async def _ingest_single(cls, kb_id: int, file_name: str, text: str, auth, rebuild_graph: bool = True) -> int:
         chunks = chunk_text(text)
         if not chunks:
             return 0
-        vectors = await embedding.embed_texts(chunks, model_id=await cls._kb_model_id([kb_id]))
+        model_id = await cls._kb_model_id([kb_id])
+        vectors = await embedding.embed_texts(chunks, model_id=model_id)
+        model_name = await cls._vector_model_name(model_id)
         async with async_db_session.begin() as db:
             b = await db.get(AiKnowledgeBaseModel, kb_id)
             if not b:
@@ -2085,20 +2195,22 @@ class AiKnowledgeService:
                     )
                 )
             ).scalar() or 0
-            for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False), start=existing + 1):
-                db.add(
-                    AiKnowledgeChunkModel(
-                        knowledge_base_id=kb_id,
-                        file_name=file_name,
-                        chunk_index=i,
-                        content=chunk,
-                        meta={"source": "datasource", "file_name": file_name},
-                        vector=vec,
-                        dimension=len(vec) if vec else None,
-                    )
+            rows: list[AiKnowledgeChunkModel] = []
+            for i, chunk in enumerate(chunks, start=existing + 1):
+                row = AiKnowledgeChunkModel(
+                    knowledge_base_id=kb_id,
+                    file_name=file_name,
+                    chunk_index=i,
+                    content=chunk,
+                    meta={"source": "datasource", "file_name": file_name},
                 )
+                db.add(row)
+                rows.append(row)
+            await db.flush()
+            await vector_store.write_vectors(db, rows, vectors, model_name=model_name)
             b.chunk_count = (b.chunk_count or 0) + len(chunks)
-        await cls._rebuild_graph(kb_id)
+        if rebuild_graph:
+            await cls._rebuild_graph(kb_id)
         return len(chunks)
 
     @classmethod
@@ -2134,32 +2246,58 @@ class AiKnowledgeService:
 
     @classmethod
     async def rebuild_index(cls, kb_id: int) -> dict:
-        """重建索引：重新向量化所有分块 + 重建图谱。"""
+        """重建索引（后台任务）：立即返回 task_id。"""
+        from .tasks import create_task
+
+        task = await create_task("kb_rebuild", kb_id=kb_id)
+        return {"task_id": task["id"], "status": "pending"}
+
+    @classmethod
+    async def _rebuild_index_sync(cls, kb_id: int) -> dict:
+        """重建索引的同步实现（供 worker 调用）：重新向量化子分块 + 重建图谱。"""
         async with async_db_session() as db:
-            chunks = (
+            ids = (
                 (
                     await db.execute(
-                        select(AiKnowledgeChunkModel).where(
+                        select(AiKnowledgeChunkModel.id).where(
                             AiKnowledgeChunkModel.knowledge_base_id == kb_id,
                             AiKnowledgeChunkModel.is_deleted.is_(False),
+                            AiKnowledgeChunkModel.is_parent.is_not(True),
                         )
                     )
                 )
                 .scalars()
                 .all()
             )
-        if not chunks:
-            return {"chunks": 0}
-        texts = [c.content for c in chunks]
+            if not ids:
+                return {"chunks": 0, "vectors": 0}
+            texts = list(
+                (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel.content).where(
+                            AiKnowledgeChunkModel.id.in_(ids)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
         model_id = await cls._kb_model_id([kb_id])
         vecs = await embedding.embed_texts(texts, model_id=model_id)
+        model_name = await cls._vector_model_name(model_id)
         async with async_db_session.begin() as db:
-            for c, v in zip(chunks, vecs, strict=False):
-                row = await db.get(AiKnowledgeChunkModel, c.id)
-                row.vector = v
-                row.dimension = len(v) if v else None
+            rows = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel).where(AiKnowledgeChunkModel.id.in_(ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            written = await vector_store.write_vectors(db, rows, vecs, model_name=model_name)
         await cls._rebuild_graph(kb_id)
-        return {"chunks": len(chunks)}
+        return {"chunks": len(ids), "vectors": written}
 
 
 async def _probe_db(d: AiDatasourceModel) -> list[str]:

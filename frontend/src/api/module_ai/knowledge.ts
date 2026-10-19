@@ -36,7 +36,8 @@ export function searchAiKnowledge(
   useGraph = true,
   mode = "hybrid",
   vectorWeight = 0.5,
-  fulltextWeight = 0.5
+  fulltextWeight = 0.5,
+  opts: Record<string, any> = {}
 ) {
   return request({
     url: `${BASE}/${id}/search`,
@@ -48,6 +49,7 @@ export function searchAiKnowledge(
       mode,
       vector_weight: vectorWeight,
       fulltext_weight: fulltextWeight,
+      ...opts,
     },
   });
 }
@@ -208,13 +210,15 @@ export function uploadAiKnowledgeDocument(
   file: File,
   chunkSize = 500,
   overlap = 50,
-  strategy = "fixed"
+  strategy = "fixed",
+  useOcr = true
 ) {
   const form = new FormData();
   form.append("file", file);
   form.append("chunk_size", String(chunkSize));
   form.append("overlap", String(overlap));
   form.append("strategy", strategy);
+  form.append("use_ocr", String(useOcr));
   return request({
     url: `${BASE}/${id}/documents/upload`,
     method: "post",
@@ -268,4 +272,45 @@ export function testAiDatasource(id: number) {
 
 export function syncAiDatasource(id: number, data: any) {
   return request({ url: `${DS}/${id}/sync`, method: "post", data });
+}
+
+// ---------- RAG 后台任务 ----------
+const TASK = "/ai/knowledge/tasks";
+
+export function getAiRagTask(taskId: number) {
+  return request({ url: `${TASK}/${taskId}`, method: "get" });
+}
+
+export function getAiRagTaskList(params?: Record<string, any>) {
+  return request({ url: TASK, method: "get", params });
+}
+
+export function cancelAiRagTask(taskId: number) {
+  return request({ url: `${TASK}/${taskId}/cancel`, method: "post" });
+}
+// ---------- 检索评测 ----------
+const EVAL = "/ai/knowledge/eval";
+
+export function getAiEvalSets() {
+  return request({ url: `${EVAL}/sets`, method: "get" });
+}
+
+export function createAiEvalSet(data: any) {
+  return request({ url: `${EVAL}/sets`, method: "post", data });
+}
+
+export function getAiEvalItems(setId: number) {
+  return request({ url: `${EVAL}/sets/${setId}/items`, method: "get" });
+}
+
+export function createAiEvalItem(setId: number, data: any) {
+  return request({ url: `${EVAL}/sets/${setId}/items`, method: "post", data });
+}
+
+export function runAiEval(kbId: number, data: any) {
+  return request({ url: `${BASE}/${kbId}/eval/run`, method: "post", data });
+}
+
+export function getAiEvalRuns(kbId: number) {
+  return request({ url: `${BASE}/${kbId}/eval/runs`, method: "get" });
 }

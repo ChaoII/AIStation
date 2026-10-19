@@ -25,7 +25,11 @@ class AiKnowledgeIngestSchema(BaseModel):
     content: str = Field(..., description="待入库文本内容")
     chunk_size: int = Field(default=500, ge=100, le=2000)
     overlap: int = Field(default=50, ge=0, le=400)
-    strategy: str = Field(default="fixed", description="fixed/paragraph/sentence")
+    strategy: str = Field(
+        default="fixed", description="fixed/paragraph/sentence/heading"
+    )
+    parent_child: bool = Field(default=False, description="是否启用父子分块")
+    chunk_unit: str = Field(default="char", description="切分口径：char/token")
 
 
 class AiKnowledgeUpdateChunkSchema(BaseModel):
@@ -60,6 +64,12 @@ class AiKnowledgeSearchSchema(BaseModel):
     mode: str = Field(default="hybrid", description="vector/fulltext/hybrid/graph/grep")
     vector_weight: float = Field(default=0.5, ge=0.0, le=1.0, description="混合检索：向量权重")
     fulltext_weight: float = Field(default=0.5, ge=0.0, le=1.0, description="混合检索：全文权重")
+    use_weighted: bool = Field(default=False, description="是否用归一化加权（默认 RRF）")
+    min_score: float = Field(default=0.0, ge=-1.0, le=1.0, description="向量相似度下限")
+    use_rerank: bool = Field(default=True, description="是否启用 rerank 精排")
+    filters: dict | None = Field(default=None, description="元数据过滤：file_name/document_id/file_type")
+    context_tokens: int | None = Field(default=None, ge=100, le=20000, description="上下文 token 预算")
+    rewrite: str = Field(default="off", description="查询改写：off/multi_query/hyde")
 
 
 class AiDatasourceCreateSchema(BaseModel):

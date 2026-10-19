@@ -1691,6 +1691,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_scheduler())
         log.info("✅ 训练调度器已启动")
 
+        # RAG 后台任务 worker（文档入库/重建索引/数据源同步/评测运行）
+        # 测试期不启动，避免后台任务与用例里的同步驱动互相竞争。
+        import os as _os
+
+        if _os.getenv("TESTING") != "1":
+            from app.plugin.module_ai.knowledge.tasks.worker import run_worker
+
+            asyncio.create_task(run_worker())
+            log.info("✅ RAG 任务 worker 已启动")
+
         from app.plugin.module_train.eval_scheduler import start_evaluation_scheduler
         asyncio.create_task(start_evaluation_scheduler())
         log.info("✅ 评估调度器已启动")

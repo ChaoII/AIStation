@@ -1,7 +1,9 @@
 """知识库 / 数据源 RAG 的数据模型。"""
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -55,6 +57,31 @@ class AiKnowledgeChunkModel(ModelMixin):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, comment="分块序号")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="分块内容")
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="父块 ID（子块指向父块）"
+    )
+    is_parent: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="是否父块（父块不参与召回，仅用于上下文回填）"
+    )
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default=None, comment="内容哈希（去重/幂等）"
+    )
+    vector_model: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default=None, comment="生成该向量的模型名（换模型失效判定）"
+    )
+    token_count: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="token 估算数（上下文预算用）"
+    )
+    char_start: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="原文起始字符偏移"
+    )
+    char_end: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="原文结束字符偏移"
+    )
+    search_text: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None,
+        comment="正文+标注的可索引文本（全文检索唯一入口）",
+    )
     annotations: Mapped[list | None] = mapped_column(
         JSONB, nullable=True, default=None,
         comment="用户标注（[{text,kind}]），参与向量+全文+grep 检索以提升召回",
@@ -244,3 +271,80 @@ class AiKnowledgeRelationModel(ModelMixin):
     rtype: Mapped[str | None] = mapped_column(
         String(64), nullable=True, default="related", comment="关系类型/语义描述（线上显示）"
     )
+
+
+class AiRagTaskModel(ModelMixin, UserMixin):
+    """RAG 后台任务（文档入库/重建索引/数据源同步/评测运行）。
+
+    状态机：``pending → running → succeeded | failed | canceled``。
+    """
+
+    __tablename__ = "ai_rag_tasks"
+    __table_args__ = ({"comment": "AI RAG 后台任务表"},)
+
+    kind: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="document_ingest", comment="任务类型"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending",
+        comment="状态 pending/running/succeeded/failed/canceled",
+    )
+    kb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None, comment="知识库 ID")
+    document_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="文档 ID"
+    )
+    payload: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=None, comment="任务参数"
+    )
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="进度 0-100")
+    step: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default=None, comment="当前步骤"
+    )
+    message: Mapped[str | None] = mapped_column(Text, nullable=True, default=None, comment="进度信息")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None, comment="失败原因")
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, comment="是否请求取消"
+    )
+    started_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
+    )
+    finished_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
+    )
+
+
+class AiEvalSetModel(ModelMixin, UserMixin):
+    """检索评测集（一组查询 + 金标准分块）。"""
+
+    __tablename__ = "ai_eval_sets"
+    __table_args__ = ({"comment": "AI 检索评测集"},)
+
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
+    kb_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+
+
+class AiEvalItemModel(ModelMixin):
+    """评测条目：查询 + 期望命中的分块 id（或文件名）。"""
+
+    __tablename__ = "ai_eval_items"
+    __table_args__ = ({"comment": "AI 检索评测条目"},)
+
+    set_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_chunk_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    expected_files: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+
+class AiEvalRunModel(ModelMixin, UserMixin):
+    """评测运行记录：配置 + 指标。"""
+
+    __tablename__ = "ai_eval_runs"
+    __table_args__ = ({"comment": "AI 检索评测运行记录"},)
+
+    set_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    kb_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
+    metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
