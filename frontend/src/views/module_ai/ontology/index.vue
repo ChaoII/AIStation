@@ -14,7 +14,7 @@
         <el-card shadow="never" class="ont-side">
           <template #header>
             <div class="ont-side__head">
-              <span class="ont-side__title">本体</span>
+              <span class="ont-side__title">本体域</span>
               <el-button
                 v-hasPerm="'module_ai:ontology:edit'"
                 class="ont-side__add"
@@ -25,7 +25,7 @@
                 :loading="domainSaving"
                 @click="openDomainForm()"
               >
-                新建本体
+                新建本体域
               </el-button>
             </div>
           </template>
@@ -62,7 +62,7 @@
               </el-dropdown>
             </div>
             <div v-if="!domains.length" class="ont-domains__empty">
-              <el-empty :image-size="50" description="还没有本体，点「新建本体」创建" />
+              <el-empty :image-size="50" description="还没有本体域，点「新建本体域」创建" />
             </div>
           </div>
         </el-card>
@@ -125,7 +125,7 @@
                         写入示例能力（10 函数 + 7 动作）
                       </el-dropdown-item>
                       <el-dropdown-item command="assign" divided>
-                        批量归属本体（已选 {{ selected.length }}）
+                        批量归属本体域（已选 {{ selected.length }}）
                       </el-dropdown-item>
                       <el-dropdown-item command="pending">
                         待审批的版本发布（{{ pendingVersions.length }}）
@@ -690,13 +690,13 @@
     <!-- 本体（domain）新建 / 重命名 -->
     <el-dialog
       v-model="domainDialog"
-      :title="domainForm.id ? '重命名本体' : '新建本体'"
+      :title="domainForm.id ? '重命名本体域' : '新建本体域'"
       width="460px"
       append-to-body
     >
       <el-form label-width="80px">
         <el-form-item label="名称" required>
-          <el-input v-model="domainForm.name" placeholder="本体名称" maxlength="60" />
+          <el-input v-model="domainForm.name" placeholder="本体域名称" maxlength="60" />
         </el-form-item>
         <el-form-item v-if="!domainForm.id" label="编码" required>
           <el-input
