@@ -306,6 +306,12 @@ class AiKnowledgeService:
                         AiSearchLogModel.knowledge_base_id == kid
                     )
                 )
+                # 文档行也要删：否则删库后遗留的后台任务仍会按 document_id 写入分块
+                await db.execute(
+                    _delete(AiKnowledgeDocumentModel).where(
+                        AiKnowledgeDocumentModel.knowledge_base_id == kid
+                    )
+                )
                 await db.delete(b)
                 # 尝试删除对应 AGE 图（仅 PostgreSQL + AGE 可用时；失败忽略）
                 try:

@@ -28,7 +28,7 @@ async def job_document_ingest(task: dict) -> None:
     from app.core.database import async_db_session
     from app.utils.s3_client import s3_client
 
-    from ..model import AiKnowledgeDocumentModel
+    from ..model import AiKnowledgeBaseModel, AiKnowledgeDocumentModel
     from ..service import AiKnowledgeService
     from . import report_progress
 
@@ -44,6 +44,9 @@ async def job_document_ingest(task: dict) -> None:
         name = doc.name or "文档"
         text = doc.content or ""
         object_key = doc.object_key
+        base = await db.get(AiKnowledgeBaseModel, kb_id)
+        if base is None or base.is_deleted:
+            raise ValueError("知识库不存在（可能已删除，任务终止）")
 
     if not text.strip() and object_key:
         buf = await asyncio.to_thread(s3_client.download_fileobj, object_key)
