@@ -7,7 +7,7 @@
         :class="{ 'is-collapsed': collapse }"
         to="/"
       >
-        <img :src="logoUrl" class="logo__icon" />
+        <img :src="logoUrl" class="logo__icon" @error="handleLogoError" />
         <span v-if="!collapse" class="logo__text">
           {{ configStore.configData.sys_web_title.config_value }}
         </span>
@@ -17,14 +17,10 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useConfigStore } from "@/store";
 import { resolveSiteLogo } from "@/utils/siteLogo";
-
-const configStore = useConfigStore();
-
-// logo 兜底：配置为空/失效时回落内置 logo.png（此前导致侧边栏出现破损图）
-const logoUrl = computed(() => resolveSiteLogo(configStore.configData?.sys_web_logo?.config_value));
+import fallbackLogo from "@/assets/images/logo.svg";
 
 defineProps({
   collapse: {
@@ -32,6 +28,20 @@ defineProps({
     required: true,
   },
 });
+
+const configStore = useConfigStore();
+
+// logo 兜底：配置为空时回落内置 logo；配置指向失效地址（图片加载失败）时也切换回内置 logo
+const fallbackOnError = ref(false);
+const logoUrl = computed(() => {
+  if (fallbackOnError.value) return fallbackLogo;
+  return resolveSiteLogo(configStore.configData?.sys_web_logo?.config_value);
+});
+
+// 配置值失效（如 127.0.0.1:8001 带反斜杠的旧地址）时切换内置 logo，避免破损图
+function handleLogoError() {
+  fallbackOnError.value = true;
+}
 </script>
 
 <style lang="scss" scoped>
