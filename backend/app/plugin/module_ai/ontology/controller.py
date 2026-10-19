@@ -952,7 +952,8 @@ async def list_object_views(auth: AuthDep, object_code: str = "",
                            msg="查询成功")
 
 
-@OntologyRouter.get("/object-view/{code}", summary="对象视图详情（含版本）")
+@OntologyRouter.get("/object-views/{code}", summary="对象视图详情（含版本）")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.get("/object-view/{code}", summary="[旧路径，保留兼容] 对象视图详情（含版本）")
 async def get_object_view(auth: AuthDep, code: str) -> JSONResponse:
     v = await _ov.get_view(code)
     if not v:
@@ -960,14 +961,16 @@ async def get_object_view(auth: AuthDep, code: str) -> JSONResponse:
     return SuccessResponse(data=v, msg="查询成功")
 
 
-@OntologyRouter.get("/object-view/standard/{object_code}", summary="标准视图（自动生成）")
+@OntologyRouter.get("/object-views/standard/{object_code}", summary="标准视图（自动生成）")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.get("/object-view/standard/{object_code}", summary="[旧路径，保留兼容] 标准视图（自动生成）")
 async def standard_object_view(auth: AuthDep, object_code: str,
                                form_factor: str = "full") -> JSONResponse:
     return SuccessResponse(data=await _ov.standard_view(object_code, form_factor),
                            msg="查询成功")
 
 
-@OntologyRouter.get("/object-view/render/{code}/{object_key}", summary="按视图渲染某个对象")
+@OntologyRouter.get("/object-views/render/{code}/{object_key}", summary="按视图渲染某个对象")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.get("/object-view/render/{code}/{object_key}", summary="[旧路径，保留兼容] 按视图渲染某个对象")
 async def render_object_view(auth: AuthDep, code: str, object_key: str,
                              scenario: str = "") -> JSONResponse:
     r = await _ov.render_view(code, object_key, principal=await _principal(auth),
@@ -977,7 +980,8 @@ async def render_object_view(auth: AuthDep, code: str, object_key: str,
     return SuccessResponse(data=r, msg="查询成功")
 
 
-@OntologyRouter.post("/object-view/save", summary="新建/修改对象视图")
+@OntologyRouter.post("/object-views/save", summary="新建/修改对象视图")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.post("/object-view/save", summary="[旧路径，保留兼容] 新建/修改对象视图")
 async def save_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     who = str(getattr(user, "name", None) or "")
@@ -990,25 +994,29 @@ async def save_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSO
     return SuccessResponse(data=r, msg=r.get("msg", "已保存"))
 
 
-@OntologyRouter.post("/object-view/default", summary="设为默认视图")
+@OntologyRouter.post("/object-views/default", summary="设为默认视图")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.post("/object-view/default", summary="[旧路径，保留兼容] 设为默认视图")
 async def set_default_object_view(auth: AuthEdit,
                                   data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ov.set_default_view(str(data.get("code", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已设置"))
 
 
-@OntologyRouter.post("/object-view/remove", summary="删除对象视图")
+@OntologyRouter.post("/object-views/remove", summary="删除对象视图")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.post("/object-view/remove", summary="[旧路径，保留兼容] 删除对象视图")
 async def remove_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ov.remove_view(str(data.get("code", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
 
 
-@OntologyRouter.get("/object-view/{code}/versions", summary="视图版本历史")
+@OntologyRouter.get("/object-views/{code}/versions", summary="视图版本历史")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.get("/object-view/{code}/versions", summary="[旧路径，保留兼容] 视图版本历史")
 async def object_view_versions(auth: AuthDep, code: str) -> JSONResponse:
     return SuccessResponse(data=await _ov.list_view_versions(code), msg="查询成功")
 
 
-@OntologyRouter.post("/object-view/restore", summary="回滚到某个视图版本")
+@OntologyRouter.post("/object-views/restore", summary="回滚到某个视图版本")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.post("/object-view/restore", summary="[旧路径，保留兼容] 回滚到某个视图版本")
 async def restore_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _ov.restore_view_version(str(data.get("code", "")),
@@ -1017,7 +1025,8 @@ async def restore_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> 
     return SuccessResponse(data=r, msg=r.get("msg", "已回滚"))
 
 
-@OntologyRouter.post("/object-view/sync-defaults", summary="给所有对象类型补齐默认视图")
+@OntologyRouter.post("/object-views/sync-defaults", summary="给所有对象类型补齐默认视图")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.post("/object-view/sync-defaults", summary="[旧路径，保留兼容] 给所有对象类型补齐默认视图")
 async def sync_default_object_views(auth: AuthEdit) -> JSONResponse:
     user = getattr(auth, "user", None)
     r = await _ov.sync_default_views(str(getattr(user, "name", None) or "system"))
@@ -1257,7 +1266,8 @@ async def demo_clear(auth: AuthManage) -> JSONResponse:
     return SuccessResponse(data=r, msg=r.get("msg", "已清除"))
 
 
-@OntologyRouter.post("/object-view/share", summary="设置视图共享方式（跟随对象类型 / 按角色）")
+@OntologyRouter.post("/object-views/share", summary="设置视图共享方式（跟随对象类型 / 按角色）")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.post("/object-view/share", summary="[旧路径，保留兼容] 设置视图共享方式（跟随对象类型 / 按角色）")
 async def share_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _ov.share_view(str(data.get("code") or ""),
                              str(data.get("share_mode") or "inherit"),
@@ -1265,7 +1275,8 @@ async def share_object_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JS
     return SuccessResponse(data=r, msg=r.get("msg", "已设置"))
 
 
-@OntologyRouter.get("/object-view/{code}/link", summary="生成视图深链（可带对象）")
+@OntologyRouter.get("/object-views/{code}/link", summary="生成视图深链（可带对象）")  # 规范路径（复数），与 /object-views 列表端点一致
+@OntologyRouter.get("/object-view/{code}/link", summary="[旧路径，保留兼容] 生成视图深链（可带对象）")
 async def object_view_link(auth: AuthDep, code: str, object_key: str = "") -> JSONResponse:
     r = await _ov.view_link(code, object_key)
     return SuccessResponse(data=r, msg=r.get("msg", "已生成"))

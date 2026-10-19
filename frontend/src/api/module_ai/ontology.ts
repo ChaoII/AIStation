@@ -463,46 +463,46 @@ export function getOntObjectViews(params: Record<string, any> = {}) {
   return request({ url: `${API_PATH}/object-views`, method: "get", params });
 }
 export function getOntObjectView(code: string) {
-  return request({ url: `${API_PATH}/object-view/${encodeURIComponent(code)}`, method: "get" });
+  return request({ url: `${API_PATH}/object-views/${encodeURIComponent(code)}`, method: "get" });
 }
 export function getOntStandardView(objectCode: string, formFactor = "full") {
   return request({
-    url: `${API_PATH}/object-view/standard/${encodeURIComponent(objectCode)}`,
+    url: `${API_PATH}/object-views/standard/${encodeURIComponent(objectCode)}`,
     method: "get",
     params: { form_factor: formFactor },
   });
 }
 export function renderOntObjectView(code: string, objectKey: string, scenario = "") {
   return request({
-    url: `${API_PATH}/object-view/render/${encodeURIComponent(code)}/${encodeURIComponent(objectKey)}`,
+    url: `${API_PATH}/object-views/render/${encodeURIComponent(code)}/${encodeURIComponent(objectKey)}`,
     method: "get",
     params: { scenario },
   });
 }
 export function saveOntObjectView(data: Record<string, any>) {
-  return request({ url: `${API_PATH}/object-view/save`, method: "post", data });
+  return request({ url: `${API_PATH}/object-views/save`, method: "post", data });
 }
 export function setDefaultOntObjectView(code: string) {
-  return request({ url: `${API_PATH}/object-view/default`, method: "post", data: { code } });
+  return request({ url: `${API_PATH}/object-views/default`, method: "post", data: { code } });
 }
 export function removeOntObjectView(code: string) {
-  return request({ url: `${API_PATH}/object-view/remove`, method: "post", data: { code } });
+  return request({ url: `${API_PATH}/object-views/remove`, method: "post", data: { code } });
 }
 export function getOntObjectViewVersions(code: string) {
   return request({
-    url: `${API_PATH}/object-view/${encodeURIComponent(code)}/versions`,
+    url: `${API_PATH}/object-views/${encodeURIComponent(code)}/versions`,
     method: "get",
   });
 }
 export function restoreOntObjectView(code: string, version: number) {
   return request({
-    url: `${API_PATH}/object-view/restore`,
+    url: `${API_PATH}/object-views/restore`,
     method: "post",
     data: { code, version },
   });
 }
 export function syncDefaultOntObjectViews() {
-  return request({ url: `${API_PATH}/object-view/sync-defaults`, method: "post" });
+  return request({ url: `${API_PATH}/object-views/sync-defaults`, method: "post" });
 }
 export function getOntObjectViewMeta() {
   return request({ url: `${API_PATH}/object-view-meta`, method: "get" });
@@ -642,14 +642,14 @@ export function clearOntDemo() {
 
 export function shareOntObjectView(code: string, shareMode: string, shareRoles: string[] = []) {
   return request({
-    url: `${API_PATH}/object-view/share`,
+    url: `${API_PATH}/object-views/share`,
     method: "post",
     data: { code, share_mode: shareMode, share_roles: shareRoles },
   });
 }
 export function getOntObjectViewLink(code: string, objectKey = "") {
   return request({
-    url: `${API_PATH}/object-view/${encodeURIComponent(code)}/link`,
+    url: `${API_PATH}/object-views/${encodeURIComponent(code)}/link`,
     method: "get",
     params: { object_key: objectKey },
   });
