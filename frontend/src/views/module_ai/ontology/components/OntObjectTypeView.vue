@@ -716,6 +716,20 @@
         <el-form-item v-for="f in execForm.fields" :key="f.key" :label="f.label || f.key">
           <el-input v-model="execForm.params[f.key]" :placeholder="f.key" />
         </el-form-item>
+        <el-form-item label="场景">
+          <el-select
+            v-model="scen"
+            size="small"
+            clearable
+            placeholder="主本体（写真实表）"
+            style="width: 100%"
+            @visible-change="onScenOpen"
+          >
+            <el-option label="主本体（写真实表）" value="" />
+            <el-option v-for="s in scenOptions" :key="s.code" :label="s.name" :value="s.code" />
+          </el-select>
+          <div class="ont-hint">选中场景则**只暂存差异、不写真实表**，合并场景后才生效</div>
+        </el-form-item>
         <el-alert
           v-if="execForm.approval"
           type="warning"
@@ -756,6 +770,7 @@ import {
   executeOntAction,
   getOntDependents,
   getOntObjectFull,
+  getOntScenarios,
   getOntSharedProperties,
   getOntUsage,
   getOntValueTypes,
@@ -1147,6 +1162,21 @@ async function doMaterialize() {
 
 /* ---------- 动作执行 ---------- */
 const execDialog = ref(false);
+// 场景（P5）：选中则动作只暂存到场景，不写真实表
+const scen = ref("");
+const scenOptions = ref<{ code: string; name: string }[]>([]);
+
+async function onScenOpen(open: boolean) {
+  if (!open || scenOptions.value.length) return;
+  try {
+    const r = await getOntScenarios({ limit: 300 });
+    scenOptions.value = ((r.data?.data || []) as any[])
+      .filter((s: any) => s.status === "active")
+      .map((s: any) => ({ code: s.code, name: s.name }));
+  } catch {
+    scenOptions.value = [];
+  }
+}
 const execLoading = ref(false);
 const execResult = ref("");
 const execOk = ref(false);
@@ -1194,6 +1224,7 @@ async function runExec() {
       code: execForm.code,
       object_key: execForm.object_key,
       params,
+      scenario: scen.value,
     });
     const d = r.data?.data || {};
     execOk.value = !!d.ok;
