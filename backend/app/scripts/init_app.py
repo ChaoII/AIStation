@@ -705,6 +705,12 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:plugin:create", "新增能力插件"),
     ("module_ai:plugin:update", "编辑能力插件"),
     ("module_ai:plugin:delete", "删除能力插件"),
+    # 个人工作空间
+    ("module_ai:space:query", "查看个人空间"),
+    ("module_ai:space:upload", "上传文件"),
+    ("module_ai:space:download", "下载文件"),
+    ("module_ai:space:delete", "删除文件"),
+    ("module_ai:space:manage", "管理文件夹"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -776,6 +782,7 @@ async def _ensure_ai_menus() -> None:
 
             pages = [
                 ("工作台", "AiWorkbench", "/ai/workspace", "module_ai/workspace/index", "module_ai:workspace:query", 6, "el-icon-OfficeBuilding"),
+                ("个人工作空间", "AiPersonalSpace", "/ai/space", "module_ai/space/index", "module_ai:space:query", 8, "el-icon-FolderOpened"),
                 ("AI 控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 7, "el-icon-Odometer"),
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10, "el-icon-Cpu"),
                 ("知识库", "AiKnowledge", "/ai/knowledge", "module_ai/knowledge/index", "module_ai:knowledge:query", 14, "el-icon-Collection"),
