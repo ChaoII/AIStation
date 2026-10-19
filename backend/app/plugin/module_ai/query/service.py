@@ -180,6 +180,7 @@ def invalidate_ont_allow_cache() -> None:
     _ONT_ALLOW_CACHE = None
     _ONT_ALLOW_CACHE_AT = 0.0
 
+
 #: 当前对象上下文（对齐 Palantir Retrieval Context 的 Fixed Object Set）。
 #: 由 ``ask()`` / ``ask_stream()`` 在请求开始时**确定性注入**（不由模型决定是否检索），
 #: 供 prompt（``_build_schema_context``）与对象查询共用。
@@ -4552,7 +4553,13 @@ class AiQueryService:
 
     @classmethod
     async def _can_see_sensitive(cls, user_id) -> bool:
-        """ABAC：超管可看敏感字段；否则看是否有敏感放行规则(按用户 role)。"""
+        """ABAC：超管可看敏感字段；否则看是否有**针对该用户**的敏感放行规则。
+
+        安全补丁（2026-10-19）：修前只判断"存在**任一**启用且 sensitive_ok 的规则"，
+        完全不校验它是否命中当前用户 —— 于是 dev 库里一条 ``role=ADMIN`` 的放行规则
+        让**所有用户**都能看敏感字段，`_ont_sql_violations` 被短路、字段级 ACL 形同虚设。
+        现在按 ``attribute=value`` 命中当前用户的角色才放行（默认拒绝）。
+        """
         try:
             async with async_db_session() as db:
                 from sqlalchemy import text as _t
@@ -4560,8 +4567,13 @@ class AiQueryService:
                     "SELECT is_superuser FROM sys_user WHERE id=:id AND is_deleted=false"), {"id": user_id or 0})).fetchone()
             if r and r[0]:
                 return True
+            roles = await cls._user_role_codes_by_id(user_id)
+            if not roles:
+                return False
             rules = await cls.list_access_rules()
-            return any(x["sensitive_ok"] and x["enabled"] for x in rules)
+            return any(x["sensitive_ok"] and x["enabled"]
+                       and x["attribute"] == "role" and x["value"] in roles
+                       for x in rules)
         except Exception:  # noqa: BLE001
             return False
 
@@ -6399,7 +6411,10 @@ class AiQueryService:
                 cache_key, cached, res = None, False, None
                 ttl = metric.get("cache_ttl") or 0
                 if redis and ttl:
-                    cache_key = cls._cache_key(metric, params)
+                    # 安全补丁：缓存 key 必须含调用者 —— 指标结果是按权限算的
+                    cache_key = cls._cache_key(
+                        metric, params,
+                        user_id=getattr(getattr(auth, "user", None), "id", None))
                     hit = await cls._cache_get(redis, cache_key)
                     if hit is not None:
                         res, cached = hit, True
@@ -6452,13 +6467,17 @@ class AiQueryService:
         return await cls._slow_path(question, sess["id"], datasource or SYSTEM_DS, auth)
 
     @staticmethod
-    def _cache_key(metric: dict, params: dict) -> str:
+    def _cache_key(metric: dict, params: dict, user_id: int | None = None) -> str:
         import hashlib
         import json
 
         raw = json.dumps(
             {"ds": metric.get("datasource"), "key": metric.get("key"),
-             "params": sorted(params.items())},
+             "params": sorted(params.items()),
+             # 安全补丁（2026-10-19）：缓存 key 必须含 user。指标结果是**按调用者
+             # 权限**算出来的（行/列策略已下推），不含 user ⇒ A 按自己权限算出的
+             # 结果会在 TTL（30~120s）内被 B 直接拿到 —— 越权读。
+             "uid": int(user_id or 0)},
             ensure_ascii=False, sort_keys=True, default=str,
         )
         return f"ai:query:{hashlib.md5(raw.encode()).hexdigest()}"
@@ -6495,6 +6514,19 @@ class AiQueryService:
         secured = await _secure_ont_sql(sql, auth)
         if secured.get("deny"):
             raise CustomException(msg=secured["msg"])
+        # 安全补丁（2026-10-19）：字段级 ACL 必须在**共同执行出口**生效，且 fail-closed。
+        # 修前只在 ask_stream 里调过一次且包着 ``except: pass`` —— 非流式 ask 走的
+        # 慢路径根本没调它；而且检查一炸就等于没做，受限字段会被原样查出来。
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        try:
+            violations = await cls._ont_sql_violations(sql, uid)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 字段级 ACL 检查失败，拒绝执行：{e}")
+            raise CustomException(
+                msg=f"字段级权限校验失败，已拒绝执行：{str(e)[:120]}") from e
+        if violations:
+            raise CustomException(
+                msg=f"字段级权限：无权限访问 {', '.join(violations)}（本体属性级 ACL）")
         return await _execute_sql(secured["sql"])
 
     @classmethod
@@ -7618,17 +7650,9 @@ class AiQueryService:
         yield {"type": "sql_final", "sql": sql}
 
         # ---- 执行并返回结果 ----
-        # 本体字段级 ACL：若 SQL 查询了用户无权限的本体受限/敏感属性 → 拒绝
-        try:
-            violations = await cls._ont_sql_violations(sql, getattr(auth, "user", None) and auth.user.id)
-            if violations:
-                await cls._save_message(sess["id"], question, path="slow", datasource=datasource,
-                                        sql=sql, rows=[], is_error=True,
-                                        summary=f"字段级权限：无权限访问 {', '.join(violations)}")
-                yield {"type": "error", "message": f"字段级权限：无权限访问 {', '.join(violations)}（本体属性级 ACL）"}
-                return
-        except Exception:  # noqa: BLE001
-            pass
+        # 本体字段级 ACL：已下沉到 `_execute_one`（ask 与 ask_stream 的共同出口）
+        # 统一执行且 fail-closed。修前这里是**唯一**调用点，却包着 `except: pass`
+        # ⇒ 检查一炸就等于没做，受限字段被原样查出来；非流式 ask 更是完全不走这里。
         try:
             res = await cls._execute_one(sql, datasource, auth)
             cols = res.get("columns") or []

@@ -263,9 +263,11 @@ async def run_report(report_id: int, params: dict | None = None, auth=None) -> d
     """带参数执行报表（**复用指标执行链路**：渲染 → 校验 → 加引号 → 执行）。"""
     from .service import (
         SYSTEM_DS,
+        AiQueryService,
         _execute_custom_ds_sql,
         _execute_sql,
         _render_template,
+        _secure_ont_sql,
         _system_allowed,
         validate_sql,
     )
@@ -284,8 +286,23 @@ async def run_report(report_id: int, params: dict | None = None, auth=None) -> d
         raise CustomException(msg=f"参数「{leftover.group(1)}」未提供，无法执行")
     ds = rep["datasource"] or SYSTEM_DS
     if ds == SYSTEM_DS:
-        sql = validate_sql(sql, await _system_allowed())
-        res = await _execute_sql(sql)
+        # 安全补丁（2026-10-19）：报表此前用**全局**白名单且从不做行/列策略改写 ⇒
+        # 数据域/ABAC 完全不生效，任何能触发报表的人都能查到全局白名单里的所有表。
+        # 现在与问数主链路同口径：按调用者收窄白名单 + 走本体行/列策略改写（fail-closed）。
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        if uid:
+            allowed = await AiQueryService._allowed_for_user(auth)
+        else:
+            # 内部/定时执行等无身份场景：保持既有行为，但显式留痕（不假装做过校验）
+            log.warning("[report] 无调用者身份，报表按全局白名单执行")
+            allowed = await _system_allowed()
+        sql = validate_sql(sql, allowed)
+        secured = await _secure_ont_sql(sql, auth)
+        if secured.get("deny"):
+            from app.core.exceptions import CustomException
+
+            raise CustomException(msg=secured["msg"])
+        res = await _execute_sql(secured["sql"])
     else:
         res = await _execute_custom_ds_sql(int(str(ds).split(":")[-1]), sql, auth)
     log.info(f"[report] 执行 {rep['key']} → {len(res.get('rows') or [])} 行")
