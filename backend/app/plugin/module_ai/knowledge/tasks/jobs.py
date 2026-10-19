@@ -77,6 +77,9 @@ async def job_document_ingest(task: dict) -> None:
         start_lines=start_lines,
         pages=pages,
         rebuild_graph=False,
+        parent_child=bool(payload.get("parent_child")),
+        chunk_unit=str(payload.get("chunk_unit") or "char"),
+        page_offsets=page_offsets,
     )
     await report_progress(task["id"], progress=90, step="重建图谱")
     await AiKnowledgeService._rebuild_graph(kb_id)

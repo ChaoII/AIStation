@@ -9,6 +9,7 @@ from sqlalchemy import func, select, text
 from app.core.database import async_db_session
 
 from . import embedding, graphrag
+from .chunking import chunk_drafts, chunk_text
 from .embeddings import persist as vector_store
 from .model import (
     AiChunkAnnotationLogModel,
@@ -35,54 +36,6 @@ def _cosine(a: list[float], b: list[float]) -> float | None:
         return None
     sim = dot / (na * nb)
     return max(-1.0, min(1.0, sim))
-
-
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed") -> list[str]:
-    """分块：fixed(定长+重叠) / paragraph(按段落) / sentence(按句子)。"""
-    text = (text or "").strip()
-    if not text:
-        return []
-    if strategy == "paragraph":
-        paras = re.split(r"\n\s*\n", text)
-        out: list[str] = []
-        for p in paras:
-            p = p.strip()
-            if p:
-                if len(p) > chunk_size:
-                    out.extend(_fixed_chunk(p, chunk_size, overlap))
-                else:
-                    out.append(p)
-        return out
-    if strategy == "sentence":
-        sents = re.split(r"(?<=[。！？!?；;])", text)
-        out = []
-        buf = ""
-        for s in sents:
-            s = s.strip()
-            if not s:
-                continue
-            if len(buf) + len(s) > chunk_size and buf:
-                out.append(buf.strip())
-                buf = ""
-            buf += s
-        if buf.strip():
-            out.append(buf.strip())
-        if len(out) > 1 and len(out[-1]) <= overlap:
-            out.pop()
-        return out
-    return _fixed_chunk(text, chunk_size, overlap)
-
-
-def _fixed_chunk(text: str, chunk_size: int, overlap: int) -> list[str]:
-    step = max(1, chunk_size - overlap)
-    chunks: list[str] = []
-    for i in range(0, len(text), step):
-        piece = text[i : i + chunk_size].strip()
-        if piece:
-            chunks.append(piece)
-    if len(chunks) > 1 and len(chunks[-1]) <= overlap:
-        chunks.pop()
-    return chunks
 
 
 def _annotation_text(annotations: list | None) -> str:
@@ -176,11 +129,20 @@ def _chunk_to_dict(c: AiKnowledgeChunkModel) -> dict:
         "id": c.id,
         "knowledge_base_id": c.knowledge_base_id,
         "file_name": c.file_name or "",
+        "document_id": c.document_id,
+        "parent_id": c.parent_id,
+        "is_parent": bool(c.is_parent),
         "chunk_index": c.chunk_index or 0,
         "content": c.content,
         "annotations": c.annotations or [],
         "meta": c.meta,
         "dimension": c.dimension,
+        "token_count": c.token_count,
+        "char_start": c.char_start,
+        "char_end": c.char_end,
+        "start_line": c.start_line,
+        "page": c.page,
+        "vector_model": c.vector_model,
     }
 
 
@@ -456,6 +418,8 @@ class AiKnowledgeService:
             chunk_size=data.chunk_size,
             overlap=data.overlap,
             strategy=data.strategy,
+            parent_child=bool(getattr(data, "parent_child", False)),
+            chunk_unit=str(getattr(data, "chunk_unit", "char") or "char"),
         )
 
     @classmethod
@@ -1650,16 +1614,32 @@ class AiKnowledgeService:
         start_lines: list[int] | None = None,
         pages: list[int] | None = None,
         rebuild_graph: bool = True,
+        parent_child: bool = False,
+        chunk_unit: str = "char",
+        page_offsets: list[int] | None = None,
     ) -> dict:
-        """文本→分块→向量化→入库（文档复用）。支持引用溯源字段。
+        """文本→分块→向量化→入库（文档复用）。支持引用溯源与父子分块。
 
-        ``rebuild_graph=False`` 供批量入库（后台任务）在末尾只重建一次图谱。
+        - ``parent_child=True`` 时父块只存文本（不向量化），子块带 ``parent_id``；
+        - ``chunk_unit="token"`` 时按 token 窗口切分；
+        - ``rebuild_graph=False`` 供批量入库在末尾只重建一次图谱。
         """
-        chunks = chunk_text(text, chunk_size, overlap, strategy)
-        if not chunks:
+        drafts = chunk_drafts(
+            text,
+            strategy=strategy,
+            chunk_size=chunk_size,
+            overlap=overlap,
+            unit=chunk_unit,
+            page_offsets=page_offsets,
+            parent_child=parent_child,
+        )
+        child_drafts = [draft for draft in drafts if not draft.is_parent]
+        if not child_drafts:
             return {"chunks": 0}
         model_id = await cls._kb_model_id([kb_id])
-        vectors = await embedding.embed_texts(chunks, model_id=model_id)
+        vectors = await embedding.embed_texts(
+            [draft.content for draft in child_drafts], model_id=model_id
+        )
         model_name = await cls._vector_model_name(model_id)
         saved = 0
         async with async_db_session.begin() as db:
@@ -1673,16 +1653,54 @@ class AiKnowledgeService:
                     )
                 )
             ).scalar() or 0
-            rows: list[AiKnowledgeChunkModel] = []
-            for i, chunk in enumerate(chunks, start=existing + 1):
+            parent_rows: list[AiKnowledgeChunkModel] = []
+            for offset, draft in enumerate([d for d in drafts if d.is_parent]):
                 row = AiKnowledgeChunkModel(
                     knowledge_base_id=kb_id,
                     file_name=file_name,
                     document_id=document_id,
-                    start_line=(start_lines[i - existing - 1] if start_lines and i - existing - 1 < len(start_lines) else None),
-                    page=(pages[i - existing - 1] if pages and i - existing - 1 < len(pages) else None),
-                    chunk_index=i,
-                    content=chunk,
+                    chunk_index=existing + offset + 1,
+                    content=draft.content,
+                    is_parent=True,
+                    page=draft.page,
+                    char_start=draft.char_start,
+                    char_end=draft.char_end,
+                    token_count=draft.token_count,
+                    meta={"file_name": file_name, "is_parent": True},
+                )
+                db.add(row)
+                parent_rows.append(row)
+            if parent_rows:
+                await db.flush()
+            parent_ids = [row.id for row in parent_rows]
+            rows: list[AiKnowledgeChunkModel] = []
+            for offset, (draft, vec) in enumerate(
+                zip(child_drafts, vectors, strict=False)
+            ):
+                index = existing + len(parent_rows) + offset + 1
+                parent_id = None
+                if draft.parent_index is not None and draft.parent_index < len(parent_ids):
+                    parent_id = parent_ids[draft.parent_index]
+                row = AiKnowledgeChunkModel(
+                    knowledge_base_id=kb_id,
+                    file_name=file_name,
+                    document_id=document_id,
+                    parent_id=parent_id,
+                    start_line=(
+                        text[: draft.char_start].count("\n") + 1
+                        if draft.char_start is not None
+                        else None
+                    ),
+                    page=(
+                        draft.page
+                        if draft.page is not None
+                        else (pages[offset] if pages and offset < len(pages) else None)
+                    ),
+                    chunk_index=index,
+                    content=draft.content,
+                    char_start=draft.char_start,
+                    char_end=draft.char_end,
+                    token_count=draft.token_count,
                     meta={"file_name": file_name},
                 )
                 db.add(row)
