@@ -689,6 +689,7 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:market:submit", "提交资产到市场"),
     ("module_ai:market:share", "分享市场商品"),
     ("module_ai:market:review", "审核市场商品"),
+    ("module_ai:market:manage", "维护我的资产（启停/删除/接收分享）"),
     # 本体（Ontology）：读写分离 + 执行与治理分级。
     # 原先 90 个接口共用 `module_ai:query:ask`，等于「能问数就能改本体定义」（安全洞）。
     ("module_ai:ontology:query", "查看本体"),
@@ -1790,7 +1791,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _register_business_jobs_on_startup()
 
         # 导入并显示最终的启动信息面板
-        from app.common.enums import EnvironmentEnum
 
         console_run(
             host=settings.SERVER_HOST,

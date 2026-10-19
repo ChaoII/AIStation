@@ -200,13 +200,21 @@ def test_share_list_pagination(test_client, auth_headers):
 def test_accept_share_rejects_non_approved_item(test_client, auth_headers):
     """接受分享时校验市场商品状态：未上架商品不可接收。"""
     headers_b, bid = _make_user(test_client, auth_headers, "na")
-    item_id = _seed_item("pending")
+    item_id = _seed_item("approved")
     r = test_client.post(
         "/api/v1/ai/market/shares/share",
         headers=auth_headers,
         json={"item_id": item_id, "to_user_id": bid},
     )
     share_id = r.json()["data"]["id"]
+
+    # 分享后商品被下架（分享本身只允许已上架商品，故用下架制造非 approved 状态）
+    off = test_client.post(
+        "/api/v1/ai/market/review",
+        headers=auth_headers,
+        json={"item_id": item_id, "action": "offline", "remark": "测试下架"},
+    )
+    assert off.status_code == 200, off.text
 
     acc = test_client.post(f"/api/v1/ai/market/shares/{share_id}/accept", headers=headers_b)
     assert acc.status_code != 200

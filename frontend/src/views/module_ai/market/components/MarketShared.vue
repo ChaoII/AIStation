@@ -50,10 +50,24 @@
         <el-table-column v-if="direction === 'in'" label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 'pending'">
-              <el-button size="small" type="primary" :icon="Check" @click="accept(row as any)">
+              <el-button
+                v-hasPerm="'module_ai:market:manage'"
+                size="small"
+                type="primary"
+                :icon="Check"
+                @click="accept(row as any)"
+              >
                 接收
               </el-button>
-              <el-button size="small" :icon="Close" @click="reject(row as any)">拒绝</el-button>
+              <el-button
+                v-hasPerm="'module_ai:market:manage'"
+                size="small"
+                :icon="Close"
+                @click="reject(row as any)"
+              >
+                拒绝
+              </el-button>
+              <span v-if="!hasPerm('module_ai:market:manage')" class="done-text">无接收权限</span>
             </template>
             <span v-else class="done-text">已处理</span>
           </template>
@@ -75,6 +89,8 @@ import {
   rejectMarketShare,
   type MarketShare,
 } from "@/api/module_ai/market";
+import { ROLE_ROOT } from "@/constants";
+import { useUserStore } from "@/store";
 
 defineOptions({ name: "MarketShared" });
 
@@ -82,6 +98,13 @@ const loading = ref(false);
 const direction = ref("in");
 const status = ref("");
 const items = ref<MarketShare[]>([]);
+
+function hasPerm(perm: string): boolean {
+  const store = useUserStore();
+  const roles = store.basicInfo.roles;
+  if (roles && roles.some((r) => r.code === ROLE_ROOT)) return true;
+  return store.prems.includes(perm);
+}
 
 function assetLabel(type: string) {
   return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;

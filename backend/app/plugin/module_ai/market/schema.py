@@ -34,7 +34,7 @@ class MarketReviewSchema(BaseModel):
     """审核：通过/驳回 + 意见。"""
 
     item_id: int
-    action: str = Field(..., description="approve/reject")
+    action: str = Field(..., description="approve/reject/offline")
     remark: str | None = Field(default="", max_length=500)
 
 
