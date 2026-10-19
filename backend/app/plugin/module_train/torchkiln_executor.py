@@ -1049,6 +1049,10 @@ class TorchKilnExecutor(TaskExecutor):
     @classmethod
     async def recover_orphans(cls) -> None:
         """override：先处理 simple 任务（子进程判定），其余走基类容器逻辑（R10）。"""
+        # self-heal：把 simple 并发计数对账为实际在册任务数（30s 恢复循环内自愈）
+        with contextlib.suppress(Exception):
+            await simple_scheduler.reconcile_active()
+
         from sqlalchemy import select
 
         async with async_db_session() as db:

@@ -131,23 +131,54 @@ async def acquire(task_id: int, need_mem_gb: float,
 
 
 async def release(task_id: int) -> None:
-    """幂等释放：删任务台账、并发计数回落、清环境快照。重复调用安全。"""
+    """幂等释放：删任务台账、并发计数回落、清环境快照。重复调用安全。
+
+    ⚠️ 递减判定**由 Redis 台账驱动**（del 返回 1 = 该任务在册），不依赖进程内
+    ``_LOCAL_TASKS`` 镜像——后端重启后镜像为空，但恢复路径（``recover_orphans``）
+    正是**跨进程**调用 ``release``，若镜像驱动会漏减 ``K_SIMPLE_ACTIVE``。
+    """
     global _LOCAL_ACTIVE
     rd = await _store.redis_or_none()
-    was_active = task_id in _LOCAL_TASKS
     if rd is not None:
+        # del 原子地同时「删除台账」与「判定是否存在」，返回被删 key 数
+        deleted = 0
         with contextlib.suppress(Exception):
-            await rd.delete(f"{K_SIMPLE_TASK}{task_id}")
+            deleted = int(await rd.delete(f"{K_SIMPLE_TASK}{task_id}") or 0)
         with contextlib.suppress(Exception):
             await rd.delete(f"{K_SIMPLE_ENV}{task_id}")
-        if was_active:
+        if deleted:
             with contextlib.suppress(Exception):
                 await rd.decr(K_SIMPLE_ACTIVE)
     else:
-        if was_active:
+        if task_id in _LOCAL_TASKS:
             _LOCAL_ACTIVE = max(0, _LOCAL_ACTIVE - 1)
         _LOCAL_ENV.pop(task_id, None)
     _LOCAL_TASKS.pop(task_id, None)
+
+
+async def reconcile_active() -> None:
+    """把 ``K_SIMPLE_ACTIVE`` 对账为实际存活的台账 key 数量（自愈）。
+
+    场景：INCR 后后端崩溃、或台账被 TTL 回收，但 ``K_SIMPLE_ACTIVE`` 未随
+    ``release`` 回落——该键无 TTL，一个崩溃就会把并发上限永久撑满，挡住所有
+    后续 simple 任务。恢复循环（``recover_orphans``）周期性调用，令计数在
+    30s 内自愈。仅 Redis 可用时执行（进程内降级无此问题）；失败 log 不抛。
+    """
+    rd = await _store.redis_or_none()
+    if rd is None:
+        return
+    try:
+        count = 0
+        async for key in rd.scan_iter(match=f"{K_SIMPLE_TASK}*"):
+            skey = key if isinstance(key, str) else key.decode("utf-8", "ignore")
+            # 排除 ``aist:tk:simple:active`` 自身与 ``aist:tk:simple:env:*`` 快照键，
+            # 只数真正的任务台账键（``aist:tk:simple:{task_id}``）。
+            if skey == K_SIMPLE_ACTIVE or skey.startswith(K_SIMPLE_ENV):
+                continue
+            count += 1
+        await rd.set(K_SIMPLE_ACTIVE, count)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[simple_scheduler] 对账 active 计数失败: {e}")
 
 
 async def record_pid(task_id: int, pid: int) -> None:

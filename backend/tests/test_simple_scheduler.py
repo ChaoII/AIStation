@@ -188,3 +188,53 @@ def test_update_usage_env_and_step_backfill(monkeypatch):
     _run(ss.update_usage(step))
     snap = ss.usage_snapshot()
     assert snap["gpus"][0]["reserved_gb"] == 3.2, "step 的 mem_reserved 应回填台账"
+
+
+# ---------------------------------------------------------------- 自愈对账
+def test_release_across_process_decrements_redis(monkeypatch):
+    """跨进程 release：进程内镜像为空（模拟重启）但 Redis 台账存在 → 计数回落、台账删除。"""
+    import json
+
+    import fakeredis.aioredis
+
+    rd = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(ss._store, "redis_or_none", _async(rd))
+    monkeypatch.setattr(ss, "_LOCAL_TASKS", {})   # 模拟后端重启后镜像为空
+    monkeypatch.setattr(ss, "_LOCAL_ACTIVE", 0)
+    monkeypatch.setattr(ss, "_LOCAL_ENV", {})
+
+    # Redis 里有台账 + 虚高计数，进程内镜像却没有该任务
+    _run(rd.set(f"{ss.K_SIMPLE_TASK}{_TASK + 30}",
+                json.dumps({"gpu_id": 0, "pid": 1, "ts": 1.0})))
+    _run(rd.set(ss.K_SIMPLE_ACTIVE, 1))
+
+    _run(ss.release(_TASK + 30))
+    assert _run(rd.get(ss.K_SIMPLE_ACTIVE)) == "0", "跨进程 release 应正确递减 active"
+    assert _run(rd.get(f"{ss.K_SIMPLE_TASK}{_TASK + 30}")) is None, "应删除 Redis 台账"
+
+
+def test_reconcile_active_sets_actual_count(monkeypatch):
+    """对账：预置 3 个任务台账 + env 快照 + 虚高 active → reconcile 后计数 = 3。"""
+    import fakeredis.aioredis
+
+    rd = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(ss._store, "redis_or_none", _async(rd))
+    monkeypatch.setattr(ss, "_LOCAL_TASKS", {})
+
+    for i in range(3):
+        _run(rd.set(f"{ss.K_SIMPLE_TASK}{_TASK + 40 + i}", '{"gpu_id":0}'))
+    _run(rd.set(f"{ss.K_SIMPLE_ENV}{_TASK + 40}", '{"gpu":[{}]}'))
+
+    # 三种情形：虚高 / 虚低，都应被对账成真实计数 3
+    for bad in ("99", "0"):
+        _run(rd.set(ss.K_SIMPLE_ACTIVE, bad))
+        _run(ss.reconcile_active())
+        assert _run(rd.get(ss.K_SIMPLE_ACTIVE)) == "3", (
+            f"对账后 active 应为真实台账数 3，实际 {_run(rd.get(ss.K_SIMPLE_ACTIVE))}")
+
+
+def test_reconcile_active_skips_when_no_redis(monkeypatch):
+    """Redis 不可用（降级进程内）时对账应跳过，不抛异常。"""
+    monkeypatch.setattr(ss._store, "redis_or_none", _async_none)
+    _run(ss.reconcile_active())  # 不应抛
+    assert ss.usage_snapshot()["active_count"] == 0
