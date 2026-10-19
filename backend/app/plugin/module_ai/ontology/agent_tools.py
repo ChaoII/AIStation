@@ -398,6 +398,17 @@ async def _run_ontology_tool_impl(name: str, args: dict, user_id: int | None = N
         code = (args.get("code") or "").strip()
         if not code:
             return {"error": "缺少函数编码"}
+        # P4（补）：与同文件的 list_ontology / propose_ontology_action 同口径 ——
+        # Agent 不能执行调用者本人无权查看的函数。修前这里**直接派发**：只要 code
+        # 猜得中就能跑被 ACL 限定角色、或被设为 hidden/deprecated 的函数（含 http
+        # 形态，可做内网探针）—— Agent 成为绕过本体资源权限的后门。
+        fn = next((f for f in await ont.list_functions(None) if f.get("code") == code), None)
+        if not fn:
+            return {"error": f"本体函数 {code} 不存在"}
+        if not _visible(fn):
+            return {"error": f"本体函数 {code} 不可用（已隐藏或已废弃）"}
+        if principal is not None and not await _allowed("function", code):
+            return {"error": f"无权调用本体函数 {code}"}
         r = await ont.run_ontology_function(code, args.get("args") or {})
         if not r.get("ok"):
             return {"error": r.get("msg") or "函数执行失败"}

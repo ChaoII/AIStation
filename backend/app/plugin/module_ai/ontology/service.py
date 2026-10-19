@@ -1404,35 +1404,36 @@ async def execute_ontology_action(code: str, object_key: str, params: dict,
             "msg": f"已在场景内暂存（未写入真实数据）：{'、'.join(applied)}",
         }
     try:
-        for e in edits:
-            rtype = e["rule"]
-            assigns = e.get("assignments") or {}
-            if rtype == "modify_object":
-                if not assigns:
-                    continue
-                sets = ", ".join(f'"{_safe_ident(c)}" = :{c}' for c in assigns)
-                async with async_db_session.begin() as db:
+        # 单事务（P1）：多条编辑要么全成、要么全滚。修前每条各开一个事务，
+        # 第 1 条已提交、第 2 条失败时不回滚 ⇒ 返回"规则执行失败"但数据已改了一半
+        # （对比 apply_scenario 是真单事务，说明本该这么做）。
+        async with async_db_session.begin() as db:
+            for e in edits:
+                rtype = e["rule"]
+                assigns = e.get("assignments") or {}
+                if rtype == "modify_object":
+                    if not assigns:
+                        continue
+                    sets = ", ".join(f'"{_safe_ident(c)}" = :{c}' for c in assigns)
                     res = await db.execute(
                         _t(f'UPDATE "{table}" SET {sets} WHERE {_cast_text(_q("id"))} = :__k'),
                         {**assigns, "__k": str(object_key)})
                     total_rows += int(res.rowcount or 0)
-                applied.append(f"modify_object({len(assigns)} 列)")
-            elif rtype == "create_object":
-                if not assigns:
-                    return {"ok": False, "msg": "create_object 规则没有任何赋值"}
-                cols_ = ", ".join(f'"{_safe_ident(c)}"' for c in assigns)
-                ph = ", ".join(f":{c}" for c in assigns)
-                async with async_db_session.begin() as db:
+                    applied.append(f"modify_object({len(assigns)} 列)")
+                elif rtype == "create_object":
+                    if not assigns:
+                        raise CustomException(msg="create_object 规则没有任何赋值")
+                    cols_ = ", ".join(f'"{_safe_ident(c)}"' for c in assigns)
+                    ph = ", ".join(f":{c}" for c in assigns)
                     await db.execute(_t(f'INSERT INTO "{table}" ({cols_}) VALUES ({ph})'), assigns)
                     total_rows += 1
-                applied.append("create_object")
-            elif rtype == "delete_object":
-                async with async_db_session.begin() as db:
+                    applied.append("create_object")
+                elif rtype == "delete_object":
                     res = await db.execute(
                         _t(f'DELETE FROM "{table}" WHERE {_cast_text(_q("id"))} = :__k'),
                         {"__k": str(object_key)})
                     total_rows += int(res.rowcount or 0)
-                applied.append("delete_object")
+                    applied.append("delete_object")
     except Exception as e:  # noqa: BLE001
         await _log_action_result(act_name, table, object_key, params, operator, "failed",
                                  f"规则执行失败：{str(e)[:200]}")
@@ -1882,6 +1883,20 @@ async def upsert_link(data: dict) -> dict:
         "st": data.get("status") or "experimental",
         "vi": data.get("visibility") or "normal",
     }
+    # 去重（P1）：无 id 时按**自然键**（源对象,目标对象,源字段,目标字段）找已存在的
+    # 活行 → 复用其 id，走下面的更新分支，不再无脑 INSERT。修前回滚/导入/提案合并
+    # 都用"无 id 的完整字典"重放，每次都新造一行；而读取按 ORDER BY id 取第一条
+    # （旧行）⇒ 改了定义却不生效。
+    if not data.get("id"):
+        exist = (await _exec(
+            "SELECT id FROM ai_ont_link WHERE source_object=:s AND target_object=:t "
+            "AND COALESCE(source_field,'')=:sf AND COALESCE(target_field,'')=:tf "
+            "AND is_deleted=false LIMIT 1",
+            {"s": data["source_object"], "t": data["target_object"],
+             "sf": data.get("source_field", ""), "tf": data.get("target_field", "")}
+        )).fetchone()
+        if exist:
+            data = {**data, "id": int(exist[0])}
     if data.get("id"):
         await _exec_write(
             "UPDATE ai_ont_link SET source_object=:s, target_object=:t, name=:n, card=:c, "
@@ -1939,6 +1954,15 @@ async def upsert_action(data: dict) -> dict:
     raw_table = (data.get("target_table") or "").strip()
     if raw_table:
         _safe_ident(raw_table)
+    # 去重（P1）：无 id 时按 code 找已存在的活行 → 复用其 id 走更新分支。
+    # 修前回滚/导入/提案合并每次都新造一行，而 _find_action 按 ORDER BY id 取第一条
+    # （旧行）⇒ 改了白名单/审批配置却不生效，安全配置被幽灵旧行遮蔽。
+    if not data.get("id"):
+        exist = (await _exec(
+            "SELECT id FROM ai_ont_action WHERE code=:c AND is_deleted=false LIMIT 1",
+            {"c": code})).fetchone()
+        if exist:
+            data = {**data, "id": int(exist[0])}
     common = {
         "n": data.get("name", code),
         # 显式传入 parameters 时同步生成 input_schema（工具 JSON Schema 的来源）
@@ -4132,6 +4156,13 @@ async def upsert_function(data: dict, actor_id: int | None = None) -> dict:
     errs = _fe.validate_function({**data, "kind": kind})
     if errs:
         raise CustomException(msg="函数定义有误：" + "；".join(errs))
+    # 去重（P1）：无 id 时按 code 找已存在的活行 → 复用其 id 走更新分支（同 upsert_action）
+    if not data.get("id"):
+        exist = (await _exec(
+            "SELECT id FROM ai_ont_function WHERE code=:c AND is_deleted=false LIMIT 1",
+            {"c": code})).fetchone()
+        if exist:
+            data = {**data, "id": int(exist[0])}
     common = {
         "n": data.get("name", code), "e": data.get("expr", ""),
         "d": data.get("description", ""),
@@ -4419,10 +4450,18 @@ async def materialize_object(code: str) -> dict:
     src_table = str(row[1] or "")
     ds_id = int(row[2] or 0)
 
+    # 去重/防损（P1）：已物化对象的支撑表就是物化表自己。此时再物化会
+    # `SELECT 自己 → INSERT 自己`，行数每次翻倍（实例/聚合/派生/决策快照全失真）。
+    # 数据已在平台库，没有外部源可同步 ⇒ 直接拒绝并说明。
+    table = f"ont_{code}"
+    if src_table == table:
+        return {"ok": False, "msg": f"对象已物化（支撑表已是 {table}），无需重复物化；"
+                                    f"数据已同步到平台库，如需重建请先还原绑定"}
+
     props = await list_properties(code)
     if not props:
         return {"ok": False, "msg": "对象没有属性，无法物化"}
-    table = f"ont_{code}"
+    # table 已在上方的"是否已物化"守卫处定义
     col_map = []
     cols_ddl = []
     pg_of: dict[str, str] = {}
