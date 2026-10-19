@@ -121,3 +121,28 @@ Limit
 3. **评测集数据**：需要在 dev 库创建评测集与条目（页面上暂无「新建评测集/条目」表单，先用接口或脚本）。
 4. **兼容清理**：`service._pg_search` / `_minmax_scores` / `_fuse_weighted` / `_py_search` 已成为死代码，留待下一轮删除。
 5. **迁移脚本**：本轮用 `extensions.py` 幂等补列/建表（存量库重启即生效）；仍需补一份手写 alembic revision 以覆盖全新库迁移链。
+
+## 6. 真实环境端到端（2026-10-19 实测，worktree 后端 8003 + 真库/真网关）
+
+前置：`SERVER_PORT=8003` 起 worktree 后端（**不复用主仓 8002**），`openapi.json` 已确认新路由
+（`/ai/knowledge/eval/sets` 等）生效——即「跑的是新代码」这一步有证据。
+
+| 验证项 | 实测结果 |
+|---|---|
+| 生成带中文的扫描件 PNG → `/documents/upload` | 返回 `task_id`，任务 `succeeded`（step=完成） |
+| MinerU OCR | 分块内容 `## 设备检修记录：液压泵压力正常`（识别正确），`page=0` |
+| 真实嵌入模型 | 分块 `vector_model=smbs/Embedding-4B`、`dimension=2560` |
+| 语义检索（字面无重叠） | query「休假天数是多少」→ 命中 policy.txt「员工每年享有带薪年假十五天」，score=0.0164（RRF 分） |
+| 评测运行（rerank off/on） | 两组均 `succeeded`；n=2, recall=1.0, mrr=1.0, ndcg=1.0（**该小集区分度不足，暂无 rerank 提升数字**） |
+| 清理 | 脚本自动删除测试知识库 |
+
+### 端到端抓出并修复的真实缺陷（`0x00` 入库失败）
+
+现象：上传 PNG 返回 400 —— `asyncpg.exceptions.CharacterNotInRepertoireError: invalid byte sequence for encoding "UTF8": 0x00`
+（图片被当文本解码后写入 `ai_knowledge_documents.content`，PG 的 text 列不接受 NUL）。
+
+修复：
+1. `parsing/text.py::decode_text` 统一剔除 `\x00`（防御任何二进制/脏编码输入）；
+2. `service.upload_document` 对图片后缀**不做文本层预解析**（直接留空，由 worker 从 RustFS 取原始字节走 OCR）。
+
+> 说明：这两个修复是「真实环境跑一遍」才暴露出来的，单元测试（SQLite）无法发现 NUL 问题。

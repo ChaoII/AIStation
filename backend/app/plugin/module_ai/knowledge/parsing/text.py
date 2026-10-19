@@ -6,13 +6,17 @@ import io
 
 
 def decode_text(data: bytes) -> str:
-    """按 BOM → utf-8 → gbk → 宽松 utf-8 的顺序解码。"""
+    """按 BOM → utf-8 → gbk → 宽松 utf-8 的顺序解码。
+
+    二进制文件（图片等）也可能走到这里，务必剔除 NUL：PostgreSQL 的 text 列
+    不接受 ``0x00``，否则入库会报 ``CharacterNotInRepertoireError``。
+    """
     for encoding in ("utf-8-sig", "utf-8", "gbk"):
         try:
-            return data.decode(encoding)
+            return data.decode(encoding).replace("\x00", "")
         except UnicodeDecodeError:
             continue
-    return data.decode("utf-8", errors="replace")
+    return data.decode("utf-8", errors="replace").replace("\x00", "")
 
 
 def csv_to_markdown(text: str) -> str:

@@ -1359,12 +1359,17 @@ class AiKnowledgeService:
                 raise ValueError("知识库不存在")
             # 先做一次「快速文本层」提取：常见格式（txt/docx/pdf 文本层）无需等后台；
             # 扫描件/图片会得到空文本，由 worker 从 RustFS 取原始字节走 OCR。
-            try:
-                text, page_offsets = await asyncio.to_thread(
-                    cls._extract_doc, filename or "文档", data
-                )
-            except Exception:  # noqa: BLE001  解析失败交由后台任务报错
+            # 图片等二进制不能走文本解码（会产生 NUL，PG text 列拒绝）。
+            suffix = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else ""
+            if suffix in ("png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp", "gif"):
                 text, page_offsets = "", [0]
+            else:
+                try:
+                    text, page_offsets = await asyncio.to_thread(
+                        cls._extract_doc, filename or "文档", data
+                    )
+                except Exception:  # noqa: BLE001  解析失败交由后台任务报错
+                    text, page_offsets = "", [0]
             ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
             doc = AiKnowledgeDocumentModel(
                 knowledge_base_id=kb_id,
