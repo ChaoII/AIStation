@@ -47,6 +47,7 @@ const NON_METRIC_KEYS = new Set([
   "exit_reason",
   "duration_sec",
   "timestamp",
+  "ts", // 环境指标行（env）的采样时间戳（epoch 秒）：是坐标不是指标，防其它路径误判
   "date",
   "classes", // per-class 是嵌套 dict，单独用表格/柱状图展示，不进标量列表
 ]);
@@ -229,6 +230,9 @@ export function enumerateMetricsFromLog(log: any[]): { train: string[]; eval: st
   const push = (m: any, target: Set<string>) => {
     if (m == null || typeof m !== "object") return;
     const kind = m._kind;
+    // env 行（环境指标，嵌套结构 + ts 时间戳）与 failed 行（失败簿记）
+    // 都不是训练/评估指标：不排除的话 env 的 `ts` 会当成指标名混进图表
+    if (kind === "env" || kind === "failed") return;
     for (const key in m) {
       if (NON_METRIC_KEYS.has(key)) continue;
       const v = m[key];

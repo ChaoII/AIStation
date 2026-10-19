@@ -199,6 +199,9 @@
         </el-row>
       </el-card>
 
+      <!-- 环境指标面板：仅简单模式任务（容器任务无 env 事件，不调接口不渲染） -->
+      <EnvMetricPanel v-if="isSimpleTask" :rows="envRows" />
+
       <el-card v-if="compareTableData.length" shadow="never" class="section-card">
         <template #header><span class="card-title">指标对比</span></template>
         <el-table :data="compareTableData" border size="small" style="width: 100%">
@@ -309,6 +312,7 @@ import {
   type MetricSpecItem,
 } from "@/utils/trainMetrics";
 import MetricMiniChart from "../components/MetricMiniChart.vue";
+import EnvMetricPanel from "../components/EnvMetricPanel.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -524,9 +528,14 @@ const livePrimaryKey = computed(() => {
   return "map50";
 });
 
-/** 簿记行（`end` / `start`）本身不含指标值，不能参与「最优/最终」的评选。 */
+/**
+ * 簿记行（`end` / `env` / `failed`）本身不含指标值，不能参与「最优/最终」的评选。
+ * - `end`：训练结束簿记（旧有）；
+ * - `env`：简单模式环境指标行（简单模式 metrics_log 物化时混入，数据另走 envRows）；
+ * - `failed`：简单模式失败事件行（字段由训练侧定，无指标语义）。
+ */
 function isMetricRow(r: any): boolean {
-  return !!r && r._kind !== "end";
+  return !!r && r._kind !== "end" && r._kind !== "env" && r._kind !== "failed";
 }
 
 /**
@@ -1331,10 +1340,16 @@ async function loadTask() {
   //
   //    播种后 live 数组就是历史的延续，appendMetricRow 才是真正的**增量追加**。
   const rows = r.data?.data?.metrics_log;
-  liveMetricsLog.value = Array.isArray(rows) ? rows.slice() : [];
+  // ⚠️ 简单模式的 metrics_log 物化自事件表，混有 **env 环境指标行**
+  // （`_kind:"env"`，带 ts 时间戳与 gpu/cpu/… 嵌套结构）。它们的数据走
+  // envRows（EnvMetricPanel 专用），**不能进指标链**：否则 `ts` 会被
+  // enumerateMetricsFromLog 当成指标名混进图表，去重索引也会冲突。
+  liveMetricsLog.value = Array.isArray(rows) ? rows.filter((row: any) => row?._kind !== "env") : [];
   // 整体替换后去重索引全部失效，必须重建（否则新事件会因旧下标误替换）
   rebuildMetricRowIndex();
   syncChartLog();
+  // 简单任务：初载/重载环境指标（env 行不进 metrics_log 指标链，独立取数）
+  if (isSimpleTask.value) void loadEnvMetrics(id);
   // 拉该模型的评估指标键，决定「评估指标」区展示哪些指标
   loadModelMetricKeys();
 }
@@ -1443,6 +1458,69 @@ function stopPoll() {
 }
 
 // ==================================================================
+// 环境指标（仅简单模式）
+// ------------------------------------------------------------------
+// 简单模式（TorchKiln 子进程直调）训练侧每 ~5s 回调一条 `env` 事件，
+// 后端落事件表并经 SSE 扇出（渲染行：`_kind:"env"`，无 `type`）。
+// 数据**不进指标链**（liveMetricsLog / 图表 / 枚举器一律排除），
+// 由本页持有的 envRows 单独承载，EnvMetricPanel 只负责渲染：
+//   - 初载/重载：`GET /task/{id}/env-metrics`（带 ts，epoch 秒）；
+//   - 实时追加：SSE 收到的 env 行（局部更新，不整表重拉）；
+//   - 重连重放：`/metrics/stream` 会补发 seq>offset 的 env 行，按 seq 去重。
+// ==================================================================
+/** 简单任务判定：hyperparams 带 `__tk_mode="simple"`（后端 spawn 前持久化，detail 接口原样返回） */
+const isSimpleTask = computed(() => task.value?.hyperparams?.__tk_mode === "simple");
+/** 环境指标行（含 ts 的 env 行，父组件持有；组件卸载即释放） */
+const envRows = ref<any[]>([]);
+/** seq 去重集合（env 行与 step/eval 共用任务内递增 seq，同号不重复） */
+const envSeen = new Set<number>();
+/** env 行上限：5s 一条 ≈ 7h（与后端事件表 5000 行上限对齐） */
+const MAX_ENV_ROWS = 5000;
+/** 同指标链：攒够一整块再切队首，避免每条 env 事件都做 O(n) splice */
+const ENV_TRIM_CHUNK = 1024;
+
+/** 初载/重载环境指标（end 事件后 loadTask 也会再调一次拿最终快照） */
+async function loadEnvMetrics(taskId: number) {
+  try {
+    const r = await TrainAPI.getEnvMetrics(taskId);
+    const items = r.data?.data?.items;
+    if (!Array.isArray(items)) return;
+    // 整体替换（env-metrics 按 seq 升序返回，含全部历史）
+    envRows.value = items;
+    envSeen.clear();
+    for (const row of items) {
+      if (typeof row?.seq === "number") envSeen.add(row.seq);
+    }
+  } catch {
+    /* 提示由请求拦截器统一处理；env 面板是辅助展示，失败不影响主流程 */
+  }
+}
+
+/** SSE env 行实时追加（去重 + 裁剪）。env 渲染行不带 ts，用接收时刻补一个
+ *  （epoch 秒，与接口返回的 ts 同量纲，作 x 轴相对秒无碍）。 */
+function appendEnvRow(row: any) {
+  if (!row || row._kind !== "env") return;
+  const seq = row.seq;
+  if (typeof seq === "number") {
+    // 重连重放会补发已收到的 env 行 → 直接丢
+    if (envSeen.has(seq)) return;
+    envSeen.add(seq);
+  }
+  if (typeof row.ts !== "number") row.ts = Date.now() / 1000;
+  const log = envRows.value;
+  log.push(row);
+  if (log.length > MAX_ENV_ROWS + ENV_TRIM_CHUNK) {
+    const drop = log.length - MAX_ENV_ROWS;
+    // 同步清理被丢弃行的 seq，否则后续同 seq 重放会被误判为「已收到」
+    for (let i = 0; i < drop; i++) {
+      const s = log[i]?.seq;
+      if (typeof s === "number") envSeen.delete(s);
+    }
+    log.splice(0, drop);
+  }
+}
+
+// ==================================================================
 // 指标实时流（SSE）
 // ------------------------------------------------------------------
 // 为什么不用"每秒整表重拉"：
@@ -1488,8 +1566,18 @@ function stopMetricStream() {
   metricConnected.value = false;
 }
 
-/** 把一条指标事件转成 liveMetricsLog 的一行（结构与后端 metrics_log 一致） */
+/**
+ * 把一条指标事件转成 liveMetricsLog 的一行（结构与后端 metrics_log 一致）。
+ *
+ * ⚠️ 两种事件形状都要认：
+ *   - **容器模式**：`_pump` 发布**原始事件**（`type` 键），走下面 step/eval/best/end 分支；
+ *   - **简单模式**：`publish_metric(render_event_row(ev))` 发布**渲染行**（`_kind` 键、无
+ *     `type`）——行本身就是行，直接透传。不认 `_kind` 的话简单模式每一条实时
+ *     step/eval/best 都会被判成 null 丢弃，曲线永远不动。
+ * （`env` 行不会走到这里：onEvent 先按 `_kind === "env"` 分流到 appendEnvRow。）
+ */
 function metricEventToRow(ev: any) {
+  if (ev?._kind) return ev;
   const type = ev?.type;
   if (type === "step") {
     const row: any = {
@@ -1638,6 +1726,11 @@ function startMetricStream(taskId: number) {
       void loadTask();
       return;
     }
+    if (ev?._kind === "env") {
+      // 简单模式环境指标行：进 envRows（seq 去重），**不进指标链**
+      appendEnvRow(ev);
+      return;
+    }
     appendMetricRow(metricEventToRow(ev));
   };
 
@@ -1747,6 +1840,8 @@ async function handleRetrain() {
     clearLogs();
     liveMetricsLog.value = [];
     rebuildMetricRowIndex();
+    envRows.value = [];
+    envSeen.clear();
     syncChartLog(); // 重新训练后清图表（否则节流快照还留着上一轮的曲线）
     Object.assign(yoloMetrics, {
       epoch: 0,

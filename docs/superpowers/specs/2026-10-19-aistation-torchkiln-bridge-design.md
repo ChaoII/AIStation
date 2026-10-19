@@ -184,3 +184,20 @@ TORKILN_SIMPLE_MAX_CONCURRENT: int = 4                       # 并发硬上限�
 
 - **风险**：TorchKiln Windows 化可能遇到未知平台假设——阶段 1 以「兼容清单 + 回归测试」兜底，遇到障碍逐条解决并回写清单；torch CUDA wheel 依赖清华 `pytorch-wheels` 镜像（AGENTS.md 已实测可用）；submodule pin 与 TorchKiln 演进节奏需手动协调；常驻部署服务第一版不并入 simple（后续真实需求再扩）。
 - **开放问题**：无（核心取舍均已在本文定稿：统一事件表、HTTP loopback 回调、动态并发、四链路范围、按需依赖、Windows 目标）。
+
+## 九、简单模式 smoke（Task 8）
+
+> 注：本节编号顺延——原文末节「八、风险与开放问题」已占用「八」。
+> 2026-10-19 更新：smoke **默认用 GPU**（`--cpu` 强制 CPU，无 CUDA 自动回退）；导出链路交付标准改为 **ONNX**（`model.onnx`，TorchScript 仅兼容保留）。
+
+- **用途**：一键 smoke 脚本 `backend/scripts/smoke_simple_mode.py`，合成小数据集（128×128 PNG，8 训练 / 3 验证 / 3 推理，YOLO txt 归一化标签，1 类）跑通 `simple_run` 的 train → eval → predict → export 四链路；事件经本地 HTTP 回调（`X-Torchkiln-Token` 鉴权）收集，做**事件级断言**（退出码 0 + 有且仅 1 条合法 `end` + 各链路专属事件/产物），不只信退出码。
+- **设备**：**默认 GPU**（`resources.gpu=1`、`Global.device=cuda:0`；predict 由 `resources.gpu>0` 自动走 cuda:0）；`--cpu` 强制 CPU；`torch.cuda.is_available()` 为 False 且未显式指定时打印提示并自动回退 CPU（跨机器通用）；汇总输出标注本次设备（GPU 型号 / CPU）与总耗时。
+- **前置**：backend 虚拟环境已装 simple 依赖组——`cd backend && uv sync --extra simple`（装 CPU 版 torch）。**要跑 GPU 需另装 CUDA 轮子**（会覆盖 CPU 版），本机示例（阿里云 pytorch-wheels/cu132）：`uv pip install --no-deps --find-links https://mirrors.aliyun.com/pytorch-wheels/cu132/ "torch==2.14.1+cu132" "torchvision==0.29.1+cu132"`；⚠️ 装 CUDA 轮子后**不要再执行 `uv sync`**（锁文件记的是 CPU 版，会覆盖 CUDA 版），补包用 `uv pip install`。缺依赖时脚本打印中文引导并 **exit 2**（不算 smoke 失败）。
+- **命令**：`cd backend && .venv/Scripts/python.exe scripts/smoke_simple_mode.py`（默认 GPU；`--cpu` 强制 CPU；`--keep` 保留临时工作目录；Windows 原生可跑，不依赖 bash/docker）。
+- **通过标准**：
+  - train：`step` ≥1、`eval` ≥1、权重产物（`best_accuracy.pth` / `final.pth` / `latest.pth`）落盘；
+  - eval：`eval` 事件 `main_value` 可解析；
+  - predict：末条 `predict` 事件 `images_done == images_total`，输出目录逐图落 `.jpg`；
+  - export：`output_dir` 存在且含 **ONNX 交付产物 `model.onnx`（存在且非空）**，`end.onnx_path` 指向该文件（`simple_run` 已强制 `--onnx`，缺失即 `end(error)` + 退出码 1；TorchScript `model.pt` / `inference.pth` 仅作兼容保留，不再是通过依据）；
+  - 末尾逐链路汇总（设备 / 退出码 / end / 事件计数 / 耗时 / PASS|FAIL / 总耗时）+ `ALL PASS`（exit 0）。
+- **与容器模式并行验证**：smoke 走 direct CLI（`python -m torchkiln.simple_run`，等价 executor 的 simple 分支），与容器模式共用同一事件契约（`end` 终态、`step/eval/predict` 事件、`metrics.jsonl` 同形）；四链路全 PASS 后，平台侧再经训练任务 UI 走 executor 端到端复核（事件落 `train_metric_events` 表）。

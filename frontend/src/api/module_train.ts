@@ -227,6 +227,19 @@ export const TrainAPI = {
       params: { offset },
     });
   },
+  /**
+   * 简单模式环境指标（env 事件行）：只返回事件表里的 env 行，
+   * 每行带 `ts`（epoch 秒 float，前端直接作 x 轴）与
+   * gpu/cpu/cpu_per_core/mem/disk/net 嵌套结构（不摊平）。
+   * `start`/`end` 可选（epoch 秒，闭区间），缺省全量（受事件表 5000 行上限约束）。
+   */
+  getEnvMetrics(id: number, start?: number, end?: number) {
+    return request<ApiResponse<{ task_id: number; status?: string; items: any[]; total: number }>>({
+      url: `${API_PATH}/task/${id}/env-metrics`,
+      method: "get",
+      params: { start, end },
+    });
+  },
   /** 指标 SSE 地址（配合 EventSource 使用；后端已带 no-transform 头防代理缓冲） */
   taskMetricsStreamUrl(id: number, offset = -1) {
     return `/api/v1${API_PATH}/task/${id}/metrics/stream?offset=${offset}`;

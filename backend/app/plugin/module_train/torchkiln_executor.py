@@ -21,19 +21,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import posixpath
+import sys
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import update
 
 from app.config.setting import settings
 from app.core.database import async_db_session
 from app.plugin.module_train.framework_utils import framework_value
-from app.plugin.module_train.model import TrainStatus, TrainTask
+from app.plugin.module_train.model import TrainStatus, TrainTask, list_events
 from app.plugin.module_train.task_executor import TaskExecutor
 from app.plugin.module_train.torchkiln_client import (
     EVENT_BEST,
@@ -47,7 +49,7 @@ from app.plugin.module_train.torchkiln_client import (
     probe_service,
 )
 
-from . import gpu_pool
+from . import gpu_pool, simple_scheduler
 from . import tk_job_container as tkjc
 from .docker_utils import get_container_labels, run_container, stop_container
 from .paths import work_dir
@@ -84,6 +86,87 @@ _MAX_METRIC_ROWS = 5000
 
 #: 指标流订阅者（前端 SSE 端点）。key = task_id
 _metric_subscribers: dict[int, list[asyncio.Queue]] = {}
+
+
+# ---------------------------------------------------------------- 简单模式（子进程直调）
+#: simple 标记写回 hyperparams 的这个键（``__`` 前缀，用户表单不会渲染）
+SIMPLE_MODE_KEY = "__tk_mode"
+#: TorchKiln 终态事件里 ``exit_reason`` 的成功取值（其余一律失败）
+_SUCCESS_REASONS = frozenset({"finished", "early_stop", "already_complete"})
+#: simple 模式在 acquire 拿不到资源时的轮询间隔（秒，R8）
+_ACQUIRE_POLL_SECONDS = 2.0
+#: simple 模式等待子进程退出时的轮询间隔（秒，用于响应取消）
+_WAIT_POLL_SECONDS = 1.0
+#: simple 模式恢复时后台轮询 pid 存活的间隔（秒）
+_REATTACH_POLL_SECONDS = 3.0
+#: simple 任务最近事件超过这么久未更新视为异常（R10）
+_SIMPLE_STALL_SECONDS = 180.0
+
+
+def _ensure_torchkiln_runtime() -> None:
+    """懒加载探测：仅确认 ``torchkiln`` / ``ptcore`` 可 import（不实例化）。
+
+    只在 ``_execute_simple`` 内调用，启动/问数/AI 应用路径永不触碰训练栈。
+    """
+    try:
+        import ptcore  # noqa: F401
+        import torchkiln  # noqa: F401
+    except ImportError as e:
+        raise RuntimeError(
+            "未安装 torchkiln simple 依赖，请安装 backend 的 simple 可选组"
+        ) from e
+
+
+def _tk_repo_root() -> str:
+    """simple 模式下 torchkiln 源码位置 = submodule（R6）。"""
+    from app.config.path_conf import BASE_DIR
+
+    repo = BASE_DIR / "submodules" / "torchkiln"
+    if not repo.exists():
+        raise RuntimeError("未找到 torchkiln submodule，请先 git submodule update --init")
+    return str(repo)
+
+
+def _kill_process(pid: int) -> None:
+    """终止子进程：先 terminate，超时 10s 再 kill（R11，Windows 可用）。"""
+    import psutil
+
+    try:
+        p = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return
+    try:
+        p.terminate()
+        try:
+            p.wait(timeout=10)
+        except psutil.TimeoutExpired:
+            with contextlib.suppress(Exception):
+                p.kill()
+    except psutil.NoSuchProcess:
+        return
+
+
+def _pid_alive(pid: int) -> bool:
+    """进程存活判断（供孤儿恢复用）。psutil 不可用时视为不存活。"""
+    try:
+        import psutil
+    except ImportError:
+        return False
+    try:
+        return bool(int(pid)) and psutil.pid_exists(int(pid))
+    except (TypeError, ValueError):
+        return False
+
+
+async def set_simple_mode(task_id: int) -> None:
+    """把 ``__tk_mode="simple"`` 写回 hyperparams（R7，spawn 前持久化）。"""
+    async with async_db_session.begin() as db:
+        row = await db.get(TrainTask, task_id)
+        if row is None:
+            return
+        hp = dict(row.hyperparams or {})
+        hp[SIMPLE_MODE_KEY] = "simple"
+        row.hyperparams = hp
 
 
 # ---------------------------------------------------------------- 订阅（SSE 扇出）
@@ -129,10 +212,36 @@ async def set_job_id(task_id: int, job_id: str) -> None:
         row.hyperparams = hp
 
 
+def task_uses_events(task) -> bool:
+    """判断任务的指标是否应从**事件表**读取（simple 模式）。
+
+    以 hyperparams 里的 ``__tk_mode`` 标记为唯一依据（Task 5 在 spawn 前写回，R7）。
+    **不读全局开关** ``TORKILN_MODE``：该开关只影响新任务走哪条执行路径（写侧），
+    读侧必须按任务创建时实际落库的介质决定——若开关后来被切换，存量任务仍要
+    从它真正写过数据的地方读，否则会"读空"。
+    """
+    hp = getattr(task, "hyperparams", None)
+    return (hp or {}).get(SIMPLE_MODE_KEY) == "simple"
+
+
 async def load_metrics_rows(task_id: int) -> list[dict]:
+    """读取指标行——``/metrics`` 与 ``/metrics/stream`` 的唯一补发入口。
+
+    - simple 任务（``__tk_mode`` 标记）：从**事件表**按 seq 升序物化
+      （``render_event_row`` 渲染，未知类型跳过）；
+    - 容器/存量任务：读传统 ``metrics_log`` 列（兼容回退）。
+    """
     async with async_db_session() as db:
         task = await db.get(TrainTask, task_id)
-        return list(task.metrics_log or []) if task else []
+        if task is None:
+            return []
+        if task_uses_events(task):
+            from .event_ingest import render_event_row
+
+            events = await list_events(db, task_id)
+            return [r for ev in events
+                    if (r := render_event_row(ev["payload"])) is not None]
+        return list(task.metrics_log or [])
 
 
 async def task_is_terminal(task_id: int) -> bool:
@@ -563,6 +672,10 @@ class TorchKilnExecutor(TaskExecutor):
                 finished_at=datetime.now())
             return
 
+        # 双后端分派：simple = 子进程直调（无容器），默认 container 走存量逻辑
+        if settings.TORKILN_MODE == "simple":
+            return await cls._execute_simple(task_id)
+
         export_dir = work_dir("train_output", task_id)
         # 宿主上真正写数据的目录；容器里它对应 /workspace/data
         host_data_dir = os.path.join(export_dir, "data")
@@ -675,6 +788,336 @@ class TorchKilnExecutor(TaskExecutor):
                 task_id, TrainStatus.FAILED,
                 error_log=f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
                 finished_at=datetime.now())
+
+    # ------------------------------------------------------------ 简单模式（子进程）
+    @classmethod
+    async def _execute_simple(cls, task_id: int) -> None:
+        """简单模式：导出（宿主路径）→ 动态选卡 → 子进程 simple_run → 事件收敛。
+
+        与容器模式的差异仅在「运行形态」：数据导出 / 白名单 / ``_build_spec`` /
+        ``export_model`` 全部复用现有实现；spec 内路径一律为**宿主可访问路径**
+        （子进程与后端同机，无容器路径注入）。
+        """
+        _ensure_torchkiln_runtime()
+        export_dir = work_dir("train_output", task_id)
+        host_data_dir = os.path.join(export_dir, "data")
+        os.makedirs(host_data_dir, exist_ok=True)
+        alloc = None
+        proc = None
+        try:
+            async with async_db_session() as db:
+                task = await db.get(TrainTask, task_id)
+                if not task:
+                    return
+                hp = dict(task.hyperparams or {})
+                dataset_id = task.dataset_id
+                annotation_task_id = task.annotation_task_id
+                task_type = await cls._task_type(task)
+                model_name = cls._model_name(task)
+                ocr_rec = task_type == "ocr" and model_name.lower().rstrip("-_").endswith("rec")
+                params = await cls._dataset_params(task_type, hp, annotation_task_id)
+                train_ratio = float(hp.get("train_ratio", 0.8))
+                need_mem_gb = float((hp.get("resources") or {}).get("gpu_memory_gb")
+                                    or settings.TORKILN_GPU_MIN_FREE_GB)
+                # spec 先用宿主路径构建（_build_spec 无容器路径注入）
+                spec = cls._build_spec(task, host_data_dir, params=params)
+            cls._check_task_type(task_type)
+
+            # 数据导出到宿主目录（simple 模式无容器，宿主路径即训练进程可读路径）
+            await cls._export_training_data(
+                task_id, host_data_dir, dataset_id=dataset_id,
+                annotation_task_id=annotation_task_id,
+                train_ratio=train_ratio, task_type=task_type, ocr_rec=ocr_rec)
+
+            # R7：spawn 前持久化 simple 标记，供恢复/读取判定
+            await set_simple_mode(task_id)
+            # 补挂 train/val 清单（存在性在宿主路径探测，路径也写宿主路径）
+            spec = cls._attach_dataset_lists(spec, host_data_dir, host_data_dir)
+
+            # R8：非阻塞 acquire + 轮询重试；R9：等待期保持 RUNNING（基类已置）
+            polled = False
+            while True:
+                alloc = await simple_scheduler.acquire(task_id, need_mem_gb, need_mem_gb)
+                if alloc is not None:
+                    break
+                if cls._registry.get(task_id, {}).get("cancel"):
+                    await cls._mark_status(
+                        task_id, TrainStatus.CANCELLED, finished_at=datetime.now())
+                    return
+                if not polled:
+                    polled = True
+                    await broadcast_line(
+                        task_id,
+                        f"[torchkiln-simple] 等待可用 GPU（≥{need_mem_gb:.1f}GB 且利用率 <85%）"
+                        f" / 并发槽…")
+                await asyncio.sleep(_ACQUIRE_POLL_SECONDS)
+
+            gpu_id = alloc.gpu_indices[0]
+            await broadcast_line(task_id, f"[torchkiln-simple] 分配到 GPU {gpu_id}，写入作业配置…")
+
+            spec_path = os.path.join(host_data_dir, "spec.json")
+            with open(spec_path, "w", encoding="utf-8") as f:
+                json.dump(spec, f, ensure_ascii=False)
+
+            tk_repo = _tk_repo_root()
+            callback_url = (f"http://127.0.0.1:{settings.SERVER_PORT}"
+                            f"{settings.ROOT_PATH}/train/internal/events")
+            log_path = os.path.join(export_dir, "train_simple.log")
+            # ⚠️ stdout/stderr 必须接管道/文件：不接的话子进程输出会塞满 OS 缓冲卡死
+            with open(log_path, "w", encoding="utf-8") as lf:
+                proc = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", "torchkiln.simple_run",
+                    spec_path,
+                    "--callback-url", callback_url,
+                    "--token", settings.TORKILN_SIMPLE_CALLBACK_TOKEN,
+                    "--task-id", str(task_id),
+                    "--repo-root", tk_repo,
+                    cwd=tk_repo,
+                    stdout=lf, stderr=asyncio.subprocess.STDOUT)
+            entry = dict(cls._registry.get(task_id) or {})
+            entry.update({"proc": proc, "pid": proc.pid, "gpu_id": gpu_id})
+            cls._registry[task_id] = entry
+            await simple_scheduler.record_pid(task_id, proc.pid)
+            await broadcast_line(task_id, f"[torchkiln-simple] 训练子进程已启动 pid={proc.pid}")
+
+            await cls._wait_proc(task_id, proc)
+            await cls._settle_simple(task_id, returncode=proc.returncode, export_dir=export_dir)
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.exception(f"[torchkiln-simple] task {task_id} failed")
+            with contextlib.suppress(Exception):
+                await cls._mark_status(
+                    task_id, TrainStatus.FAILED,
+                    error_log=f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
+                    finished_at=datetime.now())
+        finally:
+            if proc is not None and proc.returncode is None:
+                with contextlib.suppress(Exception):
+                    proc.terminate()
+            if alloc is not None:
+                with contextlib.suppress(Exception):
+                    await simple_scheduler.release(task_id)
+
+    @classmethod
+    async def _wait_proc(cls, task_id: int, proc) -> None:
+        """等子进程退出；期间响应该任务的 cancel（终止子进程）。"""
+        waiter = asyncio.ensure_future(proc.wait())
+        try:
+            while True:
+                if cls._registry.get(task_id, {}).get("cancel"):
+                    await broadcast_line(task_id, "[torchkiln-simple] 收到停止请求，终止训练子进程")
+                    with contextlib.suppress(Exception):
+                        _kill_process(proc.pid)
+                done, _pending = await asyncio.wait({waiter}, timeout=_WAIT_POLL_SECONDS)
+                if done:
+                    return
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if not waiter.done():
+                waiter.cancel()
+
+    @classmethod
+    async def _settle_simple(cls, task_id: int, returncode: int | None,
+                             export_dir: str | None = None) -> TrainStatus:
+        """子进程退出后按 end 事件 + 退出码收敛终态，成功时导出权重。
+
+        - 有 ``end`` 事件且 ``exit_reason`` 属成功集、且退出码为 0 → SUCCESS + 导出；
+        - 其余（无 end / exit_reason 非成功 / 退出码非 0）→ FAILED；
+        - 若该任务已请求取消 → 置 CANCELLED（不再覆盖状态）。
+        """
+        if cls._registry.get(task_id, {}).get("cancel"):
+            await cls._mark_status(task_id, TrainStatus.CANCELLED, finished_at=datetime.now())
+            return TrainStatus.CANCELLED
+
+        async with async_db_session() as db:
+            end_events = await list_events(db, task_id, type_="end")
+        end_ev = end_events[-1] if end_events else None
+        reason = (end_ev.get("payload") or {}).get("exit_reason") if end_ev else None
+        if end_ev and reason in _SUCCESS_REASONS and (returncode is None or returncode == 0):
+            status = TrainStatus.SUCCESS
+        else:
+            status = TrainStatus.FAILED
+
+        rows = await cls._simple_event_rows(task_id)
+        best, last = cls._summarize(rows)
+        model_repo_id = None
+        if status == TrainStatus.SUCCESS:
+            if export_dir is None:
+                export_dir = work_dir("train_output", task_id)
+            try:
+                from app.plugin.module_train.exporter import export_model
+
+                model_info = await export_model(
+                    task_id, "torchkiln", export_dir, best_metrics=best)
+                model_repo_id = model_info.get("repo_id")
+                if not model_info.get("storage_path"):
+                    await broadcast_line(
+                        task_id, "[torchkiln-simple] 未能取得权重，本次不创建模型版本")
+                else:
+                    await broadcast_line(
+                        task_id, f"[torchkiln-simple] 权重已入库，模型版本 id={model_repo_id}")
+            except Exception as e:  # noqa: BLE001
+                log.error(f"[torchkiln-simple] 权重入库失败: {e}")
+
+        settle: dict = {}
+        if status == TrainStatus.SUCCESS:
+            settle["progress"] = 100
+        else:
+            p = progress_from_rows(rows)
+            if p is not None:
+                settle["progress"] = p
+        err = None
+        if status == TrainStatus.FAILED:
+            if not end_ev:
+                err = "训练子进程终止且未上报终态事件（缺少 end 事件）"
+            else:
+                err = f"训练失败（exit_reason={reason}）"
+        await cls._mark_status(
+            task_id, status, model_repo_id=model_repo_id,
+            best_metrics=best or None, last_metrics=last or None,
+            error_log=err, finished_at=datetime.now(), **settle)
+        await broadcast_line(task_id, f"[torchkiln-simple] 状态收敛为 {status}")
+        return status
+
+    @classmethod
+    async def _simple_event_rows(cls, task_id: int) -> list[dict]:
+        """从事件表物化为与容器模式同结构的行（沿用 ``render_event_row``）。"""
+        from .event_ingest import render_event_row
+
+        async with async_db_session() as db:
+            events = await list_events(db, task_id)
+        rows: list[dict] = []
+        for e in events:
+            r = render_event_row(e.get("payload") or {})
+            if r:
+                rows.append(r)
+        return rows
+
+    @classmethod
+    async def _last_event_ts(cls, task_id: int) -> datetime | None:
+        """任务最近一条事件的 ``ts``（datetime），用于简单模式恢复的停滞判定。"""
+        async with async_db_session() as db:
+            events = await list_events(db, task_id)
+        if not events:
+            return None
+        ts = events[-1].get("ts")
+        return ts if isinstance(ts, datetime) else None
+
+    @classmethod
+    async def _recover_simple_row(cls, row) -> None:
+        """处理一条 simple 模式的 RUNNING 任务（R10）：死/超时 → FAILED；存活 → reattach。"""
+        task_id = row.id
+        entry = await simple_scheduler.get_entry(task_id)
+        pid = int(entry.get("pid") or 0) if entry else 0
+        alive = _pid_alive(pid) if pid else False
+
+        stalled = not alive
+        if not stalled:
+            recent = await cls._last_event_ts(task_id)
+            if recent is not None:
+                # 事件 ts 一律按 UTC 存（insert_event 存 UTC）。PG timestamptz 读回
+                # UTC aware；SQLite 读回 naive（墙钟即 UTC）。两种都得归一 UTC 比较。
+                utc_now = datetime.now(timezone.utc)
+                if recent.tzinfo is not None:
+                    delta = (utc_now - recent).total_seconds()
+                else:
+                    delta = (utc_now.replace(tzinfo=None) - recent).total_seconds()
+                if delta > _SIMPLE_STALL_SECONDS:
+                    stalled = True
+
+        if stalled:
+            await cls._mark_status(
+                task_id, TrainStatus.FAILED,
+                error_log="训练子进程已退出或长时间无事件（后端重启后无法恢复）",
+                finished_at=datetime.now())
+            await broadcast_line(task_id, "[torchkiln-simple] 任务会话已断开，判定失败")
+            with contextlib.suppress(Exception):
+                await simple_scheduler.release(task_id)
+            return
+
+        # 存活 → 登记 registry（让基类跳过）+ 后台 reattach 轮询进程退出
+        reg = cls._registry.setdefault(task_id, {})
+        reg["pid"] = pid
+        reg["gpu_id"] = int(entry.get("gpu_id") or 0) if entry else 0
+        log.warning(f"[torchkiln-simple] 任务 {task_id} 子进程 pid={pid} 存活，重连等待退出")
+        reg["reattach_task"] = asyncio.create_task(cls._reattach_simple(task_id, pid))
+
+    @classmethod
+    async def _reattach_simple(cls, task_id: int, pid: int) -> None:
+        """后台轮询 pid 退出，按 DB 中 end 事件收敛（R10）。"""
+        try:
+            while True:
+                if not _pid_alive(pid):
+                    break
+                if cls._registry.get(task_id, {}).get("cancel"):
+                    with contextlib.suppress(Exception):
+                        _kill_process(pid)
+                    break
+                await asyncio.sleep(_REATTACH_POLL_SECONDS)
+            with contextlib.suppress(Exception):
+                await cls._settle_simple(task_id, returncode=None)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.exception(f"[torchkiln-simple] reattach {task_id} failed")
+            with contextlib.suppress(Exception):
+                await cls._mark_status(
+                    task_id, TrainStatus.FAILED, error_log=str(e),
+                    finished_at=datetime.now())
+        finally:
+            with contextlib.suppress(Exception):
+                await simple_scheduler.release(task_id)
+            cls._registry.pop(task_id, None)
+
+    @classmethod
+    async def recover_orphans(cls) -> None:
+        """override：先处理 simple 任务（子进程判定），其余走基类容器逻辑（R10）。"""
+        # self-heal：把 simple 并发计数对账为实际在册任务数（30s 恢复循环内自愈）
+        with contextlib.suppress(Exception):
+            await simple_scheduler.reconcile_active()
+
+        from sqlalchemy import select
+
+        async with async_db_session() as db:
+            rows = (await db.execute(select(cls.model_class).where(
+                cls.model_class.status == cls.status_enum.RUNNING))).scalars().all()
+        for r in rows:
+            if r.id in cls._registry:
+                continue
+            if not cls._recover_row_applies(r):
+                continue
+            if (r.hyperparams or {}).get(SIMPLE_MODE_KEY) == "simple":
+                await cls._recover_simple_row(r)
+        await super().recover_orphans()
+
+    @classmethod
+    async def stop(cls, task_id: int) -> None:
+        """override：simple 任务杀子进程；其余走基类容器逻辑（R11）。"""
+        pid = 0
+        entry = cls._registry.get(task_id)
+        if entry:
+            pid = int(entry.get("pid") or 0)
+        else:
+            led = await simple_scheduler.get_entry(task_id)
+            if led:
+                pid = int(led.get("pid") or 0)
+        if pid:
+            cls._registry.setdefault(task_id, {})["cancel"] = True
+            await broadcast_line(
+                task_id, f"[torchkiln-simple] 收到停止请求，终止训练子进程 pid={pid}")
+            with contextlib.suppress(Exception):
+                _kill_process(pid)
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    update(cls.model_class)
+                    .where(cls.model_class.id == task_id,
+                           cls.model_class.status == cls.status_enum.RUNNING)
+                    .values(status=cls.status_enum.CANCELLED, finished_at=datetime.now()))
+            return
+        await super().stop(task_id)
 
     @classmethod
     async def _export_training_data(cls, task_id: int, host_data_dir: str, *,

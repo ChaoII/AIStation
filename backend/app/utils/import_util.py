@@ -96,6 +96,9 @@ class ImportUtil:
             "templates",
             "sql",
             "env",
+            # git submodule 内的第三方代码（如 torchkiln）不得被当作本项目 ORM 模型扫描：
+            # 其 model.py 依赖 torch 等非核心依赖，backend venv 未安装，导入必失败。
+            "submodules",
         }
 
         # 定义要搜索的模型目录模式

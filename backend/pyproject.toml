@@ -71,6 +71,16 @@ dependencies = [
     "tiktoken>=0.14.0",
 ]
 
+[project.optional-dependencies]
+# 简单模式：把本地 submodule 里的 TorchKiln 作为本地依赖安装。
+# ⚠️ 不能用 `torchkiln @ file://./submodules/torchkiln` 字符串形式：
+# uv 0.11 的 PEP 508 解析不接受相对 file:// URL，会退化为构建根项目
+# 元数据再失败（见 [tool.setuptools] 说明）。改用 uv 官方推荐的
+# PEP 621 名字 + [tool.uv.sources] path 映射（锁文件记录为本地目录）。
+# `[export]` 额外组带入 onnx / onnxruntime / onnxslim：simple 模式的导出链路
+# 产出 ONNX（可转任意部署框架），torchscript 仅为兼容保留。
+simple = ["torchkiln[export]", "onnxscript"]
+
 [dependency-groups]
 dev = [
     "fakeredis>=2.21.0,<3",   # 测试：内存 Redis，配合 TESTING
@@ -82,8 +92,18 @@ dev = [
     "ruff==0.14.13",          # 代码检查/格式化
 ]
 
+# uv 需要构建根项目元数据时（如 optional-dependencies 出现本地 file:// 依赖），
+# setuptools flat-layout 会把 sql/static/submodules 误判为顶级包而报错；
+# 显式声明只含 app（backend 本身是虚拟项目，不会真正打包安装）。
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [tool.uv]
 default-groups = ["dev"]     # 本地 uv sync 含 dev；生产 pip -r requirements.txt 不含 pytest/ruff/fakeredis
+
+[tool.uv.sources]
+# simple 可选依赖组引用的本地 TorchKiln（git submodule，钉在 TK_COMMIT）
+torchkiln = { path = "submodules/torchkiln" }
 
 [[tool.uv.index]]
 name = "tuna"
