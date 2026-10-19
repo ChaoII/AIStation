@@ -17,7 +17,31 @@
 | WS5 切分：token/标题树/父子块（Task 19–21） | ✅ | `42e880e6` |
 | WS6 解析：MinerU/表格/网页（Task 22–25） | ✅ | `5b38a34d` |
 | WS7 评测：指标/数据集/运行（Task 26–27） | ✅（后端） | `f57f2714` |
-| WS8 前端页签与最终验收（Task 28–31） | ⏳ 待做 | — |
+| WS8 前端页签与检索增强（Task 28–30） | ✅（代码 + 静态检查） | `38f4ce98` |
+| WS8 最终验收（Task 31） | ⏳ 待做（需运行服务） | — |
+
+## 1.1 前端改动（`38f4ce98`）
+
+- `frontend/src/api/module_ai/knowledge.ts`：`uploadAiKnowledgeDocument` 增加 `use_ocr`；`searchAiKnowledge` 增加可选 `opts`（min_score/use_rerank/filters/rewrite）；新增 RAG 任务与评测接口封装。
+- `frontend/src/views/module_ai/knowledge/index.vue`：
+  - 文档 tab：新增「解析方式（自动/仅文本层）」、策略新增「按标题树」、新增**进度列**（`el-progress`，**只轮询该行任务**，终态才刷新列表）；
+  - 分块 tab：新增「类型（父块/子块）」与「Token」列；
+  - 检索测试：新增相似度下限、文件过滤、Rerank 开关、查询改写；结果展示**耗时分解**（总耗时/嵌入耗时/重排状态）；
+  - 新增「评测」tab：数据集选择、TopK/Rerank 配置、运行按钮、运行记录表（Recall/MRR/NDCG/状态），进度用独立横幅承载；
+  - `onUnmounted` 清理全部轮询定时器。
+
+静态检查（实测）：
+
+```
+cd frontend
+pnpm run type-check        → exit 0（无类型错误）
+pnpm exec eslint --fix <两个改动文件>
+ → 剩余 2 个 error：openRenameRel / onGraphNodeClick 未使用
+   已在 git HEAD 版本中确认同样是「只定义未引用」，属**改动前既有**问题
+```
+
+> 注：worktree 缺少 gitignored 的生成文件 `src/types/auto-imports.d.ts`、`src/types/components.d.ts`
+> 与 `node_modules`，已从主仓复制/建目录联接（本地环境，不入库）。
 
 ## 2. 测试结果（实测）
 
@@ -88,10 +112,12 @@ Limit
 
 ## 5. 阶段一尚未完成（待做）
 
-1. **前端（Task 28–30）**：评测页签、文档上传进度/解析方式、分块父子视图、检索测试阈值/过滤/rerank 开关、耗时分解。
-2. **真实环境端到端（Task 31 剩余）**：
+1. **前端视觉验证（Task 31 的一部分）**：需在 worktree 里启动 dev 服务后截图核对。按 AGENTS 规矩
+   **未擅自启动服务**（5181/8002 上可能是你在跑的服务）；需要你确认端口可用后再做。
+2. **真实环境端到端**：
    - 用真实扫描件 PDF 走 `/documents/upload` → MinerU OCR → 校验分块带正确 `page`；
    - 真实嵌入模型（`smbs/Embedding-4B`，2560 维）入库并检索，确认真实语义召回；
-   - 同一评测集跑 `use_rerank=false/true` 两组，记录 Recall/MRR/NDCG 对比数字。
-3. **兼容清理**：`service._pg_search` / `_minmax_scores` / `_fuse_weighted` / `_py_search` 已成为死代码，留待下一轮删除（避免一次性改动过大）。
-4. **迁移脚本**：本轮用 `extensions.py` 幂等补列/建表（存量库重启即生效）；仍需补一份手写 alembic revision 以覆盖全新库迁移链。
+   - 同一评测集跑 `use_rerank=false/true` 两组，记录 Recall/MRR/NDCG 对比数字（前端「评测」tab 已可发起）。
+3. **评测集数据**：需要在 dev 库创建评测集与条目（页面上暂无「新建评测集/条目」表单，先用接口或脚本）。
+4. **兼容清理**：`service._pg_search` / `_minmax_scores` / `_fuse_weighted` / `_py_search` 已成为死代码，留待下一轮删除。
+5. **迁移脚本**：本轮用 `extensions.py` 幂等补列/建表（存量库重启即生效）；仍需补一份手写 alembic revision 以覆盖全新库迁移链。
