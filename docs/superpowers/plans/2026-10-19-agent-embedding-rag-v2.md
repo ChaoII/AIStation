@@ -291,7 +291,7 @@ git commit -m "fix(ai): 重解析改为替换式入库避免重复分块"
 **Files:**
 - Create: `backend/app/plugin/module_ai/knowledge/embeddings/__init__.py`、`embeddings/persist.py`
 - Modify: `backend/app/plugin/module_ai/knowledge/extensions.py`、`service.py:1431-1475, 2060-2102, 2136-2162`
-- Create: `backend/tests/test_ai_rag_persist.py`、`backend/tests/test_ai_rag_pg_index.py`、`backend/scripts/check_rag_indexes.py`
+- Create: `backend/tests/test_ai_rag_persist.py`、`backend/tests/test_ai_rag_pg_index.py`、`backend/scripts/verify_rag_indexes.py`
 
 **Interfaces:**
 - Produces:
@@ -302,7 +302,7 @@ git commit -m "fix(ai): 重解析改为替换式入库避免重复分块"
   - `extensions.ensure_extensions()` 追加：`embedding_hv`、`parent_id`、`is_parent`、`content_hash`、`vector_model`、`token_count`、`char_start`、`char_end`、`search_text` 列；`idx_chunk_embedding_hv`、`idx_chunk_fts` 索引；存量 `search_text` 回填
     - 说明：`parent_id` 等字段已由任务 2 加入 ORM；这里是为**存量库**补 SQL 列。`embedding` / `embedding_hv` **不进 ORM**（沿用现有惰性 SQL 建列方式）。
     - `search_text` 回填 SQL：`UPDATE ai_knowledge_chunks SET search_text = content || ' ' || <标注文本拼接> WHERE search_text IS NULL`，每条语句独立提交、失败静默（与现有 `_run_sql` 一致）。
-  - `backend/scripts/check_rag_indexes.py`：连接 dev 库，打印 `EXPLAIN (COSTS OFF)` 向量查询计划与两个索引是否存在，返回码 0 表示 `Index Scan`
+  - `backend/scripts/verify_rag_indexes.py`：连接 dev 库，打印 `EXPLAIN (COSTS OFF)` 向量查询计划与两个索引是否存在，返回码 0 表示 `Index Scan`
 
 - [ ] **Step 1: 写失败测试（纯逻辑 + PG 索引）**
 
@@ -374,7 +374,7 @@ Expected: FAIL（模块不存在）
 - [ ] **Step 3: 实现 persist + extensions + 接入三条入库路径**
 
 `persist.py` 按 Interfaces 实现；`extensions.py` 在既有语句后追加列/索引/回填（每条 `_run_sql` 独立提交）；`ingest_text`、`_ingest_single`、`rebuild_index` 一律改为「先构造 ORM 行 → `flush()` 拿 id → `write_vectors(...)`」。`rebuild_index` 返回值改为 `{"chunks": int, "vectors": int}`。`ingest_text` 不再每次 `_rebuild_graph`（改为调用方决定，见任务 12）。
-`scripts/check_rag_indexes.py` 用 `psycopg` 连接 `DATABASE_*` 环境变量，执行：
+`scripts/verify_rag_indexes.py` 用 `psycopg` 连接 `DATABASE_*` 环境变量，执行：
 `EXPLAIN (COSTS OFF) SELECT id FROM ai_knowledge_chunks WHERE knowledge_base_id = ANY(ARRAY[1]) AND is_deleted = false ORDER BY embedding_hv <=> '[0,0]'::halfvec(2560) LIMIT 5`，断言输出含 `Index Scan`。
 
 - [ ] **Step 4: 运行确认通过（SQLite 单测 + 真实 PG 校验）**
@@ -385,13 +385,13 @@ Expected: PASS（3 passed）
 Run: `cd backend; uv run pytest tests/test_ai_knowledge.py -q`
 Expected: PASS（既有 5 例 + 新增 3 例）
 
-Run: `cd backend; uv run python scripts/check_rag_indexes.py`
+Run: `cd backend; uv run python scripts/verify_rag_indexes.py`
 Expected: 输出包含 `Index Scan using idx_chunk_embedding_hv`，退出码 0
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git add backend/app/plugin/module_ai/knowledge/embeddings backend/app/plugin/module_ai/knowledge/extensions.py backend/app/plugin/module_ai/knowledge/service.py backend/tests/test_ai_rag_persist.py backend/tests/test_ai_rag_pg_index.py backend/scripts/check_rag_indexes.py
+git add backend/app/plugin/module_ai/knowledge/embeddings backend/app/plugin/module_ai/knowledge/extensions.py backend/app/plugin/module_ai/knowledge/service.py backend/tests/test_ai_rag_persist.py backend/tests/test_ai_rag_pg_index.py backend/scripts/verify_rag_indexes.py
 git commit -m "feat(ai): 统一向量写入路径并补齐半精度向量索引与全文索引"
 ```
 
@@ -2057,7 +2057,7 @@ Expected: 全绿（记录用例数与耗时）
 
 - [ ] **Step 2: 索引与孤儿分块证据**
 
-Run: `cd backend; uv run python scripts/check_rag_indexes.py`
+Run: `cd backend; uv run python scripts/verify_rag_indexes.py`
 Expected: `Index Scan using idx_chunk_embedding_hv`
 
 Run（dev 库 SQL）: `SELECT count(*) FROM ai_knowledge_chunks c LEFT JOIN ai_knowledge_documents d ON c.document_id = d.id WHERE c.document_id IS NOT NULL AND d.id IS NULL;`
