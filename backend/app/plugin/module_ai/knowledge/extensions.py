@@ -125,3 +125,13 @@ async def ensure_extensions() -> None:
         "CREATE INDEX IF NOT EXISTS idx_chunk_fts "
         "ON ai_knowledge_chunks USING gin (to_tsvector('jiebacfg', search_text))"
     )
+    # ---- RAG 后台任务表（幂等；ORM 会建，这里为存量库补） ----
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_rag_tasks ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(16) DEFAULT 'pending', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, created_id INTEGER, updated_id INTEGER, deleted_id INTEGER, "
+        "kind VARCHAR(32), kb_id INTEGER, document_id INTEGER, payload JSONB, "
+        "progress INTEGER DEFAULT 0, step VARCHAR(64), message TEXT, error TEXT, "
+        "cancel_requested BOOLEAN DEFAULT false, started_time TIMESTAMP, finished_time TIMESTAMP)"
+    )

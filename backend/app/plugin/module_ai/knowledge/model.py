@@ -1,7 +1,9 @@
 """知识库 / 数据源 RAG 的数据模型。"""
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -268,4 +270,44 @@ class AiKnowledgeRelationModel(ModelMixin):
     weight: Mapped[int] = mapped_column(Integer, default=1, comment="共现权重")
     rtype: Mapped[str | None] = mapped_column(
         String(64), nullable=True, default="related", comment="关系类型/语义描述（线上显示）"
+    )
+
+
+class AiRagTaskModel(ModelMixin, UserMixin):
+    """RAG 后台任务（文档入库/重建索引/数据源同步/评测运行）。
+
+    状态机：``pending → running → succeeded | failed | canceled``。
+    """
+
+    __tablename__ = "ai_rag_tasks"
+    __table_args__ = ({"comment": "AI RAG 后台任务表"},)
+
+    kind: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="document_ingest", comment="任务类型"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending",
+        comment="状态 pending/running/succeeded/failed/canceled",
+    )
+    kb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None, comment="知识库 ID")
+    document_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="文档 ID"
+    )
+    payload: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=None, comment="任务参数"
+    )
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="进度 0-100")
+    step: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default=None, comment="当前步骤"
+    )
+    message: Mapped[str | None] = mapped_column(Text, nullable=True, default=None, comment="进度信息")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None, comment="失败原因")
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, comment="是否请求取消"
+    )
+    started_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
+    )
+    finished_time: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, default=None
     )
