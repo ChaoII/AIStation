@@ -131,3 +131,35 @@ async def job_datasource_sync(task: dict) -> None:
 register("document_ingest", job_document_ingest)
 register("kb_rebuild", job_kb_rebuild)
 register("datasource_sync", job_datasource_sync)
+
+
+async def job_kb_eval(task: dict) -> None:
+    """检索评测：逐条检索并计算 Recall/Precision/MRR/NDCG。"""
+    from .. import eval as eval_service
+    from . import report_progress
+
+    payload = task.get("payload") or {}
+    set_id = int(payload["set_id"])
+    kb_id = int(task["kb_id"])
+    config = payload.get("config") or {}
+
+    async def _progress(done: int, total: int) -> None:
+        await report_progress(
+            task["id"],
+            progress=int(10 + 80 * done / max(1, total)),
+            step=f"评测 {done}/{total}",
+        )
+
+    await report_progress(task["id"], progress=5, step="准备评测")
+    result = await eval_service.run_eval(
+        set_id, kb_id, config, progress_cb=_progress
+    )
+    await report_progress(
+        task["id"],
+        progress=100,
+        step="完成",
+        message=f"Recall={result['recall']} MRR={result['mrr']} NDCG={result['ndcg']}",
+    )
+
+
+register("kb_eval", job_kb_eval)

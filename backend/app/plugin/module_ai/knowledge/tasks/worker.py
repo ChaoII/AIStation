@@ -10,7 +10,14 @@ import asyncio
 from app.core.logger import log
 
 from ..config import rag_config
-from . import TERMINAL_STATUSES, TaskCanceled, claim_next, get_task, reset_stale_running, update_task
+from . import (
+    TERMINAL_STATUSES,
+    TaskCanceled,
+    claim_next,
+    get_task,
+    reset_stale_running,
+    update_task,
+)
 from .jobs import get_handler
 
 

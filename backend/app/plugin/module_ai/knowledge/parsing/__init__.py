@@ -8,7 +8,8 @@ from dataclasses import dataclass, field
 
 from app.core.logger import log
 
-from . import office, pdf, text as text_parser, web
+from . import office, pdf, web
+from . import text as text_parser
 from .mineru import parse_via_mineru
 
 _IMAGE_SUFFIXES = {"png", "jpg", "jpeg", "bmp", "tif", "tiff", "webp", "gif"}

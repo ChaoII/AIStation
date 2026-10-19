@@ -1,6 +1,7 @@
 """知识库 / 数据源 RAG 服务：分块、嵌入、入库、余弦检索、数据源同步。"""
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 
@@ -1615,7 +1616,7 @@ class AiKnowledgeService:
         if object_key:
             try:
                 await asyncio.to_thread(s3_client.delete_object, object_key)
-            except Exception:  # noqa: BLE001  S3 删除失败不影响元数据一致性
+            except Exception:  # noqa: BLE001  删除对象失败不影响元数据一致性
                 pass
         return purged
 
@@ -1717,7 +1718,7 @@ class AiKnowledgeService:
                 await db.flush()
             parent_ids = [row.id for row in parent_rows]
             rows: list[AiKnowledgeChunkModel] = []
-            for offset, (draft, vec) in enumerate(
+            for offset, (draft, _vec) in enumerate(
                 zip(child_drafts, vectors, strict=False)
             ):
                 index = existing + len(parent_rows) + offset + 1
@@ -2379,11 +2380,11 @@ class AiKnowledgeService:
             texts = await cls._api_rows(d.uri or "", d.api_config, limit)
 
         total = 0
-        for text in texts:
-            if not text.strip():
+        for row_text in texts:
+            if not row_text.strip():
                 continue
             total += await cls._ingest_single(
-                kb_id, d.name, text, auth=None, rebuild_graph=False
+                kb_id, d.name, row_text, auth=None, rebuild_graph=False
             )
         if texts:
             await cls._rebuild_graph(kb_id)

@@ -1793,7 +1793,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _register_business_jobs_on_startup()
 
         # 导入并显示最终的启动信息面板
-        from app.common.enums import EnvironmentEnum
 
         console_run(
             host=settings.SERVER_HOST,

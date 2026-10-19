@@ -135,3 +135,25 @@ async def ensure_extensions() -> None:
         "progress INTEGER DEFAULT 0, step VARCHAR(64), message TEXT, error TEXT, "
         "cancel_requested BOOLEAN DEFAULT false, started_time TIMESTAMP, finished_time TIMESTAMP)"
     )
+    # ---- 检索评测表（幂等） ----
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_eval_sets ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(16) DEFAULT '0', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, created_id INTEGER, updated_id INTEGER, deleted_id INTEGER, "
+        "name VARCHAR(128), description TEXT, kb_ids JSONB)"
+    )
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_eval_items ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(16) DEFAULT '0', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, set_id INTEGER, query TEXT, "
+        "expected_chunk_ids JSONB, expected_files JSONB, note TEXT)"
+    )
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_eval_runs ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(16) DEFAULT 'running', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, created_id INTEGER, updated_id INTEGER, deleted_id INTEGER, "
+        "set_id INTEGER, kb_id INTEGER, config JSONB, metrics JSONB, error TEXT)"
+    )

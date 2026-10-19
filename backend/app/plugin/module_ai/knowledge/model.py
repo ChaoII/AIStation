@@ -311,3 +311,40 @@ class AiRagTaskModel(ModelMixin, UserMixin):
     finished_time: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, default=None
     )
+
+
+class AiEvalSetModel(ModelMixin, UserMixin):
+    """检索评测集（一组查询 + 金标准分块）。"""
+
+    __tablename__ = "ai_eval_sets"
+    __table_args__ = ({"comment": "AI 检索评测集"},)
+
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, default="")
+    kb_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+
+
+class AiEvalItemModel(ModelMixin):
+    """评测条目：查询 + 期望命中的分块 id（或文件名）。"""
+
+    __tablename__ = "ai_eval_items"
+    __table_args__ = ({"comment": "AI 检索评测条目"},)
+
+    set_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_chunk_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    expected_files: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+
+class AiEvalRunModel(ModelMixin, UserMixin):
+    """评测运行记录：配置 + 指标。"""
+
+    __tablename__ = "ai_eval_runs"
+    __table_args__ = ({"comment": "AI 检索评测运行记录"},)
+
+    set_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    kb_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
+    metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)

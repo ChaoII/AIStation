@@ -9,10 +9,10 @@ import asyncio
 import time
 from dataclasses import dataclass
 
-from app.core.logger import log
 from sqlalchemy import select
 
 from app.core.database import async_db_session
+from app.core.logger import log
 
 from .. import embedding, graphrag
 from ..config import rag_config

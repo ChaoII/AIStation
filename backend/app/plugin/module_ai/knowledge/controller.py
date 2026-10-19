@@ -704,3 +704,100 @@ async def web_import(
     except ValueError as e:
         return ErrorResponse(msg=str(e))
     return SuccessResponse(data=data, msg="已导入，正在后台解析")
+
+
+# ---------------------------------------------------------------------------
+# 检索评测（数据集 / 条目 / 运行）
+# ---------------------------------------------------------------------------
+
+
+@KnowledgeRouter.post("/eval/sets", summary="创建评测集")
+async def create_eval_set(
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    from . import eval as eval_service
+
+    name = str((body or {}).get("name") or "").strip()
+    if not name:
+        return ErrorResponse(msg="name 不能为空")
+    data = await eval_service.create_set(
+        name,
+        list((body or {}).get("kb_ids") or []),
+        (body or {}).get("description"),
+        auth=auth,
+    )
+    return SuccessResponse(data=data, msg="创建成功")
+
+
+@KnowledgeRouter.get("/eval/sets", summary="评测集列表")
+async def list_eval_sets(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    from . import eval as eval_service
+
+    return SuccessResponse(data=await eval_service.list_sets())
+
+
+@KnowledgeRouter.post("/eval/sets/{set_id}/items", summary="新增评测条目")
+async def create_eval_item(
+    set_id: int,
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    from . import eval as eval_service
+
+    query = str((body or {}).get("query") or "").strip()
+    if not query:
+        return ErrorResponse(msg="query 不能为空")
+    try:
+        data = await eval_service.add_item(
+            set_id,
+            query,
+            expected_chunk_ids=[int(x) for x in (body or {}).get("expected_chunk_ids") or []],
+            expected_files=list((body or {}).get("expected_files") or []),
+            note=(body or {}).get("note"),
+        )
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+    return SuccessResponse(data=data, msg="创建成功")
+
+
+@KnowledgeRouter.get("/eval/sets/{set_id}/items", summary="评测条目列表")
+async def list_eval_items(
+    set_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    from . import eval as eval_service
+
+    return SuccessResponse(data=await eval_service.list_items(set_id))
+
+
+@KnowledgeRouter.post("/bases/{kb_id}/eval/run", summary="运行评测（后台任务）")
+async def run_eval(
+    kb_id: int,
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    from .tasks import create_task
+
+    set_id = int((body or {}).get("set_id") or 0)
+    if not set_id:
+        return ErrorResponse(msg="set_id 不能为空")
+    task = await create_task(
+        "kb_eval",
+        kb_id=kb_id,
+        payload={"set_id": set_id, "config": (body or {}).get("config") or {}},
+        auth=auth,
+    )
+    return SuccessResponse(data={"task_id": task["id"], "status": "pending"}, msg="已开始评测")
+
+
+@KnowledgeRouter.get("/bases/{kb_id}/eval/runs", summary="评测运行记录")
+async def list_eval_runs(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    from . import eval as eval_service
+
+    return SuccessResponse(data=await eval_service.list_runs(kb_id))

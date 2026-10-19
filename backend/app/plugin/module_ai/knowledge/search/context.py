@@ -67,7 +67,7 @@ async def _load_context_rows(items: list[dict]) -> tuple[dict[int, str], dict[tu
                     )
                 )
             ).all()
-            for chunk_id, kb_id, file_name, chunk_index, content in rows:
+            for _chunk_id, kb_id, file_name, chunk_index, content in rows:
                 neighbours[(int(kb_id), str(file_name or ""), int(chunk_index or 0))] = (
                     content or ""
                 )
