@@ -68,6 +68,12 @@ class RagConfig:
     hnsw_m: int = 16
     hnsw_ef_construction: int = 64
     hnsw_ef_search: int = 100
+    # MinerU OCR（扫描件/图片）
+    mineru_url: str = "http://172.168.100.146:8100/sse"
+    mineru_backend: str = "pipeline"
+    mineru_parse_method: str = "auto"
+    mineru_lang_list: tuple[str, ...] = ("ch",)
+    mineru_timeout: float = 1800.0
     # 管线开关（出问题可回退旧行为）
     pipeline_v2: bool = True
 
@@ -91,6 +97,13 @@ def _load() -> RagConfig:
         hnsw_m=max(2, _int("RAG_HNSW_M", 16)),
         hnsw_ef_construction=max(1, _int("RAG_HNSW_EF_CONSTRUCTION", 64)),
         hnsw_ef_search=max(1, _int("RAG_HNSW_EF_SEARCH", 100)),
+        mineru_url=_str("MINERU_MCP_URL", "http://172.168.100.146:8100/sse"),
+        mineru_backend=_str("MINERU_BACKEND", "pipeline"),
+        mineru_parse_method=_str("MINERU_PARSE_METHOD", "auto"),
+        mineru_lang_list=tuple(
+            part.strip() for part in _str("MINERU_LANG_LIST", "ch").split(",") if part.strip()
+        ) or ("ch",),
+        mineru_timeout=max(1.0, _float("MINERU_TIMEOUT", 1800.0)),
         pipeline_v2=_bool("RAG_PIPELINE_V2", True),
     )
 

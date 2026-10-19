@@ -688,3 +688,19 @@ async def cancel_rag_task(
     except ValueError as e:
         return ErrorResponse(msg=str(e))
     return SuccessResponse(data=data, msg="已取消")
+
+
+@KnowledgeRouter.post("/bases/{kb_id}/web-import", summary="网页导入")
+async def web_import(
+    kb_id: int,
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    url = str((body or {}).get("url") or "").strip()
+    if not url:
+        return ErrorResponse(msg="url 不能为空")
+    try:
+        data = await AiKnowledgeService.web_import(kb_id, url, auth)
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+    return SuccessResponse(data=data, msg="已导入，正在后台解析")

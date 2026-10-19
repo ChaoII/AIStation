@@ -49,8 +49,8 @@ async def job_document_ingest(task: dict) -> None:
         buf = await asyncio.to_thread(s3_client.download_fileobj, object_key)
         raw = buf.getvalue()
         await report_progress(task["id"], progress=20, step="解析文档")
-        text, page_offsets = await asyncio.to_thread(
-            AiKnowledgeService._extract_doc, name, raw
+        text, page_offsets, _meta = await AiKnowledgeService._extract_doc_async(
+            name, raw, use_ocr=bool(payload.get("use_ocr", True)), kb_id=kb_id
         )
     else:
         page_offsets = payload.get("page_offsets") or [0]

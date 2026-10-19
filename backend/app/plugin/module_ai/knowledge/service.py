@@ -1506,6 +1506,49 @@ class AiKnowledgeService:
             return None
 
     @classmethod
+    async def _extract_doc_async(
+        cls, filename: str, data: bytes, *, use_ocr: bool = True, kb_id: int | None = None
+    ) -> tuple[str, list[int], dict]:
+        """异步解析（供后台任务）：支持 OCR、表格、网页等完整解析能力。"""
+        from .parsing import parse_document
+
+        doc = await parse_document(filename, data, use_ocr=use_ocr, kb_id=kb_id)
+        return doc.text, doc.page_offsets, doc.meta
+
+    @classmethod
+    async def web_import(cls, kb_id: int, url: str, auth) -> dict:
+        """网页导入：抓正文 → 建文档 → 入队后台分块/向量化。"""
+        from .parsing.web import parse_url
+        from .tasks import create_task
+
+        text, offsets, meta = await parse_url(url, kb_id=kb_id)
+        if not text.strip():
+            raise ValueError("网页抓取失败或无正文")
+        async with async_db_session.begin() as db:
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if not b or b.is_deleted:
+                raise ValueError("知识库不存在")
+            doc = AiKnowledgeDocumentModel(
+                knowledge_base_id=kb_id,
+                name=(url or "网页")[:200],
+                file_type="html",
+                size=len(text),
+                content=text,
+                doc_status="pending",
+            )
+            db.add(doc)
+            await db.flush()
+            doc_id = doc.id
+        task = await create_task(
+            "document_ingest",
+            kb_id=kb_id,
+            document_id=doc_id,
+            payload={"filename": url, "page_offsets": offsets, "url": url},
+            auth=auth,
+        )
+        return {"id": doc_id, "task_id": task["id"], "status": "pending", "meta": meta}
+
+    @classmethod
     async def _purge_document_chunks(cls, db, doc_id: int) -> dict:
         """清理某文档的全部分块及其绑定/标记录（供删除与重解析复用）。
 
