@@ -110,15 +110,18 @@ async def vector_search(
     model_id: int | None = None,
     filters: dict | None = None,
     min_score: float = 0.0,
+    query_vector: list[float] | None = None,
 ) -> list[dict]:
     """向量召回：PG 走 halfvec HNSW；其它库/失败回退 Python 余弦。"""
     if not kb_ids or not query:
         return []
-    try:
-        qvec = (await embedding.embed_texts([query], model_id=model_id))[0]
-    except Exception as e:  # noqa: BLE001
-        log.warning(f"[RAG] 查询向量化失败，向量召回跳过：{e}")
-        return []
+    qvec = list(query_vector or [])
+    if not qvec:
+        try:
+            qvec = (await embedding.embed_texts([query], model_id=model_id))[0]
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[RAG] 查询向量化失败，向量召回跳过：{e}")
+            return []
 
     if _is_postgres():
         try:

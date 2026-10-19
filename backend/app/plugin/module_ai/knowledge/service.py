@@ -300,7 +300,24 @@ class AiKnowledgeService:
                 b = await db.get(AiKnowledgeBaseModel, kid)
                 if not b:
                     continue
-                # 级联删除子数据（分块 / 图谱实体 / 关系），避免外键 IntegrityError
+                # 级联删除子数据（分块 / 图谱实体 / 关系 / 绑定 / 标注台账 / 检索日志），
+                # 避免外键 IntegrityError 与「删库后 id 复用导致串库日志」。
+                chunk_ids = select(AiKnowledgeChunkModel.id).where(
+                    AiKnowledgeChunkModel.knowledge_base_id == kid
+                )
+                entity_ids = select(AiKnowledgeEntityModel.id).where(
+                    AiKnowledgeEntityModel.knowledge_base_id == kid
+                )
+                await db.execute(
+                    _delete(AiKnowledgeEntityChunkModel).where(
+                        AiKnowledgeEntityChunkModel.entity_id.in_(entity_ids)
+                    )
+                )
+                await db.execute(
+                    _delete(AiKnowledgeEntityChunkModel).where(
+                        AiKnowledgeEntityChunkModel.chunk_id.in_(chunk_ids)
+                    )
+                )
                 await db.execute(
                     _delete(AiKnowledgeChunkModel).where(
                         AiKnowledgeChunkModel.knowledge_base_id == kid
@@ -314,6 +331,16 @@ class AiKnowledgeService:
                 await db.execute(
                     _delete(AiKnowledgeRelationModel).where(
                         AiKnowledgeRelationModel.knowledge_base_id == kid
+                    )
+                )
+                await db.execute(
+                    _delete(AiChunkAnnotationLogModel).where(
+                        AiChunkAnnotationLogModel.knowledge_base_id == kid
+                    )
+                )
+                await db.execute(
+                    _delete(AiSearchLogModel).where(
+                        AiSearchLogModel.knowledge_base_id == kid
                     )
                 )
                 await db.delete(b)
@@ -551,15 +578,51 @@ class AiKnowledgeService:
         mode: str = "hybrid",
         vector_weight: float = 0.5,
         fulltext_weight: float = 0.5,
+        *,
+        min_score: float = 0.0,
+        use_rerank: bool = True,
+        filters: dict | None = None,
+        context_tokens: int | None = None,
+        use_weighted: bool = False,
+        rewrite: str | None = None,
+        user_id: int | None = None,
     ) -> list[dict]:
-        """知识检索（多模态，自动选路）。mode: vector/fulltext/hybrid/graph/grep。"""
-        if not kb_ids or not query:
-            return []
-        if cls._is_postgres():
-            return await cls._pg_search(
-                kb_ids, query, top_k, use_graph, mode, vector_weight, fulltext_weight
+        """知识检索（统一走检索管线；历史参数保持兼容）。
+
+        新增参数全部为关键字参数，避免打断 agent/助手/工作流的位置参数调用。
+        """
+        from .config import rag_config
+        from .search import SearchOptions
+        from .search import search as pipeline_search
+
+        options = SearchOptions(
+            mode=mode,
+            use_graph=use_graph,
+            min_score=min_score,
+            use_rerank=use_rerank,
+            vector_weight=(vector_weight if use_weighted else None),
+            fulltext_weight=(fulltext_weight if use_weighted else None),
+            rewrite=rewrite or rag_config.rewrite,
+            filters=filters,
+            context_tokens=context_tokens,
+        )
+        stats: dict = {}
+        results = await pipeline_search(kb_ids, query, top_k, options, stats_out=stats)
+        try:
+            await cls.log_search(
+                kb_ids[0],
+                query,
+                mode,
+                top_k,
+                results,
+                user_id=user_id,
+                embed_ms=float(stats.get("embed_ms") or 0.0),
+                rerank=stats.get("rerank"),
+                engine_counts=stats.get("engine_counts"),
             )
-        return await cls._py_search(kb_ids, query, top_k, use_graph, mode)
+        except Exception:  # noqa: BLE001  日志失败不影响检索
+            pass
+        return results
 
     @staticmethod
     def _is_postgres() -> bool:

@@ -125,10 +125,13 @@ async def search(
         mode=data.mode,
         vector_weight=data.vector_weight,
         fulltext_weight=data.fulltext_weight,
-    )
-    # 记录检索日志（供检索趋势统计）
-    await AiKnowledgeService.log_search(
-        kb_id, data.query, data.mode, data.top_k, results, user_id=auth.user.id
+        min_score=data.min_score,
+        use_rerank=data.use_rerank,
+        filters=data.filters,
+        context_tokens=data.context_tokens,
+        use_weighted=data.use_weighted,
+        rewrite=data.rewrite,
+        user_id=auth.user.id,
     )
     return SuccessResponse(data=results, msg="检索成功")
 
