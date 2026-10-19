@@ -146,3 +146,33 @@ Limit
 2. `service.upload_document` 对图片后缀**不做文本层预解析**（直接留空，由 worker 从 RustFS 取原始字节走 OCR）。
 
 > 说明：这两个修复是「真实环境跑一遍」才暴露出来的，单元测试（SQLite）无法发现 NUL 问题。
+
+## 7. 收口进度与一个被推翻的假设
+
+### 7.1 死代码清理：**假设不成立，已中止**
+
+原以为 `_pg_search` / `_minmax_scores` / `_fuse_weighted` / `_fuse_rrf` 已被新检索管线取代。
+删除脚本加的安全校验（「除定义外不得有其它引用」）直接拦下：
+
+```
+[ABORT] _pg_search 仍被引用：uses=3 defs=1
+service.py:1905  vec = await cls._pg_search([kb_id], query, top_n, False, "vector")
+service.py:1910  ft  = await cls._pg_search([kb_id], query, top_n * 3, False, "fulltext")
+```
+
+即：`suggest_annotate`（「检索失败？推测相关分块」）仍在用它做向量/全文双路召回。
+
+**正确的清理顺序**（下一轮做）：
+1. 把 `suggest_annotate` 的两处调用改为 `search.engines.vector_search / fulltext_search`（保持双路语义）；
+2. 再删 `_pg_search` + `_minmax_scores` + `_fuse_weighted` + `_fuse_rrf`；
+3. 顺带评估 `_py_search` / `_py_search_vector`（新管线已有非 PG 回退，疑似可删）。
+
+> 教训：删「死代码」前先做**引用计数校验**，别凭印象——这次省下了一次把线上功能删坏的返工。
+
+### 7.2 仍未完成
+
+- 前端截图核对（环境已就绪，见 §1.1 注）；
+- 手写 alembic revision（空库全链重放）；
+- 上面 §7.1 的死代码清理；
+- 合并回 main；
+- rerank 提升数字（需构造有区分度的评测集，现有 2 条太简单）。
