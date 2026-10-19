@@ -375,12 +375,9 @@ export function rollbackOntVersion(version_id: number) {
 export function getOntVersionDiff(version_id: number) {
   return request({ url: `${API_PATH}/version/diff`, method: "get", params: { version_id } });
 }
-export function getOntCapabilities() {
-  return request({ url: `${API_PATH}/capabilities`, method: "get" });
-}
-export function saveOntCapability(data: any) {
-  return request({ url: `${API_PATH}/capability/save`, method: "post", data });
-}
+// 本体能力登记（getOntCapabilities / saveOntCapability）已删除（2026-10-19）：
+// Palantir 没有 "Capability" 本体对象类型，且本项目里 Agent 装配能力走的是
+// ai_agents.capabilities（函数/动作 code 列表），这张登记表与之零关联。
 export function getOntAnalyze() {
   return request({ url: `${API_PATH}/analyze`, method: "get" });
 }

@@ -50,30 +50,6 @@ test("维护 → 派生属性问题扫描：能渲染列表或空态", async ({ 
   });
 });
 
-test("维护 → 能力登记：能列出能力并可登记新能力", async ({ page, request }) => {
-  await login(request);
-  await pickMaintCommand(page, "能力登记");
-
-  const dlg = page.locator(".el-dialog", { hasText: "本体能力登记" }).first();
-  await expect(dlg).toBeVisible({ timeout: 15_000 });
-  await expect(dlg.getByText("能力清单").first()).toBeVisible({ timeout: 20_000 });
-  await expect(dlg.locator(".el-table").first()).toBeVisible({ timeout: 20_000 });
-
-  // 登记一条能力（编码唯一，避免重复）
-  const code = `e2e.cap.${Date.now()}`;
-  await dlg.getByRole("button", { name: "登记能力" }).click();
-  const form = page.locator(".el-dialog", { hasText: "登记能力" }).last();
-  await expect(form).toBeVisible({ timeout: 10_000 });
-  await form.getByLabel("名称").fill(`e2e 能力 ${code}`);
-  await form.getByLabel("编码").fill(code);
-  await form.getByRole("button", { name: "保存" }).click();
-  await expect(page.locator(".el-message--success").first()).toBeVisible({ timeout: 20_000 });
-  await expect(dlg.locator(".el-table__row", { hasText: code }).first()).toBeVisible({
-    timeout: 20_000,
-  });
-  await page.screenshot({ path: "e2e/ontology-capabilities.png" });
-});
-
 test("维护 → 补齐默认对象视图：确认后给出反馈", async ({ page, request }) => {
   await login(request);
   await pickMaintCommand(page, "补齐默认对象视图");

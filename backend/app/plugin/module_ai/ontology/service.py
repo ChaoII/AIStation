@@ -68,10 +68,8 @@ _ONT_TABLES_SQL = (
     "expr TEXT DEFAULT '', description TEXT DEFAULT '', parameters JSONB DEFAULT '[]', "
     "tool_description TEXT DEFAULT '', "
     "is_deleted BOOLEAN DEFAULT false, created_time TIMESTAMP DEFAULT now())",
-    "CREATE TABLE IF NOT EXISTS ai_ont_capability ("
-    "id BIGSERIAL PRIMARY KEY, code VARCHAR(128) UNIQUE, name VARCHAR(160), type VARCHAR(32), "
-    "description TEXT DEFAULT '', enabled BOOLEAN DEFAULT true, "
-    "is_deleted BOOLEAN DEFAULT false, created_time TIMESTAMP DEFAULT now())",
+    # 本体能力登记表的建表语句已删除（2026-10-19）：本体能力登记整个特性已下线，
+    # 见下方「本体能力登记已删除」的说明。既有库里的空表可手工 DROP。
     "CREATE TABLE IF NOT EXISTS ai_ont_version ("
     "id BIGSERIAL PRIMARY KEY, object_code VARCHAR(128), version INTEGER, "
     "snapshot JSONB DEFAULT '{}', is_deleted BOOLEAN DEFAULT false, "
@@ -4375,55 +4373,12 @@ async def object_dependents(code: str) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# 本体能力（Palantir：能力可挂在本体上，Agent 从本体装配能力）
-# ---------------------------------------------------------------------------
-_CAP_ONTOLOGY_TYPES = {"function", "action", "grounding"}
-_CAP_TOOL_TYPES = {"query", "governance"}
+# 本体能力登记（表 + list_capabilities / upsert_capability）已删除（2026-10-19）。
+# 理由：Palantir Ontology 没有 "Capability" 这个本体对象类型（自造概念贴官方标签）；
+# 而且本项目里 Agent 装配能力走的是 ai_agents.capabilities（函数/动作 code 列表，
+# 见 agent/service.py:567-587），与这张登记表零关联 —— 纯 CRUD 的登记表只会误导。
+# 注意：ai_agents.capabilities 与本体函数/动作的绑定是**另一回事**，保留不动。
 
-
-def _cap_meta(t: str) -> tuple[str, str]:
-    """能力 type → (source, kind)。source: ontology/platform；kind: tool/component。"""
-    t = (t or "generic").lower()
-    if t in _CAP_ONTOLOGY_TYPES:
-        return "ontology", "tool"
-    if t in _CAP_TOOL_TYPES:
-        return "platform", "tool"
-    return "platform", "component"
-
-
-async def list_capabilities() -> list[dict]:
-    r = await _exec("SELECT id,code,name,type,description,enabled FROM ai_ont_capability "
-                    "WHERE is_deleted=false ORDER BY id DESC")
-    rows = r.fetchall()
-    out = []
-    for x in rows:
-        source, kind = _cap_meta(x[3])
-        out.append({"id": x[0], "code": x[1], "name": x[2], "type": x[3],
-                    "description": x[4] or "", "enabled": bool(x[5]),
-                    "source": source, "kind": kind})
-    return out
-
-
-async def upsert_capability(data: dict) -> dict:
-    code = (data.get("code") or "").strip()
-    if not code:
-        raise CustomException(msg="能力编码必填")
-    if data.get("id"):
-        await _exec_write("UPDATE ai_ont_capability SET name=:n, type=:t, description=:d, enabled=:e WHERE id=:id",
-                          {"n": data.get("name", code), "t": data.get("type", "generic"),
-                           "d": data.get("description", ""), "e": bool(data.get("enabled", True)), "id": data["id"]})
-        return {"id": data["id"]}
-    try:
-        r = await _exec_write("INSERT INTO ai_ont_capability(code,name,type,description,enabled) "
-                              "VALUES (:c,:n,:t,:d,:e) RETURNING id",
-                              {"c": code, "n": data.get("name", code), "t": data.get("type", "generic"),
-                               "d": data.get("description", ""), "e": bool(data.get("enabled", True))})
-        return {"id": r.scalar()}
-    except Exception as e:  # noqa: BLE001
-        if "duplicate" in str(e).lower():
-            raise CustomException(msg=f"能力编码 {code} 已存在")
-        raise CustomException(msg=f"保存失败：{str(e)[:80]}")
 
 
 # ---------------------------------------------------------------------------

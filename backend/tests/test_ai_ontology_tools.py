@@ -61,11 +61,8 @@ def test_build_selected_ontology_tools(monkeypatch):
     assert r["result"] == 0.4
 
 
-def test_cap_meta():
-    assert ont._cap_meta("function") == ("ontology", "tool")
-    assert ont._cap_meta("action") == ("ontology", "tool")
-    assert ont._cap_meta("governance") == ("platform", "tool")
-    assert ont._cap_meta("knowledge") == ("platform", "component")
+# test_cap_meta 已删除（2026-10-19）：本体能力登记特性整体下线，_cap_meta 随之移除。
+# 智能体的能力字段 ai_agents.capabilities（函数/动作 code 列表）是另一回事，未受影响。
 
 
 def test_list_ontology(monkeypatch):

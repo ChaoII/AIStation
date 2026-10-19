@@ -514,15 +514,12 @@ async def init_decision_object_type(auth: AuthEdit) -> JSONResponse:
     return SuccessResponse(data=r, msg=r.get("msg", "已处理"))
 
 
-@OntologyRouter.get("/capabilities", summary="本体能力列表")
-async def list_capabilities(auth: AuthDep) -> JSONResponse:
-    return SuccessResponse(data=await _svc.list_capabilities(), msg="查询成功")
-
-
-@OntologyRouter.post("/capability/save", summary="本体能力保存")
-async def upsert_capability(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
-    r = await _svc.upsert_capability(data)
-    return SuccessResponse(data=r, msg="保存成功")
+# 本体能力登记（表 + 两个端点）已删除（2026-10-19）：
+# Palantir Ontology 没有 "Capability" 这个本体对象类型（自造概念贴官方标签），
+# 而且即便按本项目自己的设计它也没打通 —— Agent 装配能力走的是
+# `agent/service.py:567-587` 的「函数/动作 code 列表」（ai_agents.capabilities），
+# 与这张登记表零关联。保留一个纯 CRUD 的登记表只会误导。
+# 前端「维护 → 能力登记」入口与两个对话框已一并移除。
 
 
 @OntologyRouter.get("/analyze", summary="本体深度建模分析")

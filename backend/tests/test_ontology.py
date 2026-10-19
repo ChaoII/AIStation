@@ -107,13 +107,9 @@ class TestOntologyCrud:
         msg = body.get("msg") or ""
         assert ("AVG" in msg) or ("amount" in msg), msg
 
-    def test_capability_save_and_list(self, test_client, auth_headers, ontology_obj):
-        test_client.post("/api/v1/ai/ontology/capability/save", json={
-            "code": "retail_query", "name": "零售问数", "type": "query",
-            "description": "零售对象问数", "enabled": True}, headers=auth_headers)
-        r = test_client.get("/api/v1/ai/ontology/capabilities", headers=auth_headers)
-        assert r.status_code == 200
-        assert any(x["code"] == "retail_query" for x in r.json()["data"])
+    # test_capability_save_and_list 已删除（2026-10-19）：本体能力登记整个特性已下线
+    # （Palantir 没有 "Capability" 本体对象类型，且 Agent 装配能力走的是
+    #  ai_agents.capabilities，与这张登记表零关联）。
 
     def test_version_publish_and_list(self, test_client, auth_headers, ontology_obj):
         test_client.post("/api/v1/ai/ontology/version/publish", json={"code": "orders"}, headers=auth_headers)

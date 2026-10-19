@@ -135,7 +135,6 @@
                       </el-dropdown-item>
                       <el-dropdown-item command="derived">派生属性问题扫描</el-dropdown-item>
                       <el-dropdown-item command="syncviews">补齐默认对象视图</el-dropdown-item>
-                      <el-dropdown-item command="capabilities">能力登记</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -337,97 +336,6 @@
       </el-table>
       <template #footer>
         <el-button @click="derivedDialog = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 能力登记 -->
-    <el-dialog v-model="capDialog" title="本体能力登记" width="760px" append-to-body>
-      <div class="ont-sec__head">
-        <span class="ont-sec__title">能力清单</span>
-        <el-tag size="small" effect="plain">{{ capabilities.length }} 项</el-tag>
-        <el-button
-          v-hasPerm="'module_ai:ontology:edit'"
-          class="ont-sec__op"
-          size="small"
-          type="primary"
-          :icon="Plus"
-          @click="openCapForm()"
-        >
-          登记能力
-        </el-button>
-      </div>
-      <el-alert
-        type="info"
-        :closable="false"
-        class="ont-note"
-        title="能力清单记录本体对外提供的能力（来源：本体自身 / 平台），供问数与智能体按能力检索。"
-      />
-      <el-table :data="capabilities" size="small" border max-height="360">
-        <template #empty><el-empty :image-size="50" description="还没有登记能力" /></template>
-        <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="code" label="编码" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="type" label="类型" width="120" />
-        <el-table-column label="来源" width="100">
-          <template #default="{ row }">{{ row.source === "ontology" ? "本体" : "平台" }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" effect="plain" :type="row.enabled ? 'success' : 'info'">
-              {{ row.enabled ? "启用" : "停用" }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="说明" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.description || "—" }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
-          <template #default="{ row }">
-            <el-button
-              v-hasPerm="'module_ai:ontology:edit'"
-              link
-              type="primary"
-              size="small"
-              @click="openCapForm(row)"
-            >
-              编辑
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <template #footer>
-        <el-button @click="capDialog = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 能力登记：编辑 -->
-    <el-dialog v-model="capFormVisible" title="登记能力" width="520px" append-to-body>
-      <el-form :model="capForm" label-width="90px">
-        <el-form-item label="名称" required>
-          <el-input v-model="capForm.name" placeholder="如 问数：自然语言查询" />
-        </el-form-item>
-        <el-form-item label="编码" required>
-          <el-input v-model="capForm.code" :disabled="!!capForm.id" placeholder="如 query.ask" />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-input v-model="capForm.type" placeholder="generic" />
-        </el-form-item>
-        <el-form-item label="启用">
-          <el-switch v-model="capForm.enabled" />
-        </el-form-item>
-        <el-form-item label="说明">
-          <el-input v-model="capForm.description" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="capFormVisible = false">取消</el-button>
-        <el-button
-          v-hasPerm="'module_ai:ontology:edit'"
-          type="primary"
-          :loading="capSaving"
-          @click="doSaveCap"
-        >
-          保存
-        </el-button>
       </template>
     </el-dialog>
 
@@ -891,13 +799,11 @@ import {
   discardOntWip,
   enrichOntology,
   getOntAnalyze,
-  getOntCapabilities,
   getOntDerivedIssues,
   getOntProperties,
   getOntVersionPending,
   materializeOntObject,
   removeOntDomain,
-  saveOntCapability,
   saveOntDomain,
   saveOntWip,
   seedOntologyExamples,
@@ -1145,7 +1051,6 @@ async function onMaint(cmd: string) {
   if (cmd === "analyze") return openAnalyze();
   if (cmd === "derived") return openDerived();
   if (cmd === "syncviews") return doSyncViews();
-  if (cmd === "capabilities") return openCapabilities();
   if (cmd === "assign") {
     if (!selected.value.length) {
       return ElMessage.warning("请先在「对象类型」清单里勾选对象，再执行批量归属");
@@ -1163,7 +1068,7 @@ async function onMaint(cmd: string) {
     maintenanceDrawer.value = true;
   }
 }
-/* ---------------- 本体级工具：建模分析 / 派生问题扫描 / 补齐默认视图 / 能力登记 ---------------- */
+/* ---------------- 本体级工具：建模分析 / 派生问题扫描 / 补齐默认视图 ---------------- */
 const analyzeDialog = ref(false);
 const analyzeLoading = ref(false);
 const analyze = ref<any>(null);
@@ -1213,62 +1118,6 @@ async function doSyncViews() {
     ElMessage.error(e?.msg || "补齐失败");
   } finally {
     loading.close();
-  }
-}
-
-const capDialog = ref(false);
-const capabilities = ref<any[]>([]);
-const capFormVisible = ref(false);
-const capSaving = ref(false);
-const capForm = reactive<any>({
-  id: 0,
-  code: "",
-  name: "",
-  type: "generic",
-  description: "",
-  enabled: true,
-});
-
-async function loadCapabilities() {
-  try {
-    const r = await getOntCapabilities();
-    capabilities.value = r.data?.data || [];
-  } catch (e: any) {
-    ElMessage.error(e?.msg || "加载能力清单失败");
-  }
-}
-
-async function openCapabilities() {
-  capDialog.value = true;
-  await loadCapabilities();
-}
-
-function openCapForm(row?: any) {
-  Object.assign(capForm, {
-    id: row?.id || 0,
-    code: row?.code || "",
-    name: row?.name || "",
-    type: row?.type || "generic",
-    description: row?.description || "",
-    enabled: row ? !!row.enabled : true,
-  });
-  capFormVisible.value = true;
-}
-
-async function doSaveCap() {
-  if (!capForm.name?.trim() || !capForm.code?.trim()) {
-    return ElMessage.warning("名称与编码必填");
-  }
-  capSaving.value = true;
-  try {
-    const r = await saveOntCapability({ ...capForm });
-    ElMessage.success(r.data?.msg || "已保存");
-    capFormVisible.value = false;
-    await loadCapabilities();
-  } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
-  } finally {
-    capSaving.value = false;
   }
 }
 
