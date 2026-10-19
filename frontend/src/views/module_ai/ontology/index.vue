@@ -126,6 +126,10 @@
                       <el-dropdown-item command="pending">
                         待审批的版本发布（{{ pendingVersions.length }}）
                       </el-dropdown-item>
+                      <el-dropdown-item command="analyze" divided>建模分析（结构诊断与建议）</el-dropdown-item>
+                      <el-dropdown-item command="derived">派生属性问题扫描</el-dropdown-item>
+                      <el-dropdown-item command="syncviews">补齐默认对象视图</el-dropdown-item>
+                      <el-dropdown-item command="capabilities">能力登记</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -247,6 +251,179 @@
     </EnhancedDialog>
 
     <!-- ================= 弹窗 ================= -->
+    <!-- 建模分析：结构诊断（对象/属性/关系统计 + 中心度 + 建议） -->
+    <el-dialog v-model="analyzeDialog" title="本体建模分析" width="760px" append-to-body>
+      <el-alert v-if="analyzeLoading" type="info" :closable="false" show-icon title="正在分析……" />
+      <template v-else-if="analyze">
+        <el-descriptions :column="4" size="small" border>
+          <el-descriptions-item label="对象类型">{{ analyze.objects }}</el-descriptions-item>
+          <el-descriptions-item label="属性">{{ analyze.properties }}</el-descriptions-item>
+          <el-descriptions-item label="关系">{{ analyze.links }}</el-descriptions-item>
+          <el-descriptions-item label="动作">{{ analyze.actions }}</el-descriptions-item>
+          <el-descriptions-item label="孤立对象">{{ analyze.isolated }}</el-descriptions-item>
+          <el-descriptions-item label="缺主键">{{ analyze.no_pk }}</el-descriptions-item>
+          <el-descriptions-item label="连通分量">{{ analyze.components }}</el-descriptions-item>
+          <el-descriptions-item label="关系密度">{{ analyze.density }}</el-descriptions-item>
+        </el-descriptions>
+
+        <el-alert type="warning" :closable="false" show-icon class="ont-note" title="建模建议">
+          <ul class="ont-analyze__recs">
+            <li v-for="(r, i) in analyze.recommendations || []" :key="i">{{ r }}</li>
+          </ul>
+        </el-alert>
+
+        <div class="ont-sec__head ont-sec__head--mt">
+          <span class="ont-sec__title">中心度最高的对象</span>
+          <span class="ont-hint">度数越高，越值得优先定义动作与治理规则</span>
+        </div>
+        <el-table :data="analyze.top_central || []" size="small" border max-height="240">
+          <template #empty><el-empty :image-size="50" description="还没有对象类型" /></template>
+          <el-table-column label="对象" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.name }}<span class="ont-mono">（{{ row.code }}）</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="degree" label="度数" width="80" align="center" />
+          <el-table-column prop="in" label="入" width="70" align="center" />
+          <el-table-column prop="out" label="出" width="70" align="center" />
+        </el-table>
+
+        <div class="ont-sec__head ont-sec__head--mt">
+          <span class="ont-sec__title">关系基数分布</span>
+        </div>
+        <el-tag
+          v-for="(n, k) in analyze.card_dist || {}"
+          :key="k"
+          size="small"
+          effect="plain"
+          class="ont-tag-gap"
+        >
+          {{ k }}：{{ n }}
+        </el-tag>
+      </template>
+      <template #footer>
+        <el-button @click="analyzeDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 派生属性问题扫描 -->
+    <el-dialog v-model="derivedDialog" title="派生属性问题扫描" width="680px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        class="ont-note"
+        title="扫描全量派生属性的配置问题（引用缺失、表达式非法等），修完再发布版本更稳。"
+      />
+      <el-table :data="derivedIssues" size="small" border max-height="380">
+        <template #empty>
+          <el-empty :image-size="50" description="没有发现配置问题" />
+        </template>
+        <el-table-column label="对象类型" min-width="170" show-overflow-tooltip>
+          <template #default="{ row }">{{ objectLabel(row.object_code) }}</template>
+        </el-table-column>
+        <el-table-column prop="name" label="属性" min-width="140" show-overflow-tooltip />
+        <el-table-column label="问题" min-width="260">
+          <template #default="{ row }">
+            <div v-for="(e, i) in row.errors || []" :key="i">{{ e }}</div>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="derivedDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 能力登记 -->
+    <el-dialog v-model="capDialog" title="本体能力登记" width="760px" append-to-body>
+      <div class="ont-sec__head">
+        <span class="ont-sec__title">能力清单</span>
+        <el-tag size="small" effect="plain">{{ capabilities.length }} 项</el-tag>
+        <el-button
+          class="ont-sec__op"
+          size="small"
+          type="primary"
+          :icon="Plus"
+          v-hasPerm="'module_ai:ontology:edit'"
+          @click="openCapForm()"
+        >
+          登记能力
+        </el-button>
+      </div>
+      <el-alert
+        type="info"
+        :closable="false"
+        class="ont-note"
+        title="能力清单记录本体对外提供的能力（来源：本体自身 / 平台），供问数与智能体按能力检索。"
+      />
+      <el-table :data="capabilities" size="small" border max-height="360">
+        <template #empty><el-empty :image-size="50" description="还没有登记能力" /></template>
+        <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="code" label="编码" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="type" label="类型" width="120" />
+        <el-table-column label="来源" width="100">
+          <template #default="{ row }">{{ row.source === "ontology" ? "本体" : "平台" }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain" :type="row.enabled ? 'success' : 'info'">
+              {{ row.enabled ? "启用" : "停用" }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="说明" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.description || "—" }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="80" align="center">
+          <template #default="{ row }">
+            <el-button
+              link
+              type="primary"
+              size="small"
+              v-hasPerm="'module_ai:ontology:edit'"
+              @click="openCapForm(row)"
+            >
+              编辑
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="capDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 能力登记：编辑 -->
+    <el-dialog v-model="capFormVisible" title="登记能力" width="520px" append-to-body>
+      <el-form :model="capForm" label-width="90px">
+        <el-form-item label="名称" required>
+          <el-input v-model="capForm.name" placeholder="如 问数：自然语言查询" />
+        </el-form-item>
+        <el-form-item label="编码" required>
+          <el-input v-model="capForm.code" :disabled="!!capForm.id" placeholder="如 query.ask" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-input v-model="capForm.type" placeholder="generic" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="capForm.enabled" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="capForm.description" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="capFormVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="capSaving"
+          v-hasPerm="'module_ai:ontology:edit'"
+          @click="doSaveCap"
+        >
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 对象类型 -->
     <el-dialog v-model="objDialog" title="对象类型" width="640px" append-to-body>
       <el-form :model="objForm" label-width="130px">
@@ -660,7 +837,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElLoading, ElMessage, ElMessageBox } from "element-plus";
 import {
   ArrowDown,
   Box,
@@ -677,13 +854,18 @@ import {
   assignOntDomain,
   discardOntWip,
   enrichOntology,
+  getOntAnalyze,
+  getOntCapabilities,
+  getOntDerivedIssues,
   getOntProperties,
   getOntVersionPending,
   materializeOntObject,
   removeOntDomain,
+  saveOntCapability,
   saveOntDomain,
   saveOntWip,
   seedOntologyExamples,
+  syncDefaultOntObjectViews,
 } from "@/api/module_ai/ontology";
 import { useOntologyData } from "./composables/useOntologyData";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
@@ -924,6 +1106,10 @@ const domainForm = reactive({ id: null as number | null, code: "", name: "" });
 async function onMaint(cmd: string) {
   if (cmd === "enrich") return doEnrich();
   if (cmd === "seed") return doSeed();
+  if (cmd === "analyze") return openAnalyze();
+  if (cmd === "derived") return openDerived();
+  if (cmd === "syncviews") return doSyncViews();
+  if (cmd === "capabilities") return openCapabilities();
   if (cmd === "assign") {
     if (!selected.value.length) {
       return ElMessage.warning("请先在「对象类型」清单里勾选对象，再执行批量归属");
@@ -941,6 +1127,115 @@ async function onMaint(cmd: string) {
     maintenanceDrawer.value = true;
   }
 }
+/* ---------------- 本体级工具：建模分析 / 派生问题扫描 / 补齐默认视图 / 能力登记 ---------------- */
+const analyzeDialog = ref(false);
+const analyzeLoading = ref(false);
+const analyze = ref<any>(null);
+
+async function openAnalyze() {
+  analyzeDialog.value = true;
+  analyzeLoading.value = true;
+  analyze.value = null;
+  try {
+    const r = await getOntAnalyze();
+    analyze.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "分析失败");
+  } finally {
+    analyzeLoading.value = false;
+  }
+}
+
+const derivedDialog = ref(false);
+const derivedIssues = ref<any[]>([]);
+
+async function openDerived() {
+  derivedDialog.value = true;
+  derivedIssues.value = [];
+  try {
+    const r = await getOntDerivedIssues();
+    derivedIssues.value = r.data?.data || [];
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "扫描失败");
+  }
+}
+
+async function doSyncViews() {
+  await ElMessageBox.confirm(
+    "将给**所有还没有默认视图**的对象类型补齐默认视图（已有视图不会被覆盖）。" +
+      "对象类型多时可能要跑十几秒，期间请不要关闭页面。确认执行？",
+    "补齐默认对象视图",
+    { type: "warning", confirmButtonText: "补齐", cancelButtonText: "取消" }
+  );
+  // 这是全量批处理（421 个对象 × 2 种形态），必须给出加载态，否则用户以为"点了没反应"
+  const loading = ElLoading.service({ fullscreen: true, text: "正在补齐默认对象视图……" });
+  try {
+    const r = await syncDefaultOntObjectViews();
+    ElMessage.success(r.data?.msg || "已补齐默认视图");
+    await reloadAll();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "补齐失败");
+  } finally {
+    loading.close();
+  }
+}
+
+const capDialog = ref(false);
+const capabilities = ref<any[]>([]);
+const capFormVisible = ref(false);
+const capSaving = ref(false);
+const capForm = reactive<any>({
+  id: 0,
+  code: "",
+  name: "",
+  type: "generic",
+  description: "",
+  enabled: true,
+});
+
+async function loadCapabilities() {
+  try {
+    const r = await getOntCapabilities();
+    capabilities.value = r.data?.data || [];
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "加载能力清单失败");
+  }
+}
+
+async function openCapabilities() {
+  capDialog.value = true;
+  await loadCapabilities();
+}
+
+function openCapForm(row?: any) {
+  Object.assign(capForm, {
+    id: row?.id || 0,
+    code: row?.code || "",
+    name: row?.name || "",
+    type: row?.type || "generic",
+    description: row?.description || "",
+    enabled: row ? !!row.enabled : true,
+  });
+  capFormVisible.value = true;
+}
+
+async function doSaveCap() {
+  if (!capForm.name?.trim() || !capForm.code?.trim()) {
+    return ElMessage.warning("名称与编码必填");
+  }
+  capSaving.value = true;
+  try {
+    const r = await saveOntCapability({ ...capForm });
+    ElMessage.success(r.data?.msg || "已保存");
+    capFormVisible.value = false;
+    await loadCapabilities();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    capSaving.value = false;
+  }
+}
+
 async function doEnrich() {
   enrichLoading.value = true;
   maintMsg.value = "";
@@ -1552,9 +1847,17 @@ onMounted(async () => {
 .ont-tag-gap {
   margin: 0 4px 4px 0;
 }
+.ont-analyze__recs {
+  margin: 0;
+  padding-left: 18px;
+}
 .ont-hint {
   font-size: var(--el-font-size-extra-small);
   color: var(--el-text-color-secondary);
+}
+/* 区块标题后面的说明文字要与标题留出间距（否则「变更记录谁在什么时候改了什么」会黏在一起） */
+.ont-sec__head .ont-hint {
+  margin-left: 8px;
 }
 .ont-note {
   margin-bottom: 8px;

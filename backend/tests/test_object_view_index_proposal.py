@@ -6,6 +6,7 @@
 · `ontologies/ontologies-proposals` —— 分支/提案/任务/审查/合并、关闭不可重开
 """
 import asyncio
+import inspect
 
 import _ont_ddl
 import pytest
@@ -131,6 +132,27 @@ class TestObjectView:
         assert r2["created"] is False, "第二次不应再创建"
         views = _run(OV.list_views("reg_ov_obj", "full"))
         assert len(views) == 1
+
+    def test_sync_default_views_reuses_object_list(self):
+        """回归：批量补齐默认视图**不能每个对象都重查一遍全量对象列表**。
+
+        实测（2026-10，421 个对象）：单次 ``list_objects()`` 约 105ms，
+        421 对象 × 2 形态 = 842 次重查 ⇒ 光重复查询就 ~89 秒，
+        整批同步长到浏览器请求超时、用户以为"点了没反应"。
+        """
+        sync_src = inspect.getsource(OV.sync_default_views)
+        assert "objects=objs" in sync_src, "批量补齐必须把对象列表传下去，避免 O(n²) 重查"
+        assert "objects: list[dict] | None = None" in inspect.getsource(OV.standard_view)
+
+    def test_ensure_default_view_tolerates_existing_code(self):
+        """回归：编码已存在（并发/历史残留）时**跳过**，不能让整批补齐全盘失败。
+
+        实测：并发补齐时 create_view 抛「视图编码 xxx 已存在」，
+        导致 421 个对象的同步在中间炸掉（已建的留下、后面的全没建）。
+        """
+        src = inspect.getsource(OV.ensure_default_view)
+        assert "except CustomException" in src
+        assert "已存在视图，跳过" in src
 
     @pg_only
     def test_editing_marks_view_user_managed(self):

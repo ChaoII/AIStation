@@ -147,14 +147,19 @@ def validate_tabs(tabs: Any) -> list[str]:
 # ---------------------------------------------------------------------------
 # Standard 视图：自动生成，不落库（官方：自动反映对象类型配置）
 # ---------------------------------------------------------------------------
-async def standard_view(object_code: str, form_factor: str = "full") -> dict:
+async def standard_view(object_code: str, form_factor: str = "full",
+                        objects: list[dict] | None = None) -> dict:
     """按对象类型配置**即时生成**标准视图。
 
     官方：*"Standardized, out-of-the-box representations that automatically reflect an
     object type's configuration … available for all object types."*
+
+    ``objects`` 可传入**已取好的对象列表**：批量补齐默认视图时若不传，每个对象都会
+    重新拉一次全量对象列表（425 对象 ⇒ 18 万行），是这条路径慢的主因。
     """
     ff = form_factor if form_factor in ONT_FORM_FACTORS else "full"
-    obj = next((o for o in await _svc.list_objects() if o["code"] == object_code), None)
+    pool = objects if objects is not None else await _svc.list_objects()
+    obj = next((o for o in pool if o["code"] == object_code), None)
     if not obj:
         return {"ok": False, "msg": f"对象类型 {object_code} 不存在"}
     props = await _svc.list_properties(object_code)
@@ -254,25 +259,36 @@ async def list_view_versions(code: str) -> list[dict]:
 # 写入
 # ---------------------------------------------------------------------------
 async def ensure_default_view(object_code: str, form_factor: str = "full",
-                              actor: str = "system") -> dict:
+                              actor: str = "system",
+                              objects: list[dict] | None = None) -> dict:
     """给对象类型自动建默认可配置视图（官方行为）。
 
     幂等：已有该形态的视图就不再建。
+
+    ``objects`` 见 :func:`standard_view`（批量时传入，避免 O(n²) 重查）。
+    并发下「先查后插」可能撞唯一编码 —— 此时**降级为跳过**而不是抛错，
+    否则整批补齐会因为一个重复而全盘失败。
     """
     exist = list(await list_views(object_code, form_factor))
     if exist:
         return {"ok": True, "created": False, "code": exist[0]["code"],
                 "msg": "已存在视图，跳过"}
-    std = await standard_view(object_code, form_factor)
+    std = await standard_view(object_code, form_factor, objects=objects)
     if not std.get("ok"):
         return {"ok": False, "msg": std.get("msg")}
     code = f"{object_code}__{form_factor}"
-    await create_view({
-        "object_code": object_code, "code": code,
-        "name": f"{std['name']}（默认）", "form_factor": form_factor,
-        "tabs": std["tabs"], "is_default": True, "is_managed": False,
-        "created_by": actor,
-    })
+    try:
+        await create_view({
+            "object_code": object_code, "code": code,
+            "name": f"{std['name']}（默认）", "form_factor": form_factor,
+            "tabs": std["tabs"], "is_default": True, "is_managed": False,
+            "created_by": actor,
+        })
+    except CustomException as e:  # 并发/历史残留：编码已存在 ⇒ 跳过，不算失败
+        if "已存在" in str(getattr(e, "msg", "") or e):
+            return {"ok": True, "created": False, "code": code,
+                    "msg": "已存在视图，跳过"}
+        raise
     return {"ok": True, "created": True, "code": code,
             "msg": f"已为 {object_code} 自动创建默认{ONT_FORM_FACTOR_LABEL[form_factor]}"}
 
@@ -385,13 +401,19 @@ async def sync_default_views(actor: str = "system") -> dict:
     """给所有对象类型补齐默认视图（官方：默认视图对每个对象类型自动创建）。"""
     objs = await _svc.list_objects()
     created = 0
+    skipped: list[str] = []
     for o in objs:
         for ff in ONT_FORM_FACTORS:
-            r = await ensure_default_view(o["code"], ff, actor)
+            r = await ensure_default_view(o["code"], ff, actor, objects=objs)
             if r.get("created"):
                 created += 1
-    return {"ok": True, "created": created,
-            "msg": f"已为 {len(objs)} 个对象类型补齐默认视图（新建 {created} 个）"}
+            elif not r.get("ok"):
+                skipped.append(f"{o['code']}/{ff}：{r.get('msg')}")
+    msg = f"已为 {len(objs)} 个对象类型补齐默认视图（新建 {created} 个）"
+    if skipped:
+        msg += f"；{len(skipped)} 个未能创建（如 {skipped[0]}）"
+    return {"ok": True, "created": created, "objects": len(objs),
+            "failed": len(skipped), "msg": msg}
 
 
 # ---------------------------------------------------------------------------

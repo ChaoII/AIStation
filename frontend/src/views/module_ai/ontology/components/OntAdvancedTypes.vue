@@ -80,9 +80,10 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="130" align="center">
+        <el-table-column label="操作" width="180" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openVt(row)">编辑</el-button>
+            <el-button link type="primary" size="small" @click="openValidate(row)">试校验</el-button>
             <el-button link type="danger" size="small" v-hasPerm="'module_ai:ontology:edit'" @click="delVt(row)">删</el-button>
           </template>
         </el-table-column>
@@ -335,6 +336,48 @@
         <el-button type="primary" :loading="saving" v-hasPerm="'module_ai:ontology:edit'" @click="save">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- ============ 值类型：试校验（约束到底生效没有，只有试一次才知道） ============ -->
+    <el-dialog v-model="validateVisible" title="按值类型约束校验取值" width="520px" append-to-body>
+      <el-descriptions :column="1" size="small" border>
+        <el-descriptions-item label="值类型">
+          {{ validateTarget?.name }}
+          <span class="ont-mono">（{{ validateTarget?.code }}）</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="基础类型">
+          {{ validateTarget?.base_type }}
+        </el-descriptions-item>
+        <el-descriptions-item label="约束">
+          <span :class="{ 'ont-none': !Object.keys(validateTarget?.constraints || {}).length }">
+            {{
+              Object.keys(validateTarget?.constraints || {}).length
+                ? JSON.stringify(validateTarget.constraints)
+                : "无"
+            }}
+          </span>
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="70px" class="ont-note">
+        <el-form-item label="取值">
+          <el-input v-model="validateInput" placeholder="填一个值，如 abc@example.com" @keyup.enter="doValidate" />
+        </el-form-item>
+      </el-form>
+      <el-alert
+        v-if="validateResult"
+        :type="validateResult.ok ? 'success' : 'error'"
+        :closable="false"
+        show-icon
+        :title="validateResult.ok ? '校验通过' : '校验不通过'"
+      >
+        <ul v-if="!validateResult.ok" class="ont-validate__errs">
+          <li v-for="(e, i) in validateResult.errors || []" :key="i">{{ e }}</li>
+        </ul>
+      </el-alert>
+      <template #footer>
+        <el-button @click="validateVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="validating" @click="doValidate">校验</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -358,6 +401,7 @@ import {
   saveOntSharedProperty,
   saveOntValueType,
   setOntInterfaceImpls,
+  validateOntValue,
 } from "@/api/module_ai/ontology";
 import { BASE_TYPE_VALUES } from "../constants";
 
@@ -563,6 +607,35 @@ async function save() {
   }
 }
 
+/* ---------- 值类型：试校验 ---------- */
+const validateVisible = ref(false);
+const validating = ref(false);
+const validateTarget = ref<any>(null);
+const validateInput = ref("");
+const validateResult = ref<any>(null);
+
+function openValidate(row: any) {
+  validateTarget.value = row;
+  validateInput.value = "";
+  validateResult.value = null;
+  validateVisible.value = true;
+}
+
+async function doValidate() {
+  if (!validateTarget.value) return;
+  validating.value = true;
+  validateResult.value = null;
+  try {
+    const r = await validateOntValue(validateTarget.value.code, validateInput.value);
+    // request() 返回 axios response，业务数据在 data.data
+    validateResult.value = r.data?.data || { ok: false, errors: [r.data?.msg || "校验失败"] };
+  } catch (e: any) {
+    validateResult.value = { ok: false, errors: [e?.msg || "校验请求失败"] };
+  } finally {
+    validating.value = false;
+  }
+}
+
 async function setImpls(code: string, codes: string[]): Promise<string> {
   const r = await setOntInterfaceImpls(code, codes);
   const d = r.data?.data || {};
@@ -649,5 +722,9 @@ async function runCheck() {
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+}
+.ont-validate__errs {
+  margin: 0;
+  padding-left: 18px;
 }
 </style>
