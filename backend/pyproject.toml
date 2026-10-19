@@ -109,6 +109,12 @@ torchkiln = { path = "submodules/torchkiln" }
 name = "tuna"
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
+[tool.pytest.ini_options]
+# 只收集本仓库测试：backend/submodules/** 是独立 git 子模块（TorchKiln 自带测试，
+# 依赖 torch/onnx 等 simple 依赖）。若纳入收集，装没装 simple 依赖会导致用例数/
+# 结果不一致（实测：装 torch 时多跑 ~32 个 submodule 用例，未装则 collection error）。
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 100
 indent-width = 4
