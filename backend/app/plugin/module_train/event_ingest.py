@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
+from app.core.logger import log
+
 from .torchkiln_client import EVENT_BEST, EVENT_END, EVENT_EVAL, EVENT_STEP
 
 #: 事件基字段（渲染行时剔除，只留业务字段）
@@ -123,9 +125,10 @@ def render_event_row(ev: dict) -> dict | None:
 async def update_usage_tasks(ev: dict) -> None:
     """环境指标台账更新钩子。
 
-    Task 5 接线：``type == "env"`` 时更新 Redis 资源台账
-    （GPU/CPU/内存/磁盘/网络占用），供后续资源占用展示与调度参考。
-    第一版为 no-op 占位。
+    Task 5 接线：把事件转交给 :mod:`simple_scheduler` 的 ``update_usage``——
+    ``type == "env"`` 更新环境快照台账（GPU/CPU/内存/磁盘/网络占用），
+    ``type == "step"`` 且含 ``mem_reserved`` 时回填任务台账的实测显存。
+    失败一律 log 不抛（事件通道是旁路，不能拖垮训练回调）。
 
     参数:
     - ev (dict): 完整事件（含 task_id/seq/ts/type 平铺字段）。
@@ -133,4 +136,9 @@ async def update_usage_tasks(ev: dict) -> None:
     返回:
     - None: 无返回。
     """
-    return None
+    try:
+        from . import simple_scheduler
+
+        await simple_scheduler.update_usage(ev)
+    except Exception as e:  # noqa: BLE001
+        log.warning("[event_ingest] 更新资源台账失败: {}", e)
