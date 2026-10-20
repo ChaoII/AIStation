@@ -85,6 +85,16 @@
                     同步
                   </el-button>
                   <el-button size="small" :icon="EditPen" @click="openBatch">批量维护</el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:query:ask'"
+                    size="small"
+                    :icon="MagicStick"
+                    :loading="generatingDesc"
+                    title="用 AI 为缺中文描述的表/字段生成描述（只补缺的，人工校对后生效）"
+                    @click="runGenerateDesc"
+                  >
+                    AI 生成描述
+                  </el-button>
                   <el-switch v-model="hideSys" active-text="只看业务表" />
                   <el-switch v-model="hideUnmaintained" active-text="只看已维护" />
                   <span class="ig-bar__gap" />
@@ -140,12 +150,7 @@
                   <el-table-column label="纳入" width="96" align="center">
                     <template #default="{ row }">
                       <!-- 三态：显式排除 / 同步过但未治理（默认纳入）/ 已纳入 -->
-                      <el-tag
-                        v-if="row.included === false"
-                        size="small"
-                        type="info"
-                        effect="plain"
-                      >
+                      <el-tag v-if="row.included === false" size="small" type="info" effect="plain">
                         否
                       </el-tag>
                       <el-tag v-else-if="!row.governed" size="small" type="warning" effect="plain">
@@ -1234,7 +1239,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Refresh, Search, DataBoard, EditPen, Coin } from "@element-plus/icons-vue";
+import { Plus, Refresh, Search, DataBoard, EditPen, Coin, MagicStick } from "@element-plus/icons-vue";
 import {
   getQueryDatasources,
   saveQueryDatasource,
@@ -1276,6 +1281,7 @@ import {
   autoLinkQueryKg,
   extractQueryObjects,
   inferQueryAssetRelations,
+  generateQueryAssetDesc,
 } from "@/api/module_ai/query";
 import { getOntDomains, saveOntObject } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
@@ -2307,6 +2313,27 @@ async function autoLinkKg() {
     await loadMisc();
   } catch (e: any) {
     ElMessage.error(e?.msg || "自动打边失败");
+  }
+}
+
+// AI 生成描述：原来治理巡检的「补全描述」是占位实现（把 alias 写成 "数据表 X" 的假描述），
+// 真正调 LLM 的 /assets/generate-desc 端点在前端零入口。这里补上（只补缺的，人工校对后生效）。
+const generatingDesc = ref(false);
+async function runGenerateDesc() {
+  generatingDesc.value = true;
+  try {
+    const r: any = await generateQueryAssetDesc(false);
+    const d = r.data?.data || {};
+    ElMessage.success(
+      r.data?.msg ||
+        `已生成描述：表 ${d.tables ?? 0} 条、字段 ${d.columns ?? 0} 条（人工校对后生效）`
+    );
+    await loadAssets();
+  } catch (e: any) {
+    // 拦截器 reject 的是 axios response，真实 msg 在 data.msg（e.msg 恒为 undefined）
+    ElMessage.error(e?.data?.msg || e?.msg || "AI 生成描述失败");
+  } finally {
+    generatingDesc.value = false;
   }
 }
 

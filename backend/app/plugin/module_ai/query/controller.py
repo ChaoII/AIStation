@@ -181,7 +181,9 @@ async def autopilot_execute(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
-    r = await AiQueryService.autopilot_execute(data.get("executable", ""), data.get("table", ""))
+    r = await AiQueryService.autopilot_execute(
+        data.get("executable", ""), data.get("table", ""), auth=auth
+    )
     return SuccessResponse(data=r, msg=r.get("msg", "执行完成"))
 
 

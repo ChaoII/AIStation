@@ -2039,7 +2039,7 @@ class AiQueryService:
         return {"total": len(actions), "actions": actions}
 
     @classmethod
-    async def autopilot_execute(cls, executable: str, table: str = "") -> dict:
+    async def autopilot_execute(cls, executable: str, table: str = "", auth=None) -> dict:
         """执行一个安全的自主行动：敏感扫描 / DQ 重扫 / 补全描述 / 启用数据源。"""
         if executable == "scan_sensitive" and table:
             r = await cls.scan_sensitive(table)
@@ -2052,14 +2052,19 @@ class AiQueryService:
                 return {"ok": False, "msg": f"DQ 重扫失败：{e}"}
         if executable == "generate_desc" and table:
             try:
-                async with async_db_session.begin() as db:
-                    from sqlalchemy import text as _t
-                    await db.execute(_t(
-                        "UPDATE ai_query_assets SET alias=COALESCE(NULLIF(alias,''), :alias) "
-                        "WHERE table_name=:t AND is_deleted=false"),
-                        {"alias": f"数据表 {table}", "t": table})
-                _SCHEMA_CACHE = None
-                return {"ok": True, "msg": f"已为 {table} 补全中文名"}
+                # 原来这里是**占位实现**：只把 alias 写成 "数据表 X"（假描述），
+                # 前端看是"已补全"，实际一句中文描述都没生成；
+                # 而真正调 LLM 的 generate_asset_descriptions / assets/generate-desc
+                # 在前端**零入口**。现在两者接上（生成器按"缺描述的资产"批量处理，
+                # 只补缺的，不覆盖人工填过的内容）。
+                r = await cls.generate_asset_descriptions(auth, force=False) or {}
+                return {
+                    "ok": True,
+                    "msg": (
+                        f"AI 生成描述完成：表 {r.get('tables', 0)} 条、"
+                        f"字段 {r.get('columns', 0)} 条（人工校对后生效）"
+                    ),
+                }
             except Exception as e:  # noqa: BLE001
                 return {"ok": False, "msg": f"补全描述失败：{e}"}
         if executable == "enable_ds" and table:
