@@ -99,3 +99,34 @@ def test_update_and_remove_view():
     layout, gone = _run(_impl())
     assert layout == "grid"
     assert gone is None
+
+
+# ---------------------------------------------------------------------------
+# Task 3：版本管理 + 默认
+# ---------------------------------------------------------------------------
+def test_version_bump_and_restore():
+    async def _impl():
+        v = await _gv.create_view({"name": "V", "graph_kind": "saved", "domain_code": "d1",
+                                   "state": {"layout": "cose"}})
+        await _gv.update_view(v["code"], {"state": {"layout": "grid"}})
+        await _gv.update_view(v["code"], {"state": {"layout": "concentric"}})
+        vers = await _gv.list_versions(v["code"])
+        assert len(vers) == 2 and vers[0]["version"] == 2
+        await _gv.restore_version(v["code"], 1)
+        return (await _gv.get_view(v["code"]))["state"]["layout"]
+
+    layout = _run(_impl())
+    assert layout == "cose"
+
+
+def test_set_default_unique_per_domain():
+    async def _impl():
+        a = await _gv.create_view({"name": "A", "graph_kind": "saved", "domain_code": "d1"})
+        b = await _gv.create_view({"name": "B", "graph_kind": "saved", "domain_code": "d1"})
+        await _gv.set_default(a["code"], "d1")
+        await _gv.set_default(b["code"], "d1")
+        views = await _gv.list_views(domain_code="d1", kind="saved")
+        return sum(1 for x in views if x["is_default"])
+
+    cnt = _run(_impl())
+    assert cnt == 1

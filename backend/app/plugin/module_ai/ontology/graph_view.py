@@ -177,3 +177,62 @@ async def remove_view(code: str) -> dict:
     await _svc._exec_write(
         "DELETE FROM ai_ont_graph_view_version WHERE view_code=:c", {"c": code})
     return {"ok": True, "msg": "视图已删除"}
+
+
+# ---------------------------------------------------------------------------
+# 版本管理
+# ---------------------------------------------------------------------------
+async def list_versions(code: str) -> list[dict]:
+    r = await _svc._exec(
+        "SELECT id,version,state,COALESCE(note,''),COALESCE(created_by,''),created_time "
+        "FROM ai_ont_graph_view_version WHERE view_code=:c ORDER BY version DESC",
+        {"c": code})
+    return [{"id": x[0], "version": x[1], "state": _svc._json_dict(x[2]), "note": x[3],
+             "created_by": x[4],
+             "created_time": x[5].strftime("%Y-%m-%d %H:%M:%S")
+             if isinstance(x[5], datetime) else (x[5] or "")}
+            for x in r.fetchall()]
+
+
+async def restore_version(code: str, version: int, actor: str = "") -> dict:
+    v = await get_view(code)
+    if not v:
+        raise CustomException(msg="视图不存在")
+    r = await _svc._exec(
+        "SELECT state FROM ai_ont_graph_view_version WHERE view_code=:c AND version=:v",
+        {"c": code, "v": version})
+    row = r.fetchone()
+    if not row:
+        raise CustomException(msg=f"版本 {version} 不存在")
+    # 先把当前 state 快照，避免回滚覆盖掉未保存的较新配置
+    await _svc._exec_write(
+        "INSERT INTO ai_ont_graph_view_version(view_code,version,state,note,created_by,"
+        "created_time) VALUES (:c,:v,:st,:n,:cb,:ct)",
+        {"c": code, "v": int(v["version"] or 1), "st": _j(v["state"] or {}),
+         "n": "回滚前快照", "cb": actor, "ct": _now()})
+    new_version = int(v["version"] or 1) + 1
+    await _svc._exec_write(
+        "UPDATE ai_ont_graph_view SET state=:s, version=:v, updated_time=:ut "
+        "WHERE code=:c AND is_deleted=false",
+        {"s": _j(_svc._json_dict(row[0])), "v": new_version, "ut": _now(), "c": code})
+    await _svc._log_change(v["domain_code"] or code, "graph_view", "restore",
+                           f"图视图 {code} 回滚到 v{version}")
+    return {"ok": True, "msg": f"已回滚到 v{version}", "version": new_version}
+
+
+# ---------------------------------------------------------------------------
+# 默认视图
+# ---------------------------------------------------------------------------
+async def set_default(code: str, domain_code: str = "") -> dict:
+    v = await get_view(code)
+    if not v:
+        raise CustomException(msg="视图不存在")
+    d = domain_code or v["domain_code"]
+    # 同域内先清掉其它默认（保持每个域最多一个默认）
+    await _svc._exec_write(
+        "UPDATE ai_ont_graph_view SET is_default=false "
+        "WHERE domain_code=:d AND is_deleted=false", {"d": d})
+    await _svc._exec_write(
+        "UPDATE ai_ont_graph_view SET is_default=true WHERE code=:c", {"c": code})
+    await _svc._log_change(d or code, "graph_view", "set_default", f"图视图 {code}")
+    return {"ok": True, "msg": f"「{v['name']}」已设为默认视图"}
