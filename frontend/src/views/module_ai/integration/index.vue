@@ -113,6 +113,7 @@
                     />
                   </el-select>
                   <el-button
+                    v-hasPerm="'module_ai:ontology:edit'"
                     size="small"
                     :icon="DataBoard"
                     :disabled="!curDs"
@@ -231,6 +232,7 @@
                       />
                     </el-select>
                     <el-button
+                      v-hasPerm="'module_ai:ontology:edit'"
                       size="small"
                       :icon="DataBoard"
                       :loading="importing"

@@ -85,6 +85,7 @@
         <el-tag v-if="impDs" size="small" effect="plain">{{ impTableCount }} 张表</el-tag>
         <el-checkbox v-model="impIncludeTechnical" size="small">含技术字段</el-checkbox>
         <el-button
+          v-hasPerm="'module_ai:ontology:edit'"
           size="small"
           type="primary"
           :disabled="!impDs"
