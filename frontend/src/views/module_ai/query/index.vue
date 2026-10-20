@@ -626,8 +626,19 @@ async function ask() {
         cur.result_rows = d.result_rows ?? (d.rows || []).length;
         cur.took_ms = d.took_ms;
         cur.path = cur.path || d.path || "result";
-        cur.recalled = d.recalled || cur.recalled;
-        cur.ontology = d.ontology || cur.ontology;
+        // 后端字段名是 retrieved / ontology_used，渲染函数（recalledOf/ontologyOf）只认
+        // grounding 这一层；之前这里读的是 d.recalled / d.ontology（两个都不存在），
+        // 也没落到 grounding → 直播期间标签永远不出现，必须刷新才看得到。
+        if (d.retrieved || d.ontology_used) {
+          cur.grounding = {
+            ...(cur.grounding || {}),
+            retrieved: d.retrieved,
+            ontology_used: d.ontology_used,
+          };
+        }
+        // message_id：「有用/没用/存为报表/沉淀为指标」按钮按 v-if="m.id" 门控，
+        // 不带上它就必须刷新或点开旧会话才能看到（反馈闭环断在最关键时刻）。
+        if (d.message_id) cur.id = d.message_id;
         hasResult = true;
         flush();
       } else if (t === "clarify") {

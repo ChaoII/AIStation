@@ -7662,18 +7662,24 @@ class AiQueryService:
             res = await cls._execute_one(sql, datasource, auth)
             cols = res.get("columns") or []
             rows = res.get("rows") or []
-            await cls._save_message(
+            # Grounding **必须落库**（非流式 ask 一直有写，流式漏了）：
+            # 否则刷新/重开会话后「召回的表 / 本体对象」标签就消失了。
+            retrieved = await cls._recall_grounding(question, datasource)
+            ont_used = _scan_ont_tables(sql)
+            msg = await cls._save_message(
                 sess["id"], question, path="slow", datasource=datasource,
                 sql=sql, columns=cols, rows=rows,
                 result_rows=len(rows), took_ms=res.get("took_ms", 0), cached=False,
                 summary="以下是根据你的问题生成的结果：",
+                grounding={"retrieved": retrieved, "ontology_used": ont_used},
             )
-            # Grounding 可观测：返回本次混合检索锁定的表 + 关键字段
-            retrieved = await cls._recall_grounding(question, datasource)
+            # message_id 必须回传：前端「有用/没用/存为报表/沉淀为指标」按钮按
+            # v-if="m.id" 门控，不带 id 用户就必须刷新/点开旧会话才看得到。
             yield {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows),
-                   "retrieved": retrieved, "dq_warning": await cls._dq_warning_for_sql(sql)}
+                   "retrieved": retrieved, "ontology_used": ont_used, "message_id": msg.id,
+                   "dq_warning": await cls._dq_warning_for_sql(sql)}
             yield {"type": "answer", "summary": "以下是根据你的问题生成的结果："}
-            yield {"type": "done"}
+            yield {"type": "done", "message_id": msg.id}
         except Exception as e:  # noqa: BLE001
             await cls._save_message(sess["id"], question, path="slow", datasource=datasource,
                                     sql=sql, rows=[], is_error=True, summary=f"查询失败：{e}")
