@@ -143,8 +143,11 @@
           <el-select v-model="formData.usage" style="width: 100%">
             <el-option label="对话/通用" value="chat" />
             <el-option label="助手/工具" value="assistant" />
+            <el-option label="问数（Text-to-SQL）" value="query" />
             <el-option label="向量/Embedding" value="embedding" />
           </el-select>
+          <!-- 后端 NL2SQL 运行时优先选 usage=='query' 的模型；没有它就永远落到 chat/通用模型 -->
+          <el-text type="info" size="small">不填则回退到对话/通用模型</el-text>
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
@@ -431,7 +434,11 @@ function openDetail(row: any) {
   detailVisible.value = true;
 }
 function usageLabel(u: string) {
-  return { chat: "对话", assistant: "助手", embedding: "嵌入", asr: "识别", tts: "合成" }[u] || u;
+  return (
+    { chat: "对话", assistant: "助手", query: "问数", embedding: "嵌入", asr: "识别", tts: "合成" }[
+      u
+    ] || u
+  );
 }
 
 async function loadProviders() {
