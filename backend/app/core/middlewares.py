@@ -219,6 +219,67 @@ class RequestLogMiddleware:
             return None
 
 
+class AdmissionGateMiddleware:
+    """并发准入闸门：**超过连接池承载能力就立刻 503**，不让请求排队到超时。
+
+    为什么需要它（2026-10 实测根因）：
+
+    - PostgreSQL 每次建连都要算 SCRAM-SHA-256 的 PBKDF2，本机 **846ms/条（672ms 纯 CPU）**，
+      并且这段 CPU 在事件循环里**同步执行、完全串行**（5 条并发建连实测 = 5×1392ms）。
+    - 连接池打满后，后续请求只能等 `POOL_TIMEOUT`（30 秒）才报错；而前端 10 秒就超时了，
+      于是用户看到的是「请求超时」，服务端却还挂着一堆等连接的请求——两边都白等。
+    - 本中间件在**进请求前**按池容量放行：拿得到槽位就处理，`GATE_WAIT_SECONDS` 内拿不到
+      就**立刻**回 503 + `Retry-After`，由前端按服务繁忙重试，而不是排队 10 秒再超时。
+
+    为什么在最外层：它要拦在 CORS / 日志 / 会话中间件之前，连被拒的请求都不必建会话。
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+        #: 槽位数：默认取池大小，但应显式小于 POOL_SIZE，给「一个请求内部再开会话」留余量
+        self._slots = max(1, int(getattr(settings, "GATE_SLOTS", 0) or settings.POOL_SIZE))
+        self._wait = float(getattr(settings, "GATE_WAIT_SECONDS", 0.6))
+        self._sem: asyncio.Semaphore = asyncio.Semaphore(self._slots)
+
+    async def _reject(self, scope: Scope, send: Send) -> None:
+        body = json.dumps(
+            {
+                "code": 503,
+                "msg": f"服务繁忙：已有 {self._slots} 个并发请求在处理，请稍后重试",
+                "data": None,
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 503,
+                "headers": [
+                    (b"content-type", b"application/json; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode("ascii")),
+                    (b"retry-after", str(max(1, int(self._wait)) or 1).encode("ascii")),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # 非 HTTP（lifespan / websocket）与 CORS 预检一律放行
+        if scope["type"] != "http" or scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        try:
+            await asyncio.wait_for(self._sem.acquire(), timeout=self._wait)
+        except TimeoutError:
+            await self._reject(scope, send)
+            return
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            self._sem.release()
+
+
 class DBSessionMiddleware:
     """请求作用域会话中间件：一请求一条连接，且保证归还。
 

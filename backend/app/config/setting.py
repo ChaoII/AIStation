@@ -161,6 +161,14 @@ class Settings(BaseSettings):
     # 启动期并发预热异步连接池：把「一次性建连」代价放到启动阶段，
     # 让首个接入突发只复用已建好的保留连接（审计·并发 #11）。
     DB_POOL_WARMUP: bool = True
+    #: 并发准入闸门的槽位数；0 表示「取 POOL_SIZE」。显式大于 0 时必须 **< POOL_SIZE**：
+    #: 池是全站共享资源，要给「一个请求内部再开会话」（实测最多 3 条）留出余量。
+    GATE_SLOTS: int = 0
+    # 并发准入闸门（AdmissionGateMiddleware）：拿不到槽位时**最多等这么久**就立刻 503+Retry-After。
+    # 取值依据：正常排队（短请求 20 条连接可服务 90 并发）几百毫秒内必有位置；
+    # 超过这个等待窗口，说明池已被长请求占满，继续等下去必然被前端 10 秒超时打断，
+    # 双方白等——不如立即失败让前端按服务繁忙重试。
+    GATE_WAIT_SECONDS: float = 1.5
     # Agno OpenTelemetry 追踪：把 agent/模型/工具运行写入 agno 运行态库
     # （agno_traces/agno_spans），用于定位慢调用与异常。可观测性增强，默认开。
     AGNO_TRACING: bool = True
@@ -189,6 +197,11 @@ class Settings(BaseSettings):
     # 应用级 Redis 连接池上限：与 DB 的 POOL_SIZE 解耦（审计·并发 #10/#22）。
     # 边缘事件 WS 实时订阅使用独立连接池（见 EDGE_WS_MAX_CONNECTIONS），不占用本池。
     REDIS_MAX_CONNECTIONS: int = 100
+    # Redis 命令的 socket 超时（秒）。**必须与 DB 的 POOL_TIMEOUT 解耦**：
+    # 早先复用 POOL_TIMEOUT，2026-10 把 POOL_TIMEOUT 调成 8 后，启动期写系统配置直接
+    # 「Timeout reading from 127.0.0.1:6379」导致应用起不来——DB 等连接的预算不该
+    # 决定 Redis 读写超时。
+    REDIS_SOCKET_TIMEOUT: int = 30
 
     # ================================================= #
     # ************** RustFS / S3 对象存储 ************** #
@@ -622,6 +635,8 @@ class Settings(BaseSettings):
         # 它依赖「中间件与端点同一任务」来判定请求会话归属，若放到
         # RequestLogMiddleware（BaseHTTPMiddleware）外层会跨任务而失效。
         MIDDLEWARES: list[str | None] = [
+            # 并发准入闸门放**最外层**：连被拒的请求都不必建会话/记日志
+            "app.core.middlewares.AdmissionGateMiddleware",
             "app.core.middlewares.CustomCORSMiddleware" if self.CORS_ORIGIN_ENABLE else None,
             "app.core.middlewares.RequestLogMiddleware" if self.OPERATION_LOG_RECORD else None,
             "app.core.middlewares.CustomGZipMiddleware" if self.GZIP_ENABLE else None,

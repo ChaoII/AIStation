@@ -232,6 +232,27 @@ async def async_db_session_fresh() -> AsyncIterator[AsyncSession]:
 _warmup_task: asyncio.Task | None = None
 
 
+#: 预热期间**永远留给实时流量**的连接数。
+#:
+#: 预热必须「同时持有」才会真的新建连接（顺序 acquire/close 只会复用同一条，
+#: 这是 SQLAlchemy 池的特性），但如果把 POOL_SIZE 条全占住，正在进来的请求就一条也拿不到，
+#: 实测会直接 ``QueuePool limit of size 48 overflow 0 reached, connection timed out``
+#: 导致预热在 40/48 中断、同时把首批请求打成 500。因此恒定留 8 条给在途请求。
+WARMUP_RESERVE_FOR_TRAFFIC = 8
+
+
+def warmup_target() -> int:
+    """预热要**同时持有**的连接数 = ``POOL_SIZE - WARMUP_RESERVE_FOR_TRAFFIC``。
+
+    2026-10 实测根因：PG 每次建连算 SCRAM-SHA-256 的 PBKDF2（本机 846ms/条，672ms 纯 CPU），
+    且**在事件循环里同步串行**（5 条并发建连 = 5×1392ms）。早先只预热 8 条，
+    「第 9 个并发请求」就得现建连接 → 单用户打开一个弹窗（并发 10~20 请求）就让事件循环
+    停摆 1~2 秒/条，队尾超过前端 10 秒超时 → 页面弹「请求超时」。
+    池建满后同一场景（20 并发会话+查询+提交）实测 109ms，建连时则是 12.6~21.5 秒。
+    """
+    return max(1, int(settings.POOL_SIZE) - WARMUP_RESERVE_FOR_TRAFFIC)
+
+
 async def async_pool_warmup(app: FastAPI, status: bool) -> None:
     """启动期并发预热异步 DB 连接池（审计·并发 #11）。
 
@@ -256,20 +277,30 @@ async def async_pool_warmup(app: FastAPI, status: bool) -> None:
     if settings.DATABASE_TYPE == "sqlite" or not getattr(settings, "DB_POOL_WARMUP", True):
         return
 
-    # 只预热少量连接（8 条）即可支撑启动后的常规并发；
-    # 其余连接按需建连——全量预热 48 条在事件循环内做同步 SCRAM 认证会拖慢启动 ~30s+。
-    target = max(1, min(int(settings.POOL_SIZE), 8))
+    # **全量预热**（2026-10 排查结论）：
+    # PG 每次建连都要做 SCRAM-SHA-256 的 PBKDF2（本机实测 846ms/条，其中 672ms 是纯 CPU），
+    # 且这段 CPU 在事件循环里**同步执行、完全串行**（实测 5 条并发建连 = 5×1392ms）。
+    # 之前只预热 8 条，于是「第 9 个并发请求」就要现建连接 → 单用户开一个弹窗（并发 10~20 请求）
+    # 就把事件循环卡住 1~2 秒/条，队尾必然超过前端 10 秒超时 → 「请求超时」刷屏。
+    # 池建满后实测 20 并发会话+查询+提交 = 109ms（建连时同一场景要 12.6~21.5 秒）。
+    # 因此请求期**一次连接都不该再新建**；启动期这一轮建连成本是固定的一次性开销。
+    # （预留 8 条给在途请求，见 WARMUP_RESERVE_FOR_TRAFFIC。）
+    target = warmup_target()
 
-    async def _acquire(acquired: list, sem: asyncio.Semaphore) -> None:
+    async def _acquire(acquired: list, sem: asyncio.Semaphore, idx: int) -> None:
         async with sem:
             acquired.append(await async_engine.connect())
+            # 建连本身会连续阻塞循环约 1 秒，每条之间让出一次调度，别把启动期饿死
+            await asyncio.sleep(0)
+            if idx % 5 == 0:
+                log.info(f"🔄 数据库连接池预热进度：{idx}/{target}")
 
     async def _warmup() -> None:
         acquired: list = []
         sem = asyncio.Semaphore(16)
         try:
-            await asyncio.gather(*[_acquire(acquired, sem) for _ in range(target)])
-            log.info(f"✅ 数据库连接池后台预热完成：{len(acquired)} 条保留连接")
+            await asyncio.gather(*[_acquire(acquired, sem, i + 1) for i in range(target)])
+            log.info(f"✅ 数据库连接池后台预热完成：{len(acquired)}/{target} 条保留连接")
         except Exception as e:  # noqa: BLE001 - 预热失败不阻断启动，后续按需建连
             log.warning(f"⚠️ 数据库连接池后台预热失败（不影响启动，后续按需建连）: {e}")
         finally:
@@ -425,7 +456,7 @@ async def redis_connect(app: FastAPI, status: bool) -> Redis | None:
                     decode_responses=True,
                     health_check_interval=20,
                     max_connections=settings.REDIS_MAX_CONNECTIONS,
-                    socket_timeout=settings.POOL_TIMEOUT,
+                    socket_timeout=settings.REDIS_SOCKET_TIMEOUT,
                 )
                 app.state.redis = rd
                 if await rd.ping():  # pyright: ignore[reportGeneralTypeIssues]
