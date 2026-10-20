@@ -6243,10 +6243,31 @@ class AiQueryService:
             ]
 
     @classmethod
-    async def list_messages(cls, session_id: int) -> list[dict]:
+    def _ensure_session_owner(cls, sess: AiQuerySessionModel | None, auth) -> None:
+        """会话归属校验。
+
+        修复前 `list_messages` / `delete_session` **只按 id 查**，任何拿到
+        ``module_ai:query:ask`` 权限的用户都能按 id 读到、删掉**别人的**问数历史
+        （枚举 id 即可越权）。这里统一校验：归属人必须是当前用户；
+        报「不存在」而不是「无权限」，避免暴露 id 的存在性。
+        """
+        if sess is None:
+            raise CustomException(msg="会话不存在")
+        if auth is None:
+            return  # 内部调用（如问句重写读历史）无 HTTP 用户上下文；HTTP 边界一律传 auth
+        owner = getattr(sess, "user_id", None)
+        if owner is None:
+            return  # 历史遗留数据（无归属），保持可访问
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        if uid is None or int(owner) != int(uid):
+            raise CustomException(msg="会话不存在")
+
+    @classmethod
+    async def list_messages(cls, session_id: int, auth=None) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import select
 
+            cls._ensure_session_owner(await db.get(AiQuerySessionModel, session_id), auth)
             rows = (
                 await db.execute(
                     select(AiQueryMessageModel)
@@ -6260,11 +6281,13 @@ class AiQueryService:
             return [cls._msg_dict(m) for m in rows]
 
     @classmethod
-    async def delete_session(cls, session_id: int) -> None:
+    async def delete_session(cls, session_id: int, auth=None) -> None:
         async with async_db_session.begin() as db:
             s = await db.get(AiQuerySessionModel, session_id)
-            if s:
-                await db.delete(s)
+            if s is None:
+                return  # 已不存在：保持幂等，不因重复删除而报错
+            cls._ensure_session_owner(s, auth)
+            await db.delete(s)
 
     @classmethod
     def _msg_dict(cls, m: AiQueryMessageModel) -> dict:

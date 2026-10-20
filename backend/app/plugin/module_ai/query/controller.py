@@ -1495,7 +1495,7 @@ async def list_messages(
     session_id: int,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.list_messages(session_id), msg="查询成功")
+    return SuccessResponse(data=await AiQueryService.list_messages(session_id, auth), msg="查询成功")
 
 
 @AiQueryRouter.delete("/sessions/{session_id}", summary="删除会话")
@@ -1503,7 +1503,7 @@ async def delete_session(
     session_id: int,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
-    await AiQueryService.delete_session(session_id)
+    await AiQueryService.delete_session(session_id, auth)
     return SuccessResponse(msg="删除成功")
 
 
