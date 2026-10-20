@@ -1012,7 +1012,7 @@ async def workshop_save(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
-    r = await AiQueryService.upsert_workshop_app(data)
+    r = await AiQueryService.upsert_workshop_app(data, auth)
     return SuccessResponse(data=r, msg="保存成功")
 
 
@@ -1021,7 +1021,7 @@ async def workshop_preview(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
-    r = await AiQueryService.workshop_preview(int(data.get("app_id", 0)), int(data.get("limit") or 50))
+    r = await AiQueryService.workshop_preview(int(data.get("app_id", 0)), auth, int(data.get("limit") or 50))
     return SuccessResponse(data=r, msg="预览完成")
 
 
@@ -1039,7 +1039,7 @@ async def workshop_submit(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
-    r = await AiQueryService.workshop_submit(int(data.get("app_id", 0)), data.get("data") or {})
+    r = await AiQueryService.workshop_submit(int(data.get("app_id", 0)), data.get("data") or {}, auth)
     return SuccessResponse(data=r, msg="保存成功")
 
 

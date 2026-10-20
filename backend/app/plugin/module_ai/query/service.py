@@ -4283,7 +4283,36 @@ class AiQueryService:
     _WORKSHOP_WRITABLE = {"ont_orders"}
 
     @classmethod
-    async def workshop_submit(cls, app_id: int, data: dict) -> dict:
+    async def _require_workshop_source(cls, table, columns, auth) -> tuple[str, list[str]]:
+        """Workshop（无代码应用）「来源表 + 列」统一校验（P0-2 安全修复）。
+
+        保存、预览、表单提交三个入口都会把 ``ai_workshop_app`` 里的 ``object_table``
+        / ``columns`` 拼进 SQL（``SELECT {cols} FROM "{table}"`` / ``INSERT INTO
+        "{table}"``），不校验等于任意表读写：
+
+        - ``object_table`` 为空或白名单外 → 整表导出（``sys_user`` 一类表在内）；
+        - ``columns`` 含注入串 → 闭合引号后可拼出任意 SQL（psycopg2 允许多语句）。
+
+        复用 P0-1 的两道护栏：``_require_queryable_table``（合法标识符 + **按用户收窄**
+        的可查白名单）与 ``_require_ident``（逐列标识符）。校验失败抛 CustomException
+        （fail-closed），且必须发生在拼 SQL 之前。返回 ``(表名, 列名列表)`` —— 之后的
+        SQL 只允许用这两个返回值拼装，任何原始入参都不得再进 SQL。
+        """
+        name = await cls._require_queryable_table(table, auth)
+        raw = columns
+        if isinstance(raw, str):
+            # columns 列是 JSONB，但历史行/方言可能给回 JSON 字符串
+            try:
+                import json as _json
+                raw = _json.loads(raw) if raw.strip() else []
+            except Exception:  # noqa: BLE001
+                raw = []
+        if not isinstance(raw, list):
+            raw = []
+        return name, [cls._require_ident(c, "列名") for c in raw]
+
+    @classmethod
+    async def workshop_submit(cls, app_id: int, data: dict, auth) -> dict:
         """把表单数据写入对象表（仅限白名单对象，字段须属于应用配置的列）。"""
         async with async_db_session() as db:
             row = (await db.execute(
@@ -4291,10 +4320,10 @@ class AiQueryService:
                 {"i": app_id})).fetchone()
         if not row:
             raise CustomException(msg="应用不存在")
-        table = row[0]
+        # P0-2：历史行可绕过保存期校验，写入前同样过「按用户白名单 + 逐列标识符」
+        table, cols = await cls._require_workshop_source(row[0], row[1], auth)
         if table not in cls._WORKSHOP_WRITABLE:
             raise CustomException(msg="该对象暂不支持表单写入")
-        cols = row[1] if isinstance(row[1], list) else []
         if not cols:
             raise CustomException(msg="应用未配置字段")
         allowed = set(cols)
@@ -4328,28 +4357,31 @@ class AiQueryService:
         } for r in rows]
 
     @classmethod
-    async def upsert_workshop_app(cls, data: dict) -> dict:
+    async def upsert_workshop_app(cls, data: dict, auth) -> dict:
         import json as _json
-        cols = _json.dumps(data.get("columns") or [], ensure_ascii=False)
+        # P0-2：object_table/columns 决定预览拼出的 SELECT，落库前先过护栏（fail-closed）
+        table, cols_list = await cls._require_workshop_source(
+            data.get("object_table"), data.get("columns"), auth)
+        cols = _json.dumps(cols_list, ensure_ascii=False)
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
             if data.get("id"):
                 await db.execute(_t(
                     "UPDATE ai_workshop_app SET name=:n, object_table=:o, view_type=:v, columns=:c, "
                     "enabled=:e, updated_time=now() WHERE id=:i"), {
-                    "n": data.get("name", ""), "o": data.get("object_table", ""),
+                    "n": data.get("name", ""), "o": table,
                     "v": data.get("view_type", "table"), "c": cols, "e": bool(data.get("enabled", True)),
                     "i": data["id"]})
                 return {"id": data["id"]}
             res = await db.execute(_t(
                 "INSERT INTO ai_workshop_app(name,object_table,view_type,columns,enabled) "
                 "VALUES (:n,:o,:v,:c,:e) RETURNING id"), {
-                "n": data.get("name", ""), "o": data.get("object_table", ""),
+                "n": data.get("name", ""), "o": table,
                 "v": data.get("view_type", "table"), "c": cols, "e": bool(data.get("enabled", True))})
             return {"id": res.scalar()}
 
     @classmethod
-    async def workshop_preview(cls, app_id: int, limit: int = 50) -> dict:
+    async def workshop_preview(cls, app_id: int, auth, limit: int = 50) -> dict:
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             row = (await db.execute(_t(
@@ -4357,9 +4389,9 @@ class AiQueryService:
                 {"i": app_id})).fetchone()
         if not row:
             return {"ok": False, "msg": "应用不存在"}
-        table = row[0]
-        cols = row[1] if isinstance(row[1], list) else []
-        select = ", ".join(f'"{c}"' for c in cols) if cols else "*"
+        # P0-2：库里的配置同样要过「按用户白名单 + 逐列标识符」，失败抛错、不查数据
+        table, cols_list = await cls._require_workshop_source(row[0], row[1], auth)
+        select = ", ".join(f'"{c}"' for c in cols_list) if cols_list else "*"
         sql = f'SELECT {select} FROM "{table}"'
         if table in ("video_cameras", "train_tasks", "annotation_dataset", "video_algorithms", "video_edge_devices", "sys_user", "ai_models", "ai_call_logs"):
             sql += " WHERE is_deleted=false"
