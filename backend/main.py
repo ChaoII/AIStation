@@ -47,6 +47,18 @@ def create_app() -> FastAPI:
     register_files(app)
     # 重设API文档
     reset_api_docs(app)
+    # 预生成 OpenAPI schema：首次访问 /openapi.json 要把 989 条路由的 schema 算一遍，
+    # 实测 **6.7 秒纯 CPU、期间事件循环完全卡死**（任何请求都要等）。启动期一次性算好缓存，
+    # 之后 /docs、/openapi.json 都是纯字典读取。
+    if app.openapi_url:
+        import time as _time
+
+        _t0 = _time.perf_counter()
+        app.openapi()
+        _ms = round((_time.perf_counter() - _t0) * 1000)
+        from app.core.logger import log as _log
+
+        _log.info(f"✅ OpenAPI schema 预生成完成：{_ms}ms（原为首次请求时卡 6.7s）")
 
     return app
 
