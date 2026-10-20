@@ -7485,12 +7485,13 @@ class AiQueryService:
             if tool_agent:
                 # 工具化 Agent：让模型自主决定何时调用 schema/fewshots/cost 工具
                 # （执行层不再叠加额外执行工具，避免重复；schema/fewshot 由模型自主检索）
-                from .agno_query_tools import QUERY_TOOLS
+                # P0-4：工具按请求构造，执行类工具绑定当前调用者身份（走同一份 ACL）
+                from .agno_query_tools import build_query_tools
 
                 agent = Agent(
                     model=model,
                     telemetry=False,
-                    tools=list(QUERY_TOOLS),
+                    tools=build_query_tools(auth),
                     tool_call_limit=6, instructions=(
                         f"你是 {dialect_name(_dialect)} 数据库查询助手，生成只读 SELECT。"
                         "先调用 search_schema(question) 获取相关表/字段，必要时再调用 "
@@ -7541,7 +7542,7 @@ class AiQueryService:
         tool_start / tool_result / tool_error / sql_delta / sql_final /
         result / done / error / answer。
         """
-        from .agno_query_tools import QUERY_TOOLS
+        from .agno_query_tools import build_query_tools
 
         await cls.ensure_system_seed()
         question = (question or "").strip()
@@ -7694,7 +7695,7 @@ class AiQueryService:
         if cls._cfg_bool(cfg, "agno_tool_agent", False):
             agent = Agent(
                 model=model, telemetry=False,
-                tools=list(QUERY_TOOLS), tool_call_limit=6,
+                tools=build_query_tools(auth), tool_call_limit=6,
                 instructions=(
                     f"你是 {dialect_name(_dialect)} 数据库查询助手，生成只读 SELECT。"
                     "先调用 search_schema(question) 获取相关表/字段，可再用 "

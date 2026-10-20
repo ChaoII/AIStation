@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import functools
 import re
 
 from app.core.logger import log
@@ -245,22 +246,38 @@ async def explain_column(table: str, column: str) -> str:
         return f"查询字段说明失败：{e}"
 
 
-async def run_sql(sql: str) -> str:
-    """执行一条只读 SELECT，返回结果（前 N 行）或错误信息，供模型执行-自修复（execution-guided）。
+async def _run_sql_guarded(sql: str, auth, tool_name: str) -> str:
+    """工具路径的 SQL 执行**唯一收口**（P0-4）。
 
-    模型生成候选 SQL 后调用本工具验证：成功返回结果行；报错（列/语法/JOIN）返回错误，
-    Agno 会把该错误插回上下文，模型据此修正 SQL 再调用，直至成功或放弃。
+    与问数主链路共用同一份 ACL：
+
+    1. 白名单用 ``AiQueryService._allowed_for_user(auth)``（数据域/ABAC **按用户收窄**），
+       不再是全局 ``_system_allowed()``；
+    2. 执行走 ``AiQueryService._execute_one``（→ 字段级 ACL + 本体行/列改写 + 执行），
+       与 ask / ask_stream / 报表 / 指标是同一个出口；
+    3. **fail-closed**：拿不到调用者身份就拒绝执行——修前这两个工具正是靠"没有身份"
+       退回全局白名单并直连 ``_execute_sql``，把数据域隔离与字段级 ACL 整段绕过。
+
+    返回文案与修前保持一致（模型据「列/行 + 报错」做 execution-guided 自修复）。
     """
-    from .service import _execute_sql, _system_allowed, validate_sql
+    from app.core.exceptions import CustomException
 
-    log.warning("[QUERY_TOOL] 模型调用了 run_sql，sql={}", (sql or "")[:200])
-    sql = (sql or "").strip()
+    from .service import SYSTEM_DS, AiQueryService, validate_sql
+
+    q = (sql or "").strip()
+    if not q:
+        return "SQL 为空"
+    if not getattr(getattr(auth, "user", None), "id", None):
+        return f"未绑定调用者身份，拒绝执行（{tool_name} 必须按请求绑定 auth）"
     try:
-        safe = validate_sql(sql, await _system_allowed())
+        safe = validate_sql(q, await AiQueryService._allowed_for_user(auth))
     except Exception as e:  # noqa: BLE001
         return f"SQL 不合法：{e}"
     try:
-        res = await _execute_sql(safe)
+        res = await AiQueryService._execute_one(safe, SYSTEM_DS, auth)
+    except CustomException as e:
+        # 白名单/字段级 ACL/本体策略的拒绝：原样告诉模型（可自修复），但不执行
+        return f"执行被拒绝：{e}"
     except Exception as e:  # noqa: BLE001
         return f"执行失败：{e}"
     cols = res.get("columns") or []
@@ -269,10 +286,36 @@ async def run_sql(sql: str) -> str:
     return f"执行成功，共 {len(rows)} 行。列：{', '.join(cols)}。\n{txt}"
 
 
+async def run_sql(sql: str) -> str:
+    """执行一条只读 SELECT，返回结果（前 N 行）或错误信息，供模型执行-自修复（execution-guided）。
+
+    模型生成候选 SQL 后调用本工具验证：成功返回结果行；报错（列/语法/JOIN）返回错误，
+    Agno 会把该错误插回上下文，模型据此修正 SQL 再调用，直至成功或放弃。
+    """
+    log.warning("[QUERY_TOOL] 模型调用了 run_sql，sql={}", (sql or "")[:200])
+    # P0-4：模块级工具本身**没有调用者身份** → fail-closed。
+    # 需要真正执行时请用 `build_sql_tools(auth)` / `build_query_tools(auth)`（按请求绑定 auth）。
+    return await _run_sql_guarded(sql, None, "run_sql")
+
+
+def _make_run_sql(auth):
+    """按请求绑定调用者身份（auth）的 ``run_sql`` 工具。
+
+    用 ``functools.wraps`` 保留原工具名/文档/参数签名——Agno 由它们生成 tool schema，
+    给 LLM 的可见契约必须与模块级 ``run_sql`` 完全一致。
+    """
+
+    @functools.wraps(run_sql)
+    async def _bound_run_sql(sql: str) -> str:
+        log.warning("[QUERY_TOOL] 模型调用了 run_sql，sql={}", (sql or "")[:200])
+        return await _run_sql_guarded(sql, auth, "run_sql")
+
+    return _bound_run_sql
+
+
 # ---------------------------------------------------------------------------
 # 结合 Agno 原生 SQLTools（官方 SQL 工具）：list_tables / describe_table 用 Agno 官方实现；
-# run_sql_query 重写为「本体白名单只读执行」，复用项目同步 engine + _system_allowed() 白名单，
-# 让问数用 Agno 官方 SQL 工具，同时安全性（只读 + 白名单）不可绕过。
+# run_sql_query 重写为「本体白名单只读执行」，与主链路共用 `_execute_one`（按用户白名单 + 字段级 ACL）。
 # ---------------------------------------------------------------------------
 def _build_agno_sql_tools():
     from agno.tools.sql import SQLTools
@@ -280,7 +323,13 @@ def _build_agno_sql_tools():
     from app.core.database import engine as _engine
 
     class _SafeSqlTools(SQLTools):
-        """Agno 官方 SQL 工具，但 run_sql_query 强制走本体白名单只读执行（安全）。"""
+        """Agno 官方 SQL 工具，但 run_sql_query 强制走「按用户白名单 + 字段级 ACL」执行。
+
+        ``auth`` 是**按请求绑定**的调用者身份（见 ``build_agno_sql_tools``）；
+        未绑定（None）时 run_sql_query 一律 fail-closed，不会退回全局白名单。
+        """
+
+        auth = None
 
         async def run_sql_query(self, query: str, limit: int = 1000) -> str:  # type: ignore[override]
             """执行一条经本体白名单校验的只读 SELECT，返回结果（前 20 行）或错误信息。
@@ -291,24 +340,8 @@ def _build_agno_sql_tools():
             Returns:
                 str: 执行结果或错误信息。报错时模型应据此修正 SQL 再调用。
             """
-            from .service import _execute_sql, _system_allowed, validate_sql
-
             log.warning("[QUERY_TOOL] 模型调用了 agno_sql_run_sql_query，sql={}", (query or "")[:200])
-            q = (query or "").strip()
-            if not q:
-                return "SQL 为空"
-            try:
-                safe = validate_sql(q, await _system_allowed())
-            except Exception as e:  # noqa: BLE001
-                return f"SQL 不合法：{e}"
-            try:
-                res = await _execute_sql(safe)
-            except Exception as e:  # noqa: BLE001
-                return f"执行失败：{e}"
-            cols = res.get("columns") or []
-            rows = res.get("rows") or []
-            txt = "\n".join(" | ".join(str(v) for v in r) for r in rows[:20]) or "（空结果）"
-            return f"执行成功，共 {len(rows)} 行。列：{', '.join(cols)}。\n{txt}"
+            return await _run_sql_guarded(query, self.auth, "agno_sql_run_sql_query")
 
     return _SafeSqlTools(
         db_engine=_engine,
@@ -318,7 +351,19 @@ def _build_agno_sql_tools():
     )
 
 
+def build_agno_sql_tools(auth):
+    """按请求构造 Agno 官方 SQL 工具集（``run_sql_query`` 绑定调用者身份）。
+
+    执行与问数主链路共用 ``AiQueryService._execute_one``（白名单按用户收窄 + 字段级 ACL）。
+    """
+    kit = _build_agno_sql_tools()
+    kit.auth = auth
+    return kit
+
+
 #: Agno 官方 SQL 工具（list_tables/describe_table 官方实现 + run_sql_query 白名单只读）
+#: ⚠️ 这是**未绑定身份**的单例 → run_sql_query fail-closed。
+#: 真正执行请用 ``build_agno_sql_tools(auth)``（按请求绑定）。
 AGNO_SQL_TOOLS = _build_agno_sql_tools()
 
 
@@ -328,3 +373,27 @@ QUERY_TOOLS = [
     kg_search, list_metrics, list_terms, search_history,
     resolve_value, find_join_path, explain_column,
 ]
+
+#: 需要「按请求绑定调用者身份」的工具工厂：模块级裸函数本身 fail-closed，
+#: 只有经 ``build_query_tools(auth)`` 绑定后才允许执行。新增执行类工具必须登记在这里，
+#: 否则它一旦进入 ``QUERY_TOOLS`` 就只会返回"未绑定身份"（不会静默绕过 ACL）。
+_AUTH_BOUND_TOOL_FACTORIES = {"run_sql": _make_run_sql}
+
+
+def build_sql_tools(auth) -> list:
+    """按请求构造 SQL 执行工具（``run_sql``，已绑定调用者身份）。"""
+    return [_make_run_sql(auth)]
+
+
+def build_query_tools(auth) -> list:
+    """按请求构造问数工具集：把当前调用者身份注入**执行类**工具。
+
+    工具名/签名/文档与 ``QUERY_TOOLS`` 完全一致（LLM 依赖 tool schema，不得变化），
+    差别只在执行类工具绑定 ``auth``——执行统一走 ``AiQueryService._execute_one``，
+    与 ask / ask_stream / 报表 / 指标共用同一份 ACL。
+    """
+    tools = []
+    for tool in QUERY_TOOLS:
+        factory = _AUTH_BOUND_TOOL_FACTORIES.get(getattr(tool, "__name__", ""))
+        tools.append(factory(auth) if factory else tool)
+    return tools
