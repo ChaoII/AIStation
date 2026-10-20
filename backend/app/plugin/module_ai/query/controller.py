@@ -279,7 +279,7 @@ async def dq_rules_run(
     column: str = "",
     rule_type: str = "",
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.dq_rules_run(table, column, rule_type), msg="查询成功")
+    return SuccessResponse(data=await AiQueryService.dq_rules_run(table, column, rule_type, auth), msg="查询成功")
 
 
 @AiQueryRouter.get("/assets/{table_name}/export", summary="数据集导出(真实表数据)")
@@ -288,7 +288,7 @@ async def export_asset(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     limit: int = 100,
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.export_asset(table_name, limit), msg="查询成功")
+    return SuccessResponse(data=await AiQueryService.export_asset(table_name, auth, limit), msg="查询成功")
 
 
 @AiQueryRouter.get("/objects/{table_name}/browse", summary="对象数据浏览器(分页)")
@@ -298,7 +298,7 @@ async def object_browse(
     page: int = 1,
     page_size: int = 20,
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.object_browse(table_name, page, page_size), msg="查询成功")
+    return SuccessResponse(data=await AiQueryService.object_browse(table_name, auth, page, page_size), msg="查询成功")
 
 
 @AiQueryRouter.post("/share/create", summary="数据集分享(生成分享链接)")

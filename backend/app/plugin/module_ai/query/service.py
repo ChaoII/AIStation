@@ -214,6 +214,9 @@ _FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 _COMMENT_RE = re.compile(r"(--.*$)|(/\*.*?\*/)", re.MULTILINE | re.DOTALL)
+# 合法 SQL 标识符（表名/列名）：数据资产入口把参数直接拼进 ``FROM "x"``，
+# 表名含 ``"`` 即可闭合引号注入任意 SQL，所以必须先卡标识符再拼 SQL（P0-1）
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # 本系统可查询表（白名单，用于系统数据源的安全校验）
 SYSTEM_ALLOWED_TABLES = {
@@ -3567,9 +3570,47 @@ class AiQueryService:
         metrics = await cls.list_metrics(SYSTEM_DS)
         return [dict(t) | {"on": bool(metrics)} for t in cls._DQ_RULE_TEMPLATES]
 
+    # ---------------------------------------------------------------- #
+    # 数据资产入口（导出/浏览/质量规则）统一表名校验（P0-1 安全修复）
+    # ---------------------------------------------------------------- #
+    @staticmethod
+    def _require_ident(name: str, what: str = "表名") -> str:
+        """合法 SQL 标识符校验（表名/列名）：仅允许 ``[A-Za-z_][A-Za-z0-9_]*``。
+
+        export_asset / object_browse / dq_rules_run 把路径/查询参数直接拼进
+        ``SELECT ... FROM "x"``，表名含 ``"`` 即可闭合引号注入任意 SQL
+        （psycopg2 允许多语句），所以必须先过这里。不合法抛 CustomException
+        （fail-closed），绝不静默放行。
+        """
+        s = str(name or "").strip()
+        if not _IDENT_RE.match(s):
+            raise CustomException(msg=f"非法{what}：{name!r}")
+        return s
+
     @classmethod
-    async def dq_rules_run(cls, table: str, column: str, rule_type: str) -> dict:
+    async def _require_queryable_table(cls, table_name: str, auth) -> str:
+        """资产入口统一白名单校验：表名必须在**按用户收窄**的可查白名单内。
+
+        与问数主链路同口径：复用 ``_allowed_for_user(auth)``（数据域/ABAC 收窄），
+        不是全局 ``_system_allowed()`` —— 否则数据域隔离在这三个入口上失效。
+        注意 ``validate_sql`` 的白名单正则 ``\\bfrom\\s+([A-Za-z_]…)`` 对
+        ``FROM "x"`` 这种**带引号**的表名不匹配，单靠它会被绕过，所以这里
+        先做标识符校验（拼出来的 SQL 只含已校验的标识符，无需再走一遍）。
+
+        校验失败抛 CustomException（fail-closed），且发生在拼 SQL 之前。
+        """
+        name = cls._require_ident(table_name, "表名")
+        allowed = await cls._allowed_for_user(auth)
+        if name.lower() not in {str(t).lower() for t in allowed}:
+            raise CustomException(msg=f"表「{name}」不在可查询白名单内")
+        return name
+
+    @classmethod
+    async def dq_rules_run(cls, table: str, column: str, rule_type: str, auth) -> dict:
         """执行数据质量规则：非空率/唯一性。"""
+        # P0-1：table/column 都被拼进 SELECT，先过「标识符 + 按用户白名单」校验
+        table = await cls._require_queryable_table(table, auth)
+        column = cls._require_ident(column, "列名")
         if rule_type == "not_null":
             async with async_db_session() as db:
                 from sqlalchemy import text as _t
@@ -3595,8 +3636,10 @@ class AiQueryService:
         return {"ok": False, "msg": "不支持的规则类型"}
 
     @classmethod
-    async def export_asset(cls, table_name: str, limit: int = 100) -> dict:
+    async def export_asset(cls, table_name: str, auth, limit: int = 100) -> dict:
         """数据集导出：读取真实表数据用于导出（CSV/JSON 由前端生成下载）。"""
+        # P0-1：表名直接拼 SELECT，先过「标识符 + 按用户白名单」校验（fail-closed）
+        table_name = await cls._require_queryable_table(table_name, auth)
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             try:
@@ -3610,8 +3653,10 @@ class AiQueryService:
                 "row_count": len(data)}
 
     @classmethod
-    async def object_browse(cls, table_name: str, page: int = 1, page_size: int = 20) -> dict:
+    async def object_browse(cls, table_name: str, auth, page: int = 1, page_size: int = 20) -> dict:
         """对象数据浏览器：分页读取真实表数据（前端表格浏览）。"""
+        # P0-1：表名直接拼 SELECT，先过「标识符 + 按用户白名单」校验（fail-closed）
+        table_name = await cls._require_queryable_table(table_name, auth)
         page = max(1, int(page)); page_size = max(1, min(int(page_size), 100))
         offset = (page - 1) * page_size
         async with async_db_session() as db:

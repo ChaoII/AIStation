@@ -253,31 +253,47 @@ class TestAiEval:
         assert "root" in r and "affected_tables" in r and "affected_metrics" in r
         assert isinstance(r["affected_tables"], list)
 
-    def test_dq_rules(self):
+    def test_dq_rules(self, monkeypatch):
         from app.plugin.module_ai.query.service import AiQueryService
 
+        async def _allowed(auth):
+            return {"video_alarm_records"}
+
+        monkeypatch.setattr(AiQueryService, "_allowed_for_user", staticmethod(_allowed))
         rules = asyncio.run(AiQueryService.dq_rules_list())
         assert len(rules) >= 3 and any(r["key"] == "not_null" for r in rules)
-        bad = asyncio.run(AiQueryService.dq_rules_run("t_none", "x", "unknown"))
+        # P0-1 后：table/column 过「标识符 + 按用户白名单」校验；未知规则类型仍返回 ok=False
+        bad = asyncio.run(AiQueryService.dq_rules_run("video_alarm_records", "x", "unknown", None))
         assert bad["ok"] is False
 
-    def test_export_asset(self):
+    def test_export_asset(self, monkeypatch):
         from sqlalchemy import text as _t
 
         from app.core.database import async_db_session
+        from app.core.exceptions import CustomException
         from app.plugin.module_ai.query.service import AiQueryService
+
+        async def _allowed(auth):
+            return {"t_export"}
+
+        monkeypatch.setattr(AiQueryService, "_allowed_for_user", staticmethod(_allowed))
 
         async def _go():
             async with async_db_session.begin() as db:
                 await db.execute(_t("DROP TABLE IF EXISTS t_export"))
                 await db.execute(_t("CREATE TABLE t_export (id INTEGER, name TEXT)"))
                 await db.execute(_t("INSERT INTO t_export VALUES (1,'a'),(2,'b')"))
-            r = await AiQueryService.export_asset("t_export", 10)
+            r = await AiQueryService.export_asset("t_export", None, 10)
             assert r["ok"] is True and r["row_count"] == 2
             assert "name" in r["columns"]
-            bad = await AiQueryService.export_asset("t_nope")
-            assert bad["ok"] is False
-            b = await AiQueryService.object_browse("t_export", 1, 2)
+            # P0-1 后：白名单外表直接拒绝（fail-closed 抛错，不再碰数据库）
+            try:
+                await AiQueryService.export_asset("t_nope", None)
+            except CustomException:
+                pass
+            else:
+                raise AssertionError("白名单外表 t_nope 未被拒绝（越权导出）")
+            b = await AiQueryService.object_browse("t_export", None, 1, 2)
             assert b["ok"] is True and b["total"] == 2 and "has_next" in b
             return True
         assert asyncio.run(_go())
