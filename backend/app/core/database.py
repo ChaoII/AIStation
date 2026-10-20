@@ -240,6 +240,10 @@ _warmup_task: asyncio.Task | None = None
 #: 导致预热在 40/48 中断、同时把首批请求打成 500。因此恒定留 8 条给在途请求。
 WARMUP_RESERVE_FOR_TRAFFIC = 8
 
+#: 每建完一条连接后的**让路时间**（秒）：建连期间事件循环是被同步 CPU 占死的，
+#: 建完必须喘口气，否则启动期的 Redis/DB 调用会被饿到超时（实测 30 秒超时导致起不来）。
+_WARMUP_YIELD_SECONDS = 0.25
+
 
 def warmup_target() -> int:
     """预热要**同时持有**的连接数 = ``POOL_SIZE - WARMUP_RESERVE_FOR_TRAFFIC``。
@@ -290,14 +294,16 @@ async def async_pool_warmup(app: FastAPI, status: bool) -> None:
     async def _acquire(acquired: list, sem: asyncio.Semaphore, idx: int) -> None:
         async with sem:
             acquired.append(await async_engine.connect())
-            # 建连本身会连续阻塞循环约 1 秒，每条之间让出一次调度，别把启动期饿死
-            await asyncio.sleep(0)
+            # 每次建连会**连续阻塞事件循环约 1 秒**（PBKDF2 是同步 CPU，无法让出）。
+            # 必须「一次一条 + 建完歇一会」：早先 16 路并发时，40 条建连把循环连续卡死约 40 秒，
+            # 启动期写系统配置的 Redis 命令等 30 秒超时，应用直接起不来。
+            await asyncio.sleep(_WARMUP_YIELD_SECONDS)
             if idx % 5 == 0:
                 log.info(f"🔄 数据库连接池预热进度：{idx}/{target}")
 
     async def _warmup() -> None:
         acquired: list = []
-        sem = asyncio.Semaphore(16)
+        sem = asyncio.Semaphore(1)
         try:
             await asyncio.gather(*[_acquire(acquired, sem, i + 1) for i in range(target)])
             log.info(f"✅ 数据库连接池后台预热完成：{len(acquired)}/{target} 条保留连接")
