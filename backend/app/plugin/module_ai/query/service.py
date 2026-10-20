@@ -1211,21 +1211,10 @@ async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> di
     if ds_code == SYSTEM_DS:
         table = await AiQueryService._allowed_for_user(auth)
         sql = validate_sql(sql, table)
-        # 指标模板同样要过本体行级/列级权限（否则走指标就能绕过）
-        secured = await _secure_ont_sql(sql, auth)
-        if secured.get("deny"):
-            raise CustomException(msg=secured["msg"])
-        res = await _execute_sql(secured["sql"])
-        if secured.get("rewritten"):
-            res["ont_secured"] = secured["rewritten"]
-    else:
-        # 自定义数据源：ds:{id}，走独立连接 + schema 白名单 + 角色授权
-        try:
-            ds_id = int(ds_code.split(":")[-1])
-        except ValueError:
-            raise CustomException(msg=f"数据源编码异常：{ds_code}")
-        res = await _execute_custom_ds_sql(ds_id, sql, auth)
-        res["sql"] = res.get("sql", sql)
+    # 安全补丁（P0-3）：执行一律走 `_execute_one`（与 ask / ask_stream / 报表共用
+    # 的**唯一收口**）—— 字段级 ACL 与本体行/列改写都在那里做，指标不再直连
+    # `_execute_sql`，否则「指标模板」就是绕过敏感字段拦截的后门。
+    res = await AiQueryService._execute_one(sql, ds_code, auth)
     res["sql"] = res.get("sql") or sql
     return res
 
@@ -6620,6 +6609,18 @@ class AiQueryService:
 
     @classmethod
     async def _execute_one(cls, sql: str, datasource: str, auth) -> dict:
+        """**系统库取数的唯一收口**（P0-3）：白名单 → 字段级 ACL → 行/列改写 → 执行。
+
+        四条路径（ask / ask_stream / report / metric）都必须经过这里：
+        字段级 ACL（``_ont_sql_violations``）**只在本函数内实现一次**。
+        修前它只挂在 ask/ask_stream 这条路上，报表与指标各自直连 ``_execute_sql``，
+        于是「能问数就能造一条读敏感列的指标/报表模板并执行」——
+        ``metrics/save`` / ``reports`` 与问数同权限码（``module_ai:query:ask``）。
+
+        自定义数据源（``ds:{id}``）走独立连接，字段级 ACL 的元数据
+        （``ai_query_asset_columns`` / 本体属性）不描述外部库的表，故不在此检查
+        （与修前口径一致）。
+        """
         if datasource and datasource != SYSTEM_DS:
             ds_id = int(datasource.split(":")[-1])
             return await _execute_custom_ds_sql(ds_id, sql, auth)

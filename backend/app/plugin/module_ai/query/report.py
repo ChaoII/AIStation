@@ -264,10 +264,7 @@ async def run_report(report_id: int, params: dict | None = None, auth=None) -> d
     from .service import (
         SYSTEM_DS,
         AiQueryService,
-        _execute_custom_ds_sql,
-        _execute_sql,
         _render_template,
-        _secure_ont_sql,
         _system_allowed,
         validate_sql,
     )
@@ -297,14 +294,10 @@ async def run_report(report_id: int, params: dict | None = None, auth=None) -> d
             log.warning("[report] 无调用者身份，报表按全局白名单执行")
             allowed = await _system_allowed()
         sql = validate_sql(sql, allowed)
-        secured = await _secure_ont_sql(sql, auth)
-        if secured.get("deny"):
-            from app.core.exceptions import CustomException
-
-            raise CustomException(msg=secured["msg"])
-        res = await _execute_sql(secured["sql"])
-    else:
-        res = await _execute_custom_ds_sql(int(str(ds).split(":")[-1]), sql, auth)
+    # 安全补丁（P0-3）：执行统一走 `AiQueryService._execute_one` —— 它是系统库取数的
+    # **唯一收口**（字段级 ACL + 本体行/列改写都在里面）。修前报表直连 `_execute_sql`，
+    # 于是「能问数就能造一条读敏感列的报表模板并执行」，字段级 ACL 被整段绕过。
+    res = await AiQueryService._execute_one(sql, ds, auth)
     log.info(f"[report] 执行 {rep['key']} → {len(res.get('rows') or [])} 行")
     return {
         "id": rep["id"], "key": rep["key"], "name": rep["name"],

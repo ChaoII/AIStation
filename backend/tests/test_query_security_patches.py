@@ -92,9 +92,16 @@ def test_run_report_applies_ontology_row_column_rewrite(monkeypatch):
             captured["exec_sql"] = sql
             return {"columns": ["id"], "rows": [[1]], "took_ms": 1}
 
+        async def _no_acl_violation(sql, uid):
+            # P0-3 后报表也走字段级 ACL（与 ask 共用 `_execute_one` 收口）；
+            # 这里放行，避免本用例依赖字段资产/本体属性的数据库元数据。
+            return []
+
         monkeypatch.setattr(R, "get_report", _get)
         monkeypatch.setattr(S.AiQueryService, "_allowed_for_user",
                             staticmethod(_per_user_allowed))
+        monkeypatch.setattr(S.AiQueryService, "_ont_sql_violations",
+                            staticmethod(_no_acl_violation))
         monkeypatch.setattr(S, "_secure_ont_sql", _secure)
         monkeypatch.setattr(S, "_execute_sql", _exec)
 
