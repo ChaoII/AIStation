@@ -137,15 +137,21 @@
                   <el-table-column label="字段数" width="70" align="center">
                     <template #default="{ row }">{{ row.column_count ?? "-" }}</template>
                   </el-table-column>
-                  <el-table-column label="纳入" width="64" align="center">
+                  <el-table-column label="纳入" width="96" align="center">
                     <template #default="{ row }">
+                      <!-- 三态：显式排除 / 同步过但未治理（默认纳入）/ 已纳入 -->
                       <el-tag
+                        v-if="row.included === false"
                         size="small"
-                        :type="row.included === false ? 'info' : 'success'"
+                        type="info"
                         effect="plain"
                       >
-                        {{ row.included === false ? "否" : "是" }}
+                        否
                       </el-tag>
+                      <el-tag v-else-if="!row.governed" size="small" type="warning" effect="plain">
+                        是·未治理
+                      </el-tag>
+                      <el-tag v-else size="small" type="success" effect="plain">是</el-tag>
                     </template>
                   </el-table-column>
                   <el-table-column label="系统/业务" width="92" align="center">
@@ -1448,7 +1454,11 @@ const tableRows = computed(() => {
       domain: a?.domain || "",
       description: a?.description || "",
       business_scenarios: a?.business_scenarios || "",
+      // 纳入口径与后端 `_ds_schema_map(included_only=True)` 保持一致：
+      // **没建过资产行（同步过 schema 但没治理）默认纳入**，同步完即可问数，
+      // 但用 `governed` 在界面上标出「未治理」，避免用户误以为已经治理过。
       included: a?.included ?? true,
+      governed: !!a,
       object_enabled: a?.object_enabled ?? false,
     };
   });
@@ -1459,8 +1469,8 @@ const filteredTables = computed(() => {
   return tableRows.value.filter((t) => {
     // 「只看业务表」= 隐藏系统表（is_system 来自后端 schema 接口）
     if (hideSys.value && t.is_system) return false;
-    // 「只看已维护」= 隐藏未纳入问数的表
-    if (hideUnmaintained.value && t.included === false) return false;
+    // 「只看已维护」= 隐藏「未治理」和「显式排除」的表（治理过且在问数范围内才算已维护）
+    if (hideUnmaintained.value && (!t.governed || t.included === false)) return false;
     if (!kw) return true;
     return (
       String(t.table).toLowerCase().includes(kw) ||

@@ -386,18 +386,23 @@ async def list_ds_schema(datasource_id: int, included_only: bool = False) -> lis
             )
         ).scalars().all()
         if included_only:
-            inc = {
-                str(r[0]).upper()
-                for r in (
-                    await db.execute(
-                        _t(
-                            "SELECT table_name FROM ai_query_assets "
-                            "WHERE is_deleted=false AND included=true"
-                        )
+            # 一张表有三种状态：**显式纳入**（included=true）/ **显式排除**（included=false）/
+            # **从未建过资产行**（同步过 schema 但没治理过）。
+            #
+            # 旧逻辑只认「显式纳入」⇒ 新数据源刚同步完表结构（ai_query_assets 还没有行）
+            # 时交集为空，NL2SQL 的 prompt 里一张表都没有 → 模型开始「编表名」。
+            # 现在：没治理过的表**默认纳入**（同步即可用，界面上标「未治理」），
+            # 用户显式排除的仍然排除——这与前端「纳入」列的口径一致（见 integration/index.vue）。
+            seen: dict[str, bool] = {}
+            for row in (
+                await db.execute(
+                    _t(
+                        "SELECT table_name, included FROM ai_query_assets WHERE is_deleted=false"
                     )
-                ).fetchall()
-            }
-            rows = [r for r in rows if str(r.table_name).upper() in inc]
+                )
+            ).fetchall():
+                seen[str(row[0]).upper()] = bool(row[1])
+            rows = [r for r in rows if seen.get(str(r.table_name).upper(), True)]
     return [
         {
             "table": r.table_name,
