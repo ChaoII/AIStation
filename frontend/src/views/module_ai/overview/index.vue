@@ -898,7 +898,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <div v-else class="gov-empty">暂无分享，可在数据资产表格「分享」生成链接</div>
+      <div v-else class="gov-empty">暂无分享（分享入口暂未开放，待 ?share= 消费方实现后恢复）</div>
     </el-card>
 
     <el-card shadow="never" class="ov-recent-card mt-3">

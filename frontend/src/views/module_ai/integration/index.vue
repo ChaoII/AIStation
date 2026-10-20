@@ -181,9 +181,9 @@
                       <el-button link type="primary" size="small" @click="addFav(row)">
                         收藏
                       </el-button>
-                      <el-button link type="primary" size="small" @click="shareTable(row)">
-                        分享
-                      </el-button>
+                      <!-- 「分享」入口暂时下线：后端 share/create 会生成 /web#/ai/query?share=<token>，
+                           但全前端**没有一处读这个参数**，点开就是普通问数页——
+                           假闭环比没有更伤信任。恢复入口前请先实现 ?share= 的消费方。 -->
                     </template>
                   </el-table-column>
                 </el-table>
@@ -1239,7 +1239,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Refresh, Search, DataBoard, EditPen, Coin, MagicStick } from "@element-plus/icons-vue";
+import {
+  Plus,
+  Refresh,
+  Search,
+  DataBoard,
+  EditPen,
+  Coin,
+  MagicStick,
+} from "@element-plus/icons-vue";
 import {
   getQueryDatasources,
   saveQueryDatasource,
@@ -1257,7 +1265,6 @@ import {
   getQueryAssets,
   suggestQueryAssets,
   addFavorite,
-  createShare,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -1381,25 +1388,6 @@ async function addFav(row: any) {
     ElMessage.success(r?.data?.msg || "已收藏");
   } catch (e: any) {
     ElMessage.error(e?.msg || "收藏失败");
-  }
-}
-async function shareTable(row: any) {
-  try {
-    const r = await createShare(row.table || row.table_name);
-    const d = r?.data?.data || {};
-    const link = d.link ? window.location.origin + d.link : "";
-    if (link) {
-      try {
-        await navigator.clipboard.writeText(link);
-      } catch {
-        /* 剪贴板不可用时仅提示 */
-      }
-      ElMessage.success("已生成分享链接，并复制到剪贴板");
-    } else {
-      ElMessage.success("分享成功");
-    }
-  } catch (e: any) {
-    ElMessage.error(e?.msg || "分享失败");
   }
 }
 const batchDlg = ref(false);
