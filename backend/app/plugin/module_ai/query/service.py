@@ -7475,14 +7475,19 @@ class AiQueryService:
                 if metric:
                     params = _build_params(metric, question)
                     res = await _execute_metric(metric, params, auth)
+                    # 摘要本地算一次即可：_save_message 返回的是 ORM 模型（没有 .get()），
+                    # 之前写成 msg.get("summary") → AttributeError → 被 except 吞掉后
+                    # **降级走 NL2SQL**，但消息已经提交入库 → 一次提问落 2 条历史消息、
+                    # 快路径占比统计被污染（单测当时把 _save_message mock 成 dict 了，所以没发现）。
+                    summary = cls._summarize(metric, res)
                     msg = await cls._save_message(
                         sess["id"], question, path="fast", datasource=metric["datasource"],
                         sql=res["sql"], columns=res["columns"], rows=res["rows"],
                         result_rows=len(res["rows"]), took_ms=res.get("took_ms", 0),
-                        summary=cls._summarize(metric, res))
+                        summary=summary)
                     yield {"type": "result", "path": "fast",
                            "columns": res["columns"], "rows": res["rows"],
-                           "summary": msg.get("summary") or ""}
+                           "summary": summary, "message_id": msg.id}
                     yield {"type": "done", "path": "fast", "session_id": sess["id"]}
                     return
             except Exception as e:  # noqa: BLE001

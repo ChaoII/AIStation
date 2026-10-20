@@ -34,7 +34,11 @@ def test_stream_hits_metric_fast_path(monkeypatch):
             return {"sql": "SELECT 1", "columns": ["数值"], "rows": [[1]], "took_ms": 1}
 
         async def _save(*a, **k):
-            return {"summary": "s"}
+            # ⚠️ 替身必须是**属性访问**且**没有 .get()**（与真实 ORM 返回一致）：
+            # 之前 mock 成 dict {"summary": "s"}，于是线上 `msg.get("summary")` 必抛
+            # AttributeError 这个 bug，被测试完美掩盖。
+            # 不能直接用真实 ORM 模型：快模式下 mapper 未初始化会失败（见测试失败记录）。
+            return SimpleNamespace(summary=k.get("summary", ""), id=42)
 
         monkeypatch.setattr(S.AiQueryService, "ensure_system_seed",
                             classmethod(lambda cls: _seed()))
@@ -65,3 +69,8 @@ def test_stream_hits_metric_fast_path(monkeypatch):
     paths = [e.get("path") for e in evs if e.get("type") in ("result", "done")]
     assert "fast" in paths, evs
     assert evs[-1].get("type") == "done"
+    fast = next((e for e in evs if e.get("type") == "result"), None)
+    assert fast is not None, evs
+    assert fast.get("message_id") is not None, (
+        "流式 result 必须回传 message_id：前端「有用/没用/存为报表」按钮按 v-if=\"m.id\" 门控"
+    )
