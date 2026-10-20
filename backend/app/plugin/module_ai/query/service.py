@@ -7090,6 +7090,8 @@ class AiQueryService:
         }
         # 前端「本体对象」标签用（对象查询没有 SQL，故手动补）
         ans["ontology_used"] = [ir.object]
+        # message_id：前端反馈按钮按 v-if="m.id" 门控（与快/慢路径对齐）
+        ans["message_id"] = msg.id
         # 热度驱动自动建索引：**放在答案构造之后**，且自带 try —— 绝不能影响这次问答
         try:
             await cls._maybe_auto_index(ir.object, cfg)
@@ -7556,8 +7558,10 @@ class AiQueryService:
                 yield {"type": "result", "path": "object",
                        "columns": ans.get("columns") or [], "rows": ans.get("rows") or [],
                        "summary": ans.get("summary") or "",
-                       "ontology_used": ans.get("ontology_used") or []}
-                yield {"type": "done", "path": "object", "session_id": sess["id"]}
+                       "ontology_used": ans.get("ontology_used") or [],
+                       "message_id": ans.get("message_id")}
+                yield {"type": "done", "path": "object", "session_id": sess["id"],
+                       "message_id": ans.get("message_id")}
                 return
 
         # ---- 构建生成 Agent（与 _nl2sql 工具化模式一致） ----
