@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text as _t
 
-from app.core.database import async_db_session, async_engine
+from app.core.database import async_db_session, async_db_session_fresh, async_engine
 from app.core.exceptions import CustomException
 
 from . import action_engine as _ae
@@ -219,6 +221,25 @@ _ONT_TABLES_SQL = (
     "id BIGSERIAL PRIMARY KEY, view_code VARCHAR(160), version INTEGER, "
     "tabs JSONB DEFAULT '[]', note TEXT DEFAULT '', "
     "created_by VARCHAR(120) DEFAULT '', created_time TIMESTAMP DEFAULT now())",
+    # ---- 图视图（对齐官方 vertex：保存视图 / 图模板 / 时间轴）----
+    "CREATE TABLE IF NOT EXISTS ai_ont_graph_view ("
+    "id BIGSERIAL PRIMARY KEY, code VARCHAR(160), "
+    "name VARCHAR(200) DEFAULT '', description TEXT DEFAULT '', "
+    # saved=保存视图(按域)；template=图模板(全局，domain_code 可空)
+    "graph_kind VARCHAR(16) DEFAULT 'saved', "
+    "domain_code VARCHAR(80) DEFAULT '', "
+    "state JSONB DEFAULT '{}', "
+    "filters JSONB DEFAULT '[]', "
+    "share_roles JSONB DEFAULT '[]', share_mode VARCHAR(16) DEFAULT 'inherit', "
+    "status VARCHAR(24) DEFAULT 'experimental', visibility VARCHAR(24) DEFAULT 'normal', "
+    "created_by VARCHAR(120) DEFAULT '', is_default BOOLEAN DEFAULT false, "
+    "version INTEGER DEFAULT 1, "
+    "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now(), "
+    "is_deleted BOOLEAN DEFAULT false)",
+    "CREATE TABLE IF NOT EXISTS ai_ont_graph_view_version ("
+    "id BIGSERIAL PRIMARY KEY, view_code VARCHAR(160), version INTEGER, "
+    "state JSONB DEFAULT '{}', note TEXT DEFAULT '', "
+    "created_by VARCHAR(120) DEFAULT '', created_time TIMESTAMP DEFAULT now())",
     # ---- B) 索引（对齐官方 object-indexing：Funnel 流水线状态 + 构建/重试）----
     "CREATE TABLE IF NOT EXISTS ai_ont_index ("
     "id BIGSERIAL PRIMARY KEY, object_code VARCHAR(128), "
@@ -422,26 +443,59 @@ async def _ensure_ontology_schema() -> None:
     global _ont_schema_ready
     if _ont_schema_ready:
         return
+    from app.core.logger import log
+
     for sql in _ONT_TABLES_SQL + _ONT_ALTER_SQL:
         try:
             async with async_db_session.begin() as db:
                 await db.execute(_t(sql))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            # 不再静默吞掉：新环境建表/加列失败应在启动期可见，拖到业务查询才炸极难排查。
+            # SQLite 测试库不支持部分 DDL，属预期，按 warning 记录。
+            log.warning(f"[ontology] 建表/加列失败（跳过）：{str(e)[:120]} | {sql[:80]!r}")
     _ont_schema_ready = True
 
 
 # ---------------------------------------------------------------------------
 # 元模型 CRUD
 # ---------------------------------------------------------------------------
+#: 事务会话上下文：``_ont_transaction()`` 期间被设置，让 ``_exec`` / ``_exec_write``
+#: 路由到同一会话（不各自提交）。默认 None = 既有行为（逐次提交），零影响。
+_ont_tx_session: ContextVar[Any | None] = ContextVar("ont_tx_session", default=None)
+
+
+@asynccontextmanager
+async def _ont_transaction():
+    """在**单个事务**里执行对元模型的一连串写操作（全成或全不成）。
+
+    背景：``_exec_write`` 默认每次调用即提交（``async_db_session.begin()``），
+    导致多步写（如提案合并）在中间失败时会留下半套改动。这里用一条**独立会话**
+    开一个事务，并通过 ``_ont_tx_session`` 让期间所有 ``_exec`` / ``_exec_write``
+    都路由到该会话（不各自提交），由本上下文在退出时统一**提交**；期间抛错则**回滚**。
+    """
+    async with async_db_session_fresh() as db:
+        token = _ont_tx_session.set(db)
+        try:
+            async with db.begin():
+                yield db
+        finally:
+            _ont_tx_session.reset(token)
+
+
 async def _exec(sql: str, params: dict | None = None):
     await _ensure_ontology_schema()
+    tx = _ont_tx_session.get()
+    if tx is not None:
+        return await tx.execute(_t(sql), params or {})
     async with async_db_session() as db:
         return await db.execute(_t(sql), params or {})
 
 
 async def _exec_write(sql: str, params: dict | None = None):
     await _ensure_ontology_schema()
+    tx = _ont_tx_session.get()
+    if tx is not None:
+        return await tx.execute(_t(sql), params or {})
     async with async_db_session.begin() as db:
         return await db.execute(_t(sql), params or {})
 
@@ -1248,6 +1302,19 @@ async def _find_action(code: str, owner_id: int | None = None) -> dict | None:
     return next((a for a in acts if a.get("code") == code or a.get("name") == code), None)
 
 
+async def _missing_required_props(object_code: str, assigns: dict) -> list[str]:
+    """返回该对象类型所有**必填属性**中，尚未被赋值的 code 列表。
+
+    官方：必需属性（required）是对象类型级强制约束；新建对象时必须提供。
+    此前该标记只存在界面上，写路径完全不校验（P0）。
+    """
+    if not object_code:
+        return []
+    props = await list_properties(object_code)
+    reqs = [p["code"] for p in props if p.get("required")]
+    return [c for c in reqs if c not in (assigns or {})]
+
+
 async def execute_ontology_action(code: str, object_key: str, params: dict,
                                   operator: str = "", approve: bool = False,
                                   user_id: int | None = None,
@@ -1384,6 +1451,11 @@ async def execute_ontology_action(code: str, object_key: str, params: dict,
                 continue
             if kind == "create":
                 after = dict(assigns)
+                missing = await _missing_required_props(
+                    act.get("object_code") or "", assigns)
+                if missing:
+                    return {"ok": False, "blocked_by": "required",
+                            "msg": f"创建对象缺少必填属性：{'、'.join(missing)}"}
             elif kind == "delete":
                 after = {}
             else:
@@ -1426,6 +1498,11 @@ async def execute_ontology_action(code: str, object_key: str, params: dict,
                 elif rtype == "create_object":
                     if not assigns:
                         raise CustomException(msg="create_object 规则没有任何赋值")
+                    missing = await _missing_required_props(
+                        act.get("object_code") or "", assigns)
+                    if missing:
+                        raise CustomException(
+                            msg=f"创建对象缺少必填属性：{'、'.join(missing)}")
                     cols_ = ", ".join(f'"{_safe_ident(c)}"' for c in assigns)
                     ph = ", ".join(f":{c}" for c in assigns)
                     await db.execute(_t(f'INSERT INTO "{table}" ({cols_}) VALUES ({ph})'), assigns)
@@ -3330,6 +3407,16 @@ async def writeback_instance(object_code: str, key: str, props: dict,
         if rejected:
             return {"ok": False, "msg": f"字段 {', '.join(rejected)} 被识别为敏感字段，禁止写回"}
         return {"ok": False, "msg": "没有可写的属性（需在本体里声明且未标记为仅动作填充/敏感）"}
+    # 值类型约束：与动作参数路径同一套校验（P1 遗留：Writeback 此前完全不校验）。
+    prop_by_code = {p["code"]: p for p in meta["props"]}
+    for col, val in list(target.items()):
+        vtc = (prop_by_code.get(col) or {}).get("value_type_code") or ""
+        if not vtc:
+            continue
+        vr = await validate_value(vtc, val)
+        if not vr.get("ok"):
+            return {"ok": False,
+                    "msg": f"属性 {col} 未通过值类型校验：{'；'.join(vr.get('errors') or [])}"}
     kc = _safe_ident(meta["key_prop"])
     table = _safe_ident(meta["table"])
     sets = ", ".join(f'"{_safe_ident(c)}" = :{c}' for c in target)
@@ -3795,6 +3882,29 @@ async def check_interface_impl(iface_code: str, object_code: str) -> dict:
         if isinstance(rl, dict) and (rl.get("api_name") or "") and rl["api_name"] not in l_names
         and (rl.get("name") or "") not in l_names
     ]
+    # P8：required_link 可声明 target_interface —— 对端对象类型须实现该接口
+    # （gap-analysis `interface-link-types-overview` 🟡：此前只校验同名关系存在，不校验对端类型）
+    iface_by_code = {i["code"]: i for i in await list_interfaces()}
+    for rl in iface["required_links"]:
+        if not isinstance(rl, dict):
+            continue
+        ti = (rl.get("target_interface") or "").strip()
+        if not ti:
+            continue
+        has_api = (rl.get("api_name") or "")
+        has_name = (rl.get("name") or "")
+        lnk = next((lk for lk in links
+                    if (has_api and lk.get("api_name") == has_api)
+                    or (has_name and lk.get("name") == has_name)), None)
+        if not lnk:
+            continue  # 链路本身缺失由上方列表报
+        if lnk.get("source_object") == object_code:
+            other = lnk.get("target_object") or ""
+        else:
+            other = lnk.get("source_object") or ""
+        impl_set = set((iface_by_code.get(ti) or {}).get("implementations", []))
+        if other and other not in impl_set:
+            miss_links.append(f"{has_name or has_api}：对端 {other} 未实现接口 {ti}")
     if miss_links:
         missing["links"] = miss_links
 
@@ -4088,7 +4198,12 @@ async def approve_version_publish(pending_id: int, operator: int = 0) -> dict:
 
 
 async def version_diff(version_id: int) -> dict:
-    """版本对比：某版本快照的属性 vs 当前定义，返回 新增/删除/变更 属性。"""
+    """版本对比：某版本快照 vs 当前定义。
+
+    覆盖 **属性 / 关系 / 动作 / 函数**（P0：此前只比属性 prop_type/sensitive）。
+    属性沿用既有 `added/removed/changed` 顶层结构（兼容旧消费方）；关系/动作/函数
+    分别放到 `links/actions/functions` 子对象里。
+    """
     import json as _json
     rv = (await _exec("SELECT object_code,snapshot FROM ai_ont_version WHERE id=:id AND is_deleted=false",
                       {"id": version_id})).fetchone()
@@ -4107,7 +4222,34 @@ async def version_diff(version_id: int) -> dict:
             o, n = old_props[c], cur_props[c]
             if (o.get("prop_type") != n.get("prop_type")) or (bool(o.get("sensitive")) != bool(n.get("sensitive"))):
                 changed.append(c)
-    return {"ok": True, "object_code": code, "added": added, "removed": removed, "changed": changed}
+
+    def _diff_list(old_items: list, new_items: list, key_fn, fields: list) -> dict:
+        old = {key_fn(x): x for x in old_items}
+        new = {key_fn(x): x for x in new_items}
+        add = [new[k] for k in new if k not in old]
+        rem = [old[k] for k in old if k not in new]
+        chg = []
+        for k in old:
+            if k in new:
+                diffs = [f for f in fields if old[k].get(f) != new[k].get(f)]
+                if diffs:
+                    chg.append({"key": k, "fields": diffs})
+        return {"added": add, "removed": rem, "changed": chg}
+
+    def _lk_key(x): return (f"{x.get('source_object')}|{x.get('target_object')}|"
+                            f"{x.get('source_field')}|{x.get('target_field')}")
+    def _act_key(x): return x.get("code") or x.get("id")
+    def _fn_key(x): return x.get("code") or x.get("id")
+
+    cur_funcs = await list_functions(code)
+    links = _diff_list(snap.get("links", []), cur.get("links", []), _lk_key,
+                       ("name", "card", "source_field", "target_field", "api_name"))
+    actions = _diff_list(snap.get("actions", []), cur.get("actions", []), _act_key,
+                         ("name", "method", "input_schema", "white_fields"))
+    functions = _diff_list(snap.get("functions", []), cur_funcs, _fn_key,
+                           ("name", "kind", "expr"))
+    return {"ok": True, "object_code": code, "added": added, "removed": removed,
+            "changed": changed, "links": links, "actions": actions, "functions": functions}
 
 
 async def list_versions(object_code: str | None = None) -> list[dict]:
