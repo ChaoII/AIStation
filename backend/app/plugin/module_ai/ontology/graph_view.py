@@ -236,3 +236,80 @@ async def set_default(code: str, domain_code: str = "") -> dict:
         "UPDATE ai_ont_graph_view SET is_default=true WHERE code=:c", {"c": code})
     await _svc._log_change(d or code, "graph_view", "set_default", f"图视图 {code}")
     return {"ok": True, "msg": f"「{v['name']}」已设为默认视图"}
+
+
+# ---------------------------------------------------------------------------
+# 分享与权限
+# ---------------------------------------------------------------------------
+async def share_view(code: str, share_mode: str, roles: list[str] | None = None) -> dict:
+    """设置图视图的共享方式。
+
+    - ``inherit``（默认）：跟随本体域权限
+    - ``roles``：只给指定角色看
+
+    注意：**只看得到视图 ≠ 看得到图数据** —— 图数据仍走对象类型/实例权限。
+    """
+    v = await get_view(code)
+    if not v:
+        raise CustomException(msg="视图不存在")
+    mode = share_mode if share_mode in ("inherit", "roles") else "inherit"
+    rs = [str(x).strip() for x in (roles or []) if str(x).strip()]
+    if mode == "roles" and not rs:
+        raise CustomException(msg="按角色共享时至少要指定一个角色")
+    await _svc._exec_write(
+        "UPDATE ai_ont_graph_view SET share_mode=:m, share_roles=:r WHERE code=:c",
+        {"m": mode, "r": _j(rs), "c": code})
+    await _svc._log_change(v["domain_code"] or code, "graph_view", "share",
+                           f"图视图 {code} 共享方式 → {mode}")
+    return {"ok": True, "share_mode": mode, "share_roles": rs,
+            "msg": ("已改为跟随本体域权限" if mode == "inherit"
+                    else f"已共享给角色：{'、'.join(rs)}")}
+
+
+async def can_view_view(code: str, principal: Any) -> tuple[bool, str]:
+    """某个人能不能看这个图视图（共享层面）。数据能否看由对象类型权限决定。"""
+    v = await get_view(code)
+    if not v:
+        return False, "视图不存在"
+    if v.get("share_mode") != "roles":
+        return True, "跟随本体域权限"
+    if principal is None:
+        return True, "未提供身份，跳过共享校验"
+    if getattr(principal, "is_superuser", False):
+        return True, "超级管理员"
+    roles = set(getattr(principal, "role_codes", []) or [])
+    want = set(v.get("share_roles") or [])
+    if roles & want:
+        return True, "角色命中"
+    return False, f"该视图只共享给：{'、'.join(sorted(want))}"
+
+
+async def list_shared_views(principal: Any) -> list[dict]:
+    """当前身份可见的图视图（按共享设置过滤）。"""
+    out = []
+    for v in await list_views():
+        ok, why = await can_view_view(v["code"], principal)
+        if ok:
+            v["share_reason"] = why
+            out.append(v)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 生成链接（官方 generate-urls）
+# ---------------------------------------------------------------------------
+def view_url(code: str, base: str = "#/ai/ontology") -> str:
+    """生成能直接打开某个图视图的深链。"""
+    from urllib.parse import quote
+
+    return f"{base}?graphview={quote(str(code or ''), safe='')}"
+
+
+async def view_link(code: str) -> dict:
+    """返回深链与其含义（界面上「复制链接」用）。"""
+    v = await get_view(code)
+    if not v:
+        raise CustomException(msg="视图不存在")
+    return {"ok": True, "url": view_url(code), "view_code": code,
+            "graph_kind": v["graph_kind"], "domain_code": v["domain_code"],
+            "msg": "链接可直接打开该图视图"}

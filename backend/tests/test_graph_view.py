@@ -130,3 +130,61 @@ def test_set_default_unique_per_domain():
 
     cnt = _run(_impl())
     assert cnt == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 4：分享与权限（share / can_view / list_shared / link）
+# ---------------------------------------------------------------------------
+class _P:
+    """假的 principal，模拟 auth 主体（object_view.can_view_view 读 role_codes）。"""
+
+    def __init__(self, roles):
+        self.role_codes = set(roles)
+        self.is_superuser = False
+
+
+def test_share_and_can_view():
+    async def _impl():
+        v = await _gv.create_view({"name": "S", "graph_kind": "saved", "domain_code": "d1"})
+        await _gv.share_view(v["code"], "roles", ["role_a"])
+        ok, _ = await _gv.can_view_view(v["code"], _P(["role_a"]))
+        ok2, _ = await _gv.can_view_view(v["code"], _P(["role_z"]))
+        return ok, ok2
+
+    ok, ok2 = _run(_impl())
+    assert ok is True
+    assert ok2 is False
+
+
+def test_inherit_follows_domain():
+    async def _impl():
+        v = await _gv.create_view({"name": "I", "graph_kind": "saved", "domain_code": "d1"})
+        return (await _gv.can_view_view(v["code"], _P([])))[0]
+
+    ok = _run(_impl())
+    assert ok is True
+
+
+def test_shared_views_filters():
+    async def _impl():
+        a = await _gv.create_view({"name": "SA", "graph_kind": "saved", "domain_code": "d1"})
+        b = await _gv.create_view({"name": "SB", "graph_kind": "saved", "domain_code": "d1"})
+        await _gv.share_view(a["code"], "roles", ["role_a"])
+        await _gv.share_view(b["code"], "roles", ["role_b"])
+        names = {x["name"] for x in await _gv.list_shared_views(_P(["role_a"]))}
+        return "SA" in names, "SB" in names
+
+    sa_ok, sb_ok = _run(_impl())
+    assert sa_ok is True
+    assert sb_ok is False
+
+
+def test_view_link():
+    async def _impl():
+        v = await _gv.create_view({"name": "L", "graph_kind": "saved", "domain_code": "d1"})
+        r = await _gv.view_link(v["code"])
+        return r["url"], r["view_code"]
+
+    url, code = _run(_impl())
+    assert code != ""
+    assert "view=" in url
