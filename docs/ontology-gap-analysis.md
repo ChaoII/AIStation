@@ -278,7 +278,7 @@
 | `interface-metadata` | ✅ | 名称/描述/状态/可见性 | A |
 | `edit-interface-definition` | 🟡 | 能改，缺"改完谁掉队"的完整流程（有合规检查按钮） | A |
 | `edit-interface-implementation` | 🟡 | 同上 | A |
-| `interface-link-types-overview` | 🟡 | **官方接口可声明 link type 约束（目标须实现某接口）**；我们只校验同名关系存在，不校验对端类型 | A |
+| `interface-link-types-overview` | 🟡→✅(back) | **官方接口可声明 link type 约束（目标须实现某接口）**；`check_interface_impl` 已支持 `required_link.target_interface`，对端对象类型未实现该校验不通过（P8，2026-10 后端落地+测试）；前端 UI 经自由 JSON 编辑 `required_links` 即可配置 | A |
 | `extend-interface` | ❌ | 接口继承 | B |
 
 ### 2.8 🔴 `object-explorer` 对象浏览器（15 页）— ✅6 / 🟡2 / ❌7
@@ -315,7 +315,7 @@
 | `comment-on-objects` | ❌ | 对象评论 | B |
 | `marketplace-object-views` | ❌ | 视图市场 | B |
 
-### 2.10 🟡 `vertex` 顶点（27 页）— ✅4 / 🟡5 / ❌18
+### 2.10 🟡 `vertex` 顶点（27 页）— ✅10 / 🟡5 / ❌12
 
 | 页面 | 状态 | 说明 | 级别 |
 |---|---|---|---|
@@ -325,15 +325,16 @@
 | `example-use-cases` | 🟡 | | A |
 | `graphs-display-options` | 🟡 | 有布局/缩放/适配/搜索 | A |
 | `derive-property-functions` | 🟡 | 我们有派生属性，但**不是图上的派生属性函数** | A |
-| `graphs-explore` | ❌ | 保存的图探索 | B |
-| `save-share` | ❌ | 保存与分享 | B |
-| `graphs-template` | ❌ | **图模板** | B |
+| `graphs-explore` | ✅ | 保存的图探索（把当前图配置存为 saved 视图并可加载） | B |
+| `save-share` | ✅ | 保存与分享（按域保存、按角色分享、版本/回滚/设为默认/深链） | B |
+| `graphs-template` | ✅ | **图模板**（全局存/还原图配置） | B |
 | `generate-graph-apps` | ❌ | 由图生成应用 | B |
 | `generate-graph-functions` | ❌ | 由图生成函数 | B |
 | `embed-graph-workshop` | ❌ | 嵌入 Workshop | B |
 | `read-only-mode` | ❌ | 只读模式 | B |
 | `events-overview` / `configure-events` / `explore-related-events` | ❌ | **事件**（3 页） | B |
-| `explore-time-series` / `use-time-selection` / `configure-thresholds` / `timeline` | ❌ | **时间轴与时间序列**（4 页） | B |
+| `explore-time-series` / `use-time-selection` / `timeline` | ✅ | **时间轴与时间选择**（3 页）——基于对象已有时间属性 + 双滑块在实例图上淡化范围外节点（P7） | B |
+| `configure-thresholds` | ❌ | 阈值配置（未做） | B |
 | **`scenarios-overview` / `scenarios-getting-started` / `scenarios-options`** | ✅ | **场景（沙箱化决策探索）**（3 页）——P5 已实现：编辑叠加式沙箱、读叠加、单事务合并、多场景对比、TTL、按执行上下文治理动作 | A |
 | `chained-models` | ❌ | 模型链 | B |
 | `vertex-settings-control-panel` | ❌ | 设置面板 | B |
@@ -580,8 +581,8 @@ OSDK：用 TypeScript / Python / Java / OpenAPI 直接访问本体，把 Foundry
 | ~~P4~~ | ~~对象权限（本体资源 + 对象链接 + 行列级）+ 工具按调用者权限门控~~ | `object-permissioning` 5 页 | 中高 | ✅ **已完成**（2026-10）：两层授权 + 单元格级 + Agent 门控 + Check access |
 | ~~P5~~ | ~~场景（scenarios）：动作效果沙箱预览再提交~~ | `vertex/scenarios-*` 3 页 | 中高 | ✅ **已完成**（2026-10）：编辑叠加沙箱 + 读叠加 + 单事务合并 + 对比 + 按执行上下文治理 |
 | ~~P6~~ | ~~对象浏览器补：筛选器 UI、保存探索/列表、结果集图表~~ | `object-explorer` 5 页 | 中 | ⚠️ 部分：对象视图已可渲染/保存 |
-| **P7** | 顶点补：保存视图、图模板、时间轴 | `vertex` 6 页 | 中高 | 图能力从"能看"到"能存能分享" |
-| **P8** | 接口 link type 约束（目标须实现某接口） | `interfaces` 1 页 | 低 | 已有实现校验框架，扩展一类约束 |
+| ~~P7~~ | ~~顶点补：保存视图、图模板、时间轴~~ | ~~`vertex` 6 页~~ | 中高 | ✅ **已完成**（2026-10）：保存视图（按域/分享/版本/默认/深链）+ 图模板（全局）+ 时间轴（实例图按时间属性滑块过滤） |
+| ~~P8~~ | ~~接口 link type 约束（目标须实现某接口）~~ | ~~`interfaces` 1 页~~ | 低 | ✅ **已完成**（2026-10）：check_interface_impl 支持 required_link.target_interface |
 | ~~P9~~ | ~~索引机制~~ | `object-indexing` 5 页 | 高 | ✅ **已完成**（2026-10）：真建库索引 + 状态机 + 5 分钟自动重试 |
 
 ---
@@ -609,7 +610,7 @@ OSDK：用 TypeScript / Python / Java / OpenAPI 直接访问本体，把 Foundry
 | 4 | ✅/🟡 的表格行逐格统计 vs 汇总 | **完全一致**（✅61 / 🟡31）——说明逐页判定与汇总无偏差 |
 | 5 | 文档中出现的页名是否都真实存在 | 350 个反引号标识符中，25 个不在 sitemap；**逐一确认这 25 个全是我们自己的字段名/表名/函数名**（如 `submission_criteria`、`ai_action_log`、`validate_value`），**无编造官方页名** |
 
-### 7.1 P0–P5 + A/B/C 完成后的计数变动
+### 7.1 P0–P9（含 P7）+ A/B/C 完成后的计数变动
 
 | 区域 | 变动 |
 |---|---|
@@ -619,12 +620,13 @@ OSDK：用 TypeScript / Python / Java / OpenAPI 直接访问本体，把 Foundry
 | `ontology` | ✅ 2 → **3**，🟡 2 → **1**（`why-ontology` 🟡→✅，P3） |
 | `object-permissioning` | ✅ 0 → **3**，🟡 0 → **1**，❌ 5 → **1**（P4） |
 | `vertex`（场景 3 页） | ✅ 1 → **4**，❌ 21 → **18**（P5） |
+| `vertex`（P7） | ✅ 4 → **10**，🟡 5 → **5**，❌ 18 → **12**（保存视图/图模板/时间轴） |
 | `object-views` | ✅ 0 → **9**，🟡 1 → **3**，❌ 17 → **6**（A，含筛选器/共享/深链） |
 | `object-indexing` | ✅ 0 → **3**，🟡 0 → **1**，❌ 5 → **1**（B） |
 | `ontologies` | ✅ 0 → **2**，❌ 7 → **5**（C） |
-| **合计** | ✅ 56 → **96**，🟡 35 → **37**，❌ 270 → **228** |
+| **合计** | ✅ 56 → **96** → **102**，🟡 35 → **37**，❌ 270 → **228** → **222** |
 
-占比：**✅ 26.6% / 🟡 10.2% / ❌ 63.2%**
+占比：**✅ 28.3% / 🟡 10.2% / ❌ 61.5%**
 > 校验脚本用 PowerShell 正则解析本文并对照 `.research/palantir/all_urls.txt`，可重复执行。
 > 注：❌ 的"表格行统计"（113）小于汇总（270），因为整块未实现的区域用**行内清单**而非表格呈现，符号未计入表格行——这是呈现方式差异，不是计数错误。
 
