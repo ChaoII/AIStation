@@ -12,6 +12,7 @@ from app.core.router_class import OperationLogRoute
 
 from . import decision as _dec
 from . import demo as _demo
+from . import graph_view as _gv
 from . import indexing as _ix
 from . import object_view as _ov
 from . import proposal as _pr
@@ -1047,6 +1048,85 @@ async def object_view_meta(auth: AuthDep) -> JSONResponse:
                        for k, v in _ov.ONT_WIDGET_CATEGORY_LABEL.items()],
         "max_tabs": _ov.MAX_TABS, "max_widgets": _ov.MAX_WIDGETS_PER_TAB,
     }, msg="查询成功")
+
+
+# ---------------------------------------------------------------------------
+# A2) 图视图（对齐官方 vertex：保存视图 / 图模板 / 时间轴）
+# ---------------------------------------------------------------------------
+# 注意路由顺序：`/graph-views/timeline-props` 必须在 `/graph-views/{code}` 之前注册，
+# 否则会被 `{code}` 捕获（FastAPI 按注册顺序匹配）。
+@OntologyRouter.get("/graph-views", summary="图视图列表")
+async def list_graph_views(auth: AuthDep, domain_code: str = "", kind: str = "",
+                           shared: str = "") -> JSONResponse:
+    if shared == "1":
+        data = await _gv.list_shared_views(await _principal(auth))
+    else:
+        data = await _gv.list_views(domain_code, kind)
+    return SuccessResponse(data=data, msg="查询成功")
+
+
+@OntologyRouter.get("/graph-views/timeline-props", summary="时间轴属性候选")
+async def graph_view_timeline_props(auth: AuthDep, domain_code: str = "") -> JSONResponse:
+    return SuccessResponse(data=await _gv.timeline_props(domain_code), msg="查询成功")
+
+
+@OntologyRouter.get("/graph-views/{code}", summary="图视图详情（含 state）")
+async def get_graph_view(auth: AuthDep, code: str) -> JSONResponse:
+    v = await _gv.get_view(code)
+    if not v:
+        raise CustomException(msg="视图不存在")
+    return SuccessResponse(data=v, msg="查询成功")
+
+
+@OntologyRouter.post("/graph-views/save", summary="新建/修改图视图")
+async def save_graph_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
+    user = getattr(auth, "user", None)
+    who = str(getattr(user, "name", None) or "")
+    if data.get("code") and data.get("_mode") != "create":
+        exist = await _gv.get_view(str(data["code"]))
+        if exist:
+            r = await _gv.update_view(str(data["code"]), data, who)
+            return SuccessResponse(data=r, msg=r.get("msg", "已保存"))
+    r = await _gv.create_view(data, who)
+    return SuccessResponse(data=r, msg=r.get("msg", "已保存"))
+
+
+@OntologyRouter.post("/graph-views/default", summary="设为域默认视图")
+async def set_default_graph_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _gv.set_default(str(data.get("code", "")), str(data.get("domain_code") or ""))
+    return SuccessResponse(data=r, msg=r.get("msg", "已设置"))
+
+
+@OntologyRouter.post("/graph-views/remove", summary="删除图视图")
+async def remove_graph_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _gv.remove_view(str(data.get("code", "")))
+    return SuccessResponse(data=r, msg=r.get("msg", "已删除"))
+
+
+@OntologyRouter.get("/graph-views/{code}/versions", summary="图视图版本历史")
+async def graph_view_versions(auth: AuthDep, code: str) -> JSONResponse:
+    return SuccessResponse(data=await _gv.list_versions(code), msg="查询成功")
+
+
+@OntologyRouter.post("/graph-views/restore", summary="回滚到某个图视图版本")
+async def restore_graph_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
+    user = getattr(auth, "user", None)
+    r = await _gv.restore_version(str(data.get("code", "")), int(data.get("version") or 0),
+                                  str(getattr(user, "name", None) or ""))
+    return SuccessResponse(data=r, msg=r.get("msg", "已回滚"))
+
+
+@OntologyRouter.post("/graph-views/share", summary="设置图视图共享方式")
+async def share_graph_view(auth: AuthEdit, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _gv.share_view(str(data.get("code", "")), str(data.get("share_mode") or "inherit"),
+                             data.get("share_roles"))
+    return SuccessResponse(data=r, msg=r.get("msg", "已设置"))
+
+
+@OntologyRouter.get("/graph-views/{code}/link", summary="生成图视图深链")
+async def graph_view_link(auth: AuthDep, code: str) -> JSONResponse:
+    r = await _gv.view_link(code)
+    return SuccessResponse(data=r, msg=r.get("msg", "查询成功"))
 
 
 # ---------------------------------------------------------------------------

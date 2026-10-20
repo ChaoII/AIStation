@@ -208,3 +208,15 @@ def test_timeline_props_returns_date_props():
     codes = _run(_impl())
     assert "evt_at" in codes
     assert "title" not in codes
+
+
+# ---------------------------------------------------------------------------
+# Task 6：controller 路由接入
+# ---------------------------------------------------------------------------
+def test_graph_view_routes_registered():
+    from app.plugin.module_ai.ontology import controller as _c
+
+    paths = [getattr(r, "path", "") for r in _c.OntologyRouter.routes]
+    assert any("/graph-views" in p for p in paths)
+    assert any("graph-views/{code}/versions" in p for p in paths)
+    assert any("graph-views/timeline-props" in p for p in paths)
