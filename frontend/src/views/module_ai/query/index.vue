@@ -675,9 +675,9 @@ async function ask() {
   } catch (e: any) {
     cur.streaming = false;
     cur.is_error = true;
-    cur.summary = e?.msg || e?.message || "提问失败";
+    cur.summary = e?.data?.msg || e?.msg || e?.message || "提问失败";
     flush();
-    ElMessage.error(e?.msg || "提问失败");
+    ElMessage.error(e?.data?.msg || e?.msg || "提问失败");
   } finally {
     asking.value = false;
   }
@@ -722,7 +722,7 @@ async function submitSaveReport() {
     ElMessage.success("已存为报表草稿，可在报表列表确认");
     srVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.data?.msg || e?.msg || "保存失败");
   } finally {
     srLoading.value = false;
   }
@@ -856,7 +856,7 @@ async function openSettings() {
     setLoaded.value = { ...merged };
     setForm.value = { ...merged };
   } catch (e: any) {
-    ElMessage.error(e?.msg || "读取问数设置失败");
+    ElMessage.error(e?.data?.msg || e?.msg || "读取问数设置失败");
   } finally {
     setLoading.value = false;
   }
@@ -883,7 +883,7 @@ async function saveSettings() {
     ElMessage.success(`已保存 ${changed.length} 项设置`);
     setVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存设置失败");
+    ElMessage.error(e?.data?.msg || e?.msg || "保存设置失败");
   } finally {
     setSaving.value = false;
   }
@@ -938,7 +938,7 @@ async function submitPromote() {
     ElMessage.success("已沉淀为指标，同类问题将走确定性快路径");
     pmVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "沉淀失败");
+    ElMessage.error(e?.data?.msg || e?.msg || "沉淀失败");
   } finally {
     pmLoading.value = false;
   }
@@ -955,7 +955,7 @@ async function feedback(m: any, kind: string) {
     await queryFeedback({ message_id: m.id, feedback: kind });
     ElMessage.success("已记录反馈");
   } catch (e: any) {
-    ElMessage.error(e?.msg || "反馈失败");
+    ElMessage.error(e?.data?.msg || e?.msg || "反馈失败");
   }
 }
 
@@ -1026,7 +1026,7 @@ async function submitFeedback(withSql: boolean) {
     else ElMessage.success("已记录反馈");
     fbVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "反馈失败");
+    ElMessage.error(e?.data?.msg || e?.msg || "反馈失败");
   } finally {
     fbLoading.value = false;
   }
