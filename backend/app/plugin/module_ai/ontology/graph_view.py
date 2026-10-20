@@ -1,0 +1,179 @@
+"""图视图（Graph View）：本体图谱的可复用呈现。
+
+对齐设计：`docs/superpowers/specs/2026-10-20-ontology-p7-graph-views-design.md`
+
+三种子能力：
+- **saved**（保存视图）：按 `domain_code` 归属，可分享/版本化/设为域默认。
+- **template**（图模板）：全局（`domain_code` 可空），一键还原图配置。
+- **时间轴**（timeline-props）：基于对象已有时间属性（`base_type ∈ {date, datetime, timestamp, time}`）。
+
+权限 / 分享 / 版本完全复刻 `object_view.py`，唯一差异是**归属维度是 `domain_code`
+（本体域）而非 `object_code`（对象类型）**。写库一律走 `service._exec/_exec_write`。
+"""
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import datetime
+from typing import Any
+
+from app.core.exceptions import CustomException
+
+from . import service as _svc
+
+
+def _j(v: Any) -> str:
+    """把任意值安全序列化成 JSON 字符串（处理 datetime / Decimal / bytes）。"""
+    from decimal import Decimal
+
+    def _d(o: Any) -> Any:
+        if isinstance(o, datetime):
+            return o.strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(o, Decimal):
+            return float(o)
+        if isinstance(o, (bytes, bytearray)):
+            return o.decode("utf-8", "replace")
+        return str(o)
+
+    return json.dumps(v, ensure_ascii=False, default=_d)
+
+
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# ---------------------------------------------------------------------------
+# 常量
+# ---------------------------------------------------------------------------
+ONT_GRAPH_KINDS = ("saved", "template")
+
+#: SELECT 列（顺序必须与 _G_FIELDS 一致；不含 is_deleted，查询用 WHERE 过滤）
+_G_COLS = ("SELECT id,code,COALESCE(name,''),COALESCE(description,''),"
+           "COALESCE(graph_kind,'saved'),COALESCE(domain_code,''),state,filters,"
+           "share_roles,COALESCE(share_mode,'inherit'),COALESCE(status,'experimental'),"
+           "COALESCE(visibility,'normal'),COALESCE(created_by,''),is_default,"
+           "COALESCE(version,1),created_time,updated_time "
+           "FROM ai_ont_graph_view ")
+_G_FIELDS = ("id", "code", "name", "description", "graph_kind", "domain_code",
+             "state", "filters", "share_roles", "share_mode", "status", "visibility",
+             "created_by", "is_default", "version", "created_time", "updated_time")
+#: JSON 列（读回需反序列化）。漏掉 state 会让回放/更新时静默丢图配置。
+_G_JSON_FIELDS = ("state", "filters", "share_roles")
+
+
+def _row_to_view(row) -> dict:
+    out: dict[str, Any] = {}
+    for i, n in enumerate(_G_FIELDS):
+        v = row[i]
+        if n == "state":
+            v = v if isinstance(v, dict) else _svc._json_dict(v)
+        elif n in _G_JSON_FIELDS:
+            v = v if isinstance(v, list) else _svc._json_list(v)
+        elif isinstance(v, datetime):
+            v = v.strftime("%Y-%m-%d %H:%M:%S")
+        out[n] = v
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 读取
+# ---------------------------------------------------------------------------
+async def list_views(domain_code: str = "", kind: str = "") -> list[dict]:
+    """列出可见图视图。``kind`` 为 'saved'/'template' 时过滤；``domain_code`` 为空则不限域。"""
+    sql = _G_COLS + "WHERE is_deleted=false"
+    p: dict = {}
+    if domain_code:
+        sql += " AND domain_code=:d"
+        p["d"] = domain_code
+    if kind:
+        sql += " AND graph_kind=:k"
+        p["k"] = kind
+    sql += " ORDER BY id DESC"
+    return [_row_to_view(r) for r in (await _svc._exec(sql, p)).fetchall()]
+
+
+async def get_view(code: str) -> dict | None:
+    r = await _svc._exec(_G_COLS + "WHERE code=:c AND is_deleted=false", {"c": code})
+    row = r.fetchone()
+    if not row:
+        return None
+    return _row_to_view(row)
+
+
+# ---------------------------------------------------------------------------
+# 写入
+# ---------------------------------------------------------------------------
+async def create_view(data: dict, actor: str = "") -> dict:
+    code = str(data.get("code") or "").strip() or f"gv_{uuid.uuid4().hex[:12]}"
+    graph_kind = str(data.get("graph_kind") or "saved")
+    if graph_kind not in ONT_GRAPH_KINDS:
+        raise CustomException(msg=f"图视图类型不支持 {graph_kind}")
+    domain_code = str(data.get("domain_code") or "").strip()
+    if graph_kind == "saved" and not domain_code:
+        raise CustomException(msg="保存视图必须归属某个本体域")
+    if (await _svc._exec(
+            "SELECT 1 FROM ai_ont_graph_view WHERE code=:c AND is_deleted=false",
+            {"c": code})).fetchone():
+        raise CustomException(msg=f"视图编码 {code} 已存在")
+    await _svc._exec_write(
+        "INSERT INTO ai_ont_graph_view(code,name,description,graph_kind,domain_code,state,"
+        "filters,share_roles,share_mode,status,visibility,created_by,is_default,version,"
+        "created_time,updated_time) "
+        "VALUES (:c,:n,:d,:k,:dc,:st,:fl,:sr,:sm,:status,:vis,:cb,:df,:v,:ct,:ut)",
+        {"c": code, "n": str(data.get("name") or ""), "d": str(data.get("description") or ""),
+         "k": graph_kind, "dc": domain_code, "st": _j(data.get("state") or {}),
+         "fl": _j(data.get("filters") or []), "sr": _j(data.get("share_roles") or []),
+         "sm": str(data.get("share_mode") or "inherit"),
+         "status": str(data.get("status") or "experimental"),
+         "vis": str(data.get("visibility") or "normal"), "cb": actor,
+         "df": bool(data.get("is_default")), "v": int(data.get("version") or 1),
+         "ct": _now(), "ut": _now()})
+    await _svc._log_change(domain_code or code, "graph_view", "create", f"图视图 {code}")
+    return {"ok": True, "code": code, "msg": "已保存"}
+
+
+async def update_view(code: str, data: dict, actor: str = "") -> dict:
+    v = await get_view(code)
+    if not v:
+        raise CustomException(msg="视图不存在")
+    # 版本自增 + 先快照当前 state（供回滚）
+    new_version = int(v["version"] or 1) + 1
+    await _svc._exec_write(
+        "INSERT INTO ai_ont_graph_view_version(view_code,version,state,note,created_by,"
+        "created_time) VALUES (:c,:v,:st,:n,:cb,:ct)",
+        {"c": code, "v": int(v["version"] or 1), "st": _j(v["state"] or {}),
+         "n": "更新前快照", "cb": actor, "ct": _now()})
+    sets: list[str] = []
+    p: dict = {"c": code}
+    for key in ("name", "description", "graph_kind", "domain_code", "share_mode"):
+        if key in data:
+            sets.append(f"{key}=:{key}")
+            p[key] = str(data[key])
+    if "state" in data:
+        sets.append("state=:state")
+        p["state"] = _j(data.get("state") or {})
+    if "filters" in data:
+        sets.append("filters=:filters")
+        p["filters"] = _j(data.get("filters") or [])
+    if "share_roles" in data:
+        sets.append("share_roles=:share_roles")
+        p["share_roles"] = _j(data.get("share_roles") or [])
+    if not sets:
+        raise CustomException(msg="没有可更新的内容")
+    sets.append("version=:version")
+    sets.append("updated_time=:ut")
+    p["version"] = new_version
+    p["ut"] = _now()
+    await _svc._exec_write(
+        f"UPDATE ai_ont_graph_view SET {', '.join(sets)} "
+        "WHERE code=:c AND is_deleted=false", p)
+    await _svc._log_change(v["domain_code"] or code, "graph_view", "update", f"图视图 {code}")
+    return {"ok": True, "code": code, "msg": "已更新", "version": new_version}
+
+
+async def remove_view(code: str) -> dict:
+    await _svc._exec_write(
+        "UPDATE ai_ont_graph_view SET is_deleted=true WHERE code=:c", {"c": code})
+    await _svc._exec_write(
+        "DELETE FROM ai_ont_graph_view_version WHERE view_code=:c", {"c": code})
+    return {"ok": True, "msg": "视图已删除"}

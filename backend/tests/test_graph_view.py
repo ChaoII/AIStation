@@ -8,6 +8,8 @@ import asyncio
 import _ont_ddl
 import pytest
 
+from app.core.exceptions import CustomException
+from app.plugin.module_ai.ontology import graph_view as _gv
 from app.plugin.module_ai.ontology import service as _svc
 
 
@@ -44,3 +46,56 @@ def test_graph_view_tables_exist():
 
     names = _run(_impl())
     assert names == {"ai_ont_graph_view", "ai_ont_graph_view_version"}
+
+
+# ---------------------------------------------------------------------------
+# Task 2：核心 CRUD（create / list / get / update / remove）
+# ---------------------------------------------------------------------------
+def test_create_and_get_view():
+    async def _impl():
+        r = await _gv.create_view({
+            "name": "默认图", "graph_kind": "saved", "domain_code": "fuel_business",
+            "state": {"layout": "cose", "theme": "default", "selected": [],
+                      "zoom": 1, "pan": {"x": 0, "y": 0}},
+        }, actor="admin")
+        assert r["ok"] is True
+        v = await _gv.get_view(r["code"])
+        assert v["state"]["layout"] == "cose"
+        assert v["domain_code"] == "fuel_business"
+        return r
+
+    _run(_impl())
+
+
+def test_create_view_requires_domain():
+    async def _impl():
+        with pytest.raises(CustomException):
+            await _gv.create_view({"name": "x", "graph_kind": "saved", "domain_code": ""})
+
+    _run(_impl())
+
+
+def test_list_views_filters_by_kind():
+    async def _impl():
+        await _gv.create_view({"name": "A", "graph_kind": "saved", "domain_code": "d1"})
+        await _gv.create_view({"name": "B", "graph_kind": "template", "domain_code": ""})
+        saved = await _gv.list_views(domain_code="d1", kind="saved")
+        tpl = await _gv.list_views(kind="template")
+        return [x["name"] for x in saved], [x["name"] for x in tpl]
+
+    saved, tpl = _run(_impl())
+    assert saved == ["A"]
+    assert tpl == ["B"]
+
+
+def test_update_and_remove_view():
+    async def _impl():
+        v = await _gv.create_view({"name": "C", "graph_kind": "saved", "domain_code": "d1"})
+        await _gv.update_view(v["code"], {"state": {"layout": "grid"}})
+        up = await _gv.get_view(v["code"])
+        await _gv.remove_view(v["code"])
+        return up["state"]["layout"], await _gv.get_view(v["code"])
+
+    layout, gone = _run(_impl())
+    assert layout == "grid"
+    assert gone is None
