@@ -3313,7 +3313,9 @@ async def instance_graph(object_code: str, key: str, link_ids: list[int] | None 
         nid = _nid(inst["object_code"], inst["key"])
         if nid not in nodes:
             nodes[nid] = {"id": nid, "name": inst["label"], "etype": inst["object_code"],
-                          "weight": 1, "object_code": inst["object_code"], "key": inst["key"]}
+                          "weight": 1, "object_code": inst["object_code"], "key": inst["key"],
+                          # 挂上实例属性值（时间轴按某个时间属性在图上淡化用）
+                          "props": inst.get("props") or {}}
         return nid
 
     root_id = _add(root)

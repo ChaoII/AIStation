@@ -258,10 +258,45 @@
         <el-button size="small" @click="() => graphRef?.center?.()">居中</el-button>
         <el-tag size="small" type="info" effect="plain">{{ graphMsg }}</el-tag>
       </div>
+      <div class="ont-explore__timeline">
+        <el-select
+          v-model="timelineProp"
+          size="small"
+          clearable
+          placeholder="选择时间属性"
+          class="ont-explore__pick"
+          @change="onTimelinePropChange"
+        >
+          <el-option
+            v-for="tp in timelinePropsList"
+            :key="`${tp.object_code}:${tp.prop_code}`"
+            :label="`${tp.object_name}.${tp.prop_name}`"
+            :value="`${tp.object_code}:${tp.prop_code}`"
+          />
+        </el-select>
+        <template v-if="timelineProp && timelineMax > timelineMin">
+          <el-slider
+            v-model="timelineRange"
+            range
+            :min="timelineMin"
+            :max="timelineMax"
+            style="flex: 1; margin: 0 12px"
+          />
+          <span class="ont-explore__tl-label">
+            {{ fmtTime(timelineRange[0]) }} ~ {{ fmtTime(timelineRange[1]) }}
+          </span>
+        </template>
+        <el-empty
+          v-else-if="timelineProp"
+          :image-size="30"
+          description="所选时间属性无可用时间值"
+        />
+      </div>
       <GraphCanvas
         ref="graphRef"
         :nodes="graphNodes"
         :edges="graphEdges"
+        :dimmed="dimmedNames"
         height="560px"
         layout-name="force"
         @node-tap="onNodeTap"
@@ -347,6 +382,7 @@ import {
   getOntInstance,
   getOntInstanceGraph,
   getOntScenarios,
+  getTimelineProps,
   pivotOntInstance,
   searchOntInstances,
   writebackOntInstance,
@@ -543,6 +579,7 @@ async function openGraph(row: any) {
   graphRoot.value = { code: code.value, key: String(row.key) };
   graphDialog.value = true;
   await reloadGraph();
+  await loadTimelineProps();
 }
 async function reloadGraph() {
   if (!graphRoot.value) return;
@@ -568,6 +605,67 @@ function onNodeTap(name: string) {
   const n = graphNodes.value.find((x) => x.name === name);
   if (!n) return;
   ElMessage.info(`实例：${n.name}（${n.object_code} #${n.key}）`);
+}
+
+/* ---------- 时间轴（按实例时间属性在图上淡化范围外节点） ---------- */
+const timelinePropsList = ref<any[]>([]);
+const timelineProp = ref(""); // "object_code:prop_code"
+const timelineRange = ref<[number, number]>([0, 0]);
+const timelineMin = ref(0);
+const timelineMax = ref(0);
+
+async function loadTimelineProps() {
+  try {
+    const r = await getTimelineProps("");
+    timelinePropsList.value = r?.data?.data || [];
+  } catch {
+    timelinePropsList.value = [];
+  }
+}
+
+function onTimelinePropChange(code: string) {
+  if (!code) {
+    timelineRange.value = [0, 0];
+    return;
+  }
+  const [ocode, pcode] = code.split(":");
+  const times: number[] = [];
+  for (const n of graphNodes.value) {
+    if (n.object_code !== ocode) continue;
+    const v = n.props?.[pcode];
+    if (v == null || v === "") continue;
+    const t = new Date(String(v)).getTime();
+    if (!Number.isNaN(t)) times.push(t);
+  }
+  if (!times.length) {
+    timelineRange.value = [0, 0];
+    return;
+  }
+  timelineMin.value = Math.min(...times);
+  timelineMax.value = Math.max(...times);
+  timelineRange.value = [timelineMin.value, timelineMax.value];
+}
+
+const dimmedNames = computed<string[]>(() => {
+  if (!timelineProp.value) return [];
+  const [ocode, pcode] = timelineProp.value.split(":");
+  const out: string[] = [];
+  for (const n of graphNodes.value) {
+    if (n.object_code !== ocode) continue;
+    const v = n.props?.[pcode];
+    if (v == null || v === "") continue;
+    const t = new Date(String(v)).getTime();
+    if (Number.isNaN(t)) continue;
+    if (t < timelineRange.value[0] || t > timelineRange.value[1]) out.push(n.name);
+  }
+  return out;
+});
+
+function fmtTime(v: number) {
+  if (!v) return "";
+  const d = new Date(v);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 /* ---------- 批量执行动作 ---------- */
@@ -664,6 +762,17 @@ async function runAction() {
 }
 .ont-explore__pick {
   width: 260px;
+}
+.ont-explore__timeline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ont-explore__tl-label {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  white-space: nowrap;
 }
 .ont-explore__kw {
   width: 240px;

@@ -35,6 +35,8 @@ const props = defineProps<{
   edges: { source: string; target: string; rtype?: string; weight?: number }[];
   usePreset?: boolean;
   highlight?: string[];
+  /** 需要淡化的节点 name 集合（时间轴过滤用）；置于 dimmed class，透明度降低 */
+  dimmed?: string[];
   height?: string;
   layoutName?: string;
   linkMode?: boolean;
@@ -294,6 +296,10 @@ const graphStyle: any[] = [
       "shadow-offset-y": 2,
       "min-zoomed-font-size": 6,
     },
+  },
+  {
+    selector: "node.dimmed",
+    style: { opacity: 0.15 },
   },
   {
     selector: "edge",
@@ -772,7 +778,10 @@ onMounted(() => {
 
 watch(
   () => [props.nodes, props.edges],
-  () => applyElements(),
+  () => {
+    applyElements();
+    applyDimmed();
+  },
   { deep: true }
 );
 watch(
@@ -786,6 +795,11 @@ watch(
       if (node.length) node.addClass("highlight");
     });
   }
+);
+watch(
+  () => props.dimmed,
+  () => applyDimmed(),
+  { deep: true }
 );
 watch(
   () => props.edgeStyle,
@@ -803,6 +817,16 @@ watch(
   },
   { deep: true }
 );
+
+function applyDimmed() {
+  const c = cy;
+  if (!c) return;
+  c.nodes().removeClass("dimmed");
+  (props.dimmed || []).forEach((n) => {
+    const node = c.getElementById(String(n));
+    if (node.length) node.addClass("dimmed");
+  });
+}
 
 function png(): string {
   if (!cy) return "";
