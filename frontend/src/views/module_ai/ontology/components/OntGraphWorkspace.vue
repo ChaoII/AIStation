@@ -75,6 +75,44 @@
           />
         </el-tooltip>
       </div>
+
+      <!-- 保存视图 / 图模板 -->
+      <el-dropdown size="small" trigger="click" @command="onViewCmd">
+        <el-button size="small" :icon="View">视图</el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="save">保存当前视图</el-dropdown-item>
+            <el-dropdown-item command="manage:active">管理已加载视图…</el-dropdown-item>
+            <el-dropdown-item command="refresh" divided>刷新列表</el-dropdown-item>
+            <el-dropdown-item
+              v-for="v in mySavedViews"
+              :key="v.code"
+              :command="`load:${v.code}`"
+              divided
+            >
+              <span>{{ v.name || v.code }}</span>
+              <el-tag v-if="v.is_default" size="small" type="success">默认</el-tag>
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <el-dropdown size="small" trigger="click" @command="onTemplateCmd">
+        <el-button size="small" :icon="Brush">模板</el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="save">存为图模板</el-dropdown-item>
+            <el-dropdown-item command="refresh" divided>刷新列表</el-dropdown-item>
+            <el-dropdown-item
+              v-for="t in templates"
+              :key="t.code"
+              :command="`load:${t.code}`"
+              divided
+            >
+              {{ t.name || t.code }}
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
 
     <!-- 图谱 -->
@@ -141,13 +179,80 @@
     <div v-if="multiSelect && selectedNames.length" class="ont-gw__selbar">
       已选 {{ selectedNames.length }} 个对象类型（可批量删除 / 清空）
     </div>
+
+    <!-- 保存视图 / 存模板命名弹窗 -->
+    <el-dialog
+      v-model="viewDialog.visible"
+      :title="viewDialog.kind === 'template' ? '存为图模板' : '保存视图'"
+      width="420px"
+      append-to-body
+    >
+      <el-form label-width="70px">
+        <el-form-item label="名称">
+          <el-input v-model="viewDialog.name" placeholder="给这个视图起个名字" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="viewDialog.description" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="viewDialog.visible = false">取消</el-button>
+        <el-button type="primary" @click="confirmSaveView">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 管理已加载视图：分享 / 版本 / 设默认 / 删除 -->
+    <el-dialog v-model="manageDialog.visible" title="管理视图" width="520px" append-to-body>
+      <el-descriptions v-if="manageDialog.view" :column="1" size="small" border>
+        <el-descriptions-item label="名称">
+          {{ manageDialog.view.name || manageDialog.view.code }}
+        </el-descriptions-item>
+        <el-descriptions-item label="类型">
+          {{ manageDialog.view.graph_kind === "template" ? "图模板" : "保存视图" }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-divider content-position="left">共享给角色</el-divider>
+      <el-select
+        v-model="manageDialog.roles"
+        multiple
+        filterable
+        allow-create
+        default-first-option
+        placeholder="输入/选择角色编码"
+        style="width: 100%"
+      />
+      <el-button size="small" type="primary" style="margin-top: 8px" @click="confirmShare">
+        保存共享设置
+      </el-button>
+      <el-divider content-position="left">版本历史</el-divider>
+      <el-scrollbar max-height="160px">
+        <div v-for="ver in manageDialog.versions" :key="ver.version" class="ont-gw__ver">
+          <span>v{{ ver.version }} · {{ ver.created_time }}</span>
+          <el-button size="small" @click="doRestoreVersion(ver.version)">回滚</el-button>
+        </div>
+        <el-empty v-if="!manageDialog.versions.length" :image-size="40" description="暂无版本" />
+      </el-scrollbar>
+      <template #footer>
+        <el-button
+          v-if="manageDialog.view && manageDialog.view.graph_kind === 'saved'"
+          @click="confirmDefault"
+        >
+          设为默认
+        </el-button>
+        <el-button type="danger" plain @click="confirmRemoveView(manageDialog.view)">
+          删除
+        </el-button>
+        <el-button @click="manageDialog.visible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import {
   Aim,
+  Brush,
   Collection,
   DataLine,
   Download,
@@ -161,11 +266,22 @@ import {
   Search,
   Share,
   Tickets,
+  View,
   ZoomIn,
   ZoomOut,
 } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
+import {
+  getGraphViewDetail,
+  getGraphViewList,
+  getGraphViewVersions,
+  removeGraphView,
+  restoreGraphView,
+  saveGraphView,
+  setDefaultGraphView,
+  shareGraphView,
+} from "@/api/module_ai/ontology";
 import { useOntologyData } from "../composables/useOntologyData";
 import { buildOntGraph } from "../graph";
 
@@ -181,7 +297,7 @@ const emit = defineEmits<{
   (e: "batch-delete", objectCodes: string[]): void;
 }>();
 
-const { scopedObjects, scopedLinks } = useOntologyData();
+const { scopedObjects, scopedLinks, currentDomain } = useOntologyData();
 
 const graphRef = ref<any>(null);
 const layout = ref("cose");
@@ -341,6 +457,197 @@ function doSearch() {
   }, 200);
 }
 
+/** 当前图配置快照（保存视图 / 存模板用）。zoom/pan 取 GraphCanvas 视口。 */
+function collectState(): Record<string, any> {
+  return {
+    layout: layout.value,
+    theme: theme.value,
+    onlyConnected: onlyConnected.value,
+    physicsMode: physicsMode.value,
+    shortestMode: shortestMode.value,
+    multiSelect: multiSelect.value,
+    search: search.value,
+    selected: [...selectedNames.value],
+    ...(graphRef.value?.getViewport?.() ?? { zoom: 1, pan: { x: 0, y: 0 } }),
+  };
+}
+
+const activeViewCode = ref("");
+const mySavedViews = ref<any[]>([]);
+const templates = ref<any[]>([]);
+/** 保存/存模板命名弹窗 */
+const viewDialog = reactive({
+  visible: false,
+  kind: "saved" as "saved" | "template",
+  name: "",
+  description: "",
+});
+/** 管理弹窗：分享 / 版本 / 设默认 / 删除 */
+const manageDialog = reactive({
+  visible: false,
+  view: null as any,
+  roles: [] as string[],
+  versions: [] as any[],
+});
+
+async function loadGraphViews() {
+  try {
+    const [saved, tpl] = await Promise.all([
+      getGraphViewList(currentDomain.value || "", "saved"),
+      getGraphViewList("", "template"),
+    ]);
+    mySavedViews.value = saved?.data?.data || [];
+    templates.value = tpl?.data?.data || [];
+  } catch {
+    /* 列表失败静默，不打断图谱使用 */
+  }
+}
+
+function openViewDialog(kind: "saved" | "template") {
+  viewDialog.kind = kind;
+  viewDialog.name = "";
+  viewDialog.description = "";
+  viewDialog.visible = true;
+}
+
+async function confirmSaveView() {
+  const domain_code = viewDialog.kind === "saved" ? currentDomain.value || "" : "";
+  if (viewDialog.kind === "saved" && !domain_code) {
+    ElMessage.warning("请先选择左侧的本体域再保存视图");
+    return;
+  }
+  try {
+    const r = await saveGraphView({
+      name: viewDialog.name || `视图 ${new Date().toLocaleString()}`,
+      description: viewDialog.description,
+      graph_kind: viewDialog.kind,
+      domain_code,
+      state: collectState(),
+    });
+    viewDialog.visible = false;
+    ElMessage.success(r?.data?.msg || "已保存");
+    loadGraphViews();
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || "保存失败");
+  }
+}
+
+async function loadViewState(code: string) {
+  try {
+    const r = await getGraphViewDetail(code);
+    const v = r?.data?.data;
+    if (!v?.state) return;
+    const s = v.state;
+    if (s.layout) layout.value = s.layout;
+    if (s.theme) theme.value = s.theme;
+    if (typeof s.onlyConnected === "boolean") onlyConnected.value = s.onlyConnected;
+    if (typeof s.physicsMode === "boolean") physicsMode.value = s.physicsMode;
+    if (typeof s.shortestMode === "boolean") shortestMode.value = s.shortestMode;
+    if (typeof s.multiSelect === "boolean") multiSelect.value = s.multiSelect;
+    if (typeof s.search === "string") search.value = s.search;
+    if (Array.isArray(s.selected)) selectedNames.value = [...s.selected];
+    activeViewCode.value = code;
+    ElMessage.success(`已加载「${v.name || v.code}」`);
+    // 布局是异步的，等渲染完成后再应用视口
+    setTimeout(() => {
+      graphRef.value?.setLayout?.(layout.value);
+      graphRef.value?.setViewport?.({ zoom: s.zoom, pan: s.pan });
+    }, 350);
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || "加载失败");
+  }
+}
+
+async function openManage(code: string) {
+  try {
+    const [detail, versions] = await Promise.all([
+      getGraphViewDetail(code),
+      getGraphViewVersions(code),
+    ]);
+    manageDialog.view = detail?.data?.data;
+    manageDialog.roles = detail?.data?.data?.share_roles || [];
+    manageDialog.versions = versions?.data?.data || [];
+    manageDialog.visible = true;
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || "加载失败");
+  }
+}
+
+async function confirmShare() {
+  const view = manageDialog.view;
+  if (!view) return;
+  try {
+    const r = await shareGraphView(view.code, "roles", manageDialog.roles);
+    ElMessage.success(r?.data?.msg || "已设置共享");
+    openManage(view.code);
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || "设置失败");
+  }
+}
+
+async function confirmDefault() {
+  const view = manageDialog.view;
+  if (!view) return;
+  try {
+    await setDefaultGraphView(view.code, view.domain_code || currentDomain.value || "");
+    ElMessage.success("已设为默认");
+    manageDialog.visible = false;
+    loadGraphViews();
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || "设置失败");
+  }
+}
+
+async function doRestoreVersion(version: number) {
+  const view = manageDialog.view;
+  if (!view) return;
+  try {
+    await restoreGraphView(view.code, version);
+    ElMessage.success("已回滚");
+    openManage(view.code);
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || "回滚失败");
+  }
+}
+
+function confirmRemoveView(view: any) {
+  if (!view) return;
+  ElMessageBox.confirm(
+    `将删除图视图「${view.name || view.code}」及其全部版本记录，且不可恢复。`,
+    "删除视图",
+    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+  )
+    .then(async () => {
+      try {
+        await removeGraphView(view.code);
+        ElMessage.success("已删除");
+        manageDialog.visible = false;
+        loadGraphViews();
+      } catch (e: any) {
+        ElMessage.error(e?.response?.data?.msg || e?.message || "删除失败");
+      }
+    })
+    .catch(() => {});
+}
+
+function onViewCmd(cmd: string) {
+  if (cmd === "save") return openViewDialog("saved");
+  if (cmd === "refresh") return loadGraphViews();
+  if (cmd.startsWith("load:")) return loadViewState(cmd.slice(5));
+  if (cmd.startsWith("manage:")) {
+    const rest = cmd.slice(7);
+    return openManage(rest === "active" ? activeViewCode.value || "" : rest);
+  }
+}
+
+function onTemplateCmd(cmd: string) {
+  if (cmd === "save") return openViewDialog("template");
+  if (cmd === "refresh") return loadGraphViews();
+  if (cmd.startsWith("load:")) return loadViewState(cmd.slice(5));
+}
+
+watch(currentDomain, loadGraphViews, { immediate: true });
+
 defineExpose({ graphRef });
 </script>
 
@@ -418,5 +725,14 @@ defineExpose({ graphRef });
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
   border-radius: var(--el-border-radius-base);
+}
+.ont-gw__ver {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
 }
 </style>

@@ -680,3 +680,55 @@ export function autoModelApply(data: {
 }) {
   return request({ url: `${API_PATH}/auto-model/apply`, method: "post", data, timeout: 180000 });
 }
+
+/* ---------------- 图视图（保存视图 / 图模板 / 时间轴） ---------------- */
+export function getGraphViewList(domain_code = "", kind = "", shared = "") {
+  return request({
+    url: `${API_PATH}/graph-views`,
+    method: "get",
+    params: { domain_code, kind, shared },
+  });
+}
+export function getGraphViewDetail(code: string) {
+  return request({ url: `${API_PATH}/graph-views/${code}`, method: "get" });
+}
+export function saveGraphView(data: any) {
+  return request({ url: `${API_PATH}/graph-views/save`, method: "post", data });
+}
+export function setDefaultGraphView(code: string, domain_code = "") {
+  return request({
+    url: `${API_PATH}/graph-views/default`,
+    method: "post",
+    data: { code, domain_code },
+  });
+}
+export function removeGraphView(code: string) {
+  return request({ url: `${API_PATH}/graph-views/remove`, method: "post", data: { code } });
+}
+export function getGraphViewVersions(code: string) {
+  return request({ url: `${API_PATH}/graph-views/${code}/versions`, method: "get" });
+}
+export function restoreGraphView(code: string, version: number) {
+  return request({
+    url: `${API_PATH}/graph-views/restore`,
+    method: "post",
+    data: { code, version },
+  });
+}
+export function shareGraphView(code: string, share_mode: string, share_roles: string[]) {
+  return request({
+    url: `${API_PATH}/graph-views/share`,
+    method: "post",
+    data: { code, share_mode, share_roles },
+  });
+}
+export function getGraphViewLink(code: string) {
+  return request({ url: `${API_PATH}/graph-views/${code}/link`, method: "get" });
+}
+export function getTimelineProps(domain_code = "") {
+  return request({
+    url: `${API_PATH}/graph-views/timeline-props`,
+    method: "get",
+    params: { domain_code },
+  });
+}

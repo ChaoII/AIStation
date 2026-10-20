@@ -809,7 +809,29 @@ function png(): string {
   return (cy.png as any)({ output: "dataurl", full: true, scale: 2 }) as string;
 }
 
-defineExpose({ emitPositions, png, setLayout, fit, center, zoom, search });
+function getViewport(): { zoom: number; pan: { x: number; y: number } } {
+  if (!cy) return { zoom: 1, pan: { x: 0, y: 0 } };
+  return { zoom: cy.zoom(), pan: { x: cy.pan().x, y: cy.pan().y } };
+}
+
+function setViewport(v: { zoom?: number; pan?: { x: number; y: number } } | null) {
+  if (!cy) return;
+  if (v && typeof v.zoom === "number") {
+    cy.viewport({ zoom: v.zoom, pan: v.pan || { x: 0, y: 0 } });
+  }
+}
+
+defineExpose({
+  emitPositions,
+  png,
+  setLayout,
+  fit,
+  center,
+  zoom,
+  search,
+  getViewport,
+  setViewport,
+});
 
 onBeforeUnmount(() => {
   container.value?.removeEventListener("mouseleave", hideTooltip);
