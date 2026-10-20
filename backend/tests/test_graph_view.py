@@ -188,3 +188,23 @@ def test_view_link():
     url, code = _run(_impl())
     assert code != ""
     assert "view=" in url
+
+
+# ---------------------------------------------------------------------------
+# Task 5：时间轴属性候选（timeline_props）
+# ---------------------------------------------------------------------------
+def test_timeline_props_returns_date_props():
+    async def _impl():
+        await _svc.upsert_object({"code": "timeline_obj", "name": "时间对象",
+                                  "domain_code": "d1", "key_prop": "id", "name_prop": "name"})
+        for c, n, bt in (("evt_at", "事件时间", "date"), ("title", "标题", "string")):
+            await _svc._exec_write(
+                "INSERT INTO ai_ont_property(object_code,code,name,prop_type,base_type,"
+                "is_deleted) VALUES (:oc,:c,:n,:pt,:bt,0)",
+                {"oc": "timeline_obj", "c": c, "n": n, "pt": bt, "bt": bt})
+        props = await _gv.timeline_props("d1")
+        return [p["prop_code"] for p in props]
+
+    codes = _run(_impl())
+    assert "evt_at" in codes
+    assert "title" not in codes

@@ -313,3 +313,26 @@ async def view_link(code: str) -> dict:
     return {"ok": True, "url": view_url(code), "view_code": code,
             "graph_kind": v["graph_kind"], "domain_code": v["domain_code"],
             "msg": "链接可直接打开该图视图"}
+
+
+# ---------------------------------------------------------------------------
+# 时间轴属性候选
+# ---------------------------------------------------------------------------
+async def timeline_props(domain_code: str = "") -> list[dict]:
+    """返回可作为时间轴的属性候选（``base_type`` 表示时间/日期的属性）。
+
+    时间值属于**实例**，因此候选来自对象类型的日期类属性；前端据此在
+    对象探索（实例图）上做时间滑块过滤。集合取 `ON value valid` 中的
+    ``{'date','datetime','timestamp','time'}``（兼容 `ONT_BASE_TYPE` 与实例数据）。
+    """
+    sql = ("SELECT o.code, o.name, p.code, p.name, p.base_type "
+           "FROM ai_ont_object o JOIN ai_ont_property p ON p.object_code = o.code "
+           "WHERE p.is_deleted = false AND o.is_deleted = false AND p.base_type IN "
+           "('date','datetime','timestamp','time')")
+    params: dict = {}
+    if domain_code:
+        sql += " AND o.domain_code = :d"
+        params["d"] = domain_code
+    rows = await _svc._exec(sql, params)
+    return [{"object_code": r[0], "object_name": r[1], "prop_code": r[2],
+             "prop_name": r[3], "base_type": r[4]} for r in rows.fetchall()]
