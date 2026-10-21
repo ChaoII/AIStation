@@ -41,7 +41,13 @@ from .model import (
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
-from .schema import DevelopCreateSchema, DevelopUpdateSchema, EmbedRunSchema, EmbedTokenIssueSchema
+from .schema import (
+    DevelopCreateSchema,
+    DevelopUpdateSchema,
+    EmbedMintSchema,
+    EmbedRunSchema,
+    EmbedTokenIssueSchema,
+)
 from .service import DevelopService
 
 
@@ -303,6 +309,50 @@ async def develop_reset_key(
 ) -> JSONResponse:
     result = await DevelopService.reset_appkey(app_id, auth)
     return SuccessResponse(data=result, msg="重置成功")
+
+
+@DevelopRouter.get("/tokens", summary="嵌入令牌列表")
+async def develop_list_tokens(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    app_id: Annotated[int, Query(description="应用ID")],
+) -> JSONResponse:
+    """列出某应用的嵌入令牌元信息（不含明文/散列），供管理弹窗展示与吊销。"""
+    return SuccessResponse(
+        data={"items": await DevelopService.list_tokens(app_id)}, msg="查询成功"
+    )
+
+
+@DevelopRouter.post("/tokens", summary="签发体验令牌（2小时）")
+async def develop_mint_token(
+    data: EmbedMintSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:create"]))],
+) -> JSONResponse:
+    """管理端签发体验票：issued_by=admin、有效期固定 2 小时，明文仅此响应一次。"""
+    async with async_db_session() as db:
+        app_row = await db.get(AiIntegrationAppModel, data.app_id)
+    if app_row is None or app_row.is_deleted:
+        return ErrorResponse(msg="应用不存在")
+    if await EmbedService.get_target(data.kind, data.target_id) is None:
+        raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
+    result = await EmbedService.issue_token(
+        app_row,
+        kind=data.kind,
+        target_id=data.target_id,
+        ttl=7200,
+        issued_by="admin",
+    )
+    return SuccessResponse(data=result, msg="已签发（有效期 2 小时）")
+
+
+@DevelopRouter.put("/tokens/{token_id}/revoke", summary="吊销嵌入令牌")
+async def develop_revoke_token(
+    token_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:update"]))],
+) -> JSONResponse:
+    """吊销后令牌立即失效（软语义：置 revoked，保留审计行）。"""
+    if not await DevelopService.revoke_token(token_id):
+        return ErrorResponse(msg="令牌不存在")
+    return SuccessResponse(msg="已吊销")
 
 
 @DevelopRouter.get("/call-logs", summary="分页查询调用日志")

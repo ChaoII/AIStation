@@ -62,3 +62,11 @@ class EmbedRunSchema(BaseModel):
 
     sid: str = Field(..., min_length=8, max_length=64, description="客户端会话标识")
     message: str = Field(..., min_length=1, max_length=4000, description="用户消息")
+
+
+class EmbedMintSchema(BaseModel):
+    """管理端签发体验令牌入参（有效期固定 2 小时，便于当场试用）。"""
+
+    app_id: int = Field(..., description="应用ID")
+    kind: Literal["agent", "app", "workflow"] = Field(..., description="嵌入形态")
+    target_id: int = Field(..., description="嵌入目标ID")
