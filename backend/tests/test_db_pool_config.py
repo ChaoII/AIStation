@@ -1,7 +1,8 @@
 """数据库连接池配置与启动期预热测试（审计·并发 #11）。
 
 覆盖：
-- 预热并发签出 ``POOL_SIZE`` 条连接并全部归还（顺序复用只会命中同一条）；
+- 预热并发签出 ``POOL_SIZE - WARMUP_RESERVE_FOR_TRAFFIC`` 条连接并全部归还
+  （顺序复用只会命中同一条；同时必须给在途请求留足连接，见该用例 docstring）；
 - 非启动期 / TESTING / SQLite 下跳过预热；
 - 默认池配置为「保留 POOL_SIZE 条、MAX_OVERFLOW=0」，避免溢出建连风暴。
 """
@@ -41,12 +42,15 @@ def _use_warmable_postgres(monkeypatch, size: int = 5) -> _FakeEngine:
 
 
 def test_warmup_acquires_and_returns_pool_size_connections(monkeypatch):
-    """启动期并发签出 POOL_SIZE 条连接，并全部归还（防止顺序复用只建一条）。
+    """启动期预热签出 ``warmup_target()`` 条连接并全部归还（防止顺序复用只建一条）。
 
-    预热是**后台任务**（不阻塞启动），所以必须在**同一个事件循环内** await 该任务
-    后再断言；否则 asyncio.run 一结束就把未完成的任务取消，conns 恒为空。
+    ⚠️ 目标**不是** POOL_SIZE 条：预热期间是「同时持有」连接，若占满整池，
+    在途请求一条都拿不到——实测会 `QueuePool limit of size N reached`，
+    预热自己被饿死在 40/48，同时还把首批请求打成 500。
+    因此恒定留 ``WARMUP_RESERVE_FOR_TRAFFIC`` 条给实时流量。
     """
-    engine = _use_warmable_postgres(monkeypatch, size=5)
+    size = 20
+    engine = _use_warmable_postgres(monkeypatch, size=size)
 
     async def _run():
         await database.async_pool_warmup(app=None, status=True)
@@ -54,7 +58,10 @@ def test_warmup_acquires_and_returns_pool_size_connections(monkeypatch):
         await database._warmup_task
 
     asyncio.run(_run())
-    assert len(engine.conns) == 5
+    expected = size - database.WARMUP_RESERVE_FOR_TRAFFIC
+    assert len(engine.conns) == expected
+    # 必须给在途请求留够连接，否则预热会把自己饿死（本轮实测踩过）
+    assert size - len(engine.conns) >= database.WARMUP_RESERVE_FOR_TRAFFIC
     assert all(conn.closed for conn in engine.conns)
 
 
