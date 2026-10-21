@@ -685,4 +685,3 @@ async def _query_mcp_sessions(
             "has_next": page_no * page_size < total,
             "items": [_mcp_session_to_dict(r) for r in rows],
         }
-

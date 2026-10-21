@@ -21,7 +21,7 @@ from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 
 from .auth import AppContext
-from .model import AiIntegrationApprovalModel, AiIntegrationAppModel
+from .model import AiIntegrationAppModel, AiIntegrationApprovalModel
 from .registry import Capability
 from .service import _app_to_dict
 
