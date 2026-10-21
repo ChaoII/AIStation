@@ -68,6 +68,7 @@
               <el-progress
                 :percentage="quotaPercent"
                 :stroke-width="8"
+                :show-text="false"
                 :status="quotaPercent >= 100 ? 'exception' : undefined"
                 class="space-quota-bar"
               />
@@ -976,17 +977,27 @@ async function submitQuotaRequest() {
 }
 
 .space-quota-inline {
-  display: flex;
-  gap: 6px;
+  display: inline-flex;
   align-items: center;
+  gap: 8px;
+  height: var(--el-component-size, 32px);
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-bg-color);
 }
 
 .space-quota-bar {
-  width: 90px;
+  width: 80px;
+  :deep(.el-progress-bar__outer) {
+    background: var(--el-fill-color);
+  }
 }
 
 .space-quota-text {
-  color: var(--el-text-color-secondary);
+  color: var(--el-text-color-regular);
+  font-size: var(--el-font-size-base, 14px);
   white-space: nowrap;
 }
 
