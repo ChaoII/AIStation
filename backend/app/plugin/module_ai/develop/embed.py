@@ -225,3 +225,37 @@ class EmbedService:
                 error=error_text,
                 latency_ms=int((time.perf_counter() - started) * 1000),
             )
+
+    @classmethod
+    async def check_limits(cls, redis, ctx: "EmbedContext", ip: str) -> None:
+        """固定窗口限流（token/IP 双键）+ 按日配额；超限抛 429。
+
+        - 限流：``INCR``+``EXPIRE 60``，键 ``ai:embed:rl:t:{hash12}`` / ``ai:embed:rl:ip:{ip}``；
+        - 配额：``app.quota["embed"]`` 为自然日次数上限（缺省/0=不限），
+          键 ``ai:embed:quota:{app_id}:{YYYYMMDD}``；
+        - ``redis`` 为空时整体跳过（降级，不阻断对话）。
+        """
+        if redis is None:
+            return
+        from app.config.setting import settings
+
+        async def _hit(key: str, cap: int, ttl: int = 60) -> bool:
+            """计数 +1 并判断是否超限（固定窗口，首次命中时设过期）。"""
+            count = int(await redis.incr(key))
+            if count == 1:
+                await redis.expire(key, ttl)
+            return count > cap
+
+        if await _hit(
+            f"ai:embed:rl:t:{ctx.token_hash12}", settings.EMBED_RATE_TOKEN_PER_MIN
+        ) or await _hit(f"ai:embed:rl:ip:{ip or 'na'}", settings.EMBED_RATE_IP_PER_MIN):
+            raise CustomException(msg="访问过于频繁，请稍后再试", code=10429, status_code=429)
+
+        quota = (ctx.quota or {}).get("embed")
+        if isinstance(quota, int) and quota > 0:
+            day = datetime.now().strftime("%Y%m%d")
+            count = int(await redis.incr(f"ai:embed:quota:{ctx.app_id}:{day}"))
+            if count == 1:
+                await redis.expire(f"ai:embed:quota:{ctx.app_id}:{day}", 86400)
+            if count > quota:
+                raise CustomException(msg="今日嵌入调用配额已用完", code=10429, status_code=429)

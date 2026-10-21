@@ -125,6 +125,11 @@ async def embed_run(
             error="无权限操作",
         )
         raise CustomException(msg="无权限操作", code=10403, status_code=403)
+    await EmbedService.check_limits(
+        getattr(request.app.state, "redis", None),
+        ctx,
+        request.client.host if request.client else "",
+    )
     session_id, session_reset = await EmbedService.prepare_session(ctx, data.sid)
     gen = EmbedService.run_stream(
         ctx,
