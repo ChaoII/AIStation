@@ -245,6 +245,24 @@ async def invoke_capability(
             session_id=session_id,
         )
         raise
+    except ValueError as e:
+        # 既有 service 的业务校验用 ValueError（如「仅 pending 任务可编辑」）：
+        # 归为 400 参数/状态错误，不要把用户的输入问题报成服务端故障。
+        await audit_call(
+            ctx,
+            category=cap.category,
+            capability=cap.code,
+            method=method,
+            status="failed",
+            error=str(e),
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            request_body=body,
+            request_path=request_path,
+            transport=transport,
+            client_info=client_info,
+            session_id=session_id,
+        )
+        raise CustomException(msg=str(e), code=10400, status_code=400) from e
     except Exception as e:  # noqa: BLE001 - 统一转成审计 + 500
         await audit_call(
             ctx,

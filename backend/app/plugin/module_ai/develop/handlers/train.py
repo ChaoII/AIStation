@@ -67,6 +67,11 @@ async def _train_create(*, app_ctx: AppContext, payload: dict) -> dict:
         data = TrainTaskCreateSchema(**body)
     except ValidationError as exc:
         raise _bad_request(exc) from exc
+    # 退场框架（ultralytics / paddlex）当场拒绝，给出与平台内部一致的明确文案
+    from app.plugin.module_train.retired import is_retired, retired_message
+
+    if is_retired(data.framework):
+        raise CustomException(msg=retired_message(data.framework, "训练"), code=10400, status_code=400)
     result = await TrainService.create_task(data, _OPEN_AUTH, source_app_id=app_ctx.app_id)
     return {"task_id": result["id"], "source_app_id": app_ctx.app_id}
 
