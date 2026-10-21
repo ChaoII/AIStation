@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator, Iterable
+from contextlib import AsyncExitStack, suppress
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request, Response
@@ -1955,7 +1956,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         log.error(f"❌ 应用初始化失败: {e!s}")
         raise SystemExit(1)
 
+    # MCP Server 的 Streamable HTTP 会话管理器必须与 FastAPI 同生命周期：
+    # 挂载的子应用不会运行自己的 lifespan，只能在这里显式进入。
+    mcp_stack = AsyncExitStack()
+    try:
+        from app.plugin.module_ai.develop.mcp_server import mcp_session_manager
+
+        await mcp_stack.enter_async_context(mcp_session_manager())
+        log.info("✅ MCP Server 会话管理器已启动")
+    except Exception as e:  # noqa: BLE001 - MCP 起不来不阻断整个服务
+        log.warning(f"⚠️  MCP Server 会话管理器启动失败（不阻断启动）: {e}")
+
     yield
+
+    with suppress(Exception):
+        await mcp_stack.aclose()
 
     try:
         await SchedulerUtil.shutdown(wait=False)
@@ -2140,6 +2155,16 @@ def register_routers(app: FastAPI) -> None:
         router=get_dynamic_router(),
         dependencies=[_rate_limit("train")],
     )
+
+    # MCP Server（Streamable HTTP）：挂在开放面路径下，鉴权由中间件处理
+    # （Bearer appid:appkey，与开放 REST 同一套凭证）。
+    try:
+        from app.plugin.module_ai.develop.mcp_server import mount_mcp
+
+        mount_mcp(app)
+        log.info("✅ MCP Server 已挂载: /ai/develop-api/mcp")
+    except Exception as e:  # noqa: BLE001 - MCP 不可用不应阻断整个服务启动
+        log.warning(f"⚠️  MCP Server 挂载失败（不阻断启动）: {e}")
 
 
 def register_files(app: FastAPI) -> None:
