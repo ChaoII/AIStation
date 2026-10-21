@@ -185,7 +185,7 @@
 | 提交 | 内容 |
 |------|------|
 | `dbcff2c6` | 能力注册表（元数据+分发，纯逻辑） |
-| `43d970b7` | `source_app_id` 归属（模型 + service 过滤参数 + 手写迁移 `b7c8d9e0f1a2`） |
+| `d021d6f7` | `source_app_id` 归属（模型 + service 过滤参数 + 手写迁移 `b7c8d9e0f1a2`） |
 | `f0bfe2f5` | 开放 REST 统一入口 `POST /ai/develop-api/capabilities/{code}` + `GET /ai/develop-api/capabilities`（按授权过滤）+ agent 能力 |
 | `39b544b1` | ruff 修正 |
 | `7cf09218` | chat / bot / train 能力（聚合回复、会话归属隔离、退场框架守卫、ValueError→400） |
@@ -210,3 +210,4 @@
 - **真实 HTTP 冒烟**（uvicorn + SQLite）：未鉴权 401 → initialize 200（拿到 `mcp-session-id`）→ `tools/list` 只含授权工具 → `tools/call agent_create` 落 `source_app_id` → `call_logs(method=MCP)=2`、`mcp_sessions` 1 行 `tool_calls=2`。
 - **UI 计算样式探测**：外壳 padding 12px / 边框 1px / 圆角 4px / 白底，与「能力市场」逐项相等；4 个页签内所有表格 `el-table--border` 齐全、无横向溢出。
 - 截图归档：`.openchamber/screenshots/p2-docs-rest.png`、`p2-docs-capabilities.png`、`p2-mcp-sessions.png`、`p2-logs-mcp.png`。
+
