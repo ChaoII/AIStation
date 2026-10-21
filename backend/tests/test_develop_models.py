@@ -1,6 +1,8 @@
 # tests/test_develop_models.py （PYTEST_NO_APP=1）
 from app.plugin.module_ai.develop.model import (
-    AiIntegrationAppModel, AiIntegrationCallLogModel, AiIntegrationMcpSessionModel,
+    AiIntegrationAppModel,
+    AiIntegrationCallLogModel,
+    AiIntegrationMcpSessionModel,
 )
 
 
