@@ -312,6 +312,7 @@ class Settings(BaseSettings):
     # ================================================= #
     AI_SPACE_MAX_FILE_MB: int = 200  # 个人空间单文件上限（MB）
     AI_SPACE_QUOTA_MB: int = 2048  # 个人空间每用户总配额（MB，默认 2GB；可申请扩容由管理员按用户覆盖）
+    AI_SPACE_SOFFICE_PATH: str = ""  # LibreOffice soffice 可执行文件路径（office→PDF 预览用；留空则自动发现）
     ALLOWED_EXTENSIONS: list[str] = [  # 允许的文件类型
         ".gif",
         ".jpg",

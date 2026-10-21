@@ -155,8 +155,8 @@ async def file_preview(
         return ErrorResponse(msg=str(e), status_code=404)
     if result["kind"] == "text":
         return SuccessResponse(data=result, msg="查询成功")
-    if result["kind"] in ("image", "pdf", "docx"):
-        # 二进制内容走下载流，前端按类型渲染（img / vue-pdf-embed / mammoth）
+    if result["kind"] in ("image", "pdf", "docx", "xlsx"):
+        # 二进制内容走下载流，前端按类型渲染（img / vue-pdf-embed / mammoth / exceljs）
         meta = await SpaceService.download_file(file_id, _uid(auth))
         import asyncio
 
@@ -174,6 +174,22 @@ async def file_preview(
 
         return StreamingResponse(_gen(), media_type=meta["mime_type"] or "application/octet-stream")
     return ErrorResponse(msg="该类型暂不支持预览，请下载后查看", status_code=400)
+
+
+@SpaceRouter.get("/files/{file_id}/preview-pdf", summary="office 文档转 PDF 预览")
+async def file_preview_pdf(
+    file_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:space:query"]))],
+):
+    try:
+        result = await SpaceService.convert_to_pdf(file_id, _uid(auth))
+    except ValueError as e:
+        return ErrorResponse(msg=str(e), status_code=404)
+    except CustomException as e:
+        return ErrorResponse(msg=e.msg, status_code=e.status_code)
+    return StreamingResponse(
+        iter([result["data"]]), media_type=result["mime_type"] or "application/pdf"
+    )
 
 
 @SpaceRouter.put("/files/rename", summary="重命名文件")

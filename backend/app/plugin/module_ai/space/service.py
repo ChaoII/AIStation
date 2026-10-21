@@ -61,11 +61,16 @@ class SpaceService:
         }
 
     @staticmethod
-    def _folder_dict(f: AiSpaceFolderModel) -> dict:
+    def _folder_dict(f: AiSpaceFolderModel, stats: tuple[int, int] | None = None) -> dict:
+        cnt, size = stats or (0, 0)
         return {
             "id": f.id,
             "name": f.name,
             "parent_id": f.parent_id,
+            "created_time": f.created_time,
+            "updated_time": f.updated_time,
+            "file_count": cnt,
+            "size": size,
         }
 
     # ---------------- 配额 ----------------
@@ -246,7 +251,9 @@ class SpaceService:
 
     @classmethod
     async def folder_tree(cls, user_id: int) -> list[dict]:
-        """当前用户文件夹树（多级，只含未删）。"""
+        """当前用户文件夹树（多级，只含未删；带递归大小与文件数）。"""
+        from sqlalchemy import select
+
         async with async_db_session() as db:
             rows = (
                 await db.execute(
@@ -258,11 +265,80 @@ class SpaceService:
                     .order_by(AiSpaceFolderModel.id.asc())
                 )
             ).scalars().all()
-            flat = [
-                {"id": r.id, "name": r.name, "parent_id": r.parent_id}
-                for r in rows
-            ]
-            return traversal_to_tree(flat)
+        stats = await cls._folder_stats(user_id)
+        flat = [
+            {
+                "id": r.id,
+                "name": r.name,
+                "parent_id": r.parent_id,
+                "created_time": r.created_time,
+                "updated_time": r.updated_time,
+                "file_count": stats.get(r.id, (0, 0))[0],
+                "size": stats.get(r.id, (0, 0))[1],
+            }
+            for r in rows
+        ]
+        return traversal_to_tree(flat)
+
+    @classmethod
+    async def _folder_stats(cls, user_id: int) -> dict[int, tuple[int, int]]:
+        """folder_id -> (文件数, 总体积[字节])，体积含所有后代文件夹（递归）。"""
+        from sqlalchemy import func, select
+
+        async with async_db_session() as db:
+            files = (
+                await db.execute(
+                    select(
+                        AiSpaceFileModel.folder_id,
+                        func.count().label("c"),
+                        func.sum(AiSpaceFileModel.size).label("s"),
+                    )
+                    .where(
+                        AiSpaceFileModel.user_id == user_id,
+                        AiSpaceFileModel.is_deleted.is_(False),
+                    )
+                    .group_by(AiSpaceFileModel.folder_id)
+                )
+            ).all()
+            folders = (
+                await db.execute(
+                    select(AiSpaceFolderModel.id, AiSpaceFolderModel.parent_id).where(
+                        AiSpaceFolderModel.user_id == user_id,
+                        AiSpaceFolderModel.is_deleted.is_(False),
+                    )
+                )
+            ).all()
+        # 直接文件聚合（每个 folder 的直接大小/数量）
+        direct_size: dict[int, int] = {}
+        direct_count: dict[int, int] = {}
+        for fid, c, s in files:
+            if fid is None:
+                continue
+            direct_count[fid] = int(c)
+            direct_size[fid] = int(s or 0)
+        children: dict[int, list[int]] = {}
+        for fid, pid in folders:
+            if pid is not None:
+                children.setdefault(pid, []).append(fid)
+        # 递归累加，memoize 保证每个文件夹只算一次（避免重复计入子文件夹）
+        final_size: dict[int, int] = {}
+        final_count: dict[int, int] = {}
+
+        def _calc(fid: int) -> None:
+            if fid in final_size:
+                return
+            s = direct_size.get(fid, 0)
+            c = direct_count.get(fid, 0)
+            for ch in children.get(fid, []):
+                _calc(ch)
+                s += final_size[ch]
+                c += final_count[ch]
+            final_size[fid] = s
+            final_count[fid] = c
+
+        for fid, _pid in folders:
+            _calc(fid)
+        return {fid: (final_count[fid], final_size[fid]) for fid in final_size}
 
     @classmethod
     async def create_folder(cls, name: str, parent_id: int | None, user_id: int) -> dict:
@@ -376,11 +452,14 @@ class SpaceService:
                 AiSpaceFileModel.user_id == user_id,
                 AiSpaceFileModel.is_deleted.is_(False),
             )
-            if folder_id is not None:
-                base = base.where(AiSpaceFileModel.folder_id == folder_id)
-            else:
-                # 根目录（全部文件）：只看根目录下的文件，与文件夹视图语义一致
-                base = base.where(AiSpaceFileModel.folder_id.is_(None))
+            # 搜索（keyword/file_type）时全局匹配整个工作空间；否则按目录浏览
+            is_search = bool(keyword) or bool(file_type)
+            if not is_search:
+                if folder_id is not None:
+                    base = base.where(AiSpaceFileModel.folder_id == folder_id)
+                else:
+                    # 根目录（全部文件）：只看根目录下的文件，与文件夹视图语义一致
+                    base = base.where(AiSpaceFileModel.folder_id.is_(None))
             if file_type:
                 base = base.where(AiSpaceFileModel.file_type == file_type)
             if keyword:
@@ -530,6 +609,94 @@ class SpaceService:
     async def download_file(cls, file_id: int, user_id: int) -> dict:
         return await cls._download_meta(file_id, user_id)
 
+    @staticmethod
+    def _find_soffice() -> str | None:
+        """定位 LibreOffice soffice：配置 > PATH > 常见安装路径（含本机解压版）。"""
+        import os
+        import shutil
+
+        from app.config.setting import settings
+
+        candidates = [
+            settings.AI_SPACE_SOFFICE_PATH,
+            shutil.which("soffice"),
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+            os.path.join(
+                os.environ.get("LOCALAPPDATA", ""), "LibreOfficePortable", "program", "soffice.exe"
+            ),
+        ]
+        for c in candidates:
+            if c and os.path.exists(c):
+                return c
+        return None
+
+    @classmethod
+    async def convert_to_pdf(cls, file_id: int, user_id: int) -> dict:
+        """office 文档(pptx/docx/xlsx…) 转 PDF，返回 {data: bytes, mime_type, name}。
+
+        依赖 LibreOffice soffice（配置 AI_SPACE_SOFFICE_PATH 或 PATH 自动发现）。
+        """
+        import asyncio
+        import os
+        import tempfile
+
+        from app.utils.s3_client import s3_client
+
+        meta = await cls._download_meta(file_id, user_id)
+        ft = meta["file_type"]
+        pdf_name = f"{os.path.splitext(meta['name'])[0]}.pdf"
+
+        if ft == "pdf":
+            obj = await asyncio.to_thread(s3_client.get_object, meta["object_key"])
+            data = await asyncio.to_thread(obj["Body"].read)
+            return {"data": data, "mime_type": "application/pdf", "name": pdf_name}
+        if ft not in ("pptx", "docx", "doc", "xlsx", "xls", "ods", "odp"):
+            raise CustomException(msg="该格式暂不支持转 PDF", code=400, status_code=400)
+
+        # 定位 soffice：配置 > PATH > 常见安装路径（含本机解压版）
+        soffice = await asyncio.to_thread(cls._find_soffice)
+        if not soffice:
+            raise CustomException(msg="服务器未安装 LibreOffice，无法转换为 PDF", code=500, status_code=500)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ext = os.path.splitext(meta["name"])[1]
+            src = os.path.join(tmp, meta["name"] or f"file{ext}")
+            obj = await asyncio.to_thread(s3_client.get_object, meta["object_key"])
+            raw = await asyncio.to_thread(obj["Body"].read)
+            with open(src, "wb") as fh:
+                fh.write(raw)
+            profile = os.path.join(tmp, "profile")
+            uri = "file:///" + profile.replace("\\", "/")
+            cmd = [
+                soffice,
+                f"-env:UserInstallation={uri}",
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                tmp,
+                src,
+            ]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=180)
+            except asyncio.TimeoutError:
+                proc.kill()
+                raise CustomException(msg="转换为 PDF 超时", code=500, status_code=500) from None
+            except Exception as exc:  # noqa: BLE001
+                raise CustomException(msg=f"转换为 PDF 失败：{str(exc)[:120]}", code=500, status_code=500) from None
+            pdf_path = os.path.splitext(src)[0] + ".pdf"
+            if not os.path.exists(pdf_path):
+                raise CustomException(msg="转换为 PDF 失败", code=500, status_code=500)
+            with open(pdf_path, "rb") as fh:
+                pdf = fh.read()
+        return {"data": pdf, "mime_type": "application/pdf", "name": pdf_name}
+
     @classmethod
     async def preview_file(cls, file_id: int, user_id: int) -> dict:
         """预览：文本类返回 {kind:"text", content, truncated}；其余返回 {kind: file_type}。
@@ -540,7 +707,7 @@ class SpaceService:
 
         meta = await cls._download_meta(file_id, user_id)
         ft = meta["file_type"]
-        if ft not in ("txt", "md", "csv", "json"):
+        if ft not in ("txt", "md", "csv", "json", "code", "html"):
             return {"kind": ft}
         import asyncio
 
@@ -551,7 +718,11 @@ class SpaceService:
         limit = 500 * 1024
         raw = await asyncio.to_thread(body.read, limit + 1)
         truncated = len(raw) > limit
-        text = _extract_doc_text(raw[:limit] if truncated else raw, meta["mime_type"], meta["name"])
+        chunk = raw[:limit] if truncated else raw
+        if ft in ("code", "html"):
+            text = chunk.decode("utf-8", errors="ignore")
+        else:
+            text = _extract_doc_text(chunk, meta["mime_type"], meta["name"])
         if truncated:
             text += "\n…（内容过长已截断）"
         return {"kind": "text", "content": text, "truncated": truncated}

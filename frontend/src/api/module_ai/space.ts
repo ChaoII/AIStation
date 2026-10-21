@@ -8,6 +8,10 @@ export interface SpaceFolder {
   name: string;
   parent_id?: number | null;
   children?: SpaceFolder[];
+  created_time?: string;
+  updated_time?: string;
+  file_count?: number;
+  size?: number;
 }
 
 export interface SpaceFileItem {
@@ -136,6 +140,15 @@ export function previewSpaceFile(fileId: number) {
   return request<ApiResponse<{ kind: string; content?: string; truncated?: boolean }>>({
     url: `${SPACE_PATH}/files/${fileId}/preview`,
     method: "get",
+  });
+}
+
+/** office 文档(pptx/docx/xlsx) 转 PDF 预览，返回二进制/pdf。 */
+export function previewOfficePdf(fileId: number) {
+  return request({
+    url: `${SPACE_PATH}/files/${fileId}/preview-pdf`,
+    method: "get",
+    responseType: "blob",
   });
 }
 

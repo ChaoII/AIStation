@@ -8,6 +8,20 @@ FILE_TYPE_BY_EXT: dict[str, str] = {
     "webp": "image", "bmp": "image", "svg": "image", "ico": "image",
     # 文档
     "pdf": "pdf", "docx": "docx", "doc": "docx",
+    # 表格
+    "xlsx": "xlsx", "xls": "xlsx", "ods": "xlsx",
+    # 演示
+    "pptx": "pptx", "ppt": "pptx", "odp": "pptx",
+    # 网页
+    "html": "html", "htm": "html",
+    # 代码
+    "py": "code", "js": "code", "ts": "code", "jsx": "code", "tsx": "code",
+    "java": "code", "c": "code", "cpp": "code", "cc": "code", "h": "code", "hpp": "code",
+    "cs": "code", "go": "code", "rs": "code", "rb": "code", "php": "code",
+    "sh": "code", "bash": "code", "bat": "code", "ps1": "code",
+    "css": "code", "scss": "code", "less": "code", "sql": "code", "xml": "code",
+    "toml": "code", "ini": "code", "vue": "code", "svelte": "code",
+    "kt": "code", "swift": "code", "r": "code", "m": "code", "pl": "code", "lua": "code",
     # 文本
     "txt": "txt", "md": "md", "markdown": "md", "csv": "csv",
     "json": "json", "jsonl": "json", "log": "txt", "yaml": "txt", "yml": "txt",
@@ -26,6 +40,11 @@ FILE_TYPE_BY_MIME: dict[str, str] = {
     "application/pdf": "pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
     "application/msword": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.ms-excel": "xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+    "application/vnd.ms-powerpoint": "pptx",
+    "text/html": "html",
     "text/plain": "txt", "text/markdown": "md", "text/csv": "csv",
     "application/json": "json",
     "video/mp4": "video", "video/webm": "video", "video/x-matroska": "video",
@@ -38,6 +57,10 @@ MIME_BY_FILE_TYPE: dict[str, str] = {
     "image": "image/png",
     "pdf": "application/pdf",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "html": "text/html",
+    "code": "text/plain",
     "txt": "text/plain",
     "md": "text/markdown",
     "csv": "text/csv",
@@ -97,10 +120,24 @@ def guess_mime(ext: str) -> str:
         "pdf": "application/pdf",
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "doc": "application/msword",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xls": "application/vnd.ms-excel",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "ppt": "application/vnd.ms-powerpoint",
+        "html": "text/html", "htm": "text/html",
         "txt": "text/plain", "md": "text/markdown", "markdown": "text/markdown",
         "csv": "text/csv", "json": "application/json", "jsonl": "application/json",
         "mp4": "video/mp4", "webm": "video/webm", "mov": "video/quicktime",
         "mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac",
         "m4a": "audio/mp4", "ogg": "audio/ogg", "aac": "audio/aac",
     }
+    # 代码类统一按纯文本处理
+    code_exts = [
+        "py", "js", "ts", "jsx", "tsx", "java", "c", "cpp", "cc", "h", "hpp",
+        "cs", "go", "rs", "rb", "php", "sh", "bash", "bat", "ps1", "css",
+        "scss", "less", "sql", "xml", "toml", "ini", "vue", "svelte", "kt",
+        "swift", "r", "m", "pl", "lua",
+    ]
+    if e in code_exts:
+        return "text/plain"
     return direct.get(e, "application/octet-stream")

@@ -188,7 +188,7 @@
             </el-table-column>
             <el-table-column label="大小" width="100" align="right">
               <template #default="{ row }">
-                {{ row.kind === "folder" ? "—" : formatSize(row.size) }}
+                {{ formatSize(row.size) }}
               </template>
             </el-table-column>
             <el-table-column label="来源" width="100" align="center">
@@ -206,6 +206,9 @@
                 </el-tag>
                 <span v-else>—</span>
               </template>
+            </el-table-column>
+            <el-table-column label="创建时间" width="170">
+              <template #default="{ row }">{{ formatTime(row.created_time) }}</template>
             </el-table-column>
             <el-table-column label="更新时间" width="170">
               <template #default="{ row }">
@@ -354,7 +357,7 @@
     </el-dialog>
 
     <!-- 文件预览 -->
-    <el-dialog v-model="previewVisible" :title="previewName" width="760px" append-to-body>
+    <el-dialog v-model="previewVisible" :title="previewName" width="860px" append-to-body>
       <div v-loading="previewLoading" class="space-preview">
         <img
           v-if="previewKind === 'image' && previewImageUrl"
@@ -362,6 +365,41 @@
           class="space-preview-img"
         />
         <VuePdfEmbed v-else-if="previewKind === 'pdf' && previewPdfUrl" :source="previewPdfUrl" />
+        <iframe
+          v-else-if="previewKind === 'html' && previewHtmlSrc"
+          :srcdoc="previewHtmlSrc"
+          class="space-preview-frame"
+          sandbox=""
+        />
+        <div
+          v-else-if="previewKind === 'markdown'"
+          class="space-preview-markdown"
+          v-html="previewHtml"
+        />
+        <div v-else-if="previewKind === 'code'" class="space-preview-code" v-html="previewHtml" />
+        <div v-else-if="previewKind === 'xlsx'" class="space-preview-table">
+          <template v-for="s in previewTableSheets" :key="s.name">
+            <div v-if="previewTableSheets.length > 1" class="space-preview-sheet-name">
+              {{ s.name }}
+            </div>
+            <el-table
+              :data="s.rows"
+              size="small"
+              border
+              max-height="48vh"
+              class="space-preview-xlsx"
+            >
+              <el-table-column
+                v-for="col in s.columns"
+                :key="col.prop"
+                :prop="col.prop"
+                :label="col.label"
+                min-width="120"
+                show-overflow-tooltip
+              />
+            </el-table>
+          </template>
+        </div>
         <div v-else-if="previewKind === 'docx'" class="space-preview-html" v-html="previewHtml" />
         <div v-else class="space-preview-text">{{ previewContent || "（空文档）" }}</div>
       </div>
@@ -463,6 +501,11 @@ import {
 } from "@element-plus/icons-vue";
 import VuePdfEmbed from "vue-pdf-embed";
 import mammoth from "mammoth";
+import MarkdownIt from "markdown-it";
+import hljs from "highlight.js";
+import "highlight.js/styles/github.css";
+import DOMPurify from "dompurify";
+import ExcelJS from "exceljs";
 
 import {
   createSpaceFolder,
@@ -474,6 +517,7 @@ import {
   getSpaceFolderTree,
   getSpaceQuota,
   moveSpaceFile,
+  previewOfficePdf,
   previewSpaceFile,
   renameSpaceFile,
   submitSpaceQuotaRequest,
@@ -497,6 +541,7 @@ interface SpaceTreeNode {
   file_type?: string;
   source?: "upload" | "agent";
   size?: number;
+  created_time?: string;
   updated_time?: string;
 }
 
@@ -521,6 +566,7 @@ interface SpaceRow {
   file_type: string;
   size: number;
   source: string;
+  created_time?: string;
   updated_time: string;
   parent_id?: number | null;
   ext?: string;
@@ -554,9 +600,10 @@ const displayItems = computed<SpaceRow[]>(() => {
     name: n.name,
     kind: "folder",
     file_type: "folder",
-    size: 0,
+    size: n.size || 0,
     source: "folder",
-    updated_time: "",
+    created_time: n.created_time,
+    updated_time: n.updated_time || "",
     parent_id: n.parent_id,
   }));
   const fileRows: SpaceRow[] = files.value.map((f) => ({ ...f, kind: "file" }));
@@ -577,8 +624,12 @@ const typeOptions = [
   { value: "image", label: "图片" },
   { value: "pdf", label: "PDF" },
   { value: "docx", label: "文档" },
+  { value: "xlsx", label: "表格" },
+  { value: "pptx", label: "演示" },
   { value: "txt", label: "文本" },
   { value: "md", label: "Markdown" },
+  { value: "html", label: "HTML" },
+  { value: "code", label: "代码" },
   { value: "csv", label: "CSV" },
   { value: "json", label: "JSON" },
   { value: "video", label: "视频" },
@@ -589,8 +640,12 @@ const typeLabels: Record<string, string> = {
   image: "图片",
   pdf: "PDF",
   docx: "文档",
+  xlsx: "表格",
+  pptx: "演示",
   txt: "文本",
   md: "MD",
+  html: "HTML",
+  code: "代码",
   csv: "CSV",
   json: "JSON",
   video: "视频",
@@ -696,6 +751,9 @@ async function decorateWithFiles(nodes: SpaceFolder[]): Promise<SpaceTreeNode[]>
       kind: "folder" as const,
       treeKey: `folder-${n.id}`,
       parent_id: n.parent_id,
+      size: n.size,
+      created_time: n.created_time,
+      updated_time: n.updated_time,
       children: [...subFolders, ...fileNodes],
     });
   }
@@ -997,21 +1055,156 @@ const previewName = ref("");
 const previewKind = ref("text");
 const previewContent = ref("");
 const previewHtml = ref("");
+const previewHtmlSrc = ref("");
 const previewImageUrl = ref("");
 const previewPdfUrl = ref("");
 const previewLoading = ref(false);
+const previewTableSheets = ref<XlsxSheet[]>([]);
+
+interface XlsxSheet {
+  name: string;
+  columns: { prop: string; label: string }[];
+  rows: Record<string, string | number>[];
+}
+
+// markdown 渲染：hljs 高亮 + 关闭原生 html（防 XSS，走 dompurify 白名单）
+function escapeHtmlText(s: string): string {
+  return s.replace(/[&<>"']/g, (m) => {
+    const map: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+    return map[m];
+  });
+}
+
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  highlight: (str, lang) => {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        const r = hljs.highlight(str, { language: lang, ignoreIllegals: true });
+        return `<pre class="hljs"><code>${r.value}</code></pre>`;
+      } catch {
+        /* fallthrough */
+      }
+    }
+    return `<pre class="hljs"><code>${escapeHtmlText(str)}</code></pre>`;
+  },
+});
+
+const EXT_TO_LANG: Record<string, string> = {
+  py: "python",
+  js: "javascript",
+  ts: "typescript",
+  jsx: "javascript",
+  tsx: "typescript",
+  java: "java",
+  c: "c",
+  cpp: "cpp",
+  h: "cpp",
+  hpp: "cpp",
+  cs: "csharp",
+  go: "go",
+  rs: "rust",
+  rb: "ruby",
+  php: "php",
+  sh: "bash",
+  bash: "bash",
+  bat: "dos",
+  ps1: "powershell",
+  css: "css",
+  scss: "scss",
+  less: "less",
+  sql: "sql",
+  xml: "xml",
+  toml: "ini",
+  ini: "ini",
+  yml: "yaml",
+  yaml: "yaml",
+  vue: "xml",
+  svelte: "xml",
+  kt: "kotlin",
+  swift: "swift",
+  r: "r",
+  m: "objectivec",
+  pl: "perl",
+  lua: "lua",
+  json: "json",
+  html: "xml",
+  htm: "xml",
+};
+
+function mapExtToLang(ext: string): string {
+  return EXT_TO_LANG[ext] || "";
+}
+
+function cellToValue(cell: ExcelJS.Cell): string | number {
+  const v = cell.value;
+  if (v == null) return "";
+  if (v instanceof Date) return v.toLocaleString();
+  if (typeof v === "object") {
+    // 富文本 / 超链接等 { text, ... }
+    const obj = v as { text?: unknown; result?: unknown };
+    if (obj.text != null) return String(obj.text);
+    if (obj.result != null) return String(obj.result);
+    return String(v);
+  }
+  return typeof v === "number" ? v : String(v);
+}
+
+async function parseXlsx(ab: ArrayBuffer): Promise<XlsxSheet[]> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(ab);
+  const sheets: XlsxSheet[] = [];
+  wb.eachSheet((ws) => {
+    const matrix: (string | number)[][] = [];
+    ws.eachRow((row) => {
+      const cells: (string | number)[] = [];
+      const count = row.cellCount || row.actualCellCount || 1;
+      for (let c = 1; c <= count; c++) {
+        cells.push(cellToValue(row.getCell(c)));
+      }
+      matrix.push(cells);
+    });
+    if (matrix.length) {
+      const header = matrix[0];
+      const colCount = Math.max(header.length, ...matrix.slice(1).map((r) => r.length), 0);
+      const columns: { prop: string; label: string }[] = [];
+      for (let c = 0; c < colCount; c++) {
+        columns.push({ prop: `c${c}`, label: String(header[c] ?? "") });
+      }
+      const rows = matrix.slice(1).map((r) => {
+        const o: Record<string, string | number> = {};
+        for (let c = 0; c < colCount; c++) o[`c${c}`] = r[c] ?? "";
+        return o;
+      });
+      sheets.push({ name: ws.name || "Sheet", columns, rows });
+    } else {
+      sheets.push({ name: ws.name || "Sheet", columns: [], rows: [] });
+    }
+  });
+  return sheets;
+}
 
 async function openPreview(row: any) {
   previewVisible.value = true;
   previewName.value = row.name;
   previewContent.value = "";
   previewHtml.value = "";
+  previewHtmlSrc.value = "";
   previewImageUrl.value = "";
   previewPdfUrl.value = "";
+  previewTableSheets.value = [];
   previewLoading.value = true;
   const ft = (row.file_type || "").toLowerCase();
+  const ext = (row.ext || "").toLowerCase();
   try {
-    if (ft === "image" || ft === "pdf" || ft === "docx") {
+    if (ft === "image" || ft === "pdf" || ft === "docx" || ft === "xlsx" || ft === "pptx") {
       previewKind.value = ft;
       const r: any = await downloadSpaceFile(row.id);
       const blob = r.data instanceof Blob ? r.data : new Blob([r.data]);
@@ -1019,15 +1212,42 @@ async function openPreview(row: any) {
         previewImageUrl.value = URL.createObjectURL(blob);
       } else if (ft === "pdf") {
         previewPdfUrl.value = URL.createObjectURL(blob);
+      } else if (ft === "pptx") {
+        // office → PDF 预览（复用 pdf 渲染）
+        const pr: any = await previewOfficePdf(row.id);
+        const pblob = pr.data instanceof Blob ? pr.data : new Blob([pr.data]);
+        previewPdfUrl.value = URL.createObjectURL(pblob);
+        previewKind.value = "pdf";
+      } else if (ft === "xlsx") {
+        previewTableSheets.value = await parseXlsx(await blob.arrayBuffer());
       } else {
         const ab = await blob.arrayBuffer();
         const res = await mammoth.convertToHtml({ arrayBuffer: ab });
         previewHtml.value = res.value || "";
       }
+    } else if (ft === "md") {
+      previewKind.value = "markdown";
+      const rr = await previewSpaceFile(row.id);
+      const content = rr.data?.data?.content || "";
+      previewHtml.value = DOMPurify.sanitize(md.render(content));
+    } else if (ft === "html") {
+      previewKind.value = "html";
+      const rr = await previewSpaceFile(row.id);
+      previewHtmlSrc.value = rr.data?.data?.content || "";
+    } else if (ft === "code") {
+      previewKind.value = "code";
+      const rr = await previewSpaceFile(row.id);
+      const content = rr.data?.data?.content || "";
+      const lang = mapExtToLang(ext);
+      const value =
+        lang && hljs.getLanguage(lang)
+          ? hljs.highlight(content, { language: lang, ignoreIllegals: true }).value
+          : hljs.highlightAuto(content).value;
+      previewHtml.value = `<pre class="hljs"><code>${value}</code></pre>`;
     } else {
       previewKind.value = "text";
-      const r = await previewSpaceFile(row.id);
-      previewContent.value = r.data?.data?.content || "";
+      const rr = await previewSpaceFile(row.id);
+      previewContent.value = rr.data?.data?.content || "";
     }
   } catch (e: any) {
     previewKind.value = "text";
@@ -1272,6 +1492,78 @@ async function submitQuotaRequest() {
   :deep(img) {
     max-width: 100%;
   }
+}
+
+.space-preview-frame {
+  width: 100%;
+  height: 60vh;
+  background: #fff;
+  border: none;
+}
+
+.space-preview-markdown {
+  line-height: 1.6;
+  color: var(--el-text-color-primary);
+  overflow-wrap: break-word;
+  :deep(h1),
+  :deep(h2),
+  :deep(h3),
+  :deep(h4) {
+    margin: 0.6em 0 0.4em;
+    font-weight: 600;
+  }
+  :deep(p) {
+    margin: 0.4em 0;
+  }
+  :deep(pre) {
+    padding: 12px;
+    overflow: auto;
+    background: #f6f8fa;
+    border-radius: var(--el-border-radius-base);
+  }
+  :deep(code) {
+    font-family: var(--el-font-family-mono, monospace);
+  }
+  :deep(img) {
+    max-width: 100%;
+  }
+  :deep(table) {
+    border-collapse: collapse;
+  }
+  :deep(th),
+  :deep(td) {
+    padding: 4px 8px;
+    border: 1px solid var(--el-border-color);
+  }
+  :deep(blockquote) {
+    padding: 0 1em;
+    margin: 0.4em 0;
+    color: var(--el-text-color-secondary);
+    border-left: 4px solid var(--el-border-color);
+  }
+}
+
+.space-preview-code {
+  :deep(.hljs) {
+    padding: 12px;
+    overflow: auto;
+    color: var(--el-text-color-primary);
+    background: #f6f8fa;
+    border-radius: var(--el-border-radius-base);
+  }
+  :deep(code) {
+    font-family: var(--el-font-family-mono, monospace);
+    font-size: var(--el-font-size-base);
+  }
+}
+
+.space-preview-sheet-name {
+  margin: 8px 0 4px;
+  font-weight: 600;
+}
+
+.space-preview-xlsx {
+  margin-bottom: 8px;
 }
 
 .quota-current {

@@ -246,3 +246,143 @@ def test_get_file_rejects_other_user(test_client, auth_headers, monkeypatch):
 def test_no_auth_rejected(test_client):
     r = test_client.get("/api/v1/ai/space/files/list")
     assert r.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------- #
+# 搜索（全局） / 文件夹属性 / 代码与html预览 / office转PDF
+# ---------------------------------------------------------------- #
+def test_search_global_ignores_folder(test_client, auth_headers, monkeypatch):
+    """有 keyword/file_type 时全局搜索整个工作空间，忽略 folder_id 限制。"""
+    _mock_s3(monkeypatch)
+    h = auth_headers
+    a = test_client.post(
+        "/api/v1/ai/space/folders/create", json={"name": "A"}, headers=h
+    ).json()["data"]["id"]
+    _upload(test_client, h, name="report.txt", content=b"report", folder_id=a)
+
+    # 按 keyword 全局搜（即便指定 folder_id 也应命中其它目录）
+    lst = test_client.get(
+        f"/api/v1/ai/space/files/list?keyword=report&folder_id={a}", headers=h
+    ).json()["data"]
+    assert lst["total"] == 1 and lst["items"][0]["name"] == "report.txt"
+
+    # 按 type 全局搜
+    lst2 = test_client.get(
+        "/api/v1/ai/space/files/list?file_type=txt&folder_id=999999", headers=h
+    ).json()["data"]
+    assert lst2["total"] == 1
+
+    # 无搜索条件 → 按目录浏览：folder_id=999999 命中 0
+    lst3 = test_client.get(
+        "/api/v1/ai/space/files/list?folder_id=999999", headers=h
+    ).json()["data"]
+    assert lst3["total"] == 0
+
+
+def test_folder_tree_recursive_stats(test_client, auth_headers):
+    """folder_tree 应返回 created_time 与递归 size/file_count（含子文件夹）。"""
+    h = auth_headers
+    uid = _admin_id(test_client, h)
+    a = test_client.post(
+        "/api/v1/ai/space/folders/create", json={"name": "A"}, headers=h
+    ).json()["data"]["id"]
+    b = test_client.post(
+        "/api/v1/ai/space/folders/create", json={"name": "B", "parent_id": a}, headers=h
+    ).json()["data"]["id"]
+
+    async def _seed():
+        async with async_db_session.begin() as db:
+            db.add(AiSpaceFileModel(
+                uuid="fa", folder_id=a, user_id=uid, name="a.txt", ext="txt",
+                file_type="txt", mime_type="text/plain", size=100,
+                object_key="ai-space/1/x/fa.txt", source="upload",
+            ))
+            db.add(AiSpaceFileModel(
+                uuid="fb", folder_id=b, user_id=uid, name="b.txt", ext="txt",
+                file_type="txt", mime_type="text/plain", size=300,
+                object_key="ai-space/1/x/fb.txt", source="upload",
+            ))
+
+    asyncio.run(_seed())
+
+    tree = test_client.get("/api/v1/ai/space/folders/tree", headers=h).json()["data"]
+    node_a = next(n for n in tree if n["id"] == a)
+    assert node_a["size"] == 400 and node_a["file_count"] == 2
+    assert node_a["created_time"] is not None
+    node_b = next(n for n in node_a["children"] if n["id"] == b)
+    assert node_b["size"] == 300 and node_b["file_count"] == 1
+
+
+def test_preview_code_and_html(test_client, auth_headers, monkeypatch):
+    """code/html 属文本类：预览返回真实源码内容。"""
+    _mock_s3(monkeypatch, content=b"def foo():\n    return 1")
+    fid = _upload(test_client, auth_headers, name="x.py", content=b"def foo():\n    return 1").json()["data"]["id"]
+    pv = test_client.get(f"/api/v1/ai/space/files/{fid}/preview", headers=auth_headers).json()["data"]
+    assert pv["kind"] == "text" and "def foo" in pv["content"]
+
+    _mock_s3(monkeypatch, content=b"<h1>Hi</h1>")
+    fid2 = _upload(test_client, auth_headers, name="p.html", content=b"<h1>Hi</h1>").json()["data"]["id"]
+    pv2 = test_client.get(f"/api/v1/ai/space/files/{fid2}/preview", headers=auth_headers).json()["data"]
+    assert pv2["kind"] == "text" and "<h1>Hi</h1>" in pv2["content"]
+
+
+def test_convert_pdf_passthrough(test_client, auth_headers, monkeypatch):
+    """pdf → 直接返回字节（不需 soffice）。"""
+    _mock_s3(monkeypatch, content=b"%PDF-1.4 fake")
+    fid = _upload(test_client, auth_headers, name="d.pdf", content=b"%PDF-1.4 fake").json()["data"]["id"]
+    import asyncio
+
+    from app.plugin.module_ai.space.service import SpaceService
+
+    res = asyncio.run(SpaceService.convert_to_pdf(fid, _admin_id(test_client, auth_headers)))
+    assert res["mime_type"] == "application/pdf" and res["data"].startswith(b"%PDF")
+
+
+def test_convert_pdf_office(test_client, auth_headers, monkeypatch):
+    """真实 office(xlsx) → pdf：依赖 LibreOffice soffice，缺失则跳过。"""
+    import asyncio
+    import io
+
+    import pytest
+
+    from app.plugin.module_ai.space.service import SpaceService
+
+    if not SpaceService._find_soffice():
+        pytest.skip("无 LibreOffice soffice，跳过 office→PDF 集成测试")
+
+    wb = io.BytesIO()
+    from openpyxl import Workbook
+
+    book = Workbook()
+    sheet = book.active
+    sheet["A1"] = "hello"
+    sheet["B1"] = 42
+    book.save(wb)
+    data = wb.getvalue()
+
+    def _get(key, **k):
+        return {
+            "Body": _FakeBody(data),
+            "ContentLength": len(data),
+            "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.get_object", _get)
+    monkeypatch.setattr("app.utils.s3_client.s3_client.upload_fileobj", lambda *a, **k: None)
+    uid = _admin_id(test_client, auth_headers)
+
+    async def _seed():
+        async with async_db_session.begin() as db:
+            r = AiSpaceFileModel(
+                uuid="fx", folder_id=None, user_id=uid, name="t.xlsx", ext="xlsx",
+                file_type="xlsx",
+                mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                size=len(data), object_key="ai-space/1/x/fx.xlsx", source="upload",
+            )
+            db.add(r)
+            await db.flush()
+            return r.id
+
+    fid = asyncio.run(_seed())
+    res = asyncio.run(SpaceService.convert_to_pdf(fid, uid))
+    assert res["mime_type"] == "application/pdf" and res["data"].startswith(b"%PDF")
