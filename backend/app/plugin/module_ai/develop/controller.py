@@ -17,10 +17,11 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -150,6 +151,21 @@ async def embed_run(
     if ctx.kind == "workflow":
         return ui_stream_response(gen)
     return agno_stream_response(gen)
+
+
+@EmbedRouter.get("/sdk.js", summary="嵌入 SDK 脚本")
+async def embed_sdk() -> PlainTextResponse:
+    """返回嵌入 SDK 静态脚本。
+
+    本端点**无鉴权**：返回的是纯代码、不含任何凭证；实质鉴权发生在 ``/embed/run``
+    等业务端点（Bearer access_token）。请勿在此文件中放入任何密钥。
+    """
+    path = Path(__file__).parent / "static" / "ai-assistant.js"
+    return PlainTextResponse(
+        path.read_text(encoding="utf-8"),
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @OpenApiRouter.get("/auth/verify", summary="鉴权验证")
