@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String
+from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,13 @@ class AiSessionModel(ModelMixin):
     )
     user_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True, index=True, comment="所属用户ID"
+    )
+    source_app_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("ai_integration_apps.id"),
+        nullable=True,
+        index=True,
+        comment="来源集成应用ID（空=内部用户创建）",
     )
     title: Mapped[str] = mapped_column(String(255), default="", comment="标题")
     message_count: Mapped[int] = mapped_column(Integer, default=0, comment="消息数量")
