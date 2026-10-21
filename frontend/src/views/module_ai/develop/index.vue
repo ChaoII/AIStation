@@ -87,7 +87,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="call_count" label="调用次数" width="90" align="center" />
-            <el-table-column label="操作" width="250" fixed="right">
+            <el-table-column label="操作" width="250" :fixed="fixedAction">
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="['module_ai:develop:query']"
@@ -404,7 +404,7 @@
               min-width="140"
               show-overflow-tooltip
             />
-            <el-table-column label="操作" width="190" fixed="right">
+            <el-table-column label="操作" width="190" :fixed="fixedAction">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openApprovalDetail(row)">详情</el-button>
                 <template v-if="row.status === 'pending'">
@@ -793,6 +793,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Search, CopyDocument } from "@element-plus/icons-vue";
+import { useWindowSize } from "@vueuse/core";
 import {
   createApp,
   deleteApp,
@@ -810,6 +811,12 @@ import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import EmbedDialog from "./components/EmbedDialog.vue";
 
 defineOptions({ name: "AiDevelopManage" });
+
+//: 窄屏（<1280）不把操作列固定在右侧——否则会盖住相邻列的内容（1024 下状态标签被切）。
+const { width: viewportWidth } = useWindowSize();
+const fixedAction = computed<"right" | undefined>(() =>
+  viewportWidth.value >= 1280 ? "right" : undefined
+);
 
 // ---- 能力品类目录（与后端 capabilities.py 保持一致） ----
 const CATEGORIES: Record<string, string> = {

@@ -55,6 +55,16 @@ def _sanitize_body(payload: Any) -> dict:
     return out
 
 
+def _strip_secrets(payload: Any) -> dict:
+    """只剔除凭证键、**保留完整参数**（审批后要按原参数执行，不能截断）。"""
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: ("***" if str(key).lower() in _SENSITIVE_KEYS else value)
+        for key, value in payload.items()
+    }
+
+
 def _summarize(result: Any) -> str | None:
     """把 handler 结果压成一行摘要（列表记条数，dict 记键，其余取字符串）。"""
     if result is None:
@@ -117,6 +127,29 @@ async def audit_call(
 def _app_requires_approval(ctx: AppContext) -> bool:
     """应用是否开启「调用需人工审批」（``app`` 为对外 dict，取不到按未开启处理）。"""
     return bool((ctx.app or {}).get("requires_approval"))
+
+
+def _validate_payload(cap: Capability, payload: dict) -> None:
+    """审批入队前先按能力的 JSON Schema 校验入参。
+
+    审批门禁发生在 handler 之前，若不先校验，**参数非法的请求也会被排进审批队列**，
+    管理员批准时才失败——既浪费人工，也让审批列表变成垃圾场。这里做一次
+    轻量 JSON Schema 校验（失败即 400）；schema 缺失或校验器异常时放行。
+    """
+    schema = cap.input_schema or {}
+    if not schema.get("properties") and not schema.get("required"):
+        return
+    try:
+        from jsonschema import ValidationError, validate
+    except Exception:  # noqa: BLE001 - 未安装校验库则跳过（不阻断）
+        return
+    try:
+        validate(instance=payload, schema=schema)
+    except ValidationError as exc:
+        field = ".".join(str(p) for p in exc.absolute_path) or "(root)"
+        raise CustomException(
+            msg=f"参数不合法：{field} {exc.message}", code=10400, status_code=400
+        ) from exc
 
 
 async def check_open_limits(
@@ -241,7 +274,11 @@ async def invoke_capability(
     if cap.requires_approval and not bypass_approval and _app_requires_approval(ctx):
         from .approvals import ApprovalService
 
-        row = await ApprovalService.create(ctx, cap, body)
+        # 先校验入参，避免把非法请求排进审批队列
+        _validate_payload(cap, payload or {})
+        # 审批行保存**完整入参**（仅剔除凭证键）：批准后要按原参数执行，
+        # 不能用审计用的截断体，否则长文本参数会被截断导致执行语义变化。
+        row = await ApprovalService.create(ctx, cap, _strip_secrets(payload))
         await audit_call(
             ctx,
             category=cap.category,

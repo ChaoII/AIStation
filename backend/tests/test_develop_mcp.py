@@ -21,7 +21,7 @@ def _uid() -> str:
 def _create_app(test_client, auth_headers, caps):
     r = test_client.post(
         f"{API}/ai/develop/create",
-        json={"name": f"MCP面-{_uid()}", "capabilities": caps},
+        json={"name": f"MCP面-{_uid()}", "capabilities": caps, "requires_approval": False},
         headers=auth_headers,
     )
     assert r.status_code == 200, r.text

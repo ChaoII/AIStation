@@ -211,3 +211,35 @@
 - **UI 计算样式探测**：外壳 padding 12px / 边框 1px / 圆角 4px / 白底，与「能力市场」逐项相等；4 个页签内所有表格 `el-table--border` 齐全、无横向溢出。
 - 截图归档：`.openchamber/screenshots/p2-docs-rest.png`、`p2-docs-capabilities.png`、`p2-mcp-sessions.png`、`p2-logs-mcp.png`。
 
+---
+
+## 第二轮深挖与补强（2026-10-22 晚）
+
+### 功能逻辑缺陷（已修）
+
+| 问题 | 修复 |
+|------|------|
+| `chat.send` / `bot.use` 无超时，目标卡住会长期占用连接与并发槽 | 增加 `OPEN_API_CHAT_TIMEOUT_SECONDS`（默认 120s），超时返回 504 明确文案并写 failed 审计 |
+| 开放面 `train.create` 不校验数据集，能建出指向不存在数据集的悬空任务 | 创建前校验 `annotation_dataset` 存在且未删除（404） |
+| 开放面 `agent.delete` 是物理删除却无确认 | 要求 `confirm=true`，否则 400；MCP 工具 schema 同步要求该字段 |
+| MCP 会话 `close_reason` 存协议方法名（tools/call） | 存中文原因（工具调用/握手完成/…），前端 `transport` 也中文化 |
+| 审批入参存的是审计用截断体（长文本被截到 200 字） | 审批单独保存**完整入参**（仅剔除凭证键），并加单测钉住 |
+| 审批门禁在参数校验之前，非法请求会被排进审批队列 | 入队前按能力 JSON Schema 校验（jsonschema），失败 400 |
+| 审批可重复处理（拒绝后仍能被批准并执行） | 审批接口与 service 双重校验 `status == pending` |
+| 迁移 revision 与既有 `c8d9e0f1a2b3` 撞号导致迁移链成环（应用启动 SystemExit） | 改用 `d9e0f1a2b3c4`；新增「迁移链只能有一个 head」回归测试 |
+
+### 缺失功能（已补）
+
+- **敏感调用审批流**（spec 提出「关键动作可审批」，此前完全未实现）：应用 `requires_approval` + 能力 `requires_approval`（`agent.delete`、`train.create/start/stop`）→ 先落 `ai_integration_approvals`（pending，不执行）→ 管理端「调用审批」页签批准后以原应用身份执行并回写结果 / 拒绝只记意见。权限点 `module_ai:develop:approve` 启动时幂等补齐。
+- **配额与审批 UI**：应用表单新增「需人工审批」开关与「按日调用配额」（agent/chat/train/bot/embed 五类，0/空=不限），此前后端支持但页面无法配置。
+- **日志/会话中文化**：出海口、状态、传输方式全部中文；日志表新增「待审批」状态色。
+- **窄屏（1024）适配**：操作列在 <1280 不再 `fixed=right`，避免固定列盖住状态标签；表单弹窗限高 88vh + 内部滚动。
+
+### 仍待办（下一轮候选）
+
+1. 调用统计概览（今日调用/成功率/平均耗时/Top 能力/按天趋势）。
+2. 调用日志时间范围过滤、详情抽屉、导出。
+3. 管理端「能力试调」（选应用 + 能力 + JSON 入参直接调开放面）。
+4. 审批通知（待审批提醒/超时自动拒绝）、配额用量可视化。
+5. MCP 资源/提示词（resources/prompts）暴露。
+6. `train.create` 对标注任务 / 基础模型的存在性校验。

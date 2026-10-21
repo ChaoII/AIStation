@@ -138,6 +138,22 @@ def test_approval_disabled_app_executes_immediately(test_client, auth_headers):
         _cleanup(test_client, auth_headers, app["id"], [agent_id] if agent_id else [])
 
 
+def test_approval_keeps_full_payload():
+    """审批行必须保存完整入参（仅剔除凭证），不能存审计用的截断体。
+
+    否则长文本参数（如工作流提示/超参）在批准执行时会被截断，语义改变。
+    """
+    from app.plugin.module_ai.develop.openapi import _sanitize_body, _strip_secrets
+
+    payload = {"name": "x" * 400, "appkey": "secret-value", "n": 3}
+    audit = _sanitize_body(payload)
+    stored = _strip_secrets(payload)
+    assert len(audit["name"]) == 200  # 审计体截断
+    assert len(stored["name"]) == 400  # 审批体保留完整
+    assert stored["appkey"] == "***"
+    assert stored["n"] == 3
+
+
 def test_reject_keeps_resource_untouched(test_client, auth_headers):
     app = _create_app(test_client, auth_headers, AGENT_CAPS, approval=True)
     agent_id = None
