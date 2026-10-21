@@ -78,10 +78,11 @@
           v-loading="loadingTokens"
           :data="tokens"
           size="small"
+          border
           max-height="150"
           empty-text="暂无令牌（换票与体验票都会出现在这里）"
         >
-          <el-table-column label="形态" width="76">
+          <el-table-column label="形态" width="74">
             <template #default="{ row }">
               <div>{{ kindLabel(row.kind) }}</div>
               <div class="embed-dialog__sub">
@@ -90,7 +91,11 @@
             </template>
           </el-table-column>
           <el-table-column prop="target_name" label="目标" min-width="84" show-overflow-tooltip />
-          <el-table-column prop="expires_at" label="过期时间" width="140" />
+          <el-table-column label="过期时间" width="110">
+            <template #default="{ row }">
+              <span :title="row.expires_at">{{ fmtShort(row.expires_at) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="use_count" label="使用" width="50" align="right" />
           <el-table-column label="状态" width="76">
             <template #default="{ row }">
@@ -215,6 +220,12 @@ const reveal = reactive({ visible: false, token: "", expiresAt: "" });
 
 function kindLabel(k: string): string {
   return { agent: "Agent", app: "AI 应用", workflow: "工作流" }[k] || k;
+}
+
+/** 令牌过期时间：同一天内显示「MM-DD HH:mm」，表格窄列不折行。 */
+function fmtShort(v?: string): string {
+  if (!v) return "—";
+  return v.length >= 16 ? v.slice(5, 16) : v;
 }
 
 function normalizeList(res: any): any[] {

@@ -39,9 +39,9 @@
             </el-button>
           </div>
 
-          <el-table v-loading="appLoading" :data="apps" row-key="id" stripe>
+          <el-table v-loading="appLoading" :data="apps" row-key="id" border stripe>
             <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
-            <el-table-column label="AppID" min-width="200">
+            <el-table-column label="AppID" min-width="170">
               <template #default="{ row }">
                 <div class="appid-cell">
                   <span class="appid-cell__value">{{ row.appid_masked || "—" }}</span>
@@ -53,7 +53,7 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="状态" width="90">
+            <el-table-column label="状态" width="100">
               <template #default="{ row }">
                 <el-switch
                   v-hasPerm="['module_ai:develop:update']"
@@ -62,14 +62,14 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="到期时间" min-width="160">
+            <el-table-column label="到期时间" width="150">
               <template #default="{ row }">
                 <span :class="{ 'text-muted': !row.expire_at }">
                   {{ fmtDateTime(row.expire_at) }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column label="权限点" min-width="240">
+            <el-table-column label="权限点" min-width="200">
               <template #default="{ row }">
                 <template v-if="row.capabilities && row.capabilities.length">
                   <el-tooltip
@@ -86,12 +86,12 @@
                 <span v-else class="text-muted">—</span>
               </template>
             </el-table-column>
-            <el-table-column prop="call_count" label="调用次数" width="100" align="center" />
-            <el-table-column label="操作" width="330" fixed="right">
+            <el-table-column prop="call_count" label="调用次数" width="90" align="center" />
+            <el-table-column label="操作" width="250" fixed="right">
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="['module_ai:develop:query']"
-                  text
+                  link
                   type="primary"
                   @click="openEmbed(row)"
                 >
@@ -99,7 +99,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:develop:update']"
-                  text
+                  link
                   type="primary"
                   @click="openEdit(row)"
                 >
@@ -107,7 +107,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:develop:reset']"
-                  text
+                  link
                   type="primary"
                   @click="openKeyDialog(row)"
                 >
@@ -115,7 +115,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:develop:delete']"
-                  text
+                  link
                   type="danger"
                   @click="onDelete(row)"
                 >
@@ -205,37 +205,37 @@
             </el-form-item>
           </el-form>
 
-          <el-table v-loading="logLoading" :data="logs" row-key="id" stripe>
-            <el-table-column label="时间" width="170">
+          <el-table v-loading="logLoading" :data="logs" row-key="id" border stripe>
+            <el-table-column label="时间" width="165" show-overflow-tooltip>
               <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
             </el-table-column>
-            <el-table-column label="AppID" width="160">
+            <el-table-column label="AppID" width="120" show-overflow-tooltip>
               <template #default="{ row }">{{ row.appid || "—" }}</template>
             </el-table-column>
-            <el-table-column label="品类" width="100">
+            <el-table-column label="品类" width="85">
               <template #default="{ row }">
                 {{ CATEGORIES[row.category || ""] || row.category }}
               </template>
             </el-table-column>
-            <el-table-column prop="capability" label="能力" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="method" label="出海口" width="100" />
-            <el-table-column label="状态" width="90">
+            <el-table-column prop="capability" label="能力" min-width="145" show-overflow-tooltip />
+            <el-table-column prop="method" label="出海口" width="80" />
+            <el-table-column label="状态" width="100">
               <template #default="{ row }">
                 <el-tag size="small" :type="logStatusType(row.status)">{{ row.status }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="latency_ms" label="耗时(ms)" width="90" align="right" />
-            <el-table-column prop="cost_tokens" label="Tokens" width="90" align="right" />
+            <el-table-column prop="latency_ms" label="耗时(ms)" width="85" align="right" />
+            <el-table-column prop="cost_tokens" label="Tokens" width="78" align="right" />
             <el-table-column
               prop="request_path"
               label="请求路径"
-              min-width="180"
+              min-width="150"
               show-overflow-tooltip
             />
             <el-table-column
               prop="result_summary"
               label="结果摘要"
-              min-width="200"
+              min-width="160"
               show-overflow-tooltip
             />
             <template #empty>
@@ -281,37 +281,34 @@
             </el-form-item>
           </el-form>
 
-          <el-table v-loading="mcpLoading" :data="mcps" row-key="id" stripe>
-            <el-table-column label="时间" width="170">
-              <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
-            </el-table-column>
-            <el-table-column label="AppID" width="160">
+          <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe>
+            <el-table-column label="AppID" width="120" show-overflow-tooltip>
               <template #default="{ row }">{{ row.appid || "—" }}</template>
             </el-table-column>
-            <el-table-column label="会话ID" width="220">
+            <el-table-column label="会话ID" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">
                 <span class="mono-text">{{ row.session_id || "—" }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="transport" label="传输" width="140" />
+            <el-table-column prop="transport" label="传输" width="100" />
             <el-table-column
               prop="client_info"
               label="客户端"
-              min-width="140"
+              min-width="120"
               show-overflow-tooltip
             />
-            <el-table-column label="开始时间" width="170">
+            <el-table-column label="开始时间" width="165">
               <template #default="{ row }">{{ fmtDateTime(row.started_at) }}</template>
             </el-table-column>
-            <el-table-column label="结束时间" width="170">
+            <el-table-column label="结束时间" width="165">
               <template #default="{ row }">{{ fmtDateTime(row.ended_at, "—") }}</template>
             </el-table-column>
-            <el-table-column prop="duration_s" label="时长(s)" width="90" align="right" />
-            <el-table-column prop="tool_calls" label="工具调用" width="90" align="right" />
+            <el-table-column prop="duration_s" label="时长(s)" width="80" align="right" />
+            <el-table-column prop="tool_calls" label="工具调用" width="85" align="right" />
             <el-table-column
               prop="close_reason"
               label="关闭原因"
-              min-width="140"
+              min-width="120"
               show-overflow-tooltip
             />
             <template #empty>
