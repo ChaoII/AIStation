@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -30,6 +30,8 @@ from app.core.database import async_db_session
 from app.core.dependencies import AuthPermission
 from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
+from app.plugin.module_ai.assistant.agno_service import agno_stream_response
+from app.plugin.module_ai.streaming import ui_stream_response
 
 from .auth import AppContext, EmbedContext, get_app_api_auth, get_embed_ctx, require_app_perm
 from .capabilities import permissions_by_category
@@ -39,7 +41,7 @@ from .model import (
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
-from .schema import DevelopCreateSchema, DevelopUpdateSchema, EmbedTokenIssueSchema
+from .schema import DevelopCreateSchema, DevelopUpdateSchema, EmbedRunSchema, EmbedTokenIssueSchema
 from .service import DevelopService
 
 
@@ -93,6 +95,50 @@ async def embed_meta(
         },
         msg="查询成功",
     )
+
+
+@EmbedRouter.post("/run", summary="嵌入对话（流式）")
+async def embed_run(
+    data: EmbedRunSchema,
+    request: Request,
+    ctx: Annotated[EmbedContext, Depends(get_embed_ctx)],
+) -> StreamingResponse:
+    """嵌入对话主通道：``Bearer <token>``，请求体仅 ``sid`` + ``message``。
+
+    校验顺序（全部在返回流之前完成，错误以 JSON 返回而非 SSE 帧）：
+    权限点 → 会话绑定（403）→ 生成流。审计在流结束时写入 ``method=EMBED``。
+    """
+    async with async_db_session() as db:
+        app_row = await db.get(AiIntegrationAppModel, ctx.app_id)
+    if app_row is None:
+        raise CustomException(msg="鉴权失败", code=10401, status_code=401)
+    if "integration:embed:use" not in ctx.perms:
+        await DevelopService.log_call(
+            app_row,
+            category="embed",
+            capability="run",
+            method="EMBED",
+            transport="sse",
+            request_path="/run",
+            request_body={"sid": data.sid, "kind": ctx.kind, "target_id": ctx.target_id},
+            status="denied",
+            error="无权限操作",
+        )
+        raise CustomException(msg="无权限操作", code=10403, status_code=403)
+    session_id, session_reset = await EmbedService.prepare_session(ctx, data.sid)
+    gen = EmbedService.run_stream(
+        ctx,
+        data.sid,
+        app_row,
+        session_id,
+        session_reset,
+        data.message,
+        redis=getattr(request.app.state, "redis", None),
+    )
+    # 与已登录端点保持同一协议包装：工作流走 UI Message Stream，agent/app 走 Agno 事件流
+    if ctx.kind == "workflow":
+        return ui_stream_response(gen)
+    return agno_stream_response(gen)
 
 
 @OpenApiRouter.get("/auth/verify", summary="鉴权验证")

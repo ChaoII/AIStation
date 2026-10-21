@@ -52,3 +52,13 @@ class EmbedTokenIssueSchema(BaseModel):
     kind: Literal["agent", "app", "workflow"] = Field(..., description="嵌入形态")
     target_id: int = Field(..., description="嵌入目标ID")
     ttl: int | None = Field(default=None, description="有效期秒数（缺省1800，上限86400）")
+
+
+class EmbedRunSchema(BaseModel):
+    """嵌入对话入参：仅会话标识 + 一条消息（上下文由服务端会话维护）。
+
+    ``sid`` 由嵌入页生成并本地保存，服务端按 ``(app_id, sid)`` 映射平台会话。
+    """
+
+    sid: str = Field(..., min_length=8, max_length=64, description="客户端会话标识")
+    message: str = Field(..., min_length=1, max_length=4000, description="用户消息")

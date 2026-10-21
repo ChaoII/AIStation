@@ -6,12 +6,32 @@
 """
 from __future__ import annotations
 
+import time
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
+from types import SimpleNamespace
+from typing import TYPE_CHECKING
+
+from sqlalchemy import select
 
 from app.core.database import async_db_session
+from app.core.exceptions import CustomException
+from app.plugin.module_ai.sessions.model import AiSessionModel
 
-from .model import AiIntegrationAccessTokenModel, AiIntegrationAppModel
-from .service import _generate_embed_token, _hash_embed_token, clamp_embed_ttl
+from .model import (
+    AiIntegrationAccessTokenModel,
+    AiIntegrationAppModel,
+    AiIntegrationEmbedSessionModel,
+)
+from .service import (
+    DevelopService,
+    _generate_embed_token,
+    _hash_embed_token,
+    clamp_embed_ttl,
+)
+
+if TYPE_CHECKING:  # 仅类型标注，避免运行期循环导入
+    from .auth import EmbedContext
 
 
 class EmbedService:
@@ -78,3 +98,130 @@ class EmbedService:
             "expires_in": expires_in,
             "expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
         }
+
+    @classmethod
+    async def prepare_session(cls, ctx: "EmbedContext", sid: str) -> tuple[int, bool]:
+        """解析/建立 ``(app_id, sid)`` → 平台会话映射，返回 ``(session_id, session_reset)``。
+
+        - 同 ``sid`` 换形态/换目标 → 403（防串会话）；
+        - 无映射或映射过期 → 新建平台会话并重置映射（闲置 TTL 24 小时）；
+        - 未过期 → 仅刷新 ``last_active_at``。
+        """
+        now = datetime.now()
+        async with async_db_session.begin() as db:
+            row = (
+                await db.execute(
+                    select(AiIntegrationEmbedSessionModel).where(
+                        AiIntegrationEmbedSessionModel.app_id == ctx.app_id,
+                        AiIntegrationEmbedSessionModel.sid == sid,
+                        AiIntegrationEmbedSessionModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if row is not None and (row.kind != ctx.kind or row.target_id != ctx.target_id):
+                raise CustomException(msg="会话绑定无效", code=10403, status_code=403)
+            reset = row is None or row.expires_at <= now
+            if not reset:
+                row.last_active_at = now
+                return row.session_id, False
+            # 新建平台会话（复用既有会话模型，归属打 source_app_id）
+            session = AiSessionModel(
+                title=f"嵌入-{ctx.kind}-{ctx.target_id}"[:255],
+                user_id=None,
+                source_app_id=ctx.app_id,
+            )
+            db.add(session)
+            await db.flush()
+            expires_at = now + timedelta(hours=24)
+            if row is None:
+                db.add(
+                    AiIntegrationEmbedSessionModel(
+                        app_id=ctx.app_id,
+                        sid=sid,
+                        kind=ctx.kind,
+                        target_id=ctx.target_id,
+                        session_id=session.id,
+                        expires_at=expires_at,
+                        last_active_at=now,
+                    )
+                )
+            else:
+                row.session_id = session.id
+                row.expires_at = expires_at
+                row.last_active_at = now
+            return session.id, True
+
+    @classmethod
+    async def run_stream(
+        cls,
+        ctx: "EmbedContext",
+        sid: str,
+        app_row: AiIntegrationAppModel,
+        session_id: int,
+        session_reset: bool,
+        message: str,
+        redis=None,
+    ) -> AsyncIterator[str]:
+        """嵌入对话流：首帧 ``data-embed``，随后透传三形态既有 run 服务的 UI 帧。
+
+        - 上下文来自**服务端会话**（客户端只传 ``sid`` + ``message``）；
+        - 匿名垫片 ``SimpleNamespace(user=None)``：既有 run 服务经 ``getattr`` 取 uid，
+          ``None`` 已被容忍；
+        - 审计在流结束时写入（成功/异常都写；明文 token 不落审计）。
+        """
+        from app.plugin.module_ai.sessions.service import AiSessionService
+        from app.plugin.module_ai.streaming import UiMessageStream
+
+        ms = UiMessageStream()
+        started = time.perf_counter()
+        status = "success"
+        error_text: str | None = None
+        try:
+            yield ms.data("embed", {"session_reset": session_reset, "sid": sid})
+            history = await AiSessionService.get_messages(session_id)
+            ui_messages = [{"role": m["role"], "parts": m["parts"]} for m in history]
+            ui_messages.append(
+                {"role": "user", "parts": [{"type": "text", "text": message}]}
+            )
+            auth = SimpleNamespace(user=None)  # 匿名垫片（uid=None）
+            if ctx.kind == "agent":
+                from app.plugin.module_ai.agent.service import AiAgentService
+
+                gen = AiAgentService.run_ui_stream(
+                    ctx.target_id, ui_messages, auth, None, session_id
+                )
+            elif ctx.kind == "app":
+                from app.plugin.module_ai.apps.service import run_app_ui_stream
+
+                gen = run_app_ui_stream(ctx.target_id, ui_messages, auth, None, session_id)
+            else:
+                from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+                gen = AiWorkflowService.run_ui_stream(
+                    ctx.target_id, ui_messages, auth, None, session_id, redis=redis
+                )
+            async for frame in gen:
+                yield frame
+        except Exception as e:  # noqa: BLE001
+            status = "error"
+            error_text = str(e)[:250]
+            raise
+        finally:
+            await DevelopService.log_call(
+                app_row,
+                category="embed",
+                capability="run",
+                method="EMBED",
+                transport="sse",
+                session_id=str(session_id),
+                request_path="/run",
+                request_body={
+                    "sid": sid,
+                    "kind": ctx.kind,
+                    "target_id": ctx.target_id,
+                    "message": message[:80],
+                },
+                status=status,
+                error=error_text,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            )
