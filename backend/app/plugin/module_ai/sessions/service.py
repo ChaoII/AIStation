@@ -149,14 +149,27 @@ class AiSessionService:
             s = await db.get(AiSessionModel, session_id)
             if not s or s.is_deleted:
                 return
-            if s.user_id is None or s.user_id != user_id:
-                from app.core.logger import logger
+            if s.user_id is not None:
+                # 用户会话：必须归属调用方
+                if s.user_id != user_id:
+                    from app.core.logger import logger
 
-                logger.warning(
-                    f"拒绝写入非本人 AI 会话: session_id={session_id} "
-                    f"owner={s.user_id} caller={user_id}"
-                )
-                return
+                    logger.warning(
+                        f"拒绝写入非本人 AI 会话: session_id={session_id} "
+                        f"owner={s.user_id} caller={user_id}"
+                    )
+                    return
+            else:
+                # 无用户归属：仅允许「集成应用归属的嵌入会话」被匿名调用方写入；
+                # 无 source_app_id 的历史会话与已登录用户一律拒绝。
+                if not (s.source_app_id is not None and user_id is None):
+                    from app.core.logger import logger
+
+                    logger.warning(
+                        f"拒绝写入潜变的 AI 会话: session_id={session_id} "
+                        f"owner={s.user_id} caller={user_id}"
+                    )
+                    return
             target_app_id = app_id if app_id is not None else s.app_id
             added = 0
             if user_text:

@@ -115,11 +115,20 @@ def test_run_workflow_success_stream_headers_and_audit(test_client, auth_headers
         assert '"data-embed"' in r.text.replace(" ", "")
         assert "结果" in r.text and "data: [DONE]" in r.text
 
-        row = next(
-            i
-            for i in _embed_logs(test_client, auth_headers)
-            if i["app_id"] == app["id"] and i["capability"] == "run"
-        )
+        row = None
+        for _ in range(15):  # 审计为 fire-and-forget 后台任务：短暂轮询等待落库
+            rows = [
+                i
+                for i in _embed_logs(test_client, auth_headers)
+                if i["app_id"] == app["id"] and i["capability"] == "run"
+            ]
+            if rows:
+                row = rows[0]
+                break
+            import time
+
+            time.sleep(0.2)
+        assert row is not None, "后台审计未在 3 秒内落库"
         assert row["status"] == "success" and row["latency_ms"] >= 0
         assert token not in str(row.get("request_body"))
     finally:
@@ -176,6 +185,41 @@ def test_run_expired_token_401(test_client, auth_headers):
 
 def _run_async(coro):
     return asyncio.run(coro)
+
+
+def test_record_exchange_allows_app_owned_anonymous_session(test_client, auth_headers):
+    """会话归属守卫：仅「app 归属 + 匿名调用方」的嵌入会话可写入（多轮上下文依赖）。"""
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.sessions.model import AiSessionModel
+    from app.plugin.module_ai.sessions.service import AiSessionService
+
+    app = _create_app(test_client, auth_headers)
+
+    async def _go():
+        async with async_db_session.begin() as db:
+            embed_session = AiSessionModel(
+                title="嵌入守卫-允许", user_id=None, source_app_id=app["id"]
+            )
+            ownerless = AiSessionModel(title="嵌入守卫-拒绝", user_id=None, source_app_id=None)
+            db.add_all([embed_session, ownerless])
+            await db.flush()
+            ids = (embed_session.id, ownerless.id)
+        await AiSessionService.record_exchange(ids[0], "hi", "ok", user_id=None)
+        await AiSessionService.record_exchange(ids[1], "hi", "ok", user_id=None)
+        return (
+            await AiSessionService.get_messages(ids[0]),
+            await AiSessionService.get_messages(ids[1]),
+        )
+
+    try:
+        allowed, rejected = _run_async(_go())
+        assert len(allowed) == 2  # user + assistant 均落库
+        assert rejected == []  # 无 app 归属的会话仍拒绝匿名写入
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/develop/delete", json=[app["id"]], headers=auth_headers
+        )
+
 
 
 def test_run_dispatch_agent_and_app_with_anonymous_shim(monkeypatch):

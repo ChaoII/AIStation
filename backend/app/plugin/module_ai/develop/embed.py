@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
@@ -207,24 +208,32 @@ class EmbedService:
             error_text = str(e)[:250]
             raise
         finally:
-            await DevelopService.log_call(
-                app_row,
-                category="embed",
-                capability="run",
-                method="EMBED",
-                transport="sse",
-                session_id=str(session_id),
-                request_path="/run",
-                request_body={
-                    "sid": sid,
-                    "kind": ctx.kind,
-                    "target_id": ctx.target_id,
-                    "message": message[:80],
-                },
-                status=status,
-                error=error_text,
-                latency_ms=int((time.perf_counter() - started) * 1000),
-            )
+            # 审计一律 fire-and-forget：客户端中断（GeneratorExit）时在生成器 finally 里
+            # await 数据库会挂死该请求，进而占满并发准入槽位；改为独立后台任务 + 独立会话。
+            try:
+                asyncio.get_running_loop().create_task(
+                    DevelopService.log_call(
+                        app_row,
+                        category="embed",
+                        capability="run",
+                        method="EMBED",
+                        transport="sse",
+                        session_id=str(session_id),
+                        request_path="/run",
+                        request_body={
+                            "sid": sid,
+                            "kind": ctx.kind,
+                            "target_id": ctx.target_id,
+                            "message": message[:80],
+                        },
+                        status=status,
+                        error=error_text,
+                        latency_ms=int((time.perf_counter() - started) * 1000),
+                    )
+                )
+            except RuntimeError:
+                # 事件循环已关闭（进程退出阶段）则放弃审计
+                pass
 
     @classmethod
     async def check_limits(cls, redis, ctx: "EmbedContext", ip: str) -> None:
