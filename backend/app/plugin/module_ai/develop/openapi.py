@@ -114,6 +114,11 @@ async def audit_call(
         pass
 
 
+def _app_requires_approval(ctx: AppContext) -> bool:
+    """应用是否开启「调用需人工审批」（``app`` 为对外 dict，取不到按未开启处理）。"""
+    return bool((ctx.app or {}).get("requires_approval"))
+
+
 async def check_open_limits(
     redis, ctx: AppContext, *, category: str, ip: str = ""
 ) -> None:
@@ -163,6 +168,7 @@ async def invoke_capability(
     client_info: str | None = None,
     ip: str = "",
     session_id: str | None = None,
+    bypass_approval: bool = False,
 ) -> Any:
     """执行一次开放面能力调用（REST / MCP 共用入口）。
 
@@ -173,9 +179,12 @@ async def invoke_capability(
         method: 出口标识，``"REST"`` 或 ``"MCP"``（写入审计）。
         redis: 限流/配额用的 Redis 客户端；``None`` 时跳过限流。
         request_path / transport / client_info / ip / session_id: 审计与限流上下文。
+        bypass_approval: 审批通过后由审批模块以原应用身份执行时置 ``True``，
+            跳过审批门禁（避免二次入队）。
 
     Returns:
-        handler 的返回值（JSON 可序列化）。
+        handler 的返回值（JSON 可序列化）；若命中审批门禁，返回
+        ``{"status": "pending_approval", "approval_id": ...}``。
 
     Raises:
         CustomException: 404（能力不存在）、403（无权限）、429（限流/配额）、
@@ -226,6 +235,32 @@ async def invoke_capability(
 
     if cap.handler is None:
         raise CustomException(msg="能力暂不可用", code=10405, status_code=503)
+
+    # 敏感能力 + 应用开启审批：落待审批行，**本次不执行**（管理员批准后由
+    # approvals 模块以原应用身份执行；批准执行时 bypass_approval=True）。
+    if cap.requires_approval and not bypass_approval and _app_requires_approval(ctx):
+        from .approvals import ApprovalService
+
+        row = await ApprovalService.create(ctx, cap, body)
+        await audit_call(
+            ctx,
+            category=cap.category,
+            capability=cap.code,
+            method=method,
+            status="pending",
+            error="待管理员审批",
+            request_body=body,
+            request_path=request_path,
+            transport=transport,
+            client_info=client_info,
+            session_id=session_id,
+        )
+        return {
+            "status": "pending_approval",
+            "approval_id": row.id,
+            "capability": cap.code,
+            "message": "该操作需管理员审批，已进入待审批队列；批准后自动执行",
+        }
 
     try:
         result = await cap.handler(app_ctx=ctx, payload=payload or {})

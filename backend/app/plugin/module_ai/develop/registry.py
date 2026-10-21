@@ -37,6 +37,8 @@ class Capability:
         handler: 异步处理函数；注册时可为 ``None``（仅登记元数据）。
         mcp_tool: MCP 工具名；``None`` = 不暴露为 MCP 工具。
         rest: 是否暴露为 REST 能力（默认 ``True``）。
+        requires_approval: 是否为「敏感能力」——应用开启 ``requires_approval`` 时，
+            调用该能力先进入待审批队列（管理员批准后才执行）。
     """
 
     code: str
@@ -49,6 +51,7 @@ class Capability:
     handler: Handler | None = None
     mcp_tool: str | None = None
     rest: bool = True
+    requires_approval: bool = False
 
 
 _REGISTRY: dict[str, Capability] = {}
@@ -102,6 +105,7 @@ def to_public_dict(cap: Capability) -> dict:
         "returns": cap.returns,
         "mcp_tool": cap.mcp_tool,
         "rest": cap.rest,
+        "requires_approval": cap.requires_approval,
     }
 
 

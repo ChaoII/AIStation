@@ -169,6 +169,59 @@ class AiIntegrationMcpSessionModel(MappedBase):
     )
 
 
+class AiIntegrationApprovalModel(MappedBase):
+    """AI 集成调用审批：需审批的能力调用先落待审批行，管理员批准后才真正执行。
+
+    生命周期：``pending`` →（批准）执行 → ``approved`` / ``failed``；或（拒绝）→ ``rejected``。
+    仅当应用 ``requires_approval=true`` 且能力被标记为需审批时才会产生行。
+    """
+
+    __tablename__ = "ai_integration_approvals"
+    __table_args__ = ({"comment": "AI 集成调用审批表"},)
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="主键ID",
+    )
+    created_time: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.now, nullable=False, index=True, comment="申请时间",
+    )
+    app_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("ai_integration_apps.id"), nullable=False, index=True,
+        comment="所属应用ID",
+    )
+    appid: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="应用标识（冗余）",
+    )
+    capability: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="能力码（如 agent.delete）",
+    )
+    category: Mapped[str] = mapped_column(
+        String(16), nullable=False, comment="品类（train/agent/chat/bot/embed）",
+    )
+    payload: Mapped[dict | None] = mapped_column(
+        JSONB, default=None, nullable=True, comment="能力入参（已脱敏，不含凭证）",
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default="pending", nullable=False, index=True,
+        comment="状态: pending/approved/rejected/failed",
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=None, nullable=True, comment="审批时间",
+    )
+    reviewed_by: Mapped[int | None] = mapped_column(
+        Integer, default=None, nullable=True, comment="审批人用户ID",
+    )
+    review_note: Mapped[str | None] = mapped_column(
+        String(255), default=None, nullable=True, comment="审批意见",
+    )
+    result: Mapped[dict | None] = mapped_column(
+        JSONB, default=None, nullable=True, comment="执行结果（批准后）",
+    )
+    error: Mapped[str | None] = mapped_column(
+        String(255), default=None, nullable=True, comment="执行错误",
+    )
+
+
 class AiIntegrationAccessTokenModel(ModelMixin):
     """AI 集成嵌入令牌：短期 access_token，只存散列、绑定应用与嵌入目标。
 

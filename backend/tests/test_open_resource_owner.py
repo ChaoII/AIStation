@@ -88,3 +88,14 @@ def test_models_declare_source_app_id():
 
     assert "source_app_id" in AiAgentModel.__table__.columns
     assert "source_app_id" in TrainTask.__table__.columns
+
+
+def test_alembic_has_single_head():
+    """迁移链必须只有一个 head（revision 撞号会成环，直接导致应用启动 SystemExit）。"""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    root = Path(__file__).parent.parent
+    script = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
+    heads = script.get_heads()
+    assert len(heads) == 1, f"迁移链出现多个 head（或成环）：{heads}"

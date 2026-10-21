@@ -723,6 +723,7 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:develop:update", "编辑AI集成应用"),
     ("module_ai:develop:delete", "删除AI集成应用"),
     ("module_ai:develop:reset", "重置AI集成应用密钥"),
+    ("module_ai:develop:approve", "审批AI集成调用"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -1090,6 +1091,7 @@ async def _ensure_develop_menus() -> None:
                 ("module_ai:develop:update", "编辑AI集成应用"),
                 ("module_ai:develop:delete", "删除AI集成应用"),
                 ("module_ai:develop:reset", "重置AI集成应用密钥"),
+                ("module_ai:develop:approve", "审批AI集成调用"),
             ]
             for order, (perm_code, perm_name) in enumerate(
                 ensure_perms(_existing, _develop_perms), start=1
@@ -2265,3 +2267,4 @@ def reset_api_docs(app: FastAPI) -> None:
             swagger_css_url=settings.CUSTOM_CSS_URL,
             swagger_favicon_url=settings.FAVICON_URL
         )
+

@@ -36,6 +36,7 @@ from app.plugin.module_ai.streaming import ui_stream_response
 
 # 导入 handler 包即注册全部开放能力（REST 与 MCP 共用注册表）。
 from . import handlers as _handlers  # noqa: F401
+from .approvals import ApprovalService
 from .auth import AppContext, EmbedContext, get_app_api_auth, get_embed_ctx, require_app_perm
 from .capabilities import permissions_by_category
 from .embed import EmbedService
@@ -44,9 +45,10 @@ from .model import (
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
-from .openapi import invoke_capability
+from .openapi import audit_call, invoke_capability
 from .registry import all_capabilities, capabilities_for, to_public_dict
 from .schema import (
+    ApprovalReviewSchema,
     CapabilityInvokeSchema,
     DevelopCreateSchema,
     DevelopUpdateSchema,
@@ -303,6 +305,95 @@ async def open_capability_invoke(
         ip=request.client.host if request.client else "",
     )
     return SuccessResponse(data=result, msg="调用成功")
+
+
+# ---------------------------------------------------------------------- #
+# 内部管理面：调用审批（敏感能力「先审批后执行」）
+# ---------------------------------------------------------------------- #
+@DevelopRouter.get("/approvals", summary="分页查询调用审批")
+async def develop_approvals(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    status: Annotated[str | None, Query(description="状态: pending/approved/rejected/failed")] = None,
+    app_id: Annotated[int | None, Query(description="按应用过滤")] = None,
+    page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await ApprovalService.list(
+            status=status, app_id=app_id, page_no=page_no, page_size=page_size
+        ),
+        msg="查询成功",
+    )
+
+
+@DevelopRouter.post("/approvals/{approval_id}/review", summary="审批调用（批准即执行）")
+async def develop_approval_review(
+    approval_id: int,
+    data: ApprovalReviewSchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:approve"]))],
+) -> JSONResponse:
+    """批准 → 以**原应用身份**执行被拦截的调用并把结果写回审批行；拒绝 → 只记意见。
+
+    执行失败不抛给管理员（审批动作本身已成功），而是把状态置为 ``failed`` 并回传错误，
+    便于在审批列表里看到真实结果。
+    """
+    row = await ApprovalService.get(approval_id)
+    if row is None:
+        raise CustomException(msg="审批记录不存在", code=10404, status_code=404)
+    # 已处理的审批不得重复执行（批准/拒绝都只允许一次）
+    if row.status != "pending":
+        raise CustomException(msg="该审批已处理", code=10400, status_code=400)
+    reviewer_id = getattr(getattr(auth, "user", None), "id", None)
+    ctx = await ApprovalService.app_context(row.app_id)
+
+    if not data.approve:
+        result = await ApprovalService.mark_rejected(
+            approval_id, reviewer_id=reviewer_id, note=data.note
+        )
+        await audit_call(
+            ctx,
+            category=row.category,
+            capability=row.capability,
+            method="REST",
+            status="rejected",
+            error=(data.note or "管理员拒绝")[:255],
+            request_path=f"/approvals/{approval_id}",
+        )
+        return SuccessResponse(data=result, msg="已拒绝")
+
+    error: str | None = None
+    executed: object = None
+    try:
+        executed = await invoke_capability(
+            ctx,
+            row.capability,
+            row.payload or {},
+            method="REST",
+            redis=getattr(request.app.state, "redis", None),
+            request_path=f"/approvals/{approval_id}",
+            bypass_approval=True,
+        )
+    except CustomException as e:  # noqa: PERF203 - 执行失败也要回写状态
+        error = e.msg
+    except Exception as e:  # noqa: BLE001 - 兜底：审批动作不能 500
+        error = str(e)
+
+    result = await ApprovalService.mark_executed(
+        approval_id, reviewer_id=reviewer_id, note=data.note, result=executed, error=error
+    )
+    await audit_call(
+        ctx,
+        category=row.category,
+        capability=row.capability,
+        method="REST",
+        status="failed" if error else "approved",
+        error=error,
+        request_path=f"/approvals/{approval_id}",
+    )
+    return SuccessResponse(
+        data=result, msg=f"已批准，执行失败：{error}" if error else "已批准并执行完成"
+    )
 
 
 # ---------------------------------------------------------------------- #
@@ -594,3 +685,4 @@ async def _query_mcp_sessions(
             "has_next": page_no * page_size < total,
             "items": [_mcp_session_to_dict(r) for r in rows],
         }
+

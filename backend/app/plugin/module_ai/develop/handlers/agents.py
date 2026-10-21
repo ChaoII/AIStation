@@ -191,5 +191,7 @@ def register_agent_capabilities() -> None:
                 returns=returns,
                 handler=handler,
                 mcp_tool=tool,
+                # 删除不可恢复：应用开启 requires_approval 时先走审批
+                requires_approval=code == "agent.delete",
             )
         )

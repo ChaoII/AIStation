@@ -218,10 +218,14 @@
               </template>
             </el-table-column>
             <el-table-column prop="capability" label="能力" min-width="145" show-overflow-tooltip />
-            <el-table-column prop="method" label="出海口" width="80" />
+            <el-table-column label="出海口" width="90">
+              <template #default="{ row }">{{ methodLabel(row.method) }}</template>
+            </el-table-column>
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
-                <el-tag size="small" :type="logStatusType(row.status)">{{ row.status }}</el-tag>
+                <el-tag size="small" :type="logStatusType(row.status)">
+                  {{ statusLabel(row.status) }}
+                </el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="latency_ms" label="耗时(ms)" width="85" align="right" />
@@ -229,13 +233,13 @@
             <el-table-column
               prop="request_path"
               label="请求路径"
-              min-width="150"
+              min-width="145"
               show-overflow-tooltip
             />
             <el-table-column
               prop="result_summary"
               label="结果摘要"
-              min-width="160"
+              min-width="145"
               show-overflow-tooltip
             />
             <template #empty>
@@ -290,7 +294,9 @@
                 <span class="mono-text">{{ row.session_id || "—" }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="transport" label="传输" width="100" />
+            <el-table-column label="传输" width="100">
+              <template #default="{ row }">{{ transportLabel(row.transport) }}</template>
+            </el-table-column>
             <el-table-column
               prop="client_info"
               label="客户端"
@@ -335,6 +341,116 @@
           </div>
         </el-tab-pane>
 
+        <!-- ============ 调用审批 ============ -->
+        <el-tab-pane label="调用审批" name="approvals">
+          <el-form :inline="true" :model="approvalFilter" class="develop-search">
+            <el-form-item label="状态">
+              <el-select
+                v-model="approvalFilter.status"
+                placeholder="全部"
+                clearable
+                style="width: 140px"
+                @change="loadApprovals(true)"
+              >
+                <el-option
+                  v-for="(label, code) in APPROVAL_STATUS"
+                  :key="code"
+                  :label="label"
+                  :value="code"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button :icon="Search" @click="loadApprovals(true)">查询</el-button>
+            </el-form-item>
+          </el-form>
+
+          <div class="develop-toolbar">
+            <div class="develop-toolbar__left">
+              <span class="develop-toolbar__hint">
+                应用开启「需人工审批」后，删除智能体、训练任务创建/启停等敏感调用会先进入这里；
+                批准后立即以原应用身份执行。
+              </span>
+              <el-tag size="small" type="warning" effect="plain" class="summary-tag">
+                待审批 {{ approvalPendingCount }} 条
+              </el-tag>
+            </div>
+          </div>
+
+          <el-table v-loading="approvalLoading" :data="approvals" row-key="id" border stripe>
+            <el-table-column label="申请时间" width="165">
+              <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
+            </el-table-column>
+            <el-table-column prop="appid" label="AppID" width="130" show-overflow-tooltip />
+            <el-table-column prop="capability" label="能力" min-width="150" show-overflow-tooltip />
+            <el-table-column label="品类" width="95">
+              <template #default="{ row }">
+                {{ CATEGORIES[row.category] || row.category }}
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" :type="approvalStatusType(row.status)">
+                  {{ APPROVAL_STATUS[row.status] || row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="审批时间" width="165">
+              <template #default="{ row }">{{ fmtDateTime(row.reviewed_at, "—") }}</template>
+            </el-table-column>
+            <el-table-column
+              prop="review_note"
+              label="审批意见"
+              min-width="140"
+              show-overflow-tooltip
+            />
+            <el-table-column label="操作" width="190" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openApprovalDetail(row)">详情</el-button>
+                <template v-if="row.status === 'pending'">
+                  <el-button
+                    v-hasPerm="'module_ai:develop:approve'"
+                    link
+                    type="primary"
+                    @click="onReviewApproval(row, true)"
+                  >
+                    批准
+                  </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:develop:approve'"
+                    link
+                    type="danger"
+                    @click="onReviewApproval(row, false)"
+                  >
+                    拒绝
+                  </el-button>
+                </template>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty :image-size="80" description="暂无调用审批" />
+            </template>
+          </el-table>
+
+          <div v-if="approvalTotal > 0" class="develop-pagination">
+            <el-pagination
+              v-model:current-page="approvalPage"
+              v-model:page-size="approvalPageSize"
+              :total="approvalTotal"
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next"
+              background
+              @current-change="() => loadApprovals(false)"
+              @size-change="
+                () => {
+                  approvalPage = 1;
+                  loadApprovals(false);
+                }
+              "
+            />
+          </div>
+        </el-tab-pane>
+
         <!-- ============ 接入文档 ============ -->
         <el-tab-pane label="接入文档" name="docs">
           <div class="docs-wrap">
@@ -345,6 +461,14 @@
               show-icon
               class="docs-alert"
               description="AppID / AppKey 仅用于服务端调用：开放 REST 与 MCP 直接带 Authorization: Bearer {appid}:{appkey}；网页嵌入则由宿主服务端调 POST /api/v1/ai/develop-api/auth/token 换取短期 access_token，浏览器只持票。切勿把 AppKey 写入网页或嵌入代码；AppKey 仅在创建或重置时展示一次。"
+            />
+            <el-alert
+              title="审批与配额"
+              type="warning"
+              :closable="false"
+              show-icon
+              class="docs-alert"
+              description="应用开启「需人工审批」后，敏感能力（删除智能体、训练任务创建/启停）会先进入「调用审批」页签，管理员批准后才执行；「按日调用配额」按品类限制自然日调用次数（0/空 = 不限），超限返回 429。"
             />
             <el-card shadow="never" class="doc-card">
               <template #header>
@@ -453,12 +577,56 @@
       </el-tabs>
     </el-card>
 
+    <!-- ============ 审批详情弹窗 ============ -->
+    <el-dialog v-model="approvalDetail.visible" title="调用审批详情" width="600px" append-to-body>
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="能力">
+          {{ approvalDetail.row?.capability }}
+          <el-tag size="small" effect="plain" class="cap-tag">
+            {{ CATEGORIES[approvalDetail.row?.category || ""] || approvalDetail.row?.category }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="应用">{{ approvalDetail.row?.appid }}</el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag size="small" :type="approvalStatusType(approvalDetail.row?.status)">
+            {{ APPROVAL_STATUS[approvalDetail.row?.status || ""] || approvalDetail.row?.status }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="申请时间">
+          {{ fmtDateTime(approvalDetail.row?.created_time) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="approvalDetail.row?.reviewed_at" label="审批时间">
+          {{ fmtDateTime(approvalDetail.row?.reviewed_at) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="approvalDetail.row?.review_note" label="审批意见">
+          {{ approvalDetail.row?.review_note }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <p class="doc-card__desc">请求参数</p>
+      <pre class="doc-code">{{ prettyJson(approvalDetail.row?.payload) }}</pre>
+      <template v-if="approvalDetail.row?.result">
+        <p class="doc-card__desc">执行结果</p>
+        <pre class="doc-code">{{ prettyJson(approvalDetail.row?.result) }}</pre>
+      </template>
+      <el-alert
+        v-if="approvalDetail.row?.error"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="`执行失败：${approvalDetail.row?.error}`"
+      />
+      <template #footer>
+        <el-button @click="approvalDetail.visible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- ============ 新增 / 编辑应用弹窗 ============ -->
     <EnhancedDialog
       v-model="dialog.visible"
       :title="dialog.title"
       append-to-body
-      width="600px"
+      width="640px"
+      dialog-class="develop-app-dialog"
       @close="dialog.visible = false"
     >
       <el-form :model="form" label-width="110px">
@@ -498,6 +666,29 @@
             value-format="YYYY-MM-DD HH:mm:ss"
             style="width: 100%"
           />
+        </el-form-item>
+        <el-form-item label="需人工审批">
+          <el-switch v-model="form.requires_approval" />
+          <span class="form-tip">
+            开启后，删除智能体、训练任务创建/启停等敏感调用先进入「调用审批」页签，批准后才执行。
+          </span>
+        </el-form-item>
+        <el-form-item label="按日调用配额">
+          <div class="quota-grid">
+            <div v-for="(label, cat) in QUOTA_CATEGORIES" :key="cat" class="quota-item">
+              <span class="quota-item__label">{{ label }}</span>
+              <el-input-number
+                v-model="form.quota[cat]"
+                :min="0"
+                :max="1000000"
+                :step="100"
+                controls-position="right"
+                placeholder="不限"
+                style="width: 130px"
+              />
+            </div>
+          </div>
+          <span class="form-tip">0 或留空表示不限；按自然日统计（对应品类的开放调用）。</span>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" />
@@ -605,11 +796,13 @@ import { Plus, Search, CopyDocument } from "@element-plus/icons-vue";
 import {
   createApp,
   deleteApp,
+  getApprovals,
   getCallLogs,
   getCapabilities,
   getDevelopAppList,
   getMcpSessions,
   resetAppkey,
+  reviewApproval,
   toggleApp,
   updateApp,
 } from "@/api/module_ai/develop";
@@ -735,7 +928,18 @@ const form = reactive({
   capabilities: [] as string[],
   expire_at: "" as string,
   enabled: true,
+  requires_approval: true,
+  quota: {} as Record<string, number | undefined>,
 });
+
+//: 可配置「按日调用配额」的品类（与开放面限流/配额口径一致）。
+const QUOTA_CATEGORIES: Record<string, string> = {
+  agent: "智能体",
+  chat: "对话",
+  train: "模型训练",
+  bot: "机器人",
+  embed: "网页嵌入",
+};
 
 function resetForm() {
   Object.assign(form, {
@@ -745,6 +949,8 @@ function resetForm() {
     capabilities: [],
     expire_at: "",
     enabled: true,
+    requires_approval: true,
+    quota: {},
   });
 }
 
@@ -770,6 +976,8 @@ function openEdit(row: any) {
     capabilities: row.capabilities || [],
     expire_at: row.expire_at ? fmtDateTime(row.expire_at) : "",
     enabled: row.enabled !== false,
+    requires_approval: row.requires_approval !== false,
+    quota: { ...(row.quota || {}) },
   });
   dialog.visible = true;
 }
@@ -779,12 +987,19 @@ async function handleSubmit() {
     ElMessage.warning("请填写应用名称");
     return;
   }
+  // 配额只提交 >0 的品类；全空 = 不限（后端按自然日统计）
+  const quota: Record<string, number> = {};
+  Object.entries(form.quota || {}).forEach(([cat, value]) => {
+    if (typeof value === "number" && value > 0) quota[cat] = value;
+  });
   const payload: any = {
     name: form.name.trim(),
     description: form.description?.trim() || null,
     capabilities: form.capabilities,
     expire_at: form.expire_at || null,
     enabled: form.enabled,
+    requires_approval: form.requires_approval,
+    quota: Object.keys(quota).length ? quota : null,
   };
   submitLoading.value = true;
   try {
@@ -929,11 +1144,40 @@ async function loadLogs(resetPage = true) {
   }
 }
 
-function logStatusType(status?: string) {
-  if (status === "success") return "success";
-  if (status === "failed") return "danger";
-  if (status === "denied") return "warning";
+function logStatusType(status?: string): "success" | "danger" | "warning" | "info" {
+  if (status === "success" || status === "approved") return "success";
+  if (status === "failed" || status === "error") return "danger";
+  if (status === "denied" || status === "pending") return "warning";
   return "info";
+}
+
+//: 调用日志/会话里的英文枚举 → 中文（管理端不直接暴露协议名）。
+const METHOD_LABELS: Record<string, string> = { REST: "REST", MCP: "MCP", EMBED: "网页嵌入" };
+const STATUS_LABELS: Record<string, string> = {
+  success: "成功",
+  failed: "失败",
+  error: "异常",
+  denied: "拒绝",
+  pending: "待审批",
+  approved: "已批准",
+  rejected: "已拒绝",
+};
+const TRANSPORT_LABELS: Record<string, string> = {
+  "streamable-http": "流式 HTTP",
+  stdio: "本地进程",
+  sse: "SSE",
+};
+
+function methodLabel(method?: string) {
+  return METHOD_LABELS[method || ""] || method || "—";
+}
+
+function statusLabel(status?: string) {
+  return STATUS_LABELS[status || ""] || status || "—";
+}
+
+function transportLabel(transport?: string) {
+  return TRANSPORT_LABELS[transport || ""] || transport || "—";
 }
 
 // ============ MCP 会话 ============
@@ -963,10 +1207,93 @@ async function loadMcps(resetPage = true) {
   }
 }
 
+// ---- 调用审批（敏感能力「先审批后执行」） ----
+const APPROVAL_STATUS: Record<string, string> = {
+  pending: "待审批",
+  approved: "已批准",
+  rejected: "已拒绝",
+  failed: "执行失败",
+};
+
+const approvals = ref<any[]>([]);
+const approvalTotal = ref(0);
+const approvalPendingCount = ref(0);
+const approvalPage = ref(1);
+const approvalPageSize = ref(10);
+const approvalLoading = ref(false);
+const approvalFilter = reactive({ status: undefined as string | undefined });
+const approvalDetail = reactive({ visible: false, row: null as any });
+
+function approvalStatusType(status?: string) {
+  const map: Record<string, "warning" | "success" | "info" | "danger"> = {
+    pending: "warning",
+    approved: "success",
+    rejected: "info",
+    failed: "danger",
+  };
+  return map[status || ""] || "info";
+}
+
+function prettyJson(value: any) {
+  try {
+    return JSON.stringify(value ?? {}, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+async function loadApprovals(resetPage = true) {
+  if (resetPage) approvalPage.value = 1;
+  approvalLoading.value = true;
+  try {
+    const res = await getApprovals({
+      status: approvalFilter.status || undefined,
+      page_no: approvalPage.value,
+      page_size: approvalPageSize.value,
+    });
+    const d = res.data?.data || {};
+    approvals.value = d.items || [];
+    approvalTotal.value = d.total || 0;
+    approvalPendingCount.value = approvals.value.filter((r) => r.status === "pending").length;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "审批列表加载失败");
+  } finally {
+    approvalLoading.value = false;
+  }
+}
+
+function openApprovalDetail(row: any) {
+  approvalDetail.row = row;
+  approvalDetail.visible = true;
+}
+
+async function onReviewApproval(row: any, approve: boolean) {
+  const action = approve ? "批准并立即执行" : "拒绝";
+  try {
+    await ElMessageBox.confirm(
+      approve
+        ? `将批准该「${row.capability}」调用，并**立即以 ${row.appid} 身份执行**（可能产生真实资源变更）。`
+        : `将拒绝该「${row.capability}」调用，申请方不会得到执行结果。`,
+      `确认${action}？`,
+      { type: approve ? "warning" : "info", confirmButtonText: action, cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    const res = await reviewApproval(row.id, { approve });
+    ElMessage.success(res.data?.msg || "已处理");
+    await loadApprovals(false);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "处理失败");
+  }
+}
+
 function onTabChange(name: string | number) {
   const key = String(name);
   if (key === "logs") loadLogs(false);
   else if (key === "mcp") loadMcps(false);
+  else if (key === "approvals") loadApprovals(false);
   else if (key === "docs" && !capabilities.value.length) loadCapabilities();
 }
 
@@ -1208,6 +1535,33 @@ onMounted(() => {
   width: 100%;
 }
 
+/* 配额配置：与能力勾选区保持同一视觉语言（浅边框分组） */
+.quota-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  width: 100%;
+}
+
+.quota-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.quota-item__label {
+  min-width: 64px;
+  color: var(--el-text-color-regular);
+}
+
+.form-tip {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+
 .cap-group {
   padding: 8px 12px;
   border: 1px solid var(--el-border-color-lighter);
@@ -1350,6 +1704,20 @@ onMounted(() => {
   min-height: 0;
   padding-top: 4px;
   padding-right: 4px;
+  overflow-y: auto;
+}
+</style>
+
+<style lang="scss">
+/* 应用表单较长（能力分组 + 配额）：限高并内部滚动，避免撑出视口 */
+.develop-app-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+}
+
+.develop-app-dialog .el-dialog__body {
+  min-height: 0;
   overflow-y: auto;
 }
 </style>

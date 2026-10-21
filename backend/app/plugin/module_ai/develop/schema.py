@@ -70,6 +70,13 @@ class CapabilityInvokeSchema(BaseModel):
     payload: dict = Field(default_factory=dict, description="能力入参（JSON 对象）")
 
 
+class ApprovalReviewSchema(BaseModel):
+    """调用审批入参：批准（``approve=true`` 会立即执行原调用）或拒绝。"""
+
+    approve: bool = Field(..., description="是否批准")
+    note: str | None = Field(default=None, max_length=255, description="审批意见")
+
+
 class EmbedMintSchema(BaseModel):
     """管理端签发体验令牌入参（有效期固定 2 小时，便于当场试用）。"""
 

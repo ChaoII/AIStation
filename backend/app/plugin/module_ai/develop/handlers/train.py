@@ -207,5 +207,7 @@ def register_train_capabilities() -> None:
                 returns=returns,
                 handler=handler,
                 mcp_tool=tool,
+                # 训练任务创建/启停消耗 GPU 与容器资源：应用开启 requires_approval 时先走审批
+                requires_approval=code in {"train.create", "train.start", "train.stop"},
             )
         )
