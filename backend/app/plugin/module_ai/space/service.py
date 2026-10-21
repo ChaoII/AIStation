@@ -378,6 +378,9 @@ class SpaceService:
             )
             if folder_id is not None:
                 base = base.where(AiSpaceFileModel.folder_id == folder_id)
+            else:
+                # 根目录（全部文件）：只看根目录下的文件，与文件夹视图语义一致
+                base = base.where(AiSpaceFileModel.folder_id.is_(None))
             if file_type:
                 base = base.where(AiSpaceFileModel.file_type == file_type)
             if keyword:

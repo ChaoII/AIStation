@@ -145,20 +145,34 @@
         <div class="space-table-wrap">
           <el-table
             v-loading="loading"
-            :data="files"
+            :data="displayItems"
             row-key="id"
             height="100%"
             border
             stripe
-            @selection-change="(rows: SpaceFileItem[]) => (selectedIds = rows.map((r) => r.id))"
+            @selection-change="(rows: SpaceRow[]) => (selectedIds = rows.map((r) => r.id))"
           >
             <template #empty>
               <el-empty :image-size="80" description="当前目录暂无文件" />
             </template>
-            <el-table-column type="selection" width="46" />
+            <el-table-column
+              type="selection"
+              width="46"
+              :selectable="(row: SpaceRow) => row.kind === 'file'"
+            />
             <el-table-column label="名称" min-width="240" show-overflow-tooltip>
               <template #default="{ row }">
-                <span class="space-file-name" @click="openPreview(row)">
+                <!-- 文件夹：点击进入目录 -->
+                <span
+                  v-if="row.kind === 'folder'"
+                  class="space-file-name"
+                  @click="onFolderClick(row.id)"
+                >
+                  <el-icon class="space-file-icon"><Folder /></el-icon>
+                  <span>{{ row.name }}</span>
+                </span>
+                <!-- 文件：点击预览 -->
+                <span v-else class="space-file-name" @click="openPreview(row)">
                   <el-icon class="space-file-icon">
                     <component :is="fileIcon(row.file_type)" />
                   </el-icon>
@@ -168,67 +182,104 @@
             </el-table-column>
             <el-table-column label="类型" width="90" align="center">
               <template #default="{ row }">
-                <el-tag size="small" effect="plain">{{ typeLabel(row.file_type) }}</el-tag>
+                <el-tag v-if="row.kind === 'folder'" size="small" effect="plain">文件夹</el-tag>
+                <el-tag v-else size="small" effect="plain">{{ typeLabel(row.file_type) }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="大小" width="100" align="right">
-              <template #default="{ row }">{{ formatSize(row.size) }}</template>
+              <template #default="{ row }">
+                {{ row.kind === "folder" ? "—" : formatSize(row.size) }}
+              </template>
             </el-table-column>
             <el-table-column label="来源" width="100" align="center">
               <template #default="{ row }">
                 <el-tag
+                  v-if="row.kind === 'file' && row.source === 'agent'"
                   size="small"
-                  :type="row.source === 'agent' ? 'success' : 'info'"
+                  type="success"
                   effect="plain"
                 >
-                  {{ row.source === "agent" ? "AI 生成" : "用户上传" }}
+                  AI 生成
                 </el-tag>
+                <el-tag v-else-if="row.kind === 'file'" size="small" type="info" effect="plain">
+                  用户上传
+                </el-tag>
+                <span v-else>—</span>
               </template>
             </el-table-column>
             <el-table-column label="更新时间" width="170">
-              <template #default="{ row }">{{ formatTime(row.updated_time) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="220" align="center" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" link type="primary" @click="openPreview(row)">
-                  预览
-                </el-button>
-                <el-button
-                  v-hasPerm="'module_ai:space:download'"
-                  size="small"
-                  link
-                  type="primary"
-                  @click="downloadFile(row)"
-                >
-                  下载
-                </el-button>
-                <el-button
-                  v-hasPerm="'module_ai:space:manage'"
-                  size="small"
-                  link
-                  type="primary"
-                  @click="openRename(row)"
-                >
-                  重命名
-                </el-button>
-                <el-button
-                  v-hasPerm="'module_ai:space:manage'"
-                  size="small"
-                  link
-                  type="primary"
-                  @click="openMove(row)"
-                >
-                  移动
-                </el-button>
-                <el-button
-                  v-hasPerm="'module_ai:space:delete'"
-                  size="small"
-                  link
-                  type="danger"
-                  @click="deleteFiles([row.id], row.name)"
-                >
-                  删除
-                </el-button>
+                {{ row.kind === "folder" ? "—" : formatTime(row.updated_time) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="250" align="center" fixed="right">
+              <template #default="{ row }">
+                <!-- 文件夹操作：打开 / 重命名 / 删除 -->
+                <template v-if="row.kind === 'folder'">
+                  <el-button size="small" link type="primary" @click="onFolderClick(row.id)">
+                    打开
+                  </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:space:manage'"
+                    size="small"
+                    link
+                    type="primary"
+                    @click="openFolderRename(row)"
+                  >
+                    重命名
+                  </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:space:manage'"
+                    size="small"
+                    link
+                    type="danger"
+                    @click="onFolderCmd(row, 'delete')"
+                  >
+                    删除
+                  </el-button>
+                </template>
+                <!-- 文件操作：预览 / 下载 / 重命名 / 移动 / 删除 -->
+                <template v-else>
+                  <el-button size="small" link type="primary" @click="openPreview(row)">
+                    预览
+                  </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:space:download'"
+                    size="small"
+                    link
+                    type="primary"
+                    @click="downloadFile(row)"
+                  >
+                    下载
+                  </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:space:manage'"
+                    size="small"
+                    link
+                    type="primary"
+                    @click="openRename(row)"
+                  >
+                    重命名
+                  </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:space:manage'"
+                    size="small"
+                    link
+                    type="primary"
+                    @click="openMove(row)"
+                  >
+                    移动
+                  </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:space:delete'"
+                    size="small"
+                    link
+                    type="danger"
+                    @click="deleteFiles([row.id], row.name)"
+                  >
+                    删除
+                  </el-button>
+                </template>
               </template>
             </el-table-column>
           </el-table>
@@ -462,6 +513,56 @@ const pageNo = ref(1);
 const pageSize = ref(20);
 const selectedIds = ref<number[]>([]);
 
+// 右侧列表统一行：文件夹 + 文件（Finder 式混排）
+interface SpaceRow {
+  id: number;
+  name: string;
+  kind: "folder" | "file";
+  file_type: string;
+  size: number;
+  source: string;
+  updated_time: string;
+  parent_id?: number | null;
+  ext?: string;
+  mime_type?: string;
+  uuid?: string;
+}
+
+// 在树里按文件夹 id 定位节点（仅文件夹）
+function findTreeNode(nodes: SpaceTreeNode[], id: number): SpaceTreeNode | null {
+  for (const n of nodes) {
+    if (n.kind === "folder" && n.id === id) return n;
+    const hit = n.children ? findTreeNode(n.children, id) : null;
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// 当前目录的直接子文件夹（来自树）
+const subFolders = computed<SpaceTreeNode[]>(() => {
+  if (currentFolderId.value == null) {
+    return treeData.value.filter((n) => n.kind === "folder");
+  }
+  const node = findTreeNode(treeData.value, currentFolderId.value);
+  return (node?.children || []).filter((n) => n.kind === "folder");
+});
+
+// 右侧表格数据：文件夹在前 + 文件在后
+const displayItems = computed<SpaceRow[]>(() => {
+  const folderRows: SpaceRow[] = subFolders.value.map((n) => ({
+    id: n.id,
+    name: n.name,
+    kind: "folder",
+    file_type: "folder",
+    size: 0,
+    source: "folder",
+    updated_time: "",
+    parent_id: n.parent_id,
+  }));
+  const fileRows: SpaceRow[] = files.value.map((f) => ({ ...f, kind: "file" }));
+  return [...folderRows, ...fileRows];
+});
+
 const quotaUsed = ref(0);
 const quotaTotal = ref(1);
 const quotaHasPending = ref(false);
@@ -643,6 +744,9 @@ onMounted(refreshAll);
 function onFolderClick(id: number | null) {
   currentFolderId.value = id;
   breadcrumb.value = findBreadcrumb(treeData.value, id);
+  // 切换目录：立即清空文件，避免文件异步加载期间闪现上一目录的文件
+  files.value = [];
+  total.value = 0;
   loadFiles(1);
 }
 
