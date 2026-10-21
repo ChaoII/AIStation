@@ -6,7 +6,7 @@
       <el-card shadow="never" class="space-side">
         <template #header>
           <div class="space-side-head">
-            <span>文件夹</span>
+            <span>文件</span>
             <el-button
               v-hasPerm="'module_ai:space:manage'"
               link
@@ -18,20 +18,37 @@
         </template>
         <el-tree
           :data="treeData"
-          node-key="id"
+          node-key="treeKey"
           :props="{ label: 'name', children: 'children' }"
-          :current-node-key="currentFolderId ?? undefined"
+          :current-node-key="currentFolderId != null ? 'folder-' + currentFolderId : undefined"
           highlight-current
           :expand-on-click-node="false"
-          @node-click="onFolderClick"
+          @node-click="onTreeClick"
+          @dragover.prevent
+          @drop.prevent="onTreeContainerDrop"
         >
           <template #default="{ data }">
+            <!-- 文件节点：点击预览 -->
+            <span v-if="data.kind === 'file'" class="space-tree-node space-tree-node--file">
+              <el-icon class="space-tree-icon">
+                <component :is="fileIcon(data.file_type)" />
+              </el-icon>
+              <span class="space-tree-label">{{ data.name }}</span>
+            </span>
+            <!-- 文件夹节点：右键菜单 + 拖拽上传到该文件夹 -->
             <el-dropdown
+              v-else
               class="space-tree-menu"
               trigger="contextmenu"
               @command="(c: string) => onFolderCmd(data, c)"
             >
-              <span class="space-tree-node">
+              <span
+                class="space-tree-node"
+                :class="{ 'is-drag-hover': dragHoverKey === data.treeKey }"
+                @dragover.prevent.stop="onTreeDragOver(data)"
+                @dragleave="onTreeDragLeave(data)"
+                @drop.prevent.stop="onNodeDrop($event, data)"
+              >
                 <el-icon class="space-tree-icon"><Folder /></el-icon>
                 <span class="space-tree-label">{{ data.name }}</span>
               </span>
@@ -115,25 +132,6 @@
             </el-upload>
           </div>
         </div>
-
-        <!-- 拖拽上传区（Element Plus 原生 drag） -->
-        <el-upload
-          v-hasPerm="'module_ai:space:upload'"
-          class="space-drop"
-          drag
-          :show-file-list="false"
-          :multiple="true"
-          :http-request="doUpload"
-        >
-          <div class="space-drop-inner">
-            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-            <div class="space-drop-text">
-              将文件拖到此处，或
-              <em>点击上传</em>
-            </div>
-            <div class="space-drop-tip">单个文件不超过 {{ formatSize(maxFileBytes) }}</div>
-          </div>
-        </el-upload>
 
         <!-- 右键「上传文件到此」用的隐藏文件输入 -->
         <input
@@ -399,7 +397,6 @@ import {
   Plus,
   Search,
   Upload,
-  UploadFilled,
   VideoPlay,
   Headset,
 } from "@element-plus/icons-vue";
@@ -427,9 +424,24 @@ import {
 } from "@/api/module_ai/space";
 
 // ---------------------------------------------------------------- 状态
-const treeData = ref<SpaceFolder[]>([]);
+/** 左侧树统一节点：文件夹 + 文件 */
+interface SpaceTreeNode {
+  id: number;
+  name: string;
+  kind: "folder" | "file";
+  treeKey: string;
+  parent_id?: number | null;
+  children?: SpaceTreeNode[];
+  file?: SpaceFileItem;
+  file_type?: string;
+  source?: "upload" | "agent";
+  size?: number;
+  updated_time?: string;
+}
+
+const treeData = ref<SpaceTreeNode[]>([]);
 const currentFolderId = ref<number | null>(null);
-const breadcrumb = ref<SpaceFolder[]>([]);
+const breadcrumb = ref<SpaceTreeNode[]>([]);
 const keyword = ref("");
 const typeFilter = ref("");
 const loading = ref(false);
@@ -442,7 +454,6 @@ const selectedIds = ref<number[]>([]);
 
 const quotaUsed = ref(0);
 const quotaTotal = ref(1);
-const maxFileBytes = ref(0);
 const quotaHasPending = ref(false);
 const quotaPercent = computed(() =>
   quotaTotal.value ? Math.min(100, Math.round((quotaUsed.value / quotaTotal.value) * 100)) : 0
@@ -519,12 +530,13 @@ function fileIcon(ft: string) {
 }
 
 function findBreadcrumb(
-  nodes: SpaceFolder[],
+  nodes: SpaceTreeNode[],
   id: number | null,
-  trail: SpaceFolder[] = []
-): SpaceFolder[] {
+  trail: SpaceTreeNode[] = []
+): SpaceTreeNode[] {
   if (id == null) return trail;
   for (const n of nodes) {
+    if (n.kind === "file") continue; // 文件节点不参与面包屑
     const next = [...trail, n];
     if (n.id === id) return next;
     const hit = findBreadcrumb(n.children || [], id, next);
@@ -536,8 +548,47 @@ function findBreadcrumb(
 // ---------------------------------------------------------------- 加载
 async function loadTree() {
   const r = await getSpaceFolderTree();
-  treeData.value = r.data?.data || [];
+  const folderTree = (r.data?.data || []) as SpaceFolder[];
+  treeData.value = await decorateWithFiles(folderTree);
   breadcrumb.value = findBreadcrumb(treeData.value, currentFolderId.value);
+}
+
+// 给每个文件夹挂上其文件（文件节点），组成「文件夹 + 文件」树
+async function decorateWithFiles(nodes: SpaceFolder[]): Promise<SpaceTreeNode[]> {
+  const out: SpaceTreeNode[] = [];
+  for (const n of nodes) {
+    // 先递归处理子文件夹
+    const subFolders = n.children ? await decorateWithFiles(n.children) : [];
+    // 拉取该文件夹下的文件（限制 100 条，避免树过大）
+    let fileNodes: SpaceTreeNode[] = [];
+    try {
+      const fr = await getSpaceFileList({ folder_id: n.id, page_size: 100 });
+      const items = fr.data?.data?.items || [];
+      fileNodes = items.map((f) => ({
+        id: f.id,
+        name: f.name,
+        kind: "file" as const,
+        treeKey: `file-${f.id}`,
+        parent_id: n.id,
+        file: f,
+        file_type: f.file_type,
+        source: f.source,
+        size: f.size,
+        updated_time: f.updated_time,
+      }));
+    } catch {
+      // 拉取文件失败不影响文件夹展示
+    }
+    out.push({
+      id: n.id,
+      name: n.name,
+      kind: "folder" as const,
+      treeKey: `folder-${n.id}`,
+      parent_id: n.parent_id,
+      children: [...subFolders, ...fileNodes],
+    });
+  }
+  return out;
 }
 
 async function loadFiles(page = pageNo.value) {
@@ -565,7 +616,6 @@ async function loadQuota() {
     if (q) {
       quotaUsed.value = q.used_bytes;
       quotaTotal.value = q.quota_bytes;
-      maxFileBytes.value = q.max_file_bytes;
       quotaHasPending.value = q.has_pending_request;
     }
   } catch {
@@ -584,6 +634,51 @@ function onFolderClick(id: number | null) {
   currentFolderId.value = id;
   breadcrumb.value = findBreadcrumb(treeData.value, id);
   loadFiles(1);
+}
+
+// 左侧树节点点击：文件 → 预览；文件夹 → 进入目录
+function onTreeClick(data: SpaceTreeNode) {
+  if (data.kind === "file") {
+    openPreview(data.file || (data as any));
+  } else {
+    onFolderClick(data.id);
+  }
+}
+
+// ---------- 树拖拽上传（拖文件到文件夹节点 / 空白处上传到当前目录） ----------
+const dragHoverKey = ref<string | null>(null);
+
+function onTreeDragOver(data: SpaceTreeNode) {
+  if (data.kind !== "folder") return;
+  dragHoverKey.value = data.treeKey;
+}
+
+function onTreeDragLeave(data: SpaceTreeNode) {
+  if (dragHoverKey.value === data.treeKey) dragHoverKey.value = null;
+}
+
+function onNodeDrop(e: DragEvent, data: SpaceTreeNode) {
+  if (data.kind !== "folder") return;
+  dragHoverKey.value = null;
+  const files = Array.from(e.dataTransfer?.files || []);
+  uploadFilesTo(files, data.id);
+}
+
+function onTreeContainerDrop(e: DragEvent) {
+  const files = Array.from(e.dataTransfer?.files || []);
+  uploadFilesTo(files, currentFolderId.value);
+}
+
+// 批量上传到指定文件夹，成功后刷新树/列表/配额
+async function uploadFilesTo(files: File[], folderId: number | null) {
+  if (!files.length) return;
+  try {
+    for (const f of files) await uploadSpaceFile(f, folderId);
+    ElMessage.success(`已上传 ${files.length} 个文件`);
+    await refreshAll();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "上传失败");
+  }
 }
 
 const folderDialogVisible = ref(false);
@@ -671,7 +766,7 @@ async function performUploadFile(file: File, folderId: number | null) {
   try {
     await uploadSpaceFile(file, folderId);
     ElMessage.success(`已上传 ${file.name}`);
-    await Promise.all([loadFiles(1), loadQuota()]);
+    await Promise.all([loadTree(), loadFiles(1), loadQuota()]);
   } catch (e: any) {
     ElMessage.error(e?.message || "上传失败");
   }
@@ -734,7 +829,7 @@ async function submitRename() {
     await renameSpaceFile({ file_id: renameId.value, name });
     ElMessage.success("修改成功");
     renameVisible.value = false;
-    await loadFiles(pageNo.value);
+    await Promise.all([loadTree(), loadFiles(pageNo.value)]);
   } catch (e: any) {
     ElMessage.error(e?.message || "操作失败");
   }
@@ -756,7 +851,7 @@ async function submitMove() {
     await moveSpaceFile({ file_id: moveFileId.value, folder_id: moveTarget.value });
     ElMessage.success("移动成功");
     moveVisible.value = false;
-    await loadFiles(pageNo.value);
+    await Promise.all([loadTree(), loadFiles(pageNo.value)]);
   } catch (e: any) {
     ElMessage.error(e?.message || "移动失败");
   }
@@ -776,7 +871,7 @@ async function deleteFiles(ids: number[], label: string) {
     const r = await deleteSpaceFiles(ids);
     ElMessage.success(`已删除 ${r.data?.data?.deleted ?? ids.length} 个文件`);
     selectedIds.value = [];
-    await Promise.all([loadFiles(1), loadQuota()]);
+    await Promise.all([loadTree(), loadFiles(1), loadQuota()]);
   } catch (e: any) {
     ElMessage.error(e?.message || "删除失败");
   }
@@ -944,6 +1039,17 @@ async function submitQuotaRequest() {
   padding-right: 8px;
 }
 
+.space-tree-node--file {
+  cursor: pointer;
+  color: var(--el-text-color-regular);
+}
+
+.space-tree-node.is-drag-hover {
+  background: var(--el-color-primary-light-9);
+  outline: 1px dashed var(--el-color-primary);
+  border-radius: var(--el-border-radius-base);
+}
+
 .space-tree-icon {
   color: var(--el-color-info);
 }
@@ -1040,42 +1146,6 @@ async function submitQuotaRequest() {
   :deep(img) {
     max-width: 100%;
   }
-}
-
-.space-drop {
-  margin-top: 4px;
-  :deep(.el-upload) {
-    width: 100%;
-  }
-  :deep(.el-upload-dragger) {
-    padding: 12px;
-    border: 1px dashed var(--el-border-color);
-    border-radius: var(--el-border-radius-base);
-    &:hover {
-      border-color: var(--el-color-primary);
-    }
-  }
-}
-
-.space-drop-inner {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-  color: var(--el-text-color-secondary);
-}
-
-.space-drop-text {
-  font-size: var(--el-font-size-base, 14px);
-  em {
-    color: var(--el-color-primary);
-    font-style: normal;
-  }
-}
-
-.space-drop-tip {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
 }
 
 .quota-current {
