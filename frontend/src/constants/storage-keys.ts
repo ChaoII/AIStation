@@ -25,6 +25,7 @@ export const SHOW_SIZE_SELECT_KEY = "showSizeSelect";
 export const SHOW_LANG_SELECT_KEY = "showLangSelect";
 export const SHOW_NOTIFICATION_KEY = "showNotification";
 export const SHOW_GUIDE_KEY = "showGuide"; // 引导功能开关
+export const GUIDE_AUTO_SHOWN_KEY = "guideAutoShown"; // 引导是否已自动弹出过（仅首次）
 export const LAYOUT_KEY = "layout";
 export const SIDEBAR_COLOR_SCHEME_KEY = "sidebarColorScheme";
 export const THEME_KEY = "theme";

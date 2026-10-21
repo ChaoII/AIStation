@@ -158,6 +158,7 @@ import AuthAPI, {
 import { useAppStore, useUserStore, useSettingsStore } from "@/store";
 import { User, Loading, Lock } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
+import { GUIDE_AUTO_SHOWN_KEY } from "@/constants/storage-keys";
 
 const { t } = useI18n();
 const userStore = useUserStore();
@@ -272,8 +273,9 @@ async function handleAutoLogin(userId: number) {
     const redirect = resolveRedirectTarget(route.query);
     await router.replace(redirect);
 
-    // 6. 显示引导
-    if (settingsStore.showGuide) {
+    // 6. 显示引导（仅首次自动弹出，避免每次登录都弹；用户仍可在设置里手动关闭/开启）
+    if (settingsStore.showGuide && !localStorage.getItem(GUIDE_AUTO_SHOWN_KEY)) {
+      localStorage.setItem(GUIDE_AUTO_SHOWN_KEY, "1");
       appStore.showGuide(true);
     }
 
@@ -369,8 +371,9 @@ async function handleLoginSubmit() {
     // - 选中"记住我": token存储在localStorage中，浏览器关闭后仍然有效
     // - 未选中"记住我": token存储在sessionStorage中，浏览器关闭后失效
 
-    // 登录成功后自动开启项目引导
-    if (settingsStore.showGuide) {
+    // 登录成功后自动开启项目引导（仅首次自动弹出，避免每次登录都弹）
+    if (settingsStore.showGuide && !localStorage.getItem(GUIDE_AUTO_SHOWN_KEY)) {
+      localStorage.setItem(GUIDE_AUTO_SHOWN_KEY, "1");
       appStore.showGuide(true);
     }
   } catch (error: any) {

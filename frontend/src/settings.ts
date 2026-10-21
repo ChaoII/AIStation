@@ -44,7 +44,7 @@ export const defaultSettings: AppSettings = {
   // 项目引导
   guideVisible: false,
   /** 是否启动引导 */
-  showGuide: true,
+  showGuide: false,
   /** 是否开启AI助手 */
   aiEnabled: false,
   /** 是否开启灰色模式 */
