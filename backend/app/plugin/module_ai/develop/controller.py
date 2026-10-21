@@ -61,6 +61,39 @@ DevelopRouter = APIRouter(
     tags=["AI-集成管理"],
 )
 
+EmbedRouter = APIRouter(
+    route_class=OperationLogRoute,
+    prefix="/embed",
+    tags=["AI-嵌入"],
+)
+
+
+@EmbedRouter.get("/meta", summary="嵌入目标元信息")
+async def embed_meta(
+    ctx: Annotated[EmbedContext, Depends(get_embed_ctx)],
+) -> SuccessResponse:
+    """返回嵌入目标名称与欢迎语（嵌入页初始化用）。
+
+    - 令牌缺/过期/吊销/app 停用 → 401（依赖层统一处理）；
+    - 应用缺 ``integration:embed:use`` → 403（权限每请求重读，收回即时生效）；
+    - 目标已删除 → 404。
+    """
+    if "integration:embed:use" not in ctx.perms:
+        raise CustomException(msg="无权限操作", code=10403, status_code=403)
+    target = await EmbedService.get_target(ctx.kind, ctx.target_id)
+    if target is None:
+        raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
+    return SuccessResponse(
+        data={
+            "kind": ctx.kind,
+            "target_id": ctx.target_id,
+            "name": target["name"],
+            "welcome": target["description"] or "",
+            "expire_at": ctx.expires_at.strftime("%Y-%m-%d %H:%M:%S"),
+        },
+        msg="查询成功",
+    )
+
 
 @OpenApiRouter.get("/auth/verify", summary="鉴权验证")
 async def auth_verify(
