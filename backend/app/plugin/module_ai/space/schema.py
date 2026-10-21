@@ -19,3 +19,14 @@ class SpaceFileMoveSchema(BaseModel):
 class SpaceFileRenameSchema(BaseModel):
     file_id: int = Field(..., description="文件ID")
     name: str = Field(..., min_length=1, max_length=255, description="新文件名（含扩展名）")
+
+
+class SpaceQuotaRequestSchema(BaseModel):
+    target_mb: int = Field(..., gt=0, description="申请目标配额（MB）")
+    reason: str = Field(default="", max_length=500, description="申请理由")
+
+
+class SpaceQuotaReviewSchema(BaseModel):
+    approve: bool = Field(..., description="是否通过")
+    quota_mb: int | None = Field(default=None, gt=0, description="通过时生效配额（MB，默认取申请值）")
+    note: str = Field(default="", max_length=500, description="审核备注")

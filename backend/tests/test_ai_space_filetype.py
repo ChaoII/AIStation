@@ -37,4 +37,5 @@ def test_guess_mime():
 
 def test_settings_have_quota_defaults():
     assert settings.AI_SPACE_MAX_FILE_MB == 200
-    assert settings.AI_SPACE_QUOTA_MB == 10240
+    # 默认 2GB（2026-10-21 个人空间改造：可申请扩容，管理员按用户覆盖）
+    assert settings.AI_SPACE_QUOTA_MB == 2048

@@ -5,7 +5,9 @@
 """
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, String
+from datetime import datetime
+
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.base_model import ModelMixin
@@ -69,3 +71,41 @@ class AiSpaceFileModel(ModelMixin):
     source: Mapped[str] = mapped_column(
         String(16), nullable=False, default="upload", comment="来源 upload=用户上传 agent=智能体生成"
     )
+
+
+class AiSpaceQuotaRequestModel(ModelMixin):
+    """个人空间扩容申请表（status 复用 ModelMixin：pending/approved/rejected）。"""
+
+    __tablename__ = "ai_space_quota_requests"
+    __table_args__ = ({"comment": "个人工作空间扩容申请表"},)
+
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sys_user.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="申请人ID",
+    )
+    target_mb: Mapped[int] = mapped_column(Integer, nullable=False, comment="申请目标配额（MB）")
+    reason: Mapped[str] = mapped_column(String(500), nullable=False, default="", comment="申请理由")
+    reviewed_by: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="审核人ID")
+    review_note: Mapped[str] = mapped_column(String(500), nullable=False, default="", comment="审核备注")
+    review_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="审核时间")
+
+
+class AiSpaceUserQuotaModel(ModelMixin):
+    """个人空间按用户配额覆盖（无覆盖则回落到全局默认值）。"""
+
+    __tablename__ = "ai_space_user_quota"
+    __table_args__ = ({"comment": "个人空间按用户配额覆盖表"},)
+
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sys_user.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="用户ID",
+    )
+    quota_mb: Mapped[int] = mapped_column(Integer, nullable=False, comment="该用户生效配额（MB）")
+    updated_by: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="最后修改人ID")

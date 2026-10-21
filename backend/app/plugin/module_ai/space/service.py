@@ -14,7 +14,12 @@ from app.core.exceptions import CustomException
 from app.core.logger import log
 from app.utils.common_util import traversal_to_tree
 
-from .model import AiSpaceFileModel, AiSpaceFolderModel
+from .model import (
+    AiSpaceFileModel,
+    AiSpaceFolderModel,
+    AiSpaceQuotaRequestModel,
+    AiSpaceUserQuotaModel,
+)
 
 
 class SpaceService:
@@ -67,20 +72,39 @@ class SpaceService:
 
     @classmethod
     async def quota(cls, user_id: int) -> dict:
-        """返回 {used_bytes, quota_bytes, max_file_bytes}。"""
+        """返回 {used_bytes, quota_bytes, max_file_bytes, default_quota_bytes, has_pending_request}。"""
         from app.config.setting import settings
 
         async with async_db_session() as db:
             used = await cls._used_bytes(db, user_id)
+            quota_mb = await cls._effective_quota_mb(db, user_id)
+            has_pending = await cls._has_pending_request(db, user_id)
         return {
             "used_bytes": used,
-            "quota_bytes": cls._to_quota_bytes(settings.AI_SPACE_QUOTA_MB),
+            "quota_bytes": cls._to_quota_bytes(quota_mb),
             "max_file_bytes": cls._to_quota_bytes(settings.AI_SPACE_MAX_FILE_MB),
+            "default_quota_bytes": cls._to_quota_bytes(settings.AI_SPACE_QUOTA_MB),
+            "has_pending_request": has_pending,
         }
 
     @classmethod
+    async def _effective_quota_mb(cls, db, user_id: int) -> int:
+        """当前用户生效配额（MB）：有按用户覆盖则用覆盖，否则回落到全局默认。"""
+        from app.config.setting import settings
+
+        row = await db.scalar(
+            select(AiSpaceUserQuotaModel).where(
+                AiSpaceUserQuotaModel.user_id == user_id,
+                AiSpaceUserQuotaModel.is_deleted.is_(False),
+            )
+        )
+        if row and row.quota_mb:
+            return int(row.quota_mb)
+        return int(settings.AI_SPACE_QUOTA_MB)
+
+    @classmethod
     async def _check_quota(cls, db, user_id: int, add_bytes: int) -> None:
-        """校验新增字节数不超单文件与总配额，超限抛 CustomException(400)。"""
+        """校验新增字节数不超单文件与总配额（按用户生效配额），超限抛 CustomException(400)。"""
         from app.config.setting import settings
 
         max_file = cls._to_quota_bytes(settings.AI_SPACE_MAX_FILE_MB)
@@ -90,12 +114,133 @@ class SpaceService:
                 code=400, status_code=400,
             )
         used = await cls._used_bytes(db, user_id)
-        quota = cls._to_quota_bytes(settings.AI_SPACE_QUOTA_MB)
+        quota_mb = await cls._effective_quota_mb(db, user_id)
+        quota = cls._to_quota_bytes(quota_mb)
         if used + add_bytes > quota:
             raise CustomException(
-                msg=f"个人空间配额不足：已用 {used / 1024 / 1024:.1f}MB / 共 {settings.AI_SPACE_QUOTA_MB}MB，请清理后重试",
+                msg=f"个人空间配额不足：已用 {used / 1024 / 1024:.1f}MB / 共 {quota_mb}MB，请清理后重试或申请扩容",
                 code=400, status_code=400,
             )
+
+    # ---------------- 扩容申请与审核 ----------------
+
+    @classmethod
+    async def _has_pending_request(cls, db, user_id: int) -> bool:
+        v = await db.scalar(
+            select(AiSpaceQuotaRequestModel.id)
+            .where(
+                AiSpaceQuotaRequestModel.user_id == user_id,
+                AiSpaceQuotaRequestModel.status == "pending",
+                AiSpaceQuotaRequestModel.is_deleted.is_(False),
+            )
+            .limit(1)
+        )
+        return v is not None
+
+    @staticmethod
+    def _request_dict(r: AiSpaceQuotaRequestModel) -> dict:
+        return {
+            "id": r.id,
+            "user_id": r.user_id,
+            "target_mb": r.target_mb,
+            "reason": r.reason,
+            "status": r.status,
+            "reviewed_by": r.reviewed_by,
+            "review_note": r.review_note,
+            "review_time": r.review_time.strftime("%Y-%m-%d %H:%M:%S") if r.review_time else "",
+            "created_time": r.created_time.strftime("%Y-%m-%d %H:%M:%S") if r.created_time else "",
+        }
+
+    @classmethod
+    async def submit_request(cls, user_id: int, target_mb: int, reason: str) -> dict:
+        """提交扩容申请：目标必须大于当前生效配额；已有待审申请则拦截。"""
+        async with async_db_session.begin() as db:
+            cur_mb = await cls._effective_quota_mb(db, user_id)
+            if target_mb <= cur_mb:
+                raise CustomException(
+                    msg=f"申请配额需大于当前配额 {cur_mb}MB", code=400, status_code=400
+                )
+            if await cls._has_pending_request(db, user_id):
+                raise CustomException(msg="已有待审核的扩容申请，请勿重复提交", code=400, status_code=400)
+            row = AiSpaceQuotaRequestModel(
+                user_id=user_id, target_mb=target_mb, reason=(reason or "")[:500], status="pending"
+            )
+            db.add(row)
+            await db.flush()
+            rid = row.id
+        return {"request_id": rid, "target_mb": target_mb, "status": "pending", "msg": "申请已提交，等待管理员审核"}
+
+    @classmethod
+    async def list_requests(cls, user_id: int) -> list[dict]:
+        """当前用户自己的扩容申请（倒序）。"""
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AiSpaceQuotaRequestModel)
+                    .where(
+                        AiSpaceQuotaRequestModel.user_id == user_id,
+                        AiSpaceQuotaRequestModel.is_deleted.is_(False),
+                    )
+                    .order_by(AiSpaceQuotaRequestModel.id.desc())
+                )
+            ).scalars().all()
+            return [cls._request_dict(r) for r in rows]
+
+    @classmethod
+    async def list_all_requests(cls, status: str | None = None) -> list[dict]:
+        """管理员视角：全部扩容申请（可过滤状态），带申请人用户名。"""
+        from app.api.v1.module_system.user.model import UserModel
+
+        async with async_db_session() as db:
+            stmt = (
+                select(AiSpaceQuotaRequestModel, UserModel.username)
+                .join(UserModel, UserModel.id == AiSpaceQuotaRequestModel.user_id)
+                .where(AiSpaceQuotaRequestModel.is_deleted.is_(False))
+                .order_by(AiSpaceQuotaRequestModel.id.desc())
+            )
+            if status:
+                stmt = stmt.where(AiSpaceQuotaRequestModel.status == status)
+            rows = (await db.execute(stmt)).all()
+            out = []
+            for rr, uname in rows:
+                d = cls._request_dict(rr)
+                d["username"] = uname
+                out.append(d)
+            return out
+
+    @classmethod
+    async def review_request(
+        cls, request_id: int, approve: bool, quota_mb: int | None, note: str, reviewer: int
+    ) -> dict:
+        """审核扩容申请：通过则给该用户 upsert 生效配额；驳回则标记状态。"""
+        from datetime import datetime
+
+        async with async_db_session.begin() as db:
+            row = await db.get(AiSpaceQuotaRequestModel, request_id)
+            if not row or row.is_deleted:
+                raise CustomException(msg="申请不存在", code=404, status_code=404)
+            if row.status != "pending":
+                raise CustomException(msg=f"该申请已处理（{row.status}）", code=400, status_code=400)
+            now = datetime.now()
+            row.reviewed_by = reviewer
+            row.review_note = note[:500] or ""
+            row.review_time = now
+            if approve:
+                eff = int(quota_mb or row.target_mb)
+                uq = await db.scalar(
+                    select(AiSpaceUserQuotaModel).where(AiSpaceUserQuotaModel.user_id == row.user_id)
+                )
+                if not uq:
+                    uq = AiSpaceUserQuotaModel(user_id=row.user_id, quota_mb=eff, updated_by=reviewer)
+                    db.add(uq)
+                else:
+                    uq.quota_mb = eff
+                    uq.updated_by = reviewer
+                row.status = "approved"
+            else:
+                row.status = "rejected"
+            status = row.status
+        return {"request_id": request_id, "status": status, "msg": "已通过并生效" if approve else "已驳回"}
 
     # ---------------- 文件夹 ----------------
 

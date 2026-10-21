@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import ErrorResponse, SuccessResponse
 from app.core.dependencies import AuthPermission
+from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
 
 from .schema import (
@@ -14,6 +15,8 @@ from .schema import (
     SpaceFileRenameSchema,
     SpaceFolderCreateSchema,
     SpaceFolderUpdateSchema,
+    SpaceQuotaRequestSchema,
+    SpaceQuotaReviewSchema,
 )
 from .service import SpaceService
 
@@ -213,3 +216,48 @@ async def space_quota(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:space:query"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await SpaceService.quota(_uid(auth)), msg="查询成功")
+
+
+# ---------------------------------------------------------------- #
+# 扩容申请与审核
+# ---------------------------------------------------------------- #
+@SpaceRouter.post("/quota/request", summary="提交扩容申请")
+async def quota_request(
+    data: SpaceQuotaRequestSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:space:query"]))],
+) -> JSONResponse:
+    try:
+        result = await SpaceService.submit_request(_uid(auth), data.target_mb, data.reason)
+        return SuccessResponse(data=result, msg=result.get("msg", "已提交"))
+    except CustomException as e:
+        return ErrorResponse(msg=str(e), status_code=e.status_code or 400)
+
+
+@SpaceRouter.get("/quota/requests/mine", summary="我的扩容申请")
+async def quota_requests_mine(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:space:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await SpaceService.list_requests(_uid(auth)), msg="查询成功")
+
+
+@SpaceRouter.get("/quota/requests", summary="全部扩容申请（管理员）")
+async def quota_requests_all(
+    status: str | None = None,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:space:quota_review"]))] = None,
+) -> JSONResponse:
+    return SuccessResponse(data=await SpaceService.list_all_requests(status), msg="查询成功")
+
+
+@SpaceRouter.post("/quota/requests/{request_id}/review", summary="审核扩容申请（管理员）")
+async def quota_request_review(
+    request_id: int,
+    data: SpaceQuotaReviewSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:space:quota_review"]))],
+) -> JSONResponse:
+    try:
+        result = await SpaceService.review_request(
+            request_id, data.approve, data.quota_mb, data.note, _uid(auth)
+        )
+        return SuccessResponse(data=result, msg=result.get("msg", "已处理"))
+    except CustomException as e:
+        return ErrorResponse(msg=str(e), status_code=e.status_code or 400)

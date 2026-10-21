@@ -311,7 +311,7 @@ class Settings(BaseSettings):
     # *************** 个人工作空间配置 ************** #
     # ================================================= #
     AI_SPACE_MAX_FILE_MB: int = 200  # 个人空间单文件上限（MB）
-    AI_SPACE_QUOTA_MB: int = 10240  # 个人空间每用户总配额（MB，默认 10GB）
+    AI_SPACE_QUOTA_MB: int = 2048  # 个人空间每用户总配额（MB，默认 2GB；可申请扩容由管理员按用户覆盖）
     ALLOWED_EXTENSIONS: list[str] = [  # 允许的文件类型
         ".gif",
         ".jpg",
