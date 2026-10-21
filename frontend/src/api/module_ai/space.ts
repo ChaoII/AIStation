@@ -36,6 +36,21 @@ export interface SpaceQuota {
   used_bytes: number;
   quota_bytes: number;
   max_file_bytes: number;
+  default_quota_bytes: number;
+  has_pending_request: boolean;
+}
+
+export interface SpaceQuotaRequest {
+  id: number;
+  user_id: number;
+  target_mb: number;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  reviewed_by?: number | null;
+  review_note?: string;
+  review_time?: string;
+  created_time?: string;
+  username?: string;
 }
 
 // ---------- 文件夹 ----------
@@ -153,5 +168,42 @@ export function getSpaceQuota() {
   return request<ApiResponse<SpaceQuota>>({
     url: `${SPACE_PATH}/quota`,
     method: "get",
+  });
+}
+
+// ---------- 扩容申请与审核 ----------
+export function submitSpaceQuotaRequest(data: { target_mb: number; reason?: string }) {
+  return request<
+    ApiResponse<{ request_id: number; target_mb: number; status: string; msg: string }>
+  >({
+    url: `${SPACE_PATH}/quota/request`,
+    method: "post",
+    data,
+  });
+}
+
+export function getMySpaceQuotaRequests() {
+  return request<ApiResponse<SpaceQuotaRequest[]>>({
+    url: `${SPACE_PATH}/quota/requests/mine`,
+    method: "get",
+  });
+}
+
+export function getSpaceQuotaRequests(params?: { status?: string }) {
+  return request<ApiResponse<SpaceQuotaRequest[]>>({
+    url: `${SPACE_PATH}/quota/requests`,
+    method: "get",
+    params,
+  });
+}
+
+export function reviewSpaceQuotaRequest(
+  id: number,
+  data: { approve: boolean; quota_mb?: number | null; note?: string }
+) {
+  return request<ApiResponse<{ request_id: number; status: string; msg: string }>>({
+    url: `${SPACE_PATH}/quota/requests/${id}/review`,
+    method: "post",
+    data,
   });
 }

@@ -64,7 +64,7 @@
           <div class="space-toolbar-right">
             <el-input
               v-model="keyword"
-              placeholder="搜索文件名"
+              placeholder="搜索个人空间文件…"
               clearable
               :prefix-icon="Search"
               style="width: 200px"
@@ -105,7 +105,34 @@
             class="space-quota-bar"
           />
           <span class="space-quota-text">{{ quotaText }}</span>
+          <el-button
+            v-hasPerm="'module_ai:space:query'"
+            link
+            type="primary"
+            @click="openQuotaDialog"
+          >
+            申请扩容
+          </el-button>
         </div>
+
+        <!-- 拖拽上传区（Element Plus 原生 drag） -->
+        <el-upload
+          v-hasPerm="'module_ai:space:upload'"
+          class="space-drop"
+          drag
+          :show-file-list="false"
+          :multiple="true"
+          :http-request="doUpload"
+        >
+          <div class="space-drop-inner">
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="space-drop-text">
+              将文件拖到此处，或
+              <em>点击上传</em>
+            </div>
+            <div class="space-drop-tip">单个文件不超过 {{ formatSize(maxFileBytes) }}</div>
+          </div>
+        </el-upload>
 
         <el-table
           v-loading="loading"
@@ -273,6 +300,81 @@
         <el-button @click="previewVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 申请扩容 -->
+    <el-dialog v-model="quotaDialogVisible" title="申请扩容" width="560px">
+      <div class="quota-current">
+        <span>当前配额：{{ formatQuotaSize(quotaTotal) }}</span>
+        <span>已用：{{ formatQuotaSize(quotaUsed) }}</span>
+      </div>
+      <el-form v-if="!quotaHasPending" label-width="90px" class="quota-form" @submit.prevent>
+        <el-form-item label="目标配额">
+          <el-input-number
+            v-model="quotaTargetGb"
+            :min="quotaTargetMinGb"
+            :step="1"
+            :precision="0"
+          />
+          <span class="quota-unit">GB</span>
+        </el-form-item>
+        <el-form-item label="申请理由">
+          <el-input
+            v-model="quotaReason"
+            type="textarea"
+            :rows="3"
+            maxlength="500"
+            show-word-limit
+            placeholder="请说明申请扩容的原因，如：需要存储更多模型训练产物。"
+          />
+        </el-form-item>
+      </el-form>
+      <el-alert
+        v-if="quotaHasPending"
+        type="info"
+        :closable="false"
+        show-icon
+        title="您已有一笔待审核的扩容申请，请耐心等待管理员处理。"
+      />
+      <div class="quota-mine">
+        <div class="quota-mine-title">我的申请</div>
+        <el-table
+          v-loading="quotaMineLoading"
+          :data="quotaMine"
+          size="small"
+          empty-text="暂无申请记录"
+        >
+          <el-table-column label="目标配额" width="110">
+            <template #default="{ row }">
+              {{ formatQuotaSize(row.target_mb * 1024 * 1024) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="quotaStatusType(row.status)" effect="plain">
+                {{ quotaStatusLabel(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="申请时间" width="150">
+            <template #default="{ row }">{{ formatTime(row.created_time) }}</template>
+          </el-table-column>
+          <el-table-column label="审核备注" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.review_note || "—" }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="quotaDialogVisible = false">关闭</el-button>
+        <el-button
+          v-if="!quotaHasPending"
+          type="primary"
+          :loading="quotaSubmitting"
+          @click="submitQuotaRequest"
+        >
+          提交申请
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -288,6 +390,7 @@ import {
   Plus,
   Search,
   Upload,
+  UploadFilled,
   VideoPlay,
   Headset,
 } from "@element-plus/icons-vue";
@@ -299,16 +402,19 @@ import {
   deleteSpaceFiles,
   deleteSpaceFolder,
   downloadSpaceFile,
+  getMySpaceQuotaRequests,
   getSpaceFileList,
   getSpaceFolderTree,
   getSpaceQuota,
   moveSpaceFile,
   previewSpaceFile,
   renameSpaceFile,
+  submitSpaceQuotaRequest,
   updateSpaceFolder,
   uploadSpaceFile,
   type SpaceFileItem,
   type SpaceFolder,
+  type SpaceQuotaRequest,
 } from "@/api/module_ai/space";
 
 // ---------------------------------------------------------------- 状态
@@ -327,11 +433,13 @@ const selectedIds = ref<number[]>([]);
 
 const quotaUsed = ref(0);
 const quotaTotal = ref(1);
+const maxFileBytes = ref(0);
+const quotaHasPending = ref(false);
 const quotaPercent = computed(() =>
   quotaTotal.value ? Math.min(100, Math.round((quotaUsed.value / quotaTotal.value) * 100)) : 0
 );
 const quotaText = computed(
-  () => `${formatSize(quotaUsed.value)} / ${formatSize(quotaTotal.value)}`
+  () => `${formatQuotaSize(quotaUsed.value)} / ${formatQuotaSize(quotaTotal.value)}`
 );
 
 const typeOptions = [
@@ -370,6 +478,19 @@ function formatSize(bytes: number): string {
     i++;
   }
   return `${v.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+// 配额/用量展示用 2 位小数，匹配「62.86 MB / 2.00 GB」样式
+function formatQuotaSize(bytes: number): string {
+  if (bytes == null || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return i === 0 ? `${bytes} B` : `${v.toFixed(2)} ${units[i]}`;
 }
 
 function formatTime(t?: string): string {
@@ -435,6 +556,8 @@ async function loadQuota() {
     if (q) {
       quotaUsed.value = q.used_bytes;
       quotaTotal.value = q.quota_bytes;
+      maxFileBytes.value = q.max_file_bytes;
+      quotaHasPending.value = q.has_pending_request;
     }
   } catch {
     // 配额加载失败不阻断页面
@@ -673,6 +796,78 @@ async function openPreview(row: any) {
     previewLoading.value = false;
   }
 }
+
+// ---------------------------------------------------------------- 申请扩容
+const quotaDialogVisible = ref(false);
+const quotaTargetGb = ref(5);
+const quotaReason = ref("");
+const quotaSubmitting = ref(false);
+const quotaMine = ref<SpaceQuotaRequest[]>([]);
+const quotaMineLoading = ref(false);
+
+const quotaTargetMinGb = computed(() =>
+  Math.max(1, Math.ceil(quotaTotal.value / 1024 / 1024 / 1024))
+);
+
+function quotaStatusLabel(s: string): string {
+  if (s === "approved") return "已通过";
+  if (s === "rejected") return "已驳回";
+  return "待审核";
+}
+
+function quotaStatusType(s: string): "success" | "danger" | "info" {
+  if (s === "approved") return "success";
+  if (s === "rejected") return "danger";
+  return "info";
+}
+
+async function loadQuotaMine() {
+  quotaMineLoading.value = true;
+  try {
+    const r = await getMySpaceQuotaRequests();
+    quotaMine.value = r.data?.data || [];
+  } catch (e: any) {
+    ElMessage.error(e?.message || "加载申请记录失败");
+  } finally {
+    quotaMineLoading.value = false;
+  }
+}
+
+async function openQuotaDialog() {
+  quotaDialogVisible.value = true;
+  quotaTargetGb.value = quotaTargetMinGb.value + 1;
+  quotaReason.value = "";
+  await loadQuotaMine();
+  quotaHasPending.value = quotaMine.value.some((r) => r.status === "pending");
+}
+
+async function submitQuotaRequest() {
+  const targetMb = Math.round(quotaTargetGb.value * 1024);
+  const currentMb = quotaTotal.value / 1024 / 1024;
+  if (targetMb <= currentMb) {
+    ElMessage.warning(`目标配额需大于当前 ${formatQuotaSize(quotaTotal.value)}`);
+    return;
+  }
+  if (!quotaReason.value.trim()) {
+    ElMessage.warning("请填写申请理由");
+    return;
+  }
+  quotaSubmitting.value = true;
+  try {
+    const r = await submitSpaceQuotaRequest({
+      target_mb: targetMb,
+      reason: quotaReason.value.trim(),
+    });
+    ElMessage.success(r.data?.data?.msg || "申请已提交");
+    await loadQuotaMine();
+    await loadQuota();
+    quotaHasPending.value = true;
+  } catch (e: any) {
+    ElMessage.error(e?.message || "提交失败");
+  } finally {
+    quotaSubmitting.value = false;
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -809,5 +1004,67 @@ async function openPreview(row: any) {
   :deep(img) {
     max-width: 100%;
   }
+}
+
+.space-drop {
+  margin-top: 4px;
+  :deep(.el-upload) {
+    width: 100%;
+  }
+  :deep(.el-upload-dragger) {
+    padding: 12px;
+    border: 1px dashed var(--el-border-color);
+    border-radius: var(--el-border-radius-base);
+    &:hover {
+      border-color: var(--el-color-primary);
+    }
+  }
+}
+
+.space-drop-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  color: var(--el-text-color-secondary);
+}
+
+.space-drop-text {
+  font-size: var(--el-font-size-base, 14px);
+  em {
+    color: var(--el-color-primary);
+    font-style: normal;
+  }
+}
+
+.space-drop-tip {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.quota-current {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.quota-form {
+  margin-bottom: 16px;
+}
+
+.quota-unit {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+}
+
+.quota-mine-title {
+  margin-bottom: 8px;
+}
+
+.quota-mine {
+  margin-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding-top: 12px;
 }
 </style>
