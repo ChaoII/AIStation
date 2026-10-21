@@ -311,3 +311,24 @@ class DevelopService:
             if row:
                 row.last_call_at = now
                 row.call_count = (row.call_count or 0) + 1
+
+
+# ---------------------------------------------------------------------- #
+# 嵌入短期令牌（P4'）：生成 / 散列 / TTL 夹紧（纯逻辑，无 DB / HTTP）
+# ---------------------------------------------------------------------- #
+
+def _generate_embed_token() -> str:
+    """生成嵌入 access_token 明文（URL 安全、不含冒号，便于 Bearer 解析）。"""
+    return secrets.token_urlsafe(32)
+
+
+def _hash_embed_token(token: str) -> str:
+    """计算嵌入 token 的 sha256 散列（库内只存散列，明文仅签发时返回一次）。"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def clamp_embed_ttl(ttl: int | None) -> int:
+    """夹紧换票 TTL：缺省 1800s，下限 60s，上限 86400s（24 小时）。"""
+    if ttl is None:
+        return 1800
+    return max(60, min(int(ttl), 86400))

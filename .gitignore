@@ -97,3 +97,4 @@ playwright-report/
 backend/_*.out
 backend/tmp_500.txt
 backend/tmp_500_bytes.bin
+.openchamber/
