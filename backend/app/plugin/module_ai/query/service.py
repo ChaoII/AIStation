@@ -1113,6 +1113,64 @@ def _scan_ont_tables(sql: str) -> list[str]:
     ))
 
 
+# P1-12 方案 b：内置默认敏感列名单（fail-closed 底板）。
+# 作为「配置显式标记（ai_query_asset_columns.sensitive / 本体属性 sensitive）」之外的兜底，
+# 凡**返回结果列**命中该名单（大小写不敏感，含常见变体）即默认拦截、永不返回明文。
+# 只拦「返回列」，不拦 WHERE / JOIN 里的引用（否则会伤到正常过滤）。
+_DEFAULT_SENSITIVE_COLS: frozenset[str] = frozenset({
+    "password", "passwd", "pwd", "secret", "token",
+    "access_token", "refresh_token", "api_token",
+    "api_key", "apikey", "private_key", "encrypt_key",
+    "auth_secret", "credential", "salt",
+    "user_passwd", "user_password", "login_password",
+    "auth_key", "sign_key", "secret_key", "passkey", "passcode",
+})
+
+
+def _default_sensitive_return_cols(sql: str) -> list[str]:
+    """筛出 SQL **返回结果列**中命中内置敏感名单的列名（原始形式）。
+
+    - 用 sqlglot 精确提取 SELECT 投影表达式里的列（含函数内列、别名），
+      避免正则误伤字符串；**不扫 WHERE / JOIN**（那里引用敏感列不拦）。
+    - 别名场景（``id AS password``）以**别名**作为结果列名判定——结果列就叫 password，必须拦。
+    - 解析失败时回退正则（宁可多报、不可漏报，保持 fail-closed）。
+    """
+    if not sql:
+        return []
+    try:
+        import sqlglot
+        from sqlglot import exp as _exp
+
+        parsed = sqlglot.parse_one(sql, read="postgres")
+    except Exception:  # noqa: BLE001
+        try:
+            names = re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", sql)
+        except Exception:  # noqa: BLE001
+            return []
+        return [n for n in names if n.lower() in _DEFAULT_SENSITIVE_COLS]
+
+    candidates: list[str] = []
+    for sel in parsed.find_all(_exp.Select):
+        for expr in sel.expressions:
+            # 别名：以「别名」作为结果列名（如 `id AS password`）
+            if isinstance(expr, _exp.Alias):
+                candidates.append(expr.alias)
+            # 内部列：覆盖直接列（password）、函数内列（MAX(api_token)）
+            for col in expr.find_all(_exp.Column):
+                candidates.append(col.name)
+
+    seen: set[str] = set()
+    hits: list[str] = []
+    for name in candidates:
+        low = name.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        if low in _DEFAULT_SENSITIVE_COLS:
+            hits.append(name)
+    return hits
+
+
 async def _execute_sql(sql: str) -> dict:
     start = time.time()
     try:
@@ -6696,6 +6754,18 @@ class AiQueryService:
         if violations:
             raise CustomException(
                 msg=f"字段级权限：无权限访问 {', '.join(violations)}（本体属性级 ACL）")
+        # P1-12 方案 b：内置默认敏感列名单（fail-closed 底板）——作为「配置显式标记」
+        # （`ai_query_asset_columns.sensitive` / 本体属性 `sensitive`）之外的兜底，放在
+        # 字段级 ACL **之后**：配置标记（业务明标敏感）优先报「字段级权限」；无标记但命中
+        # 内置名单（如无人标注的明文凭据列）在此兜底拦截。
+        # 用**原始 sql**（与 `_ont_sql_violations` 同源，不用改写后的 `secured["sql"]`）。
+        # 对**所有用户（含超管）**生效：超管 `_ont_sql_violations` 会被 `_can_see_sensitive`
+        # 短路返回空（不报「字段级权限」），但内置名单仍拦，确保敏感列永不返回。
+        # 只拦「返回结果列」，不拦 WHERE / JOIN 引用。
+        _default_hits = _default_sensitive_return_cols(sql)
+        if _default_hits:
+            raise CustomException(
+                msg=f"查询包含内置敏感列（默认拦截，永不返回）：{', '.join(_default_hits)}")
         return await _execute_sql(secured["sql"])
 
     @classmethod
