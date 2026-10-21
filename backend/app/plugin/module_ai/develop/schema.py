@@ -25,6 +25,7 @@ class DevelopCreateSchema(BaseModel):
     expire_at: datetime | None = Field(default=None, description="凭证过期时间（空为永久）")
     quota: dict | None = Field(default=None, description="配额配置（JSON 对象）")
     requires_approval: bool | None = Field(default=True, description="调用是否需要人工审批")
+    enabled: bool | None = Field(default=None, description="是否启用（None 时默认 True）")
 
 
 class DevelopUpdateSchema(BaseModel):
@@ -36,3 +37,4 @@ class DevelopUpdateSchema(BaseModel):
     expire_at: datetime | None = Field(default=None, description="凭证过期时间（空为永久）")
     quota: dict | None = Field(default=None, description="配额配置（JSON 对象）")
     requires_approval: bool | None = Field(default=None, description="调用是否需要人工审批")
+    enabled: bool | None = Field(default=None, description="是否启用（None 表示不更新）")

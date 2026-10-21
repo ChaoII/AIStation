@@ -14,7 +14,7 @@ import hashlib
 import pytest
 
 from app.core.exceptions import CustomException
-from app.plugin.module_ai.develop.schema import DevelopCreateSchema
+from app.plugin.module_ai.develop.schema import DevelopCreateSchema, DevelopUpdateSchema
 from app.plugin.module_ai.develop.service import DevelopService, _generate_appid, _hash_appkey
 
 
@@ -77,3 +77,24 @@ def test_disabled_or_expired_app_auth_fails(test_client):
     assert _run(DevelopService.verify_appkey(c["appid"], c["appkey"])) is None
     _run(DevelopService.toggle_app(c["id"], False, _Auth()))
     assert _run(DevelopService.verify_appkey(c["appid"], c["appkey"])) is None
+
+
+def test_create_with_enabled_false_fails_auth(test_client):
+    """创建时显式 ``enabled=False``：应用应立刻禁用，verify_appkey 返回 None。"""
+    c = _run(DevelopService.create_app(
+        DevelopCreateSchema(name="off", enabled=False), _Auth()))
+    assert c["enabled"] is False
+    assert _run(DevelopService.verify_appkey(c["appid"], c["appkey"])) is None
+
+
+def test_update_app_honors_enabled(test_client):
+    """编辑弹窗的启用开关应生效：update_app 显式改 enabled 会改变可鉴权状态。"""
+    c = _run(DevelopService.create_app(DevelopCreateSchema(name="toggle-upd"), _Auth()))
+    # 初始启用，可校验通过
+    assert _run(DevelopService.verify_appkey(c["appid"], c["appkey"])) is not None
+    # 通过 update_app 关闭（模拟编辑弹窗关闭「启用」）
+    _run(DevelopService.update_app(c["id"], DevelopUpdateSchema(enabled=False), _Auth()))
+    assert _run(DevelopService.verify_appkey(c["appid"], c["appkey"])) is None
+    # 再重新启用
+    _run(DevelopService.update_app(c["id"], DevelopUpdateSchema(enabled=True), _Auth()))
+    assert _run(DevelopService.verify_appkey(c["appid"], c["appkey"])) is not None

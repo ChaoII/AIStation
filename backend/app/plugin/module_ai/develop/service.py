@@ -151,7 +151,7 @@ class DevelopService:
                 appid=appid,
                 appkey_hash=_hash_appkey(appkey),
                 description=data.description,
-                enabled=True,
+                enabled=data.enabled if data.enabled is not None else True,
                 expire_at=data.expire_at,
                 capabilities=caps,
                 quota=data.quota,
@@ -191,6 +191,8 @@ class DevelopService:
             if "requires_approval" in payload:
                 # 允许显式传 None 还原为默认 True（模型列非空）
                 row.requires_approval = True if payload["requires_approval"] is None else bool(payload["requires_approval"])
+            if "enabled" in payload:
+                row.enabled = bool(payload["enabled"])
             row.updated_id = auth.user.id
             await db.flush()
             return _app_to_dict(row)
