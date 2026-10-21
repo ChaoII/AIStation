@@ -98,6 +98,7 @@ export class EmbedChatTransport implements ChatTransport<UIMessage> {
     return new ReadableStream<UIMessageChunk>({
       async start(controller) {
         const ctx: MapCtx = { messageId: msgId, seq: 0 };
+        let sawText = false; // 本响应是否已产出文本增量（LLM 节点才有）
         try {
           const res = await fetch(url, {
             method: "POST",
@@ -129,14 +130,40 @@ export class EmbedChatTransport implements ChatTransport<UIMessage> {
               if (kind === "ui") {
                 const chunk = parsed.data as UIMessageChunk;
                 if ((chunk as any).type === "text-delta") {
+                  sawText = true;
                   opts.onTextDelta?.(String((chunk as any).delta || ""));
                 }
                 controller.enqueue(chunk);
               } else if (kind === "aux") {
-                opts.onAuxFrame?.(String(parsed.data?.type || ""), parsed.data);
+                const auxType = String(parsed.data?.type || "");
+                const payload = parsed.data?.data;
+                // 纯非 LLM 工作流不发 text-delta，回复只在 data-finish.reply 里：
+                // 若本响应没有任何文本增量，用 reply 合成一段文本 parts，保证界面与持久化一致。
+                if (
+                  auxType === "data-finish" &&
+                  !sawText &&
+                  payload &&
+                  typeof payload.reply === "string" &&
+                  payload.reply.trim()
+                ) {
+                  sawText = true;
+                  const finId = `fin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+                  controller.enqueue({ type: "text-start", id: finId } as UIMessageChunk);
+                  controller.enqueue({
+                    type: "text-delta",
+                    id: finId,
+                    delta: payload.reply,
+                  } as UIMessageChunk);
+                  controller.enqueue({ type: "text-end", id: finId } as UIMessageChunk);
+                  opts.onTextDelta?.(payload.reply);
+                }
+                opts.onAuxFrame?.(auxType, parsed.data);
               } else if (kind === "agno") {
                 for (const c of mapAgnoEvent(parsed.event, parsed.data, ctx)) {
-                  if (c.type === "text-delta") opts.onTextDelta?.(c.delta);
+                  if (c.type === "text-delta") {
+                    sawText = true;
+                    opts.onTextDelta?.(c.delta);
+                  }
                   controller.enqueue(c);
                 }
               }
