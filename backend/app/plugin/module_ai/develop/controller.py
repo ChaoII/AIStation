@@ -37,12 +37,15 @@ from app.plugin.module_ai.streaming import ui_stream_response
 from .auth import AppContext, EmbedContext, get_app_api_auth, get_embed_ctx, require_app_perm
 from .capabilities import permissions_by_category
 from .embed import EmbedService
+from .openapi import invoke_capability
+from .registry import capabilities_for, to_public_dict
 from .model import (
     AiIntegrationAppModel,
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
 from .schema import (
+    CapabilityInvokeSchema,
     DevelopCreateSchema,
     DevelopUpdateSchema,
     EmbedMintSchema,
@@ -50,6 +53,8 @@ from .schema import (
     EmbedTokenIssueSchema,
 )
 from .service import DevelopService
+# 导入 handler 包即注册全部开放能力（REST 与 MCP 共用注册表）。
+from . import handlers as _handlers  # noqa: F401
 
 
 class DevelopToggleSchema(BaseModel):
@@ -258,6 +263,46 @@ async def auth_token(
     )
     await _audit("success", summary=f"{data.kind}:{data.target_id}")
     return SuccessResponse(data=result, msg="令牌已签发")
+
+
+# ---------------------------------------------------------------------- #
+# 开放数据面（OpenApiRouter）：统一能力入口。
+# 鉴权走 Bearer appid:appkey；能力元数据从注册表读取，按授权权限点过滤；
+# 调用统一经 openapi.invoke_capability（权限 → 限流/配额 → 执行 → 审计）。
+# ---------------------------------------------------------------------- #
+@OpenApiRouter.get("/capabilities", summary="开放能力清单（按授权过滤）")
+async def open_capabilities(
+    ctx: Annotated[AppContext, Depends(get_app_api_auth)],
+) -> SuccessResponse:
+    """返回**当前应用已授权**的能力元数据（未授权能力不出现，避免暴露能力面）。"""
+    caps = capabilities_for(ctx.perms)
+    return SuccessResponse(
+        data={"items": [to_public_dict(c) for c in caps], "total": len(caps)}, msg="查询成功"
+    )
+
+
+@OpenApiRouter.post("/capabilities/{code}", summary="调用开放能力")
+async def open_capability_invoke(
+    code: str,
+    data: CapabilityInvokeSchema,
+    request: Request,
+    ctx: Annotated[AppContext, Depends(get_app_api_auth)],
+) -> JSONResponse:
+    """统一调用入口：``POST /ai/develop-api/capabilities/{code}``，body ``{"payload": {...}}``。
+
+    错误语义：401（凭证）→ 403（未授权能力，写 denied 审计）→ 404（能力不存在）
+    → 429（限流/配额）→ 400/500（handler 业务错误）。
+    """
+    result = await invoke_capability(
+        ctx,
+        code,
+        data.payload,
+        method="REST",
+        redis=getattr(request.app.state, "redis", None),
+        request_path=f"/capabilities/{code}",
+        ip=request.client.host if request.client else "",
+    )
+    return SuccessResponse(data=result, msg="调用成功")
 
 
 # ---------------------------------------------------------------------- #

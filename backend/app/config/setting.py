@@ -248,6 +248,9 @@ class Settings(BaseSettings):
     EMBED_RATE_TOKEN_PER_MIN: int = 30  # 每 token 每分钟消息条数上限
     EMBED_RATE_IP_PER_MIN: int = 60  # 每 IP 每分钟消息条数上限
     EMBED_TOKEN_RATE_PER_MIN: int = 30  # 每 appid 每分钟换票次数上限（防铸票滥用）
+    # 开放 REST / MCP 通道限流（固定窗口，每分钟；超限 429）
+    OPEN_API_RATE_APP_PER_MIN: int = 120  # 每 appid 每分钟调用上限
+    OPEN_API_RATE_IP_PER_MIN: int = 240  # 每 IP 每分钟调用上限
 
     # ================================================= #
     # ***************** 第三方 OAuth 登录配置 ********* #

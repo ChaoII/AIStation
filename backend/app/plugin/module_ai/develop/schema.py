@@ -64,6 +64,12 @@ class EmbedRunSchema(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000, description="用户消息")
 
 
+class CapabilityInvokeSchema(BaseModel):
+    """开放能力调用入参：一个 JSON 对象（能力各自的 ``input_schema`` 描述其字段）。"""
+
+    payload: dict = Field(default_factory=dict, description="能力入参（JSON 对象）")
+
+
 class EmbedMintSchema(BaseModel):
     """管理端签发体验令牌入参（有效期固定 2 小时，便于当场试用）。"""
 
