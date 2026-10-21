@@ -44,10 +44,14 @@ def _invoke(test_client, app, code, payload):
     )
 
 
-def _cleanup(test_client, auth_headers, app_id=None, task_id=None):
+def _cleanup(test_client, auth_headers, app_id=None, task_id=None, dataset_id=None):
     if task_id:
         test_client.request(
             "DELETE", f"{API}/train/task/delete", json=[task_id], headers=auth_headers
+        )
+    if dataset_id:
+        test_client.request(
+            "DELETE", f"{API}/annotation/dataset/delete", json=[dataset_id], headers=auth_headers
         )
     if app_id:
         test_client.request(
@@ -55,10 +59,22 @@ def _cleanup(test_client, auth_headers, app_id=None, task_id=None):
         )
 
 
+def _create_dataset(test_client, auth_headers) -> int:
+    """开放面 train.create 现在会校验数据集存在，用例需先建一个真实数据集。"""
+    r = test_client.post(
+        f"{API}/annotation/dataset/create",
+        json={"name": f"开放训练数据集-{_uid()}"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["data"]["id"]
+
+
 def test_train_create_tags_owner_and_isolates_between_apps(test_client, auth_headers):
     app_a = _create_app(test_client, auth_headers, TRAIN_CAPS)
     app_b = _create_app(test_client, auth_headers, TRAIN_CAPS_QUERY)
     task_id = None
+    dataset_id = _create_dataset(test_client, auth_headers)
     try:
         created = _invoke(
             test_client,
@@ -67,7 +83,7 @@ def test_train_create_tags_owner_and_isolates_between_apps(test_client, auth_hea
             {
                 "name": f"开放训练-{_uid()}",
                 "framework": "torchkiln",
-                "dataset_id": 1,
+                "dataset_id": dataset_id,
                 "hyperparams": {"epochs": 1},
             },
         )
@@ -94,8 +110,24 @@ def test_train_create_tags_owner_and_isolates_between_apps(test_client, auth_hea
         items = internal["items"] if isinstance(internal, dict) else internal
         assert any(i["id"] == task_id for i in items), "管理面应能看到开放面创建的任务"
     finally:
-        _cleanup(test_client, auth_headers, app_a["id"], task_id)
+        _cleanup(test_client, auth_headers, app_a["id"], task_id, dataset_id)
         _cleanup(test_client, auth_headers, app_b["id"])
+
+
+def test_train_create_rejects_unknown_dataset(test_client, auth_headers):
+    """数据集不存在 → 404（此前任意 dataset_id 都能建出悬空任务）。"""
+    app = _create_app(test_client, auth_headers, TRAIN_CAPS)
+    try:
+        r = _invoke(
+            test_client,
+            app,
+            "train.create",
+            {"name": f"悬空-{_uid()}", "framework": "torchkiln", "dataset_id": 999999},
+        )
+        assert r.status_code == 404, r.text
+        assert "数据集" in r.json()["msg"]
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])
 
 
 def test_train_create_rejects_retired_framework(test_client, auth_headers):

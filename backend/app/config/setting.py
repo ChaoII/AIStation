@@ -251,6 +251,9 @@ class Settings(BaseSettings):
     # 开放 REST / MCP 通道限流（固定窗口，每分钟；超限 429）
     OPEN_API_RATE_APP_PER_MIN: int = 120  # 每 appid 每分钟调用上限
     OPEN_API_RATE_IP_PER_MIN: int = 240  # 每 IP 每分钟调用上限
+    # 开放面「聚合回复」类能力（chat.send / bot.use）的整体超时（秒）：
+    # 非流式调用必须设上限，否则目标卡住会把工作线程/连接长期占住。
+    OPEN_API_CHAT_TIMEOUT_SECONDS: int = 120
 
     # ================================================= #
     # ***************** 第三方 OAuth 登录配置 ********* #

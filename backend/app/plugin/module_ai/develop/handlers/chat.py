@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -107,6 +108,28 @@ async def _collect_reply(frames: AsyncIterator[str]) -> tuple[str, str | None]:
     return text, error_text
 
 
+async def _collect_with_timeout(
+    kind: str, target_id: int, ui_messages: list[dict], session_id: int
+) -> tuple[str, str | None]:
+    """带整体超时的帧流聚合。
+
+    开放面是**非流式**语义：没有超时保护时，目标侧卡住（模型无响应/工具阻塞）
+    会把请求与连接长期占住（并发槽被吃光）。超时按 504 返回明确文案。
+    """
+    from app.config.setting import settings
+
+    timeout = max(5, int(settings.OPEN_API_CHAT_TIMEOUT_SECONDS))
+    frames = await _run_frames(kind, target_id, ui_messages, session_id)
+    try:
+        return await asyncio.wait_for(_collect_reply(frames), timeout=timeout)
+    except TimeoutError as exc:
+        raise CustomException(
+            msg=f"对话超时（超过 {timeout} 秒未完成），请稍后重试或改用流式接口",
+            code=10504,
+            status_code=504,
+        ) from exc
+
+
 async def _send(
     app_ctx: AppContext, *, kind: str, target_id: int, message: str, sid: str | None
 ) -> dict:
@@ -131,9 +154,7 @@ async def _send(
     ui_messages = [{"role": m["role"], "parts": m["parts"]} for m in history]
     ui_messages.append({"role": "user", "parts": [{"type": "text", "text": message}]})
 
-    reply, error_text = await _collect_reply(
-        await _run_frames(kind, target_id, ui_messages, session_id)
-    )
+    reply, error_text = await _collect_with_timeout(kind, target_id, ui_messages, session_id)
     if error_text:
         raise CustomException(msg=error_text[:200], code=10400, status_code=400)
     return {

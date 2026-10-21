@@ -57,6 +57,17 @@ async def _train_get(*, app_ctx: AppContext, payload: dict) -> dict:
     return task
 
 
+async def _ensure_dataset(dataset_id: int) -> None:
+    """校验数据集存在且未删除（否则开放面会创建出指向不存在数据集的训练任务）。"""
+    from app.api.v1.module_annotation.dataset.model import DatasetModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        row = await db.get(DatasetModel, dataset_id)
+    if row is None or getattr(row, "is_deleted", False):
+        raise CustomException(msg="数据集不存在", code=10404, status_code=404)
+
+
 async def _train_create(*, app_ctx: AppContext, payload: dict) -> dict:
     body = {
         k: v
@@ -72,6 +83,7 @@ async def _train_create(*, app_ctx: AppContext, payload: dict) -> dict:
 
     if is_retired(data.framework):
         raise CustomException(msg=retired_message(data.framework, "训练"), code=10400, status_code=400)
+    await _ensure_dataset(data.dataset_id)
     result = await TrainService.create_task(data, _OPEN_AUTH, source_app_id=app_ctx.app_id)
     return {"task_id": result["id"], "source_app_id": app_ctx.app_id}
 

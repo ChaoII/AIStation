@@ -77,6 +77,12 @@ async def _agent_update(*, app_ctx: AppContext, payload: dict) -> dict:
 
 async def _agent_delete(*, app_ctx: AppContext, payload: dict) -> dict:
     agent_id = _need_int(payload, "agent_id")
+    # 开放面删除是**物理删除**（与平台内部一致），不可恢复：必须显式确认，
+    # 避免第三方系统一次笔误就把线上智能体删掉。
+    if payload.get("confirm") is not True:
+        raise CustomException(
+            msg="删除不可恢复：请在 payload 中传 confirm=true 明确确认", code=10400, status_code=400
+        )
     if await AiAgentService.get_agent(agent_id, source_app_id=app_ctx.app_id) is None:
         raise CustomException(msg="智能体不存在", code=10404, status_code=404)
     await AiAgentService.delete([agent_id])
@@ -162,8 +168,11 @@ def register_agent_capabilities() -> None:
             "删除本应用创建的智能体（跨应用 404）",
             {
                 "type": "object",
-                "properties": {"agent_id": {"type": "integer"}},
-                "required": ["agent_id"],
+                "properties": {
+                    "agent_id": {"type": "integer"},
+                    "confirm": {"type": "boolean", "description": "必须为 true 才执行删除（不可恢复）"},
+                },
+                "required": ["agent_id", "confirm"],
             },
             "deleted: int",
             _agent_delete,

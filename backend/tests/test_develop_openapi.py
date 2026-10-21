@@ -57,6 +57,26 @@ def _cleanup(test_client, auth_headers, app_id):
     )
 
 
+def test_agent_delete_requires_explicit_confirm(test_client, auth_headers):
+    """物理删除不可恢复：开放面必须显式 confirm=true，否则 400 且资源不动。"""
+    app = _create_app(test_client, auth_headers, AGENT_CAPS_FULL)
+    try:
+        created = _invoke(test_client, app, "agent.create", {"agent_name": f"待删-{_uid()}"})
+        assert created.status_code == 200, created.text
+        agent_id = created.json()["data"]["id"]
+
+        refused = _invoke(test_client, app, "agent.delete", {"agent_id": agent_id})
+        assert refused.status_code == 400, refused.text
+        assert "confirm" in refused.json()["msg"]
+        assert _invoke(test_client, app, "agent.get", {"agent_id": agent_id}).status_code == 200
+
+        ok = _invoke(test_client, app, "agent.delete", {"agent_id": agent_id, "confirm": True})
+        assert ok.status_code == 200, ok.text
+        assert _invoke(test_client, app, "agent.get", {"agent_id": agent_id}).status_code == 404
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])
+
+
 def test_admin_capability_catalog_lists_all(test_client, auth_headers):
     """管理面能力清单：接入文档展示「有哪些能力可授权」。"""
     r = test_client.get(f"{API}/ai/develop/capabilities", headers=auth_headers)
@@ -151,8 +171,8 @@ def test_agent_isolation_between_apps(test_client, auth_headers):
         listed = _invoke(test_client, app_b, "agent.list", {})
         assert all(item["id"] != agent_id for item in listed.json()["data"]["items"])
 
-        # B 应用：删 → 404，且资源仍在
-        deleted = _invoke(test_client, app_b, "agent.delete", {"agent_id": agent_id})
+        # B 应用：删 → 404，且资源仍在（注意删除需 confirm=true，否则先撞 400）
+        deleted = _invoke(test_client, app_b, "agent.delete", {"agent_id": agent_id, "confirm": True})
         assert deleted.status_code == 404, deleted.text
         still = _invoke(test_client, app_a, "agent.get", {"agent_id": agent_id})
         assert still.status_code == 200, still.text

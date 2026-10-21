@@ -51,6 +51,24 @@ CURRENT_REDIS: ContextVar[Any] = ContextVar("mcp_redis", default=None)
 #: 整数型 ContextVar 的改动无法回传到中间件，故用 dict 承载计数）。
 _TOOL_CALLS: ContextVar[dict | None] = ContextVar("mcp_tool_calls", default=None)
 
+#: JSON-RPC 方法 → 会话行的中文「关闭原因」（管理端可读，别直接暴露方法名）。
+_METHOD_LABELS: dict[str, str] = {
+    "initialize": "握手完成",
+    "tools/list": "查询工具清单",
+    "tools/call": "工具调用",
+    "resources/list": "查询资源清单",
+    "prompts/list": "查询提示词清单",
+    "ping": "心跳",
+}
+
+
+def _close_reason(method: str | None) -> str:
+    """把 JSON-RPC 方法名转成中文会话原因（未知方法保留原名，便于排查）。"""
+    if not method:
+        return "请求完成"
+    return _METHOD_LABELS.get(method, method)[:64]
+
+
 #: JSON Schema 类型 → Python 类型（用于生成 MCP 工具的入参签名）。
 _JSON_TYPES: dict[str, Any] = {
     "string": str,
@@ -142,14 +160,14 @@ async def _record_session(
                     ended_at=now,
                     duration_s=duration_s,
                     tool_calls=tool_calls,
-                    close_reason=(method or "request")[:64],
+                    close_reason=_close_reason(method),
                 )
             )
             return
         row.ended_at = now
         row.duration_s = (row.duration_s or 0) + duration_s
         row.tool_calls = (row.tool_calls or 0) + tool_calls
-        row.close_reason = (method or "request")[:64]
+        row.close_reason = _close_reason(method)
 
 
 def _tool_function(cap: Capability):
