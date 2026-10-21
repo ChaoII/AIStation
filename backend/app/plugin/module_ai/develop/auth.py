@@ -11,12 +11,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from fastapi import Header
+from sqlalchemy import select
 
+from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 
-from .service import DevelopService, _app_to_dict
+from .model import AiIntegrationAccessTokenModel, AiIntegrationAppModel
+from .service import DevelopService, _app_to_dict, _hash_embed_token
 
 
 @dataclass

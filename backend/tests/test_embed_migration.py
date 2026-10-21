@@ -8,7 +8,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
 MOD = import_module("app.alembic.versions.2026_10_21_ai_integration_embed")
-REVISION = "e2f3a4b5c6d7"
+REVISION = "a9b8c7d6e5f4"
 DOWN_REVISION = "c9d0e1f2a3b4"
 
 TOKEN_TABLE = "ai_integration_access_tokens"

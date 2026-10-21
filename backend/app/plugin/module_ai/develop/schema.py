@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -38,3 +39,16 @@ class DevelopUpdateSchema(BaseModel):
     quota: dict | None = Field(default=None, description="配额配置（JSON 对象）")
     requires_approval: bool | None = Field(default=None, description="调用是否需要人工审批")
     enabled: bool | None = Field(default=None, description="是否启用（None 表示不更新）")
+
+
+class EmbedTokenIssueSchema(BaseModel):
+    """换票入参：形态 + 目标 + 可选有效期。
+
+    - ``kind``：嵌入形态（与服务端 ``EmbedService.get_target`` 分派一致）。
+    - ``target_id``：目标主键；令牌将绑定到该单目标。
+    - ``ttl``：有效期秒数，缺省 1800、下限 60、上限 86400（service 层夹紧）。
+    """
+
+    kind: Literal["agent", "app", "workflow"] = Field(..., description="嵌入形态")
+    target_id: int = Field(..., description="嵌入目标ID")
+    ttl: int | None = Field(default=None, description="有效期秒数（缺省1800，上限86400）")

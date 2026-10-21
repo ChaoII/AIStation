@@ -28,16 +28,18 @@ from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import ErrorResponse, SuccessResponse
 from app.core.database import async_db_session
 from app.core.dependencies import AuthPermission
+from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
 
-from .auth import AppContext, get_app_api_auth
+from .auth import AppContext, EmbedContext, get_app_api_auth, get_embed_ctx, require_app_perm
 from .capabilities import permissions_by_category
+from .embed import EmbedService
 from .model import (
     AiIntegrationAppModel,
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
-from .schema import DevelopCreateSchema, DevelopUpdateSchema
+from .schema import DevelopCreateSchema, DevelopUpdateSchema, EmbedTokenIssueSchema
 from .service import DevelopService
 
 
@@ -93,6 +95,51 @@ async def auth_verify(
             status="success",
         )
     return SuccessResponse(data=data, msg="校验成功")
+
+
+@OpenApiRouter.post("/auth/token", summary="换票签发嵌入短期令牌")
+async def auth_token(
+    data: EmbedTokenIssueSchema,
+    ctx: Annotated[AppContext, Depends(get_app_api_auth)],
+) -> SuccessResponse:
+    """服务端换票：``appid:appkey`` → 绑定 ``app+kind+target`` 的短期 access_token。
+
+    - 缺 ``integration:embed:use`` → 403 + denied 审计；
+    - 目标不存在 → 404 + denied 审计；
+    - 明文 token 仅本响应返回一次，库内只存 sha256（响应本身不写日志）。
+    """
+    async with async_db_session() as db:
+        row = await db.get(AiIntegrationAppModel, ctx.app_id)
+    if row is None:
+        raise CustomException(msg="鉴权失败", code=10401, status_code=401)
+
+    async def _audit(status: str, error: str | None = None, summary: str | None = None) -> None:
+        """写一条换票审计（request_body 仅 kind/target，绝不含明文 token）。"""
+        await DevelopService.log_call(
+            row,
+            category="embed",
+            capability="token.issue",
+            method="REST",
+            request_path="/auth/token",
+            request_body={"kind": data.kind, "target_id": data.target_id},
+            status=status,
+            error=error,
+            result_summary=summary,
+        )
+
+    try:
+        require_app_perm(ctx, "integration:embed:use")
+    except CustomException as e:
+        await _audit("denied", error=e.msg)
+        raise
+    if await EmbedService.get_target(data.kind, data.target_id) is None:
+        await _audit("denied", error="嵌入目标不存在")
+        raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
+    result = await EmbedService.issue_token(
+        row, kind=data.kind, target_id=data.target_id, ttl=data.ttl, issued_by="exchange"
+    )
+    await _audit("success", summary=f"{data.kind}:{data.target_id}")
+    return SuccessResponse(data=result, msg="令牌已签发")
 
 
 # ---------------------------------------------------------------------- #

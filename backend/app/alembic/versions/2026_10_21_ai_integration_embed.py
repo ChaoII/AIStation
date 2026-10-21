@@ -1,6 +1,6 @@
 """AI 集成 P4'：嵌入令牌/会话两表 + 会话归属列 + 删除旧分享列
 
-Revision ID: e2f3a4b5c6d7
+Revision ID: a9b8c7d6e5f4
 Revises: c9d0e1f2a3b4
 Create Date: 2026-10-22 00:00:00.000000
 
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "e2f3a4b5c6d7"
+revision: str = "a9b8c7d6e5f4"
 down_revision: str | None = "c9d0e1f2a3b4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
