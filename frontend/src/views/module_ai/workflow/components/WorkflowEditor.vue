@@ -148,9 +148,7 @@
                   >
                     统计
                   </el-button>
-                  <el-button size="small" :icon="Link" @click="showEmbedHint">
-                    嵌入对话
-                  </el-button>
+                  <el-button size="small" :icon="Link" @click="showEmbedHint">嵌入对话</el-button>
                   <el-button size="small" :icon="Share" @click="topoVisible = true">拓扑</el-button>
                   <el-button
                     size="small"
