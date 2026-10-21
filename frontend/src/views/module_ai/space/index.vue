@@ -26,26 +26,27 @@
           @node-click="onFolderClick"
         >
           <template #default="{ data }">
-            <span class="space-tree-node">
-              <el-icon class="space-tree-icon"><Folder /></el-icon>
-              <span class="space-tree-label">{{ data.name }}</span>
-              <el-dropdown trigger="click" @command="(c: string) => onFolderCmd(data, c)">
-                <el-icon class="space-tree-more" @click.stop><MoreFilled /></el-icon>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="addchild">新建子文件夹</el-dropdown-item>
-                    <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                    <el-dropdown-item
-                      command="delete"
-                      style="color: var(--el-color-danger)"
-                      divided
-                    >
-                      删除
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </span>
+            <el-dropdown
+              class="space-tree-menu"
+              trigger="contextmenu"
+              @command="(c: string) => onFolderCmd(data, c)"
+            >
+              <span class="space-tree-node">
+                <el-icon class="space-tree-icon"><Folder /></el-icon>
+                <span class="space-tree-label">{{ data.name }}</span>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="addchild">新建文件夹</el-dropdown-item>
+                  <el-dropdown-item command="upload">上传文件到此</el-dropdown-item>
+                  <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                  <el-dropdown-item command="delete" style="color: var(--el-color-danger)" divided>
+                    删除
+                  </el-dropdown-item>
+                  <el-dropdown-item command="refresh">刷新</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-tree>
       </el-card>
@@ -62,6 +63,24 @@
             </el-breadcrumb-item>
           </el-breadcrumb>
           <div class="space-toolbar-right">
+            <!-- 用量：放在搜索框旁（进度条 + 已用/总量 + 申请扩容） -->
+            <div class="space-quota-inline">
+              <el-progress
+                :percentage="quotaPercent"
+                :stroke-width="8"
+                :status="quotaPercent >= 100 ? 'exception' : undefined"
+                class="space-quota-bar"
+              />
+              <span class="space-quota-text">{{ quotaText }}</span>
+              <el-button
+                v-hasPerm="'module_ai:space:query'"
+                link
+                type="primary"
+                @click="openQuotaDialog"
+              >
+                申请扩容
+              </el-button>
+            </div>
             <el-input
               v-model="keyword"
               placeholder="搜索个人空间文件…"
@@ -96,25 +115,6 @@
           </div>
         </div>
 
-        <div class="space-quota">
-          <span class="space-quota-label">空间用量</span>
-          <el-progress
-            :percentage="quotaPercent"
-            :stroke-width="10"
-            :status="quotaPercent >= 100 ? 'exception' : undefined"
-            class="space-quota-bar"
-          />
-          <span class="space-quota-text">{{ quotaText }}</span>
-          <el-button
-            v-hasPerm="'module_ai:space:query'"
-            link
-            type="primary"
-            @click="openQuotaDialog"
-          >
-            申请扩容
-          </el-button>
-        </div>
-
         <!-- 拖拽上传区（Element Plus 原生 drag） -->
         <el-upload
           v-hasPerm="'module_ai:space:upload'"
@@ -133,6 +133,15 @@
             <div class="space-drop-tip">单个文件不超过 {{ formatSize(maxFileBytes) }}</div>
           </div>
         </el-upload>
+
+        <!-- 右键「上传文件到此」用的隐藏文件输入 -->
+        <input
+          ref="hiddenUploadInput"
+          type="file"
+          multiple
+          style="display: none"
+          @change="onHiddenUploadChange"
+        />
 
         <el-table
           v-loading="loading"
@@ -385,7 +394,6 @@ import {
   Delete,
   Document,
   Folder,
-  MoreFilled,
   Picture,
   Plus,
   Search,
@@ -603,6 +611,8 @@ function openFolderRename(row: any) {
 async function onFolderCmd(row: any, cmd: string) {
   if (cmd === "addchild") openFolderCreate(row.id);
   else if (cmd === "rename") openFolderRename(row);
+  else if (cmd === "refresh") await loadTree();
+  else if (cmd === "upload") triggerUploadTo(row.id);
   else if (cmd === "delete") {
     const count = await countFilesInTree(row);
     try {
@@ -653,17 +663,38 @@ async function submitFolder() {
 }
 
 // ---------------------------------------------------------------- 上传
-async function doUpload(options: any) {
-  const file: File = options.file;
+const uploadTargetFolderId = ref<number | null>(null);
+const hiddenUploadInput = ref<HTMLInputElement | null>(null);
+
+async function performUploadFile(file: File, folderId: number | null) {
   try {
-    await uploadSpaceFile(file, currentFolderId.value);
+    await uploadSpaceFile(file, folderId);
     ElMessage.success(`已上传 ${file.name}`);
     await Promise.all([loadFiles(1), loadQuota()]);
   } catch (e: any) {
     ElMessage.error(e?.message || "上传失败");
-  } finally {
-    options.onSuccess?.();
   }
+}
+
+async function doUpload(options: any) {
+  await performUploadFile(options.file, currentFolderId.value);
+  options.onSuccess?.();
+}
+
+// 右键「上传文件到此」：记录目标文件夹并触发文件选择
+function triggerUploadTo(folderId: number | null) {
+  uploadTargetFolderId.value = folderId;
+  hiddenUploadInput.value?.click();
+}
+
+function onHiddenUploadChange(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const files = input.files;
+  if (files && files.length) {
+    const folderId = uploadTargetFolderId.value;
+    for (const f of Array.from(files)) performUploadFile(f, folderId);
+  }
+  input.value = "";
 }
 
 // ---------------------------------------------------------------- 文件操作
@@ -896,10 +927,19 @@ async function submitQuotaRequest() {
   justify-content: space-between;
 }
 
+.space-tree-menu {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+}
+
 .space-tree-node {
   display: flex;
+  flex: 1;
   gap: 4px;
   align-items: center;
+  min-width: 0;
   padding-right: 8px;
 }
 
@@ -912,15 +952,6 @@ async function submitQuotaRequest() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.space-tree-more {
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.space-tree-node:hover .space-tree-more {
-  opacity: 1;
 }
 
 .space-main {
@@ -944,20 +975,14 @@ async function submitQuotaRequest() {
   align-items: center;
 }
 
-.space-quota {
+.space-quota-inline {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  margin: 8px 0 4px;
-}
-
-.space-quota-label {
-  color: var(--el-text-color-secondary);
-  white-space: nowrap;
 }
 
 .space-quota-bar {
-  flex: 1;
+  width: 90px;
 }
 
 .space-quota-text {
