@@ -142,87 +142,97 @@
           @change="onHiddenUploadChange"
         />
 
-        <el-table
-          v-loading="loading"
-          :data="files"
-          empty-text="当前目录暂无文件"
-          @selection-change="(rows: SpaceFileItem[]) => (selectedIds = rows.map((r) => r.id))"
-        >
-          <el-table-column type="selection" width="46" />
-          <el-table-column label="名称" min-width="240" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span class="space-file-name" @click="openPreview(row)">
-                <el-icon class="space-file-icon">
-                  <component :is="fileIcon(row.file_type)" />
-                </el-icon>
-                <span>{{ row.name }}</span>
-              </span>
+        <div class="space-table-wrap">
+          <el-table
+            v-loading="loading"
+            :data="files"
+            row-key="id"
+            height="100%"
+            border
+            stripe
+            @selection-change="(rows: SpaceFileItem[]) => (selectedIds = rows.map((r) => r.id))"
+          >
+            <template #empty>
+              <el-empty :image-size="80" description="当前目录暂无文件" />
             </template>
-          </el-table-column>
-          <el-table-column label="类型" width="90" align="center">
-            <template #default="{ row }">
-              <el-tag size="small" effect="plain">{{ typeLabel(row.file_type) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="大小" width="100" align="right">
-            <template #default="{ row }">{{ formatSize(row.size) }}</template>
-          </el-table-column>
-          <el-table-column label="来源" width="100" align="center">
-            <template #default="{ row }">
-              <el-tag
-                size="small"
-                :type="row.source === 'agent' ? 'success' : 'info'"
-                effect="plain"
-              >
-                {{ row.source === "agent" ? "AI 生成" : "用户上传" }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="更新时间" width="170">
-            <template #default="{ row }">{{ formatTime(row.updated_time) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="220" align="center" fixed="right">
-            <template #default="{ row }">
-              <el-button size="small" link type="primary" @click="openPreview(row)">预览</el-button>
-              <el-button
-                v-hasPerm="'module_ai:space:download'"
-                size="small"
-                link
-                type="primary"
-                @click="downloadFile(row)"
-              >
-                下载
-              </el-button>
-              <el-button
-                v-hasPerm="'module_ai:space:manage'"
-                size="small"
-                link
-                type="primary"
-                @click="openRename(row)"
-              >
-                重命名
-              </el-button>
-              <el-button
-                v-hasPerm="'module_ai:space:manage'"
-                size="small"
-                link
-                type="primary"
-                @click="openMove(row)"
-              >
-                移动
-              </el-button>
-              <el-button
-                v-hasPerm="'module_ai:space:delete'"
-                size="small"
-                link
-                type="danger"
-                @click="deleteFiles([row.id], row.name)"
-              >
-                删除
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+            <el-table-column type="selection" width="46" />
+            <el-table-column label="名称" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="space-file-name" @click="openPreview(row)">
+                  <el-icon class="space-file-icon">
+                    <component :is="fileIcon(row.file_type)" />
+                  </el-icon>
+                  <span>{{ row.name }}</span>
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="类型" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ typeLabel(row.file_type) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="大小" width="100" align="right">
+              <template #default="{ row }">{{ formatSize(row.size) }}</template>
+            </el-table-column>
+            <el-table-column label="来源" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="row.source === 'agent' ? 'success' : 'info'"
+                  effect="plain"
+                >
+                  {{ row.source === "agent" ? "AI 生成" : "用户上传" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="更新时间" width="170">
+              <template #default="{ row }">{{ formatTime(row.updated_time) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="220" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button size="small" link type="primary" @click="openPreview(row)">
+                  预览
+                </el-button>
+                <el-button
+                  v-hasPerm="'module_ai:space:download'"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="downloadFile(row)"
+                >
+                  下载
+                </el-button>
+                <el-button
+                  v-hasPerm="'module_ai:space:manage'"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="openRename(row)"
+                >
+                  重命名
+                </el-button>
+                <el-button
+                  v-hasPerm="'module_ai:space:manage'"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="openMove(row)"
+                >
+                  移动
+                </el-button>
+                <el-button
+                  v-hasPerm="'module_ai:space:delete'"
+                  size="small"
+                  link
+                  type="danger"
+                  @click="deleteFiles([row.id], row.name)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
         <div class="space-table-footer">
           <div>
             <el-button
@@ -1066,6 +1076,12 @@ async function submitQuotaRequest() {
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  :deep(.el-card__body) {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
 }
 
 .space-toolbar {
@@ -1074,6 +1090,12 @@ async function submitQuotaRequest() {
   gap: 12px;
   align-items: center;
   justify-content: space-between;
+}
+
+.space-table-wrap {
+  flex: 1;
+  min-height: 0;
+  margin-top: 16px;
 }
 
 .space-toolbar-right {
