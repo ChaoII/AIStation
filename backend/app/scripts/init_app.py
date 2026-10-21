@@ -716,6 +716,12 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     # AI 报告（P1-1：此前从未注册 → /ai/report/* 接口恒 403）
     ("module_ai:report:query", "查看 AI 报告"),
     ("module_ai:report:delete", "删除 AI 报告"),
+    # AI 集成开放平台（应用凭证、appid/appkey、审计）
+    ("module_ai:develop:query", "查询AI集成应用"),
+    ("module_ai:develop:create", "新增AI集成应用"),
+    ("module_ai:develop:update", "编辑AI集成应用"),
+    ("module_ai:develop:delete", "删除AI集成应用"),
+    ("module_ai:develop:reset", "重置AI集成应用密钥"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -993,6 +999,118 @@ async def _ensure_ai_menus() -> None:
                 await db.flush()
                 db.add(RoleMenusModel(role_id=1, menu_id=m.id))
             log.info("✅ AI 菜单与权限已注册")
+
+
+async def _ensure_develop_menus() -> None:
+    """确保 AI 集成开放平台菜单与按钮权限存在（幂等）。
+
+    参照 ``_ensure_ai_menus``：查 AI 父菜单，若无则告警返回；「AI 集成」页面（type=2）
+    不存在则创建、存在则修复为未隐藏并校正路径；``db.flush()`` 后给 role_id=1 补角色关联；
+    再用 ``ensure_perms`` 幂等补齐 type=3 按钮权限。重复调用不产生重复菜单/权限。
+    """
+    from sqlalchemy import select, update
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.route_name == "AI", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到 AI 父菜单，跳过 AI 集成菜单注册")
+                return
+
+            # AI 集成开放平台页面（type=2）：唯一键 route_name=AiDevelop，
+            # 与既有的「数据与集成」AiIntegration 保持区分。
+            _row = await db.scalar(
+                select(MenuModel).where(MenuModel.route_name == "AiDevelop")
+            )
+            if _row:
+                # 存量菜单：修复为可见并校正路径/组件/权限/父级
+                await db.execute(
+                    update(MenuModel)
+                    .where(MenuModel.id == _row.id)
+                    .values(
+                        name="AI 集成",
+                        title="AI 集成",
+                        type=2,
+                        hidden=False,
+                        route_path="/ai/develop",
+                        component_path="module_ai/develop/index",
+                        permission="module_ai:develop:query",
+                        parent_id=parent.id,
+                    )
+                )
+            else:
+                _row = MenuModel(
+                    name="AI 集成",
+                    type=2,
+                    icon="el-icon-DataLine",
+                    order=25,
+                    route_name="AiDevelop",
+                    route_path="/ai/develop",
+                    component_path="module_ai/develop/index",
+                    permission="module_ai:develop:query",
+                    parent_id=parent.id,
+                    status="0",
+                    is_deleted=False,
+                    title="AI 集成",
+                )
+                db.add(_row)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=_row.id))
+
+            # 幂等补齐角色授权：菜单存在但未授权 → admin 看不到（须先 flush 才能读到 id）
+            await db.flush()
+            _link = await db.scalar(
+                select(RoleMenusModel).where(
+                    RoleMenusModel.role_id == 1, RoleMenusModel.menu_id == _row.id
+                )
+            )
+            if not _link:
+                db.add(RoleMenusModel(role_id=1, menu_id=_row.id))
+
+            # 按钮权限（type=3）：幂等补齐，不重复插入
+            _existing = set(
+                (
+                    await db.execute(
+                        select(MenuModel.permission).where(
+                            MenuModel.permission.like("module_ai:%")
+                        )
+                    )
+                ).scalars().all()
+            )
+            _develop_perms = [
+                ("module_ai:develop:query", "查询AI集成应用"),
+                ("module_ai:develop:create", "新增AI集成应用"),
+                ("module_ai:develop:update", "编辑AI集成应用"),
+                ("module_ai:develop:delete", "删除AI集成应用"),
+                ("module_ai:develop:reset", "重置AI集成应用密钥"),
+            ]
+            for order, (perm_code, perm_name) in enumerate(
+                ensure_perms(_existing, _develop_perms), start=1
+            ):
+                m = MenuModel(
+                    name=perm_name,
+                    type=3,
+                    icon=None,
+                    order=order,
+                    route_name="",
+                    route_path="",
+                    component_path="",
+                    permission=perm_code,
+                    parent_id=parent.id,
+                    status="0",
+                    is_deleted=False,
+                    title=perm_name,
+                )
+                db.add(m)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=m.id))
+            log.info("✅ AI 集成菜单与权限已注册")
 
 
 async def _ensure_ai_tools() -> None:
@@ -1608,6 +1726,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_edge_event_page_menu()
         await _ensure_face_gallery_menus()
         await _ensure_ai_menus()
+        await _ensure_develop_menus()
         await _ensure_ai_tools()
         await _ensure_agno_tools()
         # 问数侧历史影子表建表（幂等）：新环境部署必需，否则管道/数据域/权限/动作等报错

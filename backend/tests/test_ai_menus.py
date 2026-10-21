@@ -260,3 +260,21 @@ def test_ai_menus_query_group(test_client):
     asyncio.run(init_app._ensure_ai_menus())
     menus2 = _fetch_menus()
     assert menus2[QUERY_GROUP].id == group.id
+
+
+def test_develop_menu_registered(test_client):
+    """_ensure_develop_menus 后：AI 集成菜单落地且可见，按钮权限已注册。"""
+    asyncio.run(init_app._ensure_develop_menus())
+    menus = _fetch_menus()
+    m = menus["AiDevelop"]
+    assert m.hidden is False and m.route_path == "/ai/develop"
+    assert m.component_path == "module_ai/develop/index"
+    assert m.permission == "module_ai:develop:query"
+    perms = {c for c, _ in init_app.AI_BUTTON_PERMS}
+    assert {
+        "module_ai:develop:query",
+        "module_ai:develop:create",
+        "module_ai:develop:update",
+        "module_ai:develop:delete",
+        "module_ai:develop:reset",
+    } <= perms
