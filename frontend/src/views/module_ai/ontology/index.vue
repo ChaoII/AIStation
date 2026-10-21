@@ -15,22 +15,32 @@
           <template #header>
             <div class="ont-side__head">
               <span class="ont-side__title">本体域</span>
-              <el-button
-                v-hasPerm="'module_ai:ontology:edit'"
-                class="ont-side__add"
-                size="small"
-                type="primary"
-                plain
-                :icon="Plus"
-                :loading="domainSaving"
-                @click="openDomainForm()"
-              >
-                新建本体域
-              </el-button>
+              <div class="ont-side__head-ops">
+                <el-button
+                  v-hasPerm="'module_ai:ontology:edit'"
+                  class="ont-side__add"
+                  size="small"
+                  type="primary"
+                  plain
+                  :icon="Plus"
+                  :loading="domainSaving"
+                  @click="openDomainForm()"
+                >
+                  新建本体域
+                </el-button>
+                <el-button
+                  class="ont-side__collapse"
+                  size="small"
+                  text
+                  :icon="domainPanelCollapsed ? Expand : Fold"
+                  :title="domainPanelCollapsed ? '展开本体域' : '折叠本体域'"
+                  @click="domainPanelCollapsed = !domainPanelCollapsed"
+                />
+              </div>
             </div>
           </template>
 
-          <div class="ont-domains">
+          <div v-show="!domainPanelCollapsed" class="ont-domains">
             <div
               v-for="d in domains"
               :key="d.code"
@@ -536,8 +546,8 @@
         <el-form-item label="方式">
           <el-select v-model="actionForm.method" style="width: 100%">
             <el-option label="update（修改对象）" value="update" />
-            <el-option label="insert（暂不支持，会被拒绝）" value="insert" />
-            <el-option label="delete（暂不支持，会被拒绝）" value="delete" />
+            <el-option label="insert（暂不支持，会被拒绝）" value="insert" :disabled="true" />
+            <el-option label="delete（暂不支持，会被拒绝）" value="delete" :disabled="true" />
           </el-select>
         </el-form-item>
         <el-form-item label="审批门禁"><el-switch v-model="actionForm.approval" /></el-form-item>
@@ -585,7 +595,9 @@
             :rows="2"
             placeholder='[{"type":"notification","detail":"通知值班人"}]'
           />
-          <span class="ont-hint">官方支持通知 / Webhook / 触发调度构建；当前仅声明，无执行器</span>
+          <span class="ont-hint">
+            支持 notification（写系统通知）与 webhook（发 HTTP 请求）；「触发调度构建」暂未接入
+          </span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -787,6 +799,8 @@ import {
   Box,
   Check,
   DataAnalysis,
+  Expand,
+  Fold,
   MoreFilled,
   Plus,
   Promotion,
@@ -1043,6 +1057,7 @@ const approveLoading = ref(false);
 const pendingDialog = ref(false);
 const domainDialog = ref(false);
 const domainSaving = ref(false);
+const domainPanelCollapsed = ref(false); // 本体域面板可折叠（小屏省空间）
 const domainForm = reactive({ id: null as number | null, code: "", name: "" });
 
 async function onMaint(cmd: string) {
@@ -1559,6 +1574,15 @@ onMounted(async () => {
 }
 .ont-side__add {
   margin-left: auto;
+}
+.ont-side__head-ops {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+.ont-side__collapse {
+  padding: 4px;
 }
 .ont-domains {
   display: flex;

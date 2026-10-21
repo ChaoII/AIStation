@@ -34,7 +34,24 @@
 
     <!-- ============ 子页导航 ============ -->
     <el-tabs v-model="activeTab" class="ont-obj__tabs">
-      <el-tab-pane v-for="t in TABS" :key="t.value" :name="t.value" :label="t.label" />
+      <el-tab-pane v-for="t in PRIMARY_TABS" :key="t.value" :name="t.value" :label="t.label" />
+      <el-tab-pane name="_more">
+        <template #label>
+          <el-dropdown trigger="click" @command="onMoreCommand">
+            <span class="ont-obj__more-label">
+              更多
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="t in MORE_TABS" :key="t.value" :command="t.value">
+                  {{ t.label }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </template>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- ============ Overview：官方 7 分区 ============ -->
@@ -764,7 +781,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Edit, MagicStick, Plus } from "@element-plus/icons-vue";
+import { ArrowDown, Edit, MagicStick, Plus } from "@element-plus/icons-vue";
 import {
   computeOntDerived,
   executeOntAction,
@@ -821,14 +838,22 @@ const TABS = [
   { value: "usage", label: "使用量" },
   { value: "functions", label: "函数" },
   { value: "versions", label: "版本历史" },
-  { value: "cleanup", label: "清理建议" },
-  { value: "importexport", label: "导入导出" },
-  { value: "metrics", label: "指标" },
+  { value: "cleanup", label: "清理建议", folded: true },
+  { value: "importexport", label: "导入导出", folded: true },
+  { value: "metrics", label: "指标", folded: true },
 ];
+// 高频 Tab 直接铺在导航栏；低频的折进「更多」下拉（降低 12-Tab 的信息密度）。
+const PRIMARY_TABS = TABS.filter((t) => !t.folded);
+const MORE_TABS = TABS.filter((t) => t.folded);
+const FOLDED_VALUES = new Set(MORE_TABS.map((t) => t.value));
 const activeTab = computed({
-  get: () => props.page || "overview",
+  get: () => (FOLDED_VALUES.has(props.page) ? "_more" : props.page || "overview"),
   set: (v: string) => emit("update:page", v),
 });
+
+function onMoreCommand(value: string) {
+  activeTab.value = value;
+}
 
 const { domains, objectByCode, linksOf, actionsOf, functionsOf, stage } = useOntologyData();
 
@@ -1408,5 +1433,19 @@ async function runExec() {
   font-size: var(--el-font-size-extra-large);
   font-weight: 600;
   color: var(--el-color-primary);
+}
+</style>
+
+<style lang="scss">
+/* 对象类型详情：Tab 导航条「吸顶」—— 滚动到任意位置都能一键切换子页（#11 全局 Tab 快速跳转）。
+   用非 scoped（.ont-obj__tabs 根由 Element Plus el-tabs 渲染，scoped data-v 不会命中）。
+   注意要点：el-tabs 在本页只是「纯导航」，pane 内容为空、真正的分区内容是兄弟模板，
+   因此 el-tabs 根仅 ~47px 高；若只给 .el-tabs__header 加 sticky，其父(elt-tabs)太矮无法行程、
+   不生效，须给整条 .ont-obj__tabs 加 sticky。 */
+.ont-obj__tabs {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--el-bg-color);
 }
 </style>

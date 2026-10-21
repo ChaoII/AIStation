@@ -527,6 +527,258 @@ class TestProposal:
             _run(svc.delete_one("ai_ont_property", row[0]))
 
 
+class TestProposalAtomicity:
+    """合并原子性回归——**不依赖 Postgres**，在 SQLite 上也可验证。
+
+    背景：``TestProposal`` 整体被 skip 到 Postgres（reason 关乎物化/索引），
+    但合并原子性并不依赖那些，故单独放这里，保证在默认 SQLite 测试库也能跑。
+    """
+
+    def test_merge_is_atomic_on_task_failure(self):
+        """合并内**任一任务失败**时，必须整体回滚——不能留下半套改动。
+
+        这是对「合并非单事务、部分失败留半成品」的回归：一旦某个任务在
+        ``_apply_task`` 抛出，前面的任务也必须一起回滚。
+        """
+        r = _run(PR.create_branch("回归-原子性", "", "t"))
+        bc, pc = r["branch_code"], r["proposal_code"]
+        # 任务1：合法的属性新增（若非单事务会成功写入）
+        _run(PR.save_on_branch(bc, "property", "create",
+                               {"object_code": CAM, "code": "reg_atomic_ok",
+                                "name": "原子性字段", "prop_type": "string"}, "t"))
+        # 任务2：合并阶段必然失败的资源种类（绕过 save 校验直接落库，status=approved）
+        _run(svc._exec_write(
+            "INSERT INTO ai_ont_proposal_task(proposal_code, resource_kind, "
+            "resource_code, resource_name, change_kind, before, after, status, created_time) "
+            "VALUES (:p, 'bogus_kind', 'x', 'X', 'update', '{}', '{}', 'approved', :t)",
+            {"p": pc, "t": "now"}))
+        # 批准唯一合法的任务（bogus 已置为 approved）
+        p = _run(PR.get_proposal(pc))
+        for t in p["tasks"]:
+            if t["status"] != "approved":
+                _run(PR.review_task(t["id"], True, "t"))
+        # 合并应当失败
+        m = _run(PR.merge_proposal(pc, "t"))
+        assert m["ok"] is False, m
+        # 原子性：任务1 的改动也不应存在（否则就是半成品）
+        props = _run(svc.list_properties(CAM))
+        assert not any(p["code"] == "reg_atomic_ok" for p in props), \
+            "合并失败后不应留下任务1的改动（须整体回滚）"
+        # 收尾：即便失败残留也清掉，避免污染后续用例
+        row = _run(svc._exec(
+            "SELECT id FROM ai_ont_property WHERE code='reg_atomic_ok'", {})).fetchone()
+        if row:
+            _run(svc.delete_one("ai_ont_property", row[0]))
+
+    def test_merge_success_path_still_works(self):
+        """单事务改造后，**正常合并**必须依旧生效（回归保护）。"""
+        r = _run(PR.create_branch("回归-成功路径", "", "t"))
+        bc, pc = r["branch_code"], r["proposal_code"]
+        _run(PR.save_on_branch(bc, "property", "create",
+                               {"object_code": CAM, "code": "reg_atomic_ok2",
+                                "name": "成功字段", "prop_type": "string"}, "t"))
+        p = _run(PR.get_proposal(pc))
+        _run(PR.review_task(p["tasks"][0]["id"], True, "t"))
+        m = _run(PR.merge_proposal(pc, "t"))
+        assert m["ok"], m
+        props = _run(svc.list_properties(CAM))
+        assert any(p["code"] == "reg_atomic_ok2" for p in props), "正常合并应写入主本体"
+        row = _run(svc._exec(
+            "SELECT id FROM ai_ont_property WHERE code='reg_atomic_ok2'", {})).fetchone()
+        if row:
+            _run(svc.delete_one("ai_ont_property", row[0]))
+
+
+class TestWritebackValueType:
+    """实例写回必须按属性挂接的值类型约束校验（P1 遗留：Writeback 未接）。"""
+
+    def _create(self):
+        async def _setup():
+            from sqlalchemy import text as _t
+
+            from app.core.database import async_db_session
+
+            async with async_db_session.begin() as db:
+                await db.execute(_t(
+                    "CREATE TABLE IF NOT EXISTS wt_cams "
+                    "(id INTEGER PRIMARY KEY, name TEXT)"))
+                await db.execute(_t(
+                    "INSERT OR IGNORE INTO wt_cams (id,name) VALUES (1,'GOOD')"))
+            await svc.upsert_object({"code": "wt_cam", "name": "写回测试",
+                                     "key_prop": "id", "name_prop": "name",
+                                     "backing_table": "wt_cams", "edits_enabled": True})
+            await svc.upsert_value_type({"code": "wt_vt", "name": "测试值类型",
+                                         "base_type": "string",
+                                         "constraints": {"options": ["GOOD", "OK"]}})
+            await svc.upsert_property({"object_code": "wt_cam", "code": "name",
+                                       "name": "名称", "prop_type": "string",
+                                       "value_type_code": "wt_vt"})
+        _run(_setup())
+
+    def _clean(self):
+        async def _cl():
+            from sqlalchemy import text as _t
+
+            from app.core.database import async_db_session
+
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DROP TABLE IF EXISTS wt_cams"))
+        _run(_cl())
+
+    def test_writeback_rejects_value_violating_value_type(self):
+        """写回值违反值类型约束（enum 外取值）时必须拒绝写入。"""
+        self._create()
+        try:
+            r = _run(svc.writeback_instance("wt_cam", "1", {"name": "BAD"}))
+            assert r["ok"] is False, r
+            assert "值类型" in r.get("msg", "") or "取值" in r.get("msg", ""), r
+            # 合法值应通过
+            r2 = _run(svc.writeback_instance("wt_cam", "1", {"name": "GOOD"}))
+            assert r2["ok"] is True, r2
+        finally:
+            self._clean()
+
+
+class TestActionRequired:
+    """动作 create_object 规则必须校验对象类型的必填属性（P0：required 此前不生效）。"""
+
+    def test_missing_required_props_detected(self, monkeypatch):
+        async def _fake_list_props(code):
+            return [{"code": "name", "required": True},
+                    {"code": "status", "required": False}]
+
+        monkeypatch.setattr(svc, "list_properties", _fake_list_props)
+        # 缺 name → 返回 ["name"]
+        assert _run(svc._missing_required_props("x", {"status": "ON"})) == ["name"]
+        # 都提供 → 空
+        assert _run(svc._missing_required_props("x", {"name": "a", "status": "ON"})) == []
+        # 对象无必填（或对象不存在）→ 空
+        assert _run(svc._missing_required_props("x", {})) == ["name"]
+
+
+class TestOntSchemaFailure:
+    """建表/加列失败必须可见（warning），不能静默吞掉（P0：裸 except pass）。"""
+
+    def test_schema_failure_is_logged_not_silent(self, monkeypatch):
+        import app.core.logger as logger_mod
+
+        calls: list[str] = []
+
+        class _FakeLog:
+            def warning(self, msg, *a, **k):
+                calls.append(str(msg))
+
+        monkeypatch.setattr(logger_mod, "log", _FakeLog())
+        monkeypatch.setattr(svc, "_ont_schema_ready", False)
+        monkeypatch.setattr(svc, "_ONT_TABLES_SQL", ("THIS IS NOT VALID DDL",))
+        monkeypatch.setattr(svc, "_ONT_ALTER_SQL", ())
+        _run(svc._ensure_ontology_schema())
+        assert any("建表/加列失败" in c for c in calls), \
+            f"建表失败应记录告警而非静默通过，实际 calls={calls}"
+
+
+class TestVersionDiff:
+    """版本 diff 必须覆盖 属性/关系/动作/函数（P0：此前只比属性 prop_type/sensitive）。"""
+
+    def test_version_diff_covers_links_actions_functions(self):
+        v = _run(svc._do_publish(CAM))
+        vid = v["id"]
+        # 改动：新增 属性 + 关系 + 动作
+        _run(svc.upsert_property({"object_code": CAM, "code": "reg_vdiff_prop",
+                                  "name": "VDF", "prop_type": "string"}))
+        _run(svc.upsert_link({"source_object": CAM, "target_object": CAM,
+                              "name": "自关联VDF", "card": "one_to_many",
+                              "source_field": "id", "target_field": "id"}))
+        _run(svc.upsert_action({"object_code": CAM, "code": "reg_vdiff_act",
+                                "name": "VDF动作", "method": "update",
+                                "target_table": "reg_cams", "white_fields": ["name"]}))
+        try:
+            d = _run(svc.version_diff(vid))
+            assert d["ok"], d
+            # 属性（保持既有返回结构）
+            assert "reg_vdiff_prop" in d["added"]
+            # 关系 / 动作（新增的 diff 覆盖）
+            assert any("自关联VDF" in str(x) for x in d["links"]["added"]), \
+                f"diff 应覆盖新增关系：{d['links']['added']}"
+            assert any(x.get("code") == "reg_vdiff_act" for x in d["actions"]["added"]), \
+                f"diff 应覆盖新增动作：{d['actions']['added']}"
+        finally:
+            # 收尾：清理本次新增的元数据，避免污染后续用例
+            for table, cond in (("ai_ont_property", "code='reg_vdiff_prop'"),
+                                ("ai_ont_action", "code='reg_vdiff_act'")):
+                row = _run(svc._exec(f"SELECT id FROM {table} WHERE {cond}", {})).fetchone()
+                if row:
+                    _run(svc.delete_one(table, row[0]))
+            lk = _run(svc._exec(
+                "SELECT id FROM ai_ont_link WHERE source_object=:s AND target_object=:t "
+                "AND name='自关联VDF'", {"s": CAM, "t": CAM})).fetchone()
+            if lk:
+                _run(svc.delete_one("ai_ont_link", lk[0]))
+
+
+class TestInterfaceLinkConstraint:
+    """P8：接口可声明 link type 约束——**目标对象类型须实现某接口**。
+
+    现况只校验同名关系存在，不校验对端类型（gap-analysis `interface-link-types-overview` 🟡）。
+    """
+
+    def _seed(self):
+        async def _s():
+            await svc._exec_write(
+                "INSERT INTO ai_ont_object(code,name,key_prop,name_prop,is_deleted) "
+                "VALUES ('ifc_a','A','id','name',false)")
+            await svc._exec_write(
+                "INSERT INTO ai_ont_object(code,name,key_prop,name_prop,is_deleted) "
+                "VALUES ('ifc_b','B','id','name',false)")
+            await svc._exec_write(
+                "INSERT INTO ai_ont_link(source_object,target_object,name,api_name,card,is_deleted) "
+                "VALUES ('ifc_a','ifc_b','关联B','linked_b','one_to_many',false)")
+            await svc._exec_write(
+                "INSERT INTO ai_ont_interface(code,name,required_links,is_deleted) "
+                "VALUES ('itf_target','目标接口','[]',false)")
+            import json as _j
+            rl = _j.dumps([{"name": "关联B", "api_name": "linked_b",
+                            "target_interface": "itf_target"}], ensure_ascii=False)
+            await svc._exec_write(
+                "INSERT INTO ai_ont_interface(code,name,required_links,is_deleted) "
+                "VALUES ('itf_link','链接约束接口',:rl,false)", {"rl": rl})
+            await svc._exec_write(
+                "INSERT INTO ai_ont_interface_impl(interface_code,object_code) "
+                "VALUES ('itf_link','ifc_a')")
+        _run(_s())
+
+    def _clean(self):
+        async def _c():
+            await svc._exec_write(
+                "DELETE FROM ai_ont_interface_impl WHERE interface_code IN ('itf_link','itf_target') "
+                "OR object_code IN ('ifc_a','ifc_b')")
+            await svc._exec_write(
+                "DELETE FROM ai_ont_link WHERE source_object IN ('ifc_a','ifc_b') "
+                "OR target_object IN ('ifc_a','ifc_b')")
+            await svc._exec_write(
+                "DELETE FROM ai_ont_interface WHERE code IN ('itf_link','itf_target')")
+            await svc._exec_write(
+                "DELETE FROM ai_ont_object WHERE code IN ('ifc_a','ifc_b')")
+        _run(_c())
+
+    def test_required_link_target_must_implement_interface(self):
+        self._seed()
+        try:
+            # 情况1：对端 B 未实现 itf_target → 应报缺失
+            chk = _run(svc.check_interface_impl("itf_link", "ifc_a"))
+            assert not chk["ok"], chk
+            assert any("未实现接口" in str(m) for m in chk["missing"].get("links", [])), \
+                f"应在 missing.links 中指出对端未实现接口：{chk['missing']}"
+            # 情况2：B 实现 itf_target → 该项通过
+            _run(svc._exec_write(
+                "INSERT INTO ai_ont_interface_impl(interface_code,object_code) "
+                "VALUES ('itf_target','ifc_b')"))
+            chk2 = _run(svc.check_interface_impl("itf_link", "ifc_a"))
+            assert chk2["ok"], chk2
+        finally:
+            self._clean()
+
+
 # ===========================================================================
 # D) 演示数据
 # ===========================================================================

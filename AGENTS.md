@@ -431,6 +431,54 @@ Dashboard `index.vue` 图表区使用自定义 CSS Grid (`display: grid; grid-te
 
 ---
 
+## 调试记忆：el-tabs「纯导航」时给 `position: sticky` 吸顶不生效（对象详情 Tab 全局快速跳转）
+
+### 问题现象
+想让对象类型详情的 Tab 导航栏在滚动时「吸顶」，做成全局快速跳转。本以为给
+`.el-tabs__header` 加 `position: sticky; top:0` 即可，实测：滚动后 header 直接跟着内容滚走了，**完全没有停靠**。
+
+### 根因（关键）
+在这个组件里，`<el-tabs>` 是**纯导航**：`el-tab-pane` 内容为空（没有真正的内容），
+真正的分区内容是用 `v-if="page === '...'"` 写在 el-tabs **外面**的兄弟模板。
+
+因此 `el-tabs` 根实际仅约 **47px** 高（只有头部导航条）。
+`position: sticky` 的「行程」受限于**其父（containing block）的高度**——`el-tabs` 根太矮，
+header 根本无处可停，所以一点都吸不住。
+
+> 唯一例外：若给 sticky 元素设一个**更高的父级容器**（如把 sticky 作用在 el-tabs **根**上、
+> 且根是滚动容器的直接子元素），就能吸住。
+
+### 修复方案
+必须给**整条 el-tabs 根**（`.ont-obj__tabs`）加 sticky，而不是给 `.el-tabs__header`：
+
+```scss
+/* 非 scoped；因为 `.ont-obj__tabs` 是 Element Plus 渲染的根，scoped data-v 不会命中 */
+.ont-obj__tabs {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--el-bg-color);
+}
+```
+
+- 前提：该 el-tabs 根必须是**滚动容器的直接子元素**（直接子元素才能相对滚动容器吸顶；
+  实测把探针 div prepend 到 `.ont-obj`（滚动容器 `overflow:auto` 的直接子元素）时 sticky 生效，
+  stuck gap=0；而嵌套在 el-tabs 内的 header 不生效）。
+
+### 排查手法（可复用）
+1. 先确认**哪个元素是真正的滚动容器**（`getComputedStyle` 看 `overflow:auto` + `scrollHeight>clientHeight`）。
+2. 在页面里 `prepend` 一个 `position:sticky;top:0` 的探针 div 到滚动容器直接子层，滚动观察：
+   - 探针能吸住 → 容器关系 OK，问题在目标元素层级太深/父太矮；
+   - 探针也吸不住 → 容器或祖先 `overflow` 建立独立滚动上下文。
+3. 检查目标元素祖先链的 `overflow`，以及**父容器高度**（`getBoundingClientRect().height`）。
+
+### 相关文件
+- `frontend/src/views/module_ai/ontology/components/OntObjectTypeView.vue` — 问题组件，新增
+  `<style lang="scss">`（非 scoped）`.ont-obj__tabs { position: sticky; ... }`
+- 决策记录：`docs/superpowers/plans/2026-10-20-ontology-p0-ui-plan.md` 第 11 项
+
+---
+
 ## 调试记忆：后端热重载（reload）是陷阱，开发时禁止开
 
 ### 现象与代价（2026-10-18 实测，代价：约 1 小时的错误排查）

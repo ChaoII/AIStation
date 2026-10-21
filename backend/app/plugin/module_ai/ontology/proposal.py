@@ -520,21 +520,24 @@ async def merge_proposal(proposal_code: str, actor: str = "",
         return {"ok": False, "blocked_by": "not_approved",
                 "msg": f"还有 {len(not_ok)} 个任务未批准，不能合并"}
 
-    applied, failed = 0, []
-    for t in p["tasks"]:
-        try:
-            await _apply_task(t, actor)
-            applied += 1
-        except Exception as e:  # noqa: BLE001
-            failed.append(f"{t['resource_kind']} {t['resource_code']}：{str(e)[:80]}")
-    if failed:
-        return {"ok": False, "msg": "合并失败（部分改动未生效）：" + "；".join(failed[:3])}
-    await _svc._exec_write(
-        "UPDATE ai_ont_proposal SET stage='merged', merged_at=now(), merged_by=:b "
-        "WHERE code=:c", {"b": actor, "c": proposal_code})
-    await _svc._exec_write(
-        "UPDATE ai_ont_branch SET status='merged', merged_at=now(), merged_by=:b "
-        "WHERE code=:c", {"b": actor, "c": p["branch_code"]})
+    # 单事务：全成或全不成。任一任务失败 → 整体回滚，不留下半套改动。
+    # （原来逐个 ``_apply_task`` 且各自提交，任务 3 失败时前 2 个已成事实库。）
+    applied = 0
+    try:
+        async with _svc._ont_transaction():
+            for t in p["tasks"]:
+                await _apply_task(t, actor)
+                applied += 1
+            await _svc._exec_write(
+                "UPDATE ai_ont_proposal SET stage='merged', merged_at=now(), merged_by=:b "
+                "WHERE code=:c", {"b": actor, "c": proposal_code})
+            await _svc._exec_write(
+                "UPDATE ai_ont_branch SET status='merged', merged_at=now(), merged_by=:b "
+                "WHERE code=:c", {"b": actor, "c": p["branch_code"]})
+    except Exception as e:  # noqa: BLE001
+        await _svc._log_change("", "proposal", "merge_failed",
+                               f"提案 {proposal_code} 合并失败（已回滚）：{str(e)[:160]}")
+        return {"ok": False, "msg": "合并失败，已整体回滚（单事务）：" + str(e)[:160]}
     await _svc._log_change("", "proposal", "merge",
                            f"提案 {proposal_code} 已合并（{applied} 个任务）")
     return {"ok": True, "applied": applied,
