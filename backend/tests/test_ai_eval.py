@@ -183,8 +183,22 @@ class TestAiEval:
         assert "ok" in r and "msg" in r
         r2 = asyncio.run(AiQueryService.autopilot_execute("none", ""))
         assert r2["ok"] is False
-        r3 = asyncio.run(AiQueryService.autopilot_execute("generate_desc", "t_desc"))
-        assert "ok" in r3
+
+    def test_autopilot_execute_generate_desc_shape(self, monkeypatch):
+        """旧断言 ``"ok" in r3`` 是假绿：ok 为 False 时同样成立，失败也会通过。
+
+        这里把生成器打桩（避免真调 LLM），断言「成功」必须逐项可见：
+        ``ok is True`` 且 msg 里带上真实补全条数。
+        """
+        from app.plugin.module_ai.query.service import AiQueryService as S
+
+        async def _fake_desc(auth=None, force=False):
+            return {"tables": 2, "columns": 5}
+
+        monkeypatch.setattr(S, "generate_asset_descriptions", staticmethod(_fake_desc))
+        r3 = asyncio.run(S.autopilot_execute("generate_desc", "t_desc"))
+        assert r3["ok"] is True, r3["msg"]
+        assert "表 2 条" in r3["msg"] and "字段 5 条" in r3["msg"]
 
     def test_derived_metrics(self):
         from app.plugin.module_ai.query.service import AiQueryService

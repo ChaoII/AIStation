@@ -268,6 +268,19 @@ def _ds_code(datasource_id: int) -> str:
     return f"ds:{datasource_id}"
 
 
+def _actor_id(auth) -> int | None:
+    """取当前操作人 id；**内部调度**（无 HTTP 用户上下文）返回 ``None``。
+
+    背景（实测回归）：``generate_asset_descriptions`` 这类批量动作既会被 HTTP
+    接口触发（有 auth），也会被自主巡检在**后台**触发（``auth=None``）。旧实现
+    直接写 ``auth.user.id`` → AttributeError → 整批「补全描述」必然失败。
+
+    这里统一兜底为 ``None``（= 系统写入，审计字段留空），
+    **不放宽任何 ACL**：归属过滤仍按真实 auth 走，``None`` 只影响审计列。
+    """
+    return getattr(getattr(auth, "user", None), "id", None)
+
+
 async def _load_ds(datasource_id: int):
     async with async_db_session() as db:
         ds = await db.get(AiQueryDatasourceModel, datasource_id)
@@ -2047,13 +2060,16 @@ class AiQueryService:
                 return {"ok": True, "msg": f"已对 {table} 重跑数据质量扫描"}
             except Exception as e:  # noqa: BLE001
                 return {"ok": False, "msg": f"DQ 重扫失败：{e}"}
-        if executable == "generate_desc" and table:
+        if executable == "generate_desc":
             try:
                 # 原来这里是**占位实现**：只把 alias 写成 "数据表 X"（假描述），
                 # 前端看是"已补全"，实际一句中文描述都没生成；
                 # 而真正调 LLM 的 generate_asset_descriptions / assets/generate-desc
                 # 在前端**零入口**。现在两者接上（生成器按"缺描述的资产"批量处理，
                 # 只补缺的，不覆盖人工填过的内容）。
+                # 注意：生成器是**批量**动作（自己扫描所有缺描述资产），
+                # table 参数对它没有意义，所以这里不再要求 table 非空——
+                # 否则自主修复（无 table）会掉到"暂不支持"分支。
                 r = await cls.generate_asset_descriptions(auth, force=False) or {}
                 return {
                     "ok": True,
@@ -2278,15 +2294,31 @@ class AiQueryService:
         """AIP 自主修复全自动调度：自动批量执行所有可执行的自主行动（敏感扫描/补全描述/DQ重扫）。"""
         plan = await cls.autopilot()
         results: list[dict] = []
+        # `generate_desc` 本身是**批量**动作（一次扫描全部缺描述资产），只能触发一次。
+        # 旧实现把它和「按表」行动放在同一个循环里 → N 张表就全量重跑 N 轮 LLM
+        # （白烧 token，且每轮结果互相覆盖）。这里单独处理、只跑一次。
+        desc_done = False
         for a in plan["actions"]:
-            if a["executable"] in ("scan_sensitive", "generate_desc", "dq_scan") and a.get("tables"):
-                for t in a["tables"]:
-                    try:
-                        r = await cls.autopilot_execute(a["executable"], t)
-                        results.append({"action": a["type"], "table": t,
-                                        "ok": bool(r.get("ok")), "msg": r.get("msg", "")})
-                    except Exception as e:  # noqa: BLE001
-                        results.append({"action": a["type"], "table": t, "ok": False, "msg": str(e)})
+            if a["executable"] not in ("scan_sensitive", "generate_desc", "dq_scan") or not a.get("tables"):
+                continue
+            if a["executable"] == "generate_desc":
+                if desc_done:
+                    continue
+                desc_done = True
+                try:
+                    r = await cls.autopilot_execute("generate_desc", "")
+                    results.append({"action": a["type"], "table": "",
+                                    "ok": bool(r.get("ok")), "msg": r.get("msg", "")})
+                except Exception as e:  # noqa: BLE001
+                    results.append({"action": a["type"], "table": "", "ok": False, "msg": str(e)})
+                continue
+            for t in a["tables"]:
+                try:
+                    r = await cls.autopilot_execute(a["executable"], t)
+                    results.append({"action": a["type"], "table": t,
+                                    "ok": bool(r.get("ok")), "msg": r.get("msg", "")})
+                except Exception as e:  # noqa: BLE001
+                    results.append({"action": a["type"], "table": t, "ok": False, "msg": str(e)})
         fixed = sum(1 for r in results if r["ok"])
         return {"attempted": len(results), "fixed": fixed, "results": results}
 
@@ -2510,7 +2542,11 @@ class AiQueryService:
         """用 LLM 为表/字段生成中文描述（带数据画像；人工校对后生效）。
 
         force=True 时对全部已纳入资产重建，否则仅处理缺描述的。
+
+        ``auth`` 允许为 ``None``（自主巡检/调度器在后台触发时没有 HTTP 用户上下文），
+        此时审计列 ``updated_id`` 留空，**不做**任何归属过滤放行。
         """
+        actor = _actor_id(auth)
         async with async_db_session() as db:
             from sqlalchemy import select as _sel
 
@@ -2568,14 +2604,14 @@ class AiQueryService:
                 obj = await dbt.get(AiQueryAssetModel, trow.id)
                 if obj and tdesc:
                     obj.description = tdesc
-                    obj.updated_id = auth.user.id
+                    obj.updated_id = actor
                     updated_tables += 1
                 cdesc = data.get("columns") or {}
                 for colname, cobj in colmap.get(tname, []):
                     d = (cdesc.get(colname) or "").strip()
                     if d and isinstance(cobj, AiQueryAssetColumnModel):
                         cobj.description = d
-                        cobj.updated_id = auth.user.id
+                        cobj.updated_id = actor
                         updated_cols += 1
         return {"tables": updated_tables, "columns": updated_cols}
 
