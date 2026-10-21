@@ -117,7 +117,7 @@ class EmbedService:
         }
 
     @classmethod
-    async def prepare_session(cls, ctx: "EmbedContext", sid: str) -> tuple[int, bool]:
+    async def prepare_session(cls, ctx: EmbedContext, sid: str) -> tuple[int, bool]:
         """解析/建立 ``(app_id, sid)`` → 平台会话映射，返回 ``(session_id, session_reset)``。
 
         - 同 ``sid`` 换形态/换目标 → 403（防串会话）；
@@ -172,7 +172,7 @@ class EmbedService:
     @classmethod
     async def run_stream(
         cls,
-        ctx: "EmbedContext",
+        ctx: EmbedContext,
         sid: str,
         app_row: AiIntegrationAppModel,
         session_id: int,
@@ -259,7 +259,7 @@ class EmbedService:
                 pass
 
     @classmethod
-    async def check_limits(cls, redis, ctx: "EmbedContext", ip: str) -> None:
+    async def check_limits(cls, redis, ctx: EmbedContext, ip: str) -> None:
         """固定窗口限流（token/IP 双键）+ 按日配额；超限抛 429。
 
         - 限流：``INCR``+``EXPIRE 60``，键 ``ai:embed:rl:t:{hash12}`` / ``ai:embed:rl:ip:{ip}``；

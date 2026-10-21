@@ -34,16 +34,18 @@ from app.core.router_class import OperationLogRoute
 from app.plugin.module_ai.assistant.agno_service import agno_stream_response
 from app.plugin.module_ai.streaming import ui_stream_response
 
+# 导入 handler 包即注册全部开放能力（REST 与 MCP 共用注册表）。
+from . import handlers as _handlers  # noqa: F401
 from .auth import AppContext, EmbedContext, get_app_api_auth, get_embed_ctx, require_app_perm
 from .capabilities import permissions_by_category
 from .embed import EmbedService
-from .openapi import invoke_capability
-from .registry import capabilities_for, to_public_dict
 from .model import (
     AiIntegrationAppModel,
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
+from .openapi import invoke_capability
+from .registry import capabilities_for, to_public_dict
 from .schema import (
     CapabilityInvokeSchema,
     DevelopCreateSchema,
@@ -53,8 +55,6 @@ from .schema import (
     EmbedTokenIssueSchema,
 )
 from .service import DevelopService
-# 导入 handler 包即注册全部开放能力（REST 与 MCP 共用注册表）。
-from . import handlers as _handlers  # noqa: F401
 
 
 class DevelopToggleSchema(BaseModel):
