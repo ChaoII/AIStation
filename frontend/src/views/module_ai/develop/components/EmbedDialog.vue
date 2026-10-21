@@ -7,6 +7,7 @@
     v-model="visible"
     :title="`嵌入对话 · ${app?.name || ''}`"
     width="640px"
+    top="6vh"
     append-to-body
     class="embed-dialog-host"
     @closed="resetState"
@@ -361,6 +362,9 @@ async function onRevoke(row: any) {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  max-height: 64vh;
+  padding-right: 6px;
+  overflow-y: auto;
 }
 
 .embed-dialog__section {
