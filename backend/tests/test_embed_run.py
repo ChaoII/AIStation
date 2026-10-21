@@ -221,6 +221,123 @@ def test_record_exchange_allows_app_owned_anonymous_session(test_client, auth_he
         )
 
 
+def test_prepare_session_slides_expiry(test_client, auth_headers):
+    """闲置 TTL 滑动：复用会话时 expires_at 必须向后延长，不能按创建时间硬截止。"""
+    from sqlalchemy import select
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.develop.embed import EmbedService
+    from app.plugin.module_ai.develop.model import AiIntegrationEmbedSessionModel
+
+    app = _create_app(test_client, auth_headers)
+    wf = _create_workflow(test_client, auth_headers)
+    ctx = SimpleNamespace(
+        app_id=app["id"],
+        appid=app["appid"],
+        kind="workflow",
+        target_id=wf,
+        perms={"integration:embed:use"},
+        quota=None,
+    )
+    sid = f"sid-ttl-{_uid()}"
+
+    async def _read_expiry():
+        async with async_db_session() as db:
+            row = (
+                await db.execute(
+                    select(AiIntegrationEmbedSessionModel).where(
+                        AiIntegrationEmbedSessionModel.app_id == app["id"],
+                        AiIntegrationEmbedSessionModel.sid == sid,
+                    )
+                )
+            ).scalar_one()
+            return row.session_id, row.expires_at
+
+    async def _go():
+        sid1, reset1 = await EmbedService.prepare_session(ctx, sid)
+        session1, expires1 = await _read_expiry()
+        await asyncio.sleep(0.05)
+        sid2, reset2 = await EmbedService.prepare_session(ctx, sid)
+        session2, expires2 = await _read_expiry()
+        return sid1, sid2, reset1, reset2, session1, session2, expires1, expires2
+
+    try:
+        sid1, sid2, reset1, reset2, session1, session2, expires1, expires2 = _run_async(_go())
+        assert reset1 is True and reset2 is False
+        assert sid1 == sid2 == session1 == session2  # 复用同一平台会话
+        assert expires2 > expires1  # 每次使用滑动续期
+    finally:
+        test_client.request("DELETE", f"{API}/ai/workflows/delete", json=[wf], headers=auth_headers)
+        test_client.request(
+            "DELETE", f"{API}/ai/develop/delete", json=[app["id"]], headers=auth_headers
+        )
+
+
+def test_run_stream_includes_server_history(monkeypatch, test_client, auth_headers):
+    """多轮上下文：run 必须把「服务端会话历史 + 新消息」交给三形态 run 服务。"""
+    from types import SimpleNamespace
+
+    from app.plugin.module_ai.develop.embed import EmbedService
+    from app.plugin.module_ai.develop.service import DevelopService
+    from app.plugin.module_ai.sessions import service as sessions_service
+    from app.plugin.module_ai.streaming import UiMessageStream
+    from app.plugin.module_ai.workflow import service as workflow_service
+
+    app = _create_app(test_client, auth_headers)
+    captured: dict = {}
+
+    async def fake_log(cls, app_row, **kwargs):
+        return None
+
+    monkeypatch.setattr(DevelopService, "log_call", classmethod(fake_log))
+
+    history = [
+        {"role": "user", "parts": [{"type": "text", "text": "上一句"}]},
+        {"role": "assistant", "parts": [{"type": "text", "text": "上一句的回答"}]},
+    ]
+
+    async def fake_messages(cls, session_id):
+        return history
+
+    monkeypatch.setattr(sessions_service.AiSessionService, "get_messages", classmethod(fake_messages))
+
+    async def fake_workflow_stream(workflow_id, msgs, auth, variables=None, session_id=None, **kw):
+        captured["messages"] = msgs
+        ms = UiMessageStream()
+        yield ms.start()
+        yield ms.data("finish", {"reply": "ok"})
+        yield ms.finish()
+        yield ms.done()
+
+    monkeypatch.setattr(
+        workflow_service.AiWorkflowService, "run_ui_stream", classmethod(
+            lambda cls, *a, **k: fake_workflow_stream(*a, **k)
+        ),
+    )
+
+    ctx = SimpleNamespace(
+        app_id=app["id"], appid=app["appid"], kind="workflow", target_id=1,
+        perms={"integration:embed:use"}, quota=None,
+    )
+    app_row = SimpleNamespace(id=app["id"], appid=app["appid"])
+
+    async def _collect():
+        frames = []
+        async for frame in EmbedService.run_stream(ctx, "sid-history-1", app_row, 1, False, "新一句", None):
+            frames.append(frame)
+        return frames
+
+    try:
+        frames = _run_async(_collect())
+        msgs = captured["messages"]
+        assert [m["parts"][0]["text"] for m in msgs] == ["上一句", "上一句的回答", "新一句"]
+        assert any('"data-embed"' in f for f in frames)
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/develop/delete", json=[app["id"]], headers=auth_headers
+        )
+
+
 
 def test_run_dispatch_agent_and_app_with_anonymous_shim(monkeypatch):
     """三形态分派 + 匿名垫片（uid=None）单元验证（不触真实模型/引擎）。"""

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
@@ -33,6 +34,21 @@ from .service import (
 
 if TYPE_CHECKING:  # 仅类型标注，避免运行期循环导入
     from .auth import EmbedContext
+
+#: 嵌入会话闲置 TTL（小时）：每次使用滑动续期
+SESSION_TTL_HOURS = 24
+
+
+def _extract_stream_error(frame: str) -> str | None:
+    """从 SSE 帧中提取 ``type=error`` 的文案（用于审计状态判定）。"""
+    try:
+        raw = frame[6:].strip() if frame.startswith("data: ") else frame.strip()
+        payload = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        return None
+    if isinstance(payload, dict) and payload.get("type") == "error":
+        return str(payload.get("errorText") or payload.get("message") or "运行失败")
+    return None
 
 
 class EmbedService:
@@ -106,7 +122,7 @@ class EmbedService:
 
         - 同 ``sid`` 换形态/换目标 → 403（防串会话）；
         - 无映射或映射过期 → 新建平台会话并重置映射（闲置 TTL 24 小时）；
-        - 未过期 → 仅刷新 ``last_active_at``。
+        - 未过期 → 刷新 ``last_active_at`` 并**滑动续期** ``expires_at``。
         """
         now = datetime.now()
         async with async_db_session.begin() as db:
@@ -123,7 +139,9 @@ class EmbedService:
                 raise CustomException(msg="会话绑定无效", code=10403, status_code=403)
             reset = row is None or row.expires_at <= now
             if not reset:
+                # 闲置 TTL 滑动：每次使用都续期，避免活跃会话被 24h 硬截止
                 row.last_active_at = now
+                row.expires_at = now + timedelta(hours=SESSION_TTL_HOURS)
                 return row.session_id, False
             # 新建平台会话（复用既有会话模型，归属打 source_app_id）
             session = AiSessionModel(
@@ -133,7 +151,6 @@ class EmbedService:
             )
             db.add(session)
             await db.flush()
-            expires_at = now + timedelta(hours=24)
             if row is None:
                 db.add(
                     AiIntegrationEmbedSessionModel(
@@ -142,13 +159,13 @@ class EmbedService:
                         kind=ctx.kind,
                         target_id=ctx.target_id,
                         session_id=session.id,
-                        expires_at=expires_at,
+                        expires_at=now + timedelta(hours=SESSION_TTL_HOURS),
                         last_active_at=now,
                     )
                 )
             else:
                 row.session_id = session.id
-                row.expires_at = expires_at
+                row.expires_at = now + timedelta(hours=SESSION_TTL_HOURS)
                 row.last_active_at = now
             return session.id, True
 
@@ -202,6 +219,12 @@ class EmbedService:
                     ctx.target_id, ui_messages, auth, None, session_id, redis=redis
                 )
             async for frame in gen:
+                # 流内 error 帧（目标停用/模型未配置等）也计入审计状态，避免「用户看到失败、审计却是成功」
+                if status == "success":
+                    stream_err = _extract_stream_error(frame)
+                    if stream_err:
+                        status = "error"
+                        error_text = stream_err[:250]
                 yield frame
         except Exception as e:  # noqa: BLE001
             status = "error"
@@ -268,3 +291,27 @@ class EmbedService:
                 await redis.expire(f"ai:embed:quota:{ctx.app_id}:{day}", 86400)
             if count > quota:
                 raise CustomException(msg="今日嵌入调用配额已用完", code=10429, status_code=429)
+
+    @classmethod
+    async def check_issue_limit(cls, redis, appid: str, ip: str) -> None:
+        """换票端点限流（appid + IP 双键），防无限铸票（DB 膨胀/滥用）。
+
+        固定窗口 60s：每 appid 每分钟 ``EMBED_TOKEN_RATE_PER_MIN`` 次，
+        每 IP 每分钟 2 倍额度；``redis`` 为空时跳过（降级）。
+        """
+        if redis is None:
+            return
+        from app.config.setting import settings
+
+        cap = settings.EMBED_TOKEN_RATE_PER_MIN
+
+        async def _hit(key: str, limit: int) -> bool:
+            count = int(await redis.incr(key))
+            if count == 1:
+                await redis.expire(key, 60)
+            return count > limit
+
+        if await _hit(f"ai:embed:issue:{appid}", cap) or await _hit(
+            f"ai:embed:issue:ip:{ip or 'na'}", cap * 2
+        ):
+            raise CustomException(msg="换票过于频繁，请稍后再试", code=10429, status_code=429)

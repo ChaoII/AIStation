@@ -73,3 +73,28 @@ def test_quota_zero_means_unlimited(monkeypatch):
 
 def test_no_redis_skips():
     asyncio.run(EmbedService.check_limits(None, _ctx(quota={"embed": 1}), "1.1.1.1"))
+
+
+def test_issue_limit_appid_second_call_429(monkeypatch):
+    """换票端点限流：同 appid 连发超限 → 429（防无限铸票）。"""
+    monkeypatch.setattr(settings, "EMBED_TOKEN_RATE_PER_MIN", 1)
+    redis = _FakeRedis()
+    asyncio.run(EmbedService.check_issue_limit(redis, "ai_testapp", "1.1.1.1"))
+    with pytest.raises(CustomException) as ei:
+        asyncio.run(EmbedService.check_issue_limit(redis, "ai_testapp", "1.1.1.1"))
+    assert ei.value.status_code == 429 and "换票" in ei.value.msg
+
+
+def test_issue_limit_ip_covers_multiple_appids(monkeypatch):
+    """换票限流的 IP 键跨 appid 累计（每 IP 额度为单 appid 的 2 倍）。"""
+    monkeypatch.setattr(settings, "EMBED_TOKEN_RATE_PER_MIN", 1)
+    redis = _FakeRedis()
+    asyncio.run(EmbedService.check_issue_limit(redis, "ai_app_a", "9.9.9.9"))
+    asyncio.run(EmbedService.check_issue_limit(redis, "ai_app_b", "9.9.9.9"))
+    with pytest.raises(CustomException) as ei:
+        asyncio.run(EmbedService.check_issue_limit(redis, "ai_app_c", "9.9.9.9"))
+    assert ei.value.status_code == 429
+
+
+def test_issue_limit_no_redis_skips():
+    asyncio.run(EmbedService.check_issue_limit(None, "ai_testapp", "1.1.1.1"))

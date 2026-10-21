@@ -94,6 +94,7 @@ async def embed_meta(
         raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
     return SuccessResponse(
         data={
+            "appid": ctx.appid,
             "kind": ctx.kind,
             "target_id": ctx.target_id,
             "name": target["name"],
@@ -206,6 +207,7 @@ async def auth_verify(
 @OpenApiRouter.post("/auth/token", summary="换票签发嵌入短期令牌")
 async def auth_token(
     data: EmbedTokenIssueSchema,
+    request: Request,
     ctx: Annotated[AppContext, Depends(get_app_api_auth)],
 ) -> SuccessResponse:
     """服务端换票：``appid:appkey`` → 绑定 ``app+kind+target`` 的短期 access_token。
@@ -238,9 +240,19 @@ async def auth_token(
     except CustomException as e:
         await _audit("denied", error=e.msg)
         raise
-    if await EmbedService.get_target(data.kind, data.target_id) is None:
+    # 换票限流（appid + IP 双键）：防无限铸票
+    await EmbedService.check_issue_limit(
+        getattr(request.app.state, "redis", None),
+        ctx.appid,
+        request.client.host if request.client else "",
+    )
+    target = await EmbedService.get_target(data.kind, data.target_id)
+    if target is None:
         await _audit("denied", error="嵌入目标不存在")
         raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
+    if not target["enabled"]:
+        await _audit("denied", error="嵌入目标未启用")
+        raise CustomException(msg="嵌入目标未启用", code=10400, status_code=400)
     result = await EmbedService.issue_token(
         row, kind=data.kind, target_id=data.target_id, ttl=data.ttl, issued_by="exchange"
     )

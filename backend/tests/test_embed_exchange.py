@@ -121,6 +121,39 @@ def test_exchange_target_not_found_404(test_client, auth_headers):
         _cleanup(test_client, auth_headers, app.get("id"))
 
 
+def test_exchange_disabled_target_400(test_client, auth_headers):
+    """目标停用时拒绝换票（快速失败），而不是铸出必然失败使用的票。"""
+    import asyncio
+
+    from sqlalchemy import update
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.workflow.model import AiWorkflowModel
+
+    app = _create_app(test_client, auth_headers, ["integration:embed:use"])
+    wf = None
+    try:
+        wf = _create_workflow(test_client, auth_headers)
+
+        async def _disable():
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    update(AiWorkflowModel)
+                    .where(AiWorkflowModel.id == wf)
+                    .values(enabled=False)
+                )
+
+        asyncio.run(_disable())
+        r = test_client.post(
+            f"{API}/ai/develop-api/auth/token",
+            json={"kind": "workflow", "target_id": wf},
+            headers=_app_auth(app),
+        )
+        assert r.status_code == 400 and "未启用" in r.text, r.text
+    finally:
+        _cleanup(test_client, auth_headers, app.get("id"), wf)
+
+
 def test_exchange_invalid_appkey_401(test_client, auth_headers):
     app = _create_app(test_client, auth_headers, ["integration:embed:use"])
     try:
