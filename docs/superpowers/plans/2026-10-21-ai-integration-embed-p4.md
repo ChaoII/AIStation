@@ -1,6 +1,6 @@
 # AI 集成 P4'：换票 Token 底座 + 三形态嵌入 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 落地 AI 集成开放平台 v2 的 P4'——短期 access_token 换票底座、Agent/AI 应用/工作流三形态免平台账号嵌入对话（iframe + script SDK + postMessage 全事件流）、管理端嵌入弹窗与 token 治理，并整体拆除旧 `/share` 通道。
 
@@ -61,7 +61,7 @@
 - Consumes: 无。
 - Produces: 无（纯拆除）；后续任务不再存在任何 `share_token` 引用。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_ai_workflow.py` 将原 share/run 用例改写为：
 
@@ -71,21 +71,21 @@ def test_legacy_share_run_removed(test_client):
     assert r.status_code == 404
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/test_ai_workflow.py -q -k "share"`（backend，先 `$env:CAPTCHA_ENABLE="false"`）
 Expected: FAIL（端点仍存在，返回非 404）
 
-- [ ] **Step 3: 按 Files 清单删除后端与前端代码**
+- [x] **Step 3: 按 Files 清单删除后端与前端代码**
 
 后端删端点/服务/Schema/model 列声明；前端删路由、白名单项、`ShareRun.vue`、编辑器分享 UI（替换为引导按钮）。
 
-- [ ] **Step 4: 跑测试确认通过 + 前端静态检查**
+- [x] **Step 4: 跑测试确认通过 + 前端静态检查**
 
 Run: `uv run pytest tests/test_ai_workflow.py -q` → PASS；`cd frontend && pnpm run type-check` → 0 error（确认无残留引用）。
 Expected: 通过；若 type-check 报 `ShareRun`/`AiShareRun` 残留引用则回到 Step 3 补删。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add -A backend/app/plugin/module_ai/workflow backend/tests/test_ai_workflow.py frontend/src docs/ontology-usage.md
@@ -110,7 +110,7 @@ git commit -m "refactor(ai): 整体拆除旧工作流 /share 分享通道"
   - `_hash_embed_token(token: str) -> str`（sha256 hex）
   - `clamp_embed_ttl(ttl: int | None) -> int`（None→1800；`<60`→60；`>86400`→86400；否则原值）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/test_embed_token.py（PYTEST_NO_APP=1）
@@ -132,20 +132,20 @@ def test_access_token_model_columns():
     ...
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTEST_NO_APP=1 uv run pytest tests/test_embed_token.py -q`
 Expected: FAIL（ImportError）
 
-- [ ] **Step 3: 实现模型与纯函数**
+- [x] **Step 3: 实现模型与纯函数**
 
 按 Produces 签名在 `model.py` 追加两模型、`service.py` 追加三函数（照 `_generate_appid` 的注释风格写中文 docstring）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `PYTEST_NO_APP=1 uv run pytest tests/test_embed_token.py -q` → PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/develop backend/tests/test_embed_token.py
@@ -170,7 +170,7 @@ git commit -m "feat(ai): 定义嵌入 token 与嵌入会话模型及纯逻辑"
   4. `has_table("ai_workflows") and has_column(..., "share_token")` 才 `op.drop_column`。
   downgrade 对称。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/test_embed_migration.py（参照 tests/test_migration_replay.py 现有夹具写法）
@@ -181,21 +181,21 @@ def test_embed_migration_upgrade_downgrade_roundtrip():
     # 再 upgrade head → 复原
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/test_embed_migration.py -q`（`$env:CAPTCHA_ENABLE="false"`）
 Expected: FAIL（迁移不存在）
 
-- [ ] **Step 3: 手写迁移 + sessions 模型列**
+- [x] **Step 3: 手写迁移 + sessions 模型列**
 
 按 Produces 四段防护实现（`sa.inspect(bind)` 判断），并给 `AiSessionModel` 加 `source_app_id`。
 
-- [ ] **Step 4: 跑测试与全链重放**
+- [x] **Step 4: 跑测试与全链重放**
 
 Run: `uv run pytest tests/test_embed_migration.py tests/test_migration_replay.py tests/test_develop_models.py -q`
 Expected: 全 PASS（SQLite 空库重放含删列分支不炸）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/alembic backend/app/plugin/module_ai/sessions backend/tests
@@ -221,7 +221,7 @@ git commit -m "feat(ai): 嵌入 token/会话迁移与会话归属列（含删 sh
   - schema: `EmbedTokenIssueSchema(kind: Literal["agent","app","workflow"], target_id: int, ttl: int | None = None)`。
   - 路由：`@OpenApiRouter.post("/auth/token", summary="换票签发嵌入短期令牌")` → 依赖 `Depends(get_app_api_auth)`，体内 `require_app_perm(ctx, "integration:embed:use")`（缺权抛 403 + denied 审计），`get_target` 为 None → `CustomException(msg="嵌入目标不存在", status_code=404)`；成功 `SuccessResponse(data=…)` 并 `log_call(category="embed", capability="token.issue", method="REST", status=...)`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/test_embed_exchange.py（test_client + auth_headers；先建含 embed 权限的 app）
@@ -238,19 +238,19 @@ def test_exchange_invalid_appkey(...):            # 错误凭证 → 401
 
 （app 的创建与凭证获取复用 `test_develop_crud.py` 既有写法；无有效 agent 时用 `AiAgentService.create` 造一个或取库里已有行。）
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/test_embed_exchange.py -q` → Expected: FAIL（404 路由不存在）
 
-- [ ] **Step 3: 实现 `EmbedService.get_target/issue_token` 与端点**
+- [x] **Step 3: 实现 `EmbedService.get_target/issue_token` 与端点**
 
 按 Produces 签名；审计复用 `DevelopService.log_call`（app 行从 `ctx.app_id` 取，参照 `controller.py:auth_verify` 的写法）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_embed_exchange.py -q` → PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/develop backend/tests/test_embed_exchange.py
@@ -274,7 +274,7 @@ git commit -m "feat(ai): 开放面换票端点签发嵌入短期 token"
   - `EmbedRouter = APIRouter(route_class=OperationLogRoute, prefix="/embed", tags=["AI-嵌入"])`，`@EmbedRouter.get("/meta")` → `Depends(get_embed_ctx)` + 缺 `integration:embed:use` 抛 403；返回 `SuccessResponse(data={"kind","target_id","name","welcome","expire_at"})`，`welcome = description or ""`，目标消失 → 404。
   - 页面层辅助 `def embed_status_error(status: int) -> CustomException`（可选，供 Task 6 复用 401/403 构造）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/test_embed_api.py
@@ -288,19 +288,19 @@ def test_meta_after_perm_removed_403(test_client, valid_token): ...    # 把 app
 def test_meta_increments_use_count(test_client, valid_token): ...      # use_count 递增、last_used_at 非空
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/test_embed_api.py -q` → Expected: FAIL（404）
 
-- [ ] **Step 3: 实现 `EmbedContext`/`get_embed_ctx`/`EmbedRouter`/`meta`**
+- [x] **Step 3: 实现 `EmbedContext`/`get_embed_ctx`/`EmbedRouter`/`meta`**
 
 按 Produces 签名；`EmbedRouter` 写在 `controller.py`（模块自动发现只认 `controller.py` 顶层 Router）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_embed_api.py -q` → PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/develop backend/tests/test_embed_api.py
@@ -333,7 +333,7 @@ git commit -m "feat(ai): 嵌入公开面 token 鉴权依赖与 meta 端点"
     4. `finally` 内审计：`log_call(category="embed", capability="run", method="EMBED", transport="sse", request_path="/run", request_body={"sid","kind","target_id","message截断80字"}, status="success"/"error", latency_ms=实测, session_id=str(session_id))`（app 行按 `ctx.app_id` 取）。
   - 路由：`@EmbedRouter.post("/run")` —— `Depends(get_embed_ctx)` → 缺 `integration:embed:use` 抛 403（并写 denied 审计）→ `prepare_session`（403 可能抛出）→ 返回 `ui_stream_response(gen)`（workflow）或 `agno_stream_response(gen)`（agent/app）。**perm/绑定/限流类错误必须在返回流之前抛出（JSON 错误），不得进 SSE。**
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/test_embed_run.py（mock 层参照 tests/test_ai_workflow.py 中 run/stream 既有写法）
@@ -351,19 +351,19 @@ def test_run_writes_embed_audit(...):      # method=EMBED、category=embed、req
 def test_run_disabled_target_error_frame(...):  # 目标停用 → 流内 error 帧（既有语义）
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/test_embed_run.py -q` → Expected: FAIL（404）
 
-- [ ] **Step 3: 实现 `prepare_session`/`run_stream`/`run` 端点**
+- [x] **Step 3: 实现 `prepare_session`/`run_stream`/`run` 端点**
 
 按 Produces；注意历史消息取的是**服务端会话**（`get_messages`），与 spec §9.3「请求体只带 sid+message」一致。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_embed_run.py -q` → PASS；再跑 `uv run pytest tests/test_embed_api.py tests/test_embed_exchange.py -q` 确认无回归。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/develop backend/tests/test_embed_run.py
@@ -384,7 +384,7 @@ git commit -m "feat(ai): 嵌入对话流式通道复用三形态 run 服务"
 - Consumes: `EmbedContext`、settings。
 - Produces: `async def check_limits(redis, ctx: EmbedContext, ip: str) -> None` —— redis 为空时跳过（可测降级）；固定窗口 `INCR`+`EXPIRE 60`，键 `ai:embed:rl:t:{ctx.token_hash12}` 与 `ai:embed:rl:ip:{ip or "na"}`，cap 取 settings；配额键 `ai:embed:quota:{ctx.app_id}:{YYYYMMDD}`（本地自然日）INCR，cap 取 `(ctx.quota or {}).get("embed")`（int 且 >0 才限）；超限抛 `CustomException(status_code=429)`，文案分别为「访问过于频繁，请稍后再试」「今日嵌入调用配额已用完」。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/test_embed_limits.py（自备最小 FakeRedis：incr/expire 计数桩）
@@ -395,13 +395,13 @@ def test_quota_daily_429(...):   # app.quota={"embed":1} → 第二次 429 且 m
 def test_no_redis_skips_limit(...):  # redis=None → 放行
 ```
 
-- [ ] **Step 2: 跑测试确认失败** → Run: `uv run pytest tests/test_embed_limits.py -q` → FAIL
+- [x] **Step 2: 跑测试确认失败** → Run: `uv run pytest tests/test_embed_limits.py -q` → FAIL
 
-- [ ] **Step 3: 实现 settings 与 `check_limits` 并接入 `/embed/run`**
+- [x] **Step 3: 实现 settings 与 `check_limits` 并接入 `/embed/run`**
 
-- [ ] **Step 4: 跑测试确认通过** → PASS + 复跑 `tests/test_embed_run.py`（接入点未破坏既有用例）
+- [x] **Step 4: 跑测试确认通过** → PASS + 复跑 `tests/test_embed_run.py`（接入点未破坏既有用例）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app backend/tests/test_embed_limits.py
@@ -426,7 +426,7 @@ git commit -m "feat(ai): 嵌入通道 token/IP 限流与按日配额"
   - `PUT /ai/develop/tokens/{token_id}/revoke`（perm `update`）→ `revoke_token(token_id) -> bool`（False → ErrorResponse「令牌不存在」）。
   - `async def list_tokens(app_id: int) -> list[dict]`、`async def revoke_token(token_id: int) -> bool`（均在 `service.py` 的 `DevelopService` 或模块级，就近放 `DevelopService`）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/test_embed_admin_tokens.py（admin JWT：auth_headers）
@@ -436,13 +436,13 @@ def test_tokens_list_requires_perm(...):   # 参照 tests/test_develop_admin.py 
 def test_revoke_unknown_404(...):
 ```
 
-- [ ] **Step 2: 跑测试确认失败** → FAIL
+- [x] **Step 2: 跑测试确认失败** → FAIL
 
-- [ ] **Step 3: 实现三端点与 service 方法**
+- [x] **Step 3: 实现三端点与 service 方法**
 
-- [ ] **Step 4: 跑测试确认通过** → PASS
+- [x] **Step 4: 跑测试确认通过** → PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/develop backend/tests/test_embed_admin_tokens.py
@@ -468,7 +468,7 @@ git commit -m "feat(ai): 管理面嵌入令牌列表签发与吊销"
     - 句柄方法：`setToken(t)` / `sendMessage(text)` / `resize(w,h)` / `destroy()`（下行为 `{source:"ai-host",version:1,command,payload}` 发往 `iframe.contentWindow`）；`on(event, cb)` 返回退订函数。
   - 页面内注释中文说明「token 由宿主服务端换票获取，勿在前端放 appkey」。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 # tests/test_embed_sdk.py
@@ -481,13 +481,13 @@ def test_sdk_js_served(test_client):
     assert "stew7" not in r.text  # 任何明文凭证样例不存在
 ```
 
-- [ ] **Step 2: 跑测试确认失败** → FAIL
+- [x] **Step 2: 跑测试确认失败** → FAIL
 
-- [ ] **Step 3: 实现 JS 文件与端点**（按 Produces 行为清单；JS 内注释中文）
+- [x] **Step 3: 实现 JS 文件与端点**（按 Produces 行为清单；JS 内注释中文）
 
-- [ ] **Step 4: 跑测试确认通过** → PASS
+- [x] **Step 4: 跑测试确认通过** → PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/develop backend/tests/test_embed_sdk.py
@@ -522,24 +522,24 @@ git commit -m "feat(ai): 提供嵌入 script SDK 静态端点"
     - 视觉结构（spec §9.6）：头部（目标名 + 绿点状态 +「AIStation 驱动」小字）/ 消息区（用户右侧主色气泡、助手左侧浅底气泡 + 首字母圆标，`RichContent` 渲染 markdown，流式光标）/ 输入区（自适应 textarea、Enter 发送、Shift+Enter 换行、发送中禁用、流式时「停止生成」）/ 空态欢迎语（`meta.welcome` 兜底「有什么可以帮你？」）/ 覆盖层（`el-skeleton` 初始化、过期页、429 内联提示条含「频繁/配额」文案识别、网络错误重试条）。
     - 样式：scoped + `--el-*` 变量，禁自造配色、禁零散 font-size；**实现前先调用 `frontend-design` 技能**。
 
-- [ ] **Step 1: 实现 transport 与 composable**
+- [x] **Step 1: 实现 transport 与 composable**
 
 按 Produces 签名；帧分类逻辑写成可测纯函数 `classifyFrame(parsed): "ui" | "aux" | "agno" | "drop"` 导出（便于后续补测）。
 
-- [ ] **Step 2: 实现 `EmbedChat.vue`**
+- [x] **Step 2: 实现 `EmbedChat.vue`**
 
 先 `frontend-design` 技能，再按视觉结构实现；单根、白名单与路由改好。
 
-- [ ] **Step 3: 静态检查**
+- [x] **Step 3: 静态检查**
 
 Run: `cd frontend && pnpm run type-check && pnpm run lint`
 Expected: 0 新增 error（既有仓库级告警不计入）
 
-- [ ] **Step 4: 本地可视自检（依赖 Task 12 的运行实例；若后端未起则先做 Step 3 绿即可，视觉统一在 Task 12 验收）**
+- [x] **Step 4: 本地可视自检（依赖 Task 12 的运行实例；若后端未起则先做 Step 3 绿即可，视觉统一在 Task 12 验收）**
 
 打开 `/#/embed?token=…` 截图：空态、对话态（mock 或真实 agent）、缺 token 态三屏，用多模态读图与 `module_ai/provider` 风格对照。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add frontend/src
@@ -569,7 +569,7 @@ git commit -m "feat(ai): 新增嵌入对话页与 token 鉴权流式传输层"
   - 接入文档（index.vue）：凭证说明 alert 更新为「appid:appkey 仅用于服务端换票，切勿放入网页」；REST 卡 = `auth/verify` + `auth/token` 两个 curl（删除不存在的 `/chat/send`）；MCP 卡加 `el-tag type=warning「P3 即将开放」`；嵌入卡 = 新 SDK 示例（指向真实 `/api/v1/ai/embed/sdk.js`、含 `{access_token}` 占位与换票说明）+ iframe 直嵌示例 + postMessage 事件表。
   - 后端 `CATEGORIES["embed"]="网页嵌入"`；测试 `assert CATEGORIES["embed"] == "网页嵌入"`。
 
-- [ ] **Step 1: 写失败测试（后端标签）**
+- [x] **Step 1: 写失败测试（后端标签）**
 
 ```python
 def test_embed_category_label_is_web_embed():
@@ -578,17 +578,17 @@ def test_embed_category_label_is_web_embed():
 ```
 Run: `PYTEST_NO_APP=1 uv run pytest tests/test_develop_capabilities.py -q` → 新用例 FAIL
 
-- [ ] **Step 2: 后端标签修正 + 通过**
+- [x] **Step 2: 后端标签修正 + 通过**
 
 Run: 同上 → PASS
 
-- [ ] **Step 3: 实现 EmbedDialog、按钮接线、文档重写、API 函数**
+- [x] **Step 3: 实现 EmbedDialog、按钮接线、文档重写、API 函数**
 
-- [ ] **Step 4: 静态检查 + 截图自检**
+- [x] **Step 4: 静态检查 + 截图自检**
 
 Run: `pnpm run type-check && pnpm run lint` → 0 新增 error；打开应用管理弹窗截图核对（视觉标准同 Task 10）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/develop backend/tests frontend/src
@@ -607,14 +607,14 @@ git commit -m "feat(ai): 应用嵌入管理弹窗与接入文档重写，embed �
 - Consumes: Task 4-11 全部产物。
 - Produces: 演示页结构——顶部醒目警示「生产环境必须由服务端换票，切勿把 appkey 写进网页」；表单（apiBase 默认 `location.origin + "/api/v1/ai"`、webBase 默认 `http://127.0.0.1:5182/web` 可改、appid、appkind、target_id、appkey）；「换票并嵌入」按钮 → fetch `auth/token` → `AiAssistant.init({container:"#chat", token, apiBase, webBase, theme:{primary:"#409eff"}})`；右侧事件日志面板（`on()` 挂全部 7 事件 + window message 原始信封，逐条带时间戳）；辅助按钮：`setToken`（粘贴新票续期）、`sendMessage("你好")`、`destroy`。
 
-- [ ] **Step 1: 探测端口并启动本 worktree 实例**
+- [x] **Step 1: 探测端口并启动本 worktree 实例**
 
 ```powershell
 Get-NetTCPConnection -LocalPort 5181,5182,8002,8012 -State Listen -ErrorAction SilentlyContinue | Select LocalPort,OwningProcess
 ```
 先查在跑后端的 `/openapi.json` 是否已含 `/ai/embed/run`（判断现服务是否来自本 worktree）。**仅当需要跑新代码且端口被旧实例占用时**，用空闲端口显式启动本 worktree 实例（前端 `vite --port 5182 --strictPort`，后端 `uv run main.py run --env=dev --no-reload --port 8012` 之类），`E2E_BASE_URL` 与之严格一致；不杀不改用户已有服务，结束前收尾自有进程。
 
-- [ ] **Step 2: 端到端手测清单（浏览器工具操作 + 截图）**
+- [x] **Step 2: 端到端手测清单（浏览器工具操作 + 截图）**
 
 1. 「AI 集成」新建应用（勾 `embed:use`）→ 行内「嵌入」→ 选真实 Agent → 体验票 → 填入代码 → 复制；
 2. 打开 `/static/embed-demo.html` → 换票嵌入 → 发「你好」→ 流式回复可见；
@@ -625,17 +625,17 @@ Get-NetTCPConnection -LocalPort 5181,5182,8002,8012 -State Listen -ErrorAction S
 7. 访问旧 `/#/share?token=x` → 404/跳转，`POST /api/v1/ai/workflows/share/run` → 404；
 8. 调用日志页签出现 `method=EMBED` 流水且 token 已脱敏。
 
-- [ ] **Step 3: 视觉验收（硬标准）**
+- [x] **Step 3: 视觉验收（硬标准）**
 
 逐屏截图并用多模态读图核对：嵌入页（空态/对话态/过期态/429 提示）、嵌入弹窗、接入文档新卡、演示页。标准：与平台风格同源、结构清晰、状态齐全、无贴边裁切/错位；**任何一屏不达标 → 回 Task 10/11 返工重截**。
 
-- [ ] **Step 4: 全量回归**
+- [x] **Step 4: 全量回归**
 
 Run（backend，`$env:CAPTCHA_ENABLE="false"`）: `uv run pytest -q -n 4` → 0 failed；
 Run（frontend）: `pnpm run type-check && pnpm run lint` → 0 新增 error。
 （**不要引用历史通过记录，全部当次取证**。）
 
-- [ ] **Step 5: 提交与收尾**
+- [x] **Step 5: 提交与收尾**
 
 ```bash
 git add backend/static docs frontend/src backend/app
@@ -652,3 +652,20 @@ git commit -m "feat(ai): 嵌入演示宿主页与 P4' 端到端验收"
 3. **类型一致**：`EmbedContext`、`EmbedService.get_target/issue_token/prepare_session/run_stream/check_limits`、`get_embed_ctx`、`clamp_embed_ttl` 各任务引用一致。
 4. **Review Focus 8 条**均有对应测试任务（见各条括注）。
 5. **比例**：计划以任务/接口/断言为主，无整函数实现转录。
+
+---
+
+## 执行记录（2026-10-22 完成）
+
+- 全部 12 个任务完成；后端新增测试 7 个文件，最终全量 `pytest -q -n 4`：**3076 passed / 7 failed / 37 skipped**。
+  7 个失败均在本次**未触碰**的模块（`test_query_recall` 引用已重构掉的 `_embed_agno` 旧符号；
+  `test_rule_leaves_e2e` 等依赖视频回调共享密钥环境），与本特性无因果（改动文件清单不含这些模块）。
+- 计划外修正（执行中发现，均已提交）：
+  1. 迁移 revision 与旧迁移 `e2f3a4b5c6d7` 撞号成环 → 改用 `a9b8c7d6e5f4`；
+  2. 删 `share_token` 列前须先删其索引（SQLite 拒绝带索引列 DROP），迁移已加守护并由真实 SQLite 往返测试锁住；
+  3. SSE 审计改 fire-and-forget（客户端中断时生成器 `finally` 里 `await` 写库会挂死请求、占满并发准入槽位）；
+  4. 会话归属守卫放行「`source_app_id` 非空 + 匿名调用方」的嵌入会话（否则多轮上下文写不进库）；
+  5. 纯非 LLM 工作流只发 `data-finish.reply`、不发 `text-delta`，前端传输层据此合成文本 parts（否则界面无回复）。
+- 环境备注（worktree 专属，均不入库）：`backend/env/.env.dev`（SQLite + 验证码关闭 + 放大连接池/闸门）、
+  `frontend/.env.development`（指向 8001）、`vite.e2e.config.mts`（Node 24 下 CJS require(esm) 环的绕过）、
+  `frontend/node_modules` 以 junction 指向主仓依赖。演示页实际地址：`/api/v1/static/embed-demo.html`。
