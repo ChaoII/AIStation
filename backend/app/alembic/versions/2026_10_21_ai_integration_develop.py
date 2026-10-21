@@ -93,7 +93,7 @@ def upgrade() -> None:
             sa.Column("result_summary", sa.String(length=512), nullable=True, comment="结果摘要"),
             sa.Column("id", sa.Integer(), autoincrement=True, nullable=False, comment="主键ID"),
             sa.Column("created_time", sa.DateTime(), nullable=False, comment="创建时间"),
-            sa.ForeignKeyConstraint(["app_id"], ["ai_integration_apps.id"], onupdate="CASCADE", ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(["app_id"], ["ai_integration_apps.id"]),
             sa.PrimaryKeyConstraint("id"),
             comment="AI 集成调用日志表",
         )
@@ -116,7 +116,7 @@ def upgrade() -> None:
             sa.Column("close_reason", sa.String(length=64), nullable=True, comment="关闭原因"),
             sa.Column("id", sa.Integer(), autoincrement=True, nullable=False, comment="主键ID"),
             sa.Column("created_time", sa.DateTime(), nullable=False, comment="创建时间"),
-            sa.ForeignKeyConstraint(["app_id"], ["ai_integration_apps.id"], onupdate="CASCADE", ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(["app_id"], ["ai_integration_apps.id"]),
             sa.PrimaryKeyConstraint("id"),
             comment="AI 集成 MCP 会话表",
         )
