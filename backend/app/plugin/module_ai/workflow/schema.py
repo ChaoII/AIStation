@@ -45,13 +45,6 @@ class AiWorkflowStepSchema(BaseModel):
     messages: list[dict] = Field(default_factory=list)
 
 
-class AiWorkflowShareRunSchema(BaseModel):
-    """公开分享运行：仅凭分享令牌 + 一条消息（匿名、受限白名单节点）。"""
-
-    token: str
-    message: str = Field(..., max_length=2000)
-
-
 class AiWorkflowScheduleSchema(BaseModel):
     """定时调度配置：四种触发类型（`trigger` + `trigger_args`）+ 启用。
 

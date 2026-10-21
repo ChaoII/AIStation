@@ -1038,7 +1038,7 @@ NL2SQL 最容易出错的是**多表关联靠猜**。现在本体把显式关系
 
 对齐前的两套各标各的：
 - **仅本体**：`sys_user.password`、`ai_models.api_key`、`ai_providers.api_key`、
-  `ai_query_datasources.password`、`ai_workflows.share_token`、`train_deploys.api_key` …
+  `ai_query_datasources.password`、`train_deploys.api_key` …
 - **仅问数**：`ai_call_logs.prompt_tokens`、`completion_tokens` ← **这是误报**
 
 误报根源：扫描器规则里 `"token"` 用**子串匹配**，把 `prompt_tokens`（计数）

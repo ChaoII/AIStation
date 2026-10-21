@@ -65,10 +65,6 @@ export function getAiWorkflowStats(id: number) {
   return request({ url: `${API_PATH}/${id}/stats`, method: "get" });
 }
 
-export function createAiWorkflowShare(id: number) {
-  return request({ url: `${API_PATH}/${id}/share`, method: "post" });
-}
-
 export function getAiWorkflowSchedule(id: number) {
   return request({ url: `${API_PATH}/${id}/schedule`, method: "get" });
 }

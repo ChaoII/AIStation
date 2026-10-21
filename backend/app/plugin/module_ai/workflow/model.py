@@ -33,9 +33,6 @@ class AiWorkflowModel(ModelMixin, UserMixin):
     )
     version: Mapped[int] = mapped_column(Integer, default=1, comment="版本号")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
-    share_token: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, default=None, index=True, comment="公开分享令牌（受限运行）"
-    )
 
 
 class AiWorkflowVersionModel(ModelMixin, UserMixin):
