@@ -86,8 +86,16 @@
             </template>
           </el-table-column>
           <el-table-column prop="call_count" label="调用次数" width="100" align="center" />
-          <el-table-column label="操作" width="230" fixed="right">
+          <el-table-column label="操作" width="290" fixed="right">
             <template #default="{ row }">
+              <el-button
+                v-hasPerm="['module_ai:develop:query']"
+                text
+                type="primary"
+                @click="openEmbed(row)"
+              >
+                嵌入
+              </el-button>
               <el-button
                 v-hasPerm="['module_ai:develop:update']"
                 text
@@ -328,7 +336,7 @@
             :closable="false"
             show-icon
             class="docs-alert"
-            description="每个应用持有唯一的 AppID 与 AppKey。调用开放接口时，在请求头携带 Authorization: Bearer &lt;appid&gt;:&lt;appkey&gt;。AppKey 仅在创建或重置时展示一次，请妥善保存。"
+            description="AppID 与 AppKey 只用于「服务端换票」：调用 POST /api/v1/ai/develop-api/auth/token 换取短期 access_token，嵌入页再用 Bearer token 访问 /ai/embed/*。切勿把 AppKey 写入网页或嵌入代码；AppKey 仅在创建或重置时展示一次。"
           />
           <el-card shadow="never" class="doc-card">
             <template #header>
@@ -337,18 +345,21 @@
                 <el-tag size="small">HTTP</el-tag>
               </div>
             </template>
-            <p class="doc-card__desc">以鉴权校验接口为例，验证凭证并获取应用身份与已授权能力。</p>
+            <p class="doc-card__desc">
+              当前已开放的服务端接口：凭证校验与换票（业务能力 REST 将在 P2 开放）。
+            </p>
             <pre class="doc-code">{{ restExample }}</pre>
           </el-card>
           <el-card shadow="never" class="doc-card">
             <template #header>
               <div class="doc-card__header">
                 <span>MCP 接入</span>
-                <el-tag size="small">工具调用</el-tag>
+                <el-tag size="small" type="warning">P3 即将开放</el-tag>
               </div>
             </template>
             <p class="doc-card__desc">
-              在支持 MCP 的客户端中配置以下会话端点，将应用凭证注入请求头。
+              规划形态：在支持 MCP 的客户端中配置平台 MCP Server（Streamable
+              HTTP），把应用凭证注入请求头。
             </p>
             <pre class="doc-code">{{ mcpExample }}</pre>
           </el-card>
@@ -359,8 +370,24 @@
                 <el-tag size="small">Embed</el-tag>
               </div>
             </template>
-            <p class="doc-card__desc">通过脚本将对话能力嵌入已有页面，凭证由服务端安全下发。</p>
+            <p class="doc-card__desc">
+              两种嵌入形态（iframe 直嵌 / Script SDK）。token
+              由服务端换票下发；过期时宿主重新换票并调用
+              <code>setToken()</code>
+              续期，对话不中断。
+            </p>
             <pre class="doc-code">{{ embedExample }}</pre>
+            <div class="doc-events">
+              <span class="doc-events__label">postMessage 事件</span>
+              <span v-for="e in docEvents" :key="e.name" class="doc-events__chip" :title="e.desc">
+                {{ e.name }}
+              </span>
+            </div>
+            <p class="doc-card__desc doc-card__desc--foot">
+              完整契约见「应用管理 → 嵌入」弹窗与下方示例注释；上行信封
+              <code>{ source: "ai-embed", version: 1, event, payload }</code>
+              。
+            </p>
           </el-card>
         </div>
       </el-tab-pane>
@@ -505,6 +532,9 @@
         <el-button type="primary" @click="reveal.visible = false">我已保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- ============ 嵌入管理弹窗 ============ -->
+    <EmbedDialog v-model="embedVisible" :app="embedRow" />
   </div>
 </template>
 
@@ -523,6 +553,7 @@ import {
   updateApp,
 } from "@/api/module_ai/develop";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import EmbedDialog from "./components/EmbedDialog.vue";
 
 defineOptions({ name: "AiDevelopManage" });
 
@@ -532,7 +563,7 @@ const CATEGORIES: Record<string, string> = {
   agent: "智能体",
   chat: "对话",
   bot: "机器人",
-  embed: "向量嵌入",
+  embed: "网页嵌入",
 };
 const CATEGORY_PERMS: Record<string, string[]> = {
   train: [
@@ -921,15 +952,15 @@ async function copyText(text?: string) {
 }
 
 // ---- 接入文档示例（纯文本，避免模板解析脚本标签） ----
-const restExample = `# 1. 鉴权校验：验证凭证并获取应用身份
+const restExample = `# 1. 凭证校验：确认应用状态与已授权能力
 curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
   -H "Authorization: Bearer {appid}:{appkey}"
 
-# 2. 调用能力接口（示例）
-curl -X POST "https://<host>/api/v1/ai/develop-api/chat/send" \\
+# 2. 换票：换取绑定「应用 + 嵌入目标」的短期 access_token（默认 30 分钟）
+curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
   -H "Authorization: Bearer {appid}:{appkey}" \\
   -H "Content-Type: application/json" \\
-  -d '{"query": "你好"}'`;
+  -d '{"kind": "agent", "target_id": 123}'`;
 
 const mcpExample = `{
   "mcpServers": {
@@ -945,19 +976,46 @@ const mcpExample = `{
 // 会话建立后，即可按工具清单调用该应用已授权的 MCP 工具。`;
 
 const embedExample =
-  `<!-- 将对话能力嵌入已有页面 -->
-<div id="ai-assistant"></div>
-<script src="https://<host>/sdk/ai-assistant.js"></scr` +
+  `<!-- 方式一：iframe 直嵌（token 由服务端换票注入） -->
+<iframe src="https://<host>/web/#/embed?token={access_token}"
+        width="420" height="620" style="border:0;border-radius:12px"></iframe>
+
+<!-- 方式二：Script SDK（推荐：事件回调 + 续期） -->
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
   `ipt>
+<div id="ai-assistant" style="width:420px;height:620px"></div>
 <script>
-  AiAssistant.init({
+  const ai = AiAssistant.init({
     container: "#ai-assistant",
-    appid: "{appid}",
-    // appkey 由服务端安全下发，勿在前端明文暴露
-    apiBase: "https://<host>/api/v1/ai/develop-api"
+    token: "{access_token}",
+    apiBase: "https://<host>/api/v1/ai",
+    webBase: "https://<host>/web",
+    theme: { primary: "#409eff" }
+  });
+  ai.on("token_expired", async () => {
+    ai.setToken(await fetchTokenFromYourBackend());  // 服务端重新换票
   });
 </scr` +
   `ipt>`;
+
+/** postMessage 事件契约（完整载荷见「嵌入」弹窗）。 */
+const docEvents = [
+  { name: "ready", desc: "初始化完成" },
+  { name: "user_message", desc: "用户消息" },
+  { name: "reply_start", desc: "开始回复" },
+  { name: "reply_delta", desc: "流式增量" },
+  { name: "reply_done", desc: "回复完成" },
+  { name: "error", desc: "错误（网络/限流）" },
+  { name: "token_expired", desc: "凭证过期" },
+];
+
+// ---- 嵌入管理弹窗 ----
+const embedVisible = ref(false);
+const embedRow = ref<any>(null);
+function openEmbed(row: any) {
+  embedRow.value = row;
+  embedVisible.value = true;
+}
 
 onMounted(() => {
   loadApps();
@@ -980,17 +1038,17 @@ onMounted(() => {
 
 .develop-toolbar {
   display: flex;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
   margin-bottom: 12px;
 }
 
 .develop-toolbar__left {
   display: flex;
-  align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .develop-toolbar__hint {
@@ -1015,8 +1073,8 @@ onMounted(() => {
 
 .appid-cell {
   display: inline-flex;
-  align-items: center;
   gap: 4px;
+  align-items: center;
 }
 
 .appid-cell__value {
@@ -1032,8 +1090,8 @@ onMounted(() => {
 }
 
 .key-text {
-  word-break: break-all;
   color: var(--el-color-primary);
+  word-break: break-all;
 }
 
 .text-muted {
@@ -1041,10 +1099,10 @@ onMounted(() => {
 }
 
 .cap-groups {
-  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
 }
 
 .cap-group {
@@ -1098,20 +1156,53 @@ onMounted(() => {
 }
 
 .doc-code {
-  margin: 0;
   padding: 12px 14px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  background: var(--el-fill-color-light);
+  margin: 0;
+  overflow-x: auto;
   font-family: var(--el-font-family-mono, monospace);
   font-size: var(--el-font-size-base);
   line-height: 1.6;
   color: var(--el-text-color-primary);
-  overflow-x: auto;
   white-space: pre;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
 }
 
 .reveal-desc {
   margin-top: 12px;
+}
+.doc-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.doc-events__label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.doc-events__chip {
+  padding: 1px 8px;
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  cursor: help;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+}
+
+.doc-card__desc--foot {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.doc-card__desc--foot code {
+  padding: 0 3px;
+  font-family: var(--el-font-family-mono, monospace);
 }
 </style>

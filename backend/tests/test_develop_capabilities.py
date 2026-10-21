@@ -37,3 +37,8 @@ def test_permissions_by_category_groups():
     got = permissions_by_category(["integration:agent:create", "integration:chat:send"])
     assert set(got["agent"]) == {"integration:agent:create"}
     assert set(got["chat"]) == {"integration:chat:send"}
+
+
+def test_embed_category_label_is_web_embed():
+    """embed 品类对外叫「网页嵌入」（iframe/script 嵌入第三方站点），不是向量嵌入。"""
+    assert CATEGORIES["embed"] == "网页嵌入"
