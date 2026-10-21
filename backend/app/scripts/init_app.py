@@ -712,6 +712,9 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:space:download", "下载文件"),
     ("module_ai:space:delete", "删除文件"),
     ("module_ai:space:manage", "管理文件夹"),
+    # AI 报告（P1-1：此前从未注册 → /ai/report/* 接口恒 403）
+    ("module_ai:report:query", "查看 AI 报告"),
+    ("module_ai:report:delete", "删除 AI 报告"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -736,6 +739,19 @@ QUERY_GROUP_MENUS: list[tuple[str, str, str, str, int, str]] = [
     ("问数评测", "AiEval", "/ai/eval", "module_ai/eval/index", 3, "el-icon-DataAnalysis"),
     ("报表模板", "AiQueryReports", "/ai/query/reports", "module_ai/query/reports", 4, "el-icon-Tickets"),
 ]
+
+
+def ensure_perms(
+    registered: set[str], perms: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
+    """幂等补齐权限码：把 `perms` 中尚未注册的码加入 `registered` 集合，并返回本次新增项。
+
+    用于 `_ensure_ai_menus` 注册按钮权限（type=3）：空库/存量库重复调用都只补缺失行，
+    不产生重复菜单。测试（test_report_permission_registration）直接复用此函数做纯逻辑断言。
+    """
+    added = [p for p in perms if p[0] not in registered]
+    registered.update(code for code, _ in added)
+    return added
 
 
 async def _ensure_ai_menus() -> None:
@@ -954,9 +970,9 @@ async def _ensure_ai_menus() -> None:
                     )
                 ).scalars().all()
             )
-            for order, (perm_code, perm_name) in enumerate(AI_BUTTON_PERMS, start=1):
-                if perm_code in existing:
-                    continue
+            for order, (perm_code, perm_name) in enumerate(
+                ensure_perms(existing, AI_BUTTON_PERMS), start=1
+            ):
                 m = MenuModel(
                     name=perm_name,
                     type=3,
