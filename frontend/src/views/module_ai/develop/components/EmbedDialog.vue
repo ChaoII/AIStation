@@ -78,28 +78,28 @@
           v-loading="loadingTokens"
           :data="tokens"
           size="small"
-          max-height="200"
+          max-height="150"
           empty-text="暂无令牌（换票与体验票都会出现在这里）"
         >
-          <el-table-column label="形态" width="88">
-            <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
-          </el-table-column>
-          <el-table-column prop="target_name" label="目标" min-width="110" show-overflow-tooltip />
-          <el-table-column label="签发" width="76">
+          <el-table-column label="形态" width="76">
             <template #default="{ row }">
-              {{ row.issued_by === "admin" ? "体验票" : "换票" }}
+              <div>{{ kindLabel(row.kind) }}</div>
+              <div class="embed-dialog__sub">
+                {{ row.issued_by === "admin" ? "体验票" : "换票" }}
+              </div>
             </template>
           </el-table-column>
-          <el-table-column prop="expires_at" label="过期时间" width="158" />
-          <el-table-column prop="use_count" label="使用" width="62" align="right" />
-          <el-table-column label="状态" width="80">
+          <el-table-column prop="target_name" label="目标" min-width="84" show-overflow-tooltip />
+          <el-table-column prop="expires_at" label="过期时间" width="140" />
+          <el-table-column prop="use_count" label="使用" width="50" align="right" />
+          <el-table-column label="状态" width="76">
             <template #default="{ row }">
               <el-tag size="small" :type="row.revoked ? 'info' : 'success'" effect="plain">
                 {{ row.revoked ? "已吊销" : "有效" }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="70" fixed="right">
+          <el-table-column label="操作" width="56">
             <template #default="{ row }">
               <el-button
                 v-if="!row.revoked"
@@ -358,13 +358,13 @@ async function onRevoke(row: any) {
 
 <style scoped>
 .embed-dialog {
-  max-height: 64vh;
+  max-height: 70vh;
   padding-right: 6px;
   overflow-y: auto;
 }
 
 .embed-dialog :deep(.el-form-item) {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .embed-dialog :deep(.el-form-item:last-child) {
@@ -384,7 +384,7 @@ async function onRevoke(row: any) {
 }
 
 .embed-dialog__pre {
-  max-height: 180px;
+  max-height: 150px;
   padding: 10px 12px;
   margin: 0;
   overflow: auto;
@@ -418,6 +418,12 @@ async function onRevoke(row: any) {
 
 .embed-dialog__tag {
   font-family: var(--el-font-family-mono, monospace);
+}
+
+.embed-dialog__sub {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
 }
 
 .embed-dialog__note {

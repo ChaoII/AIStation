@@ -157,6 +157,7 @@
           v-if="isStreaming"
           class="embed-input__btn"
           circle
+          type="primary"
           aria-label="停止生成"
           @click="stop"
         >
@@ -166,6 +167,7 @@
           v-else
           class="embed-input__btn"
           circle
+          type="primary"
           aria-label="发送"
           :disabled="!draft.trim()"
           @click="onSend"

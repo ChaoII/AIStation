@@ -86,7 +86,7 @@
             </template>
           </el-table-column>
           <el-table-column prop="call_count" label="调用次数" width="100" align="center" />
-          <el-table-column label="操作" width="290" fixed="right">
+          <el-table-column label="操作" width="330" fixed="right">
             <template #default="{ row }">
               <el-button
                 v-hasPerm="['module_ai:develop:query']"
