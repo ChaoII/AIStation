@@ -12,6 +12,22 @@
       </el-col>
     </el-row>
 
+    <el-card v-hasPerm="'module_ai:report:query'" shadow="never" class="ov-recent-card">
+      <template #header>
+        <div class="ov-usage-row flex justify-between">
+          <span>AI 报告</span>
+          <div class="flex items-center" style="gap: 10px">
+            <span class="ai-sub">AI 生成报告 · 查看 / 删除</span>
+            <el-button type="primary" size="small" @click="openReportDrawer">查看</el-button>
+          </div>
+        </div>
+      </template>
+      <div class="ov-usage-row">
+        <span>已生成报告</span>
+        <b>{{ stats.reports ?? 0 }}</b>
+      </div>
+    </el-card>
+
     <el-card shadow="never" class="ov-recent-card" style="margin-bottom: 12px">
       <template #header>
         <div class="ov-usage-row flex justify-between">
@@ -1394,6 +1410,74 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-drawer v-model="reportDrawerVisible" title="AI 报告" size="600px" append-to-body>
+      <div v-loading="reportListLoading" class="ai-report-drawer">
+        <div class="flex items-center justify-between mb-2">
+          <span class="ai-report-sub">共 {{ reportList.length }} 条</span>
+          <el-button
+            v-hasPerm="'module_ai:report:delete'"
+            type="danger"
+            plain
+            size="small"
+            :disabled="!reportSelection.length"
+            @click="batchDeleteReports"
+          >
+            删除选中（{{ reportSelection.length }}）
+          </el-button>
+        </div>
+        <el-table
+          v-if="reportList.length"
+          ref="reportTableRef"
+          :data="reportList"
+          size="small"
+          max-height="460"
+          @selection-change="onReportSelect"
+        >
+          <el-table-column type="selection" width="46" />
+          <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
+          <el-table-column label="类型" width="110">
+            <template #default="{ row }">
+              <el-tag size="small" type="info" effect="plain">{{ reportSourceLabel(row) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_time" label="创建时间" min-width="150" />
+          <el-table-column label="操作" width="130" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="viewReport(row)">查看</el-button>
+              <el-button
+                v-hasPerm="'module_ai:report:delete'"
+                link
+                type="danger"
+                size="small"
+                @click="deleteReport(row)"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else-if="!reportListLoading" :image-size="60" description="暂无 AI 报告" />
+      </div>
+    </el-drawer>
+
+    <el-dialog
+      v-model="reportDetailVisible"
+      :title="reportDetail?.title || 'AI 报告详情'"
+      width="600px"
+      append-to-body
+    >
+      <div v-loading="reportDetailLoading" class="ai-report-detail">
+        <div class="flex items-center gap-2 mb-2">
+          <el-tag size="small" type="info" effect="plain">
+            {{ reportSourceLabel(reportDetail) }}
+          </el-tag>
+          <span class="ai-report-sub">创建于 {{ reportDetail?.created_time || "-" }}</span>
+        </div>
+        <MarkdownRenderer v-if="reportDetail?.content" :content="reportDetail.content" />
+        <el-empty v-else-if="!reportDetailLoading" :image-size="40" description="无正文内容" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -1447,6 +1531,7 @@ import { getGovernanceReport } from "@/api/module_ai/query";
 import { getAssetHotspots, getObjectLifecycle } from "@/api/module_ai/query";
 import { objectBrowse } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
+import { getAiReportList, getAiReportDetail, deleteAiReports } from "@/api/module_ai/report";
 
 defineOptions({ name: "AiOverview" });
 
@@ -1853,6 +1938,123 @@ function downloadReport() {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+// ---- AI 报告（列表抽屉 / 详情弹窗 / 删除，局部更新） ----
+const reportDrawerVisible = ref(false);
+const reportList = ref<any[]>([]);
+const reportListLoading = ref(false);
+const reportSelection = ref<any[]>([]);
+const reportTableRef = ref<any>(null);
+const reportDetailVisible = ref(false);
+const reportDetail = ref<any>(null);
+const reportDetailLoading = ref(false);
+
+function reportSourceLabel(row: any): string {
+  const raw = row?.source;
+  if (!raw) return "AI 报告";
+  let obj: any = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      return "AI 报告";
+    }
+  }
+  if (obj?.plugin) {
+    const pmap: Record<string, string> = { report_generate: "报告生成" };
+    return pmap[obj.plugin] || String(obj.plugin);
+  }
+  if (obj?.scope) {
+    const smap: Record<string, string> = {
+      annotation: "标注",
+      train: "训练",
+      video: "视频",
+      all: "综合",
+    };
+    return smap[obj.scope] || String(obj.scope);
+  }
+  if (obj?.topic) return "专题报告";
+  return "AI 报告";
+}
+
+async function openReportDrawer() {
+  reportDrawerVisible.value = true;
+  if (!reportList.value.length) await loadReportList();
+}
+
+async function loadReportList() {
+  reportListLoading.value = true;
+  try {
+    const r = await getAiReportList();
+    reportList.value = r.data?.data || [];
+  } catch {
+    reportList.value = [];
+  } finally {
+    reportListLoading.value = false;
+  }
+}
+
+function onReportSelect(selection: any[]) {
+  reportSelection.value = selection;
+}
+
+async function viewReport(row: any) {
+  reportDetailLoading.value = true;
+  try {
+    const r = await getAiReportDetail(row.id);
+    reportDetail.value = r.data?.data || null;
+    reportDetailVisible.value = true;
+  } catch {
+    reportDetail.value = null;
+  } finally {
+    reportDetailLoading.value = false;
+  }
+}
+
+async function deleteReport(row: any) {
+  try {
+    await ElMessageBox.confirm(`将删除报告「${row.title}」，且不可恢复。是否继续？`, "删除报告", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+    });
+  } catch {
+    return;
+  }
+  try {
+    await deleteAiReports([row.id]);
+    reportList.value = reportList.value.filter((x) => x.id !== row.id);
+    reportSelection.value = reportSelection.value.filter((x) => x.id !== row.id);
+    stats.reports = Math.max(0, (stats.reports || 0) - 1);
+  } catch {
+    // 错误提示已由拦截器处理
+  }
+}
+
+async function batchDeleteReports() {
+  const ids = reportSelection.value.map((x) => x.id);
+  if (!ids.length) return;
+  try {
+    await ElMessageBox.confirm(
+      `将删除选中的 ${ids.length} 条 AI 报告，且不可恢复。是否继续？`,
+      "批量删除报告",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await deleteAiReports(ids);
+    const idSet = new Set(ids);
+    reportList.value = reportList.value.filter((x) => !idSet.has(x.id));
+    reportSelection.value = [];
+    reportTableRef.value?.clearSelection();
+    stats.reports = Math.max(0, (stats.reports || 0) - ids.length);
+  } catch {
+    // 错误提示已由拦截器处理
+  }
+}
+
 const hotspots = ref<any>(null);
 async function loadHotspots() {
   try {
@@ -2254,5 +2456,14 @@ onBeforeUnmount(() => {
   display: block !important;
   height: auto !important;
   overflow: visible !important;
+}
+
+/* 非 scoped：AI 报告抽屉/详情弹窗 append-to-body 后脱离 scoped 作用域，需全局定义 */
+.ai-report-sub {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.ai-report-drawer {
+  padding: 0 4px;
 }
 </style>
