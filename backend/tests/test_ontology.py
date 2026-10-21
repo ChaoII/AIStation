@@ -364,12 +364,15 @@ class TestPromoteReuse:
         from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
+            # 先建一条**真实归属**的会话：promote 现在会按 message 的 session_id
+            # 反查会话校验归属（旧用例直接写 session_id=1 的孤儿消息，等于没有归属）
+            auth = SimpleNamespace(user=SimpleNamespace(id=1))
+            sess = await AiQueryService.get_or_create_session(None, "指标沉淀测试", auth)
             msg = await AiQueryService._save_message(
-                1, "按品牌统计摄像头数量", path="slow", datasource="system",
+                sess["id"], "按品牌统计摄像头数量", path="slow", datasource="system",
                 sql="SELECT COUNT(*) AS 数值 FROM video_cameras", columns=["数值"],
                 rows=[[5]], result_rows=1, took_ms=1, cached=False,
             )
-            auth = SimpleNamespace(user=SimpleNamespace(id=1))
             r = await AiQueryService.promote_message_to_metric(
                 msg.id, "按品牌摄像头数量", "camera_by_brand", auth)
             assert r["key"] == "camera_by_brand" and r["term"] == "按品牌统计摄像头数量"

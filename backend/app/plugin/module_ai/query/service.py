@@ -1683,6 +1683,10 @@ class AiQueryService:
             m = await db.get(AiQueryMessageModel, message_id)
             if not m or not (m.sql or ""):
                 raise CustomException(msg="问答记录无效或缺少 SQL")
+            # 归属校验：message_id 只是自增主键，枚举即可命中他人问答。
+            # 先按 session_id 反查会话并复用统一归属校验，再谈"沉淀成指标"。
+            cls._ensure_session_owner(
+                await db.get(AiQuerySessionModel, m.session_id), auth)
             try:
                 validate_sql(m.sql, await _system_allowed())
             except CustomException as e:  # noqa: BLE001
@@ -6320,6 +6324,9 @@ class AiQueryService:
             if session_id:
                 s = await db.get(AiQuerySessionModel, session_id)
                 if s:
+                    # 命中已有会话时必须校验归属：`ask`/`ask_stream` 会拿着这个 id
+                    # 继续写消息，旧实现不校验 → 可把消息写进他人会话。
+                    cls._ensure_session_owner(s, auth)
                     return {"id": s.id, "title": s.title, "datasource": s.datasource}
             user = getattr(getattr(auth, "user", None), "id", None)
             s = AiQuerySessionModel(
@@ -6333,12 +6340,22 @@ class AiQueryService:
     @classmethod
     async def list_sessions(cls, auth) -> list[dict]:
         async with async_db_session() as db:
-            from sqlalchemy import select
+            from sqlalchemy import or_, select
 
+            conds = [AiQuerySessionModel.is_deleted.is_(False)]
+            uid = _actor_id(auth)
+            if uid is not None:
+                # 与 `_ensure_session_owner` 同口径：本人 + 历史遗留（user_id 为 NULL）。
+                # 旧实现完全不按用户过滤 → 所有人能看到所有人的会话标题，
+                # 点进去 `list_messages` 却报"会话不存在"（自相矛盾，且泄露标题）。
+                conds.append(
+                    or_(AiQuerySessionModel.user_id == uid,
+                        AiQuerySessionModel.user_id.is_(None))
+                )
             rows = (
                 await db.execute(
                     select(AiQuerySessionModel)
-                    .where(AiQuerySessionModel.is_deleted.is_(False))
+                    .where(*conds)
                     .order_by(AiQuerySessionModel.id.desc())
                     .limit(100)
                 )
@@ -9101,6 +9118,10 @@ class AiQueryService:
             m = await db.get(AiQueryMessageModel, message_id)
             if not m:
                 raise CustomException(msg="记录不存在")
+            # 归属校验：旧实现只按 message_id 取行 → 谁都能改他人反馈，
+            # 还能把他人问答沉淀成自己的 few-shot。按 session_id 反查会话统一校验。
+            cls._ensure_session_owner(
+                await db.get(AiQuerySessionModel, m.session_id), auth)
             m.feedback = feedback
             m.updated_id = auth.user.id
             sunk = False
