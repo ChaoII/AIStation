@@ -87,39 +87,50 @@
             class="embed-msg"
             :class="m.role === 'user' ? 'is-user' : 'is-assistant'"
           >
-            <div v-if="m.role !== 'user'" class="embed-msg__avatar">{{ initialChar }}</div>
-            <div class="embed-msg__bubble" :class="{ 'is-plain': m.role === 'user' }">
-              <span v-if="m.role === 'user'" class="embed-msg__text">{{ textOf(m) }}</span>
-              <RichContent v-else :content="textOf(m)" />
-              <span v-if="isTypingTail(i)" class="embed-caret" />
+            <div class="embed-msg__avatar" :class="m.role === 'user' ? 'is-user' : 'is-ai'">
+              {{ m.role === "user" ? "你" : initialChar }}
             </div>
-          </div>
-
-          <div v-if="m.role !== 'user' && sourcesOf(i).length" class="embed-sources">
-            <button type="button" class="embed-sources__toggle" @click="toggleSources(i)">
-              <span>引用 {{ sourcesOf(i).length }} 条</span>
-              <el-icon>
-                <ArrowDown v-if="!openSources[i]" />
-                <ArrowUp v-else />
-              </el-icon>
-            </button>
-            <ul v-if="openSources[i]" class="embed-sources__list">
-              <li v-for="(s, si) in sourcesOf(i)" :key="si" class="embed-sources__item">
-                <span class="embed-sources__title">{{ sourceTitle(s) }}</span>
-                <span v-if="s && s.score != null" class="embed-sources__score">
-                  {{ Number(s.score).toFixed(2) }}
-                </span>
-              </li>
-            </ul>
+            <div class="embed-msg__content">
+              <div class="embed-msg__sender">
+                {{ m.role === "user" ? "你" : meta?.name || "AI 助手" }}
+              </div>
+              <div class="embed-msg__body">
+                <div v-if="m.role === 'user'" class="embed-msg__text">{{ textOf(m) }}</div>
+                <template v-else>
+                  <RichContent :content="textOf(m)" />
+                  <span v-if="isTypingTail(i)" class="embed-caret" />
+                </template>
+              </div>
+              <div v-if="m.role !== 'user' && sourcesOf(i).length" class="embed-sources">
+                <button type="button" class="embed-sources__toggle" @click="toggleSources(i)">
+                  <span>引用 {{ sourcesOf(i).length }} 条</span>
+                  <el-icon>
+                    <ArrowDown v-if="!openSources[i]" />
+                    <ArrowUp v-else />
+                  </el-icon>
+                </button>
+                <ul v-if="openSources[i]" class="embed-sources__list">
+                  <li v-for="(s, si) in sourcesOf(i)" :key="si" class="embed-sources__item">
+                    <span class="embed-sources__title">{{ sourceTitle(s) }}</span>
+                    <span v-if="s && s.score != null" class="embed-sources__score">
+                      {{ Number(s.score).toFixed(2) }}
+                    </span>
+                  </li>
+                </ul>
+              </div>
+            </div>
           </div>
         </template>
 
         <div v-if="showTyping" class="embed-msg is-assistant">
-          <div class="embed-msg__avatar">{{ initialChar }}</div>
-          <div class="embed-msg__bubble embed-typing">
-            <i />
-            <i />
-            <i />
+          <div class="embed-msg__avatar is-ai">{{ initialChar }}</div>
+          <div class="embed-msg__content">
+            <div class="embed-msg__sender">{{ meta?.name || "AI 助手" }}</div>
+            <div class="embed-typing">
+              <i />
+              <i />
+              <i />
+            </div>
           </div>
         </div>
 
@@ -186,6 +197,7 @@ defineOptions({ name: "AiEmbedChat" });
 type Fatal = "" | "missing" | "expired" | "forbidden";
 
 interface MetaData {
+  appid: string;
   kind: "agent" | "app" | "workflow";
   target_id: number;
   name: string;
@@ -219,7 +231,8 @@ let errorEmitted = false;
 
 /* ---------- 本地存储（sid + 转写，按 ticket/目标隔离） ---------- */
 function storageKeys(m: MetaData) {
-  const scope = `ai-embed:${token.value.slice(0, 6)}:${m.kind}:${m.target_id}`;
+  // 归属维度用 appid（换票后 token 变化但 app 不变 → 续期后仍可恢复转写；跨 app 隔离）
+  const scope = `ai-embed:${m.appid || token.value.slice(0, 6)}:${m.kind}:${m.target_id}`;
   return { sid: `${scope}:sid`, messages: `${scope}:messages` };
 }
 function readJson<T>(key: string, fallback: T): T {
@@ -638,13 +651,9 @@ onBeforeUnmount(() => {
 
 .embed-msg {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: flex-start;
   animation: embed-fade-in 0.16s ease-out;
-
-  &.is-user {
-    justify-content: flex-end;
-  }
 }
 
 .embed-msg__avatar {
@@ -657,30 +666,32 @@ onBeforeUnmount(() => {
   margin-top: 2px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--embed-primary);
-  background: color-mix(in srgb, var(--embed-primary) 12%, transparent);
-  border-radius: 9px;
+  color: #fff;
+  background: var(--el-color-success);
+  border-radius: 6px;
+
+  &.is-user {
+    background: var(--embed-primary);
+  }
 }
 
-.embed-msg__bubble {
-  position: relative;
-  max-width: min(78%, 560px);
-  padding: 10px 12px;
+.embed-msg__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.embed-msg__sender {
+  margin-bottom: 6px;
   font-size: var(--el-font-size-base);
-  line-height: 1.65;
-  background: var(--el-fill-color-light);
-  border-radius: 4px 12px 12px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
 
-  &.is-plain {
-    color: #fff;
-    background: var(--embed-primary);
-    border-radius: 12px 4px 12px 12px;
-  }
-
-  :deep(.rich-content) {
-    font-size: var(--el-font-size-base);
-    line-height: 1.65;
-  }
+.embed-msg__body {
+  font-size: var(--el-font-size-base);
+  line-height: 1.6;
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
 
   :deep(p) {
     margin: 0 0 6px;
@@ -694,14 +705,18 @@ onBeforeUnmount(() => {
     padding: 8px 10px;
     overflow-x: auto;
     font-size: 12px;
-    background: var(--el-fill-color-darker);
-    border-radius: 8px;
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
   }
 }
 
 .embed-msg__text {
-  overflow-wrap: anywhere;
+  display: inline-block;
+  padding: 10px 14px;
   white-space: pre-wrap;
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 12px;
 }
 
 .embed-caret {
@@ -718,7 +733,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   gap: 4px;
   align-items: center;
-  padding: 14px 14px;
+  padding: 6px 2px;
 
   i {
     width: 6px;
@@ -738,7 +753,7 @@ onBeforeUnmount(() => {
 }
 
 .embed-sources {
-  margin: -6px 0 0 36px;
+  margin: 6px 0 0;
 }
 
 .embed-sources__toggle {

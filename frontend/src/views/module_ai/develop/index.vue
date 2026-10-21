@@ -379,9 +379,16 @@
             <pre class="doc-code">{{ embedExample }}</pre>
             <div class="doc-events">
               <span class="doc-events__label">postMessage 事件</span>
-              <span v-for="e in docEvents" :key="e.name" class="doc-events__chip" :title="e.desc">
+              <el-tag
+                v-for="e in docEvents"
+                :key="e.name"
+                size="small"
+                effect="plain"
+                class="doc-events__tag"
+                :title="e.desc"
+              >
                 {{ e.name }}
-              </span>
+              </el-tag>
             </div>
             <p class="doc-card__desc doc-card__desc--foot">
               完整契约见「应用管理 → 嵌入」弹窗与下方示例注释；上行信封
@@ -1185,14 +1192,8 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
 }
 
-.doc-events__chip {
-  padding: 1px 8px;
+.doc-events__tag {
   font-family: var(--el-font-family-mono, monospace);
-  font-size: 12px;
-  color: var(--el-text-color-regular);
-  cursor: help;
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
 }
 
 .doc-card__desc--foot {

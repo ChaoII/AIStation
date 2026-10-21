@@ -1,6 +1,7 @@
 <!--
   应用「嵌入」弹窗：选目标 → 生成 iframe / Script SDK 代码 → 签体验票 → 令牌治理。
   凭证约定：代码内只出现短期 access_token 占位符；appkey 永不进入网页。
+  样式与系统管理模块一致：el-form 标签 + el-table + el-tag + el-alert，仅用 --el-* 变量。
 -->
 <template>
   <el-dialog
@@ -9,84 +10,75 @@
     width="640px"
     top="6vh"
     append-to-body
-    class="embed-dialog-host"
     @closed="resetState"
   >
-    <div class="embed-dialog">
-      <!-- 目标 -->
-      <section class="embed-dialog__section">
-        <div class="embed-dialog__label">嵌入目标</div>
-        <div class="embed-dialog__target">
-          <el-radio-group v-model="kind" size="small" @change="onKindChange">
-            <el-radio-button value="agent">Agent</el-radio-button>
-            <el-radio-button value="app">AI 应用</el-radio-button>
-            <el-radio-button value="workflow">工作流</el-radio-button>
-          </el-radio-group>
-          <el-select
-            v-model="targetId"
-            filterable
-            clearable
-            :loading="loadingTargets"
-            placeholder="选择要嵌入的目标"
-            class="embed-dialog__select"
-            @change="mintedToken = ''"
-          >
-            <el-option v-for="t in targets" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
-        </div>
-      </section>
+    <el-form label-width="94px" class="embed-dialog">
+      <el-form-item label="嵌入形态">
+        <el-radio-group v-model="kind" @change="onKindChange">
+          <el-radio-button value="agent">Agent</el-radio-button>
+          <el-radio-button value="app">AI 应用</el-radio-button>
+          <el-radio-button value="workflow">工作流</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
 
-      <!-- 嵌入代码 -->
-      <section class="embed-dialog__section">
-        <div class="embed-dialog__head">
-          <span class="embed-dialog__label">嵌入代码</span>
-          <el-button
-            v-hasPerm="'module_ai:develop:create'"
-            size="small"
-            :loading="minting"
-            :disabled="!targetId"
-            @click="onMint"
-          >
-            生成体验 Token（2 小时）
-          </el-button>
-        </div>
-        <el-tabs v-model="codeTab" class="embed-dialog__tabs">
-          <el-tab-pane label="iframe 直嵌" name="iframe">
-            <pre class="embed-dialog__code">{{ codeFor("iframe") }}</pre>
-          </el-tab-pane>
-          <el-tab-pane label="Script SDK" name="script">
-            <pre class="embed-dialog__code">{{ codeFor("script") }}</pre>
-          </el-tab-pane>
-        </el-tabs>
-        <div class="embed-dialog__hint">
-          <el-icon><InfoFilled /></el-icon>
-          <span>
-            <code>{access_token}</code>
-            为短期凭证占位符：请由宿主服务端用 appid/appkey 调
-            <code>POST {{ apiBase }}/develop-api/auth/token</code>
-            换票获取；
-            <b>切勿把 appkey 写入网页</b>
-            。过期后宿主重新换票并调用
-            <code>setToken()</code>
-            即可续期。
-          </span>
-        </div>
-        <div class="embed-dialog__actions">
-          <el-button size="small" :disabled="!targetId" @click="copyCode">
-            <el-icon><CopyDocument /></el-icon>
-            复制代码
-          </el-button>
-        </div>
-      </section>
+      <el-form-item label="嵌入目标">
+        <el-select
+          v-model="targetId"
+          filterable
+          clearable
+          :loading="loadingTargets"
+          placeholder="选择要嵌入的目标"
+          class="embed-dialog__select"
+          @change="mintedToken = ''"
+        >
+          <el-option v-for="t in targets" :key="t.id" :label="t.name" :value="t.id" />
+        </el-select>
+      </el-form-item>
 
-      <!-- 令牌列表 -->
-      <section class="embed-dialog__section">
-        <div class="embed-dialog__label">已签发令牌</div>
+      <el-form-item label="嵌入代码">
+        <div class="embed-dialog__code">
+          <el-tabs v-model="codeTab">
+            <el-tab-pane label="iframe 直嵌" name="iframe">
+              <pre class="embed-dialog__pre">{{ codeFor("iframe") }}</pre>
+            </el-tab-pane>
+            <el-tab-pane label="Script SDK" name="script">
+              <pre class="embed-dialog__pre">{{ codeFor("script") }}</pre>
+            </el-tab-pane>
+          </el-tabs>
+          <div class="embed-dialog__actions">
+            <el-button size="small" :disabled="!targetId" @click="copyCode">
+              <el-icon><CopyDocument /></el-icon>
+              复制代码
+            </el-button>
+            <el-button
+              v-hasPerm="'module_ai:develop:create'"
+              size="small"
+              type="primary"
+              plain
+              :disabled="!targetId"
+              :loading="minting"
+              @click="onMint"
+            >
+              生成体验 Token（2 小时）
+            </el-button>
+          </div>
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            class="embed-dialog__alert"
+            title="凭证说明"
+            :description="`{access_token} 为短期凭证占位符：请由宿主服务端用 appid/appkey 调 POST ${apiBase}/develop-api/auth/token 换票获取；切勿把 appkey 写入网页。过期后宿主重新换票并调用 setToken() 续期。`"
+          />
+        </div>
+      </el-form-item>
+
+      <el-form-item label="已签发令牌">
         <el-table
           v-loading="loadingTokens"
           :data="tokens"
           size="small"
-          max-height="204"
+          max-height="200"
           empty-text="暂无令牌（换票与体验票都会出现在这里）"
         >
           <el-table-column label="形态" width="88">
@@ -122,19 +114,26 @@
             </template>
           </el-table-column>
         </el-table>
-      </section>
+      </el-form-item>
 
-      <!-- 事件契约 -->
-      <section class="embed-dialog__section">
-        <div class="embed-dialog__label">postMessage 事件（source = ai-embed，version = 1）</div>
+      <el-form-item label="事件契约">
         <div class="embed-dialog__events">
-          <span v-for="e in EVENTS" :key="e.name" class="embed-dialog__event" :title="e.desc">
-            <code>{{ e.name }}</code>
-          </span>
+          <el-tag
+            v-for="e in EVENTS"
+            :key="e.name"
+            size="small"
+            effect="plain"
+            class="embed-dialog__tag"
+            :title="e.desc"
+          >
+            {{ e.name }}
+          </el-tag>
         </div>
-        <p class="embed-dialog__note">完整载荷与下行命令见「接入文档」页签。</p>
-      </section>
-    </div>
+        <div class="embed-dialog__note">
+          上行信封 source = ai-embed / version = 1；完整载荷与下行命令见「接入文档」页签。
+        </div>
+      </el-form-item>
+    </el-form>
 
     <template #footer>
       <el-button @click="visible = false">关闭</el-button>
@@ -171,7 +170,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { CopyDocument, InfoFilled } from "@element-plus/icons-vue";
+import { CopyDocument } from "@element-plus/icons-vue";
 import { getAiAgentList } from "@/api/module_ai/agent";
 import { getAiAppList } from "@/api/module_ai/app";
 import { getAiWorkflowList } from "@/api/module_ai/workflow";
@@ -359,47 +358,32 @@ async function onRevoke(row: any) {
 
 <style scoped>
 .embed-dialog {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
   max-height: 64vh;
   padding-right: 6px;
   overflow-y: auto;
 }
 
-.embed-dialog__section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.embed-dialog :deep(.el-form-item) {
+  margin-bottom: 18px;
 }
 
-.embed-dialog__label {
-  font-size: var(--el-font-size-base);
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.embed-dialog__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.embed-dialog__target {
-  display: flex;
-  gap: 10px;
-  align-items: center;
+.embed-dialog :deep(.el-form-item:last-child) {
+  margin-bottom: 4px;
 }
 
 .embed-dialog__select {
-  flex: 1;
-}
-
-.embed-dialog__tabs :deep(.el-tabs__content) {
-  margin-top: 4px;
+  width: 100%;
 }
 
 .embed-dialog__code {
+  width: 100%;
+}
+
+.embed-dialog__code :deep(.el-tabs__content) {
+  overflow: visible;
+}
+
+.embed-dialog__pre {
   max-height: 180px;
   padding: 10px 12px;
   margin: 0;
@@ -414,50 +398,31 @@ async function onRevoke(row: any) {
   border-radius: 6px;
 }
 
-.embed-dialog__hint {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-  padding: 8px 10px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-lighter);
-  border-radius: 6px;
-}
-
-.embed-dialog__hint code {
-  padding: 0 3px;
-  font-family: var(--el-font-family-mono, monospace);
-  color: var(--el-color-primary);
-}
-
 .embed-dialog__actions {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.embed-dialog__alert {
+  margin-top: 10px;
 }
 
 .embed-dialog__events {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  width: 100%;
 }
 
-.embed-dialog__event {
-  padding: 2px 8px;
-  font-size: 12px;
-  color: var(--el-text-color-regular);
-  cursor: help;
-  background: var(--el-fill-color-light);
-  border-radius: 4px;
-}
-
-.embed-dialog__event code {
+.embed-dialog__tag {
   font-family: var(--el-font-family-mono, monospace);
 }
 
 .embed-dialog__note {
-  margin: 0;
+  width: 100%;
+  margin-top: 6px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
