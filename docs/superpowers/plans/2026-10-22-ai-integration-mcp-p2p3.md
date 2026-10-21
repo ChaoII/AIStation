@@ -45,11 +45,11 @@
   - `all_capabilities() -> list[Capability]`
   - `capabilities_for(perms: set[str]) -> list[Capability]`（按 `perm in perms` 过滤，按 category+code 排序）
 
-- [ ] 步骤 1：写失败测试 `test_registry_register_and_lookup`、`test_registry_rejects_duplicate_code`、`test_capabilities_for_filters_by_perm`
-- [ ] 步骤 2：跑 `uv run pytest tests/test_develop_registry.py -q`，确认 FAIL
-- [ ] 步骤 3：实现 `registry.py`
-- [ ] 步骤 4：跑测试确认 PASS
-- [ ] 步骤 5：提交 `feat(ai): 开放平台能力注册表`
+- [x] 步骤 1：写失败测试 `test_registry_register_and_lookup`、`test_registry_rejects_duplicate_code`、`test_capabilities_for_filters_by_perm`
+- [x] 步骤 2：跑 `uv run pytest tests/test_develop_registry.py -q`，确认 FAIL
+- [x] 步骤 3：实现 `registry.py`
+- [x] 步骤 4：跑测试确认 PASS
+- [x] 步骤 5：提交 `feat(ai): 开放平台能力注册表`
 
 ### 任务 2：数据归属列（迁移 + 模型 + service 过滤）
 
@@ -62,11 +62,11 @@
 **接口**
 - 产出：两表新增可空列 `source_app_id Integer`（FK `ai_integration_apps.id`，`NULL` = 内部用户创建）；service 的新可选参数默认 `None` = 不过滤（内部页面行为不变）。
 
-- [ ] 步骤 1：写失败测试：带 `source_app_id` 的 Agent 只能被同 `source_app_id` 查到；不同 app 查为 None；`list_agents(source_app_id=1)` 不返回 `source_app_id=None` 的内部 Agent
-- [ ] 步骤 2：跑测试确认 FAIL
-- [ ] 步骤 3：加模型列 + service 参数 + 手写迁移（`down_revision` = 当前 head；`has_column` 判断防重放）
-- [ ] 步骤 4：跑测试 + `uv run pytest tests/test_embed_migration.py -q` 确认 PASS
-- [ ] 步骤 5：提交 `feat(ai): Agent/训练任务支持 source_app_id 归属`
+- [x] 步骤 1：写失败测试：带 `source_app_id` 的 Agent 只能被同 `source_app_id` 查到；不同 app 查为 None；`list_agents(source_app_id=1)` 不返回 `source_app_id=None` 的内部 Agent
+- [x] 步骤 2：跑测试确认 FAIL
+- [x] 步骤 3：加模型列 + service 参数 + 手写迁移（`down_revision` = 当前 head；`has_column` 判断防重放）
+- [x] 步骤 4：跑测试 + `uv run pytest tests/test_embed_migration.py -q` 确认 PASS
+- [x] 步骤 5：提交 `feat(ai): Agent/训练任务支持 source_app_id 归属`
 
 ### 任务 3：开放 REST 调用端点（统一入口）
 
@@ -81,11 +81,11 @@
     流程：查注册表（无 → 404）→ `require_app_perm(ctx, cap.perm)`（403 + denied 审计）→ 配额/限流（429）→ `cap.handler(app_ctx=ctx, payload=payload)` → 成功审计（`latency_ms`/`result_summary`）。
   - `async def audit_call(ctx: AppContext, *, category, capability, method, status, error=None, latency_ms=0, result_summary=None, request_body=None, request_path=None, session_id=None, transport=None, client_info=None) -> None`（内部按 `ctx.app_id` 取 ORM 行后调 `DevelopService.log_call`）
 
-- [ ] 步骤 1：写失败测试：无凭证 401；未授权能力 403 且 `call_logs.status=denied`；未注册 code 404；成功调用写 `method=REST`、`status=success`、`request_body` 不含 appkey
-- [ ] 步骤 2：跑测试确认 FAIL
-- [ ] 步骤 3：实现 `openapi.py` 与两个端点（端点用 `Depends(get_app_api_auth)`）
-- [ ] 步骤 4：跑测试确认 PASS
-- [ ] 步骤 5：提交 `feat(ai): 开放 REST 能力调用端点`
+- [x] 步骤 1：写失败测试：无凭证 401；未授权能力 403 且 `call_logs.status=denied`；未注册 code 404；成功调用写 `method=REST`、`status=success`、`request_body` 不含 appkey
+- [x] 步骤 2：跑测试确认 FAIL
+- [x] 步骤 3：实现 `openapi.py` 与两个端点（端点用 `Depends(get_app_api_auth)`）
+- [x] 步骤 4：跑测试确认 PASS
+- [x] 步骤 5：提交 `feat(ai): 开放 REST 能力调用端点`
 
 ### 任务 4：agent 品类 handler
 
@@ -97,11 +97,11 @@
 - 产出：`def register_agent_capabilities() -> None`，注册 `agent.list` / `agent.get` / `agent.create` / `agent.update` / `agent.delete`，perm 分别 `integration:agent:{query,query,create,update,delete}`，`mcp_tool` 为 `agent_list` / `agent_get` / `agent_create` / `agent_update` / `agent_delete`。
 - handler 签名统一 `async def handler(*, app_ctx: AppContext, payload: dict) -> Any`；创建时 `source_app_id=app_ctx.app_id`；读/改/删一律带 `source_app_id=app_ctx.app_id` 过滤；`auth` 传 `SimpleNamespace(user=None)` 并显式传 `created_id=None`（开放面资源无平台用户）。
 
-- [ ] 步骤 1：写失败测试：创建后 `source_app_id == app.id`；另一 app 读/删同 id → 404；`agent.list` 只含本 app 的 Agent
-- [ ] 步骤 2：跑测试确认 FAIL
-- [ ] 步骤 3：实现 `handlers/agents.py` 并在 `develop/__init__.py` 导入时注册
-- [ ] 步骤 4：跑测试确认 PASS
-- [ ] 步骤 5：提交 `feat(ai): 开放面 Agent 能力`
+- [x] 步骤 1：写失败测试：创建后 `source_app_id == app.id`；另一 app 读/删同 id → 404；`agent.list` 只含本 app 的 Agent
+- [x] 步骤 2：跑测试确认 FAIL
+- [x] 步骤 3：实现 `handlers/agents.py` 并在 `develop/__init__.py` 导入时注册
+- [x] 步骤 4：跑测试确认 PASS
+- [x] 步骤 5：提交 `feat(ai): 开放面 Agent 能力`
 
 ### 任务 5：chat / bot 品类 handler
 
@@ -115,11 +115,11 @@
 - `chat.sessions` / `chat.messages`：仅返回本 app（`source_app_id = app.id`）的会话与消息。
 - `bot.use` payload：`{app_id: int, message: str}`（AI 应用），内部走 `run_app_ui_stream` 聚合成回复。
 
-- [ ] 步骤 1：写失败测试：`chat.send` 目标为 e2e 无模型工作流时返回 `reply` 且写审计；`chat.sessions` 不返回内部会话；`bot.use` 缺 `integration:bot:use` → 403
-- [ ] 步骤 2：跑测试确认 FAIL
-- [ ] 步骤 3：实现 `handlers/chat.py`（帧聚合函数 `async def _collect_reply(frames) -> str`）
-- [ ] 步骤 4：跑测试确认 PASS
-- [ ] 步骤 5：提交 `feat(ai): 开放面对话与机器人能力`
+- [x] 步骤 1：写失败测试：`chat.send` 目标为 e2e 无模型工作流时返回 `reply` 且写审计；`chat.sessions` 不返回内部会话；`bot.use` 缺 `integration:bot:use` → 403
+- [x] 步骤 2：跑测试确认 FAIL
+- [x] 步骤 3：实现 `handlers/chat.py`（帧聚合函数 `async def _collect_reply(frames) -> str`）
+- [x] 步骤 4：跑测试确认 PASS
+- [x] 步骤 5：提交 `feat(ai): 开放面对话与机器人能力`
 
 ### 任务 6：train 品类 handler
 
@@ -132,11 +132,11 @@
 - `train.create` payload：`{name, framework, dataset_id, annotation_task_id?, base_model_id?, hyperparams?}` → `TrainService.create_task(TrainTaskCreateSchema(...), auth=SimpleNamespace(user=None), source_app_id=app_ctx.app_id)`；先 `retired.ensure_active`。
 - `train.start` / `train.stop`：仅允许 `source_app_id = app.id` 的任务，否则 404；`start` 调 `scheduler.start_training`。
 
-- [ ] 步骤 1：写失败测试：创建后归属正确；跨 app 读/停 → 404；退场框架 → 400 文案含「已退场」
-- [ ] 步骤 2：跑测试确认 FAIL
-- [ ] 步骤 3：实现 `handlers/train.py`
-- [ ] 步骤 4：跑测试确认 PASS
-- [ ] 步骤 5：提交 `feat(ai): 开放面训练任务能力`
+- [x] 步骤 1：写失败测试：创建后归属正确；跨 app 读/停 → 404；退场框架 → 400 文案含「已退场」
+- [x] 步骤 2：跑测试确认 FAIL
+- [x] 步骤 3：实现 `handlers/train.py`
+- [x] 步骤 4：跑测试确认 PASS
+- [x] 步骤 5：提交 `feat(ai): 开放面训练任务能力`
 
 ### 任务 7：MCP Server（Streamable HTTP）
 
@@ -152,11 +152,11 @@
   - `build_mcp_server() -> MCPServer`：为每个 `mcp_tool` 非空的注册能力用 `@server.tool(name=..., description=...)` 注册一个工具，工具内 `ctx = CURRENT_APP_CTX.get()`（None → 401 语义错误），调 `invoke_capability(..., method="MCP", transport="streamable-http")`。
   - `def mcp_asgi_app() -> Starlette`：`server.streamable_http_app()` + 中间件包装。
 
-- [ ] 步骤 1：写失败测试：不带 Authorization → 401；带正确凭证 initialize 握手返回 `serverInfo.name`；`tools/list` 只含该 app 授权的能力；调用 `agent_list` 写 `call_logs(method=MCP)` 且 `mcp_sessions.tool_calls` 递增
-- [ ] 步骤 2：跑测试确认 FAIL
-- [ ] 步骤 3：实现 `mcp_server.py` 与挂载（lifespan 内 `async with server.session_manager.run():`）
-- [ ] 步骤 4：跑测试确认 PASS；`curl -H "Authorization: Bearer ..." -X POST /api/v1/ai/develop-api/mcp` 冒烟
-- [ ] 步骤 5：提交 `feat(ai): MCP Server（Streamable HTTP）`
+- [x] 步骤 1：写失败测试：不带 Authorization → 401；带正确凭证 initialize 握手返回 `serverInfo.name`；`tools/list` 只含该 app 授权的能力；调用 `agent_list` 写 `call_logs(method=MCP)` 且 `mcp_sessions.tool_calls` 递增
+- [x] 步骤 2：跑测试确认 FAIL
+- [x] 步骤 3：实现 `mcp_server.py` 与挂载（lifespan 内 `async with server.session_manager.run():`）
+- [x] 步骤 4：跑测试确认 PASS；`curl -H "Authorization: Bearer ..." -X POST /api/v1/ai/develop-api/mcp` 冒烟
+- [x] 步骤 5：提交 `feat(ai): MCP Server（Streamable HTTP）`
 
 ### 任务 8：前端接入文档与能力清单
 
@@ -165,14 +165,48 @@
 - 修改：`frontend/src/views/module_ai/develop/components/EmbedDialog.vue`（如需展示 MCP 端点则加一行只读文本，保持框架样式）
 - 测试：无自动化；用 Playwright 截图 + 计算样式探测（见 `AGENTS.md` §5）
 
-- [ ] 步骤 1：改写文档页签（表格 `border stripe`、代码块沿用既有样式）
-- [ ] 步骤 2：`pnpm run type-check` + eslint/stylelint/prettier
-- [ ] 步骤 3：无头浏览器截图（文档页签有数据态/空态、MCP 会话页签）+ 计算样式探测与参照页数值比对
-- [ ] 步骤 4：提交 `docs(ai): 接入文档补齐 REST/MCP 示例与能力清单`
+- [x] 步骤 1：改写文档页签（表格 `border stripe`、代码块沿用既有样式）
+- [x] 步骤 2：`pnpm run type-check` + eslint/stylelint/prettier
+- [x] 步骤 3：无头浏览器截图（文档页签有数据态/空态、MCP 会话页签）+ 计算样式探测与参照页数值比对
+- [x] 步骤 4：提交 `docs(ai): 接入文档补齐 REST/MCP 示例与能力清单`
 
 ### 任务 9：全量自查
 
-- [ ] 步骤 1：`uv run pytest -q -n 4`（全量）与前端 `type-check`、lint
-- [ ] 步骤 2：真实冒烟：起后端 → 用 appid/appkey 调 `POST /ai/develop-api/capabilities/agent.create`、`agent.list`，再用 MCP 客户端（或裸 HTTP initialize + tools/call）跑一次工具调用；管理端确认调用日志与 MCP 会话两页签有记录
-- [ ] 步骤 3：截图归档到 `.openchamber/screenshots/`，逐张读图对照框架页面
-- [ ] 步骤 4：更新 spec 的里程碑状态与本计划的执行记录；提交
+- [x] 步骤 1：`uv run pytest -q -n 4`（全量）与前端 `type-check`、lint
+- [x] 步骤 2：真实冒烟：起后端 → 用 appid/appkey 调 `POST /ai/develop-api/capabilities/agent.create`、`agent.list`，再用 MCP 客户端（或裸 HTTP initialize + tools/call）跑一次工具调用；管理端确认调用日志与 MCP 会话两页签有记录
+- [x] 步骤 3：截图归档到 `.openchamber/screenshots/`，逐张读图对照框架页面
+- [x] 步骤 4：更新 spec 的里程碑状态与本计划的执行记录；提交
+---
+
+## 执行记录（2026-10-22）
+
+全部 9 个任务已实施并提交（分支 `groovy-hedgehog`）：
+
+| 提交 | 内容 |
+|------|------|
+| `dbcff2c6` | 能力注册表（元数据+分发，纯逻辑） |
+| `43d970b7` | `source_app_id` 归属（模型 + service 过滤参数 + 手写迁移 `b7c8d9e0f1a2`） |
+| `f0bfe2f5` | 开放 REST 统一入口 `POST /ai/develop-api/capabilities/{code}` + `GET /ai/develop-api/capabilities`（按授权过滤）+ agent 能力 |
+| `39b544b1` | ruff 修正 |
+| `7cf09218` | chat / bot / train 能力（聚合回复、会话归属隔离、退场框架守卫、ValueError→400） |
+| `61b38444` | MCP Server（Streamable HTTP） |
+| `d8eff7e9` | 接入文档补齐 REST/MCP 真实示例 + 开放能力清单（`GET /ai/develop/capabilities`） |
+| `4d526a78` | MCP 端点改精确路由（修 307 丢头） |
+
+### 与计划的偏差（均已验证）
+
+1. **FastMCP → MCPServer**：`mcp` 2.3.0 已把 `FastMCP` 更名为 `MCPServer`，实现用 `mcp.server.mcpserver.MCPServer`（spec 中的「FastMCP」对应物），并在 spec 与模块 docstring 注明。
+2. **挂载方式**：`app.mount()` 会让 `/ai/develop-api/mcp` 回 307 到 `.../mcp/`（POST 307 会丢自定义头，很多 MCP 客户端不跟随），改为 `Route` 精确匹配；该问题在真实 HTTP 冒烟时才暴露（TestClient 默认跟随重定向，掩盖了它）。
+3. **工具调用计数**：MCP 传输层可能在自己的任务里执行工具，整数型 ContextVar 的改动无法回传中间件 → 改为 dict 计数对象。
+4. **工具错误语义**：handler 的 `CustomException` 转成 SDK `ToolError`，客户端看到 `[10403] 无权限操作`，而不是笼统的 `Error executing tool`（返回 `result.isError=true`，符合 MCP 语义）。
+5. **`tools/list` 按授权过滤**：以子类覆写 `list_tools`（SDK 无 middleware 钩子）。
+6. **多加了 1 个管理面端点** `GET /ai/develop/capabilities`（全量能力清单，接入文档表格数据源）。
+7. **DNS-rebinding 保护关闭**：SDK 默认只允许 localhost Host，而本端点是服务端↔服务端调用且部署 Host 是真实域名；鉴权仍由 Bearer 强制。
+
+### 验证证据
+
+- 新增/相关测试 **37 个全绿**：`test_develop_registry`(7) + `test_open_resource_owner`(5) + `test_develop_openapi`(7) + `test_develop_chat`(4) + `test_develop_train`(3) + `test_develop_mcp`(5) + 既有嵌入 6 个文件。
+- **全量**：`3109 passed / 6 failed / 38 skipped`；6 个失败均为既有问题（`_embed_agno` 旧符号、RAG 嵌入/问数/规则 e2e 环境类），已在**基线 `d00eb685` 的独立 worktree 复现同样的失败**，与本次改动无关。
+- **真实 HTTP 冒烟**（uvicorn + SQLite）：未鉴权 401 → initialize 200（拿到 `mcp-session-id`）→ `tools/list` 只含授权工具 → `tools/call agent_create` 落 `source_app_id` → `call_logs(method=MCP)=2`、`mcp_sessions` 1 行 `tool_calls=2`。
+- **UI 计算样式探测**：外壳 padding 12px / 边框 1px / 圆角 4px / 白底，与「能力市场」逐项相等；4 个页签内所有表格 `el-table--border` 齐全、无横向溢出。
+- 截图归档：`.openchamber/screenshots/p2-docs-rest.png`、`p2-docs-capabilities.png`、`p2-mcp-sessions.png`、`p2-logs-mcp.png`。

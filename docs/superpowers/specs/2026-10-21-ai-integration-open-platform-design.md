@@ -89,9 +89,9 @@
 | 阶段 | 范围 | 状态 |
 |------|------|------|
 | **P1** | `ai_integration_apps` 等三表、appid/appkey、品类权限、鉴权依赖、审计、RBAC 管理面与前端「AI 集成」菜单 | **已完成（按 v1 实现）** |
-| **P4'** | **换票 token 底座 + 三形态嵌入**（本设计 §6 + §9） | **本次实施** |
-| P2 | 开放 REST 能力（能力注册表 + 数据归属 `source_app_id`） | 后续分期，依赖 §6 管道 |
-| P3 | MCP Server（FastMCP + Streamable HTTP + 连接会话监控） | 后续分期，依赖 P2 注册表 |
+| **P4'** | **换票 token 底座 + 三形态嵌入**（本设计 §6 + §9） | **已完成** |
+| P2 | 开放 REST 能力（能力注册表 + 数据归属 `source_app_id`） | **已完成（2026-10-22）**：注册表 `develop/registry.py` + handler 分包（agent/chat/bot/train 共 14 项能力）+ `POST /ai/develop-api/capabilities/{code}` 统一入口 + `ai_agents`/`train_tasks` 归属列 |
+| P3 | MCP Server（Streamable HTTP + 连接会话监控） | **已完成（2026-10-22）**：`develop/mcp_server.py`，工具=能力、`tools/list` 按授权过滤、传输层 `Bearer appid:appkey`、会话与调用审计 |
 
 ---
 
@@ -366,8 +366,9 @@ ai.on(event, cb);               // 同时向 window 广播原生 message，纯 i
   5. 审计可见 `method=EMBED` 完整流水；限流/配额生效返回 429。
   6. 旧 `/share` 链接失效；工作流旧分享 UI 不复存在。
   7. **视觉验收通过**（截图逐屏核对，结构、状态、质感达标）。
-- **P2 验收**：appid 调用「创建训练任务/创建 Agent/发消息/聊天」，资源归属对应 app，超权限 403。
-- **P3 验收**：MCP header 鉴权调用工具；管理端能看到连接与工具调用流水。
+- **P2 验收（2026-10-22 通过）**：`POST /ai/develop-api/capabilities/{code}` 以 appid 调用「创建/查询/删除 Agent」「发消息/查会话」「创建/查询/启停训练任务」，资源落 `source_app_id` 且跨应用一律 404，超权限 403 + denied 审计（见 `tests/test_develop_openapi.py`、`test_develop_agents`/`chat`/`train`）。
+- **P3 验收（2026-10-22 通过）**：MCP 端点 `POST /api/v1/ai/develop-api/mcp`（Streamable HTTP）以 `Bearer appid:appkey` 完成 initialize / tools/list / tools/call；`tools/list` 只含该应用授权能力；管理端「调用日志」见 `method=MCP` 流水、「MCP 会话」见连接行与工具调用计数（真实冒烟：1 会话 / tool_calls=2 / 2 条 MCP 审计）。
+  - 实现物与 spec 的差异：`mcp` 2.x 已把 `FastMCP` 更名为 `MCPServer`（`mcp/server/fastmcp.py` 是导入即抛的占位模块），故实现用 `mcp.server.mcpserver.MCPServer`（FastMCP 的继任者）。
 
 ---
 
@@ -376,6 +377,6 @@ ai.on(event, cb);               // 同时向 window 广播原生 message，纯 i
 - **换票依赖第三方服务端**：嵌入方必须有后端才能换票（安全模型的既定代价），接入文档必须醒目标注；无后端的场景不提供降级匿名通道（禁免密是铁律）。
 - **token 暴露面**：嵌入页 URL 中的 token 可被宿主页访客读取——以「短 TTL + 单目标 + 限流 + 可吊销」四重缓解；文档建议宿主页不把 iframe src 回写进可公开爬取的 DOM。
 - **迁移风险**：删列与建表同链，谨防 `autogenerate`；SQLite 回归必须覆盖。
-- **文档超前误导**：P2/P3 未开放端点在接入文档标注「即将开放」，只展示真实可用示例。
+- **文档超前误导**：P2/P3 已在 2026-10-22 开放，接入文档已改为真实示例（含 MCP 两种客户端配置）；后续新增能力时同步更新文档与能力清单。
 - **appkey 保管**（v1 遗留）：明文仅一次返回，前端只展示引导提示。
 - **SSE 经代理缓冲**：响应头 `no-transform` / `X-Accel-Buffering: no` 必须带，避免整块到达。
