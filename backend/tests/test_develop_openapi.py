@@ -57,6 +57,18 @@ def _cleanup(test_client, auth_headers, app_id):
     )
 
 
+def test_admin_capability_catalog_lists_all(test_client, auth_headers):
+    """管理面能力清单：接入文档展示「有哪些能力可授权」。"""
+    r = test_client.get(f"{API}/ai/develop/capabilities", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    codes = {item["code"] for item in r.json()["data"]["items"]}
+    assert {"agent.list", "agent.create", "chat.send", "bot.use", "train.create"}.issubset(codes)
+    # 每个能力都带权限点与 MCP 工具名，便于文档展示
+    sample = next(i for i in r.json()["data"]["items"] if i["code"] == "agent.list")
+    assert sample["perm"] == "integration:agent:query"
+    assert sample["mcp_tool"] == "agent_list"
+
+
 def test_missing_credentials_returns_401(test_client):
     r = test_client.post(
         f"{API}/ai/develop-api/capabilities/agent.list",

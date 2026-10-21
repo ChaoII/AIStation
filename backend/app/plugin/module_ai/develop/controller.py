@@ -45,7 +45,7 @@ from .model import (
     AiIntegrationMcpSessionModel,
 )
 from .openapi import invoke_capability
-from .registry import capabilities_for, to_public_dict
+from .registry import all_capabilities, capabilities_for, to_public_dict
 from .schema import (
     CapabilityInvokeSchema,
     DevelopCreateSchema,
@@ -332,6 +332,19 @@ async def develop_detail(
     if not result:
         return ErrorResponse(msg="应用不存在")
     return SuccessResponse(data=result, msg="查询成功")
+
+
+@DevelopRouter.get("/capabilities", summary="开放能力清单（管理面，全量）")
+async def develop_capabilities(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+) -> JSONResponse:
+    """返回全部已注册的开放能力元数据（接入文档用；与授权无关）。
+
+    与 ``GET /ai/develop-api/capabilities``（开放面，按应用授权过滤）不同：
+    本端点面向平台管理员，用于展示「有哪些能力可授权」。
+    """
+    items = [to_public_dict(cap) for cap in all_capabilities()]
+    return SuccessResponse(data={"items": items, "total": len(items)}, msg="查询成功")
 
 
 @DevelopRouter.post("/create", summary="创建AI集成应用")

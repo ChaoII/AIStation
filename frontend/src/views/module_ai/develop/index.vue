@@ -354,7 +354,13 @@
                 </div>
               </template>
               <p class="doc-card__desc">
-                当前已开放的服务端接口：凭证校验与换票（业务能力 REST 将在 P2 开放）。
+                服务端持
+                <code>appid:appkey</code>
+                调用：能力清单、能力调用（统一入口
+                <code>/capabilities/{code}</code>
+                ）、对话与网页嵌入换票。响应统一为
+                <code>{ code, msg, data }</code>
+                。
               </p>
               <pre class="doc-code">{{ restExample }}</pre>
             </el-card>
@@ -362,14 +368,52 @@
               <template #header>
                 <div class="doc-card__header">
                   <span>MCP 接入</span>
-                  <el-tag size="small" type="warning">P3 即将开放</el-tag>
+                  <el-tag size="small" type="success">Streamable HTTP</el-tag>
                 </div>
               </template>
               <p class="doc-card__desc">
-                规划形态：在支持 MCP 的客户端中配置平台 MCP Server（Streamable
-                HTTP），把应用凭证注入请求头。
+                平台同时是 MCP Server：工具即能力，
+                <code>tools/list</code>
+                只返回该应用已授权的能力，调用与 REST 共用同一套鉴权、限流与审计。
               </p>
               <pre class="doc-code">{{ mcpExample }}</pre>
+            </el-card>
+            <el-card shadow="never" class="doc-card">
+              <template #header>
+                <div class="doc-card__header">
+                  <span>开放能力清单</span>
+                  <el-tag size="small" type="info">共 {{ capabilities.length }} 项</el-tag>
+                </div>
+              </template>
+              <p class="doc-card__desc">
+                能力与权限点一一对应：应用只有被授予对应权限点，才会在能力清单与 MCP
+                工具列表里看到它。
+              </p>
+              <el-table v-loading="capLoading" :data="capabilities" border stripe>
+                <el-table-column prop="name" label="能力" min-width="130" show-overflow-tooltip />
+                <el-table-column prop="code" label="能力码" width="130" />
+                <el-table-column label="品类" width="100">
+                  <template #default="{ row }">
+                    {{ CATEGORIES[row.category] || row.category }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="perm" label="所需权限点" width="200" />
+                <el-table-column prop="mcp_tool" label="MCP 工具名" width="140">
+                  <template #default="{ row }">
+                    <span v-if="row.mcp_tool" class="mono-text">{{ row.mcp_tool }}</span>
+                    <span v-else class="text-muted">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  prop="description"
+                  label="说明"
+                  min-width="240"
+                  show-overflow-tooltip
+                />
+                <template #empty>
+                  <el-empty :image-size="80" description="暂无开放能力" />
+                </template>
+              </el-table>
             </el-card>
             <el-card shadow="never" class="doc-card">
               <template #header>
@@ -562,6 +606,7 @@ import {
   createApp,
   deleteApp,
   getCallLogs,
+  getCapabilities,
   getDevelopAppList,
   getMcpSessions,
   resetAppkey,
@@ -922,6 +967,23 @@ function onTabChange(name: string | number) {
   const key = String(name);
   if (key === "logs") loadLogs(false);
   else if (key === "mcp") loadMcps(false);
+  else if (key === "docs" && !capabilities.value.length) loadCapabilities();
+}
+
+// ---- 开放能力清单（接入文档页签） ----
+const capabilities = ref<any[]>([]);
+const capLoading = ref(false);
+
+async function loadCapabilities() {
+  capLoading.value = true;
+  try {
+    const res = await getCapabilities();
+    capabilities.value = res.data?.data?.items || [];
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "能力清单加载失败");
+  } finally {
+    capLoading.value = false;
+  }
 }
 
 // ---- 通用工具 ----
@@ -972,24 +1034,57 @@ const restExample = `# 1. 凭证校验：确认应用状态与已授权能力
 curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
   -H "Authorization: Bearer {appid}:{appkey}"
 
-# 2. 换票：换取绑定「应用 + 嵌入目标」的短期 access_token（默认 30 分钟）
+# 2. 能力清单：只返回本应用**已授权**的能力
+curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
+  -H "Authorization: Bearer {appid}:{appkey}"
+
+# 3. 调用能力（统一入口）：code 取自能力清单，body 固定为 {"payload": {...}}
+curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"payload": {"agent_name": "外部创建助手"}}'
+
+# 4. 对话（聚合回复，非流式）
+curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "你好"}}'
+
+# 5. 网页嵌入换票（浏览器面不接触 appkey）
 curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
   -H "Authorization: Bearer {appid}:{appkey}" \\
   -H "Content-Type: application/json" \\
   -d '{"kind": "agent", "target_id": 123}'`;
 
-const mcpExample = `{
+const mcpExample = `// 端点（Streamable HTTP）：https://<host>/api/v1/ai/develop-api/mcp
+// 鉴权：请求头 Authorization: Bearer {appid}:{appkey}（与 REST 同一套凭证）
+
+// 方式一：客户端原生支持自定义请求头（推荐）
+{
   "mcpServers": {
-    "ai-integration": {
+    "aistation": {
+      "type": "http",
       "url": "https://<host>/api/v1/ai/develop-api/mcp",
-      "headers": {
-        "Authorization": "Bearer {appid}:{appkey}"
-      }
+      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
     }
   }
 }
 
-// 会话建立后，即可按工具清单调用该应用已授权的 MCP 工具。`;
+// 方式二：客户端只支持 stdio（用 mcp-remote 代理转发请求头）
+{
+  "mcpServers": {
+    "aistation": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote",
+        "https://<host>/api/v1/ai/develop-api/mcp",
+        "--header", "Authorization: Bearer {appid}:{appkey}"
+      ]
+    }
+  }
+}
+
+// 工具 = 能力：tools/list 只返回该应用已授权的能力；每次调用都写审计。`;
 
 const embedExample =
   `<!-- 方式一：iframe 直嵌（token 由服务端换票注入） -->
