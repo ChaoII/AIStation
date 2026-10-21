@@ -23,9 +23,12 @@
 |----|------|--------|
 | `ai_space_folders` | 多级文件夹 | `name`、`user_id`、`parent_id`（NULL=根） |
 | `ai_space_files` | 文件元信息 | `folder_id`、`user_id`、`name`、`ext`、`file_type`、`mime_type`、`size`、`object_key`(唯一)、`source`(upload/agent) |
+| `ai_space_quota_requests` | 扩容申请 | `user_id`、`target_mb`、`reason`、`status`(pending/approved/rejected)、`reviewed_by`、`review_note`、`review_time` |
+| `ai_space_user_quota` | 按用户配额覆盖 | `user_id`(唯一)、`quota_mb`、`updated_by` |
 
-- 两表均继承 `ModelMixin`（软删：`is_deleted` / `deleted_time`）。
-- 迁移文件：`backend/app/alembic/versions/2026_10_19_ai_space_tables.py`（手写 + `has_table` 幂等守卫）。
+- 四表均继承 `ModelMixin`（软删：`is_deleted` / `deleted_time`）。
+- 迁移文件：`backend/app/alembic/versions/2026_10_19_ai_space_tables.py`、
+  `backend/app/alembic/versions/2026_10_21_ai_space_quota.py`（均手写 + `has_table` 幂等守卫）。
 
 ```bash
 cd backend && uv run main.py upgrade --env=dev
@@ -37,27 +40,34 @@ cd backend && uv run main.py upgrade --env=dev
 
 | 权限码 | 含义 |
 |--------|------|
-| `module_ai:space:query` | 查看个人空间（列表/树/预览/配额）、对话引用入口 |
+| `module_ai:space:query` | 查看个人空间（列表/树/预览/配额）、提交扩容申请、对话引用入口 |
 | `module_ai:space:upload` | 上传文件 |
 | `module_ai:space:download` | 下载文件 |
 | `module_ai:space:delete` | 删除文件/文件夹（含级联） |
 | `module_ai:space:manage` | 新建/重命名文件夹、移动/重命名文件 |
+| `module_ai:space:quota_review` | 审核个人空间扩容申请（管理员页） |
 
-菜单：`AI 管理 → 个人工作空间`（`/ai/space`，组件 `module_ai/space/index`）。
+菜单：`AI 管理 → 个人工作空间`（`/ai/space`，组件 `module_ai/space/index`）、
+`AI 管理 → 空间扩容审核`（`/ai/space/quota`，组件 `module_ai/space/quota-review`，权限 `module_ai:space:quota_review`）。
 
 **存量库如何生效**：菜单与按钮权限由 `_ensure_ai_menus()` 启动时幂等补齐并授权 admin，
 重启一次后端即可，无需手工 INSERT。
 
-## 四、配额（配置化）
+## 四、配额（默认 2GB + 申请扩容）
 
 `backend/app/config/setting.py`：
 
 | 配置 | 默认 | 说明 |
 |------|------|------|
 | `AI_SPACE_MAX_FILE_MB` | 200 | 单文件上限（MB） |
-| `AI_SPACE_QUOTA_MB` | 10240 | 每用户总配额（MB，默认 10GB） |
+| `AI_SPACE_QUOTA_MB` | 2048 | 每用户总配额（MB，默认 2GB） |
 
+**生效配额**：有 `ai_space_user_quota` 覆盖则用覆盖值，否则回落到 `AI_SPACE_QUOTA_MB`。
 超限上传返回 400 中文提示；配额统计口径为「未删除文件 size 之和」。
+
+**扩容流程**：用户点「申请扩容」→ 提交申请（`target_mb` 必须大于当前生效配额、同一用户
+只能有一笔待审）→ 管理员在「空间扩容审核」页通过/驳回 → 通过时为该用户 upsert
+有效配额（`ai_space_user_quota`），配额立即生效。
 
 ## 五、API 一览（`/api/v1/ai/space`）
 
@@ -74,7 +84,11 @@ cd backend && uv run main.py upgrade --env=dev
 | PUT | `/files/rename` | space:manage | `{file_id, name}` |
 | POST | `/files/move` | space:manage | `{file_id, folder_id}` |
 | DELETE | `/files/delete` | space:delete | body=file_ids 数组 |
-| GET | `/quota` | space:query | `{used_bytes, quota_bytes, max_file_bytes}` |
+| GET | `/quota` | space:query | `{used_bytes, quota_bytes, max_file_bytes, default_quota_bytes, has_pending_request}` |
+| POST | `/quota/request` | space:query | 提交扩容申请 `{target_mb, reason}`（大于当前生效配额、无待审） |
+| GET | `/quota/requests/mine` | space:query | 我自己的扩容申请（倒序） |
+| GET | `/quota/requests` | space:quota_review | 全部扩容申请（`?status=`, 带 `username`） |
+| POST | `/quota/requests/{id}/review` | space:quota_review | 审核 `{approve, quota_mb?, note}`；通过则 upsert 用户配额 |
 
 删除类接口均为**软删元信息 + 删除对象**；对象删除失败仅记日志不阻塞。
 
