@@ -166,7 +166,7 @@ Resp:   { "token": "…", "expires_in": 1800, "expires_at": "YYYY-MM-DD HH:mm:ss
 3. **品类权限**：所需权限点 ∈ `app.capabilities` → 否则 **403 + denied 审计**。
 4. **配额 + 限流**：
    - 配额：`app.quota` 含 `embed` 键时按「自然日次数」限额，Redis `INCR quota:embed:{app_id}:{yyyymmdd}`，超限 **429**；缺省/0 = 不限。
-   - 限流：Redis 滑动窗口，**token 键 + IP 键**双限：默认每 token 30 条/分钟、每 IP 60 条/分钟（env 可调），超限 **429** + 中文提示。
+   - 限流：Redis **固定窗口**（`INCR`+`EXPIRE 60`，沿用工作流分享既有模式），**token 键 + IP 键**双限：默认每 token 30 条/分钟、每 IP 60 条/分钟（env 可调），超限 **429** + 中文提示。
 5. **执行**：handler 直接复用现有 service（嵌入 run 复用与已登录 `/run/stream` 相同的 service 函数），资源落 `source_app_id = app.id`（§8 归属约定在 P4' 落地于会话行）。
 6. **审计**：成功/拒绝/异常都写 `ai_integration_call_logs`（`method` 按出口 = `REST`/`MCP`/`EMBED`；token 只留前 6 位前缀）。
 
@@ -253,13 +253,13 @@ class Capability:
 
 ### 9.4 会话与续接
 
-- 嵌入页生成 `sid`（uuid，存**宿主域** localStorage，key 含 token 前缀避免跨目标串号）。
+- 嵌入页生成 `sid`（uuid，存嵌入页自身即**平台域** localStorage，key 形如 `ai-embed:{token前6位}:{kind}:{target_id}`，隔离不同票与目标）。
 - 首次 `run` 创建平台会话行（复用 run 服务既有会话模型），打 `source_app_id = app.id`；同 `sid` 续接历史。
 - 闲置 TTL 24 小时（超期后同 sid 重新开新会话）；`(token, sid, app)` 三元绑定校验。
 
 ### 9.5 限流与配额
 
-- 限流：Redis 滑动窗口，键 `rl:embed:token:{hash前缀}` 与 `rl:embed:ip:{ip}`；默认每 token 30 条/分钟、每 IP 60 条/分钟，env 可调。
+- 限流：Redis **固定窗口**（`INCR`+`EXPIRE 60`），键 `rl:embed:token:{hash前12}` 与 `rl:embed:ip:{ip}`；默认每 token 30 条/分钟、每 IP 60 条/分钟，env 可调。
 - 配额：见 §6.3 第 4 步（按 app 按日）。
 - 超限返回 429 中文文案，嵌入页渲染友好提示，postMessage `error`（reason=rate_limited / quota）。
 
@@ -268,7 +268,7 @@ class Capability:
 **结构**：Layout 外独立路由，整页为一个悬浮 **widget 质感对话卡片**（自适应 iframe 尺寸）：
 
 - **头部**：目标名 + 状态点（绿 = token 有效，依据 `meta.expire_at` 本地判定；过期由覆盖层接管）+「AIStation 驱动」小字标识；加载期骨架屏。
-- **消息流**：气泡式（用户右侧主色、助手左侧头像），Markdown 富文本（复用 `RichContent`）、流式打字机、引用来源可展开；工具调用事件在嵌入页**不渲染**（widget 简洁优先，事件仍在流内透传给 postMessage 监听者）。
+- **消息流**：气泡式（用户右侧主色、助手左侧头像），Markdown 富文本（复用 `RichContent`）、流式打字机、引用来源可展开；工具调用事件在嵌入页**不渲染**，也不进入 postMessage 契约（对外事件仅 §9.7 所列 7 类）。
 - **输入区**：自适应高度 textarea；Enter 发送、Shift+Enter 换行；发送中态 +「停止生成」（断开 SSE 流，行为对齐既有已登录对话的停止实现）；禁用态与错误态。
 - **空态**：欢迎语（`meta.welcome`，默认取目标 description，兜底「有什么可以帮你？」）。
 - **品牌化**：`init({ theme: { primary } })` 注入 CSS 变量，第三方换主色；未传则平台主色。
@@ -311,7 +311,7 @@ ai.setToken(t); ai.sendMessage(s); ai.resize(w, h); ai.destroy();
 ai.on(event, cb);               // 同时向 window 广播原生 message，纯 iframe 用户可自行监听
 ```
 
-- SDK 校验 `event.origin === apiBase 的 origin`；宿主侧建议同样校验 iframe 来源（文档示例给出）。
+- SDK 校验 `event.origin === webBase 的 origin`（事件来自嵌入页所在源）；宿主侧建议同样校验 iframe 来源（文档示例给出）。
 - 纯 iframe 模式：`<iframe src="{webBase}/#/embed?token=…" width=… height=… style="border:0">`，直接监听 `message` 即可，不依赖 sdk.js。
 
 ### 9.8 管理 UI：应用行「嵌入」弹窗（AI 集成菜单）
