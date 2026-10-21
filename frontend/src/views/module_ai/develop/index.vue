@@ -344,7 +344,7 @@
               :closable="false"
               show-icon
               class="docs-alert"
-              description="AppID 与 AppKey 只用于「服务端换票」：调用 POST /api/v1/ai/develop-api/auth/token 换取短期 access_token，嵌入页再用 Bearer token 访问 /ai/embed/*。切勿把 AppKey 写入网页或嵌入代码；AppKey 仅在创建或重置时展示一次。"
+              description="AppID / AppKey 仅用于服务端调用：开放 REST 与 MCP 直接带 Authorization: Bearer {appid}:{appkey}；网页嵌入则由宿主服务端调 POST /api/v1/ai/develop-api/auth/token 换取短期 access_token，浏览器只持票。切勿把 AppKey 写入网页或嵌入代码；AppKey 仅在创建或重置时展示一次。"
             />
             <el-card shadow="never" class="doc-card">
               <template #header>

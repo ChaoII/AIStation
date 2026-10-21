@@ -373,5 +373,14 @@ async def mcp_session_manager() -> AsyncIterator[None]:
 
 
 def mount_mcp(app) -> None:
-    """把 MCP 端点挂到 FastAPI 应用（``/ai/develop-api/mcp``，对外带 ``/api/v1`` 前缀）。"""
-    app.mount("/ai/develop-api/mcp", mcp_asgi_app())
+    """把 MCP 端点注册到 FastAPI 应用（``/ai/develop-api/mcp``，对外带 ``/api/v1`` 前缀）。
+
+    用 ``Route`` 而不是 ``app.mount()``：``Mount`` 要求以 ``/`` 结尾，否则对
+    ``/ai/develop-api/mcp`` 回 307 重定向到 ``/ai/develop-api/mcp/``——很多 MCP
+    客户端不跟随重定向（POST 307 还会丢自定义头），会直接连不上。
+    """
+    from starlette.routing import Route
+
+    app.router.routes.append(
+        Route("/ai/develop-api/mcp", mcp_asgi_app(), include_in_schema=False)
+    )
