@@ -98,3 +98,6 @@ backend/_*.out
 backend/tmp_500.txt
 backend/tmp_500_bytes.bin
 .openchamber/
+
+# 本地 e2e 专用（不提交）：vite 配置覆盖（node_modules junction + 独立 cacheDir）
+frontend/vite.e2e.config.mts

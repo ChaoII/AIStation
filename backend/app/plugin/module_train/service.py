@@ -416,6 +416,7 @@ class TrainService:
         name = (params or {}).get("name")
         framework = (params or {}).get("framework")
         status = (params or {}).get("status")
+        source_app_id = (params or {}).get("source_app_id")
 
         async with async_db_session() as db:
             stmt = select(TrainTask)
@@ -439,6 +440,8 @@ class TrainService:
                 stmt = stmt.where(framework_filter(TrainTask.framework, framework))
             if status:
                 stmt = stmt.where(TrainTask.status == status)
+            if source_app_id is not None:
+                stmt = stmt.where(TrainTask.source_app_id == source_app_id)
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = (await db.execute(count_stmt)).scalar() or 0
             stmt = stmt.order_by(desc(TrainTask.created_time)).limit(page_size).offset((page_no - 1) * page_size)
@@ -449,10 +452,13 @@ class TrainService:
                     for r in rows], total
 
     @classmethod
-    async def get_task(cls, task_id: int) -> dict | None:
+    async def get_task(cls, task_id: int, source_app_id: int | None = None) -> dict | None:
+        """按主键取任务详情；``source_app_id`` 非空时校验归属，不匹配返回 ``None``。"""
         async with async_db_session() as db:
             t = await db.get(TrainTask, task_id)
             if not t:
+                return None
+            if source_app_id is not None and t.source_app_id != source_app_id:
                 return None
             name_map = await _dataset_name_map(db, [t.dataset_id])
             d = await _enrich_task(t, name_map)
@@ -492,7 +498,7 @@ class TrainService:
             return d
 
     @classmethod
-    async def create_task(cls, data, auth) -> dict:
+    async def create_task(cls, data, auth, source_app_id: int | None = None) -> dict:
         from .retired import ensure_active
 
         # Ultralytics / PaddleX 已退场：新建训练任务时直接拒绝。
@@ -506,6 +512,7 @@ class TrainService:
                 annotation_task_id=data.annotation_task_id,
                 base_model_id=data.base_model_id, docker_image="torchkiln:0.1.0",
                 hyperparams=data.hyperparams,
+                source_app_id=source_app_id,
             )
             set_create_audit(t, auth)
             db.add(t)

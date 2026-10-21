@@ -127,6 +127,7 @@ def _to_dict(a: AiAgentModel) -> dict:
         "markdown": a.markdown,
         "enabled": a.enabled,
         "order": a.order or 0,
+        "source_app_id": getattr(a, "source_app_id", None),
         "uuid": a.uuid,
         "created_time": a.created_time,
         "updated_time": a.updated_time,
@@ -248,11 +249,22 @@ class AiAgentService:
     # 智能体
     # ---------------------------------------------------------------- #
     @classmethod
-    async def list_agents(cls, category_id: int | None = None) -> list[dict]:
+    async def list_agents(
+        cls, category_id: int | None = None, source_app_id: int | None = None
+    ) -> list[dict]:
+        """列出智能体。
+
+        Args:
+            category_id: 可选，按分类过滤。
+            source_app_id: 可选，按**开放平台归属应用**过滤；传入时只返回该应用
+                创建的智能体（内部用户创建的 ``source_app_id`` 为 ``None``，不会混入）。
+        """
         async with async_db_session() as db:
             stmt = select(AiAgentModel).where(AiAgentModel.is_deleted.is_(False))
             if category_id is not None:
                 stmt = stmt.where(AiAgentModel.category_id == category_id)
+            if source_app_id is not None:
+                stmt = stmt.where(AiAgentModel.source_app_id == source_app_id)
             rows = (
                 await db.execute(
                     stmt.order_by(AiAgentModel.order.asc(), AiAgentModel.id.desc())
@@ -261,15 +273,20 @@ class AiAgentService:
             return [_to_dict(a) for a in rows]
 
     @classmethod
-    async def get_agent(cls, agent_id: int) -> dict | None:
+    async def get_agent(cls, agent_id: int, source_app_id: int | None = None) -> dict | None:
+        """按主键取智能体；``source_app_id`` 非空时校验归属，不匹配返回 ``None``。"""
         async with async_db_session() as db:
             a = await db.get(AiAgentModel, agent_id)
             if not a or a.is_deleted:
                 return None
+            if source_app_id is not None and a.source_app_id != source_app_id:
+                return None
             return _to_dict(a)
 
     @classmethod
-    async def create(cls, data, auth) -> dict:
+    async def create(cls, data, auth, source_app_id: int | None = None) -> dict:
+        """创建智能体；``source_app_id`` 非空表示由开放平台应用创建（归属打标）。"""
+        uid = getattr(getattr(auth, "user", None), "id", None)
         async with async_db_session.begin() as db:
             a = AiAgentModel(
                 agent_name=data.agent_name,
@@ -293,8 +310,9 @@ class AiAgentService:
                 markdown=data.markdown,
                 enabled=data.enabled,
                 order=data.order or 0,
-                created_id=auth.user.id,
-                updated_id=auth.user.id,
+                source_app_id=source_app_id,
+                created_id=uid,
+                updated_id=uid,
             )
             await _validate_agent_bindings(
                 db,
@@ -302,7 +320,7 @@ class AiAgentService:
                 skill_ids=data.skill_ids or [],
                 knowledge_ids=data.knowledge_ids or [],
                 mcp_ids=getattr(data, "mcp_ids", None) or [],
-                user_id=auth.user.id,
+                user_id=uid,
             )
             db.add(a)
             await db.flush()
@@ -329,9 +347,9 @@ class AiAgentService:
                 skill_ids=data.skill_ids if getattr(data, "skill_ids", None) is not None else None,
                 knowledge_ids=data.knowledge_ids if getattr(data, "knowledge_ids", None) is not None else None,
                 mcp_ids=data.mcp_ids if getattr(data, "mcp_ids", None) is not None else None,
-                user_id=auth.user.id,
+                user_id=getattr(getattr(auth, "user", None), "id", None),
             )
-            a.updated_id = auth.user.id
+            a.updated_id = getattr(getattr(auth, "user", None), "id", None)
             await db.flush()
             return _to_dict(a)
 
