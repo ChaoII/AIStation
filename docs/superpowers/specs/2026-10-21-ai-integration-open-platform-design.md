@@ -80,7 +80,7 @@
 |------|--------|------|------|
 | **P1** | 集成应用凭证与权限（底座） | `ai_integration_apps` 表、appid/appkey 生成/重置/启停/到期、按品类权限点、appid/appkey 鉴权依赖、调用审计表、前端「AI 集成」菜单 | 无 |
 | **P2** | 开放 REST API（能力暴露） | 对外端点：创建训练任务/创建 Agent/发消息/聊天/查状态；appid 鉴权+权限校验+数据归属（app 租户）+限流+审计；统一能力注册表 | P1 |
-| **P3** | MCP Server（协议暴露） | 平台作为 MCP Server（`FastMCP` + Streamable HTTP），把能力注册表暴露为 MCP tools；appid/appkey 走 MCP header 鉴权 | P2 |
+| **P3** | MCP Server（协议暴露） | 平台作为 MCP Server（`FastMCP` + Streamable HTTP），把能力注册表暴露为 MCP tools；appid/appkey 走 MCP header 鉴权；**每次工具调用写 `ai_integration_call_logs`（method=MCP），每次连接/断开写 `ai_integration_mcp_sessions`，供管理员监控 MCP 行为** | P2 |
 | **P4** | 嵌入能力（对齐 BSIAP） | `/embed/*` + `/public/*` 免登录路由；app 维度 embed token；`<script>`/iframe 嵌入 SDK；`postMessage` 业务数据回传 | P1 |
 
 > 可选项 P5：治理度量（tokens 消耗统计、配额告警、开发者文档/样例代码生成）。
@@ -170,15 +170,21 @@ class Capability:
 
 #### `ai_integration_call_logs`（调用审计表）
 
+覆盖 **REST / MCP / 嵌入** 三种出海口的所有行为，是「管理员监控」的核心。
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | Integer PK | 主键 |
 | `app_id` | Integer FK | 关联 `ai_integration_apps.id` |
 | `appid` | String(64) | 冗余展示 |
 | `category` | String(16) | 能力品类（`train/agent/chat/bot/embed`） |
-| `capability` | String(64) | 能力码 |
-| `method` | String(16) | `REST` / `MCP` / `EMBED` |
-| `request_path` | String(255) | 请求路径 |
+| `capability` | String(64) | 能力码 / MCP 工具名（如 `train__create_task`） |
+| `log_type` | String(16) | 行为类型：`invoke`（调用）/ `connect` / `disconnect` |
+| `method` | String(16) | 出海口：`REST` / `MCP` / `EMBED` / `MCP_SESSION` |
+| `transport` | String(16) | MCP 传输：`streamable_http` / `sse` / `stdio`（REST 为 `http`） |
+| `session_id` | String(64) | MCP 会话 ID（可空；用于把多次调用串到同一会话） |
+| `client_info` | String(128) | 客户端标识（如 MCP 客户端名/版本） |
+| `request_path` | String(255) | 请求路径或 MCP tool 名 |
 | `request_body` | JSONB | 入参（脱敏） |
 | `status` | String(16) | `success` / `denied` / `error` |
 | `error` | String(255) | 错误信息 |
@@ -186,6 +192,25 @@ class Capability:
 | `cost_tokens` | Integer | token 消耗（P2 起填） |
 | `result_summary` | String(512) | 结果摘要（如资源 id） |
 | `MappedBase` | - | 仅 `id`/`created_time`，无软删（审计只增不改） |
+
+> 工具调用写本表（`log_type=invoke`、`method=MCP`）。MCP **连接**与**断开**事件也写本表（`log_type=connect/disconnect`、`method=MCP_SESSION`），作为完整流水；而 `ai_integration_mcp_sessions` 是**连接会话的权威/聚合视图**（供看板与"按会话"查询）。管理员可在「调用日志」里按 `method=MCP` 过滤，看到：**谁在什么时候连进来、用了什么传输、调用了哪些工具、结果如何**。
+
+#### `ai_integration_mcp_sessions`（MCP 连接会话表，用于连接级监控）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | Integer PK | 主键 |
+| `app_id` | Integer FK | 关联 `ai_integration_apps.id` |
+| `appid` | String(64) | 冗余展示 |
+| `session_id` | String(64) | MCP 会话 ID |
+| `transport` | String(16) | `streamable_http` / `sse` / `stdio` |
+| `client_info` | String(128) | 客户端标识 |
+| `started_at` | DateTime | 连接建立时间 |
+| `ended_at` | DateTime | 连接结束时间 |
+| `duration_s` | Integer | 连接持续秒数 |
+| `tool_calls` | Integer | 该会话累计工具调用数 |
+| `close_reason` | String(64) | 关闭原因（正常/超时/异常/客户端断连） |
+| `MappedBase` | - | 只增不改，用于看板/统计 |
 
 ### 6.2 appid/appkey 生成
 
@@ -233,7 +258,9 @@ def get_app_api_auth(
 
 单页 `module_ai/develop/index.vue`，页签：
 - **应用管理**：列表（`useCrudList`）+ 新建/编辑弹窗（`EnhancedDialog`）+ 详情查看 appid/appkey（明文一次性）+ 重置 appkey + 启用/禁用 + 到期时间 + 权限点勾选（`el-checkbox-group`）+ 配额。所有删除/重置类操作**二次确认**。
-- **调用日志**：列表（按 appid/品类/状态/时间过滤），只读。
+- **调用日志（含 MCP 行为监控）**：列表（按 appid/品类/状态/时间/出海口过滤），只读。提供两个子视图：
+  - **全部调用**：`ai_integration_call_logs`，可按 `method=MCP` 过滤查看 MCP 工具调用；
+  - **MCP 会话**：`ai_integration_mcp_sessions`，查看每个 MCP 连接的会话（创建/结束时间、传输方式、客户端、调用次数、关闭原因），管理员可据此监控 **MCP 行为**。
 - **接入文档**：展示 REST / MCP / 嵌入三种接入方式与示例代码（静态）。
 
 样式遵循既有模块（参照 `module_ai/provider`、`module_system/param`），复用 `--el-*` 变量，禁止自造主题化外壳。
@@ -252,6 +279,7 @@ def get_app_api_auth(
 - **纯逻辑测试（快速模式）**：appid 生成、appkey 哈希/校验、权限点校验、到期判断、鉴权依赖（`PYTEST_NO_APP=1`，不构造应用）。
 - **DB 相关**：`ai_integration_apps` / `ai_integration_call_logs` 建表与 CRUD（复用既有 DB 测试设施）。
 - **鉴权集成**：`/ai/develop-api` 端点用有效/无效 appid/appkey、过期、禁用、超权限 各场景校验返回 200/401/403。
+- **审计/MCP 行为**：调用成功/拒绝/异常都会写 `ai_integration_call_logs`；MCP 连接/断开写 `ai_integration_mcp_sessions`；按 `method=MCP` 过滤能查到对应工具调用。
 - **迁移**：`upgrade`/`downgrade` 往返；空库全链重放（SQLite 回归）不因插件表报错。
 
 ---
@@ -260,7 +288,7 @@ def get_app_api_auth(
 
 - **P1 验收**：能在「AI 集成」菜单创建应用并拿到 appid/appkey；用 appid/appkey 调用开放端点鉴权通过/拒绝正确；调用可审计；权限点/到期/禁用生效。
 - **P2 验收**：能用 appid 调用「创建训练任务/创建 Agent/发消息/聊天」，资源归属对应 app，超出权限被拒。
-- **P3 验收**：第三方把平台配为 MCP Server，用 appid/appkey 作为 header，通过 MCP 调用上述工具。
+- **P3 验收**：第三方把平台配为 MCP Server，用 appid/appkey 作为 header，通过 MCP 调用上述工具；**管理员在「调用日志 → MCP 会话/全部调用」能看到每次 MCP 连接与工具调用（含结果、传输、耗时）**。
 - **P4 验收**：第三方站点 iframe 嵌入 Agent/聊天机器人，免登录可对话，业务数据经 `postMessage` 回传。
 
 ---
