@@ -38,8 +38,9 @@ def _j(v: Any) -> str:
     return json.dumps(v, ensure_ascii=False, default=_d)
 
 
-def _now() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def _now() -> datetime:
+    # asyncpg 严格要求时间参数为 datetime 实例（传 str 会 DataError：图视图保存曾因此全挂）
+    return datetime.now()
 
 
 # ---------------------------------------------------------------------------
