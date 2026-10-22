@@ -40,10 +40,14 @@ test("AI 菜单：智能问数为独立目录，展开含 4 个子菜单，数�
     timeout: 10_000,
   });
 
-  // 展开目录，断言 4 个子菜单均出现
-  await group.locator(":scope > .el-sub-menu__title").click();
-  await page.waitForTimeout(500);
-  for (const item of ["数据与集成", "智能问数", "问数评测", "自定义报表"]) {
+  // 展开目录后断言 4 个子菜单均出现。注意：当前页就在该目录下时菜单**已自动展开**
+  // （class 含 is-opened），此时再点一次标题会反而折叠 → 子项高度变 0 → 不可见（实测）。
+  const groupClass = (await group.getAttribute("class")) || "";
+  if (!groupClass.includes("is-opened")) {
+    await group.locator(":scope > .el-sub-menu__title").click();
+    await page.waitForTimeout(500);
+  }
+  for (const item of ["数据与集成", "智能问数", "问数评测", "报表模板"]) {
     await expect(group.locator(".el-menu-item", { hasText: item }).first()).toBeVisible();
   }
 

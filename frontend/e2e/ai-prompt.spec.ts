@@ -41,27 +41,30 @@ test("提示词列表搜索在上，弹窗内画布可添加块并识别变量�
   const addBlock = dialog.getByRole("button", { name: "添加块" }).first();
   await expect(addBlock).toBeVisible({ timeout: 10_000 });
 
-  const before = await dialog.locator(".block-editor").count();
+  const before = await dialog.locator(".prompt-editor .nav-item").count();
   // 引导 tour 遮罩可能拦截指针事件，直接派发 click（与 ai-model.spec.ts 一致）
   await addBlock.evaluate((el) => (el as HTMLElement).click());
-  await expect(dialog.locator(".block-editor")).toHaveCount(before + 1);
+  // 编辑器已改版：块列表为左侧导航 .nav-item（原 .block-editor 已移除）
+  await expect(dialog.locator(".prompt-editor .nav-item")).toHaveCount(before + 1);
 
   await expect(dialog.getByRole("button", { name: "保存" })).toBeVisible();
 
   // 新增块后输入含 {{name}} 的内容，验证变量自动识别与预览
-  const textarea = dialog.locator(".block-editor textarea").last();
+  const textarea = dialog.locator(".prompt-editor__textarea textarea");
   await textarea.fill("你好，{{name}}");
 
-  // 右侧「变量」面板自动出现 name 标签
-  const variablesCard = dialog.locator(".col-card").filter({ hasText: "变量" });
-  await expect(variablesCard.getByText("name", { exact: true })).toBeVisible();
+  // 右侧「变量」页签（默认激活）自动出现 name 标签
+  const aside = dialog.locator(".prompt-editor__aside");
+  await expect(aside.locator(".var-row .el-tag", { hasText: "name" }).first()).toBeVisible();
 
-  // 预览区保留未赋值的占位符原文
-  const previewCard = dialog.locator(".col-card").filter({ hasText: "预览" });
-  const preview = previewCard.locator("pre");
+  // 切「预览」页签：未赋值时保留占位符原文
+  await aside.getByRole("tab", { name: "预览" }).click();
+  const preview = aside.locator(".preview");
   await expect(preview).toContainText("你好，{{name}}");
 
-  // 填写示例值后预览区完成变量替换
-  await variablesCard.locator(".var-row input").first().fill("小明");
+  // 切回「变量」填写示例值，再看预览完成变量替换
+  await aside.getByRole("tab", { name: "变量" }).click();
+  await aside.locator(".var-row input").first().fill("小明");
+  await aside.getByRole("tab", { name: "预览" }).click();
   await expect(preview).toContainText("你好，小明");
 });
