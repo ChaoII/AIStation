@@ -123,6 +123,33 @@ async def vector_search(
             log.warning(f"[RAG] 查询向量化失败，向量召回跳过：{e}")
             return []
 
+    # agno 原生主路径（生产）：agno PgVector 近邻（ai_kb_vectors + HNSW）。
+    # 成功即返回；返回 None（非 PG / agno 不可用 / 失败）时走旧实现回退。
+    from . import agno_engine
+
+    agno_hits = await agno_engine.search_chunks(query, kb_ids, top_n)
+    if agno_hits is not None:
+        items: list[dict] = []
+        for h in agno_hits:
+            meta = h.get("meta_data") or {}
+            score = h.get("score")
+            if score is not None and float(score) < float(min_score):
+                continue
+            items.append(
+                {
+                    "chunk_id": int(h["chunk_id"]),
+                    "knowledge_base_id": int(meta.get("kb_id") or 0),
+                    "file_name": meta.get("file_name") or "",
+                    "document_id": meta.get("document_id"),
+                    "start_line": meta.get("start_line"),
+                    "page": meta.get("page"),
+                    "content": h.get("content") or "",
+                    "score": round(float(score or 0.0), 4),
+                    "engine": "agno-pgvector",
+                }
+            )
+        return apply_filters(items, filters)
+
     if _is_postgres():
         try:
             async with async_db_session.begin() as db:

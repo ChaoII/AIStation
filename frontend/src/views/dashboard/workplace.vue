@@ -339,6 +339,7 @@
               />
               <div v-else class="workplace-logs-scroll">
                 <el-table
+                  border
                   :data="displayedLogs"
                   class="workplace-logs-table"
                   size="small"

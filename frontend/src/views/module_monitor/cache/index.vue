@@ -219,6 +219,7 @@
                   </div>
                 </template>
                 <el-table
+                  stripe
                   :loading="subLoading"
                   :data="cacheKeys.map((key) => ({ cacheKey: key }))"
                   height="100%"

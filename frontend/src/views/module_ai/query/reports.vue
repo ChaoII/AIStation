@@ -35,7 +35,7 @@
         class="r-tip"
       />
 
-      <el-table v-loading="loading" :data="rows" size="small" border>
+      <el-table v-loading="loading" :data="rows" size="small" border stripe>
         <el-table-column type="index" label="#" width="52" />
         <el-table-column prop="name" label="报表名" min-width="170" show-overflow-tooltip />
         <el-table-column prop="key" label="标识" width="120" show-overflow-tooltip />
@@ -57,12 +57,23 @@
         </el-table-column>
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openRun(row)">运行</el-button>
-            <el-button link size="small" @click="openParams(row)">参数</el-button>
-            <el-button v-if="!row.verified" link type="success" size="small" @click="verify(row)">
+            <el-button icon="VideoPlay" link type="primary" size="small" @click="openRun(row)">
+              运行
+            </el-button>
+            <el-button icon="Setting" link size="small" @click="openParams(row)">参数</el-button>
+            <el-button
+              v-if="!row.verified"
+              icon="Check"
+              link
+              type="success"
+              size="small"
+              @click="verify(row)"
+            >
               确认
             </el-button>
-            <el-button link type="danger" size="small" @click="remove(row)">删除</el-button>
+            <el-button icon="delete" link type="danger" size="small" @click="remove(row)">
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -72,7 +83,7 @@
     <el-dialog
       v-model="runVisible"
       :title="`运行报表：${cur?.name || ''}`"
-      width="720px"
+      width="900px"
       append-to-body
     >
       <el-alert
@@ -129,6 +140,7 @@
         border
         max-height="360"
         class="r-result"
+        stripe
       >
         <el-table-column
           v-for="c in result.columns"
@@ -147,7 +159,7 @@
     <el-dialog
       v-model="paramVisible"
       :title="`参数定义：${cur?.name || ''}`"
-      width="720px"
+      width="900px"
       append-to-body
     >
       <el-alert
@@ -157,7 +169,7 @@
         title="参数来自 SQL 模板里的 {占位符}（保存时自动抽取）。这里可改中文名/类型/必填/默认值，运行时会按此校验。"
         class="r-tip"
       />
-      <el-table :data="paramDefs" size="small" border>
+      <el-table :data="paramDefs" size="small" border stripe>
         <el-table-column label="占位符 key" width="150">
           <template #default="{ row }">
             <el-input v-model="row.key" size="small" placeholder="如 start_date" />
@@ -189,13 +201,19 @@
         </el-table-column>
         <el-table-column label="操作" width="70" align="center">
           <template #default="{ $index }">
-            <el-button link type="danger" size="small" @click="paramDefs.splice($index, 1)">
+            <el-button
+              icon="delete"
+              link
+              type="danger"
+              size="small"
+              @click="paramDefs.splice($index, 1)"
+            >
               移除
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-button link type="primary" size="small" class="r-addparam" @click="addParam">
+      <el-button icon="Plus" link type="primary" size="small" class="r-addparam" @click="addParam">
         + 添加参数
       </el-button>
       <template #footer>

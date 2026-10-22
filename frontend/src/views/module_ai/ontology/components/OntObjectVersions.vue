@@ -36,7 +36,7 @@
       class="ont-obj__note"
       title="版本在「保存」待保存改动时生成。恢复历史版本会把该对象类型的属性/关系/动作/函数定义覆盖为指定版本，改动先进入待保存列表，点「保存」后才生效。"
     />
-    <el-table :data="list" size="small" border max-height="460" class="ont-ver__table">
+    <el-table :data="list" size="small" border max-height="460" class="ont-ver__table" stripe>
       <template #empty><el-empty :image-size="50" description="暂无版本记录" /></template>
       <el-table-column label="版本" width="90" align="center">
         <template #default="{ row }">
@@ -52,9 +52,12 @@
       </el-table-column>
       <el-table-column label="操作" width="180" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="showDiff(row)">对比</el-button>
+          <el-button icon="Switch" link type="primary" size="small" @click="showDiff(row)">
+            对比
+          </el-button>
           <el-button
             v-hasPerm="'module_ai:ontology:edit'"
+            icon="RefreshLeft"
             link
             type="primary"
             size="small"
@@ -65,6 +68,7 @@
           </el-button>
           <el-button
             v-hasPerm="'module_ai:ontology:manage'"
+            icon="RefreshLeft"
             link
             type="danger"
             size="small"
@@ -81,7 +85,7 @@
     <el-dialog
       v-model="diffVisible"
       :title="`版本对比 v${diffVersion}`"
-      width="640px"
+      width="600px"
       append-to-body
     >
       <el-alert v-if="diffLoading" type="info" :closable="false" show-icon title="正在计算差异……" />
@@ -91,7 +95,7 @@
           :image-size="50"
           description="该版本与当前定义没有差异"
         />
-        <el-table v-else :data="diffItems" size="small" border max-height="360">
+        <el-table v-else :data="diffItems" size="small" border max-height="360" stripe>
           <el-table-column prop="kind" label="类型" width="90" />
           <el-table-column prop="target" label="对象" min-width="140" show-overflow-tooltip />
           <el-table-column prop="detail" label="变化" min-width="240" show-overflow-tooltip />

@@ -81,6 +81,7 @@
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="['module_ai:prompt:query']"
+                  icon="View"
                   size="small"
                   link
                   type="primary"
@@ -90,6 +91,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:prompt:update']"
+                  icon="edit"
                   size="small"
                   link
                   type="primary"
@@ -99,6 +101,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:prompt:create']"
+                  icon="CopyDocument"
                   size="small"
                   link
                   @click="doCopy(row)"
@@ -107,6 +110,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:prompt:delete']"
+                  icon="delete"
                   size="small"
                   link
                   type="danger"

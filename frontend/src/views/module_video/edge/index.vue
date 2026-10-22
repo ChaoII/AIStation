@@ -84,11 +84,18 @@
               min-width="160"
             >
               <template #default="scope">
-                <el-button type="primary" size="small" link @click="handleViewDetail(scope.row)">
+                <el-button
+                  icon="View"
+                  type="primary"
+                  size="small"
+                  link
+                  @click="handleViewDetail(scope.row)"
+                >
                   详情
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:edge:update']"
+                  icon="edit"
                   type="primary"
                   size="small"
                   link
@@ -98,6 +105,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:edge:delete']"
+                  icon="delete"
                   type="danger"
                   size="small"
                   link

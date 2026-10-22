@@ -526,7 +526,13 @@
         </el-table-column>
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <el-button type="primary" size="small" link @click="playRecordFile(row)">
+            <el-button
+              icon="VideoPlay"
+              type="primary"
+              size="small"
+              link
+              @click="playRecordFile(row)"
+            >
               播放
             </el-button>
           </template>

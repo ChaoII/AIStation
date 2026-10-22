@@ -16,7 +16,7 @@
         <el-button :icon="Refresh" @click="loadList">刷新</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="list" empty-text="暂无扩容申请">
+      <el-table v-loading="loading" :data="list" empty-text="暂无扩容申请" border stripe>
         <el-table-column label="申请人" width="120">
           <template #default="{ row }">{{ row.username || row.user_id }}</template>
         </el-table-column>
@@ -43,6 +43,7 @@
           <template #default="{ row }">
             <template v-if="row.status === 'pending'">
               <el-button
+                icon="Check"
                 size="small"
                 link
                 type="primary"
@@ -51,6 +52,7 @@
                 通过
               </el-button>
               <el-button
+                icon="Close"
                 size="small"
                 link
                 type="danger"
@@ -242,5 +244,28 @@ onMounted(loadList);
 .quota-unit {
   margin-left: 8px;
   color: var(--el-text-color-secondary);
+}
+</style>
+
+<!-- 布局统一（非 scoped + 唯一类名）：白色面板撑满可视区（行少时也不露灰底） -->
+<style lang="scss">
+.app-container.ai-space-quota-page {
+  box-sizing: border-box;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ai-space-quota-page > .el-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ai-space-quota-page > .el-card > .el-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 </style>

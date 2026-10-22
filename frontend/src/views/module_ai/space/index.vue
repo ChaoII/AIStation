@@ -56,11 +56,16 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="addchild">新建文件夹</el-dropdown-item>
                   <el-dropdown-item command="upload">上传文件到此</el-dropdown-item>
-                  <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                  <el-dropdown-item command="delete" style="color: var(--el-color-danger)" divided>
+                  <el-dropdown-item icon="EditPen" command="rename">重命名</el-dropdown-item>
+                  <el-dropdown-item
+                    icon="delete"
+                    command="delete"
+                    style="color: var(--el-color-danger)"
+                    divided
+                  >
                     删除
                   </el-dropdown-item>
-                  <el-dropdown-item command="refresh">刷新</el-dropdown-item>
+                  <el-dropdown-item icon="refresh" command="refresh">刷新</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -73,7 +78,9 @@
         <div class="space-toolbar">
           <el-breadcrumb separator="/">
             <el-breadcrumb-item>
-              <el-button link type="primary" @click="onFolderClick(null)">全部文件</el-button>
+              <el-button icon="Folder" link type="primary" @click="onFolderClick(null)">
+                全部文件
+              </el-button>
             </el-breadcrumb-item>
             <el-breadcrumb-item v-for="f in breadcrumb" :key="f.id">
               <el-button link type="primary" @click="onFolderClick(f.id)">{{ f.name }}</el-button>
@@ -92,6 +99,7 @@
               <span class="space-quota-text">{{ quotaText }}</span>
               <el-button
                 v-hasPerm="'module_ai:space:query'"
+                icon="Plus"
                 link
                 type="primary"
                 @click="openQuotaDialog"
@@ -219,11 +227,18 @@
               <template #default="{ row }">
                 <!-- 文件夹操作：打开 / 重命名 / 删除 -->
                 <template v-if="row.kind === 'folder'">
-                  <el-button size="small" link type="primary" @click="onFolderClick(row.id)">
+                  <el-button
+                    icon="VideoPlay"
+                    size="small"
+                    link
+                    type="primary"
+                    @click="onFolderClick(row.id)"
+                  >
                     打开
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:manage'"
+                    icon="EditPen"
                     size="small"
                     link
                     type="primary"
@@ -233,6 +248,7 @@
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:manage'"
+                    icon="delete"
                     size="small"
                     link
                     type="danger"
@@ -243,11 +259,12 @@
                 </template>
                 <!-- 文件操作：预览 / 下载 / 重命名 / 移动 / 删除 -->
                 <template v-else>
-                  <el-button size="small" link type="primary" @click="openPreview(row)">
+                  <el-button icon="View" size="small" link type="primary" @click="openPreview(row)">
                     预览
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:download'"
+                    icon="Download"
                     size="small"
                     link
                     type="primary"
@@ -257,6 +274,7 @@
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:manage'"
+                    icon="EditPen"
                     size="small"
                     link
                     type="primary"
@@ -266,6 +284,7 @@
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:manage'"
+                    icon="Rank"
                     size="small"
                     link
                     type="primary"
@@ -275,6 +294,7 @@
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:delete'"
+                    icon="delete"
                     size="small"
                     link
                     type="danger"
@@ -313,7 +333,7 @@
     </div>
 
     <!-- 新建/重命名文件夹 -->
-    <el-dialog v-model="folderDialogVisible" :title="folderDialogTitle" width="420px">
+    <el-dialog v-model="folderDialogVisible" :title="folderDialogTitle" width="520px">
       <el-form label-width="80px" @submit.prevent>
         <el-form-item label="名称">
           <el-input v-model="folderName" placeholder="请输入文件夹名称" maxlength="255" />
@@ -326,7 +346,7 @@
     </el-dialog>
 
     <!-- 重命名文件 -->
-    <el-dialog v-model="renameVisible" title="重命名文件" width="420px">
+    <el-dialog v-model="renameVisible" title="重命名文件" width="520px">
       <el-form label-width="80px" @submit.prevent>
         <el-form-item label="文件名">
           <el-input v-model="renameName" placeholder="请输入文件名（含扩展名）" maxlength="255" />
@@ -339,7 +359,7 @@
     </el-dialog>
 
     <!-- 移动文件 -->
-    <el-dialog v-model="moveVisible" title="移动到文件夹" width="420px">
+    <el-dialog v-model="moveVisible" title="移动到文件夹" width="520px">
       <el-tree
         :data="treeData"
         node-key="id"
@@ -357,7 +377,7 @@
     </el-dialog>
 
     <!-- 文件预览 -->
-    <el-dialog v-model="previewVisible" :title="previewName" width="860px" append-to-body>
+    <el-dialog v-model="previewVisible" :title="previewName" width="900px" append-to-body>
       <div v-loading="previewLoading" class="space-preview">
         <img
           v-if="previewKind === 'image' && previewImageUrl"
@@ -388,6 +408,7 @@
               border
               max-height="48vh"
               class="space-preview-xlsx"
+              stripe
             >
               <el-table-column
                 v-for="col in s.columns"
@@ -409,7 +430,7 @@
     </el-dialog>
 
     <!-- 申请扩容 -->
-    <el-dialog v-model="quotaDialogVisible" title="申请扩容" width="560px">
+    <el-dialog v-model="quotaDialogVisible" title="申请扩容" width="600px">
       <div class="quota-current">
         <span>当前配额：{{ formatQuotaSize(quotaTotal) }}</span>
         <span>已用：{{ formatQuotaSize(quotaUsed) }}</span>
@@ -449,6 +470,8 @@
           :data="quotaMine"
           size="small"
           empty-text="暂无申请记录"
+          border
+          stripe
         >
           <el-table-column label="目标配额" width="110">
             <template #default="{ row }">

@@ -99,7 +99,7 @@
         class="ont-note"
         title="只在读时生效：过滤用户能读到哪些对象实例，不影响底层数据，也不会传播到下游导出。未配置任何启用的允许策略时全部可见。"
       />
-      <el-table :data="rowPolicies" size="small" border>
+      <el-table :data="rowPolicies" size="small" border stripe>
         <template #empty>
           <el-empty :image-size="50" description="未配置行级策略（全部可见）" />
         </template>
@@ -143,9 +143,12 @@
         </el-table-column>
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openPolicy(row)">编辑</el-button>
+            <el-button icon="edit" link type="primary" size="small" @click="openPolicy(row)">
+              编辑
+            </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:manage'"
+              icon="delete"
               link
               type="danger"
               size="small"
@@ -173,7 +176,7 @@
           {{ overview?.column_restricted?.length || 0 }} / {{ overview?.column_total || 0 }} 受限
         </el-tag>
       </div>
-      <el-table :data="propList" size="small" border max-height="420">
+      <el-table :data="propList" size="small" border max-height="420" stripe>
         <template #empty><el-empty :image-size="50" description="暂无属性" /></template>
         <el-table-column prop="name" label="属性" min-width="150" show-overflow-tooltip />
         <el-table-column prop="code" label="属性 ID" min-width="130" show-overflow-tooltip />
@@ -267,7 +270,7 @@
     </el-card>
 
     <!-- 策略编辑 -->
-    <el-dialog v-model="policyDialog" title="行级安全策略" width="760px" append-to-body>
+    <el-dialog v-model="policyDialog" title="行级安全策略" width="900px" append-to-body>
       <el-form label-width="110px">
         <el-form-item label="策略名">
           <el-input v-model="policyForm.name" placeholder="如 只看本部门设备" />

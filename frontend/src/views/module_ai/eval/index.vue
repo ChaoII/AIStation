@@ -54,6 +54,35 @@ function onSelect(id: string) {
 }
 </script>
 
+<style lang="scss">
+/* 布局统一：页面撑满 + el-tabs 内部高度链（tab 内容区自己滚），
+   避免「白色区域没有填满、下面留一截」。非 scoped + 唯一类名。 */
+.app-container.ai-eval-page {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ai-eval-page > .el-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ai-eval-page > .el-tabs > .el-tabs__header {
+  flex: 0 0 auto;
+}
+
+.ai-eval-page > .el-tabs > .el-tabs__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+</style>
+
 <style scoped>
 .ai-eval-page :deep(.el-tabs__content) {
   padding: 0;

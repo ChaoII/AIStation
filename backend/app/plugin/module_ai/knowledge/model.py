@@ -10,6 +10,27 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.base_model import ModelMixin, UserMixin
 
 
+class AiKnowledgeCategoryModel(ModelMixin, UserMixin):
+    """知识库分类：树形分组（父级 + 同级排序 + 负责人），供知识库左侧分类树使用。"""
+
+    __tablename__ = "ai_knowledge_categories"
+    __table_args__ = ({"comment": "AI 知识库分类表"},)
+
+    name: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, comment="分类名称"
+    )
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="父分类 ID"
+    )
+    owner: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default=None, comment="负责人"
+    )
+    remark: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="", comment="备注"
+    )
+    sort: Mapped[int] = mapped_column(Integer, default=0, comment="同级排序")
+
+
 class AiKnowledgeBaseModel(ModelMixin, UserMixin):
     """知识库：上传文档→分块→向量化→检索（RAG）。"""
 
@@ -30,6 +51,12 @@ class AiKnowledgeBaseModel(ModelMixin, UserMixin):
     )
     file_type: Mapped[str | None] = mapped_column(
         String(32), nullable=True, default="text", comment="内容类型"
+    )
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ai_knowledge_categories.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        comment="知识库分类 ID",
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
 

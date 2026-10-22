@@ -9,6 +9,7 @@ class AiKnowledgeBaseCreateSchema(BaseModel):
     description: str | None = Field(default=None, max_length=1000)
     model_id: int | None = None
     file_type: str | None = Field(default="text", max_length=32)
+    category_id: int | None = None
     enabled: bool = True
 
 
@@ -17,7 +18,26 @@ class AiKnowledgeBaseUpdateSchema(BaseModel):
     description: str | None = Field(default=None, max_length=1000)
     model_id: int | None = None
     file_type: str | None = Field(default=None, max_length=32)
+    category_id: int | None = None
     enabled: bool | None = None
+
+
+class AiKnowledgeCategoryCreateSchema(BaseModel):
+    """知识库分类（左侧分类树）"""
+
+    name: str = Field(..., max_length=64)
+    parent_id: int | None = None
+    owner: str | None = Field(default=None, max_length=64)
+    remark: str | None = Field(default=None, max_length=500)
+    sort: int = 0
+
+
+class AiKnowledgeCategoryUpdateSchema(BaseModel):
+    name: str | None = Field(default=None, max_length=64)
+    parent_id: int | None = None
+    owner: str | None = Field(default=None, max_length=64)
+    remark: str | None = Field(default=None, max_length=500)
+    sort: int | None = None
 
 
 class AiKnowledgeIngestSchema(BaseModel):

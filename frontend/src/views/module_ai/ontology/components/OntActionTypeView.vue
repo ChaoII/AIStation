@@ -167,7 +167,7 @@
         class="ont-note"
         title="未配置规则：当前走兼容路径（按「写回目标表 + 可写字段白名单」执行 update）。配好规则后，写哪些列由规则决定。"
       />
-      <el-table v-else :data="realRules" size="small" border>
+      <el-table v-else :data="realRules" size="small" border stripe>
         <el-table-column label="规则" width="150">
           <template #default="{ row }">
             <el-tag size="small" effect="plain">{{ ruleLabel(row.type) }}</el-tag>
@@ -188,7 +188,7 @@
         <el-tag size="small" type="info" effect="plain">{{ realEffects.length }}</el-tag>
         <span class="ont-hint">通知写站内信；Webhook 发 HTTP 请求（可设 before/after）</span>
       </div>
-      <el-table :data="realEffects" size="small" border>
+      <el-table :data="realEffects" size="small" border stripe>
         <template #empty>
           <el-empty :image-size="50" description="未配置副作用" />
         </template>
@@ -227,7 +227,7 @@
         <span class="ont-sec__title">参数</span>
         <el-tag size="small" type="info" effect="plain">{{ fields.length }}</el-tag>
       </div>
-      <el-table :data="fields" size="small" border>
+      <el-table :data="fields" size="small" border stripe>
         <template #empty><el-empty :image-size="50" description="无参数" /></template>
         <el-table-column prop="key" label="参数 ID" min-width="140" />
         <el-table-column prop="label" label="显示名" min-width="140" />
@@ -304,7 +304,7 @@
     </section>
 
     <!-- 提交条件编辑 -->
-    <el-dialog v-model="critDialog" title="编辑提交条件（JSON）" width="720px" append-to-body>
+    <el-dialog v-model="critDialog" title="编辑提交条件（JSON）" width="900px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
@@ -326,7 +326,7 @@
     </el-dialog>
 
     <!-- 副作用编辑 -->
-    <el-dialog v-model="fxDialog" title="编辑副作用（JSON）" width="720px" append-to-body>
+    <el-dialog v-model="fxDialog" title="编辑副作用（JSON）" width="900px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
@@ -348,7 +348,7 @@
     </el-dialog>
 
     <!-- 试运行 -->
-    <el-dialog v-model="testDialog" title="试运行（不会写入任何数据）" width="720px" append-to-body>
+    <el-dialog v-model="testDialog" title="试运行（不会写入任何数据）" width="900px" append-to-body>
       <el-form label-width="110px" size="small">
         <el-form-item label="对象行 ID">
           <el-input v-model="testForm.object_key" placeholder="目标行主键" style="width: 200px" />
@@ -426,7 +426,7 @@
     </el-dialog>
 
     <!-- 规则编辑 -->
-    <el-dialog v-model="rulesDialog" title="编辑规则（JSON）" width="720px" append-to-body>
+    <el-dialog v-model="rulesDialog" title="编辑规则（JSON）" width="900px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
@@ -448,7 +448,7 @@
     </el-dialog>
 
     <!-- 执行对话框 -->
-    <el-dialog v-model="execDialog" title="执行本体动作" width="560px" append-to-body>
+    <el-dialog v-model="execDialog" title="执行本体动作" width="600px" append-to-body>
       <el-alert
         v-if="act.approval"
         type="warning"

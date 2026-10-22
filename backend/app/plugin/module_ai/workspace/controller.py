@@ -1,7 +1,7 @@
 """AI 工作台控制器：分类树 CRUD + 聚合条目。"""
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, BackgroundTasks, Body, Depends
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -72,7 +72,7 @@ async def workspace_items(
 
 @WorkspaceRouter.get("/cron/list", summary="定时任务列表")
 async def cron_list(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workspace:query"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:cron:query"]))],
     category_id: int | None = None,
     target_type: str | None = None,
 ) -> JSONResponse:
@@ -101,7 +101,7 @@ async def trigger_preview(
 @WorkspaceRouter.post("/cron/create", summary="新建定时任务")
 async def cron_create(
     data: WorkspaceCronCreateSchema,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workspace:create"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:cron:create"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await WorkspaceService.create_cron(data, auth), msg="创建成功")
 
@@ -110,7 +110,7 @@ async def cron_create(
 async def cron_update(
     cron_id: int,
     data: WorkspaceCronUpdateSchema,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workspace:update"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:cron:update"]))],
 ) -> JSONResponse:
     result = await WorkspaceService.update_cron(cron_id, data, auth)
     if not result:
@@ -121,7 +121,24 @@ async def cron_update(
 @WorkspaceRouter.delete("/cron/delete", summary="删除定时任务")
 async def cron_delete(
     cron_id: Annotated[int, Body(description="定时任务ID")],
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workspace:delete"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:cron:delete"]))],
 ) -> JSONResponse:
     await WorkspaceService.delete_cron(cron_id, auth)
     return SuccessResponse(msg="删除成功")
+
+
+@WorkspaceRouter.post("/cron/{cron_id}/run", summary="立即执行一次")
+async def cron_run(
+    cron_id: int,
+    background_tasks: BackgroundTasks,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:cron:run"]))],
+) -> JSONResponse:
+    """手动触发一次既有任务：执行走与调度器完全相同的 `run_scheduled_workspace_cron`。
+
+    目标（agent/workflow/app）执行可能耗时，故放后台任务执行、接口只负责入队，
+    避免长运行占住 HTTP 请求直到超时。
+    """
+    ok = await WorkspaceService.trigger_cron(cron_id, background_tasks)
+    if not ok:
+        return ErrorResponse(msg="定时任务不存在")
+    return SuccessResponse(msg="已触发执行")

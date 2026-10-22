@@ -30,17 +30,22 @@
                 </div>
               </div>
               <div class="ig-ds-item__ops" @click.stop>
-                <el-button link type="primary" size="small" @click="testDs(d)">测试</el-button>
-                <el-button link type="primary" size="small" @click="openDs(d)">编辑</el-button>
-                <el-button
-                  v-hasPerm="['module_ai:query:ask']"
-                  link
-                  type="danger"
-                  size="small"
-                  @click="removeDs(d)"
-                >
-                  删除
-                </el-button>
+                <el-tooltip content="测试连接" placement="left">
+                  <el-button link type="primary" size="small" :icon="Refresh" @click="testDs(d)" />
+                </el-tooltip>
+                <el-tooltip content="编辑" placement="left">
+                  <el-button link type="primary" size="small" :icon="EditPen" @click="openDs(d)" />
+                </el-tooltip>
+                <el-tooltip content="删除" placement="left">
+                  <el-button
+                    v-hasPerm="['module_ai:query:ask']"
+                    link
+                    type="danger"
+                    size="small"
+                    :icon="Delete"
+                    @click="removeDs(d)"
+                  />
+                </el-tooltip>
               </div>
             </div>
             <el-empty
@@ -123,7 +128,14 @@
                     批量导入
                   </el-button>
                 </div>
-                <el-table :data="filteredTables" size="small" border height="100%" row-key="table">
+                <el-table
+                  :data="filteredTables"
+                  size="small"
+                  border
+                  height="100%"
+                  row-key="table"
+                  stripe
+                >
                   <template #empty>
                     <el-empty :description="tableEmptyText" :image-size="50" />
                   </template>
@@ -173,13 +185,19 @@
                   </el-table-column>
                   <el-table-column label="操作" width="224" align="center" fixed="right">
                     <template #default="{ row }">
-                      <el-button link type="primary" size="small" @click="openFieldDrawer(row)">
+                      <el-button
+                        icon="Grid"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="openFieldDrawer(row)"
+                      >
                         字段
                       </el-button>
                       <el-button link type="primary" size="small" @click="openVersions(row)">
                         版本
                       </el-button>
-                      <el-button link type="primary" size="small" @click="addFav(row)">
+                      <el-button icon="Star" link type="primary" size="small" @click="addFav(row)">
                         收藏
                       </el-button>
                       <!-- 「分享」入口暂时下线：后端 share/create 会生成 /web#/ai/query?share=<token>，
@@ -290,7 +308,7 @@
                     </el-tag>
                   </div>
                   <div class="ig-fields-wrap">
-                    <el-table :data="filteredColumns" size="small" border height="100%">
+                    <el-table :data="filteredColumns" size="small" border height="100%" stripe>
                       <template #empty>
                         <el-empty description="该表暂无字段信息，请先同步表结构" :image-size="50" />
                       </template>
@@ -356,7 +374,13 @@
                       </el-table-column>
                       <el-table-column label="操作" width="96" align="center" fixed="right">
                         <template #default="{ row }">
-                          <el-button link type="primary" size="small" @click="openColEdit(row)">
+                          <el-button
+                            icon="EditPen"
+                            link
+                            type="primary"
+                            size="small"
+                            @click="openColEdit(row)"
+                          >
                             编辑属性
                           </el-button>
                         </template>
@@ -378,7 +402,7 @@
                   源表 → 目标对象，运行后落到管道物化表
                 </el-tag>
               </div>
-              <el-table :data="pipelines" size="small" border height="100%">
+              <el-table :data="pipelines" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty description="暂无管道" :image-size="60" />
                 </template>
@@ -390,13 +414,25 @@
                 </el-table-column>
                 <el-table-column label="操作" width="180" align="center">
                   <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="runPipe(row)">
+                    <el-button
+                      icon="VideoPlay"
+                      link
+                      type="primary"
+                      size="small"
+                      @click="runPipe(row)"
+                    >
                       运行
                     </el-button>
-                    <el-button link type="primary" size="small" @click="openPipe(row)">
+                    <el-button icon="edit" link type="primary" size="small" @click="openPipe(row)">
                       编辑
                     </el-button>
-                    <el-button link type="primary" size="small" @click="viewPipeData(row)">
+                    <el-button
+                      icon="DataLine"
+                      link
+                      type="primary"
+                      size="small"
+                      @click="viewPipeData(row)"
+                    >
                       数据
                     </el-button>
                   </template>
@@ -417,7 +453,7 @@
                   AI 推荐指标/术语
                 </el-button>
               </div>
-              <el-table :data="metrics" size="small" border height="100%">
+              <el-table :data="metrics" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty description="暂无指标" :image-size="60" />
                 </template>
@@ -431,10 +467,22 @@
                 />
                 <el-table-column label="操作" width="110" align="center">
                   <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="openMetric(row)">
+                    <el-button
+                      icon="edit"
+                      link
+                      type="primary"
+                      size="small"
+                      @click="openMetric(row)"
+                    >
                       编辑
                     </el-button>
-                    <el-button link type="danger" size="small" @click="removeMetric(row)">
+                    <el-button
+                      icon="delete"
+                      link
+                      type="danger"
+                      size="small"
+                      @click="removeMetric(row)"
+                    >
                       删除
                     </el-button>
                   </template>
@@ -459,7 +507,7 @@
                 style="margin-bottom: 10px"
                 title="分工：术语 = 业务黑话 → 指标/字段的映射（优先级最高，命中即走快路径）；对象别名请到 本体 维护；概念同义词请在「业务概念」维护，不要在此重复录入。"
               />
-              <el-table :data="terms" size="small" border height="100%">
+              <el-table :data="terms" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty description="暂无术语" :image-size="60" />
                 </template>
@@ -478,10 +526,16 @@
                 />
                 <el-table-column label="操作" width="110" align="center">
                   <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="openTerm(row)">
+                    <el-button icon="edit" link type="primary" size="small" @click="openTerm(row)">
                       编辑
                     </el-button>
-                    <el-button link type="danger" size="small" @click="removeTerm(row)">
+                    <el-button
+                      icon="delete"
+                      link
+                      type="danger"
+                      size="small"
+                      @click="removeTerm(row)"
+                    >
                       删除
                     </el-button>
                   </template>
@@ -506,7 +560,7 @@
                 style="margin-bottom: 10px"
                 title="分工：概念 = 有层级的业务概念 + 同义词；「关联指标」会参与快路径匹配。对象别名在本体维护（此处只读合并），黑话映射请用「术语」。"
               />
-              <el-table :data="concepts" size="small" border height="100%">
+              <el-table :data="concepts" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty description="暂无概念" :image-size="60" />
                 </template>
@@ -526,10 +580,22 @@
                 </el-table-column>
                 <el-table-column label="操作" width="110" align="center">
                   <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="openConcept(row)">
+                    <el-button
+                      icon="edit"
+                      link
+                      type="primary"
+                      size="small"
+                      @click="openConcept(row)"
+                    >
                       编辑
                     </el-button>
-                    <el-button link type="danger" size="small" @click="removeConcept(row)">
+                    <el-button
+                      icon="delete"
+                      link
+                      type="danger"
+                      size="small"
+                      @click="removeConcept(row)"
+                    >
                       删除
                     </el-button>
                   </template>
@@ -547,7 +613,7 @@
                   NL2SQL 少样本示例：教模型这类问题怎么写 SQL（不是指标）
                 </el-tag>
               </div>
-              <el-table :data="fewshots" size="small" border height="100%">
+              <el-table :data="fewshots" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty description="暂无示例" :image-size="60" />
                 </template>
@@ -582,10 +648,22 @@
                 </el-table-column>
                 <el-table-column label="操作" width="110" align="center">
                   <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="openFewshot(row)">
+                    <el-button
+                      icon="edit"
+                      link
+                      type="primary"
+                      size="small"
+                      @click="openFewshot(row)"
+                    >
                       编辑
                     </el-button>
-                    <el-button link type="danger" size="small" @click="removeFewshot(row)">
+                    <el-button
+                      icon="delete"
+                      link
+                      type="danger"
+                      size="small"
+                      @click="removeFewshot(row)"
+                    >
                       删除
                     </el-button>
                   </template>
@@ -709,6 +787,8 @@
                 :data="modelingResult.reasons"
                 size="small"
                 style="margin-top: 8px"
+                border
+                stripe
               >
                 <el-table-column label="失败原因" show-overflow-tooltip>
                   <template #default="{ row }">{{ row }}</template>
@@ -735,7 +815,7 @@
     </el-row>
 
     <!-- 批量维护：粘贴「表名 中文名」一次填一批 -->
-    <el-dialog v-model="batchDlg" title="批量维护表信息" width="680px">
+    <el-dialog v-model="batchDlg" title="批量维护表信息" width="600px">
       <el-alert
         type="info"
         :closable="false"
@@ -755,7 +835,7 @@
           {{ batchUnknown.length }} 条不在当前数据源的表里
         </el-tag>
       </div>
-      <el-table :data="batchRows.slice(0, 8)" size="small" border max-height="220">
+      <el-table :data="batchRows.slice(0, 8)" size="small" border max-height="220" stripe>
         <template #empty>
           <el-empty description="粘贴内容后这里会显示预览" :image-size="50" />
         </template>
@@ -824,7 +904,7 @@
     <el-dialog
       v-model="pipeGraphVisible"
       title="管道编排图（源表 → 管道 → 本体对象）"
-      width="820px"
+      width="900px"
     >
       <GraphCanvas
         v-if="pipeGraphNodes.length"
@@ -838,7 +918,7 @@
     </el-dialog>
 
     <!-- AI 推荐指标/术语 -->
-    <el-dialog v-model="suggestVisible" title="AI 推荐指标 / 术语" width="720px">
+    <el-dialog v-model="suggestVisible" title="AI 推荐指标 / 术语" width="900px">
       <el-alert
         type="info"
         :closable="false"
@@ -847,7 +927,7 @@
         title="由大模型根据已纳入资产的中文词典推荐高频指标与业务术语；逐条「采纳」后写入指标/术语库。"
       />
       <div class="ig-sub">推荐指标（{{ suggestMetrics.length }}）</div>
-      <el-table :data="suggestMetrics" size="small" border max-height="220">
+      <el-table :data="suggestMetrics" size="small" border max-height="220" stripe>
         <template #empty>
           <el-empty description="无推荐" :image-size="40" />
         </template>
@@ -855,12 +935,14 @@
         <el-table-column prop="sql" label="SQL" min-width="260" show-overflow-tooltip />
         <el-table-column label="操作" width="80" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="adoptMetric(row)">采纳</el-button>
+            <el-button icon="Check" link type="primary" size="small" @click="adoptMetric(row)">
+              采纳
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
       <div class="ig-sub">推荐术语（{{ suggestTerms.length }}）</div>
-      <el-table :data="suggestTerms" size="small" border max-height="220">
+      <el-table :data="suggestTerms" size="small" border max-height="220" stripe>
         <template #empty>
           <el-empty description="无推荐" :image-size="40" />
         </template>
@@ -869,15 +951,17 @@
         <el-table-column prop="target" label="指向" min-width="160" show-overflow-tooltip />
         <el-table-column label="操作" width="80" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="adoptTerm(row)">采纳</el-button>
+            <el-button icon="Check" link type="primary" size="small" @click="adoptTerm(row)">
+              采纳
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-dialog>
 
     <!-- 查看管道落库数据 -->
-    <el-dialog v-model="pipeDataDlg" :title="`管道数据：${pipeDataName}`" width="720px">
-      <el-table :data="pipeDataRows" size="small" border max-height="420">
+    <el-dialog v-model="pipeDataDlg" :title="`管道数据：${pipeDataName}`" width="900px">
+      <el-table :data="pipeDataRows" size="small" border max-height="420" stripe>
         <template #empty>
           <el-empty description="暂无数据，请先运行管道" :image-size="60" />
         </template>
@@ -933,7 +1017,7 @@
     </el-dialog>
 
     <!-- 新建/编辑示例工程 -->
-    <el-dialog v-model="fewshotDlg" :title="fewshotForm.id ? '编辑示例' : '新建示例'" width="620px">
+    <el-dialog v-model="fewshotDlg" :title="fewshotForm.id ? '编辑示例' : '新建示例'" width="600px">
       <el-form :model="fewshotForm" label-width="90px" size="small">
         <el-form-item label="数据源">
           <el-select v-model="fewshotForm.datasource" style="width: 100%">
@@ -1005,7 +1089,7 @@
     </el-dialog>
 
     <!-- 新建/编辑概念 -->
-    <el-dialog v-model="conceptDlg" :title="conceptForm.id ? '编辑概念' : '新建概念'" width="560px">
+    <el-dialog v-model="conceptDlg" :title="conceptForm.id ? '编辑概念' : '新建概念'" width="600px">
       <el-form :model="conceptForm" label-width="100px" size="small">
         <el-form-item label="概念名称">
           <el-input
@@ -1247,6 +1331,7 @@ import {
   Search,
   DataBoard,
   EditPen,
+  Delete,
   Coin,
   MagicStick,
 } from "@element-plus/icons-vue";
@@ -2625,9 +2710,11 @@ async function handleInferRelations() {
 }
 .ig-ds-item__ops {
   display: flex;
-  /* 悬浮或选中时显示操作，避免挤占名称空间 */
   visibility: hidden;
   flex-shrink: 0;
+  /* 窄左栏（240px）：操作改成竖排图标列，悬浮/选中才显示，避免挤占名称空间 */
+  flex-direction: column;
+  gap: 0;
   align-items: center;
 }
 .ig-ds-item:hover .ig-ds-item__ops,
@@ -2646,9 +2733,9 @@ async function handleInferRelations() {
 }
 .ig-kg-filter {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
   padding: 8px 0;
   margin-bottom: 6px;
 }
@@ -2657,8 +2744,31 @@ async function handleInferRelations() {
   color: var(--el-text-color-secondary);
 }
 .ig-kg-filter__hint {
+  margin-left: auto;
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  margin-left: auto;
+}
+</style>
+
+<!-- 布局统一（非 scoped + 唯一类名）：左栏固定 240px（与工作台/个人空间/问数/本体一致） -->
+<style lang="scss">
+.ai-integration-page > .el-row.ig-fill {
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin: 0 !important;
+}
+
+.ai-integration-page > .el-row.ig-fill > .el-col {
+  padding: 0 !important;
+}
+
+.ai-integration-page > .el-row.ig-fill > .el-col:first-child {
+  flex: 0 0 240px;
+  max-width: 240px;
+}
+
+.ai-integration-page > .el-row.ig-fill > .el-col:last-child {
+  flex: 1 1 auto;
+  max-width: 100%;
 }
 </style>

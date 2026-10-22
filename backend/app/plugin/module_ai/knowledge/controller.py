@@ -15,6 +15,8 @@ from .schema import (
     AiDatasourceUpdateSchema,
     AiKnowledgeBaseCreateSchema,
     AiKnowledgeBaseUpdateSchema,
+    AiKnowledgeCategoryCreateSchema,
+    AiKnowledgeCategoryUpdateSchema,
     AiKnowledgeChunkAnnotateSchema,
     AiKnowledgeEntityBindSchema,
     AiKnowledgeGraphEntitySchema,
@@ -39,8 +41,11 @@ KnowledgeRouter = APIRouter(
 @KnowledgeRouter.get("/bases/list", summary="知识库列表")
 async def list_bases(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+    category_id: int | None = None,
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiKnowledgeService.list_bases(), msg="查询成功")
+    return SuccessResponse(
+        data=await AiKnowledgeService.list_bases(category_id), msg="查询成功"
+    )
 
 
 @KnowledgeRouter.get("/bases/detail/{kb_id}", summary="知识库详情")
@@ -93,6 +98,45 @@ async def copy_kb(
         return SuccessResponse(data=data, msg="复制成功")
     except ValueError as e:
         return ErrorResponse(msg=str(e))
+
+
+# ---------------------------------------------------------------- #
+# 知识库分类（左侧分类树）
+# ---------------------------------------------------------------- #
+@KnowledgeRouter.get("/categories/tree", summary="知识库分类树")
+async def list_categories(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiKnowledgeService.list_category_tree(), msg="查询成功")
+
+
+@KnowledgeRouter.post("/categories/create", summary="新增知识库分类")
+async def create_category(
+    data: AiKnowledgeCategoryCreateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:create"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiKnowledgeService.create_category(data, auth), msg="创建成功")
+
+
+@KnowledgeRouter.put("/categories/update/{cat_id}", summary="编辑知识库分类")
+async def update_category(
+    cat_id: int,
+    data: AiKnowledgeCategoryUpdateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    result = await AiKnowledgeService.update_category(cat_id, data, auth)
+    if not result:
+        return ErrorResponse(msg="分类不存在")
+    return SuccessResponse(data=result, msg="修改成功")
+
+
+@KnowledgeRouter.delete("/categories/delete", summary="删除知识库分类")
+async def delete_categories(
+    ids: Annotated[list[int], Body(description="分类ID列表")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:delete"]))],
+) -> JSONResponse:
+    await AiKnowledgeService.delete_category(ids)
+    return SuccessResponse(msg="删除成功")
 
 
 # ---------------------------------------------------------------- #

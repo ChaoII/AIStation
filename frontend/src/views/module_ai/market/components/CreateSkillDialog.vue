@@ -4,7 +4,7 @@
   <el-dialog
     v-model="visible"
     :title="props.realId ? '编辑技能' : '新建技能'"
-    width="640px"
+    width="600px"
     append-to-body
     destroy-on-close
     @closed="resetForm"

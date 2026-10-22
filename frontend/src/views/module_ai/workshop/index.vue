@@ -51,12 +51,17 @@
                 </el-tag>
               </div>
               <el-dropdown trigger="click" @command="(c: string) => onCardCmd(a, c)">
-                <el-button size="small" circle :icon="MoreFilled" @click.stop />
+                <el-button link :icon="MoreFilled" class="ws-app-card__more" @click.stop />
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="run">打开</el-dropdown-item>
-                    <el-dropdown-item command="edit">编辑</el-dropdown-item>
-                    <el-dropdown-item command="delete" style="color: #f56c6c" divided>
+                    <el-dropdown-item command="run" :icon="VideoPlay">打开</el-dropdown-item>
+                    <el-dropdown-item command="edit" :icon="Edit">编辑</el-dropdown-item>
+                    <el-dropdown-item
+                      command="delete"
+                      :icon="Delete"
+                      divided
+                      style="color: var(--el-color-danger)"
+                    >
                       删除
                     </el-dropdown-item>
                   </el-dropdown-menu>
@@ -369,6 +374,7 @@ import { ref, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Collection,
+  Delete,
   Edit,
   Grid,
   Menu,
@@ -376,6 +382,7 @@ import {
   Plus,
   Refresh,
   Search,
+  VideoPlay,
   View,
 } from "@element-plus/icons-vue";
 
@@ -502,7 +509,15 @@ function colLabel(c: string) {
   return f?.label ? `${c} · ${f.label}` : c;
 }
 function cardColor(k: any) {
-  const palette = ["#409eff", "#67c23a", "#e6a23c", "#f56c6c", "#909399", "#9b59b6", "#2f9e95"];
+  const palette = [
+    "var(--el-color-primary)",
+    "var(--el-color-success)",
+    "var(--el-color-warning)",
+    "var(--el-color-danger)",
+    "#909399",
+    "#9b59b6",
+    "#2f9e95",
+  ];
   let h = 0;
   const s = String(k ?? "");
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
@@ -704,80 +719,80 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .ai-workshop-page {
-  height: 100%;
   display: flex;
   flex-direction: column;
+  height: 100%;
   overflow: hidden;
 }
 .ai-workshop-page .ws-shell {
-  flex: 1 1 auto;
-  min-height: 0;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 .ai-workshop-page .ws-shell :deep(.el-card__body) {
-  flex: 1 1 auto;
-  min-height: 0;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
+  min-height: 0;
   overflow: auto;
 }
 
 /* 说明横幅 */
 .ws-intro {
   display: flex;
-  align-items: flex-start;
   gap: 14px;
+  align-items: flex-start;
   padding: 14px 16px;
+  margin-bottom: 16px;
+  background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--el-border-radius-base);
-  background: var(--el-fill-color-light);
-  margin-bottom: 16px;
 }
 .ws-intro__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border-radius: 10px;
 }
 .ws-intro__title {
-  font-weight: 600;
   margin-bottom: 4px;
+  font-weight: 600;
 }
 .ws-intro__desc {
-  color: var(--el-text-color-regular);
+  margin-bottom: 8px;
   font-size: var(--el-font-size-base);
   line-height: 1.6;
-  margin-bottom: 8px;
+  color: var(--el-text-color-regular);
 }
 .ws-intro__steps {
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  gap: 6px;
 }
 
 /* 列表工具条 */
 .ws-toolbar {
   display: flex;
+  gap: 12px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
   margin-bottom: 16px;
 }
 .ws-toolbar__count {
-  color: var(--el-text-color-secondary);
   font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .ws-toolbar__right {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
 /* 应用卡片 */
@@ -789,10 +804,10 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   padding: 16px 18px;
+  cursor: pointer;
   background: var(--el-color-white);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
-  cursor: pointer;
   transition:
     box-shadow 0.2s,
     transform 0.2s,
@@ -805,39 +820,46 @@ onMounted(() => {
 }
 .ws-app-card__head {
   display: flex;
-  align-items: flex-start;
   gap: 12px;
+  align-items: flex-start;
+}
+/* 「更多」：link 图标按钮（去掉 circle 边框，与工作台卡片一致） */
+.ws-app-card__more {
+  color: var(--el-text-color-secondary);
+}
+.ws-app-card__more:hover {
+  color: var(--el-color-primary);
 }
 .ws-app-card__icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
 }
 .ws-app-card__title {
-  min-width: 0;
   flex: 1;
+  min-width: 0;
 }
 .ws-app-card__name {
-  font-weight: 600;
-  line-height: 1.5;
   margin-bottom: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 600;
+  line-height: 1.5;
   white-space: nowrap;
 }
 .ws-app-card__obj {
   display: flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   margin: 12px 0 8px;
-  color: var(--el-text-color-regular);
-  font-size: var(--el-font-size-base);
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
   white-space: nowrap;
 }
 .ws-app-card__cols {
@@ -857,56 +879,56 @@ onMounted(() => {
 .ws-app-card__foot {
   display: flex;
   gap: 8px;
-  margin-top: auto;
   padding-top: 10px;
+  margin-top: auto;
   border-top: 1px solid var(--el-border-color-lighter);
 }
 .ws-empty-suggest {
-  color: var(--el-text-color-secondary);
   font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 /* 新建表单 */
 .ws-form-hint {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
   line-height: 1.4;
+  color: var(--el-text-color-secondary);
 }
 .ws-view-opts {
   display: flex;
   gap: 10px;
 }
 .ws-view-opt {
-  flex: 1;
   display: flex;
+  flex: 1;
+  gap: 6px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   padding: 10px 0;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
   border: 1px solid var(--el-border-color);
   border-radius: var(--el-border-radius-base);
-  cursor: pointer;
-  color: var(--el-text-color-regular);
   transition: all 0.2s;
   &.is-active {
-    border-color: var(--el-color-primary);
+    font-weight: 600;
     color: var(--el-color-primary);
     background: var(--el-color-primary-light-9);
-    font-weight: 600;
+    border-color: var(--el-color-primary);
   }
 }
 .ws-fields {
-  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: 100%;
   max-height: 300px;
   overflow: auto;
 }
 .ws-field {
   display: flex;
-  align-items: center;
   gap: 4px;
+  align-items: center;
   margin-right: 0;
   white-space: nowrap;
 }
@@ -914,8 +936,8 @@ onMounted(() => {
   font-weight: 600;
 }
 .ws-field__label {
-  color: var(--el-text-color-secondary);
   font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 /* ===== 运行视图 ===== */
@@ -926,62 +948,62 @@ onMounted(() => {
 }
 .ws-run__bar {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  margin-bottom: 14px;
   flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .ws-run__meta {
   display: flex;
-  align-items: center;
   gap: 10px;
+  align-items: center;
 }
 .ws-run__obj {
   display: inline-flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
   font-size: var(--el-font-size-base);
   font-weight: 600;
 }
 .ws-run__count {
+  padding: 2px 10px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color-light);
   border-radius: 10px;
-  padding: 2px 10px;
 }
 .ws-run__switch {
   display: inline-flex;
-  align-items: center;
   gap: 6px;
+  align-items: center;
+  padding: 4px;
   background: var(--el-fill-color-light);
   border-radius: 8px;
-  padding: 4px;
 }
 .ws-run__switch-item {
   display: inline-flex !important;
-  align-items: center;
   gap: 4px;
+  align-items: center;
   cursor: pointer;
   border-radius: 6px !important;
 }
 .ws-run__tools {
-  margin-left: auto;
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
+  margin-left: auto;
 }
 
 /* 表格 */
 .ws-table-stats {
   display: flex;
-  align-items: center;
   gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
   b {
     color: var(--el-text-color-primary);
   }
@@ -993,9 +1015,9 @@ onMounted(() => {
   border-radius: 10px;
 }
 .ws-run__table :deep(.el-table th.el-table__cell) {
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
   font-weight: 600;
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
 }
 .ws-run__table :deep(.el-table__row) {
   &:hover > td {
@@ -1016,32 +1038,32 @@ onMounted(() => {
 .ws-kanban {
   display: flex;
   gap: 14px;
-  overflow-x: auto;
   align-items: flex-start;
   padding-bottom: 12px;
+  overflow-x: auto;
 }
 .ws-kb-col {
   position: relative;
-  flex: 0 0 272px;
+  display: flex;
+  flex: 0 0 240px;
+  flex-direction: column;
+  min-height: 200px;
+  padding: 12px 10px 10px;
+  overflow: hidden;
   background: var(--el-fill-color-light);
   border-radius: 12px;
-  padding: 12px 10px 10px;
-  min-height: 200px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
   transition: background 0.2s;
 }
 .ws-kb-head {
   display: flex;
-  align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  align-items: center;
   padding: 6px 10px;
-  border-radius: 8px;
-  color: #fff;
+  margin-bottom: 10px;
   font-weight: 600;
-  background: var(--kb-color, #409eff);
+  color: #fff;
+  background: var(--kb-color, var(--el-color-primary));
+  border-radius: 8px;
 }
 .ws-kb-head__title {
   overflow: hidden;
@@ -1060,11 +1082,11 @@ onMounted(() => {
   gap: 8px;
 }
 .ws-kb-card {
+  padding: 10px 12px;
+  cursor: grab;
   background: var(--el-color-white);
   border-radius: 10px;
-  padding: 10px 12px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 6%);
-  cursor: grab;
   transition:
     box-shadow 0.2s,
     transform 0.2s;
@@ -1078,20 +1100,20 @@ onMounted(() => {
 }
 .ws-kb-card__top {
   display: flex;
+  gap: 6px;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 6px;
 }
 .ws-kb-card__main {
-  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 600;
   white-space: nowrap;
 }
 .ws-kb-card__more {
+  flex: 0 0 auto;
   color: var(--el-text-color-secondary);
   cursor: pointer;
-  flex: 0 0 auto;
 }
 .ws-kb-card__tags {
   display: flex;
@@ -1104,29 +1126,29 @@ onMounted(() => {
 }
 .ws-kb-card__foot {
   display: flex;
-  align-items: center;
   gap: 6px;
-  margin-top: 10px;
+  align-items: center;
   padding-top: 8px;
+  margin-top: 10px;
   border-top: 1px solid var(--el-border-color-lighter);
 }
 .ws-kb-avatar {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--kb-color, var(--el-color-primary));
-  color: #fff;
-  font-size: 12px;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--kb-color, var(--el-color-primary));
+  border-radius: 50%;
 }
 .ws-kb-foot-text {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
 .ws-kb-card--empty {
@@ -1148,10 +1170,10 @@ onMounted(() => {
   color: var(--el-text-color-primary);
 }
 .ws-run-form {
+  padding: 20px 24px 8px;
   background: var(--el-color-white);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 12px;
-  padding: 20px 24px 8px;
 }
 .ws-run-form :deep(.el-form-item__label) {
   font-size: var(--el-font-size-base);
@@ -1159,8 +1181,8 @@ onMounted(() => {
 }
 .ws-run-form-actions {
   display: flex;
-  align-items: center;
   gap: 12px;
+  align-items: center;
   margin: 8px 0 16px;
 }
 .ws-run-form-hint {

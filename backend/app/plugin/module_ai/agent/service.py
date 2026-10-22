@@ -394,25 +394,29 @@ class AiAgentService:
         session_id: int | None = None,
     ) -> AsyncIterator[str]:
         """运行智能体：绑定工作流则走编排引擎，否则回退模型+提示词+工具。"""
+        from app.plugin.module_ai.assistant.agno_service import (
+            agno_error_frame,
+            ui_stream_to_agno,
+        )
+
         agent = await cls.get_agent(agent_id)
         if not agent or not agent.get("enabled"):
-            # 没有 agent 也要产出终止帧，保持协议一致
-            from app.plugin.module_ai.streaming import UiMessageStream
-
-            ms = UiMessageStream()
-            empty_finish = {"reply": "", "tool_calls": [], "action": None, "report_id": None}
-            yield ms.start()
-            yield ms.error("智能体不存在或未启用")
-            yield ms.data("finish", empty_finish)
-            yield ms.finish()
-            yield ms.done()
+            # 没有 agent 也要产出终止帧，保持协议一致（Agno 原生 RunError）
+            yield agno_error_frame("智能体不存在或未启用")
             return
 
+        # 委托工作流：引擎产 UI Message Stream 帧（编排语义），此处转译为 Agno 原生事件
+        # （本端点契约 = Agno 帧，前端 AgnoChatTransport 只认 Run* 事件）。会话已由
+        # 工作流引擎自行落库，finally 不再重复落。
+        delegated = False
         if agent.get("workflow_id"):
             from app.plugin.module_ai.workflow.service import AiWorkflowService
 
-            async for frame in AiWorkflowService.run_ui_stream(
-                agent["workflow_id"], ui_messages, auth, variables, session_id
+            delegated = True
+            async for frame in ui_stream_to_agno(
+                AiWorkflowService.run_ui_stream(
+                    agent["workflow_id"], ui_messages, auth, variables, session_id
+                )
             ):
                 yield frame
             return
@@ -428,27 +432,19 @@ class AiAgentService:
         from app.plugin.module_ai.overview.service import AiOverviewService
         from app.plugin.module_ai.prompts.service import AiPromptService, render_prompt
         from app.plugin.module_ai.sessions.service import persist_session_exchange
-        from app.plugin.module_ai.streaming import UiMessageStream
 
-        ms = UiMessageStream()
         t0 = time.perf_counter()
         uid = getattr(getattr(auth, "user", None), "id", None)
         user_text = last_user_text(ui_messages)
         # Guardrail：输入安全校验（空/超长/提示注入）
         _gap = _agent_guardrail(user_text)
         if _gap:
-            yield ms.start()
-            yield ms.error(_gap)
-            yield ms.data("finish", empty_finish)
-            yield ms.finish()
-            yield ms.done()
+            yield agno_error_frame(_gap)
             return
-        empty_finish = {"reply": "", "tool_calls": [], "action": None, "report_id": None}
         state: dict = {
             "assistant_text": "", "reply": "", "tool_calls": [],
             "action": None, "report_id": None, "error": None,
         }
-        yield ms.start()
         try:
             system_prompt = SYSTEM_PROMPT
             if agent.get("prompt_id"):
@@ -511,10 +507,7 @@ class AiAgentService:
                 runtime = await AiModelService.get_runtime_model()
             if not runtime:
                 state["error"] = "未配置大模型，请在 AI 管理→模型配置 中添加并启用"
-                yield ms.error(state["error"])
-                yield ms.data("finish", empty_finish)
-                yield ms.finish()
-                yield ms.done()
+                yield agno_error_frame(state["error"])
                 return
 
             tool_names = list(agent.get("tool_ids") or [])
@@ -590,10 +583,7 @@ class AiAgentService:
                 QUERY_DS_CONTEXT.reset(ds_token)
         except Exception as e:  # noqa: BLE001
             state["error"] = str(e)
-            yield ms.error(f"运行失败：{e}")
-            yield ms.data("finish", empty_finish)
-            yield ms.finish()
-            yield ms.done()
+            yield agno_error_frame(f"运行失败：{e}")
         finally:
             await AiOverviewService.add_log(
                 agent.get("agent_name", ""),
@@ -604,10 +594,12 @@ class AiAgentService:
                 app_id=agent_id,
                 user_id=uid,
             )
-            await persist_session_exchange(
-                session_id, user_text, state["assistant_text"],
-                app_id=agent_id, user_id=uid,
-            )
+            # 委托工作流时会话已由引擎落库：跳过，防重复 user 消息
+            if not delegated:
+                await persist_session_exchange(
+                    session_id, user_text, state["assistant_text"],
+                    app_id=agent_id, user_id=uid,
+                )
 
     # ---------------------------------------------------------------- #
     # Agent 编排运行看板

@@ -30,11 +30,23 @@
       </el-col>
     </el-row>
 
-    <!-- 图表 -->
+    <!-- 图表：刷新统计/导出 归入统计区头部（不再单独占一行游离按钮条） -->
     <el-row :gutter="12" class="log-charts">
       <el-col v-if="stats.trend?.length" :md="14">
         <el-card shadow="never" class="log-chart-card">
-          <template #header>调用趋势（近 {{ statsDays }} 天）</template>
+          <template #header>
+            <div class="log-chart-head">
+              <span>调用趋势（近 {{ statsDays }} 天）</span>
+              <div class="log-chart-head__ops">
+                <el-button size="small" :loading="statsLoading" @click="loadStats">
+                  刷新统计
+                </el-button>
+                <el-button size="small" type="primary" plain :loading="exporting" @click="doExport">
+                  导出 CSV
+                </el-button>
+              </div>
+            </div>
+          </template>
           <div ref="trendRef" class="log-chart" />
         </el-card>
       </el-col>
@@ -45,13 +57,6 @@
         </el-card>
       </el-col>
     </el-row>
-
-    <div class="log-actions">
-      <el-button size="small" :loading="statsLoading" @click="loadStats">刷新统计</el-button>
-      <el-button size="small" type="primary" plain :loading="exporting" @click="doExport">
-        导出 CSV
-      </el-button>
-    </div>
 
     <PageSearch
       ref="searchRef"
@@ -240,8 +245,8 @@ function renderCharts() {
     trendChart = trendChart || echarts.init(trendRef.value);
     trendChart.setOption({
       tooltip: { trigger: "axis" },
-      legend: { data: ["调用", "失败"] },
-      grid: { left: 40, right: 16, top: 30, bottom: 24 },
+      legend: { data: ["调用", "失败"], top: 0, right: 8 },
+      grid: { left: 44, right: 20, top: 36, bottom: 26 },
       xAxis: { type: "category", data: (stats.trend || []).map((t: any) => t.date) },
       yAxis: { type: "value" },
       series: [
@@ -264,11 +269,22 @@ function renderCharts() {
     modelChart = modelChart || echarts.init(modelRef.value);
     modelChart.setOption({
       tooltip: { trigger: "item" },
+      // 模型数量多、名称长：隐藏外部标签，统一用滚动图例，避免标签互相遮挡
+      legend: {
+        type: "scroll",
+        bottom: 0,
+        itemWidth: 10,
+        itemHeight: 10,
+        textStyle: { fontSize: 12 },
+      },
       series: [
         {
           type: "pie",
-          radius: ["40%", "68%"],
+          radius: ["34%", "62%"],
+          center: ["50%", "44%"],
           data: (stats.by_model || []).map((m: any) => ({ name: m.name, value: m.count })),
+          label: { show: false },
+          labelLine: { show: false },
         },
       ],
     });
@@ -338,16 +354,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .ai-logs-page {
-  padding: 0;
+  /* 继承 .app-container 的 16px padding（此前 padding:0 让内容紧贴侧边栏） */
+  padding: 16px;
+}
+/* 覆盖全局 `.app-container > .el-row { flex:1 }`（那是给单行栅格页的）：
+   统计行/图表行按内容高度排列，表格区仍由 PageContent 撑满剩余 */
+.ai-logs-page > .el-row {
+  flex: 0 0 auto;
 }
 .log-cards {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 .log-card {
   margin-bottom: 12px;
 }
 .log-charts {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 .log-chart-card {
   margin-bottom: 12px;
@@ -355,8 +377,17 @@ onBeforeUnmount(() => {
 .log-chart {
   height: 220px;
 }
-.log-actions {
-  margin-bottom: 12px;
+/* 图表卡头部：标题 + 统计操作（同一区域，符合「统计区」场景） */
+.log-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.log-chart-head__ops {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 .log-error {
   white-space: pre-wrap;

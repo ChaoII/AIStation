@@ -3,7 +3,7 @@
   <el-dialog
     :model-value="visible"
     title="从个人空间选择文件"
-    width="720px"
+    width="900px"
     append-to-body
     @update:model-value="(v: boolean) => emit('update:visible', v)"
   >
@@ -36,6 +36,8 @@
         />
         <el-table
           v-loading="loading"
+          border
+          stripe
           :data="files"
           height="320"
           empty-text="该文件夹暂无文件"

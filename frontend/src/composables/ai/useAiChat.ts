@@ -1,6 +1,8 @@
 import { computed, unref, type MaybeRef } from "vue";
 import { useChat } from "@ai-sdk/vue";
-import type { UIMessage, ChatRequestOptions } from "ai";
+import type { ChatTransport, UIMessage, ChatRequestOptions } from "ai";
+import { DefaultChatTransport } from "ai";
+import { Auth } from "@/utils/auth";
 import { AgnoChatTransport } from "./agnoChatTransport";
 
 /** 随消息上传的文件载荷（data URL）。 */
@@ -22,6 +24,13 @@ export type AiChatAnyFilePayload = AiChatFilePayload | AiChatWorkspaceFilePayloa
 export interface UseAiChatOptions {
   /** 相对 VITE_APP_BASE_API 的流式路径，默认助手流。 */
   path?: string;
+  /**
+   * 帧协议：
+   * - `agno`（默认）：Agno 原生事件流（assistant / agent / app 的 run 端点）；
+   * - `ui`：AI SDK UI Message Stream（workflow 端点，编排帧 node-status/data-run 等
+   *   依赖此协议）—— 由 SDK 原生 `DefaultChatTransport` 消费。
+   */
+  protocol?: "agno" | "ui";
   /** 附加请求体（如 app_id / session_id / knowledge_ids / model_id）。 */
   body?: () => Record<string, unknown>;
   /** 会话 id（useChat 的 chat id），支持响应式（切换会话时重建）。 */
@@ -42,10 +51,33 @@ export function useAiChat(options: UseAiChatOptions | (() => UseAiChatOptions) =
   const getOptions = typeof options === "function" ? options : () => options;
   // transport 固定（path/body 稳定）；body 为函数，每次请求时动态读取会话/知识等
   const baseOpts = getOptions();
-  const transport = new AgnoChatTransport({
-    path: baseOpts.path || "/ai/assistant/stream",
-    buildBody: baseOpts.body,
-  });
+  const apiBase = import.meta.env.VITE_APP_BASE_API || "/api/v1";
+  const apiPath = baseOpts.path || "/ai/assistant/stream";
+  const transport: ChatTransport<UIMessage> =
+    baseOpts.protocol === "ui"
+      ? // UI Message Stream：SDK 原生 DefaultChatTransport（与后端 ui_stream_response 对齐）
+        new DefaultChatTransport<UIMessage>({
+          api: `${apiBase}${apiPath}`,
+          prepareSendMessagesRequest: ({ messages, body }) => ({
+            body: {
+              // 仅透传 text parts，与 AgnoChatTransport 出参保持一致
+              messages: messages.map((m) => ({
+                role: m.role,
+                parts: (m.parts || [])
+                  .filter((p: any) => p.type === "text")
+                  .map((p: any) => ({ type: "text", text: String(p.text || "") })),
+              })),
+              ...(baseOpts.body ? baseOpts.body() : {}),
+              ...((body as Record<string, unknown>) || {}),
+            },
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${Auth.getAccessToken() || ""}`,
+              "X-Forwarded-For": "127.0.0.1",
+            },
+          }),
+        })
+      : new AgnoChatTransport({ path: apiPath, buildBody: baseOpts.body });
 
   const chat = useChat(() => {
     const o = getOptions();

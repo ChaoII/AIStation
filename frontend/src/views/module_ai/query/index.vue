@@ -21,7 +21,13 @@
             <div class="q-sess__title">{{ s.title || "未命名" }}</div>
             <div class="q-sess__meta">
               <span>{{ s.created_time || "" }}</span>
-              <el-button link type="danger" size="small" @click.stop="removeSession(s)">
+              <el-button
+                icon="delete"
+                link
+                type="danger"
+                size="small"
+                @click.stop="removeSession(s)"
+              >
                 删除
               </el-button>
             </div>
@@ -50,11 +56,15 @@
                     :value="d.code || `ds:${d.id}`"
                   />
                 </el-select>
-                <el-button link type="primary" size="small" @click="goOntology">查看本体</el-button>
-                <el-button link type="primary" size="small" @click="openSettings">
+                <el-button icon="Collection" link type="primary" size="small" @click="goOntology">
+                  查看本体
+                </el-button>
+                <el-button icon="Setting" link type="primary" size="small" @click="openSettings">
                   问数设置
                 </el-button>
-                <el-button link type="primary" size="small" @click="openStats">使用统计</el-button>
+                <el-button icon="DataLine" link type="primary" size="small" @click="openStats">
+                  使用统计
+                </el-button>
                 <el-dropdown @command="goSub">
                   <el-button link type="primary" size="small">
                     <el-icon style="margin-right: 4px"><Grid /></el-icon>
@@ -190,6 +200,7 @@
                 border
                 max-height="340"
                 class="q-msg__table"
+                stripe
               >
                 <el-table-column
                   v-for="c in m.columns"
@@ -201,10 +212,13 @@
                 />
               </el-table>
               <div v-if="m.id" class="q-msg__fb">
-                <el-button link size="small" @click="feedback(m, 'up')">有用</el-button>
-                <el-button link size="small" @click="openCorrect(m)">没用</el-button>
+                <el-button icon="Select" link size="small" @click="feedback(m, 'up')">
+                  有用
+                </el-button>
+                <el-button icon="Close" link size="small" @click="openCorrect(m)">没用</el-button>
                 <el-button
                   v-if="m.sql && !m.is_error"
+                  icon="Document"
                   link
                   type="primary"
                   size="small"
@@ -214,6 +228,7 @@
                 </el-button>
                 <el-button
                   v-if="m.sql && !m.is_error"
+                  icon="DataAnalysis"
                   link
                   type="primary"
                   size="small"
@@ -279,7 +294,7 @@
     </el-dialog>
 
     <!-- 报表建议：未命中时，推荐已沉淀的报表供用户选择执行 -->
-    <el-dialog v-model="reportSuggestVisible" title="帮你找到相关报表" width="560px" append-to-body>
+    <el-dialog v-model="reportSuggestVisible" title="帮你找到相关报表" width="600px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
@@ -368,7 +383,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="statsVisible" title="问数使用统计" width="480px" append-to-body>
+    <el-dialog v-model="statsVisible" title="问数使用统计" width="520px" append-to-body>
       <el-row :gutter="12">
         <el-col :span="12">
           <el-statistic title="总问答" :value="stats.total" />
@@ -409,7 +424,7 @@
         </el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="setVisible" title="问数设置" width="620px" append-to-body>
+    <el-dialog v-model="setVisible" title="问数设置" width="600px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
@@ -1058,6 +1073,56 @@ onMounted(async () => {
 });
 </script>
 
+<!-- 布局统一（非 scoped + 唯一类名，避免 data-v 在 keep-alive/HMR 下失效）：
+     1) 页面撑满：app-container → el-row → el-col → el-card → body 全链 height/min-height；
+     2) 左栏固定 240px（与工作台/个人工作空间/本体一致），不用栅格百分比。 -->
+<style lang="scss">
+.app-container.ai-query-page {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ai-query-page > .el-row {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin: 0 !important;
+  min-height: 0;
+}
+
+.ai-query-page > .el-row > .el-col {
+  height: 100%;
+  min-height: 0;
+  padding: 0 !important;
+}
+
+.ai-query-page > .el-row > .el-col:first-child {
+  flex: 0 0 240px;
+  max-width: 240px;
+}
+
+.ai-query-page > .el-row > .el-col:last-child {
+  flex: 1 1 auto;
+  max-width: 100%;
+}
+
+.ai-query-page > .el-row > .el-col > .el-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ai-query-page > .el-row > .el-col > .el-card > .el-card__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+</style>
+
 <style lang="scss" scoped>
 .q-side__head,
 .q-head {
@@ -1136,23 +1201,23 @@ onMounted(async () => {
 
 .q-msg__q {
   display: flex;
-  justify-content: flex-end;
   gap: 8px;
+  justify-content: flex-end;
   margin-bottom: 10px;
   .el-tag {
     flex: 0 0 auto;
   }
   span {
     max-width: 78%;
+    padding: 8px 12px;
+    font-weight: 500;
+    line-height: 1.6;
+    color: var(--el-text-color-primary);
+    overflow-wrap: anywhere;
     background: var(--el-color-primary-light-9);
     border: 1px solid var(--el-color-primary-light-7);
     border-radius: var(--el-border-radius-base) var(--el-border-radius-base) 0
       var(--el-border-radius-base);
-    padding: 8px 12px;
-    color: var(--el-text-color-primary);
-    font-weight: 500;
-    line-height: 1.6;
-    overflow-wrap: anywhere;
   }
 }
 
@@ -1186,20 +1251,20 @@ onMounted(async () => {
   margin-top: 12px;
 }
 .q-report-item {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
   padding: 10px 14px;
   cursor: pointer;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
   transition: all 0.2s;
   &:hover {
-    border-color: var(--el-color-primary-light-5);
     background: var(--el-color-primary-light-9);
+    border-color: var(--el-color-primary-light-5);
   }
 }
 .q-report-item__head {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   font-weight: 600;
 }
 .q-report-item__name {
@@ -1209,13 +1274,13 @@ onMounted(async () => {
 }
 .q-report-item__desc {
   margin-top: 4px;
-  color: var(--el-text-color-regular);
   font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
 }
 .q-report-item__q {
   margin-top: 2px;
-  color: var(--el-text-color-secondary);
   font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .q-msg__meta {

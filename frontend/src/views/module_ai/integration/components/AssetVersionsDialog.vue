@@ -3,7 +3,7 @@
   <el-dialog
     :model-value="modelValue"
     :title="`资产版本 · ${table || ''}`"
-    width="760px"
+    width="900px"
     append-to-body
     destroy-on-close
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
@@ -30,7 +30,7 @@
           V{{ r.version }}
         </el-tag>
       </div>
-      <el-table :data="versions" size="small" border max-height="60vh">
+      <el-table :data="versions" size="small" border max-height="60vh" stripe>
         <template #empty>
           <el-empty description="暂无版本记录" :image-size="60" />
         </template>
@@ -50,8 +50,12 @@
         <el-table-column prop="time" label="时间" min-width="160" show-overflow-tooltip />
         <el-table-column label="操作" width="180" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="publish(row)">发布</el-button>
-            <el-button link type="danger" size="small" @click="rollback(row)">回滚</el-button>
+            <el-button icon="Upload" link type="primary" size="small" @click="publish(row)">
+              发布
+            </el-button>
+            <el-button icon="RefreshLeft" link type="danger" size="small" @click="rollback(row)">
+              回滚
+            </el-button>
           </template>
         </el-table-column>
       </el-table>

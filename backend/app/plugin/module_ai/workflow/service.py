@@ -218,6 +218,8 @@ class AiWorkflowService:
                 graph=data.graph or {"nodes": [], "edges": []},
                 version=1,
                 enabled=data.enabled,
+                # 模板创建路径传的是 SimpleNamespace（无 category_id），故用 getattr 兜底
+                category_id=getattr(data, "category_id", None),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )
@@ -238,6 +240,9 @@ class AiWorkflowService:
                 if getattr(data, key) is None:
                     continue
                 setattr(w, key, getattr(data, key))
+            # 分类允许**显式清空**（clearable 下拉传来 null）：与其它字段的「None=不修改」语义区分
+            if "category_id" in provided:
+                w.category_id = data.category_id
             if "graph" in provided:
                 w.version = (w.version or 1) + 1
             w.updated_id = auth.user.id

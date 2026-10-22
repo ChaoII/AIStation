@@ -323,8 +323,13 @@ async def run_app_ui_stream(
     variables: dict | None = None,
     session_id: int | None = None,
 ) -> AsyncIterator[str]:
-    """运行 AI 应用：解析应用/模型/提示词/工具，流式产出 UI Message Stream 帧。"""
+    """运行 AI 应用：解析应用/模型/提示词/工具，流式产出 Agno 原生事件帧。"""
 
+    from app.plugin.module_ai.assistant.agno_service import (
+        agno_error_frame,
+        agno_event_frame,
+        ui_stream_to_agno,
+    )
     from app.plugin.module_ai.assistant.service import (
         SYSTEM_PROMPT,
         last_user_text,
@@ -333,14 +338,13 @@ async def run_app_ui_stream(
     from app.plugin.module_ai.overview.service import AiOverviewService
     from app.plugin.module_ai.prompts.service import AiPromptService, render_prompt
     from app.plugin.module_ai.sessions.service import persist_session_exchange
-    from app.plugin.module_ai.streaming import UiMessageStream
 
-    ms = UiMessageStream()
     t0 = time.perf_counter()
     uid = getattr(getattr(auth, "user", None), "id", None)
     user_text = last_user_text(ui_messages)
     model_name = "app"
-    empty_finish = {"reply": "", "tool_calls": [], "action": None, "report_id": None}
+    # 委托工作流时会话已由引擎落库：finally 跳过，防重复 user 消息
+    delegated = False
     state: dict = {
         "assistant_text": "",
         "reply": "",
@@ -349,15 +353,11 @@ async def run_app_ui_stream(
         "report_id": None,
         "error": None,
     }
-    yield ms.start()
     try:
         app = await AiAppService.get_app(app_id)
         if not app or not app.get("enabled"):
             state["error"] = "应用不存在或未启用"
-            yield ms.error(state["error"])
-            yield ms.data("finish", empty_finish)
-            yield ms.finish()
-            yield ms.done()
+            yield agno_error_frame(state["error"])
             return
 
         # 统一组件：按类型分发运行
@@ -365,8 +365,12 @@ async def run_app_ui_stream(
         if app_type == "workflow" and app.get("workflow_id"):
             from app.plugin.module_ai.workflow.service import AiWorkflowService
 
-            async for frame in AiWorkflowService.run_ui_stream(
-                app["workflow_id"], ui_messages, auth, variables, session_id
+            delegated = True
+            # 工作流引擎产 UI Message Stream 帧（编排语义），转译为本端点契约的 Agno 帧
+            async for frame in ui_stream_to_agno(
+                AiWorkflowService.run_ui_stream(
+                    app["workflow_id"], ui_messages, auth, variables, session_id
+                )
             ):
                 yield frame
             return
@@ -380,20 +384,24 @@ async def run_app_ui_stream(
                 )
                 ans = result.get("answer") or ""
                 refs = result.get("references") or []
-                if ans:
-                    yield ms.text(ans)
-                if refs:
-                    yield ms.tool(name="references", args={"refs": refs}, state="success")
-                yield ms.text_end()
                 state["assistant_text"] = ans
                 state["reply"] = ans
-                yield ms.data("finish", {"reply": ans, "tool_calls": [], "action": None, "report_id": None})
+                if ans:
+                    yield agno_event_frame("RunContent", {"content": ans})
+                if refs:
+                    # 引用来源以「references」工具对呈现（前端按 ToolCall* 渲染工具卡）
+                    yield agno_event_frame(
+                        "ToolCallStarted",
+                        {"tool": {"tool_name": "references", "tool_call_id": "refs-1", "tool_args": {}}},
+                    )
+                    yield agno_event_frame(
+                        "ToolCallCompleted",
+                        {"tool": {"tool_name": "references", "tool_call_id": "refs-1", "result": refs}},
+                    )
+                yield agno_event_frame("RunCompleted")
             except Exception as e:  # noqa: BLE001
                 state["error"] = str(e)
-                yield ms.error(f"运行失败：{e}")
-                yield ms.data("finish", empty_finish)
-            yield ms.finish()
-            yield ms.done()
+                yield agno_error_frame(f"运行失败：{e}")
             return
 
         # 系统提示词：优先渲染绑定提示词，缺失时回退助手默认
@@ -417,10 +425,7 @@ async def run_app_ui_stream(
             runtime = await AiModelService.get_runtime_model()
         if not runtime:
             state["error"] = "未配置大模型，请在 AI 管理→模型配置 中添加并启用"
-            yield ms.error(state["error"])
-            yield ms.data("finish", empty_finish)
-            yield ms.finish()
-            yield ms.done()
+            yield agno_error_frame(state["error"])
             return
         model_name = runtime.get("model") or "app"
 
@@ -446,10 +451,7 @@ async def run_app_ui_stream(
             yield frame
     except Exception as e:  # noqa: BLE001
         state["error"] = str(e)
-        yield ms.error(f"运行失败：{e}")
-        yield ms.data("finish", empty_finish)
-        yield ms.finish()
-        yield ms.done()
+        yield agno_error_frame(f"运行失败：{e}")
     finally:
         u = state.get("usage") or {}
         await AiOverviewService.add_log(
@@ -463,6 +465,8 @@ async def run_app_ui_stream(
             prompt_tokens=u.get("prompt_tokens", 0),
             completion_tokens=u.get("completion_tokens", 0),
         )
-        await persist_session_exchange(
-            session_id, user_text, state["assistant_text"], app_id=app_id, user_id=uid
-        )
+        # 委托工作流时会话已由引擎落库：跳过，防重复 user 消息
+        if not delegated:
+            await persist_session_exchange(
+                session_id, user_text, state["assistant_text"], app_id=app_id, user_id=uid
+            )

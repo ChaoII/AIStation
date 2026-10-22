@@ -50,7 +50,7 @@
         <el-divider content-position="left">分维度准确率</el-divider>
         <el-tabs v-model="dimTab" type="border-card">
           <el-tab-pane v-for="d in dims" :key="d.field" :label="d.label" :name="d.field">
-            <el-table :data="groupRows(d.field)" size="small" border>
+            <el-table :data="groupRows(d.field)" size="small" border stripe>
               <el-table-column prop="key" label="分组" min-width="160" show-overflow-tooltip />
               <el-table-column prop="total" label="题数" width="90" />
               <el-table-column prop="correct" label="正确" width="90" />
@@ -77,7 +77,7 @@
             <el-radio-button label="slow">仅慢路径</el-radio-button>
           </el-radio-group>
         </div>
-        <el-table v-loading="loading" :data="filteredResults" size="small" border>
+        <el-table v-loading="loading" :data="filteredResults" size="small" border stripe>
           <el-table-column type="expand">
             <template #default="{ row }">
               <el-descriptions :column="2" size="small" border class="ev-exp">

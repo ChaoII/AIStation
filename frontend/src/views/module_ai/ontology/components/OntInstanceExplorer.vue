@@ -85,6 +85,7 @@
       size="small"
       border
       max-height="420"
+      stripe
       @selection-change="onSelect"
     >
       <template #empty>
@@ -108,9 +109,13 @@
       </el-table-column>
       <el-table-column label="操作" width="210" align="center" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openView(row)">视图</el-button>
+          <el-button icon="View" link type="primary" size="small" @click="openView(row)">
+            视图
+          </el-button>
           <el-button link type="primary" size="small" @click="openGraph(row)">图</el-button>
-          <el-button link type="success" size="small" @click="goQuery(row)">问数</el-button>
+          <el-button icon="Search" link type="success" size="small" @click="goQuery(row)">
+            问数
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -188,7 +193,9 @@
             </el-tag>
             <span class="ont-view__linkname">{{ lk.name }}</span>
             <span class="ont-none">{{ lk.other_label }}</span>
-            <el-button link type="primary" size="small" @click="doPivot(lk)">跳转</el-button>
+            <el-button icon="Right" link type="primary" size="small" @click="doPivot(lk)">
+              跳转
+            </el-button>
           </div>
         </div>
 
@@ -212,14 +219,16 @@
     </el-drawer>
 
     <!-- 跳转结果 -->
-    <el-dialog v-model="pivotDialog" :title="pivotTitle" width="720px" append-to-body>
-      <el-table :data="pivotItems" size="small" border max-height="420">
+    <el-dialog v-model="pivotDialog" :title="pivotTitle" width="900px" append-to-body>
+      <el-table :data="pivotItems" size="small" border max-height="420" stripe>
         <template #empty><el-empty :image-size="50" description="没有关联实例" /></template>
         <el-table-column prop="key" label="主键" width="90" />
         <el-table-column prop="label" label="标题" min-width="200" show-overflow-tooltip />
         <el-table-column label="操作" width="110" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="drillInto(row)">继续</el-button>
+            <el-button icon="VideoPlay" link type="primary" size="small" @click="drillInto(row)">
+              继续
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -311,7 +320,7 @@
 
     <!-- 选择要执行的动作 -->
     <el-dialog v-model="chooserDialog" title="选择要执行的动作" width="520px" append-to-body>
-      <el-table :data="chooserActs" size="small" border max-height="360">
+      <el-table :data="chooserActs" size="small" border max-height="360" stripe>
         <template #empty><el-empty :image-size="50" description="该对象类型没有动作" /></template>
         <el-table-column prop="name" label="动作" min-width="150" show-overflow-tooltip />
         <el-table-column prop="code" label="编码" min-width="120" show-overflow-tooltip />
@@ -323,7 +332,9 @@
         </el-table-column>
         <el-table-column label="操作" width="90" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="pickAction(row)">选它</el-button>
+            <el-button icon="Check" link type="primary" size="small" @click="pickAction(row)">
+              选它
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -331,7 +342,7 @@
     </el-dialog>
 
     <!-- 执行动作 -->
-    <el-dialog v-model="actDialog" :title="actTitle" width="560px" append-to-body>
+    <el-dialog v-model="actDialog" :title="actTitle" width="600px" append-to-body>
       <el-alert
         v-if="actTarget?.approval"
         type="warning"

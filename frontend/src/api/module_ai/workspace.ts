@@ -93,6 +93,39 @@ export function deleteWorkspaceCron(id: number) {
   return request({ url: `${WS_PATH}/cron/delete`, method: "delete", data: id });
 }
 
+/** 定时任务列表行（独立菜单页数据源；`needs_review` 由后端统一层判定） */
+export interface WorkspaceCronRow {
+  id: number;
+  name: string;
+  description?: string;
+  /** 触发类型：cron / interval / date / now */
+  trigger: string;
+  /** 契约同 `WorkspaceCronPayload.trigger_args`（interval 为对象、now 为 null） */
+  trigger_args: unknown;
+  /** 后端统一层「人话描述」（如「每天 09:00」）；脏数据为 null */
+  trigger_describe?: string | null;
+  target_type: string;
+  target_id: number | null;
+  category_id?: number | null;
+  enabled: boolean;
+  last_run_time?: string | null;
+  next_run_time?: string | null;
+  /** 按新校验不通过（或迁移被跳过）：需人工确认，否则「有任务但调度不上」静默停摆 */
+  needs_review?: boolean;
+}
+
+export function getWorkspaceCronList(params?: {
+  category_id?: number | null;
+  target_type?: string;
+}) {
+  return request({ url: `${WS_PATH}/cron/list`, method: "get", params });
+}
+
+/** 立即执行一次：接口只入队（后台跑与调度器相同的执行路径），成功返回「已触发执行」 */
+export function runWorkspaceCron(id: number) {
+  return request({ url: `${WS_PATH}/cron/${id}/run`, method: "post" });
+}
+
 // ---------- 触发预览 ----------
 
 /** 触发预览结果：描述与下次运行时间由后端统一层（TriggerUtil）产出，前端不自算 */

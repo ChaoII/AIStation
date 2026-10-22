@@ -32,7 +32,7 @@
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
       </template>
-      <template #table="{ data, loading, tableRef, onSelectionChange }">
+      <template #table="{ data, loading, tableRef }">
         <div class="data-table__content">
           <el-table
             :ref="tableRef as any"
@@ -84,13 +84,26 @@
             </el-table-column>
             <el-table-column label="操作" fixed="right" width="300" align="center">
               <template #default="scope">
-                <el-button size="small" link type="primary" @click="openDetail(scope.row)">
+                <el-button
+                  icon="View"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="openDetail(scope.row)"
+                >
                   详情
                 </el-button>
-                <el-button size="small" link type="primary" @click="handleTest(scope.row)">
+                <el-button
+                  icon="Connection"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="handleTest(scope.row)"
+                >
                   测试
                 </el-button>
                 <el-button
+                  icon="Star"
                   size="small"
                   link
                   type="success"
@@ -101,6 +114,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:model:update']"
+                  icon="edit"
                   size="small"
                   link
                   type="primary"
@@ -110,6 +124,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:model:delete']"
+                  icon="delete"
                   size="small"
                   link
                   type="danger"

@@ -148,4 +148,29 @@ async def write_vectors(
         except Exception as e:  # noqa: BLE001
             log.warning(f"[RAG] 写 pgvector 列失败（保留 JSONB）：{e}")
             break
+
+    # agno 原生双写（生产主检索路径 ai_kb_vectors；独立连接、失败仅告警，不影响本事务）
+    try:
+        from ..search.agno_engine import upsert_chunks as _agno_upsert
+
+        await _agno_upsert(
+            [
+                {
+                    "chunk_id": row.id,
+                    "content": getattr(row, "search_text", None) or row.content or "",
+                    "meta_data": {
+                        "kb_id": row.knowledge_base_id,
+                        "chunk_id": row.id,
+                        "file_name": getattr(row, "file_name", "") or "",
+                        "document_id": getattr(row, "document_id", None),
+                        "start_line": getattr(row, "start_line", None),
+                        "page": getattr(row, "page", None),
+                    },
+                    "vector": values,
+                }
+                for row, values in pairs
+            ]
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[RAG] agno 向量双写跳过（旧列仍可检索）：{e}")
     return written

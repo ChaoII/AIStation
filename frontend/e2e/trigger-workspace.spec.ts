@@ -1,27 +1,57 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 
 /**
- * Task C3：AI 工作台「新建定时任务」弹窗改用统一触发组件 `TriggerEditor`
+ * Task C3（定时任务独立菜单 + 卡片版）：统一触发组件 `TriggerEditor`
  * （同时覆盖 C2 的四类型 / 实时预览 / 非法拦截）。
+ *
+ * 定时任务是独立菜单页 `/ai/cron`（卡片网格，信息模板统一），
+ * 用例从工作台卡片 → 独立页卡片；接口与组件契约不变。
  *
  * 断言口径：
  * - 弹窗内「描述 / 下次运行」一律来自后端统一层 `POST /ai/workspace/trigger/preview`，前端不自算；
- * - 列表卡片上的「触发方式 / 描述 / 下次运行 / 需人工确认」来自 `GET /ai/workspace/cron/list`
- *   的 `trigger` / `trigger_args` / `next_run_time` / `needs_review`。
+ * - 卡片的「触发方式 tag / 人话描述 / 下次运行 / 需人工确认」来自 `GET /ai/workspace/cron/list`
+ *   的 `trigger` / `trigger_describe` / `next_run_time` / `needs_review`。
  *
  * ⚠️ 用例 2/3/4（间隔 / 单次 / 立即）依赖后端写入接口接受 `trigger` + `trigger_args`
- * 两个新字段（旧字段 `cron` 仍兼容）。若后端只认 `cron`，这三条会因「请先配置触发时间」而失败——
- * 那是后端契约缺口，不是用例问题，详见 C3 报告「顾虑」。
+ * 两个新字段（旧字段 `cron` 仍兼容）。
  */
 
-/** 打开工作台并关掉新手引导（引导浮层会挡住点击） */
-async function openWorkspace(page: Page) {
+const API = process.env.E2E_API_URL || "http://127.0.0.1:8001/api/v1";
+
+/** 本 run 创建的定时任务名（结束后统一清理，避免 dev 库被 e2e 垃圾数据淹没） */
+const createdNames: string[] = [];
+
+test.afterAll(async ({ request }) => {
+  if (!createdNames.length) return;
+  try {
+    const login = await request.post(`${API}/system/auth/login`, {
+      form: { username: "admin", password: "123456" },
+      headers: { "X-Forwarded-For": "127.0.0.1" },
+    });
+    const token = (await login.json()).data.access_token;
+    const headers = { Authorization: `Bearer ${token}` };
+    const list = await request.get(`${API}/ai/workspace/cron/list`, { headers });
+    const items: Array<{ id: number; name: string }> = (await list.json()).data.items || [];
+    for (const row of items) {
+      if (!createdNames.includes(row.name)) continue;
+      await request
+        .delete(`${API}/ai/workspace/cron/delete`, { headers, data: row.id })
+        .catch(() => {});
+    }
+  } catch {
+    // 清理失败不影响用例结论（仅打印）
+    console.warn("e2e 定时任务清理失败，可能残留本次创建的数据");
+  }
+});
+
+/** 打开定时任务页并关掉新手引导（引导浮层会挡住点击） */
+async function openCronPage(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem("guideVisible", "false");
     localStorage.setItem("showGuide", "false");
   });
-  await page.goto("/#/ai/workspace", { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".ai-workspace-page").first()).toBeVisible({ timeout: 25_000 });
+  await page.goto("/#/ai/cron", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".ai-cron-page").first()).toBeVisible({ timeout: 25_000 });
   const tour = page.locator(".el-tour");
   if (await tour.count()) {
     await tour
@@ -35,8 +65,7 @@ async function openWorkspace(page: Page) {
 
 /** 打开「新建定时任务」弹窗（触发方式区域是 TriggerEditor） */
 async function openCronDialog(page: Page): Promise<Locator> {
-  await page.locator(".ws-tab-actions").getByRole("button", { name: "新建" }).click();
-  await page.locator(".el-dropdown-menu__item", { hasText: "定时任务" }).first().click();
+  await page.locator(".cron-toolbar-right").getByRole("button", { name: "新建" }).click();
   const dialog = page.locator(".el-dialog").filter({ hasText: "新建定时任务" });
   await expect(dialog).toBeVisible({ timeout: 15_000 });
   await expect(dialog.locator(".trigger-editor")).toBeVisible();
@@ -56,12 +85,17 @@ async function clickSave(page: Page, dialog: Locator) {
   return { status: resp.status(), body: resp.request().postDataJSON() as Record<string, unknown> };
 }
 
-/** 按名称搜索定位卡片（关键字唯一，避免分页/历史数据干扰） */
+/** 按名称搜索定位卡片（搜索是实时过滤，无需点按钮） */
 async function cronCard(page: Page, name: string): Promise<Locator> {
-  await page.getByPlaceholder("搜索条目").fill(name);
-  const card = page.locator(".ws-card").filter({ hasText: name }).first();
+  await page.getByPlaceholder("搜索任务").fill(name);
+  const card = page.locator(".cron-card").filter({ hasText: name }).first();
   await expect(card).toBeVisible({ timeout: 15_000 });
   return card;
+}
+
+/** 卡片内应含「下次运行」时间戳（YYYY-MM-DD HH:mm） */
+async function expectNextRun(card: Locator) {
+  await expect(card).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
 }
 
 /** 明天同一时刻（保证「单次」填的是未来时间） */
@@ -71,11 +105,12 @@ function tomorrowText(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} 09:00:00`;
 }
 
-test("C3-1 定时：默认每天 09:00，预览有描述与下次运行，保存后列表展示触发方式/描述/下次运行", async ({
+test("C3-1 定时：默认每天 09:00，预览有描述与下次运行，保存后卡片展示触发/描述/下次运行", async ({
   page,
 }) => {
   const name = `e2e-定时-${Date.now()}`;
-  await openWorkspace(page);
+  createdNames.push(name);
+  await openCronPage(page);
   const dialog = await openCronDialog(page);
   const preview = dialog.locator(".trigger-editor__preview");
 
@@ -98,12 +133,11 @@ test("C3-1 定时：默认每天 09:00，预览有描述与下次运行，保存
   await expect(dialog).toBeHidden({ timeout: 15_000 });
 
   const card = await cronCard(page, name);
-  await expect(card).toContainText("触发方式");
   await expect(card).toContainText("定时");
-  // 描述优先展示后端统一层下发的人话描述（`trigger_describe`，A8 起聚合条目也带），
-  // 拿不到时才回退原始 `trigger_args`（见 cronArgsText）
-  await expect(card).toContainText("描述：每天 09:00");
-  await expect(card).toContainText("下次运行：");
+  await expect(card).toContainText("每天 09:00");
+  // 卡片描述区展示任务自身描述
+  await expect(card).toContainText("C3 e2e 定时任务");
+  await expectNextRun(card);
   // 健康行不得被误标「需人工确认」
   await expect(card).not.toContainText("需人工确认");
 });
@@ -112,7 +146,8 @@ test("C3-2 间隔：切「间隔」先提示非法，填 2 小时后预览含「
   page,
 }) => {
   const name = `e2e-间隔-${Date.now()}`;
-  await openWorkspace(page);
+  createdNames.push(name);
+  await openCronPage(page);
   const dialog = await openCronDialog(page);
   const preview = dialog.locator(".trigger-editor__preview");
 
@@ -140,15 +175,16 @@ test("C3-2 间隔：切「间隔」先提示非法，填 2 小时后预览含「
   await expect(dialog).toBeHidden({ timeout: 15_000 });
 
   const card = await cronCard(page, name);
-  await expect(card).toContainText("触发方式");
   await expect(card).toContainText("间隔");
-  await expect(card).toContainText("下次运行：");
+  await expect(card).toContainText("每 2 小时");
+  await expectNextRun(card);
 });
 
 test("C3-3 单次：选未来时间，预览含该时刻，保存成功", async ({ page }) => {
   const name = `e2e-单次-${Date.now()}`;
+  createdNames.push(name);
   const future = tomorrowText();
-  await openWorkspace(page);
+  await openCronPage(page);
   const dialog = await openCronDialog(page);
   const preview = dialog.locator(".trigger-editor__preview");
 
@@ -169,14 +205,15 @@ test("C3-3 单次：选未来时间，预览含该时刻，保存成功", async 
   await expect(dialog).toBeHidden({ timeout: 15_000 });
 
   const card = await cronCard(page, name);
-  await expect(card).toContainText("触发方式");
   await expect(card).toContainText("单次");
-  await expect(card).toContainText("下次运行：");
+  await expect(card).toContainText(future.slice(0, 16));
+  await expectNextRun(card);
 });
 
-test("C3-4 立即：切「立即」保存成功，列表触发方式为「立即」", async ({ page }) => {
+test("C3-4 立即：切「立即」保存成功，卡片触发方式为「立即」", async ({ page }) => {
   const name = `e2e-立即-${Date.now()}`;
-  await openWorkspace(page);
+  createdNames.push(name);
+  await openCronPage(page);
   const dialog = await openCronDialog(page);
   const preview = dialog.locator(".trigger-editor__preview");
 
@@ -193,14 +230,13 @@ test("C3-4 立即：切「立即」保存成功，列表触发方式为「立即
   await expect(dialog).toBeHidden({ timeout: 15_000 });
 
   const card = await cronCard(page, name);
-  await expect(card).toContainText("触发方式");
   await expect(card).toContainText("立即");
 });
 
 test("C3-5 非法：间隔全 0 时提示非法原因且保存被拦截（弹窗不关闭）", async ({ page }) => {
   const name = `e2e-非法-${Date.now()}`;
   const createCalls: string[] = [];
-  await openWorkspace(page);
+  await openCronPage(page);
   page.on("request", (r) => {
     if (r.url().includes("/ai/workspace/cron/create")) createCalls.push(r.url());
   });

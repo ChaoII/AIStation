@@ -160,7 +160,7 @@
             <template #header>
               <span class="frwb-card__title">表清单（{{ preview?.tables?.length ?? 0 }}）</span>
             </template>
-            <el-table :data="preview?.tables || []" size="small" border height="300">
+            <el-table :data="preview?.tables || []" size="small" border height="300" stripe>
               <template #empty>
                 <el-empty description="暂无表数据，请先同步表结构" :image-size="50" />
               </template>
@@ -187,7 +187,7 @@
             <template #header>
               <span class="frwb-card__title">字段清单（{{ preview?.fields?.length ?? 0 }}）</span>
             </template>
-            <el-table :data="preview?.fields || []" size="small" border height="300">
+            <el-table :data="preview?.fields || []" size="small" border height="300" stripe>
               <template #empty>
                 <el-empty description="暂无字段数据，请先同步表结构" :image-size="50" />
               </template>
@@ -260,7 +260,7 @@
             class="frwb-note"
             title="已保存规则与当前草稿一致，无命中变化。"
           />
-          <el-table v-else :data="compareItems" size="small" border height="320">
+          <el-table v-else :data="compareItems" size="small" border height="320" stripe>
             <template #empty>
               <el-empty description="暂无差异（先点「刷新对比」或修改草稿规则）" :image-size="50" />
             </template>
@@ -432,7 +432,7 @@
               <div class="frwb-llm__subtitle">
                 系统表建议（{{ classifyResult.system_suggest?.length || 0 }}）
               </div>
-              <el-table :data="classifyResult.system_suggest || []" size="small" border>
+              <el-table :data="classifyResult.system_suggest || []" size="small" border stripe>
                 <el-table-column label="表名" prop="name" min-width="200" show-overflow-tooltip />
                 <el-table-column
                   label="建议原因"
@@ -444,7 +444,7 @@
               <div class="frwb-llm__subtitle">
                 审计字段建议（{{ classifyResult.audit_suggest?.length || 0 }}）
               </div>
-              <el-table :data="classifyResult.audit_suggest || []" size="small" border>
+              <el-table :data="classifyResult.audit_suggest || []" size="small" border stripe>
                 <el-table-column label="字段名" prop="name" min-width="200" show-overflow-tooltip />
                 <el-table-column
                   label="建议原因"

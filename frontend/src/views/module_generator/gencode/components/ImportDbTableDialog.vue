@@ -47,6 +47,7 @@
     <el-row>
       <el-table
         ref="tableRef"
+        stripe
         :data="data"
         :height="tableHeight"
         border

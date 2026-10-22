@@ -10,7 +10,7 @@
   <el-dialog
     v-model="visible"
     :title="title"
-    width="760px"
+    width="900px"
     append-to-body
     @open="runPreview"
     @closed="reset"
@@ -35,6 +35,8 @@
           :data="items"
           height="340"
           size="small"
+          border
+          stripe
           @selection-change="onSelectionChange"
         >
           <el-table-column type="selection" width="42" />

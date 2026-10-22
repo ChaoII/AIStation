@@ -79,7 +79,7 @@
         <el-button type="primary" size="small" @click="load">查询</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="rows" size="small" border max-height="560">
+      <el-table v-loading="loading" :data="rows" size="small" border max-height="560" stripe>
         <template #empty>
           <el-empty :image-size="60" description="还没有决策记录" />
         </template>
@@ -143,6 +143,7 @@
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'proposed'"
+              icon="Checked"
               link
               type="primary"
               size="small"
@@ -153,6 +154,7 @@
             <el-button
               v-if="row.status === 'approved'"
               v-hasPerm="'module_ai:ontology:execute'"
+              icon="VideoPlay"
               link
               type="success"
               size="small"
@@ -160,10 +162,15 @@
             >
               执行
             </el-button>
-            <el-button link type="primary" size="small" @click="openLineage(row)">谱系</el-button>
-            <el-button link type="primary" size="small" @click="openForm(row)">编辑</el-button>
+            <el-button icon="Share" link type="primary" size="small" @click="openLineage(row)">
+              谱系
+            </el-button>
+            <el-button icon="edit" link type="primary" size="small" @click="openForm(row)">
+              编辑
+            </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
+              icon="delete"
               link
               type="danger"
               size="small"
@@ -241,7 +248,7 @@
           <span class="ont-sec__title">评估过的选项</span>
           <el-tag size="small" effect="plain">{{ detail.options.length }}</el-tag>
         </div>
-        <el-table :data="detail.options" size="small" border>
+        <el-table :data="detail.options" size="small" border stripe>
           <template #empty>
             <el-empty :image-size="50" description="未记录备选方案" />
           </template>
@@ -280,7 +287,7 @@
           <span class="ont-sec__title">决策上下文（依据）</span>
           <el-tag size="small" effect="plain">{{ detail.evidence.length }}</el-tag>
         </div>
-        <el-table :data="detail.evidence" size="small" border>
+        <el-table :data="detail.evidence" size="small" border stripe>
           <template #empty>
             <el-empty :image-size="50" description="未记录依据" />
           </template>
@@ -314,7 +321,7 @@
           <el-tag size="small" effect="plain">{{ detail.impacts.length }}</el-tag>
           <span class="ont-hint">执行后自动对比对象前后快照得出</span>
         </div>
-        <el-table :data="detail.impacts" size="small" border>
+        <el-table :data="detail.impacts" size="small" border stripe>
           <template #empty>
             <el-empty :image-size="50" description="尚未执行或没有字段变化" />
           </template>
@@ -358,7 +365,7 @@
     </el-drawer>
 
     <!-- 提出/编辑决策 -->
-    <el-dialog v-model="formVisible" title="提出决策" width="720px" append-to-body>
+    <el-dialog v-model="formVisible" title="提出决策" width="900px" append-to-body>
       <el-form :model="form" label-width="130px">
         <el-form-item label="决策标题" required>
           <el-input v-model="form.title" placeholder="一句话说清要决定什么" />
@@ -475,7 +482,7 @@
     </el-dialog>
 
     <!-- 事后结果 -->
-    <el-dialog v-model="outcomeVisible" title="记录事后结果" width="560px" append-to-body>
+    <el-dialog v-model="outcomeVisible" title="记录事后结果" width="600px" append-to-body>
       <el-form label-width="110px">
         <el-form-item label="指标名">
           <el-input v-model="outcomeForm.metric" placeholder="如 downtime_minutes" />
@@ -504,7 +511,7 @@
     </el-dialog>
 
     <!-- 谱系 -->
-    <el-dialog v-model="lineageVisible" title="决策谱系" width="860px" append-to-body>
+    <el-dialog v-model="lineageVisible" title="决策谱系" width="900px" append-to-body>
       <el-alert
         type="info"
         :closable="false"

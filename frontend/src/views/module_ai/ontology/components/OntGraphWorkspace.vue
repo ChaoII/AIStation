@@ -184,7 +184,7 @@
     <el-dialog
       v-model="viewDialog.visible"
       :title="viewDialog.kind === 'template' ? '存为图模板' : '保存视图'"
-      width="420px"
+      width="520px"
       append-to-body
     >
       <el-form label-width="70px">

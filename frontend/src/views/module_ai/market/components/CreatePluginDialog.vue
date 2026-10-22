@@ -4,7 +4,7 @@
   <el-dialog
     v-model="visible"
     :title="props.realId ? '编辑能力插件' : '新增能力插件'"
-    width="560px"
+    width="600px"
     append-to-body
     destroy-on-close
     @closed="resetForm"

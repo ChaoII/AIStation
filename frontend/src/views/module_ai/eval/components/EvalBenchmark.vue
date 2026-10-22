@@ -55,6 +55,7 @@
         border
         style="margin-top: 12px"
         max-height="360"
+        stripe
       >
         <el-table-column prop="q" label="问题" min-width="220" show-overflow-tooltip />
         <el-table-column label="结果" width="80" align="center">

@@ -109,7 +109,13 @@
                 </el-descriptions-item>
               </el-descriptions>
               <div class="gp-section">最近管道运行</div>
-              <el-table :data="g.overview?.pipeline_runs || []" size="small" max-height="200">
+              <el-table
+                :data="g.overview?.pipeline_runs || []"
+                size="small"
+                max-height="200"
+                border
+                stripe
+              >
                 <el-table-column prop="name" label="管道" min-width="120" />
                 <el-table-column label="状态" width="90">
                   <template #default="{ row }">
@@ -143,7 +149,7 @@
           style="margin-bottom: 10px"
           title="ABAC：超管默认可见全部；命中「敏感放行」可查看敏感对象字段，否则 resolve/问数自动剔除敏感字段。"
         />
-        <el-table :data="accessRules" size="small" border>
+        <el-table :data="accessRules" size="small" border stripe>
           <template #empty>
             <el-empty description="暂无 ABAC 策略，点击「新建策略」配置访问管控" :image-size="60" />
           </template>
@@ -175,7 +181,9 @@
           </el-table-column>
           <el-table-column label="操作" width="110" align="center">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="editAccess(row)">编辑</el-button>
+              <el-button icon="edit" link type="primary" size="small" @click="editAccess(row)">
+                编辑
+              </el-button>
               <el-button link type="danger" size="small" @click="delAccess(row)">删</el-button>
             </template>
           </el-table-column>
@@ -207,7 +215,7 @@
             show-icon
           />
         </div>
-        <el-table :data="dqData.items || []" size="small" border>
+        <el-table :data="dqData.items || []" size="small" border stripe>
           <template #empty>
             <el-empty description="暂无数据质量结果，点击「扫描全部对象」" :image-size="60" />
           </template>
@@ -219,10 +227,10 @@
                 :percentage="Math.round(row.score || 0)"
                 :color="
                   (row.score || 0) >= 80
-                    ? '#67c23a'
+                    ? 'var(--el-color-success)'
                     : (row.score || 0) >= 60
-                      ? '#e6a23c'
-                      : '#f56c6c'
+                      ? 'var(--el-color-warning)'
+                      : 'var(--el-color-danger)'
                 "
                 :stroke-width="10"
               />
@@ -276,7 +284,7 @@
                       {{ d.code }}
                     </el-tag>
                   </span>
-                  <el-button link type="primary" size="small" @click="editDomain(d)">
+                  <el-button icon="edit" link type="primary" size="small" @click="editDomain(d)">
                     编辑
                   </el-button>
                   <el-button link type="danger" size="small" @click="delDomain(d)">删</el-button>
@@ -315,7 +323,7 @@
             本体对象 · 来源管道 / 下游 / 数据质量分 | 平均 {{ ontGov.avg_score ?? "-" }}
           </el-tag>
         </div>
-        <el-table :data="ontGov.items || []" size="small" border>
+        <el-table :data="ontGov.items || []" size="small" border stripe>
           <template #empty>
             <el-empty description="暂无本体对象，请先在「本体」页定义对象并物化" :image-size="60" />
           </template>
@@ -328,10 +336,10 @@
                 :percentage="Math.round(row.score || 0)"
                 :color="
                   (row.score || 0) >= 80
-                    ? '#67c23a'
+                    ? 'var(--el-color-success)'
                     : (row.score || 0) >= 60
-                      ? '#e6a23c'
-                      : '#f56c6c'
+                      ? 'var(--el-color-warning)'
+                      : 'var(--el-color-danger)'
                 "
                 :stroke-width="10"
               />
@@ -414,7 +422,7 @@
           </el-tag>
         </div>
         <div class="gp-section">待审批（写回需人工批准，批准后生效）</div>
-        <el-table :data="pendingActions" size="small" border style="margin-bottom: 16px">
+        <el-table :data="pendingActions" size="small" border style="margin-bottom: 16px" stripe>
           <template #empty>
             <el-empty description="暂无待审批动作" :image-size="50" />
           </template>
@@ -430,10 +438,10 @@
           <el-table-column prop="time" label="时间" min-width="150" show-overflow-tooltip />
           <el-table-column label="操作" width="130" align="center" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="apAction(row, true)">
+              <el-button icon="Check" link type="primary" size="small" @click="apAction(row, true)">
                 批准
               </el-button>
-              <el-button link type="danger" size="small" @click="apAction(row, false)">
+              <el-button icon="Close" link type="danger" size="small" @click="apAction(row, false)">
                 驳回
               </el-button>
             </template>
@@ -441,7 +449,7 @@
         </el-table>
 
         <div class="gp-section">动作定义（对象可写列 / 校验 / 是否需审批）</div>
-        <el-table :data="actionList" size="small" border>
+        <el-table :data="actionList" size="small" border stripe>
           <template #empty>
             <el-empty description="暂无动作定义" :image-size="50" />
           </template>
@@ -483,7 +491,7 @@
         </el-table>
 
         <div class="gp-section">审计日志（最近 50 条）</div>
-        <el-table :data="actionLogs" size="small" border max-height="260">
+        <el-table :data="actionLogs" size="small" border max-height="260" stripe>
           <template #empty>
             <el-empty description="暂无审计日志" :image-size="50" />
           </template>
@@ -518,7 +526,7 @@
           style="margin-bottom: 10px"
           title="交付命题：诊断→建模→装配→影子校验→交接 五步交付跟踪；影子校验用黄金标准比对影子指标实际值。"
         />
-        <el-table :data="fdeList" size="small" border>
+        <el-table :data="fdeList" size="small" border stripe>
           <template #empty>
             <el-empty description="暂无交付命题" :image-size="60" />
           </template>
@@ -553,8 +561,11 @@
           </el-table-column>
           <el-table-column label="操作" width="190" align="center" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="openFde(row)">编辑</el-button>
+              <el-button icon="edit" link type="primary" size="small" @click="openFde(row)">
+                编辑
+              </el-button>
               <el-button
+                icon="Checked"
                 link
                 type="primary"
                 size="small"
@@ -592,6 +603,7 @@
           border
           style="margin-top: 12px"
           max-height="420"
+          stripe
         >
           <template #empty>
             <el-empty description="暂无已发布对象" :image-size="60" />
@@ -648,7 +660,7 @@
     </el-dialog>
 
     <!-- 权限矩阵（按角色） -->
-    <el-dialog v-model="matrixDialog" title="数据域权限矩阵（按角色）" width="720px" append-to-body>
+    <el-dialog v-model="matrixDialog" title="数据域权限矩阵（按角色）" width="900px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
@@ -656,7 +668,14 @@
         style="margin-bottom: 10px"
         title="每个系统角色「合并后」可查询的对象清单；未命中策略即不受限（默认全部）。"
       />
-      <el-table v-loading="matrixLoading" :data="matrixRows" size="small" border max-height="420">
+      <el-table
+        v-loading="matrixLoading"
+        :data="matrixRows"
+        size="small"
+        border
+        max-height="420"
+        stripe
+      >
         <template #empty>
           <el-empty description="暂无角色" :image-size="60" />
         </template>
@@ -703,7 +722,7 @@
     <el-dialog
       v-model="sandboxDialog"
       title="权限预览（Check Access）"
-      width="720px"
+      width="900px"
       append-to-body
     >
       <el-form label-width="80px" inline>
@@ -782,7 +801,7 @@
     <el-dialog
       v-model="fdeDlg"
       :title="fdeForm.id ? '编辑交付命题' : '新建交付命题'"
-      width="620px"
+      width="600px"
       append-to-body
     >
       <el-form :model="fdeForm" label-width="100px">

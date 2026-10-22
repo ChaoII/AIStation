@@ -101,12 +101,24 @@
                 </el-descriptions-item>
               </el-descriptions>
               <!-- 关系 / 关联对象 -->
-              <el-table v-else-if="w.type === 'links'" :data="w.items || []" size="small" border>
+              <el-table
+                v-else-if="w.type === 'links'"
+                :data="w.items || []"
+                size="small"
+                border
+                stripe
+              >
                 <el-table-column prop="name" label="关系" min-width="140" />
                 <el-table-column prop="target_object" label="目标对象类型" min-width="140" />
                 <el-table-column prop="card" label="基数" width="90" />
               </el-table>
-              <el-table v-else-if="w.type === 'related'" :data="w.rows || []" size="small" border>
+              <el-table
+                v-else-if="w.type === 'related'"
+                :data="w.rows || []"
+                size="small"
+                border
+                stripe
+              >
                 <el-table-column
                   v-for="c in relatedCols(w)"
                   :key="c"
@@ -143,6 +155,7 @@
                 size="small"
                 border
                 max-height="320"
+                stripe
               >
                 <el-table-column
                   v-for="c in (w.columns || []).slice(0, 6)"
@@ -219,7 +232,7 @@
       </el-tab-pane>
 
       <el-tab-pane label="视图列表" name="list">
-        <el-table :data="views" size="small" border>
+        <el-table :data="views" size="small" border stripe>
           <template #empty><el-empty :image-size="50" description="暂无视图" /></template>
           <el-table-column prop="name" label="视图" min-width="200" show-overflow-tooltip />
           <el-table-column prop="code" label="编码" min-width="180" show-overflow-tooltip />
@@ -243,9 +256,12 @@
           <el-table-column prop="version" label="版本" width="70" align="center" />
           <el-table-column label="操作" width="220" align="center" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="openEditor(row)">编辑</el-button>
+              <el-button icon="edit" link type="primary" size="small" @click="openEditor(row)">
+                编辑
+              </el-button>
               <el-button
                 v-hasPerm="'module_ai:ontology:edit'"
+                icon="Star"
                 link
                 type="primary"
                 size="small"
@@ -259,6 +275,7 @@
               </el-button>
               <el-button
                 v-hasPerm="'module_ai:ontology:edit'"
+                icon="delete"
                 link
                 type="danger"
                 size="small"
@@ -273,7 +290,7 @@
     </el-tabs>
 
     <!-- 编辑器 -->
-    <el-dialog v-model="editorVisible" title="编辑对象视图" width="820px" append-to-body>
+    <el-dialog v-model="editorVisible" title="编辑对象视图" width="900px" append-to-body>
       <el-form label-width="100px">
         <el-form-item label="视图名称">
           <el-input v-model="form.name" />
@@ -455,7 +472,7 @@
     </el-dialog>
 
     <!-- 共享 -->
-    <el-dialog v-model="shareVisible" title="共享视图" width="560px" append-to-body>
+    <el-dialog v-model="shareVisible" title="共享视图" width="600px" append-to-body>
       <el-form label-width="110px">
         <el-form-item label="共享方式">
           <el-radio-group v-model="shareForm.share_mode">
@@ -488,8 +505,8 @@
       </template>
     </el-dialog>
     <!-- 版本 -->
-    <el-dialog v-model="verVisible" title="视图版本" width="620px" append-to-body>
-      <el-table :data="versions" size="small" border>
+    <el-dialog v-model="verVisible" title="视图版本" width="600px" append-to-body>
+      <el-table :data="versions" size="small" border stripe>
         <template #empty><el-empty :image-size="50" description="暂无历史版本" /></template>
         <el-table-column prop="version" label="版本" width="80" />
         <el-table-column prop="note" label="说明" min-width="160" show-overflow-tooltip />
@@ -499,6 +516,7 @@
           <template #default="{ row }">
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
+              icon="RefreshLeft"
               link
               type="primary"
               size="small"

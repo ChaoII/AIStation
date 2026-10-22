@@ -61,6 +61,7 @@
         :data="cases"
         size="small"
         border
+        stripe
         @selection-change="selection = $event"
       >
         <el-table-column type="selection" width="44" />
@@ -88,8 +89,12 @@
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="viewSql(row)">金标 SQL</el-button>
-            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button icon="Document" link type="primary" size="small" @click="viewSql(row)">
+              金标 SQL
+            </el-button>
+            <el-button icon="edit" link type="primary" size="small" @click="openEdit(row)">
+              编辑
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -137,7 +142,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="sqlVisible" title="金标 SQL" width="640px" append-to-body>
+    <el-dialog v-model="sqlVisible" title="金标 SQL" width="600px" append-to-body>
       <div class="ev-q">{{ current?.question }}</div>
       <el-input v-model="currentSql" type="textarea" :rows="9" readonly />
     </el-dialog>
@@ -145,7 +150,7 @@
     <el-dialog
       v-model="editVisible"
       :title="editing ? '编辑测试题' : '新增测试题'"
-      width="620px"
+      width="600px"
       append-to-body
     >
       <el-form :model="editForm" label-width="80px">

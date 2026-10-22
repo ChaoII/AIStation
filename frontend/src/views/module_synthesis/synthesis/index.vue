@@ -98,8 +98,15 @@
               </el-collapse-item>
             </el-collapse>
             <div style="margin-top: 6px">
-              <el-button size="small" link type="primary" @click="resetParams">恢复默认</el-button>
-              <el-button size="small" link @click="toggleAll">
+              <el-button icon="RefreshLeft" size="small" link type="primary" @click="resetParams">
+                恢复默认
+              </el-button>
+              <el-button
+                :icon="activeDisturbs.length ? 'ArrowUp' : 'ArrowDown'"
+                size="small"
+                link
+                @click="toggleAll"
+              >
                 {{ activeDisturbs.length ? "收起全部" : "展开全部" }}
               </el-button>
               <span class="disturb-hint">关闭的扰动不参与生成；参数为随机区间 [下限 ~ 上限]</span>
@@ -163,7 +170,7 @@
           <el-button size="small" :icon="Refresh" @click="loadJobs">刷新</el-button>
         </div>
       </template>
-      <el-table :data="jobs" size="default" empty-text="暂无合成任务">
+      <el-table border stripe :data="jobs" size="default" empty-text="暂无合成任务">
         <el-table-column prop="id" label="任务ID" width="80" />
         <el-table-column prop="plate_type_label" label="车牌类型" width="150" />
         <el-table-column prop="params" label="参数" min-width="180">

@@ -158,6 +158,7 @@
                   删除
                 </el-button>
                 <el-button
+                  :icon="scope.row.status === 'RUNNING' ? 'VideoPause' : 'VideoPlay'"
                   :type="scope.row.status === 'RUNNING' ? 'warning' : 'success'"
                   size="small"
                   link

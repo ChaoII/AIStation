@@ -26,6 +26,21 @@
                     placeholder="描述"
                   />
                 </el-form-item>
+                <el-form-item label="分类">
+                  <el-select
+                    v-model="formData.category_id"
+                    clearable
+                    placeholder="选择分类"
+                    style="width: 100%"
+                  >
+                    <el-option
+                      v-for="c in categoryOptions"
+                      :key="c.id"
+                      :label="indentLabel(c)"
+                      :value="c.id"
+                    />
+                  </el-select>
+                </el-form-item>
                 <el-form-item label="快速模板">
                   <el-dropdown trigger="click" style="width: 100%" @command="applyTemplateByKey">
                     <el-button size="small" :icon="MagicStick" style="width: 100%">
@@ -204,7 +219,7 @@
                 </Panel>
                 <Panel position="bottom-center" class="wf-hint">
                   操作：左侧点选/拖拽添加节点 → 点击节点在右侧编辑 → 拖动节点圆点连线 →
-                  <el-button link type="primary" size="small" @click="fitView()">
+                  <el-button icon="FullScreen" link type="primary" size="small" @click="fitView()">
                     适配视图
                   </el-button>
                 </Panel>
@@ -220,6 +235,7 @@
               <div class="section-title">
                 节点：{{ nodeDefOf(selectedNode.type || "llm").label }}
                 <el-button
+                  icon="VideoPlay"
                   link
                   type="primary"
                   size="small"
@@ -229,6 +245,7 @@
                   调试此节点
                 </el-button>
                 <el-button
+                  icon="CopyDocument"
                   link
                   type="primary"
                   size="small"
@@ -238,6 +255,7 @@
                   复制
                 </el-button>
                 <el-button
+                  icon="delete"
                   link
                   type="danger"
                   size="small"
@@ -382,6 +400,7 @@
                         <div class="kv-t">
                           输入
                           <el-button
+                            icon="CopyDocument"
                             link
                             size="small"
                             class="kv-copy"
@@ -396,6 +415,7 @@
                         <div class="kv-t">
                           输出
                           <el-button
+                            icon="CopyDocument"
                             link
                             size="small"
                             class="kv-copy"
@@ -410,6 +430,7 @@
                         <div class="kv-t">
                           错误
                           <el-button
+                            icon="CopyDocument"
                             link
                             size="small"
                             class="kv-copy"
@@ -598,7 +619,7 @@
     </teleport>
 
     <!-- 加入分组选择弹窗 -->
-    <el-dialog v-model="groupDialogVisible" title="加入分组" width="400px" append-to-body>
+    <el-dialog v-model="groupDialogVisible" title="加入分组" width="520px" append-to-body>
       <el-select v-model="groupSelect" filterable placeholder="选择分组" style="width: 100%">
         <el-option v-for="g in groupOptions" :key="g.id" :label="g.label" :value="g.id" />
       </el-select>
@@ -621,7 +642,7 @@
     <el-dialog
       v-model="historyVisible"
       title="运行历史"
-      width="760px"
+      width="900px"
       append-to-body
       @closed="stopReplay"
     >
@@ -647,6 +668,7 @@
         size="small"
         border
         max-height="420"
+        stripe
       >
         <el-table-column label="时间" width="180">
           <template #default="{ row }">{{ formatTime(row.created_time) }}</template>
@@ -666,7 +688,7 @@
         </el-table-column>
         <el-table-column label="" width="70">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openRunDetail(row.id)">
+            <el-button icon="View" link type="primary" size="small" @click="openRunDetail(row.id)">
               详情
             </el-button>
           </template>
@@ -677,7 +699,14 @@
         <div class="history-detail__title">
           节点执行过程
           <span class="hd-replay">
-            <el-button v-if="!replayPlaying" link type="primary" size="small" @click="startReplay">
+            <el-button
+              v-if="!replayPlaying"
+              icon="VideoPlay"
+              link
+              type="primary"
+              size="small"
+              @click="startReplay"
+            >
               画布回放
             </el-button>
             <el-button v-else link type="danger" size="small" @click="stopReplay">
@@ -777,7 +806,7 @@
     </el-drawer>
 
     <!-- 版本管理弹窗 -->
-    <el-dialog v-model="versionsVisible" title="版本管理" width="680px" append-to-body>
+    <el-dialog v-model="versionsVisible" title="版本管理" width="600px" append-to-body>
       <div class="version-save-row">
         <el-input
           v-model="versionRemark"
@@ -789,7 +818,7 @@
           保存当前版本
         </el-button>
       </div>
-      <el-table v-loading="versionLoading" :data="versions" size="small" border>
+      <el-table v-loading="versionLoading" :data="versions" size="small" border stripe>
         <el-table-column label="版本" width="80">
           <template #default="{ row }">v{{ row.version_no }}</template>
         </el-table-column>
@@ -803,9 +832,15 @@
         <el-table-column prop="created_time" label="保存时间" width="180" />
         <el-table-column label="操作" width="200">
           <template #default="{ row }">
-            <el-button link type="success" size="small" @click="openCompare(row)">对比</el-button>
-            <el-button link type="primary" size="small" @click="doPublish(row)">发布</el-button>
-            <el-button link type="warning" size="small" @click="doRollback(row)">回滚</el-button>
+            <el-button icon="Switch" link type="success" size="small" @click="openCompare(row)">
+              对比
+            </el-button>
+            <el-button icon="Upload" link type="primary" size="small" @click="doPublish(row)">
+              发布
+            </el-button>
+            <el-button icon="RefreshLeft" link type="warning" size="small" @click="doRollback(row)">
+              回滚
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -830,7 +865,7 @@
     <el-dialog
       v-model="topoVisible"
       title="DAG 拓扑总览"
-      width="800px"
+      width="900px"
       height="600px"
       append-to-body
     >
@@ -947,6 +982,7 @@ import {
   setAiWorkflowSchedule,
   runAiWorkflowSchedule,
 } from "@/api/module_ai/workflow";
+import { getWorkspaceCategoryTree } from "@/api/module_ai/workspace";
 import { Auth } from "@/utils/auth";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
@@ -1065,7 +1101,35 @@ onConnect((conn) => {
   autoFillOnConnect(conn);
 });
 
-const formData = reactive<{ name: string; description: string }>({ name: "", description: "" });
+const formData = reactive<{ name: string; description: string; category_id: number | null }>({
+  name: "",
+  description: "",
+  category_id: null,
+});
+
+/** 分类下拉的层级缩进：全角空格（用 \u3000 转义，避免 no-irregular-whitespace） */
+function indentLabel(c: { name: string; depth: number }) {
+  return "\u3000".repeat(c.depth) + c.name;
+}
+
+/** 工作台分类（分类的唯一维护入口在工作台；此处只读取树并拍平供下拉选择） */
+const categoryOptions = ref<{ id: number; name: string; depth: number }[]>([]);
+async function loadCategories() {
+  try {
+    const res: any = await getWorkspaceCategoryTree();
+    const out: { id: number; name: string; depth: number }[] = [];
+    const walk = (list: any[], depth: number) => {
+      for (const n of list || []) {
+        out.push({ id: n.id, name: n.name, depth });
+        if (n.children?.length) walk(n.children, depth + 1);
+      }
+    };
+    walk(res.data?.data || [], 0);
+    categoryOptions.value = out;
+  } catch {
+    categoryOptions.value = [];
+  }
+}
 const workflowId = ref<number>();
 const saving = ref(false);
 const nodes = ref<Node[]>([]);
@@ -2066,10 +2130,12 @@ const loadOptions = async () => {
 onInit((instance) => {
   instance.fitView();
   loadOptions();
+  loadCategories();
   if (props.workflow) {
     workflowId.value = props.workflow.id;
     formData.name = props.workflow.name || "";
     formData.description = props.workflow.description || "";
+    formData.category_id = props.workflow.category_id ?? null;
     const g = props.workflow.graph || { nodes: [], edges: [] };
     nodes.value = g.nodes.map((n: any) => ({
       id: n.id,
@@ -3147,6 +3213,7 @@ async function handleSave() {
         name: formData.name,
         description: formData.description,
         graph,
+        category_id: formData.category_id,
       });
     } else {
       const res = await createAiWorkflow({
@@ -3154,6 +3221,7 @@ async function handleSave() {
         description: formData.description,
         graph,
         enabled: true,
+        category_id: formData.category_id,
       });
       workflowId.value = res.data?.data?.id;
     }
@@ -3504,7 +3572,7 @@ async function handleApprove(decision: "approve" | "reject") {
 
   .palette-item__desc {
     margin-left: auto;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--el-text-color-placeholder);
   }
 }
@@ -3728,7 +3796,7 @@ async function handleApprove(decision: "approve" | "reject") {
 
     .trace-item__chev {
       color: var(--el-text-color-secondary);
-      font-size: 11px;
+      font-size: 12px;
     }
 
     .trace-item__dot {
@@ -3756,7 +3824,7 @@ async function handleApprove(decision: "approve" | "reject") {
     }
 
     .trace-item__dur {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--el-text-color-secondary);
     }
 
@@ -3888,7 +3956,7 @@ async function handleApprove(decision: "approve" | "reject") {
 
   .share-trace-item__chev {
     color: var(--el-text-color-secondary);
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .share-trace-item__err {
@@ -4191,7 +4259,7 @@ async function handleApprove(decision: "approve" | "reject") {
 
     .run-trace__chev {
       color: var(--el-text-color-secondary);
-      font-size: 11px;
+      font-size: 12px;
     }
   }
 

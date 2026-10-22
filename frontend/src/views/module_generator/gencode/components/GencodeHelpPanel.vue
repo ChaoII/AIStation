@@ -7,7 +7,7 @@
           菜单、页面路由与接口路径对照（写入本地时）
         </span>
       </template>
-      <el-table :data="rows" border size="small" class="gencode-rules-table">
+      <el-table stripe :data="rows" border size="small" class="gencode-rules-table">
         <el-table-column prop="parent" label="上级目录" min-width="88" />
         <el-table-column prop="sidebar" label="侧栏结构（目录→菜单→按钮）" min-width="200" />
         <el-table-column prop="page" label="浏览器地址（页面路由）" min-width="160" />

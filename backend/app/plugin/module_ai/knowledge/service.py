@@ -8,6 +8,7 @@ import re
 from sqlalchemy import func, select, text
 
 from app.core.database import async_db_session
+from app.utils.common_util import traversal_to_tree
 
 from . import embedding, graphrag
 from .chunking import chunk_drafts, chunk_text
@@ -16,6 +17,7 @@ from .model import (
     AiChunkAnnotationLogModel,
     AiDatasourceModel,
     AiKnowledgeBaseModel,
+    AiKnowledgeCategoryModel,
     AiKnowledgeChunkModel,
     AiKnowledgeDocumentModel,
     AiKnowledgeEntityChunkModel,
@@ -76,6 +78,7 @@ def _kb_to_dict(b: AiKnowledgeBaseModel) -> dict:
         "name": b.name,
         "description": b.description or "",
         "model_id": b.model_id,
+        "category_id": b.category_id,
         "chunk_count": b.chunk_count or 0,
         "file_type": b.file_type or "text",
         "enabled": b.enabled,
@@ -83,6 +86,19 @@ def _kb_to_dict(b: AiKnowledgeBaseModel) -> dict:
         "graph_edges": 0,
         "created_time": b.created_time,
         "updated_time": b.updated_time,
+    }
+
+
+def _category_to_dict(c: AiKnowledgeCategoryModel) -> dict:
+    return {
+        "id": c.id,
+        "name": c.name,
+        "parent_id": c.parent_id,
+        "owner": c.owner or "",
+        "remark": c.remark or "",
+        "sort": c.sort or 0,
+        "created_time": c.created_time,
+        "updated_time": c.updated_time,
     }
 
 
@@ -180,18 +196,136 @@ class AiKnowledgeService:
             )
 
     # ------------------------------------------------------------ #
-    # 知识库 CRUD
+    # 知识库分类（左侧分类树）
     # ------------------------------------------------------------ #
     @classmethod
-    async def list_bases(cls) -> list[dict]:
+    async def list_category_tree(cls) -> list[dict]:
+        """分类树（多级），每个分类带其**直属**知识库数量。"""
         async with async_db_session() as db:
             rows = (
                 await db.execute(
-                    select(AiKnowledgeBaseModel)
-                    .where(AiKnowledgeBaseModel.is_deleted.is_(False))
-                    .order_by(AiKnowledgeBaseModel.id.desc())
+                    select(AiKnowledgeCategoryModel)
+                    .where(AiKnowledgeCategoryModel.is_deleted.is_(False))
+                    .order_by(AiKnowledgeCategoryModel.sort.asc(), AiKnowledgeCategoryModel.id.asc())
                 )
             ).scalars().all()
+            counts = dict(
+                (
+                    await db.execute(
+                        select(AiKnowledgeBaseModel.category_id, func.count())
+                        .where(AiKnowledgeBaseModel.is_deleted.is_(False))
+                        .group_by(AiKnowledgeBaseModel.category_id)
+                    )
+                ).all()
+            )
+            flat = [
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "parent_id": c.parent_id,
+                    "owner": c.owner or "",
+                    "remark": c.remark or "",
+                    "sort": c.sort or 0,
+                    "count": int(counts.get(c.id, 0) or 0),
+                }
+                for c in rows
+            ]
+        return traversal_to_tree(flat)
+
+    @classmethod
+    async def create_category(cls, data, auth) -> dict:
+        async with async_db_session.begin() as db:
+            c = AiKnowledgeCategoryModel(
+                name=(data.name or "").strip(),
+                parent_id=data.parent_id,
+                owner=data.owner or None,
+                remark=data.remark or "",
+                sort=data.sort or 0,
+                created_id=auth.user.id,
+                updated_id=auth.user.id,
+            )
+            db.add(c)
+            await db.flush()
+            return _category_to_dict(c)
+
+    @classmethod
+    async def update_category(cls, cat_id: int, data, auth) -> dict | None:
+        async with async_db_session.begin() as db:
+            c = await db.get(AiKnowledgeCategoryModel, cat_id)
+            if not c or c.is_deleted:
+                return None
+            for key in ("name", "parent_id", "owner", "remark", "sort"):
+                val = getattr(data, key, None)
+                if val is not None:
+                    setattr(c, key, val)
+            c.updated_id = auth.user.id
+            await db.flush()
+            return _category_to_dict(c)
+
+    @classmethod
+    async def delete_category(cls, ids: list[int]) -> None:
+        """删除分类：子分类提升为根、所属知识库解绑（不删知识库）。"""
+        async with async_db_session.begin() as db:
+            for cid in ids:
+                c = await db.get(AiKnowledgeCategoryModel, cid)
+                if not c or c.is_deleted:
+                    continue
+                children = (
+                    await db.execute(
+                        select(AiKnowledgeCategoryModel).where(
+                            AiKnowledgeCategoryModel.parent_id == cid
+                        )
+                    )
+                ).scalars().all()
+                for child in children:
+                    child.parent_id = None
+                bases = (
+                    await db.execute(
+                        select(AiKnowledgeBaseModel).where(
+                            AiKnowledgeBaseModel.category_id == cid
+                        )
+                    )
+                ).scalars().all()
+                for b in bases:
+                    b.category_id = None
+                await db.delete(c)
+
+    @classmethod
+    async def _category_descendant_ids(cls, db, category_id: int) -> list[int]:
+        """分类 + 其所有子孙分类 id（父分类应能看到子分类下的知识库）。"""
+        rows = (
+            await db.execute(
+                select(AiKnowledgeCategoryModel).where(
+                    AiKnowledgeCategoryModel.is_deleted.is_(False)
+                )
+            )
+        ).scalars().all()
+        children: dict[int | None, list[int]] = {}
+        for c in rows:
+            children.setdefault(c.parent_id, []).append(c.id)
+        out: list[int] = []
+        stack = [category_id]
+        while stack:
+            cur = stack.pop()
+            out.append(cur)
+            stack.extend(children.get(cur, []))
+        return out
+
+    # ------------------------------------------------------------ #
+    # 知识库 CRUD
+    # ------------------------------------------------------------ #
+    @classmethod
+    async def list_bases(cls, category_id: int | None = None) -> list[dict]:
+        async with async_db_session() as db:
+            stmt = (
+                select(AiKnowledgeBaseModel)
+                .where(AiKnowledgeBaseModel.is_deleted.is_(False))
+                .order_by(AiKnowledgeBaseModel.id.desc())
+            )
+            if category_id is not None:
+                ids = await cls._category_descendant_ids(db, category_id)
+                stmt = stmt.where(AiKnowledgeBaseModel.category_id.in_(ids))
+            rows = (await db.execute(stmt)).scalars().all()
             items = [_kb_to_dict(b) for b in rows]
         await _attach_graph_stats(items)
         return items
@@ -214,6 +348,7 @@ class AiKnowledgeService:
                 description=data.description or "",
                 model_id=data.model_id,
                 file_type=data.file_type or "text",
+                category_id=data.category_id,
                 enabled=data.enabled,
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
@@ -243,7 +378,7 @@ class AiKnowledgeService:
             if not b or b.is_deleted:
                 return None
             old_model_id = b.model_id
-            for key in ("name", "description", "model_id", "file_type", "enabled"):
+            for key in ("name", "description", "model_id", "file_type", "category_id", "enabled"):
                 if getattr(data, key) is not None:
                     setattr(b, key, getattr(data, key))
             b.updated_id = auth.user.id
@@ -321,6 +456,12 @@ class AiKnowledgeService:
                 except Exception:  # noqa: BLE001
                     pass
 
+        # agno 向量行按库清理（级联已删 chunks，防脏行残留）
+        from .search import agno_engine
+
+        for kid in ids:
+            await agno_engine.delete_kb_vectors(kid)
+
     @classmethod
     async def copy_kb(cls, kb_id: int, auth) -> dict:
         """复制知识库：新建副本并连同分块内容/向量/溯源一起复制（图谱另同步）。"""
@@ -374,6 +515,35 @@ class AiKnowledgeService:
                 )
                 copied += 1
             new.chunk_count = copied
+            await db.flush()
+            # 副本向量同步写入 agno（否则副本库的向量检索为空）
+            snapshots = [
+                {
+                    "chunk_id": c.id,
+                    "content": c.search_text or c.content or "",
+                    "meta_data": {
+                        "kb_id": new_id,
+                        "chunk_id": c.id,
+                        "file_name": c.file_name or "",
+                        "document_id": c.document_id,
+                        "start_line": c.start_line,
+                        "page": c.page,
+                    },
+                    "vector": list(c.vector or []),
+                }
+                for c in (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel).where(
+                            AiKnowledgeChunkModel.knowledge_base_id == new_id,
+                            AiKnowledgeChunkModel.is_deleted.is_(False),
+                        )
+                    )
+                ).scalars().all()
+                if c.vector
+            ]
+        from .search import agno_engine
+
+        await agno_engine.upsert_chunks(snapshots)
         await cls._rebuild_graph(new_id)
         return {"id": new_id, "name": new.name, "chunks": copied}
 
@@ -951,6 +1121,10 @@ class AiKnowledgeService:
             c = await db.get(AiKnowledgeChunkModel, chunk_id)
             if c:
                 await db.delete(c)
+        # agno 向量行同步删除（防检索命中已删分块）
+        from .search import agno_engine
+
+        await agno_engine.delete_chunk_ids([chunk_id])
 
     @classmethod
     async def update_chunk(cls, kb_id: int, chunk_id: int, content: str) -> dict:
@@ -964,6 +1138,24 @@ class AiKnowledgeService:
             c.content = content
             c.vector = vec
             c.dimension = len(vec) if vec else None
+            search_text = c.search_text or content
+            snapshot = {
+                "chunk_id": c.id,
+                "content": search_text,
+                "meta_data": {
+                    "kb_id": c.knowledge_base_id,
+                    "chunk_id": c.id,
+                    "file_name": c.file_name or "",
+                    "document_id": c.document_id,
+                    "start_line": c.start_line,
+                    "page": c.page,
+                },
+                "vector": vec,
+            }
+        # agno 向量行同步更新（否则检索返回旧内容）
+        from .search import agno_engine
+
+        await agno_engine.upsert_chunks([snapshot])
         return {"chunk_id": chunk_id}
 
     # ---------- 分块标注（提升换说法召回命中） ----------
@@ -2255,6 +2447,11 @@ class AiKnowledgeService:
     @classmethod
     async def _rebuild_index_sync(cls, kb_id: int) -> dict:
         """重建索引的同步实现（供 worker 调用）：重新向量化子分块 + 重建图谱。"""
+        # 先清该库的 agno 向量行（防「分块被删但向量残留」的脏行）
+        from .search import agno_engine
+
+        await agno_engine.delete_kb_vectors(kb_id)
+
         async with async_db_session() as db:
             ids = (
                 (

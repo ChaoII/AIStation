@@ -623,7 +623,7 @@ defineExpose({
             justify-content: center;
             width: 22px;
             height: 22px;
-            font-size: 11px;
+            font-size: 12px;
             cursor: pointer;
             border: 1px solid var(--el-border-color-lighter);
             border-radius: 6px;

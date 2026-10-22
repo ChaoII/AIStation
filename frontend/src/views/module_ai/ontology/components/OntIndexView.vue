@@ -60,7 +60,7 @@
 
       <el-tabs v-model="tab">
         <el-tab-pane label="索引明细" name="list">
-          <el-table v-loading="loading" :data="rows" size="small" border max-height="520">
+          <el-table v-loading="loading" :data="rows" size="small" border max-height="520" stripe>
             <template #empty><el-empty :image-size="60" description="还没有索引" /></template>
             <el-table-column label="对象类型" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">{{ objectLabel(row.object_code) }}</template>
@@ -104,6 +104,7 @@
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="'module_ai:ontology:manage'"
+                  icon="Refresh"
                   link
                   type="primary"
                   size="small"
@@ -114,6 +115,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="'module_ai:ontology:manage'"
+                  icon="delete"
                   link
                   type="danger"
                   size="small"
@@ -127,7 +129,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="按对象类型" name="objects">
-          <el-table :data="summary?.objects || []" size="small" border>
+          <el-table :data="summary?.objects || []" size="small" border stripe>
             <template #empty><el-empty :image-size="50" description="暂无" /></template>
             <el-table-column
               prop="object_name"
@@ -151,6 +153,7 @@
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="'module_ai:ontology:manage'"
+                  icon="Refresh"
                   link
                   type="primary"
                   size="small"
@@ -160,6 +163,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="'module_ai:ontology:manage'"
+                  icon="Clock"
                   link
                   type="warning"
                   size="small"
@@ -175,7 +179,7 @@
     </el-card>
 
     <!-- 新建索引 -->
-    <el-dialog v-model="formVisible" title="索引" width="560px" append-to-body>
+    <el-dialog v-model="formVisible" title="索引" width="600px" append-to-body>
       <el-form label-width="110px">
         <el-form-item label="对象类型" required>
           <el-select v-model="form.object_code" filterable style="width: 100%">
@@ -228,14 +232,14 @@
     </el-dialog>
 
     <!-- 索引建议 -->
-    <el-dialog v-model="sugVisible" title="索引建议" width="620px" append-to-body>
+    <el-dialog v-model="sugVisible" title="索引建议" width="600px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
         title="依据：主键/显示名、被行级策略引用的字段、关系关联字段、唯一约束字段"
       />
-      <el-table :data="suggestions" size="small" border max-height="360">
+      <el-table :data="suggestions" size="small" border max-height="360" stripe>
         <template #empty><el-empty :image-size="50" description="暂无建议" /></template>
         <el-table-column label="字段" min-width="140">
           <template #default="{ row }">

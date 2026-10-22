@@ -265,6 +265,24 @@ Vue logs: `"Component inside <Transition> renders non-element root node that can
 - 动手前先找**同类页面/组件**作参照（列表页看 `module_system/param`，训练详情看 `module_train/task/detail`），照其结构、字号、间距、交互实现；**不要自创风格**。
 - 完成后用无头浏览器截图，**直接用模型自身的多模态能力读图**与既有页面对照，确认风格一致再交付（**不要**依赖 `vision-recognition` 技能）。
 
+### 5. 页面布局统一（强制，2026-10）
+
+参照「系统管理」（用户/角色/参数等框架自带 CRUD 页），所有页面必须满足：
+
+- **白色面板铺满**：页面根 `app-container` 显式 `display:flex; flex-direction:column; height:100%;
+  overflow:hidden`，卡片/面板 `flex:1 1 auto; min-height:0`，内容区自己滚。
+  禁止「表格几行就结束、下面露一大截灰底」（曾出现：知识库 446px / 空间扩容审核 327px /
+  AI 集成 490px 处截止，用户明确否掉）。
+- **左右布局左栏固定 240px**（`flex:0 0 240px`），左右各自独立 `el-card`，`gap:12px`。
+  不要用 `el-col` 百分比栅格定左栏（实测 354px 等各页不一），也不要 260/272 混用。
+  已统一：工作台、定时任务（单卡）、个人工作空间、智能问数、本体、数据与集成。
+- 保留 `el-row` 时必须清掉 gutter 负边距：`margin:0!important` + col `padding:0!important` + `gap:12px`，
+  否则左卡实际宽度是 240-12=228px，与 flex 布局页差 12px（视觉上"割裂"）。
+- 布局覆盖一律**非 scoped + 唯一类名**（防 data-v 在 keep-alive/HMR 下失效）；
+  `el-tabs` 页必须给 `.el-tabs` / `.el-tabs__content` 补 flex 高度链（否则 tab 内容区不撑满）。
+- 无卡片的列表页（provider/develop）要么给表格包 `flex:1` 容器 + `height="100%"`，要么套统一
+  `el-card` 让白色面板铺满；不要一半有卡一半裸表格。
+
 ## 标注标签渲染经验（标注重中之重）
 
 ### 坐标系统
@@ -705,6 +723,63 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 ## AI 管理模块（v2，进行中）
 
 - 位置：后端 `backend/app/plugin/module_ai/`（自动发现，容器前缀 `/ai`）；前端 `frontend/src/views/module_ai/`。
+- 工作台（2026-10 改版）：只服务**智能体家族**（传统智能体 + 工作流编排）；原顶部类型 tab 已废弃，
+  类别筛选并入工具栏下拉（全部/传统智能体/工作流，「新建」随类别联动）。**卡片模板参照能力市场**
+  （`MarketCard.vue`）：图标 + 名称（单行 ellipsis）+ 副行（类型 tag / agent_role / 分类名）+
+  **固定两行描述区**（无描述显示「暂无描述」，保证各卡等高）+ 能力标签行（min-height 24px）+
+  footer（创建时间 + 对话/更多）。卡片行内高度实测完全一致（224px）。**布局区域隔离**（参照
+  「个人工作空间」）：左「分类」独立 el-card（树 + 新建分类）＋ 右内容独立 el-card（工具栏 + 卡片网格 +
+  分页），不再挤在同一面板。卡片开关**真实落库**（agent → `PUT /ai/agents/batch/status`；workflow →
+  `PUT /ai/workflows/update/{id}` 部分更新）。
+  应用归「AI应用」菜单；**定时任务为独立模块 `/ai/cron`**（`module_ai/cron/index`，**卡片网格**：
+  信息模板统一 = 描述区固定两行 + 触发/下次/上次各一行 + 目标行，各卡高度完全一致；操作
+  新建/编辑（TriggerEditor）/启停/立即执行/删除）。cron 接口仍挂 `/ai/workspace/cron/*` 前缀，
+  但权限独立为 `module_ai:cron:*`（`_ensure_ai_menus` 注册菜单+按钮权限，存量库重启生效）；
+  「立即执行」= `POST /cron/{id}/run`，只入队（BackgroundTasks），执行与调度器同走
+  `run_scheduled_workspace_cron`。触发预览仍复用 `/ai/workspace/trigger/preview`。
+- **调度执行目标**（`WorkspaceService._run_target`）：workflow 走 `run_schedule`；agent/app **真执行**
+  （没有非流式入口，消费各自 `run_ui_stream` 的完整流；`auth=None` + `session_id=None`，
+  不落用户会话、调用日志照记；固定调度消息「按你的配置执行」，因为 agent guardrail 拒绝空输入）。
+- **工作流分类**：`AiWorkflowModel.category_id` 已由 Create/Update schema 暴露（此前只有列、无字段 →
+  分类树对工作流空转）；入口在 `WorkflowEditor` 基础信息「分类」下拉（读工作台分类树，`\u3000` 缩进层级）。
+  update 传 `category_id: null` = **显式清空**（与其它字段 None=不修改区分）。
+- **AI 菜单分组**（2026-10）：`_ensure_ai_menu_groups()`（幂等，必须在 `_ensure_ai_menus` +
+  `_ensure_develop_menus` **之后**调用）：**工作台、定时任务是顶层独立模块**（order 5/6，不放进分组）；
+  其余页面挂到 3 个目录：知识与本体（本体/知识库/提示词）、应用与集成（AI应用/无代码应用/能力市场/AI集成）、
+  平台与运维（模型配置/模型供应商/调用日志/空间扩容审核/个人工作空间）。顶层另有控制台（hidden，
+  父菜单 redirect 到它）+ 智能问数目录。`AI_RETIRED_GROUPS`（AiGroupBuild）会被幂等清理（子菜单回顶层、
+  删目录与授权）。目录 type=1 的 route_path/redirect 必须非空。
+- 历史菜单行若 `client` 为空或**目录缺 route_path**，`GET /system/menu/tree` 会 400/500（校验失败），
+  表现为「菜单管理页打不开」；修数据即可（client 补 'pc'，目录补 route_path=redirect）。
+- **知识库向量检索 agno 化**（2026-10）：生产主路径走 `agno.vectordb.pgvector.PgVector`（`search/agno_engine.py`，
+  `public.ai_kb_vectors` 原生表，`schema="public"` + 构造后**必须 `await async_create()`** 建表；Embedder =
+  `OpenAILikeEmbedder(dimensions=...)`（dimensions 传给 embedder 而非 PgVector））。入库链路在
+  `persist.write_vectors` **双写**（chunks 表存详情/标注 + agno 表存向量，meta_data 带 kb_id/chunk_id/file_name）；
+  检索 `engines.vector_search` 先 agno、失败回退旧 pgvector SQL → Python 手算余弦（**回退仅测试/降级**，
+  SQLite pytest 走此路径）。存量数据点一次「重建索引」即迁移。坑：日志输出 `ai.` schema 前缀=未传 `schema`。
+- **对话流协议边界**（2026-10，勿再混）：两条 SSE 协议各有疆界——
+  - **workflow 端点**（`/ai/workflows/{id}/run/stream` 等）= AI SDK UI Message Stream 帧
+    （编辑器/分享页/HITL 依赖 `node-status` / `data-run` / `data-finish`），**不改**。
+  - **assistant / agent / app 的 run 端点** = Agno 原生事件流（`RunStarted/RunContent/
+    ToolCall*/RunError/RunCompleted`），controller 用 `agno_stream_response`，前端
+    `AgnoChatTransport` 只认 `event: Run*` 帧——**误发 UI 帧会被静默丢弃**（错误提示/回复
+    全丢，曾真实发生：guardrail 拦截、kb 应用、委托工作流三条路径）。
+  - agent/app **委托工作流**时经 `assistant/agno_service.ui_stream_to_agno` 转译（编排帧丢弃）；
+    错误路径一律 `agno_error_frame`；委托时 finally **跳过** `persist_session_exchange`
+    （工作流引擎已自己落会话，重复会多一条 user 消息）。
+  - 前端 `useAiChat` 按 `protocol` 选 transport：workflow kind 用 SDK 原生
+    `DefaultChatTransport`（`protocol: "ui"`），其余用 `AgnoChatTransport`。
+- **知识库分类树**（2026-10）：新建 `ai_knowledge_categories` 表（插件表自建：`knowledge/schema_check.py`
+  的 `ensure_knowledge_schema` 启动幂等建表 + 给 `ai_knowledge_bases` 补 `category_id` 列，
+  **不走 alembic autogenerate**）。接口 `/ai/knowledge/categories/{tree,create,update,delete}`（权限
+  沿用 `module_ai:knowledge:*`）；`bases/list?category_id=` 含子分类过滤；前端左侧分类树
+  （根节点「全部」+ 计数徽章），新建/编辑知识库可选分类。
+- **分类树统一视觉**（工作台 + 知识库共用）：全局 `.ai-tree`（`styles/element-plus.scss`）——
+  文件夹图标 + 名称（title 提示）+ 计数徽章，选中浅蓝高亮；树默认 `default-expand-all`；
+  左栏统一 240px。工作台计数为「分类及子孙分类下的智能体/工作流数」（前端统计）。
+- e2e：`trigger-workspace.spec.ts`（打 `/ai/cron` 卡片）**必须清理**（afterAll 按名称删除本次创建的
+  定时任务，否则 dev 库会被 `e2e-*` 垃圾淹没——曾累积 44 条）；`ai-workspace.spec.ts` 锁类别下拉只剩
+  智能体家族 + 左右两个独立卡片容器。e2e 直连 dev 后端，运行需 `E2E_API_URL=http://127.0.0.1:8002/api/v1`（清理用）。
 - 结构：
   - `providers/` 提供商 CRUD + `GET /ai/providers/remote-models/{id}`（拉远端模型列表）
   - `provider/` 模型配置 CRUD（归属 provider、usage/capabilities/context_window、自定义请求头）+ `/ai/model/test` 连接测试

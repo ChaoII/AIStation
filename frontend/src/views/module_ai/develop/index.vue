@@ -1,370 +1,393 @@
 <!-- AI 集成开放平台：应用管理 / 调用日志 / MCP 会话 / 接入文档 -->
 <template>
   <div class="app-container develop-page">
-    <el-tabs v-model="activeTab" class="develop-tabs" @tab-change="onTabChange">
-      <!-- ============ 应用管理 ============ -->
-      <el-tab-pane label="应用管理" name="apps">
-        <el-form :inline="true" :model="appSearch" class="develop-search">
-          <el-form-item label="关键字">
-            <el-input
-              v-model="appSearch.keyword"
-              placeholder="名称 / appid"
-              clearable
-              style="width: 220px"
-              @keyup.enter="loadApps()"
-            />
-          </el-form-item>
-          <el-form-item>
-            <el-button :icon="Search" @click="loadApps()">查询</el-button>
-          </el-form-item>
-        </el-form>
+    <el-card shadow="never" class="develop-card">
+      <el-tabs v-model="activeTab" class="develop-tabs" @tab-change="onTabChange">
+        <!-- ============ 应用管理 ============ -->
+        <el-tab-pane label="应用管理" name="apps">
+          <el-form :inline="true" :model="appSearch" class="develop-search">
+            <el-form-item label="关键字">
+              <el-input
+                v-model="appSearch.keyword"
+                placeholder="名称 / appid"
+                clearable
+                style="width: 220px"
+                @keyup.enter="loadApps()"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :icon="Search" @click="loadApps()">查询</el-button>
+              <el-button :icon="Refresh" @click="resetAppSearch">重置</el-button>
+            </el-form-item>
+          </el-form>
 
-        <div class="develop-toolbar">
-          <div class="develop-toolbar__left">
-            <span class="develop-toolbar__hint">
-              为外部平台创建接入应用，分配能力权限点并下发凭证。
-            </span>
-            <el-tag size="small" type="info" effect="plain" class="summary-tag">
-              共 {{ appTotal }} 个应用
-            </el-tag>
+          <div class="develop-toolbar">
+            <div class="develop-toolbar__left">
+              <el-tag size="small" type="info" effect="plain" class="summary-tag">
+                共 {{ appTotal }} 个应用
+              </el-tag>
+            </div>
+            <el-button
+              v-hasPerm="['module_ai:develop:create']"
+              type="primary"
+              :icon="Plus"
+              @click="openCreate"
+            >
+              新增应用
+            </el-button>
           </div>
-          <el-button
-            v-hasPerm="['module_ai:develop:create']"
-            type="primary"
-            :icon="Plus"
-            @click="openCreate"
-          >
-            新增应用
-          </el-button>
-        </div>
 
-        <el-table v-loading="appLoading" :data="apps" row-key="id" stripe>
-          <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
-          <el-table-column label="AppID" min-width="200">
-            <template #default="{ row }">
-              <div class="appid-cell">
-                <span class="appid-cell__value">{{ row.appid_masked || "—" }}</span>
-                <el-tooltip content="复制完整 AppID" placement="top">
-                  <el-button text type="primary" size="small" @click="copyText(row.appid)">
-                    <el-icon><CopyDocument /></el-icon>
+          <div class="develop-table">
+            <el-table height="100%" v-loading="appLoading" :data="apps" row-key="id" stripe border>
+              <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
+              <el-table-column label="AppID" min-width="200">
+                <template #default="{ row }">
+                  <div class="appid-cell">
+                    <span class="appid-cell__value">{{ row.appid_masked || "—" }}</span>
+                    <el-tooltip content="复制完整 AppID" placement="top">
+                      <el-button text type="primary" size="small" @click="copyText(row.appid)">
+                        <el-icon><CopyDocument /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }">
+                  <el-switch
+                    v-hasPerm="['module_ai:develop:update']"
+                    :model-value="row.enabled !== false"
+                    @change="(v) => onToggle(row, Boolean(v))"
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column label="到期时间" min-width="160">
+                <template #default="{ row }">
+                  <span :class="{ 'text-muted': !row.expire_at }">
+                    {{ fmtDateTime(row.expire_at) }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="权限点" min-width="240">
+                <template #default="{ row }">
+                  <template v-if="row.capabilities && row.capabilities.length">
+                    <el-tooltip
+                      v-for="perm in row.capabilities"
+                      :key="perm"
+                      :content="perm"
+                      placement="top"
+                    >
+                      <el-tag size="small" effect="plain" class="cap-tag">
+                        {{ perm.replace("integration:", "") }}
+                      </el-tag>
+                    </el-tooltip>
+                  </template>
+                  <span v-else class="text-muted">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="call_count" label="调用次数" width="100" align="center" />
+              <el-table-column label="操作" width="230" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                    v-hasPerm="['module_ai:develop:update']"
+                    text
+                    type="primary"
+                    @click="openEdit(row)"
+                  >
+                    编辑
                   </el-button>
-                </el-tooltip>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="90">
-            <template #default="{ row }">
-              <el-switch
-                v-hasPerm="['module_ai:develop:update']"
-                :model-value="row.enabled !== false"
-                @change="(v) => onToggle(row, Boolean(v))"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column label="到期时间" min-width="160">
-            <template #default="{ row }">
-              <span :class="{ 'text-muted': !row.expire_at }">
-                {{ fmtDateTime(row.expire_at) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="权限点" min-width="240">
-            <template #default="{ row }">
-              <template v-if="row.capabilities && row.capabilities.length">
-                <el-tooltip
-                  v-for="perm in row.capabilities"
-                  :key="perm"
-                  :content="perm"
-                  placement="top"
-                >
-                  <el-tag size="small" effect="plain" class="cap-tag">
-                    {{ perm.replace("integration:", "") }}
-                  </el-tag>
-                </el-tooltip>
+                  <el-button
+                    v-hasPerm="['module_ai:develop:reset']"
+                    text
+                    type="primary"
+                    @click="openKeyDialog(row)"
+                  >
+                    AppKey
+                  </el-button>
+                  <el-button
+                    v-hasPerm="['module_ai:develop:delete']"
+                    text
+                    type="danger"
+                    @click="onDelete(row)"
+                  >
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
+              <template #empty>
+                <el-empty :image-size="80" description="暂无应用，点击「新增应用」创建" />
               </template>
-              <span v-else class="text-muted">—</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="call_count" label="调用次数" width="100" align="center" />
-          <el-table-column label="操作" width="230" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                v-hasPerm="['module_ai:develop:update']"
-                text
-                type="primary"
-                @click="openEdit(row)"
-              >
-                编辑
-              </el-button>
-              <el-button
-                v-hasPerm="['module_ai:develop:reset']"
-                text
-                type="primary"
-                @click="openKeyDialog(row)"
-              >
-                AppKey
-              </el-button>
-              <el-button
-                v-hasPerm="['module_ai:develop:delete']"
-                text
-                type="danger"
-                @click="onDelete(row)"
-              >
-                删除
-              </el-button>
-            </template>
-          </el-table-column>
-          <template #empty>
-            <el-empty :image-size="80" description="暂无应用，点击「新增应用」创建" />
-          </template>
-        </el-table>
+            </el-table>
+          </div>
 
-        <div v-if="appTotal > 0" class="develop-pagination">
-          <el-pagination
-            v-model:current-page="appPage"
-            v-model:page-size="appPageSize"
-            :total="appTotal"
-            :page-sizes="[10, 20, 50, 100]"
-            layout="total, sizes, prev, pager, next"
-            background
-            @current-change="() => loadApps(false)"
-            @size-change="
-              () => {
-                appPage = 1;
-                loadApps(false);
-              }
-            "
-          />
-        </div>
-      </el-tab-pane>
+          <div v-if="appTotal > 0" class="develop-pagination">
+            <el-pagination
+              v-model:current-page="appPage"
+              v-model:page-size="appPageSize"
+              :total="appTotal"
+              :page-sizes="[10, 20, 50, 100]"
+              layout="total, sizes, prev, pager, next"
+              background
+              @current-change="() => loadApps(false)"
+              @size-change="
+                () => {
+                  appPage = 1;
+                  loadApps(false);
+                }
+              "
+            />
+          </div>
+        </el-tab-pane>
 
-      <!-- ============ 调用日志 ============ -->
-      <el-tab-pane label="调用日志" name="logs">
-        <el-form :inline="true" :model="logFilter" class="develop-search">
-          <el-form-item label="应用">
-            <el-select
-              v-model="logFilter.app_id"
-              placeholder="全部"
-              clearable
-              filterable
-              style="width: 180px"
-            >
-              <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="品类">
-            <el-select
-              v-model="logFilter.category"
-              placeholder="全部"
-              clearable
-              style="width: 140px"
-            >
-              <el-option
-                v-for="(label, code) in CATEGORIES"
-                :key="code"
-                :label="label"
-                :value="code"
+        <!-- ============ 调用日志 ============ -->
+        <el-tab-pane label="调用日志" name="logs">
+          <el-form :inline="true" :model="logFilter" class="develop-search">
+            <el-form-item label="应用">
+              <el-select
+                v-model="logFilter.app_id"
+                placeholder="全部"
+                clearable
+                filterable
+                style="width: 180px"
+              >
+                <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="品类">
+              <el-select
+                v-model="logFilter.category"
+                placeholder="全部"
+                clearable
+                style="width: 140px"
+              >
+                <el-option
+                  v-for="(label, code) in CATEGORIES"
+                  :key="code"
+                  :label="label"
+                  :value="code"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="出海口">
+              <el-select
+                v-model="logFilter.method"
+                placeholder="全部"
+                clearable
+                style="width: 140px"
+              >
+                <el-option label="REST" value="REST" />
+                <el-option label="MCP" value="MCP" />
+                <el-option label="EMBED" value="EMBED" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="状态">
+              <el-select
+                v-model="logFilter.status"
+                placeholder="全部"
+                clearable
+                style="width: 140px"
+              >
+                <el-option label="成功" value="success" />
+                <el-option label="失败" value="failed" />
+                <el-option label="拒绝" value="denied" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :icon="Search" @click="loadLogs()">查询</el-button>
+              <el-button :icon="Refresh" @click="resetLogFilter">重置</el-button>
+            </el-form-item>
+          </el-form>
+
+          <div class="develop-table">
+            <el-table height="100%" v-loading="logLoading" :data="logs" row-key="id" stripe border>
+              <el-table-column label="时间" width="170">
+                <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
+              </el-table-column>
+              <el-table-column label="AppID" width="160">
+                <template #default="{ row }">{{ row.appid || "—" }}</template>
+              </el-table-column>
+              <el-table-column label="品类" width="100">
+                <template #default="{ row }">
+                  {{ CATEGORIES[row.category || ""] || row.category }}
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="capability"
+                label="能力"
+                min-width="180"
+                show-overflow-tooltip
               />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="出海口">
-            <el-select v-model="logFilter.method" placeholder="全部" clearable style="width: 140px">
-              <el-option label="REST" value="REST" />
-              <el-option label="MCP" value="MCP" />
-              <el-option label="EMBED" value="EMBED" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="logFilter.status" placeholder="全部" clearable style="width: 140px">
-              <el-option label="成功" value="success" />
-              <el-option label="失败" value="failed" />
-              <el-option label="拒绝" value="denied" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button :icon="Search" @click="loadLogs()">查询</el-button>
-          </el-form-item>
-        </el-form>
+              <el-table-column prop="method" label="出海口" width="100" />
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="logStatusType(row.status)">{{ row.status }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="latency_ms" label="耗时(ms)" width="90" align="right" />
+              <el-table-column prop="cost_tokens" label="Tokens" width="90" align="right" />
+              <el-table-column
+                prop="request_path"
+                label="请求路径"
+                min-width="180"
+                show-overflow-tooltip
+              />
+              <el-table-column
+                prop="result_summary"
+                label="结果摘要"
+                min-width="200"
+                show-overflow-tooltip
+              />
+              <template #empty>
+                <el-empty :image-size="80" description="暂无调用日志" />
+              </template>
+            </el-table>
+          </div>
 
-        <el-table v-loading="logLoading" :data="logs" row-key="id" stripe>
-          <el-table-column label="时间" width="170">
-            <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
-          </el-table-column>
-          <el-table-column label="AppID" width="160">
-            <template #default="{ row }">{{ row.appid || "—" }}</template>
-          </el-table-column>
-          <el-table-column label="品类" width="100">
-            <template #default="{ row }">
-              {{ CATEGORIES[row.category || ""] || row.category }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="capability" label="能力" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="method" label="出海口" width="100" />
-          <el-table-column label="状态" width="90">
-            <template #default="{ row }">
-              <el-tag size="small" :type="logStatusType(row.status)">{{ row.status }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="latency_ms" label="耗时(ms)" width="90" align="right" />
-          <el-table-column prop="cost_tokens" label="Tokens" width="90" align="right" />
-          <el-table-column
-            prop="request_path"
-            label="请求路径"
-            min-width="180"
-            show-overflow-tooltip
-          />
-          <el-table-column
-            prop="result_summary"
-            label="结果摘要"
-            min-width="200"
-            show-overflow-tooltip
-          />
-          <template #empty>
-            <el-empty :image-size="80" description="暂无调用日志" />
-          </template>
-        </el-table>
+          <div v-if="logTotal > 0" class="develop-pagination">
+            <el-pagination
+              v-model:current-page="logPage"
+              v-model:page-size="logPageSize"
+              :total="logTotal"
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next"
+              background
+              @current-change="() => loadLogs(false)"
+              @size-change="
+                () => {
+                  logPage = 1;
+                  loadLogs(false);
+                }
+              "
+            />
+          </div>
+        </el-tab-pane>
 
-        <div v-if="logTotal > 0" class="develop-pagination">
-          <el-pagination
-            v-model:current-page="logPage"
-            v-model:page-size="logPageSize"
-            :total="logTotal"
-            :page-sizes="[10, 20, 50]"
-            layout="total, sizes, prev, pager, next"
-            background
-            @current-change="() => loadLogs(false)"
-            @size-change="
-              () => {
-                logPage = 1;
-                loadLogs(false);
-              }
-            "
-          />
-        </div>
-      </el-tab-pane>
+        <!-- ============ MCP 会话 ============ -->
+        <el-tab-pane label="MCP 会话" name="mcp">
+          <el-form :inline="true" :model="mcpFilter" class="develop-search">
+            <el-form-item label="应用">
+              <el-select
+                v-model="mcpFilter.app_id"
+                placeholder="全部"
+                clearable
+                filterable
+                style="width: 180px"
+              >
+                <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :icon="Search" @click="loadMcps()">查询</el-button>
+              <el-button :icon="Refresh" @click="resetMcpFilter">重置</el-button>
+            </el-form-item>
+          </el-form>
 
-      <!-- ============ MCP 会话 ============ -->
-      <el-tab-pane label="MCP 会话" name="mcp">
-        <el-form :inline="true" :model="mcpFilter" class="develop-search">
-          <el-form-item label="应用">
-            <el-select
-              v-model="mcpFilter.app_id"
-              placeholder="全部"
-              clearable
-              filterable
-              style="width: 180px"
-            >
-              <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button :icon="Search" @click="loadMcps()">查询</el-button>
-          </el-form-item>
-        </el-form>
+          <div class="develop-table">
+            <el-table height="100%" v-loading="mcpLoading" :data="mcps" row-key="id" stripe border>
+              <el-table-column label="时间" width="170">
+                <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
+              </el-table-column>
+              <el-table-column label="AppID" width="160">
+                <template #default="{ row }">{{ row.appid || "—" }}</template>
+              </el-table-column>
+              <el-table-column label="会话ID" width="220">
+                <template #default="{ row }">
+                  <span class="mono-text">{{ row.session_id || "—" }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="transport" label="传输" width="140" />
+              <el-table-column
+                prop="client_info"
+                label="客户端"
+                min-width="140"
+                show-overflow-tooltip
+              />
+              <el-table-column label="开始时间" width="170">
+                <template #default="{ row }">{{ fmtDateTime(row.started_at) }}</template>
+              </el-table-column>
+              <el-table-column label="结束时间" width="170">
+                <template #default="{ row }">{{ fmtDateTime(row.ended_at, "—") }}</template>
+              </el-table-column>
+              <el-table-column prop="duration_s" label="时长(s)" width="90" align="right" />
+              <el-table-column prop="tool_calls" label="工具调用" width="90" align="right" />
+              <el-table-column
+                prop="close_reason"
+                label="关闭原因"
+                min-width="140"
+                show-overflow-tooltip
+              />
+              <template #empty>
+                <el-empty :image-size="80" description="暂无 MCP 会话" />
+              </template>
+            </el-table>
+          </div>
 
-        <el-table v-loading="mcpLoading" :data="mcps" row-key="id" stripe>
-          <el-table-column label="时间" width="170">
-            <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
-          </el-table-column>
-          <el-table-column label="AppID" width="160">
-            <template #default="{ row }">{{ row.appid || "—" }}</template>
-          </el-table-column>
-          <el-table-column label="会话ID" width="220">
-            <template #default="{ row }">
-              <span class="mono-text">{{ row.session_id || "—" }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="transport" label="传输" width="140" />
-          <el-table-column
-            prop="client_info"
-            label="客户端"
-            min-width="140"
-            show-overflow-tooltip
-          />
-          <el-table-column label="开始时间" width="170">
-            <template #default="{ row }">{{ fmtDateTime(row.started_at) }}</template>
-          </el-table-column>
-          <el-table-column label="结束时间" width="170">
-            <template #default="{ row }">{{ fmtDateTime(row.ended_at, "—") }}</template>
-          </el-table-column>
-          <el-table-column prop="duration_s" label="时长(s)" width="90" align="right" />
-          <el-table-column prop="tool_calls" label="工具调用" width="90" align="right" />
-          <el-table-column
-            prop="close_reason"
-            label="关闭原因"
-            min-width="140"
-            show-overflow-tooltip
-          />
-          <template #empty>
-            <el-empty :image-size="80" description="暂无 MCP 会话" />
-          </template>
-        </el-table>
+          <div v-if="mcpTotal > 0" class="develop-pagination">
+            <el-pagination
+              v-model:current-page="mcpPage"
+              v-model:page-size="mcpPageSize"
+              :total="mcpTotal"
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next"
+              background
+              @current-change="() => loadMcps(false)"
+              @size-change="
+                () => {
+                  mcpPage = 1;
+                  loadMcps(false);
+                }
+              "
+            />
+          </div>
+        </el-tab-pane>
 
-        <div v-if="mcpTotal > 0" class="develop-pagination">
-          <el-pagination
-            v-model:current-page="mcpPage"
-            v-model:page-size="mcpPageSize"
-            :total="mcpTotal"
-            :page-sizes="[10, 20, 50]"
-            layout="total, sizes, prev, pager, next"
-            background
-            @current-change="() => loadMcps(false)"
-            @size-change="
-              () => {
-                mcpPage = 1;
-                loadMcps(false);
-              }
-            "
-          />
-        </div>
-      </el-tab-pane>
-
-      <!-- ============ 接入文档 ============ -->
-      <el-tab-pane label="接入文档" name="docs">
-        <div class="docs-wrap">
-          <el-alert
-            title="接入凭证说明"
-            type="info"
-            :closable="false"
-            show-icon
-            class="docs-alert"
-            description="每个应用持有唯一的 AppID 与 AppKey。调用开放接口时，在请求头携带 Authorization: Bearer &lt;appid&gt;:&lt;appkey&gt;。AppKey 仅在创建或重置时展示一次，请妥善保存。"
-          />
-          <el-card shadow="never" class="doc-card">
-            <template #header>
-              <div class="doc-card__header">
-                <span>REST 接入</span>
-                <el-tag size="small">HTTP</el-tag>
-              </div>
-            </template>
-            <p class="doc-card__desc">以鉴权校验接口为例，验证凭证并获取应用身份与已授权能力。</p>
-            <pre class="doc-code">{{ restExample }}</pre>
-          </el-card>
-          <el-card shadow="never" class="doc-card">
-            <template #header>
-              <div class="doc-card__header">
-                <span>MCP 接入</span>
-                <el-tag size="small">工具调用</el-tag>
-              </div>
-            </template>
-            <p class="doc-card__desc">
-              在支持 MCP 的客户端中配置以下会话端点，将应用凭证注入请求头。
-            </p>
-            <pre class="doc-code">{{ mcpExample }}</pre>
-          </el-card>
-          <el-card shadow="never" class="doc-card">
-            <template #header>
-              <div class="doc-card__header">
-                <span>网页嵌入</span>
-                <el-tag size="small">Embed</el-tag>
-              </div>
-            </template>
-            <p class="doc-card__desc">通过脚本将对话能力嵌入已有页面，凭证由服务端安全下发。</p>
-            <pre class="doc-code">{{ embedExample }}</pre>
-          </el-card>
-        </div>
-      </el-tab-pane>
-    </el-tabs>
+        <!-- ============ 接入文档 ============ -->
+        <el-tab-pane label="接入文档" name="docs">
+          <div class="docs-wrap">
+            <el-alert
+              title="接入凭证说明"
+              type="info"
+              :closable="false"
+              show-icon
+              class="docs-alert"
+              description="每个应用持有唯一的 AppID 与 AppKey。调用开放接口时，在请求头携带 Authorization: Bearer &lt;appid&gt;:&lt;appkey&gt;。AppKey 仅在创建或重置时展示一次，请妥善保存。"
+            />
+            <el-card shadow="never" class="doc-card">
+              <template #header>
+                <div class="doc-card__header">
+                  <span>REST 接入</span>
+                  <el-tag size="small">HTTP</el-tag>
+                </div>
+              </template>
+              <p class="doc-card__desc">以鉴权校验接口为例，验证凭证并获取应用身份与已授权能力。</p>
+              <pre class="doc-code">{{ restExample }}</pre>
+            </el-card>
+            <el-card shadow="never" class="doc-card">
+              <template #header>
+                <div class="doc-card__header">
+                  <span>MCP 接入</span>
+                  <el-tag size="small">工具调用</el-tag>
+                </div>
+              </template>
+              <p class="doc-card__desc">
+                在支持 MCP 的客户端中配置以下会话端点，将应用凭证注入请求头。
+              </p>
+              <pre class="doc-code">{{ mcpExample }}</pre>
+            </el-card>
+            <el-card shadow="never" class="doc-card">
+              <template #header>
+                <div class="doc-card__header">
+                  <span>网页嵌入</span>
+                  <el-tag size="small">Embed</el-tag>
+                </div>
+              </template>
+              <p class="doc-card__desc">通过脚本将对话能力嵌入已有页面，凭证由服务端安全下发。</p>
+              <pre class="doc-code">{{ embedExample }}</pre>
+            </el-card>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
 
     <!-- ============ 新增 / 编辑应用弹窗 ============ -->
     <EnhancedDialog
@@ -511,7 +534,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Search, CopyDocument } from "@element-plus/icons-vue";
+import { Plus, Search, CopyDocument, Refresh } from "@element-plus/icons-vue";
 import {
   createApp,
   deleteApp,
@@ -599,6 +622,12 @@ const appTotal = ref(0);
 const appPage = ref(1);
 const appPageSize = ref(10);
 const appSearch = reactive({ keyword: "" });
+
+/** 重置应用搜索（与系统管理一致的「查询 + 重置」组合） */
+function resetAppSearch() {
+  appSearch.keyword = "";
+  loadApps();
+}
 
 // 用于日志/MCP 过滤的应用下拉选项
 const appOptions = ref<{ id: number; name: string }[]>([]);
@@ -815,6 +844,15 @@ const logFilter = reactive({
   status: "",
 });
 
+/** 重置调用日志筛选 */
+function resetLogFilter() {
+  logFilter.app_id = undefined;
+  logFilter.category = "";
+  logFilter.method = "";
+  logFilter.status = "";
+  loadLogs();
+}
+
 async function loadLogs(resetPage = true) {
   if (resetPage) logPage.value = 1;
   logLoading.value = true;
@@ -851,6 +889,12 @@ const mcpTotal = ref(0);
 const mcpPage = ref(1);
 const mcpPageSize = ref(10);
 const mcpFilter = reactive({ app_id: undefined as number | undefined });
+
+/** 重置 MCP 会话筛选 */
+function resetMcpFilter() {
+  mcpFilter.app_id = undefined;
+  loadMcps();
+}
 
 async function loadMcps(resetPage = true) {
   if (resetPage) mcpPage.value = 1;
@@ -967,7 +1011,8 @@ onMounted(() => {
 
 <style scoped>
 .develop-page {
-  padding: 0;
+  /* 继承 .app-container 的 16px padding（此前 padding:0 让内容紧贴侧边栏） */
+  padding: 16px;
 }
 
 .develop-tabs :deep(.el-tabs__content) {
@@ -980,17 +1025,17 @@ onMounted(() => {
 
 .develop-toolbar {
   display: flex;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
   margin-bottom: 12px;
 }
 
 .develop-toolbar__left {
   display: flex;
-  align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .develop-toolbar__hint {
@@ -1015,8 +1060,8 @@ onMounted(() => {
 
 .appid-cell {
   display: inline-flex;
-  align-items: center;
   gap: 4px;
+  align-items: center;
 }
 
 .appid-cell__value {
@@ -1032,8 +1077,8 @@ onMounted(() => {
 }
 
 .key-text {
-  word-break: break-all;
   color: var(--el-color-primary);
+  word-break: break-all;
 }
 
 .text-muted {
@@ -1041,10 +1086,10 @@ onMounted(() => {
 }
 
 .cap-groups {
-  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
 }
 
 .cap-group {
@@ -1098,20 +1143,73 @@ onMounted(() => {
 }
 
 .doc-code {
-  margin: 0;
   padding: 12px 14px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  background: var(--el-fill-color-light);
+  margin: 0;
+  overflow-x: auto;
   font-family: var(--el-font-family-mono, monospace);
   font-size: var(--el-font-size-base);
   line-height: 1.6;
   color: var(--el-text-color-primary);
-  overflow-x: auto;
   white-space: pre;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
 }
 
 .reveal-desc {
   margin-top: 12px;
+}
+</style>
+
+<!-- 布局统一（非 scoped + 唯一类名）：白色面板撑满可视区，内容区自己滚（行少时也不露灰底） -->
+<style lang="scss">
+.app-container.develop-page {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.develop-page .develop-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.develop-page .develop-card > .el-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.develop-page .develop-card .develop-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.develop-page .develop-card .el-tabs__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* tab 内容区撑满：搜索/工具栏固定，表格占满剩余（空态居中，不露大片空白） */
+.develop-page .develop-card .develop-tabs .el-tab-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.develop-page .develop-table {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 </style>

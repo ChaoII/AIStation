@@ -1,152 +1,133 @@
 <!-- 模型供应商管理：CRUD + 连通性测试 + 拉取远端模型 -->
 <template>
   <div class="app-container ai-provider-page">
-    <!-- 搜索 / 筛选 -->
-    <el-form :inline="true" :model="searchForm" class="provider-search">
-      <el-form-item label="关键字">
-        <el-input
-          v-model="searchForm.keyword"
-          placeholder="名称 / API 基址"
-          clearable
-          style="width: 200px"
-          @keyup.enter="refreshList"
-        />
-      </el-form-item>
-      <el-form-item label="协议">
-        <el-select v-model="searchForm.protocol" placeholder="全部" clearable style="width: 160px">
-          <el-option label="openai" value="openai" />
-          <el-option label="OpenAI 兼容" value="openai_compatible" />
-          <el-option label="ollama" value="ollama" />
-          <el-option label="anthropic" value="anthropic" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-select v-model="searchForm.enabled" placeholder="全部" clearable style="width: 140px">
-          <el-option label="启用" value="true" />
-          <el-option label="停用" value="false" />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button :icon="Search" @click="refreshList">查询</el-button>
-      </el-form-item>
-    </el-form>
+    <PageSearch
+      ref="searchRef"
+      :search-config="searchConfig"
+      @query-click="handleQueryClick"
+      @reset-click="handleResetClick"
+    />
 
-    <!-- 顶部工具栏 -->
-    <div class="provider-toolbar">
-      <div class="provider-toolbar__left">
-        <span class="provider-toolbar__hint">
-          配置 OpenAI 兼容的模型供应商，供大模型配置关联取用。
+    <PageContent ref="contentRef" :content-config="contentConfig">
+      <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
+        <CrudToolbarLeft
+          :remove-ids="removeIds"
+          :perm-create="['module_ai:provider:create']"
+          :perm-delete="['module_ai:provider:delete']"
+          @add="openCreate"
+          @delete="onToolbar('delete')"
+        />
+        <span class="batch-ac">
+          <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(true)">
+            批量启用
+          </el-button>
+          <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(false)">
+            批量停用
+          </el-button>
         </span>
         <el-tag size="small" type="info" effect="plain" class="summary-tag">
-          共 {{ summary.total }} 个供应商 · 启用 {{ summary.enabled }} · 停用
-          {{ summary.disabled }}
+          共 {{ summary.total }} 个供应商 · 启用 {{ summary.enabled }} · 停用 {{ summary.disabled }}
         </el-tag>
-      </div>
-      <el-button
-        v-hasPerm="['module_ai:provider:create']"
-        type="primary"
-        :icon="Plus"
-        @click="openCreate"
-      >
-        新增供应商
-      </el-button>
-      <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(true)">
-        批量启用
-      </el-button>
-      <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(false)">
-        批量停用
-      </el-button>
-    </div>
-
-    <!-- 列表 -->
-    <el-table
-      v-loading="loading"
-      :data="pagedRows"
-      row-key="id"
-      stripe
-      @selection-change="(sel: any[]) => (providerSelIds = sel.map((s) => s.id))"
-    >
-      <el-table-column type="selection" width="45" />
-      <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
-      <el-table-column label="协议" width="160">
-        <template #default="{ row }">
-          <el-tag size="small">{{ row.protocol || "openai_compatible" }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="base_url" label="API 基址" min-width="240" show-overflow-tooltip />
-      <el-table-column label="API Key" width="150">
-        <template #default="{ row }">{{ row.api_key_masked || "—" }}</template>
-      </el-table-column>
-      <el-table-column label="启用" width="90">
-        <template #default="{ row }">
-          <el-switch
-            v-hasPerm="['module_ai:provider:update']"
-            :model-value="row.enabled !== false"
-            @change="(v) => onToggle(row, Boolean(v))"
-          />
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="300" fixed="right">
-        <template #default="{ row }">
-          <el-button
-            v-hasPerm="['module_ai:provider:query']"
-            text
-            type="primary"
-            @click="openDetail(row)"
-          >
-            详情
-          </el-button>
-          <el-button
-            v-hasPerm="['module_ai:provider:query']"
-            text
-            type="primary"
-            :loading="testingId === row.id"
-            @click="onTest(row)"
-          >
-            测试连通
-          </el-button>
-          <el-button
-            v-hasPerm="['module_ai:provider:query']"
-            text
-            type="primary"
-            :loading="pullingId === row.id"
-            @click="onPullModels(row)"
-          >
-            拉取模型
-          </el-button>
-          <el-button
-            v-hasPerm="['module_ai:provider:update']"
-            text
-            type="primary"
-            @click="openEdit(row)"
-          >
-            编辑
-          </el-button>
-          <el-button
-            v-hasPerm="['module_ai:provider:delete']"
-            text
-            type="danger"
-            @click="onDelete(row)"
-          >
-            删除
-          </el-button>
-        </template>
-      </el-table-column>
-      <template #empty>
-        <el-empty :image-size="80" description="暂无供应商，点击「新增」创建" />
+        <div class="data-table__toolbar--right">
+          <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
+        </div>
       </template>
-    </el-table>
 
-    <div v-if="providerCount > 0" class="provider-pagination">
-      <el-pagination
-        v-model:current-page="page"
-        v-model:page-size="pageSize"
-        :total="filteredRows.length"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next"
-        background
-      />
-    </div>
+      <template #table="{ data, loading, tableRef }">
+        <div class="data-table__content">
+          <el-table
+            :ref="tableRef as any"
+            v-loading="loading"
+            border
+            :data="data"
+            row-key="id"
+            stripe
+            height="100%"
+            @selection-change="(sel: any[]) => (providerSelIds = sel.map((s) => s.id))"
+          >
+            <el-table-column type="selection" width="45" />
+            <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
+            <el-table-column label="协议" width="160">
+              <template #default="{ row }">
+                <el-tag size="small">{{ row.protocol || "openai_compatible" }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="base_url"
+              label="API 基址"
+              min-width="240"
+              show-overflow-tooltip
+            />
+            <el-table-column label="API Key" width="150">
+              <template #default="{ row }">{{ row.api_key_masked || "—" }}</template>
+            </el-table-column>
+            <el-table-column label="启用" width="90">
+              <template #default="{ row }">
+                <el-switch
+                  v-hasPerm="['module_ai:provider:update']"
+                  :model-value="row.enabled !== false"
+                  @change="(v) => onToggle(row, Boolean(v))"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="300" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  v-hasPerm="['module_ai:provider:query']"
+                  icon="View"
+                  text
+                  type="primary"
+                  @click="openDetail(row)"
+                >
+                  详情
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:provider:query']"
+                  icon="Connection"
+                  text
+                  type="primary"
+                  :loading="testingId === row.id"
+                  @click="onTest(row)"
+                >
+                  测试连通
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:provider:query']"
+                  icon="Download"
+                  text
+                  type="primary"
+                  :loading="pullingId === row.id"
+                  @click="onPullModels(row)"
+                >
+                  拉取模型
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:provider:update']"
+                  icon="edit"
+                  text
+                  type="primary"
+                  @click="openEdit(row)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:provider:delete']"
+                  icon="delete"
+                  text
+                  type="danger"
+                  @click="onDelete(row)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty :image-size="80" description="暂无供应商，点击「新增」创建" />
+            </template>
+          </el-table>
+        </div>
+      </template>
+    </PageContent>
 
     <!-- 新增 / 编辑弹窗 -->
     <EnhancedDialog
@@ -179,17 +160,12 @@
             <div v-for="(h, i) in form.headerFields" :key="i" class="header-row">
               <el-input v-model="h.key" placeholder="请求头名，如 x-api-key" />
               <el-input v-model="h.value" placeholder="值" />
-              <el-button
-                text
-                type="danger"
-                :icon="Delete"
-                @click="form.headerFields.splice(i, 1)"
-              />
+              <el-button text type="danger" icon="delete" @click="form.headerFields.splice(i, 1)" />
             </div>
             <el-button
               text
               type="primary"
-              :icon="Plus"
+              icon="plus"
               @click="form.headerFields.push({ key: '', value: '' })"
             >
               添加请求头
@@ -213,7 +189,7 @@
     <el-dialog
       v-model="pullVisible"
       :title="`远端模型列表 · ${pullProvider?.name || ''}`"
-      width="560px"
+      width="600px"
       append-to-body
     >
       <p class="pull-intro">
@@ -293,7 +269,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Delete, Search } from "@element-plus/icons-vue";
 import {
   createAiProvider,
   deleteAiProvider,
@@ -304,7 +279,13 @@ import {
   testAiProvider,
   updateAiProvider,
 } from "@/api/module_ai/provider";
+import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
+import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import PageContent from "@/components/CURD/PageContent.vue";
+import PageSearch from "@/components/CURD/PageSearch.vue";
+import { useCrudList } from "@/components/CURD/useCrudList";
+import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 
 defineOptions({ name: "AiProviderManage" });
 
@@ -320,46 +301,21 @@ interface ProviderRow {
   created_time?: string;
 }
 
+const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+
 const loading = ref(false);
 const rows = ref<ProviderRow[]>([]);
 const providerSelIds = ref<number[]>([]);
 
-// 搜索 / 筛选
-const searchForm = reactive({ keyword: "", protocol: "", enabled: "" });
-const filteredRows = computed(() => {
-  const keyword = searchForm.keyword.trim().toLowerCase();
-  const protocol = searchForm.protocol.trim();
-  const enabled = searchForm.enabled;
-  return rows.value.filter((r) => {
-    if (protocol && (r.protocol || "openai_compatible") !== protocol) return false;
-    if (enabled && String(r.enabled !== false) !== enabled) return false;
-    if (keyword) {
-      const haystack = [r.name, r.base_url, r.description].filter(Boolean).join(" ").toLowerCase();
-      if (!haystack.includes(keyword)) return false;
-    }
-    return true;
-  });
-});
-
-// 分页（数据量小，客户端分页）
-const page = ref(1);
-const pageSize = ref(10);
-const pagedRows = computed(() => {
-  const start = (page.value - 1) * pageSize.value;
-  return filteredRows.value.slice(start, start + pageSize.value);
-});
-const providerCount = computed(() => filteredRows.value.length || rows.value.length);
-
-// 列表统计摘要
+// 列表统计摘要（工具栏展示）
 const summary = computed(() => ({
   total: rows.value.length,
   enabled: rows.value.filter((r) => r.enabled !== false).length,
   disabled: rows.value.filter((r) => r.enabled === false).length,
 }));
 
-// 重置页码并刷新列表
-async function refreshList() {
-  page.value = 1;
+/** 加载全量供应商（数据量小：客户端过滤 + 分页，与模型配置页一致） */
+async function loadProviders() {
   loading.value = true;
   try {
     const res = await getAiProviderList();
@@ -370,6 +326,92 @@ async function refreshList() {
     loading.value = false;
   }
 }
+
+const searchConfig = reactive<ISearchConfig>({
+  permPrefix: "module_ai:provider",
+  colon: true,
+  showNumber: 3,
+  form: { labelWidth: "auto" },
+  formItems: [
+    {
+      prop: "keyword",
+      label: "关键字",
+      type: "input",
+      attrs: { placeholder: "名称 / API 基址", clearable: true, style: { width: "200px" } },
+    },
+    {
+      prop: "protocol",
+      label: "协议",
+      type: "select",
+      options: [
+        { label: "openai", value: "openai" },
+        { label: "OpenAI 兼容", value: "openai_compatible" },
+        { label: "ollama", value: "ollama" },
+        { label: "anthropic", value: "anthropic" },
+      ],
+      attrs: { placeholder: "全部", clearable: true, style: { width: "160px" } },
+    },
+    {
+      prop: "enabled",
+      label: "状态",
+      type: "select",
+      options: [
+        { label: "启用", value: "true" },
+        { label: "停用", value: "false" },
+      ],
+      attrs: { placeholder: "全部", clearable: true, style: { width: "140px" } },
+    },
+  ],
+});
+
+const contentConfig = reactive<IContentConfig<any>>({
+  permPrefix: "module_ai:provider",
+  pk: "id",
+  cols: [],
+  hideColumnFilter: true,
+  toolbar: [],
+  defaultToolbar: ["refresh"],
+  pagination: { pageSize: 10, pageSizes: [10, 20, 50] },
+  request: { page_no: "page_no", page_size: "page_size" },
+  indexAction: async (params) => {
+    await loadProviders();
+    const q = params as any;
+    const keyword = String(q.keyword || "")
+      .trim()
+      .toLowerCase();
+    const protocol = String(q.protocol || "").trim();
+    const enabled = String(q.enabled ?? "");
+    const list = rows.value.filter((r) => {
+      if (protocol && (r.protocol || "openai_compatible") !== protocol) return false;
+      if (enabled && String(r.enabled !== false) !== enabled) return false;
+      if (keyword) {
+        const haystack = [r.name, r.base_url, r.description]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(keyword)) return false;
+      }
+      return true;
+    });
+    const pageNo = Number(q.page_no) || 1;
+    const size = Number(q.page_size) || 10;
+    return { total: list.length, list: list.slice((pageNo - 1) * size, pageNo * size) };
+  },
+  deleteAction: async (ids) => {
+    await deleteAiProvider(
+      ids
+        .split(",")
+        .map((s: string) => Number(s.trim()))
+        .filter((n: number) => !Number.isNaN(n))
+    );
+  },
+  deleteConfirm: {
+    title: "警告",
+    message: "确认删除所选供应商？删除后其下模型配置将不可用。",
+    type: "warning",
+  },
+});
+
 async function batchProvider(enabled: boolean) {
   if (!providerSelIds.value.length) return;
   try {
@@ -580,7 +622,8 @@ onMounted(() => {
 
 <style scoped>
 .ai-provider-page {
-  padding: 0;
+  /* 继承 .app-container 的 16px padding（此前 padding:0 让内容紧贴侧边栏） */
+  padding: 16px;
 }
 
 .pull-intro {
@@ -594,19 +637,19 @@ onMounted(() => {
 }
 .pull-model-row {
   padding: 8px 12px;
-  border-bottom: 1px dashed var(--el-border-color-lighter);
   font-family: var(--el-font-family-mono, monospace);
   font-size: var(--el-font-size-base);
   color: var(--el-text-color-primary);
+  border-bottom: 1px dashed var(--el-border-color-lighter);
 }
 .pull-model-row:last-child {
   border-bottom: none;
 }
 .header-builder {
-  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
 }
 .header-row {
   display: flex;
@@ -614,38 +657,8 @@ onMounted(() => {
   align-items: center;
 }
 
-.provider-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.provider-toolbar__left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.provider-toolbar__hint {
-  font-size: var(--el-font-size-base);
-  color: var(--el-text-color-secondary);
-}
-
-.provider-search {
-  margin-bottom: 4px;
-}
-
 .summary-tag {
   flex-shrink: 0;
-}
-
-.provider-pagination {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
 }
 
 .cap-tag {
@@ -655,5 +668,22 @@ onMounted(() => {
 
 .muted {
   color: var(--el-text-color-placeholder);
+}
+</style>
+
+<!-- 布局统一（非 scoped + 唯一类名）：页面撑满；工具栏批量操作按钮成组 -->
+<style lang="scss">
+.app-container.ai-provider-page {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ai-provider-page .batch-ac {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
 }
 </style>

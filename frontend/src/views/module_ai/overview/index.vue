@@ -182,6 +182,8 @@
         size="small"
         max-height="320"
         :show-overflow-tooltip="true"
+        border
+        stripe
       >
         <el-table-column prop="created_time" label="时间" min-width="160" />
         <el-table-column prop="model_name" label="模型" min-width="150" />
@@ -287,7 +289,7 @@
           </div>
         </el-col>
       </el-row>
-      <el-table :data="aip?.runs || []" size="small" max-height="360">
+      <el-table :data="aip?.runs || []" size="small" max-height="360" border stripe>
         <el-table-column prop="time" label="时间" width="100" />
         <el-table-column prop="model" label="模型" min-width="130" show-overflow-tooltip />
         <el-table-column prop="usage" label="用途" width="110" />
@@ -332,7 +334,7 @@
           <el-statistic title="累计运行" :value="agentDash.total_runs ?? 0" />
         </el-col>
       </el-row>
-      <el-table :data="agentDash?.agents || []" size="small" max-height="300">
+      <el-table :data="agentDash?.agents || []" size="small" max-height="300" border stripe>
         <el-table-column prop="name" label="智能体" min-width="120" show-overflow-tooltip />
         <el-table-column label="状态" width="70" align="center">
           <template #default="{ row }">
@@ -551,7 +553,7 @@
       <div class="ov-usage-row mb-2">
         <el-button size="small" :loading="derivedLoading" @click="loadDerived">刷新</el-button>
       </div>
-      <el-table :data="derived" size="small" border>
+      <el-table :data="derived" size="small" border stripe>
         <el-table-column prop="name" label="派生指标" min-width="120" />
         <el-table-column prop="formula" label="规则" min-width="180" show-overflow-tooltip />
         <el-table-column label="基础指标" min-width="160">
@@ -578,7 +580,7 @@
         </el-table-column>
         <el-table-column label="操作" width="90" align="center">
           <template #default="{ row }">
-            <el-button size="small" type="primary" link @click="computeDerived(row.key)">
+            <el-button icon="Cpu" size="small" type="primary" link @click="computeDerived(row.key)">
               计算
             </el-button>
           </template>
@@ -632,6 +634,8 @@
         :data="security.action_logs"
         size="small"
         max-height="260"
+        border
+        stripe
       >
         <el-table-column prop="time" label="时间" width="120" />
         <el-table-column prop="action" label="动作" min-width="110" show-overflow-tooltip />
@@ -672,7 +676,7 @@
           基础对象 {{ derivedObj?.base_objects ?? 0 }} · 派生 {{ derivedObj?.total_derived ?? 0 }}
         </el-tag>
       </div>
-      <el-table :data="derivedObj?.derived_objects || []" size="small" border>
+      <el-table :data="derivedObj?.derived_objects || []" size="small" border stripe>
         <el-table-column prop="name" label="派生对象" min-width="120" />
         <el-table-column label="基础对象" min-width="180">
           <template #default="{ row }">
@@ -727,7 +731,9 @@
                   {{ f.ref }}
                 </span>
               </div>
-              <el-button link type="danger" size="small" @click="removeFav(f.id)">移除</el-button>
+              <el-button icon="delete" link type="danger" size="small" @click="removeFav(f.id)">
+                移除
+              </el-button>
             </div>
           </div>
           <div v-else class="gov-empty">暂无收藏，可在资产/对象/指标处收藏</div>
@@ -783,7 +789,13 @@
                   >
                     {{ d.pri }}
                   </el-tag>
-                  <el-button size="small" type="primary" link @click="runDecision(d)">
+                  <el-button
+                    icon="VideoPlay"
+                    size="small"
+                    type="primary"
+                    link
+                    @click="runDecision(d)"
+                  >
                     执行
                   </el-button>
                 </div>
@@ -903,14 +915,24 @@
         <el-button size="small" @click="loadShares">刷新</el-button>
         <el-tag size="small" type="info" effect="plain">{{ shares.length }} 条分享</el-tag>
       </div>
-      <el-table v-if="shares.length" :data="shares" size="small" border>
+      <el-table v-if="shares.length" :data="shares" size="small" border stripe>
         <el-table-column prop="table" label="数据集" min-width="150" show-overflow-tooltip />
         <el-table-column prop="time" label="分享时间" width="150" />
         <el-table-column prop="token" label="Token" width="120" show-overflow-tooltip />
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="copyShare(row)">复制</el-button>
-            <el-button link type="danger" size="small" @click="revokeShare(row.id)">撤销</el-button>
+            <el-button icon="CopyDocument" link type="primary" size="small" @click="copyShare(row)">
+              复制
+            </el-button>
+            <el-button
+              icon="RefreshLeft"
+              link
+              type="danger"
+              size="small"
+              @click="revokeShare(row.id)"
+            >
+              撤销
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -1119,7 +1141,7 @@
             @current-change="loadBrowse"
           />
         </div>
-        <el-table :data="browse.rows" size="small" border max-height="320" class="w-full">
+        <el-table :data="browse.rows" size="small" border max-height="320" class="w-full" stripe>
           <el-table-column
             v-for="c in (browse.columns || []).slice(0, 10)"
             :key="c"
@@ -1314,6 +1336,7 @@
         border
         max-height="220"
         class="mt-2"
+        stripe
       >
         <el-table-column prop="input" label="输入" min-width="180" show-overflow-tooltip />
         <el-table-column label="通过" width="80" align="center">
@@ -1432,6 +1455,8 @@
           :data="reportList"
           size="small"
           max-height="460"
+          border
+          stripe
           @selection-change="onReportSelect"
         >
           <el-table-column type="selection" width="46" />
@@ -1444,9 +1469,12 @@
           <el-table-column prop="created_time" label="创建时间" min-width="150" />
           <el-table-column label="操作" width="130" align="center">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="viewReport(row)">查看</el-button>
+              <el-button icon="View" link type="primary" size="small" @click="viewReport(row)">
+                查看
+              </el-button>
               <el-button
                 v-hasPerm="'module_ai:report:delete'"
+                icon="delete"
                 link
                 type="danger"
                 size="small"
@@ -2222,8 +2250,8 @@ function render() {
     const t = stats.trend || [];
     trendChart.setOption({
       tooltip: { trigger: "axis" },
-      legend: { data: ["调用", "失败"] },
-      grid: { left: 40, right: 16, top: 30, bottom: 24 },
+      legend: { data: ["调用", "失败"], top: 0, right: 8 },
+      grid: { left: 44, right: 20, top: 36, bottom: 26 },
       xAxis: { type: "category", data: t.map((x: any) => x.date) },
       yAxis: { type: "value" },
       series: [
@@ -2240,17 +2268,24 @@ function render() {
   if (modelRef.value) {
     modelChart = modelChart || echarts.init(modelRef.value);
     const m = stats.by_model || [];
+    // 横向条形：模型名较长（smbs/LLM-284B-MXFP4），竖排 X 轴标签会挤压旋转，改横向更可读
     modelChart.setOption({
       tooltip: { trigger: "axis" },
-      grid: { left: 40, right: 16, top: 30, bottom: 40 },
-      xAxis: { type: "category", data: m.map((x: any) => x.name), axisLabel: { rotate: 20 } },
-      yAxis: { type: "value" },
+      grid: { left: 8, right: 24, top: 16, bottom: 8, containLabel: true },
+      xAxis: { type: "value" },
+      yAxis: {
+        type: "category",
+        inverse: true,
+        data: m.map((x: any) => x.name),
+        axisLabel: { width: 120, overflow: "truncate" },
+      },
       series: [
         {
           name: "调用",
           type: "bar",
           data: m.map((x: any) => x.count),
           itemStyle: { color: "#67c23a" },
+          barMaxWidth: 18,
         },
       ],
     });

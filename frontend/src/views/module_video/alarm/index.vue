@@ -150,6 +150,7 @@
                 >
                   <template #default="scope">
                     <el-button
+                      icon="View"
                       size="small"
                       type="primary"
                       link
@@ -178,6 +179,7 @@
                     </el-button>
                     <el-button
                       v-hasPerm="['module_video:alarm:delete']"
+                      icon="delete"
                       size="small"
                       type="danger"
                       link

@@ -47,6 +47,7 @@
         :data="rows"
         size="small"
         border
+        stripe
         max-height="520"
         @selection-change="(v: any[]) => (checked = v.map((x) => x.code))"
       >
@@ -90,10 +91,13 @@
         </el-table-column>
         <el-table-column label="操作" width="250" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
+            <el-button icon="View" link type="primary" size="small" @click="openDetail(row)">
+              详情
+            </el-button>
             <el-button
               v-if="row.status === 'active'"
               v-hasPerm="'module_ai:ontology:edit'"
+              icon="Connection"
               link
               type="success"
               size="small"
@@ -103,6 +107,7 @@
             </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
+              icon="CopyDocument"
               link
               type="primary"
               size="small"
@@ -113,6 +118,7 @@
             <el-button
               v-if="row.status === 'active'"
               v-hasPerm="'module_ai:ontology:edit'"
+              icon="Delete"
               link
               type="warning"
               size="small"
@@ -122,6 +128,7 @@
             </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
+              icon="delete"
               link
               type="danger"
               size="small"
@@ -135,7 +142,7 @@
     </el-card>
 
     <!-- 新建 / 编辑 -->
-    <el-dialog v-model="formVisible" title="场景" width="620px" append-to-body>
+    <el-dialog v-model="formVisible" title="场景" width="600px" append-to-body>
       <el-form :model="form" label-width="120px">
         <el-form-item label="场景名称" required>
           <el-input v-model="form.name" placeholder="如 方案A-先改名观察" />
@@ -237,7 +244,7 @@
           <span class="ont-sec__title">合并后会变成什么</span>
           <el-tag size="small" effect="plain">{{ diff?.objects_changed || 0 }} 个对象</el-tag>
         </div>
-        <el-table :data="diff?.changes || []" size="small" border max-height="360">
+        <el-table :data="diff?.changes || []" size="small" border max-height="360" stripe>
           <template #empty>
             <el-empty :image-size="50" description="该场景还没有任何编辑" />
           </template>
@@ -275,7 +282,7 @@
           <span class="ont-sec__title">编辑明细</span>
           <el-tag size="small" effect="plain">{{ detail.edits?.length || 0 }}</el-tag>
         </div>
-        <el-table :data="detail.edits || []" size="small" border max-height="300">
+        <el-table :data="detail.edits || []" size="small" border max-height="300" stripe>
           <el-table-column label="对象" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="ont-mono">{{ objectLabel(row.object_code) }}#{{ row.object_key }}</span>
@@ -310,14 +317,14 @@
     </el-drawer>
 
     <!-- 多场景对比 -->
-    <el-dialog v-model="compareVisible" title="多场景对比" width="820px" append-to-body>
+    <el-dialog v-model="compareVisible" title="多场景对比" width="900px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
         title="同一个对象在不同场景下会变成什么样——用来权衡不同方案"
       />
-      <el-table :data="compare?.rows || []" size="small" border max-height="420">
+      <el-table :data="compare?.rows || []" size="small" border max-height="420" stripe>
         <el-table-column label="对象" min-width="170" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="ont-mono">{{ objectLabel(row.object_code) }}#{{ row.object_key }}</span>

@@ -147,7 +147,7 @@
     <!-- Per-class metrics table -->
     <el-card v-if="evalData?.metrics?.classes" shadow="never" class="section-card">
       <template #header><span class="card-title">各类别指标</span></template>
-      <el-table :data="classTableData" border size="small" style="width: 100%">
+      <el-table stripe :data="classTableData" border size="small" style="width: 100%">
         <el-table-column prop="cls" label="类别" width="100" />
         <el-table-column label="Precision">
           <template #default="{ row }">{{ fmtPct(row.precision) }}</template>

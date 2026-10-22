@@ -17,6 +17,16 @@
           @add="handleOpenDialog()"
           @delete="onToolbar('delete')"
         />
+        <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(true)">
+          批量启用
+        </el-button>
+        <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(false)">
+          批量停用
+        </el-button>
+        <el-tag size="small" type="info" effect="plain" class="summary-tag">
+          共 {{ appSummary.total }} 个组件 · 启用 {{ appSummary.enabled }} · 停用
+          {{ appSummary.disabled }}
+        </el-tag>
         <el-dropdown
           v-if="appTemplates.length"
           style="margin-left: 8px"
@@ -28,7 +38,7 @@
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item v-for="t in appTemplates" :key="t.key" :command="t">
+              <el-dropdown-item v-for="t in appTemplates" :key="t.key" :command="t" icon="Document">
                 {{ t.name }}（{{ t.app_type }}）
               </el-dropdown-item>
             </el-dropdown-menu>
@@ -41,18 +51,6 @@
 
       <template #table="{ data, loading, tableRef }">
         <div class="data-table__content">
-          <div class="batch-bar">
-            <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(true)">
-              批量启用
-            </el-button>
-            <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(false)">
-              批量停用
-            </el-button>
-            <el-tag size="small" type="info" effect="plain" class="summary-tag">
-              共 {{ appSummary.total }} 个组件 · 启用 {{ appSummary.enabled }} · 停用
-              {{ appSummary.disabled }}
-            </el-tag>
-          </div>
           <el-table
             :ref="tableRef as any"
             v-loading="loading"
@@ -106,6 +104,7 @@
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="['module_ai:app:query']"
+                  icon="View"
                   size="small"
                   link
                   type="primary"
@@ -115,6 +114,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:app:update']"
+                  icon="edit"
                   size="small"
                   link
                   type="primary"
@@ -124,6 +124,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:app:create']"
+                  icon="CopyDocument"
                   size="small"
                   link
                   @click="doCopy(row)"
@@ -132,6 +133,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:app:delete']"
+                  icon="delete"
                   size="small"
                   link
                   type="danger"
@@ -422,7 +424,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
 import { Auth } from "@/utils/auth";
 import { readAgnoFrames } from "@/composables/ai/agnoSse";
 import { Delete, Plus, ArrowDown } from "@element-plus/icons-vue";
@@ -450,8 +451,6 @@ import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
 import { getAiWorkflowList } from "@/api/module_ai/workflow";
 
 defineOptions({ name: "AiApp" });
-
-const router = useRouter();
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 

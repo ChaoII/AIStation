@@ -10,6 +10,7 @@
         </template>
       </el-input>
       <el-button
+        :icon="treeExpanded ? 'ArrowUp' : 'ArrowDown'"
         type="primary"
         link
         size="small"

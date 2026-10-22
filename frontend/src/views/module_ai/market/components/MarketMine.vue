@@ -131,7 +131,7 @@
     />
 
     <!-- 提交市场 -->
-    <el-dialog v-model="submitVisible" title="提交到能力市场" width="560px" append-to-body>
+    <el-dialog v-model="submitVisible" title="提交到能力市场" width="600px" append-to-body>
       <el-form ref="submitFormRef" :model="submitForm" :rules="submitRules" label-width="90px">
         <el-form-item label="资产类型">
           <el-tag effect="plain">{{ assetLabel(submitForm.asset_type) }}</el-tag>

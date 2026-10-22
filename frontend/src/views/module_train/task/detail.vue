@@ -204,7 +204,7 @@
 
       <el-card v-if="compareTableData.length" shadow="never" class="section-card">
         <template #header><span class="card-title">指标对比</span></template>
-        <el-table :data="compareTableData" border size="small" style="width: 100%">
+        <el-table stripe :data="compareTableData" border size="small" style="width: 100%">
           <el-table-column prop="label" label="指标" width="140" />
           <el-table-column label="最优值">
             <template #default="{ row }">

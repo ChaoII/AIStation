@@ -41,6 +41,10 @@ _EMPTY_TRIGGER_MSG = "请先配置触发时间（分 时 日 月 周）"
 #: （否则会把别的模块的定时任务一并删掉——无告警、只在下次触发时表现为「任务不再运行」）。
 _JOB_PREFIX = "ai_workspace_cron:"
 
+#: 调度（无用户输入）运行时使用的固定消息：agent 的 guardrail 拒绝空输入，
+#: 且「定时执行」语义就是「按配置跑一次」，不引入第二套输入契约。
+_SCHEDULE_MESSAGES: list[dict] = [{"role": "user", "content": "按你的配置执行"}]
+
 
 def _job_key(cron_id: int) -> str:
     """本模块在中心调度器里的作业键（`ai_workspace_cron:{id}`）。"""
@@ -606,15 +610,46 @@ class WorkspaceService:
         SchedulerUtil.remove_business_job(_job_key(cron_id))
 
     @classmethod
+    async def trigger_cron(cls, cron_id: int, background_tasks) -> bool:
+        """「立即执行一次」：校验行存在后，把执行挂到后台任务（返回是否入队成功）。
+
+        不直接 await 执行：目标运行可能远超 HTTP 超时时间；放 background_tasks
+        让接口只负责入队，执行路径与调度器触发的是同一个 `run_scheduled_workspace_cron`。
+        """
+        async with async_db_session() as db:
+            row = await db.get(AiWorkspaceCronModel, cron_id)
+            if not row or row.is_deleted:
+                return False
+        background_tasks.add_task(run_scheduled_workspace_cron, cron_id)
+        return True
+
+    @classmethod
     async def _run_target(cls, target_type: str, target_id: int) -> None:
-        """执行绑定的资产（工作流用其 run_schedule；agent/app 由对应 run 非流式执行）。"""
+        """执行绑定的资产（三种目标都**真实运行**，不是只记一行日志）。
+
+        - workflow：`run_schedule`（引擎直跑，无输入，落运行日志）；
+        - agent / app：复用各自的流式执行入口并**消费完整个流**（没有非流式入口，
+          这是唯一不改 agno 链路的做法）。`auth=None` + `session_id=None`：
+          不落用户会话（`persist_session_exchange` 无 session_id 直接跳过），
+          调用日志照记（`user_id=None`），与 workflow 的调度口径一致。
+        """
         if target_type == "workflow":
             from app.plugin.module_ai.workflow.service import AiWorkflowService
 
             await AiWorkflowService.run_schedule(target_id)
             return
-        # agent / app：暂不做非流式执行，仅记录（后续接入）。
-        # ⚠️ 必须用 log 而不是 print：Windows 控制台是 GBK，`print("ℹ️ …")` 会抛
-        # `UnicodeEncodeError: 'gbk' codec can't encode character '\u2139'`，
-        # 作业被执行器记为**失败**（实测「立即执行」的工作台任务因此跑不起来）。
-        log.info(f"[workspace] 定时任务目标 {target_type}#{target_id} 执行（非流式执行待接入）")
+        if target_type == "agent":
+            from app.plugin.module_ai.agent.service import AiAgentService
+
+            async for _frame in AiAgentService.run_ui_stream(
+                target_id, list(_SCHEDULE_MESSAGES), None
+            ):
+                pass
+            return
+        if target_type == "app":
+            from app.plugin.module_ai.apps.service import run_app_ui_stream
+
+            async for _frame in run_app_ui_stream(target_id, list(_SCHEDULE_MESSAGES), None):
+                pass
+            return
+        log.warning(f"[workspace] 定时任务目标类型不支持：{target_type}#{target_id}")

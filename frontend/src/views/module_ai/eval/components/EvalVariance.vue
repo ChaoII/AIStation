@@ -72,14 +72,14 @@
         :closable="false"
         show-icon
         class="ev-mt"
-        :title="`每次准确率 ${rep.per_run_accuracy.join(' / ')}　均值 ${rep.mean}　标准差 ${rep.std}　极差(噪声带) ${rep.spread} 分`"
+        :title="`每次准确率 ${rep.per_run_accuracy.join(' / ')} 均值 ${rep.mean} 标准差 ${rep.std} 极差(噪声带) ${rep.spread} 分`"
       />
       <div class="ev-stat">
-        题数 {{ rep.n_questions }}　稳定通过 {{ rep.always_pass }}　稳定失败
-        {{ rep.always_fail }}　不稳定 {{ rep.unstable.length }}
+        题数 {{ rep.n_questions }} 稳定通过 {{ rep.always_pass }} 稳定失败
+        {{ rep.always_fail }} 不稳定 {{ rep.unstable.length }}
       </div>
 
-      <el-table :data="rep.unstable" size="small" border class="ev-mt">
+      <el-table :data="rep.unstable" size="small" border class="ev-mt" stripe>
         <el-table-column label="跨次通过率" width="120" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.rate >= 0.5 ? 'warning' : 'danger'">
@@ -95,7 +95,7 @@
         />
       </el-table>
 
-      <el-table :data="rep.pairs" size="small" border class="ev-mt">
+      <el-table :data="rep.pairs" size="small" border class="ev-mt" stripe>
         <el-table-column label="对比" width="100" align="center">
           <template #default="{ row }">第 {{ row.a }} vs {{ row.b }} 次</template>
         </el-table-column>

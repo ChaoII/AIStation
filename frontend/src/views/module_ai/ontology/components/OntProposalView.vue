@@ -28,7 +28,7 @@
         <el-tab-pane v-for="t in tabs" :key="t.value" :label="t.label" :name="t.value" />
       </el-tabs>
 
-      <el-table v-loading="loading" :data="items" size="small" border max-height="520">
+      <el-table v-loading="loading" :data="items" size="small" border max-height="520" stripe>
         <template #empty><el-empty :image-size="60" description="还没有提案" /></template>
         <el-table-column label="提案" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
@@ -68,9 +68,12 @@
         <el-table-column prop="created_time" label="创建时间" width="150" show-overflow-tooltip />
         <el-table-column label="操作" width="230" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
+            <el-button icon="View" link type="primary" size="small" @click="openDetail(row)">
+              详情
+            </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:manage'"
+              icon="Connection"
               link
               type="success"
               size="small"
@@ -81,6 +84,7 @@
             </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:manage'"
+              icon="Close"
               link
               type="danger"
               size="small"
@@ -95,7 +99,7 @@
     </el-card>
 
     <!-- 新建 -->
-    <el-dialog v-model="createVisible" title="新建分支 / 提案" width="560px" append-to-body>
+    <el-dialog v-model="createVisible" title="新建分支 / 提案" width="600px" append-to-body>
       <el-form label-width="90px">
         <el-form-item label="标题" required>
           <el-input v-model="createForm.title" placeholder="如 给摄像机加维护状态字段" />
@@ -182,7 +186,7 @@
             批量拒绝
           </el-button>
         </div>
-        <el-table :data="detail.tasks || []" size="small" border max-height="320">
+        <el-table :data="detail.tasks || []" size="small" border max-height="320" stripe>
           <template #empty><el-empty :image-size="50" description="分支上还没有改动" /></template>
           <el-table-column label="资源" min-width="200" show-overflow-tooltip>
             <template #default="{ row }">
@@ -213,6 +217,7 @@
             <template #default="{ row }">
               <el-button
                 v-hasPerm="'module_ai:ontology:manage'"
+                icon="Check"
                 link
                 type="success"
                 size="small"
@@ -223,6 +228,7 @@
               </el-button>
               <el-button
                 v-hasPerm="'module_ai:ontology:manage'"
+                icon="Close"
                 link
                 type="danger"
                 size="small"
@@ -233,6 +239,7 @@
               </el-button>
               <el-button
                 v-hasPerm="'module_ai:ontology:manage'"
+                icon="Delete"
                 link
                 type="info"
                 size="small"

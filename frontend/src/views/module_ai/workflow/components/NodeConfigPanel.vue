@@ -79,6 +79,7 @@
       <el-tag v-else size="small" type="info">未设置</el-tag>
       <el-button
         v-if="d.output_variable"
+        icon="CopyDocument"
         link
         size="small"
         type="primary"
@@ -1036,7 +1037,7 @@ onMounted(async () => {
 
 .io-var-src {
   margin-left: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 

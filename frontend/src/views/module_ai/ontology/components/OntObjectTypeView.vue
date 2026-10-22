@@ -188,7 +188,7 @@
         <div class="ont-sec__head ont-sec__head--mt">
           <span class="ont-sec__title">字段映射</span>
         </div>
-        <el-table :data="propList" size="small" border max-height="300">
+        <el-table :data="propList" size="small" border max-height="300" stripe>
           <el-table-column prop="name" label="属性" min-width="150" show-overflow-tooltip />
           <el-table-column prop="code" label="属性 ID" min-width="130" show-overflow-tooltip />
           <el-table-column label="来源列" min-width="150">
@@ -218,6 +218,7 @@
           <span class="ont-sec__title">依赖</span>
           <el-tag size="small" type="info" effect="plain">{{ depTotal }}</el-tag>
           <el-button
+            icon="refresh"
             class="ont-sec__op"
             size="small"
             type="primary"
@@ -268,7 +269,7 @@
       <!-- 关系类型列表：**详情 / 删除**入口。
            此前关系类型只能「新建」——详情组件（OntLinkTypeView）全仓无人引用，
            既看不了元数据/安全/用量，也删不掉。 -->
-      <el-table :data="rels" size="small" border max-height="360" style="margin-top: 12px">
+      <el-table :data="rels" size="small" border max-height="360" style="margin-top: 12px" stripe>
         <template #empty><el-empty :image-size="40" description="暂无关系类型" /></template>
         <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
         <el-table-column label="方向" width="80">
@@ -283,8 +284,12 @@
         <el-table-column prop="join_method" label="连接方式" width="120" show-overflow-tooltip />
         <el-table-column label="操作" width="130" align="center">
           <template #default="{ row }">
-            <el-button size="small" link @click="emit('open-link', row.id)">详情</el-button>
-            <el-button size="small" type="danger" link @click="removeRel(row)">删除</el-button>
+            <el-button icon="View" size="small" link @click="emit('open-link', row.id)">
+              详情
+            </el-button>
+            <el-button icon="delete" size="small" type="danger" link @click="removeRel(row)">
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -305,7 +310,7 @@
           新建属性
         </el-button>
       </div>
-      <el-table :data="propList" size="small" border max-height="460">
+      <el-table :data="propList" size="small" border max-height="460" stripe>
         <template #empty><el-empty :image-size="50" description="暂无属性" /></template>
         <el-table-column prop="name" label="显示名" min-width="120" show-overflow-tooltip />
         <el-table-column prop="code" label="属性 ID" min-width="110" show-overflow-tooltip />
@@ -372,7 +377,9 @@
         </el-table-column>
         <el-table-column label="操作" width="110" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openPropEdit(row)">编辑</el-button>
+            <el-button icon="edit" link type="primary" size="small" @click="openPropEdit(row)">
+              编辑
+            </el-button>
             <el-button link type="danger" size="small" @click="removeProp(row)">删</el-button>
           </template>
         </el-table-column>
@@ -395,7 +402,7 @@
           新建
         </el-button>
       </div>
-      <el-table :data="acts" size="small" border max-height="460">
+      <el-table :data="acts" size="small" border max-height="460" stripe>
         <template #empty><el-empty :image-size="40" description="暂无动作类型" /></template>
         <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
         <el-table-column prop="code" label="编码" min-width="130" show-overflow-tooltip />
@@ -414,9 +421,15 @@
         <el-table-column prop="description" label="描述" min-width="160" show-overflow-tooltip />
         <el-table-column label="操作" width="170" align="center">
           <template #default="{ row }">
-            <el-button size="small" type="success" link @click="openExec(row)">执行</el-button>
-            <el-button size="small" link @click="emit('open-action', row.code)">详情</el-button>
-            <el-button size="small" type="danger" link @click="removeAction(row)">删除</el-button>
+            <el-button icon="VideoPlay" size="small" type="success" link @click="openExec(row)">
+              执行
+            </el-button>
+            <el-button icon="View" size="small" link @click="emit('open-action', row.code)">
+              详情
+            </el-button>
+            <el-button icon="delete" size="small" type="danger" link @click="removeAction(row)">
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -457,7 +470,7 @@
       <div class="ont-sec__head">
         <span class="ont-sec__title">指标</span>
       </div>
-      <el-table v-loading="metricsLoading" :data="objectMetrics" size="small" border>
+      <el-table v-loading="metricsLoading" :data="objectMetrics" size="small" border stripe>
         <el-table-column prop="name" label="指标名称" min-width="140" show-overflow-tooltip />
         <el-table-column prop="key" label="指标 key" min-width="180" show-overflow-tooltip />
         <el-table-column prop="agg_fn" label="聚合" width="90" />
@@ -481,6 +494,7 @@
       <div class="ont-sec__head">
         <span class="ont-sec__title">使用量</span>
         <el-button
+          icon="refresh"
           class="ont-sec__op"
           size="small"
           type="primary"
@@ -520,7 +534,7 @@
     </section>
 
     <!-- 属性编辑 -->
-    <el-dialog v-model="propDialog" title="属性类型" width="560px" append-to-body>
+    <el-dialog v-model="propDialog" title="属性类型" width="600px" append-to-body>
       <el-form :model="propForm" label-width="100px">
         <el-form-item label="显示名" required><el-input v-model="propForm.name" /></el-form-item>
         <el-form-item label="属性 ID" required><el-input v-model="propForm.code" /></el-form-item>
@@ -714,7 +728,7 @@
     </el-dialog>
 
     <!-- 动作执行 -->
-    <el-dialog v-model="execDialog" title="执行本体动作" width="560px" append-to-body>
+    <el-dialog v-model="execDialog" title="执行本体动作" width="600px" append-to-body>
       <el-alert
         v-if="execForm.approval"
         type="warning"

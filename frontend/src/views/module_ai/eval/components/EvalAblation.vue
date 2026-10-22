@@ -83,7 +83,14 @@
         class="ev-alert"
       />
 
-      <el-table v-if="tableRows.length" :data="tableRows" size="small" border class="ev-table">
+      <el-table
+        v-if="tableRows.length"
+        :data="tableRows"
+        size="small"
+        border
+        class="ev-table"
+        stripe
+      >
         <el-table-column prop="name" label="组" min-width="140" show-overflow-tooltip />
         <el-table-column label="数据准确率" width="130">
           <template #default="{ row }">{{ pct(row.data_accuracy) }}</template>

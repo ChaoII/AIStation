@@ -14,7 +14,7 @@
           组是**跨对象类型**的多对多分组（不同于「所属本体」的一对一归属），可用于筛选与批量操作
         </span>
       </div>
-      <el-table :data="groups" size="small" border max-height="480">
+      <el-table :data="groups" size="small" border max-height="480" stripe>
         <template #empty><el-empty :image-size="50" description="暂无分组" /></template>
         <el-table-column prop="name" label="组名" min-width="160" show-overflow-tooltip />
         <el-table-column prop="code" label="编码" min-width="120" show-overflow-tooltip />
@@ -40,7 +40,9 @@
         <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
         <el-table-column label="操作" width="130" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openGroup(row)">编辑</el-button>
+            <el-button icon="edit" link type="primary" size="small" @click="openGroup(row)">
+              编辑
+            </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
               link
@@ -64,7 +66,7 @@
           值类型是基础类型之上的**语义包装**（邮箱/URL/UUID/枚举…）＋约束＋版本；属性可引用它
         </span>
       </div>
-      <el-table :data="valueTypes" size="small" border max-height="480">
+      <el-table :data="valueTypes" size="small" border max-height="480" stripe>
         <template #empty><el-empty :image-size="50" description="暂无值类型" /></template>
         <el-table-column prop="name" label="显示名" min-width="150" show-overflow-tooltip />
         <el-table-column prop="code" label="编码" min-width="130" show-overflow-tooltip />
@@ -90,8 +92,10 @@
         </el-table-column>
         <el-table-column label="操作" width="180" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openVt(row)">编辑</el-button>
-            <el-button link type="primary" size="small" @click="openValidate(row)">
+            <el-button icon="edit" link type="primary" size="small" @click="openVt(row)">
+              编辑
+            </el-button>
+            <el-button icon="Checked" link type="primary" size="small" @click="openValidate(row)">
               试校验
             </el-button>
             <el-button
@@ -119,7 +123,7 @@
           定义一次、多个对象类型引用；**只共享元数据，不共享数据**。改元数据会同步到引用方
         </span>
       </div>
-      <el-table :data="shared" size="small" border max-height="480">
+      <el-table :data="shared" size="small" border max-height="480" stripe>
         <template #empty><el-empty :image-size="50" description="暂无共享属性" /></template>
         <el-table-column prop="name" label="显示名" min-width="140" show-overflow-tooltip />
         <el-table-column prop="code" label="属性 ID" min-width="130" show-overflow-tooltip />
@@ -148,7 +152,9 @@
         </el-table-column>
         <el-table-column label="操作" width="130" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openSp(row)">编辑</el-button>
+            <el-button icon="edit" link type="primary" size="small" @click="openSp(row)">
+              编辑
+            </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
               link
@@ -178,7 +184,7 @@
           接口声明必需属性/关系/动作；让对象类型实现时**约束在实现侧强制**，不满足会被拒绝
         </span>
       </div>
-      <el-table :data="interfaces" size="small" border max-height="440">
+      <el-table :data="interfaces" size="small" border max-height="440" stripe>
         <template #empty><el-empty :image-size="50" description="暂无接口" /></template>
         <el-table-column prop="name" label="接口名" min-width="150" show-overflow-tooltip />
         <el-table-column prop="code" label="编码" min-width="120" show-overflow-tooltip />
@@ -210,7 +216,9 @@
         </el-table-column>
         <el-table-column label="操作" width="130" align="center">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="openIf(row)">编辑</el-button>
+            <el-button icon="edit" link type="primary" size="small" @click="openIf(row)">
+              编辑
+            </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
               link
@@ -225,7 +233,7 @@
       </el-table>
 
       <div v-if="issues.length" class="ont-sub-title">不合规的实现</div>
-      <el-table v-if="issues.length" :data="issues" size="small" border max-height="220">
+      <el-table v-if="issues.length" :data="issues" size="small" border max-height="220" stripe>
         <el-table-column prop="interface_name" label="接口" min-width="140" />
         <el-table-column label="对象类型" min-width="150">
           <template #default="{ row }">{{ objectLabel(row.object_code) }}</template>
@@ -237,7 +245,7 @@
     </template>
 
     <!-- ============ 编辑弹窗 ============ -->
-    <el-dialog v-model="dlg" :title="dlgTitle" width="640px" append-to-body>
+    <el-dialog v-model="dlg" :title="dlgTitle" width="600px" append-to-body>
       <el-form label-width="130px" size="small">
         <el-form-item label="显示名" required>
           <el-input v-model="form.name" />

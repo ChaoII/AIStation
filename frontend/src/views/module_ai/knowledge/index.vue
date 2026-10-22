@@ -1,215 +1,326 @@
 <!-- AI 知识库 / 数据源 RAG：知识库（入库/检索/分块） + 数据源（测试/同步），复用 Element Plus -->
 <template>
   <div class="app-container ai-knowledge-page">
-    <el-card shadow="never" class="kb-tabs-card">
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="知识库" name="kb">
-          <div class="kb-toolbar">
+    <div class="kb-layout">
+      <!-- 左：知识库分类树（全部 / 分类 + 计数） -->
+      <el-card shadow="never" class="kb-side">
+        <template #header>
+          <div class="kb-side-head">
+            <span>分类</span>
             <el-button
-              v-hasPerm="['module_ai:knowledge:create']"
+              v-hasPerm="'module_ai:knowledge:create'"
+              link
               type="primary"
               :icon="Plus"
-              @click="openKbDialog()"
-            >
-              新建知识库
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:knowledge:update']"
-              :icon="Upload"
-              :disabled="!selectedKb"
-              @click="selectedKb && openIngestDialog(selectedKb)"
-            >
-              文本入库
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:knowledge:query']"
-              :icon="Search"
-              :disabled="!selectedKb"
-              @click="selectedKb && openSearchDialog(selectedKb)"
-            >
-              检索测试
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:knowledge:query']"
-              :icon="Files"
-              :disabled="!selectedKb"
-              @click="selectedKb && openChunks(selectedKb)"
-            >
-              分块查看
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:knowledge:query']"
-              :icon="Share"
-              :disabled="!selectedKb"
-              @click="selectedKb && openGraph(selectedKb)"
-            >
-              图谱
-            </el-button>
+              @click="openCatCreate(null)"
+            />
           </div>
+        </template>
+        <el-tree
+          class="ai-tree"
+          :data="catTree"
+          node-key="id"
+          :props="{ label: 'name', children: 'children' }"
+          :current-node-key="currentCatId ?? undefined"
+          highlight-current
+          default-expand-all
+          :expand-on-click-node="false"
+          @node-click="onCatClick"
+        >
+          <template #default="{ data }">
+            <span class="ai-tree-node">
+              <el-icon class="ai-tree-node__icon">
+                <component :is="data.id === 0 ? Files : Folder" />
+              </el-icon>
+              <span class="ai-tree-node__label" :title="data.name">{{ data.name }}</span>
+              <span class="ai-tree-node__count">{{ data.count ?? 0 }}</span>
+            </span>
+          </template>
+        </el-tree>
+      </el-card>
 
-          <el-table
-            v-loading="loading"
-            :data="bases"
-            highlight-current-row
-            @current-change="(row: any) => (selectedKb = row)"
-          >
-            <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.description || "—" }}</template>
-            </el-table-column>
-            <el-table-column prop="chunk_count" label="分块数" width="90" align="center" />
-            <el-table-column label="嵌入模型" width="150" show-overflow-tooltip>
-              <template #default="{ row }">
-                <el-tag v-if="row.model_id" size="small" type="info" effect="plain">
-                  {{ modelNameMap[row.model_id] || `#${row.model_id}` }}
-                </el-tag>
-                <span v-else class="kb-opt-hint">确定性向量</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="图谱" width="150" align="center">
-              <template #default="{ row }">
-                <el-tag
-                  v-if="row.graph_nodes"
-                  size="small"
-                  type="success"
-                  effect="plain"
-                  class="kb-graph-cell"
-                  title="点击查看图谱"
-                  @click.stop="openGraph(row)"
-                >
-                  {{ row.graph_nodes }} 节点 / {{ row.graph_edges }} 边
-                </el-tag>
-                <span v-else class="kb-opt-hint">—</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="90" align="center">
-              <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
-                  {{ row.enabled ? "启用" : "停用" }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="280" align="center" fixed="right">
-              <template #default="{ row }">
-                <el-button size="small" type="primary" @click="openDetail(row)">详情</el-button>
-                <el-button
-                  v-hasPerm="['module_ai:knowledge:create']"
-                  size="small"
-                  :icon="CopyDocument"
-                  @click="copyBase(row)"
-                >
-                  复制
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:knowledge:update']"
-                  size="small"
-                  :icon="Edit"
-                  @click="openKbDialog(row)"
-                >
-                  编辑
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:knowledge:delete']"
-                  size="small"
-                  type="danger"
-                  :icon="Delete"
-                  @click="deleteBases(row)"
+      <el-card shadow="never" class="kb-tabs-card">
+        <el-tabs v-model="activeTab">
+          <el-tab-pane label="知识库" name="kb">
+            <div class="kb-toolbar">
+              <el-button
+                v-hasPerm="['module_ai:knowledge:create']"
+                type="success"
+                icon="plus"
+                @click="openKbDialog()"
+              >
+                新建知识库
+              </el-button>
+              <el-button
+                v-hasPerm="['module_ai:knowledge:update']"
+                :icon="Upload"
+                :disabled="!selectedKb"
+                @click="selectedKb && openIngestDialog(selectedKb)"
+              >
+                文本入库
+              </el-button>
+              <el-button
+                v-hasPerm="['module_ai:knowledge:query']"
+                :icon="Search"
+                :disabled="!selectedKb"
+                @click="selectedKb && openSearchDialog(selectedKb)"
+              >
+                检索测试
+              </el-button>
+              <el-button
+                v-hasPerm="['module_ai:knowledge:query']"
+                :icon="Files"
+                :disabled="!selectedKb"
+                @click="selectedKb && openChunks(selectedKb)"
+              >
+                分块查看
+              </el-button>
+              <el-button
+                v-hasPerm="['module_ai:knowledge:query']"
+                :icon="Share"
+                :disabled="!selectedKb"
+                @click="selectedKb && openGraph(selectedKb)"
+              >
+                图谱
+              </el-button>
+              <div class="kb-toolbar__right">
+                <el-input
+                  v-model="kbKeyword"
+                  placeholder="搜索知识库"
+                  clearable
+                  :prefix-icon="Search"
+                  style="width: 200px"
                 />
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
+                <el-button circle type="success" :icon="Refresh" title="刷新" @click="loadData" />
+              </div>
+            </div>
 
-        <el-tab-pane label="数据源" name="ds">
-          <div class="kb-toolbar">
-            <el-button
-              v-hasPerm="['module_ai:knowledge:create']"
-              type="primary"
-              :icon="Plus"
-              @click="openDsDialog()"
+            <el-table
+              v-loading="loading"
+              border
+              stripe
+              :data="filteredBases"
+              highlight-current-row
+              @current-change="(row: any) => (selectedKb = row)"
             >
-              新增数据源
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:knowledge:query']"
-              :icon="Connection"
-              :disabled="!selectedDs"
-              @click="selectedDs && testDs(selectedDs)"
-            >
-              测试
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:knowledge:update']"
-              type="warning"
-              :icon="Refresh"
-              :disabled="!selectedDs"
-              @click="selectedDs && syncDs(selectedDs)"
-            >
-              同步入库
-            </el-button>
-          </div>
+              <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
+              <el-table-column
+                prop="description"
+                label="描述"
+                min-width="180"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">{{ row.description || "—" }}</template>
+              </el-table-column>
+              <el-table-column prop="chunk_count" label="分块数" width="90" align="center" />
+              <el-table-column label="嵌入模型" width="150" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <el-tag v-if="row.model_id" size="small" type="info" effect="plain">
+                    {{ modelNameMap[row.model_id] || `#${row.model_id}` }}
+                  </el-tag>
+                  <span v-else class="kb-opt-hint">确定性向量</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="图谱" width="150" align="center">
+                <template #default="{ row }">
+                  <el-tag
+                    v-if="row.graph_nodes"
+                    size="small"
+                    type="success"
+                    effect="plain"
+                    class="kb-graph-cell"
+                    title="点击查看图谱"
+                    @click.stop="openGraph(row)"
+                  >
+                    {{ row.graph_nodes }} 节点 / {{ row.graph_edges }} 边
+                  </el-tag>
+                  <span v-else class="kb-opt-hint">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="90" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
+                    {{ row.enabled ? "启用" : "停用" }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="280" align="center" fixed="right">
+                <template #default="{ row }">
+                  <el-button size="small" link type="info" icon="View" @click="openDetail(row)">
+                    详情
+                  </el-button>
+                  <el-button
+                    v-hasPerm="['module_ai:knowledge:create']"
+                    size="small"
+                    link
+                    type="primary"
+                    :icon="CopyDocument"
+                    @click="copyBase(row)"
+                  >
+                    复制
+                  </el-button>
+                  <el-button
+                    v-hasPerm="['module_ai:knowledge:update']"
+                    size="small"
+                    link
+                    type="primary"
+                    :icon="Edit"
+                    @click="openKbDialog(row)"
+                  >
+                    编辑
+                  </el-button>
+                  <el-button
+                    v-hasPerm="['module_ai:knowledge:delete']"
+                    size="small"
+                    link
+                    type="danger"
+                    :icon="Delete"
+                    @click="deleteBases(row)"
+                  >
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
 
-          <el-table
-            v-loading="loadingDs"
-            :data="datasources"
-            highlight-current-row
-            @current-change="(row: any) => (selectedDs = row)"
-          >
-            <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
-            <el-table-column label="类型" width="80" align="center">
-              <template #default="{ row }">
-                <el-tag size="small" effect="plain">
-                  {{ row.ds_type === "db" ? "数据库" : "API" }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="连接" min-width="200" show-overflow-tooltip>
-              <template #default="{ row }">
-                {{
-                  row.ds_type === "db"
-                    ? (row.dialect || "") + " | " + (row.uri || "")
-                    : row.uri || ""
-                }}
-              </template>
-            </el-table-column>
-            <el-table-column label="目标知识库" min-width="120" show-overflow-tooltip>
-              <template #default="{ row }">
-                {{ kbName(row.knowledge_base_id) }}
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="90" align="center">
-              <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
-                  {{ row.enabled ? "启用" : "停用" }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="200" align="center" fixed="right">
-              <template #default="{ row }">
-                <el-button
-                  v-hasPerm="['module_ai:knowledge:update']"
-                  size="small"
-                  :icon="Edit"
-                  @click="openDsDialog(row)"
-                >
-                  编辑
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:knowledge:delete']"
-                  size="small"
-                  type="danger"
-                  :icon="Delete"
-                  @click="deleteDatasources(row)"
+          <el-tab-pane label="数据源" name="ds">
+            <div class="kb-toolbar">
+              <el-button
+                v-hasPerm="['module_ai:knowledge:create']"
+                type="success"
+                icon="plus"
+                @click="openDsDialog()"
+              >
+                新增数据源
+              </el-button>
+              <el-button
+                v-hasPerm="['module_ai:knowledge:query']"
+                :icon="Connection"
+                :disabled="!selectedDs"
+                @click="selectedDs && testDs(selectedDs)"
+              >
+                测试
+              </el-button>
+              <el-button
+                v-hasPerm="['module_ai:knowledge:update']"
+                type="warning"
+                :icon="Refresh"
+                :disabled="!selectedDs"
+                @click="selectedDs && syncDs(selectedDs)"
+              >
+                同步入库
+              </el-button>
+              <div class="kb-toolbar__right">
+                <el-input
+                  v-model="dsKeyword"
+                  placeholder="搜索数据源"
+                  clearable
+                  :prefix-icon="Search"
+                  style="width: 200px"
                 />
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
-    </el-card>
+                <el-button circle type="success" :icon="Refresh" title="刷新" @click="loadData" />
+              </div>
+            </div>
+
+            <el-table
+              v-loading="loadingDs"
+              border
+              stripe
+              :data="filteredDatasources"
+              highlight-current-row
+              @current-change="(row: any) => (selectedDs = row)"
+            >
+              <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
+              <el-table-column label="类型" width="80" align="center">
+                <template #default="{ row }">
+                  <el-tag size="small" effect="plain">
+                    {{ row.ds_type === "db" ? "数据库" : "API" }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="连接" min-width="200" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{
+                    row.ds_type === "db"
+                      ? (row.dialect || "") + " | " + (row.uri || "")
+                      : row.uri || ""
+                  }}
+                </template>
+              </el-table-column>
+              <el-table-column label="目标知识库" min-width="120" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ kbName(row.knowledge_base_id) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="90" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
+                    {{ row.enabled ? "启用" : "停用" }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="200" align="center" fixed="right">
+                <template #default="{ row }">
+                  <el-button
+                    v-hasPerm="['module_ai:knowledge:update']"
+                    size="small"
+                    link
+                    type="primary"
+                    :icon="Edit"
+                    @click="openDsDialog(row)"
+                  >
+                    编辑
+                  </el-button>
+                  <el-button
+                    v-hasPerm="['module_ai:knowledge:delete']"
+                    size="small"
+                    link
+                    type="danger"
+                    :icon="Delete"
+                    @click="deleteDatasources(row)"
+                  >
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+        </el-tabs>
+      </el-card>
+    </div>
+
+    <!-- 新建知识库分类 -->
+    <el-dialog v-model="catDialogVisible" title="新建分类" width="420px" append-to-body>
+      <el-form :model="catForm" label-width="80px">
+        <el-form-item label="名称" required>
+          <el-input v-model="catForm.name" placeholder="分类名称" />
+        </el-form-item>
+        <el-form-item label="父分类">
+          <el-select
+            v-model="catForm.parent_id"
+            clearable
+            placeholder="顶级分类"
+            style="width: 100%"
+          >
+            <el-option v-for="c in flatCatOptions" :key="c.id" :label="c.label" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="负责人">
+          <el-input v-model="catForm.owner" placeholder="选填，如：张三" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="catForm.remark" type="textarea" :rows="2" placeholder="选填" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="catDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="catSaving" @click="saveCat">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 数据源测试结果 -->
-    <el-dialog v-model="dsTestVisible" title="数据源测试结果" width="560px" append-to-body>
+    <el-dialog v-model="dsTestVisible" title="数据源测试结果" width="600px" append-to-body>
       <el-result
         :icon="dsTestResult.ok ? 'success' : 'error'"
         :title="dsTestResult.ok ? '连接成功' : '连接失败'"
@@ -238,6 +349,16 @@
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="kbForm.description" type="textarea" :rows="3" placeholder="描述" />
+        </el-form-item>
+        <el-form-item label="分类">
+          <el-select
+            v-model="kbForm.category_id"
+            clearable
+            placeholder="选择分类（留空为未分类）"
+            style="width: 100%"
+          >
+            <el-option v-for="c in flatCatOptions" :key="c.id" :label="c.label" :value="c.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="嵌入模型">
           <el-select
@@ -300,7 +421,7 @@
     <el-dialog
       v-model="searchDialogVisible"
       title="检索测试"
-      width="620px"
+      width="600px"
       append-to-body
       destroy-on-close
     >
@@ -338,7 +459,7 @@
     <el-dialog
       v-model="graphVisible"
       :title="`知识图谱 · ${selectedKb?.name || ''}`"
-      width="720px"
+      width="900px"
       height="560px"
       append-to-body
     >
@@ -388,7 +509,14 @@
 
     <!-- 分块抽屉 -->
     <el-drawer v-model="chunksVisible" :title="`分块 · ${chunksTarget?.name || ''}`" size="480px">
-      <el-table v-loading="loadingChunks" :data="chunks" size="small" max-height="70vh">
+      <el-table
+        v-loading="loadingChunks"
+        :data="chunks"
+        size="small"
+        max-height="70vh"
+        border
+        stripe
+      >
         <el-table-column prop="chunk_index" label="序号" width="60" align="center" />
         <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
         <el-table-column label="内容" min-width="200">
@@ -538,6 +666,8 @@
           </div>
           <el-table
             v-loading="loadingDocs"
+            border
+            stripe
             :data="documents"
             size="small"
             max-height="50vh"
@@ -576,14 +706,18 @@
             </el-table-column>
             <el-table-column label="操作" width="210" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="previewDoc(row)">
+                <el-button icon="View" link type="primary" size="small" @click="previewDoc(row)">
                   预览
                 </el-button>
-                <el-button link type="warning" size="small" @click="reparseDoc(row)">
+                <el-button icon="Refresh" link type="warning" size="small" @click="reparseDoc(row)">
                   重建
                 </el-button>
-                <el-button link size="small" @click="downloadDoc(row)">下载</el-button>
-                <el-button link type="danger" size="small" @click="deleteDoc(row)">删除</el-button>
+                <el-button icon="Download" link size="small" @click="downloadDoc(row)">
+                  下载
+                </el-button>
+                <el-button icon="delete" link type="danger" size="small" @click="deleteDoc(row)">
+                  删除
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -641,7 +775,14 @@
               导出 CSV
             </el-button>
           </div>
-          <el-table v-loading="loadingChunks" :data="detailChunks" size="small" max-height="60vh">
+          <el-table
+            v-loading="loadingChunks"
+            :data="detailChunks"
+            size="small"
+            max-height="60vh"
+            border
+            stripe
+          >
             <el-table-column prop="chunk_index" label="#" width="60" align="center" />
             <el-table-column label="类型" width="70" align="center">
               <template #default="{ row }">
@@ -670,10 +811,16 @@
             </el-table-column>
             <el-table-column label="操作" width="150" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="openChunkEdit(row)">
+                <el-button icon="edit" link type="primary" size="small" @click="openChunkEdit(row)">
                   编辑
                 </el-button>
-                <el-button link type="warning" size="small" @click="openAnnotation(row)">
+                <el-button
+                  icon="EditPen"
+                  link
+                  type="warning"
+                  size="small"
+                  @click="openAnnotation(row)"
+                >
                   标注
                 </el-button>
                 <el-button
@@ -776,6 +923,7 @@
                 图谱：{{ h.graph_entity }}
               </el-tag>
               <el-button
+                icon="EditPen"
                 link
                 type="warning"
                 size="small"
@@ -786,7 +934,7 @@
               >
                 + 标注此分块
               </el-button>
-              <el-button link type="primary" size="small" @click="locateInGraph(h)">
+              <el-button icon="Aim" link type="primary" size="small" @click="locateInGraph(h)">
                 图谱定位
               </el-button>
             </div>
@@ -821,6 +969,7 @@
                 <el-tag v-if="s.hit" size="small" type="success" effect="plain">已命中</el-tag>
                 <el-tag v-else size="small" type="warning" effect="plain">未命中，建议标注</el-tag>
                 <el-button
+                  icon="EditPen"
                   link
                   type="warning"
                   size="small"
@@ -872,7 +1021,14 @@
             <el-tag size="small" type="success" effect="plain">添加 {{ statAdd }}</el-tag>
             <el-tag size="small" type="danger" effect="plain">删除 {{ statRemove }}</el-tag>
           </div>
-          <el-table v-loading="loadingLogs" :data="filteredLogs" size="small" max-height="60vh">
+          <el-table
+            v-loading="loadingLogs"
+            :data="filteredLogs"
+            size="small"
+            max-height="60vh"
+            border
+            stripe
+          >
             <el-table-column label="时间" width="160">
               <template #default="{ row }">{{ row.created_time }}</template>
             </el-table-column>
@@ -943,7 +1099,7 @@
               暂无数据
             </span>
           </div>
-          <el-table :data="searchStats.trend || []" size="small" max-height="40vh">
+          <el-table :data="searchStats.trend || []" size="small" max-height="40vh" border stripe>
             <el-table-column prop="date" label="日期" width="150" />
             <el-table-column prop="count" label="检索次数" width="100" align="center" />
             <el-table-column prop="hits" label="命中总数" width="100" align="center" />
@@ -1000,7 +1156,7 @@
             :stroke-width="8"
             class="eval-progress"
           />
-          <el-table :data="evalRuns" size="small" max-height="50vh">
+          <el-table :data="evalRuns" size="small" max-height="50vh" border stripe>
             <el-table-column prop="id" label="#" width="60" align="center" />
             <el-table-column label="配置" min-width="180" show-overflow-tooltip>
               <template #default="{ row }">
@@ -1207,7 +1363,7 @@
     </el-drawer>
 
     <!-- 编辑分块 -->
-    <el-dialog v-model="chunkEditVisible" title="编辑分块" width="640px" append-to-body>
+    <el-dialog v-model="chunkEditVisible" title="编辑分块" width="600px" append-to-body>
       <el-input
         v-model="chunkEditContent"
         type="textarea"
@@ -1242,7 +1398,9 @@
             <div v-for="c in entityBoundChunks" :key="c.id" class="bind-item">
               <span class="bind-item__label">#{{ c.chunk_index }}</span>
               <span class="bind-item__text">{{ c.content }}</span>
-              <el-button link type="danger" size="small" @click="unbindChunk(c)">解绑</el-button>
+              <el-button icon="Close" link type="danger" size="small" @click="unbindChunk(c)">
+                解绑
+              </el-button>
             </div>
             <el-empty
               v-if="!entityBoundChunks.length"
@@ -1283,7 +1441,7 @@
     <el-dialog
       v-model="annotationVisible"
       :title="`分块标注 · #${annotChunk?.chunk_index || ''}`"
-      width="620px"
+      width="600px"
       append-to-body
     >
       <el-alert
@@ -1297,7 +1455,9 @@
         <div v-for="(a, ai) in annotList" :key="ai" class="ann-item">
           <el-tag size="small" type="warning" effect="plain">{{ a.text }}</el-tag>
           <el-tag size="small" type="info" effect="plain">{{ annotKindLabel(a.kind) }}</el-tag>
-          <el-button link type="danger" size="small" @click="removeAnnotation(ai)">删除</el-button>
+          <el-button icon="delete" link type="danger" size="small" @click="removeAnnotation(ai)">
+            删除
+          </el-button>
         </div>
         <el-empty v-if="!annotList.length" description="暂无标注" :image-size="50" />
       </div>
@@ -1320,7 +1480,7 @@
     </el-dialog>
 
     <!-- 图谱关系编辑 -->
-    <el-dialog v-model="relEditVisible" title="编辑图谱关系" width="480px" append-to-body>
+    <el-dialog v-model="relEditVisible" title="编辑图谱关系" width="520px" append-to-body>
       <el-form label-width="90px" size="default">
         <el-form-item label="源实体">
           <el-select v-model="relEditForm.source" filterable placeholder="源" style="width: 100%">
@@ -1357,7 +1517,7 @@
     </el-dialog>
 
     <!-- 新建节点（图上右键空白） -->
-    <el-dialog v-model="nodeNewVisible" title="新建节点" width="440px" append-to-body>
+    <el-dialog v-model="nodeNewVisible" title="新建节点" width="520px" append-to-body>
       <el-form label-width="80px" size="default">
         <el-form-item label="节点名" required>
           <el-input v-model="nodeNewForm.name" placeholder="实体名称" />
@@ -1379,7 +1539,7 @@
     </el-dialog>
 
     <!-- 新建关系（选两个节点 + 关系类型，自动连线） -->
-    <el-dialog v-model="relAddVisible" title="新建关系" width="480px" append-to-body>
+    <el-dialog v-model="relAddVisible" title="新建关系" width="520px" append-to-body>
       <el-form label-width="90px" size="default">
         <el-form-item label="源节点">
           <el-select
@@ -1501,7 +1661,7 @@
         />
         <el-button size="small" type="primary" @click="addRt">添加</el-button>
       </div>
-      <el-table :data="relationTypes" size="small" max-height="50vh">
+      <el-table :data="relationTypes" size="small" max-height="50vh" border stripe>
         <el-table-column prop="name" label="类型" min-width="140" />
         <el-table-column label="颜色" width="80" align="center">
           <template #default="{ row }">
@@ -1510,7 +1670,9 @@
         </el-table-column>
         <el-table-column label="操作" width="80" align="center">
           <template #default="{ row }">
-            <el-button link type="danger" size="small" @click="delRt(row)">删除</el-button>
+            <el-button icon="delete" link type="danger" size="small" @click="delRt(row)">
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -1520,7 +1682,7 @@
     </el-dialog>
 
     <!-- 节点样式设置 -->
-    <el-dialog v-model="nodeStyleVisible" title="节点样式设置" width="560px" append-to-body>
+    <el-dialog v-model="nodeStyleVisible" title="节点样式设置" width="600px" append-to-body>
       <el-form label-width="90px" size="default">
         <el-form-item label="节点大小">
           <el-radio-group v-model="nodeStyle.sizeMode">
@@ -1575,7 +1737,7 @@
     </el-dialog>
 
     <!-- 文档内容预览 -->
-    <el-dialog v-model="docPreviewVisible" :title="docPreviewName" width="760px" append-to-body>
+    <el-dialog v-model="docPreviewVisible" :title="docPreviewName" width="900px" append-to-body>
       <div v-loading="docPreviewLoading" class="doc-preview">
         <VuePdfEmbed
           v-if="docPreviewKind === 'pdf' && docPreviewPdfUrl"
@@ -1590,7 +1752,7 @@
     </el-dialog>
 
     <!-- 引用来源弹窗 -->
-    <el-dialog v-model="qaCiteVisible" title="引用来源" width="560px" append-to-body>
+    <el-dialog v-model="qaCiteVisible" title="引用来源" width="600px" append-to-body>
       <el-descriptions v-if="qaCite" :column="1" size="small" border>
         <el-descriptions-item label="来源文档">{{ qaCite.file }}</el-descriptions-item>
         <el-descriptions-item label="位置">
@@ -1609,7 +1771,7 @@
     </el-dialog>
 
     <!-- 连线样式设置 -->
-    <el-dialog v-model="edgeStyleVisible" title="连线样式设置" width="560px" append-to-body>
+    <el-dialog v-model="edgeStyleVisible" title="连线样式设置" width="600px" append-to-body>
       <el-form label-width="90px" size="default">
         <el-form-item label="线型">
           <el-radio-group v-model="edgeStyle.lineStyle">
@@ -1683,7 +1845,7 @@
     </el-dialog>
 
     <!-- 图谱统计 -->
-    <el-dialog v-model="graphStatsVisible" title="图谱统计" width="560px" append-to-body>
+    <el-dialog v-model="graphStatsVisible" title="图谱统计" width="600px" append-to-body>
       <el-descriptions :column="2" border>
         <el-descriptions-item label="实体节点">{{ graphStatsDetail.nodes }}</el-descriptions-item>
         <el-descriptions-item label="关系边">{{ graphStatsDetail.edges }}</el-descriptions-item>
@@ -1723,7 +1885,7 @@
     <el-dialog
       v-model="entityChunksVisible"
       :title="`实体关联分块 · ${entityChunksName}`"
-      width="560px"
+      width="600px"
       append-to-body
     >
       <el-table
@@ -1731,6 +1893,8 @@
         :data="entityChunksList"
         size="small"
         max-height="50vh"
+        border
+        stripe
       >
         <el-table-column prop="chunk_index" label="#" width="60" align="center" />
         <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
@@ -1740,6 +1904,7 @@
         <el-table-column label="操作" width="90" align="center">
           <template #default="{ row }">
             <el-button
+              icon="EditPen"
               link
               type="warning"
               size="small"
@@ -1758,7 +1923,7 @@
     <el-dialog
       v-model="dsDialogVisible"
       :title="editingDs ? '编辑数据源' : '新增数据源'"
-      width="560px"
+      width="600px"
       append-to-body
       destroy-on-close
     >
@@ -1835,12 +2000,13 @@ import { GraphChart } from "echarts/charts";
 import { TooltipComponent } from "echarts/components";
 use([CanvasRenderer, GraphChart, TooltipComponent]);
 import {
-  Plus,
   Edit,
   Delete,
   Upload,
   Search,
   Files,
+  Folder,
+  Plus,
   Connection,
   Refresh,
   Share,
@@ -1849,6 +2015,8 @@ import {
 } from "@element-plus/icons-vue";
 import {
   getAiKnowledgeList,
+  getAiKnowledgeCategoryTree,
+  createAiKnowledgeCategory,
   createAiKnowledge,
   updateAiKnowledge,
   deleteAiKnowledge,
@@ -1911,6 +2079,30 @@ const modelOptions = ref<{ id: number; name: string }[]>([]);
 const modelNameMap = ref<Record<number, string>>({});
 const modelUsageMap = ref<Record<number, string>>({});
 
+// 知识库 / 数据源 关键字过滤（工具栏搜索框，与系统管理一致的搜索体验）
+const kbKeyword = ref("");
+const dsKeyword = ref("");
+const filteredBases = computed(() => {
+  const q = kbKeyword.value.trim().toLowerCase();
+  const ids = currentCatIds.value;
+  return bases.value.filter((b: any) => {
+    // 分类过滤：选中分类时含其子分类；「全部」不过滤
+    if (ids && !ids.has(b.category_id)) return false;
+    if (q) {
+      const haystack = [b.name, b.description].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+});
+const filteredDatasources = computed(() => {
+  const q = dsKeyword.value.trim().toLowerCase();
+  if (!q) return datasources.value;
+  return datasources.value.filter((d: any) =>
+    [d.name, d.uri].filter(Boolean).join(" ").toLowerCase().includes(q)
+  );
+});
+
 const selectedKb = ref<any>();
 const selectedDs = ref<any>();
 
@@ -1946,6 +2138,8 @@ const loadData = async () => {
     );
     bases.value = list;
     datasources.value = dr.data?.data || [];
+    // 分类树带各分类的知识库数量（依赖刚加载的 bases）
+    await loadCategories();
     const models = mr.data?.data || [];
     // 只列可用作嵌入的模型（usage=embedding 或 capabilities 含 embedding）
     modelOptions.value = models
@@ -1962,6 +2156,86 @@ const loadData = async () => {
   }
 };
 
+// ---------- 知识库分类（左侧分类树） ----------
+const catTree = ref<any[]>([]);
+const currentCatId = ref<number | null>(null);
+const catDialogVisible = ref(false);
+const catSaving = ref(false);
+const catForm = reactive<any>({ name: "", parent_id: null, owner: "", remark: "" });
+
+/** 分类树：根节点「全部」+ 分类子树（带各分类的知识库数量） */
+async function loadCategories() {
+  try {
+    const res: any = await getAiKnowledgeCategoryTree();
+    catTree.value = [
+      { id: 0, name: "全部", count: bases.value.length, children: res.data?.data || [] },
+    ];
+  } catch {
+    catTree.value = [{ id: 0, name: "全部", count: bases.value.length, children: [] }];
+  }
+}
+
+/** 当前选中的分类及其所有子孙 id（父分类应能看到子分类下的知识库） */
+const currentCatIds = computed<Set<number> | null>(() => {
+  if (currentCatId.value == null) return null;
+  const ids = new Set<number>([currentCatId.value]);
+  const walk = (list: any[]) => {
+    for (const n of list || []) {
+      if (ids.has(n.id) && n.children?.length) walk(n.children);
+    }
+  };
+  walk(catTree.value[0]?.children || []);
+  return ids;
+});
+
+function onCatClick(data: any) {
+  currentCatId.value = data.id === 0 ? null : data.id;
+}
+
+function openCatCreate(parent?: any) {
+  Object.assign(catForm, {
+    name: "",
+    parent_id: parent?.id ?? null,
+    owner: "",
+    remark: "",
+  });
+  catDialogVisible.value = true;
+}
+
+/** 分类下拉选项（拍平 + 层级缩进） */
+const flatCatOptions = computed(() => {
+  const out: { id: number; label: string }[] = [];
+  const walk = (list: any[], depth: number) => {
+    for (const n of list || []) {
+      out.push({ id: n.id, label: `${"　".repeat(depth)}${n.name}` });
+      if (n.children?.length) walk(n.children, depth + 1);
+    }
+  };
+  walk(catTree.value[0]?.children || [], 0);
+  return out;
+});
+
+async function saveCat() {
+  if (!catForm.name?.trim()) {
+    ElMessage.warning("请填写分类名称");
+    return;
+  }
+  catSaving.value = true;
+  try {
+    await createAiKnowledgeCategory({
+      name: catForm.name.trim(),
+      parent_id: catForm.parent_id ?? null,
+      owner: catForm.owner || null,
+      remark: catForm.remark || "",
+    });
+    ElMessage.success("分类已创建");
+    catDialogVisible.value = false;
+    await loadCategories();
+  } finally {
+    catSaving.value = false;
+  }
+}
+
 // ---------- 知识库 CRUD ----------
 const kbDialogVisible = ref(false);
 const savingKb = ref(false);
@@ -1972,7 +2246,7 @@ function openKbDialog(b?: any) {
   editingKb.value = b || undefined;
   Object.assign(
     kbForm,
-    b ? { ...b } : { name: "", description: "", model_id: null, enabled: true }
+    b ? { ...b } : { name: "", description: "", model_id: null, category_id: null, enabled: true }
   );
   kbDialogVisible.value = true;
 }
@@ -1988,6 +2262,7 @@ async function saveKb() {
       name: kbForm.name,
       description: kbForm.description || "",
       model_id: kbForm.model_id || null,
+      category_id: kbForm.category_id ?? null,
       enabled: kbForm.enabled,
     };
     if (editingKb.value) {
@@ -2436,14 +2711,6 @@ const relEditForm = reactive<any>({
   rtype: "related",
 });
 const savingRel = ref(false);
-function openRenameRel(e: any) {
-  relEditForm.id = e.id;
-  relEditForm.source = e.source;
-  relEditForm.target = e.target;
-  relEditForm.weight = e.weight || 1;
-  relEditForm.rtype = e.rtype || "related";
-  relEditVisible.value = true;
-}
 async function saveRelEdit() {
   if (!graphKbId.value || !relEditForm.id) return;
   if (!relEditForm.source || !relEditForm.target) {
@@ -3122,47 +3389,6 @@ const entityChunksVisible = ref(false);
 const entityChunksName = ref("");
 const entityChunksList = ref<any[]>([]);
 const entityChunksLoading = ref(false);
-async function onGraphNodeClick(params: any) {
-  closeCtxMenu();
-  const name = params?.data?.name || params?.name;
-  if (!name || !graphKbId.value) return;
-  const node = graphNodes.value.find((n) => n.name === name);
-  if (!node) return;
-  // 多选模式：点击节点切换选中
-  if (multiSelect.value) {
-    toggleSelect(name);
-    reloadGraph();
-    return;
-  }
-  // 连线模式：第一次点击记起点，第二次点击记终点并弹添加关系
-  if (linkMode.value) {
-    if (!linkSource.value) {
-      linkSource.value = name;
-      ElMessage.info(`已选起点「${name}」，再点击目标节点完成连线`);
-    } else if (linkSource.value !== name) {
-      const src = linkSource.value;
-      linkSource.value = null;
-      relAddForm.source = src;
-      relAddForm.target = name;
-      relAddForm.rtype = "related";
-      relAddForm.weight = 1;
-      relAddVisible.value = true;
-    }
-    return;
-  }
-  entityChunksName.value = name;
-  entityChunksVisible.value = true;
-  entityChunksLoading.value = true;
-  try {
-    const r = await getAiKnowledgeEntityChunks(graphKbId.value, node.id);
-    entityChunksList.value = r.data?.data || [];
-  } catch (e: any) {
-    entityChunksList.value = [];
-    ElMessage.error(e?.message || "加载失败");
-  } finally {
-    entityChunksLoading.value = false;
-  }
-}
 
 // ---------- 图上右键菜单（直接在图里编辑） ----------
 const ctxMenu = reactive({
@@ -3707,14 +3933,24 @@ onMounted(() => {
 .kb-tabs-card {
   .kb-toolbar {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
+    align-items: center;
     margin-bottom: 12px;
+  }
+
+  /* 工具栏右侧：搜索 + 刷新（与系统管理一致） */
+  .kb-toolbar__right {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-left: auto;
   }
 }
 
 .search-hit {
-  margin-bottom: 10px;
   padding: 10px;
+  margin-bottom: 10px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 
@@ -3736,14 +3972,14 @@ onMounted(() => {
 
   .search-hit__content {
     font-size: var(--el-font-size-base);
-    color: var(--el-text-color-regular);
     line-height: 1.6;
+    color: var(--el-text-color-regular);
 
     mark {
-      background: var(--el-color-warning-light-7);
-      color: var(--el-color-warning-dark-2);
-      border-radius: 2px;
       padding: 0 2px;
+      color: var(--el-color-warning-dark-2);
+      background: var(--el-color-warning-light-7);
+      border-radius: 2px;
     }
   }
 }
@@ -3753,8 +3989,8 @@ onMounted(() => {
   overflow: hidden;
   font-size: 12px;
   color: var(--el-text-color-regular);
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
-  word-break: break-word;
 }
 </style>
 
@@ -3790,8 +4026,8 @@ onMounted(() => {
   }
   .dt-weights {
     display: flex;
-    align-items: center;
     gap: 8px;
+    align-items: center;
     margin-bottom: 12px;
 
     .dt-weight-label {
@@ -3814,8 +4050,8 @@ onMounted(() => {
   }
   .log-toolbar {
     display: flex;
-    align-items: center;
     gap: 8px;
+    align-items: center;
     margin-bottom: 12px;
   }
   .stats-cards {
@@ -3825,8 +4061,8 @@ onMounted(() => {
   }
   .stats-engine {
     display: flex;
-    align-items: center;
     gap: 6px;
+    align-items: center;
     margin-bottom: 14px;
 
     .stats-engine__label {
@@ -3896,16 +4132,16 @@ onMounted(() => {
 
   .graph-legend__item {
     display: inline-flex;
-    align-items: center;
     gap: 5px;
+    align-items: center;
     font-size: var(--el-font-size-base);
     color: var(--el-text-color-regular);
 
     .graph-legend__dot {
+      display: inline-block;
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      display: inline-block;
     }
   }
 }
@@ -3914,9 +4150,9 @@ onMounted(() => {
   margin-top: 14px;
 
   .stat-block__title {
+    margin-bottom: 8px;
     font-size: var(--el-font-size-base);
     color: var(--el-text-color-regular);
-    margin-bottom: 8px;
   }
 }
 .stat-tag {
@@ -3935,33 +4171,33 @@ onMounted(() => {
 }
 .doc-preview {
   max-height: 70vh;
+  padding: 14px;
   overflow: auto;
-  white-space: pre-wrap;
   font-size: var(--el-font-size-base);
   line-height: 1.7;
   color: var(--el-text-color-regular);
+  white-space: pre-wrap;
   background: var(--el-fill-color-light);
   border-radius: 6px;
-  padding: 14px;
 }
 .qa-block {
   .qa-block__title {
-    font-size: var(--el-font-size-base);
-    color: var(--el-text-color-regular);
     margin-bottom: 8px;
+    font-size: var(--el-font-size-base);
     font-weight: 600;
+    color: var(--el-text-color-regular);
   }
 }
 .qa-answer {
-  margin-top: 12px;
   padding: 12px 14px;
+  margin-top: 12px;
+  font-size: var(--el-font-size-base);
+  line-height: 1.8;
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+  background: var(--el-fill-color-lighter);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
-  background: var(--el-fill-color-lighter);
-  line-height: 1.8;
-  font-size: var(--el-font-size-base);
-  color: var(--el-text-color-primary);
-  word-break: break-word;
 }
 .qa-cite {
   display: inline-flex;
@@ -3973,12 +4209,12 @@ onMounted(() => {
   margin: 0 2px;
   font-size: 12px;
   font-weight: 600;
+  vertical-align: middle;
   color: var(--el-color-primary);
+  cursor: pointer;
   background: var(--el-color-primary-light-9);
   border: 1px solid var(--el-color-primary-light-5);
   border-radius: 4px;
-  cursor: pointer;
-  vertical-align: middle;
 }
 .qa-cite:hover {
   background: var(--el-color-primary-light-7);
@@ -3987,36 +4223,36 @@ onMounted(() => {
   margin-top: 12px;
 }
 .qa-refs__title {
+  margin-bottom: 6px;
   font-size: var(--el-font-size-base);
   color: var(--el-text-color-regular);
-  margin-bottom: 6px;
 }
 .qa-ref {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
   padding: 6px 0;
-  border-bottom: 1px dashed var(--el-border-color-lighter);
   font-size: var(--el-font-size-base);
+  border-bottom: 1px dashed var(--el-border-color-lighter);
 }
 .qa-ref__file {
   color: var(--el-text-color-primary);
 }
 .qa-ref__loc {
-  color: var(--el-text-color-secondary);
   font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .qa-cite-content {
-  margin-top: 12px;
   max-height: 40vh;
-  overflow: auto;
   padding: 10px 12px;
+  margin-top: 12px;
+  overflow: auto;
+  font-size: var(--el-font-size-base);
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+  white-space: pre-wrap;
   background: var(--el-fill-color-lighter);
   border-radius: 6px;
-  line-height: 1.7;
-  font-size: var(--el-font-size-base);
-  white-space: pre-wrap;
-  color: var(--el-text-color-regular);
 }
 .faq-bar {
   margin: 12px 0;
@@ -4032,21 +4268,21 @@ onMounted(() => {
 .doc-text {
   max-height: 70vh;
   overflow: auto;
-  white-space: pre-wrap;
   font-size: var(--el-font-size-base);
   line-height: 1.7;
   color: var(--el-text-color-regular);
+  white-space: pre-wrap;
 }
 
 .graph-ctx {
   position: fixed;
   z-index: 3000;
   min-width: 140px;
+  padding: 4px 0;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   box-shadow: var(--el-box-shadow-light);
-  padding: 4px 0;
 
   .graph-ctx__item {
     padding: 8px 14px;
@@ -4055,16 +4291,16 @@ onMounted(() => {
     cursor: pointer;
 
     &:hover {
-      background: var(--el-fill-color-light);
       color: var(--el-color-primary);
+      background: var(--el-fill-color-light);
     }
   }
   .graph-ctx__danger {
     color: var(--el-color-danger);
 
     &:hover {
-      background: var(--el-fill-color-light);
       color: var(--el-color-danger);
+      background: var(--el-fill-color-light);
     }
   }
 }
@@ -4082,14 +4318,14 @@ onMounted(() => {
 
 .ann-preview {
   max-height: 120px;
-  overflow: auto;
   padding: 8px 10px;
   margin: 12px 0;
+  overflow: auto;
+  font-size: var(--el-font-size-base);
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
   background: var(--el-fill-color-light);
   border-radius: 4px;
-  font-size: var(--el-font-size-base);
-  color: var(--el-text-color-regular);
-  line-height: 1.6;
 }
 .ann-list {
   display: flex;
@@ -4125,16 +4361,16 @@ onMounted(() => {
     padding: 2px 0;
 
     .bind-item__label {
-      color: var(--el-text-color-secondary);
       font-size: 12px;
+      color: var(--el-text-color-secondary);
       white-space: nowrap;
     }
     .bind-item__text {
       flex: 1;
       overflow: hidden;
       text-overflow: ellipsis;
-      white-space: nowrap;
       font-size: var(--el-font-size-base);
+      white-space: nowrap;
     }
   }
   .el-select {
@@ -4145,19 +4381,82 @@ onMounted(() => {
   margin-top: 8px;
 }
 .ds-test-data__title {
+  margin-bottom: 6px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  margin-bottom: 6px;
 }
 .ds-test-data__body {
   max-height: 40vh;
-  overflow: auto;
-  background: var(--el-fill-color-lighter);
-  border-radius: 6px;
   padding: 10px;
   margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
+  overflow: auto;
   font-size: var(--el-font-size-base);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+}
+</style>
+
+<!-- 布局统一（非 scoped + 唯一类名）：白色面板撑满可视区，内容区自己滚（行少时也不露灰底） -->
+<style lang="scss">
+.app-container.ai-knowledge-page {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 左分类树 + 右内容（区域隔离，参照个人工作空间） */
+.ai-knowledge-page .kb-layout {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 12px;
+  min-height: 0;
+}
+
+.ai-knowledge-page .kb-side {
+  flex: 0 0 240px;
+  min-width: 0;
+  overflow: auto;
+}
+
+.ai-knowledge-page .kb-side > .el-card__header {
+  padding: 12px 16px;
+}
+
+.ai-knowledge-page .kb-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.ai-knowledge-page .kb-tabs-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ai-knowledge-page .kb-tabs-card > .el-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ai-knowledge-page .kb-tabs-card .el-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ai-knowledge-page .kb-tabs-card .el-tabs__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 </style>

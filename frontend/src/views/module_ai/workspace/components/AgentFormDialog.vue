@@ -3,7 +3,7 @@
   <el-dialog
     :model-value="modelValue"
     :title="editingAgent ? '编辑智能体' : '新建智能体'"
-    width="620px"
+    width="600px"
     append-to-body
     destroy-on-close
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
@@ -22,7 +22,7 @@
       </el-form-item>
       <el-form-item label="分类">
         <el-select v-model="form.category_id" clearable placeholder="选择分类" style="width: 100%">
-          <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+          <el-option v-for="c in categories" :key="c.id" :label="indentLabel(c)" :value="c.id" />
         </el-select>
       </el-form-item>
       <el-form-item label="运行方式">
@@ -162,7 +162,8 @@
 import { reactive, watch, ref } from "vue";
 import { ElMessage } from "element-plus";
 
-import { createAiAgent, updateAiAgent, getAgentCategoryList } from "@/api/module_ai/agent";
+import { createAiAgent, updateAiAgent } from "@/api/module_ai/agent";
+import { getWorkspaceCategoryTree } from "@/api/module_ai/workspace";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiPromptList } from "@/api/module_ai/prompt";
 import { getAiToolList } from "@/api/module_ai/tool";
@@ -181,7 +182,22 @@ const emit = defineEmits<{ (e: "update:modelValue", v: boolean): void; (e: "refr
 const loadingOptions = ref(false);
 const saving = ref(false);
 const editingAgent = ref<any>(undefined);
-const categories = ref<any[]>([]);
+const categories = ref<{ id: number; name: string; depth: number }[]>([]);
+
+/** 分类下拉的层级缩进：全角空格（用 \u3000 转义，避免 no-irregular-whitespace） */
+function indentLabel(c: { name: string; depth: number }) {
+  return "\u3000".repeat(c.depth) + c.name;
+}
+
+/** 工作台分类树 → 扁平下拉选项（带 depth 缩进），与 WorkflowEditor 一致 */
+function flattenCategories(nodes: any[], depth = 0): { id: number; name: string; depth: number }[] {
+  const out: { id: number; name: string; depth: number }[] = [];
+  for (const n of nodes || []) {
+    out.push({ id: n.id, name: n.name, depth });
+    if (n.children?.length) out.push(...flattenCategories(n.children, depth + 1));
+  }
+  return out;
+}
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const promptOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string }[]>([]);
@@ -224,7 +240,8 @@ async function loadOptions() {
   loadingOptions.value = true;
   try {
     const [cr, mr, pr, tr, wr, sr, kr, mcr, dr] = await Promise.all([
-      getAgentCategoryList(),
+      // 分类统一用工作台分类树（与 WorkflowEditor 一致）；旧的 agent 专属分类表已废弃（空表）
+      getWorkspaceCategoryTree(),
       getAiModelList({}),
       getAiPromptList({}),
       getAiToolList({}),
@@ -234,7 +251,7 @@ async function loadOptions() {
       getMcpList(),
       getQueryDatasources(),
     ]);
-    categories.value = cr.data?.data || [];
+    categories.value = flattenCategories(cr.data?.data || []);
     modelOptions.value = (mr.data?.data || []).map((m: any) => ({ id: m.id, name: m.name }));
     promptOptions.value = (pr.data?.data || []).map((p: any) => ({ id: p.id, name: p.name }));
     toolOptions.value = (tr.data?.data || []).map((t: any) => ({ id: t.id, name: t.name }));

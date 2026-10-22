@@ -21,6 +21,7 @@
         <span class="task-banner-meta">已用 {{ t.elapsed }}</span>
         <el-button
           v-if="t.kind !== 'purge'"
+          icon="View"
           size="small"
           link
           type="primary"
@@ -184,6 +185,7 @@
                     <div class="import-pop-actions">
                       <el-button
                         v-if="isRunning(rowImport(scope.row))"
+                        icon="DataLine"
                         size="small"
                         link
                         type="primary"
@@ -193,6 +195,7 @@
                       </el-button>
                       <el-button
                         v-if="rowImport(scope.row)?.taskId"
+                        icon="Right"
                         size="small"
                         link
                         type="success"
@@ -204,6 +207,7 @@
                       </el-button>
                       <el-button
                         v-if="['failed', 'cancelled'].includes(rowImport(scope.row)?.phase || '')"
+                        icon="RefreshRight"
                         size="small"
                         link
                         type="warning"

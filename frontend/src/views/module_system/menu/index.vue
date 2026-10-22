@@ -29,6 +29,7 @@
           <el-table
             :ref="tableRef as any"
             v-loading="loading"
+            stripe
             row-key="id"
             :data="data"
             :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"

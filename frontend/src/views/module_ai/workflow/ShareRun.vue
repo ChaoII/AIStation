@@ -347,7 +347,7 @@ onMounted(() => {
       }
       .share-trace__chev {
         color: var(--el-text-color-secondary);
-        font-size: 11px;
+        font-size: 12px;
       }
       .share-trace__dot {
         width: 8px;

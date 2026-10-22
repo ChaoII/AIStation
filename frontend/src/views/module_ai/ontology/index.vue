@@ -59,9 +59,10 @@
                 <el-icon class="ont-dom-item__more" @click.stop><MoreFilled /></el-icon>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                    <el-dropdown-item icon="EditPen" command="rename">重命名</el-dropdown-item>
                     <el-dropdown-item
                       v-hasPerm="'module_ai:ontology:edit'"
+                      icon="delete"
                       command="remove"
                       divided
                     >
@@ -267,7 +268,7 @@
 
     <!-- ================= 弹窗 ================= -->
     <!-- 建模分析：结构诊断（对象/属性/关系统计 + 中心度 + 建议） -->
-    <el-dialog v-model="analyzeDialog" title="本体建模分析" width="760px" append-to-body>
+    <el-dialog v-model="analyzeDialog" title="本体建模分析" width="900px" append-to-body>
       <el-alert v-if="analyzeLoading" type="info" :closable="false" show-icon title="正在分析……" />
       <template v-else-if="analyze">
         <el-descriptions :column="4" size="small" border>
@@ -291,7 +292,7 @@
           <span class="ont-sec__title">中心度最高的对象</span>
           <span class="ont-hint">度数越高，越值得优先定义动作与治理规则</span>
         </div>
-        <el-table :data="analyze.top_central || []" size="small" border max-height="240">
+        <el-table :data="analyze.top_central || []" size="small" border max-height="240" stripe>
           <template #empty><el-empty :image-size="50" description="还没有对象类型" /></template>
           <el-table-column label="对象" min-width="200" show-overflow-tooltip>
             <template #default="{ row }">
@@ -323,14 +324,14 @@
     </el-dialog>
 
     <!-- 派生属性问题扫描 -->
-    <el-dialog v-model="derivedDialog" title="派生属性问题扫描" width="680px" append-to-body>
+    <el-dialog v-model="derivedDialog" title="派生属性问题扫描" width="600px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
         title="扫描全量派生属性的配置问题（引用缺失、表达式非法等），修完再发布版本更稳。"
       />
-      <el-table :data="derivedIssues" size="small" border max-height="380">
+      <el-table :data="derivedIssues" size="small" border max-height="380" stripe>
         <template #empty>
           <el-empty :image-size="50" description="没有发现配置问题" />
         </template>
@@ -350,7 +351,7 @@
     </el-dialog>
 
     <!-- 对象类型 -->
-    <el-dialog v-model="objDialog" title="对象类型" width="640px" append-to-body>
+    <el-dialog v-model="objDialog" title="对象类型" width="600px" append-to-body>
       <el-form :model="objForm" label-width="130px">
         <el-form-item label="显示名" required>
           <el-input v-model="objForm.name" placeholder="如 摄像机表" />
@@ -441,7 +442,7 @@
     </el-dialog>
 
     <!-- 关系类型 -->
-    <el-dialog v-model="linkDialog" title="关系类型" width="640px" append-to-body>
+    <el-dialog v-model="linkDialog" title="关系类型" width="600px" append-to-body>
       <el-form :model="linkForm" label-width="130px">
         <el-form-item label="源对象类型" required>
           <el-select v-model="linkForm.source_object" filterable style="width: 100%">
@@ -531,7 +532,7 @@
     </el-dialog>
 
     <!-- 动作类型 -->
-    <el-dialog v-model="actionDialog" title="动作类型" width="640px" append-to-body>
+    <el-dialog v-model="actionDialog" title="动作类型" width="600px" append-to-body>
       <el-form :model="actionForm" label-width="140px">
         <el-form-item label="动作名" required><el-input v-model="actionForm.name" /></el-form-item>
         <el-form-item label="编码" required><el-input v-model="actionForm.code" /></el-form-item>
@@ -614,7 +615,7 @@
     </el-dialog>
 
     <!-- 保存前的改动审核（对齐官方 Review changes） -->
-    <el-dialog v-model="reviewDialog" title="审核改动" width="640px" append-to-body>
+    <el-dialog v-model="reviewDialog" title="审核改动" width="600px" append-to-body>
       <div class="ont-review">
         <div class="ont-review__sum">
           共
@@ -628,7 +629,7 @@
           </el-tag>
         </div>
 
-        <el-table :data="review.changes" size="small" border max-height="200">
+        <el-table :data="review.changes" size="small" border max-height="200" stripe>
           <el-table-column prop="label" label="类型" width="100" />
           <el-table-column label="改动" width="90">
             <template #default="{ row }">
@@ -703,7 +704,7 @@
     <el-dialog
       v-model="domainDialog"
       :title="domainForm.id ? '重命名本体域' : '新建本体域'"
-      width="460px"
+      width="520px"
       append-to-body
     >
       <el-form label-width="80px">
@@ -732,7 +733,7 @@
     </el-dialog>
 
     <!-- 批量归属 -->
-    <el-dialog v-model="assignDialog" title="批量归属本体" width="480px" append-to-body>
+    <el-dialog v-model="assignDialog" title="批量归属本体" width="520px" append-to-body>
       <div class="ont-hint">
         已选 {{ selected.length }} 个对象类型：{{
           selected
@@ -760,8 +761,8 @@
     </el-dialog>
 
     <!-- 待审批版本 -->
-    <el-dialog v-model="pendingDialog" title="待审批的版本发布" width="560px" append-to-body>
-      <el-table :data="pendingVersions" size="small" border>
+    <el-dialog v-model="pendingDialog" title="待审批的版本发布" width="600px" append-to-body>
+      <el-table :data="pendingVersions" size="small" border stripe>
         <template #empty>
           <el-empty description="没有待审批的发布申请" :image-size="50" />
         </template>
@@ -772,6 +773,7 @@
         <el-table-column label="操作" width="100" align="center">
           <template #default="{ row }">
             <el-button
+              icon="Check"
               link
               type="primary"
               size="small"
@@ -1808,18 +1810,31 @@ onMounted(async () => {
 .app-container.ai-ontology-page {
   box-sizing: border-box;
   height: 100% !important;
-  padding: 12px !important;
+  padding: 16px !important;
   overflow: hidden !important;
 }
 
 /* 两张白卡的高度链：row → col → card → body */
 .ai-ontology-page .ont-row {
+  flex-wrap: nowrap;
+  gap: 12px;
   height: 100%;
+  margin: 0 !important;
   min-height: 0;
 }
 .ai-ontology-page .ont-row > .el-col {
   height: 100%;
   min-height: 0;
+  padding: 0 !important;
+}
+/* 左栏固定 240px（与工作台/个人工作空间统一，不用栅格百分比，避免各页左宽不一致） */
+.ai-ontology-page .ont-row > .el-col:first-child {
+  flex: 0 0 240px;
+  max-width: 240px;
+}
+.ai-ontology-page .ont-row > .el-col:last-child {
+  flex: 1 1 auto;
+  max-width: 100%;
 }
 .ai-ontology-page .ont-row > .el-col > .el-card {
   display: flex;

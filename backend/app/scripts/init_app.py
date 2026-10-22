@@ -671,6 +671,12 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:workspace:create", "新建工作台条目"),
     ("module_ai:workspace:update", "编辑工作台条目"),
     ("module_ai:workspace:delete", "删除工作台条目"),
+    # 定时任务（独立菜单页；接口仍挂 /ai/workspace/cron/* 前缀，权限与工作台分离）
+    ("module_ai:cron:query", "访问定时任务"),
+    ("module_ai:cron:create", "新建定时任务"),
+    ("module_ai:cron:update", "编辑定时任务"),
+    ("module_ai:cron:delete", "删除定时任务"),
+    ("module_ai:cron:run", "立即执行定时任务"),
     ("module_ai:skill:query", "查询技能"),
     ("module_ai:skill:create", "新增技能"),
     ("module_ai:skill:update", "编辑技能"),
@@ -735,6 +741,41 @@ AI_MERGED_INTO_MARKET: dict[str, str] = {
     "AiTool": "/ai/market",
     "AiMcp": "/ai/market",
 }
+
+# AI 管理一级菜单分组（2026-10）：页面菜单归入 3 个分组目录；
+# 工作台与定时任务**拉平到顶层**（用户要求：两者都是独立模块，不放进分组里）。
+# 复用「智能问数」的目录模式（type=1）：目录的 route_path 与 redirect **都必须非空**，
+# 否则 GET /system/user/current/info 的菜单校验失败 → 前端菜单/路由全挂（实测踩过）。
+# 幂等：目录不存在则建、存在则修正；随后把子菜单挂到目录并重排组内 order。
+AI_MENU_GROUPS: list[dict] = [
+    {
+        "route_name": "AiGroupKnowledge",
+        "title": "知识与本体",
+        "icon": "el-icon-Collection",
+        "order": 9,
+        "redirect": "/ai/ontology",
+        "menus": ["AiOntology", "AiKnowledge", "AiPrompt"],
+    },
+    {
+        "route_name": "AiGroupApps",
+        "title": "应用与集成",
+        "icon": "el-icon-Monitor",
+        "order": 15,
+        "redirect": "/ai/app",
+        "menus": ["AiApp", "AiWorkshop", "AiMarket", "AiDevelop"],
+    },
+    {
+        "route_name": "AiGroupPlatform",
+        "title": "平台与运维",
+        "icon": "el-icon-Setting",
+        "order": 24,
+        "redirect": "/ai/model",
+        "menus": ["AiModel", "AiProviderManage", "AiLogs", "AiSpaceQuota", "AiPersonalSpace"],
+    },
+]
+
+#: 已废弃的分组目录（曾把工作台/定时任务收进去；现要求两者拉平到顶层）
+AI_RETIRED_GROUPS: list[str] = ["AiGroupBuild"]
 
 # 「智能问数」独立菜单目录：目录（type=1）+ 4 个独立页面子菜单；
 # 存量库从「工作台合并态」幂等迁移为目录结构；数据资产（AiAsset）继续并入数据与集成
@@ -805,7 +846,9 @@ async def _ensure_ai_menus() -> None:
                 await db.delete(_m)
 
             pages = [
-                ("工作台", "AiWorkbench", "/ai/workspace", "module_ai/workspace/index", "module_ai:workspace:query", 6, "el-icon-OfficeBuilding"),
+                # 工作台 / 定时任务为独立模块，拉平在 AI 顶层（order 5/6，紧挨在一起）
+                ("工作台", "AiWorkbench", "/ai/workspace", "module_ai/workspace/index", "module_ai:workspace:query", 5, "el-icon-OfficeBuilding"),
+                ("定时任务", "AiCron", "/ai/cron", "module_ai/cron/index", "module_ai:cron:query", 6, "el-icon-Timer"),
                 ("个人工作空间", "AiPersonalSpace", "/ai/space", "module_ai/space/index", "module_ai:space:query", 8, "el-icon-FolderOpened"),
                 ("空间扩容审核", "AiSpaceQuota", "/ai/space/quota", "module_ai/space/quota-review", "module_ai:space:quota_review", 12, "el-icon-DataAnalysis"),
                 ("AI 控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 7, "el-icon-Odometer"),
@@ -999,6 +1042,104 @@ async def _ensure_ai_menus() -> None:
                 await db.flush()
                 db.add(RoleMenusModel(role_id=1, menu_id=m.id))
             log.info("✅ AI 菜单与权限已注册")
+
+
+async def _ensure_ai_menu_groups() -> None:
+    """AI 管理一级菜单分组（幂等）：15 项平铺 → 顶层「控制台 + 问数」+ 4 个分组目录。
+
+    必须在 ``_ensure_ai_menus()`` 与 ``_ensure_develop_menus()`` **之后**调用：
+    分组要把页面菜单（含由 develop 流程创建的 AiDevelop）挂到目录下。
+    目录（type=1）的 route_path / redirect 均非空，否则 current/info 校验失败会拖垮整棵菜单。
+    """
+    from sqlalchemy import delete, select, update
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.route_name == "AI", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到 AI 父菜单，跳过分组迁移")
+                return
+
+            # 废弃分组清理（幂等）：子菜单回顶层，删目录与角色关联
+            for rname in AI_RETIRED_GROUPS:
+                retired = await db.scalar(
+                    select(MenuModel).where(MenuModel.route_name == rname)
+                )
+                if not retired:
+                    continue
+                await db.execute(
+                    update(MenuModel)
+                    .where(MenuModel.parent_id == retired.id)
+                    .values(parent_id=parent.id)
+                )
+                await db.execute(
+                    delete(RoleMenusModel).where(RoleMenusModel.menu_id == retired.id)
+                )
+                await db.delete(retired)
+
+            # 工作台 / 定时任务：拉平到顶层（显式钉住 parent/order，防被历史分组残留带走）
+            for idx, rname in enumerate(("AiWorkbench", "AiCron"), start=5):
+                await db.execute(
+                    update(MenuModel)
+                    .where(MenuModel.route_name == rname)
+                    .values(parent_id=parent.id, order=idx)
+                )
+
+            for spec in AI_MENU_GROUPS:
+                grp = await db.scalar(
+                    select(MenuModel).where(MenuModel.route_name == spec["route_name"])
+                )
+                if not grp:
+                    grp = MenuModel(
+                        name=spec["title"],
+                        type=1,
+                        icon=spec["icon"],
+                        order=spec["order"],
+                        route_name=spec["route_name"],
+                        route_path=spec["redirect"],
+                        component_path="",
+                        permission="",
+                        redirect=spec["redirect"],
+                        parent_id=parent.id,
+                        status="0",
+                        is_deleted=False,
+                        hidden=False,
+                        title=spec["title"],
+                    )
+                    db.add(grp)
+                    await db.flush()
+                    db.add(RoleMenusModel(role_id=1, menu_id=grp.id))
+                else:
+                    # 存量目录/图片脏字段统一修正（幂等）
+                    await db.execute(
+                        update(MenuModel)
+                        .where(MenuModel.id == grp.id)
+                        .values(
+                            name=spec["title"],
+                            title=spec["title"],
+                            hidden=False,
+                            parent_id=parent.id,
+                            order=spec["order"],
+                            route_path=spec["redirect"],
+                            redirect=spec["redirect"],
+                            component_path="",
+                            permission="",
+                        )
+                    )
+                # 子菜单归组 + 组内重排序（只动本组白名单，隐藏残留不动）
+                for idx, child_rname in enumerate(spec["menus"], start=1):
+                    await db.execute(
+                        update(MenuModel)
+                        .where(MenuModel.route_name == child_rname)
+                        .values(parent_id=grp.id, order=idx)
+                    )
+            log.info("✅ AI 菜单分组已就绪")
 
 
 async def _ensure_develop_menus() -> None:
@@ -1727,6 +1868,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_face_gallery_menus()
         await _ensure_ai_menus()
         await _ensure_develop_menus()
+        await _ensure_ai_menu_groups()
         await _ensure_ai_tools()
         await _ensure_agno_tools()
         # 问数侧历史影子表建表（幂等）：新环境部署必需，否则管道/数据域/权限/动作等报错
@@ -1878,7 +2020,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
             from app.plugin.module_train.schema_check import ensure_train_columns
 
             await ensure_train_columns(_train_engine)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"⚠️  训练表补列跳过: {e}")
 
+        try:
+            from app.core.database import async_engine as _kb_engine
+            from app.plugin.module_ai.knowledge.schema_check import ensure_knowledge_schema
+
+            await ensure_knowledge_schema(_kb_engine)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"⚠️  知识库表补列跳过: {e}")
+
+        try:
             # train_predicts 兜底建表：DDL 与 TrainPredictModel 对齐（逐条独立事务，失败留日志）
             await _exec_ddl(
                 """

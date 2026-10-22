@@ -257,7 +257,7 @@ function shortText(v: any, limit = 160): string {
 
 <style scoped lang="scss">
 .wf-node {
-  --node-color: #409eff;
+  --node-color: var(--el-color-primary);
   position: relative;
   width: 200px;
   padding: 10px 12px 10px 14px;
@@ -313,7 +313,7 @@ function shortText(v: any, limit = 160): string {
     }
     .wf-group__hint {
       margin-top: 4px;
-      font-size: 11px;
+      font-size: 12px;
       color: var(--el-text-color-secondary);
     }
   }
@@ -361,7 +361,7 @@ function shortText(v: any, limit = 160): string {
   .wf-node__disable-tag {
     margin-left: 8px;
     padding: 1px 6px;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.4;
     color: var(--el-text-color-secondary);
     background: var(--el-fill-color-light);
@@ -376,7 +376,7 @@ function shortText(v: any, limit = 160): string {
     height: 18px;
     line-height: 18px;
     text-align: center;
-    font-size: 11px;
+    font-size: 12px;
     color: #fff;
     background: var(--el-color-primary);
     border-radius: 50%;
@@ -388,7 +388,7 @@ function shortText(v: any, limit = 160): string {
     height: 16px;
     line-height: 16px;
     text-align: center;
-    font-size: 11px;
+    font-size: 12px;
     color: #fff;
     background: var(--el-color-danger);
     border-radius: 50%;
@@ -414,9 +414,9 @@ function shortText(v: any, limit = 160): string {
 
   .wf-node__branch-tag {
     padding: 1px 6px;
-    font-size: 11px;
+    font-size: 12px;
     color: #fff;
-    background: #f56c6c;
+    background: var(--el-color-danger);
     border-radius: 4px;
   }
 
@@ -427,7 +427,7 @@ function shortText(v: any, limit = 160): string {
   .wf-node__note {
     margin-bottom: 6px;
     padding: 4px 6px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--el-color-primary);
     background: var(--el-color-primary-light-9);
     border-radius: 4px;
@@ -439,14 +439,14 @@ function shortText(v: any, limit = 160): string {
 
   .wf-node__outvar {
     margin-bottom: 6px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--el-color-success);
   }
 
   .wf-node__out {
     margin-top: 6px;
     padding: 4px 6px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--el-text-color-regular);
     background: var(--el-fill-color-light);
     border-radius: 4px;
@@ -501,12 +501,12 @@ function shortText(v: any, limit = 160): string {
 .wf-handle--true {
   top: 50%;
   left: 0;
-  background: #67c23a;
+  background: var(--el-color-success);
 }
 
 .wf-handle--false {
   top: 50%;
   right: 0;
-  background: #f56c6c;
+  background: var(--el-color-danger);
 }
 </style>

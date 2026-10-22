@@ -183,7 +183,7 @@
         class="ont-note"
         title="关系权限随两端对象类型的 backing datasource 权限。字段级限制见各对象类型的「安全」子页。"
       />
-      <el-table :data="[...srcProps, ...tgtProps]" size="small" border max-height="380">
+      <el-table :data="[...srcProps, ...tgtProps]" size="small" border max-height="380" stripe>
         <template #empty><el-empty :image-size="50" description="暂无属性" /></template>
         <el-table-column prop="name" label="属性" min-width="150" show-overflow-tooltip />
         <el-table-column

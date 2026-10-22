@@ -23,7 +23,7 @@
       class="ont-obj__note"
       title="函数会作为 Agent 的能力（工具）暴露给 AI 使用。改动进入待保存列表，点「保存」后生效。"
     />
-    <el-table :data="list" size="small" border max-height="460" class="ont-fn__table">
+    <el-table :data="list" size="small" border max-height="460" class="ont-fn__table" stripe>
       <template #empty>
         <el-empty :image-size="50" description="暂无函数，点右上角「新建函数」" />
       </template>
@@ -37,15 +37,19 @@
       <el-table-column prop="description" label="描述" min-width="160" show-overflow-tooltip />
       <el-table-column label="操作" width="200" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openFnRun(row)">运行</el-button>
-          <el-button link type="primary" size="small" @click="openFuncEdit(row)">编辑</el-button>
+          <el-button icon="VideoPlay" link type="primary" size="small" @click="openFnRun(row)">
+            运行
+          </el-button>
+          <el-button icon="edit" link type="primary" size="small" @click="openFuncEdit(row)">
+            编辑
+          </el-button>
           <el-button link type="danger" size="small" @click="removeFunc(row)">删</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <!-- 新建 / 编辑函数 -->
-    <el-dialog v-model="funcDialog" title="本体计算函数" width="720px" append-to-body>
+    <el-dialog v-model="funcDialog" title="本体计算函数" width="900px" append-to-body>
       <el-form :model="funcForm" label-width="140px">
         <el-form-item label="函数名" required>
           <el-input v-model="funcForm.name" placeholder="如 摄像机在线率（%）" />
@@ -74,7 +78,12 @@
           />
           <div class="ont-hint">
             支持 + - * / 与比较、三元表达式，以及 {{ fnBuiltins.length }} 个内置函数。
-            <el-button type="primary" link @click="showBuiltins = !showBuiltins">
+            <el-button
+              :icon="showBuiltins ? 'ArrowUp' : 'View'"
+              type="primary"
+              link
+              @click="showBuiltins = !showBuiltins"
+            >
               {{ showBuiltins ? "收起" : "查看内置函数" }}
             </el-button>
           </div>
@@ -152,7 +161,7 @@
     <el-dialog
       v-model="fnRunDialog"
       title="运行函数（不会写入任何数据）"
-      width="620px"
+      width="600px"
       append-to-body
     >
       <el-alert

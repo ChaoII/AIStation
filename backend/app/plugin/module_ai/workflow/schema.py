@@ -11,6 +11,8 @@ class AiWorkflowCreateSchema(BaseModel):
     description: str | None = Field(default=None, max_length=512)
     graph: dict | None = None
     enabled: bool = True
+    # 工作台分类（模型列早已存在，此前 schema 未暴露 → 工作流永远挂不上分类）
+    category_id: int | None = None
 
 
 class AiWorkflowUpdateSchema(BaseModel):
@@ -18,6 +20,7 @@ class AiWorkflowUpdateSchema(BaseModel):
     description: str | None = Field(default=None, max_length=512)
     graph: dict | None = None
     enabled: bool | None = None
+    category_id: int | None = None
 
 
 class AiWorkflowRunSchema(BaseModel):

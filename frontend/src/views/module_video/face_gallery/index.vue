@@ -108,6 +108,7 @@
               <template #default="scope">
                 <el-button
                   v-hasPerm="['module_video:face_gallery:create']"
+                  icon="edit"
                   type="primary"
                   size="small"
                   link
@@ -117,6 +118,7 @@
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:face_gallery:delete']"
+                  icon="delete"
                   type="danger"
                   size="small"
                   link

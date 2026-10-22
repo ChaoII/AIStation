@@ -103,6 +103,52 @@ def test_ai_space_menu_registered(test_client):
     } <= perms
 
 
+def test_ai_cron_menu_registered(test_client):
+    """_ensure_ai_menus 后：定时任务独立菜单落地且可见，cron 按钮权限（含立即执行）已注册。"""
+    asyncio.run(init_app._ensure_ai_menus())
+    menus = _fetch_menus()
+    m = menus["AiCron"]
+    assert m.hidden is False and m.route_path == "/ai/cron"
+    assert m.component_path == "module_ai/cron/index"
+    assert m.permission == "module_ai:cron:query"
+    perms = {c for c, _ in init_app.AI_BUTTON_PERMS}
+    assert {
+        "module_ai:cron:query",
+        "module_ai:cron:create",
+        "module_ai:cron:update",
+        "module_ai:cron:delete",
+        "module_ai:cron:run",
+    } <= perms
+
+
+def test_ai_menu_groups(test_client):
+    """AI 菜单分组：4 个分组目录存在且子菜单归组、组内有序（存量/新建库都幂等）。"""
+    asyncio.run(init_app._ensure_ai_menus())
+    asyncio.run(init_app._ensure_develop_menus())
+    asyncio.run(init_app._ensure_ai_menu_groups())
+    menus = _fetch_menus()
+    for spec in init_app.AI_MENU_GROUPS:
+        grp = menus[spec["route_name"]]
+        # type=1 目录：route_path/redirect 必须非空，否则 current/info 校验失败拖垮菜单
+        assert grp.type == 1 and grp.hidden is False
+        assert grp.route_path == spec["redirect"]
+        assert grp.redirect == spec["redirect"]
+        for idx, rname in enumerate(spec["menus"], start=1):
+            child = menus[rname]
+            assert child.parent_id == grp.id, f"{rname} 未归入 {spec['title']}"
+            assert child.order == idx, f"{rname} 组内顺序错误"
+    # 工作台 / 定时任务：拉平到 AI 顶层（不进任何分组目录）
+    ai_parent = menus["AI"]
+    for rname in ("AiWorkbench", "AiCron"):
+        assert menus[rname].parent_id == ai_parent.id, f"{rname} 应拉平在 AI 顶层"
+    # 已废弃的「智能体与编排」分组目录必须被清理
+    assert "AiGroupBuild" not in menus
+    # 重复调用幂等（不产生重复目录）
+    asyncio.run(init_app._ensure_ai_menu_groups())
+    menus2 = _fetch_menus()
+    assert len(menus2) == len(menus)
+
+
 def test_ai_menus_collapsed(test_client):
     """_ensure_ai_menus 后：控制台页可见并落地，富功能页保留，下线页 hidden。"""
     _ensure_removed_rows_visible()

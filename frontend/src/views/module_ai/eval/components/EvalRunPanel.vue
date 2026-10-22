@@ -106,6 +106,7 @@
         size="small"
         border
         highlight-current-row
+        stripe
         @row-click="onRowClick"
       >
         <el-table-column prop="run_id" label="run_id" width="180" show-overflow-tooltip />
@@ -131,7 +132,13 @@
         <el-table-column prop="started_at" label="开始时间" min-width="160" show-overflow-tooltip />
         <el-table-column label="操作" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click.stop="emit('select', row.run_id)">
+            <el-button
+              icon="DataAnalysis"
+              link
+              type="primary"
+              size="small"
+              @click.stop="emit('select', row.run_id)"
+            >
               查看报表
             </el-button>
           </template>

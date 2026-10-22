@@ -380,8 +380,119 @@ def agno_stream_response(body: AsyncIterator[str]):
     return sse_response(body, extra_headers={"Connection": "keep-alive"})
 
 
-def agno_error_frame(message: str) -> str:
-    """Agno 原生 error 帧（配合 SSE 终止）。"""
+def agno_event_frame(event: str, payload: dict | None = None) -> str:
+    """构造 Agno 原生 SSE 事件帧（``event: <name>`` + data 冗余 event 字段）。"""
     import json
 
-    return f"event: RunError\ndata: {json.dumps({'event': 'RunError', 'error': message}, ensure_ascii=False)}\n\n"
+    data = {"event": event}
+    if payload:
+        data.update(payload)
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+
+
+def agno_error_frame(message: str) -> str:
+    """Agno 原生 error 帧（配合 SSE 终止）。"""
+    return agno_event_frame("RunError", {"error": message})
+
+
+async def ui_stream_to_agno(body: AsyncIterator[str]) -> AsyncIterator[str]:
+    """把 UI Message Stream 帧流转译为 Agno 原生事件帧。
+
+    协议边界（勿混淆）：工作流端点自身保持 UI Message Stream（编辑器/分享页/HITL
+    依赖 ``node-status`` / ``data-run`` / ``data-finish``）；而 agent/app 的
+    ``run/stream`` 端点契约是 Agno 原生事件（前端 ``AgnoChatTransport`` 只认
+    ``event: Run*`` 帧，UI 帧会被静默丢弃）。委托工作流运行时在此转译：
+
+    - ``text-delta`` → ``RunContent``；``reasoning-delta`` → ``ReasoningContentDelta``
+    - ``tool-input/output-*`` → ``ToolCallStarted/Completed``
+    - ``error`` → ``RunError``；``finish`` → ``RunCompleted``
+    - ``data-finish``：``reply``（end 节点回复只装在这里，无流式正文）补发为
+      ``RunContent``；``awaiting_approval`` → ``RunError`` 提示（对话页无审批 UI）。
+    - 其余编排专属帧（``node-status`` / ``data-run`` / ``sources`` / ``tool-approval``）
+      对对话无意义，丢弃。
+    """
+    import json as _json
+
+    completed = False
+    text_emitted = False
+    pending_reply = ""
+    awaiting = False
+    async for frame in body:
+        # 一次 yield 可能拼了多帧（如 ms.text 首次 = text-start + text-delta）：逐行解析
+        for line in frame.split("\n"):
+            s = line.strip()
+            if not s.startswith("data:"):
+                continue
+            raw = s[5:].strip()
+            if raw == "[DONE]":
+                continue
+            try:
+                obj = _json.loads(raw)
+            except Exception:  # noqa: BLE001 非 JSON 帧忽略
+                continue
+            if not isinstance(obj, dict):
+                continue
+            t = obj.get("type")
+            if t == "text-delta":
+                delta = obj.get("delta") or ""
+                if delta:
+                    text_emitted = True
+                    yield agno_event_frame("RunContent", {"content": delta})
+            elif t == "reasoning-delta":
+                delta = obj.get("delta") or ""
+                if delta:
+                    yield agno_event_frame(
+                        "ReasoningContentDelta", {"reasoning_content": delta}
+                    )
+            elif t == "tool-input-available":
+                yield agno_event_frame(
+                    "ToolCallStarted",
+                    {
+                        "tool": {
+                            "tool_name": obj.get("toolName") or "工具",
+                            "tool_call_id": obj.get("toolCallId") or "",
+                            "tool_args": obj.get("input"),
+                        }
+                    },
+                )
+            elif t == "tool-output-available":
+                yield agno_event_frame(
+                    "ToolCallCompleted",
+                    {
+                        "tool": {
+                            "tool_name": obj.get("toolName") or "工具",
+                            "tool_call_id": obj.get("toolCallId") or "",
+                            "result": obj.get("output"),
+                        }
+                    },
+                )
+            elif t == "tool-output-error":
+                # 前端 toolResultError 启发式按 success===false 识别为错误输出
+                yield agno_event_frame(
+                    "ToolCallCompleted",
+                    {
+                        "tool": {
+                            "tool_name": obj.get("toolName") or "工具",
+                            "tool_call_id": obj.get("toolCallId") or "",
+                            "result": {"success": False, "error": obj.get("errorText")},
+                        }
+                    },
+                )
+            elif t == "error":
+                yield agno_error_frame(str(obj.get("errorText") or "运行失败"))
+            elif t == "data-finish":
+                d = obj.get("data")
+                d = d if isinstance(d, dict) else {}
+                pending_reply = str(d.get("reply") or "")
+                awaiting = bool(d.get("awaiting_approval"))
+            elif t == "finish" and not completed:
+                completed = True
+                if awaiting:
+                    # HITL 挂起：对话页无审批 UI，明确告知用户去向
+                    yield agno_error_frame("工作流等待工具审批，请到工作流编辑器处理后重试")
+                elif pending_reply and not text_emitted:
+                    # end 节点回复只装在 data-finish.reply（无流式正文）：补发为正文
+                    yield agno_event_frame("RunContent", {"content": pending_reply})
+                yield agno_event_frame("RunCompleted")
+    if not completed:
+        yield agno_event_frame("RunCompleted")

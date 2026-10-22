@@ -4,7 +4,7 @@
   <el-dialog
     v-model="visible"
     :title="dialogTitle"
-    width="680px"
+    width="600px"
     append-to-body
     destroy-on-close
     @closed="resetForm"

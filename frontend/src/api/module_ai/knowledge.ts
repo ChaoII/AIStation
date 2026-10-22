@@ -4,8 +4,8 @@ const BASE = "/ai/knowledge/bases";
 const DS = "/ai/knowledge/datasources";
 
 // ---------- 知识库 ----------
-export function getAiKnowledgeList() {
-  return request({ url: `${BASE}/list`, method: "get" });
+export function getAiKnowledgeList(params?: { category_id?: number | null }) {
+  return request({ url: `${BASE}/list`, method: "get", params });
 }
 
 export function getAiKnowledgeDetail(id: number) {
@@ -22,6 +22,42 @@ export function updateAiKnowledge(id: number, data: any) {
 
 export function deleteAiKnowledge(ids: number[]) {
   return request({ url: `${BASE}/delete`, method: "delete", data: ids });
+}
+
+// ---------- 知识库分类（左侧分类树） ----------
+const CAT = "/ai/knowledge/categories";
+
+export interface AiKnowledgeCategoryNode {
+  id: number;
+  name: string;
+  parent_id?: number | null;
+  owner?: string;
+  remark?: string;
+  sort?: number;
+  count?: number;
+  children?: AiKnowledgeCategoryNode[];
+}
+
+export function getAiKnowledgeCategoryTree() {
+  return request({ url: `${CAT}/tree`, method: "get" });
+}
+export function createAiKnowledgeCategory(data: {
+  name: string;
+  parent_id?: number | null;
+  owner?: string;
+  remark?: string;
+  sort?: number;
+}) {
+  return request({ url: `${CAT}/create`, method: "post", data });
+}
+export function updateAiKnowledgeCategory(
+  id: number,
+  data: { name?: string; parent_id?: number | null; owner?: string; remark?: string; sort?: number }
+) {
+  return request({ url: `${CAT}/update/${id}`, method: "put", data });
+}
+export function deleteAiKnowledgeCategory(ids: number[]) {
+  return request({ url: `${CAT}/delete`, method: "delete", data: ids });
 }
 
 // ---------- 入库 / 检索 / 分块 ----------

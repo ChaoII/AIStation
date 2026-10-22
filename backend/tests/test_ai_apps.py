@@ -482,3 +482,32 @@ def test_app_templates_and_create_from_template(test_client, auth_headers):
     assert body["name"] == "pytest-报告"
     assert body["app_type"] == "report"
     _delete_apps(test_client, auth_headers, [body["id"]])
+
+
+def test_app_kb_type_emits_agno_frames(monkeypatch, test_client, auth_headers):
+    """kb 应用：Agno 原生帧（RunContent 正文 + references 工具对 + RunCompleted）。
+
+    此前该分支误发 UI Message Stream 帧（ms.tool 还带错误参数），在 Agno SSE 端点上
+    被前端 AgnoChatTransport 静默丢弃 → 对话空白。现统一为端点契约的 Agno 帧。
+    """
+    from app.plugin.module_ai.knowledge.service import AiKnowledgeService
+
+    async def _fake_ask(kb_id, q, top_k=6, auth=None):
+        return {
+            "answer": "知识库答案",
+            "references": [{"file_name": "a.txt", "content": "片段"}],
+        }
+
+    monkeypatch.setattr(AiKnowledgeService, "ask", staticmethod(_fake_ask))
+    kb_id = _create_app(test_client, auth_headers, app_type="kb", kb_id=1, tools=[])
+
+    try:
+        body = _run_stream(test_client, auth_headers, kb_id)
+        assert "event: RunContent" in body
+        assert '"content": "知识库答案"' in body
+        assert "event: ToolCallStarted" in body
+        assert "event: ToolCallCompleted" in body
+        assert "references" in body
+        assert "event: RunCompleted" in body
+    finally:
+        _delete_apps(test_client, auth_headers, [kb_id])

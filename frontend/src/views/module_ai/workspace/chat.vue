@@ -22,6 +22,7 @@
             <span class="chat-group-label">{{ group.label }}</span>
             <el-button
               v-if="group.label === '今天' && todaySessions.length"
+              icon="Delete"
               link
               size="small"
               class="chat-group-del"
@@ -103,9 +104,9 @@
 
 <script setup lang="ts">
 import { Delete, Download, Plus, Search } from "@element-plus/icons-vue";
-import { ElMessageBox } from "element-plus";
-import { computed, ref } from "vue";
-import { useRoute } from "vue-router";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import {
   createAiSession,
@@ -122,6 +123,7 @@ import { useAiChat } from "@/composables/ai/useAiChat";
 defineOptions({ name: "AiWorkspaceChat" });
 
 const route = useRoute();
+const router = useRouter();
 const kind = String(route.params.kind || "agent");
 const assetId = Number(route.params.id);
 
@@ -130,8 +132,16 @@ const pathMap: Record<string, string> = {
   app: `/ai/apps/${assetId}/run/stream`,
   workflow: `/ai/workflows/${assetId}/run/stream`,
 };
+// 历史链接守卫：定时任务已迁出工作台（cron 不再有对话语义）。此前 cron 会回落到
+// agent 的 run 接口（拿 cron id 当 agent id），直达旧 URL 会打错接口——这里直接送回工作台。
+onMounted(() => {
+  if (!pathMap[kind]) {
+    ElMessage.info("该条目类型已不再支持对话，已返回工作台");
+    router.replace("/ai/workspace");
+  }
+});
 const assetLabel = computed(
-  () => ({ agent: "智能体", app: "应用", workflow: "工作流", cron: "定时任务" })[kind] || "对话"
+  () => ({ agent: "智能体", app: "应用", workflow: "工作流" })[kind] || "对话"
 );
 // ---- 会话 ----
 const sessions = ref<AiSessionItem[]>([]);
@@ -154,6 +164,8 @@ async function loadModels() {
 
 const chat = useAiChat({
   path: pathMap[kind] || pathMap.agent,
+  // workflow 端点是 UI Message Stream（编排帧协议）；agent/app 端点是 Agno 原生事件
+  protocol: kind === "workflow" ? "ui" : "agno",
   body: () => ({
     session_id: currentSessionId.value,
     model_id: chatModelId.value,
@@ -318,7 +330,7 @@ loadModels();
 }
 
 .chat-side {
-  flex: 0 0 260px;
+  flex: 0 0 240px;
   display: flex;
   flex-direction: column;
   background: var(--el-fill-color-blank);

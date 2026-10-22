@@ -211,18 +211,20 @@
     />
 
     <el-drawer v-model="versionsVisible" :title="`版本 - ${versionsRepoName}`" size="760px">
-      <el-table v-loading="versionsLoading" :data="versions" border size="small">
+      <el-table v-loading="versionsLoading" stripe :data="versions" border size="small">
         <el-table-column label="版本" prop="version" width="80" align="center" />
         <el-table-column label="框架" prop="framework" width="110" />
         <el-table-column label="状态" prop="status" width="100" />
         <el-table-column label="创建时间" prop="created_time" min-width="170" />
         <el-table-column label="操作" min-width="320" align="center">
           <template #default="{ row }">
-            <el-button size="small" link @click="handleTrain(row)">训练</el-button>
-            <el-button size="small" link @click="handleEval(row)">评估</el-button>
-            <el-button size="small" link @click="handlePredict(row)">预测</el-button>
-            <el-button size="small" link @click="handleExport(row)">导出</el-button>
-            <el-button size="small" link @click="handleDeploy(row)">部署</el-button>
+            <el-button icon="VideoPlay" size="small" link @click="handleTrain(row)">训练</el-button>
+            <el-button icon="DataAnalysis" size="small" link @click="handleEval(row)">
+              评估
+            </el-button>
+            <el-button icon="Cpu" size="small" link @click="handlePredict(row)">预测</el-button>
+            <el-button icon="Download" size="small" link @click="handleExport(row)">导出</el-button>
+            <el-button icon="Upload" size="small" link @click="handleDeploy(row)">部署</el-button>
           </template>
         </el-table-column>
       </el-table>
