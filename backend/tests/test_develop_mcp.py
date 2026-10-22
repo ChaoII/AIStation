@@ -250,3 +250,22 @@ def test_mcp_prompt_platform_guide(test_client, auth_headers):
         assert "pending_approval" in content
     finally:
         _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_mcp_session_limits_configurable():
+    """MCP 会话保护参数存在且生效于构建（max_sessions / idle timeout 传给 session manager）。"""
+    from pathlib import Path
+
+    from app.config.setting import settings
+
+    assert settings.MCP_MAX_SESSIONS > 0
+    assert settings.MCP_SESSION_IDLE_TIMEOUT > 0
+    src = (
+        Path(__file__).parent.parent
+        / "app"
+        / "plugin"
+        / "module_ai"
+        / "develop"
+        / "mcp_server.py"
+    ).read_text(encoding="utf-8")
+    assert "MCP_MAX_SESSIONS" in src and "MCP_SESSION_IDLE_TIMEOUT" in src

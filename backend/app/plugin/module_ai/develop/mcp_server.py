@@ -325,8 +325,14 @@ def _get_server():
             security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
         except Exception:  # noqa: BLE001 - 旧版本无该配置则用默认
             security = None
+        from app.config.setting import settings
+
         _SERVER.streamable_http_app(
-            streamable_http_path="/", json_response=True, transport_security=security
+            streamable_http_path="/",
+            json_response=True,
+            transport_security=security,
+            max_sessions=max(1, int(settings.MCP_MAX_SESSIONS)),
+            session_idle_timeout=float(settings.MCP_SESSION_IDLE_TIMEOUT),
         )
         _SESSION_MANAGER_READY = True
     return _SERVER

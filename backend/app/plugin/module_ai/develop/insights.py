@@ -23,6 +23,7 @@ from .model import (
     AiIntegrationAppModel,
     AiIntegrationApprovalModel,
     AiIntegrationCallLogModel,
+    AiIntegrationMcpSessionModel,
 )
 
 
@@ -281,3 +282,37 @@ class DevelopInsights:
                 ]
             )
         return buf.getvalue()
+
+
+async def purge_integration_logs(days: int | None = None) -> int:
+    """删除超期的调用日志与 MCP 会话（定时任务，模块级无参可直接被 APScheduler 调度）。
+
+    - 保留期取 ``settings.CALL_LOG_RETENTION_DAYS``（默认 180 天；``0`` = 永不清理）；
+    - 审批行（``ai_integration_approvals``）**不清理**——审批是合规留痕。
+    - ``days`` 参数仅供测试覆盖默认值。
+
+    Returns:
+        本次删除的总行数（日志 + 会话）。
+    """
+    from datetime import timedelta as _timedelta
+
+    from sqlalchemy import delete as _delete
+
+    from app.config.setting import settings
+
+    keep = settings.CALL_LOG_RETENTION_DAYS if days is None else days
+    if keep is None or int(keep) <= 0:
+        return 0
+    cutoff = datetime.now() - _timedelta(days=max(1, int(keep)))
+    async with async_db_session.begin() as db:
+        logs = await db.execute(
+            _delete(AiIntegrationCallLogModel).where(
+                AiIntegrationCallLogModel.created_time < cutoff
+            )
+        )
+        sessions = await db.execute(
+            _delete(AiIntegrationMcpSessionModel).where(
+                AiIntegrationMcpSessionModel.created_time < cutoff
+            )
+        )
+    return int(logs.rowcount or 0) + int(sessions.rowcount or 0)

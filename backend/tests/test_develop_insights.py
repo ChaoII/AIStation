@@ -221,3 +221,68 @@ def test_stats_includes_expiring_apps(test_client, auth_headers):
         assert hit["expire_at"].startswith(expire_at[:10])
     finally:
         _cleanup(test_client, auth_headers, app_id)
+
+
+def test_purge_integration_logs_removes_expired_only(test_client, auth_headers):
+    """日志保留清理：超期的删掉、未超期保留；days=0 永不清理。"""
+    import asyncio
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import update
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.develop.insights import purge_integration_logs
+    from app.plugin.module_ai.develop.model import (
+        AiIntegrationCallLogModel,
+        AiIntegrationMcpSessionModel,
+    )
+
+    app = _create_app(test_client, auth_headers)
+    try:
+        _invoke(test_client, app, "agent.list", {})
+        _invoke(test_client, app, "agent.list", {})
+        _invoke(test_client, app, "agent.list", {})
+        logs = test_client.get(
+            f"{API}/ai/develop/call-logs",
+            params={"app_id": app["id"], "page_size": 50},
+            headers=auth_headers,
+        ).json()["data"]["items"]
+        assert len(logs) >= 3, "应有多条日志可测（删一条留两条）"
+        old_ids = [logs[0]["id"]]
+
+        # 造一行超期的 MCP 会话 + 把第一条日志回拨 300 天
+        async def _prep():
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    update(AiIntegrationCallLogModel)
+                    .where(AiIntegrationCallLogModel.id.in_(old_ids))
+                    .values(created_time=datetime.now() - timedelta(days=300))
+                )
+                db.add(
+                    AiIntegrationMcpSessionModel(
+                        app_id=app["id"],
+                        appid=app["appid"],
+                        session_id="purge-test-session",
+                        transport="streamable-http",
+                        created_time=datetime.now() - timedelta(days=300),
+                        started_at=datetime.now() - timedelta(days=300),
+                        duration_s=1,
+                    )
+                )
+
+        asyncio.run(_prep())
+
+        removed = asyncio.run(purge_integration_logs(180))
+        assert removed >= 2, f"应至少删 1 日志 + 1 会话，实际 {removed}"
+
+        remaining = test_client.get(
+            f"{API}/ai/develop/call-logs",
+            params={"app_id": app["id"], "page_size": 50},
+            headers=auth_headers,
+        ).json()["data"]["items"]
+        assert remaining, "未超期日志应保留"
+
+        # days=0 = 永不清理
+        assert asyncio.run(purge_integration_logs(0)) == 0
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])

@@ -43,7 +43,7 @@ def _sanitize_body(payload: Any) -> dict:
             out[key] = "***"
             continue
         if isinstance(value, str):
-            out[key] = value[:_BODY_TEXT_LIMIT]
+            out[key] = value[:_body_limit()]
         elif isinstance(value, (int, float, bool)) or value is None:
             out[key] = value
         elif isinstance(value, (list, tuple)):
@@ -53,6 +53,13 @@ def _sanitize_body(payload: Any) -> dict:
         else:
             out[key] = str(value)[:80]
     return out
+
+
+def _body_limit() -> int:
+    """审计请求体的单字段截断上限（``OPEN_AUDIT_BODY_LIMIT``，夹紧 100..2000）。"""
+    from app.config.setting import settings
+
+    return max(100, min(int(getattr(settings, "OPEN_AUDIT_BODY_LIMIT", 200) or 200), 2000))
 
 
 def _strip_secrets(payload: Any) -> dict:

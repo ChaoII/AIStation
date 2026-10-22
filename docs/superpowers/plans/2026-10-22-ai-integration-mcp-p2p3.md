@@ -308,3 +308,39 @@
 
 - 新增/扩充用例：审批**超时关闭+审计+关闭后不可再批准**、**新鲜 pending 不受影响**、**待审批触发站内通知**、**stats 到期列表**、**MCP resources/list+read 只含授权能力**、**MCP prompts/list+get 含 appid** —— 共 9+7+7 = 与既有用例同轮全绿（单文件 14 passed / 9 passed）。
 - UI 走查（1440）：应用页签临期横幅（1 个应用 7 天内到期 + 应用名与时间）、到期时间橙色、审批页「已过期」徽标 + 意见 + 仅剩「详情」、**右上角站内通知红点 1**；截图归档 `p2-apps-expiring.png`、`p2-approvals-expired.png`。
+
+---
+
+## 第五轮：通知可外发、日志可保留、MCP 会话可限（2026-10-23）
+
+### 新增设置（`app/config/setting.py`）
+
+| 键 | 默认 | 说明 |
+|----|------|------|
+| `APPROVAL_NOTIFY_CHANNELS` | `""` | 审批外部通道（`email,webhook,sms`，逗号分隔；空=仅站内）。复用告警模块 `app/utils/notification.py` 的 `_send_{channel}` |
+| `OPEN_AUDIT_BODY_LIMIT` | `200` | 审计 request_body 单字段截断上限（夹紧 100..2000；排查期可调大） |
+| `CALL_LOG_RETENTION_DAYS` | `180` | 调用日志 + MCP 会话保留天数（0=永不清理；审批行不清理） |
+| `MCP_MAX_SESSIONS` | `64` | Streamable HTTP 同时在线会话上限 |
+| `MCP_SESSION_IDLE_TIMEOUT` | `600` | MCP 空闲会话回收（秒） |
+
+### ① 审批通知可外发
+
+- `_build_approval_alarm(row)`：把审批行适配成既有告警通道认识的 `(alarm, rule)` 结构（**复用而非重写**邮件正文/签名/重试）；通道白名单 `email/webhook/sms`（`ws_push` 是告警大屏广播，不并入）。
+- `_notify_external(row)`：按 `APPROVAL_NOTIFY_CHANNELS` 逐通道调用，配置读系统参数 `ai_approval_notify_{channel}`（JSON，坏 JSON 跳过该通道），SMTP/Webhook 基础参数沿用既有 `notify_smtp_*` / `notify_webhook_*`；单通道失败只记 warning。
+- 与站内通知并列挂进 `ApprovalService.create`，都 best-effort。
+- 审批页签提示文案补齐配置说明（外发开关 + 参数键名 + 24h 自动关闭）。
+
+### ② 审计体上限可配 + 日志保留清理
+
+- `_sanitize_body` 改走 `_body_limit()`（settings 夹紧）；
+- `purge_integration_logs(days=None)`：按 `CALL_LOG_RETENTION_DAYS` 删超期 `ai_integration_call_logs` + `ai_integration_mcp_sessions`（审批行保留，合规留痕），返回删除行数；
+- 调度新增 `ai_develop_cron:purge_logs`（interval 24h）。
+
+### ③ MCP 会话保护
+
+- `streamable_http_app(...)` 显式传 `max_sessions` / `session_idle_timeout`（不再吃 SDK 默认），测试断言设置键与源码引用。
+
+### 验证
+
+- 新增用例：告警字段映射、默认关闭不外发、email 通道被正确调用且 cfg 来自参数、坏 JSON 跳过、审计上限默认/夹紧、日志清理「超期删+未超期留+days=0 不清」、MCP 会话参数——三文件合并 **30 passed**。
+- 前端 eslint/prettier/type-check 全绿；ruff 全绿。

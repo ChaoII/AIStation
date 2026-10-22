@@ -446,7 +446,10 @@
             <div class="develop-toolbar__left">
               <span class="develop-toolbar__hint">
                 应用开启「需人工审批」后，删除智能体、训练任务创建/启停等敏感调用会先进入这里；
-                批准后立即以原应用身份执行。
+                批准后立即以原应用身份执行，超过 24 小时未处理由系统自动关闭为「已过期」。
+                产生待审批时会给管理员发站内通知；如需外发，配置
+                APPROVAL_NOTIFY_CHANNELS（email/webhook/sms）并配系统参数
+                ai_approval_notify_{channel}（JSON）。
               </span>
               <el-tag size="small" type="warning" effect="plain" class="summary-tag">
                 待审批 {{ approvalPendingCount }} 条

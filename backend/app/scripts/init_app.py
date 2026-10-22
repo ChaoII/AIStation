@@ -1688,6 +1688,7 @@ async def _register_business_jobs_on_startup() -> None:
     # AI 集成：调用审批超时自动关闭（`ai_develop_cron:`，每 10 分钟扫一次）
     try:
         from app.plugin.module_ai.develop.approvals import expire_stale_approvals
+        from app.plugin.module_ai.develop.insights import purge_integration_logs
 
         specs = [
             (
@@ -1696,7 +1697,15 @@ async def _register_business_jobs_on_startup() -> None:
                 {"minutes": 10},
                 expire_stale_approvals,
                 (),
-            )
+            ),
+            # 日志保留清理：每天一次（保留期 CALL_LOG_RETENTION_DAYS，0=不清理）
+            (
+                "ai_develop_cron:purge_logs",
+                "interval",
+                {"hours": 24},
+                purge_integration_logs,
+                (),
+            ),
         ]
         SchedulerUtil.sync_business_jobs(specs, prefixes=("ai_develop_cron:",))
         log.info("✅ AI 集成审批超时关闭任务已注册到中心调度器")

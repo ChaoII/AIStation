@@ -12,6 +12,8 @@
 """
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -24,6 +26,8 @@ from .auth import AppContext
 from .model import AiIntegrationAppModel, AiIntegrationApprovalModel
 from .registry import Capability
 from .service import _app_to_dict
+
+log = logging.getLogger(__name__)
 
 
 def _approval_to_dict(row: AiIntegrationApprovalModel) -> dict:
@@ -65,8 +69,9 @@ class ApprovalService:
             db.add(row)
             await db.flush()
             await db.refresh(row)
-        # 站内通知管理员（best-effort：失败只记日志，不阻断调用方拿到 approval_id）
+        # 站内 + 外部通道通知管理员（best-effort：失败只记日志，不阻断调用方拿到 approval_id）
         await _notify_admins(row)
+        await _notify_external(row)
         return row
 
     @classmethod
@@ -205,9 +210,83 @@ async def _notify_admins(row: AiIntegrationApprovalModel) -> None:
                 module_id=row.id,
             )
     except Exception as e:  # noqa: BLE001 - 通知失败不影响主流程
-        import logging
+        log.warning(f"[approvals] 站内通知发送失败（忽略）: {e}")
 
-        logging.getLogger(__name__).warning(f"[approvals] 站内通知发送失败（忽略）: {e}")
+
+#: 审批通知允许的**外部通道**（复用告警模块 app/utils/notification.py 的
+#: ``_send_{channel}``；``ws_push`` 是告警大屏广播，不在此列以免污染大屏）。
+_EXTERNAL_CHANNELS = ("email", "webhook", "sms")
+
+
+def _build_approval_alarm(row: AiIntegrationApprovalModel) -> tuple[dict, dict]:
+    """把审批行适配成既有告警通知函数认识的 ``(alarm, rule)`` 结构。
+
+    复用而非重写：邮件正文/签名/重试等全部沿用告警模块的实现，
+    这里只做字段映射（``alarm_type`` = 待审批标题，``description`` = 说明）。
+    """
+    now = datetime.now()
+    alarm = {
+        "alarm_type": f"调用待审批：{row.capability}",
+        "severity": "WARNING",
+        "description": (
+            f"应用 {row.appid}（ID {row.app_id}）申请调用敏感能力 {row.capability}"
+            f"（品类 {row.category}），请到「AI 集成 → 调用审批」批准或拒绝；"
+            f"批准后立即以该应用身份执行。"
+        ),
+        "alarm_time": str(now),
+        "camera_name": "AIStation 开放平台",
+        "camera_id": "",
+        "rule_id": row.id,
+        "rule_name": "AI 集成调用审批",
+        "snapshot_path": "",
+    }
+    rule = {"id": 0, "name": "AI 集成调用审批", "notify_channels": []}
+    return alarm, rule
+
+
+async def _notify_external(row: AiIntegrationApprovalModel) -> None:
+    """审批的外部通道通知（best-effort）。
+
+    - 开关：``settings.APPROVAL_NOTIFY_CHANNELS``（逗号分隔，如 ``email,webhook``；空=关闭）；
+    - 每通道 JSON 配置读系统参数 ``ai_approval_notify_{channel}``（管理员在参数管理页配），
+      基础凭证沿用告警模块的 ``notify_smtp_*`` / ``notify_webhook_*`` 参数；
+    - 单通道失败只记 warning，不影响站内通知与主流程。
+    """
+    from app.config.setting import settings
+    from app.utils.notification import _send_email, _send_sms, _send_webhook, load_params
+
+    channels = [
+        c.strip().lower()
+        for c in (settings.APPROVAL_NOTIFY_CHANNELS or "").split(",")
+        if c.strip().lower() in _EXTERNAL_CHANNELS
+    ]
+    if not channels:
+        return
+    senders = {"email": _send_email, "webhook": _send_webhook, "sms": _send_sms}
+    cfg_keys = [f"ai_approval_notify_{c}" for c in channels]
+    async with async_db_session() as db:
+        try:
+            cfgs = await load_params(db, *cfg_keys)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[approvals] 读取通知通道参数失败（忽略）: {e}")
+            return
+        alarm, rule = _build_approval_alarm(row)
+        for channel in channels:
+            key = f"ai_approval_notify_{channel}"
+            raw = cfgs.get(key)
+            try:
+                cfg = json.loads(raw) if isinstance(raw, str) and raw.strip() else {}
+            except ValueError:
+                log.warning(
+                    f"[approvals] 通道参数 {key} 不是合法 JSON，跳过该通道"
+                )
+                continue
+            try:
+                await senders[channel](db, alarm, rule, cfg)
+            except Exception as e:  # noqa: BLE001 - 通道失败不影响主流程
+                log.warning(
+                    f"[approvals] 外部通道 {channel} 通知失败（忽略）: {e}"
+                )
 
 
 async def expire_stale_approvals(hours: int | None = None) -> int:

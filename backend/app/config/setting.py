@@ -257,6 +257,19 @@ class Settings(BaseSettings):
     # 调用审批待处理时限（小时）：超过则由定时任务自动关闭为 expired，
     # 避免「待审批」永久堆积（申请方也没法预期结果）。
     APPROVAL_PENDING_TTL_HOURS: int = 24
+    # 审批通知的**外部通道**（逗号分隔，复用告警模块既有四通道实现）：
+    # 支持 email / webhook / sms，留空 = 只发站内通知。
+    # 每个通道的 JSON 配置读系统参数 `ai_approval_notify_{channel}`；
+    # SMTP/Webhook 基础参数沿用告警模块的 notify_smtp_* / notify_webhook_* 约定。
+    APPROVAL_NOTIFY_CHANNELS: str = ""
+    # 开放面审计 request_body 的单字段截断上限（字符）：1..2000，超出截断。
+    # 默认 200 = 只留摘要（防审计表被长文本撑爆）；排查期可临时调大。
+    OPEN_AUDIT_BODY_LIMIT: int = 200
+    # 调用日志保留天数（0 = 永久保留）：定时任务每天清理超期行。
+    CALL_LOG_RETENTION_DAYS: int = 180
+    # MCP 会话保护（传给 Streamable HTTP session manager）
+    MCP_MAX_SESSIONS: int = 64  # 同时在线会话上限
+    MCP_SESSION_IDLE_TIMEOUT: float = 600  # 空闲会话回收（秒）
 
     # ================================================= #
     # ***************** 第三方 OAuth 登录配置 ********* #

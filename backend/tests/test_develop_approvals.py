@@ -4,6 +4,7 @@
 覆盖：开启 requires_approval 的应用调敏感能力 → 落待审批且**不执行**；未开启的应用直接执行；
 批准 → 以原应用身份执行并回写结果；拒绝 → 不执行；非敏感能力不受审批门禁影响。
 """
+import asyncio
 from uuid import uuid4
 
 API = "/api/v1"
@@ -299,3 +300,128 @@ def asyncio_run(fn, *args):
     import asyncio
 
     return asyncio.run(fn(*args))
+
+
+def test_build_approval_alarm_maps_fields():
+    """适配壳：alarm/rule 字段映射正确（复用告警通道的输入契约）。"""
+    from app.plugin.module_ai.develop.approvals import _build_approval_alarm
+
+    class _Row:
+        app_id = 7
+        appid = "ai_demo"
+        capability = "agent.delete"
+        category = "agent"
+        id = 42
+
+    alarm, rule = _build_approval_alarm(_Row())
+    assert alarm["severity"] == "WARNING"
+    assert "agent.delete" in alarm["alarm_type"]
+    assert "ai_demo" in alarm["description"] and "调用审批" in alarm["description"]
+    assert alarm["rule_id"] == 42
+    assert rule["name"] == "AI 集成调用审批"
+
+
+def test_notify_external_disabled_by_default(monkeypatch):
+    """默认（APPROVAL_NOTIFY_CHANNELS 为空）不外发：任何通道发送器都不该被调。"""
+    import app.utils.notification as notifier
+    from app.config.setting import settings
+    from app.plugin.module_ai.develop import approvals as appr
+
+    called = []
+
+    async def _boom(*args, **kwargs):
+        called.append(1)
+
+    monkeypatch.setattr(settings, "APPROVAL_NOTIFY_CHANNELS", "")
+    monkeypatch.setattr(notifier, "_send_email", _boom)
+    monkeypatch.setattr(notifier, "_send_webhook", _boom)
+
+    class _Row:
+        app_id = 1
+        appid = "ai_x"
+        capability = "agent.delete"
+        category = "agent"
+        id = 1
+
+    asyncio.run(appr._notify_external(_Row()))
+    assert called == []
+
+
+def test_notify_external_sends_email_with_config(monkeypatch):
+    """配置 email 通道 → 调用既有邮件发送器；配置来自系统参数（此处无参数 → cfg={}）。"""
+    import app.utils.notification as notifier
+    from app.config.setting import settings
+    from app.plugin.module_ai.develop import approvals as appr
+
+    calls = []
+
+    async def _fake_email(db, alarm, rule, cfg):
+        calls.append((alarm["alarm_type"], rule["name"], cfg))
+
+    monkeypatch.setattr(settings, "APPROVAL_NOTIFY_CHANNELS", "email")
+    monkeypatch.setattr(notifier, "_send_email", _fake_email)
+
+    class _Row:
+        app_id = 3
+        appid = "ai_mail"
+        capability = "train.create"
+        category = "train"
+        id = 9
+
+    asyncio.run(appr._notify_external(_Row()))
+    assert len(calls) == 1
+    alarm_type, rule_name, cfg = calls[0]
+    assert "train.create" in alarm_type
+    assert rule_name == "AI 集成调用审批"
+    assert isinstance(cfg, dict)
+
+
+def test_notify_external_skips_broken_channel_json(monkeypatch):
+    """系统参数里 JSON 写坏 → 跳过该通道、不抛异常（best-effort）。"""
+    import asyncio as _asyncio
+
+    import app.utils.notification as notifier
+    from app.config.setting import settings
+    from app.plugin.module_ai.develop import approvals as appr
+
+    calls = []
+
+    async def _fake_email(*args, **kwargs):
+        calls.append(1)
+
+    async def _broken_params(db, *keys):
+        return dict.fromkeys(keys, "{not-json")
+
+    monkeypatch.setattr(settings, "APPROVAL_NOTIFY_CHANNELS", "email")
+    monkeypatch.setattr(notifier, "_send_email", _fake_email)
+    monkeypatch.setattr(notifier, "load_params", _broken_params)
+
+    class _Row:
+        app_id = 5
+        appid = "ai_bad"
+        capability = "agent.delete"
+        category = "agent"
+        id = 5
+
+    _asyncio.run(appr._notify_external(_Row()))
+    assert calls == []
+
+
+def test_audit_body_limit_is_configurable():
+    """审计请求体截断上限可配（OPEN_AUDIT_BODY_LIMIT，默认 200、夹紧 100..2000）。"""
+    from app.config.setting import settings
+    from app.plugin.module_ai.develop.openapi import _body_limit, _sanitize_body
+
+    long_text = "x" * 1500
+    try:
+        original = settings.OPEN_AUDIT_BODY_LIMIT
+        settings.OPEN_AUDIT_BODY_LIMIT = 500
+        assert _body_limit() == 500
+        assert len(_sanitize_body({"note": long_text})["note"]) == 500
+        settings.OPEN_AUDIT_BODY_LIMIT = 50
+        assert _body_limit() == 100  # 夹紧
+        settings.OPEN_AUDIT_BODY_LIMIT = 99999
+        assert _body_limit() == 2000  # 夹紧
+        settings.OPEN_AUDIT_BODY_LIMIT = original
+    finally:
+        settings.OPEN_AUDIT_BODY_LIMIT = 200
