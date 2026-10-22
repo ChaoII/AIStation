@@ -243,3 +243,35 @@
 4. 审批通知（待审批提醒/超时自动拒绝）、配额用量可视化。
 5. MCP 资源/提示词（resources/prompts）暴露。
 6. `train.create` 对标注任务 / 基础模型的存在性校验。
+
+---
+
+## 第三轮：可观测性与自测能力（2026-10-22 夜）
+
+### 新增后端
+
+- `GET /ai/develop/stats?days=7`：今日调用/成功率/平均耗时/待审批 + 最近 N 天趋势 + Top 能力 + 应用与审批计数（`insights.py`，`func.date()` 分组，SQLite/PG 通用）。
+- `GET /ai/develop/apps/{id}/usage`：某应用当日按品类调用次数（与 `app.quota` 一起用于「今日已用」）。
+- `GET /ai/develop/call-logs/export`：按当前筛选导出 CSV（UTF-8 BOM，≤5000 行）。
+- `POST /ai/develop/apps/{id}/try`：管理端能力试调——以应用身份执行一次能力，**跳过审批门禁**但仍校验权限、限流并写审计（`request_path=/try/{code}`）。
+- `GET /ai/develop/call-logs` 新增 `start_time` / `end_time`（`YYYY-MM-DD HH:mm:ss`，非法格式 400）。
+- `train.create` 增补：标注任务 / 基础模型存在性校验（此前只校验数据集）。
+
+### 新增前端
+
+- 调用日志页签顶部：4 张统计卡（`el-card`）+ 7 天迷你柱状趋势 + Top 能力标签（`el-row/el-col`，无图表库依赖）。
+- 日志筛选新增「时间范围」（`el-date-picker` datetimerange）与「导出 CSV」；行点击打开详情抽屉（时间/应用/能力/出海口/状态/耗时/Tokens/路径/错误 + 请求参数 + 结果摘要）。
+- 应用行新增「试调」：选能力（按 `input_schema.required` 自动生成 JSON 模板）→ 发送 → 展示响应/错误，并刷新日志与统计。
+- 应用表单配额项显示「今日已用」，配额改为 2 列网格（避免窄列换行）。
+
+### 验证
+
+- 新增 `tests/test_develop_insights.py`（6 项）：统计字段与计数、时间范围真的生效（未来起始时间返回空）、CSV 头与内容、用量与配额、试调跳过审批且写 `/try/` 审计、未知能力 404 / 无权 403。
+- 真实 UI 走查（1440 + 1024）：统计卡 7 次 / 100% / 12ms、趋势与 Top 能力、详情抽屉、试调真实创建 Agent（响应含 id/agent_name）、配额「今日 6 / 5 / 1」；截图归档 `p2-logs-stats.png`、`p2-log-detail.png`、`p2-try-dialog.png`、`p2-try-result.png`、`p2-app-form-quota.png`。
+
+### 剩余（仍未做）
+
+1. 审批通知与超时自动处理。
+2. 凭证到期提醒（数据已在 `stats.apps.expiring_soon`，UI 未展示）。
+3. MCP 的 resources/prompts 暴露。
+4. 试调参数校验提示可再友好（目前错误以文本回显）。
