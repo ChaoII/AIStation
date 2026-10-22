@@ -56,6 +56,15 @@ export function getWorkspaceItems(params?: { category_id?: number | null; asset_
 
 // ---------- 定时任务 ----------
 
+/** 定时任务执行历史（每次调度/立即执行的成败、耗时、错误与输出摘要）。 */
+export function getCronRuns(cronId: number, limit = 50) {
+  return request({
+    url: `${WS_PATH}/cron/${cronId}/runs`,
+    method: "get",
+    params: { limit },
+  });
+}
+
 /** 触发类型（统一契约，与后端 `TriggerUtil` 一致） */
 export type TriggerType = "cron" | "interval" | "date" | "now";
 

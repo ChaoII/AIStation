@@ -1,6 +1,7 @@
 """AI 工作台服务：分类树 CRUD + 多类型条目聚合。"""
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -91,11 +92,36 @@ async def run_scheduled_workspace_cron(cron_id: int) -> None:
         ):
             return
         target_type, target_id = row.target_type, row.target_id
+        cron_name = row.name or f"定时任务#{cron_id}"
+    # 执行结果落「执行历史」（ai_call_logs, usage=cron + app_id=cron_id）：
+    # 此前只回写 last_run_time，用户只能知道跑过、不知道成败与产出（本次修复）。
+    status, err, reply = "success", None, ""
+    t0 = time.perf_counter()
     try:
-        await WorkspaceService._run_target(target_type, target_id)
+        result = await WorkspaceService._run_target(target_type, target_id)
+        status = str(result.get("status") or "success")
+        err = result.get("error")
+        reply = str(result.get("reply") or "")
     except Exception as exc:  # noqa: BLE001 单次执行失败不抛出，避免污染作业状态
+        status, err = "error", str(exc)
         log.error(f"工作台定时任务 #{cron_id} 执行失败：{exc}")
     finally:
+        latency = int((time.perf_counter() - t0) * 1000)
+        try:
+            from app.plugin.module_ai.overview.service import AiOverviewService
+
+            await AiOverviewService.add_log(
+                cron_name,
+                "cron",
+                latency,
+                status,
+                err,
+                app_id=cron_id,
+                user_id=None,
+                reply_preview=reply or None,
+            )
+        except Exception as log_exc:  # noqa: BLE001 历史写入失败不应影响作业
+            log.warning(f"定时任务执行历史写入失败：{str(log_exc)[:120]}")
         # 只有真正执行过的这一轮才回写 `last_run_time`（被跳过的行不记「刚跑过」）
         await WorkspaceService.write_back_cron_state(cron_id, ran_at=started)
 
@@ -315,6 +341,43 @@ class WorkspaceService:
             rows = (await db.execute(stmt.order_by(AiWorkspaceCronModel.id.desc()))).scalars().all()
             items = [cls._cron_dict(r) for r in rows]
             return {"total": len(items), "items": items}
+
+    @classmethod
+    async def list_cron_runs(cls, cron_id: int, limit: int = 50) -> list[dict]:
+        """定时任务执行历史。
+
+        数据源：`ai_call_logs` 中 `usage="cron"` 且 `app_id=cron_id` 的记录（每次调度
+        /「立即执行」由 `run_scheduled_workspace_cron` 写入），含成败、耗时、错误与
+        输出摘要——解决「只知道在干、不知道干成什么样」。
+        """
+        from app.plugin.module_ai.overview.model import AiCallLogModel
+
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AiCallLogModel)
+                    .where(
+                        AiCallLogModel.usage == "cron",
+                        AiCallLogModel.app_id == cron_id,
+                        AiCallLogModel.is_deleted.is_(False),
+                    )
+                    .order_by(AiCallLogModel.id.desc())
+                    .limit(limit)
+                )
+            ).scalars().all()
+            return [
+                {
+                    "id": r.id,
+                    "created_time": r.created_time.strftime("%Y-%m-%d %H:%M:%S")
+                    if r.created_time
+                    else "",
+                    "result": r.result or "success",
+                    "latency_ms": int(r.latency_ms or 0),
+                    "error": r.error or "",
+                    "reply_preview": r.reply_preview or "",
+                }
+                for r in rows
+            ]
 
     @staticmethod
     def _cron_dict(r: AiWorkspaceCronModel) -> dict:
@@ -624,7 +687,7 @@ class WorkspaceService:
         return True
 
     @classmethod
-    async def _run_target(cls, target_type: str, target_id: int) -> None:
+    async def _run_target(cls, target_type: str, target_id: int) -> dict:
         """执行绑定的资产（三种目标都**真实运行**，不是只记一行日志）。
 
         - workflow：`run_schedule`（引擎直跑，无输入，落运行日志）；
@@ -632,24 +695,59 @@ class WorkspaceService:
           这是唯一不改 agno 链路的做法）。`auth=None` + `session_id=None`：
           不落用户会话（`persist_session_exchange` 无 session_id 直接跳过），
           调用日志照记（`user_id=None`），与 workflow 的调度口径一致。
+
+        返回 `{status, error, reply}`：供 `run_scheduled_workspace_cron` 落执行历史
+        （成败/错误/输出摘要）。此前消费完流即丢弃，用户"只知道在干、不知道干成什么样"。
         """
         if target_type == "workflow":
             from app.plugin.module_ai.workflow.service import AiWorkflowService
 
             await AiWorkflowService.run_schedule(target_id)
-            return
+            return {"status": "success", "error": None, "reply": ""}
         if target_type == "agent":
             from app.plugin.module_ai.agent.service import AiAgentService
 
-            async for _frame in AiAgentService.run_ui_stream(
-                target_id, list(_SCHEDULE_MESSAGES), None
-            ):
-                pass
-            return
+            reply, err = await cls._drain_stream(
+                AiAgentService.run_ui_stream(target_id, list(_SCHEDULE_MESSAGES), None)
+            )
+            return {"status": "error" if err else "success", "error": err, "reply": reply}
         if target_type == "app":
             from app.plugin.module_ai.apps.service import run_app_ui_stream
 
-            async for _frame in run_app_ui_stream(target_id, list(_SCHEDULE_MESSAGES), None):
-                pass
-            return
-        log.warning(f"[workspace] 定时任务目标类型不支持：{target_type}#{target_id}")
+            reply, err = await cls._drain_stream(
+                run_app_ui_stream(target_id, list(_SCHEDULE_MESSAGES), None)
+            )
+            return {"status": "error" if err else "success", "error": err, "reply": reply}
+        msg = f"定时任务目标类型不支持：{target_type}#{target_id}"
+        log.warning(f"[workspace] {msg}")
+        return {"status": "error", "error": msg, "reply": ""}
+
+    @staticmethod
+    async def _drain_stream(stream) -> tuple[str, str | None]:
+        """消费 Agno 原生事件流：累积 RunContent 正文与 RunError 错误（供执行历史）。"""
+        import json as _json
+
+        buf: list[str] = []
+        err: str | None = None
+        async for frame in stream:
+            if not isinstance(frame, str):
+                continue
+            for line in frame.split("\n"):
+                s = line.strip()
+                if not s.startswith("data:"):
+                    continue
+                raw = s[5:].strip()
+                if raw == "[DONE]":
+                    continue
+                try:
+                    obj = _json.loads(raw)
+                except Exception:  # noqa: BLE001 非 JSON 帧忽略
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                ev = obj.get("event")
+                if ev == "RunContent" and isinstance(obj.get("content"), str):
+                    buf.append(obj["content"])
+                elif ev == "RunError":
+                    err = str(obj.get("error") or "运行失败")
+        return "".join(buf).strip(), err

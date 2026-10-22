@@ -117,6 +117,16 @@
                 </span>
                 <div class="cron-card__actions">
                   <el-button
+                    v-hasPerm="'module_ai:cron:query'"
+                    type="primary"
+                    size="small"
+                    link
+                    :icon="Clock"
+                    @click="openHistory(row)"
+                  >
+                    历史
+                  </el-button>
+                  <el-button
                     v-hasPerm="'module_ai:cron:run'"
                     type="warning"
                     size="small"
@@ -233,17 +243,58 @@
         </div>
       </template>
     </EnhancedDialog>
+
+    <!-- 执行历史：每次调度/立即执行的成败、耗时、错误与输出摘要（此前只有「上次运行时间」） -->
+    <EnhancedDialog v-model="historyVisible" :title="historyTitle" width="720px">
+      <el-table
+        v-loading="historyLoading"
+        :data="historyRows"
+        border
+        stripe
+        max-height="420"
+        size="small"
+      >
+        <el-table-column prop="created_time" label="执行时间" width="160" />
+        <el-table-column label="结果" width="90">
+          <template #default="{ row }">
+            <el-tag
+              size="small"
+              effect="light"
+              :type="row.result === 'success' ? 'success' : 'danger'"
+            >
+              {{ row.result === "success" ? "成功" : "失败" }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="耗时" width="90">
+          <template #default="{ row }">{{ (Number(row.latency_ms || 0) / 1000).toFixed(1) }}s</template>
+        </el-table-column>
+        <el-table-column label="错误 / 输出摘要" min-width="320">
+          <template #default="{ row }">
+            <span v-if="row.error" class="cron-history__error">{{ row.error }}</span>
+            <span v-else-if="row.reply_preview" class="cron-history__reply">
+              {{ row.reply_preview }}
+            </span>
+            <span v-else class="cron-history__empty">（无输出）</span>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty :image-size="60" description="暂无执行记录（点「立即执行」或等待调度触发）" />
+        </template>
+      </el-table>
+    </EnhancedDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Delete, Edit, Plus, Search, Timer, VideoPlay } from "@element-plus/icons-vue";
+import { Clock, Delete, Edit, Plus, Search, Timer, VideoPlay } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
 
 import {
   createWorkspaceCron,
   deleteWorkspaceCron,
+  getCronRuns,
   getWorkspaceCronList,
   runWorkspaceCron,
   updateWorkspaceCron,
@@ -359,6 +410,33 @@ async function handleRun(row: WorkspaceCronRow) {
     await loadRows();
   } finally {
     runLoadingId.value = null;
+  }
+}
+
+// ---- 执行历史 ----
+const historyVisible = ref(false);
+const historyLoading = ref(false);
+const historyTitle = ref("执行历史");
+const historyRows = ref<Array<Record<string, unknown>>>([]);
+
+/** 打开执行历史：列出该定时任务每次调度/立即执行的结果。 */
+async function openHistory(row: WorkspaceCronRow) {
+  historyTitle.value = `执行历史 · ${row.name}`;
+  historyRows.value = [];
+  historyVisible.value = true;
+  historyLoading.value = true;
+  try {
+    const res: any = await getCronRuns(row.id);
+    // 拦截器返回 AxiosResponse（res.data = 后端 body）；items 在后端 data 层，
+    // 这里对两种形态都做兼容，避免把对象传给 el-table（会 render 崩溃、空态不显示）。
+    const body = res?.data ?? res;
+    const payload = body?.data ?? body;
+    const items = Array.isArray(payload) ? payload : payload?.items;
+    historyRows.value = Array.isArray(items) ? items : [];
+  } catch {
+    ElMessage.error("执行历史加载失败");
+  } finally {
+    historyLoading.value = false;
   }
 }
 
@@ -683,5 +761,19 @@ async function handleSubmit() {
   flex: 0 0 auto;
   justify-content: flex-end;
   padding-top: 8px;
+}
+
+/* 执行历史弹窗内容样式（唯一类名，避免与页面其它 block 冲突） */
+.cron-history__error {
+  color: var(--el-color-danger);
+  word-break: break-all;
+}
+.cron-history__reply {
+  color: var(--el-text-color-regular);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cron-history__empty {
+  color: var(--el-text-color-placeholder);
 }
 </style>

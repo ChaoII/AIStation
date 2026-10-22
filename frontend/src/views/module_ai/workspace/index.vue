@@ -633,7 +633,7 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
   padding: 16px 18px;
   cursor: pointer;
   background: var(--el-color-white);
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--el-border-color-light);
   border-radius: 10px;
   transition:
     box-shadow 0.2s,

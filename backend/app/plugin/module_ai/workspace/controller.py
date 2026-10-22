@@ -86,6 +86,17 @@ async def cron_list(
     return SuccessResponse(data=data, msg="查询成功")
 
 
+@WorkspaceRouter.get("/cron/{cron_id}/runs", summary="定时任务执行历史")
+async def cron_runs(
+    cron_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:cron:query"]))],
+    limit: int = 50,
+) -> JSONResponse:
+    """执行历史：每次调度/立即执行的结果（成败、耗时、错误、输出摘要）。"""
+    rows = await WorkspaceService.list_cron_runs(cron_id, limit=max(1, min(limit, 200)))
+    return SuccessResponse(data={"total": len(rows), "items": rows}, msg="查询成功")
+
+
 @WorkspaceRouter.post("/trigger/preview", summary="触发预览（人话描述 + 下次运行时间）")
 async def trigger_preview(
     data: Annotated[dict, Body(description="trigger 与 trigger_args")],
