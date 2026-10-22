@@ -463,3 +463,122 @@ async def save_notify_config(
         except Exception as e:  # noqa: BLE001
             log.warning(f"[approvals] 通知配置缓存同步失败（忽略）: {e}")
     return await get_notify_config()
+
+
+async def review_one(
+    row: AiIntegrationApprovalModel,
+    *,
+    approve: bool,
+    note: str | None,
+    reviewer_id: int | None,
+    redis=None,
+) -> tuple[dict, str]:
+    """审批**单条**（单条端点与批量端点共用的核心语义）。
+
+    - 拒绝 → 只记状态与意见；
+    - 批准 → 以原应用身份执行被拦截的调用并回写结果；执行失败**不抛**，
+      置 ``failed`` 并把错误带回调用方（审批动作本身算成功）；
+    - 两条路径都写审计（``method=REST``，``request_path=/approvals/{id}``）。
+
+    Returns:
+        ``(审批 dict, 中文结果消息)``。
+
+    Raises:
+        CustomException: 记录不存在（404）/ 已处理（400）/ 应用不存在或停用。
+    """
+    from .openapi import audit_call, invoke_capability
+
+    approval_id = row.id
+    if not approve:
+        result = await ApprovalService.mark_rejected(
+            approval_id, reviewer_id=reviewer_id, note=note
+        )
+        ctx = await ApprovalService.app_context(row.app_id)
+        await audit_call(
+            ctx,
+            category=row.category,
+            capability=row.capability,
+            method="REST",
+            status="rejected",
+            error=(note or "管理员拒绝")[:255],
+            request_path=f"/approvals/{approval_id}",
+        )
+        return result, "已拒绝"
+
+    ctx = await ApprovalService.app_context(row.app_id)
+    error: str | None = None
+    executed: object = None
+    try:
+        executed = await invoke_capability(
+            ctx,
+            row.capability,
+            row.payload or {},
+            method="REST",
+            redis=redis,
+            request_path=f"/approvals/{approval_id}",
+            bypass_approval=True,
+        )
+    except CustomException as e:  # noqa: PERF203 - 执行失败也要回写状态
+        error = e.msg
+    except Exception as e:  # noqa: BLE001 - 兜底：审批动作不能 500
+        error = str(e)
+
+    result = await ApprovalService.mark_executed(
+        approval_id, reviewer_id=reviewer_id, note=note, result=executed, error=error
+    )
+    await audit_call(
+        ctx,
+        category=row.category,
+        capability=row.capability,
+        method="REST",
+        status="failed" if error else "approved",
+        error=error,
+        request_path=f"/approvals/{approval_id}",
+    )
+    return result, (f"已批准，执行失败：{error}" if error else "已批准并执行完成")
+
+
+async def review_batch(
+    ids: list[int],
+    *,
+    approve: bool,
+    note: str | None,
+    reviewer_id: int | None,
+    redis=None,
+) -> dict:
+    """批量审批（逐条独立处理，单条失败不中断）。
+
+    只允许批量**批准**（拒绝仍是单条动作，避免误操作放大）；上限 50 条/次。
+
+    Returns:
+        ``{ok: [审批 dict...], failed: [{id, msg}], total: N}``。
+    """
+    if not approve:
+        raise CustomException(msg="批量仅支持批准，请逐条拒绝", code=10400, status_code=400)
+    if not ids:
+        raise CustomException(msg="未选择审批记录", code=10400, status_code=400)
+    if len(ids) > 50:
+        raise CustomException(msg="单次批量最多 50 条", code=10400, status_code=400)
+
+    ok: list[dict] = []
+    failed: list[dict] = []
+    seen: set[int] = set()
+    for approval_id in ids:
+        if approval_id in seen:
+            continue
+        seen.add(approval_id)
+        try:
+            row = await ApprovalService.get(approval_id)
+            if row is None:
+                raise CustomException(msg="审批记录不存在", code=10404, status_code=404)
+            if row.status != "pending":
+                raise CustomException(msg="该审批已处理", code=10400, status_code=400)
+            result, _msg = await review_one(
+                row, approve=True, note=note, reviewer_id=reviewer_id, redis=redis
+            )
+            ok.append(result)
+        except CustomException as e:
+            failed.append({"id": approval_id, "msg": e.msg})
+        except Exception as e:  # noqa: BLE001 - 单条异常归入明细
+            failed.append({"id": approval_id, "msg": str(e)})
+    return {"ok": ok, "failed": failed, "total": len(seen)}

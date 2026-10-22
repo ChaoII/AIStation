@@ -408,3 +408,40 @@
 
 - 三文件合并测试 **37 passed**（新增：通知配置往返与超长 400、用量 CSV 表头与行、MCP 概览 shape 与计数）；ruff / eslint / prettier / vue-tsc 全绿。
 - UI 走查（1440）：MCP 统计卡非零 + 趋势柱、通知配置弹窗（通道多选 + JSON 配置 + 提示）、用量页导出按钮与数据行；截图 `95-mcp-stats` / `96-notify-config` / `97-usage-export`。
+
+---
+
+## 第八轮：试调结构化、批量审批、能力下钻、SDK 加固（2026-10-23）
+
+### ① 试调结果解读
+
+- 前端把试调响应解析为结构化 `el-descriptions`（白名单键映射：ID/任务 ID/名称/回复/会话/条数/状态/启用/归属应用等；数组显示条数、布尔显示是/否），下面保留「原始响应」JSON。
+- 错误仍按 `错误 [错误码] 文案` 展示；打开/出错时清空结构化状态。
+
+### ② 审批批量批准
+
+- 后端 `POST /ai/develop/approvals/batch-review`（≤50 条/次，仅允许批量**批准**，拒绝仍逐条防误操作放大）：单条语义抽到 `approvals.review_one`（单条端点与批量共用），逐条独立执行、单条失败进 `failed` 明细不中断；已处理/不存在也归入明细。
+- 前端审批表加选择列（`selectable` 只放行 pending）+ 「批量批准（N）」按钮 + 二次确认（写明"逐条立即执行、不可撤销"），成功后清选中并刷新。
+
+### ③ 日志按能力下钻
+
+- 后端 `call-logs` 新增 `capability` 精确过滤参数；
+- 前端筛选区加「能力」下拉（选项来自能力清单，logs 页签按需加载清单）；Top 能力标签改为**点击下钻**（设筛选 + 立即查询，hover 主色提示），标签标题改为「Top 能力（点击下钻）」。
+
+### ④ 嵌入 SDK destroy 加固（附更正）
+
+- **更正上轮说法**：SDK 里 `destroy` 已存在且正确（移除 message 监听 + iframe）；我此前"当前无法解绑监听"是凭印象的错误判断，未读代码。
+- 实际缺口加固：`destroyed` 标志 + 幂等（重复调用安全）；`setToken/sendMessage/resize` 销毁后显式早退；`handlers = {}` 释放宿主回调引用。
+- 新增**行为测试** `backend/tests/fixtures/embed_sdk_behavior.js`（node 执行：mock window/document/container，覆盖 init → 事件派发 → destroy → 幂等 → 销毁后 API 不发 postMessage）+ Python 侧静态兜底断言（无 node 时 skip）。
+
+### 过程事故与修复（教训）
+
+- 用 Python 脚本做 `text[:start] + new_block + text[end:]` 大段替换时**只验证了锚点存在、没验证区间语义**：`end` 锚落在了 review 函数与 call-logs 之间，连带删掉 11 个 CRUD/tokens 路由与 3 条 import（create 路由 404 才暴露）。
+- 修复方式：以 `git HEAD` 为唯一真源，先列出**缺失函数清单**（grep 对比），再按行区间补回缺失段，最后补齐 import、跑 ruff + 全部 develop 测试（63 passed）。
+- 教训：脚本化大段改文件后，必须**比对函数/路由清单与 HEAD**，不能只信 `import ok`（FastAPI 路由注册在运行时才解析注解，import 通过也可能少路由）。
+
+### 验证
+
+- 后端新增用例：批量批准逐条执行/重复处理进 failed/边界（空、>50、批量拒绝）、call-logs 能力过滤——审批+概览合计 **28 passed**；SDK 3 passed（node 行为 + 静态）；全量另行报告。
+- UI 走查（1440）：「批量批准（2）」按钮激活 + 全选仅 pending；Top 能力下钻（10 条 → 筛 agent.create 后 4 条、下拉回显）；试调结果表（ID/名称/启用/归属应用）+ 原始响应；截图 `p2-batch-approve` / `p2-top-tag` / `p2-drill-capability` / `p2-try-result`。
+- 期间后端进程无 traceback 退出过一次（重启后正常），未复现；与本功能无关但值得留意。

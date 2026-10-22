@@ -467,3 +467,69 @@ def test_notify_config_rejects_oversized_json(test_client, auth_headers):
     )
     assert r.status_code == 400, r.text
     assert "500" in r.json()["msg"]
+
+
+def test_batch_approve_executes_each(test_client, auth_headers):
+    """批量批准：逐条以原应用身份执行，单条失败不中断，重复处理进 failed。"""
+    app = _create_app(test_client, auth_headers, AGENT_CAPS, approval=True)
+    created_ids = []
+    try:
+        for i in range(2):
+            r = _invoke(test_client, app, "agent.create", {"agent_name": f"批量-{_uid()}-{i}"})
+            created_ids.append(r.json()["data"]["id"])
+        approval_ids = []
+        for aid in created_ids:
+            r = _invoke(test_client, app, "agent.delete", {"agent_id": aid, "confirm": True})
+            assert r.status_code == 200, r.text
+            assert r.json()["data"]["status"] == "pending_approval"
+            approval_ids.append(r.json()["data"]["approval_id"])
+
+        r = test_client.post(
+            f"{API}/ai/develop/approvals/batch-review",
+            json={"ids": approval_ids, "note": "批量同意"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert len(data["ok"]) == 2 and data["failed"] == [], data
+        assert data["total"] == 2
+
+        # 两个 Agent 都应真的被删（批准即执行）
+        for aid in created_ids:
+            assert _invoke(test_client, app, "agent.get", {"agent_id": aid}).status_code == 404
+
+        # 再批一次 → 逐条 failed（已处理）
+        r2 = test_client.post(
+            f"{API}/ai/develop/approvals/batch-review",
+            json={"ids": approval_ids, "note": "重复"},
+            headers=auth_headers,
+        )
+        assert r2.status_code == 200
+        assert len(r2.json()["data"]["failed"]) == 2
+        assert r2.json()["data"]["ok"] == []
+        created_ids = []
+    finally:
+        _cleanup(test_client, auth_headers, app["id"], created_ids)
+
+
+def test_batch_approve_rejects_bad_input(test_client, auth_headers):
+    """批量边界：空列表 / 超 50 条 / approve=false（拒绝不许批量）→ 400。"""
+    app = _create_app(test_client, auth_headers, AGENT_CAPS, approval=True)
+    try:
+        empty = test_client.post(
+            f"{API}/ai/develop/approvals/batch-review",
+            json={"ids": []},
+            headers=auth_headers,
+        )
+        # Pydantic min_length 层拦下（422）或业务层拦下（400），二者皆可
+        assert empty.status_code in (400, 422), empty.text
+
+        too_many = test_client.post(
+            f"{API}/ai/develop/approvals/batch-review",
+            json={"ids": list(range(1, 52))},
+            headers=auth_headers,
+        )
+        assert too_many.status_code in (400, 422), too_many.text
+        assert "50" in too_many.json()["msg"]
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])

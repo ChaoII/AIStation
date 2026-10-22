@@ -59,6 +59,11 @@ export function reviewApproval(id: number, data: { approve: boolean; note?: stri
   return request({ url: `${API_PATH}/approvals/${id}/review`, method: "post", data });
 }
 
+/** 批量批准（≤50 条/次，逐条独立执行；拒绝请逐条操作）。 */
+export function batchReviewApprovals(data: { ids: number[]; note?: string }) {
+  return request({ url: `${API_PATH}/approvals/batch-review`, method: "post", data });
+}
+
 /** 调用概览（今日/趋势/Top 能力/应用与审批计数）。 */
 export function getDevelopStats(days = 7) {
   return request({ url: `${API_PATH}/stats`, method: "get", params: { days } });

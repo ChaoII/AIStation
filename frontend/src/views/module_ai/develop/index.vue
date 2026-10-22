@@ -194,13 +194,15 @@
               <span class="spark__label">{{ day.date.slice(5) }}</span>
             </div>
             <div v-if="stats.top_capabilities.length" class="spark-row__top">
-              <span class="spark-row__label">Top 能力</span>
+              <span class="spark-row__label">Top 能力（点击下钻）</span>
               <el-tag
                 v-for="item in stats.top_capabilities"
                 :key="item.capability + item.category"
                 size="small"
                 effect="plain"
-                class="cap-tag"
+                class="cap-tag cap-tag--drill"
+                :title="`筛选该能力的日志：${item.capability}`"
+                @click="drillDownCapability(item.capability)"
               >
                 {{ item.capability }} · {{ item.calls }}
               </el-tag>
@@ -277,6 +279,23 @@
                   {{ q.label }}
                 </el-button>
               </el-button-group>
+            </el-form-item>
+            <el-form-item label="能力">
+              <el-select
+                v-model="logFilter.capability"
+                placeholder="全部"
+                clearable
+                filterable
+                style="width: 170px"
+                @change="loadLogs()"
+              >
+                <el-option
+                  v-for="cap in capabilities"
+                  :key="cap.code"
+                  :label="cap.code"
+                  :value="cap.code"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item>
               <el-button :icon="Search" @click="loadLogs()">查询</el-button>
@@ -542,6 +561,14 @@
               </el-tag>
             </div>
             <el-button
+              v-hasPerm="['module_ai:develop:approve']"
+              type="primary"
+              :disabled="!approvalSelection.length"
+              @click="onBatchApprove"
+            >
+              批量批准（{{ approvalSelection.length }}）
+            </el-button>
+            <el-button
               v-hasPerm="['module_ai:develop:update']"
               :icon="Setting"
               @click="openNotifyCfg"
@@ -550,8 +577,21 @@
             </el-button>
           </div>
 
-          <el-table v-loading="approvalLoading" :data="approvals" row-key="id" border stripe>
-            <el-table-column label="申请时间" width="165">
+          <el-table
+            ref="approvalTableRef"
+            v-loading="approvalLoading"
+            :data="approvals"
+            row-key="id"
+            border
+            stripe
+            @selection-change="(rows: any[]) => (approvalSelection = rows)"
+          >
+            <el-table-column
+              type="selection"
+              width="46"
+              :selectable="(row: any) => row.status === 'pending'"
+            />
+            <el-table-column label="申请时间" width="155">
               <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
             </el-table-column>
             <el-table-column prop="appid" label="AppID" width="130" show-overflow-tooltip />
@@ -568,13 +608,13 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="审批时间" width="165">
+            <el-table-column label="审批时间" width="155">
               <template #default="{ row }">{{ fmtDateTime(row.reviewed_at, "—") }}</template>
             </el-table-column>
             <el-table-column
               prop="review_note"
               label="审批意见"
-              min-width="140"
+              min-width="120"
               show-overflow-tooltip
             />
             <el-table-column label="操作" width="190" :fixed="fixedAction">
@@ -830,7 +870,21 @@
           />
         </el-form-item>
       </el-form>
-      <template v-if="tryDialog.resultText">
+      <template v-if="tryDialog.resultObj">
+        <p class="doc-card__desc">结果</p>
+        <el-descriptions :column="2" border size="small" class="try-result">
+          <el-descriptions-item
+            v-for="field in tryDialog.resultFields"
+            :key="field.label"
+            :label="field.label"
+          >
+            {{ field.value }}
+          </el-descriptions-item>
+        </el-descriptions>
+        <p class="doc-card__desc">原始响应</p>
+        <pre class="doc-code">{{ tryDialog.resultText }}</pre>
+      </template>
+      <template v-else-if="tryDialog.resultText">
         <p class="doc-card__desc">响应</p>
         <pre class="doc-code">{{ tryDialog.resultText }}</pre>
       </template>
@@ -1113,6 +1167,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Download, Plus, Search, CopyDocument, Setting } from "@element-plus/icons-vue";
 import { useWindowSize } from "@vueuse/core";
 import {
+  batchReviewApprovals,
   createApp,
   deleteApp,
   exportCallLogs,
@@ -1460,6 +1515,7 @@ const logTotal = ref(0);
 const logPage = ref(1);
 const logPageSize = ref(10);
 const logFilter = reactive({
+  capability: "",
   app_id: undefined as number | undefined,
   category: "",
   method: "",
@@ -1568,6 +1624,7 @@ async function onExportLogs() {
       status: logFilter.status || undefined,
       start_time: logFilter.range?.[0] || undefined,
       end_time: logFilter.range?.[1] || undefined,
+      capability: logFilter.capability || undefined,
     };
     const res = await exportCallLogs(params);
     downloadBlob(res, `ai-call-logs-${Date.now()}.csv`);
@@ -1599,6 +1656,12 @@ async function onExportUsage() {
   }
 }
 
+//: Top 能力标签下钻：设能力筛选并立即查询。
+function drillDownCapability(code: string) {
+  logFilter.capability = code;
+  loadLogs();
+}
+
 // ---- 能力试调 ----
 const tryDialog = reactive({
   visible: false,
@@ -1606,8 +1669,46 @@ const tryDialog = reactive({
   capability: "",
   payloadText: "{}",
   resultText: "",
+  resultObj: null as any,
+  resultFields: [] as { label: string; value: string }[],
   loading: false,
 });
+
+//: 试调结果的关键字段（白名单映射，其余留在「原始响应」里）。
+const TRY_RESULT_KEYS: [string, string][] = [
+  ["id", "ID"],
+  ["task_id", "任务 ID"],
+  ["deleted", "已删除 ID"],
+  ["agent_name", "名称"],
+  ["name", "名称"],
+  ["reply", "回复"],
+  ["sid", "会话标识"],
+  ["session_id", "会话 ID"],
+  ["total", "条数"],
+  ["status", "状态"],
+  ["enabled", "启用"],
+  ["source_app_id", "归属应用"],
+  ["items", "列表条数"],
+];
+
+function summarizeResult(obj: any): { label: string; value: string }[] {
+  if (!obj || typeof obj !== "object") return [];
+  const out: { label: string; value: string }[] = [];
+  for (const [key, label] of TRY_RESULT_KEYS) {
+    const value = obj[key];
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      out.push({ label, value: `${value.length} 条` });
+    } else if (typeof value === "boolean") {
+      out.push({ label, value: value ? "是" : "否" });
+    } else if (typeof value === "object") {
+      out.push({ label, value: JSON.stringify(value) });
+    } else {
+      out.push({ label, value: String(value) });
+    }
+  }
+  return out;
+}
 
 async function openTry(row: any) {
   if (!capabilities.value.length) await loadCapabilities();
@@ -1615,6 +1716,8 @@ async function openTry(row: any) {
   tryDialog.capability = "";
   tryDialog.payloadText = "{}";
   tryDialog.resultText = "";
+  tryDialog.resultObj = null;
+  tryDialog.resultFields = [];
   tryDialog.visible = true;
 }
 
@@ -1651,12 +1754,17 @@ async function submitTry() {
       capability: tryDialog.capability,
       payload,
     });
-    tryDialog.resultText = prettyJson(res.data?.data ?? res.data);
+    const data = res.data?.data ?? res.data;
+    tryDialog.resultObj = data && typeof data === "object" ? data : null;
+    tryDialog.resultFields = summarizeResult(tryDialog.resultObj);
+    tryDialog.resultText = prettyJson(data);
     ElMessage.success("调用成功");
     await loadLogs(false);
     await loadStats();
   } catch (e: any) {
     const code = e?.code ? `[${e.code}] ` : "";
+    tryDialog.resultObj = null;
+    tryDialog.resultFields = [];
     tryDialog.resultText = `错误 ${code}${e?.msg || "调用失败"}`;
   } finally {
     tryDialog.loading = false;
@@ -1672,6 +1780,7 @@ async function loadLogs(resetPage = true) {
       category: logFilter.category || undefined,
       method: logFilter.method || undefined,
       status: logFilter.status || undefined,
+      capability: logFilter.capability || undefined,
       start_time: logFilter.range?.[0] || undefined,
       end_time: logFilter.range?.[1] || undefined,
       page_no: logPage.value,
@@ -1766,6 +1875,39 @@ const approvalPage = ref(1);
 const approvalPageSize = ref(10);
 const approvalLoading = ref(false);
 const approvalFilter = reactive({ status: undefined as string | undefined });
+const approvalTableRef = ref();
+const approvalSelection = ref<any[]>([]);
+
+async function onBatchApprove() {
+  const ids = approvalSelection.value.map((r) => r.id);
+  if (!ids.length) return;
+  try {
+    await ElMessageBox.confirm(
+      `将批量批准 ${ids.length} 条调用申请，并逐条**立即以对应应用身份执行**（可能产生真实资源变更，不可撤销）。`,
+      `批准并执行 ${ids.length} 条？`,
+      { type: "warning", confirmButtonText: "批准并执行", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    const res = await batchReviewApprovals({ ids });
+    const data = res.data?.data || { ok: [], failed: [] };
+    const failed = (data.failed || []) as { id: number; msg: string }[];
+    if (failed.length) {
+      ElMessage.warning(
+        `已批准 ${data.ok?.length || 0} 条，失败 ${failed.length} 条：${failed[0]?.msg || ""}`
+      );
+    } else {
+      ElMessage.success(res.data?.msg || `已批准 ${data.ok?.length || 0} 条`);
+    }
+    approvalTableRef.value?.clearSelection();
+    await loadApprovals(false);
+    await loadStats();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "批量处理失败");
+  }
+}
 const approvalDetail = reactive({ visible: false, row: null as any });
 
 function approvalStatusType(status?: string) {
@@ -1934,6 +2076,7 @@ async function saveNotifyCfg() {
 function onTabChange(name: string | number) {
   const key = String(name);
   if (key === "logs") {
+    if (!capabilities.value.length) loadCapabilities();
     loadLogs(false);
     loadStats();
   } else if (key === "mcp") {
@@ -2281,6 +2424,19 @@ onMounted(() => {
 
 .log-table :deep(.el-table__row) {
   cursor: pointer;
+}
+
+.cap-tag--drill {
+  cursor: pointer;
+}
+
+.cap-tag--drill:hover {
+  color: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+}
+
+.try-result {
+  width: 100%;
 }
 
 .quota-item__usage {

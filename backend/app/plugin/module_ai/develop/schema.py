@@ -97,3 +97,10 @@ class NotifyConfigSchema(BaseModel):
 
     channels: list[str] = Field(default_factory=list, description="启用的通道（email/webhook/sms）")
     configs: dict = Field(default_factory=dict, description="{通道: JSON 对象}")
+
+
+class ApprovalBatchReviewSchema(BaseModel):
+    """批量批准入参（拒绝请逐条操作）。"""
+
+    ids: list[int] = Field(..., min_length=1, max_length=50, description="审批记录 ID 列表（≤50）")
+    note: str | None = Field(default=None, max_length=255, description="审批意见（可选）")

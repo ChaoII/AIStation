@@ -383,3 +383,29 @@ def test_usage_report_csv_export(test_client, auth_headers):
         assert "近7天" in text_body
     finally:
         _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_call_logs_capability_filter(test_client, auth_headers):
+    """日志能力下钻：capability 精确过滤只回该能力的调用。"""
+    app = _create_app(test_client, auth_headers)
+    try:
+        _invoke(test_client, app, "agent.list", {})
+        _invoke(test_client, app, "agent.create", {"agent_name": f"下钻-{_uid()}"})
+        _invoke(test_client, app, "agent.list", {})
+
+        only_list = test_client.get(
+            f"{API}/ai/develop/call-logs",
+            params={"app_id": app["id"], "capability": "agent.list", "page_size": 50},
+            headers=auth_headers,
+        ).json()["data"]
+        assert only_list["total"] == 2, only_list
+        assert all(i["capability"] == "agent.list" for i in only_list["items"])
+
+        only_create = test_client.get(
+            f"{API}/ai/develop/call-logs",
+            params={"app_id": app["id"], "capability": "agent.create", "page_size": 50},
+            headers=auth_headers,
+        ).json()["data"]
+        assert only_create["total"] == 1
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])

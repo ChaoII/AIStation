@@ -99,6 +99,7 @@
     }
 
     var token = opts.token;
+    var destroyed = false;
     iframe.src = buildSrc(token);
     el.appendChild(iframe);
 
@@ -145,24 +146,29 @@
     return {
       /** 更替访问令牌（过期续期用）：嵌入页会自动重取 meta 并保持会话。 */
       setToken: function (next) {
-        if (!next) return;
+        if (destroyed || !next) return;
         token = next;
         sendCommand("setToken", { token: next });
       },
       /** 以宿主身份追加一条用户消息。 */
       sendMessage: function (text) {
-        if (!text) return;
+        if (destroyed || !text) return;
         sendCommand("sendMessage", { text: String(text) });
       },
       /** 调整 iframe 尺寸（像素）。 */
       resize: function (width, height) {
+        if (destroyed) return;
         if (width) iframe.style.width = Number(width) + "px";
         if (height) iframe.style.height = Number(height) + "px";
       },
-      /** 销毁实例并移除 iframe。 */
+      /** 销毁实例并移除 iframe（幂等：重复调用安全）。 */
       destroy: function () {
+        if (destroyed) return;
+        destroyed = true;
         global.removeEventListener("message", onMessage);
         if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        // 释放宿主注册的回调引用（长驻页面多次 init/destroy 时不残留闭包）
+        handlers = {};
       },
       /** 订阅上行事件，返回取消订阅函数。 */
       on: function (event, cb) {

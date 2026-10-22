@@ -37,7 +37,7 @@ from app.plugin.module_ai.streaming import ui_stream_response
 
 # 导入 handler 包即注册全部开放能力（REST 与 MCP 共用注册表）。
 from . import handlers as _handlers  # noqa: F401
-from .approvals import ApprovalService
+from .approvals import ApprovalService, review_one
 from .auth import AppContext, EmbedContext, get_app_api_auth, get_embed_ctx, require_app_perm
 from .capabilities import permissions_by_category
 from .embed import EmbedService
@@ -46,9 +46,10 @@ from .model import (
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
-from .openapi import audit_call, invoke_capability
+from .openapi import invoke_capability
 from .registry import all_capabilities, capabilities_for, to_public_dict
 from .schema import (
+    ApprovalBatchReviewSchema,
     ApprovalReviewSchema,
     CapabilityInvokeSchema,
     CapabilityTrySchema,
@@ -338,8 +339,8 @@ async def develop_approval_review(
 ) -> JSONResponse:
     """批准 → 以**原应用身份**执行被拦截的调用并把结果写回审批行；拒绝 → 只记意见。
 
-    执行失败不抛给管理员（审批动作本身已成功），而是把状态置为 ``failed`` 并回传错误，
-    便于在审批列表里看到真实结果。
+    核心语义在 ``approvals.review_one``（与批量审批共用）；执行失败不抛给管理员，
+    状态置 ``failed`` 并回传错误，便于在列表里看到真实结果。
     """
     row = await ApprovalService.get(approval_id)
     if row is None:
@@ -348,55 +349,36 @@ async def develop_approval_review(
     if row.status != "pending":
         raise CustomException(msg="该审批已处理", code=10400, status_code=400)
     reviewer_id = getattr(getattr(auth, "user", None), "id", None)
-    ctx = await ApprovalService.app_context(row.app_id)
-
-    if not data.approve:
-        result = await ApprovalService.mark_rejected(
-            approval_id, reviewer_id=reviewer_id, note=data.note
-        )
-        await audit_call(
-            ctx,
-            category=row.category,
-            capability=row.capability,
-            method="REST",
-            status="rejected",
-            error=(data.note or "管理员拒绝")[:255],
-            request_path=f"/approvals/{approval_id}",
-        )
-        return SuccessResponse(data=result, msg="已拒绝")
-
-    error: str | None = None
-    executed: object = None
-    try:
-        executed = await invoke_capability(
-            ctx,
-            row.capability,
-            row.payload or {},
-            method="REST",
-            redis=getattr(request.app.state, "redis", None),
-            request_path=f"/approvals/{approval_id}",
-            bypass_approval=True,
-        )
-    except CustomException as e:  # noqa: PERF203 - 执行失败也要回写状态
-        error = e.msg
-    except Exception as e:  # noqa: BLE001 - 兜底：审批动作不能 500
-        error = str(e)
-
-    result = await ApprovalService.mark_executed(
-        approval_id, reviewer_id=reviewer_id, note=data.note, result=executed, error=error
+    result, msg = await review_one(
+        row,
+        approve=data.approve,
+        note=data.note,
+        reviewer_id=reviewer_id,
+        redis=getattr(request.app.state, "redis", None),
     )
-    await audit_call(
-        ctx,
-        category=row.category,
-        capability=row.capability,
-        method="REST",
-        status="failed" if error else "approved",
-        error=error,
-        request_path=f"/approvals/{approval_id}",
+    return SuccessResponse(data=result, msg=msg)
+
+
+@DevelopRouter.post("/approvals/batch-review", summary="批量批准审批")
+async def develop_approvals_batch_review(
+    data: ApprovalBatchReviewSchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:approve"]))],
+) -> JSONResponse:
+    """批量批准（≤50 条/次，逐条独立执行，单条失败不中断）。拒绝请逐条操作。"""
+    from .approvals import review_batch
+
+    reviewer_id = getattr(getattr(auth, "user", None), "id", None)
+    result = await review_batch(
+        data.ids,
+        approve=True,
+        note=data.note,
+        reviewer_id=reviewer_id,
+        redis=getattr(request.app.state, "redis", None),
     )
-    return SuccessResponse(
-        data=result, msg=f"已批准，执行失败：{error}" if error else "已批准并执行完成"
-    )
+    failed_n = len(result["failed"])
+    msg = f"已批准 {len(result['ok'])} 条" + (f"，失败 {failed_n} 条" if failed_n else "")
+    return SuccessResponse(data=result, msg=msg)
 
 
 # ---------------------------------------------------------------------- #
@@ -544,12 +526,21 @@ async def develop_call_logs(
     status: Annotated[str | None, Query(description="按状态过滤 success/failed/denied/pending")] = None,
     start_time: Annotated[str | None, Query(description="起始时间 YYYY-MM-DD HH:mm:ss")] = None,
     end_time: Annotated[str | None, Query(description="结束时间 YYYY-MM-DD HH:mm:ss")] = None,
+    capability: Annotated[str | None, Query(description="按能力码精确过滤（下钻）")] = None,
     page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
 ) -> JSONResponse:
     return SuccessResponse(
         data=await _query_call_logs(
-            app_id, category, method, status, page_no, page_size, start_time, end_time
+            app_id,
+            category,
+            method,
+            status,
+            page_no,
+            page_size,
+            start_time,
+            end_time,
+            capability,
         ),
         msg="查询成功",
     )
@@ -773,6 +764,7 @@ async def _query_call_logs(
     page_size: int,
     start_time: str | None = None,
     end_time: str | None = None,
+    capability: str | None = None,
 ) -> dict:
     """按 app_id/category/method/status 过滤调用日志，分页返回。"""
     page_no = max(int(page_no or 1), 1)
@@ -786,6 +778,8 @@ async def _query_call_logs(
         wheres.append(AiIntegrationCallLogModel.method == method)
     if status:
         wheres.append(AiIntegrationCallLogModel.status == status)
+    if capability:
+        wheres.append(AiIntegrationCallLogModel.capability == capability)
     # 时间范围（"YYYY-MM-DD HH:mm:ss"，本地 naive 时间，与写入口径一致）
     for raw, op in ((start_time, "ge"), (end_time, "le")):
         if not raw:
