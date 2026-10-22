@@ -74,6 +74,31 @@ export function getUsageReport(days = 7) {
   return request({ url: `${API_PATH}/usage-report`, method: "get", params: { days } });
 }
 
+/** 审批通知配置：读（开关 + 各通道 JSON）。 */
+export function getNotifyConfig() {
+  return request({ url: `${API_PATH}/notify-config`, method: "get" });
+}
+
+/** 保存审批通知配置。 */
+export function saveNotifyConfig(data: { channels: string[]; configs: Record<string, any> }) {
+  return request({ url: `${API_PATH}/notify-config`, method: "put", data });
+}
+
+/** 导出用量报告 CSV（返回 blob）。 */
+export function exportUsageReport(days = 7) {
+  return request({
+    url: `${API_PATH}/usage-report/export`,
+    method: "get",
+    params: { days },
+    responseType: "blob",
+  });
+}
+
+/** MCP 会话概览（近 N 天趋势 + 汇总）。 */
+export function getMcpStats(days = 7) {
+  return request({ url: `${API_PATH}/mcp-stats`, method: "get", params: { days } });
+}
+
 /** 导出调用日志 CSV（返回 blob）。 */
 export function exportCallLogs(params?: any) {
   return request({

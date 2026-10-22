@@ -295,3 +295,38 @@ def test_mcp_initialize_advertises_standard_capabilities(test_client, auth_heade
         assert r.json()["result"]["serverInfo"]["name"] == "aistation-ai-integration"
     finally:
         _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_mcp_stats_trend_and_totals(test_client, auth_headers):
+    """MCP 概览：握手+两次工具调用后，sessions/tool_calls 计入，趋势按天。"""
+    app = _create_app(test_client, auth_headers, AGENT_CAPS)
+    try:
+        session_id = _initialize(test_client, app)
+        _rpc(test_client, app, "tools/list", session_id=session_id)
+        _rpc(
+            test_client,
+            app,
+            "tools/call",
+            {"name": "agent_create", "arguments": {"agent_name": f"统计-{_uid()}"}},
+            session_id=session_id,
+        )
+
+        r = test_client.get(
+            f"{API}/ai/develop/mcp-stats", params={"days": 7}, headers=auth_headers
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["days"] == 7
+        assert len(data["series"]) == 7
+        assert {s["date"] for s in data["series"]}  # 每天都有 key（空天补 0）
+        assert data["total"]["sessions"] >= 1
+        assert data["total"]["tool_calls"] >= 1
+        assert data["total"]["avg_duration_s"] >= 0
+        assert all(
+            {"date", "sessions", "tool_calls"} <= set(s) for s in data["series"]
+        )
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/agents/delete", json=[], headers=auth_headers
+        )
+        _cleanup(test_client, auth_headers, app["id"])

@@ -252,14 +252,11 @@ async def _notify_external(row: AiIntegrationApprovalModel) -> None:
       基础凭证沿用告警模块的 ``notify_smtp_*`` / ``notify_webhook_*`` 参数；
     - 单通道失败只记 warning，不影响站内通知与主流程。
     """
-    from app.config.setting import settings
     from app.utils.notification import _send_email, _send_sms, _send_webhook, load_params
 
-    channels = [
-        c.strip().lower()
-        for c in (settings.APPROVAL_NOTIFY_CHANNELS or "").split(",")
-        if c.strip().lower() in _EXTERNAL_CHANNELS
-    ]
+    async with async_db_session() as db:
+        params = await load_params(db, "ai_approval_notify_channels")
+        channels = _parse_channels(params.get("ai_approval_notify_channels"))
     if not channels:
         return
     senders = {"email": _send_email, "webhook": _send_webhook, "sms": _send_sms}
@@ -350,3 +347,119 @@ async def expire_stale_approvals(hours: int | None = None) -> int:
         except Exception:  # noqa: BLE001
             continue
     return len(expired_ids)
+
+
+#: 通道中文名（配置弹窗下拉/表单展示）
+CHANNEL_LABELS = {"email": "邮件", "webhook": "Webhook", "sms": "短信"}
+
+#: 系统参数键：通道开关（逗号串）
+_CHANNELS_KEY = "ai_approval_notify_channels"
+
+
+def _parse_channels(raw: str | None) -> list[str]:
+    """解析通道开关（逗号串，可为空；只认白名单）。"""
+    from app.config.setting import settings
+
+    value = raw if isinstance(raw, str) and raw.strip() else settings.APPROVAL_NOTIFY_CHANNELS
+    return [
+        c.strip().lower()
+        for c in (value or "").split(",")
+        if c.strip().lower() in _EXTERNAL_CHANNELS
+    ]
+
+
+async def get_notify_config() -> dict:
+    """读取审批通知配置：开关（params 优先，回落 env）+ 各通道 JSON 配置。
+
+    配置值存在系统参数 ``ai_approval_notify_{channel}``（字段上限 500 字符，
+    由 sys_param 表决定；坏 JSON 原样回传给前端报错，不吞）。
+    """
+    from app.utils.notification import load_params
+
+    keys = [_CHANNELS_KEY] + [f"ai_approval_notify_{c}" for c in _EXTERNAL_CHANNELS]
+    async with async_db_session() as db:
+        params = await load_params(db, *keys)
+    configs: dict[str, dict] = {}
+    broken: list[str] = []
+    for channel in _EXTERNAL_CHANNELS:
+        raw = params.get(f"ai_approval_notify_{channel}")
+        if not raw:
+            configs[channel] = {}
+            continue
+        try:
+            configs[channel] = json.loads(raw)
+        except ValueError:
+            configs[channel] = {}
+            broken.append(channel)
+    return {
+        "channels": _parse_channels(params.get(_CHANNELS_KEY)),
+        "configs": configs,
+        "broken": broken,
+        "labels": dict(CHANNEL_LABELS),
+    }
+
+
+async def save_notify_config(
+    channels: list[str], configs: dict, redis=None
+) -> dict:
+    """保存审批通知配置（开关 + 各通道 JSON），upsert 系统参数行。
+
+    - 只接受白名单通道；开关写 ``ai_approval_notify_channels``（逗号串）；
+    - 配置 JSON 序列化后须 ≤500 字符（sys_param.config_value 字段上限），超限 400；
+    - 写表后 best-effort 同步 SYSTEM_CONFIG 缓存键（读路径走表，缓存失败不阻断）。
+    """
+    from app.api.v1.module_system.params.model import ParamsModel
+
+    picked = [c.strip().lower() for c in channels if str(c).strip().lower() in _EXTERNAL_CHANNELS]
+    payload_by_key: dict[str, str] = {_CHANNELS_KEY: ",".join(picked)}
+    for channel in _EXTERNAL_CHANNELS:
+        if channel not in picked:
+            continue
+        cfg = (configs or {}).get(channel) or {}
+        if not isinstance(cfg, dict):
+            raise CustomException(msg=f"通道 {channel} 的配置必须是 JSON 对象", code=10400, status_code=400)
+        body = json.dumps(cfg, ensure_ascii=False)
+        if len(body) > 500:
+            raise CustomException(
+                msg=f"通道 {channel} 配置超过 500 字符（系统参数字段上限），请精简",
+                code=10400,
+                status_code=400,
+            )
+        payload_by_key[f"ai_approval_notify_{channel}"] = body
+
+    async with async_db_session.begin() as db:
+        for key, value in payload_by_key.items():
+            row = (
+                await db.execute(
+                    select(ParamsModel).where(ParamsModel.config_key == key)
+                )
+            ).scalar_one_or_none()
+            name = (
+                "AI集成审批通知-开关"
+                if key == _CHANNELS_KEY
+                else f"AI集成审批通知-{CHANNEL_LABELS.get(key.rsplit('_', 1)[-1], key)}"
+            )
+            if row is None:
+                db.add(
+                    ParamsModel(
+                        config_name=name,
+                        config_key=key,
+                        config_value=value,
+                        config_type=False,
+                    )
+                )
+            else:
+                row.config_value = value
+                row.updated_time = datetime.now()
+
+    if redis is not None:
+        # 与系统参数创建逻辑保持一致的缓存键（best-effort：读路径走表，失败不阻断）
+        try:
+            from app.common.enums import RedisInitKeyConfig
+
+            prefix = RedisInitKeyConfig.SYSTEM_CONFIG.key
+            for key in payload_by_key:
+                await redis.set(f"{prefix}:{key}", value=payload_by_key[key], ex=None)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[approvals] 通知配置缓存同步失败（忽略）: {e}")
+    return await get_notify_config()

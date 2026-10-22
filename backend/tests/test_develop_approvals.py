@@ -425,3 +425,45 @@ def test_audit_body_limit_is_configurable():
         settings.OPEN_AUDIT_BODY_LIMIT = original
     finally:
         settings.OPEN_AUDIT_BODY_LIMIT = 200
+
+
+def test_notify_config_roundtrip(test_client, auth_headers):
+    """通知配置读写往返：开关 + 通道 JSON 落系统参数，GET 原样回读。"""
+    try:
+        r = test_client.put(
+            f"{API}/ai/develop/notify-config",
+            json={
+                "channels": ["email", "sms", "not-a-channel"],
+                "configs": {"email": {"recipients": ["a@b.com"]}, "sms": {}},
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        got = r.json()["data"]
+        assert set(got["channels"]) == {"email", "sms"}, got["channels"]  # 非法通道被丢弃
+        assert got["configs"]["email"]["recipients"] == ["a@b.com"]
+
+        again = test_client.get(f"{API}/ai/develop/notify-config", headers=auth_headers)
+        assert again.status_code == 200
+        data = again.json()["data"]
+        assert set(data["channels"]) == {"email", "sms"}
+        assert data["configs"]["email"]["recipients"] == ["a@b.com"]
+        assert data["broken"] == [], data
+    finally:
+        # 还原为关闭状态，避免影响其它用例的「默认不外发」断言
+        test_client.put(
+            f"{API}/ai/develop/notify-config",
+            json={"channels": [], "configs": {}},
+            headers=auth_headers,
+        )
+
+
+def test_notify_config_rejects_oversized_json(test_client, auth_headers):
+    """通道配置 JSON 序列化后 >500 字符（sys_param 字段上限）→ 400。"""
+    r = test_client.put(
+        f"{API}/ai/develop/notify-config",
+        json={"channels": ["webhook"], "configs": {"webhook": {"secret": "x" * 600}}},
+        headers=auth_headers,
+    )
+    assert r.status_code == 400, r.text
+    assert "500" in r.json()["msg"]

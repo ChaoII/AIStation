@@ -419,3 +419,94 @@ async def usage_report(days: int = 7) -> dict:
         "since": since.strftime("%Y-%m-%d %H:%M:%S"),
         "items": sorted(items.values(), key=lambda x: x["calls"], reverse=True),
     }
+
+
+def _usage_rows_csv(items: list[dict], days: int) -> str:
+    """用量报告 → CSV（UTF-8 BOM）。与调用日志导出同一套编码约定。"""
+    buf = io.StringIO()
+    buf.write("\ufeff")
+    writer = csv.writer(buf)
+    writer.writerow(
+        ["统计区间", "应用ID", "应用", "AppID", "调用", "成功", "成功率", "配额超限", "被限流", "Top能力"]
+    )
+    for row in items:
+        top = "、".join(f"{t['capability']}×{t['calls']}" for t in row.get("top", []))
+        writer.writerow(
+            [
+                f"近{days}天",
+                row["app_id"],
+                row["name"],
+                row["appid"],
+                row["calls"],
+                row["success"],
+                f"{round(row['success_rate'] * 100, 1)}%",
+                row["quota_hits"],
+                row["rate_limited"],
+                top,
+            ]
+        )
+    return buf.getvalue()
+
+
+async def usage_report_csv(days: int = 7) -> str:
+    """按当前天数导出用量报告 CSV。"""
+    report = await usage_report(days)
+    return _usage_rows_csv(report["items"], report["days"])
+
+
+async def mcp_stats(days: int = 7) -> dict:
+    """MCP 会话概览：近 N 天按天的会话数/工具调用数趋势 + 汇总。
+
+    口径说明：行按 ``created_time`` 归到某天（跨天的长会话计入其**建立当天**，
+    ``tool_calls`` 是会话累计值——不按天拆分，趋势只作观测用途）。
+    """
+    days = max(1, min(int(days or 7), 30))
+    since = datetime.now() - timedelta(days=days - 1)
+    day_col = func.date(AiIntegrationMcpSessionModel.created_time)
+
+    async with async_db_session() as db:
+        rows = (
+            await db.execute(
+                select(
+                    day_col.label("day"),
+                    func.count().label("sessions"),
+                    func.coalesce(func.sum(AiIntegrationMcpSessionModel.tool_calls), 0).label("tools"),
+                    func.coalesce(func.sum(AiIntegrationMcpSessionModel.duration_s), 0).label("seconds"),
+                )
+                .where(AiIntegrationMcpSessionModel.created_time >= since)
+                .group_by(day_col)
+                .order_by(day_col)
+            )
+        ).all()
+        total_row = (
+            await db.execute(
+                select(
+                    func.count().label("sessions"),
+                    func.coalesce(func.sum(AiIntegrationMcpSessionModel.tool_calls), 0).label("tools"),
+                    func.coalesce(func.avg(AiIntegrationMcpSessionModel.duration_s), 0).label("avg_s"),
+                ).where(AiIntegrationMcpSessionModel.created_time >= since)
+            )
+        ).one()
+
+    by_day = {str(r.day): r for r in rows}
+    today = date.today()
+    series = []
+    for offset in range(days):
+        key = str(today - timedelta(days=days - 1 - offset))
+        row = by_day.get(key)
+        series.append(
+            {
+                "date": key,
+                "sessions": int(row.sessions) if row else 0,
+                "tool_calls": int(row.tools) if row else 0,
+            }
+        )
+    return {
+        "days": days,
+        "series": series,
+        "total": {
+            "sessions": int(total_row.sessions or 0),
+            "tool_calls": int(total_row.tools or 0),
+            "avg_duration_s": int(total_row.avg_s or 0),
+        },
+    }

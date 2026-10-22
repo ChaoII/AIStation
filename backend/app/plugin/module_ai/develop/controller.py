@@ -57,6 +57,7 @@ from .schema import (
     EmbedMintSchema,
     EmbedRunSchema,
     EmbedTokenIssueSchema,
+    NotifyConfigSchema,
 )
 from .service import DevelopService
 
@@ -579,6 +580,29 @@ async def develop_app_usage(
     return SuccessResponse(data=usage, msg="查询成功")
 
 
+@DevelopRouter.get("/notify-config", summary="审批通知配置（开关 + 通道参数）")
+async def develop_notify_config(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+) -> JSONResponse:
+    from .approvals import get_notify_config
+
+    return SuccessResponse(data=await get_notify_config(), msg="查询成功")
+
+
+@DevelopRouter.put("/notify-config", summary="保存审批通知配置")
+async def develop_notify_config_save(
+    data: NotifyConfigSchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:update"]))],
+) -> JSONResponse:
+    from .approvals import save_notify_config
+
+    result = await save_notify_config(
+        data.channels, data.configs, getattr(request.app.state, "redis", None)
+    )
+    return SuccessResponse(data=result, msg="已保存")
+
+
 @DevelopRouter.get("/usage-report", summary="用量报告（按应用，近 N 天）")
 async def develop_usage_report(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
@@ -626,6 +650,32 @@ async def develop_call_logs_export(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@DevelopRouter.get("/usage-report/export", summary="导出用量报告 CSV")
+async def develop_usage_report_export(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    days: Annotated[int, Query(ge=1, le=90, description="统计天数")] = 7,
+) -> StreamingResponse:
+    from .insights import usage_report_csv
+
+    content = await usage_report_csv(days)
+    filename = f"ai-usage-report-{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@DevelopRouter.get("/mcp-stats", summary="MCP 会话概览（近 N 天趋势）")
+async def develop_mcp_stats(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    days: Annotated[int, Query(ge=1, le=30, description="趋势天数")] = 7,
+) -> JSONResponse:
+    from .insights import mcp_stats
+
+    return SuccessResponse(data=await mcp_stats(days), msg="查询成功")
 
 
 @DevelopRouter.post("/apps/{app_id}/try", summary="能力试调（管理端）")

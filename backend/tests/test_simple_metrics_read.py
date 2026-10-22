@@ -73,8 +73,24 @@ def _insert_events(task_id: int, events: list[dict]) -> None:
 
 @pytest.fixture(scope="module")
 def simple_task_id(test_client):
-    """simple 任务（带 ``__tk_mode`` 标记）。"""
+    """simple 任务（带 ``__tk_mode`` 标记）+ 它需要的 step/eval 事件。
+
+    事件在 fixture 里一次备齐：`test_detail_metrics_log_materialized` /
+    `test_offset_incremental` 也依赖这些事件，**不能**靠「文件里排在前面的用例顺手插入」
+    ——那样在 xdist（-n 4 按用例分发到不同 worker）下必挂（实测）。
+    """
     _make_task(3001, "simple-metrics-read-test-task", {"__tk_mode": "simple"})
+    _insert_events(3001, [
+        {"task_id": 3001, "seq": 3001, "ts": 1_700_000_100.0, "type": "step",
+         "loss": 0.8, "lr": 0.01, "epoch": 1, "global_step": 10, "epoch_num": 10,
+         "comps": {"cls": 0.5, "dfl": 0.3}},
+        {"task_id": 3001, "seq": 3002, "ts": 1_700_000_110.0, "type": "step",
+         "loss": 0.6, "lr": 0.01, "epoch": 2, "global_step": 20, "epoch_num": 10,
+         "comps": {"cls": 0.4, "dfl": 0.2}},
+        {"task_id": 3001, "seq": 3003, "ts": 1_700_000_120.0, "type": "eval",
+         "epoch": 2, "global_step": 20, "main_indicator": "precision",
+         "main_value": 0.7, "epoch_num": 10, "metrics": {"precision": 0.7, "recall": 0.8}},
+    ])
     return 3001
 
 
@@ -92,28 +108,21 @@ def legacy_task_id(test_client):
 
 
 def test_metrics_from_events_for_simple(test_client, auth_headers, simple_task_id):
-    """/metrics 对 simple 任务返回事件表物化行：结构与旧行一致、seq 升序、total 正确。"""
-    _insert_events(simple_task_id, [
-        {"task_id": simple_task_id, "seq": 3001, "ts": 1_700_000_100.0, "type": "step",
-         "loss": 0.8, "lr": 0.01, "epoch": 1, "global_step": 10, "epoch_num": 10,
-         "comps": {"cls": 0.5, "dfl": 0.3}},
-        {"task_id": simple_task_id, "seq": 3002, "ts": 1_700_000_110.0, "type": "step",
-         "loss": 0.6, "lr": 0.01, "epoch": 2, "global_step": 20, "epoch_num": 10,
-         "comps": {"cls": 0.4, "dfl": 0.2}},
-        {"task_id": simple_task_id, "seq": 3003, "ts": 1_700_000_120.0, "type": "eval",
-         "epoch": 2, "global_step": 20, "main_indicator": "precision",
-         "main_value": 0.7, "epoch_num": 10, "metrics": {"precision": 0.7, "recall": 0.8}},
-    ])
+    """/metrics 对 simple 任务返回事件表物化行：结构与旧行一致、seq 升序、total 一致。
 
+    事件由 fixture 准备；本用例只断言（`test_env_metrics_filter` 可能往同一任务追加
+    3104，故 total 用「= len(items) 且 >= 3」而不是硬等 3）。
+    """
     r = test_client.get(f"{_URL}/{simple_task_id}/metrics", headers=auth_headers)
     assert r.status_code == 200, f"/metrics 应 200，实际 {r.status_code}: {r.text}"
     data = r.json()["data"]
     assert data["task_id"] == simple_task_id
     items = data["items"]
-    assert data["total"] == len(items) == 3, f"应物化出 3 行，实际 {len(items)}: {items}"
+    assert data["total"] == len(items), f"total 应等于返回行数，实际 {data['total']} vs {len(items)}"
+    assert len(items) >= 3, f"至少应物化出 3 行，实际 {len(items)}: {items}"
 
-    # seq 升序 + 行结构与旧行一致（_kind/seq/业务字段齐全）
-    assert [row["seq"] for row in items] == [3001, 3002, 3003], "应按 seq 升序物化"
+    # seq 升序 + 前 3 行结构与旧行一致（_kind/seq/业务字段齐全）
+    assert [row["seq"] for row in items][:3] == [3001, 3002, 3003], "应按 seq 升序物化"
     step1 = items[0]
     assert step1["_kind"] == "step", f"首行 _kind 应为 step，实际 {step1.get('_kind')}"
     assert step1["loss"] == 0.8 and step1["epoch"] == 1 and step1["total_epochs"] == 10
@@ -188,7 +197,7 @@ def test_offset_incremental(test_client, auth_headers, simple_task_id):
     """/metrics?offset=N 只返回 seq>N 的物化行（断点续传语义）。"""
     r = test_client.get(f"{_URL}/{simple_task_id}/metrics", headers=auth_headers)
     items = r.json()["data"]["items"]
-    assert items, "前置用例应已插入事件，物化行不应为空"
+    assert items, "fixture 已准备事件，物化行不应为空"
     seqs = [row["seq"] for row in items if isinstance(row.get("seq"), int)]
     max_seq = max(seqs)
 

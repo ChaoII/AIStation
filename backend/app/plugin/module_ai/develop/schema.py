@@ -90,3 +90,10 @@ class EmbedMintSchema(BaseModel):
     app_id: int = Field(..., description="应用ID")
     kind: Literal["agent", "app", "workflow"] = Field(..., description="嵌入形态")
     target_id: int = Field(..., description="嵌入目标ID")
+
+
+class NotifyConfigSchema(BaseModel):
+    """审批通知配置入参：开关通道 + 各通道 JSON 配置。"""
+
+    channels: list[str] = Field(default_factory=list, description="启用的通道（email/webhook/sms）")
+    configs: dict = Field(default_factory=dict, description="{通道: JSON 对象}")

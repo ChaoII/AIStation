@@ -361,3 +361,25 @@ def test_usage_report_quotas_hits_counted(test_client, auth_headers):
         )
     finally:
         _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_usage_report_csv_export(test_client, auth_headers):
+    """用量报告 CSV 导出：BOM + 表头 + 应用行。"""
+    app = _create_app(test_client, auth_headers)
+    try:
+        _invoke(test_client, app, "agent.list", {})
+        r = test_client.get(
+            f"{API}/ai/develop/usage-report/export",
+            params={"days": 7},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        assert "text/csv" in r.headers["content-type"]
+        assert "attachment" in r.headers.get("content-disposition", "")
+        text_body = r.content.decode("utf-8-sig")
+        header, *lines = text_body.splitlines()
+        assert "应用" in header and "成功率" in header and "Top能力" in header
+        assert any(app["name"] in line for line in lines), lines
+        assert "近7天" in text_body
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])

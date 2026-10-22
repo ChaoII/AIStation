@@ -372,6 +372,30 @@
             </el-form-item>
           </el-form>
 
+          <el-row :gutter="12" class="stat-row">
+            <el-col v-for="card in mcpStatCards" :key="card.label" :xs="12" :sm="6">
+              <el-card shadow="never" class="stat-card">
+                <div class="stat-card__label">{{ card.label }}</div>
+                <div class="stat-card__value">
+                  {{ card.value }}
+                  <span class="stat-card__suffix">{{ card.suffix }}</span>
+                </div>
+              </el-card>
+            </el-col>
+          </el-row>
+          <div v-if="mcpStats.series.length" class="spark-row">
+            <span class="spark-row__label">近 {{ mcpStats.days }} 天</span>
+            <div
+              v-for="day in mcpStats.series"
+              :key="'mcp-' + day.date"
+              class="spark"
+              :title="`${day.date}：${day.sessions} 会话 / ${day.tool_calls} 次工具调用`"
+            >
+              <div class="spark__bar" :style="{ height: barHeight(day.tool_calls, mcpSparkMax) }" />
+              <span class="spark__label">{{ day.date.slice(5) }}</span>
+            </div>
+          </div>
+
           <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe>
             <el-table-column label="AppID" width="120" show-overflow-tooltip>
               <template #default="{ row }">{{ row.appid || "—" }}</template>
@@ -446,6 +470,7 @@
             </el-form-item>
             <el-form-item>
               <el-button :icon="Search" @click="loadUsage()">查询</el-button>
+              <el-button :icon="Download" @click="onExportUsage">导出 CSV</el-button>
             </el-form-item>
           </el-form>
 
@@ -516,6 +541,13 @@
                 待审批 {{ approvalPendingCount }} 条
               </el-tag>
             </div>
+            <el-button
+              v-hasPerm="['module_ai:develop:update']"
+              :icon="Setting"
+              @click="openNotifyCfg"
+            >
+              通知配置
+            </el-button>
           </div>
 
           <el-table v-loading="approvalLoading" :data="approvals" row-key="id" border stripe>
@@ -808,6 +840,43 @@
       </template>
     </el-dialog>
 
+    <!-- ============ 审批通知配置弹窗 ============ -->
+    <el-dialog v-model="notifyCfg.visible" title="审批通知配置" width="580px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        class="docs-alert"
+        title="开关保存到系统参数 ai_approval_notify_channels；各通道配置为 JSON（存 ai_approval_notify_{通道}，≤500 字符）。SMTP/Webhook 的基础凭证仍走系统参数 notify_smtp_* / notify_webhook_*。"
+      />
+      <el-form label-width="90px">
+        <el-form-item label="启用通道">
+          <el-checkbox-group v-model="notifyCfg.channels">
+            <el-checkbox v-for="ch in NOTIFY_CHANNELS" :key="ch" :value="ch">
+              {{ notifyCfg.labels[ch] || ch }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <template v-for="ch in notifyCfg.channels" :key="'cfg-' + ch">
+          <el-form-item :label="(notifyCfg.labels[ch] || ch) + ' 配置'">
+            <el-input
+              v-model="notifyCfg.configs[ch]"
+              type="textarea"
+              :rows="4"
+              :placeholder="NOTIFY_CONFIG_PLACEHOLDERS[ch]"
+              spellcheck="false"
+            />
+          </el-form-item>
+        </template>
+      </el-form>
+      <template #footer>
+        <el-button @click="notifyCfg.visible = false">关闭</el-button>
+        <el-button type="primary" :loading="notifyCfg.loading" @click="saveNotifyCfg">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- ============ 审批详情弹窗 ============ -->
     <el-dialog v-model="approvalDetail.visible" title="调用审批详情" width="600px" append-to-body>
       <el-descriptions :column="1" border size="small">
@@ -1041,12 +1110,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Search, CopyDocument, Download } from "@element-plus/icons-vue";
+import { Download, Plus, Search, CopyDocument, Setting } from "@element-plus/icons-vue";
 import { useWindowSize } from "@vueuse/core";
 import {
   createApp,
   deleteApp,
   exportCallLogs,
+  exportUsageReport,
   getAppUsage,
   getApprovals,
   getCallLogs,
@@ -1054,9 +1124,12 @@ import {
   getDevelopAppList,
   getDevelopStats,
   getMcpSessions,
+  getMcpStats,
+  getNotifyConfig,
   getUsageReport,
   resetAppkey,
   reviewApproval,
+  saveNotifyConfig,
   toggleApp,
   tryCapability,
   updateApp,
@@ -1413,7 +1486,13 @@ const statCards = computed(() => [
 const sparkMax = computed(() => Math.max(1, ...stats.series.map((d: any) => Number(d.calls) || 0)));
 
 function sparkHeight(calls: number) {
-  return `${Math.max(2, Math.round(((Number(calls) || 0) / sparkMax.value) * 36))}px`;
+  return barHeight(calls, sparkMax.value);
+}
+
+/** 通用迷你柱高度：value/max → 2..36px（max 为 0/undefined 时取 1）。 */
+function barHeight(value: number, max: number) {
+  const safe = Math.max(1, Number(max) || 1);
+  return `${Math.max(2, Math.round(((Number(value) || 0) / safe) * 36))}px`;
 }
 
 function isExpiringSoon(row: any) {
@@ -1491,16 +1570,30 @@ async function onExportLogs() {
       end_time: logFilter.range?.[1] || undefined,
     };
     const res = await exportCallLogs(params);
-    const blob = res.data instanceof Blob ? res.data : new Blob([res.data]);
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ai-call-logs-${Date.now()}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-    ElMessage.success("已开始下载");
+    downloadBlob(res, `ai-call-logs-${Date.now()}.csv`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "导出失败");
+  }
+}
+
+/** 下载 blob 响应（CSV 等导出公用）。 */
+function downloadBlob(res: any, fallbackName: string) {
+  const blob = res?.data instanceof Blob ? res.data : new Blob([res?.data]);
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fallbackName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+  ElMessage.success("已开始下载");
+}
+
+async function onExportUsage() {
+  try {
+    const res = await exportUsageReport(usageDays.value);
+    downloadBlob(res, `ai-usage-report-${Date.now()}.csv`);
   } catch (e: any) {
     ElMessage.error(e?.msg || "导出失败");
   }
@@ -1742,13 +1835,111 @@ async function onReviewApproval(row: any, approve: boolean) {
   }
 }
 
+// ---- MCP 会话概览（统计卡 + 近 N 天工具调用趋势） ----
+const mcpStats = reactive<{ days: number; series: any[]; total: any }>({
+  days: 7,
+  series: [],
+  total: {},
+});
+
+const mcpStatCards = computed(() => [
+  { label: "近 7 天会话", value: mcpStats.total?.sessions ?? 0, suffix: " 个" },
+  { label: "工具调用", value: mcpStats.total?.tool_calls ?? 0, suffix: " 次" },
+  { label: "平均时长", value: mcpStats.total?.avg_duration_s ?? 0, suffix: " s" },
+]);
+
+const mcpSparkMax = computed(() =>
+  Math.max(1, ...mcpStats.series.map((d: any) => Number(d.tool_calls) || 0))
+);
+
+async function loadMcpStats() {
+  try {
+    const res = await getMcpStats(7);
+    const d = res.data?.data || {};
+    mcpStats.days = d.days || 7;
+    mcpStats.series = d.series || [];
+    mcpStats.total = d.total || {};
+  } catch {
+    // 概览失败不打断会话列表（静默降级）
+  }
+}
+
+// ---- 审批通知配置（开关 + 各通道 JSON） ----
+const NOTIFY_CHANNELS = ["email", "webhook", "sms"];
+const NOTIFY_CONFIG_PLACEHOLDERS: Record<string, string> = {
+  email: '{"recipients": ["admin@example.com"]}',
+  webhook: '{"url": "https://example.com/hook", "method": "POST"}',
+  sms: "{}",
+};
+const notifyCfg = reactive({
+  visible: false,
+  loading: false,
+  channels: [] as string[],
+  labels: {} as Record<string, string>,
+  configs: {} as Record<string, string>,
+});
+
+async function openNotifyCfg() {
+  notifyCfg.visible = true;
+  notifyCfg.loading = true;
+  try {
+    const res = await getNotifyConfig();
+    const d = res.data?.data || {};
+    notifyCfg.channels = d.channels || [];
+    notifyCfg.labels = d.labels || {};
+    const raw = d.configs || {};
+    const mapped: Record<string, string> = {};
+    NOTIFY_CHANNELS.forEach((ch) => {
+      mapped[ch] = raw[ch] && Object.keys(raw[ch]).length ? JSON.stringify(raw[ch], null, 2) : "";
+    });
+    notifyCfg.configs = mapped;
+    if (d.broken?.length) {
+      ElMessage.warning(`通道 ${d.broken.join("、")} 的现有配置不是合法 JSON，已置空待修复`);
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "通知配置加载失败");
+    notifyCfg.visible = false;
+  } finally {
+    notifyCfg.loading = false;
+  }
+}
+
+async function saveNotifyCfg() {
+  const configs: Record<string, any> = {};
+  for (const ch of notifyCfg.channels) {
+    const text = (notifyCfg.configs[ch] || "").trim();
+    if (!text) {
+      configs[ch] = {};
+      continue;
+    }
+    try {
+      configs[ch] = JSON.parse(text);
+    } catch {
+      ElMessage.error(`${notifyCfg.labels[ch] || ch} 的配置不是合法 JSON`);
+      return;
+    }
+  }
+  notifyCfg.loading = true;
+  try {
+    const res = await saveNotifyConfig({ channels: notifyCfg.channels, configs });
+    notifyCfg.visible = false;
+    ElMessage.success(res.data?.msg || "已保存");
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    notifyCfg.loading = false;
+  }
+}
+
 function onTabChange(name: string | number) {
   const key = String(name);
   if (key === "logs") {
     loadLogs(false);
     loadStats();
-  } else if (key === "mcp") loadMcps(false);
-  else if (key === "approvals") loadApprovals(false);
+  } else if (key === "mcp") {
+    loadMcps(false);
+    loadMcpStats();
+  } else if (key === "approvals") loadApprovals(false);
   else if (key === "usage" && !usageItems.value.length) loadUsage();
   else if (key === "docs" && !capabilities.value.length) loadCapabilities();
 }

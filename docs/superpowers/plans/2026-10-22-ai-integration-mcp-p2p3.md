@@ -374,3 +374,37 @@
 - 新用例：用量报告按应用聚合与 Top、配额超限计数（含口径断言 0 成功=0.0）、MCP 握手三面能力——与既有用例合并 **10 passed（insights）+ MCP 7 passed**；ruff / eslint / prettier / type-check 全绿。
 - UI 走查（1440）：用量页签数据正确（8 调用/100%/Top 能力）、审批详情 footer `关闭/拒绝/批准并执行`、时间快捷填入 `2026-10-16 00:00:00 → 现在`；三张表全部 `border`、无横向溢出（1168/1168）；截图归档 `p2-usage-report.png`、`p2-approval-detail-actions.png`、`p2-logs-quick-range.png`。
 - 备注：并行跑全量 + UI 时 `test_simple_metrics_read::test_detail_metrics_log_materialized` 再次因 xdist 分发失败，单跑该文件 **6 passed**（既有顺序依赖测试，非回归）。
+
+---
+
+## 第七轮：测试技术债、通知配置界面、用量导出、MCP 概览（2026-10-23）
+
+### ① 修掉 `test_simple_metrics_read` 的顺序依赖（既有测试债）
+
+- 根因：`test_detail_metrics_log_materialized` / `test_offset_incremental` 依赖「文件里排在前面的用例顺手往事件表插数据」，`-n 4` 按用例分发到不同 worker 时后者必挂（此前连续两轮全量各挂 1 次）。
+- 修法：step/eval 事件**挪进 `simple_task_id` fixture**（数据一次备齐）；`test_metrics_from_events_for_simple` 不再自插，`total` 断言从「硬等 3」放宽为「= len(items) 且 ≥3」（`test_env_metrics_filter` 会给同一任务追加 3104）；187 的「前置用例已插入事件」注释更正。
+- 验证：单跑 6 passed、**`-n 2` 分发场景 6 passed**（原必挂场景）。
+
+### ② 审批通知配置界面（免去系统参数页手写 JSON）
+
+- 后端 `GET/PUT /ai/develop/notify-config`（读 query 权限 / 写 update 权限）：
+  - 开关落系统参数 `ai_approval_notify_channels`（逗号串，白名单 email/webhook/sms），各通道 JSON 落 `ai_approval_notify_{channel}`（≤500 字符，超限 400——`sys_param.config_value` 字段上限）；
+  - 读取：开关 params 优先、回落 env `APPROVAL_NOTIFY_CHANNELS`；坏 JSON 原样回传 `broken` 让前端提示，不吞；
+  - 写表后 best-effort 同步 `SYSTEM_CONFIG` 缓存键（读路径走表，失败仅告警）。
+- `_notify_external` 的通道开关改为读 params（页面可改），环境变量只作缺省。
+- 前端审批页签「通知配置」按钮（`module_ai:develop:update`）→ 弹窗：通道多选 + 逐通道 JSON textarea（占位模板）+ 基础凭证提示；本地 JSON 解析失败不提交。
+
+### ③ 用量报告导出
+
+- `GET /ai/develop/usage-report/export?days=`：UTF-8 BOM CSV（区间/应用ID/应用/AppID/调用/成功/成功率/配额超限/被限流/Top能力），与日志导出同编码约定；
+- 前端抽公共 `downloadBlob()`，日志导出与用量导出共用；用量页签加「导出 CSV」。
+
+### ④ MCP 会话概览
+
+- `GET /ai/develop/mcp-stats?days=1..30`：近 N 天按天的 `sessions` / `tool_calls` 趋势（空天补 0）+ 汇总（会话数、工具调用、平均时长）；口径注明：行按 `created_time` 归天、`tool_calls` 为会话累计（跨天不拆）。
+- 前端 MCP 页签顶部三张统计卡（近 7 天会话 / 工具调用 / 平均时长）+ 迷你趋势柱（复用 `.spark` 样式，`sparkHeight` 泛化为 `barHeight(value, max)` 供日志与 MCP 两处共用）。
+
+### 验证
+
+- 三文件合并测试 **37 passed**（新增：通知配置往返与超长 400、用量 CSV 表头与行、MCP 概览 shape 与计数）；ruff / eslint / prettier / vue-tsc 全绿。
+- UI 走查（1440）：MCP 统计卡非零 + 趋势柱、通知配置弹窗（通道多选 + JSON 配置 + 提示）、用量页导出按钮与数据行；截图 `95-mcp-stats` / `96-notify-config` / `97-usage-export`。
