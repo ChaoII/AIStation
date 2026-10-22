@@ -2410,7 +2410,7 @@ onMounted(() => {
 }
 
 .spark__label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--el-text-color-placeholder);
 }
 
@@ -2559,7 +2559,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 12px;
+  padding: 16px;
   overflow: hidden;
 }
 
@@ -2570,7 +2570,7 @@ onMounted(() => {
   min-height: 0;
   overflow: hidden;
   background: var(--el-fill-color-blank);
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--el-border-color-light);
   border-radius: var(--el-border-radius-base);
 }
 

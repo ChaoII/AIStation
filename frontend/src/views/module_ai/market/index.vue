@@ -74,7 +74,7 @@ const canReview = computed(() => {
   flex-direction: column;
   overflow: hidden;
   background: var(--el-fill-color-blank);
-  border: 1px solid var(--el-border-color);
+  border: 1px solid var(--el-border-color-light);
   border-radius: var(--el-border-radius-base);
 }
 

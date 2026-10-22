@@ -335,7 +335,7 @@ const m = await page.evaluate(() => {
   };
 });
 ```
-- 参照页实测基线（1440×900，侧边栏 210）：`padding 12px`、`border 1px solid`、`radius 4px`、`bg rgb(255,255,255)`、`rect x=222 y=96 1206×792`。
+- 参照页实测基线（1440×900，侧边栏 210；2026-10-22 重测 system/param）：`padding 16px`（历史记录 12px 已过时，AI 管理 23 页已全部对齐 16px）、`border 1px solid var(--el-border-color-light)`（解析值 srgb 0.882/0.915/0.971；勿用 `--el-border-color`/`lighter` 档，色差肉眼可辨）、`radius 4px`、`bg rgb(255,255,255)`、root `1230×816`、单壳页壳 `1198×784`（gap 16 撑满）。
 - 表格额外探测：`document.querySelectorAll(".el-table--border").length` 覆盖页内所有表格；`getComputedStyle(th).borderRightWidth === "1px"`。
 - 截图覆盖：**每个页签 ×（有数据态 + 空态）**，弹窗各态，以及同尺寸的参照页一张；用模型自身读图对照。
 

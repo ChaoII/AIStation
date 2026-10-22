@@ -2547,7 +2547,7 @@ async function handleInferRelations() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 12px;
+  padding: 16px;
 }
 .ig-fill,
 .ig-card {

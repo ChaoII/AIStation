@@ -2349,7 +2349,7 @@ onBeforeUnmount(() => {
 }
 
 .ai-overview-page {
-  padding: 12px;
+  padding: 16px;
   overflow: auto;
 }
 .ov-cards {
@@ -2488,9 +2488,23 @@ onBeforeUnmount(() => {
 <style lang="scss">
 /* 覆盖全局 .app-container(flex column;height:100%)：控制台改为块级自然流，避免卡片被 flex 压缩/重叠 */
 .app-container.ai-overview-page {
+  /* 保持 display:block（脱离 flex，防 el-card 被 shrink 压没——AGENTS.md 调试记忆）；
+     height/overflow 回归与系统管理参照页同构的「锁视口 + 内部滚动」 */
   display: block !important;
-  height: auto !important;
-  overflow: visible !important;
+  height: 100% !important;
+  overflow: auto !important;
+}
+
+/* 控制台单卡内容限高内部滚动：防「最近记录/时间线」大列表把整页撑到上万像素（实测 17241px）。
+   已带 max-height 属性的 el-table 走 inline 样式优先，不受此兜底影响。 */
+.ai-overview-page .ov-recent-card .el-table__body-wrapper {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.ai-overview-page .ov-recent-card .el-timeline {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 /* 非 scoped：AI 报告抽屉/详情弹窗 append-to-body 后脱离 scoped 作用域，需全局定义 */
