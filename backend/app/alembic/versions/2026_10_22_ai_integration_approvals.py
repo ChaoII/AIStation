@@ -57,4 +57,3 @@ def downgrade() -> None:
     insp = sa.inspect(bind)
     if _TABLE in insp.get_table_names():
         op.drop_table(_TABLE)
-
