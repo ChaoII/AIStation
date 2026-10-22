@@ -336,6 +336,10 @@ async def run_agno_tool_stream(
     instructions: list[str] = []
     if system_prompt:
         instructions.append(system_prompt)
+    # 公共工具纪律：平台统计走 platform_stats、工具直调不寒暄（agent/app 与 assistant 一致）
+    from app.plugin.module_ai.agno_tools.agent_factory import PUBLIC_TOOL_RULES
+
+    instructions.extend(PUBLIC_TOOL_RULES)
     if instructions_extra:
         instructions.extend(instructions_extra)
 
