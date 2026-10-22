@@ -1,84 +1,185 @@
 # tests/test_develop_openapi.py
-#
-# 覆盖 AI 集成开放平台「开放数据面」的鉴权验证端点（Task 5）：
-# - ``GET /api/v1/ai/develop-api/auth/verify``：经 ``get_app_api_auth`` 鉴权，
-#   返回应用身份 + 能力权限点；成功时写入一条调用审计（log_call）。
-# - 401 路径：错误 appkey / 未知 appid / 缺失或畸形 Authorization 头，
-#   均由 ``get_app_api_auth`` 依赖抛 ``CustomException(status_code=401)`` 处理。
-#
-# 说明：未启用 pytest-asyncio，HTTP 用仓库同步 ``test_client`` 夹具，
-# DB 校验统一用 ``asyncio.run`` 包一层（参照 test_develop_crud.py）。
-# 依赖 test_client 触发应用生命周期（建表），PYTEST_NO_APP=1 时这些用例自动 skip。
-import asyncio
+"""开放 REST 能力入口：凭证 / 权限 / 能力不存在 / 审计脱敏 / 归属隔离。
 
-import pytest
-from sqlalchemy import func, select
+覆盖 Review Focus：
+- 第 1 条 跨应用资源不可见（agent.get 他人资源 → 404）；
+- 第 2 条 缺权限点调用 → 403 + denied 审计；
+- 第 3 条 appkey 不得出现在审计请求体里。
+"""
+from uuid import uuid4
 
-from app.core.database import async_db_session
-from app.plugin.module_ai.develop.model import AiIntegrationCallLogModel
-from app.plugin.module_ai.develop.schema import DevelopCreateSchema
-from app.plugin.module_ai.develop.service import DevelopService
+API = "/api/v1"
+AGENT_CAPS = ["integration:agent:query", "integration:agent:create"]
+# 跨应用隔离用例需要 delete 权限点，否则先撞 403（权限先于归属校验，属预期顺序）
+AGENT_CAPS_FULL = [*AGENT_CAPS, "integration:agent:delete"]
+TRAIN_CAPS = ["integration:train:query"]
 
 
-async def _make_app(name: str) -> dict:
-    """造一个有效应用，返回含一次性明文 appkey 的对外 dict。"""
-    return await DevelopService.create_app(
-        DevelopCreateSchema(name=name, capabilities=["integration:agent:create"]),
-        type("_A", (), {"user": type("_U", (), {"id": 1, "is_superuser": True})()})(),
+def _uid() -> str:
+    return uuid4().hex[:8]
+
+
+def _create_app(test_client, auth_headers, caps):
+    r = test_client.post(
+        f"{API}/ai/develop/create",
+        json={"name": f"开放面-{_uid()}", "capabilities": caps, "requires_approval": False},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["data"]
+
+
+def _app_auth(app):
+    return {
+        "Authorization": f"Bearer {app['appid']}:{app['appkey']}",
+        "X-Forwarded-For": "127.0.0.1",
+    }
+
+
+def _invoke(test_client, app, code, payload):
+    return test_client.post(
+        f"{API}/ai/develop-api/capabilities/{code}",
+        json={"payload": payload},
+        headers=_app_auth(app),
     )
 
 
-@pytest.fixture(scope="module")
-def create_app():
-    # 名称取唯一值避免与 test_develop_crud.py 的 "demo" 撞名（name 唯一约束，跨模块共享会话库）
-    return asyncio.run(_make_app("openapi_demo"))
+def _logs(test_client, auth_headers, app_id, **params):
+    query = {"app_id": app_id, "page_size": 50, **params}
+    return test_client.get(
+        f"{API}/ai/develop/call-logs", params=query, headers=auth_headers
+    ).json()["data"]["items"]
 
 
-@pytest.mark.app
-def test_auth_verify_ok(test_client, create_app: dict):
-    resp = test_client.get(
-        "/api/v1/ai/develop-api/auth/verify",
-        headers={"Authorization": f"Bearer {create_app['appid']}:{create_app['appkey']}"},
+def _cleanup(test_client, auth_headers, app_id):
+    test_client.request(
+        "DELETE", f"{API}/ai/develop/delete", json=[app_id], headers=auth_headers
     )
-    assert resp.status_code == 200
-    data = resp.json()["data"]
-    assert data["appid"] == create_app["appid"]
-    assert "perms" in data and isinstance(data["perms"], list)
-    # 写入成功 audit
-    cnt = asyncio.run(_count_call_logs())
-    assert cnt >= 1
 
 
-async def _count_call_logs() -> int:
-    async with async_db_session() as db:
-        return await db.scalar(select(func.count()).select_from(AiIntegrationCallLogModel)) or 0
+def test_agent_delete_requires_explicit_confirm(test_client, auth_headers):
+    """物理删除不可恢复：开放面必须显式 confirm=true，否则 400 且资源不动。"""
+    app = _create_app(test_client, auth_headers, AGENT_CAPS_FULL)
+    try:
+        created = _invoke(test_client, app, "agent.create", {"agent_name": f"待删-{_uid()}"})
+        assert created.status_code == 200, created.text
+        agent_id = created.json()["data"]["id"]
+
+        refused = _invoke(test_client, app, "agent.delete", {"agent_id": agent_id})
+        assert refused.status_code == 400, refused.text
+        assert "confirm" in refused.json()["msg"]
+        assert _invoke(test_client, app, "agent.get", {"agent_id": agent_id}).status_code == 200
+
+        ok = _invoke(test_client, app, "agent.delete", {"agent_id": agent_id, "confirm": True})
+        assert ok.status_code == 200, ok.text
+        assert _invoke(test_client, app, "agent.get", {"agent_id": agent_id}).status_code == 404
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])
 
 
-@pytest.mark.app
-def test_auth_verify_401_wrong_key(test_client, create_app: dict):
-    resp = test_client.get(
-        "/api/v1/ai/develop-api/auth/verify",
-        headers={"Authorization": f"Bearer {create_app['appid']}:wrong"},
+def test_admin_capability_catalog_lists_all(test_client, auth_headers):
+    """管理面能力清单：接入文档展示「有哪些能力可授权」。"""
+    r = test_client.get(f"{API}/ai/develop/capabilities", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    codes = {item["code"] for item in r.json()["data"]["items"]}
+    assert {"agent.list", "agent.create", "chat.send", "bot.use", "train.create"}.issubset(codes)
+    # 每个能力都带权限点与 MCP 工具名，便于文档展示
+    sample = next(i for i in r.json()["data"]["items"] if i["code"] == "agent.list")
+    assert sample["perm"] == "integration:agent:query"
+    assert sample["mcp_tool"] == "agent_list"
+
+
+def test_missing_credentials_returns_401(test_client):
+    r = test_client.post(
+        f"{API}/ai/develop-api/capabilities/agent.list",
+        json={"payload": {}},
+        headers={"X-Forwarded-For": "127.0.0.1"},
     )
-    assert resp.status_code == 401
+    assert r.status_code == 401, r.text
 
 
-@pytest.mark.app
-def test_auth_verify_401_unknown_app(test_client):
-    resp = test_client.get(
-        "/api/v1/ai/develop-api/auth/verify",
-        headers={"Authorization": "Bearer ai_nonexistent:xyz"},
-    )
-    assert resp.status_code == 401
+def test_capability_list_filtered_by_granted_perms(test_client, auth_headers):
+    app = _create_app(test_client, auth_headers, AGENT_CAPS)
+    try:
+        r = test_client.get(f"{API}/ai/develop-api/capabilities", headers=_app_auth(app))
+        assert r.status_code == 200, r.text
+        codes = {item["code"] for item in r.json()["data"]["items"]}
+        assert {"agent.list", "agent.get", "agent.create"}.issubset(codes)
+        # 未授权的 train 能力不得出现
+        assert not {c for c in codes if c.startswith("train.")}
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])
 
 
-@pytest.mark.app
-def test_auth_verify_missing_or_malformed_header_401(test_client):
-    assert test_client.get("/api/v1/ai/develop-api/auth/verify").status_code == 401
-    assert (
-        test_client.get(
-            "/api/v1/ai/develop-api/auth/verify",
-            headers={"Authorization": "Bearer no-colon"},
-        ).status_code
-        == 401
-    )
+def test_unauthorized_capability_returns_403_and_denied_audit(test_client, auth_headers):
+    app = _create_app(test_client, auth_headers, AGENT_CAPS)
+    try:
+        r = _invoke(test_client, app, "train.list", {})
+        assert r.status_code == 403, r.text
+        denied = _logs(test_client, auth_headers, app["id"], status="denied")
+        assert any(
+            log["capability"] == "train.list" and log["status"] == "denied" for log in denied
+        ), denied
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_unknown_capability_returns_404(test_client, auth_headers):
+    app = _create_app(test_client, auth_headers, AGENT_CAPS)
+    try:
+        r = _invoke(test_client, app, "agent.not_exist", {})
+        assert r.status_code == 404, r.text
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_success_call_audits_rest_without_appkey(test_client, auth_headers):
+    app = _create_app(test_client, auth_headers, AGENT_CAPS)
+    try:
+        r = _invoke(test_client, app, "agent.create", {"agent_name": f"开放Agent-{_uid()}"})
+        assert r.status_code == 200, r.text
+        created = r.json()["data"]
+        assert created["source_app_id"] == app["id"]
+
+        logs = _logs(test_client, auth_headers, app["id"], method="REST")
+        assert logs, "应写入 REST 调用审计"
+        assert all(log["status"] == "success" for log in logs)
+        # Review Focus 3：审计请求体绝不含 appkey 明文
+        body_text = str([log["request_body"] for log in logs])
+        assert app["appkey"] not in body_text
+
+        # 清理开放面创建的 Agent
+        test_client.request(
+            "DELETE", f"{API}/ai/agents/delete", json=[created["id"]], headers=auth_headers
+        )
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_agent_isolation_between_apps(test_client, auth_headers):
+    """Review Focus 1：A 应用看不到 / 改不了 B 应用创建的 Agent。"""
+    app_a = _create_app(test_client, auth_headers, AGENT_CAPS)
+    app_b = _create_app(test_client, auth_headers, AGENT_CAPS_FULL)
+    try:
+        created = _invoke(test_client, app_a, "agent.create", {"agent_name": f"A-{_uid()}"})
+        assert created.status_code == 200, created.text
+        agent_id = created.json()["data"]["id"]
+
+        # B 应用：读 → 404；列表不含 A 的 Agent
+        got = _invoke(test_client, app_b, "agent.get", {"agent_id": agent_id})
+        assert got.status_code == 404, got.text
+        listed = _invoke(test_client, app_b, "agent.list", {})
+        assert all(item["id"] != agent_id for item in listed.json()["data"]["items"])
+
+        # B 应用：删 → 404，且资源仍在（注意删除需 confirm=true，否则先撞 400）
+        deleted = _invoke(test_client, app_b, "agent.delete", {"agent_id": agent_id, "confirm": True})
+        assert deleted.status_code == 404, deleted.text
+        still = _invoke(test_client, app_a, "agent.get", {"agent_id": agent_id})
+        assert still.status_code == 200, still.text
+
+        test_client.request(
+            "DELETE", f"{API}/ai/agents/delete", json=[agent_id], headers=auth_headers
+        )
+    finally:
+        _cleanup(test_client, auth_headers, app_a["id"])
+        _cleanup(test_client, auth_headers, app_b["id"])

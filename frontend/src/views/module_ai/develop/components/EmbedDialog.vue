@@ -1,0 +1,459 @@
+<!--
+  应用「嵌入」弹窗：选目标 → 生成 iframe / Script SDK 代码 → 签体验票 → 令牌治理。
+  凭证约定：代码内只出现短期 access_token 占位符；appkey 永不进入网页。
+  样式与系统管理模块一致：el-form 标签 + el-table + el-tag + el-alert，仅用 --el-* 变量。
+-->
+<template>
+  <el-dialog
+    v-model="visible"
+    :title="`嵌入对话 · ${app?.name || ''}`"
+    width="640px"
+    top="6vh"
+    append-to-body
+    @closed="resetState"
+  >
+    <el-form label-width="94px" class="embed-dialog">
+      <el-form-item label="嵌入形态">
+        <el-radio-group v-model="kind" @change="onKindChange">
+          <el-radio-button value="agent">Agent</el-radio-button>
+          <el-radio-button value="app">AI 应用</el-radio-button>
+          <el-radio-button value="workflow">工作流</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+
+      <el-form-item label="嵌入目标">
+        <el-select
+          v-model="targetId"
+          filterable
+          clearable
+          :loading="loadingTargets"
+          placeholder="选择要嵌入的目标"
+          class="embed-dialog__select"
+          @change="mintedToken = ''"
+        >
+          <el-option v-for="t in targets" :key="t.id" :label="t.name" :value="t.id" />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item label="嵌入代码">
+        <div class="embed-dialog__code">
+          <el-tabs v-model="codeTab">
+            <el-tab-pane label="iframe 直嵌" name="iframe">
+              <pre class="embed-dialog__pre">{{ codeFor("iframe") }}</pre>
+            </el-tab-pane>
+            <el-tab-pane label="Script SDK" name="script">
+              <pre class="embed-dialog__pre">{{ codeFor("script") }}</pre>
+            </el-tab-pane>
+          </el-tabs>
+          <div class="embed-dialog__actions">
+            <el-button size="small" :disabled="!targetId" @click="copyCode">
+              <el-icon><CopyDocument /></el-icon>
+              复制代码
+            </el-button>
+            <el-button
+              v-hasPerm="'module_ai:develop:create'"
+              size="small"
+              type="primary"
+              plain
+              :disabled="!targetId"
+              :loading="minting"
+              @click="onMint"
+            >
+              生成体验 Token（2 小时）
+            </el-button>
+          </div>
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            class="embed-dialog__alert"
+            title="凭证说明"
+            :description="`{access_token} 为短期凭证占位符：请由宿主服务端用 appid/appkey 调 POST ${apiBase}/develop-api/auth/token 换票获取；切勿把 appkey 写入网页。过期后宿主重新换票并调用 setToken() 续期。`"
+          />
+        </div>
+      </el-form-item>
+
+      <el-form-item label="已签发令牌">
+        <el-table
+          v-loading="loadingTokens"
+          :data="tokens"
+          size="small"
+          border
+          max-height="150"
+          empty-text="暂无令牌（换票与体验票都会出现在这里）"
+        >
+          <el-table-column label="形态" width="74">
+            <template #default="{ row }">
+              <div>{{ kindLabel(row.kind) }}</div>
+              <div class="embed-dialog__sub">
+                {{ row.issued_by === "admin" ? "体验票" : "换票" }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="target_name" label="目标" min-width="84" show-overflow-tooltip />
+          <el-table-column label="过期时间" width="110">
+            <template #default="{ row }">
+              <span :title="row.expires_at">{{ fmtShort(row.expires_at) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="use_count" label="使用" width="50" align="right" />
+          <el-table-column label="状态" width="76">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.revoked ? 'info' : 'success'" effect="plain">
+                {{ row.revoked ? "已吊销" : "有效" }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="56">
+            <template #default="{ row }">
+              <el-button
+                v-if="!row.revoked"
+                v-hasPerm="'module_ai:develop:update'"
+                link
+                type="danger"
+                size="small"
+                @click="onRevoke(row)"
+              >
+                吊销
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-form-item>
+
+      <el-form-item label="事件契约">
+        <div class="embed-dialog__events">
+          <el-tag
+            v-for="e in EVENTS"
+            :key="e.name"
+            size="small"
+            effect="plain"
+            class="embed-dialog__tag"
+            :title="e.desc"
+          >
+            {{ e.name }}
+          </el-tag>
+        </div>
+        <div class="embed-dialog__note">
+          上行信封 source = ai-embed / version = 1；完整载荷与下行命令见「接入文档」页签。
+        </div>
+      </el-form-item>
+    </el-form>
+
+    <template #footer>
+      <el-button @click="visible = false">关闭</el-button>
+    </template>
+
+    <!-- 体验票一次性展示 -->
+    <el-dialog v-model="reveal.visible" title="体验 Token" width="520px" append-to-body>
+      <el-alert
+        title="请复制后立即填入代码"
+        type="warning"
+        :closable="false"
+        show-icon
+        description="令牌明文仅在这里显示一次；过期后重新签发即可。"
+      />
+      <el-descriptions :column="1" border size="small" class="embed-dialog__reveal">
+        <el-descriptions-item label="Token">
+          <div class="embed-dialog__token">
+            <span>{{ reveal.token }}</span>
+            <el-button link type="primary" size="small" @click="copyText(reveal.token)">
+              <el-icon><CopyDocument /></el-icon>
+            </el-button>
+          </div>
+        </el-descriptions-item>
+        <el-descriptions-item label="过期时间">{{ reveal.expiresAt }}</el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="reveal.visible = false">关闭</el-button>
+        <el-button type="primary" @click="applyRevealToken">填入代码</el-button>
+      </template>
+    </el-dialog>
+  </el-dialog>
+</template>
+
+<script setup lang="ts">
+import { computed, reactive, ref, watch } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { CopyDocument } from "@element-plus/icons-vue";
+import { getAiAgentList } from "@/api/module_ai/agent";
+import { getAiAppList } from "@/api/module_ai/app";
+import { getAiWorkflowList } from "@/api/module_ai/workflow";
+import { getEmbedTokens, mintEmbedToken, revokeEmbedToken } from "@/api/module_ai/develop";
+
+defineOptions({ name: "AiEmbedDialog" });
+
+const props = defineProps<{
+  modelValue: boolean;
+  app: Record<string, any> | null;
+}>();
+const emit = defineEmits<{ (e: "update:modelValue", value: boolean): void }>();
+
+const visible = computed({
+  get: () => props.modelValue,
+  set: (v: boolean) => emit("update:modelValue", v),
+});
+
+const apiBase = `${location.origin}/api/v1/ai`;
+const webBase = `${location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}`;
+
+const EVENTS = [
+  { name: "ready", desc: "嵌入页初始化完成（含目标名与过期时间）" },
+  { name: "user_message", desc: "用户发出消息" },
+  { name: "reply_start", desc: "开始流式回复" },
+  { name: "reply_delta", desc: "流式增量文本（高频）" },
+  { name: "reply_done", desc: "回复完成（全量文本）" },
+  { name: "error", desc: "业务/网络/限流错误" },
+  { name: "token_expired", desc: "凭证过期，宿主需换票后 setToken" },
+];
+
+const kind = ref<"agent" | "app" | "workflow">("agent");
+const targetId = ref<number | undefined>(undefined);
+const targets = ref<{ id: number; name: string }[]>([]);
+const loadingTargets = ref(false);
+const codeTab = ref<"iframe" | "script">("iframe");
+const mintedToken = ref("");
+const minting = ref(false);
+const tokens = ref<any[]>([]);
+const loadingTokens = ref(false);
+const reveal = reactive({ visible: false, token: "", expiresAt: "" });
+
+function kindLabel(k: string): string {
+  return { agent: "Agent", app: "AI 应用", workflow: "工作流" }[k] || k;
+}
+
+/** 令牌过期时间：同一天内显示「MM-DD HH:mm」，表格窄列不折行。 */
+function fmtShort(v?: string): string {
+  if (!v) return "—";
+  return v.length >= 16 ? v.slice(5, 16) : v;
+}
+
+function normalizeList(res: any): any[] {
+  const d = res?.data?.data;
+  if (Array.isArray(d)) return d;
+  if (Array.isArray(d?.items)) return d.items;
+  return [];
+}
+
+async function loadTargets() {
+  loadingTargets.value = true;
+  targetId.value = undefined;
+  try {
+    const res =
+      kind.value === "agent"
+        ? await getAiAgentList()
+        : kind.value === "app"
+          ? await getAiAppList({ page_no: 1, page_size: 100 })
+          : await getAiWorkflowList();
+    targets.value = normalizeList(res)
+      .filter((t: any) => t.enabled !== false)
+      .map((t: any) => ({ id: t.id, name: t.name }));
+  } catch {
+    targets.value = [];
+    ElMessage.error("加载目标列表失败");
+  } finally {
+    loadingTargets.value = false;
+  }
+}
+
+function onKindChange() {
+  mintedToken.value = "";
+  loadTargets();
+}
+
+async function loadTokens() {
+  if (!props.app?.id) return;
+  loadingTokens.value = true;
+  try {
+    const res = await getEmbedTokens(props.app.id);
+    tokens.value = res?.data?.data?.items || [];
+  } catch {
+    tokens.value = [];
+  } finally {
+    loadingTokens.value = false;
+  }
+}
+
+function resetState() {
+  kind.value = "agent";
+  targetId.value = undefined;
+  targets.value = [];
+  tokens.value = [];
+  codeTab.value = "iframe";
+  mintedToken.value = "";
+  reveal.visible = false;
+}
+
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (!open) return;
+    void loadTargets();
+    void loadTokens();
+  }
+);
+
+/* ---------- 代码模板 ---------- */
+function codeFor(tab: "iframe" | "script"): string {
+  const token = mintedToken.value || "{access_token}";
+  if (tab === "iframe") {
+    return `<iframe\n  src="${webBase}/#/embed?token=${token}"\n  width="420" height="620"\n  style="border:0;border-radius:12px"\n  title="AI 对话"\n></iframe>`;
+  }
+  return (
+    `<script src="${apiBase}/embed/sdk.js"></scr` +
+    `ipt>\n<div id="ai-assistant" style="width:420px;height:620px"></div>\n<script>\n  AiAssistant.init({\n    container: "#ai-assistant",\n    token: "${token}",\n    apiBase: "${apiBase}",\n    webBase: "${webBase}",\n    theme: { primary: "#409eff" },\n  });\n</scr` +
+    `ipt>`
+  );
+}
+
+function copyText(text?: string) {
+  if (!text) return;
+  navigator.clipboard?.writeText(text).then(
+    () => ElMessage.success("已复制"),
+    () => ElMessage.error("复制失败，请手动复制")
+  );
+}
+
+function copyCode() {
+  copyText(codeFor(codeTab.value));
+}
+
+/* ---------- 体验票 ---------- */
+async function onMint() {
+  if (!props.app?.id || !targetId.value) return;
+  minting.value = true;
+  try {
+    const res = await mintEmbedToken({
+      app_id: props.app.id,
+      kind: kind.value,
+      target_id: targetId.value,
+    });
+    const d = res?.data?.data || {};
+    reveal.token = d.token || "";
+    reveal.expiresAt = d.expires_at || "";
+    reveal.visible = true;
+    void loadTokens();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "签发失败");
+  } finally {
+    minting.value = false;
+  }
+}
+
+function applyRevealToken() {
+  mintedToken.value = reveal.token;
+  reveal.visible = false;
+  ElMessage.success("已填入代码，可直接复制使用");
+}
+
+/* ---------- 吊销 ---------- */
+async function onRevoke(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `吊销后该令牌立即失效，使用它的嵌入页面将无法继续对话，且不可恢复。是否继续？`,
+      "吊销令牌",
+      { type: "warning", confirmButtonText: "吊销", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await revokeEmbedToken(row.id);
+    ElMessage.success("已吊销");
+    await loadTokens();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "吊销失败");
+  }
+}
+</script>
+
+<style scoped>
+.embed-dialog {
+  max-height: 70vh;
+  padding-right: 6px;
+  overflow-y: auto;
+}
+
+.embed-dialog :deep(.el-form-item) {
+  margin-bottom: 14px;
+}
+
+.embed-dialog :deep(.el-form-item:last-child) {
+  margin-bottom: 4px;
+}
+
+.embed-dialog__select {
+  width: 100%;
+}
+
+.embed-dialog__code {
+  width: 100%;
+}
+
+.embed-dialog__code :deep(.el-tabs__content) {
+  overflow: visible;
+}
+
+.embed-dialog__pre {
+  max-height: 150px;
+  padding: 10px 12px;
+  margin: 0;
+  overflow: auto;
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-primary);
+  white-space: pre;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+
+.embed-dialog__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.embed-dialog__alert {
+  margin-top: 10px;
+}
+
+.embed-dialog__events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+
+.embed-dialog__tag {
+  font-family: var(--el-font-family-mono, monospace);
+}
+
+.embed-dialog__sub {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+}
+
+.embed-dialog__note {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.embed-dialog__reveal {
+  margin-top: 12px;
+}
+
+.embed-dialog__token {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--el-font-family-mono, monospace);
+  color: var(--el-color-primary);
+  word-break: break-all;
+}
+</style>

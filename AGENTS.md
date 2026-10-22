@@ -282,6 +282,67 @@ Vue logs: `"Component inside <Transition> renders non-element root node that can
   `el-tabs` 页必须给 `.el-tabs` / `.el-tabs__content` 补 flex 高度链（否则 tab 内容区不撑满）。
 - 无卡片的列表页（provider/develop）要么给表格包 `flex:1` 容器 + `height="100%"`，要么套统一
   `el-card` 让白色面板铺满；不要一半有卡一半裸表格。
+### 6. 页面外壳 / 表格 / 表单必须与框架页面同构（强制）
+
+> 2026-10-22 教训：AI 集成页写了 `padding: 0` 且没有面板容器，标题/表格直接贴住侧边栏，我仅看内容就说"检查通过"，
+> 被用户当场否掉（"没有白色背景也没边框，都和菜单挨在一起了"）。**"看了一眼觉得还行"不算检查，必须量数值。**
+
+**唯一风格来源 = 框架自带页面**（不要自创）：
+- CRUD 列表：`frontend/src/views/module_system/param/index.vue`
+- 页签 + 面板：`frontend/src/views/module_ai/market/index.vue`（`market-shell`）
+- 多卡片工作台：`frontend/src/views/module_ai/ontology/index.vue`
+
+**页面外壳（照抄 market-shell）**
+```scss
+/* 非 scoped！scoped 在 keep-alive / HMR 下可能不命中（见本文件下方调试记忆） */
+.app-container.xxx-page {
+  display: flex; flex-direction: column; height: 100%;
+  overflow: hidden; padding: 12px; box-sizing: border-box;
+}
+.xxx-page .xxx-shell {            /* el-card shadow="never" */
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
+}
+/* body / 页签 / 内容区依次 flex:1 + min-height:0，内容区 overflow-y:auto */
+```
+- **禁止** `padding: 0`、禁止内容直接挂在 `app-container` 下无面板（只有纯表单类简单页可例外，且需与同模块对齐）。
+
+**表格（竖线框必须有）**
+- 一律 `border` + `stripe`：`<el-table ... border stripe>`。**裸 `el-table`（无边框）视为缺陷**。
+- 列以 `min-width` 为主、短列用 `width`；长文本 `show-overflow-tooltip`。
+- 空态统一 `<template #empty><el-empty :image-size="80" description="暂无数据" /></template>`。
+- 分页统一 `layout="total, sizes, prev, pager, next"` + `background`，右对齐；表格容器沿用 `data-table__content`（`height="100%"` 时）。
+- 列表页优先直接用 `PageSearch` + `PageContent`（自带上述规范）；自定义页签页也要满足同样外观。
+
+**表单 / 弹窗**
+- 搜索区 `el-form :inline="true"`；弹窗 `el-form :label-width`（与同模块一致，常见 90~110）。
+- 字号只用 `var(--el-font-size-base)` / 12px 次要说明；颜色/圆角只用 `--el-*`；按钮 `size` 与同模块一致。
+
+**探测验收（不做 = 没做完）**
+
+必须用无头浏览器读计算样式，与参照页**逐项数值相等**（不是看着像）：
+```js
+const m = await page.evaluate(() => {
+  const shell = document.querySelector(".develop-shell");
+  const cs = getComputedStyle(shell);
+  const r = shell.getBoundingClientRect();
+  return {
+    padding: getComputedStyle(document.querySelector(".app-container")).padding,
+    border: cs.borderTopWidth, radius: cs.borderTopLeftRadius, bg: cs.backgroundColor,
+    rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+  };
+});
+```
+- 参照页实测基线（1440×900，侧边栏 210）：`padding 12px`、`border 1px solid`、`radius 4px`、`bg rgb(255,255,255)`、`rect x=222 y=96 1206×792`。
+- 表格额外探测：`document.querySelectorAll(".el-table--border").length` 覆盖页内所有表格；`getComputedStyle(th).borderRightWidth === "1px"`。
+- 截图覆盖：**每个页签 ×（有数据态 + 空态）**，弹窗各态，以及同尺寸的参照页一张；用模型自身读图对照。
+
+**自查清单（每次交付前逐条打勾）**
+1. 每个页签都在面板内、四边留白一致、无贴边；
+2. 页内所有表格都有竖线框（`border`）且空态/分页一致；
+3. 计算样式与参照页数值相等 + 截图逐张看过（含弹窗、空态、窄屏）。
 
 ## 标注标签渲染经验（标注重中之重）
 

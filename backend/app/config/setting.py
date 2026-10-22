@@ -244,6 +244,32 @@ class Settings(BaseSettings):
     CAPTCHA_EXPIRE_SECONDS: int = 60 * 1  # 验证码过期时间(秒) 1分钟
     CAPTCHA_FONT_SIZE: int = 32  # 字体大小
     CAPTCHA_FONT_PATH: str = "static/assets/font/Arial.ttf"  # 字体路径
+    # AI 集成嵌入通道限流（固定窗口，每分钟；超限 429）
+    EMBED_RATE_TOKEN_PER_MIN: int = 30  # 每 token 每分钟消息条数上限
+    EMBED_RATE_IP_PER_MIN: int = 60  # 每 IP 每分钟消息条数上限
+    EMBED_TOKEN_RATE_PER_MIN: int = 30  # 每 appid 每分钟换票次数上限（防铸票滥用）
+    # 开放 REST / MCP 通道限流（固定窗口，每分钟；超限 429）
+    OPEN_API_RATE_APP_PER_MIN: int = 120  # 每 appid 每分钟调用上限
+    OPEN_API_RATE_IP_PER_MIN: int = 240  # 每 IP 每分钟调用上限
+    # 开放面「聚合回复」类能力（chat.send / bot.use）的整体超时（秒）：
+    # 非流式调用必须设上限，否则目标卡住会把工作线程/连接长期占住。
+    OPEN_API_CHAT_TIMEOUT_SECONDS: int = 120
+    # 调用审批待处理时限（小时）：超过则由定时任务自动关闭为 expired，
+    # 避免「待审批」永久堆积（申请方也没法预期结果）。
+    APPROVAL_PENDING_TTL_HOURS: int = 24
+    # 审批通知的**外部通道**（逗号分隔，复用告警模块既有四通道实现）：
+    # 支持 email / webhook / sms，留空 = 只发站内通知。
+    # 每个通道的 JSON 配置读系统参数 `ai_approval_notify_{channel}`；
+    # SMTP/Webhook 基础参数沿用告警模块的 notify_smtp_* / notify_webhook_* 约定。
+    APPROVAL_NOTIFY_CHANNELS: str = ""
+    # 开放面审计 request_body 的单字段截断上限（字符）：1..2000，超出截断。
+    # 默认 200 = 只留摘要（防审计表被长文本撑爆）；排查期可临时调大。
+    OPEN_AUDIT_BODY_LIMIT: int = 200
+    # 调用日志保留天数（0 = 永久保留）：定时任务每天清理超期行。
+    CALL_LOG_RETENTION_DAYS: int = 180
+    # MCP 会话保护（传给 Streamable HTTP session manager）
+    MCP_MAX_SESSIONS: int = 64  # 同时在线会话上限
+    MCP_SESSION_IDLE_TIMEOUT: float = 600  # 空闲会话回收（秒）
 
     # ================================================= #
     # ***************** 第三方 OAuth 登录配置 ********* #

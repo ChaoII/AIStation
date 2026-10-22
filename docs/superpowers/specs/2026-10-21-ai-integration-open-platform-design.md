@@ -1,301 +1,382 @@
-# AI 集成开放平台·设计文档
+# AI 集成开放平台·设计文档（v2：统一认证 + 嵌入能力）
 
-- 日期：2026-10-21
+- 日期：2026-10-21（v1 同日初版并已按其完成 P1；v2 为评审修订版）
 - 状态：待评审
-- 范围：新增「AI 集成」子系统，把平台的 AI 能力（训练任务 / Agent / 消息 / 聊天机器人 / 嵌入）以开放接口（REST + MCP Server + 嵌入 SDK）暴露给第三方，用 **appid / appkey** 鉴权并按**能力品类权限**控制
-- 参考模型：**企业微信（WeCom）AI 开放能力 / MCP 集成**
+- 范围：「AI 集成」子系统**整体规划**——把平台 AI 能力（训练任务 / Agent / AI 应用 / 工作流对话 / 消息）以 **REST + MCP Server + 嵌入 SDK** 三种出口暴露给外部；**所有出口一律凭证校验、禁止匿名**；按能力品类权限控制，关键动作可审批、授权可到期、调用全审计。
+- 参考模型：企业微信（WeCom）AI 开放能力 / MCP 集成；浏览器面 token 换票对齐微信 `access_token` 模型与 MCP 生态 OAuth Bearer 实践。
+- **本次实施范围（P4'）**：换票 token 底座 + 三形态嵌入（见 §9）；P2 REST / P3 MCP 按 §6 统一管道排后续分期。
+
+---
+
+## 修订记录
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| v1 | 2026-10-21 | 初版。P1（凭证与权限底座）已按 v1 实现并全量回归。 |
+| v2 | 2026-10-21 | ① **禁免密**：新增 §6 统一认证模型，原 P4「免登录 `/embed` `/public`」设计**作废**；② 嵌入范围扩为 Agent / AI 应用 / 工作流**三形态**；③ 旧工作流 `/share` 通道**整体弃用拆除**（无历史包袱）；④ embed 品类中文名定为「网页嵌入」（修正 v1 实现中的「向量嵌入」）；⑤ **界面体验列为硬性验收标准**；⑥ 明确分期：本次实施 = 换票底座 + 嵌入（P4'）。 |
 
 ---
 
 ## 1. 背景与目标
 
-平台目前 `module_ai`（AI 管理）已具备：Agent、AI 应用、聊天/助手（SSE 流式）、知识库 RAG、模型与供应商、能力市场、MCP 客户端管理；`module_train` 具备训练任务（OCR/PaddleX/YOLO）、评估、预测。但**这些能力只能由平台内部登录用户通过 RBAC 权限访问**，无法被第三方系统程序化调用。
+平台 `module_ai`（AI 管理）已具备：Agent、AI 应用、聊天/助手（SSE 流式）、工作流、知识库 RAG、模型与供应商、能力市场、MCP 客户端管理；`module_train` 具备训练任务与评估。但这些能力只能由平台内部登录用户经 RBAC 访问，无法被外部系统程序化调用、也无法嵌入第三方站点。
 
-目标：搭建一个「AI 集成开放平台」，让**外部系统**申请 `appid/appkey`，通过 **REST API / MCP Server / 嵌入 SDK** 三种形态调用平台 AI 能力，且**按 appid 的能力品类权限**控制，做到权限隔离、关键动作可审批、授权可到期、调用全审计。
+目标：外部系统申请 `appid/appkey`，经 **REST / MCP / 嵌入 SDK** 三种形态调用平台 AI 能力；**每一次调用都必须携带凭证**（服务端面 `appid:appkey`、浏览器面换票 `access_token`），按品类权限控制，全量审计可配额。
 
-### 1.1 成功标准
-- 第三方用 `appid:appkey` 即可调用：创建训练任务、创建 Agent、发消息、聊天机器人对话。
-- 第三方能把 Agent/聊天机器人 **iframe 嵌入自家站点**（对齐 BSIAP 的 `/embed` / `/public` 机制）。
-- 每个 app 的能力被**按品类权限**限制，超出权限的调用被拒绝并记录。
-- 所有 app 调用可审计、可追溯、可配额。
+### 1.1 成功标准（v2）
+
+- 任何开放端点**无凭证一律 401**，不存在匿名可达的业务接口。
+- 第三方服务端用 `appid:appkey` 换取短期 `access_token`；浏览器与嵌入代码中**永不出现 appkey**。
+- 第三方站点以 **iframe 或 `<script>` SDK** 嵌入 Agent / AI 应用 / 工作流，**换票后**免平台账号多轮流式对话，业务事件经 `postMessage` 全事件流回传宿主。
+- 超出权限/过期/吊销/超限的调用被拒绝并记审计。
+- **界面与交互达到平台同等质感，视觉验收不过不交付。**
 
 ---
 
-## 2. 参考模型：企业微信 MCP 集成
+## 2. 参考模型：企业微信 MCP 集成 + 微信 access_token
 
-企业微信 5.0.10 开放了 CLI 与 MCP 能力，其设计要点如下，直接作为我们的参考基准：
-
-| 企业微信 | 我们的实现 |
+| 企业微信 / MCP 生态 | 本平台实现 |
 |---------|-----------|
-| 企业微信后台创建「智能机器人（AI Bot）」 | 「AI 集成」菜单创建「集成应用（app）」 |
-| **Bot ID + Secret**（凭据） | **appid + appkey** |
-| 按**品类（category）**授权：`doc / msg / contact / schedule / todo / meeting` | 按能力品类授权：`train / agent / chat / bot / embed` |
-| 工具命名 `{category}__{method}`（如 `msg__send_message`） | 如 `train__create_task`、`agent__create`、`chat__send_message` |
-| 远程 MCP（Streamable HTTP），按品类拉取对应 Server | 平台作为 MCP Server（`mcp` 官方 `FastMCP` + Streamable HTTP） |
-| 安全四要素：**人员权限与 AI 权限隔离、关键动作人工审批、授权有效期、全量审计可追溯** | 同四要素落地 |
+| 后台创建「智能机器人（AI Bot）」 | 「AI 集成」菜单创建「集成应用（app）」 |
+| **Bot ID + Secret**（服务端保管） | **appid + appkey**（服务端保管，只存 sha256） |
+| 按**品类（category）**授权 | 按能力品类授权：`train / agent / chat / bot / embed` |
+| **短期 access_token 换票**（Secret 换 token，浏览器只持 token） | `POST /develop-api/auth/token` 换票，token 绑定 app + 目标 |
+| 远程 MCP（Streamable HTTP）+ OAuth Bearer | 平台作为 MCP Server，header `Bearer appid:appkey` |
+| 安全四要素：人员与 AI 权限隔离、关键动作审批、授权有效期、全量审计 | 同四要素落地 |
 
-> 参考来源：企业微信「AI 开放能力」页、企业微信 5.0.10 开放 CLI 与 MCP 公告、`wecom-mcp` 社区实现。企业微信的接入流程是「创建 AI Bot → 获取 Bot ID/Secret → 在后台为 Bot 开启各品类授权 → Agent 通过 Bot ID/Secret 以 MCP 方式调用」。
+> 与 v1 的差异：v1 设计浏览器面为「免登录直连」，v2 评审否决（嵌入代码公开暴露，匿名面不可接受），改为换票 token（§6）。
 
 ---
 
 ## 3. 整体架构与分解
 
-采用**独立数据域 + 三态出口 + 统一能力注册表**。整个系统分解为 4 个子项目，按依赖顺序推进，每个子项目独立走「spec → plan → 实现 → 验证」。
-
 ```
-┌───────────────────────────────────────────────────────────┐
-│                 AI 集成开放平台（module_ai/develop/）        │
-│                                                             │
-│  内部管理面（RBAC 鉴权，/ai/develop/*）                      │
-│    ├─ 集成应用管理（app CRUD、appid/appkey、权限点、配额）    │
-│    ├─ 调用日志 / 审计 / 统计                               │
-│    └─ 授权有效期 / 审批配置                                │
-│                                                             │
-│  开放数据面（appid/appkey 鉴权）                             │
-│    ├─ REST API     /ai/develop-api/*                      │
-│    ├─ MCP Server   /ai/develop-api/mcp （Streamable HTTP） │
-│    └─ 嵌入 SDK     /embed/* + /public/*                  │
-│                                                             │
-│  统一能力注册表（capability registry，方案 A）               │
-│    每个能力条目：能力码 / 权限码 / 参数schema / REST路由 /    │
-│    MCP工具定义 / handler → 复用现有 service                  │
-└───────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                AI 集成开放平台（module_ai/develop/）             │
+│                                                                  │
+│  内部管理面（RBAC，/ai/develop/*）                                │
+│    ├─ 集成应用管理（appid/appkey、权限点、配额、到期、启停）        │
+│    ├─ 嵌入管理（选目标、签发体验票、token 列表/吊销、代码生成）     │  ← v2 新增
+│    ├─ 调用日志 / MCP 会话 / 审计统计                              │
+│    └─ 接入文档（换票流程 / SDK / postMessage 契约）                │
+│                                                                  │
+│  开放数据面（全部凭证校验，禁匿名）                                │
+│    ├─ REST     /ai/develop-api/*           Bearer appid:appkey   │
+│    ├─ MCP      /ai/develop-api/mcp         header 同上（P3）       │
+│    ├─ 换票     /ai/develop-api/auth/token  appid:appkey → token   │
+│    ├─ 嵌入     /ai/embed/*                 Bearer <access_token>  │
+│    └─ SDK      /ai/embed/sdk.js            静态脚本（不含凭证）     │
+│                                                                  │
+│  统一鉴权管道（六步，三出口共享，见 §6.3）                          │
+│    凭证 → app 状态/到期 → 品类权限 → 配额/限流 → 执行 → 审计       │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.1 能力品类（首批对外）
+### 3.1 能力品类（对外）
 
-| 品类 | 权限点示例 | 能力 |
+| 品类 | 权限点 | 能力 |
 |------|-----------|------|
-| `train` | `integration:train:create/query/start/stop` | 创建训练任务、查询/启动/停止、查状态与日志 |
-| `agent` | `integration:agent:create/query/update/delete` | 创建/查询/编辑/删除 Agent |
-| `chat` | `integration:chat:send/query` | 发消息（非流式/流式）、会话管理 |
-| `bot` | `integration:bot:use` | 聊天机器人对话（调用 app 可用的 bot 实例） |
-| `embed` | `integration:embed:use` | 把 Agent/聊天机器人 iframe 嵌入第三方站点 |
+| `train` | `integration:train:create/query/start/stop` | 训练任务（P2） |
+| `agent` | `integration:agent:create/query/update/delete` | Agent 管理（P2） |
+| `chat` | `integration:chat:send/query` | 消息/会话（P2） |
+| `bot` | `integration:bot:use` | 聊天机器人（P2） |
+| `embed` | `integration:embed:use` | **网页嵌入**：把 Agent/AI 应用/工作流对话嵌入第三方站点（P4'） |
 
-> 权限点定义在前端勾选、后端校验，独立于系统内部 `module_ai:*` RBAC 权限，实现「人员权限与 AI 权限隔离」。
+> 品类中文名以本表为准：`embed` = **网页嵌入**（v1 实现误写「向量嵌入」，P4' 一并修正前后端两处）。
 
-### 3.2 子项目分解与顺序
+### 3.2 分期与依赖
 
-| 阶段 | 子项目 | 范围 | 依赖 |
-|------|--------|------|------|
-| **P1** | 集成应用凭证与权限（底座） | `ai_integration_apps` 表、appid/appkey 生成/重置/启停/到期、按品类权限点、appid/appkey 鉴权依赖、调用审计表、前端「AI 集成」菜单 | 无 |
-| **P2** | 开放 REST API（能力暴露） | 对外端点：创建训练任务/创建 Agent/发消息/聊天/查状态；appid 鉴权+权限校验+数据归属（app 租户）+限流+审计；统一能力注册表 | P1 |
-| **P3** | MCP Server（协议暴露） | 平台作为 MCP Server（`FastMCP` + Streamable HTTP），把能力注册表暴露为 MCP tools；appid/appkey 走 MCP header 鉴权；**每次工具调用写 `ai_integration_call_logs`（method=MCP），每次连接/断开写 `ai_integration_mcp_sessions`，供管理员监控 MCP 行为** | P2 |
-| **P4** | 嵌入能力（对齐 BSIAP） | `/embed/*` + `/public/*` 免登录路由；app 维度 embed token；`<script>`/iframe 嵌入 SDK；`postMessage` 业务数据回传 | P1 |
-
-> 可选项 P5：治理度量（tokens 消耗统计、配额告警、开发者文档/样例代码生成）。
+| 阶段 | 范围 | 状态 |
+|------|------|------|
+| **P1** | `ai_integration_apps` 等三表、appid/appkey、品类权限、鉴权依赖、审计、RBAC 管理面与前端「AI 集成」菜单 | **已完成（按 v1 实现）** |
+| **P4'** | **换票 token 底座 + 三形态嵌入**（本设计 §6 + §9） | **已完成** |
+| P2 | 开放 REST 能力（能力注册表 + 数据归属 `source_app_id`） | **已完成（2026-10-22）**：注册表 `develop/registry.py` + handler 分包（agent/chat/bot/train 共 14 项能力）+ `POST /ai/develop-api/capabilities/{code}` 统一入口 + `ai_agents`/`train_tasks` 归属列 |
+| P3 | MCP Server（Streamable HTTP + 连接会话监控） | **已完成（2026-10-22）**：`develop/mcp_server.py`，工具=能力、`tools/list` 按授权过滤、传输层 `Bearer appid:appkey`、会话与调用审计 |
 
 ---
 
-## 4. 命名与路由（重要：避让已占用菜单）
-
-`/ai/integration`（route_name `AiIntegration`，菜单「数据与集成」，组件 `module_ai/integration/index`）**已被智能问数数据源集成占用**。本新功能必须避让。
-
-**最终命名：**
+## 4. 命名与路由
 
 | 项 | 值 | 说明 |
 |----|----|------|
-| 菜单名 | 「AI 集成」 | 用户要求 |
-| 路由 | `/ai/develop` | 避开 `/ai/integration` |
-| route_name | `AiDevelop` | 唯一 |
-| 前端组件 | `module_ai/develop/index.vue` | 单页 + 页签（应用管理 / 调用日志） |
+| 菜单名 / 路由 / route_name | 「AI 集成」/ `/ai/develop` / `AiDevelop` | v1 已定，避让 `/ai/integration` |
+| 前端组件 | `module_ai/develop/index.vue` | 页签：应用管理（操作列含「嵌入」弹窗，见 §9.8）/ 调用日志 / MCP 会话 / 接入文档 |
 | 后端模块 | `app/plugin/module_ai/develop/` | 自动发现，容器前缀 `/ai` |
-| 内部管理面 | `DevelopRouter`（`/ai/develop`，`AuthPermission(["module_ai:develop:*"])`） | RBAC |
-| 开放数据面 | `OpenApiRouter`（`/ai/develop-api`，`get_app_api_auth`） | appid/appkey |
-
-> ⚠️ 若后续需要在「AI 控制台」之外再放一个菜单入口，需同步登记 route_name 与按钮权限（见 §8.3 菜单种子）。
+| 内部管理面 | `DevelopRouter`（`/ai/develop`） | RBAC `module_ai:develop:*` |
+| 开放数据面 | `OpenApiRouter`（`/ai/develop-api`） | `Bearer appid:appkey` |
+| **嵌入 API** | `EmbedRouter`（`/ai/embed`） | `Bearer <access_token>`，无 RBAC |
+| **嵌入页（前端）** | `/#/embed?token=…` | Layout 外静态路由；`permission.ts` 白名单以 `/embed` **替换** `/share` |
+| **SDK** | `GET /api/v1/ai/embed/sdk.js` | 静态 JS，无凭证；接入文档示例指向此真实地址 |
 
 ---
 
-## 5. 统一能力注册表（方案 A）
+## 5. P1 已实现内容（v1 存档，作为 v2 基座）
 
-REST / MCP / 嵌入三态共用同一套能力 handler，避免逻辑重复。注册表只做**元数据 + 分发**，不重写业务（handler 直接复用现有 service）。
+> 以下为已落地代码的既成事实，P4'/P2/P3 直接复用，不再重新设计。
 
-每个能力条目（`integration/capabilities.py` 中定义）：
+### 5.1 数据模型（三表，手写迁移已并链）
+
+- `ai_integration_apps`（ModelMixin/UserMixin）：`appid`（`ai_`+8 位去混淆）、`appkey_hash`（sha256）、`name` 唯一、`enabled`、`expire_at`、`capabilities` JSONB、`quota` JSONB、`requires_approval`、`last_call_at`、`call_count`。
+- `ai_integration_call_logs`（MappedBase 只增不改）：`app_id` FK、`appid` 冗余、`category`、`capability`、`log_type`、`method`（REST/MCP/EMBED）、`transport`、`session_id`、`request_path`、`request_body` 脱敏、`status`（success/denied/error）、`latency_ms`、`cost_tokens`、`result_summary`。
+- `ai_integration_mcp_sessions`（MappedBase）：连接级监控，P3 消费。
+
+### 5.2 凭证与鉴权（已实现）
+
+- `appid = ai_ + 8 位随机（去 0/O/1/l/I）`；`appkey = token_urlsafe(32)`，只存 sha256，明文仅创建/重置返回一次；`hmac.compare_digest` 比对；失败统一 401 不区分原因。
+- `Bearer appid:appkey` 解析用 `split(":", 1)`（首冒号，appkey 可含冒号）。
+- 管理面 RBAC：`module_ai:develop:{query,create,update,delete,reset}`；菜单种子 `_ensure_develop_menus()` 幂等。
+
+### 5.3 管理端页面（已实现）
+
+四页签：应用管理（CRUD/启停/权限分组勾选/AppKey 重置，均二次确认）、调用日志（应用/品类/出海口/状态过滤）、MCP 会话、接入文档。**P4' 将重写接入文档内容并新增嵌入管理弹窗（§9.7）。**
+
+---
+
+## 6. 统一认证与授权模型（v2 核心，本次实施）
+
+### 6.1 凭证两层，禁匿名
+
+| 出口 | 凭证 | 适用 |
+|------|------|------|
+| REST / MCP（服务端↔服务端） | `Authorization: Bearer <appid>:<appkey>` | 第三方后端直接调用，密钥不离服务器 |
+| 嵌入（浏览器↔平台） | `Authorization: Bearer <access_token>` | 浏览器只持短期票，**永不见 appkey** |
+
+- **铁律**：任何开放业务端点缺凭证 → 401；appkey 不得出现在任何网页/嵌入代码/SDK 输出中（接入文档明确警告）。
+- 管理面 RBAC（JWT）与开放面（appid/appkey、token）**完全隔离**，不共用端点、不混用鉴权语义。
+
+### 6.2 换票端点
+
+```
+POST /api/v1/ai/develop-api/auth/token
+Header: Authorization: Bearer <appid>:<appkey>
+Body:   { "kind": "agent" | "app" | "workflow", "target_id": 123, "ttl": 1800? }
+Resp:   { "token": "…", "expires_in": 1800, "expires_at": "YYYY-MM-DD HH:mm:ss" }
+```
+
+- 校验顺序：凭证（P1 依赖）→ `require_app_perm("integration:embed:use")`（否则 403 + denied 审计）→ 目标存在且未软删（查对应表）→ 签发。
+- **token 绑定 `app + kind + target_id`**，单目标最小权限；默认 TTL 30 分钟，上限 24 小时。
+- 库中只存 `token_hash = sha256(token)`；明文仅此响应返回一次。
+- `issued_by`：`exchange`（换票）/ `admin`（管理弹窗「体验 Token」，固定 2 小时，方便当场试用）。
+- 每次签发（成功/拒绝）写 `call_logs`：`category=embed`、`capability=token.issue`、`method=REST`。
+
+### 6.3 六步鉴权管道（三出口共享，每请求执行）
+
+1. **凭证校验**：解析并查 token/appid → 无效、过期、吊销、禁用、到期 → **401**（统一文案，不泄露原因）。
+2. **app 状态**：`enabled=true` 且 `expire_at` 为空或未到。
+3. **品类权限**：所需权限点 ∈ `app.capabilities` → 否则 **403 + denied 审计**。
+4. **配额 + 限流**：
+   - 配额：`app.quota` 含 `embed` 键时按「自然日次数」限额，Redis `INCR quota:embed:{app_id}:{yyyymmdd}`，超限 **429**；缺省/0 = 不限。
+   - 限流：Redis **固定窗口**（`INCR`+`EXPIRE 60`，沿用工作流分享既有模式），**token 键 + IP 键**双限：默认每 token 30 条/分钟、每 IP 60 条/分钟（env 可调），超限 **429** + 中文提示。
+5. **执行**：handler 直接复用现有 service（嵌入 run 复用与已登录 `/run/stream` 相同的 service 函数），资源落 `source_app_id = app.id`（§8 归属约定在 P4' 落地于会话行）。
+6. **审计**：成功/拒绝/异常都写 `ai_integration_call_logs`（`method` 按出口 = `REST`/`MCP`/`EMBED`；token 只留前 6 位前缀）。
+
+### 6.4 token 生命周期与续期契约
+
+- 过期/吊销即拒（401）；吊销为管理端动作，DB 置 `revoked=true`，立即生效。
+- 嵌入页收到 401 → SDK 向宿主发 `token_expired` 事件 → **第三方服务端**用 `appid:appkey` 重新换票 → 调 `AiAssistant.setToken(新票)` 热替换 → 对话（`sid` 会话）不中断。
+- 客户端**没有任何刷新凭证能力**（安全边界：刷新只能发生在持有 appkey 的第三方服务端）。
+
+### 6.5 MCP（P3 摘要，维持 v1 设计）
+
+`FastMCP` + Streamable HTTP 挂 `/ai/develop-api/mcp`，header `Bearer appid:appkey` 走同一管道；工具调用写 `call_logs(method=MCP)`，连接/断开写 `mcp_sessions`。
+
+---
+
+## 7. 统一能力注册表（P2/P3 设计，v1 内容保留）
+
+REST / MCP / 嵌入三态共用能力 handler，注册表只做「元数据 + 分发」，不重写业务：
 
 ```python
 class Capability:
-    code: str                 # "train.create_task"
-    perm: str                 # "integration:train:create"
-    category: str             # "train"
-    name: str                 # 中文名
-    description: str
-    input_schema: dict        # JSON Schema（校验入参）
-    returns: str              # 返回结构说明
-    handler: Callable         # 实际调用现有 service 的异步函数
-    requires_approval: bool   # 是否需要人工审批（高危动作）
-    mcp: dict                 # MCP 工具定义（name/description/参数）
-    rest: dict                # REST 路由模板（method/path）
+    code: str          # "train.create_task"
+    perm: str          # "integration:train:create"
+    category: str
+    name: str; description: str
+    input_schema: dict # JSON Schema
+    returns: str
+    handler: Callable  # 复用现有 service
+    requires_approval: bool
+    mcp: dict; rest: dict
 ```
 
-- **REST**：`OpenApiRouter` 通过注册表生成路由，handler 注入 `app`（appid 上下文）。
-- **MCP**：P3 用 `FastMCP` 把注册表里 `mcp` 定义批量 `@mcp.tool()`，handler 同样注入 `app`。
-- **嵌入**：P4 复用能力注册表的「认证 + 归属」逻辑。
-
-### 5.1 统一层注入（一次注入，三态共享）
-每个开放入口经过 `get_app_api_auth` 得到 `AppContext(app_id, app, perms, quota)`。之后：
-1. 校验该能力 `perm` 是否在 app 的权限点内（否则 403）；
-2. 若 `requires_approval`，进入审批流程（P2/P3；P1 只存标记）；
-3. 校验配额/有效期；
-4. 调用 handler（内层把资源 `app_id` 归属到该 app）；
-5. 写调用审计 `ai_integration_call_logs`。
+- 统一层注入：`get_app_api_auth` → `AppContext(app_id, app, perms, quota)` → 六步管道（§6.3）。
+- P4' 的嵌入 run **不走注册表**（它是传输层复用而非新能力暴露）；P2 起的业务能力一律入册。
 
 ---
 
-## 6. P1 详细设计：集成应用凭证与权限
+## 8. 数据归属约定（跨分期）
 
-### 6.1 数据模型（手写 Alembic 迁移）
+- 资源（训练任务 / Agent / 消息 / 会话 / token）落 `source_app_id`（FK `ai_integration_apps.id`，空 = 内部用户创建）。
+- P1 仅记录 `call_logs.app_id` 归属；**P4' 起嵌入会话行物化 `source_app_id`**；P2/P3 在创建路径统一打标并按归属过滤。
 
-> 本项目 dev 库有 400+ 历史/影子表（`ont_*`），`autogenerate` 会产生无关 DROP，**迁移必须手写**（参考 `2026_10_15_ai_market_models.py` 模式）。插件表增列前用 `sa.inspect(bind).has_table()` 判断，保证空库/全链重放（SQLite 回归）可用。
+---
 
-#### `ai_integration_apps`（集成应用主表）
+## 9. P4' 嵌入能力详细设计（本次实施）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | Integer PK | 主键 |
-| `uuid` | String(64) | 全局唯一 |
-| `appid` | String(64) | **公开标识**，全局唯一（`ai_` 前缀，如 `ai_ab12cd`），用于鉴权与展示 |
-| `appkey_hash` | String(128) | **appkey 的哈希**（sha256），不存明文；创建/重置时一次性返回明文 |
-| `name` | String(128) | 应用名（唯一） |
-| `description` | String(255) | 描述 |
-| `status` | String(16) | `enabled` / `disabled`（禁用后拒绝鉴权） |
-| `expire_at` | DateTime | 授权到期时间；空=长期 |
-| `capabilities` | JSONB | 权限点数组（`["integration:agent:create", ...]`） |
-| `quota` | JSONB | 配额（如 `{"train": 10, "chat": 1000}`，空=不限制） |
-| `requires_approval` | Boolean | 高危动作是否需人工审批（默认 true） |
-| `source_type` | String(16) | 归属来源：`admin`（平台管理员创建）/ 预留 |
-| `last_call_at` | DateTime | 最近调用时间（用于展示） |
-| `call_count` | Integer | 累计调用次数 |
-| `ModelMixin/UserMixin` | - | 复用 `created_id`/`updated_id` 等审计 |
-
-#### `ai_integration_call_logs`（调用审计表）
-
-覆盖 **REST / MCP / 嵌入** 三种出海口的所有行为，是「管理员监控」的核心。
+### 9.1 数据模型：`ai_integration_access_tokens`
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | Integer PK | 主键 |
-| `app_id` | Integer FK | 关联 `ai_integration_apps.id` |
+| `app_id` | Integer FK `ai_integration_apps.id` | 所属应用 |
 | `appid` | String(64) | 冗余展示 |
-| `category` | String(16) | 能力品类（`train/agent/chat/bot/embed`） |
-| `capability` | String(64) | 能力码 / MCP 工具名（如 `train__create_task`） |
-| `log_type` | String(16) | 行为类型：`invoke`（调用）/ `connect` / `disconnect` |
-| `method` | String(16) | 出海口：`REST` / `MCP` / `EMBED` / `MCP_SESSION` |
-| `transport` | String(16) | MCP 传输：`streamable_http` / `sse` / `stdio`（REST 为 `http`） |
-| `session_id` | String(64) | MCP 会话 ID（可空；用于把多次调用串到同一会话） |
-| `client_info` | String(128) | 客户端标识（如 MCP 客户端名/版本） |
-| `request_path` | String(255) | 请求路径或 MCP tool 名 |
-| `request_body` | JSONB | 入参（脱敏） |
-| `status` | String(16) | `success` / `denied` / `error` |
-| `error` | String(255) | 错误信息 |
-| `latency_ms` | Integer | 耗时 |
-| `cost_tokens` | Integer | token 消耗（P2 起填） |
-| `result_summary` | String(512) | 结果摘要（如资源 id） |
-| `MappedBase` | - | 仅 `id`/`created_time`，无软删（审计只增不改） |
+| `kind` | String(16) | `agent` / `app` / `workflow` |
+| `target_id` | Integer | 目标主键 |
+| `token_hash` | String(128) unique index | sha256(token)，明文不落库 |
+| `expires_at` | DateTime | 过期时间 |
+| `revoked` | Boolean default false | 吊销标记 |
+| `issued_by` | String(16) | `exchange` / `admin` |
+| `use_count` / `last_used_at` | Integer / DateTime | 使用统计 |
+| `created_time` / `updated_time` / `is_deleted` | — | 复用 `ModelMixin` 审计列 |
 
-> 工具调用写本表（`log_type=invoke`、`method=MCP`）。MCP **连接**与**断开**事件也写本表（`log_type=connect/disconnect`、`method=MCP_SESSION`），作为完整流水；而 `ai_integration_mcp_sessions` 是**连接会话的权威/聚合视图**（供看板与"按会话"查询）。管理员可在「调用日志」里按 `method=MCP` 过滤，看到：**谁在什么时候连进来、用了什么传输、调用了哪些工具、结果如何**。
+- 迁移**手写**：`down_revision` = 当前 head；建表用 `checkfirst` 语义防重放；**同一迁移内删除** `ai_workflows.share_token` 列（先 `has_column` 判断，SQLite 全链重放安全）。
+- 吊销 = `revoked=true`（软语义，保留审计行）；不做物理删。
 
-#### `ai_integration_mcp_sessions`（MCP 连接会话表，用于连接级监控）
+### 9.2 端点清单（P4'）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | Integer PK | 主键 |
-| `app_id` | Integer FK | 关联 `ai_integration_apps.id` |
-| `appid` | String(64) | 冗余展示 |
-| `session_id` | String(64) | MCP 会话 ID |
-| `transport` | String(16) | `streamable_http` / `sse` / `stdio` |
-| `client_info` | String(128) | 客户端标识 |
-| `started_at` | DateTime | 连接建立时间 |
-| `ended_at` | DateTime | 连接结束时间 |
-| `duration_s` | Integer | 连接持续秒数 |
-| `tool_calls` | Integer | 该会话累计工具调用数 |
-| `close_reason` | String(64) | 关闭原因（正常/超时/异常/客户端断连） |
-| `MappedBase` | - | 只增不改，用于看板/统计 |
+| 方法与路径 | 鉴权 | 说明 |
+|---|---|---|
+| `POST /ai/develop-api/auth/token` | `Bearer appid:appkey` + `embed:use` | 换票（§6.2） |
+| `POST /ai/embed/run`（SSE） | `Bearer <token>` | 对话主通道，见 9.3 |
+| `GET /ai/embed/meta` | `Bearer <token>` | `{kind, target_id, name, welcome, expire_at}` |
+| `GET /ai/embed/sdk.js` | 无（静态代码，不含凭证） | SDK 本体 |
+| `GET /ai/develop/tokens?app_id=` | RBAC `develop:query` | 该应用 token 列表（不含明文） |
+| `POST /ai/develop/tokens` | RBAC `develop:create` | 管理端签体验票（issued_by=admin，2h） |
+| `PUT /ai/develop/tokens/{id}/revoke` | RBAC `develop:update` | 吊销 |
 
-### 6.2 appid/appkey 生成
+### 9.3 对话通道 `POST /ai/embed/run`
 
-- `appid`：`ai_` + 8 位随机（去易混淆字符），创建后不可变。
-- `appkey`：32 位随机串，**仅在创建/重置时返回一次明文**，数据库只存 `sha256`。
-- 重置：新 appkey 覆盖旧哈希，旧 appkey 立即失效（返回一次明文）。
+- 请求：`Header: Bearer <token>`；`Body: { sid, message }`。**kind/target/app 全部从 token 推导**，请求体不携带目标参数（防参数走私）。
+- 校验走 §6.3 六步管道；`sid` 与 token 绑定不匹配 → 403（防跨会话串用，见 9.4）。
+- 执行：按 `kind` 复用现有 run service（`/ai/agents/{id}/run/stream`、`/ai/apps/{id}/run/stream`、`/ai/workflows/{id}/run/stream` 底层同一函数），返回 SSE 流（复用 `ui_stream_response`），响应头带 `Cache-Control: no-transform`、`X-Accel-Buffering: no`。
+- 审计：`category=embed`、`capability=run`、`method=EMBED`、`request_body={sid, message截断}`、`result_summary` 记回复摘要；耗时计 `latency_ms`。
 
-### 6.3 鉴权流程（`get_app_api_auth`）
+### 9.4 会话与续接
 
-开放数据面所有入口用 `Depends(get_app_api_auth)`：
+- 嵌入页生成 `sid`（uuid，存嵌入页自身即**平台域** localStorage，key 形如 `ai-embed:{token前6位}:{kind}:{target_id}`，隔离不同票与目标）。
+- 首次 `run` 创建平台会话行（复用 run 服务既有会话模型），打 `source_app_id = app.id`；同 `sid` 续接历史。
+- 闲置 TTL 24 小时（超期后同 sid 重新开新会话）；`(token, sid, app)` 三元绑定校验。
 
-1. 从 `Authorization: Bearer <appid>:<appkey>` 解析出 `appid` + `appkey`；
-2. 查 `ai_integration_apps`（`appid == ...` 且 `status == enabled`）；
-3. 校验 `expire_at` 未过期；
-4. 计算 `sha256(appkey)` 与 `appkey_hash` 比对（`hmac.compare_digest` 防时序攻击）；
-5. 命中 → 返回 `AppContext(app_id, app, perms=set(capabilities), quota)`；
-6. 失败 → 401（不区分"不存在"与"密钥错"，避免枚举）。
+### 9.5 限流与配额
 
-```python
-def get_app_api_auth(
-    authorization: str = Header(...),   # "Bearer <appid>:<appkey>"
-) -> AppContext: ...
+- 限流：Redis **固定窗口**（`INCR`+`EXPIRE 60`），键 `rl:embed:token:{hash前12}` 与 `rl:embed:ip:{ip}`；默认每 token 30 条/分钟、每 IP 60 条/分钟，env 可调。
+- 配额：见 §6.3 第 4 步（按 app 按日）。
+- 超限返回 429 中文文案，嵌入页渲染友好提示，postMessage `error`（reason=rate_limited / quota）。
+
+### 9.6 前端嵌入页 `/#/embed`（**视觉硬标准**）
+
+**结构**：Layout 外独立路由，整页为一个悬浮 **widget 质感对话卡片**（自适应 iframe 尺寸）：
+
+- **头部**：目标名 + 状态点（绿 = token 有效，依据 `meta.expire_at` 本地判定；过期由覆盖层接管）+「AIStation 驱动」小字标识；加载期骨架屏。
+- **消息流**：气泡式（用户右侧主色、助手左侧头像），Markdown 富文本（复用 `RichContent`）、流式打字机、引用来源可展开；工具调用事件在嵌入页**不渲染**，也不进入 postMessage 契约（对外事件仅 §9.7 所列 7 类）。
+- **输入区**：自适应高度 textarea；Enter 发送、Shift+Enter 换行；发送中态 +「停止生成」（断开 SSE 流，行为对齐既有已登录对话的停止实现）；禁用态与错误态。
+- **空态**：欢迎语（`meta.welcome`，默认取目标 description，兜底「有什么可以帮你？」）。
+- **品牌化**：`init({ theme: { primary } })` 注入 CSS 变量，第三方换主色；未传则平台主色。
+- **状态覆盖层**：① 初始化骨架；② token 过期页（「凭证已过期」+ 自动发 `token_expired`）；③ 限流/配额内联提示条；④ 网络错误重试条。
+- **视觉规范**：与平台同源（Element Plus 变量、`--el-*`，不造次级主题），气泡/圆角/阴影/间距成体系；**逐屏截图多模态验收，不合格返工**。
+
+**接入安全**：页面只认 URL 上的 token；不存 appkey；`permission.ts` 白名单 `/share → /embed`。
+
+### 9.7 SDK 与 postMessage 契约
+
+**上行（iframe → 宿主，全部经 `postMessage`）**，信封：
+
+```json
+{ "source": "ai-embed", "version": 1, "event": "<name>", "payload": { } }
 ```
 
-> 说明：`Authorization: Bearer <appid>:<appkey>` 同时适用于 REST 与 MCP header（P3）；`appkey` 不进日志、不进 URL。短期 `access_token` 换取（更贴近微信 access_token 模型）作为 **P5 增强**，P1 不做。
+| event | payload | 时机 |
+|---|---|---|
+| `ready` | `{kind, target_id, name, expire_at}` | 页面初始化完成 |
+| `user_message` | `{sid, message}` | 消息发出 |
+| `reply_start` | `{sid}` | 开始流式回复 |
+| `reply_delta` | `{sid, text}` | 流式增量（高频） |
+| `reply_done` | `{sid, text}` | 回复完成（全量） |
+| `error` | `{sid?, reason, message}` | 业务/网络/限流错误 |
+| `token_expired` | `{}` | 401 过期/吊销，需宿主换票 |
 
-### 6.4 权限点与校验
+**下行（宿主 → iframe）**：`{ "source": "ai-host", "version": 1, "command": ..., "payload": ... }`，命令集 `setToken / sendMessage / resize / destroy`。
 
-- 权限点统一命名 `integration:<category>:<action>`，并在 `capabilities.py`/常量中**集中定义**（单一事实来源）。
-- app 行 `capabilities` 存勾选的权限点数组。
-- 每个开放能力校验 `perm in app.perms`，否则 `403` + 审计 `denied`。
+**SDK（`sdk.js`）API**：
 
-### 6.5 数据归属（app 租户，跨 P1–P4）
+```js
+const ai = AiAssistant.init({
+  container: "#chat",            // 挂载点
+  token: "<access_token>",       // 由宿主服务端换票后注入
+  apiBase: "https://<host>/api/v1/ai",   // 缺省 = sdk.js 自身 src 去掉 "/embed/sdk.js" 后缀
+  webBase: "https://<host>/web",         // 嵌入页地址；缺省取 apiBase 的 origin + "/web"
+  theme: { primary: "#409eff" }  // 可选品牌色
+});
+ai.setToken(t); ai.sendMessage(s); ai.resize(w, h); ai.destroy();
+ai.on(event, cb);               // 同时向 window 广播原生 message，纯 iframe 用户可自行监听
+```
 
-- 资源（训练任务 / Agent / 消息 / 会话 / 嵌入 token）落 `source_app_id`（Integer FK `ai_integration_apps.id`，可空，空=内部用户创建）。
-- P2 起在**创建路径**统一打上 `source_app_id`，并**只允许 app 访问自己创建的资源**（查询/更新按 `source_app_id` 过滤）。
-- 这一「归属域」字段是跨子项目的约定，P1 定义约定与常量，P2/P3 逐步落到 train/agent/chat。
+- SDK 校验 `event.origin === webBase 的 origin`（事件来自嵌入页所在源）；宿主侧建议同样校验 iframe 来源（文档示例给出）。
+- 纯 iframe 模式：`<iframe src="{webBase}/#/embed?token=…" width=… height=… style="border:0">`，直接监听 `message` 即可，不依赖 sdk.js。
 
-### 6.6 审计与统计
+### 9.8 管理 UI：应用行「嵌入」弹窗（AI 集成菜单）
 
-- 每次开放调用写 `ai_integration_call_logs`（成功/拒绝/异常都写）。
-- `ai_integration_apps` 维护 `last_call_at` / `call_count` 供列表展示。
+- 入口：应用管理操作列新增「嵌入」按钮（`v-hasPerm module_ai:develop:query`），600px `el-dialog`，单根。
+- **目标选择**：形态 radio（Agent / AI 应用 / 工作流）+ 目标下拉（searchable，数据源复用各自 list 接口，仅列启用项）。
+- **代码生成**：`el-tabs` 两页签——「iframe 直嵌」与「Script SDK」；代码块（等宽、可复制按钮）；下方说明「token 为短期凭证：请服务端调 `/auth/token` 换票获取，代码中为 `{access_token}` 占位符」。
+- **体验 Token**：主按钮签 2 小时票 → 弹一次性展示（复用 AppKey reveal 交互样式）→「填入代码」自动替换占位符，便于当场复制即用。
+- **Token 列表**：该应用全部 token（形态/目标/签发方式/过期/使用次数/最后使用/状态），吊销按钮 + **二次确认**（文案含影响范围与不可逆性）。
+- **事件契约**：postMessage 事件小表（9.7 压缩版）+ 指向接入文档页签。
+- **接入文档页签重写**：换票 curl 流程、SDK 完整示例（指向真实 `sdk.js` 地址）、事件表；P2/P3 端点标注「即将开放」，**删除不存在的 `/chat/send` 误导示例**。
+- **品类名修正**：`embed: "向量嵌入" → "网页嵌入"`（`backend/.../capabilities.py` 与前端 `CATEGORIES` 两处同步）。
 
-### 6.7 前端「AI 集成」菜单
+### 9.9 旧通道拆除清单（无历史包袱）
 
-单页 `module_ai/develop/index.vue`，页签：
-- **应用管理**：列表（`useCrudList`）+ 新建/编辑弹窗（`EnhancedDialog`）+ 详情查看 appid/appkey（明文一次性）+ 重置 appkey + 启用/禁用 + 到期时间 + 权限点勾选（`el-checkbox-group`）+ 配额。所有删除/重置类操作**二次确认**。
-- **调用日志（含 MCP 行为监控）**：列表（按 appid/品类/状态/时间/出海口过滤），只读。提供两个子视图：
-  - **全部调用**：`ai_integration_call_logs`，可按 `method=MCP` 过滤查看 MCP 工具调用；
-  - **MCP 会话**：`ai_integration_mcp_sessions`，查看每个 MCP 连接的会话（创建/结束时间、传输方式、客户端、调用次数、关闭原因），管理员可据此监控 **MCP 行为**。
-- **接入文档**：展示 REST / MCP / 嵌入三种接入方式与示例代码（静态）。
-
-样式遵循既有模块（参照 `module_ai/provider`、`module_system/param`），复用 `--el-*` 变量，禁止自造主题化外壳。
-
-### 6.8 菜单 / 权限种子（幂等）
-
-在 `init_app.py` 新增 `_ensure_develop_menus()`（参照 `_ensure_ai_menus` 模式），**启动时幂等补齐**：
-- 父目录：AI 下新增子菜单「AI 集成」（`route_name=AiDevelop`、`/ai/develop`、`module_ai/develop/index`、`module_ai:develop:query`）；
-- 按钮权限（type=3）：`module_ai:develop:{create,update,delete,reset,query}`；
-- 存量库重启即生效，无需手工 INSERT；空库种子数据无需改（`_ensure_*` 只补缺失）。
-
----
-
-## 7. 测试方案（P1）
-
-- **纯逻辑测试（快速模式）**：appid 生成、appkey 哈希/校验、权限点校验、到期判断、鉴权依赖（`PYTEST_NO_APP=1`，不构造应用）。
-- **DB 相关**：`ai_integration_apps` / `ai_integration_call_logs` 建表与 CRUD（复用既有 DB 测试设施）。
-- **鉴权集成**：`/ai/develop-api` 端点用有效/无效 appid/appkey、过期、禁用、超权限 各场景校验返回 200/401/403。
-- **审计/MCP 行为**：调用成功/拒绝/异常都会写 `ai_integration_call_logs`；MCP 连接/断开写 `ai_integration_mcp_sessions`；按 `method=MCP` 过滤能查到对应工具调用。
-- **迁移**：`upgrade`/`downgrade` 往返；空库全链重放（SQLite 回归）不因插件表报错。
-
----
-
-## 8. 里程碑与验收
-
-- **P1 验收**：能在「AI 集成」菜单创建应用并拿到 appid/appkey；用 appid/appkey 调用开放端点鉴权通过/拒绝正确；调用可审计；权限点/到期/禁用生效。
-- **P2 验收**：能用 appid 调用「创建训练任务/创建 Agent/发消息/聊天」，资源归属对应 app，超出权限被拒。
-- **P3 验收**：第三方把平台配为 MCP Server，用 appid/appkey 作为 header，通过 MCP 调用上述工具；**管理员在「调用日志 → MCP 会话/全部调用」能看到每次 MCP 连接与工具调用（含结果、传输、耗时）**。
-- **P4 验收**：第三方站点 iframe 嵌入 Agent/聊天机器人，免登录可对话，业务数据经 `postMessage` 回传。
+| 项 | 处理 |
+|---|---|
+| 前端路由 `/share` + `views/module_ai/workflow/ShareRun.vue` | 删除 |
+| `plugins/permission.ts` 白名单 | `/share` → `/embed` |
+| `AiWorkflowModel.share_token` 列 | 迁移删除（`has_column` 防护） |
+| `POST /workflows/{id}/share`、`POST /workflows/share/run` | 删除端点 |
+| `generate_share_token` / `_get_by_share_token` / `share_ui_stream` / `AiWorkflowShareRunSchema` | 删除 |
+| 工作流编辑器「分享」「复制嵌入代码」按钮及相关状态 | 删除，替换为提示文案：「对话嵌入请前往 AI 集成 → 嵌入」 |
+| share 相关测试 | 删除或改造为断言「端点已不存在」 |
 
 ---
 
-## 9. 待办 / 风险
+## 10. 测试方案
 
-- **命名冲突**：已避让 `/ai/integration`；若未来出现其它 AI 集成语义，需先复核本说明。
-- **迁移手写**：谨防 `autogenerate` 触发无关 DROP。
-- **appkey 保管**：明文仅一次返回；前端展示时需引导及时保存，避免二次打开仍可见（建议只展示"已重置"提示）。
-- **鉴权模型**：`Bearer appid:appkey` 直传简单，但 appkey 会在每次请求中出现；若需更高安全，P5 提供短期 `access_token` 换取（对齐微信模型），P1 不引入。
+- **纯逻辑（`PYTEST_NO_APP=1` 快速模式）**：token 生成/哈希/过期判定、换票入参校验、权限点判定、postMessage 事件构造。
+- **DB**：`ai_integration_access_tokens` 建表与 CRUD；迁移 upgrade/downgrade 往返；**SQLite 空库全链重放**（含删 `share_token` 列分支）。
+- **集成**：
+  - 换票四态：正常 200 / 无 `embed:use` 403 / app 禁用或过期 401 / 目标不存在 404。
+  - run 四态：无凭证 401 / 过期 401 / 吊销 401 / 超限 429；sid 绑定不匹配 403。
+  - 三形态（agent/app/workflow）run 各至少一条成功用例（mock run service）。
+  - 审计断言：签发与 run 均落 `call_logs`，`method=EMBED`、`category=embed`，token 脱敏。
+  - 旧 `/share` 端点 404、`share_token` 列不存在。
+- **前端**：`pnpm run type-check` 与 `pnpm run lint` 零新增报错。
+- **视觉验收（硬标准）**：嵌入页各状态（骨架/正常对话/过期/限流/网络错误）+ 嵌入弹窗逐屏截图，与平台既有页面对照核对质感，**不通过不交付**。
+- **端到端**：仓库内置**演示宿主页**（第三方视角静态 HTML：页内提供「凭证换票」表单，粘贴 appid/appkey **模拟宿主服务端**完成换票，并醒目标注「生产环境必须在服务端换票，切勿把 appkey 放进网页」），实测 iframe 与 SDK 两模式：换票 → 多轮流式 → 7 类事件齐收 → `setToken` 续期不断话；旧 `/share` 链接确认失效。
+- **回归**：`uv run pytest -q -n 4` 全量；既有 develop 测试保持全绿。
+
+---
+
+## 11. 里程碑与验收（v2）
+
+- **P4' 验收（本次）**：
+  1. `/ai/embed/*` 无凭证一律 401——**零匿名面**。
+  2. 管理弹窗完成「选目标 → 签体验票 → 生成两种嵌入代码 → 列表/吊销」闭环，交互与平台风格一致。
+  3. 演示宿主页两模式（iframe / SDK）**换票后**免平台账号多轮流式对话。
+  4. 宿主收到全部 7 类 postMessage 事件；`setToken` 过期续期不断话。
+  5. 审计可见 `method=EMBED` 完整流水；限流/配额生效返回 429。
+  6. 旧 `/share` 链接失效；工作流旧分享 UI 不复存在。
+  7. **视觉验收通过**（截图逐屏核对，结构、状态、质感达标）。
+- **P2 验收（2026-10-22 通过）**：`POST /ai/develop-api/capabilities/{code}` 以 appid 调用「创建/查询/删除 Agent」「发消息/查会话」「创建/查询/启停训练任务」，资源落 `source_app_id` 且跨应用一律 404，超权限 403 + denied 审计（见 `tests/test_develop_openapi.py`、`test_develop_agents`/`chat`/`train`）。
+- **P3 验收（2026-10-22 通过）**：MCP 端点 `POST /api/v1/ai/develop-api/mcp`（Streamable HTTP）以 `Bearer appid:appkey` 完成 initialize / tools/list / tools/call；`tools/list` 只含该应用授权能力；管理端「调用日志」见 `method=MCP` 流水、「MCP 会话」见连接行与工具调用计数（真实冒烟：1 会话 / tool_calls=2 / 2 条 MCP 审计）。
+  - 实现物与 spec 的差异：`mcp` 2.x 已把 `FastMCP` 更名为 `MCPServer`（`mcp/server/fastmcp.py` 是导入即抛的占位模块），故实现用 `mcp.server.mcpserver.MCPServer`（FastMCP 的继任者）。
+
+---
+
+## 12. 待办 / 风险
+
+- **换票依赖第三方服务端**：嵌入方必须有后端才能换票（安全模型的既定代价），接入文档必须醒目标注；无后端的场景不提供降级匿名通道（禁免密是铁律）。
+- **token 暴露面**：嵌入页 URL 中的 token 可被宿主页访客读取——以「短 TTL + 单目标 + 限流 + 可吊销」四重缓解；文档建议宿主页不把 iframe src 回写进可公开爬取的 DOM。
+- **迁移风险**：删列与建表同链，谨防 `autogenerate`；SQLite 回归必须覆盖。
+- **文档超前误导**：P2/P3 已在 2026-10-22 开放，接入文档已改为真实示例（含 MCP 两种客户端配置）；后续新增能力时同步更新文档与能力清单。
+- **appkey 保管**（v1 遗留）：明文仅一次返回，前端只展示引导提示。
+- **SSE 经代理缓冲**：响应头 `no-transform` / `X-Accel-Buffering: no` 必须带，避免整块到达。

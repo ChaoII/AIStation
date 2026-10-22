@@ -93,12 +93,12 @@ export const constantRoutes: RouteRecordRaw[] = [
     meta: { hidden: true, title: "大屏展示" },
     component: () => import("@/views/module_video/layout/big-screen.vue"),
   },
-  // 公开分享运行页（独立、无登录，受令牌+限流+白名单节点保护）
+  // 对话嵌入页（独立、无布局；凭证为短期 access_token，由宿主服务端换票）
   {
-    path: "/share",
-    name: "AiShareRun",
-    meta: { hidden: true, title: "工作流分享运行" },
-    component: () => import("@/views/module_ai/workflow/ShareRun.vue"),
+    path: "/embed",
+    name: "AiEmbed",
+    meta: { hidden: true, title: "对话嵌入" },
+    component: () => import("@/views/module_ai/embed/EmbedChat.vue"),
   },
 ];
 

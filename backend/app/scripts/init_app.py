@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator, Iterable
+from contextlib import AsyncExitStack, suppress
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request, Response
@@ -728,6 +729,7 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:develop:update", "编辑AI集成应用"),
     ("module_ai:develop:delete", "删除AI集成应用"),
     ("module_ai:develop:reset", "重置AI集成应用密钥"),
+    ("module_ai:develop:approve", "审批AI集成调用"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -1230,6 +1232,7 @@ async def _ensure_develop_menus() -> None:
                 ("module_ai:develop:update", "编辑AI集成应用"),
                 ("module_ai:develop:delete", "删除AI集成应用"),
                 ("module_ai:develop:reset", "重置AI集成应用密钥"),
+                ("module_ai:develop:approve", "审批AI集成调用"),
             ]
             for order, (perm_code, perm_name) in enumerate(
                 ensure_perms(_existing, _develop_perms), start=1
@@ -1823,6 +1826,33 @@ async def _register_business_jobs_on_startup() -> None:
     except Exception as e:  # noqa: BLE001 单模块失败不阻断启动
         log.warning(f"⚠️  训练定时调度启动期注册失败（忽略）：{str(e)[:200]}")
 
+    # AI 集成：调用审批超时自动关闭（`ai_develop_cron:`，每 10 分钟扫一次）
+    try:
+        from app.plugin.module_ai.develop.approvals import expire_stale_approvals
+        from app.plugin.module_ai.develop.insights import purge_integration_logs
+
+        specs = [
+            (
+                "ai_develop_cron:expire_approvals",
+                "interval",
+                {"minutes": 10},
+                expire_stale_approvals,
+                (),
+            ),
+            # 日志保留清理：每天一次（保留期 CALL_LOG_RETENTION_DAYS，0=不清理）
+            (
+                "ai_develop_cron:purge_logs",
+                "interval",
+                {"hours": 24},
+                purge_integration_logs,
+                (),
+            ),
+        ]
+        SchedulerUtil.sync_business_jobs(specs, prefixes=("ai_develop_cron:",))
+        log.info("✅ AI 集成审批超时关闭任务已注册到中心调度器")
+    except Exception as e:  # noqa: BLE001 单模块失败不阻断启动
+        log.warning(f"⚠️  AI 集成审批超时关闭任务注册失败（忽略）：{str(e)[:200]}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
@@ -2108,7 +2138,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         log.error(f"❌ 应用初始化失败: {e!s}")
         raise SystemExit(1)
 
+    # MCP Server 的 Streamable HTTP 会话管理器必须与 FastAPI 同生命周期：
+    # 挂载的子应用不会运行自己的 lifespan，只能在这里显式进入。
+    mcp_stack = AsyncExitStack()
+    try:
+        from app.plugin.module_ai.develop.mcp_server import mcp_session_manager
+
+        await mcp_stack.enter_async_context(mcp_session_manager())
+        log.info("✅ MCP Server 会话管理器已启动")
+    except Exception as e:  # noqa: BLE001 - MCP 起不来不阻断整个服务
+        log.warning(f"⚠️  MCP Server 会话管理器启动失败（不阻断启动）: {e}")
+
     yield
+
+    with suppress(Exception):
+        await mcp_stack.aclose()
 
     try:
         await SchedulerUtil.shutdown(wait=False)
@@ -2293,6 +2337,16 @@ def register_routers(app: FastAPI) -> None:
         router=get_dynamic_router(),
         dependencies=[_rate_limit("train")],
     )
+
+    # MCP Server（Streamable HTTP）：挂在开放面路径下，鉴权由中间件处理
+    # （Bearer appid:appkey，与开放 REST 同一套凭证）。
+    try:
+        from app.plugin.module_ai.develop.mcp_server import mount_mcp
+
+        mount_mcp(app)
+        log.info("✅ MCP Server 已挂载: /ai/develop-api/mcp")
+    except Exception as e:  # noqa: BLE001 - MCP 不可用不应阻断整个服务启动
+        log.warning(f"⚠️  MCP Server 挂载失败（不阻断启动）: {e}")
 
 
 def register_files(app: FastAPI) -> None:

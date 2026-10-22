@@ -17,10 +17,12 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -28,16 +30,36 @@ from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import ErrorResponse, SuccessResponse
 from app.core.database import async_db_session
 from app.core.dependencies import AuthPermission
+from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
+from app.plugin.module_ai.assistant.agno_service import agno_stream_response
+from app.plugin.module_ai.streaming import ui_stream_response
 
-from .auth import AppContext, get_app_api_auth
+# 导入 handler 包即注册全部开放能力（REST 与 MCP 共用注册表）。
+from . import handlers as _handlers  # noqa: F401
+from .approvals import ApprovalService, review_one
+from .auth import AppContext, EmbedContext, get_app_api_auth, get_embed_ctx, require_app_perm
 from .capabilities import permissions_by_category
+from .embed import EmbedService
 from .model import (
     AiIntegrationAppModel,
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
-from .schema import DevelopCreateSchema, DevelopUpdateSchema
+from .openapi import invoke_capability
+from .registry import all_capabilities, capabilities_for, to_public_dict
+from .schema import (
+    ApprovalBatchReviewSchema,
+    ApprovalReviewSchema,
+    CapabilityInvokeSchema,
+    CapabilityTrySchema,
+    DevelopCreateSchema,
+    DevelopUpdateSchema,
+    EmbedMintSchema,
+    EmbedRunSchema,
+    EmbedTokenIssueSchema,
+    NotifyConfigSchema,
+)
 from .service import DevelopService
 
 
@@ -58,6 +80,104 @@ DevelopRouter = APIRouter(
     prefix="/develop",
     tags=["AI-集成管理"],
 )
+
+EmbedRouter = APIRouter(
+    route_class=OperationLogRoute,
+    prefix="/embed",
+    tags=["AI-嵌入"],
+)
+
+
+@EmbedRouter.get("/meta", summary="嵌入目标元信息")
+async def embed_meta(
+    ctx: Annotated[EmbedContext, Depends(get_embed_ctx)],
+) -> SuccessResponse:
+    """返回嵌入目标名称与欢迎语（嵌入页初始化用）。
+
+    - 令牌缺/过期/吊销/app 停用 → 401（依赖层统一处理）；
+    - 应用缺 ``integration:embed:use`` → 403（权限每请求重读，收回即时生效）；
+    - 目标已删除 → 404。
+    """
+    if "integration:embed:use" not in ctx.perms:
+        raise CustomException(msg="无权限操作", code=10403, status_code=403)
+    target = await EmbedService.get_target(ctx.kind, ctx.target_id)
+    if target is None:
+        raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
+    return SuccessResponse(
+        data={
+            "appid": ctx.appid,
+            "kind": ctx.kind,
+            "target_id": ctx.target_id,
+            "name": target["name"],
+            "welcome": target["description"] or "",
+            "expire_at": ctx.expires_at.strftime("%Y-%m-%d %H:%M:%S"),
+        },
+        msg="查询成功",
+    )
+
+
+@EmbedRouter.post("/run", summary="嵌入对话（流式）")
+async def embed_run(
+    data: EmbedRunSchema,
+    request: Request,
+    ctx: Annotated[EmbedContext, Depends(get_embed_ctx)],
+) -> StreamingResponse:
+    """嵌入对话主通道：``Bearer <token>``，请求体仅 ``sid`` + ``message``。
+
+    校验顺序（全部在返回流之前完成，错误以 JSON 返回而非 SSE 帧）：
+    权限点 → 会话绑定（403）→ 生成流。审计在流结束时写入 ``method=EMBED``。
+    """
+    async with async_db_session() as db:
+        app_row = await db.get(AiIntegrationAppModel, ctx.app_id)
+    if app_row is None:
+        raise CustomException(msg="鉴权失败", code=10401, status_code=401)
+    if "integration:embed:use" not in ctx.perms:
+        await DevelopService.log_call(
+            app_row,
+            category="embed",
+            capability="run",
+            method="EMBED",
+            transport="sse",
+            request_path="/run",
+            request_body={"sid": data.sid, "kind": ctx.kind, "target_id": ctx.target_id},
+            status="denied",
+            error="无权限操作",
+        )
+        raise CustomException(msg="无权限操作", code=10403, status_code=403)
+    await EmbedService.check_limits(
+        getattr(request.app.state, "redis", None),
+        ctx,
+        request.client.host if request.client else "",
+    )
+    session_id, session_reset = await EmbedService.prepare_session(ctx, data.sid)
+    gen = EmbedService.run_stream(
+        ctx,
+        data.sid,
+        app_row,
+        session_id,
+        session_reset,
+        data.message,
+        redis=getattr(request.app.state, "redis", None),
+    )
+    # 与已登录端点保持同一协议包装：工作流走 UI Message Stream，agent/app 走 Agno 事件流
+    if ctx.kind == "workflow":
+        return ui_stream_response(gen)
+    return agno_stream_response(gen)
+
+
+@EmbedRouter.get("/sdk.js", summary="嵌入 SDK 脚本")
+async def embed_sdk() -> PlainTextResponse:
+    """返回嵌入 SDK 静态脚本。
+
+    本端点**无鉴权**：返回的是纯代码、不含任何凭证；实质鉴权发生在 ``/embed/run``
+    等业务端点（Bearer access_token）。请勿在此文件中放入任何密钥。
+    """
+    path = Path(__file__).parent / "static" / "ai-assistant.js"
+    return PlainTextResponse(
+        path.read_text(encoding="utf-8"),
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @OpenApiRouter.get("/auth/verify", summary="鉴权验证")
@@ -95,6 +215,172 @@ async def auth_verify(
     return SuccessResponse(data=data, msg="校验成功")
 
 
+@OpenApiRouter.post("/auth/token", summary="换票签发嵌入短期令牌")
+async def auth_token(
+    data: EmbedTokenIssueSchema,
+    request: Request,
+    ctx: Annotated[AppContext, Depends(get_app_api_auth)],
+) -> SuccessResponse:
+    """服务端换票：``appid:appkey`` → 绑定 ``app+kind+target`` 的短期 access_token。
+
+    - 缺 ``integration:embed:use`` → 403 + denied 审计；
+    - 目标不存在 → 404 + denied 审计；
+    - 明文 token 仅本响应返回一次，库内只存 sha256（响应本身不写日志）。
+    """
+    async with async_db_session() as db:
+        row = await db.get(AiIntegrationAppModel, ctx.app_id)
+    if row is None:
+        raise CustomException(msg="鉴权失败", code=10401, status_code=401)
+
+    async def _audit(status: str, error: str | None = None, summary: str | None = None) -> None:
+        """写一条换票审计（request_body 仅 kind/target，绝不含明文 token）。"""
+        await DevelopService.log_call(
+            row,
+            category="embed",
+            capability="token.issue",
+            method="REST",
+            request_path="/auth/token",
+            request_body={"kind": data.kind, "target_id": data.target_id},
+            status=status,
+            error=error,
+            result_summary=summary,
+        )
+
+    try:
+        require_app_perm(ctx, "integration:embed:use")
+    except CustomException as e:
+        await _audit("denied", error=e.msg)
+        raise
+    # 换票限流（appid + IP 双键）：防无限铸票
+    await EmbedService.check_issue_limit(
+        getattr(request.app.state, "redis", None),
+        ctx.appid,
+        request.client.host if request.client else "",
+    )
+    target = await EmbedService.get_target(data.kind, data.target_id)
+    if target is None:
+        await _audit("denied", error="嵌入目标不存在")
+        raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
+    if not target["enabled"]:
+        await _audit("denied", error="嵌入目标未启用")
+        raise CustomException(msg="嵌入目标未启用", code=10400, status_code=400)
+    result = await EmbedService.issue_token(
+        row, kind=data.kind, target_id=data.target_id, ttl=data.ttl, issued_by="exchange"
+    )
+    await _audit("success", summary=f"{data.kind}:{data.target_id}")
+    return SuccessResponse(data=result, msg="令牌已签发")
+
+
+# ---------------------------------------------------------------------- #
+# 开放数据面（OpenApiRouter）：统一能力入口。
+# 鉴权走 Bearer appid:appkey；能力元数据从注册表读取，按授权权限点过滤；
+# 调用统一经 openapi.invoke_capability（权限 → 限流/配额 → 执行 → 审计）。
+# ---------------------------------------------------------------------- #
+@OpenApiRouter.get("/capabilities", summary="开放能力清单（按授权过滤）")
+async def open_capabilities(
+    ctx: Annotated[AppContext, Depends(get_app_api_auth)],
+) -> SuccessResponse:
+    """返回**当前应用已授权**的能力元数据（未授权能力不出现，避免暴露能力面）。"""
+    caps = capabilities_for(ctx.perms)
+    return SuccessResponse(
+        data={"items": [to_public_dict(c) for c in caps], "total": len(caps)}, msg="查询成功"
+    )
+
+
+@OpenApiRouter.post("/capabilities/{code}", summary="调用开放能力")
+async def open_capability_invoke(
+    code: str,
+    data: CapabilityInvokeSchema,
+    request: Request,
+    ctx: Annotated[AppContext, Depends(get_app_api_auth)],
+) -> JSONResponse:
+    """统一调用入口：``POST /ai/develop-api/capabilities/{code}``，body ``{"payload": {...}}``。
+
+    错误语义：401（凭证）→ 403（未授权能力，写 denied 审计）→ 404（能力不存在）
+    → 429（限流/配额）→ 400/500（handler 业务错误）。
+    """
+    result = await invoke_capability(
+        ctx,
+        code,
+        data.payload,
+        method="REST",
+        redis=getattr(request.app.state, "redis", None),
+        request_path=f"/capabilities/{code}",
+        ip=request.client.host if request.client else "",
+    )
+    return SuccessResponse(data=result, msg="调用成功")
+
+
+# ---------------------------------------------------------------------- #
+# 内部管理面：调用审批（敏感能力「先审批后执行」）
+# ---------------------------------------------------------------------- #
+@DevelopRouter.get("/approvals", summary="分页查询调用审批")
+async def develop_approvals(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    status: Annotated[str | None, Query(description="状态: pending/approved/rejected/failed")] = None,
+    app_id: Annotated[int | None, Query(description="按应用过滤")] = None,
+    page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await ApprovalService.list(
+            status=status, app_id=app_id, page_no=page_no, page_size=page_size
+        ),
+        msg="查询成功",
+    )
+
+
+@DevelopRouter.post("/approvals/{approval_id}/review", summary="审批调用（批准即执行）")
+async def develop_approval_review(
+    approval_id: int,
+    data: ApprovalReviewSchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:approve"]))],
+) -> JSONResponse:
+    """批准 → 以**原应用身份**执行被拦截的调用并把结果写回审批行；拒绝 → 只记意见。
+
+    核心语义在 ``approvals.review_one``（与批量审批共用）；执行失败不抛给管理员，
+    状态置 ``failed`` 并回传错误，便于在列表里看到真实结果。
+    """
+    row = await ApprovalService.get(approval_id)
+    if row is None:
+        raise CustomException(msg="审批记录不存在", code=10404, status_code=404)
+    # 已处理的审批不得重复执行（批准/拒绝都只允许一次）
+    if row.status != "pending":
+        raise CustomException(msg="该审批已处理", code=10400, status_code=400)
+    reviewer_id = getattr(getattr(auth, "user", None), "id", None)
+    result, msg = await review_one(
+        row,
+        approve=data.approve,
+        note=data.note,
+        reviewer_id=reviewer_id,
+        redis=getattr(request.app.state, "redis", None),
+    )
+    return SuccessResponse(data=result, msg=msg)
+
+
+@DevelopRouter.post("/approvals/batch-review", summary="批量批准审批")
+async def develop_approvals_batch_review(
+    data: ApprovalBatchReviewSchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:approve"]))],
+) -> JSONResponse:
+    """批量批准（≤50 条/次，逐条独立执行，单条失败不中断）。拒绝请逐条操作。"""
+    from .approvals import review_batch
+
+    reviewer_id = getattr(getattr(auth, "user", None), "id", None)
+    result = await review_batch(
+        data.ids,
+        approve=True,
+        note=data.note,
+        reviewer_id=reviewer_id,
+        redis=getattr(request.app.state, "redis", None),
+    )
+    failed_n = len(result["failed"])
+    msg = f"已批准 {len(result['ok'])} 条" + (f"，失败 {failed_n} 条" if failed_n else "")
+    return SuccessResponse(data=result, msg=msg)
+
+
 # ---------------------------------------------------------------------- #
 # 内部管理面（DevelopRouter）：供平台管理员管理 AI 集成应用与审计查询。
 # 每个端点经 AuthPermission 校验（module_ai:develop:*），响应统一用
@@ -122,6 +408,19 @@ async def develop_detail(
     if not result:
         return ErrorResponse(msg="应用不存在")
     return SuccessResponse(data=result, msg="查询成功")
+
+
+@DevelopRouter.get("/capabilities", summary="开放能力清单（管理面，全量）")
+async def develop_capabilities(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+) -> JSONResponse:
+    """返回全部已注册的开放能力元数据（接入文档用；与授权无关）。
+
+    与 ``GET /ai/develop-api/capabilities``（开放面，按应用授权过滤）不同：
+    本端点面向平台管理员，用于展示「有哪些能力可授权」。
+    """
+    items = [to_public_dict(cap) for cap in all_capabilities()]
+    return SuccessResponse(data={"items": items, "total": len(items)}, msg="查询成功")
 
 
 @DevelopRouter.post("/create", summary="创建AI集成应用")
@@ -174,20 +473,232 @@ async def develop_reset_key(
     return SuccessResponse(data=result, msg="重置成功")
 
 
+@DevelopRouter.get("/tokens", summary="嵌入令牌列表")
+async def develop_list_tokens(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    app_id: Annotated[int, Query(description="应用ID")],
+) -> JSONResponse:
+    """列出某应用的嵌入令牌元信息（不含明文/散列），供管理弹窗展示与吊销。"""
+    return SuccessResponse(
+        data={"items": await DevelopService.list_tokens(app_id)}, msg="查询成功"
+    )
+
+
+@DevelopRouter.post("/tokens", summary="签发体验令牌（2小时）")
+async def develop_mint_token(
+    data: EmbedMintSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:create"]))],
+) -> JSONResponse:
+    """管理端签发体验票：issued_by=admin、有效期固定 2 小时，明文仅此响应一次。"""
+    async with async_db_session() as db:
+        app_row = await db.get(AiIntegrationAppModel, data.app_id)
+    if app_row is None or app_row.is_deleted:
+        return ErrorResponse(msg="应用不存在")
+    if await EmbedService.get_target(data.kind, data.target_id) is None:
+        raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
+    result = await EmbedService.issue_token(
+        app_row,
+        kind=data.kind,
+        target_id=data.target_id,
+        ttl=7200,
+        issued_by="admin",
+    )
+    return SuccessResponse(data=result, msg="已签发（有效期 2 小时）")
+
+
+@DevelopRouter.put("/tokens/{token_id}/revoke", summary="吊销嵌入令牌")
+async def develop_revoke_token(
+    token_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:update"]))],
+) -> JSONResponse:
+    """吊销后令牌立即失效（软语义：置 revoked，保留审计行）。"""
+    if not await DevelopService.revoke_token(token_id):
+        return ErrorResponse(msg="令牌不存在")
+    return SuccessResponse(msg="已吊销")
+
+
 @DevelopRouter.get("/call-logs", summary="分页查询调用日志")
 async def develop_call_logs(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
     app_id: Annotated[int | None, Query(description="按应用ID过滤")] = None,
     category: Annotated[str | None, Query(description="按品类过滤")] = None,
     method: Annotated[str | None, Query(description="按出海口过滤 REST/MCP/EMBED")] = None,
-    status: Annotated[str | None, Query(description="按状态过滤 success/failed/denied")] = None,
+    status: Annotated[str | None, Query(description="按状态过滤 success/failed/denied/pending")] = None,
+    start_time: Annotated[str | None, Query(description="起始时间 YYYY-MM-DD HH:mm:ss")] = None,
+    end_time: Annotated[str | None, Query(description="结束时间 YYYY-MM-DD HH:mm:ss")] = None,
+    capability: Annotated[str | None, Query(description="按能力码精确过滤（下钻）")] = None,
     page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
 ) -> JSONResponse:
     return SuccessResponse(
-        data=await _query_call_logs(app_id, category, method, status, page_no, page_size),
+        data=await _query_call_logs(
+            app_id,
+            category,
+            method,
+            status,
+            page_no,
+            page_size,
+            start_time,
+            end_time,
+            capability,
+        ),
         msg="查询成功",
     )
+
+
+@DevelopRouter.get("/stats", summary="调用概览（今日/趋势/Top能力）")
+async def develop_stats(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    days: Annotated[int, Query(ge=1, le=30, description="趋势天数")] = 7,
+) -> JSONResponse:
+    from .insights import DevelopInsights
+
+    return SuccessResponse(data=await DevelopInsights.stats(days), msg="查询成功")
+
+
+@DevelopRouter.get("/apps/{app_id}/usage", summary="应用当日配额用量")
+async def develop_app_usage(
+    app_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+) -> JSONResponse:
+    from .insights import DevelopInsights
+
+    app = await DevelopService.get_app(app_id)
+    if not app:
+        return ErrorResponse(msg="应用不存在")
+    usage = await DevelopInsights.usage(app_id)
+    usage["quota"] = app.get("quota") or {}
+    return SuccessResponse(data=usage, msg="查询成功")
+
+
+@DevelopRouter.get("/notify-config", summary="审批通知配置（开关 + 通道参数）")
+async def develop_notify_config(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+) -> JSONResponse:
+    from .approvals import get_notify_config
+
+    return SuccessResponse(data=await get_notify_config(), msg="查询成功")
+
+
+@DevelopRouter.put("/notify-config", summary="保存审批通知配置")
+async def develop_notify_config_save(
+    data: NotifyConfigSchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:update"]))],
+) -> JSONResponse:
+    from .approvals import save_notify_config
+
+    result = await save_notify_config(
+        data.channels, data.configs, getattr(request.app.state, "redis", None)
+    )
+    return SuccessResponse(data=result, msg="已保存")
+
+
+@DevelopRouter.get("/usage-report", summary="用量报告（按应用，近 N 天）")
+async def develop_usage_report(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    days: Annotated[int, Query(ge=1, le=90, description="统计天数")] = 7,
+) -> JSONResponse:
+    from .insights import usage_report
+
+    return SuccessResponse(data=await usage_report(days), msg="查询成功")
+
+
+@DevelopRouter.get("/call-logs/export", summary="导出调用日志 CSV")
+async def develop_call_logs_export(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    app_id: Annotated[int | None, Query(description="按应用ID过滤")] = None,
+    category: Annotated[str | None, Query(description="按品类过滤")] = None,
+    method: Annotated[str | None, Query(description="按出海口过滤")] = None,
+    status: Annotated[str | None, Query(description="按状态过滤")] = None,
+    start_time: Annotated[str | None, Query(description="起始时间 YYYY-MM-DD HH:mm:ss")] = None,
+    end_time: Annotated[str | None, Query(description="结束时间 YYYY-MM-DD HH:mm:ss")] = None,
+) -> StreamingResponse:
+    """导出当前筛选条件下的调用日志（最近 5000 行，UTF-8 BOM CSV）。"""
+    from .insights import DevelopInsights
+
+    def _parse(raw: str | None) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+        except ValueError as exc:
+            raise CustomException(
+                msg="时间格式应为 YYYY-MM-DD HH:mm:ss", code=10400, status_code=400
+            ) from exc
+
+    content = await DevelopInsights.export_csv(
+        app_id=app_id,
+        category=category,
+        method=method,
+        status=status,
+        start_time=_parse(start_time),
+        end_time=_parse(end_time),
+    )
+    filename = f"ai-call-logs-{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@DevelopRouter.get("/usage-report/export", summary="导出用量报告 CSV")
+async def develop_usage_report_export(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    days: Annotated[int, Query(ge=1, le=90, description="统计天数")] = 7,
+) -> StreamingResponse:
+    from .insights import usage_report_csv
+
+    content = await usage_report_csv(days)
+    filename = f"ai-usage-report-{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@DevelopRouter.get("/mcp-stats", summary="MCP 会话概览（近 N 天趋势）")
+async def develop_mcp_stats(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    days: Annotated[int, Query(ge=1, le=30, description="趋势天数")] = 7,
+) -> JSONResponse:
+    from .insights import mcp_stats
+
+    return SuccessResponse(data=await mcp_stats(days), msg="查询成功")
+
+
+@DevelopRouter.post("/apps/{app_id}/try", summary="能力试调（管理端）")
+async def develop_try_capability(
+    app_id: int,
+    data: CapabilityTrySchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+) -> JSONResponse:
+    """以该应用身份调用一次能力，便于接入方自测。
+
+    与开放面的区别：**跳过审批门禁**（试调属于管理员测试动作），但仍走权限、
+    限流与审计（``request_path=/try``），因此不会产生待审批队列。
+    """
+    from .approvals import ApprovalService
+    from .registry import get_capability
+
+    if get_capability(data.capability) is None:
+        raise CustomException(msg="能力不存在", code=10404, status_code=404)
+    ctx = await ApprovalService.app_context(app_id)
+    # 试调不加 try/except：权限 403、参数 400、内部错误 500 都交给全局处理器，
+    # 前端按统一 envelope 展示（与开放面调用语义一致，便于对照排查）。
+    result = await invoke_capability(
+        ctx,
+        data.capability,
+        data.payload,
+        method="REST",
+        redis=getattr(request.app.state, "redis", None),
+        request_path=f"/try/{data.capability}",
+        bypass_approval=True,
+    )
+    return SuccessResponse(data=result, msg="调用成功")
 
 
 @DevelopRouter.get("/mcp-sessions", summary="分页查询MCP会话")
@@ -251,6 +762,9 @@ async def _query_call_logs(
     status: str | None,
     page_no: int,
     page_size: int,
+    start_time: str | None = None,
+    end_time: str | None = None,
+    capability: str | None = None,
 ) -> dict:
     """按 app_id/category/method/status 过滤调用日志，分页返回。"""
     page_no = max(int(page_no or 1), 1)
@@ -264,6 +778,21 @@ async def _query_call_logs(
         wheres.append(AiIntegrationCallLogModel.method == method)
     if status:
         wheres.append(AiIntegrationCallLogModel.status == status)
+    if capability:
+        wheres.append(AiIntegrationCallLogModel.capability == capability)
+    # 时间范围（"YYYY-MM-DD HH:mm:ss"，本地 naive 时间，与写入口径一致）
+    for raw, op in ((start_time, "ge"), (end_time, "le")):
+        if not raw:
+            continue
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            raise CustomException(msg="时间格式应为 YYYY-MM-DD HH:mm:ss", code=10400, status_code=400)
+        wheres.append(
+            AiIntegrationCallLogModel.created_time >= parsed
+            if op == "ge"
+            else AiIntegrationCallLogModel.created_time <= parsed
+        )
 
     async with async_db_session() as db:
         total = (

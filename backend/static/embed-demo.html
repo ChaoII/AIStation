@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AIStation 对话嵌入 · 演示宿主页</title>
+    <style>
+      :root {
+        --ink: #1f2733;
+        --muted: #5c6b7f;
+        --line: #e3e8ef;
+        --bg: #f5f7fa;
+        --card: #ffffff;
+        --primary: #2563eb;
+        --warn-bg: #fff7e6;
+        --warn-line: #ffd591;
+        --warn-ink: #ad6800;
+        --ok: #16a34a;
+        --mono: ui-monospace, SFMono-Regular, Consolas, "Cascadia Code", monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+      .wrap { max-width: 1180px; margin: 0 auto; padding: 22px 20px 40px; }
+      h1 { margin: 0 0 4px; font-size: 19px; font-weight: 650; }
+      .sub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+      .warn {
+        display: flex; gap: 8px; align-items: flex-start;
+        padding: 10px 12px; margin-bottom: 16px;
+        color: var(--warn-ink); background: var(--warn-bg);
+        border: 1px solid var(--warn-line); border-radius: 8px; font-size: 13px;
+      }
+      .grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+      @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
+      .card { padding: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+      .card h2 { margin: 0 0 12px; font-size: 14px; font-weight: 650; }
+      .row { display: flex; gap: 10px; margin-bottom: 10px; }
+      .row > label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+      input, select {
+        width: 100%; padding: 7px 9px; font: inherit; color: var(--ink);
+        background: #fff; border: 1px solid var(--line); border-radius: 6px;
+      }
+      input:focus, select:focus { outline: 2px solid rgb(37 99 235 / 18%); border-color: var(--primary); }
+      button {
+        padding: 8px 14px; font: inherit; color: #fff; cursor: pointer;
+        background: var(--primary); border: 0; border-radius: 6px;
+      }
+      button:disabled { cursor: not-allowed; opacity: 0.55; }
+      button.ghost { color: var(--ink); background: #fff; border: 1px solid var(--line); }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+      .stage { min-height: 620px; }
+      .stage iframe { display: block; border: 0; border-radius: 12px; }
+      .log { max-height: 300px; margin: 0; padding: 8px 10px; overflow: auto; font-family: var(--mono); font-size: 12px; background: #0f172a; border-radius: 8px; }
+      .log li { padding: 3px 0; color: #cbd5e1; list-style: none; border-bottom: 1px dashed rgb(148 163 184 / 18%); }
+      .log b { color: #93c5fd; font-weight: 600; }
+      .log .t { color: #64748b; margin-right: 6px; }
+      .log-wrap { margin: 0; }
+      .mono { font-family: var(--mono); }
+      .hint { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+      .divider { height: 1px; margin: 16px 0; background: var(--line); }
+      .tag { display: inline-block; padding: 0 6px; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; }
+      #status { font-size: 12px; color: var(--muted); }
+      #status.ok { color: var(--ok); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>AIStation 对话嵌入 · 演示宿主页</h1>
+      <p class="sub">模拟第三方站点：服务端换票 → 注入短期 token → iframe / Script SDK 两种嵌入形态。</p>
+
+      <div class="warn">
+        <span>⚠️</span>
+        <span><b>生产环境必须在宿主服务端换票</b>：本页为便于演示，把 appid/appkey 放在页面里模拟「宿主服务端」行为。真实接入时 appkey 只能保存在服务端，网页与嵌入代码中绝不能出现。</span>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>嵌入预览</h2>
+          <div class="row">
+            <label>apiBase
+              <input id="apiBase" class="mono" value="" />
+            </label>
+            <label>webBase
+              <input id="webBase" class="mono" value="http://127.0.0.1:5182/web" />
+            </label>
+          </div>
+          <div class="row">
+            <label>AppID
+              <input id="appid" class="mono" placeholder="ai_xxxxxxxx" />
+            </label>
+            <label>AppKey
+              <input id="appkey" class="mono" placeholder="创建/重置时仅展示一次" />
+            </label>
+          </div>
+          <div class="row">
+            <label>嵌入形态
+              <select id="kind">
+                <option value="workflow">工作流</option>
+                <option value="agent">Agent</option>
+                <option value="app">AI 应用</option>
+              </select>
+            </label>
+            <label>目标 ID
+              <input id="targetId" class="mono" placeholder="如 1" />
+            </label>
+          </div>
+          <div class="actions">
+            <button id="btnEmbed">换票并嵌入</button>
+            <button id="btnMintOnly" class="ghost">仅换票</button>
+            <button id="btnSend" class="ghost">发送「你好」</button>
+            <button id="btnDestroy" class="ghost">销毁实例</button>
+            <span id="status"></span>
+          </div>
+          <div class="row">
+            <label>手动 setToken（续期演示，粘贴新票）
+              <input id="newToken" class="mono" placeholder="重新换票后粘贴到这里" />
+            </label>
+            <button id="btnSetToken" class="ghost" style="align-self: flex-end">setToken</button>
+          </div>
+          <div class="row">
+            <label>当前 token
+              <input id="tokenView" class="mono" readonly placeholder="尚未换票" />
+            </label>
+          </div>
+          <div class="stage" id="stage"></div>
+          <p class="hint">iframe 直嵌模式：把 <span class="tag">token</span> 填入上方后也可直接在任意页面使用
+            <span class="mono">&lt;iframe src="{webBase}/#/embed?token=…"&gt;</span>。</p>
+        </div>
+
+        <div class="card log-wrap">
+          <h2>postMessage 事件日志</h2>
+          <ul class="log" id="log"></ul>
+          <p class="hint">上行事件 7 类：ready / user_message / reply_start / reply_delta / reply_done / error / token_expired。
+            信封：<span class="mono">{source:"ai-embed", version:1, event, payload}</span></p>
+        </div>
+      </div>
+    </div>
+
+    <script src="/api/v1/ai/embed/sdk.js"></script>
+    <script>
+      // 本页由后端 /static 提供，默认同源；frontend 与 backend 不同端口时手动改 webBase。
+      const $ = (id) => document.getElementById(id);
+      const apiBaseInput = $("apiBase");
+      apiBaseInput.value = location.origin + "/api/v1/ai";
+
+      let instance = null;
+      let currentToken = "";
+
+      function logEvent(event, payload) {
+        const li = document.createElement("li");
+        const t = new Date().toLocaleTimeString();
+        li.innerHTML = `<span class="t">${t}</span><b>${event}</b> ${JSON.stringify(payload || {}).slice(0, 220)}`;
+        const log = $("log");
+        log.prepend(li);
+        while (log.children.length > 200) log.removeChild(log.lastChild);
+      }
+
+      function setStatus(text, ok) {
+        const el = $("status");
+        el.textContent = text || "";
+        el.className = ok ? "ok" : "";
+      }
+
+      async function exchangeToken() {
+        const apiBase = apiBaseInput.value.replace(/\/+$/, "");
+        const appid = $("appid").value.trim();
+        const appkey = $("appkey").value.trim();
+        const kind = $("kind").value;
+        const targetId = Number($("targetId").value.trim());
+        if (!appid || !appkey || !kind || !targetId) {
+          throw new Error("请先填写 AppID / AppKey / 形态 / 目标 ID");
+        }
+        const resp = await fetch(`${apiBase}/develop-api/auth/token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${appid}:${appkey}`,
+          },
+          body: JSON.stringify({ kind, target_id: targetId }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(`换票失败 HTTP ${resp.status}：${data.msg || "未知错误"}`);
+        }
+        currentToken = data.data.token;
+        $("tokenView").value = currentToken;
+        setStatus(`换票成功，有效期 ${data.data.expires_in} 秒`, true);
+        return currentToken;
+      }
+
+      async function embed() {
+        try {
+          setStatus("换票中…");
+          const token = await exchangeToken();
+          if (instance) instance.destroy();
+          $("stage").innerHTML = "";
+          instance = AiAssistant.init({
+            container: "#stage",
+            token,
+            apiBase: apiBaseInput.value.replace(/\/+$/, ""),
+            webBase: $("webBase").value.trim().replace(/\/+$/, ""),
+            theme: { primary: "#2563eb" },
+          });
+          ["ready", "user_message", "reply_start", "reply_delta", "reply_done", "error", "token_expired"].forEach((name) => {
+            instance.on(name, (payload) => {
+              logEvent(name, payload);
+              if (name === "token_expired") setStatus("凭证已过期：请重新换票后点 setToken", false);
+            });
+          });
+          logEvent("sdk-init", { apiBase: apiBaseInput.value });
+        } catch (e) {
+          setStatus(String(e.message || e));
+        }
+      }
+
+      $("btnEmbed").addEventListener("click", embed);
+      $("btnMintOnly").addEventListener("click", () => exchangeToken().catch((e) => setStatus(String(e.message || e))));
+      $("btnSend").addEventListener("click", () => {
+        if (instance) instance.sendMessage("你好");
+        else setStatus("尚未嵌入实例");
+      });
+      $("btnDestroy").addEventListener("click", () => {
+        if (instance) instance.destroy();
+        instance = null;
+        setStatus("已销毁实例");
+      });
+      $("btnSetToken").addEventListener("click", async () => {
+        const next = $("newToken").value.trim();
+        if (!instance) return setStatus("尚未嵌入实例");
+        if (!next) return setStatus("请先粘贴新 token");
+        instance.setToken(next);
+        currentToken = next;
+        $("tokenView").value = next;
+        setStatus("已 setToken（续期）", true);
+      });
+
+      // 未走 SDK 的纯 iframe 模式也监听原始信封，便于核对契约
+      window.addEventListener("message", (ev) => {
+        const data = ev.data;
+        if (!data || data.source !== "ai-embed") return;
+        logEvent(`raw:${data.event}`, data.payload);
+      });
+    </script>
+  </body>
+</html>

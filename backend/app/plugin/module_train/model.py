@@ -95,6 +95,13 @@ class TrainTask(ModelMixin, UserMixin):
     cleanup_delay_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="训练完成后延迟N分钟删除容器,空=不自动删除")
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="开始时间")
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="完成时间")
+    source_app_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("ai_integration_apps.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="开放平台归属应用（空=平台内部创建）",
+    )
 
 
 class TrainEval(ModelMixin, UserMixin):

@@ -44,6 +44,81 @@ export function getMcpSessions(params?: any) {
   return request({ url: `${API_PATH}/mcp-sessions`, method: "get", params });
 }
 
+/** 全部开放能力元数据（管理面，接入文档展示「有哪些能力可授权」）。 */
+export function getCapabilities() {
+  return request({ url: `${API_PATH}/capabilities`, method: "get" });
+}
+
+/** 分页查询调用审批（params: status / app_id / page_no / page_size）。 */
+export function getApprovals(params?: any) {
+  return request({ url: `${API_PATH}/approvals`, method: "get", params });
+}
+
+/** 审批调用：批准会立即以原应用身份执行；拒绝只记录意见。 */
+export function reviewApproval(id: number, data: { approve: boolean; note?: string }) {
+  return request({ url: `${API_PATH}/approvals/${id}/review`, method: "post", data });
+}
+
+/** 批量批准（≤50 条/次，逐条独立执行；拒绝请逐条操作）。 */
+export function batchReviewApprovals(data: { ids: number[]; note?: string }) {
+  return request({ url: `${API_PATH}/approvals/batch-review`, method: "post", data });
+}
+
+/** 调用概览（今日/趋势/Top 能力/应用与审批计数）。 */
+export function getDevelopStats(days = 7) {
+  return request({ url: `${API_PATH}/stats`, method: "get", params: { days } });
+}
+
+/** 某应用当日按品类调用次数 + 配额上限（用量可视化）。 */
+export function getAppUsage(appId: number) {
+  return request({ url: `${API_PATH}/apps/${appId}/usage`, method: "get" });
+}
+
+/** 用量报告（按应用聚合近 N 天调用）。 */
+export function getUsageReport(days = 7) {
+  return request({ url: `${API_PATH}/usage-report`, method: "get", params: { days } });
+}
+
+/** 审批通知配置：读（开关 + 各通道 JSON）。 */
+export function getNotifyConfig() {
+  return request({ url: `${API_PATH}/notify-config`, method: "get" });
+}
+
+/** 保存审批通知配置。 */
+export function saveNotifyConfig(data: { channels: string[]; configs: Record<string, any> }) {
+  return request({ url: `${API_PATH}/notify-config`, method: "put", data });
+}
+
+/** 导出用量报告 CSV（返回 blob）。 */
+export function exportUsageReport(days = 7) {
+  return request({
+    url: `${API_PATH}/usage-report/export`,
+    method: "get",
+    params: { days },
+    responseType: "blob",
+  });
+}
+
+/** MCP 会话概览（近 N 天趋势 + 汇总）。 */
+export function getMcpStats(days = 7) {
+  return request({ url: `${API_PATH}/mcp-stats`, method: "get", params: { days } });
+}
+
+/** 导出调用日志 CSV（返回 blob）。 */
+export function exportCallLogs(params?: any) {
+  return request({
+    url: `${API_PATH}/call-logs/export`,
+    method: "get",
+    params,
+    responseType: "blob",
+  });
+}
+
+/** 管理端能力试调（跳过审批，仍走权限与审计）。 */
+export function tryCapability(appId: number, data: { capability: string; payload: any }) {
+  return request({ url: `${API_PATH}/apps/${appId}/try`, method: "post", data });
+}
+
 /**
  * 开放数据面鉴权校验：携带 `Authorization: Bearer <appid>:<appkey>` 调用。
  * 未传入 appid/appkey 时不覆盖自动附加的会话令牌（此时会命中管理面鉴权）。
@@ -54,4 +129,19 @@ export function verifyAuth(appid?: string, appkey?: string) {
     method: "get",
     headers: appid && appkey ? { Authorization: `Bearer ${appid}:${appkey}` } : undefined,
   });
+}
+
+/** 某应用的嵌入令牌列表（只读元信息，绝不含明文）。 */
+export function getEmbedTokens(appId: number) {
+  return request({ url: `${API_PATH}/tokens`, method: "get", params: { app_id: appId } });
+}
+
+/** 管理端签发体验令牌（有效期 2 小时；明文仅返回一次）。 */
+export function mintEmbedToken(data: { app_id: number; kind: string; target_id: number }) {
+  return request({ url: `${API_PATH}/tokens`, method: "post", data });
+}
+
+/** 吊销嵌入令牌（立即生效，不可恢复）。 */
+export function revokeEmbedToken(id: number) {
+  return request({ url: `${API_PATH}/tokens/${id}/revoke`, method: "put" });
 }

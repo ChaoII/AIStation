@@ -22,7 +22,7 @@ from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 
 from .capabilities import normalize_permissions
-from .model import AiIntegrationAppModel, AiIntegrationCallLogModel
+from .model import AiIntegrationAccessTokenModel, AiIntegrationAppModel, AiIntegrationCallLogModel
 
 #: appid 随机字符表：去掉易混淆的 0/O/1/l/I。
 _APPID_ALPHABET = "".join(c for c in string.ascii_letters + string.digits if c not in "0O1lI")
@@ -311,3 +311,73 @@ class DevelopService:
             if row:
                 row.last_call_at = now
                 row.call_count = (row.call_count or 0) + 1
+
+    @classmethod
+    async def list_tokens(cls, app_id: int) -> list[dict]:
+        """列出某应用的嵌入令牌（只读元信息，绝不含明文/散列）。"""
+        from .embed import EmbedService  # 延迟导入：避免 service ↔ embed 循环
+
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AiIntegrationAccessTokenModel)
+                    .where(
+                        AiIntegrationAccessTokenModel.app_id == app_id,
+                        AiIntegrationAccessTokenModel.is_deleted.is_(False),
+                    )
+                    .order_by(AiIntegrationAccessTokenModel.id.desc())
+                )
+            ).scalars().all()
+        items: list[dict] = []
+        for r in rows:
+            target = await EmbedService.get_target(r.kind, r.target_id)
+            items.append(
+                {
+                    "id": r.id,
+                    "kind": r.kind,
+                    "target_id": r.target_id,
+                    "target_name": (target or {}).get("name") or "—",
+                    "issued_by": r.issued_by,
+                    "expires_at": r.expires_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    "revoked": bool(r.revoked),
+                    "use_count": r.use_count or 0,
+                    "last_used_at": r.last_used_at.strftime("%Y-%m-%d %H:%M:%S")
+                    if r.last_used_at
+                    else None,
+                    "created_time": r.created_time.strftime("%Y-%m-%d %H:%M:%S")
+                    if r.created_time
+                    else None,
+                }
+            )
+        return items
+
+    @classmethod
+    async def revoke_token(cls, token_id: int) -> bool:
+        """吊销令牌（置 revoked=true，立即生效；保留审计行不物理删）。"""
+        async with async_db_session.begin() as db:
+            row = await db.get(AiIntegrationAccessTokenModel, token_id)
+            if row is None or row.is_deleted:
+                return False
+            row.revoked = True
+            return True
+
+
+# ---------------------------------------------------------------------- #
+# 嵌入短期令牌（P4'）：生成 / 散列 / TTL 夹紧（纯逻辑，无 DB / HTTP）
+# ---------------------------------------------------------------------- #
+
+def _generate_embed_token() -> str:
+    """生成嵌入 access_token 明文（URL 安全、不含冒号，便于 Bearer 解析）。"""
+    return secrets.token_urlsafe(32)
+
+
+def _hash_embed_token(token: str) -> str:
+    """计算嵌入 token 的 sha256 散列（库内只存散列，明文仅签发时返回一次）。"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def clamp_embed_ttl(ttl: int | None) -> int:
+    """夹紧换票 TTL：缺省 1800s，下限 60s，上限 86400s（24 小时）。"""
+    if ttl is None:
+        return 1800
+    return max(60, min(int(ttl), 86400))

@@ -26,21 +26,6 @@
                     placeholder="描述"
                   />
                 </el-form-item>
-                <el-form-item label="分类">
-                  <el-select
-                    v-model="formData.category_id"
-                    clearable
-                    placeholder="选择分类"
-                    style="width: 100%"
-                  >
-                    <el-option
-                      v-for="c in categoryOptions"
-                      :key="c.id"
-                      :label="indentLabel(c)"
-                      :value="c.id"
-                    />
-                  </el-select>
-                </el-form-item>
                 <el-form-item label="快速模板">
                   <el-dropdown trigger="click" style="width: 100%" @command="applyTemplateByKey">
                     <el-button size="small" :icon="MagicStick" style="width: 100%">
@@ -163,9 +148,7 @@
                   >
                     统计
                   </el-button>
-                  <el-button size="small" :icon="Link" :disabled="!workflowId" @click="openShare">
-                    分享
-                  </el-button>
+                  <el-button size="small" :icon="Link" @click="showEmbedHint">嵌入对话</el-button>
                   <el-button size="small" :icon="Share" @click="topoVisible = true">拓扑</el-button>
                   <el-button
                     size="small"
@@ -219,7 +202,7 @@
                 </Panel>
                 <Panel position="bottom-center" class="wf-hint">
                   操作：左侧点选/拖拽添加节点 → 点击节点在右侧编辑 → 拖动节点圆点连线 →
-                  <el-button icon="FullScreen" link type="primary" size="small" @click="fitView()">
+                  <el-button link type="primary" size="small" @click="fitView()">
                     适配视图
                   </el-button>
                 </Panel>
@@ -235,7 +218,6 @@
               <div class="section-title">
                 节点：{{ nodeDefOf(selectedNode.type || "llm").label }}
                 <el-button
-                  icon="VideoPlay"
                   link
                   type="primary"
                   size="small"
@@ -245,7 +227,6 @@
                   调试此节点
                 </el-button>
                 <el-button
-                  icon="CopyDocument"
                   link
                   type="primary"
                   size="small"
@@ -255,7 +236,6 @@
                   复制
                 </el-button>
                 <el-button
-                  icon="delete"
                   link
                   type="danger"
                   size="small"
@@ -400,7 +380,6 @@
                         <div class="kv-t">
                           输入
                           <el-button
-                            icon="CopyDocument"
                             link
                             size="small"
                             class="kv-copy"
@@ -415,7 +394,6 @@
                         <div class="kv-t">
                           输出
                           <el-button
-                            icon="CopyDocument"
                             link
                             size="small"
                             class="kv-copy"
@@ -430,7 +408,6 @@
                         <div class="kv-t">
                           错误
                           <el-button
-                            icon="CopyDocument"
                             link
                             size="small"
                             class="kv-copy"
@@ -538,63 +515,6 @@
       </div>
     </el-drawer>
 
-    <!-- 分享预览抽屉（受限匿名运行） -->
-    <el-drawer v-model="shareRunVisible" title="分享预览（受限运行）" size="480px" append-to-body>
-      <el-form label-position="top" size="small">
-        <el-form-item label="测试消息">
-          <el-input
-            v-model="shareMessage"
-            type="textarea"
-            :rows="2"
-            placeholder="输入一条消息测试公开分享运行"
-          />
-        </el-form-item>
-        <el-button type="primary" :loading="shareRunning" style="width: 100%" @click="runShare">
-          运行
-        </el-button>
-        <div class="share-drawer-actions">
-          <el-button size="small" @click="copyShareEmbed">复制嵌入代码</el-button>
-          <el-button size="small" @click="copyShareLink">复制链接</el-button>
-        </div>
-      </el-form>
-      <div v-if="shareError" class="debug-result">
-        <div class="debug-result__title is-err">错误</div>
-        <pre class="debug-result__body is-err">{{ shareError }}</pre>
-      </div>
-      <div v-if="shareOutput" class="debug-result">
-        <div class="debug-result__title">回复</div>
-        <pre class="debug-result__body">{{ shareOutput }}</pre>
-      </div>
-      <div v-if="shareTrace.length" class="debug-result">
-        <div class="debug-result__title">节点执行过程</div>
-        <div v-for="(t, i) in shareTrace" :key="i" class="share-trace-item">
-          <div class="share-trace-item__head" @click="shareTraceOpen[i] = !shareTraceOpen[i]">
-            <span class="share-trace-item__chev">{{ shareTraceOpen[i] ? "▾" : "▸" }}</span>
-            <el-tag
-              size="small"
-              :type="t.status === 'success' ? 'success' : t.status === 'error' ? 'danger' : 'info'"
-            >
-              {{ t.label }}
-            </el-tag>
-            <span v-if="t.error" class="share-trace-item__err">{{ t.error }}</span>
-          </div>
-          <div
-            v-if="shareTraceOpen[i] && (t.input || t.output != null)"
-            class="share-trace-item__detail"
-          >
-            <div v-if="t.input && Object.keys(t.input).length" class="hd-kv">
-              <span class="hd-kv-t">输入</span>
-              <pre class="hd-pre">{{ formatJson(t.input) }}</pre>
-            </div>
-            <div v-if="t.output != null" class="hd-kv">
-              <span class="hd-kv-t">输出</span>
-              <pre class="hd-pre">{{ formatJson(t.output) }}</pre>
-            </div>
-          </div>
-        </div>
-      </div>
-    </el-drawer>
-
     <!-- 节点右键菜单 -->
     <teleport to="body">
       <div
@@ -619,7 +539,7 @@
     </teleport>
 
     <!-- 加入分组选择弹窗 -->
-    <el-dialog v-model="groupDialogVisible" title="加入分组" width="520px" append-to-body>
+    <el-dialog v-model="groupDialogVisible" title="加入分组" width="400px" append-to-body>
       <el-select v-model="groupSelect" filterable placeholder="选择分组" style="width: 100%">
         <el-option v-for="g in groupOptions" :key="g.id" :label="g.label" :value="g.id" />
       </el-select>
@@ -642,7 +562,7 @@
     <el-dialog
       v-model="historyVisible"
       title="运行历史"
-      width="900px"
+      width="760px"
       append-to-body
       @closed="stopReplay"
     >
@@ -668,7 +588,6 @@
         size="small"
         border
         max-height="420"
-        stripe
       >
         <el-table-column label="时间" width="180">
           <template #default="{ row }">{{ formatTime(row.created_time) }}</template>
@@ -688,7 +607,7 @@
         </el-table-column>
         <el-table-column label="" width="70">
           <template #default="{ row }">
-            <el-button icon="View" link type="primary" size="small" @click="openRunDetail(row.id)">
+            <el-button link type="primary" size="small" @click="openRunDetail(row.id)">
               详情
             </el-button>
           </template>
@@ -699,14 +618,7 @@
         <div class="history-detail__title">
           节点执行过程
           <span class="hd-replay">
-            <el-button
-              v-if="!replayPlaying"
-              icon="VideoPlay"
-              link
-              type="primary"
-              size="small"
-              @click="startReplay"
-            >
+            <el-button v-if="!replayPlaying" link type="primary" size="small" @click="startReplay">
               画布回放
             </el-button>
             <el-button v-else link type="danger" size="small" @click="stopReplay">
@@ -806,7 +718,7 @@
     </el-drawer>
 
     <!-- 版本管理弹窗 -->
-    <el-dialog v-model="versionsVisible" title="版本管理" width="600px" append-to-body>
+    <el-dialog v-model="versionsVisible" title="版本管理" width="680px" append-to-body>
       <div class="version-save-row">
         <el-input
           v-model="versionRemark"
@@ -818,7 +730,7 @@
           保存当前版本
         </el-button>
       </div>
-      <el-table v-loading="versionLoading" :data="versions" size="small" border stripe>
+      <el-table v-loading="versionLoading" :data="versions" size="small" border>
         <el-table-column label="版本" width="80">
           <template #default="{ row }">v{{ row.version_no }}</template>
         </el-table-column>
@@ -832,15 +744,9 @@
         <el-table-column prop="created_time" label="保存时间" width="180" />
         <el-table-column label="操作" width="200">
           <template #default="{ row }">
-            <el-button icon="Switch" link type="success" size="small" @click="openCompare(row)">
-              对比
-            </el-button>
-            <el-button icon="Upload" link type="primary" size="small" @click="doPublish(row)">
-              发布
-            </el-button>
-            <el-button icon="RefreshLeft" link type="warning" size="small" @click="doRollback(row)">
-              回滚
-            </el-button>
+            <el-button link type="success" size="small" @click="openCompare(row)">对比</el-button>
+            <el-button link type="primary" size="small" @click="doPublish(row)">发布</el-button>
+            <el-button link type="warning" size="small" @click="doRollback(row)">回滚</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -865,7 +771,7 @@
     <el-dialog
       v-model="topoVisible"
       title="DAG 拓扑总览"
-      width="900px"
+      width="800px"
       height="600px"
       append-to-body
     >
@@ -977,12 +883,10 @@ import {
   getAiWorkflowRunLog,
   cancelAiWorkflowRun,
   getAiWorkflowStats,
-  createAiWorkflowShare,
   getAiWorkflowSchedule,
   setAiWorkflowSchedule,
   runAiWorkflowSchedule,
 } from "@/api/module_ai/workflow";
-import { getWorkspaceCategoryTree } from "@/api/module_ai/workspace";
 import { Auth } from "@/utils/auth";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
@@ -1101,35 +1005,7 @@ onConnect((conn) => {
   autoFillOnConnect(conn);
 });
 
-const formData = reactive<{ name: string; description: string; category_id: number | null }>({
-  name: "",
-  description: "",
-  category_id: null,
-});
-
-/** 分类下拉的层级缩进：全角空格（用 \u3000 转义，避免 no-irregular-whitespace） */
-function indentLabel(c: { name: string; depth: number }) {
-  return "\u3000".repeat(c.depth) + c.name;
-}
-
-/** 工作台分类（分类的唯一维护入口在工作台；此处只读取树并拍平供下拉选择） */
-const categoryOptions = ref<{ id: number; name: string; depth: number }[]>([]);
-async function loadCategories() {
-  try {
-    const res: any = await getWorkspaceCategoryTree();
-    const out: { id: number; name: string; depth: number }[] = [];
-    const walk = (list: any[], depth: number) => {
-      for (const n of list || []) {
-        out.push({ id: n.id, name: n.name, depth });
-        if (n.children?.length) walk(n.children, depth + 1);
-      }
-    };
-    walk(res.data?.data || [], 0);
-    categoryOptions.value = out;
-  } catch {
-    categoryOptions.value = [];
-  }
-}
+const formData = reactive<{ name: string; description: string }>({ name: "", description: "" });
 const workflowId = ref<number>();
 const saving = ref(false);
 const nodes = ref<Node[]>([]);
@@ -1555,27 +1431,9 @@ const histOption = computed(() => {
     ],
   };
 });
-async function openShare() {
-  if (!workflowId.value) return;
-  try {
-    const res = await createAiWorkflowShare(workflowId.value);
-    const token = res.data?.data?.token;
-    if (!token) {
-      ElMessage.error("生成分享失败（仅启用的工作流可分享）");
-      return;
-    }
-    shareToken.value = token;
-    shareMessage.value = "";
-    shareOutput.value = "";
-    shareError.value = "";
-    shareTrace.value = [];
-    shareRunVisible.value = true;
-    const link = `${location.origin}/#/share?token=${token}`;
-    await navigator.clipboard.writeText(link);
-    ElMessage.success("分享链接已复制（匿名受限运行）");
-  } catch (e: any) {
-    ElMessage.error(e?.message || "生成分享失败");
-  }
+/** 旧分享通道已下线：对话嵌入统一到「AI 集成 → 嵌入」生成代码。 */
+function showEmbedHint() {
+  ElMessage.info("对话嵌入请前往「AI 集成 → 应用管理」，在目标应用的「嵌入」中生成代码");
 }
 
 // ---------- 定时调度 ----------
@@ -1642,71 +1500,6 @@ async function runScheduleNow() {
   }
 }
 
-const shareRunVisible = ref(false);
-const shareToken = ref("");
-const shareLink = computed(() => `${location.origin}/#/share?token=${shareToken.value}`);
-function copyShareLink() {
-  navigator.clipboard.writeText(shareLink.value).then(
-    () => ElMessage.success("已复制分享链接"),
-    () => ElMessage.error("复制失败")
-  );
-}
-function copyShareEmbed() {
-  const html = `<iframe src="${shareLink.value}" width="560" height="560" style="border:0;border-radius:12px" allow="fullscreen"></iframe>`;
-  navigator.clipboard.writeText(html).then(
-    () => ElMessage.success("已复制嵌入代码"),
-    () => ElMessage.error("复制失败")
-  );
-}
-const shareMessage = ref("");
-const shareOutput = ref("");
-const shareRunning = ref(false);
-const shareError = ref("");
-const shareTrace = ref<any[]>([]);
-const shareTraceOpen = ref<Record<number, boolean>>({});
-async function runShare() {
-  if (!shareToken.value) return;
-  shareRunning.value = true;
-  shareOutput.value = "";
-  shareError.value = "";
-  shareTrace.value = [];
-  try {
-    const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
-    const resp = await fetch(`${base}/ai/workflows/share/run`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${Auth.getAccessToken() || ""}`,
-      },
-      body: JSON.stringify({ token: shareToken.value, message: shareMessage.value || "你好" }),
-    });
-    if (!resp.ok || !resp.body) {
-      shareError.value = `请求失败：${resp.status}`;
-      return;
-    }
-    await readUiStream(resp, (obj) => {
-      if (obj.type === "text-delta") shareOutput.value += obj.text;
-      else if (obj.type === "data-finish")
-        shareOutput.value = dataOf(obj).reply || shareOutput.value;
-      else if (obj.type === "node-status") {
-        shareTrace.value.push({
-          label: obj.label || obj.nodeId,
-          status: obj.status || "success",
-          input: obj.input,
-          output: obj.output,
-          error: obj.error,
-        });
-      } else if (obj.type === "error") {
-        shareError.value = obj.errorText || obj.message || "运行失败";
-      }
-    });
-    if (!shareOutput.value) shareOutput.value = "（无回复）";
-  } catch (e: any) {
-    shareError.value = `运行失败：${e?.message || e}`;
-  } finally {
-    shareRunning.value = false;
-  }
-}
 const historyStats = computed(() => {
   const list = runHistoryList.value;
   const success = list.filter((r) => r.status === "success").length;
@@ -2130,12 +1923,10 @@ const loadOptions = async () => {
 onInit((instance) => {
   instance.fitView();
   loadOptions();
-  loadCategories();
   if (props.workflow) {
     workflowId.value = props.workflow.id;
     formData.name = props.workflow.name || "";
     formData.description = props.workflow.description || "";
-    formData.category_id = props.workflow.category_id ?? null;
     const g = props.workflow.graph || { nodes: [], edges: [] };
     nodes.value = g.nodes.map((n: any) => ({
       id: n.id,
@@ -3213,7 +3004,6 @@ async function handleSave() {
         name: formData.name,
         description: formData.description,
         graph,
-        category_id: formData.category_id,
       });
     } else {
       const res = await createAiWorkflow({
@@ -3221,7 +3011,6 @@ async function handleSave() {
         description: formData.description,
         graph,
         enabled: true,
-        category_id: formData.category_id,
       });
       workflowId.value = res.data?.data?.id;
     }
@@ -3572,7 +3361,7 @@ async function handleApprove(decision: "approve" | "reject") {
 
   .palette-item__desc {
     margin-left: auto;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--el-text-color-placeholder);
   }
 }
@@ -3796,7 +3585,7 @@ async function handleApprove(decision: "approve" | "reject") {
 
     .trace-item__chev {
       color: var(--el-text-color-secondary);
-      font-size: 12px;
+      font-size: 11px;
     }
 
     .trace-item__dot {
@@ -3824,7 +3613,7 @@ async function handleApprove(decision: "approve" | "reject") {
     }
 
     .trace-item__dur {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--el-text-color-secondary);
     }
 
@@ -3944,31 +3733,6 @@ async function handleApprove(decision: "approve" | "reject") {
   font-size: 12px;
 }
 
-.share-trace-item {
-  margin-bottom: 6px;
-
-  .share-trace-item__head {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    cursor: pointer;
-  }
-
-  .share-trace-item__chev {
-    color: var(--el-text-color-secondary);
-    font-size: 12px;
-  }
-
-  .share-trace-item__err {
-    color: var(--el-color-danger);
-    font-size: 12px;
-  }
-
-  .share-trace-item__detail {
-    margin: 4px 0 0 18px;
-  }
-}
-
 .history-stats {
   display: flex;
   gap: 16px;
@@ -4065,12 +3829,6 @@ async function handleApprove(decision: "approve" | "reject") {
     font-size: 12px;
     color: var(--el-text-color-secondary);
   }
-}
-
-.share-drawer-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
 }
 
 .compare-item {
@@ -4259,7 +4017,7 @@ async function handleApprove(decision: "approve" | "reject") {
 
     .run-trace__chev {
       color: var(--el-text-color-secondary);
-      font-size: 12px;
+      font-size: 11px;
     }
   }
 

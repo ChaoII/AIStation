@@ -88,3 +88,10 @@ class AiAgentModel(ModelMixin, UserMixin):
     markdown: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否 Markdown 输出")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
     order: Mapped[int] = mapped_column(Integer, default=0, comment="排序")
+    source_app_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("ai_integration_apps.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="开放平台归属应用（空=平台内部创建）",
+    )
