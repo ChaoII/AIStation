@@ -286,3 +286,78 @@ def test_purge_integration_logs_removes_expired_only(test_client, auth_headers):
         assert asyncio.run(purge_integration_logs(0)) == 0
     finally:
         _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_usage_report_by_app(test_client, auth_headers):
+    """用量报告：按应用聚合调用/成功率/Top 能力，已删除应用回退显示名。"""
+    app = _create_app(test_client, auth_headers)
+    try:
+        _invoke(test_client, app, "agent.list", {})
+        _invoke(test_client, app, "agent.list", {})
+        _invoke(test_client, app, "agent.create", {"agent_name": f"用量-{_uid()}"})
+        r = test_client.get(
+            f"{API}/ai/develop/usage-report", params={"days": 7}, headers=auth_headers
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["days"] == 7 and data["since"]
+        row = next((x for x in data["items"] if x["app_id"] == app["id"]), None)
+        assert row, data["items"]
+        assert row["name"] == app["name"]
+        assert row["calls"] >= 3
+        assert row["success"] >= 3
+        assert 0.0 < row["success_rate"] <= 1.0
+        caps = {t["capability"] for t in row["top"]}
+        assert {"agent.list", "agent.create"} <= caps, caps
+        assert len(row["top"]) <= 3
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_usage_report_quotas_hits_counted(test_client, auth_headers):
+    """被配额拒绝的调用在报告里计入 quota_hits / denied。"""
+    import asyncio
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select, update
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.develop.insights import usage_report
+    from app.plugin.module_ai.develop.model import AiIntegrationCallLogModel
+
+    app = _create_app(test_client, auth_headers, quota={"agent": 1})
+    try:
+        _invoke(test_client, app, "agent.list", {})
+        _invoke(test_client, app, "agent.list", {})
+
+        async def _deny_two():
+            async with async_db_session.begin() as db:
+                rows = (
+                    await db.execute(
+                        select(AiIntegrationCallLogModel.id).where(
+                            AiIntegrationCallLogModel.app_id == app["id"]
+                        )
+                    )
+                ).scalars().all()
+                await db.execute(
+                    update(AiIntegrationCallLogModel)
+                    .where(AiIntegrationCallLogModel.id.in_(rows[:2]))
+                    .values(status="denied", error="今日调用配额已用完")
+                )
+
+        asyncio.run(_deny_two())
+
+        data = asyncio.run(usage_report(7))
+        row = next((x for x in data["items"] if x["app_id"] == app["id"]), None)
+        assert row, data["items"]
+        assert row["quota_hits"] >= 1, row
+        assert row["denied"] >= 1
+        assert row["calls"] >= 2
+        # 口径：成功 / 全部调用（与今日概览一致），此处 0/2 = 0
+        assert row["success_rate"] == 0.0, row
+        # 报告 since 在最近 7 天内
+        assert datetime.strptime(data["since"], "%Y-%m-%d %H:%M:%S") >= (
+            datetime.now() - timedelta(days=7, minutes=1)
+        )
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])

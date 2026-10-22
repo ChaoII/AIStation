@@ -69,6 +69,11 @@ export function getAppUsage(appId: number) {
   return request({ url: `${API_PATH}/apps/${appId}/usage`, method: "get" });
 }
 
+/** 用量报告（按应用聚合近 N 天调用）。 */
+export function getUsageReport(days = 7) {
+  return request({ url: `${API_PATH}/usage-report`, method: "get", params: { days } });
+}
+
 /** 导出调用日志 CSV（返回 blob）。 */
 export function exportCallLogs(params?: any) {
   return request({

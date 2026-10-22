@@ -316,3 +316,106 @@ async def purge_integration_logs(days: int | None = None) -> int:
             )
         )
     return int(logs.rowcount or 0) + int(sessions.rowcount or 0)
+
+
+async def usage_report(days: int = 7) -> dict:
+    """按应用聚合近 N 天调用用量（运营视角：谁用了多少、成功/拒绝、配额与限流命中、Top 能力）。
+
+    - ``quota_hits``：状态为 denied 且错误含「配额」（自然日配额用尽）；
+    - ``rate_limited``：状态为 denied 且错误含「频繁」（固定窗口限流）；
+    - 审批产生的 ``pending`` 计入总调用但不计入成功率分子（只按 success/denied/failed 算分母）。
+    """
+    days = max(1, min(int(days or 7), 90))
+    since = datetime.now() - timedelta(days=days)
+
+    async with async_db_session() as db:
+        by_app_status = (
+            await db.execute(
+                select(
+                    AiIntegrationCallLogModel.app_id,
+                    AiIntegrationCallLogModel.appid,
+                    AiIntegrationCallLogModel.status,
+                    AiIntegrationCallLogModel.error,
+                    func.count().label("n"),
+                )
+                .where(AiIntegrationCallLogModel.created_time >= since)
+                .group_by(
+                    AiIntegrationCallLogModel.app_id,
+                    AiIntegrationCallLogModel.appid,
+                    AiIntegrationCallLogModel.status,
+                    AiIntegrationCallLogModel.error,
+                )
+            )
+        ).all()
+        top_rows = (
+            await db.execute(
+                select(
+                    AiIntegrationCallLogModel.app_id,
+                    AiIntegrationCallLogModel.capability,
+                    func.count().label("n"),
+                )
+                .where(AiIntegrationCallLogModel.created_time >= since)
+                .group_by(
+                    AiIntegrationCallLogModel.app_id, AiIntegrationCallLogModel.capability
+                )
+                .order_by(func.count().desc())
+            )
+        ).all()
+        names = {
+            row.id: row.name
+            for row in (
+                await db.execute(
+                    select(AiIntegrationAppModel.id, AiIntegrationAppModel.name).where(
+                        AiIntegrationAppModel.is_deleted.is_(False)
+                    )
+                )
+            ).all()
+        }
+
+    items: dict[int, dict] = {}
+    for row in by_app_status:
+        app_id = row.app_id or 0
+        bucket = items.setdefault(
+            app_id,
+            {
+                "app_id": app_id,
+                "appid": row.appid or "-",
+                "name": names.get(app_id, f"已删除应用({app_id})"),
+                "calls": 0,
+                "success": 0,
+                "denied": 0,
+                "failed": 0,
+                "quota_hits": 0,
+                "rate_limited": 0,
+                "top": [],
+            },
+        )
+        n = int(row.n)
+        bucket["calls"] += n
+        if row.status in bucket:
+            bucket[row.status] += n
+        err = row.error or ""
+        if row.status == "denied":
+            if "配额" in err:
+                bucket["quota_hits"] += n
+            if "频繁" in err:
+                bucket["rate_limited"] += n
+
+    tops: dict[int, list[dict]] = {}
+    for row in top_rows:
+        tops.setdefault(row.app_id or 0, []).append(
+            {"capability": row.capability, "calls": int(row.n)}
+        )
+    for app_id, bucket in items.items():
+        bucket["top"] = tops.get(app_id, [])[:3]
+        # 口径与今日概览（stats.today）一致：成功 / 全部调用（含 pending/denied），
+        # 避免同屏出现两种「成功率」算法
+        bucket["success_rate"] = (
+            round(bucket["success"] / bucket["calls"], 4) if bucket["calls"] else 0.0
+        )
+
+    return {
+        "days": days,
+        "since": since.strftime("%Y-%m-%d %H:%M:%S"),
+        "items": sorted(items.values(), key=lambda x: x["calls"], reverse=True),
+    }

@@ -344,3 +344,33 @@
 
 - 新增用例：告警字段映射、默认关闭不外发、email 通道被正确调用且 cfg 来自参数、坏 JSON 跳过、审计上限默认/夹紧、日志清理「超期删+未超期留+days=0 不清」、MCP 会话参数——三文件合并 **30 passed**。
 - 前端 eslint/prettier/type-check 全绿；ruff 全绿。
+
+---
+
+## 第六轮：审批内联操作、时间快捷预设、MCP 协议面写清、用量报告（2026-10-23）
+
+### ① 审批详情内联「批准 / 拒绝」
+
+- 详情弹窗 footer 在 `status=pending` 时直接给出「拒绝」（plain danger）与「批准并执行」（primary），带 `module_ai:develop:approve` 权限；
+- 复用列表的 `onReviewApproval`（二次确认 → 关详情 → 刷新列表），少一次「回列表找按钮」。
+
+### ② 日志时间范围快捷预设
+
+- 时间范围选择器旁加「今天 / 近 7 天 / 近 30 天」按钮组：填 `logFilter.range`（当天或 N 天前的 00:00 → 现在）并立即查询。
+
+### ③ MCP 协议面写进接入文档 + 握手断言
+
+- 接入文档 MCP 卡片补标准方法说明：`initialize` / `ping` / tools·resources·prompts 的 list/get/read，JSON-RPC 2.0（协议版本 2025-06-18，Streamable HTTP，JSON 响应）；
+- 新增 `test_mcp_initialize_advertises_standard_capabilities`：握手响应 `capabilities` 必须声明 tools / resources / prompts 三面。
+
+### ④ 用量报告（按应用，近 N 天）
+
+- 后端 `GET /ai/develop/usage-report?days=1..90`（`insights.usage_report`）：按应用聚合 调用/成功/成功率/配额超限/被限流/Top 能力（`quota_hits` = denied 且错误含「配额」，`rate_limited` = 含「频繁」），已删除应用回退显示名；
+- 前端新页签「用量报告」：近 7/30/90 天切换 + 8 列 `border stripe` 表格；
+- **口径统一**：成功率 = 成功 / 全部调用（含 pending/denied），与日志页「今日概览」保持一致，避免同屏两种成功率算法（自查发现并修正）。
+
+### 验证
+
+- 新用例：用量报告按应用聚合与 Top、配额超限计数（含口径断言 0 成功=0.0）、MCP 握手三面能力——与既有用例合并 **10 passed（insights）+ MCP 7 passed**；ruff / eslint / prettier / type-check 全绿。
+- UI 走查（1440）：用量页签数据正确（8 调用/100%/Top 能力）、审批详情 footer `关闭/拒绝/批准并执行`、时间快捷填入 `2026-10-16 00:00:00 → 现在`；三张表全部 `border`、无横向溢出（1168/1168）；截图归档 `p2-usage-report.png`、`p2-approval-detail-actions.png`、`p2-logs-quick-range.png`。
+- 备注：并行跑全量 + UI 时 `test_simple_metrics_read::test_detail_metrics_log_materialized` 再次因 xdist 分发失败，单跑该文件 **6 passed**（既有顺序依赖测试，非回归）。

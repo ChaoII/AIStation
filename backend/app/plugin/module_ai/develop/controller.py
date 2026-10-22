@@ -579,6 +579,16 @@ async def develop_app_usage(
     return SuccessResponse(data=usage, msg="查询成功")
 
 
+@DevelopRouter.get("/usage-report", summary="用量报告（按应用，近 N 天）")
+async def develop_usage_report(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    days: Annotated[int, Query(ge=1, le=90, description="统计天数")] = 7,
+) -> JSONResponse:
+    from .insights import usage_report
+
+    return SuccessResponse(data=await usage_report(days), msg="查询成功")
+
+
 @DevelopRouter.get("/call-logs/export", summary="导出调用日志 CSV")
 async def develop_call_logs_export(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],

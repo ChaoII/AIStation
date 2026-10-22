@@ -269,3 +269,29 @@ def test_mcp_session_limits_configurable():
         / "mcp_server.py"
     ).read_text(encoding="utf-8")
     assert "MCP_MAX_SESSIONS" in src and "MCP_SESSION_IDLE_TIMEOUT" in src
+
+
+def test_mcp_initialize_advertises_standard_capabilities(test_client, auth_headers):
+    """握手响应要声明标准能力面（tools / resources / prompts），客户端据此探测。"""
+    app = _create_app(test_client, auth_headers, AGENT_CAPS)
+    try:
+        r = _rpc(
+            test_client,
+            app,
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "caps-probe", "version": "1"},
+            },
+        )
+        assert r.status_code == 200, r.text
+        caps = r.json()["result"].get("capabilities") or {}
+        print("MCP_CAPS", caps)
+        assert "tools" in caps, caps
+        assert "resources" in caps, caps
+        assert "prompts" in caps, caps
+        assert caps["tools"] is not None and caps["resources"] is not None
+        assert r.json()["result"]["serverInfo"]["name"] == "aistation-ai-integration"
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])

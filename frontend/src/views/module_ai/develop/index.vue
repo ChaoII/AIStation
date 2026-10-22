@@ -267,6 +267,16 @@
                 value-format="YYYY-MM-DD HH:mm:ss"
                 style="width: 340px"
               />
+              <el-button-group style="margin-left: 8px">
+                <el-button
+                  v-for="q in RANGE_PRESETS"
+                  :key="q.days"
+                  size="small"
+                  @click="setQuickRange(q.days)"
+                >
+                  {{ q.label }}
+                </el-button>
+              </el-button-group>
             </el-form-item>
             <el-form-item>
               <el-button :icon="Search" @click="loadLogs()">查询</el-button>
@@ -416,6 +426,57 @@
               "
             />
           </div>
+        </el-tab-pane>
+
+        <!-- ============ 用量报告 ============ -->
+        <el-tab-pane label="用量报告" name="usage">
+          <el-form :inline="true" class="develop-search">
+            <el-form-item label="统计区间">
+              <el-button-group>
+                <el-button
+                  v-for="d in [7, 30, 90]"
+                  :key="d"
+                  :type="usageDays === d ? 'primary' : 'default'"
+                  size="small"
+                  @click="loadUsage(d)"
+                >
+                  近 {{ d }} 天
+                </el-button>
+              </el-button-group>
+            </el-form-item>
+            <el-form-item>
+              <el-button :icon="Search" @click="loadUsage()">查询</el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-table v-loading="usageLoading" :data="usageItems" row-key="app_id" border stripe>
+            <el-table-column prop="name" label="应用" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="appid" label="AppID" width="130" show-overflow-tooltip />
+            <el-table-column prop="calls" label="调用" width="80" align="right" />
+            <el-table-column prop="success" label="成功" width="80" align="right" />
+            <el-table-column label="成功率" width="90" align="right">
+              <template #default="{ row }">{{ (row.success_rate * 100).toFixed(1) }}%</template>
+            </el-table-column>
+            <el-table-column prop="quota_hits" label="配额超限" width="100" align="right" />
+            <el-table-column prop="rate_limited" label="被限流" width="90" align="right" />
+            <el-table-column label="Top 能力" min-width="240">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="t in row.top"
+                  :key="t.capability"
+                  size="small"
+                  effect="plain"
+                  class="cap-tag"
+                >
+                  {{ t.capability }} · {{ t.calls }}
+                </el-tag>
+                <span v-if="!row.top.length" class="text-muted">—</span>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty :image-size="80" description="近段时间暂无调用" />
+            </template>
+          </el-table>
         </el-tab-pane>
 
         <!-- ============ 调用审批 ============ -->
@@ -578,7 +639,12 @@
               <p class="doc-card__desc">
                 平台同时是 MCP Server：工具即能力，
                 <code>tools/list</code>
-                只返回该应用已授权的能力，调用与 REST 共用同一套鉴权、限流与审计。
+                只返回该应用已授权的能力，调用与 REST 共用同一套鉴权、限流与审计；标准方法
+                <code>initialize</code>
+                /
+                <code>ping</code>
+                / tools·resources·prompts 的 list/get/read 全部支持（JSON-RPC 2.0，协议版本
+                2025-06-18，传输 Streamable HTTP，JSON 响应）。
               </p>
               <pre class="doc-code">{{ mcpExample }}</pre>
             </el-card>
@@ -782,6 +848,23 @@
       />
       <template #footer>
         <el-button @click="approvalDetail.visible = false">关闭</el-button>
+        <template v-if="approvalDetail.row?.status === 'pending'">
+          <el-button
+            v-hasPerm="'module_ai:develop:approve'"
+            type="danger"
+            plain
+            @click="onReviewApproval(approvalDetail.row, false)"
+          >
+            拒绝
+          </el-button>
+          <el-button
+            v-hasPerm="'module_ai:develop:approve'"
+            type="primary"
+            @click="onReviewApproval(approvalDetail.row, true)"
+          >
+            批准并执行
+          </el-button>
+        </template>
       </template>
     </el-dialog>
 
@@ -971,6 +1054,7 @@ import {
   getDevelopAppList,
   getDevelopStats,
   getMcpSessions,
+  getUsageReport,
   resetAppkey,
   reviewApproval,
   toggleApp,
@@ -1353,6 +1437,41 @@ async function loadStats() {
   }
 }
 
+//: 时间范围快捷预设（当天 0 点 → 现在）。
+const RANGE_PRESETS = [
+  { label: "今天", days: 1 },
+  { label: "近 7 天", days: 7 },
+  { label: "近 30 天", days: 30 },
+];
+
+function setQuickRange(days: number) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
+  logFilter.range = [fmt(start), fmt(now)];
+  loadLogs();
+}
+
+// ---- 用量报告 ----
+const usageLoading = ref(false);
+const usageDays = ref(7);
+const usageItems = ref<any[]>([]);
+
+async function loadUsage(days?: number) {
+  if (days) usageDays.value = days;
+  usageLoading.value = true;
+  try {
+    const res = await getUsageReport(usageDays.value);
+    usageItems.value = res.data?.data?.items || [];
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "用量加载失败");
+  } finally {
+    usageLoading.value = false;
+  }
+}
+
 // ---- 日志详情抽屉 + 导出 ----
 const logDetail = reactive({ visible: false, row: null as any });
 
@@ -1616,6 +1735,7 @@ async function onReviewApproval(row: any, approve: boolean) {
   try {
     const res = await reviewApproval(row.id, { approve });
     ElMessage.success(res.data?.msg || "已处理");
+    if (approvalDetail.visible) approvalDetail.visible = false;
     await loadApprovals(false);
   } catch (e: any) {
     ElMessage.error(e?.msg || "处理失败");
@@ -1629,6 +1749,7 @@ function onTabChange(name: string | number) {
     loadStats();
   } else if (key === "mcp") loadMcps(false);
   else if (key === "approvals") loadApprovals(false);
+  else if (key === "usage" && !usageItems.value.length) loadUsage();
   else if (key === "docs" && !capabilities.value.length) loadCapabilities();
 }
 
