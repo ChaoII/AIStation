@@ -20,6 +20,20 @@
             </el-form-item>
           </el-form>
 
+          <el-alert
+            v-if="stats.apps.expiring?.length"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="docs-alert"
+            :title="`${
+              stats.apps.expiring_soon
+            } 个应用凭证将在 7 天内到期，请及时续期或关闭到期时间`"
+            :description="
+              stats.apps.expiring.map((a: any) => `${a.name}（${a.expire_at}）`).join('、') +
+              (stats.apps.expiring_soon > stats.apps.expiring.length ? ' 等' : '')
+            "
+          />
           <div class="develop-toolbar">
             <div class="develop-toolbar__left">
               <span class="develop-toolbar__hint">
@@ -64,7 +78,7 @@
             </el-table-column>
             <el-table-column label="到期时间" width="150">
               <template #default="{ row }">
-                <span :class="{ 'text-muted': !row.expire_at }">
+                <span :class="{ 'text-muted': !row.expire_at, 'text-warn': isExpiringSoon(row) }">
                   {{ fmtDateTime(row.expire_at) }}
                 </span>
               </template>
@@ -1177,6 +1191,7 @@ async function handleSubmit() {
       dialog.visible = false;
       ElMessage.success("保存成功");
       await loadApps(false);
+      await loadStats();
     } else {
       const res = await createApp(payload);
       dialog.visible = false;
@@ -1314,6 +1329,13 @@ function sparkHeight(calls: number) {
   return `${Math.max(2, Math.round(((Number(calls) || 0) / sparkMax.value) * 36))}px`;
 }
 
+function isExpiringSoon(row: any) {
+  if (!row?.expire_at) return false;
+  const ts = new Date(String(row.expire_at).replace(" ", "T")).getTime();
+  if (Number.isNaN(ts)) return false;
+  return ts - Date.now() <= 7 * 24 * 3600 * 1000;
+}
+
 async function loadStats() {
   try {
     const res = await getDevelopStats(7);
@@ -1419,7 +1441,8 @@ async function submitTry() {
     await loadLogs(false);
     await loadStats();
   } catch (e: any) {
-    tryDialog.resultText = `错误：${e?.msg || "调用失败"}`;
+    const code = e?.code ? `[${e.code}] ` : "";
+    tryDialog.resultText = `错误 ${code}${e?.msg || "调用失败"}`;
   } finally {
     tryDialog.loading = false;
   }
@@ -1517,6 +1540,7 @@ const APPROVAL_STATUS: Record<string, string> = {
   pending: "待审批",
   approved: "已批准",
   rejected: "已拒绝",
+  expired: "已过期",
   failed: "执行失败",
 };
 
@@ -1534,6 +1558,7 @@ function approvalStatusType(status?: string) {
     pending: "warning",
     approved: "success",
     rejected: "info",
+    expired: "info",
     failed: "danger",
   };
   return map[status || ""] || "info";
@@ -1764,6 +1789,7 @@ function openEmbed(row: any) {
 
 onMounted(() => {
   loadApps();
+  loadStats();
   loadAppOptions();
 });
 </script>
@@ -1833,6 +1859,10 @@ onMounted(() => {
 
 .text-muted {
   color: var(--el-text-color-placeholder);
+}
+
+.text-warn {
+  color: var(--el-color-warning);
 }
 
 .cap-groups {

@@ -199,3 +199,25 @@ def test_try_unknown_capability_or_missing_perm(test_client, auth_headers):
         assert "无权限" in denied.json()["msg"]
     finally:
         _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_stats_includes_expiring_apps(test_client, auth_headers):
+    """stats.apps.expiring 列出 7 天内到期的应用（供列表页横幅提醒）。"""
+    name = f"临期面-{_uid()}"
+    expire_at = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+    r = test_client.post(
+        f"{API}/ai/develop/create",
+        json={"name": name, "capabilities": CAPS, "requires_approval": False, "expire_at": expire_at},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    app_id = r.json()["data"]["id"]
+    try:
+        stats = test_client.get(f"{API}/ai/develop/stats", params={"days": 3}, headers=auth_headers).json()["data"]
+        assert stats["apps"]["expiring_soon"] >= 1
+        hit = next((a for a in stats["apps"]["expiring"] if a["id"] == app_id), None)
+        assert hit, stats["apps"]["expiring"]
+        assert hit["name"] == name
+        assert hit["expire_at"].startswith(expire_at[:10])
+    finally:
+        _cleanup(test_client, auth_headers, app_id)

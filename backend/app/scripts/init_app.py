@@ -1685,6 +1685,24 @@ async def _register_business_jobs_on_startup() -> None:
     except Exception as e:  # noqa: BLE001 单模块失败不阻断启动
         log.warning(f"⚠️  训练定时调度启动期注册失败（忽略）：{str(e)[:200]}")
 
+    # AI 集成：调用审批超时自动关闭（`ai_develop_cron:`，每 10 分钟扫一次）
+    try:
+        from app.plugin.module_ai.develop.approvals import expire_stale_approvals
+
+        specs = [
+            (
+                "ai_develop_cron:expire_approvals",
+                "interval",
+                {"minutes": 10},
+                expire_stale_approvals,
+                (),
+            )
+        ]
+        SchedulerUtil.sync_business_jobs(specs, prefixes=("ai_develop_cron:",))
+        log.info("✅ AI 集成审批超时关闭任务已注册到中心调度器")
+    except Exception as e:  # noqa: BLE001 单模块失败不阻断启动
+        log.warning(f"⚠️  AI 集成审批超时关闭任务注册失败（忽略）：{str(e)[:200]}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
@@ -2267,4 +2285,3 @@ def reset_api_docs(app: FastAPI) -> None:
             swagger_css_url=settings.CUSTOM_CSS_URL,
             swagger_favicon_url=settings.FAVICON_URL
         )
-

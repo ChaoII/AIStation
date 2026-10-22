@@ -65,7 +65,9 @@ class ApprovalService:
             db.add(row)
             await db.flush()
             await db.refresh(row)
-            return row
+        # 站内通知管理员（best-effort：失败只记日志，不阻断调用方拿到 approval_id）
+        await _notify_admins(row)
+        return row
 
     @classmethod
     async def list(
@@ -174,3 +176,98 @@ class ApprovalService:
             quota=row.quota,
             app=_app_to_dict(row),
         )
+
+
+async def _notify_admins(row: AiIntegrationApprovalModel) -> None:
+    """有待审批时给**超级管理员（role_id=1）**发站内通知（best-effort，绝不阻断调用）。"""
+    try:
+        from sqlalchemy import select
+
+        from app.api.v1.module_system.notification.service import NotificationService
+        from app.api.v1.module_system.user.model import UserRolesModel
+
+        async with async_db_session() as db:
+            user_ids = (
+                await db.execute(
+                    select(UserRolesModel.user_id).where(UserRolesModel.role_id == 1).distinct()
+                )
+            ).scalars().all()
+        for uid in user_ids:
+            await NotificationService.create_notification(
+                int(uid),
+                title=f"AI 集成调用待审批：{row.capability}",
+                content=(
+                    f"应用 {row.appid} 申请调用敏感能力 {row.capability}，请到「AI 集成 → 调用审批」"
+                    f"处理（批准后立即执行）。"
+                ),
+                type="system",
+                module="ai",
+                module_id=row.id,
+            )
+    except Exception as e:  # noqa: BLE001 - 通知失败不影响主流程
+        import logging
+
+        logging.getLogger(__name__).warning(f"[approvals] 站内通知发送失败（忽略）: {e}")
+
+
+async def expire_stale_approvals(hours: int | None = None) -> int:
+    """关闭超时的待审批（定时任务入口，模块级无参可直接被 APScheduler 调度）。
+
+    超过 ``APPROVAL_PENDING_TTL_HOURS``（默认 24h）仍为 ``pending`` 的审批置为
+    ``expired``，并给所属应用补一条审计（``status=expired``），避免申请方无限等待。
+
+    Returns:
+        本次关闭的审批条数。
+    """
+    from datetime import timedelta as _timedelta
+
+    from sqlalchemy import select as _select
+
+    from app.config.setting import settings
+
+    from .openapi import audit_call
+
+    ttl = hours if hours is not None else settings.APPROVAL_PENDING_TTL_HOURS
+    cutoff = datetime.now() - _timedelta(hours=max(1, int(ttl)))
+    expired_ids: list[int] = []
+    async with async_db_session.begin() as db:
+        rows = (
+            await db.execute(
+                _select(AiIntegrationApprovalModel).where(
+                    AiIntegrationApprovalModel.status == "pending",
+                    AiIntegrationApprovalModel.created_time <= cutoff,
+                )
+            )
+        ).scalars().all()
+        for row in rows:
+            row.status = "expired"
+            row.reviewed_at = datetime.now()
+            row.review_note = f"审批超过 {ttl} 小时未处理，系统自动关闭"
+            expired_ids.append(row.id)
+    if not expired_ids:
+        return 0
+    # 事务已提交，按 id 重新取审计所需的字段（不要访问已过期的行属性）
+    async with async_db_session() as db:
+        fresh = (
+            await db.execute(
+                _select(AiIntegrationApprovalModel).where(
+                    AiIntegrationApprovalModel.id.in_(expired_ids)
+                )
+            )
+        ).scalars().all()
+        audit_rows = [(r.id, r.app_id, r.category, r.capability) for r in fresh]
+    for approval_id, app_id, category, capability in audit_rows:
+        try:
+            ctx = await ApprovalService.app_context(app_id)
+            await audit_call(
+                ctx,
+                category=category,
+                capability=capability,
+                method="REST",
+                status="expired",
+                error="审批超时自动关闭",
+                request_path=f"/approvals/{approval_id}",
+            )
+        except Exception:  # noqa: BLE001
+            continue
+    return len(expired_ids)

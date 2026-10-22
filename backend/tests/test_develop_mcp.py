@@ -195,3 +195,58 @@ def test_mcp_unauthorized_tool_call_is_rejected(test_client, auth_headers):
         assert "10403" in text and "无权限操作" in text, text
     finally:
         _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_mcp_resource_lists_authorized_capabilities(test_client, auth_headers):
+    """resources/list 提供 aistation://capabilities；read 只回本应用已授权的能力。"""
+    app = _create_app(test_client, auth_headers, AGENT_CAPS)
+    try:
+        session_id = _initialize(test_client, app)
+        r = _rpc(test_client, app, "resources/list", session_id=session_id)
+        assert r.status_code == 200, r.text
+        uris = [res["uri"] for res in r.json()["result"]["resources"]]
+        assert "aistation://capabilities" in uris, uris
+
+        r = _rpc(
+            test_client,
+            app,
+            "resources/read",
+            {"uri": "aistation://capabilities"},
+            session_id=session_id,
+        )
+        assert r.status_code == 200, r.text
+        text_payload = r.json()["result"]["contents"][0]["text"]
+        import json as _json
+
+        data = _json.loads(text_payload)
+        assert data["appid"] == app["appid"]
+        codes = {c["code"] for c in data["capabilities"]}
+        assert "agent.list" in codes
+        assert not {c for c in codes if c.startswith("train.")}, codes
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_mcp_prompt_platform_guide(test_client, auth_headers):
+    """prompts/list 暴露接入引导；get 返回含应用 appid 的说明。"""
+    app = _create_app(test_client, auth_headers, AGENT_CAPS)
+    try:
+        session_id = _initialize(test_client, app)
+        r = _rpc(test_client, app, "prompts/list", session_id=session_id)
+        assert r.status_code == 200, r.text
+        names = [p["name"] for p in r.json()["result"]["prompts"]]
+        assert "platform_guide" in names, names
+
+        r = _rpc(
+            test_client,
+            app,
+            "prompts/get",
+            {"name": "platform_guide"},
+            session_id=session_id,
+        )
+        assert r.status_code == 200, r.text
+        content = r.json()["result"]["messages"][0]["content"]["text"]
+        assert app["appid"] in content
+        assert "pending_approval" in content
+    finally:
+        _cleanup(test_client, auth_headers, app["id"])

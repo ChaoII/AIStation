@@ -275,3 +275,36 @@
 2. 凭证到期提醒（数据已在 `stats.apps.expiring_soon`，UI 未展示）。
 3. MCP 的 resources/prompts 暴露。
 4. 试调参数校验提示可再友好（目前错误以文本回显）。
+
+---
+
+## 第四轮：提醒、通知与 MCP 资源面（2026-10-23）
+
+分支策略：**先不整合**（用户决定），继续在 `groovy-hedgehog` 上迭代。
+
+### ① 凭证到期提醒（前端补展示）
+
+- 后端 `stats.apps` 新增 `expiring: [{id, name, expire_at}]`（≤7 天，最多 5 条）与精确计数 `expiring_soon`。
+- 应用页签挂载即加载统计；有临期应用时顶部出黄色 `el-alert`（标题=数量与处置建议，正文=应用名与到期时间）；列表「到期时间」7 天内到期显示橙色（`text-warn`）。
+
+### ② 审批通知与超时自动关闭
+
+- **站内通知**：`ApprovalService.create` 落 pending 后给**超级管理员（role_id=1）**发站内通知（`NotificationService.create_notification`，best-effort，失败只记日志）；实测铃铛出现未读红点。
+- **超时自动关闭**：`expire_stale_approvals(hours=None)`（模块级无参，可被 APScheduler 直接调度）把超过 `APPROVAL_PENDING_TTL_HOURS`（新设置，默认 24h）的 pending 置为 `expired` + 意见「审批超过 N 小时未处理，系统自动关闭」+ 逐条写 `status=expired` 审计；事务提交后按 id 重取审计字段（避免访问过期行属性）。
+- **注册**：`_register_business_jobs_on_startup` 增加 `ai_develop_cron:expire_approvals`（interval 10 分钟，`SchedulerUtil.sync_business_jobs` 按自己前缀，单模块失败不阻断启动）。
+- 前端审批状态增加「已过期」徽标（`expired` → info），状态筛选同步可用。
+
+### ③ MCP resources / prompts 暴露
+
+- 资源 `aistation://capabilities`（application/json）：返回**当前凭证已授权**的能力清单（能力码/权限点/MCP 工具名/入参 schema），无上下文时按鉴权失败处理。
+- 提示词 `platform_guide`（平台能力接入引导）：说明「工具即能力、敏感操作会 pending_approval、appkey 只放服务端」，并带入当前 appid。
+- 二者都经传输层 `Bearer appid:appkey` 中间件鉴权，与工具同一条管道。
+
+### ④ 试调错误富化
+
+- `POST /apps/{id}/try` 不再把业务错误吞成 400 通用响应，直接抛统一 envelope（404 能力不存在 / 403 无权限 / 400 参数），与开放面语义一致；前端试调面板显示 `错误 [错误码] 文案`。
+
+### 验证
+
+- 新增/扩充用例：审批**超时关闭+审计+关闭后不可再批准**、**新鲜 pending 不受影响**、**待审批触发站内通知**、**stats 到期列表**、**MCP resources/list+read 只含授权能力**、**MCP prompts/list+get 含 appid** —— 共 9+7+7 = 与既有用例同轮全绿（单文件 14 passed / 9 passed）。
+- UI 走查（1440）：应用页签临期横幅（1 个应用 7 天内到期 + 应用名与时间）、到期时间橙色、审批页「已过期」徽标 + 意见 + 仅剩「详情」、**右上角站内通知红点 1**；截图归档 `p2-apps-expiring.png`、`p2-approvals-expired.png`。

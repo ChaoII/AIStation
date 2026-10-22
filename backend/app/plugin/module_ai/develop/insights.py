@@ -137,6 +137,23 @@ class DevelopInsights:
                     )
                 )
             ).scalar() or 0
+            expiring_rows = (
+                await db.execute(
+                    select(
+                        AiIntegrationAppModel.id,
+                        AiIntegrationAppModel.name,
+                        AiIntegrationAppModel.expire_at,
+                    )
+                    .where(
+                        AiIntegrationAppModel.is_deleted.is_(False),
+                        AiIntegrationAppModel.expire_at.is_not(None),
+                        AiIntegrationAppModel.expire_at <= datetime.now() + timedelta(days=7),
+                        AiIntegrationAppModel.expire_at >= datetime.now(),
+                    )
+                    .order_by(AiIntegrationAppModel.expire_at)
+                    .limit(5)
+                )
+            ).all()
             pending_approvals = (
                 await db.execute(
                     select(func.count()).select_from(AiIntegrationApprovalModel).where(
@@ -165,7 +182,19 @@ class DevelopInsights:
                 }
                 for row in top_rows
             ],
-            "apps": {"total": int(app_total), "enabled": int(app_enabled), "expiring_soon": int(expiring)},
+            "apps": {
+                "total": int(app_total),
+                "enabled": int(app_enabled),
+                "expiring_soon": int(expiring),
+                "expiring": [
+                    {
+                        "id": r.id,
+                        "name": r.name,
+                        "expire_at": r.expire_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                    for r in expiring_rows
+                ],
+            },
             "approvals": {"pending": int(pending_approvals)},
             "days": days,
         }

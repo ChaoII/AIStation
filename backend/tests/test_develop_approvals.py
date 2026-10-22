@@ -179,3 +179,123 @@ def test_approval_review_requires_permission(test_client, auth_headers):
     """审批接口需要 module_ai:develop:approve（admin 有；此处校验未登录场景 401/403）。"""
     r = test_client.post(f"{API}/ai/develop/approvals/1/review", json={"approve": True})
     assert r.status_code in (401, 403), r.text
+
+
+def _backdate(approval_id: int, hours: int) -> None:
+    """把审批行的申请时间往前挪（测试用；HTTP 面没有改时间的入口）。"""
+    import asyncio
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import update
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.develop.model import AiIntegrationApprovalModel
+
+    async def _run() -> None:
+        async with async_db_session.begin() as db:
+            await db.execute(
+                update(AiIntegrationApprovalModel)
+                .where(AiIntegrationApprovalModel.id == approval_id)
+                .values(created_time=datetime.now() - timedelta(hours=hours))
+            )
+
+    asyncio.run(_run())
+
+
+def test_expire_stale_approvals_closes_and_audits(test_client, auth_headers):
+    """超时未处理的待审批 → 自动关闭为 expired，并写一条 expired 审计。"""
+    from app.plugin.module_ai.develop.approvals import expire_stale_approvals
+
+    app = _create_app(test_client, auth_headers, AGENT_CAPS, approval=True)
+    agent_id = None
+    try:
+        created = _invoke(test_client, app, "agent.create", {"agent_name": f"超时-{_uid()}"})
+        agent_id = created.json()["data"]["id"]
+        blocked = _invoke(
+            test_client, app, "agent.delete", {"agent_id": agent_id, "confirm": True}
+        )
+        approval_id = blocked.json()["data"]["approval_id"]
+
+        _backdate(approval_id, hours=48)
+        assert asyncio_run(expire_stale_approvals) == 1
+
+        rows = _approvals(test_client, auth_headers, app_id=app["id"])["items"]
+        row = next(r for r in rows if r["id"] == approval_id)
+        assert row["status"] == "expired"
+        assert "小时未处理" in (row["review_note"] or "") and "自动关闭" in (row["review_note"] or "")
+
+        logs = test_client.get(
+            f"{API}/ai/develop/call-logs",
+            params={"app_id": app["id"], "status": "expired", "page_size": 50},
+            headers=auth_headers,
+        ).json()["data"]["items"]
+        assert any(log["capability"] == "agent.delete" for log in logs), logs
+
+        # 关掉的审批不能再被批准执行
+        again = _review(test_client, auth_headers, approval_id, True)
+        assert again.status_code == 400, again.text
+        assert _invoke(test_client, app, "agent.get", {"agent_id": agent_id}).status_code == 200
+        agent_id = None
+    finally:
+        _cleanup(test_client, auth_headers, app["id"], [agent_id] if agent_id else [])
+
+
+def test_expire_stale_keeps_fresh_pending(test_client, auth_headers):
+    """刚提交的 pending 不受影响（TTL 未到）。"""
+    from app.plugin.module_ai.develop.approvals import expire_stale_approvals
+
+    app = _create_app(test_client, auth_headers, AGENT_CAPS, approval=True)
+    agent_id = None
+    try:
+        created = _invoke(test_client, app, "agent.create", {"agent_name": f"新鲜-{_uid()}"})
+        agent_id = created.json()["data"]["id"]
+        blocked = _invoke(
+            test_client, app, "agent.delete", {"agent_id": agent_id, "confirm": True}
+        )
+        approval_id = blocked.json()["data"]["approval_id"]
+
+        asyncio_run(expire_stale_approvals, 24)
+
+        rows = _approvals(test_client, auth_headers, app_id=app["id"])["items"]
+        row = next(r for r in rows if r["id"] == approval_id)
+        assert row["status"] == "pending"
+    finally:
+        if agent_id:
+            test_client.request(
+                "DELETE", f"{API}/ai/agents/delete", json=[agent_id], headers=auth_headers
+            )
+        _cleanup(test_client, auth_headers, app["id"])
+
+
+def test_pending_approval_notifies_admin(test_client, auth_headers):
+    """有待审批时给超级管理员（role_id=1）发站内通知。"""
+    app = _create_app(test_client, auth_headers, AGENT_CAPS, approval=True)
+    agent_id = None
+    try:
+        created = _invoke(test_client, app, "agent.create", {"agent_name": f"通知-{_uid()}"})
+        agent_id = created.json()["data"]["id"]
+        blocked = _invoke(
+            test_client, app, "agent.delete", {"agent_id": agent_id, "confirm": True}
+        )
+        approval_id = blocked.json()["data"]["approval_id"]
+
+        items = test_client.get(
+            f"{API}/system/notification/list", params={"page_size": 20}, headers=auth_headers
+        ).json()["data"]["items"]
+        assert any(
+            "待审批" in (n.get("title") or "") and str(approval_id) in str(n.get("module_id"))
+            for n in items
+        ), [n.get("title") for n in items]
+    finally:
+        if agent_id:
+            test_client.request(
+                "DELETE", f"{API}/ai/agents/delete", json=[agent_id], headers=auth_headers
+            )
+        _cleanup(test_client, auth_headers, app["id"])
+
+
+def asyncio_run(fn, *args):
+    """在测试进程里跑一次异步函数（与既有测试同款用法）。"""
+    import asyncio
+
+    return asyncio.run(fn(*args))

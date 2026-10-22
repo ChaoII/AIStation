@@ -254,6 +254,9 @@ class Settings(BaseSettings):
     # 开放面「聚合回复」类能力（chat.send / bot.use）的整体超时（秒）：
     # 非流式调用必须设上限，否则目标卡住会把工作线程/连接长期占住。
     OPEN_API_CHAT_TIMEOUT_SECONDS: int = 120
+    # 调用审批待处理时限（小时）：超过则由定时任务自动关闭为 expired，
+    # 避免「待审批」永久堆积（申请方也没法预期结果）。
+    APPROVAL_PENDING_TTL_HOURS: int = 24
 
     # ================================================= #
     # ***************** 第三方 OAuth 登录配置 ********* #

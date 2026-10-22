@@ -262,6 +262,45 @@ def build_mcp_server():
             name=cap.mcp_tool,
             description=f"{cap.name}：{cap.description}",
         )
+
+    # 资源：当前应用**已授权**的能力清单（JSON，供客户端一次性了解可用工具面）
+    @server.resource(
+        uri="aistation://capabilities",
+        name="开放能力清单",
+        description="当前应用已授权的开放能力（能力码/权限点/MCP 工具名），按凭证过滤",
+        mime_type="application/json",
+    )
+    def _capabilities_resource() -> str:
+        from .registry import capabilities_for, to_public_dict
+
+        ctx = CURRENT_APP_CTX.get()
+        if ctx is None:  # 正常不会发生（传输层已鉴权）
+            raise ValueError("鉴权失败")
+        items = [to_public_dict(c) for c in capabilities_for(ctx.perms)]
+        return json.dumps(
+            {"appid": ctx.appid, "total": len(items), "capabilities": items},
+            ensure_ascii=False,
+            default=str,
+        )
+
+    # 提示词：接入引导（客户端可拉取，说明工具用法与约束）
+    @server.prompt(
+        name="platform_guide",
+        title="平台能力接入引导",
+        description="说明如何调用本平台开放能力（工具即能力、按授权过滤、敏感操作需审批）",
+    )
+    def _platform_guide_prompt() -> str:
+        ctx = CURRENT_APP_CTX.get()
+        appid = ctx.appid if ctx else "{appid}"
+        return (
+            f"你正在通过 MCP 访问 AIStation 平台（应用 {appid}）。\n"
+            "1. 先用 resources/list 读取 aistation://capabilities，确认当前应用已授权的能力；\n"
+            "2. 工具与能力一一对应（如 agent_list / chat_send），参数见工具的 inputSchema；\n"
+            "3. 敏感能力（删除智能体、训练任务创建/启停）若应用开启「需人工审批」，"
+            "调用会返回 pending_approval，需平台管理员批准后执行；\n"
+            "4. 所有调用都写入平台审计，appid:appkey 只能放在服务端请求头。"
+        )
+
     return server
 
 
