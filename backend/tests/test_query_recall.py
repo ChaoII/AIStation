@@ -131,10 +131,13 @@ def test_vector_channel_degrades_without_pgvector():
 # 嵌入模型解析（既有 bug：未按 usage=embedding 解析，退化成哈希向量）
 # ===========================================================================
 def test_embed_agno_resolves_embedding_model_by_usage(monkeypatch):
-    """``_embed_agno`` 必须按 ``usage="embedding"`` 解析模型。
+    """嵌入解析必须按 ``usage="embedding"`` 解析模型。
 
     实测 bug：不传 usage 时会解析到**聊天模型**（如 LLM-284B），``/v1/embeddings``
     返回 404 → 全系统嵌入静默退化成哈希向量（语义检索质量骤降）。
+
+    实现入口已随嵌入客户端重构迁到 ``embeddings/dims.resolve_embedder``
+    （旧 ``embedding._embed_agno`` 已移除，``embedding`` 现为转发壳）；断言行为不变。
     """
     async def _run():
         from app.plugin.module_ai.knowledge import embedding as E
@@ -142,13 +145,13 @@ def test_embed_agno_resolves_embedding_model_by_usage(monkeypatch):
 
         calls: list[dict] = []
 
-        async def fake(cls, usage=None, model_id=None):
+        async def fake(cls, usage=None, model_id=None, **kwargs):
             calls.append({"usage": usage, "model_id": model_id})
             return None
 
         monkeypatch.setattr(AiModelService, "get_runtime_model", classmethod(fake))
         try:
-            await E._embed_agno(["x"], None)
+            await E.resolve_embedder(None)
         except RuntimeError:
             pass
         assert calls and calls[0]["usage"] == "embedding"
