@@ -77,6 +77,13 @@ class ApprovalReviewSchema(BaseModel):
     note: str | None = Field(default=None, max_length=255, description="审批意见")
 
 
+class CapabilityTrySchema(BaseModel):
+    """能力试调入参（管理端）：能力码 + 完整 payload。"""
+
+    capability: str = Field(..., description="能力码，如 agent.list")
+    payload: dict = Field(default_factory=dict, description="能力入参")
+
+
 class EmbedMintSchema(BaseModel):
     """管理端签发体验令牌入参（有效期固定 2 小时，便于当场试用）。"""
 

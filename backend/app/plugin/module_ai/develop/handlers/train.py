@@ -68,6 +68,23 @@ async def _ensure_dataset(dataset_id: int) -> None:
         raise CustomException(msg="数据集不存在", code=10404, status_code=404)
 
 
+async def _ensure_related(data) -> None:
+    """校验关联的标注任务 / 基础模型存在（可选字段，传了就必须存在）。"""
+    from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+    from app.core.database import async_db_session
+    from app.plugin.module_train.model import TrainModel
+
+    async with async_db_session() as db:
+        if getattr(data, "annotation_task_id", None):
+            row = await db.get(AnnotationTaskModel, data.annotation_task_id)
+            if row is None or getattr(row, "is_deleted", False):
+                raise CustomException(msg="标注任务不存在", code=10404, status_code=404)
+        if getattr(data, "base_model_id", None):
+            row = await db.get(TrainModel, data.base_model_id)
+            if row is None:
+                raise CustomException(msg="基础模型不存在", code=10404, status_code=404)
+
+
 async def _train_create(*, app_ctx: AppContext, payload: dict) -> dict:
     body = {
         k: v
@@ -84,6 +101,7 @@ async def _train_create(*, app_ctx: AppContext, payload: dict) -> dict:
     if is_retired(data.framework):
         raise CustomException(msg=retired_message(data.framework, "训练"), code=10400, status_code=400)
     await _ensure_dataset(data.dataset_id)
+    await _ensure_related(data)
     result = await TrainService.create_task(data, _OPEN_AUTH, source_app_id=app_ctx.app_id)
     return {"task_id": result["id"], "source_app_id": app_ctx.app_id}
 

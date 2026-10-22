@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -50,6 +51,7 @@ from .registry import all_capabilities, capabilities_for, to_public_dict
 from .schema import (
     ApprovalReviewSchema,
     CapabilityInvokeSchema,
+    CapabilityTrySchema,
     DevelopCreateSchema,
     DevelopUpdateSchema,
     EmbedMintSchema,
@@ -538,14 +540,114 @@ async def develop_call_logs(
     app_id: Annotated[int | None, Query(description="按应用ID过滤")] = None,
     category: Annotated[str | None, Query(description="按品类过滤")] = None,
     method: Annotated[str | None, Query(description="按出海口过滤 REST/MCP/EMBED")] = None,
-    status: Annotated[str | None, Query(description="按状态过滤 success/failed/denied")] = None,
+    status: Annotated[str | None, Query(description="按状态过滤 success/failed/denied/pending")] = None,
+    start_time: Annotated[str | None, Query(description="起始时间 YYYY-MM-DD HH:mm:ss")] = None,
+    end_time: Annotated[str | None, Query(description="结束时间 YYYY-MM-DD HH:mm:ss")] = None,
     page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
 ) -> JSONResponse:
     return SuccessResponse(
-        data=await _query_call_logs(app_id, category, method, status, page_no, page_size),
+        data=await _query_call_logs(
+            app_id, category, method, status, page_no, page_size, start_time, end_time
+        ),
         msg="查询成功",
     )
+
+
+@DevelopRouter.get("/stats", summary="调用概览（今日/趋势/Top能力）")
+async def develop_stats(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    days: Annotated[int, Query(ge=1, le=30, description="趋势天数")] = 7,
+) -> JSONResponse:
+    from .insights import DevelopInsights
+
+    return SuccessResponse(data=await DevelopInsights.stats(days), msg="查询成功")
+
+
+@DevelopRouter.get("/apps/{app_id}/usage", summary="应用当日配额用量")
+async def develop_app_usage(
+    app_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+) -> JSONResponse:
+    from .insights import DevelopInsights
+
+    app = await DevelopService.get_app(app_id)
+    if not app:
+        return ErrorResponse(msg="应用不存在")
+    usage = await DevelopInsights.usage(app_id)
+    usage["quota"] = app.get("quota") or {}
+    return SuccessResponse(data=usage, msg="查询成功")
+
+
+@DevelopRouter.get("/call-logs/export", summary="导出调用日志 CSV")
+async def develop_call_logs_export(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+    app_id: Annotated[int | None, Query(description="按应用ID过滤")] = None,
+    category: Annotated[str | None, Query(description="按品类过滤")] = None,
+    method: Annotated[str | None, Query(description="按出海口过滤")] = None,
+    status: Annotated[str | None, Query(description="按状态过滤")] = None,
+    start_time: Annotated[str | None, Query(description="起始时间 YYYY-MM-DD HH:mm:ss")] = None,
+    end_time: Annotated[str | None, Query(description="结束时间 YYYY-MM-DD HH:mm:ss")] = None,
+) -> StreamingResponse:
+    """导出当前筛选条件下的调用日志（最近 5000 行，UTF-8 BOM CSV）。"""
+    from .insights import DevelopInsights
+
+    def _parse(raw: str | None) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+        except ValueError as exc:
+            raise CustomException(
+                msg="时间格式应为 YYYY-MM-DD HH:mm:ss", code=10400, status_code=400
+            ) from exc
+
+    content = await DevelopInsights.export_csv(
+        app_id=app_id,
+        category=category,
+        method=method,
+        status=status,
+        start_time=_parse(start_time),
+        end_time=_parse(end_time),
+    )
+    filename = f"ai-call-logs-{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@DevelopRouter.post("/apps/{app_id}/try", summary="能力试调（管理端）")
+async def develop_try_capability(
+    app_id: int,
+    data: CapabilityTrySchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+) -> JSONResponse:
+    """以该应用身份调用一次能力，便于接入方自测。
+
+    与开放面的区别：**跳过审批门禁**（试调属于管理员测试动作），但仍走权限、
+    限流与审计（``request_path=/try``），因此不会产生待审批队列。
+    """
+    from .approvals import ApprovalService
+    from .registry import get_capability
+
+    if get_capability(data.capability) is None:
+        raise CustomException(msg="能力不存在", code=10404, status_code=404)
+    ctx = await ApprovalService.app_context(app_id)
+    # 试调不加 try/except：权限 403、参数 400、内部错误 500 都交给全局处理器，
+    # 前端按统一 envelope 展示（与开放面调用语义一致，便于对照排查）。
+    result = await invoke_capability(
+        ctx,
+        data.capability,
+        data.payload,
+        method="REST",
+        redis=getattr(request.app.state, "redis", None),
+        request_path=f"/try/{data.capability}",
+        bypass_approval=True,
+    )
+    return SuccessResponse(data=result, msg="调用成功")
 
 
 @DevelopRouter.get("/mcp-sessions", summary="分页查询MCP会话")
@@ -609,6 +711,8 @@ async def _query_call_logs(
     status: str | None,
     page_no: int,
     page_size: int,
+    start_time: str | None = None,
+    end_time: str | None = None,
 ) -> dict:
     """按 app_id/category/method/status 过滤调用日志，分页返回。"""
     page_no = max(int(page_no or 1), 1)
@@ -622,6 +726,19 @@ async def _query_call_logs(
         wheres.append(AiIntegrationCallLogModel.method == method)
     if status:
         wheres.append(AiIntegrationCallLogModel.status == status)
+    # 时间范围（"YYYY-MM-DD HH:mm:ss"，本地 naive 时间，与写入口径一致）
+    for raw, op in ((start_time, "ge"), (end_time, "le")):
+        if not raw:
+            continue
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            raise CustomException(msg="时间格式应为 YYYY-MM-DD HH:mm:ss", code=10400, status_code=400)
+        wheres.append(
+            AiIntegrationCallLogModel.created_time >= parsed
+            if op == "ge"
+            else AiIntegrationCallLogModel.created_time <= parsed
+        )
 
     async with async_db_session() as db:
         total = (

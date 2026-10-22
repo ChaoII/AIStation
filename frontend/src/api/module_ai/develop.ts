@@ -59,6 +59,31 @@ export function reviewApproval(id: number, data: { approve: boolean; note?: stri
   return request({ url: `${API_PATH}/approvals/${id}/review`, method: "post", data });
 }
 
+/** 调用概览（今日/趋势/Top 能力/应用与审批计数）。 */
+export function getDevelopStats(days = 7) {
+  return request({ url: `${API_PATH}/stats`, method: "get", params: { days } });
+}
+
+/** 某应用当日按品类调用次数 + 配额上限（用量可视化）。 */
+export function getAppUsage(appId: number) {
+  return request({ url: `${API_PATH}/apps/${appId}/usage`, method: "get" });
+}
+
+/** 导出调用日志 CSV（返回 blob）。 */
+export function exportCallLogs(params?: any) {
+  return request({
+    url: `${API_PATH}/call-logs/export`,
+    method: "get",
+    params,
+    responseType: "blob",
+  });
+}
+
+/** 管理端能力试调（跳过审批，仍走权限与审计）。 */
+export function tryCapability(appId: number, data: { capability: string; payload: any }) {
+  return request({ url: `${API_PATH}/apps/${appId}/try`, method: "post", data });
+}
+
 /**
  * 开放数据面鉴权校验：携带 `Authorization: Bearer <appid>:<appkey>` 调用。
  * 未传入 appid/appkey 时不覆盖自动附加的会话令牌（此时会命中管理面鉴权）。

@@ -87,7 +87,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="call_count" label="调用次数" width="90" align="center" />
-            <el-table-column label="操作" width="250" :fixed="fixedAction">
+            <el-table-column label="操作" width="300" :fixed="fixedAction">
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="['module_ai:develop:query']"
@@ -96,6 +96,14 @@
                   @click="openEmbed(row)"
                 >
                   嵌入
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:develop:query']"
+                  link
+                  type="primary"
+                  @click="openTry(row)"
+                >
+                  试调
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:develop:update']"
@@ -149,6 +157,41 @@
 
         <!-- ============ 调用日志 ============ -->
         <el-tab-pane label="调用日志" name="logs">
+          <el-row :gutter="12" class="stat-row">
+            <el-col v-for="card in statCards" :key="card.label" :xs="12" :sm="6">
+              <el-card shadow="never" class="stat-card">
+                <div class="stat-card__label">{{ card.label }}</div>
+                <div class="stat-card__value">
+                  {{ card.value }}
+                  <span class="stat-card__suffix">{{ card.suffix }}</span>
+                </div>
+              </el-card>
+            </el-col>
+          </el-row>
+          <div v-if="stats.series.length" class="spark-row">
+            <span class="spark-row__label">最近 7 天</span>
+            <div
+              v-for="day in stats.series"
+              :key="day.date"
+              class="spark"
+              :title="`${day.date}：${day.calls} 次`"
+            >
+              <div class="spark__bar" :style="{ height: sparkHeight(day.calls) }" />
+              <span class="spark__label">{{ day.date.slice(5) }}</span>
+            </div>
+            <div v-if="stats.top_capabilities.length" class="spark-row__top">
+              <span class="spark-row__label">Top 能力</span>
+              <el-tag
+                v-for="item in stats.top_capabilities"
+                :key="item.capability + item.category"
+                size="small"
+                effect="plain"
+                class="cap-tag"
+              >
+                {{ item.capability }} · {{ item.calls }}
+              </el-tag>
+            </div>
+          </div>
           <el-form :inline="true" :model="logFilter" class="develop-search">
             <el-form-item label="应用">
               <el-select
@@ -200,12 +243,32 @@
                 <el-option label="拒绝" value="denied" />
               </el-select>
             </el-form-item>
+            <el-form-item label="时间范围">
+              <el-date-picker
+                v-model="logFilter.range"
+                type="datetimerange"
+                range-separator="至"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                style="width: 340px"
+              />
+            </el-form-item>
             <el-form-item>
               <el-button :icon="Search" @click="loadLogs()">查询</el-button>
+              <el-button :icon="Download" @click="onExportLogs">导出 CSV</el-button>
             </el-form-item>
           </el-form>
 
-          <el-table v-loading="logLoading" :data="logs" row-key="id" border stripe>
+          <el-table
+            v-loading="logLoading"
+            :data="logs"
+            row-key="id"
+            border
+            stripe
+            class="log-table"
+            @row-click="openLogDetail"
+          >
             <el-table-column label="时间" width="165" show-overflow-tooltip>
               <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
             </el-table-column>
@@ -577,6 +640,91 @@
       </el-tabs>
     </el-card>
 
+    <!-- ============ 调用日志详情抽屉 ============ -->
+    <el-drawer v-model="logDetail.visible" title="调用详情" size="520px" append-to-body>
+      <el-descriptions v-if="logDetail.row" :column="1" border size="small">
+        <el-descriptions-item label="时间">
+          {{ fmtDateTime(logDetail.row.created_time) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="应用">
+          {{ logDetail.row.appid }}（ID {{ logDetail.row.app_id }}）
+        </el-descriptions-item>
+        <el-descriptions-item label="能力">
+          {{ logDetail.row.capability }}
+          <el-tag size="small" effect="plain" class="cap-tag">
+            {{ CATEGORIES[logDetail.row.category || ""] || logDetail.row.category }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="出海口 / 状态">
+          {{ methodLabel(logDetail.row.method) }} ·
+          <el-tag size="small" :type="logStatusType(logDetail.row.status)">
+            {{ statusLabel(logDetail.row.status) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="耗时 / Tokens">
+          {{ logDetail.row.latency_ms }} ms · {{ logDetail.row.cost_tokens }}
+        </el-descriptions-item>
+        <el-descriptions-item label="请求路径">
+          {{ logDetail.row.request_path || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="logDetail.row.error" label="错误">
+          <span class="text-danger">{{ logDetail.row.error }}</span>
+        </el-descriptions-item>
+      </el-descriptions>
+      <template v-if="logDetail.row">
+        <p class="doc-card__desc">请求参数（已脱敏）</p>
+        <pre class="doc-code">{{ prettyJson(logDetail.row.request_body) }}</pre>
+        <p class="doc-card__desc">结果摘要</p>
+        <pre class="doc-code">{{ logDetail.row.result_summary || "—" }}</pre>
+      </template>
+    </el-drawer>
+
+    <!-- ============ 能力试调弹窗 ============ -->
+    <el-dialog v-model="tryDialog.visible" title="能力试调" width="640px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        class="docs-alert"
+        title="以该应用身份调用一次能力：跳过审批门禁，但仍校验权限并写入调用日志，便于接入前自测。"
+      />
+      <el-form label-width="90px" class="try-form">
+        <el-form-item label="能力">
+          <el-select
+            v-model="tryDialog.capability"
+            placeholder="选择能力"
+            filterable
+            style="width: 100%"
+            @change="onTryCapabilityChange"
+          >
+            <el-option
+              v-for="cap in capabilities"
+              :key="cap.code"
+              :label="`${cap.name}（${cap.code}）`"
+              :value="cap.code"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="参数 JSON">
+          <el-input
+            v-model="tryDialog.payloadText"
+            type="textarea"
+            :rows="8"
+            spellcheck="false"
+            placeholder='例如 {"agent_name": "试调助手"}'
+          />
+        </el-form-item>
+      </el-form>
+      <template v-if="tryDialog.resultText">
+        <p class="doc-card__desc">响应</p>
+        <pre class="doc-code">{{ tryDialog.resultText }}</pre>
+      </template>
+      <template #footer>
+        <el-button @click="tryDialog.visible = false">关闭</el-button>
+        <el-button type="primary" :loading="tryDialog.loading" @click="submitTry">发送</el-button>
+      </template>
+    </el-dialog>
+
     <!-- ============ 审批详情弹窗 ============ -->
     <el-dialog v-model="approvalDetail.visible" title="调用审批详情" width="600px" append-to-body>
       <el-descriptions :column="1" border size="small">
@@ -684,8 +832,9 @@
                 :step="100"
                 controls-position="right"
                 placeholder="不限"
-                style="width: 130px"
+                style="width: 110px"
               />
+              <span class="quota-item__usage">今日 {{ form.usage[cat] ?? 0 }}</span>
             </div>
           </div>
           <span class="form-tip">0 或留空表示不限；按自然日统计（对应品类的开放调用）。</span>
@@ -792,19 +941,23 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Search, CopyDocument } from "@element-plus/icons-vue";
+import { Plus, Search, CopyDocument, Download } from "@element-plus/icons-vue";
 import { useWindowSize } from "@vueuse/core";
 import {
   createApp,
   deleteApp,
+  exportCallLogs,
+  getAppUsage,
   getApprovals,
   getCallLogs,
   getCapabilities,
   getDevelopAppList,
+  getDevelopStats,
   getMcpSessions,
   resetAppkey,
   reviewApproval,
   toggleApp,
+  tryCapability,
   updateApp,
 } from "@/api/module_ai/develop";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
@@ -937,6 +1090,7 @@ const form = reactive({
   enabled: true,
   requires_approval: true,
   quota: {} as Record<string, number | undefined>,
+  usage: {} as Record<string, number>,
 });
 
 //: 可配置「按日调用配额」的品类（与开放面限流/配额口径一致）。
@@ -958,6 +1112,7 @@ function resetForm() {
     enabled: true,
     requires_approval: true,
     quota: {},
+    usage: {},
   });
 }
 
@@ -985,8 +1140,15 @@ function openEdit(row: any) {
     enabled: row.enabled !== false,
     requires_approval: row.requires_approval !== false,
     quota: { ...(row.quota || {}) },
+    usage: {},
   });
   dialog.visible = true;
+  // 今日用量（配额可视化，失败静默）
+  getAppUsage(row.id)
+    .then((res: any) => {
+      form.usage = res.data?.data?.usage || {};
+    })
+    .catch(() => {});
 }
 
 async function handleSubmit() {
@@ -1127,7 +1289,141 @@ const logFilter = reactive({
   category: "",
   method: "",
   status: "",
+  range: [] as string[],
 });
+
+// ---- 调用概览（统计卡 + 7 天迷你趋势 + Top 能力） ----
+const stats = reactive<{
+  today: any;
+  series: any[];
+  top_capabilities: any[];
+  apps: any;
+  approvals: any;
+}>({ today: {}, series: [], top_capabilities: [], apps: {}, approvals: {} });
+
+const statCards = computed(() => [
+  { label: "今日调用", value: stats.today.calls ?? 0, suffix: " 次" },
+  { label: "成功率", value: ((stats.today.success_rate ?? 0) * 100).toFixed(1), suffix: "%" },
+  { label: "平均耗时", value: stats.today.avg_latency_ms ?? 0, suffix: " ms" },
+  { label: "待审批", value: stats.approvals.pending ?? 0, suffix: " 条" },
+]);
+
+const sparkMax = computed(() => Math.max(1, ...stats.series.map((d: any) => Number(d.calls) || 0)));
+
+function sparkHeight(calls: number) {
+  return `${Math.max(2, Math.round(((Number(calls) || 0) / sparkMax.value) * 36))}px`;
+}
+
+async function loadStats() {
+  try {
+    const res = await getDevelopStats(7);
+    const d = res.data?.data || {};
+    stats.today = d.today || {};
+    stats.series = d.series || [];
+    stats.top_capabilities = d.top_capabilities || [];
+    stats.apps = d.apps || {};
+    stats.approvals = d.approvals || {};
+  } catch {
+    // 统计失败不打断日志列表（静默降级）
+  }
+}
+
+// ---- 日志详情抽屉 + 导出 ----
+const logDetail = reactive({ visible: false, row: null as any });
+
+function openLogDetail(row: any) {
+  logDetail.row = row;
+  logDetail.visible = true;
+}
+
+async function onExportLogs() {
+  try {
+    const params = {
+      app_id: toNum(logFilter.app_id),
+      category: logFilter.category || undefined,
+      method: logFilter.method || undefined,
+      status: logFilter.status || undefined,
+      start_time: logFilter.range?.[0] || undefined,
+      end_time: logFilter.range?.[1] || undefined,
+    };
+    const res = await exportCallLogs(params);
+    const blob = res.data instanceof Blob ? res.data : new Blob([res.data]);
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ai-call-logs-${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    ElMessage.success("已开始下载");
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "导出失败");
+  }
+}
+
+// ---- 能力试调 ----
+const tryDialog = reactive({
+  visible: false,
+  app: null as any,
+  capability: "",
+  payloadText: "{}",
+  resultText: "",
+  loading: false,
+});
+
+async function openTry(row: any) {
+  if (!capabilities.value.length) await loadCapabilities();
+  tryDialog.app = row;
+  tryDialog.capability = "";
+  tryDialog.payloadText = "{}";
+  tryDialog.resultText = "";
+  tryDialog.visible = true;
+}
+
+function onTryCapabilityChange(code: string) {
+  const cap = capabilities.value.find((c: any) => c.code === code);
+  if (!cap) return;
+  // 用 schema 的 required 字段生成一个最小模板，降低手写 JSON 的成本
+  const props = cap.input_schema?.properties || {};
+  const required: string[] = cap.input_schema?.required || [];
+  const template: Record<string, any> = {};
+  required.forEach((key) => {
+    const type = props[key]?.type;
+    template[key] = type === "integer" || type === "number" ? 0 : type === "boolean" ? false : "";
+  });
+  tryDialog.payloadText = JSON.stringify(template, null, 2);
+}
+
+async function submitTry() {
+  if (!tryDialog.capability) {
+    ElMessage.warning("请选择能力");
+    return;
+  }
+  let payload: any;
+  try {
+    payload = tryDialog.payloadText.trim() ? JSON.parse(tryDialog.payloadText) : {};
+  } catch {
+    ElMessage.error("参数不是合法 JSON");
+    return;
+  }
+  tryDialog.loading = true;
+  tryDialog.resultText = "";
+  try {
+    const res = await tryCapability(tryDialog.app.id, {
+      capability: tryDialog.capability,
+      payload,
+    });
+    tryDialog.resultText = prettyJson(res.data?.data ?? res.data);
+    ElMessage.success("调用成功");
+    await loadLogs(false);
+    await loadStats();
+  } catch (e: any) {
+    tryDialog.resultText = `错误：${e?.msg || "调用失败"}`;
+  } finally {
+    tryDialog.loading = false;
+  }
+}
 
 async function loadLogs(resetPage = true) {
   if (resetPage) logPage.value = 1;
@@ -1138,6 +1434,8 @@ async function loadLogs(resetPage = true) {
       category: logFilter.category || undefined,
       method: logFilter.method || undefined,
       status: logFilter.status || undefined,
+      start_time: logFilter.range?.[0] || undefined,
+      end_time: logFilter.range?.[1] || undefined,
       page_no: logPage.value,
       page_size: logPageSize.value,
     });
@@ -1298,8 +1596,10 @@ async function onReviewApproval(row: any, approve: boolean) {
 
 function onTabChange(name: string | number) {
   const key = String(name);
-  if (key === "logs") loadLogs(false);
-  else if (key === "mcp") loadMcps(false);
+  if (key === "logs") {
+    loadLogs(false);
+    loadStats();
+  } else if (key === "mcp") loadMcps(false);
   else if (key === "approvals") loadApprovals(false);
   else if (key === "docs" && !capabilities.value.length) loadCapabilities();
 }
@@ -1544,8 +1844,8 @@ onMounted(() => {
 
 /* 配额配置：与能力勾选区保持同一视觉语言（浅边框分组） */
 .quota-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
   gap: 8px 16px;
   width: 100%;
 }
@@ -1557,8 +1857,95 @@ onMounted(() => {
 }
 
 .quota-item__label {
-  min-width: 64px;
+  min-width: 56px;
   color: var(--el-text-color-regular);
+}
+
+/* 调用概览：统计卡 + 7 天迷你柱 + Top 能力 */
+.stat-row {
+  margin-bottom: 8px;
+}
+
+.stat-card {
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.stat-card :deep(.el-card__body) {
+  padding: 10px 12px;
+}
+
+.stat-card__label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.stat-card__value {
+  margin-top: 2px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--el-text-color-primary);
+}
+
+.stat-card__suffix {
+  margin-left: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+}
+
+.spark-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+
+.spark-row__label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.spark {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  width: 34px;
+}
+
+.spark__bar {
+  width: 12px;
+  background: var(--el-color-primary-light-5);
+  border-radius: 2px;
+}
+
+.spark__label {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+}
+
+.spark-row__top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.log-table :deep(.el-table__row) {
+  cursor: pointer;
+}
+
+.quota-item__usage {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+
+.try-form {
+  margin-top: 12px;
 }
 
 .form-tip {
