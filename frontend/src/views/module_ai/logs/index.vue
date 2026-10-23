@@ -86,6 +86,17 @@
                 <el-table-column prop="latency_ms" label="耗时" min-width="100" align="center">
                   <template #default="{ row }">{{ row.latency_ms }} ms</template>
                 </el-table-column>
+                <el-table-column prop="prompt_tokens" label="输入Token" min-width="110" align="center">
+                  <template #default="{ row }">{{ row.prompt_tokens ?? 0 }}</template>
+                </el-table-column>
+                <el-table-column prop="completion_tokens" label="输出Token" min-width="110" align="center">
+                  <template #default="{ row }">{{ row.completion_tokens ?? 0 }}</template>
+                </el-table-column>
+                <el-table-column prop="cost" label="费用(元)" min-width="110" align="center">
+                  <template #default="{ row }">
+                    {{ row.cost != null ? Number(row.cost).toFixed(4) : "—" }}
+                  </template>
+                </el-table-column>
                 <el-table-column label="结果" min-width="90" align="center">
                   <template #default="{ row }">
                     <el-tag :type="row.result === 'success' ? 'success' : 'danger'" size="small">
@@ -110,6 +121,11 @@
         <el-descriptions-item label="模型">{{ detail.model_name || "—" }}</el-descriptions-item>
         <el-descriptions-item label="用途">{{ detail.usage || "—" }}</el-descriptions-item>
         <el-descriptions-item label="耗时">{{ detail.latency_ms }} ms</el-descriptions-item>
+        <el-descriptions-item label="输入Token">{{ detail.prompt_tokens ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="输出Token">{{ detail.completion_tokens ?? 0 }}</el-descriptions-item>
+        <el-descriptions-item label="费用(元)">
+          {{ detail.cost != null ? Number(detail.cost).toFixed(4) : "—" }}
+        </el-descriptions-item>
         <el-descriptions-item label="结果">
           <el-tag :type="detail.result === 'success' ? 'success' : 'danger'" size="small">
             {{ detail.result === "success" ? "成功" : "失败" }}

@@ -464,6 +464,7 @@ async def run_app_ui_stream(
             user_id=uid,
             prompt_tokens=u.get("prompt_tokens", 0),
             completion_tokens=u.get("completion_tokens", 0),
+            cost=u.get("cost", 0.0),
         )
         # 委托工作流时会话已由引擎落库：跳过，防重复 user 消息
         if not delegated:

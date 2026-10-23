@@ -20,6 +20,10 @@ def _log_dict(r: AiCallLogModel) -> dict:
         "error": r.error,
         "app_id": r.app_id,
         "user_id": r.user_id,
+        "prompt_tokens": getattr(r, "prompt_tokens", 0),
+        "completion_tokens": getattr(r, "completion_tokens", 0),
+        "cost": getattr(r, "cost", 0.0),
+        "reply_preview": getattr(r, "reply_preview", None),
         "created_time": r.created_time,
     }
 
