@@ -29,6 +29,7 @@ backend/logs
 backend/alembic/versions/*
 backend/*.db
 backend/.ruff_cache
+backend/keys/
 backend/.ruff.toml
 
 frontend/__pycache__

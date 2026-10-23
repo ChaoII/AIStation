@@ -13,6 +13,7 @@ from app.api.v1.module_system.role.crud import RoleCRUD
 from app.core.base_schema import BatchSetAvailable, UploadResponseSchema
 from app.core.exceptions import CustomException
 from app.core.logger import log
+from app.core.rsa_util import resolve_password
 from app.utils.common_util import traversal_to_tree
 from app.utils.excel_util import ExcelUtil
 from app.utils.hash_bcrpy_util import PwdUtil
@@ -146,7 +147,7 @@ class UserService:
                 raise CustomException(msg="部门不存在")
         # 创建用户
         if data.password:
-            data.password = PwdUtil.set_password_hash(password=data.password)
+            data.password = PwdUtil.set_password_hash(password=resolve_password(data.password))
         user_dict = data.model_dump(exclude_unset=True, exclude={"role_ids", "position_ids"})
         # 创建用户
         new_user = await UserCRUD(auth).create(data=user_dict)
@@ -433,12 +434,12 @@ class UserService:
         if not user:
             raise CustomException(msg="用户不存在")
         if not PwdUtil.verify_password(
-            plain_password=data.old_password, password_hash=user.password
+            plain_password=resolve_password(data.old_password), password_hash=user.password
         ):
             raise CustomException(msg="原密码输入错误")
 
         # 更新密码
-        new_password_hash = PwdUtil.set_password_hash(password=data.new_password)
+        new_password_hash = PwdUtil.set_password_hash(password=resolve_password(data.new_password))
         new_user = await UserCRUD(auth).change_password_crud(
             id=user.id, password_hash=new_password_hash
         )
@@ -469,7 +470,7 @@ class UserService:
             raise CustomException(msg="超级管理员密码不能重置")
 
         # 更新密码
-        new_password_hash = PwdUtil.set_password_hash(password=data.password)
+        new_password_hash = PwdUtil.set_password_hash(password=resolve_password(data.password))
         new_user = await UserCRUD(auth).change_password_crud(
             id=data.id, password_hash=new_password_hash
         )
@@ -492,7 +493,7 @@ class UserService:
         if username_ok:
             raise CustomException(msg="账号已存在")
 
-        data.password = PwdUtil.set_password_hash(password=data.password)
+        data.password = PwdUtil.set_password_hash(password=resolve_password(data.password))
         data.name = data.username
         create_dict = data.model_dump(exclude_unset=True, exclude={"role_ids", "position_ids"})
 
@@ -529,7 +530,7 @@ class UserService:
         if user.is_superuser:
             raise CustomException(msg="超级管理员密码不能重置")
 
-        new_password_hash = PwdUtil.set_password_hash(password=data.new_password)
+        new_password_hash = PwdUtil.set_password_hash(password=resolve_password(data.new_password))
         new_user = await UserCRUD(auth).forget_password_crud(
             id=user.id, password_hash=new_password_hash
         )

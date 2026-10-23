@@ -14,6 +14,7 @@ from app.core.exceptions import CustomException
 from app.core.logger import log
 from app.core.redis_crud import RedisCURD
 from app.core.router_class import OperationLogRoute
+from app.core.rsa_util import get_public_key_b64
 from app.core.security import CustomOAuth2PasswordRequestForm
 
 from .oauth_service import (
@@ -75,6 +76,15 @@ async def login_for_access_token_controller(
     if settings.DOCS_URL in request.headers.get("referer", ""):
         return login_token.model_dump()
     return SuccessResponse(data=login_token.model_dump(), msg="登录成功")
+
+
+@AuthRouter.get(
+    "/rsa-public-key",
+    summary="获取登录密码加密RSA公钥",
+    description="登录前用该公钥（RSA-OAEP/SHA-256）加密密码后再提交，避免请求体明文传输密码。",
+)
+async def rsa_public_key_controller() -> JSONResponse:
+    return SuccessResponse(data={"public_key": get_public_key_b64()})
 
 
 @AuthRouter.post(

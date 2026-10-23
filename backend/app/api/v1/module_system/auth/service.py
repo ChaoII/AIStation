@@ -17,6 +17,7 @@ from app.config.setting import settings
 from app.core.exceptions import CustomException
 from app.core.logger import log
 from app.core.redis_crud import RedisCURD
+from app.core.rsa_util import resolve_password
 from app.core.security import (
     CustomOAuth2PasswordRequestForm,
     create_access_token,
@@ -93,7 +94,8 @@ class LoginService:
             raise CustomException(msg="用户不存在")
 
         if not PwdUtil.verify_password(
-            plain_password=login_form.password, password_hash=user.password
+            plain_password=resolve_password(login_form.password),
+            password_hash=user.password,
         ):
             raise CustomException(msg="账号或密码错误")
         log.info(f"[登录耗时] Bcrypt密码校验: {round((time.time() - _t3) * 1000, 1)}ms"); _t4 = time.time()

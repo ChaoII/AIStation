@@ -1,16 +1,19 @@
 import request from "@/utils/request";
+import { rsaEncryptPassword } from "@/utils/rsaEncrypt";
 
 const API_PATH = "/system/auth";
 
 const AuthAPI = {
-  login(body: LoginFormData) {
+  async login(body: LoginFormData) {
+    // 登录前用服务端 RSA 公钥加密密码，避免请求体明文传输密码
+    const encryptedPassword = await rsaEncryptPassword(body.password);
     return request<ApiResponse<LoginResult>>({
       url: `${API_PATH}/login`,
       method: "post",
       headers: {
         "Content-Type": "multipart/form-data",
       },
-      data: body,
+      data: { ...body, password: encryptedPassword },
     });
   },
 
