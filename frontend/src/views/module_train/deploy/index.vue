@@ -504,6 +504,7 @@ async function handleCreate() {
       host_port: createForm.hostPort || undefined,
       hyperparams: hp,
     });
+    ElMessage.success("保存成功");
     const d = r.data?.data;
     keyInfo.apiKey = d?.api_key || "";
     keyInfo.apiUrl = d?.api_url || "";
@@ -540,6 +541,7 @@ function onKeyDialogClose() {
 async function handleDeploy(row: any) {
   try {
     await TrainAPI.startDeploy(row.id);
+    ElMessage.success("已启动");
     refreshList();
   } catch {
     /* 提示由请求拦截器统一处理 */
@@ -554,6 +556,7 @@ async function handleStop(id: number) {
       { type: "warning", confirmButtonText: "停止", cancelButtonText: "取消" }
     );
     await TrainAPI.stopDeploy(id);
+    ElMessage.success("已停止");
     refreshList();
   } catch {
     /* */
@@ -593,6 +596,7 @@ async function handleDelete(ids: number[]) {
       { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
     );
     await TrainAPI.deleteDeploy(ids);
+    ElMessage.success("删除成功");
     refreshList();
   } catch {
     /* */

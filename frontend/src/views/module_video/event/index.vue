@@ -474,6 +474,7 @@ async function handleSubmit() {
     } else {
       await createEvent(formData);
     }
+    ElMessage.success("保存成功");
     dialogVisible.visible = false;
     await resetForm();
     refreshList();

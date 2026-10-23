@@ -866,6 +866,7 @@ async function handleDelete(row?: GenTableSchema): Promise<void> {
     });
 
     await GencodeAPI.deleteTable(tableIds);
+    ElMessage.success("删除成功");
     refreshList();
   } catch (error) {
     if (error !== "cancel") {
@@ -884,6 +885,7 @@ async function handleCreateTableSubmit(sql: string, meta?: CreateTableSubmitMeta
   loading.value = true;
   try {
     await GencodeAPI.createTable(sql);
+    ElMessage.success("创建成功");
     createTableVisible.value = false;
     if (editVisible.value && activeStep.value === 2 && meta?.fromVisual && meta.visualSnapshot) {
       const v = meta.visualSnapshot;
@@ -928,6 +930,7 @@ async function handleImportTable(): Promise<void> {
     refreshList();
     // 导入成功后自动打开代码生成抽屉
     if (tables.value.length === 1) {
+      ElMessage.success("导入成功");
       await nextTick();
       const list = (unref(contentRef.value?.pageData) ?? []) as GenTableSchema[];
       const importedTable = list.find((t) => t.table_name === tables.value[0].table_name);

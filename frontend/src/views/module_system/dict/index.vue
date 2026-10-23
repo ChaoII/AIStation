@@ -282,6 +282,7 @@ defineOptions({
 });
 
 import DictAPI, { DictTable, DictForm, DictPageQuery } from "@/api/module_system/dict";
+import { ElMessage } from "element-plus";
 import { useDictStore } from "@/store";
 import DataDrawer from "@/views/module_system/dict/components/DataDrawer.vue";
 import ExportModal from "@/components/CURD/ExportModal.vue";
@@ -523,6 +524,7 @@ async function handleSubmit() {
         } else {
           await DictAPI.createDictType(formData);
         }
+        ElMessage.success("操作成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -552,6 +554,7 @@ async function handleMoreClick(status: string) {
     .then(async () => {
       try {
         await DictAPI.batchDictType({ ids, status });
+        ElMessage.success("操作成功");
         refreshList();
         dictStore.clearDictData();
         const dictTypes = Object.keys(dictStore.dictData);

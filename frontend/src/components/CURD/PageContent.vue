@@ -563,6 +563,7 @@ function handleDelete(id?: number | string) {
             //清空选中项
             tableRef.value?.clearSelection();
             handleRefresh(true);
+            ElMessage.success("删除成功");
           })
           .catch(() => {});
       } else {
@@ -843,13 +844,18 @@ function handleOperate(data: IOperateData) {
 }
 
 // 属性修改
-function handleModify(field: string, value: boolean | string | number, row: Record<string, any>) {
+async function handleModify(field: string, value: boolean | string | number, row: Record<string, any>) {
   if (props.contentConfig.modifyAction) {
-    props.contentConfig.modifyAction({
-      [pk]: row[pk],
-      field,
-      value,
-    });
+    try {
+      await props.contentConfig.modifyAction({
+        [pk]: row[pk],
+        field,
+        value,
+      });
+      ElMessage.success("更新成功");
+    } catch {
+      // 错误已由全局拦截器统一提示
+    }
   } else {
     ElMessage.error("未配置modifyAction");
   }

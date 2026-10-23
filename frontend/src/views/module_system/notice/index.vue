@@ -316,6 +316,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage } from "element-plus";
 import { ref, reactive, computed, markRaw, nextTick, onMounted, unref } from "vue";
 import { fetchAllPages } from "@/utils/fetchAllPages";
 import { useDictStore, useNoticeStore } from "@/store/index";
@@ -584,6 +585,7 @@ async function handleSubmit() {
         } else {
           await NoticeAPI.createNotice(formData);
         }
+        ElMessage.success("操作成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -612,6 +614,7 @@ async function handleMoreClick(status: string) {
     .then(async () => {
       try {
         await NoticeAPI.batchNotice({ ids, status });
+        ElMessage.success("操作成功");
         refreshList();
       } catch (error: any) {
         console.error(error);

@@ -582,6 +582,7 @@ async function handleSubmit() {
         } else {
           await createCamera(formData);
         }
+        ElMessage.success("保存成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -597,6 +598,7 @@ async function handleSubmit() {
 async function handleStartStream(row: any) {
   try {
     await startStream(row.id);
+    ElMessage.success("已启动");
     refreshList();
   } catch {
     /* 拦截器已提示错误 */
@@ -606,6 +608,7 @@ async function handleStartStream(row: any) {
 async function handleStopStream(row: any) {
   try {
     await stopStream(row.id);
+    ElMessage.success("已停止");
     refreshList();
   } catch {
     /* 拦截器已提示错误 */

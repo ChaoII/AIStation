@@ -737,6 +737,7 @@ async function handleSubmit() {
         } else {
           await createAlgorithmTask(payload);
         }
+        ElMessage.success("保存成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();

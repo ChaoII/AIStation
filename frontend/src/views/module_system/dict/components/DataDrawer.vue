@@ -402,6 +402,7 @@
 
 <script setup lang="ts">
 import DictAPI, { DictDataTable, DictDataForm, DictDataPageQuery } from "@/api/module_system/dict";
+import { ElMessage } from "element-plus";
 import { useDictStore } from "@/store";
 import { useAppStore } from "@/store/modules/app.store";
 import { DeviceEnum } from "@/enums/settings/device.enum";
@@ -738,6 +739,7 @@ async function handleSubmit() {
         } else {
           await DictAPI.createDictData(formData);
         }
+        ElMessage.success("操作成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -767,6 +769,7 @@ async function handleMoreClick(status: string) {
     .then(async () => {
       try {
         await DictAPI.batchDictData({ ids, status });
+        ElMessage.success("操作成功");
         refreshList();
         dictStore.clearDictData();
         if (props.dictType) {

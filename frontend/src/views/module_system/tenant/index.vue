@@ -277,6 +277,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage } from "element-plus";
 import { ref, reactive } from "vue";
 import TenantAPI, {
   TenantForm,
@@ -511,6 +512,7 @@ async function handleSubmit() {
           };
           await TenantAPI.createTenant(payload);
         }
+        ElMessage.success("操作成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();

@@ -626,6 +626,7 @@ defineOptions({
   inheritAttrs: false,
 });
 
+import { ElMessage } from "element-plus";
 import { ref, reactive, computed, watch, nextTick } from "vue";
 import { useAppStore } from "@/store/modules/app.store";
 import { useUserStore } from "@/store/modules/user.store";
@@ -997,6 +998,7 @@ async function handleSubmit() {
         } else {
           await MenuAPI.createMenu(formData);
         }
+        ElMessage.success("操作成功");
         await userStore.getUserInfo();
         dialogVisible.visible = false;
         await resetForm();
@@ -1025,6 +1027,7 @@ async function handleMoreClick(status: string) {
     .then(async () => {
       try {
         await MenuAPI.batchMenu({ ids, status });
+        ElMessage.success("操作成功");
         refreshList();
       } catch (error: any) {
         console.error(error);

@@ -193,6 +193,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount } from "vue";
+import { ElMessage } from "element-plus";
 import {
   getCameraGroupList,
   createCameraGroup,
@@ -399,6 +400,7 @@ async function handleSubmit() {
         } else {
           await createCameraGroup(formData);
         }
+        ElMessage.success("保存成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();

@@ -524,6 +524,7 @@ async function handleDelete(item: ResourceItem) {
     });
 
     await ResourceAPI.deleteResource([item.file_url]);
+    ElMessage.success("删除成功");
     refreshList();
   } catch (error) {
     if (error !== "cancel") {
@@ -552,6 +553,7 @@ async function handleBatchDelete() {
     const paths = selectedItems.value.map((item) => item.file_url);
 
     await ResourceAPI.deleteResource(paths);
+    ElMessage.success("删除成功");
     refreshList();
   } catch (error) {
     if (error !== "cancel") {

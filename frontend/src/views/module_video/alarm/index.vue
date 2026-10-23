@@ -613,6 +613,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, computed } from "vue";
+import { ElMessage } from "element-plus";
 import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
 import { getAlgorithmTaskList } from "@/api/module_video/deploy";
 import {
@@ -1254,6 +1255,7 @@ async function handleSubmitRule() {
     } else {
       await createAlarmRule(payload);
     }
+    ElMessage.success("保存成功");
     ruleDialogVisible.visible = false;
     await resetRuleForm();
     refreshRuleList();

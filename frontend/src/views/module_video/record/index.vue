@@ -544,6 +544,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, onBeforeUnmount } from "vue";
+import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
 import {
   getRecordPlanList,
@@ -681,6 +682,7 @@ async function stopPlan(row: any) {
   row._stopping = true;
   try {
     await stopRecordPlan(row.id);
+    ElMessage.success("已停止");
     row.is_running = false;
   } catch {}
   row._stopping = false;
@@ -823,6 +825,7 @@ async function handleSubmit() {
     try {
       if (id) await updateRecordPlan(id, payload);
       else await createPlan(payload);
+      ElMessage.success("保存成功");
       dialogVisible.visible = false;
       await resetForm();
       refreshList();

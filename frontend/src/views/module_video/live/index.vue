@@ -713,6 +713,7 @@ async function getOrCreatePlayUrl(camera: any): Promise<any> {
     // 未推流：尝试自动推流后再取播放地址（逻辑闭环，无需跳转摄像头管理页）
     try {
       await startStream(camera.id);
+      ElMessage.success("已启动");
     } catch {
       return camera;
     }
@@ -826,6 +827,7 @@ async function saveLayout() {
     } else {
       await createLayout(data);
     }
+    ElMessage.success("保存成功");
     showSaveLayout.value = false;
     fetchSavedLayouts();
   } catch {}
@@ -910,6 +912,7 @@ function handleClearAlarms() {
 async function handleStartRecord(windowId: string, cameraId: number, streamId: string) {
   try {
     await startRecord(cameraId, streamId);
+    ElMessage.success("已启动");
     recordingWindows.value = { ...recordingWindows.value, [windowId]: true };
   } catch {
     /* noop */

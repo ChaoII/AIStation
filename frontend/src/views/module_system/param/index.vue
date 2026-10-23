@@ -274,6 +274,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage } from "element-plus";
 import { ref, reactive, computed, unref } from "vue";
 import { fetchAllPages } from "@/utils/fetchAllPages";
 import ParamsAPI, { ConfigTable, ConfigForm, ConfigPageQuery } from "@/api/module_system/params";
@@ -528,6 +529,7 @@ async function handleSubmit() {
         } else {
           await ParamsAPI.createParams(formData);
         }
+        ElMessage.success("操作成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();

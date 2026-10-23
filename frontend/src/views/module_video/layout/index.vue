@@ -570,6 +570,7 @@ async function handleSubmit() {
   try {
     if (id) await updateLayout(id, { ...formData, id });
     else await createLayout(formData);
+    ElMessage.success("保存成功");
     dialogVisible.visible = false;
     await resetForm();
     refreshList();

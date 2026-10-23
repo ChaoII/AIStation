@@ -446,6 +446,7 @@ async function handleCreate() {
       source_images: sourceImages,
       hyperparams: createForm.hyperparams,
     });
+    ElMessage.success("保存成功");
     showCreateDialog.value = false;
     createForm.modelId = null;
     createForm.sourceType = "dataset";
@@ -471,6 +472,7 @@ async function handleStart(id: number) {
   try {
     await ElMessageBox.confirm("确定开始预测？", "提示", { type: "info" });
     await TrainAPI.startPredict(id);
+    ElMessage.success("已启动");
     refreshList();
   } catch {
     /* 提示由请求拦截器统一处理 */
@@ -481,6 +483,7 @@ async function handleStop(id: number) {
   try {
     await ElMessageBox.confirm("确定停止预测？", "提示", { type: "warning" });
     await TrainAPI.stopPredict(id);
+    ElMessage.success("已停止");
     refreshList();
   } catch {
     /* 提示由请求拦截器统一处理 */
@@ -493,6 +496,7 @@ function downloadZip(url: string) {
 
 async function handleDelete(ids: number[]) {
   await TrainAPI.deletePredict(ids);
+  ElMessage.success("删除成功");
   refreshList();
 }
 

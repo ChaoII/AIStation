@@ -9,19 +9,6 @@ import { ResultEnum } from "@/enums/api/result.enum";
 import { Auth } from "@/utils/auth";
 import { redirectToLogin } from "@/utils/authRedirect";
 
-/** 成功提示去重：相同文案在短窗口内只弹一次，避免一次操作触发多个写接口时弹出一模一样的多次「保存成功」 */
-const _S_SUCCESS_DEDUP_MS = 1200;
-const _successToastTimes = new Map<string, number>();
-
-function _showSuccessOnce(msg: string) {
-  if (!msg) return;
-  const now = Date.now();
-  const last = _successToastTimes.get(msg) ?? 0;
-  if (now - last < _S_SUCCESS_DEDUP_MS) return;
-  _successToastTimes.set(msg, now);
-  ElMessage.success(msg);
-}
-
 /**
  * 创建 HTTP 请求实例
  */
@@ -84,16 +71,8 @@ httpRequest.interceptors.response.use(
       return Promise.reject(response);
     }
 
-    // 如果请求不是 GET 请求，且不是登录或退出登录接口，请求成功时显示成功提示
-    if (
-      response.config.method?.toUpperCase() !== "GET" &&
-      !response.config.url?.includes("login") &&
-      !response.config.url?.includes("logout") &&
-      !silent
-    ) {
-      _showSuccessOnce(data.msg);
-    }
-
+    // 成功提示已改为「页面显式弹一次」，此处不再根据服务器 msg 自动弹，避免一次操作触发
+    // 多个写接口时弹出多个一模一样的「保存成功」。错误处理仍集中在本拦截器。
     return response;
   },
   async (error: AxiosError<ApiResponse>) => {

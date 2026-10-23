@@ -149,6 +149,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage } from "element-plus";
 import { computed, ref, watch, onMounted } from "vue";
 import { QuestionFilled, Switch as SwitchIcon } from "@element-plus/icons-vue";
 import type { TreeInstance } from "element-plus";
@@ -270,6 +271,7 @@ async function handleDrawerSave() {
     };
 
     await RoleAPI.setPermission(submitData);
+    ElMessage.success("操作成功");
 
     const userStore = useUserStore();
     await userStore.getUserInfo();

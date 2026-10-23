@@ -192,6 +192,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, onBeforeUnmount } from "vue";
+import { ElMessage } from "element-plus";
 import {
   getEdgeDeviceList,
   getEdgeDeviceDetail,
@@ -376,6 +377,7 @@ async function handleSubmit() {
       } else {
         await createEdgeDevice(payload);
       }
+      ElMessage.success("保存成功");
       dialogVisible.visible = false;
       await resetForm();
       refreshList();

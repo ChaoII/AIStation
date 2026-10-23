@@ -283,6 +283,7 @@ defineOptions({
   inheritAttrs: false,
 });
 
+import { ElMessage } from "element-plus";
 import { ref, reactive, computed, markRaw, nextTick, unref } from "vue";
 import { fetchAllPages } from "@/utils/fetchAllPages";
 import PositionAPI, {
@@ -535,6 +536,7 @@ async function handleSubmit() {
         } else {
           await PositionAPI.createPosition(formData);
         }
+        ElMessage.success("操作成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -564,6 +566,7 @@ async function handleMoreClick(status: string) {
     .then(async () => {
       try {
         await PositionAPI.batchPosition({ ids, status });
+        ElMessage.success("操作成功");
         refreshList();
         const userStore = useUserStore();
         await userStore.getUserInfo();

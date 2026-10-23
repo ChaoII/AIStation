@@ -286,6 +286,7 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import { ElMessage } from "element-plus";
 import { useUserStore } from "@/store";
 import { formatTree } from "@/utils/common";
 import { ref, reactive } from "vue";
@@ -481,6 +482,7 @@ async function handleSubmit() {
         } else {
           await DeptAPI.createDept(formData);
         }
+        ElMessage.success("操作成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -508,6 +510,7 @@ async function handleMoreClick(status: string) {
     .then(async () => {
       try {
         await DeptAPI.batchDept({ ids, status });
+        ElMessage.success("操作成功");
         refreshList();
         const userStore = useUserStore();
         await userStore.getUserInfo();

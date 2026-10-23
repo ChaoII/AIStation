@@ -1848,6 +1848,7 @@ async function handleStart() {
       type: "info",
     });
     await TrainAPI.startTask(task.value.id);
+    ElMessage.success("已启动");
     await loadTask();
     connectWs(task.value.id);
     startPoll();
@@ -1864,6 +1865,7 @@ async function handleStop() {
   try {
     await ElMessageBox.confirm("确定停止该训练任务？", "提示", { type: "warning" });
     await TrainAPI.stopTask(task.value.id);
+    ElMessage.success("已停止");
     await loadTask();
   } catch {
     /* */
@@ -1885,6 +1887,7 @@ async function handleDelete() {
       confirmButtonText: "删除",
     });
     await TrainAPI.deleteTask([task.value.id]);
+    ElMessage.success("删除成功");
     router.push("/train/task");
   } catch {
     /* */

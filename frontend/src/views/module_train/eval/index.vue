@@ -529,6 +529,7 @@ async function handleCreateEval() {
       eval_dataset_id: createForm.evalDatasetId,
       hyperparams: createForm.hyperparams,
     });
+    ElMessage.success("保存成功");
     createDialogVisible.value = false;
     createForm.modelId = null;
     createForm.evalDatasetId = null;
@@ -551,6 +552,7 @@ async function handleStartEval(id: number) {
   try {
     await ElMessageBox.confirm("确定开始评估？", "提示", { type: "info" });
     await TrainAPI.startEval(id);
+    ElMessage.success("已启动");
     refreshList();
   } catch {
     /* 提示由请求拦截器统一处理 */
@@ -561,6 +563,7 @@ async function handleStopEval(id: number) {
   try {
     await ElMessageBox.confirm("确定停止该评估？", "提示", { type: "warning" });
     await TrainAPI.stopEval(id);
+    ElMessage.success("已停止");
     refreshList();
   } catch {
     //
@@ -569,6 +572,7 @@ async function handleStopEval(id: number) {
 
 async function handleDeleteEval(ids: number[]) {
   await TrainAPI.deleteEval(ids);
+  ElMessage.success("删除成功");
   refreshList();
 }
 

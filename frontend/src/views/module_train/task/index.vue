@@ -1032,6 +1032,7 @@ async function handleSubmit() {
               : {}),
           });
         }
+        ElMessage.success("保存成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -1048,6 +1049,7 @@ async function handleStart(row: any) {
   try {
     await ElMessageBox.confirm(`确定开始训练任务「${row.name}」？`, "提示", { type: "info" });
     await TrainAPI.startTask(row.id);
+    ElMessage.success("已启动");
     refreshList();
   } catch {
     /* 提示由请求拦截器统一处理 */
@@ -1058,6 +1060,7 @@ async function handleStop(id: number) {
   try {
     await ElMessageBox.confirm("确定停止该训练任务？", "提示", { type: "warning" });
     await TrainAPI.stopTask(id);
+    ElMessage.success("已停止");
     refreshList();
   } catch {
     //
@@ -1066,6 +1069,7 @@ async function handleStop(id: number) {
 
 async function handleDelete(id: number) {
   await TrainAPI.deleteTask([id]);
+  ElMessage.success("删除成功");
   refreshList();
 }
 

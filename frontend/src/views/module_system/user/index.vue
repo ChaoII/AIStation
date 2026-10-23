@@ -388,6 +388,7 @@ defineOptions({
   inheritAttrs: false,
 });
 
+import { ElMessage } from "element-plus";
 import { useAppStore } from "@/store/modules/app.store";
 import { DeviceEnum } from "@/enums/settings/device.enum";
 import { ResultEnum } from "@/enums/api/result.enum";
@@ -677,6 +678,7 @@ function hancleResetPassword(row: UserInfo) {
         return false;
       }
       await UserAPI.resetUserPassword({ id: row.id!, password: value });
+      ElMessage.success("操作成功");
     },
     () => {
       ElMessageBox.close();
@@ -774,6 +776,7 @@ async function handleSubmit() {
         } else {
           await UserAPI.createUser(formData);
         }
+        ElMessage.success("操作成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -806,6 +809,7 @@ async function handleMoreClick(status: string) {
       try {
         submitLoading.value = true;
         await UserAPI.batchUser({ ids, status });
+        ElMessage.success("操作成功");
         refreshList();
       } catch (error: unknown) {
         console.error(error);

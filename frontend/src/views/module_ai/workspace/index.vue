@@ -497,6 +497,7 @@ async function saveCategory() {
     });
   }
   catDialogVisible.value = false;
+  ElMessage.success("保存成功");
   loadTree();
 }
 
@@ -518,6 +519,7 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
       { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
     );
     await deleteWorkspaceCategory(data.id);
+    ElMessage.success("删除成功");
     if (currentCategoryId.value === data.id) currentCategoryId.value = null;
     loadTree();
     loadItems();

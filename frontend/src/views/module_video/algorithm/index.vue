@@ -783,6 +783,7 @@ async function handleSubmitAlgo() {
     } else {
       await createAlgorithm(payload);
     }
+    ElMessage.success("保存成功");
     algoDialogVisible.visible = false;
     await resetAlgoForm();
     refreshAlgoList();

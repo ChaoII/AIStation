@@ -635,6 +635,7 @@ async function handleSubmit() {
         } else {
           await RoleAPI.createRole(formData);
         }
+        ElMessage.success("操作成功");
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -664,6 +665,7 @@ async function handleMoreClick(status: string) {
     .then(async () => {
       try {
         await RoleAPI.batchRole({ ids, status });
+        ElMessage.success("操作成功");
         refreshList();
         const userStore = useUserStore();
         await userStore.getUserInfo();

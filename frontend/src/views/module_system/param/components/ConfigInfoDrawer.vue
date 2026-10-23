@@ -574,6 +574,7 @@ const submitChanges = async () => {
     configStore.isConfigLoaded = false;
     await configStore.getConfig();
     initializeLists();
+    ElMessage.success("操作成功");
   } catch (error) {
     console.error("保存失败:", error);
   }

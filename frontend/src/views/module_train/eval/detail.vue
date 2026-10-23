@@ -540,6 +540,7 @@ async function handleStart() {
       type: "info",
     });
     await TrainAPI.startEval(evalData.value.id);
+    ElMessage.success("已启动");
     await loadEval();
     connectWs(evalData.value.id);
     startPoll();
@@ -556,6 +557,7 @@ async function handleStop() {
   try {
     await ElMessageBox.confirm("确定停止该评估？", "提示", { type: "warning" });
     await TrainAPI.stopEval(evalData.value.id);
+    ElMessage.success("已停止");
     await loadEval();
   } catch {
     /* */
@@ -573,6 +575,7 @@ async function handleDelete() {
       confirmButtonText: "删除",
     });
     await TrainAPI.deleteEval([evalData.value.id]);
+    ElMessage.success("删除成功");
     router.push("/train/eval");
   } catch {
     /* */
