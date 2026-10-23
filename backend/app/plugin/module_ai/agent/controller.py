@@ -11,8 +11,6 @@ from app.core.router_class import OperationLogRoute
 from app.plugin.module_ai.assistant.agno_service import agno_stream_response
 
 from .schema import (
-    AiAgentCategoryCreateSchema,
-    AiAgentCategoryUpdateSchema,
     AiAgentCreateSchema,
     AiAgentRunSchema,
     AiAgentSkillBindSchema,
@@ -38,45 +36,6 @@ async def create_from_template(
 ) -> JSONResponse:
     a = await AiAgentService.create_from_template(str(data.get("key", "")), str(data.get("name", "")), auth)
     return SuccessResponse(data=a, msg="创建成功")
-
-
-# ---------------------------------------------------------------- #
-# 分类
-# ---------------------------------------------------------------- #
-@AiAgentRouter.get("/categories/list", summary="智能体分类列表")
-async def list_categories(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:query"]))],
-) -> JSONResponse:
-    return SuccessResponse(data=await AiAgentService.list_categories(), msg="查询成功")
-
-
-@AiAgentRouter.post("/categories/create", summary="新增智能体分类")
-async def create_category(
-    data: AiAgentCategoryCreateSchema,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:create"]))],
-) -> JSONResponse:
-    return SuccessResponse(data=await AiAgentService.create_category(data, auth), msg="创建成功")
-
-
-@AiAgentRouter.put("/categories/update/{cat_id}", summary="编辑智能体分类")
-async def update_category(
-    cat_id: int,
-    data: AiAgentCategoryUpdateSchema,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:update"]))],
-) -> JSONResponse:
-    result = await AiAgentService.update_category(cat_id, data, auth)
-    if not result:
-        return ErrorResponse(msg="分类不存在")
-    return SuccessResponse(data=result, msg="修改成功")
-
-
-@AiAgentRouter.delete("/categories/delete", summary="删除智能体分类")
-async def delete_category(
-    cat_id: Annotated[int, Body(description="分类ID")],
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:delete"]))],
-) -> JSONResponse:
-    await AiAgentService.delete_category(cat_id)
-    return SuccessResponse(msg="删除成功")
 
 
 # ---------------------------------------------------------------- #

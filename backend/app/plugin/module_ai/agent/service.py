@@ -13,7 +13,7 @@ from app.plugin.module_ai.mcp.model import AiMcpServerModel
 from app.plugin.module_ai.skill.model import AiSkillModel
 from app.plugin.module_ai.tools_catalog.model import AiToolModel
 
-from .model import AiAgentCategoryModel, AiAgentModel
+from .model import AiAgentModel
 
 # 输入护栏（Guardrail，平台层）：空/超长/提示注入基础检测。返回 None 表示通过，否则返回错误文案。
 _MAX_INPUT_LEN = 20000
@@ -134,15 +134,6 @@ def _to_dict(a: AiAgentModel) -> dict:
     }
 
 
-def _cat_dict(c: AiAgentCategoryModel) -> dict:
-    return {
-        "id": c.id,
-        "name": c.name,
-        "parent_id": c.parent_id,
-        "sort": c.sort or 0,
-    }
-
-
 class AiAgentService:
 
     @classmethod
@@ -195,55 +186,6 @@ class AiAgentService:
             input_schema={}, avatar="", color="", markdown=False, enabled=True, order=0,
         )
         return await cls.create(data, auth)
-
-    # ---------------------------------------------------------------- #
-    # 分类
-    # ---------------------------------------------------------------- #
-    @classmethod
-    async def list_categories(cls) -> list[dict]:
-        async with async_db_session() as db:
-            rows = (
-                await db.execute(
-                    select(AiAgentCategoryModel)
-                    .where(AiAgentCategoryModel.is_deleted.is_(False))
-                    .order_by(AiAgentCategoryModel.sort.asc(), AiAgentCategoryModel.id.asc())
-                )
-            ).scalars().all()
-            return [_cat_dict(c) for c in rows]
-
-    @classmethod
-    async def create_category(cls, data, auth) -> dict:
-        async with async_db_session.begin() as db:
-            c = AiAgentCategoryModel(
-                name=data.name,
-                parent_id=data.parent_id,
-                sort=data.sort or 0,
-                created_id=auth.user.id,
-                updated_id=auth.user.id,
-            )
-            db.add(c)
-            await db.flush()
-            return _cat_dict(c)
-
-    @classmethod
-    async def update_category(cls, cat_id: int, data, auth) -> dict | None:
-        async with async_db_session.begin() as db:
-            c = await db.get(AiAgentCategoryModel, cat_id)
-            if not c or c.is_deleted:
-                return None
-            for key in ("name", "parent_id", "sort"):
-                if getattr(data, key) is not None:
-                    setattr(c, key, getattr(data, key))
-            c.updated_id = auth.user.id
-            await db.flush()
-            return _cat_dict(c)
-
-    @classmethod
-    async def delete_category(cls, cat_id: int) -> None:
-        async with async_db_session.begin() as db:
-            c = await db.get(AiAgentCategoryModel, cat_id)
-            if c:
-                await db.delete(c)
 
     # ---------------------------------------------------------------- #
     # 智能体

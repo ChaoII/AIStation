@@ -90,7 +90,7 @@ function onLogoError() {
   logoError.value = true;
 }
 
-type LayoutMap = "login" | "register" | "resetPwd";
+type LayoutMap = "login" | "register";
 
 const t = useI18n().t;
 
@@ -98,7 +98,6 @@ const component = ref<LayoutMap>("login"); // 切换显示的组件
 const formComponents = {
   login: defineAsyncComponent(() => import("./components/Login.vue")),
   register: defineAsyncComponent(() => import("./components/Register.vue")),
-  resetPwd: defineAsyncComponent(() => import("./components/ResetPwd.vue")),
 };
 
 // 预填登录信息（通过具名 v-model 双向绑定传递）

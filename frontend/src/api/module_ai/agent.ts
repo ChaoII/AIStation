@@ -1,7 +1,6 @@
 import request from "@/utils/request";
 
 const API_PATH = "/ai/agents";
-const CAT_PATH = "/ai/agents/categories";
 
 // ---------- 智能体实体 ----------
 export function getAiAgentList(params?: { category_id?: number }) {
@@ -36,22 +35,6 @@ export function batchAgentStatus(ids: number[], enabled: boolean) {
   return request({ url: `${API_PATH}/batch/status`, method: "put", data: { ids, enabled } });
 }
 
-// ---------- 智能体分类 ----------
-export function getAgentCategoryList() {
-  return request({ url: `${CAT_PATH}/list`, method: "get" });
-}
-
-export function createAgentCategory(data: any) {
-  return request({ url: `${CAT_PATH}/create`, method: "post", data });
-}
-
-export function updateAgentCategory(id: number, data: any) {
-  return request({ url: `${CAT_PATH}/update/${id}`, method: "put", data });
-}
-
-export function deleteAgentCategory(cat_id: number) {
-  return request({ url: `${CAT_PATH}/delete`, method: "delete", data: cat_id });
-}
 export function getAgentTemplates() {
   return request({ url: `${API_PATH}/templates`, method: "get" });
 }

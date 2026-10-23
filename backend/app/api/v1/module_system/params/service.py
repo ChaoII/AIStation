@@ -1,4 +1,5 @@
 import json
+import re
 
 from fastapi import UploadFile
 from redis.asyncio.client import Redis
@@ -20,6 +21,9 @@ from .schema import (
     ParamsQueryParam,
     ParamsUpdateSchema,
 )
+
+# 敏感配置键（密码/密钥/token）匹配规则：公开接口 /config/info 下掩码返回
+_SENSITIVE_KEY_PATTERN = re.compile(r"(pass|secret|access_key|private_key|token)", re.IGNORECASE)
 
 
 class ParamsService:
@@ -376,6 +380,13 @@ class ParamsService:
                 continue
             try:
                 new_config = json.loads(config)
+                # 安全：公开接口(/config/info)下，对敏感类配置键(密码/密钥/token)掩码返回，
+                # 避免未登录用户读到 SMTP 密码、短信/Webhook 密钥等敏感项。
+                config_key = str(new_config.get("config_key", ""))
+                if _SENSITIVE_KEY_PATTERN.search(config_key) and isinstance(
+                    new_config.get("config_value"), str
+                ):
+                    new_config["config_value"] = "******"
                 configs.append(new_config)
             except Exception as e:
                 log.error(f"解析系统配置数据失败: {e}")

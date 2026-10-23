@@ -27,14 +27,12 @@ from .oauth_service import (
     save_oauth_state,
 )
 from .schema import (
-    AutoLoginTokenSchema,
-    AutoLoginUserSchema,
     CaptchaOutSchema,
     JWTOutSchema,
     LogoutPayloadSchema,
     RefreshTokenPayloadSchema,
 )
-from .service import AutoLoginService, CaptchaService, LoginService
+from .service import CaptchaService, LoginService
 
 AuthRouter = APIRouter(route_class=OperationLogRoute, prefix="/auth", tags=["认证授权"])
 
@@ -178,87 +176,6 @@ async def logout_controller(
         log.info("退出成功")
         return SuccessResponse(msg="退出成功")
     return ErrorResponse(msg="退出失败")
-
-
-@AuthRouter.get(
-    "/auto-login/users",
-    summary="获取免登录用户列表",
-    description="获取可用于免登录快速登录的用户列表",
-    response_model=list[AutoLoginUserSchema],
-)
-async def get_auto_login_users_controller(
-    db: Annotated[AsyncSession, Depends(db_getter)],
-) -> JSONResponse:
-    """
-    获取免登录用户列表
-
-    参数:
-    - db (AsyncSession): 数据库会话对象
-
-    返回:
-    - list[AutoLoginUserSchema]: 免登录用户列表
-    """
-    users = await AutoLoginService.get_auto_login_users_service(db=db)
-    return SuccessResponse(data=users, msg="获取成功")
-
-
-@AuthRouter.post(
-    "/auto-login/token",
-    summary="获取免登录Token",
-    description="根据用户ID生成免登录Token",
-    response_model=AutoLoginTokenSchema,
-)
-async def get_auto_login_token_controller(
-    redis: Annotated[Redis, Depends(redis_getter)],
-    db: Annotated[AsyncSession, Depends(db_getter)],
-    user_id: int,
-) -> JSONResponse:
-    """
-    获取免登录Token
-
-    参数:
-    - redis (Redis): Redis客户端对象
-    - db (AsyncSession): 数据库会话对象
-    - user_id (int): 用户ID
-
-    返回:
-    - AutoLoginTokenSchema: 免登录Token和用户信息
-    """
-    result = await AutoLoginService.create_auto_login_token_service(
-        redis=redis, db=db, user_id=user_id
-    )
-    return SuccessResponse(data=result, msg="获取成功")
-
-
-@AuthRouter.post(
-    "/auto-login",
-    summary="免登录",
-    description="使用免登录Token快速登录",
-    response_model=JWTOutSchema,
-)
-async def auto_login_controller(
-    request: Request,
-    redis: Annotated[Redis, Depends(redis_getter)],
-    db: Annotated[AsyncSession, Depends(db_getter)],
-    token: str,
-) -> JSONResponse:
-    """
-    免登录
-
-    参数:
-    - request (Request): FastAPI请求对象
-    - redis (Redis): Redis客户端对象
-    - db (AsyncSession): 数据库会话对象
-    - token (str): 免登录Token
-
-    返回:
-    - JWTOutSchema: JWT令牌信息
-    """
-    login_token = await AutoLoginService.auto_login_service(
-        request=request, redis=redis, db=db, token=token
-    )
-    log.info("用户免登录成功")
-    return SuccessResponse(data=login_token.model_dump(), msg="登录成功")
 
 
 @AuthRouter.get(

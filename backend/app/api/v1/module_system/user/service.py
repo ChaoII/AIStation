@@ -25,7 +25,6 @@ from .schema import (
     ResetPasswordSchema,
     UserChangePasswordSchema,
     UserCreateSchema,
-    UserForgetPasswordSchema,
     UserOutSchema,
     UserQueryParam,
     UserRegisterSchema,
@@ -502,39 +501,10 @@ class UserService:
             create_dict["created_id"] = auth.user.id
 
         result = await UserCRUD(auth).create(data=create_dict)
-        if data.role_ids:
-            await UserCRUD(auth).set_user_roles_crud(user_ids=[result.id], role_ids=data.role_ids)
+
+        # 安全：注册不授予任何角色（尤其管理员 ADMIN），防止匿名注册提权。
+        # 新用户权限由管理员在「用户管理」中统一分配。
         return UserOutSchema.model_validate(result).model_dump()
-
-    @classmethod
-    async def forget_password_service(
-        cls, auth: AuthSchema, data: UserForgetPasswordSchema
-    ) -> dict:
-        """
-        用户忘记密码
-
-        参数:
-        - auth (AuthSchema): 认证信息模型
-        - data (UserForgetPasswordSchema): 用户忘记密码数据
-
-        返回:
-        - Dict: 更新后的当前用户详情字典
-        """
-        user = await UserCRUD(auth).get_by_username_crud(username=data.username)
-        if not user:
-            raise CustomException(msg="用户不存在")
-        if user.status == "1":
-            raise CustomException(msg="用户已停用")
-
-        # 检查是否是超级管理员
-        if user.is_superuser:
-            raise CustomException(msg="超级管理员密码不能重置")
-
-        new_password_hash = PwdUtil.set_password_hash(password=resolve_password(data.new_password))
-        new_user = await UserCRUD(auth).forget_password_crud(
-            id=user.id, password_hash=new_password_hash
-        )
-        return UserOutSchema.model_validate(new_user).model_dump()
 
     @classmethod
     async def batch_import_user_service(
