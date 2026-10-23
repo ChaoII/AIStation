@@ -31,6 +31,7 @@ class ItemModel(_Base):
     is_deleted: Mapped[bool] = mapped_column(default=False)
     deleted_time: Mapped[datetime | None] = mapped_column(default=None)
     deleted_id: Mapped[int | None] = mapped_column(default=None)
+    created_at: Mapped[datetime | None] = mapped_column(default=None)
 
 
 class TreeModel(_Base):
@@ -140,9 +141,41 @@ def test_crud_write_respects_data_scope():
     asyncio.run(inner())
 
 
-def test_tree_list_prunes_unauthorized_children():
-    """tree_list 的子树经 selectinload 加载，子节点须按数据权限剪枝(F5)。"""
+def test_crud_date_month_filter_sqlite():
+    """F6：date/month 搜索条件在 SQLite(及非 MySQL) 下使用跨方言写法，不报函数未定义。"""
 
+    async def inner():
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(_Base.metadata.create_all)
+        Session = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with Session() as session:
+            session.add_all(
+                [
+                    ItemModel(id=1, created_id=100, name="a", created_at=datetime(2026, 10, 23, 12, 0, 0)),
+                    ItemModel(id=2, created_id=100, name="b", created_at=datetime(2026, 10, 5, 8, 0, 0)),
+                    ItemModel(id=3, created_id=100, name="c", created_at=datetime(2026, 11, 2, 9, 0, 0)),
+                ]
+            )
+            await session.commit()
+
+            auth = _auth(session, 100)
+            crud = CRUDBase(ItemModel, auth)
+
+            # 按日过滤
+            day = await crud.list(search={"created_at": ("date", "2026-10-23")})
+            assert [i.name for i in day] == ["a"], "按日过滤应命中 10-23"
+
+            # 按月过滤
+            month = await crud.list(search={"created_at": ("month", "2026-10")})
+            assert {i.name for i in month} == {"a", "b"}, "按月过滤应命中 10 月两条"
+        await engine.dispose()
+
+    asyncio.run(inner())
+
+
+def test_tree_list_prunes_unauthorized_children():
     async def inner():
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         async with engine.begin() as conn:

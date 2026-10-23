@@ -120,6 +120,7 @@ class RequestLogMiddleware:
         ip_white_list: list = []
         white_api_list_path: list = []
         ip_black_list: list = []
+        config_error = False
 
         try:
             # 从应用实例获取Redis连接
@@ -135,13 +136,18 @@ class RequestLogMiddleware:
             white_api_list_path = system_config["white_api_list_path"]
             ip_black_list = system_config["ip_black_list"]
         except Exception as e:  # noqa: BLE001
-            log.error(f"获取系统配置失败: {e}")
+            config_error = True
+            log.error(f"获取系统配置失败，按 fail-closed 拦截: {e}")
 
         should_block = False
         block_reason = ""
 
+        # F8：配置读取失败时 fail-closed（默认拒绝），避免黑名单/演示限制被绕过
+        if config_error:
+            should_block = True
+            block_reason = "系统安全配置读取失败，已按 fail-closed 拒绝请求"
         # 1. 首先检查IP是否在黑名单中
-        if request_ip and request_ip in ip_black_list:
+        elif request_ip and request_ip in ip_black_list:
             should_block = True
             block_reason = f"IP地址 {request_ip} 在黑名单中"
 
@@ -173,6 +179,8 @@ class RequestLogMiddleware:
             )
         )
         # 拦截请求
+        if config_error:
+            return ErrorResponse(msg="系统安全策略暂时不可用，请稍后重试")
         return ErrorResponse(msg="演示环境，禁止操作")
 
     @staticmethod

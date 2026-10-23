@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import Select, asc, delete, desc, false, func, select, update
+from sqlalchemy import Select, String, asc, cast, delete, desc, false, func, select, update
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
@@ -22,6 +22,9 @@ ModelType = TypeVar("ModelType", bound=MappedBase)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 OutSchemaType = TypeVar("OutSchemaType", bound=BaseModel)
+
+#: 分页 size 服务端上限(F11)：避免大 page_size 触发全表扫/深分页
+_MAX_PAGE_SIZE = 500
 
 
 class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
@@ -181,6 +184,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         - CustomException: 查询失败时抛出异常
         """
         try:
+            # F11: 服务端约束分页大小上限，避免大 page_size 全表扫/深分页
+            if limit <= 0:
+                limit = 10
+            elif limit > _MAX_PAGE_SIZE:
+                limit = _MAX_PAGE_SIZE
             conditions = await self.__build_conditions(**(search or {}))
             order = order_by or [{"id": "asc"}]
             sql = select(self.model).where(*conditions).order_by(*self.__order_by(order))
@@ -531,6 +539,24 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         return prune(list(nodes))
 
+    def _date_expr(self, attr: Any, kind: str) -> ColumnElement:
+        """跨方言的日期/月份格式化表达式（F6）。
+
+        MySQL 用 ``date_format``，PG 用 ``to_char``，SQLite 用 ``strftime``；
+        未知方言回退为「转文本 + substr 截断」，避免在 PG/SQLite 上报函数未定义。
+        """
+        try:
+            dialect = (self.auth.db.get_bind().dialect.name or "").lower()
+        except Exception:  # noqa: BLE001  取不到方言时用通用写法
+            dialect = ""
+        if dialect == "postgresql":
+            return func.to_char(attr, "YYYY-MM-DD" if kind == "date" else "YYYY-MM")
+        if dialect == "mysql":
+            return func.date_format(attr, "%Y-%m-%d" if kind == "date" else "%Y-%m")
+        if dialect == "sqlite":
+            return func.strftime("%Y-%m-%d" if kind == "date" else "%Y-%m", attr)
+        return func.substr(cast(attr, String), 1, 10 if kind == "date" else 7)
+
     async def __build_conditions(self, **kwargs) -> builtins.list[ColumnElement]:
         """
         构建查询条件
@@ -561,9 +587,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 elif seq == "not None":
                     conditions.append(attr.isnot(None))
                 elif seq == "date" and val:
-                    conditions.append(func.date_format(attr, "%Y-%m-%d") == val)
+                    conditions.append(self._date_expr(attr, "date") == val)
                 elif seq == "month" and val:
-                    conditions.append(func.date_format(attr, "%Y-%m") == val)
+                    conditions.append(self._date_expr(attr, "month") == val)
                 elif seq == "like" and val:
                     conditions.append(attr.like(f"%{val}%"))
                 elif seq == "in":
