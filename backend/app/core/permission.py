@@ -51,6 +51,16 @@ class Permission:
         condition = await self.__permission_condition()
         return query.where(condition) if condition is not None else query
 
+    async def build_condition(self) -> ColumnElement | None:
+        """
+        返回当前用户对该模型的数据权限过滤条件。
+
+        供 CRUDBase 写路径(delete/set/restore/clear)复用，与读路径
+        (filter_query)保持一致，避免写操作绕过数据权限。
+        无权限限制时返回 None。
+        """
+        return await self.__permission_condition()
+
     async def __permission_condition(self) -> ColumnElement | None:
         """
         应用数据范围权限隔离
