@@ -122,6 +122,7 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { User, Timer, ArrowRight } from "@element-plus/icons-vue";
 import { NotificationAPI } from "@/api/module_system/notification";
+import { ElMessage } from "element-plus";
 import NoticeAPI, { NoticeTable } from "@/api/module_system/notice";
 import { useNoticeStore } from "@/store";
 
@@ -187,6 +188,9 @@ async function handleClick(item: any) {
   } else if (item.module === "ontology") {
     // ontology_proposal_pending：本体提案待审查 → 本体页
     router.push("/ai/ontology");
+  } else {
+    // 未知 module 类型：无对应直达页，给明确反馈而非静默（已读已在上方标记）
+    ElMessage.info("该通知暂无对应跳转，仅标记为已读");
   }
 }
 
