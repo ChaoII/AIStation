@@ -170,7 +170,10 @@
           <el-button size="small" :icon="Refresh" @click="loadJobs">刷新</el-button>
         </div>
       </template>
-      <el-table border stripe :data="jobs" size="default" empty-text="暂无合成任务">
+      <el-table border stripe :data="jobs" size="default">
+        <template #empty>
+          <el-empty :image-size="80" description="暂无合成任务" />
+        </template>
         <el-table-column prop="id" label="任务ID" width="80" />
         <el-table-column prop="plate_type_label" label="车牌类型" width="150" />
         <el-table-column prop="params" label="参数" min-width="180">

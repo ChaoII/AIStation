@@ -79,9 +79,12 @@
           :data="tokens"
           size="small"
           border
+          stripe
           max-height="150"
-          empty-text="暂无令牌（换票与体验票都会出现在这里）"
         >
+          <template #empty>
+            <el-empty :image-size="80" description="暂无令牌（换票与体验票都会出现在这里）" />
+          </template>
           <el-table-column label="形态" width="74">
             <template #default="{ row }">
               <div>{{ kindLabel(row.kind) }}</div>

@@ -587,6 +587,7 @@
         :data="filteredHistory"
         size="small"
         border
+        stripe
         max-height="420"
       >
         <el-table-column label="时间" width="180">
@@ -730,7 +731,7 @@
           保存当前版本
         </el-button>
       </div>
-      <el-table v-loading="versionLoading" :data="versions" size="small" border>
+      <el-table v-loading="versionLoading" :data="versions" size="small" border stripe>
         <el-table-column label="版本" width="80">
           <template #default="{ row }">v{{ row.version_no }}</template>
         </el-table-column>
