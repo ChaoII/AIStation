@@ -47,6 +47,10 @@ def build_model(model_config: dict | None = None) -> OpenAILike:
         "base_url": base_url,
         "temperature": AGENT_TEMPERATURE,
     }
+    # A4: 透传运行时超时（app.timeout 此前落库但不生效），否则由 OpenAIChat 默认
+    timeout = mc.get("timeout")
+    if timeout is not None:
+        kwargs["timeout"] = float(timeout)
     headers = build_headers(base_url, mc.get("extra_headers"))
     try:
         return OpenAILike(**kwargs, default_headers=headers or None)

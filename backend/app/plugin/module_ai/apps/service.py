@@ -427,6 +427,8 @@ async def run_app_ui_stream(
             state["error"] = "未配置大模型，请在 AI 管理→模型配置 中添加并启用"
             yield agno_error_frame(state["error"])
             return
+        # A4: 应用级 timeout 落库但此前未生效，运行时注入给 build_model 透传
+        runtime["timeout"] = app.get("timeout") or 60
         model_name = runtime.get("model") or "app"
 
         tool_schemas, http_tools = await _build_app_tools(app.get("tools"))
