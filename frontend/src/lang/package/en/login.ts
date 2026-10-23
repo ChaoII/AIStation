@@ -56,4 +56,6 @@ export default {
   quickLoginTip: "Click user avatar to login quickly",
   selectUser: "Select a user",
   reg: "Register",
+  accountLogin: "Account Login",
+  clickCaptcha: "Click to get verification code",
 };

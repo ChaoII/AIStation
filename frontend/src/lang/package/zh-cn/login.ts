@@ -56,4 +56,6 @@ export default {
   quickLoginTip: "点击用户头像快速登录",
   selectUser: "请选择用户",
   reg: "注 册",
+  accountLogin: "账号登录",
+  clickCaptcha: "点击获取验证码",
 };
