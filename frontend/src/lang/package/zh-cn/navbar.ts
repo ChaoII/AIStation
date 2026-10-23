@@ -1,0 +1,18 @@
+export default {
+  dashboard: "首页",
+  logout: "退出登录",
+  document: "项目文档",
+  gitee: "项目地址",
+  lock: "锁定屏幕",
+  unlock: "解锁屏幕",
+  profile: "个人中心",
+  config: "配置中心",
+  tour: "项目引导",
+  refresh: "刷新",
+  close: "关闭",
+  closeLeft: "关闭左侧",
+  closeRight: "关闭右侧",
+  closeOther: "关闭其他",
+  closeAll: "关闭所有",
+  refreshCache: "刷新缓存",
+};

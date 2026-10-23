@@ -1,0 +1,18 @@
+export default {
+  dashboard: "Dashboard",
+  logout: "Logout",
+  document: "Document",
+  gitee: "Gitee",
+  lock: "Lock",
+  unlock: "Unlock",
+  profile: "User Profile",
+  config: "Config Center",
+  tour: "Project Tour",
+  refresh: "Refresh",
+  close: "Close",
+  closeLeft: "Close Left",
+  closeRight: "Close Right",
+  closeOther: "Close Other",
+  closeAll: "Close All",
+  refreshCache: "Refresh Cache",
+};
