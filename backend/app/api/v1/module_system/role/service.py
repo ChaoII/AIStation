@@ -149,6 +149,30 @@ class RoleService:
             role = await RoleCRUD(auth).get_by_id_crud(id=id)
             if not role:
                 raise CustomException(msg="删除失败，该角色不存在")
+            if role.id == 1:
+                raise CustomException(
+                    msg="内置管理员角色不允许删除", code=400, status_code=400
+                )
+            # 校验是否已被用户占用，避免删除后用户权限悬空
+            from sqlalchemy import func, select
+
+            from app.api.v1.module_system.user.model import UserRolesModel
+            from app.core.database import async_db_session
+
+            async with async_db_session() as db:
+                bound = (
+                    await db.scalar(
+                        select(func.count())
+                        .select_from(UserRolesModel)
+                        .where(UserRolesModel.role_id == id)
+                    )
+                ) or 0
+            if bound:
+                raise CustomException(
+                    msg=f"角色「{role.name}」已绑定 {bound} 个用户，请先解除占用后再删除",
+                    code=400,
+                    status_code=400,
+                )
         await RoleCRUD(auth).delete(ids=ids)
 
     @classmethod
@@ -191,6 +215,11 @@ class RoleService:
         返回:
         - None
         """
+        # 内置管理员角色(role_id=1)不允许停用，防止权限体系坍塌
+        if data.status == "1" and data.ids and 1 in data.ids:
+            raise CustomException(
+                msg="内置管理员角色不允许停用", code=400, status_code=400
+            )
         await RoleCRUD(auth).set_available_crud(ids=data.ids, status=data.status)
 
     @classmethod
