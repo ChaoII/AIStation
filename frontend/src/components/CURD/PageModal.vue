@@ -59,8 +59,8 @@
         </el-form>
 
         <template #footer>
-          <el-button v-if="!formDisable" type="primary" @click="handleSubmit">确 定</el-button>
-          <el-button @click="handleClose">{{ !formDisable ? "取 消" : "关闭" }}</el-button>
+          <el-button v-if="!formDisable" type="primary" @click="handleSubmit">{{ t("common.ok") }}</el-button>
+          <el-button @click="handleClose">{{ !formDisable ? t("common.cancel") : t("common.close") }}</el-button>
         </template>
       </el-drawer>
     </template>
@@ -127,8 +127,8 @@
         </el-form>
 
         <template #footer>
-          <el-button v-if="!formDisable" type="primary" @click="handleSubmit">确 定</el-button>
-          <el-button @click="handleClose">{{ !formDisable ? "取 消" : "关闭" }}</el-button>
+          <el-button v-if="!formDisable" type="primary" @click="handleSubmit">{{ t("common.ok") }}</el-button>
+          <el-button @click="handleClose">{{ !formDisable ? t("common.cancel") : t("common.close") }}</el-button>
         </template>
       </EnhancedDialog>
     </template>
@@ -143,7 +143,9 @@ import type { IComponentType, IModalConfig, IObject } from "./types";
 import InputTag from "@/components/InputTag/index.vue";
 import IconSelect from "@/components/IconSelect/index.vue";
 import EnhancedDialog from "./EnhancedDialog.vue";
+import { useI18n } from "vue-i18n";
 
+const { t } = useI18n();
 defineSlots<{ [key: string]: (_args: any) => any }>();
 // 定义接收的属性
 const props = defineProps<{ modalConfig: IModalConfig }>();
@@ -224,11 +226,7 @@ const handleSubmit = useThrottleFn(() => {
       return;
     }
     props.modalConfig.formAction(formData).then(() => {
-      if (props.modalConfig.component === "drawer") {
-        ElMessage.success(`${props.modalConfig.drawer?.title}成功`);
-      } else {
-        ElMessage.success(`${props.modalConfig.dialog?.title}成功`);
-      }
+      ElMessage.success(t("common.saveSuccess"));
       emit("submitClick");
       handleClose();
     });

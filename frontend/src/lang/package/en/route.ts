@@ -1,4 +1,15 @@
 export default {
   dashboard: "Dashboard",
   document: "Document",
+  "系统管理": "System Management",
+  "菜单管理": "Menu Management",
+  "部门管理": "Department Management",
+  "岗位管理": "Position Management",
+  "角色管理": "Role Management",
+  "用户管理": "User Management",
+  "日志管理": "Log Management",
+  "公告管理": "Notice Management",
+  "参数管理": "Parameter Management",
+  "字典管理": "Dictionary Management",
+  "租户管理": "Tenant Management",
 };

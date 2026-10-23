@@ -14,7 +14,7 @@
       <div class="curd-drawer-header">
         <span class="curd-drawer-header__title">{{ title }}</span>
         <div class="curd-drawer-header__actions">
-          <el-tooltip content="关闭" placement="top">
+          <el-tooltip :content="t('common.close')" placement="top">
             <el-button text circle @click="visible = false">
               <el-icon><Close /></el-icon>
             </el-button>
@@ -33,8 +33,11 @@
 import { Close } from "@element-plus/icons-vue";
 import type { DrawerProps } from "element-plus";
 import { computed, useAttrs } from "vue";
+import { useI18n } from "vue-i18n";
 
 defineOptions({ inheritAttrs: false });
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
