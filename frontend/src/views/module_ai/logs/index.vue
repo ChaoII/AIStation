@@ -99,8 +99,27 @@
                 </el-table-column>
                 <el-table-column label="结果" min-width="90" align="center">
                   <template #default="{ row }">
-                    <el-tag :type="row.result === 'success' ? 'success' : 'danger'" size="small">
-                      {{ row.result === "success" ? "成功" : "失败" }}
+                    <el-tag
+                      :type="
+                        row.result === 'success'
+                          ? 'success'
+                          : row.result === 'cancelled'
+                            ? 'info'
+                            : row.result === 'pending'
+                              ? 'warning'
+                              : 'danger'
+                      "
+                      size="small"
+                    >
+                      {{
+                        row.result === "success"
+                          ? "成功"
+                          : row.result === "cancelled"
+                            ? "已取消"
+                            : row.result === "pending"
+                              ? "待审批"
+                              : "失败"
+                      }}
                     </el-tag>
                   </template>
                 </el-table-column>
@@ -127,8 +146,27 @@
           {{ detail.cost != null ? Number(detail.cost).toFixed(4) : "—" }}
         </el-descriptions-item>
         <el-descriptions-item label="结果">
-          <el-tag :type="detail.result === 'success' ? 'success' : 'danger'" size="small">
-            {{ detail.result === "success" ? "成功" : "失败" }}
+          <el-tag
+            :type="
+              detail.result === 'success'
+                ? 'success'
+                : detail.result === 'cancelled'
+                  ? 'info'
+                  : detail.result === 'pending'
+                    ? 'warning'
+                    : 'danger'
+            "
+            size="small"
+          >
+            {{
+              detail.result === "success"
+                ? "成功"
+                : detail.result === "cancelled"
+                  ? "已取消"
+                  : detail.result === "pending"
+                    ? "待审批"
+                    : "失败"
+            }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="应用ID">{{ detail.app_id ?? "—" }}</el-descriptions-item>

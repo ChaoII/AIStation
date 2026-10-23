@@ -540,8 +540,11 @@ class AiWorkflowService:
                 runtime_model_name(workflow_id),
                 "workflow",
                 int((time.perf_counter() - t0) * 1000),
-                # 调用日志只有 success/error 两类语义：取消与失败都算 error，HITL 挂起算 pending
-                "success" if status == "success" else ("pending" if status == "pending" else "error"),
+                # 调用日志结果区分 success / error / cancelled / pending
+                # 取消(cancelled)不再误计入 error，避免错误率虚高；HITL 挂起算 pending
+                "success"
+                if status == "success"
+                else ("pending" if status == "pending" else "cancelled" if status == "cancelled" else "error"),
                 state["error"],
                 app_id=workflow_id,
                 user_id=uid,
