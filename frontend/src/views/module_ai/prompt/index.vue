@@ -450,7 +450,7 @@ const contentConfig = reactive<IContentConfig>({
         .filter((n: number) => !Number.isNaN(n))
     );
   },
-  deleteConfirm: { title: "警告", message: "确认删除所选提示词?", type: "warning" },
+  deleteConfirm: { type: "warning" },
 });
 
 const dialogVisible = ref(false);

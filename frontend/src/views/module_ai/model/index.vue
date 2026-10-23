@@ -430,7 +430,7 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
         .filter((n: number) => !Number.isNaN(n))
     );
   },
-  deleteConfirm: { title: "警告", message: "确认删除所选模型配置?", type: "warning" },
+  deleteConfirm: { type: "warning" },
 });
 
 const dialogVisible = reactive({

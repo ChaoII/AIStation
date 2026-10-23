@@ -510,7 +510,7 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
         .filter((n: number) => !Number.isNaN(n))
     );
   },
-  deleteConfirm: { title: "警告", message: "确认删除该布控计划?", type: "warning" },
+  deleteConfirm: { type: "warning" },
 });
 
 function handleRowDelete(id: number) {

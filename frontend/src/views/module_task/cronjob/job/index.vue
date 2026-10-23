@@ -718,7 +718,12 @@ async function handleRefreshConsole() {
   }
 }
 
-function handleClearConsole() {
+async function handleClearConsole() {
+  await ElMessageBox.confirm(
+    "确定要清空调度控制台输出吗？清空后不可恢复。",
+    "清空确认",
+    { confirmButtonText: "清空", cancelButtonText: "取消", type: "warning" }
+  );
   TerminalApi.clear("scheduler-console");
 }
 
