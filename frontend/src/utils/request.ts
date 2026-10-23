@@ -9,6 +9,19 @@ import { ResultEnum } from "@/enums/api/result.enum";
 import { Auth } from "@/utils/auth";
 import { redirectToLogin } from "@/utils/authRedirect";
 
+/** 成功提示去重：相同文案在短窗口内只弹一次，避免一次操作触发多个写接口时弹出一模一样的多次「保存成功」 */
+const _S_SUCCESS_DEDUP_MS = 1200;
+const _successToastTimes = new Map<string, number>();
+
+function _showSuccessOnce(msg: string) {
+  if (!msg) return;
+  const now = Date.now();
+  const last = _successToastTimes.get(msg) ?? 0;
+  if (now - last < _S_SUCCESS_DEDUP_MS) return;
+  _successToastTimes.set(msg, now);
+  ElMessage.success(msg);
+}
+
 /**
  * 创建 HTTP 请求实例
  */
@@ -78,7 +91,7 @@ httpRequest.interceptors.response.use(
       !response.config.url?.includes("logout") &&
       !silent
     ) {
-      ElMessage.success(data.msg);
+      _showSuccessOnce(data.msg);
     }
 
     return response;

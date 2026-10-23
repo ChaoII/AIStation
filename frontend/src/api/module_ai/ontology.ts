@@ -10,8 +10,13 @@ export function getOntObjects(domain_code?: string) {
     params: domain_code === undefined ? {} : { domain_code },
   });
 }
-export function saveOntObject(data: any) {
-  return request({ url: `${API_PATH}/object/save`, method: "post", data });
+export function saveOntObject(data: any, opts?: { silent?: boolean }) {
+  return request({
+    url: `${API_PATH}/object/save`,
+    method: "post",
+    data,
+    headers: opts?.silent ? { _silent: "true" } : undefined,
+  });
 }
 export function getOntObjectFull(code: string) {
   return request({ url: `${API_PATH}/object/${code}/full`, method: "get" });

@@ -1695,20 +1695,23 @@ async function saveTable() {
   if (!curTable.value) return;
   savingTable.value = true;
   try {
-    await saveQueryAsset({ table_name: curTable.value, ...tmeta.value });
+    await saveQueryAsset({ table_name: curTable.value, ...tmeta.value }, { silent: true });
     // 收敛（Object Type 单一真相源）：勾选「纳入本体对象」时，同步在本体生成 ObjectType（按 code 幂等 upsert）
     if (tmeta.value.object_enabled) {
       try {
-        await saveOntObject({
-          code: curTable.value,
-          name: tmeta.value.alias || curTable.value,
-          key_prop: tmeta.value.object_key_col || "id",
-          name_prop: tmeta.value.object_name_col || "name",
-          icon: tmeta.value.object_icon || "el-icon-Box",
-          backing_table: curTable.value,
-          datasource_id: curDs.value?.id,
-          domain_code: tmeta.value.domain || "",
-        });
+        await saveOntObject(
+          {
+            code: curTable.value,
+            name: tmeta.value.alias || curTable.value,
+            key_prop: tmeta.value.object_key_col || "id",
+            name_prop: tmeta.value.object_name_col || "name",
+            icon: tmeta.value.object_icon || "el-icon-Box",
+            backing_table: curTable.value,
+            datasource_id: curDs.value?.id,
+            domain_code: tmeta.value.domain || "",
+          },
+          { silent: true }
+        );
       } catch {
         /* 本体对象创建失败不阻断表信息保存 */
       }

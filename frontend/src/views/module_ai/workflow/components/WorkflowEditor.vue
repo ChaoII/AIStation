@@ -3014,7 +3014,6 @@ async function handleSave() {
       });
       workflowId.value = res.data?.data?.id;
     }
-    ElMessage.success("保存成功");
     emit("refresh");
     dialogVisible.value = false;
   } catch (e: any) {
