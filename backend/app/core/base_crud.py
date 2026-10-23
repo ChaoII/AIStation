@@ -12,6 +12,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.core.base_model import MappedBase
 from app.core.exceptions import CustomException
+from app.core.logger import log
 from app.core.permission import Permission
 
 if TYPE_CHECKING:
@@ -67,7 +68,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             obj = result.scalars().first()
             return obj
         except Exception as e:
-            raise CustomException(msg=f"获取查询失败: {e!s}")
+            log.error(f"获取查询失败: {e!s}")
+            raise CustomException(msg="获取查询失败")
 
     async def list(
         self,
@@ -100,7 +102,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             result: Result = await self.auth.db.execute(sql)
             return result.scalars().all()
         except Exception as e:
-            raise CustomException(msg=f"列表查询失败: {e!s}")
+            log.error(f"列表查询失败: {e!s}")
+            raise CustomException(msg="列表查询失败")
 
     async def tree_list(
         self,
@@ -148,7 +151,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             # 子节点权限剪枝：children 经 selectinload 加载，本身未参与权限过滤(F5)
             return await self.__prune_tree_by_permission(nodes, children_attr)
         except Exception as e:
-            raise CustomException(msg=f"树形列表查询失败: {e!s}")
+            log.error(f"树形列表查询失败: {e!s}")
+            raise CustomException(msg="树形列表查询失败")
 
     async def page(
         self,
@@ -213,7 +217,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 "items": [out_schema.model_validate(obj).model_dump() for obj in objs],
             }
         except Exception as e:
-            raise CustomException(msg=f"分页查询失败: {e!s}")
+            log.error(f"分页查询失败: {e!s}")
+            raise CustomException(msg="分页查询失败")
 
     async def create(self, data: CreateSchemaType | dict) -> ModelType:
         """
@@ -244,7 +249,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             await self.auth.db.refresh(obj)
             return obj
         except Exception as e:
-            raise CustomException(msg=f"创建失败: {e!s}")
+            log.error(f"创建失败: {e!s}")
+            raise CustomException(msg="创建失败")
 
     async def update(self, id: int, data: UpdateSchemaType | dict) -> ModelType:
         """
@@ -293,7 +299,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
             return obj
         except Exception as e:
-            raise CustomException(msg=f"更新失败: {e!s}")
+            log.error(f"更新失败: {e!s}")
+            raise CustomException(msg="更新失败")
 
     async def delete(self, ids: builtins.list[int]) -> None:
         """
@@ -343,7 +350,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 await self.auth.db.execute(sql)
                 await self.auth.db.flush()
         except Exception as e:
-            raise CustomException(msg=f"删除失败: {e!s}")
+            log.error(f"删除失败: {e!s}")
+            raise CustomException(msg="删除失败")
 
     async def clear(self) -> None:
         """
@@ -381,7 +389,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 await self.auth.db.execute(sql)
                 await self.auth.db.flush()
         except Exception as e:
-            raise CustomException(msg=f"清空失败: {e!s}")
+            log.error(f"清空失败: {e!s}")
+            raise CustomException(msg="清空失败")
 
     async def set(self, ids: builtins.list[int], **kwargs) -> None:
         """
@@ -416,7 +425,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         except CustomException:
             raise
         except Exception as e:
-            raise CustomException(msg=f"批量更新失败: {e!s}")
+            log.error(f"批量更新失败: {e!s}")
+            raise CustomException(msg="批量更新失败")
 
     async def restore(self, ids: builtins.list[int]) -> None:
         """
@@ -461,7 +471,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         except CustomException:
             raise
         except Exception as e:
-            raise CustomException(msg=f"恢复失败: {e!s}")
+            log.error(f"恢复失败: {e!s}")
+            raise CustomException(msg="恢复失败")
 
     async def __filter_permissions(self, sql: Select) -> Select:
         """
