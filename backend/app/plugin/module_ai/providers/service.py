@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
-from app.plugin.module_ai.models.service import _mask, build_headers
+from app.plugin.module_ai.models.service import _mask, _mask_headers, build_headers
 
 from .model import AiProviderModel
 
@@ -15,7 +15,7 @@ def _to_dict(p: AiProviderModel) -> dict:
         "protocol": p.protocol,
         "base_url": p.base_url,
         "enabled": p.enabled,
-        "extra_headers": p.extra_headers,
+        "extra_headers": _mask_headers(p.extra_headers),
         "description": p.description,
         "api_key_masked": _mask(p.api_key),
         "created_time": p.created_time,
@@ -162,7 +162,7 @@ class AiProviderService:
                 "base_url": p.base_url or "",
                 "api_key": p.api_key or "",
                 "model": mid,
-                "extra_headers": p.extra_headers,
+                "extra_headers": _mask_headers(p.extra_headers),
             }
             for mid in remote
         ]

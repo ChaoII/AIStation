@@ -1,40 +1,31 @@
 <!-- AI 调用日志 -->
 <template>
   <div class="app-container ai-logs-page">
-    <!-- 统计卡片 -->
-    <el-row :gutter="12" class="log-cards">
-      <el-col :xs="12" :md="6">
-        <el-card shadow="never" class="log-card">
-          <el-statistic title="总调用" :value="stats.total" />
-        </el-card>
-      </el-col>
-      <el-col :xs="12" :md="6">
-        <el-card shadow="never" class="log-card">
-          <el-statistic
-            title="成功率"
-            :value="stats.success_rate * 100"
-            :precision="1"
-            suffix="%"
-          />
-        </el-card>
-      </el-col>
-      <el-col :xs="12" :md="6">
-        <el-card shadow="never" class="log-card">
-          <el-statistic title="平均耗时" :value="stats.avg_latency_ms" suffix="ms" />
-        </el-card>
-      </el-col>
-      <el-col :xs="12" :md="6">
-        <el-card shadow="never" class="log-card">
-          <el-statistic title="失败数" :value="stats.error" />
-        </el-card>
-      </el-col>
-    </el-row>
+    <el-card shadow="never" class="ai-logs-shell">
+      <div class="ai-logs-shell__body">
+        <!-- 统计 -->
+        <div class="log-stats">
+          <div class="log-stat">
+            <div class="log-stat__title">总调用</div>
+            <div class="log-stat__value">{{ stats.total }}</div>
+          </div>
+          <div class="log-stat">
+            <div class="log-stat__title">成功率</div>
+            <div class="log-stat__value">{{ (stats.success_rate * 100).toFixed(1) }}%</div>
+          </div>
+          <div class="log-stat">
+            <div class="log-stat__title">平均耗时</div>
+            <div class="log-stat__value">{{ stats.avg_latency_ms }} ms</div>
+          </div>
+          <div class="log-stat">
+            <div class="log-stat__title">失败数</div>
+            <div class="log-stat__value">{{ stats.error }}</div>
+          </div>
+        </div>
 
-    <!-- 图表：刷新统计/导出 归入统计区头部（不再单独占一行游离按钮条） -->
-    <el-row :gutter="12" class="log-charts">
-      <el-col v-if="stats.trend?.length" :md="14">
-        <el-card shadow="never" class="log-chart-card">
-          <template #header>
+        <!-- 图表 -->
+        <div class="log-charts">
+          <div v-if="stats.trend?.length" class="log-chart-block">
             <div class="log-chart-head">
               <span>调用趋势（近 {{ statsDays }} 天）</span>
               <div class="log-chart-head__ops">
@@ -46,72 +37,71 @@
                 </el-button>
               </div>
             </div>
-          </template>
-          <div ref="trendRef" class="log-chart" />
-        </el-card>
-      </el-col>
-      <el-col v-if="stats.by_model?.length" :md="10">
-        <el-card shadow="never" class="log-chart-card">
-          <template #header>模型调用分布</template>
-          <div ref="modelRef" class="log-chart" />
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <PageSearch
-      ref="searchRef"
-      :search-config="searchConfig"
-      @query-click="handleQueryClick"
-      @reset-click="handleResetClick"
-    />
-
-    <PageContent ref="contentRef" :content-config="contentConfig">
-      <template #table="{ data, loading, tableRef, pagination }">
-        <div class="data-table__content">
-          <el-table
-            :ref="tableRef as any"
-            v-loading="loading"
-            :data="data"
-            height="100%"
-            border
-            stripe
-            @row-click="openDetail"
-          >
-            <template #empty>
-              <el-empty :image-size="80" description="暂无调用日志" />
-            </template>
-            <el-table-column fixed label="序号" min-width="60">
-              <template #default="scope">
-                {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="created_time"
-              label="时间"
-              min-width="180"
-              show-overflow-tooltip
-            />
-            <el-table-column prop="model_name" label="模型" min-width="180" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.model_name || "—" }}</template>
-            </el-table-column>
-            <el-table-column prop="usage" label="用途" min-width="100" align="center" />
-            <el-table-column prop="latency_ms" label="耗时" min-width="100" align="center">
-              <template #default="{ row }">{{ row.latency_ms }} ms</template>
-            </el-table-column>
-            <el-table-column label="结果" min-width="90" align="center">
-              <template #default="{ row }">
-                <el-tag :type="row.result === 'success' ? 'success' : 'danger'" size="small">
-                  {{ row.result === "success" ? "成功" : "失败" }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="error" label="错误" min-width="240" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.error || "—" }}</template>
-            </el-table-column>
-          </el-table>
+            <div ref="trendRef" class="log-chart" />
+          </div>
+          <div v-if="stats.by_model?.length" class="log-chart-block log-chart-block--model">
+            <div class="log-chart-head"><span>模型调用分布</span></div>
+            <div ref="modelRef" class="log-chart" />
+          </div>
         </div>
-      </template>
-    </PageContent>
+
+        <!-- 搜索 + 表格 -->
+        <PageSearch
+          ref="searchRef"
+          :search-config="searchConfig"
+          @query-click="handleQueryClick"
+          @reset-click="handleResetClick"
+        />
+
+        <PageContent ref="contentRef" :content-config="contentConfig">
+          <template #table="{ data, loading, tableRef, pagination }">
+            <div class="data-table__content">
+              <el-table
+                :ref="tableRef as any"
+                v-loading="loading"
+                :data="data"
+                height="100%"
+                border
+                stripe
+                @row-click="openDetail"
+              >
+                <template #empty>
+                  <el-empty :image-size="80" description="暂无调用日志" />
+                </template>
+                <el-table-column fixed label="序号" min-width="60">
+                  <template #default="scope">
+                    {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  prop="created_time"
+                  label="时间"
+                  min-width="180"
+                  show-overflow-tooltip
+                />
+                <el-table-column prop="model_name" label="模型" min-width="180" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.model_name || "—" }}</template>
+                </el-table-column>
+                <el-table-column prop="usage" label="用途" min-width="100" align="center" />
+                <el-table-column prop="latency_ms" label="耗时" min-width="100" align="center">
+                  <template #default="{ row }">{{ row.latency_ms }} ms</template>
+                </el-table-column>
+                <el-table-column label="结果" min-width="90" align="center">
+                  <template #default="{ row }">
+                    <el-tag :type="row.result === 'success' ? 'success' : 'danger'" size="small">
+                      {{ row.result === "success" ? "成功" : "失败" }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="error" label="错误" min-width="240" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.error || "—" }}</template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </template>
+        </PageContent>
+      </div>
+    </el-card>
 
     <!-- 日志详情抽屉 -->
     <el-drawer v-model="detailVisible" title="调用详情" size="480px" append-to-body>
@@ -352,44 +342,116 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<style scoped>
-.ai-logs-page {
-  /* 继承 .app-container 的 16px padding（此前 padding:0 让内容紧贴侧边栏） */
+<style lang="scss">
+/* 非 scoped：全局 .app-container 为 flex column + height:100% + overflow:auto，
+   用 scoped 覆盖在 keep-alive/HMR 下曾出现 hash 不同步（项目已踩过），故用非 scoped + 唯一类名。 */
+.app-container.ai-logs-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+/* 白色面板：铺满剩余高度，蓝灰色边框（market-shell 同款） */
+.ai-logs-page .ai-logs-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--el-border-radius-base);
+}
+
+.ai-logs-page .ai-logs-shell > .el-card__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 16px;
 }
-/* 覆盖全局 `.app-container > .el-row { flex:1 }`（那是给单行栅格页的）：
-   统计行/图表行按内容高度排列，表格区仍由 PageContent 撑满剩余 */
-.ai-logs-page > .el-row {
+
+.ai-logs-page .ai-logs-shell__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 搜索/表格卡片融入白色面板：去掉内层卡片边框，做到一整块白底 */
+.ai-logs-page .search-container,
+.ai-logs-page .data-table {
+  border: none;
+  box-shadow: none;
+}
+
+/* 统计：一排浅色块 */
+.ai-logs-page .log-stats {
   flex: 0 0 auto;
-}
-.log-cards {
-  margin-bottom: 16px;
-}
-.log-card {
+  display: flex;
+  gap: 12px;
   margin-bottom: 12px;
 }
-.log-charts {
-  margin-bottom: 16px;
+.ai-logs-page .log-stat {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--el-fill-color-light);
+  border-radius: var(--el-border-radius-base);
+  padding: 16px;
 }
-.log-chart-card {
+.ai-logs-page .log-stat__title {
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
+}
+.ai-logs-page .log-stat__value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--el-text-color-primary);
+}
+
+/* 图表：两个带边框的块 */
+.ai-logs-page .log-charts {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 12px;
   margin-bottom: 12px;
 }
-.log-chart {
-  height: 220px;
+.ai-logs-page .log-chart-block {
+  flex: 1.6 1 0;
+  min-width: 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
+  padding: 12px;
 }
-/* 图表卡头部：标题 + 统计操作（同一区域，符合「统计区」场景） */
-.log-chart-head {
+.ai-logs-page .log-chart-block--model {
+  flex: 1 1 0;
+}
+.ai-logs-page .log-chart-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
 }
-.log-chart-head__ops {
+.ai-logs-page .log-chart-head__ops {
   display: flex;
   gap: 8px;
   align-items: center;
 }
-.log-error {
+.ai-logs-page .log-chart {
+  height: 220px;
+}
+
+.ai-logs-page .log-error {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;

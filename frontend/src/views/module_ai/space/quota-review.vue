@@ -43,6 +43,7 @@
           <template #default="{ row }">
             <template v-if="row.status === 'pending'">
               <el-button
+                v-hasPerm="'module_ai:space:quota_review'"
                 icon="Check"
                 size="small"
                 link
@@ -52,6 +53,7 @@
                 通过
               </el-button>
               <el-button
+                v-hasPerm="'module_ai:space:quota_review'"
                 icon="Close"
                 size="small"
                 link

@@ -1163,6 +1163,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
+import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Download, Plus, Search, CopyDocument, Setting } from "@element-plus/icons-vue";
 import { useWindowSize } from "@vueuse/core";
@@ -1265,6 +1266,7 @@ interface McpRow {
 }
 
 const activeTab = ref("apps");
+const route = useRoute();
 
 // ============ 应用管理 ============
 const appLoading = ref(false);
@@ -2249,6 +2251,11 @@ onMounted(() => {
   loadApps();
   loadStats();
   loadAppOptions();
+  // 支持从通知点击直达「调用审批」页签（?tab=approvals）
+  if (route.query.tab === "approvals") {
+    activeTab.value = "approvals";
+    onTabChange("approvals");
+  }
 });
 </script>
 

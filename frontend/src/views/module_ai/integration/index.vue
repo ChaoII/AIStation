@@ -2542,13 +2542,16 @@ async function handleInferRelations() {
 }
 </script>
 
-<style scoped lang="scss">
-.ai-integration-page {
+<style lang="scss">
+.app-container.ai-integration-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   padding: 16px;
 }
+</style>
+
+<style scoped lang="scss">
 .ig-fill,
 .ig-card {
   height: 100%;

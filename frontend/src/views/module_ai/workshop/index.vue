@@ -254,7 +254,7 @@
               v-model:current-page="runPage"
               :page-size="runPageSize"
               :total="filteredRunRows.length"
-              layout="total, prev, pager, next"
+              layout="total, sizes, prev, pager, next"
               background
               small
             />
@@ -717,13 +717,16 @@ onMounted(() => {
 });
 </script>
 
-<style lang="scss" scoped>
-.ai-workshop-page {
+<style lang="scss">
+.app-container.ai-workshop-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
+</style>
+
+<style lang="scss" scoped>
 .ai-workshop-page .ws-shell {
   display: flex;
   flex: 1 1 auto;

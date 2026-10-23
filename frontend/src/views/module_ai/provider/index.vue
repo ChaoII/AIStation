@@ -17,18 +17,31 @@
           @add="openCreate"
           @delete="onToolbar('delete')"
         />
-        <span class="batch-ac">
-          <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(true)">
-            批量启用
-          </el-button>
-          <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(false)">
-            批量停用
-          </el-button>
-        </span>
-        <el-tag size="small" type="info" effect="plain" class="summary-tag">
-          共 {{ summary.total }} 个供应商 · 启用 {{ summary.enabled }} · 停用 {{ summary.disabled }}
-        </el-tag>
         <div class="data-table__toolbar--right">
+          <span class="batch-ac">
+            <el-badge
+              :value="providerSelIds.length"
+              :hidden="!providerSelIds.length"
+              class="batch-badge"
+            >
+              <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(true)">
+                批量启用
+              </el-button>
+            </el-badge>
+            <el-badge
+              :value="providerSelIds.length"
+              :hidden="!providerSelIds.length"
+              class="batch-badge"
+            >
+              <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(false)">
+                批量停用
+              </el-button>
+            </el-badge>
+          </span>
+          <el-tag size="small" type="info" effect="plain" class="summary-tag">
+            共 <b>{{ summary.total }}</b> 个供应商 · 启用 <b>{{ summary.enabled }}</b> · 停用
+            <b>{{ summary.disabled }}</b>
+          </el-tag>
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
       </template>
@@ -70,12 +83,12 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="300" fixed="right">
+            <el-table-column label="操作" min-width="200" fixed="right">
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="['module_ai:provider:query']"
                   icon="View"
-                  text
+                  link
                   type="primary"
                   @click="openDetail(row)"
                 >
@@ -84,41 +97,45 @@
                 <el-button
                   v-hasPerm="['module_ai:provider:query']"
                   icon="Connection"
-                  text
+                  link
                   type="primary"
                   :loading="testingId === row.id"
                   @click="onTest(row)"
                 >
-                  测试连通
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:provider:query']"
-                  icon="Download"
-                  text
-                  type="primary"
-                  :loading="pullingId === row.id"
-                  @click="onPullModels(row)"
-                >
-                  拉取模型
+                  测试
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:provider:update']"
                   icon="edit"
-                  text
+                  link
                   type="primary"
                   @click="openEdit(row)"
                 >
                   编辑
                 </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:provider:delete']"
-                  icon="delete"
-                  text
-                  type="danger"
-                  @click="onDelete(row)"
-                >
-                  删除
-                </el-button>
+                <el-dropdown trigger="click" @command="(cmd: string) => onMoreCmd(row, cmd)">
+                  <el-button link type="primary" icon="MoreFilled" @click.stop />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-if="perm('module_ai:provider:query')"
+                        command="pull"
+                        icon="Download"
+                      >
+                        拉取模型
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="perm('module_ai:provider:delete')"
+                        command="delete"
+                        icon="delete"
+                        divided
+                        style="color: var(--el-color-danger)"
+                      >
+                        删除
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
             <template #empty>
@@ -286,6 +303,7 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
+import { usePerm } from "@/composables/usePerm";
 
 defineOptions({ name: "AiProviderManage" });
 
@@ -302,6 +320,7 @@ interface ProviderRow {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const perm = usePerm();
 
 const loading = ref(false);
 const rows = ref<ProviderRow[]>([]);
@@ -604,6 +623,14 @@ async function onDelete(row: any) {
     ElMessage.success("删除成功");
   } catch (e: any) {
     ElMessage.error(e?.msg || "删除失败");
+  }
+}
+
+function onMoreCmd(row: any, cmd: string) {
+  if (cmd === "pull") {
+    onPullModels(row);
+  } else if (cmd === "delete") {
+    onDelete(row);
   }
 }
 

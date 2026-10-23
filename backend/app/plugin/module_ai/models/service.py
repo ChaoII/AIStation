@@ -1,4 +1,7 @@
 """大模型配置服务：CRUD、运行时取用、连接测试。"""
+import io
+import wave
+
 from sqlalchemy import func, or_, select, update
 
 from app.config.setting import settings
@@ -12,6 +15,27 @@ def _mask(key: str | None) -> str:
     if not key:
         return ""
     return f"{key[:4]}****{key[-4:]}" if len(key) > 8 else "****"
+
+
+HEADER_MASK = "****"
+
+
+def _mask_headers(headers: dict | None) -> dict | None:
+    """请求头脱敏：保留键名，值统一替换为掩码（防 extra_headers 中的密钥明文回显）。"""
+    if not headers:
+        return headers
+    return {str(k): HEADER_MASK for k in headers}
+
+
+def _silence_wav(duration_ms: int = 200, rate: int = 16000) -> bytes:
+    """生成一段极短静音 WAV（用于 ASR 连通性探测，避免依赖外部音频文件）。"""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"\x00\x00" * int(rate * duration_ms / 1000))
+    return buf.getvalue()
 
 
 def build_headers(base_url: str | None, extra_headers: dict | None = None, session_id: str = "aistation") -> dict:
@@ -40,7 +64,7 @@ def _to_dict(m: AiModelModel) -> dict:
         "max_tokens": m.max_tokens,
         "enabled": m.enabled,
         "is_default": m.is_default,
-        "extra_headers": m.extra_headers,
+        "extra_headers": _mask_headers(m.extra_headers),
         "description": m.description,
         "api_key_masked": _mask(m.api_key),
         "created_time": m.created_time,
@@ -293,45 +317,121 @@ class AiModelService:
 
     @classmethod
     async def test_connection(cls, data) -> dict:
-        """用已保存配置或临时参数调用一次 LLM 验证连通性。"""
-        cfg: dict | None = None
-        extra_headers: dict | None = None
+        """按模型用途(usage)分流做连通性测试。
+
+        - chat/assistant/query → 聊天补全
+        - embedding → /embeddings（返回向量维度）
+        - rerank → /rerank
+        - tts → /audio/speech；asr → /audio/transcriptions
+        """
+        cfg, extra_headers, usage = await cls._resolve_test_cfg(data)
+        if not cfg or not cfg.get("base_url") or not cfg.get("model"):
+            raise CustomException(msg="base_url 与 model 不能为空")
+
+        base_url = cfg["base_url"]
+        api_key = cfg["api_key"] or "sk-none"
+        model = cfg["model"]
+        usage = (usage or "chat").strip().lower()
+
+        # 先构造 openai 客户端（chat/embedding/tts/asr 共用；rerank 用 httpx）
+        from openai import AsyncOpenAI
+
+        def _client():
+            return AsyncOpenAI(
+                base_url=base_url,
+                api_key=api_key,
+                default_headers=build_headers(base_url, extra_headers),
+            )
+
+        try:
+            if usage == "embedding":
+                resp = await _client().embeddings.create(model=model, input=["ping"])
+                dim = len(resp.data[0].embedding)
+                return {"ok": True, "reply": f"{dim} 维"}
+            if usage == "rerank":
+                import httpx
+
+                base = str(base_url).rstrip("/")
+                headers = build_headers(base, extra_headers, "aistation-test") or {}
+                async with httpx.AsyncClient(timeout=30) as hc:
+                    resp = await hc.post(
+                        f"{base}/rerank",
+                        headers={"Authorization": f"Bearer {api_key}", **headers},
+                        json={
+                            "model": model,
+                            "query": "ping",
+                            "documents": ["ping"],
+                            "top_n": 1,
+                        },
+                    )
+                return {"ok": True, "reply": f"重排接口连通（HTTP {resp.status_code}）"}
+            if usage == "tts":
+                import httpx
+
+                base = str(base_url).rstrip("/")
+                headers = build_headers(base, extra_headers, "aistation-test") or {}
+                async with httpx.AsyncClient(timeout=30) as hc:
+                    resp = await hc.post(
+                        f"{base}/audio/speech",
+                        headers={"Authorization": f"Bearer {api_key}", **headers},
+                        json={"model": model, "input": "ping", "voice": "alloy"},
+                    )
+                return {"ok": True, "reply": f"语音合成接口连通（HTTP {resp.status_code}）"}
+            if usage == "asr":
+                import httpx
+
+                base = str(base_url).rstrip("/")
+                headers = build_headers(base, extra_headers, "aistation-test") or {}
+                wav = _silence_wav()
+                async with httpx.AsyncClient(timeout=30) as hc:
+                    resp = await hc.post(
+                        f"{base}/audio/transcriptions",
+                        headers={"Authorization": f"Bearer {api_key}", **headers},
+                        files={"file": ("ping.wav", io.BytesIO(wav), "audio/wav")},
+                        data={"model": model},
+                    )
+                return {"ok": True, "reply": f"语音识别接口连通（HTTP {resp.status_code}）"}
+            # chat / assistant / query / 其它 → 聊天补全
+            resp = await _client().chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "ping，请只回复 pong"}],
+                max_tokens=8,
+            )
+            return {"ok": True, "reply": (resp.choices[0].message.content or "").strip()}
+        except CustomException:
+            raise
+        except Exception as e:
+            raise CustomException(msg=f"连接失败: {e}")
+
+    @classmethod
+    async def _resolve_test_cfg(cls, data) -> tuple[dict | None, dict | None, str | None]:
+        """解析测试配置与用途。
+
+        带 ``id`` 时以已保存配置为底（允许表单新值覆盖，便于编辑态未改 Key 时测新地址），
+        usage 缺省取已保存配置的用途；不带 ``id`` 时取表单临时参数，usage 缺省取传入值。
+        返回 ``(cfg, extra_headers, usage)``。
+        """
+        usage = getattr(data, "usage", None)
         if data.id:
             async with async_db_session() as db:
                 m = await db.get(AiModelModel, data.id)
                 if not m:
                     raise CustomException(msg="配置不存在")
-                # 以已保存配置为底，允许用表单中已填的新值覆盖（便于编辑态未改 Key 时测试新地址）
-                cfg = {
-                    "base_url": data.base_url or m.base_url,
-                    "api_key": data.api_key or m.api_key,
-                    "model": data.model or m.model,
-                }
-                extra_headers = m.extra_headers
-        else:
-            cfg = {
-                "base_url": data.base_url,
-                "api_key": data.api_key,
-                "model": data.model,
-            }
-            extra_headers = getattr(data, "extra_headers", None)
-
-        if not cfg or not cfg.get("base_url") or not cfg.get("model"):
-            raise CustomException(msg="base_url 与 model 不能为空")
-
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(
-            base_url=cfg["base_url"],
-            api_key=cfg["api_key"] or "sk-none",
-            default_headers=build_headers(cfg["base_url"], extra_headers),
+                return (
+                    {
+                        "base_url": getattr(data, "base_url", None) or m.base_url,
+                        "api_key": getattr(data, "api_key", None) or m.api_key,
+                        "model": getattr(data, "model", None) or m.model,
+                    },
+                    m.extra_headers,
+                    usage or m.usage,
+                )
+        return (
+            {
+                "base_url": getattr(data, "base_url", None),
+                "api_key": getattr(data, "api_key", None),
+                "model": getattr(data, "model", None),
+            },
+            getattr(data, "extra_headers", None),
+            usage,
         )
-        try:
-            resp = await client.chat.completions.create(
-                model=cfg["model"],
-                messages=[{"role": "user", "content": "ping，请只回复 pong"}],
-                max_tokens=8,
-            )
-            return {"ok": True, "reply": (resp.choices[0].message.content or "").strip()}
-        except Exception as e:
-            raise CustomException(msg=f"连接失败: {e}")

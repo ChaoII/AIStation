@@ -177,7 +177,7 @@
             v-model:current-page="page"
             :page-size="pageSize"
             :total="filteredItems.length"
-            layout="total, prev, pager, next"
+            layout="total, sizes, prev, pager, next"
             background
           />
         </div>

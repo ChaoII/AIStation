@@ -28,6 +28,10 @@ class AiModelUpdateSchema(AiModelCreateSchema):
 class AiModelTestSchema(BaseModel):
     id: int | None = Field(default=None, description="已保存配置ID（优先）")
     name: str | None = Field(default=None, description="配置名称（未传 id 时可用）")
+    usage: str | None = Field(
+        default=None,
+        description="用途（chat/assistant/query/embedding/rerank/tts/asr；带 id 时缺省取已保存配置的用途）",
+    )
     base_url: str | None = Field(default=None, description="临时测试用基址")
     api_key: str | None = Field(default=None, description="临时测试用 Key")
     model: str | None = Field(default=None, description="临时测试用模型名")

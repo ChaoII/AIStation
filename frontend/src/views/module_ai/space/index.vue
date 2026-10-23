@@ -1354,13 +1354,16 @@ async function submitQuotaRequest() {
 }
 </script>
 
-<style lang="scss" scoped>
-.ai-space-page {
+<style lang="scss">
+.app-container.ai-space-page {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
+</style>
 
+<style lang="scss" scoped>
 .space-layout {
   display: flex;
   flex: 1;
@@ -1369,8 +1372,7 @@ async function submitQuotaRequest() {
 }
 
 .space-side {
-  flex-shrink: 0;
-  width: 240px;
+  flex: 0 0 240px;
   overflow: auto;
 }
 

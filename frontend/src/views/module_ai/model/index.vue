@@ -16,19 +16,31 @@
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
-        <span class="batch-ac">
-          <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(true)">
-            批量启用
-          </el-button>
-          <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(false)">
-            批量停用
-          </el-button>
-        </span>
-        <el-tag size="small" type="info" effect="plain" class="summary-tag">
-          共 {{ modelSummary.total }} 个配置 · 启用 {{ modelSummary.enabled }} · 停用
-          {{ modelSummary.disabled }}
-        </el-tag>
         <div class="data-table__toolbar--right">
+          <span class="batch-ac">
+            <el-badge
+              :value="modelSelIds.length"
+              :hidden="!modelSelIds.length"
+              class="batch-badge"
+            >
+              <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(true)">
+                批量启用
+              </el-button>
+            </el-badge>
+            <el-badge
+              :value="modelSelIds.length"
+              :hidden="!modelSelIds.length"
+              class="batch-badge"
+            >
+              <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(false)">
+                批量停用
+              </el-button>
+            </el-badge>
+          </span>
+          <el-tag size="small" type="info" effect="plain" class="summary-tag">
+            共 <b>{{ modelSummary.total }}</b> 个配置 · 启用 <b>{{ modelSummary.enabled }}</b> · 停用
+            <b>{{ modelSummary.disabled }}</b>
+          </el-tag>
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
       </template>
@@ -82,7 +94,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" fixed="right" width="300" align="center">
+            <el-table-column label="操作" fixed="right" min-width="200" align="center">
               <template #default="scope">
                 <el-button
                   icon="View"
@@ -103,16 +115,6 @@
                   测试
                 </el-button>
                 <el-button
-                  icon="Star"
-                  size="small"
-                  link
-                  type="success"
-                  :disabled="scope.row.is_default"
-                  @click="handleSetDefault(scope.row.id)"
-                >
-                  设为默认
-                </el-button>
-                <el-button
                   v-hasPerm="['module_ai:model:update']"
                   icon="edit"
                   size="small"
@@ -122,16 +124,29 @@
                 >
                   编辑
                 </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:model:delete']"
-                  icon="delete"
-                  size="small"
-                  link
-                  type="danger"
-                  @click="handleRowDelete(scope.row.id)"
-                >
-                  删除
-                </el-button>
+                <el-dropdown trigger="click" @command="(cmd: string) => onMoreCmd(scope.row, cmd)">
+                  <el-button size="small" link type="primary" icon="MoreFilled" @click.stop />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        command="default"
+                        icon="Star"
+                        :disabled="scope.row.is_default"
+                      >
+                        设为默认
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="perm('module_ai:model:delete')"
+                        command="delete"
+                        icon="delete"
+                        divided
+                        style="color: var(--el-color-danger)"
+                      >
+                        删除
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -160,6 +175,9 @@
             <el-option label="助手/工具" value="assistant" />
             <el-option label="问数（Text-to-SQL）" value="query" />
             <el-option label="向量/Embedding" value="embedding" />
+            <el-option label="重排/Rerank" value="rerank" />
+            <el-option label="语音合成/TTS" value="tts" />
+            <el-option label="语音识别/ASR" value="asr" />
           </el-select>
           <!-- 后端 NL2SQL 运行时优先选 usage=='query' 的模型；没有它就永远落到 chat/通用模型 -->
           <el-text type="info" size="small">不填则回退到对话/通用模型</el-text>
@@ -349,6 +367,7 @@ import { getAiProviderList, getAiProviderRemoteModels } from "@/api/module_ai/pr
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import { usePerm } from "@/composables/usePerm";
 
 interface TablePageQuery {
   page_no: number;
@@ -357,6 +376,7 @@ interface TablePageQuery {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const perm = usePerm();
 const submitLoading = ref(false);
 const dataFormRef = ref();
 
@@ -450,9 +470,15 @@ function openDetail(row: any) {
 }
 function usageLabel(u: string) {
   return (
-    { chat: "对话", assistant: "助手", query: "问数", embedding: "嵌入", asr: "识别", tts: "合成" }[
-      u
-    ] || u
+    {
+      chat: "对话/通用",
+      assistant: "助手/工具",
+      query: "问数",
+      embedding: "向量嵌入",
+      rerank: "重排",
+      asr: "语音识别",
+      tts: "语音合成",
+    }[u] || u
   );
 }
 
@@ -591,6 +617,14 @@ async function handleSetDefault(id: number) {
   }
 }
 
+function onMoreCmd(row: any, cmd: string) {
+  if (cmd === "default") {
+    handleSetDefault(row.id);
+  } else if (cmd === "delete") {
+    handleRowDelete(row.id);
+  }
+}
+
 async function handleTest(row: any) {
   try {
     const res = await testAiModel({ id: row.id });
@@ -633,6 +667,7 @@ async function handleTestForm() {
   const payload: any = {
     base_url: formData.base_url,
     model: formData.model,
+    usage: formData.usage,
     extra_headers: buildObjectFromRows(formData.headerFields),
   };
   if (formData.api_key) payload.api_key = formData.api_key;
@@ -693,9 +728,11 @@ async function loadModelSummary() {
   align-items: center;
 }
 .batch-ac {
-  margin-left: 8px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
 }
 .summary-tag {
-  margin-left: 8px;
+  flex-shrink: 0;
 }
 </style>
