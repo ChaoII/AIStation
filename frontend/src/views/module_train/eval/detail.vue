@@ -70,23 +70,80 @@
       <template #header><span class="card-title">操作</span></template>
       <div class="action-buttons">
         <template v-if="evalData?.status === 'pending'">
-          <el-button type="primary" size="default" @click="handleStart">开始评估</el-button>
-          <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+          <el-button
+            v-hasPerm="'module_train:eval:create'"
+            type="primary"
+            size="default"
+            @click="handleStart"
+          >
+            开始评估
+          </el-button>
+          <el-button
+            v-hasPerm="'module_train:eval:delete'"
+            type="danger"
+            size="default"
+            @click="handleDelete"
+          >
+            删除
+          </el-button>
         </template>
         <template v-else-if="evalData?.status === 'running'">
-          <el-button type="danger" size="default" @click="handleStop">停止评估</el-button>
+          <el-button
+            v-hasPerm="'module_train:eval:create'"
+            type="danger"
+            size="default"
+            @click="handleStop"
+          >
+            停止评估
+          </el-button>
         </template>
         <template v-else-if="evalData?.status === 'success'">
-          <el-button size="default" @click="handleReEval">重新评估</el-button>
-          <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+          <el-button
+            v-hasPerm="'module_train:eval:create'"
+            size="default"
+            @click="handleReEval"
+          >
+            重新评估
+          </el-button>
+          <el-button
+            v-hasPerm="'module_train:eval:delete'"
+            type="danger"
+            size="default"
+            @click="handleDelete"
+          >
+            删除
+          </el-button>
         </template>
         <template v-else-if="evalData?.status === 'failed'">
-          <el-button type="primary" size="default" @click="handleReEval">重新评估</el-button>
-          <el-button size="default" @click="scrollToLog">查看日志</el-button>
-          <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+          <el-button
+            v-hasPerm="'module_train:eval:create'"
+            type="primary"
+            size="default"
+            @click="handleReEval"
+          >
+            重新评估
+          </el-button>
+          <el-button v-hasPerm="'module_train:eval:query'" size="default" @click="scrollToLog">
+            查看日志
+          </el-button>
+          <el-button
+            v-hasPerm="'module_train:eval:delete'"
+            type="danger"
+            size="default"
+            @click="handleDelete"
+          >
+            删除
+          </el-button>
         </template>
         <template v-else-if="evalData?.status === 'cancelled'">
-          <el-button type="primary" size="default" @click="handleReEval">重新评估</el-button>
+          <el-button
+            v-hasPerm="'module_train:eval:create'"
+            type="primary"
+            size="default"
+            @click="handleReEval"
+          >
+            重新评估
+          </el-button>
         </template>
       </div>
     </el-card>

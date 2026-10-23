@@ -184,24 +184,24 @@ async def _check_and_execute_plans():
         async with async_db_session() as session:
             plans = await _get_active_plans(session)
 
-        # Check each plan: should it be recording?
-        for plan in plans:
-            try:
-                camera = await _get_camera(session, plan.camera_id)
-                if not camera or not camera.stream_id:
-                    continue
-                stream_id = camera.stream_id
-                should_record = _should_record_now(plan)
-                is_running = stream_id in _running_recordings
+            # Check each plan: should it be recording?
+            for plan in plans:
+                try:
+                    camera = await _get_camera(session, plan.camera_id)
+                    if not camera or not camera.stream_id:
+                        continue
+                    stream_id = camera.stream_id
+                    should_record = _should_record_now(plan)
+                    is_running = stream_id in _running_recordings
 
-                if should_record and not is_running:
-                    await start_scheduled_recording(plan, camera)
-                    logger.info(f"[录制定时器] 启动录制: camera={camera.name} plan={plan.id}")
-                elif not should_record and is_running:
-                    await stop_recording(stream_id)
-                    logger.info(f"[录制定时器] 停止录制: camera={camera.name} plan={plan.id}")
-            except Exception as e:
-                logger.error(f"[录制定时器] 计划处理失败: plan={plan.id} error={e}")
+                    if should_record and not is_running:
+                        await start_scheduled_recording(plan, camera)
+                        logger.info(f"[录制定时器] 启动录制: camera={camera.name} plan={plan.id}")
+                    elif not should_record and is_running:
+                        await stop_recording(stream_id)
+                        logger.info(f"[录制定时器] 停止录制: camera={camera.name} plan={plan.id}")
+                except Exception as e:
+                    logger.error(f"[录制定时器] 计划处理失败: plan={plan.id} error={e}")
 
         # Process segments and health for all running recordings
         for sid in list(_running_recordings.keys()):

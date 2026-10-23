@@ -87,27 +87,101 @@
         <template #header><span class="card-title">操作</span></template>
         <div class="action-buttons">
           <template v-if="task?.status === 'pending'">
-            <el-button type="primary" size="default" @click="handleStart">开始训练</el-button>
-            <el-button size="default" @click="handleEditParams">编辑参数</el-button>
-            <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+            <el-button
+              v-hasPerm="'module_train:task:update'"
+              type="primary"
+              size="default"
+              @click="handleStart"
+            >
+              开始训练
+            </el-button>
+            <el-button v-hasPerm="'module_train:task:update'" size="default" @click="handleEditParams">
+              编辑参数
+            </el-button>
+            <el-button
+              v-hasPerm="'module_train:task:delete'"
+              type="danger"
+              size="default"
+              @click="handleDelete"
+            >
+              删除
+            </el-button>
           </template>
           <template v-else-if="task?.status === 'running'">
-            <el-button type="danger" size="default" @click="handleStop">停止训练</el-button>
+            <el-button
+              v-hasPerm="'module_train:task:update'"
+              type="danger"
+              size="default"
+              @click="handleStop"
+            >
+              停止训练
+            </el-button>
           </template>
           <template v-else-if="task?.status === 'success'">
-            <el-button type="primary" size="default" @click="handleViewModel">查看模型</el-button>
-            <el-button size="default" @click="handleEvaluate">评估模型</el-button>
-            <el-button size="default" @click="handleExport">导出模型</el-button>
-            <el-button size="default" @click="handleRetrain">重新训练</el-button>
-            <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+            <el-button
+              v-hasPerm="'module_train:task:query'"
+              type="primary"
+              size="default"
+              @click="handleViewModel"
+            >
+              查看模型
+            </el-button>
+            <el-button v-hasPerm="'module_train:eval:create'" size="default" @click="handleEvaluate">
+              评估模型
+            </el-button>
+            <el-button
+              v-hasPerm="'module_train:model:update'"
+              size="default"
+              @click="handleExport"
+            >
+              导出模型
+            </el-button>
+            <el-button
+              v-hasPerm="'module_train:task:create'"
+              size="default"
+              @click="handleRetrain"
+            >
+              重新训练
+            </el-button>
+            <el-button
+              v-hasPerm="'module_train:task:delete'"
+              type="danger"
+              size="default"
+              @click="handleDelete"
+            >
+              删除
+            </el-button>
           </template>
           <template v-else-if="task?.status === 'failed'">
-            <el-button type="primary" size="default" @click="handleRetrain">重新训练</el-button>
-            <el-button size="default" @click="scrollToLog">查看日志</el-button>
-            <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+            <el-button
+              v-hasPerm="'module_train:task:create'"
+              type="primary"
+              size="default"
+              @click="handleRetrain"
+            >
+              重新训练
+            </el-button>
+            <el-button v-hasPerm="'module_train:task:query'" size="default" @click="scrollToLog">
+              查看日志
+            </el-button>
+            <el-button
+              v-hasPerm="'module_train:task:delete'"
+              type="danger"
+              size="default"
+              @click="handleDelete"
+            >
+              删除
+            </el-button>
           </template>
           <template v-else-if="task?.status === 'cancelled'">
-            <el-button type="primary" size="default" @click="handleRetrain">重新训练</el-button>
+            <el-button
+              v-hasPerm="'module_train:task:create'"
+              type="primary"
+              size="default"
+              @click="handleRetrain"
+            >
+              重新训练
+            </el-button>
           </template>
         </div>
       </el-card>

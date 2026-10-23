@@ -99,6 +99,7 @@ async def get_stream_urls_controller(
 @CameraRouter.post("/webrtc/signaling", summary="WebRTC 信令代理")
 async def webrtc_signaling_controller(
     data: dict = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:camera:query"])),
 ) -> JSONResponse:
     stream_id = data.get("stream_id", "")
     sdp = data.get("sdp", "")

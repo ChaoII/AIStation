@@ -133,7 +133,7 @@ async def change_current_user_password_controller(
 )
 async def reset_password_controller(
     data: ResetPasswordSchema,
-    auth: Annotated[AuthSchema, Depends(get_current_user)],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_system:user:update"]))],
 ) -> JSONResponse:
     """
     重置密码

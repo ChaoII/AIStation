@@ -67,30 +67,82 @@
       <template #header><span class="card-title">操作</span></template>
       <div class="action-buttons">
         <template v-if="predict?.status === 'pending'">
-          <el-button type="primary" size="default" @click="handleStart">开始预测</el-button>
-          <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+          <el-button
+            v-hasPerm="'module_train:predict:create'"
+            type="primary"
+            size="default"
+            @click="handleStart"
+          >
+            开始预测
+          </el-button>
+          <el-button
+            v-hasPerm="'module_train:predict:delete'"
+            type="danger"
+            size="default"
+            @click="handleDelete"
+          >
+            删除
+          </el-button>
         </template>
         <template v-else-if="predict?.status === 'running'">
-          <el-button type="danger" size="default" @click="handleStop">停止预测</el-button>
+          <el-button
+            v-hasPerm="'module_train:predict:create'"
+            type="danger"
+            size="default"
+            @click="handleStop"
+          >
+            停止预测
+          </el-button>
         </template>
         <template v-else-if="predict?.status === 'success'">
           <el-button
             v-if="predict?.result_zip_path"
+            v-hasPerm="'module_train:predict:query'"
             type="primary"
             size="default"
             @click="downloadZip(predict.result_zip_path)"
           >
             下载结果
           </el-button>
-          <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+          <el-button
+            v-hasPerm="'module_train:predict:delete'"
+            type="danger"
+            size="default"
+            @click="handleDelete"
+          >
+            删除
+          </el-button>
         </template>
         <template v-else-if="predict?.status === 'failed'">
-          <el-button type="primary" size="default" @click="handleStart">重新预测</el-button>
-          <el-button size="default" @click="scrollToLog">查看日志</el-button>
-          <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+          <el-button
+            v-hasPerm="'module_train:predict:create'"
+            type="primary"
+            size="default"
+            @click="handleStart"
+          >
+            重新预测
+          </el-button>
+          <el-button v-hasPerm="'module_train:predict:query'" size="default" @click="scrollToLog">
+            查看日志
+          </el-button>
+          <el-button
+            v-hasPerm="'module_train:predict:delete'"
+            type="danger"
+            size="default"
+            @click="handleDelete"
+          >
+            删除
+          </el-button>
         </template>
         <template v-else-if="predict?.status === 'cancelled'">
-          <el-button type="primary" size="default" @click="handleStart">重新预测</el-button>
+          <el-button
+            v-hasPerm="'module_train:predict:create'"
+            type="primary"
+            size="default"
+            @click="handleStart"
+          >
+            重新预测
+          </el-button>
         </template>
       </div>
     </el-card>

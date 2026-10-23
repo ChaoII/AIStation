@@ -243,6 +243,7 @@ class UserOutSchema(UserUpdateSchema, BaseSchema, UserBySchema, TenantBySchema):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
+    password: str | None = Field(default=None, exclude=True, description="（不回显，仅内部）")
     tenant_id: int | None = Field(
         default=None,
         exclude=True,

@@ -900,13 +900,13 @@ class TrainService:
             total = (await db.execute(count_stmt)).scalar() or 0
             stmt = stmt.limit(page_size).offset((page_no - 1) * page_size)
             result = await db.execute(stmt)
-            return [_model_to_dict(r) for r in result.scalars().all()], total
+            return [_model_to_dict(r, exclude={"api_key"}) for r in result.scalars().all()], total
 
     @classmethod
     async def get_deploy(cls, deploy_id: int) -> dict | None:
         async with async_db_session() as db:
             d = await db.get(TrainDeploy, deploy_id)
-            return _model_to_dict(d) if d else None
+            return _model_to_dict(d, exclude={"api_key"}) if d else None
 
     @classmethod
     async def delete_deploys(cls, ids: list[int]) -> None:

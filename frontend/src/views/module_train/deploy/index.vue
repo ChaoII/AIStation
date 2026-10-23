@@ -11,7 +11,7 @@
       <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
         <CrudToolbarLeft
           :remove-ids="removeIds"
-          :perm-create="['module_train:model:query']"
+          :perm-create="['module_train:model:update']"
           @add="showCreateDialog = true"
         />
         <div class="data-table__toolbar--right">

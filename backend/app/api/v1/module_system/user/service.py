@@ -216,27 +216,29 @@ class UserService:
         )
         new_user = await UserCRUD(auth).update(id=id, data=user_dict)
 
-        # 更新角色和岗位
-        if data.role_ids and len(data.role_ids) > 0:
-            # 检查角色是否都存在且可用
-            roles = await RoleCRUD(auth).get_list_crud(search={"id": ("in", data.role_ids)})
-            if len(roles) != len(data.role_ids):
-                raise CustomException(msg="部分角色不存在")
-            if not all(role.status for role in roles):
-                raise CustomException(msg="部分角色已被禁用")
-            await UserCRUD(auth).set_user_roles_crud(user_ids=[id], role_ids=data.role_ids)
+        # 更新角色和岗位：用 model_fields_set 区分「未传」（不处理）与「显式传空数组」（清空）
+        if "role_ids" in data.model_fields_set:
+            if data.role_ids:
+                # 检查角色是否都存在且可用
+                roles = await RoleCRUD(auth).get_list_crud(search={"id": ("in", data.role_ids)})
+                if len(roles) != len(data.role_ids):
+                    raise CustomException(msg="部分角色不存在")
+                if not all(role.status for role in roles):
+                    raise CustomException(msg="部分角色已被禁用")
+            await UserCRUD(auth).set_user_roles_crud(user_ids=[id], role_ids=data.role_ids or [])
 
-        if data.position_ids and len(data.position_ids) > 0:
-            # 检查岗位是否都存在且可用
-            positions = await PositionCRUD(auth).get_list_crud(
-                search={"id": ("in", data.position_ids)}
-            )
-            if len(positions) != len(data.position_ids):
-                raise CustomException(msg="部分岗位不存在")
-            if not all(position.status for position in positions):
-                raise CustomException(msg="部分岗位已被禁用")
+        if "position_ids" in data.model_fields_set:
+            if data.position_ids:
+                # 检查岗位是否都存在且可用
+                positions = await PositionCRUD(auth).get_list_crud(
+                    search={"id": ("in", data.position_ids)}
+                )
+                if len(positions) != len(data.position_ids):
+                    raise CustomException(msg="部分岗位不存在")
+                if not all(position.status for position in positions):
+                    raise CustomException(msg="部分岗位已被禁用")
             await UserCRUD(auth).set_user_positions_crud(
-                user_ids=[id], position_ids=data.position_ids
+                user_ids=[id], position_ids=data.position_ids or []
             )
 
         user_dict = UserOutSchema.model_validate(new_user).model_dump()
