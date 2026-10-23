@@ -95,7 +95,6 @@
           </el-link>
         </div>
       </el-tab-pane>
-
     </el-tabs>
 
     <!-- 第三方登录 -->
@@ -106,10 +105,7 @@ import type { FormInstance } from "element-plus";
 import { LocationQuery, RouteLocationRaw, useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { onActivated, onMounted, watch } from "vue";
-import AuthAPI, {
-  type LoginFormData,
-  type CaptchaInfo,
-} from "@/api/module_system/auth";
+import AuthAPI, { type LoginFormData, type CaptchaInfo } from "@/api/module_system/auth";
 import { useAppStore, useUserStore, useSettingsStore } from "@/store";
 import { User, Loading, Lock } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
@@ -335,5 +331,4 @@ function toOtherForm(type: "register") {
     overflow: visible;
   }
 }
-
 </style>

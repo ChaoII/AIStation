@@ -2,7 +2,11 @@
 <template>
   <el-card shadow="hover">
     <div class="dept-tree-toolbar">
-      <el-input v-model="deptName" placeholder="部门名称" class="dept-tree-search">
+      <el-input
+        v-model="deptName"
+        :placeholder="t('system.user.deptName')"
+        class="dept-tree-search"
+      >
         <template #prefix>
           <el-icon>
             <Search />
@@ -20,7 +24,7 @@
         <el-icon :size="14">
           <Switch />
         </el-icon>
-        <span>{{ treeExpanded ? "收起" : "展开" }}</span>
+        <span>{{ treeExpanded ? t("system.user.collapse") : t("system.user.expand") }}</span>
       </el-button>
     </div>
 
@@ -36,17 +40,20 @@
       @node-click="handleNodeClick"
     >
       <template #empty>
-        <el-empty :image-size="80" description="暂无数据" />
+        <el-empty :image-size="80" :description="t('system.user.noData')" />
       </template>
     </el-tree>
   </el-card>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { Switch } from "@element-plus/icons-vue";
 import DeptAPI, { DeptPageQuery } from "@/api/module_system/dept";
 import { formatTree } from "@/utils/common";
 import type { FilterNodeMethodFunction, TreeInstance } from "element-plus";
+
+const { t } = useI18n();
 
 const props = defineProps({
   modelValue: {

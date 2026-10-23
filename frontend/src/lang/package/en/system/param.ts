@@ -1,1 +1,90 @@
-export default {};
+export default {
+  // 工具栏 / 操作
+  export: "Export",
+  noData: "No Data",
+  detail: "Detail",
+  edit: "Edit",
+  delete: "Delete",
+  action: "Actions",
+  cancel: "Cancel",
+  confirm: "Confirm",
+  save: "Save",
+  operationSuccess: "Operation successful",
+
+  // 表格列
+  selection: "Selection",
+  serial: "No.",
+  configName: "Config Name",
+  configKey: "Config Key",
+  configKeyName: "Config Key Name",
+  configValue: "Config Value",
+  configType: "System Built-in",
+  description: "Description",
+  createdTime: "Created Time",
+  updatedTime: "Updated Time",
+  yes: "Yes",
+  no: "No",
+
+  // 搜索 / 筛选
+  inputConfigName: "Please enter config name",
+  inputConfigKey: "Please enter config key",
+  inputConfigValue: "Please enter config value",
+  inputDescription: "Please enter description",
+  inputConfigKeyName: "Please enter config key name",
+  selectConfigType: "Please select system built-in",
+  to: "to",
+  startDate: "Start Date",
+  endDate: "End Date",
+
+  // 弹窗标题
+  configDetail: "System Config Detail",
+  updateConfig: "Edit System Config",
+  createConfig: "Create System Config",
+
+  // 提示 / 确认
+  warnTitle: "Warning",
+  deleteConfirmMessage: "Are you sure to delete the selected data? This cannot be undone.",
+  requiredConfigName: "Please enter system config name",
+  requiredConfigKey: "Please enter system config key",
+  requiredConfigValue: "Please enter system config value",
+  requiredConfigType: "Please select system config type",
+
+  // 配置中心抽屉
+  configCenter: "Config Center",
+  websiteConfig: "Website Config",
+  websiteIcon: "Website Icon",
+  securityPrivacy: "Security & Privacy",
+  userAgreement: "User Agreement",
+  apiWhitelist: "API Whitelist",
+  ipBlacklist: "IP Blacklist",
+  notification: "Notification Config",
+  demoConfig: "Demo Config",
+  wsPush: "WebSocket Push",
+  smtpEmail: "SMTP Email",
+  smsGateway: "SMS Gateway",
+  webhookRest: "Webhook / REST API",
+  defaultRecipient: "Default Recipient",
+  enable: "Enable",
+  disable: "Disable",
+  testWsPush: "Test WS Push",
+  testEmailPush: "Test Email Push",
+  testSmsPush: "Test SMS Push",
+  testWebhookPush: "Test Webhook Push",
+  addApiPath: "Add API Path",
+  addIp: "Add IP Address",
+  apiWhitelistTip:
+    "Config note: API paths in the whitelist are accessible without login and support full path configuration.",
+  ipBlacklistTip:
+    "Config note: IP addresses on the blacklist cannot access the system, supporting single IP configuration.",
+  demoIpWhitelistTip:
+    "Config note: In demo mode, only whitelisted IP addresses can access the system, supporting single IP configuration.",
+  demoEnableTip:
+    "Config note: Once enabled, the system will enter demo mode and some functions may be limited.",
+  invalidApiPath: "Please enter a valid API path format (starting with /)",
+  invalidIp: "Please enter a valid IP address format",
+  keepApiWhitelist: "At least one API whitelist config is required",
+  keepIpBlacklist: "At least one IP blacklist config is required",
+  keepIpWhitelist: "At least one IP whitelist config is required",
+  uploadFailedPrefix: "Upload failed: ",
+  uploadRetry: "Please try again later",
+};

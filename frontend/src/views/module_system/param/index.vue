@@ -21,7 +21,7 @@
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar">
             <template #prepend>
-              <el-tooltip content="导出">
+              <el-tooltip :content="t('system.param.export')">
                 <el-button
                   v-hasPerm="['module_system:param:export']"
                   type="warning"
@@ -48,7 +48,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('system.param.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -59,7 +59,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('system.param.serial')"
               min-width="60"
             >
               <template #default="scope">
@@ -69,7 +69,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'config_name')?.show"
               key="config_name"
-              label="配置名称"
+              :label="t('system.param.configName')"
               prop="config_name"
               min-width="120"
               show-overflow-tooltip
@@ -77,14 +77,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'config_key')?.show"
               key="config_key"
-              label="配置键"
+              :label="t('system.param.configKey')"
               prop="config_key"
               min-width="200"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'config_value')?.show"
               key="config_value"
-              label="配置值"
+              :label="t('system.param.configValue')"
               prop="config_value"
               min-width="200"
               show-overflow-tooltip
@@ -92,26 +92,28 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'config_type')?.show"
               key="config_type"
-              label="系统内置"
+              :label="t('system.param.configType')"
               prop="config_type"
               min-width="100"
             >
               <template #default="scope">
-                <el-tag v-if="scope.row.config_type" type="success">是</el-tag>
-                <el-tag v-else type="danger">否</el-tag>
+                <el-tag v-if="scope.row.config_type" type="success">
+                  {{ t("system.param.yes") }}
+                </el-tag>
+                <el-tag v-else type="danger">{{ t("system.param.no") }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'description')?.show"
               key="description"
-              label="描述"
+              :label="t('system.param.description')"
               prop="description"
               min-width="120"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="t('system.param.createdTime')"
               prop="created_time"
               min-width="200"
               sortable
@@ -120,7 +122,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_time')?.show"
               key="updated_time"
-              label="更新时间"
+              :label="t('system.param.updatedTime')"
               prop="updated_time"
               min-width="200"
               sortable
@@ -129,7 +131,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('system.param.action')"
               align="center"
               min-width="200"
             >
@@ -142,7 +144,7 @@
                   icon="View"
                   @click="handleOpenDialog('detail', scope.row.id)"
                 >
-                  详情
+                  {{ t("system.param.detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:param:update']"
@@ -152,7 +154,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("system.param.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:param:delete']"
@@ -162,7 +164,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("system.param.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -178,26 +180,28 @@
     >
       <template v-if="dialogVisible.type === 'detail'">
         <el-descriptions :column="4" border>
-          <el-descriptions-item label="配置名称" :span="2">
+          <el-descriptions-item :label="t('system.param.configName')" :span="2">
             {{ detailFormData.config_name }}
           </el-descriptions-item>
-          <el-descriptions-item label="系统内置" :span="2">
-            <el-tag v-if="detailFormData.config_type" type="success">是</el-tag>
-            <el-tag v-else type="danger">否</el-tag>
+          <el-descriptions-item :label="t('system.param.configType')" :span="2">
+            <el-tag v-if="detailFormData.config_type" type="success">
+              {{ t("system.param.yes") }}
+            </el-tag>
+            <el-tag v-else type="danger">{{ t("system.param.no") }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="配置键" :span="2">
+          <el-descriptions-item :label="t('system.param.configKey')" :span="2">
             {{ detailFormData.config_key }}
           </el-descriptions-item>
-          <el-descriptions-item label="配置值" :span="2">
+          <el-descriptions-item :label="t('system.param.configValue')" :span="2">
             {{ detailFormData.config_value }}
           </el-descriptions-item>
-          <el-descriptions-item label="描述" :span="2">
+          <el-descriptions-item :label="t('system.param.description')" :span="2">
             {{ detailFormData.description }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间" :span="2">
+          <el-descriptions-item :label="t('system.param.createdTime')" :span="2">
             {{ detailFormData.created_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新时间" :span="2">
+          <el-descriptions-item :label="t('system.param.updatedTime')" :span="2">
             {{ detailFormData.updated_time }}
           </el-descriptions-item>
         </el-descriptions>
@@ -211,29 +215,41 @@
           label-width="auto"
           label-position="right"
         >
-          <el-form-item label="配置名称" prop="config_name">
-            <el-input v-model="formData.config_name" placeholder="请输入配置名称" :maxlength="50" />
+          <el-form-item :label="t('system.param.configName')" prop="config_name">
+            <el-input
+              v-model="formData.config_name"
+              :placeholder="t('system.param.inputConfigName')"
+              :maxlength="50"
+            />
           </el-form-item>
-          <el-form-item label="配置键" prop="config_key">
-            <el-input v-model="formData.config_key" placeholder="请输入配置键" :maxlength="50" />
+          <el-form-item :label="t('system.param.configKey')" prop="config_key">
+            <el-input
+              v-model="formData.config_key"
+              :placeholder="t('system.param.inputConfigKey')"
+              :maxlength="50"
+            />
           </el-form-item>
-          <el-form-item label="配置值" prop="config_value">
-            <el-input v-model="formData.config_value" placeholder="请输入配置值" :maxlength="100" />
+          <el-form-item :label="t('system.param.configValue')" prop="config_value">
+            <el-input
+              v-model="formData.config_value"
+              :placeholder="t('system.param.inputConfigValue')"
+              :maxlength="100"
+            />
           </el-form-item>
-          <el-form-item label="系统内置" prop="config_type">
+          <el-form-item :label="t('system.param.configType')" prop="config_type">
             <el-radio-group v-model="formData.config_type">
-              <el-radio :value="true">是</el-radio>
-              <el-radio :value="false">否</el-radio>
+              <el-radio :value="true">{{ t("system.param.yes") }}</el-radio>
+              <el-radio :value="false">{{ t("system.param.no") }}</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="描述" prop="description">
+          <el-form-item :label="t('system.param.description')" prop="description">
             <el-input
               v-model="formData.description"
               :rows="4"
               :maxlength="100"
               show-word-limit
               type="textarea"
-              placeholder="请输入描述"
+              :placeholder="t('system.param.inputDescription')"
             />
           </el-form-item>
         </el-form>
@@ -241,7 +257,7 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
+          <el-button @click="handleCloseDialog">{{ t("system.param.cancel") }}</el-button>
           <el-button
             v-if="dialogVisible.type !== 'detail'"
             v-hasPerm="['module_system:param:create']"
@@ -249,7 +265,7 @@
             :loading="submitLoading"
             @click="handleSubmit"
           >
-            确定
+            {{ t("system.param.confirm") }}
           </el-button>
           <el-button
             v-else
@@ -257,7 +273,7 @@
             type="primary"
             @click="handleCloseDialog"
           >
-            确定
+            {{ t("system.param.confirm") }}
           </el-button>
         </div>
       </template>
@@ -276,6 +292,7 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { ref, reactive, computed, unref } from "vue";
+import { useI18n } from "vue-i18n";
 import { fetchAllPages } from "@/utils/fetchAllPages";
 import ParamsAPI, { ConfigTable, ConfigForm, ConfigPageQuery } from "@/api/module_system/params";
 import { useConfigStore } from "@/store";
@@ -293,6 +310,8 @@ defineOptions({
   inheritAttrs: false,
 });
 
+const { t } = useI18n();
+
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const dataFormRef = ref();
 const submitLoading = ref(false);
@@ -306,37 +325,41 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "config_name",
-      label: "配置名称",
+      label: t("system.param.configName"),
       type: "input",
-      attrs: { placeholder: "请输入配置名称", clearable: true },
+      attrs: { placeholder: t("system.param.inputConfigName"), clearable: true },
     },
     {
       prop: "config_key",
-      label: "配置键名",
+      label: t("system.param.configKeyName"),
       type: "input",
-      attrs: { placeholder: "请输入配置键名", clearable: true },
+      attrs: { placeholder: t("system.param.inputConfigKeyName"), clearable: true },
     },
     {
       prop: "config_type",
-      label: "系统内置",
+      label: t("system.param.configType"),
       type: "select",
       options: [
-        { label: "是", value: "true" },
-        { label: "否", value: "false" },
+        { label: t("system.param.yes"), value: "true" },
+        { label: t("system.param.no"), value: "false" },
       ],
-      attrs: { placeholder: "请选择系统内置", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("system.param.selectConfigType"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "created_time",
-      label: "创建时间",
+      label: t("system.param.createdTime"),
       type: "date-picker",
       initialValue: [],
       attrs: {
         type: "datetimerange",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
-        rangeSeparator: "至",
-        startPlaceholder: "开始日期",
-        endPlaceholder: "结束日期",
+        rangeSeparator: t("system.param.to"),
+        startPlaceholder: t("system.param.startDate"),
+        endPlaceholder: t("system.param.endDate"),
         style: { width: "340px" },
       },
     },
@@ -350,16 +373,16 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "config_name", label: "配置名称", show: true },
-  { prop: "config_key", label: "配置键", show: true },
-  { prop: "config_value", label: "配置值", show: true },
-  { prop: "config_type", label: "系统内置", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "updated_time", label: "更新时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("system.param.selection"), show: true },
+  { prop: "index", label: t("system.param.serial"), show: true },
+  { prop: "config_name", label: t("system.param.configName"), show: true },
+  { prop: "config_key", label: t("system.param.configKey"), show: true },
+  { prop: "config_value", label: t("system.param.configValue"), show: true },
+  { prop: "config_type", label: t("system.param.configType"), show: true },
+  { prop: "description", label: t("system.param.description"), show: true },
+  { prop: "created_time", label: t("system.param.createdTime"), show: true },
+  { prop: "updated_time", label: t("system.param.updatedTime"), show: true },
+  { prop: "operation", label: t("system.param.action"), show: true },
 ]);
 
 const configStore = useConfigStore();
@@ -402,8 +425,8 @@ const contentConfig = reactive<IContentConfig<ConfigPageQuery>>({
     await configStore.getConfig();
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("system.param.warnTitle"),
+    message: t("system.param.deleteConfirmMessage"),
     type: "warning",
   },
 });
@@ -430,10 +453,12 @@ const dialogVisible = reactive({
 });
 
 const rules = reactive({
-  config_name: [{ required: true, message: "请输入系统配置名称", trigger: "blur" }],
-  config_key: [{ required: true, message: "请输入系统配置键", trigger: "blur" }],
-  config_value: [{ required: true, message: "请输入系统配置值", trigger: "blur" }],
-  config_type: [{ required: true, message: "请选择系统配置类型", trigger: "blur" }],
+  config_name: [{ required: true, message: t("system.param.requiredConfigName"), trigger: "blur" }],
+  config_key: [{ required: true, message: t("system.param.requiredConfigKey"), trigger: "blur" }],
+  config_value: [
+    { required: true, message: t("system.param.requiredConfigValue"), trigger: "blur" },
+  ],
+  config_type: [{ required: true, message: t("system.param.requiredConfigType"), trigger: "blur" }],
 });
 
 const initialFormData: ConfigForm = {
@@ -456,13 +481,13 @@ const exportSelectionData = computed(
 );
 
 const exportColumns = [
-  { prop: "config_name", label: "配置名称" },
-  { prop: "config_key", label: "配置键" },
-  { prop: "config_value", label: "配置值" },
-  { prop: "config_type", label: "系统内置" },
-  { prop: "description", label: "描述" },
-  { prop: "created_time", label: "创建时间" },
-  { prop: "updated_time", label: "更新时间" },
+  { prop: "config_name", label: t("system.param.configName") },
+  { prop: "config_key", label: t("system.param.configKey") },
+  { prop: "config_value", label: t("system.param.configValue") },
+  { prop: "config_type", label: t("system.param.configType") },
+  { prop: "description", label: t("system.param.description") },
+  { prop: "created_time", label: t("system.param.createdTime") },
+  { prop: "updated_time", label: t("system.param.updatedTime") },
 ];
 
 const curdContentConfig = {
@@ -505,14 +530,14 @@ async function handleOpenDialog(type: "create" | "update" | "detail", id?: numbe
   if (id) {
     const response = await ParamsAPI.detailParams(id);
     if (type === "detail") {
-      dialogVisible.title = "系统配置详情";
+      dialogVisible.title = t("system.param.configDetail");
       Object.assign(detailFormData.value, response.data.data);
     } else if (type === "update") {
-      dialogVisible.title = "修改系统配置";
+      dialogVisible.title = t("system.param.updateConfig");
       Object.assign(formData, response.data.data);
     }
   } else {
-    dialogVisible.title = "新增系统配置";
+    dialogVisible.title = t("system.param.createConfig");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -529,7 +554,7 @@ async function handleSubmit() {
         } else {
           await ParamsAPI.createParams(formData);
         }
-        ElMessage.success("操作成功");
+        ElMessage.success(t("system.param.operationSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();

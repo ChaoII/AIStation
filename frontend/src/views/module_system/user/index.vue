@@ -29,7 +29,7 @@
             <div class="data-table__toolbar--right">
               <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar">
                 <template #prepend>
-                  <el-tooltip content="导入">
+                  <el-tooltip :content="t('system.user.import')">
                     <el-button
                       v-hasPerm="['module_system:user:import']"
                       type="info"
@@ -38,7 +38,7 @@
                       @click="handleOpenImportDialog"
                     />
                   </el-tooltip>
-                  <el-tooltip content="导出">
+                  <el-tooltip :content="t('system.user.export')">
                     <el-button
                       v-hasPerm="['module_system:user:export']"
                       type="warning"
@@ -65,15 +65,20 @@
                 @selection-change="onSelectionChange"
               >
                 <template #empty>
-                  <el-empty :image-size="80" description="暂无数据" />
+                  <el-empty :image-size="80" :description="t('system.user.noData')" />
                 </template>
                 <el-table-column type="selection" min-width="55" align="center" />
-                <el-table-column fixed label="序号" min-width="60">
+                <el-table-column fixed :label="t('system.user.serial')" min-width="60">
                   <template #default="scope">
                     {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
                   </template>
                 </el-table-column>
-                <el-table-column label="头像" prop="avatar" min-width="80" align="center">
+                <el-table-column
+                  :label="t('system.user.avatar')"
+                  prop="avatar"
+                  min-width="80"
+                  align="center"
+                >
                   <template #default="scope">
                     <template v-if="normalizeAvatarUrl(scope.row.avatar)">
                       <el-avatar size="small" :src="normalizeAvatarUrl(scope.row.avatar)" />
@@ -83,30 +88,55 @@
                     </template>
                   </template>
                 </el-table-column>
-                <el-table-column label="账号" prop="username" min-width="100" />
-                <el-table-column label="用户名" prop="name" min-width="100" />
-                <el-table-column label="状态" prop="status" min-width="100">
+                <el-table-column
+                  :label="t('system.user.username')"
+                  prop="username"
+                  min-width="100"
+                />
+                <el-table-column :label="t('system.user.name')" prop="name" min-width="100" />
+                <el-table-column :label="t('system.user.status')" prop="status" min-width="100">
                   <template #default="scope">
                     <el-tag :type="scope.row.status === '0' ? 'success' : 'danger'">
-                      {{ scope.row.status === "0" ? "启用" : "停用" }}
+                      {{
+                        scope.row.status === "0"
+                          ? t("system.user.enabled")
+                          : t("system.user.disabled")
+                      }}
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="部门" prop="dept" min-width="100">
+                <el-table-column :label="t('system.user.dept')" prop="dept" min-width="100">
                   <template #default="scope">
                     {{ scope.row.dept ? scope.row.dept.name : "" }}
                   </template>
                 </el-table-column>
-                <el-table-column label="性别" prop="gender" min-width="100">
+                <el-table-column :label="t('system.user.gender')" prop="gender" min-width="100">
                   <template #default="scope">
-                    <el-tag v-if="scope.row.gender === '0'" type="success">男</el-tag>
-                    <el-tag v-else-if="scope.row.gender === '1'" type="warning">女</el-tag>
-                    <el-tag v-else type="info">未知</el-tag>
+                    <el-tag v-if="scope.row.gender === '0'" type="success">
+                      {{ t("system.user.male") }}
+                    </el-tag>
+                    <el-tag v-else-if="scope.row.gender === '1'" type="warning">
+                      {{ t("system.user.female") }}
+                    </el-tag>
+                    <el-tag v-else type="info">{{ t("system.user.unknown") }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="创建时间" prop="created_time" min-width="160" />
-                <el-table-column label="更新时间" prop="updated_time" min-width="160" />
-                <el-table-column label="操作" fixed="right" align="center" min-width="280">
+                <el-table-column
+                  :label="t('system.user.createdAt')"
+                  prop="created_time"
+                  min-width="160"
+                />
+                <el-table-column
+                  :label="t('system.user.updatedAt')"
+                  prop="updated_time"
+                  min-width="160"
+                />
+                <el-table-column
+                  :label="t('system.user.action')"
+                  fixed="right"
+                  align="center"
+                  min-width="280"
+                >
                   <template #default="scope">
                     <el-button
                       v-hasPerm="['module_system:user:update']"
@@ -117,7 +147,7 @@
                       :disabled="scope.row.is_superuser === true"
                       @click="hancleResetPassword(scope.row)"
                     >
-                      重置密码
+                      {{ t("system.user.resetPassword") }}
                     </el-button>
                     <el-button
                       v-hasPerm="['module_system:user:detail']"
@@ -127,7 +157,7 @@
                       icon="View"
                       @click="handleOpenDialog('detail', scope.row.id)"
                     >
-                      详情
+                      {{ t("system.user.detail") }}
                     </el-button>
                     <el-button
                       v-hasPerm="['module_system:user:update']"
@@ -138,7 +168,7 @@
                       :disabled="scope.row.is_superuser === true"
                       @click="handleOpenDialog('update', scope.row.id)"
                     >
-                      编辑
+                      {{ t("system.user.edit") }}
                     </el-button>
                     <el-button
                       v-hasPerm="['module_system:user:delete']"
@@ -149,7 +179,7 @@
                       :disabled="scope.row.is_superuser === true"
                       @click="handleRowDelete(scope.row.id)"
                     >
-                      删除
+                      {{ t("system.user.delete") }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -169,10 +199,10 @@
     >
       <template v-if="dialogVisible.type === 'detail'">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="编号" :span="2">
+          <el-descriptions-item :label="t('system.user.id')" :span="2">
             {{ detailFormData.id }}
           </el-descriptions-item>
-          <el-descriptions-item label="头像" :span="2">
+          <el-descriptions-item :label="t('system.user.avatar')" :span="2">
             <template v-if="normalizeAvatarUrl(detailFormData.avatar)">
               <el-avatar :src="normalizeAvatarUrl(detailFormData.avatar)" size="small"></el-avatar>
             </template>
@@ -180,64 +210,70 @@
               <el-avatar icon="UserFilled" size="small"></el-avatar>
             </template>
           </el-descriptions-item>
-          <el-descriptions-item label="账号" :span="2">
+          <el-descriptions-item :label="t('system.user.username')" :span="2">
             {{ detailFormData.username }}
           </el-descriptions-item>
-          <el-descriptions-item label="用户名" :span="2">
+          <el-descriptions-item :label="t('system.user.name')" :span="2">
             {{ detailFormData.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="性别" :span="2">
-            <el-tag v-if="detailFormData.gender === '0'" type="success">男</el-tag>
-            <el-tag v-else-if="detailFormData.gender === '1'" type="warning">女</el-tag>
-            <el-tag v-else type="info">未知</el-tag>
+          <el-descriptions-item :label="t('system.user.gender')" :span="2">
+            <el-tag v-if="detailFormData.gender === '0'" type="success">
+              {{ t("system.user.male") }}
+            </el-tag>
+            <el-tag v-else-if="detailFormData.gender === '1'" type="warning">
+              {{ t("system.user.female") }}
+            </el-tag>
+            <el-tag v-else type="info">{{ t("system.user.unknown") }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="部门" :span="2">
+          <el-descriptions-item :label="t('system.user.dept')" :span="2">
             {{ detailFormData.dept ? detailFormData.dept.name : "" }}
           </el-descriptions-item>
-          <el-descriptions-item label="角色" :span="2">
+          <el-descriptions-item :label="t('system.user.role')" :span="2">
             {{
               detailFormData.roles ? detailFormData.roles.map((item) => item.name).join("、") : ""
             }}
           </el-descriptions-item>
-          <el-descriptions-item label="岗位" :span="2">
+          <el-descriptions-item :label="t('system.user.position')" :span="2">
             {{
               detailFormData.positions
                 ? detailFormData.positions.map((item) => item.name).join("、")
                 : ""
             }}
           </el-descriptions-item>
-          <el-descriptions-item label="邮箱" :span="2">
+          <el-descriptions-item :label="t('system.user.email')" :span="2">
             {{ detailFormData.email }}
           </el-descriptions-item>
-          <el-descriptions-item label="手机号" :span="2">
+          <el-descriptions-item :label="t('system.user.mobile')" :span="2">
             {{ detailFormData.mobile }}
           </el-descriptions-item>
-          <el-descriptions-item label="是否超管" :span="2">
+          <el-descriptions-item :label="t('system.user.isSuperuser')" :span="2">
             <el-tag :type="detailFormData.is_superuser ? 'success' : 'info'">
-              {{ detailFormData.is_superuser ? "是" : "否" }}
+              {{ detailFormData.is_superuser ? t("system.user.yes") : t("system.user.no") }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="状态" :span="2">
+          <el-descriptions-item :label="t('system.user.status')" :span="2">
             <el-tag :type="detailFormData.status === '0' ? 'success' : 'danger'">
-              {{ detailFormData.status === "0" ? "启用" : "停用" }}
+              {{
+                detailFormData.status === "0" ? t("system.user.enabled") : t("system.user.disabled")
+              }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="上次登录时间" :span="2">
+          <el-descriptions-item :label="t('system.user.lastLogin')" :span="2">
             {{ detailFormData.last_login }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建人" :span="2">
+          <el-descriptions-item :label="t('system.user.creator')" :span="2">
             {{ detailFormData.created_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新人" :span="2">
+          <el-descriptions-item :label="t('system.user.updater')" :span="2">
             {{ detailFormData.updated_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间" :span="2">
+          <el-descriptions-item :label="t('system.user.createdAt')" :span="2">
             {{ detailFormData.created_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新时间" :span="2">
+          <el-descriptions-item :label="t('system.user.updatedAt')" :span="2">
             {{ detailFormData.updated_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="描述" :span="4">
+          <el-descriptions-item :label="t('system.user.description')" :span="4">
             {{ detailFormData.description }}
           </el-descriptions-item>
         </el-descriptions>
@@ -251,38 +287,46 @@
           label-width="auto"
           label-position="right"
         >
-          <el-form-item label="账号" prop="username">
+          <el-form-item :label="t('system.user.username')" prop="username">
             <el-input
               v-model="formData.username"
               :disabled="!!formData.id"
-              placeholder="请输入账号"
+              :placeholder="t('system.user.inputUsername')"
             />
           </el-form-item>
 
-          <el-form-item label="用户名" prop="name">
-            <el-input v-model="formData.name" placeholder="请输入用户名" />
+          <el-form-item :label="t('system.user.name')" prop="name">
+            <el-input v-model="formData.name" :placeholder="t('system.user.inputName')" />
           </el-form-item>
 
-          <el-form-item label="性别" prop="gender">
-            <el-select v-model="formData.gender" placeholder="请选择性别">
-              <el-option label="男" value="0" />
-              <el-option label="女" value="1" />
-              <el-option label="未知" value="2" />
+          <el-form-item :label="t('system.user.gender')" prop="gender">
+            <el-select v-model="formData.gender" :placeholder="t('system.user.selectGender')">
+              <el-option :label="t('system.user.male')" value="0" />
+              <el-option :label="t('system.user.female')" value="1" />
+              <el-option :label="t('system.user.unknown')" value="2" />
             </el-select>
           </el-form-item>
 
-          <el-form-item label="手机号" prop="mobile">
-            <el-input v-model="formData.mobile" placeholder="请输入手机号码" maxlength="11" />
+          <el-form-item :label="t('system.user.mobile')" prop="mobile">
+            <el-input
+              v-model="formData.mobile"
+              :placeholder="t('system.user.inputMobile')"
+              maxlength="11"
+            />
           </el-form-item>
 
-          <el-form-item label="邮箱" prop="email">
-            <el-input v-model="formData.email" placeholder="请输入邮箱" maxlength="50" />
+          <el-form-item :label="t('system.user.email')" prop="email">
+            <el-input
+              v-model="formData.email"
+              :placeholder="t('system.user.inputEmail')"
+              maxlength="50"
+            />
           </el-form-item>
 
-          <el-form-item label="部门" prop="dept_id">
+          <el-form-item :label="t('system.user.dept')" prop="dept_id">
             <el-tree-select
               v-model="formData.dept_id"
-              placeholder="请选择上级部门"
+              :placeholder="t('system.user.selectParentDept')"
               :data="deptOptions"
               :props="{ children: 'children', label: 'label', disabled: 'disabled' }"
               filterable
@@ -291,8 +335,12 @@
             />
           </el-form-item>
 
-          <el-form-item label="角色" prop="role_ids">
-            <el-select v-model="formData.role_ids" multiple placeholder="请选择角色">
+          <el-form-item :label="t('system.user.role')" prop="role_ids">
+            <el-select
+              v-model="formData.role_ids"
+              multiple
+              :placeholder="t('system.user.selectRole')"
+            >
               <el-option
                 v-for="item in roleOptions"
                 :key="item.value"
@@ -303,8 +351,12 @@
             </el-select>
           </el-form-item>
 
-          <el-form-item label="岗位" prop="position_ids">
-            <el-select v-model="formData.position_ids" multiple placeholder="请选择岗位">
+          <el-form-item :label="t('system.user.position')" prop="position_ids">
+            <el-select
+              v-model="formData.position_ids"
+              multiple
+              :placeholder="t('system.user.selectPosition')"
+            >
               <el-option
                 v-for="item in positionOptions"
                 :key="item.value"
@@ -315,35 +367,35 @@
             </el-select>
           </el-form-item>
 
-          <el-form-item v-if="!formData.id" label="密码" prop="password">
+          <el-form-item v-if="!formData.id" :label="t('system.user.password')" prop="password">
             <el-input
               v-model="formData.password"
-              placeholder="请输入密码"
+              :placeholder="t('system.user.inputPassword')"
               type="password"
               show-password
               clearable
             />
           </el-form-item>
 
-          <el-form-item label="是否超管" prop="is_superuser">
+          <el-form-item :label="t('system.user.isSuperuser')" prop="is_superuser">
             <el-switch v-model="formData.is_superuser" />
           </el-form-item>
 
-          <el-form-item label="状态" prop="status">
+          <el-form-item :label="t('system.user.status')" prop="status">
             <el-radio-group v-model="formData.status">
-              <el-radio value="0">启用</el-radio>
-              <el-radio value="1">停用</el-radio>
+              <el-radio value="0">{{ t("system.user.enabled") }}</el-radio>
+              <el-radio value="1">{{ t("system.user.disabled") }}</el-radio>
             </el-radio-group>
           </el-form-item>
 
-          <el-form-item label="描述" prop="description">
+          <el-form-item :label="t('system.user.description')" prop="description">
             <el-input
               v-model="formData.description"
               :rows="4"
               :maxlength="100"
               show-word-limit
               type="textarea"
-              placeholder="请输入描述"
+              :placeholder="t('system.user.inputDescription')"
             />
           </el-form-item>
         </el-form>
@@ -351,16 +403,18 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
+          <el-button @click="handleCloseDialog">{{ t("system.user.cancel") }}</el-button>
           <el-button
             v-if="dialogVisible.type === 'create' || dialogVisible.type === 'update'"
             type="primary"
             :loading="submitLoading"
             @click="handleSubmit"
           >
-            确定
+            {{ t("system.user.confirm") }}
           </el-button>
-          <el-button v-else type="primary" @click="handleCloseDialog">确定</el-button>
+          <el-button v-else type="primary" @click="handleCloseDialog">
+            {{ t("system.user.confirm") }}
+          </el-button>
         </div>
       </template>
     </EnhancedDrawer>
@@ -389,6 +443,7 @@ defineOptions({
 });
 
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/store/modules/app.store";
 import { DeviceEnum } from "@/enums/settings/device.enum";
 import { ResultEnum } from "@/enums/api/result.enum";
@@ -420,6 +475,8 @@ import { normalizeAvatarUrl } from "@/utils";
 
 const appStore = useAppStore();
 
+const { t } = useI18n();
+
 const searchRef = ref<InstanceType<typeof PageSearch>>();
 const contentRef = ref<InstanceType<typeof PageContent>>();
 const dataFormRef = ref();
@@ -450,29 +507,33 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "username",
-      label: "账号",
+      label: t("system.user.username"),
       type: "input",
-      attrs: { placeholder: "请输入账号", clearable: true },
+      attrs: { placeholder: t("system.user.inputUsername"), clearable: true },
     },
     {
       prop: "name",
-      label: "用户名",
+      label: t("system.user.name"),
       type: "input",
-      attrs: { placeholder: "请输入用户名", clearable: true },
+      attrs: { placeholder: t("system.user.inputName"), clearable: true },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("system.user.status"),
       type: "select",
       options: [
-        { label: "启用", value: "0" },
-        { label: "停用", value: "1" },
+        { label: t("system.user.enabled"), value: "0" },
+        { label: t("system.user.disabled"), value: "1" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("system.user.selectStatus"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "created_id",
-      label: "创建人",
+      label: t("system.user.creator"),
       type: "user-table-select",
       initialValue: null,
       events: {
@@ -493,17 +554,17 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "avatar", label: "头像", show: true },
-  { prop: "username", label: "账号", show: true },
-  { prop: "name", label: "用户名", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "dept", label: "部门", show: true },
-  { prop: "gender", label: "性别", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "updated_time", label: "更新时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("system.user.selection"), show: true },
+  { prop: "index", label: t("system.user.serial"), show: true },
+  { prop: "avatar", label: t("system.user.avatar"), show: true },
+  { prop: "username", label: t("system.user.username"), show: true },
+  { prop: "name", label: t("system.user.name"), show: true },
+  { prop: "status", label: t("system.user.status"), show: true },
+  { prop: "dept", label: t("system.user.dept"), show: true },
+  { prop: "gender", label: t("system.user.gender"), show: true },
+  { prop: "created_time", label: t("system.user.createdAt"), show: true },
+  { prop: "updated_time", label: t("system.user.updatedAt"), show: true },
+  { prop: "operation", label: t("system.user.action"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<UserPageQuery>>({
@@ -540,8 +601,8 @@ const contentConfig = reactive<IContentConfig<UserPageQuery>>({
     }
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("system.user.warning"),
+    message: t("system.user.deleteConfirmMessage"),
     type: "warning",
   },
 });
@@ -609,39 +670,39 @@ const dialogVisible = reactive({
 });
 
 const rules = reactive({
-  username: [{ required: true, message: "请输入账号", trigger: "blur" }],
-  name: [{ required: true, message: "请输入用户名", trigger: "blur" }],
-  password: [{ required: true, message: "请输入密码", trigger: "blur" }],
-  gender: [{ required: false, message: "请选择性别", trigger: "blur" }],
+  username: [{ required: true, message: t("system.user.inputUsername"), trigger: "blur" }],
+  name: [{ required: true, message: t("system.user.inputName"), trigger: "blur" }],
+  password: [{ required: true, message: t("system.user.inputPassword"), trigger: "blur" }],
+  gender: [{ required: false, message: t("system.user.selectGender"), trigger: "blur" }],
   email: [
     {
       pattern: /\w[-\w.+]*@([A-Za-z0-9][-A-Za-z0-9]+\.)+[A-Za-z]{2,14}/,
-      message: "请输入正确的邮箱地址",
+      message: t("system.user.emailInvalid"),
       trigger: "blur",
     },
   ],
   mobile: [
     {
       pattern: /^1[3|4|5|6|7|8|9][0-9]\d{8}$/,
-      message: "请输入正确的手机号码",
+      message: t("system.user.mobileInvalid"),
       trigger: "blur",
     },
   ],
-  is_superuser: [{ required: true, message: "请选择是否超管", trigger: "blur" }],
-  status: [{ required: true, message: "请选择状态", trigger: "blur" }],
+  is_superuser: [{ required: true, message: t("system.user.selectSuperuser"), trigger: "blur" }],
+  status: [{ required: true, message: t("system.user.selectStatus"), trigger: "blur" }],
 });
 
 const exportColumns = [
-  { prop: "username", label: "账号" },
-  { prop: "name", label: "名称" },
-  { prop: "status", label: "状态" },
-  { prop: "gender", label: "性别" },
-  { prop: "email", label: "邮箱" },
-  { prop: "mobile", label: "手机号" },
-  { prop: "is_superuser", label: "是否超管" },
-  { prop: "description", label: "描述" },
-  { prop: "created_time", label: "创建时间" },
-  { prop: "updated_time", label: "更新时间" },
+  { prop: "username", label: t("system.user.username") },
+  { prop: "name", label: t("system.user.exportName") },
+  { prop: "status", label: t("system.user.status") },
+  { prop: "gender", label: t("system.user.gender") },
+  { prop: "email", label: t("system.user.email") },
+  { prop: "mobile", label: t("system.user.mobile") },
+  { prop: "is_superuser", label: t("system.user.isSuperuser") },
+  { prop: "description", label: t("system.user.description") },
+  { prop: "created_time", label: t("system.user.createdAt") },
+  { prop: "updated_time", label: t("system.user.updatedAt") },
 ];
 
 const curdContentConfig = {
@@ -668,17 +729,21 @@ const curdContentConfig = {
 } as unknown as IContentConfig;
 
 function hancleResetPassword(row: UserInfo) {
-  ElMessageBox.prompt("请输入用户【" + row.username + "】的新密码", "重置密码", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
-  }).then(
+  ElMessageBox.prompt(
+    t("system.user.resetPasswordPrompt", { username: row.username }),
+    t("system.user.resetPassword"),
+    {
+      confirmButtonText: t("system.user.confirm"),
+      cancelButtonText: t("system.user.cancel"),
+    }
+  ).then(
     async ({ value }) => {
       if (!value || value.length < 6) {
-        ElMessage.warning("密码至少需要6位字符，请重新输入");
+        ElMessage.warning(t("system.user.passwordMinLength"));
         return false;
       }
       await UserAPI.resetUserPassword({ id: row.id!, password: value });
-      ElMessage.success("操作成功");
+      ElMessage.success(t("system.user.operationSuccess"));
     },
     () => {
       ElMessageBox.close();
@@ -723,16 +788,16 @@ async function handleOpenDialog(type: "create" | "update" | "detail", id?: numbe
   if (id) {
     const response = await UserAPI.detailUser(id);
     if (type === "detail") {
-      dialogVisible.title = "用户详情";
+      dialogVisible.title = t("system.user.userDetail");
       Object.assign(detailFormData.value, response.data.data);
     } else if (type === "update") {
-      dialogVisible.title = "修改用户";
+      dialogVisible.title = t("system.user.updateUser");
       Object.assign(formData, response.data.data);
       formData.role_ids = (response.data.data.roles || []).map((item) => item.id as number);
       formData.position_ids = (response.data.data.positions || []).map((item) => item.id as number);
     }
   } else {
-    dialogVisible.title = "新增用户";
+    dialogVisible.title = t("system.user.createUser");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -776,7 +841,7 @@ async function handleSubmit() {
         } else {
           await UserAPI.createUser(formData);
         }
-        ElMessage.success("操作成功");
+        ElMessage.success(t("system.user.operationSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -797,19 +862,19 @@ async function handleMoreClick(status: string) {
   const rows = contentRef.value?.getSelectionData() as UserInfo[] | undefined;
   const ids = (rows ?? []).map((r) => r.id).filter((id): id is number => id != null);
   if (!ids.length) {
-    ElMessage.warning("请先选择要操作的数据");
+    ElMessage.warning(t("system.user.selectDataFirst"));
     return;
   }
-  ElMessageBox.confirm("确认启用或停用该项数据?", "警告", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
+  ElMessageBox.confirm(t("system.user.confirmEnableOrDisable"), t("system.user.warning"), {
+    confirmButtonText: t("system.user.confirm"),
+    cancelButtonText: t("system.user.cancel"),
     type: "warning",
   })
     .then(async () => {
       try {
         submitLoading.value = true;
         await UserAPI.batchUser({ ids, status });
-        ElMessage.success("操作成功");
+        ElMessage.success(t("system.user.operationSuccess"));
         refreshList();
       } catch (error: unknown) {
         console.error(error);
@@ -844,7 +909,7 @@ const handleUpload = async (formDataUpload: FormData) => {
     }
   } catch (error: unknown) {
     console.error(error);
-    ElMessage.error("上传失败：" + error);
+    ElMessage.error(t("system.user.uploadFailed", { error }));
   } finally {
     uploadLoading.value = false;
   }

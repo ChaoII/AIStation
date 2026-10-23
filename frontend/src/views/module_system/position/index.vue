@@ -22,7 +22,7 @@
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar">
             <template #prepend>
-              <el-tooltip content="导出">
+              <el-tooltip :content="t('system.position.export')">
                 <el-button
                   v-hasPerm="['module_system:position:export']"
                   type="warning"
@@ -49,7 +49,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('system.position.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -60,7 +60,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('system.position.index')"
               min-width="60"
             >
               <template #default="scope">
@@ -70,27 +70,31 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="岗位名称"
+              :label="t('system.position.name')"
               prop="name"
               min-width="100"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('system.position.status')"
               prop="status"
               min-width="80"
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status === '0' ? 'success' : 'danger'">
-                  {{ scope.row.status === "0" ? "启用" : "停用" }}
+                  {{
+                    scope.row.status === "0"
+                      ? t("system.position.enable")
+                      : t("system.position.disable")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'order')?.show"
               key="order"
-              label="岗位排序"
+              :label="t('system.position.order')"
               prop="order"
               min-width="80"
               show-overflow-tooltip
@@ -98,14 +102,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'description')?.show"
               key="description"
-              label="描述"
+              :label="t('system.position.description')"
               prop="description"
               min-width="120"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="t('system.position.createdTime')"
               prop="created_time"
               min-width="200"
               sortable
@@ -113,7 +117,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_time')?.show"
               key="updated_time"
-              label="更新时间"
+              :label="t('system.position.updatedTime')"
               prop="updated_time"
               min-width="200"
               sortable
@@ -121,7 +125,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_id')?.show"
               key="created_id"
-              label="创建人"
+              :label="t('system.position.createdBy')"
               min-width="100"
             >
               <template #default="scope">
@@ -131,7 +135,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_id')?.show"
               key="updated_id"
-              label="更新人"
+              :label="t('system.position.updatedBy')"
               min-width="100"
             >
               <template #default="scope">
@@ -141,7 +145,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('system.position.operation')"
               align="center"
               min-width="200"
             >
@@ -154,7 +158,7 @@
                   icon="View"
                   @click="handleOpenDialog('detail', scope.row.id)"
                 >
-                  详情
+                  {{ t("system.position.detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:position:update']"
@@ -164,7 +168,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("system.position.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:position:delete']"
@@ -174,7 +178,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("system.position.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -190,29 +194,31 @@
     >
       <template v-if="dialogVisible.type === 'detail'">
         <el-descriptions :column="4" border>
-          <el-descriptions-item label="岗位名称" :span="2">
+          <el-descriptions-item :label="t('system.position.name')" :span="2">
             {{ detailFormData.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="排序" :span="2">
+          <el-descriptions-item :label="t('system.position.orderShort')" :span="2">
             {{ detailFormData.order }}
           </el-descriptions-item>
-          <el-descriptions-item label="状态" :span="2">
-            <el-tag v-if="detailFormData.status === '0'" type="success">启用</el-tag>
-            <el-tag v-else type="danger">停用</el-tag>
+          <el-descriptions-item :label="t('system.position.status')" :span="2">
+            <el-tag v-if="detailFormData.status === '0'" type="success">
+              {{ t("system.position.enable") }}
+            </el-tag>
+            <el-tag v-else type="danger">{{ t("system.position.disable") }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="创建人" :span="2">
+          <el-descriptions-item :label="t('system.position.createdBy')" :span="2">
             {{ detailFormData.created_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新人" :span="2">
+          <el-descriptions-item :label="t('system.position.updatedBy')" :span="2">
             {{ detailFormData.updated_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间" :span="2">
+          <el-descriptions-item :label="t('system.position.createdTime')" :span="2">
             {{ detailFormData.created_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新时间" :span="2">
+          <el-descriptions-item :label="t('system.position.updatedTime')" :span="2">
             {{ detailFormData.updated_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="描述" :span="4">
+          <el-descriptions-item :label="t('system.position.description')" :span="4">
             {{ detailFormData.description }}
           </el-descriptions-item>
         </el-descriptions>
@@ -226,26 +232,30 @@
           label-width="auto"
           label-position="right"
         >
-          <el-form-item label="岗位名称" prop="name">
-            <el-input v-model="formData.name" placeholder="请输入岗位名称" :maxlength="50" />
+          <el-form-item :label="t('system.position.name')" prop="name">
+            <el-input
+              v-model="formData.name"
+              :placeholder="t('system.position.namePlaceholder')"
+              :maxlength="50"
+            />
           </el-form-item>
-          <el-form-item label="排序" prop="order">
+          <el-form-item :label="t('system.position.orderShort')" prop="order">
             <el-input-number v-model="formData.order" controls-position="right" :min="1" />
           </el-form-item>
-          <el-form-item label="状态" prop="status">
+          <el-form-item :label="t('system.position.status')" prop="status">
             <el-radio-group v-model="formData.status">
-              <el-radio value="0">启用</el-radio>
-              <el-radio value="1">停用</el-radio>
+              <el-radio value="0">{{ t("system.position.enable") }}</el-radio>
+              <el-radio value="1">{{ t("system.position.disable") }}</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="描述" prop="description">
+          <el-form-item :label="t('system.position.description')" prop="description">
             <el-input
               v-model="formData.description"
               :rows="4"
               :maxlength="100"
               show-word-limit
               type="textarea"
-              placeholder="请输入描述"
+              :placeholder="t('system.position.descriptionPlaceholder')"
             />
           </el-form-item>
         </el-form>
@@ -253,16 +263,18 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
+          <el-button @click="handleCloseDialog">{{ t("system.position.cancel") }}</el-button>
           <el-button
             v-if="dialogVisible.type !== 'detail'"
             type="primary"
             :loading="submitLoading"
             @click="handleSubmit"
           >
-            确定
+            {{ t("system.position.confirm") }}
           </el-button>
-          <el-button v-else type="primary" @click="handleCloseDialog">确定</el-button>
+          <el-button v-else type="primary" @click="handleCloseDialog">
+            {{ t("system.position.confirm") }}
+          </el-button>
         </div>
       </template>
     </EnhancedDialog>
@@ -283,7 +295,8 @@ defineOptions({
   inheritAttrs: false,
 });
 
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { useI18n } from "vue-i18n";
 import { ref, reactive, computed, markRaw, nextTick, unref } from "vue";
 import { fetchAllPages } from "@/utils/fetchAllPages";
 import PositionAPI, {
@@ -302,6 +315,7 @@ import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 
+const { t } = useI18n();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const dataFormRef = ref();
 const submitLoading = ref(false);
@@ -319,37 +333,41 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "岗位名称",
+      label: t("system.position.name"),
       type: "input",
-      attrs: { placeholder: "请输入岗位名称", clearable: true },
+      attrs: { placeholder: t("system.position.namePlaceholder"), clearable: true },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("system.position.status"),
       type: "select",
       options: [
-        { label: "启用", value: "0" },
-        { label: "停用", value: "1" },
+        { label: t("system.position.enable"), value: "0" },
+        { label: t("system.position.disable"), value: "1" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("system.position.statusPlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "created_time",
-      label: "创建时间",
+      label: t("system.position.createdTime"),
       type: "date-picker",
       initialValue: [],
       attrs: {
         type: "datetimerange",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
-        rangeSeparator: "至",
-        startPlaceholder: "开始日期",
-        endPlaceholder: "结束日期",
+        rangeSeparator: t("system.position.rangeSeparator"),
+        startPlaceholder: t("system.position.startDate"),
+        endPlaceholder: t("system.position.endDate"),
         style: { width: "340px" },
       },
     },
     {
       prop: "created_id",
-      label: "创建人",
+      label: t("system.position.createdBy"),
       type: "user-table-select",
       initialValue: null,
       events: {
@@ -370,17 +388,17 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "岗位名称", show: true },
-  { prop: "order", label: "岗位排序", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "updated_time", label: "更新时间", show: true },
-  { prop: "created_id", label: "创建人", show: true },
-  { prop: "updated_id", label: "更新人", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("system.position.selection"), show: true },
+  { prop: "index", label: t("system.position.index"), show: true },
+  { prop: "name", label: t("system.position.name"), show: true },
+  { prop: "order", label: t("system.position.order"), show: true },
+  { prop: "status", label: t("system.position.status"), show: true },
+  { prop: "description", label: t("system.position.description"), show: true },
+  { prop: "created_time", label: t("system.position.createdTime"), show: true },
+  { prop: "updated_time", label: t("system.position.updatedTime"), show: true },
+  { prop: "created_id", label: t("system.position.createdBy"), show: true },
+  { prop: "updated_id", label: t("system.position.updatedBy"), show: true },
+  { prop: "operation", label: t("system.position.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<PositionPageQuery>>({
@@ -413,8 +431,8 @@ const contentConfig = reactive<IContentConfig<PositionPageQuery>>({
     await userStore.getUserInfo();
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("system.position.confirmTitle"),
+    message: t("system.position.deleteConfirmMessage"),
     type: "warning",
   },
 });
@@ -434,12 +452,12 @@ const exportSelectionData = computed(
 );
 
 const exportColumns = [
-  { prop: "name", label: "岗位名称" },
-  { prop: "order", label: "岗位排序" },
-  { prop: "status", label: "状态" },
-  { prop: "description", label: "描述" },
-  { prop: "created_time", label: "创建时间" },
-  { prop: "updated_time", label: "更新时间" },
+  { prop: "name", label: t("system.position.name") },
+  { prop: "order", label: t("system.position.order") },
+  { prop: "status", label: t("system.position.status") },
+  { prop: "description", label: t("system.position.description") },
+  { prop: "created_time", label: t("system.position.createdTime") },
+  { prop: "updated_time", label: t("system.position.updatedTime") },
 ];
 
 const curdContentConfig = {
@@ -481,9 +499,9 @@ const dialogVisible = reactive({
 });
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入岗位名称", trigger: "blur" }],
-  order: [{ required: true, message: "请输入岗位排序", trigger: "blur" }],
-  status: [{ required: true, message: "请选择岗位状态", trigger: "blur" }],
+  name: [{ required: true, message: t("system.position.nameRequired"), trigger: "blur" }],
+  order: [{ required: true, message: t("system.position.orderRequired"), trigger: "blur" }],
+  status: [{ required: true, message: t("system.position.statusRequired"), trigger: "blur" }],
 });
 
 const initialFormData: PositionForm = {
@@ -512,14 +530,14 @@ async function handleOpenDialog(type: "create" | "update" | "detail", id?: numbe
   if (id) {
     const response = await PositionAPI.detailPosition(id);
     if (type === "detail") {
-      dialogVisible.title = "岗位详情";
+      dialogVisible.title = t("system.position.detailTitle");
       Object.assign(detailFormData.value, response.data.data);
     } else if (type === "update") {
-      dialogVisible.title = "修改岗位";
+      dialogVisible.title = t("system.position.updateTitle");
       Object.assign(formData, response.data.data);
     }
   } else {
-    dialogVisible.title = "新增岗位";
+    dialogVisible.title = t("system.position.createTitle");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -536,7 +554,7 @@ async function handleSubmit() {
         } else {
           await PositionAPI.createPosition(formData);
         }
-        ElMessage.success("操作成功");
+        ElMessage.success(t("system.position.operationSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -555,18 +573,27 @@ async function handleMoreClick(status: string) {
   const rows = contentRef.value?.getSelectionData() as PositionTable[] | undefined;
   const ids = (rows ?? []).map((r) => r.id).filter((id): id is number => id != null);
   if (!ids.length) {
-    ElMessage.warning("请先选择要操作的数据");
+    ElMessage.warning(t("system.position.selectDataFirst"));
     return;
   }
-  ElMessageBox.confirm(`确认${status === "0" ? "启用" : "停用"}该项数据?`, "警告", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
+  ElMessageBox.confirm(
+    t("system.position.confirmStatusMessage", {
+      action:
+        status === "0"
+          ? t("system.position.confirmStatusEnable")
+          : t("system.position.confirmStatusDisable"),
+    }),
+    t("system.position.confirmTitle"),
+    {
+      confirmButtonText: t("system.position.confirm"),
+      cancelButtonText: t("system.position.cancel"),
+      type: "warning",
+    }
+  )
     .then(async () => {
       try {
         await PositionAPI.batchPosition({ ids, status });
-        ElMessage.success("操作成功");
+        ElMessage.success(t("system.position.operationSuccess"));
         refreshList();
         const userStore = useUserStore();
         await userStore.getUserInfo();
