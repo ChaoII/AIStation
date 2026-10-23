@@ -49,7 +49,7 @@
         <el-table
           ref="tableRef"
           v-loading="loading"
-          v-bind="contentConfig.table"
+          v-bind="tableProps"
           :data="pageData"
           :row-key="pk"
           class="flex-1"
@@ -375,6 +375,13 @@ const emit = defineEmits<{
 
 // 表格工具栏按钮配置
 const config = computed(() => props.contentConfig);
+
+// 表格默认样式：边框 + 斑马纹（项目标准 U1），可由 contentConfig.table 显式覆盖
+const tableProps = computed(() => ({
+  border: true,
+  stripe: true,
+  ...props.contentConfig.table,
+}));
 const buttonConfig = reactive<Record<string, IObject>>({
   add: { text: "新增", attrs: { icon: "plus", type: "success" }, perm: "create" },
   delete: { text: "删除", attrs: { icon: "delete", type: "danger" }, perm: "delete" },
@@ -497,7 +504,7 @@ const showPagination = props.contentConfig.pagination !== false;
 // 分页配置
 const defaultPagination = {
   background: true,
-  layout: "total, sizes, prev, pager, next, jumper",
+  layout: "total, sizes, prev, pager, next",
   pageSize: 20,
   pageSizes: [10, 20, 30, 50],
   total: 0,
@@ -549,11 +556,16 @@ function handleDelete(id?: number | string) {
   }
 
   const dc = props.contentConfig.deleteConfirm;
-  ElMessageBox.confirm(dc?.message ?? "确认删除?", dc?.title ?? "警告", {
-    confirmButtonText: dc?.confirmButtonText ?? "确定",
-    cancelButtonText: dc?.cancelButtonText ?? "取消",
-    type: dc?.type ?? "warning",
-  })
+  const delCount = ids.split(",").filter(Boolean).length;
+  ElMessageBox.confirm(
+    dc?.message ?? `确认删除？将删除 ${delCount} 项数据，删除后不可恢复。`,
+    dc?.title ?? "删除确认",
+    {
+      confirmButtonText: dc?.confirmButtonText ?? "删除",
+      cancelButtonText: dc?.cancelButtonText ?? "取消",
+      type: dc?.type ?? "warning",
+    }
+  )
     .then(function () {
       if (props.contentConfig.deleteAction) {
         props.contentConfig
