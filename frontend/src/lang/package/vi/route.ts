@@ -93,4 +93,5 @@ export default {
   训练详情: "Chi tiết huấn luyện",
   数据合成: "Tổng hợp dữ liệu",
   车牌合成: "Tổng hợp biển số",
+  首页: "Trang chủ",
 };

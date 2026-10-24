@@ -93,4 +93,5 @@ export default {
   训练详情: "Détails d'entraînement",
   数据合成: "Synthèse de données",
   车牌合成: "Synthèse de plaques",
+  首页: "Accueil",
 };
