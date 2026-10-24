@@ -1,0 +1,90 @@
+export default {
+  // 工具栏 / 操作
+  export: "تصدير",
+  noData: "لا توجد بيانات",
+  detail: "التفاصيل",
+  edit: "تعديل",
+  delete: "حذف",
+  action: "إجراءات",
+  cancel: "إلغاء",
+  confirm: "تأكيد",
+  save: "حفظ",
+  operationSuccess: "تمت العملية بنجاح",
+
+  // 表格列
+  selection: "التحديد",
+  serial: "رقم",
+  configName: "اسم الإعداد",
+  configKey: "مفتاح الإعداد",
+  configKeyName: "اسم مفتاح الإعداد",
+  configValue: "قيمة الإعداد",
+  configType: "مدمج في النظام",
+  description: "الوصف",
+  createdTime: "وقت الإنشاء",
+  updatedTime: "وقت التحديث",
+  yes: "نعم",
+  no: "لا",
+
+  // 搜索 / 筛选
+  inputConfigName: "يرجى إدخال اسم الإعداد",
+  inputConfigKey: "يرجى إدخال مفتاح الإعداد",
+  inputConfigValue: "يرجى إدخال قيمة الإعداد",
+  inputDescription: "يرجى إدخال الوصف",
+  inputConfigKeyName: "يرجى إدخال اسم مفتاح الإعداد",
+  selectConfigType: "يرجى اختيار ما إذا كان مدمجًا في النظام",
+  to: "إلى",
+  startDate: "تاريخ البدء",
+  endDate: "تاريخ الانتهاء",
+
+  // 弹窗标题
+  configDetail: "تفاصيل إعداد النظام",
+  updateConfig: "تعديل إعداد النظام",
+  createConfig: "إنشاء إعداد النظام",
+
+  // 提示 / 确认
+  warnTitle: "تحذير",
+  deleteConfirmMessage: "هل أنت متأكد من حذف البيانات المحددة؟ لا يمكن التراجع عن هذا الإجراء.",
+  requiredConfigName: "يرجى إدخال اسم إعداد النظام",
+  requiredConfigKey: "يرجى إدخال مفتاح إعداد النظام",
+  requiredConfigValue: "يرجى إدخال قيمة إعداد النظام",
+  requiredConfigType: "يرجى اختيار نوع إعداد النظام",
+
+  // 配置中心抽屉
+  configCenter: "مركز الإعدادات",
+  websiteConfig: "إعدادات الموقع",
+  websiteIcon: "أيقونة الموقع",
+  securityPrivacy: "الأمان والخصوصية",
+  userAgreement: "اتفاقية المستخدم",
+  apiWhitelist: "قائمة السماح لواجهات API",
+  ipBlacklist: "قائمة حظر عناوين IP",
+  notification: "إعدادات الإشعارات",
+  demoConfig: "إعدادات العرض التجريبي",
+  wsPush: "دفع WebSocket",
+  smtpEmail: "بريد SMTP",
+  smsGateway: "بوابة SMS",
+  webhookRest: "Webhook / REST API",
+  defaultRecipient: "المستلم الافتراضي",
+  enable: "تفعيل",
+  disable: "تعطيل",
+  testWsPush: "اختبار دفع WS",
+  testEmailPush: "اختبار دفع البريد الإلكتروني",
+  testSmsPush: "اختبار دفع SMS",
+  testWebhookPush: "اختبار دفع Webhook",
+  addApiPath: "إضافة مسار API",
+  addIp: "إضافة عنوان IP",
+  apiWhitelistTip:
+    "ملاحظة الإعداد: مسارات API في قائمة السماح متاحة بدون تسجيل الدخول وتدعم إعداد المسار الكامل.",
+  ipBlacklistTip:
+    "ملاحظة الإعداد: لا يمكن لعناوين IP الموجودة في قائمة الحظر الوصول إلى النظام، وتدعم إعداد عنوان IP مفرد.",
+  demoIpWhitelistTip:
+    "ملاحظة الإعداد: في وضع العرض التجريبي، يمكن فقط لعناوين IP المدرجة في قائمة السماح الوصول إلى النظام، وتدعم إعداد عنوان IP مفرد.",
+  demoEnableTip:
+    "ملاحظة الإعداد: بمجرد التفعيل، سيدخل النظام وضع العرض التجريبي وقد تكون بعض الوظائف محدودة.",
+  invalidApiPath: "يرجى إدخال تنسيق مسار API صالح (يبدأ بـ /)",
+  invalidIp: "يرجى إدخال تنسيق عنوان IP صالح",
+  keepApiWhitelist: "مطلوب إعداد واحد على الأقل لقائمة سماح API",
+  keepIpBlacklist: "مطلوب إعداد واحد على الأقل لقائمة حظر عناوين IP",
+  keepIpWhitelist: "مطلوب إعداد واحد على الأقل لقائمة سماح عناوين IP",
+  uploadFailedPrefix: "فشل الرفع: ",
+  uploadRetry: "يرجى المحاولة لاحقًا",
+};

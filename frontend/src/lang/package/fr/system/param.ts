@@ -1,0 +1,90 @@
+export default {
+  // 工具栏 / 操作
+  export: "Exporter",
+  noData: "Aucune donnée",
+  detail: "Détail",
+  edit: "Modifier",
+  delete: "Supprimer",
+  action: "Actions",
+  cancel: "Annuler",
+  confirm: "Confirmer",
+  save: "Enregistrer",
+  operationSuccess: "Opération réussie",
+
+  // 表格列
+  selection: "Sélection",
+  serial: "N°",
+  configName: "Nom de la configuration",
+  configKey: "Clé de configuration",
+  configKeyName: "Nom de la clé de configuration",
+  configValue: "Valeur de configuration",
+  configType: "Intégré au système",
+  description: "Description",
+  createdTime: "Date de création",
+  updatedTime: "Date de mise à jour",
+  yes: "Oui",
+  no: "Non",
+
+  // 搜索 / 筛选
+  inputConfigName: "Veuillez saisir le nom de la configuration",
+  inputConfigKey: "Veuillez saisir la clé de configuration",
+  inputConfigValue: "Veuillez saisir la valeur de configuration",
+  inputDescription: "Veuillez saisir la description",
+  inputConfigKeyName: "Veuillez saisir le nom de la clé de configuration",
+  selectConfigType: "Veuillez sélectionner l'intégration système",
+  to: "à",
+  startDate: "Date de début",
+  endDate: "Date de fin",
+
+  // 弹窗标题
+  configDetail: "Détail de la configuration système",
+  updateConfig: "Modifier la configuration système",
+  createConfig: "Créer la configuration système",
+
+  // 提示 / 确认
+  warnTitle: "Avertissement",
+  deleteConfirmMessage: "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
+  requiredConfigName: "Veuillez saisir le nom de la configuration système",
+  requiredConfigKey: "Veuillez saisir la clé de configuration système",
+  requiredConfigValue: "Veuillez saisir la valeur de configuration système",
+  requiredConfigType: "Veuillez sélectionner le type de configuration système",
+
+  // 配置中心抽屉
+  configCenter: "Centre de configuration",
+  websiteConfig: "Configuration du site web",
+  websiteIcon: "Icône du site web",
+  securityPrivacy: "Sécurité et confidentialité",
+  userAgreement: "Accord d'utilisation",
+  apiWhitelist: "Liste blanche d'API",
+  ipBlacklist: "Liste noire d'IP",
+  notification: "Configuration des notifications",
+  demoConfig: "Configuration de démonstration",
+  wsPush: "Poussée WebSocket",
+  smtpEmail: "E-mail SMTP",
+  smsGateway: "Passerelle SMS",
+  webhookRest: "Webhook / API REST",
+  defaultRecipient: "Destinataire par défaut",
+  enable: "Activer",
+  disable: "Désactiver",
+  testWsPush: "Tester la poussée WS",
+  testEmailPush: "Tester la poussée e-mail",
+  testSmsPush: "Tester la poussée SMS",
+  testWebhookPush: "Tester la poussée Webhook",
+  addApiPath: "Ajouter un chemin d'API",
+  addIp: "Ajouter une adresse IP",
+  apiWhitelistTip:
+    "Note de configuration : les chemins d'API de la liste blanche sont accessibles sans connexion et prennent en charge la configuration d'un chemin complet.",
+  ipBlacklistTip:
+    "Note de configuration : les adresses IP de la liste noire ne peuvent pas accéder au système, prenant en charge la configuration d'une IP unique.",
+  demoIpWhitelistTip:
+    "Note de configuration : en mode démonstration, seules les adresses IP de la liste blanche peuvent accéder au système, prenant en charge la configuration d'une IP unique.",
+  demoEnableTip:
+    "Note de configuration : une fois activé, le système passera en mode démonstration et certaines fonctions peuvent être limitées.",
+  invalidApiPath: "Veuillez saisir un format de chemin d'API valide (commençant par /)",
+  invalidIp: "Veuillez saisir un format d'adresse IP valide",
+  keepApiWhitelist: "Au moins une configuration de liste blanche d'API est requise",
+  keepIpBlacklist: "Au moins une configuration de liste noire d'IP est requise",
+  keepIpWhitelist: "Au moins une configuration de liste blanche d'IP est requise",
+  uploadFailedPrefix: "Échec de l'import : ",
+  uploadRetry: "Veuillez réessayer plus tard",
+};

@@ -6,6 +6,13 @@ import en from "element-plus/es/locale/lang/en";
 import zhTw from "element-plus/es/locale/lang/zh-tw";
 import ja from "element-plus/es/locale/lang/ja";
 import ko from "element-plus/es/locale/lang/ko";
+import fr from "element-plus/es/locale/lang/fr";
+import es from "element-plus/es/locale/lang/es";
+import de from "element-plus/es/locale/lang/de";
+import ru from "element-plus/es/locale/lang/ru";
+import vi from "element-plus/es/locale/lang/vi";
+import th from "element-plus/es/locale/lang/th";
+import ar from "element-plus/es/locale/lang/ar";
 import { store } from "@/store";
 import { DeviceEnum } from "@/enums/settings/device.enum";
 import { SidebarStatus } from "@/enums/settings/layout.enum";
@@ -42,6 +49,20 @@ export const useAppStore = defineStore("app", () => {
         return ja;
       case "ko":
         return ko;
+      case "fr":
+        return fr;
+      case "es":
+        return es;
+      case "de":
+        return de;
+      case "ru":
+        return ru;
+      case "vi":
+        return vi;
+      case "th":
+        return th;
+      case "ar":
+        return ar;
       default:
         return zhCn;
     }

@@ -1,0 +1,15 @@
+export default {
+  dashboard: "Bảng điều khiển",
+  document: "Tài liệu",
+  系统管理: "Quản lý hệ thống",
+  菜单管理: "Quản lý menu",
+  部门管理: "Quản lý phòng ban",
+  岗位管理: "Quản lý vị trí",
+  角色管理: "Quản lý vai trò",
+  用户管理: "Quản lý người dùng",
+  日志管理: "Quản lý nhật ký",
+  公告管理: "Quản lý thông báo",
+  参数管理: "Quản lý tham số",
+  字典管理: "Quản lý từ điển",
+  租户管理: "Quản lý đối tượng thuê",
+};

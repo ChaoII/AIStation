@@ -1,0 +1,18 @@
+export default {
+  dashboard: "Панель управления",
+  logout: "Выйти",
+  document: "Документация",
+  gitee: "Gitee",
+  lock: "Заблокировать",
+  unlock: "Разблокировать",
+  profile: "Профиль пользователя",
+  config: "Центр конфигурации",
+  tour: "Обзор проекта",
+  refresh: "Обновить",
+  close: "Закрыть",
+  closeLeft: "Закрыть слева",
+  closeRight: "Закрыть справа",
+  closeOther: "Закрыть другие",
+  closeAll: "Закрыть все",
+  refreshCache: "Обновить кэш",
+};

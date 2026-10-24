@@ -1,0 +1,15 @@
+export default {
+  dashboard: "Tableau de bord",
+  document: "Document",
+  系统管理: "Gestion du système",
+  菜单管理: "Gestion des menus",
+  部门管理: "Gestion des départements",
+  岗位管理: "Gestion des postes",
+  角色管理: "Gestion des rôles",
+  用户管理: "Gestion des utilisateurs",
+  日志管理: "Gestion des journaux",
+  公告管理: "Gestion des annonces",
+  参数管理: "Gestion des paramètres",
+  字典管理: "Gestion des dictionnaires",
+  租户管理: "Gestion des locataires",
+};

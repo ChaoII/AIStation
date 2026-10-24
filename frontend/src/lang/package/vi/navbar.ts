@@ -1,0 +1,18 @@
+export default {
+  dashboard: "Bảng điều khiển",
+  logout: "Đăng xuất",
+  document: "Tài liệu",
+  gitee: "Gitee",
+  lock: "Khóa",
+  unlock: "Mở khóa",
+  profile: "Hồ sơ người dùng",
+  config: "Trung tâm cấu hình",
+  tour: "Tham quan dự án",
+  refresh: "Làm mới",
+  close: "Đóng",
+  closeLeft: "Đóng bên trái",
+  closeRight: "Đóng bên phải",
+  closeOther: "Đóng các tab khác",
+  closeAll: "Đóng tất cả",
+  refreshCache: "Làm mới bộ nhớ đệm",
+};

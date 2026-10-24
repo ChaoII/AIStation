@@ -1,0 +1,15 @@
+export default {
+  dashboard: "Dashboard",
+  document: "Dokument",
+  系统管理: "Systemverwaltung",
+  菜单管理: "Menüverwaltung",
+  部门管理: "Abteilungsverwaltung",
+  岗位管理: "Stellenverwaltung",
+  角色管理: "Rollenverwaltung",
+  用户管理: "Benutzerverwaltung",
+  日志管理: "Protokollverwaltung",
+  公告管理: "Ankündigungsverwaltung",
+  参数管理: "Parametervorwaltung",
+  字典管理: "Wörterbuchverwaltung",
+  租户管理: "Mandantenverwaltung",
+};

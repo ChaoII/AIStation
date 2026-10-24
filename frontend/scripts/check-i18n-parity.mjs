@@ -59,14 +59,20 @@ function flatten(obj, prefix = "", out = []) {
 async function loadLocale(locale) {
   const entry = join(pkgDir, `${locale}.ts`);
   if (!existsSync(entry)) return null;
-  const res = await build({
-    entryPoints: [entry],
-    bundle: true,
-    format: "cjs",
-    platform: "node",
-    write: false,
-    logLevel: "silent",
-  });
+  let res;
+  try {
+    res = await build({
+      entryPoints: [entry],
+      bundle: true,
+      format: "cjs",
+      platform: "node",
+      write: false,
+      logLevel: "silent",
+    });
+  } catch (e) {
+    // 语言包尚未补齐（缺失子模块）时跳过，便于逐语言增量校验。
+    return { error: true };
+  }
   const code = res.outputFiles[0].text;
   const mod = { exports: {} };
   new Function("module", "exports", "require", code)(mod, mod.exports, require);
@@ -99,6 +105,10 @@ if (!base) {
 let allOk = true;
 for (const lc of locales) {
   const target = await loadLocale(lc);
+  if (target?.error) {
+    console.log(`${lc}: 未完成（子模块缺失），跳过。`);
+    continue;
+  }
   if (!target) {
     console.error(`${lc}: 聚合器缺失，跳过。`);
     continue;

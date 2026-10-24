@@ -1,0 +1,399 @@
+export default {
+  // ===== develop (开放平台) =====
+  develop_tabApps: "แอป",
+  develop_tabLogs: "บันทึกการเรียก",
+  develop_tabMcp: "เซสชัน MCP",
+  develop_tabUsage: "การใช้งาน",
+  develop_tabApprovals: "การอนุมัติ",
+  develop_tabDocs: "เอกสารการเข้าถึง",
+  develop_keyword: "คำค้น",
+  develop_keywordPlaceholder: "ชื่อ / AppID",
+  develop_query: "สอบถาม",
+  develop_alertExpiringTitle: "{count} แอปจะหมดอายุในเร็ว ๆ นี้",
+  develop_expiringItem: "{name} หมดอายุที่ {expire}",
+  develop_etc: ", ฯลฯ",
+  develop_hintCreateApp:
+    "อนุญาตความสามารถแก่ผู้เรียกภายนอก; จัดการคีย์ โควต้าและการอนุมัติ",
+  develop_appTotal: "{total} แอปทั้งหมด",
+  develop_newApp: "แอปใหม่",
+  develop_name: "ชื่อ",
+  develop_namePlaceholder: "ชื่อแอปเฉพาะ",
+  develop_nameRequired: "กรุณากรอกชื่อ",
+  develop_copyAppid: "คัดลอก AppID",
+  develop_status: "สถานะ",
+  develop_enabled: "เปิดใช้งาน",
+  develop_enabledMsg: "เปิดใช้งาน",
+  develop_disabledMsg: "ปิดใช้งาน",
+  develop_expireTime: "เวลาหมดอายุ",
+  develop_expirePlaceholder: "เว้นว่างเพื่อไม่มีวันหมดอายุ",
+  develop_forever: "ถาวร",
+  develop_capabilities: "ความสามารถ",
+  develop_callCount: "การเรียก",
+  develop_noData: 'ยังไม่มีแอป สร้างด้วย "แอปใหม่"',
+  develop_action: "การกระทำ",
+  develop_detail: "รายละเอียด",
+  develop_edit: "แก้ไข",
+  develop_editAppTitle: "แก้ไขแอป · {name}",
+  develop_delete: "ลบ",
+  develop_deleteConfirm:
+    'การดำเนินการนี้จะลบแอป "{name}" และ AppKey ของมันจะใช้ไม่ได้ทันที; การกระทำนี้ไม่สามารถย้อนกลับได้ ดำเนินการต่อ?',
+  develop_deleteConfirmTitle: "ยืนยันการลบ",
+  develop_deleteSuccess: "ลบแอปแล้ว",
+  develop_deleteFail: "ลบไม่สำเร็จ",
+  develop_embed: "ฝัง",
+  develop_try: "ลอง",
+  develop_tryTitle: "ลองความสามารถ",
+  develop_tryAlert: "ส่งการเรียกทดสอบด้วยข้อมูลรับรองของแอปเพื่อดูการตอบกลับดิบ",
+  develop_selectCapability: "เลือกความสามารถ",
+  develop_selectCapabilityRequired: "กรุณาเลือกความสามารถ",
+  develop_payloadJson: "Payload (JSON)",
+  develop_payloadPlaceholder: 'Payload คำขอ เช่น {"agent_name": "..."}',
+  develop_invalidJson: "JSON ไม่ถูกต้อง",
+  develop_result: "ผลลัพธ์",
+  develop_rawResponse: "การตอบกลับดิบ",
+  develop_response: "การตอบกลับ",
+  develop_send: "ส่ง",
+  develop_close: "ปิด",
+  develop_trySuccess: "การเรียกสำเร็จ",
+  develop_tryError: "[{code}] {msg}",
+  develop_tryFailMsg: "คำขอล้มเหลว",
+  develop_resultTaskId: "ID งาน",
+  develop_resultDeletedId: "ID ที่ลบ",
+  develop_resultName: "ชื่อ",
+  develop_resultReply: "คำตอบ",
+  develop_resultSid: "SID",
+  develop_resultSessionId: "ID เซสชัน",
+  develop_resultTotal: "รวม",
+  develop_resultStatus: "สถานะ",
+  develop_resultEnabled: "เปิดใช้งาน",
+  develop_resultSourceApp: "แอปต้นทาง",
+  develop_resultItemsCount: "รายการ",
+  develop_itemsUnit: "รายการ",
+  develop_yes: "ใช่",
+  develop_no: "ไม่",
+  develop_opFail: "การดำเนินการล้มเหลว",
+  develop_save: "บันทึก",
+  develop_saveSuccess: "บันทึกแอปแล้ว",
+  develop_saveFail: "บันทึกล้มเหลว",
+  develop_loadFail: "โหลดไม่สำเร็จ",
+  develop_cancel: "ยกเลิก",
+  develop_copied: "คัดลอกแล้ว",
+  develop_copyFailManual: "คัดลอกล้มเหลว กรุณาคัดลอกด้วยตนเอง",
+  develop_desc: "คำอธิบาย",
+  develop_descPlaceholder: "แอปนี้ใช้ทำอะไร",
+  develop_authCaps: "ความสามารถที่ได้รับอนุญาต",
+  develop_requiresApproval: "ต้องมีการอนุมัติ",
+  develop_requiresApprovalTip: "ความสามารถที่ละเอียดอ่อนต้องได้รับการอนุมัติก่อนทำงาน",
+  develop_dailyQuota: "โควต้ารายวัน",
+  develop_quotaTip: "0 = ไม่จำกัด; โควต้นับตามวันตามปฏิทิน",
+  develop_unlimited: "ไม่จำกัด",
+  develop_todayUsage: "วันนี้ {usage}",
+  develop_catTrain: "การฝึก",
+  develop_catAgent: "เอเจนต์",
+  develop_catChat: "แชท",
+  develop_catBot: "บอต",
+  develop_catEmbed: "ฝัง",
+  develop_keyTitle: "{name} · AppKey",
+  develop_keyEncrypted: "เข้ารหัสแล้ว",
+  develop_resetKey: "รีเซ็ต AppKey",
+  develop_resetKeyTitle: "รีเซ็ต AppKey",
+  develop_resetKeyConfirm:
+    'การรีเซ็ตจะทำให้ AppKey ปัจจุบันของ "{name}" ใช้ไม่ได้ทันที; คีย์ใหม่มีผลทันทีและการกระทำนี้ไม่สามารถย้อนกลับได้ ดำเนินการต่อ?',
+  develop_reset: "รีเซ็ต",
+  develop_keyResetSuccess: "รีเซ็ต AppKey แล้ว",
+  develop_keyResetFail: "รีเซ็ตล้มเหลว",
+  develop_createSuccessTitle: "สร้างสำเร็จ",
+  develop_saveKeyAlert: "บันทึก AppKey ตอนนี้",
+  develop_saveKeyDesc:
+    "AppKey จะแสดงเพียงครั้งเดียว; หลังปิดคุณจะไม่สามารถดูได้อีก เก็บไว้อย่างปลอดภัย",
+  develop_iSaved: "ฉันบันทึกแล้ว",
+  develop_statTodayCalls: "การเรียกวันนี้",
+  develop_statSuccessRate: "อัตราความสำเร็จ",
+  develop_statAvgLatency: "ความหน่วงเฉลี่ย",
+  develop_statPending: "การอนุมัติรอดำเนินการ",
+  develop_suffixCount: "การเรียก",
+  develop_suffixRecords: "บันทึก",
+  develop_suffixItems: "รายการ",
+  develop_appLabel: "แอป",
+  develop_all: "ทั้งหมด",
+  develop_category: "หมวดหมู่",
+  develop_method: "เมธอด",
+  develop_success: "สำเร็จ",
+  develop_failed: "ล้มเหลว",
+  develop_denied: "ถูกปฏิเสธ",
+  develop_timeRange: "ช่วงเวลา",
+  develop_to: "ถึง",
+  develop_startTime: "เวลาเริ่ม",
+  develop_endTime: "เวลาสิ้นสุด",
+  develop_capability: "ความสามารถ",
+  develop_exportCsv: "ส่งออก CSV",
+  develop_time: "เวลา",
+  develop_latency: "ความหน่วง",
+  develop_latencyTokens: "ความหน่วง / โทเคน",
+  develop_requestPath: "เส้นทางคำขอ",
+  develop_resultSummary: "สรุปผลลัพธ์",
+  develop_noLogs: "ยังไม่มีบันทึกการเรียก",
+  develop_recent7: "7 วันที่ผ่านมา",
+  develop_recent30: "30 วันที่ผ่านมา",
+  develop_today: "วันนี้",
+  develop_sparkTitle: "{date}: {calls} การเรียก",
+  develop_topCapabilities: "ความสามารถยอดนิยม",
+  develop_topCapabilitiesShort: "ความสามารถยอดนิยม",
+  develop_filterCapabilityTitle: "กรองโดย {capability}",
+  develop_logDetailTitle: "รายละเอียดบันทึกการเรียก",
+  develop_methodStatus: "เมธอด / สถานะ",
+  develop_requestBody: "เนื้อหาคำขอ",
+  develop_requestBodyShort: "Payload",
+  develop_errorStatus: "ข้อผิดพลาด",
+  develop_error: "ข้อผิดพลาด",
+  develop_successRate: "อัตราความสำเร็จ",
+  develop_quotaHits: "โควต้าชน",
+  develop_rateLimited: "จำกัดอัตรา",
+  develop_noUsage: "ไม่มีข้อมูลการใช้งาน",
+  develop_usageRange: "ช่วง",
+  develop_recentDays: "{days} วันที่ผ่านมา",
+  develop_recentDaysValue: "{days}ว",
+  develop_calls: "การเรียก",
+  develop_usageLoadFail: "โหลดการใช้งานล้มเหลว",
+  develop_sessionId: "ID เซสชัน",
+  develop_transport: "การขนส่ง",
+  develop_transportStreamable: "Streamable HTTP",
+  develop_transportStdio: "stdio",
+  develop_client: "ไคลเอนต์",
+  develop_duration: "ระยะเวลา (วินาที)",
+  develop_toolCalls: "การเรียกเครื่องมือ",
+  develop_closeReason: "เหตุผลการปิด",
+  develop_noMcp: "ไม่มีเซสชัน MCP",
+  develop_mcpStatSessions: "เซสชัน",
+  develop_mcpStatToolCalls: "การเรียกเครื่องมือ",
+  develop_mcpStatAvgDuration: "ระยะเวลาเฉลี่ย (วินาที)",
+  develop_mcpSparkTitle: "{date}: {sessions} เซสชัน · {toolCalls} การเรียกเครื่องมือ",
+  develop_approvalHint:
+    'ความสามารถที่ละเอียดอ่อนเป็น "อนุมัติก่อนทำงาน"; ตรวจสอบคำขอรอดำเนินการด้านล่าง',
+  develop_approvalPending: "{count} รอดำเนินการ",
+  develop_approvalPendingStatus: "รอดำเนินการ",
+  develop_approve: "อนุมัติ",
+  develop_approveExecute: "อนุมัติและทำงาน",
+  develop_reject: "ปฏิเสธ",
+  develop_approvedStatus: "อนุมัติแล้ว",
+  develop_pendingStatus: "รอดำเนินการ",
+  develop_rejectedStatus: "ปฏิเสธแล้ว",
+  develop_expiredStatus: "หมดอายุ",
+  develop_execFailStatus: "ล้มเหลว",
+  develop_batchApprove: "อนุมัติเป็นชุด ({count})",
+  develop_batchApproveTitle: "อนุมัติเป็นชุด {count}",
+  develop_batchApproveConfirm:
+    "การดำเนินการนี้จะอนุมัติและทำงาน {count} การเรียกความสามารถรอดำเนินการ ดำเนินการต่อ?",
+  develop_batchApproveSuccess: "อนุมัติ {count} คำขอแล้ว",
+  develop_batchApprovePartial: "{ok} อนุมัติ, {failed} ล้มเหลว {msg}",
+  develop_batchApproveFail: "อนุมัติเป็นชุดล้มเหลว",
+  develop_applyTime: "เวลาที่ยื่นคำขอ",
+  develop_reviewTime: "เวลาตรวจสอบ",
+  develop_reviewNote: "หมายเหตุการตรวจสอบ",
+  develop_noApprovals: "ไม่มีการอนุมัติ",
+  develop_approvalLoadFail: "โหลดการอนุมัติล้มเหลว",
+  develop_approvalDetailTitle: "รายละเอียดการอนุมัติ",
+  develop_reviewApproveAction: "อนุมัติ",
+  develop_reviewConfirmTitle: "{action}?",
+  develop_reviewApproveConfirm:
+    'อนุมัติการเรียกความสามารถ "{capability}" ของแอป {appid} และทำงานหรือไม่?',
+  develop_reviewRejectConfirm: 'ปฏิเสธการเรียกความสามารถ "{capability}" หรือไม่?',
+  develop_processed: "ดำเนินการแล้ว",
+  develop_processFail: "ประมวลผลล้มเหลว",
+  develop_execResult: "ผลการดำเนินการ",
+  develop_execFailTitle: "การดำเนินการล้มเหลว: {error}",
+  develop_notifyCfg: "การกำหนดค่าการแจ้งเตือน",
+  develop_notifyCfgTitle: "การแจ้งเตือนการอนุมัติ",
+  develop_notifyAlert:
+    "เลือกช่องทางที่ส่งการแจ้งเตือนการอนุมัติและให้การกำหนดค่า JSON ของมัน",
+  develop_enableChannels: "เปิดใช้งานช่องทาง",
+  develop_channelConfig: "การกำหนดค่า {name}",
+  develop_notifyInvalidJson: "JSON ไม่ถูกต้องสำหรับ {name}",
+  develop_notifyLoadFail: "โหลดการกำหนดค่าการแจ้งเตือนล้มเหลว",
+  develop_notifyBroken: "การกำหนดค่าช่องทางเสีย: {broken}",
+  develop_saved: "บันทึกแล้ว",
+  develop_docsCredTitle: "ข้อมูลรับรอง",
+  develop_docsCredDesc:
+    'แต่ละแอปมี AppID + AppKey ผู้เรียกตรวจสอบด้วย "Bearer {appid}:{appkey}"; อย่าเปิดเผย AppKey ฝั่งเบราว์เซอร์',
+  develop_docsApprovalTitle: "ไม่ต้องอนุมัติใช่ไหม?",
+  develop_docsApprovalDesc:
+    'ความสามารถที่ละเอียดอ่อนต้องมีการอนุมัติระดับแอปในการเรียกครั้งแรก; เปิดใช้งานในการตั้งค่า "ความสามารถที่ได้รับอนุญาต" และ "โควต้ารายวัน" ของแอป',
+  develop_restCard: "REST",
+  develop_restDesc: "ทางเข้าความสามารถรวม: ใช้รหัสความสามารถเพื่อเรียกความสามารถใดก็ได้",
+  develop_capListCard: "รายการความสามารถ",
+  develop_capDesc:
+    "ความสามารถเปิดทั้งหมดที่แพลตฟอร์มเปิดเผย พร้อมสิทธิ์ที่ต้องใช้และชื่อเครื่องมือ MCP",
+  develop_capCount: "{count} ความสามารถ",
+  develop_capabilityName: "ชื่อ",
+  develop_capabilityCode: "รหัส",
+  develop_requiredPerm: "สิทธิ์ที่ต้องใช้",
+  develop_mcpToolName: "เครื่องมือ MCP",
+  develop_noCapabilities: "ไม่มีความสามารถ",
+  develop_capLoadFail: "โหลดความสามารถล้มเหลว",
+  develop_mcpCard: "MCP",
+  develop_mcpDesc: "เปิดเผยความสามารถเดียวกันผ่าน MCP (Streamable HTTP); ทุกการถูกเรียกตรวจสอบ",
+  develop_embedCard: "ฝังเว็บ",
+  develop_embedDesc:
+    "ฝังการสนทนาลงในหน้าของคุณผ่าน iframe หรือ Script SDK โทเคนถูกแลกเปลี่ยนโดยเซิร์ฟเวอร์ของคุณ",
+  develop_postMessageEvents: "เหตุการณ์ postMessage",
+  develop_embedFoot:
+    'ใช้ชื่อเหตุการณ์เหล่านี้และคำสั่ง setToken / sendMessage / resize / destroy จากกล่อง "ฝัง"',
+  develop_eventReady: "หน้าแบบฝังเริ่มต้นแล้ว (รวมชื่อเป้าหมายและเวลาหมดอายุ)",
+  develop_eventUserMessage: "ผู้ใช้ส่งข้อความ",
+  develop_eventReplyStart: "คำตอบสตรีมมิ่งเริ่มแล้ว",
+  develop_eventReplyDelta: "ข้อความสตรีมมิ่งเดลต้า (ความถี่สูง)",
+  develop_eventReplyDone: "คำตอบเสร็จสมบูรณ์ (ข้อความเต็ม)",
+  develop_eventError: "ข้อผิดพลาดธุรกิจ / เครือข่าย / การจำกัดอัตรา",
+  develop_eventTokenExpired: "ข้อมูลรับรองหมดอายุ; โฮสต์ต้องแลกเปลี่ยนใหม่และเรียก setToken",
+  develop_exportFail: "ส่งออกล้มเหลว",
+  develop_downloadStarted: "ดาวน์โหลดเริ่มแล้ว",
+  develop_restExample: `# 1. ตรวจสอบข้อมูลรับรอง: ยืนยันสถานะแอปและความสามารถที่ได้รับอนุญาต
+curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
+  -H "Authorization: Bearer {appid}:{appkey}"
+
+# 2. รายการความสามารถ: ส่งคืนเฉพาะความสามารถที่แอป **ได้รับอนุญาต**
+curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
+  -H "Authorization: Bearer {appid}:{appkey}"
+
+# 3. เรียกความสามารถ (ทางเข้าด้วยกัน): รหัสจากรายการความสามารถ body กำหนดเป็น {"payload": {...}}
+curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"payload": {"agent_name": "外部创建助手"}}'
+
+# 4. แชท (คำตอบรวม ไม่ใช่สตรีมมิ่ง)
+curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "你好"}}'
+
+# 5. แลกเปลี่ยนโทเคนฝังเว็บ (เบราว์เซอร์ไม่แตะ AppKey)
+curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"kind": "agent", "target_id": 123}'`,
+  develop_mcpExample: `// ปลายทาง (Streamable HTTP): https://<host>/api/v1/ai/develop-api/mcp
+// Auth: header Authorization: Bearer {appid}:{appkey} (ข้อมูลรับรองเดียวกับ REST)
+
+// วิธีที่ 1: ไคลเอนต์รองรับเฮดเดอร์กำหนดเองโดยธรรมชาติ (แนะนำ)
+{
+  "mcpServers": {
+    "aistation": {
+      "type": "http",
+      "url": "https://<host>/api/v1/ai/develop-api/mcp",
+      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
+    }
+  }
+}
+
+// วิธีที่ 2: ไคลเอนต์รองรับเฉพาะ stdio (ส่งต่อเฮดเดอร์ผ่าน mcp-remote)
+{
+  "mcpServers": {
+    "aistation": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote",
+        "https://<host>/api/v1/ai/develop-api/mcp",
+        "--header", "Authorization: Bearer {appid}:{appkey}"
+      ]
+    }
+  }
+}
+
+// Tool = ความสามารถ: tools/list ส่งคืนเฉพาะความสามารถที่แอปได้รับอนุญาต; ทุกการเรียกถูกตรวจสอบ`,
+  develop_embedExample:
+    `<!-- วิธีที่ 1: ฝัง iframe โดยตรง (โทเคนถูกฉีดโดยการแลกเปลี่ยนฝั่งเซิร์ฟเวอร์) -->
+<iframe src="https://<host>/web/#/embed?token={access_token}"
+        width="420" height="620" style="border:0;border-radius:12px"></iframe>
+
+<!-- วิธีที่ 2: Script SDK (แนะนำ: การเรียกกลับเหตุการณ์ + ต่ออายุ) -->
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
+    `ipt>
+<div id="ai-assistant" style="width:420px;height:620px"></div>
+<script>
+  const ai = AiAssistant.init({
+    container: "#ai-assistant",
+    token: "{access_token}",
+    apiBase: "https://<host>/api/v1/ai",
+    webBase: "https://<host>/web",
+    theme: { primary: "#409eff" }
+  });
+  ai.on("token_expired", async () => {
+    ai.setToken(await fetchTokenFromYourBackend());  // แลกเปลี่ยนโทเคนใหม่ฝั่งเซิร์ฟเวอร์
+  });
+</scr` +
+    `ipt>`,
+
+  // ===== develop_embed (嵌入弹窗) =====
+  develop_embedTitle: "ฝังแชท · {name}",
+  develop_embedKind: "ประเภทการฝัง",
+  develop_embedApp: "แอป AI",
+  develop_embedWorkflow: "เวิร์กโฟลว์",
+  develop_embedTarget: "เป้าหมายการฝัง",
+  develop_embedTargetPlaceholder: "เลือกเป้าหมายที่จะฝัง",
+  develop_embedCode: "โค้ดฝัง",
+  develop_embedTabIframe: "ฝัง iframe",
+  develop_embedCopyCode: "คัดลอกโค้ด",
+  develop_embedMintToken: "สร้างโทเคนทดลอง (2 ชม.)",
+  develop_embedCredTitle: "หมายเหตุข้อมูลรับรอง",
+  develop_embedCredDesc:
+    "{access_token} คือตัวยึดข้อมูลรับรองอายุสั้น: ให้แบ็กเอนด์โฮสต์ของคุณแลกเปลี่ยนผ่าน POST {apiBase}/develop-api/auth/token โดยใช้ appid/appkey อย่าเขียน AppKey ลงหน้าเว็บ เมื่อหมดอายุ ให้แลกเปลี่ยนใหม่และเรียก setToken() เพื่อต่ออายุ",
+  develop_embedIssuedTokens: "โทเคนที่ออก",
+  develop_embedNoTokens: "ไม่มีโทเคน (โทเคนที่แลกเปลี่ยนและทดลองจะปรากฏที่นี่)",
+  develop_embedKindShort: "ชนิด",
+  develop_embedTrialTicket: "ทดลอง",
+  develop_embedIssuedTicket: "แลกเปลี่ยน",
+  develop_embedTargetShort: "เป้าหมาย",
+  develop_embedExpireTime: "เวลาหมดอายุ",
+  develop_embedUsage: "การใช้งาน",
+  develop_embedStatus: "สถานะ",
+  develop_embedRevoked: "เพิกถอนแล้ว",
+  develop_embedValid: "ใช้งานได้",
+  develop_embedAction: "การกระทำ",
+  develop_embedRevoke: "เพิกถอน",
+  develop_embedRevokeFail: "เพิกถอนล้มเหลว",
+  develop_embedRevokeTitle: "เพิกถอนโทเคน",
+  develop_embedRevokeConfirm:
+    "หลังเพิกถอนโทเคนจะใช้ไม่ได้ทันที; หน้าแบบฝังที่ใช้มันจะไม่สามารถแชทได้และไม่สามารถย้อนกลับได้ ดำเนินการต่อ?",
+  develop_embedEvents: "สัญญาเหตุการณ์",
+  develop_embedEventsNote:
+    'ซองเหตุการณ์ต้นน้ำ = ai-embed / เวอร์ชัน = 1; payload เต็มและคำสั่งปลายน้ำอยู่ในแท็บ "เอกสารการเข้าถึง"',
+  develop_embedRevealTitle: "โทเคนทดลอง",
+  develop_embedRevealAlertTitle: "คัดลอกและวางลงในโค้ดของคุณตอนนี้",
+  develop_embedRevealAlertDesc: "โทเคนถูกแสดงที่นี่เพียงครั้งเดียว; เพียงออกใหม่เมื่อหมดอายุ",
+  develop_embedApplyCode: "เติมลงโค้ด",
+  develop_embedApplySuccess: "เติมลงโค้ดแล้ว พร้อมคัดลอก",
+  develop_embedIframeTitle: "แชท AI",
+  develop_embedTargetsLoadFail: "โหลดรายการเป้าหมายล้มเหลว",
+  develop_embedMintFail: "การสร้างล้มเหลว",
+
+  // ===== embed (公开嵌入页) =====
+  embed_brand: "ผู้ช่วย AI",
+  embed_missingTitle: "ขาดโทเคนการเข้าถึง",
+  embed_missingDesc:
+    "หน้านี้ต้องใช้โทเคนการเข้าถึงครั้งเดียว สร้างบนแบ็กเอนด์ของคุณและเปิด URL ด้วย ?token=...",
+  embed_conversation: "การสนทนา",
+  embed_aiAssistant: "ผู้ช่วย AI",
+  embed_you: "คุณ",
+  embed_welcome: "สวัสดี ฉันช่วยคุณได้อย่างไร?",
+  embed_hint: "ป้อนคำถามของคุณด้านล่างเพื่อแชท",
+  embed_inputPlaceholder: "พิมพ์คำถามของคุณ...",
+  embed_send: "ส่ง",
+  embed_stopGenerate: "หยุดสร้าง",
+  embed_sourcesCount: "{count} แหล่ง",
+  embed_knowledgePiece: "ความรู้",
+  embed_retry: "ลองใหม่",
+  embed_metaLoadFail: "โหลดการสนทนาล้มเหลว",
+  embed_noPermMsg: "ไม่มีสิทธิ์เข้าถึงการสนทนานี้",
+  embed_rateLimitedMsg: "คำขอมากเกินไป กรุณาลองใหม่ภายหลัง",
+  embed_rateLimitedNotice: "คำขอมากเกินไป กรุณาลองใหม่ภายหลัง",
+  embed_notFoundMsg: "ไม่พบเป้าหมาย",
+  embed_notFoundNotice: "ไม่พบเป้าหมาย",
+  embed_networkMsg: "ข้อผิดพลาดเครือข่าย กรุณาลองใหม่",
+  embed_networkNotice: "ข้อผิดพลาดเครือข่าย กรุณาลองใหม่",
+  embed_expiredTitle: "โทเคนการเข้าถึงหมดอายุ",
+  embed_expiredDesc:
+    "โทเคนการเข้าถึงหมดอายุแล้ว ขอให้โฮสต์แลกเปลี่ยนใหม่และเรียก setToken()",
+  embed_forbiddenTitle: "ไม่มีสิทธิ์",
+  embed_forbiddenDesc: "คุณไม่มีสิทธิ์เข้าถึงการสนทนานี้",
+};
