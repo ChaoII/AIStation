@@ -11,21 +11,21 @@
       <template #header>
         <div class="card-header">
           <div class="status-content">
-            <span>调度器监控</span>
+            <span>{{ t("task.schedulerMonitor") }}</span>
             <div class="status-item">
-              <span class="label">状态：</span>
+              <span class="label">{{ t("task.schedulerStatus") }}：</span>
               <el-tag :type="getSchedulerStatusType(schedulerStatus.status)" size="large">
                 {{ schedulerStatus.status }}
               </el-tag>
             </div>
             <div class="status-item">
-              <span class="label">运行中：</span>
+              <span class="label">{{ t("task.isRunningLabel") }}：</span>
               <el-tag :type="schedulerStatus.is_running ? 'success' : 'danger'" size="large">
-                {{ schedulerStatus.is_running ? "是" : "否" }}
+                {{ schedulerStatus.is_running ? t("task.yes") : t("task.no") }}
               </el-tag>
             </div>
             <div class="status-item">
-              <span class="label">任务数量：</span>
+              <span class="label">{{ t("task.jobCountLabel") }}：</span>
               <el-tag type="warning" size="large">{{ schedulerStatus.job_count }}</el-tag>
             </div>
             <div class="status-actions">
@@ -36,7 +36,7 @@
                 :disabled="schedulerStatus.status !== '停止'"
                 @click="handleStartScheduler"
               >
-                启动
+                {{ t("task.start") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_task:cronjob:job:scheduler']"
@@ -45,7 +45,7 @@
                 :disabled="schedulerStatus.status !== '运行中'"
                 @click="handlePauseScheduler"
               >
-                暂停
+                {{ t("task.pause") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_task:cronjob:job:scheduler']"
@@ -54,7 +54,7 @@
                 :disabled="schedulerStatus.status !== '暂停'"
                 @click="handleResumeScheduler"
               >
-                恢复
+                {{ t("task.resume") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_task:cronjob:job:scheduler']"
@@ -63,7 +63,7 @@
                 :disabled="schedulerStatus.status === '停止'"
                 @click="handleShutdownScheduler"
               >
-                关闭
+                {{ t("task.shutdown") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_task:cronjob:job:task']"
@@ -72,7 +72,7 @@
                 :disabled="schedulerStatus.job_count === 0"
                 @click="handleClearAllJobs"
               >
-                清空任务
+                {{ t("task.clearJobs") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_task:cronjob:job:query']"
@@ -80,7 +80,7 @@
                 icon="Monitor"
                 @click="handleOpenConsole"
               >
-                控制台
+                {{ t("task.consoleOpen") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_task:cronjob:job:scheduler']"
@@ -88,7 +88,7 @@
                 icon="Refresh"
                 @click="handleSyncJobs"
               >
-                同步
+                {{ t("task.sync") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_task:cronjob:job:update']"
@@ -96,7 +96,7 @@
                 icon="Refresh"
                 @click="refreshMain"
               >
-                刷新
+                {{ t("task.refresh") }}
               </el-button>
             </div>
           </div>
@@ -105,7 +105,11 @@
 
       <template #table="{ data, loading }">
         <div v-loading="loading" class="job-cards-container">
-          <el-empty v-if="!data || data.length === 0" :image-size="80" description="暂无数据" />
+          <el-empty
+            v-if="!data || data.length === 0"
+            :image-size="80"
+            :description="t('task.noData')"
+          />
           <el-row v-else :gutter="16">
             <el-col
               v-for="(job, index) in data"
@@ -131,11 +135,11 @@
 
                 <div class="job-card-body">
                   <div class="job-info-item">
-                    <span class="job-info-label">任务ID:</span>
+                    <span class="job-info-label">{{ t("task.jobId") }}:</span>
                     <span class="job-info-value">{{ job.id }}</span>
                   </div>
                   <div class="job-info-item">
-                    <span class="job-info-label">触发器:</span>
+                    <span class="job-info-label">{{ t("task.trigger") }}:</span>
                     <el-tag
                       v-if="String(job.trigger ?? '').includes('cron')"
                       type="primary"
@@ -168,8 +172,8 @@
                     </el-tag>
                   </div>
                   <div class="job-info-item">
-                    <span class="job-info-label">下次执行:</span>
-                    <span class="job-info-value">{{ job.next_run_time || "无" }}</span>
+                    <span class="job-info-label">{{ t("task.nextRun") }}:</span>
+                    <span class="job-info-value">{{ job.next_run_time || t("task.none") }}</span>
                   </div>
                 </div>
 
@@ -183,7 +187,7 @@
                       icon="VideoPlay"
                       @click="handleResumeJob(job.id)"
                     >
-                      恢复
+                      {{ t("task.resume") }}
                     </el-button>
                     <el-button
                       v-if="job.status === '运行中'"
@@ -193,7 +197,7 @@
                       icon="VideoPause"
                       @click="handlePauseJob(job.id)"
                     >
-                      暂停
+                      {{ t("task.pause") }}
                     </el-button>
                     <el-button
                       v-if="job.status !== '已停止' && job.status !== '未知'"
@@ -203,7 +207,7 @@
                       icon="CaretRight"
                       @click="handleRunJobNow(job.id)"
                     >
-                      调试
+                      {{ t("task.debug") }}
                     </el-button>
                     <el-button
                       v-if="job.status !== '未知'"
@@ -213,7 +217,7 @@
                       icon="Close"
                       @click="handleRemoveJob(job.id)"
                     >
-                      移除
+                      {{ t("task.remove") }}
                     </el-button>
                     <el-button
                       v-hasPerm="['module_task:cronjob:job:query']"
@@ -222,7 +226,7 @@
                       icon="List"
                       @click="handleOpenExecutionLogDrawer(job)"
                     >
-                      记录
+                      {{ t("task.records") }}
                     </el-button>
                   </div>
                 </template>
@@ -233,18 +237,23 @@
       </template>
     </PageContent>
 
-    <EnhancedDialog v-model="consoleVisible" title="调度器控制台" width="900px">
+    <EnhancedDialog v-model="consoleVisible" :title="t('task.consoleTitle')" width="900px">
       <div class="terminal-wrapper">
         <Terminal name="scheduler-console" :show-header="false" theme="dark" />
       </div>
       <template #footer>
-        <el-button @click="handleRefreshConsole">刷新</el-button>
-        <el-button @click="handleClearConsole">清空</el-button>
-        <el-button type="primary" @click="consoleVisible = false">关闭</el-button>
+        <el-button @click="handleRefreshConsole">{{ t("task.refreshConsole") }}</el-button>
+        <el-button @click="handleClearConsole">{{ t("task.clearConsole") }}</el-button>
+        <el-button type="primary" @click="consoleVisible = false">{{ t("task.close") }}</el-button>
       </template>
     </EnhancedDialog>
 
-    <EnhancedDrawer v-model="executionLogDrawerVisible" title="执行记录" direction="rtl" size="80%">
+    <EnhancedDrawer
+      v-model="executionLogDrawerVisible"
+      :title="t('task.executionRecords')"
+      direction="rtl"
+      size="80%"
+    >
       <div class="execution-log-drawer">
         <PageSearch
           ref="logSearchRef"
@@ -265,27 +274,27 @@
                 @selection-change="onSelectionChange"
               >
                 <template #empty>
-                  <el-empty :image-size="80" description="暂无数据" />
+                  <el-empty :image-size="80" :description="t('task.noData')" />
                 </template>
                 <el-table-column type="selection" align="center" min-width="55" />
-                <el-table-column type="index" fixed label="序号" min-width="60">
+                <el-table-column type="index" fixed :label="t('task.serial')" min-width="60">
                   <template #default="scope">
                     {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
                   </template>
                 </el-table-column>
                 <el-table-column
-                  label="任务ID"
+                  :label="t('task.jobId')"
                   prop="job_id"
                   min-width="80"
                   show-overflow-tooltip
                 />
-                <el-table-column label="任务名称" prop="job_name" min-width="140" />
-                <el-table-column label="触发方式" prop="trigger_type" min-width="120">
+                <el-table-column :label="t('task.jobName')" prop="job_name" min-width="140" />
+                <el-table-column :label="t('task.triggerType')" prop="trigger_type" min-width="120">
                   <template #default="scope">
                     <el-tag size="small">{{ getTriggerTypeLabel(scope.row.trigger_type) }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="状态" prop="status" min-width="80">
+                <el-table-column :label="t('task.status')" prop="status" min-width="80">
                   <template #default="scope">
                     <el-tag :type="getLogStatusType(scope.row.status)" size="small">
                       {{ getLogStatusLabel(scope.row.status) }}
@@ -293,24 +302,24 @@
                   </template>
                 </el-table-column>
                 <el-table-column
-                  label="下次执行时间"
+                  :label="t('task.nextRunTime')"
                   prop="next_run_time"
                   min-width="200"
                   show-overflow-tooltip
                 />
                 <el-table-column
-                  label="执行结果"
+                  :label="t('task.execResult')"
                   prop="result"
                   min-width="100"
                   show-overflow-tooltip
                 />
                 <el-table-column
-                  label="错误信息"
+                  :label="t('task.errorMsg')"
                   prop="error"
                   min-width="100"
                   show-overflow-tooltip
                 />
-                <el-table-column label="执行元数据" min-width="100">
+                <el-table-column :label="t('task.execMeta')" min-width="100">
                   <template #default="scope">
                     <el-button
                       v-if="scope.row.job_state"
@@ -320,14 +329,22 @@
                       icon="View"
                       @click="handleViewJobState(scope.row)"
                     >
-                      查看
+                      {{ t("task.view") }}
                     </el-button>
                     <span v-else>-</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="创建时间" prop="created_time" min-width="160" />
-                <el-table-column label="更新时间" prop="updated_time" min-width="160" />
-                <el-table-column label="操作" min-width="80" fixed="right">
+                <el-table-column
+                  :label="t('task.createdTime')"
+                  prop="created_time"
+                  min-width="160"
+                />
+                <el-table-column
+                  :label="t('task.updatedTime')"
+                  prop="updated_time"
+                  min-width="160"
+                />
+                <el-table-column :label="t('task.action')" min-width="80" fixed="right">
                   <template #default="scope">
                     <el-button
                       v-hasPerm="['module_task:cronjob:job:delete']"
@@ -337,7 +354,7 @@
                       icon="delete"
                       @click="handleLogRowDelete(scope.row.id)"
                     >
-                      删除
+                      {{ t("task.delete") }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -348,10 +365,10 @@
       </div>
     </EnhancedDrawer>
 
-    <EnhancedDialog v-model="jobStateVisible" title="执行元数据" width="800px">
+    <EnhancedDialog v-model="jobStateVisible" :title="t('task.execMeta')" width="800px">
       <JsonPretty :value="jobStateData" height="400px" />
       <template #footer>
-        <el-button type="primary" @click="jobStateVisible = false">关闭</el-button>
+        <el-button type="primary" @click="jobStateVisible = false">{{ t("task.close") }}</el-button>
       </template>
     </EnhancedDialog>
   </div>
@@ -362,6 +379,8 @@ defineOptions({
   name: "Job",
   inheritAttrs: false,
 });
+
+const { t } = useI18n();
 
 import JobAPI, {
   SchedulerStatus,
@@ -375,6 +394,7 @@ import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import EnhancedDrawer from "@/components/CURD/EnhancedDrawer.vue";
 import type { ISearchConfig, IContentConfig, IObject } from "@/components/CURD/types";
 import { ref, reactive, nextTick } from "vue";
+import { useI18n } from "vue-i18n";
 import { Terminal, TerminalApi } from "vue-web-terminal";
 import JsonPretty from "@/components/JsonPretty/index.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
@@ -397,20 +417,20 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "任务名称",
+      label: t("task.searchJobName"),
       type: "input",
-      attrs: { placeholder: "请输入任务名称", clearable: true, style: { width: "150px" } },
+      attrs: { placeholder: t("task.inputJobName"), clearable: true, style: { width: "150px" } },
     },
     {
       prop: "status",
-      label: "任务状态",
+      label: t("task.searchJobStatus"),
       type: "select",
       options: [
-        { label: "运行中", value: "运行中" },
-        { label: "暂停", value: "暂停" },
-        { label: "停止", value: "停止" },
+        { label: t("task.jobStatusRunning"), value: "运行中" },
+        { label: t("task.jobStatusPaused"), value: "暂停" },
+        { label: t("task.jobStatusStopped"), value: "停止" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "150px" } },
+      attrs: { placeholder: t("task.selectStatus"), clearable: true, style: { width: "150px" } },
     },
   ],
 });
@@ -458,29 +478,29 @@ const logSearchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "status",
-      label: "执行状态",
+      label: t("task.execStatus"),
       type: "select",
       options: [
-        { label: "待执行", value: "pending" },
-        { label: "执行中", value: "running" },
-        { label: "成功", value: "success" },
-        { label: "失败", value: "failed" },
-        { label: "超时", value: "timeout" },
-        { label: "已取消", value: "cancelled" },
+        { label: t("task.statusPending"), value: "pending" },
+        { label: t("task.statusRunning"), value: "running" },
+        { label: t("task.success"), value: "success" },
+        { label: t("task.failed"), value: "failed" },
+        { label: t("task.statusTimeout"), value: "timeout" },
+        { label: t("task.statusCancelled"), value: "cancelled" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "120px" } },
+      attrs: { placeholder: t("task.selectStatus"), clearable: true, style: { width: "120px" } },
     },
     {
       prop: "trigger_type",
-      label: "触发方式",
+      label: t("task.triggerType"),
       type: "select",
       options: [
-        { label: "Cron表达式", value: "cron" },
-        { label: "时间间隔", value: "interval" },
-        { label: "固定日期", value: "date" },
-        { label: "一次性任务", value: "manual" },
+        { label: t("task.triggerCron"), value: "cron" },
+        { label: t("task.triggerInterval"), value: "interval" },
+        { label: t("task.triggerDate"), value: "date" },
+        { label: t("task.triggerManual"), value: "manual" },
       ],
-      attrs: { placeholder: "请选择", clearable: true, style: { width: "120px" } },
+      attrs: { placeholder: t("task.select"), clearable: true, style: { width: "120px" } },
     },
   ],
 });
@@ -524,8 +544,8 @@ const logContentConfig = reactive<IContentConfig>({
         .filter((n) => !Number.isNaN(n))
     ),
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除选中的执行记录？",
+    title: t("task.warn"),
+    message: t("task.deleteLogConfirm"),
     type: "warning",
   },
 });
@@ -561,13 +581,13 @@ function getJobStatusType(status: string) {
 function getJobStatusLabel(status: string) {
   switch (status) {
     case "运行中":
-      return "运行中";
+      return t("task.jobRunning");
     case "暂停中":
-      return "暂停中";
+      return t("task.jobPausing");
     case "已停止":
-      return "已停止";
+      return t("task.jobStopped");
     case "未知":
-      return "未知";
+      return t("task.jobUnknown");
     default:
       return status;
   }
@@ -592,15 +612,16 @@ function formatTrigger(trigger: string) {
 
       // 构建简化的 cron 表达式
       const parts = [];
-      if (second && second[1] !== "'*'") parts.push(`秒:${second[1]}`);
-      if (minute && minute[1] !== "'*'") parts.push(`分:${minute[1]}`);
-      if (hour && hour[1] !== "'*'") parts.push(`时:${hour[1]}`);
-      if (day && day[1] !== "'*'") parts.push(`日:${day[1]}`);
-      if (month && month[1] !== "'*'") parts.push(`月:${month[1]}`);
-      if (dayOfWeek && dayOfWeek[1] !== "'*'") parts.push(`周:${dayOfWeek[1]}`);
+      if (second && second[1] !== "'*'") parts.push(`${t("task.formatSecond")}:${second[1]}`);
+      if (minute && minute[1] !== "'*'") parts.push(`${t("task.formatMinute")}:${minute[1]}`);
+      if (hour && hour[1] !== "'*'") parts.push(`${t("task.formatHour")}:${hour[1]}`);
+      if (day && day[1] !== "'*'") parts.push(`${t("task.formatDay")}:${day[1]}`);
+      if (month && month[1] !== "'*'") parts.push(`${t("task.formatMonth")}:${month[1]}`);
+      if (dayOfWeek && dayOfWeek[1] !== "'*'")
+        parts.push(`${t("task.formatWeek")}:${dayOfWeek[1]}`);
 
       if (parts.length === 0) {
-        return "Cron: 每分钟";
+        return t("task.cronEveryMinute");
       }
       return `Cron: ${parts.join(" ")}`;
     }
@@ -609,12 +630,12 @@ function formatTrigger(trigger: string) {
 
   if (trigger.includes("interval")) {
     const match = trigger.match(/interval\[([^\]]+)\]/);
-    return match ? `间隔时长: ${match[1]}` : trigger;
+    return match ? t("task.intervalDuration", { value: match[1] }) : trigger;
   }
 
   if (trigger.includes("date")) {
     const match = trigger.match(/date\[([^\]]+)\]/);
-    return match ? `执行日期: ${match[1]}` : trigger;
+    return match ? t("task.execDate", { value: match[1] }) : trigger;
   }
 
   return trigger;
@@ -658,9 +679,9 @@ async function handleResumeScheduler() {
 
 async function handleShutdownScheduler() {
   try {
-    await ElMessageBox.confirm("确定要关闭调度器吗？", "警告", {
-      confirmButtonText: "确定",
-      cancelButtonText: "取消",
+    await ElMessageBox.confirm(t("task.shutdownConfirm"), t("task.warn"), {
+      confirmButtonText: t("task.confirm"),
+      cancelButtonText: t("task.cancel"),
       type: "warning",
     });
     await JobAPI.shutdownScheduler();
@@ -674,18 +695,12 @@ async function handleShutdownScheduler() {
 
 async function handleClearAllJobs() {
   try {
-    await ElMessageBox.confirm(
-      "确定要清空所有任务吗？\n" +
-        "此操作会将所有待执行任务的日志标记为已取消，不会删除历史执行记录。\n" +
-        "如需删除所有执行记录，请使用执行记录的批量删除功能。",
-      "警告",
-      {
-        confirmButtonText: "确定",
-        cancelButtonText: "取消",
-        type: "warning",
-        dangerouslyUseHTMLString: false,
-      }
-    );
+    await ElMessageBox.confirm(t("task.clearJobsConfirm"), t("task.warn"), {
+      confirmButtonText: t("task.confirm"),
+      cancelButtonText: t("task.cancel"),
+      type: "warning",
+      dangerouslyUseHTMLString: false,
+    });
     await JobAPI.clearAllJobs();
     await refreshMain();
   } catch (error: any) {
@@ -703,7 +718,7 @@ async function handleOpenConsole() {
 async function handleRefreshConsole() {
   try {
     const response = await JobAPI.getSchedulerConsole();
-    const data = response.data.data || "暂无任务信息";
+    const data = response.data.data || t("task.noTaskInfo");
     TerminalApi.pushMessage("scheduler-console", {
       type: "normal",
       content: data,
@@ -713,17 +728,17 @@ async function handleRefreshConsole() {
     TerminalApi.pushMessage("scheduler-console", {
       type: "normal",
       class: "error",
-      content: "获取控制台信息失败",
+      content: t("task.getConsoleFailed"),
     });
   }
 }
 
 async function handleClearConsole() {
-  await ElMessageBox.confirm(
-    "确定要清空调度控制台输出吗？清空后不可恢复。",
-    "清空确认",
-    { confirmButtonText: "清空", cancelButtonText: "取消", type: "warning" }
-  );
+  await ElMessageBox.confirm(t("task.clearConsoleConfirm"), t("task.clearConfirmTitle"), {
+    confirmButtonText: t("task.clearButton"),
+    cancelButtonText: t("task.cancel"),
+    type: "warning",
+  });
   TerminalApi.clear("scheduler-console");
 }
 
@@ -755,9 +770,9 @@ async function handleRunJobNow(jobId: string) {
 }
 
 async function handleRemoveJob(jobId: string) {
-  ElMessageBox.confirm("确认移除该任务?", "警告", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
+  ElMessageBox.confirm(t("task.removeJobConfirm"), t("task.warn"), {
+    confirmButtonText: t("task.confirm"),
+    cancelButtonText: t("task.cancel"),
     type: "warning",
   })
     .then(async () => {
@@ -794,10 +809,10 @@ function handleLogRowDelete(id: number) {
 
 function getTriggerTypeLabel(type: string | undefined) {
   const map: Record<string, string> = {
-    cron: "Cron表达式",
-    interval: "时间间隔",
-    date: "固定日期",
-    manual: "一次性任务",
+    cron: t("task.triggerCron"),
+    interval: t("task.triggerInterval"),
+    date: t("task.triggerDate"),
+    manual: t("task.triggerManual"),
   };
   return map[type || ""] || type || "-";
 }
@@ -816,12 +831,12 @@ function getLogStatusType(status: string): "primary" | "success" | "warning" | "
 
 function getLogStatusLabel(status: string) {
   const map: Record<string, string> = {
-    pending: "待执行",
-    running: "执行中",
-    success: "成功",
-    failed: "失败",
-    timeout: "超时",
-    cancelled: "已取消",
+    pending: t("task.statusPending"),
+    running: t("task.statusRunning"),
+    success: t("task.success"),
+    failed: t("task.failed"),
+    timeout: t("task.statusTimeout"),
+    cancelled: t("task.statusCancelled"),
   };
   return map[status] || status;
 }

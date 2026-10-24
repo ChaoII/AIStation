@@ -12,7 +12,7 @@
         <el-splitter-panel size="250px" :min="200" :max="400">
           <el-scrollbar style="height: 100%">
             <div class="panel-section">
-              <div class="section-title">基础信息</div>
+              <div class="section-title">{{ t("task.baseInfo") }}</div>
               <el-form
                 ref="formRef"
                 :model="formData"
@@ -20,18 +20,18 @@
                 :rules="formRules"
                 size="small"
               >
-                <el-form-item label="编码" prop="code">
-                  <el-input v-model="formData.code" placeholder="请输入流程编码" />
+                <el-form-item :label="t('task.code')" prop="code">
+                  <el-input v-model="formData.code" :placeholder="t('task.inputFlowCodeShort')" />
                 </el-form-item>
-                <el-form-item label="名称" prop="name">
-                  <el-input v-model="formData.name" placeholder="请输入流程名称" />
+                <el-form-item :label="t('task.name')" prop="name">
+                  <el-input v-model="formData.name" :placeholder="t('task.inputFlowNameShort')" />
                 </el-form-item>
-                <el-form-item label="描述" prop="description">
+                <el-form-item :label="t('task.description')" prop="description">
                   <el-input
                     v-model="formData.description"
                     type="textarea"
                     :rows="2"
-                    placeholder="请输入流程描述"
+                    :placeholder="t('task.inputFlowDesc')"
                   />
                 </el-form-item>
               </el-form>
@@ -40,10 +40,10 @@
             <el-divider style="margin: 4px 0" />
 
             <div class="panel-section">
-              <div class="section-title">节点</div>
+              <div class="section-title">{{ t("task.nodes") }}</div>
               <el-input
                 v-model="searchKeyword"
-                placeholder="搜索节点名称"
+                :placeholder="t('task.searchNodeName')"
                 clearable
                 size="small"
                 class="search-box"
@@ -93,43 +93,47 @@
                 <Panel position="top-right" class="workflow-toolbar">
                   <el-button
                     class="vue-flow__controls-button"
-                    title="格式化画布"
+                    :title="t('task.formatCanvas')"
                     :icon="Grid"
                     @click="handleFormatCanvas"
                   />
                   <el-dropdown trigger="click" @command="handleEdgeStyleChange">
-                    <el-button class="vue-flow__controls-button" title="连线样式" :icon="Share" />
+                    <el-button
+                      class="vue-flow__controls-button"
+                      :title="t('task.edgeStyle')"
+                      :icon="Share"
+                    />
                     <template #dropdown>
                       <el-dropdown-menu>
                         <el-dropdown-item
                           command="bezier"
                           :class="{ active: edgeStyle === 'bezier' }"
                         >
-                          平滑曲线
+                          {{ t("task.smoothCurve") }}
                         </el-dropdown-item>
                         <el-dropdown-item
                           command="smoothstep"
                           :class="{ active: edgeStyle === 'smoothstep' }"
                         >
-                          阶梯折线
+                          {{ t("task.stepLine") }}
                         </el-dropdown-item>
                         <el-dropdown-item
                           command="straight"
                           :class="{ active: edgeStyle === 'straight' }"
                         >
-                          直线
+                          {{ t("task.straightLine") }}
                         </el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
                   <el-button
                     class="vue-flow__controls-button"
-                    :title="edgeAnimated ? '关闭动画' : '开启动画'"
+                    :title="edgeAnimated ? t('task.closeAnimation') : t('task.openAnimation')"
                     :icon="VideoPlay"
                     @click="handleEdgeAnimatedChange(!edgeAnimated)"
                   />
                   <el-dropdown trigger="click">
-                    <el-button class="vue-flow__controls-button" title="布局方向">
+                    <el-button class="vue-flow__controls-button" :title="t('task.layoutDirection')">
                       <el-icon><Rank /></el-icon>
                     </el-button>
                     <template #dropdown>
@@ -140,7 +144,7 @@
                             handleLayout();
                           "
                         >
-                          横向布局
+                          {{ t("task.horizontalLayout") }}
                         </el-dropdown-item>
                         <el-dropdown-item
                           @click="
@@ -148,7 +152,7 @@
                             handleLayout();
                           "
                         >
-                          纵向布局
+                          {{ t("task.verticalLayout") }}
                         </el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
@@ -181,8 +185,8 @@
 
     <template #footer>
       <div class="drawer-footer">
-        <el-button @click="handleClose">取消</el-button>
-        <el-button type="primary" @click="handleFinish">保存</el-button>
+        <el-button @click="handleClose">{{ t("task.cancel") }}</el-button>
+        <el-button type="primary" @click="handleFinish">{{ t("task.save") }}</el-button>
       </div>
     </template>
   </el-drawer>
@@ -190,6 +194,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, computed, onMounted, markRaw, type Component } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Panel, VueFlow, useVueFlow } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
@@ -234,6 +239,8 @@ const emit = defineEmits(["update:visible", "refresh"]);
 const formRef = ref();
 const workflowId = ref<number>();
 
+const { t } = useI18n();
+
 const formData = reactive<Partial<WorkflowForm>>({
   code: "",
   name: "",
@@ -241,8 +248,8 @@ const formData = reactive<Partial<WorkflowForm>>({
 });
 
 const formRules = {
-  code: [{ required: true, message: "请输入流程编码", trigger: "blur" }],
-  name: [{ required: true, message: "请输入流程名称", trigger: "blur" }],
+  code: [{ required: true, message: t("task.inputFlowCodeShort"), trigger: "blur" }],
+  name: [{ required: true, message: t("task.inputFlowNameShort"), trigger: "blur" }],
 };
 
 const dialogVisible = computed({
@@ -251,7 +258,7 @@ const dialogVisible = computed({
 });
 
 const drawerTitle = computed(() => {
-  return props.workflow ? "编辑工作流" : "创建工作流";
+  return props.workflow ? t("task.editWorkflow") : t("task.createWorkflow");
 });
 
 const {
@@ -306,7 +313,7 @@ const handleLayout = () => {
   const currentEdges = getEdgesRef.value;
 
   if (currentNodes.length === 0) {
-    ElMessage.warning("画布中没有节点，无法布局");
+    ElMessage.warning(t("task.noNodesToLayout"));
     return;
   }
 
@@ -353,7 +360,7 @@ const handleLayout = () => {
       animated: edgeAnimated.value,
     }))
   );
-  ElMessage.success("画布布局完成");
+  ElMessage.success(t("task.layoutComplete"));
 };
 
 const handleFormatCanvas = () => {
@@ -361,7 +368,7 @@ const handleFormatCanvas = () => {
   const currentEdges = getEdgesRef.value;
 
   if (currentNodes.length === 0) {
-    ElMessage.warning("画布中没有节点，无法格式化");
+    ElMessage.warning(t("task.noNodesToFormat"));
     return;
   }
 
@@ -408,7 +415,7 @@ const handleFormatCanvas = () => {
       animated: edgeAnimated.value,
     }))
   );
-  ElMessage.success("画布格式化完成");
+  ElMessage.success(t("task.formatComplete"));
 };
 
 const nodes = ref<Node[]>([]);
@@ -447,10 +454,10 @@ const getCategoryType = (category: string) => {
 
 const getCategoryText = (category: string) => {
   const textMap: Record<string, string> = {
-    trigger: "触发器",
-    action: "动作",
-    condition: "条件",
-    control: "控制",
+    trigger: t("task.trigger"),
+    action: t("task.action"),
+    condition: t("task.condition"),
+    control: t("task.control"),
   };
   return textMap[category] || category;
 };
@@ -497,7 +504,7 @@ const loadNodeTypes = async () => {
       nodeTypesRegistry.value = newTypes;
     }
   } catch {
-    ElMessage.error("加载节点类型失败");
+    ElMessage.error(t("task.loadNodeTypesFailed"));
   } finally {
     loading.value = false;
   }
@@ -519,7 +526,7 @@ onInit((vueFlowInstance) => {
         }
       })
       .catch(() => {
-        ElMessage.error("流程加载失败");
+        ElMessage.error(t("task.flowLoadFailed"));
       });
   } else {
     saveToHistory(nodes.value as any, edges.value as any);
@@ -543,16 +550,16 @@ function handleValidate() {
   const allEdgesList = getEdges();
 
   if (allNodesList.length === 0) {
-    errors.push("流程中没有节点");
+    errors.push(t("task.flowHasNoNodes"));
   }
 
   const nodeIds = new Set(allNodesList.map((n: Node) => n.id));
   allEdgesList.forEach((edge: Edge) => {
     if (!nodeIds.has(edge.source)) {
-      errors.push(`连线 ${edge.label || edge.id} 的源节点不存在`);
+      errors.push(t("task.edgeSourceMissing", { label: edge.label || edge.id }));
     }
     if (!nodeIds.has(edge.target)) {
-      errors.push(`连线 ${edge.label || edge.id} 的目标节点不存在`);
+      errors.push(t("task.edgeTargetMissing", { label: edge.label || edge.id }));
     }
   });
 
@@ -562,38 +569,41 @@ function handleValidate() {
 
   if (orphanNodes.length > 0) {
     warnings.push(
-      `有 ${orphanNodes.length} 个孤立节点: ${orphanNodes.map((n: Node) => n.data.label).join(", ")}`
+      t("task.orphanNodes", {
+        count: orphanNodes.length,
+        names: orphanNodes.map((n: Node) => n.data.label).join(", "),
+      })
     );
   }
 
   if (errors.length > 0) {
     ElMessageBox.alert(
       `<div style="max-height: 300px; overflow-y: auto;">
-        <strong>错误 (${errors.length}):</strong>
+        <strong>${t("task.errorsTitle", { count: errors.length })}</strong>
         <ul>${errors.map((e) => `<li style="color: #f56c6c;">${e}</li>`).join("")}</ul>
         ${
           warnings.length > 0
-            ? `<strong>警告 (${warnings.length}):</strong>
+            ? `<strong>${t("task.warningsTitle", { count: warnings.length })}</strong>
         <ul>${warnings.map((w) => `<li style="color: #e6a23c;">${w}</li>`).join("")}</ul>`
             : ""
         }
       </div>`,
-      "流程验证结果",
+      t("task.validateResult"),
       {
-        confirmButtonText: "确定",
+        confirmButtonText: t("task.confirm"),
         dangerouslyUseHTMLString: true,
       }
     );
-    throw new Error("验证失败");
+    throw new Error(t("task.validateFailed"));
   } else if (warnings.length > 0) {
     ElMessageBox.alert(
       `<div style="max-height: 300px; overflow-y: auto;">
-        <strong>流程验证通过，但有警告 (${warnings.length}):</strong>
+        <strong>${t("task.validatePassWithWarnings", { count: warnings.length })}</strong>
         <ul>${warnings.map((w) => `<li style="color: #e6a23c;">${w}</li>`).join("")}</ul>
       </div>`,
-      "流程验证结果",
+      t("task.validateResult"),
       {
-        confirmButtonText: "确定",
+        confirmButtonText: t("task.confirm"),
         dangerouslyUseHTMLString: true,
       }
     );
@@ -647,13 +657,13 @@ function handleDeleteNode() {
   const nodeId = selectedNode.value!.id;
   if (!nodeId) return;
 
-  ElMessageBox.confirm("确定要删除该节点吗？删除后不可恢复。", "删除节点", {
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
+  ElMessageBox.confirm(t("task.deleteNodeConfirmSingle"), t("task.deleteNodeTitle"), {
+    confirmButtonText: t("task.delete"),
+    cancelButtonText: t("task.cancel"),
     type: "warning",
   }).then(() => {
     deleteNode(nodeId, getNodes, setNodes, getEdges, setEdges);
-    ElMessage.success("节点删除成功");
+    ElMessage.success(t("task.nodeDeleteSuccess"));
     handleClosePanel();
     saveToHistory(nodes.value as any, edges.value as any);
   });
@@ -672,13 +682,13 @@ function handleDeleteEdge() {
   const edgeId = selectedEdge.value!.id;
   if (!edgeId) return;
 
-  ElMessageBox.confirm("确定要删除该连线吗？删除后不可恢复。", "删除连线", {
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
+  ElMessageBox.confirm(t("task.deleteEdgeConfirm"), t("task.deleteEdgeTitle"), {
+    confirmButtonText: t("task.delete"),
+    cancelButtonText: t("task.cancel"),
     type: "warning",
   }).then(() => {
     deleteEdge(edgeId, getEdges, setEdges);
-    ElMessage.success("连线删除成功");
+    ElMessage.success(t("task.edgeDeleteSuccess"));
     handleClosePanel();
     saveToHistory(nodes.value as any, edges.value as any);
   });
@@ -743,7 +753,7 @@ const handleFinish = async () => {
     emit("refresh");
     handleClose();
   } catch (error) {
-    console.error("保存流程失败", error);
+    console.error(t("task.saveWorkflowFailed"), error);
   }
 };
 

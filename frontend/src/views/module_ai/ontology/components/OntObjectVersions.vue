@@ -5,7 +5,7 @@
 <template>
   <section class="ont-sec">
     <div class="ont-sec__head">
-      <span class="ont-sec__title">版本历史</span>
+      <span class="ont-sec__title">{{ i18nT("ai_ontology.versionHistory") }}</span>
       <el-tag size="small" type="info" effect="plain">{{ list.length }}</el-tag>
       <el-button
         v-hasPerm="'module_ai:ontology:manage'"
@@ -17,7 +17,7 @@
         :loading="publishing"
         @click="publish"
       >
-        发布新版本
+        {{ i18nT("ai_ontology.publishNewVersion") }}
       </el-button>
       <el-button
         class="ont-sec__op"
@@ -27,33 +27,44 @@
         :icon="RefreshLeft"
         @click="emit('refresh')"
       >
-        刷新
+        {{ i18nT("ai_ontology.refresh") }}
       </el-button>
     </div>
     <el-alert
       type="info"
       :closable="false"
       class="ont-obj__note"
-      title="版本在「保存」待保存改动时生成。恢复历史版本会把该对象类型的属性/关系/动作/函数定义覆盖为指定版本，改动先进入待保存列表，点「保存」后才生效。"
+      :title="i18nT('ai_ontology.versionInfoAlert')"
     />
     <el-table :data="list" size="small" border max-height="460" class="ont-ver__table" stripe>
-      <template #empty><el-empty :image-size="50" description="暂无版本记录" /></template>
-      <el-table-column label="版本" width="90" align="center">
+      <template #empty>
+        <el-empty :image-size="50" :description="i18nT('ai_ontology.noVersionRecords')" />
+      </template>
+      <el-table-column :label="i18nT('ai_ontology.version')" width="90" align="center">
         <template #default="{ row }">
           <el-tag size="small" type="primary" effect="plain">v{{ row.version }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_time" label="发布时间" min-width="160" show-overflow-tooltip />
-      <el-table-column label="发布人" min-width="110" show-overflow-tooltip>
+      <el-table-column
+        prop="created_time"
+        :label="i18nT('ai_ontology.publishedTime')"
+        min-width="160"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        :label="i18nT('ai_ontology.publishedBy')"
+        min-width="110"
+        show-overflow-tooltip
+      >
         <template #default="{ row }">{{ row.created_by || row.author || "—" }}</template>
       </el-table-column>
-      <el-table-column label="说明" min-width="180" show-overflow-tooltip>
+      <el-table-column :label="i18nT('ai_ontology.note')" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">{{ row.msg || row.note || row.description || "—" }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="180" align="center">
+      <el-table-column :label="i18nT('ai_ontology.operations')" width="180" align="center">
         <template #default="{ row }">
           <el-button icon="Switch" link type="primary" size="small" @click="showDiff(row)">
-            对比
+            {{ i18nT("ai_ontology.compare") }}
           </el-button>
           <el-button
             v-hasPerm="'module_ai:ontology:edit'"
@@ -64,7 +75,7 @@
             :loading="restoringId === row.id"
             @click="restore(row)"
           >
-            恢复
+            {{ i18nT("ai_ontology.restore") }}
           </el-button>
           <el-button
             v-hasPerm="'module_ai:ontology:manage'"
@@ -75,7 +86,7 @@
             :loading="rollingId === row.id"
             @click="rollback(row)"
           >
-            回滚
+            {{ i18nT("ai_ontology.rollback") }}
           </el-button>
         </template>
       </el-table-column>
@@ -84,32 +95,49 @@
     <!-- 版本对比：与该版本相对当前定义的差异 -->
     <el-dialog
       v-model="diffVisible"
-      :title="`版本对比 v${diffVersion}`"
+      :title="i18nT('ai_ontology.versionCompareTitle', { version: diffVersion })"
       width="600px"
       append-to-body
     >
-      <el-alert v-if="diffLoading" type="info" :closable="false" show-icon title="正在计算差异……" />
+      <el-alert
+        v-if="diffLoading"
+        type="info"
+        :closable="false"
+        show-icon
+        :title="i18nT('ai_ontology.computingDiff')"
+      />
       <template v-else>
         <el-empty
           v-if="!diffItems.length && !diffRaw"
           :image-size="50"
-          description="该版本与当前定义没有差异"
+          :description="i18nT('ai_ontology.thisVersionHasNoDiffFromCurrentDefinition')"
         />
         <el-table v-else :data="diffItems" size="small" border max-height="360" stripe>
-          <el-table-column prop="kind" label="类型" width="90" />
-          <el-table-column prop="target" label="对象" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="detail" label="变化" min-width="240" show-overflow-tooltip />
+          <el-table-column prop="kind" :label="i18nT('ai_ontology.type')" width="90" />
+          <el-table-column
+            prop="target"
+            :label="i18nT('ai_ontology.object')"
+            min-width="140"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            prop="detail"
+            :label="i18nT('ai_ontology.change')"
+            min-width="240"
+            show-overflow-tooltip
+          />
         </el-table>
         <pre v-if="diffRaw" class="ont-ver__raw">{{ diffRaw }}</pre>
       </template>
       <template #footer>
-        <el-button @click="diffVisible = false">关闭</el-button>
+        <el-button @click="diffVisible = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { computed, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { RefreshLeft, Upload } from "@element-plus/icons-vue";
@@ -121,6 +149,8 @@ import {
 } from "@/api/module_ai/ontology";
 import { useOntologyData } from "../composables/useOntologyData";
 
+const { t: i18nT } = useI18n();
+
 const props = defineProps<{ code: string }>();
 const emit = defineEmits<{ (e: "refresh"): void }>();
 
@@ -131,19 +161,25 @@ const list = computed(() => versions.value.filter((v: any) => v.object_code === 
 const restoringId = ref<number | null>(null);
 async function restore(v: any) {
   await ElMessageBox.confirm(
-    `将把「${objectLabel(v.object_code)}」的定义恢复到版本 v${v.version}（覆盖当前属性/关系/动作/函数定义）。` +
-      "改动会先进入待保存列表，点「保存」后才生效。确认恢复？",
-    "恢复历史版本",
-    { type: "warning", confirmButtonText: "恢复", cancelButtonText: "取消" }
+    i18nT("ai_ontology.restoreVersionConfirm", {
+      name: objectLabel(v.object_code),
+      version: v.version,
+    }),
+    i18nT("ai_ontology.restoreHistoricalVersion"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.restore"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   restoringId.value = v.id;
   try {
     const r = await stageOntRestore(v.id);
     await reloadAll();
     await refreshWip();
-    ElMessage.success(r.data?.msg || "已暂存恢复");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.restoreStaged"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "恢复失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.restoreFailed"));
   } finally {
     restoringId.value = null;
   }
@@ -153,9 +189,13 @@ async function restore(v: any) {
 const publishing = ref(false);
 async function publish() {
   await ElMessageBox.confirm(
-    `将把「${objectLabel(props.code)}」的**当前定义**发布为一个新版本（生成不可变的版本快照，供日后对比/恢复/回滚）。确认发布？`,
-    "发布新版本",
-    { type: "warning", confirmButtonText: "发布", cancelButtonText: "取消" }
+    i18nT("ai_ontology.publishCurrentConfirm", { name: objectLabel(props.code) }),
+    i18nT("ai_ontology.publishNewVersion"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.publish"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   publishing.value = true;
   try {
@@ -163,12 +203,14 @@ async function publish() {
     await reloadAll();
     if (r.data?.data?.ok === false) {
       // 非超管：发布进入审批队列，尚未生效
-      ElMessage.warning(r.data?.data?.msg || r.data?.msg || "已提交发布审批");
+      ElMessage.warning(
+        r.data?.data?.msg || r.data?.msg || i18nT("ai_ontology.publishApprovalSubmitted")
+      );
     } else {
-      ElMessage.success(r.data?.msg || "已发布");
+      ElMessage.success(r.data?.msg || i18nT("ai_ontology.published"));
     }
   } catch (e: any) {
-    ElMessage.error(e?.msg || "发布失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.publishFailed"));
   } finally {
     publishing.value = false;
   }
@@ -178,19 +220,25 @@ async function publish() {
 const rollingId = ref<number | null>(null);
 async function rollback(v: any) {
   await ElMessageBox.confirm(
-    `将把「${objectLabel(v.object_code)}」的定义**立即回滚**到版本 v${v.version}。` +
-      "与「恢复」不同，回滚会**直接覆盖当前定义并立即生效**（不进待保存列表），且不可撤销。确认回滚？",
-    "回滚到该版本",
-    { type: "warning", confirmButtonText: "回滚", cancelButtonText: "取消" }
+    i18nT("ai_ontology.rollbackVersionConfirm", {
+      name: objectLabel(v.object_code),
+      version: v.version,
+    }),
+    i18nT("ai_ontology.rollbackToThisVersion"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.rollback"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   rollingId.value = v.id;
   try {
     const r = await rollbackOntVersion(v.id);
     await reloadAll();
     await refreshWip();
-    ElMessage.success(r.data?.msg || "已回滚");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.rolledBack"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "回滚失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.rollbackFailed"));
   } finally {
     rollingId.value = null;
   }
@@ -213,13 +261,13 @@ async function showDiff(v: any) {
     // 注意：项目 request() 返回的是 axios response，业务数据在 response.data.data 里
     const d: any = r.data?.data ?? r.data ?? {};
     if (d.ok === false) {
-      diffRaw.value = d.msg || "无法计算差异";
+      diffRaw.value = d.msg || i18nT("ai_ontology.cannotComputeDiff");
       return;
     }
     const kindOf: [string, string][] = [
-      ["added", "新增属性"],
-      ["removed", "删除属性"],
-      ["changed", "修改属性"],
+      ["added", i18nT("ai_ontology.addProperty")],
+      ["removed", i18nT("ai_ontology.deleteProperty")],
+      ["changed", i18nT("ai_ontology.modifyProperty")],
     ];
     const rows: { kind: string; target: string; detail: string }[] = [];
     for (const [key, label] of kindOf) {
@@ -233,7 +281,7 @@ async function showDiff(v: any) {
     }
     diffItems.value = rows;
   } catch (e: any) {
-    diffRaw.value = e?.msg || "对比失败";
+    diffRaw.value = e?.msg || i18nT("ai_ontology.compareFailed");
   } finally {
     diffLoading.value = false;
   }

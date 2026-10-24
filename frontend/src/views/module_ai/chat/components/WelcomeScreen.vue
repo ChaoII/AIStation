@@ -4,8 +4,8 @@
       <div class="ai-logo">
         <el-icon size="64"><ChatDotRound /></el-icon>
       </div>
-      <h1>AI智能助手</h1>
-      <p class="welcome-subtitle">我是您的专属AI助手，可以帮您回答问题、处理任务和进行智能对话</p>
+      <h1>{{ t("ai_chat.welcome_title") }}</h1>
+      <p class="welcome-subtitle">{{ t("ai_chat.welcome_subtitle") }}</p>
 
       <div class="example-prompts">
         <div
@@ -27,6 +27,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { ChatDotRound } from "@element-plus/icons-vue";
 
 interface Emits {
@@ -35,15 +36,29 @@ interface Emits {
 
 const emit = defineEmits<Emits>();
 
+const { t } = useI18n();
+
 const promptCards = [
-  { title: "系统介绍", body: "请介绍一下AIStation系统", prompt: "请介绍一下AIStation系统" },
-  { title: "开发指导", body: "如何在系统中创建新的模块？", prompt: "如何在系统中创建新的模块？" },
   {
-    title: "权限管理",
-    body: "FA系统的权限管理是如何工作的？",
-    prompt: "系统的权限管理是如何工作的？",
+    title: t("ai_chat.welcome_promptSysTitle"),
+    body: t("ai_chat.welcome_promptSysBody"),
+    prompt: t("ai_chat.welcome_promptSysPrompt"),
   },
-  { title: "性能优化", body: "如何优化系统的性能？", prompt: "如何优化AIStation系统的性能？" },
+  {
+    title: t("ai_chat.welcome_promptDevTitle"),
+    body: t("ai_chat.welcome_promptDevBody"),
+    prompt: t("ai_chat.welcome_promptDevPrompt"),
+  },
+  {
+    title: t("ai_chat.welcome_promptPermTitle"),
+    body: t("ai_chat.welcome_promptPermBody"),
+    prompt: t("ai_chat.welcome_promptPermPrompt"),
+  },
+  {
+    title: t("ai_chat.welcome_promptPerfTitle"),
+    body: t("ai_chat.welcome_promptPerfBody"),
+    prompt: t("ai_chat.welcome_promptPerfPrompt"),
+  },
 ];
 
 const handlePromptClick = (prompt: string) => {

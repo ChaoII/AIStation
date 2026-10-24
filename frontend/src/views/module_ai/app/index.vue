@@ -18,14 +18,19 @@
           @delete="onToolbar('delete')"
         />
         <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(true)">
-          批量启用
+          {{ t("ai_workflow.app_batchEnable") }}
         </el-button>
         <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(false)">
-          批量停用
+          {{ t("ai_workflow.app_batchDisable") }}
         </el-button>
         <el-tag size="small" type="info" effect="plain" class="summary-tag">
-          共 {{ appSummary.total }} 个组件 · 启用 {{ appSummary.enabled }} · 停用
-          {{ appSummary.disabled }}
+          {{
+            t("ai_workflow.app_summary", {
+              total: appSummary.total,
+              enabled: appSummary.enabled,
+              disabled: appSummary.disabled,
+            })
+          }}
         </el-tag>
         <el-dropdown
           v-if="appTemplates.length"
@@ -33,7 +38,7 @@
           @command="createFromTemplate"
         >
           <el-button size="small">
-            从模板创建
+            {{ t("ai_workflow.app_createFromTemplate") }}
             <el-icon style="margin-left: 4px"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
@@ -62,45 +67,67 @@
             @selection-change="onAppSel"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无组件，点击右上「新增」创建" />
+              <el-empty :image-size="80" :description="t('ai_workflow.app_noData')" />
             </template>
             <el-table-column type="selection" width="55" align="center" />
-            <el-table-column label="图标" width="80" align="center">
+            <el-table-column :label="t('ai_workflow.app_icon')" width="80" align="center">
               <template #default="{ row }">
                 <el-icon v-if="row.icon"><component :is="row.icon" /></el-icon>
                 <span v-else>—</span>
               </template>
             </el-table-column>
-            <el-table-column label="名称" prop="name" min-width="160" show-overflow-tooltip />
-            <el-table-column label="类型" width="120" align="center">
+            <el-table-column
+              :label="t('ai_workflow.app_name')"
+              prop="name"
+              min-width="160"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('ai_workflow.app_type')" width="120" align="center">
               <template #default="{ row }">
                 <el-tag size="small" :type="typeTagType(row.app_type)" effect="plain">
                   {{ typeLabel(row.app_type) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="模型" min-width="150" show-overflow-tooltip>
+            <el-table-column
+              :label="t('ai_workflow.app_model')"
+              min-width="150"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">{{ modelName(row.model_id) }}</template>
             </el-table-column>
-            <el-table-column label="提示词" min-width="150" show-overflow-tooltip>
+            <el-table-column
+              :label="t('ai_workflow.app_prompt')"
+              min-width="150"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">{{ promptName(row.prompt_id) }}</template>
             </el-table-column>
-            <el-table-column label="工具数" width="90" align="center">
+            <el-table-column :label="t('ai_workflow.app_toolCount')" width="90" align="center">
               <template #default="{ row }">{{ (row.tools || []).length }}</template>
             </el-table-column>
-            <el-table-column label="输出格式" width="110" align="center">
+            <el-table-column :label="t('ai_workflow.app_outputFormat')" width="110" align="center">
               <template #default="{ row }">
                 <el-tag size="small" effect="plain">{{ formatLabel(row.output_format) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="启用" width="90" align="center">
+            <el-table-column :label="t('ai_workflow.app_enabled')" width="90" align="center">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
-                  {{ row.enabled ? "启用" : "停用" }}
+                  {{
+                    row.enabled
+                      ? t("ai_workflow.app_enabledText")
+                      : t("ai_workflow.app_disabledText")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" fixed="right" width="260" align="center">
+            <el-table-column
+              :label="t('ai_workflow.app_action')"
+              fixed="right"
+              width="260"
+              align="center"
+            >
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="['module_ai:app:query']"
@@ -110,7 +137,7 @@
                   type="primary"
                   @click="openDetail(row)"
                 >
-                  详情
+                  {{ t("ai_workflow.app_detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:app:update']"
@@ -120,7 +147,7 @@
                   type="primary"
                   @click="handleOpenDialog(row)"
                 >
-                  编辑
+                  {{ t("ai_workflow.app_edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:app:create']"
@@ -129,7 +156,7 @@
                   link
                   @click="doCopy(row)"
                 >
-                  复制
+                  {{ t("ai_workflow.app_copy") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:app:delete']"
@@ -139,7 +166,7 @@
                   type="danger"
                   @click="handleRowDelete(row.id)"
                 >
-                  删除
+                  {{ t("ai_workflow.app_delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -156,22 +183,22 @@
       @close="handleCloseDialog"
     >
       <el-form ref="formRef" :model="formData" label-width="120px">
-        <el-form-item label="名称" required>
-          <el-input v-model="formData.name" placeholder="应用唯一名称" />
+        <el-form-item :label="t('ai_workflow.app_name')" required>
+          <el-input v-model="formData.name" :placeholder="t('ai_workflow.app_namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="组件类型">
+        <el-form-item :label="t('ai_workflow.app_componentType')">
           <el-select v-model="formData.app_type" style="width: 100%">
-            <el-option label="聊天" value="chat" />
-            <el-option label="智能体" value="agent" />
-            <el-option label="工作流" value="workflow" />
-            <el-option label="知识库问答" value="kb" />
+            <el-option :label="t('ai_workflow.app_typeChat')" value="chat" />
+            <el-option :label="t('ai_workflow.app_typeAgent')" value="agent" />
+            <el-option :label="t('ai_workflow.app_typeWorkflow')" value="workflow" />
+            <el-option :label="t('ai_workflow.app_typeKb')" value="kb" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="formData.app_type === 'kb'" label="知识库">
+        <el-form-item v-if="formData.app_type === 'kb'" :label="t('ai_workflow.app_kb')">
           <el-select
             v-model="formData.kb_id"
             clearable
-            placeholder="绑定知识库"
+            :placeholder="t('ai_workflow.app_bindKb')"
             style="width: 100%"
           >
             <el-option v-for="k in kbOptions" :key="k.id" :label="k.name" :value="k.id" />
@@ -179,38 +206,38 @@
         </el-form-item>
         <el-form-item
           v-if="formData.app_type === 'workflow' || formData.workflow_id"
-          label="工作流"
+          :label="t('ai_workflow.app_workflow')"
         >
           <el-select
             v-model="formData.workflow_id"
             clearable
-            placeholder="绑定工作流"
+            :placeholder="t('ai_workflow.app_bindWorkflow')"
             style="width: 100%"
           >
             <el-option v-for="w in wfOptions" :key="w.id" :label="w.name" :value="w.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="图标">
-          <el-input v-model="formData.icon" placeholder="Element Plus 图标名，如 MagicStick" />
+        <el-form-item :label="t('ai_workflow.app_iconLabel')">
+          <el-input v-model="formData.icon" :placeholder="t('ai_workflow.app_iconPlaceholder')" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('ai_workflow.app_description')">
           <el-input v-model="formData.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="模型">
+        <el-form-item :label="t('ai_workflow.app_model')">
           <el-select
             v-model="formData.model_id"
             clearable
-            placeholder="不选则用默认模型"
+            :placeholder="t('ai_workflow.app_modelPlaceholder')"
             style="width: 100%"
           >
             <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="提示词">
+        <el-form-item :label="t('ai_workflow.app_prompt')">
           <el-select
             v-model="formData.prompt_id"
             clearable
-            placeholder="不选则用默认助手提示词"
+            :placeholder="t('ai_workflow.app_promptPlaceholder')"
             style="width: 100%"
           >
             <el-option v-for="p in promptOptions" :key="p.id" :label="p.name" :value="p.id" />
@@ -218,7 +245,7 @@
         </el-form-item>
         <el-row :gutter="12">
           <el-col :span="12">
-            <el-form-item label="温度">
+            <el-form-item :label="t('ai_workflow.app_temperature')">
               <el-input-number
                 v-model="formData.temperature"
                 :min="0"
@@ -226,12 +253,12 @@
                 :step="0.1"
                 controls-position="right"
                 style="width: 100%"
-                placeholder="留空用模型默认"
+                :placeholder="t('ai_workflow.app_temperaturePlaceholder')"
               />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="最大 token">
+            <el-form-item :label="t('ai_workflow.app_maxTokens')">
               <el-input-number
                 v-model="formData.max_tokens"
                 :min="64"
@@ -245,19 +272,19 @@
         </el-row>
         <el-row :gutter="12">
           <el-col :span="12">
-            <el-form-item label="上下文窗口">
+            <el-form-item :label="t('ai_workflow.app_contextWindow')">
               <el-input-number
                 v-model="formData.context_window"
                 :min="0"
                 :step="1024"
                 :controls="false"
                 style="width: 100%"
-                placeholder="如 128000"
+                :placeholder="t('ai_workflow.app_contextWindowPlaceholder')"
               />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="超时(秒)">
+            <el-form-item :label="t('ai_workflow.app_timeout')">
               <el-input-number
                 v-model="formData.timeout"
                 :min="5"
@@ -268,18 +295,18 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="系统提示词">
+        <el-form-item :label="t('ai_workflow.app_systemPrompt')">
           <el-input
             v-model="formData.system_prompt"
             type="textarea"
             :rows="3"
-            placeholder="自定义系统提示词（覆盖所选提示词）；留空用默认"
+            :placeholder="t('ai_workflow.app_systemPromptPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="标签">
+        <el-form-item :label="t('ai_workflow.app_tags')">
           <el-input
             v-model="tagsInput"
-            placeholder="逗号分隔多个标签，如 客服, 销售"
+            :placeholder="t('ai_workflow.app_tagsPlaceholder')"
             clearable
             @change="tagsInputToArray"
           />
@@ -295,40 +322,50 @@
             </el-tag>
           </div>
         </el-form-item>
-        <el-form-item label="多轮记忆">
+        <el-form-item :label="t('ai_workflow.app_memory')">
           <el-switch v-model="formData.memory" />
         </el-form-item>
-        <el-form-item label="工具集">
+        <el-form-item :label="t('ai_workflow.app_tools')">
           <el-select
             v-model="formData.tools"
             multiple
             clearable
-            placeholder="选择内置 / 已启用工具"
+            :placeholder="t('ai_workflow.app_toolsPlaceholder')"
             style="width: 100%"
           >
             <el-option v-for="t in toolOptions" :key="t.name" :label="t.name" :value="t.name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="输出格式">
+        <el-form-item :label="t('ai_workflow.app_outputFormat')">
           <el-select v-model="formData.output_format" style="width: 100%">
-            <el-option label="文本" value="text" />
-            <el-option label="表格" value="table" />
-            <el-option label="报告" value="report" />
+            <el-option :label="t('ai_workflow.app_text')" value="text" />
+            <el-option :label="t('ai_workflow.app_table')" value="table" />
+            <el-option :label="t('ai_workflow.app_report')" value="report" />
           </el-select>
         </el-form-item>
-        <el-form-item label="入参字段">
+        <el-form-item :label="t('ai_workflow.app_inputFields')">
           <div class="field-builder">
             <div v-for="(f, i) in formData.inputFields" :key="i" class="field-row">
-              <el-input v-model="f.key" placeholder="字段名" class="field-row__key" />
+              <el-input
+                v-model="f.key"
+                :placeholder="t('ai_workflow.app_fieldName')"
+                class="field-row__key"
+              />
               <el-select v-model="f.type" class="field-row__type">
-                <el-option label="文本" value="string" />
-                <el-option label="数值" value="number" />
-                <el-option label="布尔" value="boolean" />
-                <el-option label="数组" value="array" />
-                <el-option label="对象" value="object" />
+                <el-option :label="t('ai_workflow.app_text')" value="string" />
+                <el-option :label="t('ai_workflow.app_number')" value="number" />
+                <el-option :label="t('ai_workflow.app_boolean')" value="boolean" />
+                <el-option :label="t('ai_workflow.app_array')" value="array" />
+                <el-option :label="t('ai_workflow.app_object')" value="object" />
               </el-select>
-              <el-input v-model="f.default" placeholder="默认值" class="field-row__default" />
-              <el-checkbox v-model="f.required" class="field-row__req">必填</el-checkbox>
+              <el-input
+                v-model="f.default"
+                :placeholder="t('ai_workflow.app_fieldDefault')"
+                class="field-row__default"
+              />
+              <el-checkbox v-model="f.required" class="field-row__req">
+                {{ t("ai_workflow.app_fieldRequired") }}
+              </el-checkbox>
               <el-button
                 text
                 type="danger"
@@ -344,78 +381,88 @@
                 formData.inputFields.push({ key: '', type: 'string', default: '', required: false })
               "
             >
-              添加字段
+              {{ t("ai_workflow.app_addField") }}
             </el-button>
           </div>
         </el-form-item>
-        <el-form-item label="排序">
+        <el-form-item :label="t('ai_workflow.app_order')">
           <el-input-number v-model="formData.order" :min="0" />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="t('ai_workflow.app_enabled')">
           <el-switch v-model="formData.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("ai_workflow.app_cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("ai_workflow.app_save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
     <!-- 应用组件详情 + 运行调试 -->
     <el-drawer
       v-model="detailVisible"
-      :title="detail?.name || '应用详情'"
+      :title="detail?.name || t('ai_workflow.app_detailTitle')"
       size="520px"
       append-to-body
     >
       <el-descriptions v-if="detail" :column="1" border size="small">
-        <el-descriptions-item label="组件类型">
+        <el-descriptions-item :label="t('ai_workflow.app_componentType')">
           <el-tag size="small" :type="typeTagType(detail.app_type)" effect="plain">
             {{ typeLabel(detail.app_type) }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="模型">{{ modelName(detail.model_id) }}</el-descriptions-item>
-        <el-descriptions-item v-if="detail.app_type === 'kb'" label="知识库">
+        <el-descriptions-item :label="t('ai_workflow.app_model')">
+          {{ modelName(detail.model_id) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="detail.app_type === 'kb'" :label="t('ai_workflow.app_kb')">
           {{ kbName(detail.kb_id) }}
         </el-descriptions-item>
-        <el-descriptions-item v-if="detail.workflow_id" label="工作流">
+        <el-descriptions-item v-if="detail.workflow_id" :label="t('ai_workflow.app_workflow')">
           {{ wfName(detail.workflow_id) }}
         </el-descriptions-item>
-        <el-descriptions-item label="提示词">
+        <el-descriptions-item :label="t('ai_workflow.app_prompt')">
           {{ promptName(detail.prompt_id) }}
         </el-descriptions-item>
-        <el-descriptions-item label="工具数">
+        <el-descriptions-item :label="t('ai_workflow.app_toolCount')">
           {{ (detail.tools || []).length }}
         </el-descriptions-item>
-        <el-descriptions-item label="输出格式">
+        <el-descriptions-item :label="t('ai_workflow.app_outputFormat')">
           {{ formatLabel(detail.output_format) }}
         </el-descriptions-item>
-        <el-descriptions-item label="启用">
+        <el-descriptions-item :label="t('ai_workflow.app_enabled')">
           <el-tag size="small" :type="detail.enabled ? 'success' : 'info'">
-            {{ detail.enabled ? "启用" : "停用" }}
+            {{
+              detail.enabled ? t("ai_workflow.app_enabledText") : t("ai_workflow.app_disabledText")
+            }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ detail.created_time }}</el-descriptions-item>
+        <el-descriptions-item :label="t('ai_workflow.app_createdTime')">
+          {{ detail.created_time }}
+        </el-descriptions-item>
       </el-descriptions>
 
-      <el-divider content-position="left">运行调试</el-divider>
+      <el-divider content-position="left">{{ t("ai_workflow.app_runDebug") }}</el-divider>
       <div class="app-run">
         <div class="app-run__input">
           <el-input
             v-model="runQuery"
-            placeholder="输入问题，调试组件（回车发送）"
+            :placeholder="t('ai_workflow.app_runPlaceholder')"
             @keyup.enter="runDebug"
           />
-          <el-button type="primary" :loading="runLoading" @click="runDebug">发送</el-button>
+          <el-button type="primary" :loading="runLoading" @click="runDebug">
+            {{ t("ai_workflow.app_send") }}
+          </el-button>
         </div>
         <div v-loading="runLoading" class="app-run__output">
           <template v-if="runAnswer">
             <div class="app-run__bot">
-              <span class="app-run__label">回答</span>
+              <span class="app-run__label">{{ t("ai_workflow.app_answer") }}</span>
               <div class="app-run__text">{{ runAnswer }}</div>
             </div>
           </template>
-          <el-empty v-else description="输入问题开始调试" :image-size="50" />
+          <el-empty v-else :description="t('ai_workflow.app_runEmpty')" :image-size="50" />
         </div>
       </div>
     </el-drawer>
@@ -424,6 +471,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { Auth } from "@/utils/auth";
 import { readAgnoFrames } from "@/composables/ai/agnoSse";
 import { Delete, Plus, ArrowDown } from "@element-plus/icons-vue";
@@ -452,6 +500,8 @@ import { getAiWorkflowList } from "@/api/module_ai/workflow";
 
 defineOptions({ name: "AiApp" });
 
+const { t } = useI18n();
+
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
 const searchConfig = reactive<ISearchConfig>({
@@ -462,19 +512,27 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "名称",
+      label: t("ai_workflow.app_name"),
       type: "input",
-      attrs: { placeholder: "应用名称", clearable: true, style: { width: "200px" } },
+      attrs: {
+        placeholder: t("ai_workflow.app_namePlaceholder"),
+        clearable: true,
+        style: { width: "200px" },
+      },
     },
     {
       prop: "enabled",
-      label: "启用",
+      label: t("ai_workflow.app_enabled"),
       type: "select",
       options: [
-        { label: "启用", value: "true" },
-        { label: "停用", value: "false" },
+        { label: t("ai_workflow.app_enabledText"), value: "true" },
+        { label: t("ai_workflow.app_disabledText"), value: "false" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("ai_workflow.app_selectStatus"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
@@ -526,14 +584,16 @@ async function loadAppTemplates() {
 async function createFromTemplate(tpl: any) {
   try {
     const r = await createAiAppFromTemplate(tpl.key, tpl.name);
-    ElMessage.success(`已从模板创建「${r.data?.data?.name || tpl.name}」`);
+    ElMessage.success(
+      t("ai_workflow.app_fromTemplateSuccess", { name: r.data?.data?.name || tpl.name })
+    );
   } catch (e: any) {
-    ElMessage.error(e?.msg || "创建失败");
+    ElMessage.error(e?.msg || t("ai_workflow.app_createFail"));
   }
 }
 
 const dialogVisible = ref(false);
-const dialogTitle = ref("新增应用");
+const dialogTitle = ref(t("ai_workflow.app_createTitle"));
 const submitLoading = ref(false);
 const formRef = ref();
 
@@ -572,11 +632,16 @@ async function batchApp(enabled: boolean) {
   if (!appSelIds.value.length) return;
   try {
     const r = await batchAppStatus(appSelIds.value, enabled);
-    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个组件`);
+    ElMessage.success(
+      t("ai_workflow.app_batchResult", {
+        action: enabled ? t("ai_workflow.app_enabledText") : t("ai_workflow.app_disabledText"),
+        count: r.data?.data?.count || 0,
+      })
+    );
     refreshList();
     loadAppSummary();
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "操作失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_workflow.app_opFail"));
   }
 }
 const appSummary = ref({ total: 0, enabled: 0, disabled: 0 });
@@ -612,27 +677,40 @@ const promptMap = computed(() => {
 });
 
 function modelName(id: number | null) {
-  if (!id) return "默认";
+  if (!id) return t("ai_workflow.app_default");
   return modelMap.value[id] || `#${id}`;
 }
 function promptName(id: number | null) {
-  if (!id) return "默认";
+  if (!id) return t("ai_workflow.app_default");
   return promptMap.value[id] || `#${id}`;
 }
 function formatLabel(fmt: string) {
-  return { text: "文本", table: "表格", report: "报告" }[fmt || "text"] || fmt;
+  return (
+    {
+      text: t("ai_workflow.app_text"),
+      table: t("ai_workflow.app_table"),
+      report: t("ai_workflow.app_report"),
+    }[fmt || "text"] || fmt
+  );
 }
-function typeLabel(t: string) {
-  return { chat: "聊天", agent: "智能体", workflow: "工作流", kb: "知识库" }[t || "chat"] || t;
+function typeLabel(t2: string) {
+  return (
+    {
+      chat: t("ai_workflow.app_typeChat"),
+      agent: t("ai_workflow.app_typeAgent"),
+      workflow: t("ai_workflow.app_typeWorkflow"),
+      kb: t("ai_workflow.app_typeKbShort"),
+    }[t2 || "chat"] || t2
+  );
 }
-function typeTagType(t: string): "primary" | "success" | "warning" | "danger" | "info" {
+function typeTagType(t2: string): "primary" | "success" | "warning" | "danger" | "info" {
   const m: Record<string, "primary" | "success" | "warning" | "danger"> = {
     chat: "primary",
     agent: "success",
     workflow: "warning",
     kb: "danger",
   };
-  return m[t || "chat"] || "info";
+  return m[t2 || "chat"] || "info";
 }
 
 async function loadOptions() {
@@ -646,7 +724,7 @@ async function loadOptions() {
     ]);
     modelOptions.value = models.data?.data || [];
     promptOptions.value = prompts.data?.data || [];
-    toolOptions.value = (tools.data?.data || []).filter((t: any) => t.enabled);
+    toolOptions.value = (tools.data?.data || []).filter((t2: any) => t2.enabled);
     kbOptions.value = kbs.data?.data || [];
     wfOptions.value = wfs.data?.data || [];
   } catch {
@@ -661,7 +739,7 @@ function handleRowDelete(id: number) {
 function handleOpenDialog(row?: any) {
   Object.assign(formData, emptyForm());
   if (row) {
-    dialogTitle.value = "编辑应用";
+    dialogTitle.value = t("ai_workflow.app_editTitle");
     formData.id = row.id;
     formData.name = row.name;
     formData.icon = row.icon || "";
@@ -685,7 +763,7 @@ function handleOpenDialog(row?: any) {
     formData.timeout = row.timeout || 60;
     tagsInput.value = (row.tags || []).join(",");
   } else {
-    dialogTitle.value = "新增应用";
+    dialogTitle.value = t("ai_workflow.app_createTitle");
   }
   dialogVisible.value = true;
 }
@@ -744,7 +822,7 @@ function fieldsToSchema(fields: any[]): Record<string, any> | undefined {
 
 async function handleSubmit() {
   if (!formData.name.trim()) {
-    ElMessage.warning("请填写名称");
+    ElMessage.warning(t("ai_workflow.app_nameRequired"));
     return;
   }
   const inputSchema = fieldsToSchema(formData.inputFields);
@@ -776,9 +854,9 @@ async function handleSubmit() {
     else await createAiApp(payload);
     dialogVisible.value = false;
     refreshList();
-    ElMessage.success("保存成功");
+    ElMessage.success(t("ai_workflow.app_saveSuccess"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.app_saveFail"));
   } finally {
     submitLoading.value = false;
   }
@@ -802,7 +880,7 @@ function wfName(id: number | null) {
 async function doCopy(row: any) {
   try {
     await createAiApp({
-      name: `${row.name}（副本）`,
+      name: t("ai_workflow.app_copyName", { name: row.name }),
       icon: row.icon || "",
       description: row.description || "",
       model_id: row.model_id ?? null,
@@ -816,10 +894,10 @@ async function doCopy(row: any) {
       kb_id: row.kb_id ?? null,
       workflow_id: row.workflow_id ?? null,
     });
-    ElMessage.success("已复制");
+    ElMessage.success(t("ai_workflow.app_copySuccess"));
     refreshList();
   } catch {
-    ElMessage.error("复制失败");
+    ElMessage.error(t("ai_workflow.app_copyFail"));
   }
 }
 
@@ -841,18 +919,18 @@ async function runDebug() {
         messages: [{ role: "user", content: runQuery.value }],
       }),
     });
-    if (!resp.ok || !resp.body) throw new Error("请求失败");
+    if (!resp.ok || !resp.body) throw new Error(t("ai_workflow.app_requestFail"));
     // Agno 原生事件流：正文来自 RunContent，错误来自 RunError
     for await (const { event, data } of readAgnoFrames(resp)) {
       if (event === "RunContent") {
         const text = typeof data.content === "string" ? data.content : "";
         if (text) runAnswer.value += text;
       } else if (event === "RunError") {
-        runAnswer.value += `\n[错误] ${data.error || data.message || ""}`;
+        runAnswer.value += `\n${t("ai_workflow.app_errorPrefix")} ${data.error || data.message || ""}`;
       }
     }
   } catch (e: any) {
-    runAnswer.value = `运行失败：${e?.message || e}`;
+    runAnswer.value = t("ai_workflow.app_runFail", { message: e?.message || e });
   } finally {
     runLoading.value = false;
   }

@@ -20,9 +20,11 @@
           :icon="Plus"
           @click="openCreate"
         >
-          新建{{ assetLabel(assetType) }}
+          {{ t("ai_market.mineCreateNew", { asset: assetLabel(assetType) }) }}
         </el-button>
-        <el-tag size="small" type="info" effect="plain">共 {{ items.length }} 项资产</el-tag>
+        <el-tag size="small" type="info" effect="plain">
+          {{ t("ai_market.mineAssetCount", { count: items.length }) }}
+        </el-tag>
       </div>
     </div>
 
@@ -48,7 +50,7 @@
             <div class="mine-head-actions">
               <el-tooltip
                 v-if="hasPerm('module_ai:market:manage')"
-                :content="row.enabled ? '停用' : '启用'"
+                :content="row.enabled ? t('ai_market.disable') : t('ai_market.enableAction')"
                 placement="top"
               >
                 <el-switch
@@ -58,12 +60,12 @@
               </el-tooltip>
               <el-tooltip
                 v-if="hasPerm(`module_ai:${row.asset_type}:update`)"
-                content="编辑"
+                :content="t('ai_market.edit')"
                 placement="top"
               >
                 <el-button size="small" circle :icon="Edit" @click="openEdit(row as any)" />
               </el-tooltip>
-              <el-tooltip content="提交市场" placement="top">
+              <el-tooltip :content="t('ai_market.submitMarket')" placement="top">
                 <el-button
                   v-if="hasPerm('module_ai:market:submit')"
                   size="small"
@@ -73,7 +75,7 @@
                   @click="openSubmit(row as any)"
                 />
               </el-tooltip>
-              <el-tooltip content="分享" placement="top">
+              <el-tooltip :content="t('ai_market.share')" placement="top">
                 <el-button
                   v-if="hasPerm('module_ai:market:share')"
                   size="small"
@@ -84,7 +86,7 @@
               </el-tooltip>
               <el-tooltip
                 v-if="row.market && row.market.status !== 'offline'"
-                content="撤回"
+                :content="t('ai_market.withdraw')"
                 placement="top"
               >
                 <el-button
@@ -95,7 +97,11 @@
                   @click="withdraw(row as any)"
                 />
               </el-tooltip>
-              <el-tooltip v-if="hasPerm('module_ai:market:manage')" content="删除" placement="top">
+              <el-tooltip
+                v-if="hasPerm('module_ai:market:manage')"
+                :content="t('ai_market.delete')"
+                placement="top"
+              >
                 <el-button
                   size="small"
                   circle
@@ -107,10 +113,10 @@
             </div>
           </div>
 
-          <div class="market-card__desc">{{ row.description || "暂无描述" }}</div>
+          <div class="market-card__desc">{{ row.description || t("ai_market.noDescription") }}</div>
 
           <div class="market-card__foot">
-            <span class="metric">市场</span>
+            <span class="metric">{{ t("ai_market.mineMarket") }}</span>
             <el-tag
               v-if="row.market"
               size="small"
@@ -119,69 +125,92 @@
             >
               {{ statusLabel(row.market.status) }}
             </el-tag>
-            <span v-else class="market-none">未提交</span>
-            <span v-if="row.market" class="metric">{{ row.market.install_count }} 次安装</span>
+            <span v-else class="market-none">{{ t("ai_market.mineNotSubmitted") }}</span>
+            <span v-if="row.market" class="metric">
+              {{ t("ai_market.mineInstallCount", { count: row.market.install_count }) }}
+            </span>
           </div>
         </div>
       </el-col>
     </el-row>
-    <el-empty
-      v-if="!loading && !items.length"
-      description="暂无资产：可在「能力市场」安装，或点击上方「新建」创建"
-    />
+    <el-empty v-if="!loading && !items.length" :description="t('ai_market.mineEmpty')" />
 
     <!-- 提交市场 -->
-    <el-dialog v-model="submitVisible" title="提交到能力市场" width="600px" append-to-body>
+    <el-dialog
+      v-model="submitVisible"
+      :title="t('ai_market.submitTitle')"
+      width="600px"
+      append-to-body
+    >
       <el-form ref="submitFormRef" :model="submitForm" :rules="submitRules" label-width="90px">
-        <el-form-item label="资产类型">
+        <el-form-item :label="t('ai_market.assetTypeLabel')">
           <el-tag effect="plain">{{ assetLabel(submitForm.asset_type) }}</el-tag>
         </el-form-item>
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="submitForm.name" maxlength="128" placeholder="市场展示名称" />
+        <el-form-item :label="t('ai_market.nameLabel')" prop="name">
+          <el-input
+            v-model="submitForm.name"
+            maxlength="128"
+            :placeholder="t('ai_market.submitDisplayName')"
+          />
         </el-form-item>
-        <el-form-item label="分类" prop="category">
+        <el-form-item :label="t('ai_market.category')" prop="category">
           <el-input
             v-model="submitForm.category"
             maxlength="64"
-            placeholder="如：效率 / 数据 / 办公"
+            :placeholder="t('ai_market.categoryPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="图标">
-          <el-input v-model="submitForm.icon" maxlength="256" placeholder="emoji 或图片 URL" />
+        <el-form-item :label="t('ai_market.iconLabel')">
+          <el-input
+            v-model="submitForm.icon"
+            maxlength="256"
+            :placeholder="t('ai_market.iconPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="版本">
-          <el-input v-model="submitForm.version" maxlength="16" placeholder="1.0" />
+        <el-form-item :label="t('ai_market.version')">
+          <el-input
+            v-model="submitForm.version"
+            maxlength="16"
+            :placeholder="t('ai_market.versionPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('ai_market.description')">
           <el-input
             v-model="submitForm.description"
             type="textarea"
             :rows="3"
             maxlength="2000"
             show-word-limit
-            placeholder="说明这个能力做什么、适用场景"
+            :placeholder="t('ai_market.submitDescPlaceholder')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="submitVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="confirmSubmit">提交审核</el-button>
+        <el-button @click="submitVisible = false">{{ t("ai_market.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="confirmSubmit">
+          {{ t("ai_market.submitReview") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 分享 -->
-    <el-dialog v-model="shareVisible" title="分享给用户" width="520px" append-to-body>
+    <el-dialog
+      v-model="shareVisible"
+      :title="t('ai_market.shareTitle')"
+      width="520px"
+      append-to-body
+    >
       <el-form label-width="90px">
-        <el-form-item label="资产">
+        <el-form-item :label="t('ai_market.asset')">
           <span>{{ shareTarget?.name }}</span>
         </el-form-item>
-        <el-form-item label="接收人" required>
+        <el-form-item :label="t('ai_market.recipient')" required>
           <el-select
             v-model="shareForm.to_user_id"
             filterable
             remote
             clearable
-            placeholder="输入用户名搜索"
+            :placeholder="t('ai_market.searchUserPlaceholder')"
             :remote-method="searchUsers"
             :loading="userLoading"
             class="user-select"
@@ -194,13 +223,19 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="留言">
-          <el-input v-model="shareForm.message" maxlength="255" placeholder="可选" />
+        <el-form-item :label="t('ai_market.messageLabel')">
+          <el-input
+            v-model="shareForm.message"
+            maxlength="255"
+            :placeholder="t('ai_market.optional')"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="shareVisible = false">取消</el-button>
-        <el-button type="primary" :loading="sharing" @click="confirmShare">发送分享</el-button>
+        <el-button @click="shareVisible = false">{{ t("ai_market.cancel") }}</el-button>
+        <el-button type="primary" :loading="sharing" @click="confirmShare">
+          {{ t("ai_market.sendShare") }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -216,6 +251,7 @@
 import { Delete, Edit, Plus, Remove, Share, Upload } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
 import { onMounted, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import {
   deleteMyAsset,
@@ -241,6 +277,8 @@ defineOptions({ name: "MarketMine" });
 const props = defineProps<{ target: { asset_type: string; name: string } | null }>();
 const emit = defineEmits<{ targetHandled: [] }>();
 
+const { t } = useI18n();
+
 // 安装需密钥资产后跳转而来：切到对应类型并自动打开该资产编辑
 watch(
   () => props.target,
@@ -252,7 +290,7 @@ watch(
     if (hit) {
       openEdit(hit);
     } else {
-      ElMessage.info(`未在「我的资产」中找到「${target.name}」，请手动定位`);
+      ElMessage.info(t("ai_market.mineNotFound", { name: target.name }));
     }
     emit("targetHandled");
   },
@@ -264,10 +302,10 @@ const items = ref<MyAsset[]>([]);
 const assetType = ref("");
 
 const typeOptions = [
-  { label: "工具", value: "tool" },
-  { label: "技能", value: "skill" },
-  { label: "MCP", value: "mcp" },
-  { label: "插件", value: "plugin" },
+  { label: t("ai_market.assetTool"), value: "tool" },
+  { label: t("ai_market.assetSkill"), value: "skill" },
+  { label: t("ai_market.assetMcp"), value: "mcp" },
+  { label: t("ai_market.assetPlugin"), value: "plugin" },
 ];
 
 function hasPerm(perm: string): boolean {
@@ -318,7 +356,7 @@ const submitForm = reactive({
   description: "",
 });
 const submitRules = {
-  name: [{ required: true, message: "请输入名称", trigger: "blur" }],
+  name: [{ required: true, message: t("ai_market.requiredName"), trigger: "blur" }],
 };
 
 const shareVisible = ref(false);
@@ -329,13 +367,24 @@ const userOptions = ref<{ id: number; name: string; username: string }[]>([]);
 const userLoading = ref(false);
 
 function assetLabel(type: string) {
-  return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+  return (
+    {
+      tool: t("ai_market.assetTool"),
+      skill: t("ai_market.assetSkill"),
+      mcp: t("ai_market.assetMcp"),
+      plugin: t("ai_market.assetPlugin"),
+    }[type] || type
+  );
 }
 
 function statusLabel(status: string) {
   return (
-    { pending: "待审核", approved: "已上架", rejected: "已驳回", offline: "已下架" }[status] ||
-    status
+    {
+      pending: t("ai_market.statusPending"),
+      approved: t("ai_market.statusApproved"),
+      rejected: t("ai_market.statusRejected"),
+      offline: t("ai_market.statusOffline"),
+    }[status] || status
   );
 }
 
@@ -366,17 +415,21 @@ async function toggleAsset(row: MyAsset, value: any) {
   const enabled = Boolean(value);
   await toggleMyAsset(row.asset_type, row.real_id, enabled);
   row.enabled = enabled;
-  ElMessage.success(enabled ? "已启用" : "已停用");
+  ElMessage.success(enabled ? t("ai_market.toggleEnabled") : t("ai_market.toggleDisabled"));
 }
 
 async function removeAsset(row: MyAsset) {
   await ElMessageBox.confirm(
-    `将删除你的${assetLabel(row.asset_type)}「${row.name}」，删除后不可恢复（已安装到智能体的绑定也会失效）。是否继续？`,
-    "删除确认",
-    { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+    t("ai_market.mineDeleteConfirm", { asset: assetLabel(row.asset_type), name: row.name }),
+    t("ai_market.deleteConfirmTitle"),
+    {
+      confirmButtonText: t("ai_market.delete"),
+      cancelButtonText: t("ai_market.cancel"),
+      type: "warning",
+    }
   );
   await deleteMyAsset(row.asset_type, row.real_id);
-  ElMessage.success("已删除");
+  ElMessage.success(t("ai_market.deleted"));
   load();
 }
 
@@ -397,7 +450,7 @@ async function confirmSubmit() {
   submitting.value = true;
   try {
     await submitMarketItem({ ...submitForm });
-    ElMessage.success("已提交，等待管理员审核");
+    ElMessage.success(t("ai_market.submittedForReview"));
     submitVisible.value = false;
     load();
   } finally {
@@ -407,12 +460,16 @@ async function confirmSubmit() {
 
 async function withdraw(row: MyAsset) {
   await ElMessageBox.confirm(
-    `撤回后「${row.name}」将从市场下架，其他用户无法再安装（已安装的副本不受影响）。是否继续？`,
-    "撤回确认",
-    { confirmButtonText: "撤回", cancelButtonText: "取消", type: "warning" }
+    t("ai_market.withdrawConfirm", { name: row.name }),
+    t("ai_market.withdrawConfirmTitle"),
+    {
+      confirmButtonText: t("ai_market.withdraw"),
+      cancelButtonText: t("ai_market.cancel"),
+      type: "warning",
+    }
   );
   await withdrawMarketItem(row.market!.item_id);
-  ElMessage.success("已撤回");
+  ElMessage.success(t("ai_market.withdrawn"));
   load();
 }
 
@@ -441,7 +498,7 @@ async function searchUsers(query: string) {
 
 async function confirmShare() {
   if (!shareForm.to_user_id) {
-    ElMessage.warning("请选择接收人");
+    ElMessage.warning(t("ai_market.selectRecipient"));
     return;
   }
   sharing.value = true;
@@ -466,7 +523,7 @@ async function confirmShare() {
       payload.real_id = target.real_id;
     }
     await shareMarketItem(payload);
-    ElMessage.success("已发送分享");
+    ElMessage.success(t("ai_market.sharedSuccess"));
     shareVisible.value = false;
   } finally {
     sharing.value = false;

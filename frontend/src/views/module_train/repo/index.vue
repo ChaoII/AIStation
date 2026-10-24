@@ -34,7 +34,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('train.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -45,7 +45,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('train.serial')"
               width="60"
             >
               <template #default="scope">
@@ -55,7 +55,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="仓库名称"
+              :label="t('train.repoName')"
               prop="name"
               min-width="160"
               show-overflow-tooltip
@@ -63,7 +63,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'framework')?.show"
               key="framework"
-              label="框架"
+              :label="t('train.framework')"
               prop="framework"
               width="120"
             >
@@ -79,7 +79,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'version_count')?.show"
               key="version_count"
-              label="版本数"
+              :label="t('train.versionCount')"
               prop="version_count"
               width="90"
               align="center"
@@ -87,7 +87,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('train.status')"
               prop="status"
               width="100"
               align="center"
@@ -101,20 +101,20 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="t('train.createdTime')"
               prop="created_time"
               min-width="170"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('train.action')"
               align="center"
               min-width="240"
             >
               <template #default="scope">
                 <el-button size="small" link type="primary" @click="openVersions(scope.row)">
-                  版本
+                  {{ t("train.version") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_train:model:update']"
@@ -123,7 +123,7 @@
                   icon="edit"
                   @click="handleEditRepo(scope.row)"
                 >
-                  编辑
+                  {{ t("train.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_train:model:delete']"
@@ -133,7 +133,7 @@
                   type="danger"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("train.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -158,48 +158,54 @@
       >
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="模型名称" prop="name">
-              <el-input v-model="formData.name" placeholder="如: 缺陷检测" />
+            <el-form-item :label="t('train.modelName')" prop="name">
+              <el-input v-model="formData.name" :placeholder="t('train.repoNamePlaceholder')" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="框架" prop="framework">
+            <el-form-item :label="t('train.framework')" prop="framework">
               <el-select v-model="formData.framework" style="width: 100%">
-                <el-option label="TorchKiln（自研）" value="torchkiln" />
+                <el-option :label="t('train.torchKilnSelf')" value="torchkiln" />
               </el-select>
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="来源数据集" prop="annotation_dataset_id">
+        <el-form-item :label="t('train.sourceDataset')" prop="annotation_dataset_id">
           <el-select
             v-model="formData.annotation_dataset_id"
             filterable
             style="width: 100%"
-            placeholder="请选择标注数据集"
+            :placeholder="t('train.selectAnnoDataset')"
             @visible-change="(v: boolean) => v && loadDatasets()"
           >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="描述" prop="description">
+        <el-form-item :label="t('train.description')" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="3"
-            placeholder="模型描述（可选）"
+            :placeholder="t('train.descriptionPlaceholder')"
           />
         </el-form-item>
-        <el-form-item v-if="dialogVisible.type === 'update'" label="状态" prop="status">
+        <el-form-item
+          v-if="dialogVisible.type === 'update'"
+          :label="t('train.status')"
+          prop="status"
+        >
           <el-select v-model="formData.status" style="width: 100%">
-            <el-option label="草稿" value="draft" />
-            <el-option label="已发布" value="released" />
-            <el-option label="已归档" value="archived" />
+            <el-option :label="t('train.repoStatusDraft')" value="draft" />
+            <el-option :label="t('train.repoStatusReleased')" value="released" />
+            <el-option :label="t('train.repoStatusArchived')" value="archived" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("train.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("train.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
@@ -210,13 +216,17 @@
       @done="refreshList"
     />
 
-    <el-drawer v-model="versionsVisible" :title="`版本 - ${versionsRepoName}`" size="760px">
+    <el-drawer
+      v-model="versionsVisible"
+      :title="t('train.versionDrawerTitle', { name: versionsRepoName })"
+      size="760px"
+    >
       <el-table v-loading="versionsLoading" stripe :data="versions" border size="small">
-        <el-table-column label="版本" prop="version" width="80" align="center" />
-        <el-table-column label="框架" prop="framework" width="110" />
-        <el-table-column label="状态" prop="status" width="100" />
-        <el-table-column label="创建时间" prop="created_time" min-width="170" />
-        <el-table-column label="操作" min-width="320" align="center">
+        <el-table-column :label="t('train.version')" prop="version" width="80" align="center" />
+        <el-table-column :label="t('train.framework')" prop="framework" width="110" />
+        <el-table-column :label="t('train.status')" prop="status" width="100" />
+        <el-table-column :label="t('train.createdTime')" prop="created_time" min-width="170" />
+        <el-table-column :label="t('train.action')" min-width="320" align="center">
           <template #default="{ row }">
             <el-button
               v-hasPerm="'module_train:task:create'"
@@ -225,7 +235,7 @@
               link
               @click="handleTrain(row)"
             >
-              训练
+              {{ t("train.train") }}
             </el-button>
             <el-button
               v-hasPerm="'module_train:eval:create'"
@@ -234,7 +244,7 @@
               link
               @click="handleEval(row)"
             >
-              评估
+              {{ t("train.eval") }}
             </el-button>
             <el-button
               v-hasPerm="'module_train:predict:create'"
@@ -243,7 +253,7 @@
               link
               @click="handlePredict(row)"
             >
-              预测
+              {{ t("train.predict") }}
             </el-button>
             <el-button
               v-hasPerm="'module_train:model:update'"
@@ -252,7 +262,7 @@
               link
               @click="handleExport(row)"
             >
-              导出
+              {{ t("train.exportModel") }}
             </el-button>
             <el-button
               v-hasPerm="'module_train:model:update'"
@@ -261,12 +271,15 @@
               link
               @click="handleDeploy(row)"
             >
-              部署
+              {{ t("train.deploy") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!versionsLoading && versions.length === 0" description="暂无版本" />
+      <el-empty
+        v-if="!versionsLoading && versions.length === 0"
+        :description="t('train.versionsNoData')"
+      />
     </el-drawer>
   </div>
 </template>
@@ -274,6 +287,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -292,6 +306,7 @@ interface TablePageQuery {
 
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
 // 从任务详情"查看模型"进入：定位到对应模型仓库
@@ -303,7 +318,11 @@ onMounted(() => {
       setTimeout(() => {
         const rows = (contentRef.value as any)?.pageData || [];
         const hit = rows.find((r: any) => r.id === id || r.repo_id === id);
-        ElMessage.info(hit ? `已定位到模型 ${hit.name || `#${id}`}` : `模型 #${id} 不在当前页`);
+        ElMessage.info(
+          hit
+            ? t("train.locatedModel", { name: hit.name || `#${id}` })
+            : t("train.modelNotInPage", { id })
+        );
       }, 600);
     }
   }
@@ -337,16 +356,20 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "模型名称",
+      label: t("train.modelName"),
       type: "input",
-      attrs: { placeholder: "请输入模型名称", clearable: true },
+      attrs: { placeholder: t("train.modelNamePlaceholder"), clearable: true },
     },
     {
       prop: "framework",
-      label: "框架",
+      label: t("train.framework"),
       type: "select",
-      options: [{ label: "TorchKiln（自研）", value: "torchkiln" }],
-      attrs: { placeholder: "请选择框架", clearable: true, style: { width: "167.5px" } },
+      options: [{ label: t("train.torchKilnSelf"), value: "torchkiln" }],
+      attrs: {
+        placeholder: t("train.frameworkPlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
@@ -358,14 +381,14 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "仓库名称", show: true },
-  { prop: "framework", label: "框架", show: true },
-  { prop: "version_count", label: "版本数", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("train.selection"), show: true },
+  { prop: "index", label: t("train.serial"), show: true },
+  { prop: "name", label: t("train.repoName"), show: true },
+  { prop: "framework", label: t("train.framework"), show: true },
+  { prop: "version_count", label: t("train.versionCount"), show: true },
+  { prop: "status", label: t("train.status"), show: true },
+  { prop: "created_time", label: t("train.createdTime"), show: true },
+  { prop: "operation", label: t("train.action"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -397,8 +420,8 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选模型? 删除后无法恢复。",
+    title: t("train.warnTitle"),
+    message: t("train.repoDeleteConfirm"),
     type: "warning",
   },
 });
@@ -449,8 +472,8 @@ const initialFormData = {
 };
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入模型名称", trigger: "blur" }],
-  framework: [{ required: true, message: "请选择框架", trigger: "change" }],
+  name: [{ required: true, message: t("train.modelNamePlaceholder"), trigger: "blur" }],
+  framework: [{ required: true, message: t("train.frameworkPlaceholder"), trigger: "change" }],
 });
 
 function statusTag(s: string): "primary" | "success" | "warning" | "info" | "danger" | undefined {
@@ -462,14 +485,20 @@ function statusTag(s: string): "primary" | "success" | "warning" | "info" | "dan
 }
 
 function statusLabel(s: string) {
-  return { draft: "草稿", released: "已发布", archived: "已归档" }[s] || s;
+  return (
+    {
+      draft: t("train.repoStatusDraft"),
+      released: t("train.repoStatusReleased"),
+      archived: t("train.repoStatusArchived"),
+    }[s] || s
+  );
 }
 
 function frameworkLabel(fw?: string) {
   return (
     (
       {
-        torchkiln: "TorchKiln（自研）",
+        torchkiln: t("train.torchKilnSelf"),
       } as any
     )[fw || ""] ||
     fw ||
@@ -494,11 +523,11 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   loadDatasets();
   if (id && type === "update") {
-    dialogVisible.title = "编辑模型仓库";
+    dialogVisible.title = t("train.repoEditTitle");
     const res = await TrainAPI.getModelDetail(id);
     Object.assign(formData, res.data.data);
   } else {
-    dialogVisible.title = "新建模型仓库";
+    dialogVisible.title = t("train.repoCreateTitle");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -506,7 +535,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
 
 function handleEditRepo(row: any) {
   dialogVisible.type = "update";
-  dialogVisible.title = "编辑模型仓库";
+  dialogVisible.title = t("train.repoEditTitle");
   Object.assign(formData, {
     id: row.id,
     name: row.name,
@@ -536,7 +565,7 @@ async function handleSubmit() {
         } else {
           await TrainAPI.createModelRepo(payload);
         }
-        ElMessage.success("保存成功");
+        ElMessage.success(t("train.saveSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -583,16 +612,18 @@ function handleDeploy(row: any) {
       const d = r.data?.data;
       if (d?.api_key) {
         // Show API Key in a brief alert, then navigate
-        ElMessage.success(`API Key: ${d.api_key}（已复制到剪贴板）`);
+        ElMessage.success(t("train.apiKeyCopied", { key: d.api_key }));
         navigator.clipboard.writeText(d.api_key).catch(() => {});
       } else {
-        ElMessage.success("部署已创建");
+        ElMessage.success(t("train.deployCreated"));
       }
       router.push("/train/deploy");
     })
     .catch((e: any) => {
       // 该请求带 _silent，拦截器不会提示，错误必须在此处展示
-      ElMessage.error(e?.msg || e?.response?.data?.msg || e?.message || "创建部署失败");
+      ElMessage.error(
+        e?.msg || e?.response?.data?.msg || e?.message || t("train.createDeployFailed")
+      );
     });
 }
 

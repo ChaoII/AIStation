@@ -11,10 +11,10 @@
       <template #header>
         <div class="card-header">
           <span>
-            <el-tooltip content="资源文件管理系统: 点击路径可以快速返回上级目录">
+            <el-tooltip :content="t('monitor.resourceTip')">
               <QuestionFilled class="w-4 h-4 mx-1" />
             </el-tooltip>
-            文件列表(当前路径)：
+            {{ t("monitor.resourceFileList") }}
           </span>
           <div class="breadcrumb-container">
             <span class="breadcrumb-label"></span>
@@ -42,7 +42,7 @@
                 icon="plus"
                 @click="handleUpload"
               >
-                上传文件
+                {{ t("monitor.resourceUpload") }}
               </el-button>
             </el-col>
             <el-col :span="1.5">
@@ -52,7 +52,7 @@
                 icon="folder-add"
                 @click="handleCreateDir"
               >
-                新建文件夹
+                {{ t("monitor.resourceCreateDir") }}
               </el-button>
             </el-col>
             <el-col :span="1.5">
@@ -63,7 +63,7 @@
                 :disabled="removeIds.length === 0"
                 @click="handleBatchDelete"
               >
-                批量删除
+                {{ t("monitor.resourceBatchDelete") }}
               </el-button>
             </el-col>
           </el-row>
@@ -74,7 +74,7 @@
             v-hasPerm="['module_monitor:resource:query']"
             @change="onShowHiddenChange"
           >
-            显示隐藏文件
+            {{ t("monitor.resourceShowHidden") }}
           </el-checkbox>
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
@@ -98,15 +98,15 @@
             "
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('monitor.noData')" />
             </template>
             <el-table-column type="selection" min-width="40" align="center" />
-            <el-table-column type="index" fixed label="序号" min-width="50">
+            <el-table-column type="index" fixed :label="t('monitor.serial')" min-width="50">
               <template #default="scope">
                 {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column label="名称" prop="name" min-width="200">
+            <el-table-column :label="t('monitor.resourceName')" prop="name" min-width="200">
               <template #default="{ row }">
                 <div class="file-name">
                   <el-icon class="file-icon">
@@ -122,15 +122,25 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="大小" prop="size" min-width="120" align="center">
+            <el-table-column
+              :label="t('monitor.resourceSize')"
+              prop="size"
+              min-width="120"
+              align="center"
+            >
               <template #default="{ row }">
                 <span v-if="!row.is_dir">{{ formatFileSize(row.size) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="修改时间" prop="modified_time" min-width="180" sortable />
+            <el-table-column
+              :label="t('monitor.resourceModifiedTime')"
+              prop="modified_time"
+              min-width="180"
+              sortable
+            />
             <el-table-column
               fixed="right"
-              label="操作"
+              :label="t('monitor.operation')"
               align="center"
               min-width="200"
               class-name="search-buttons"
@@ -145,7 +155,7 @@
                   icon="download"
                   @click="handleDownload(row as ResourceItem)"
                 >
-                  下载
+                  {{ t("monitor.resourceDownload") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_monitor:resource:rename']"
@@ -155,7 +165,7 @@
                   icon="edit"
                   @click="handleRename(row as ResourceItem)"
                 >
-                  重命名
+                  {{ t("monitor.resourceRename") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_monitor:resource:delete']"
@@ -165,7 +175,7 @@
                   icon="delete"
                   @click="handleDelete(row as ResourceItem)"
                 >
-                  删除
+                  {{ t("monitor.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -177,7 +187,7 @@
     <!-- 上传对话框 -->
     <EnhancedDialog
       v-model="uploadDialogVisible"
-      title="上传文件"
+      :title="t('monitor.resourceUpload')"
       width="500px"
       @close="handleUploadClose"
     >
@@ -191,70 +201,78 @@
       >
         <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
         <div class="el-upload__text">
-          将文件拖到此处，或
-          <em>点击上传</em>
+          {{ t("monitor.resourceUploadTip") }}
+          <em>{{ t("monitor.resourceClickUpload") }}</em>
         </div>
         <template #tip>
           <div class="el-upload__tip" style="color: red">
-            不支持多文件上传，单个文件不超过100MB，多文件上传，取最后一个文件上传
+            {{ t("monitor.resourceUploadLimit") }}
           </div>
         </template>
       </el-upload>
       <template #footer>
-        <el-button @click="uploadDialogVisible = false">取消</el-button>
+        <el-button @click="uploadDialogVisible = false">{{ t("monitor.cancel") }}</el-button>
         <el-button
           v-hasPerm="['module_monitor:resource:upload']"
           type="primary"
           :loading="uploading"
           @click="handleUploadConfirm"
         >
-          确定上传
+          {{ t("monitor.resourceConfirmUpload") }}
         </el-button>
       </template>
     </EnhancedDialog>
 
     <!-- 新建文件夹对话框 -->
-    <EnhancedDialog v-model="createDirDialogVisible" title="新建文件夹" width="400px">
+    <EnhancedDialog
+      v-model="createDirDialogVisible"
+      :title="t('monitor.resourceCreateDir')"
+      width="400px"
+    >
       <el-form :model="createDirForm" label-width="80px">
-        <el-form-item label="文件夹名" required>
+        <el-form-item :label="t('monitor.resourceDirName')" required>
           <el-input
             v-model="createDirForm.dir_name"
-            placeholder="请输入文件夹名称"
+            :placeholder="t('monitor.resourceInputDirName')"
             @keyup.enter="handleCreateDirConfirm"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createDirDialogVisible = false">取消</el-button>
+        <el-button @click="createDirDialogVisible = false">{{ t("monitor.cancel") }}</el-button>
         <el-button
           v-hasPerm="['module_monitor:resource:create_dir']"
           type="primary"
           @click="handleCreateDirConfirm"
         >
-          确定
+          {{ t("monitor.confirm") }}
         </el-button>
       </template>
     </EnhancedDialog>
 
     <!-- 重命名对话框 -->
-    <EnhancedDialog v-model="renameDialogVisible" title="重命名" width="400px">
+    <EnhancedDialog
+      v-model="renameDialogVisible"
+      :title="t('monitor.resourceRename')"
+      width="400px"
+    >
       <el-form :model="renameForm" label-width="80px">
-        <el-form-item label="新名称" required>
+        <el-form-item :label="t('monitor.resourceNewName')" required>
           <el-input
             v-model="renameForm.new_name"
-            placeholder="请输入新名称"
+            :placeholder="t('monitor.resourceInputNewName')"
             @keyup.enter="handleRenameConfirm"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="renameDialogVisible = false">取消</el-button>
+        <el-button @click="renameDialogVisible = false">{{ t("monitor.cancel") }}</el-button>
         <el-button
           v-hasPerm="['module_monitor:resource:rename']"
           type="primary"
           @click="handleRenameConfirm"
         >
-          确定
+          {{ t("monitor.confirm") }}
         </el-button>
       </template>
     </EnhancedDialog>
@@ -268,6 +286,7 @@ defineOptions({
 });
 
 import { ref, reactive } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Folder, Document, UploadFilled, QuestionFilled } from "@element-plus/icons-vue";
 import {
@@ -283,10 +302,12 @@ import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 
+const { t } = useI18n();
+
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
 const selectedItems = ref<ResourceItem[]>([]);
-const breadcrumbList = ref([{ name: "资源根目录", path: "/" }]);
+const breadcrumbList = ref([{ name: t("monitor.resourceRoot"), path: "/" }]);
 const showHiddenFiles = ref(false);
 
 const currentPath = ref("/");
@@ -302,9 +323,13 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "关键词",
+      label: t("monitor.resourceKeyword"),
       type: "input",
-      attrs: { placeholder: "请输入文件名或目录名", clearable: true, style: { width: "200px" } },
+      attrs: {
+        placeholder: t("monitor.resourceInputFileOrDir"),
+        clearable: true,
+        style: { width: "200px" },
+      },
     },
   ],
 });
@@ -362,14 +387,14 @@ function handleBreadcrumbClick(item: { path: string }) {
 
 function updateBreadcrumb() {
   if (currentPath.value === "/") {
-    breadcrumbList.value = [{ name: "资源根目录", path: "/" }];
+    breadcrumbList.value = [{ name: t("monitor.resourceRoot"), path: "/" }];
     return;
   }
 
   const parts = currentPath.value.split("/").filter((part) => part !== "");
 
   breadcrumbList.value = [
-    { name: "资源根目录", path: "/" },
+    { name: t("monitor.resourceRoot"), path: "/" },
     ...parts.map((part, index) => ({
       name: part,
       path: parts.slice(0, index + 1).join("/"),
@@ -416,7 +441,7 @@ function handleUploadChange(_file: unknown, fileList: unknown[]) {
 
 async function handleUploadConfirm() {
   if (uploadFileList.value.length === 0) {
-    ElMessage.warning("请选择要上传的文件");
+    ElMessage.warning(t("monitor.resourceSelectUpload"));
     return;
   }
 
@@ -453,7 +478,7 @@ function handleCreateDir() {
 
 async function handleCreateDirConfirm() {
   if (!createDirForm.dir_name.trim()) {
-    ElMessage.warning("请输入文件夹名称");
+    ElMessage.warning(t("monitor.resourceInputDirNameWarn"));
     return;
   }
 
@@ -499,7 +524,7 @@ function handleRename(item: ResourceItem) {
 
 async function handleRenameConfirm() {
   if (!renameForm.new_name.trim()) {
-    ElMessage.warning("请输入新名称");
+    ElMessage.warning(t("monitor.resourceInputNewNameWarn"));
     return;
   }
 
@@ -517,14 +542,18 @@ async function handleRenameConfirm() {
 
 async function handleDelete(item: ResourceItem) {
   try {
-    await ElMessageBox.confirm(`确定要删除 ${item.name} 吗？`, "确认删除", {
-      confirmButtonText: "确定",
-      cancelButtonText: "取消",
-      type: "warning",
-    });
+    await ElMessageBox.confirm(
+      t("monitor.resourceDeleteConfirm", { name: item.name }),
+      t("monitor.resourceDeleteConfirmTitle"),
+      {
+        confirmButtonText: t("monitor.confirm"),
+        cancelButtonText: t("monitor.cancel"),
+        type: "warning",
+      }
+    );
 
     await ResourceAPI.deleteResource([item.file_url]);
-    ElMessage.success("删除成功");
+    ElMessage.success(t("monitor.resourceDeleteSuccess"));
     refreshList();
   } catch (error) {
     if (error !== "cancel") {
@@ -535,17 +564,17 @@ async function handleDelete(item: ResourceItem) {
 
 async function handleBatchDelete() {
   if (selectedItems.value.length === 0) {
-    ElMessage.warning("请选择要删除的文件");
+    ElMessage.warning(t("monitor.resourceSelectDelete"));
     return;
   }
 
   try {
     await ElMessageBox.confirm(
-      `确定要删除选中的 ${selectedItems.value.length} 个文件吗？`,
-      "确认删除",
+      t("monitor.resourceBatchDeleteConfirm", { count: selectedItems.value.length }),
+      t("monitor.resourceDeleteConfirmTitle"),
       {
-        confirmButtonText: "确定",
-        cancelButtonText: "取消",
+        confirmButtonText: t("monitor.confirm"),
+        cancelButtonText: t("monitor.cancel"),
         type: "warning",
       }
     );
@@ -553,7 +582,7 @@ async function handleBatchDelete() {
     const paths = selectedItems.value.map((item) => item.file_url);
 
     await ResourceAPI.deleteResource(paths);
-    ElMessage.success("删除成功");
+    ElMessage.success(t("monitor.resourceDeleteSuccess"));
     refreshList();
   } catch (error) {
     if (error !== "cancel") {

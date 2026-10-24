@@ -4,57 +4,40 @@
       <template #title>
         <span class="gencode-help-collapse__title">
           <el-icon class="gencode-help-collapse__icon"><InfoFilled /></el-icon>
-          菜单、页面路由与接口路径对照（写入本地时）
+          {{ t("generator.helpCollapseTitle") }}
         </span>
       </template>
       <el-table stripe :data="rows" border size="small" class="gencode-rules-table">
-        <el-table-column prop="parent" label="上级目录" min-width="88" />
-        <el-table-column prop="sidebar" label="侧栏结构（目录→菜单→按钮）" min-width="200" />
-        <el-table-column prop="page" label="浏览器地址（页面路由）" min-width="160" />
-        <el-table-column prop="api" label="前端请求的 HTTP 路径" min-width="160" />
+        <el-table-column prop="parent" :label="t('generator.colParent')" min-width="88" />
+        <el-table-column prop="sidebar" :label="t('generator.colSidebar')" min-width="200" />
+        <el-table-column prop="page" :label="t('generator.colPage')" min-width="160" />
+        <el-table-column prop="api" :label="t('generator.colApi')" min-width="160" />
       </el-table>
-      <p class="gencode-help-footnote">
-        包名、模块名、业务名见下方表单（业务名对应 plugin 下功能目录，可与
-        <code>module_example</code>
-        中
-        <code>demo</code>
-        、
-        <code>demo/demo01</code>
-        、
-        <code>gen_demo02</code>
-        对照）。权限为
-        <code>包名:模块名:操作</code>
-        ，第三段是操作类型（如
-        <code>query</code>
-        、
-        <code>create</code>
-        ），与业务目录名无关。动态路由将
-        <code>module_xxx</code>
-        映射为接口前缀
-        <code>/xxx</code>
-        ，故页面 URL 与 API 前缀可以不同。仅「下载 ZIP」不会创建菜单。
-      </p>
+      <p class="gencode-help-footnote" v-html="t('generator.helpFootnote')"></p>
     </el-collapse-item>
   </el-collapse>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { InfoFilled } from "@element-plus/icons-vue";
 
 defineOptions({ name: "GencodeHelpPanel" });
 
+const { t } = useI18n();
+
 const rows = [
   {
-    parent: "已选",
-    sidebar: "上级目录 → 短包名目录 → 功能菜单 → 按钮",
-    page: "/包名/业务名",
-    api: "/短包名/业务名",
+    parent: t("generator.rowSelectedParent"),
+    sidebar: t("generator.rowSidebarSelected"),
+    page: t("generator.rowPageSelected"),
+    api: t("generator.rowApi"),
   },
   {
-    parent: "未选",
-    sidebar: "module_包名 → 功能菜单 → 按钮（与 plugin 目录一致）",
-    page: "/module_包名/业务名",
-    api: "/短包名/业务名",
+    parent: t("generator.rowUnselectedParent"),
+    sidebar: t("generator.rowSidebarUnselected"),
+    page: t("generator.rowPageUnselected"),
+    api: t("generator.rowApi"),
   },
 ];
 </script>

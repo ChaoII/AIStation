@@ -2,25 +2,25 @@
   <EnhancedDialog
     ref="dialogRef"
     v-model="open"
-    title="导入表"
+    :title="t('generator.importTable')"
     width="min(960px, 96vw)"
     append-to-body
     @fullscreen-change="onFullscreenChange"
   >
     <el-form ref="importQueryRef" :model="query" :inline="true">
-      <el-form-item label="表名称" prop="table_name">
+      <el-form-item :label="t('generator.tableName')" prop="table_name">
         <el-input
           v-model="query.table_name"
-          placeholder="请输入表名称"
+          :placeholder="t('generator.inputTableName')"
           clearable
           style="width: 180px"
           @keyup.enter="emit('query')"
         />
       </el-form-item>
-      <el-form-item label="表描述" prop="table_comment">
+      <el-form-item :label="t('generator.tableComment')" prop="table_comment">
         <el-input
           v-model="query.table_comment"
-          placeholder="请输入表描述"
+          :placeholder="t('generator.inputTableComment')"
           clearable
           style="width: 180px"
           @keyup.enter="emit('query')"
@@ -33,14 +33,14 @@
           icon="Search"
           @click="emit('query')"
         >
-          搜索
+          {{ t("generator.search") }}
         </el-button>
         <el-button
           v-hasPerm="['module_generator:dblist:query']"
           icon="Refresh"
           @click="emit('reset')"
         >
-          重置
+          {{ t("generator.reset") }}
         </el-button>
       </el-form-item>
     </el-form>
@@ -55,10 +55,16 @@
         @selection-change="onSelectionChange"
       >
         <template #empty>
-          <el-empty :image-size="80" description="暂无数据" />
+          <el-empty :image-size="80" :description="t('generator.noData')" />
         </template>
         <el-table-column type="selection" width="55"></el-table-column>
-        <el-table-column label="序号" type="index" min-width="30" align="center" fixed>
+        <el-table-column
+          :label="t('generator.serial')"
+          type="index"
+          min-width="30"
+          align="center"
+          fixed
+        >
           <template #default="scope">
             <span>
               {{ ((query.page_no ?? 1) - 1) * (query.page_size ?? 10) + scope.$index + 1 }}
@@ -67,20 +73,20 @@
         </el-table-column>
         <el-table-column
           prop="database_name"
-          label="数据库名称"
+          :label="t('generator.databaseName')"
           :show-overflow-tooltip="true"
         ></el-table-column>
         <el-table-column
           prop="table_name"
-          label="表名称"
+          :label="t('generator.tableName')"
           :show-overflow-tooltip="true"
         ></el-table-column>
         <el-table-column
           prop="table_comment"
-          label="表描述"
+          :label="t('generator.tableComment')"
           :show-overflow-tooltip="true"
         ></el-table-column>
-        <el-table-column prop="table_type" label="表类型"></el-table-column>
+        <el-table-column prop="table_type" :label="t('generator.tableType')"></el-table-column>
       </el-table>
       <pagination
         v-model:page="query.page_no"
@@ -92,9 +98,9 @@
     <template #footer>
       <div class="dialog-footer">
         <el-button type="primary" :loading="confirmLoading" @click="emit('confirm')">
-          确 定
+          {{ t("generator.confirm") }}
         </el-button>
-        <el-button @click="open = false">取 消</el-button>
+        <el-button @click="open = false">{{ t("generator.cancelConfirm") }}</el-button>
       </div>
     </template>
   </EnhancedDialog>
@@ -102,11 +108,14 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import type { FormInstance, TableInstance } from "element-plus";
 import type { DBTableSchema, GenTablePageQuery } from "@/api/module_generator/gencode";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 
 defineOptions({ name: "ImportDbTableDialog" });
+
+const { t } = useI18n();
 
 defineProps<{
   data: DBTableSchema[];

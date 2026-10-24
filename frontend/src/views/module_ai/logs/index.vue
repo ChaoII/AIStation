@@ -6,19 +6,19 @@
         <!-- 统计 -->
         <div class="log-stats">
           <div class="log-stat">
-            <div class="log-stat__title">总调用</div>
+            <div class="log-stat__title">{{ t("ai_logs.totalCalls") }}</div>
             <div class="log-stat__value">{{ stats.total }}</div>
           </div>
           <div class="log-stat">
-            <div class="log-stat__title">成功率</div>
+            <div class="log-stat__title">{{ t("ai_logs.successRate") }}</div>
             <div class="log-stat__value">{{ (stats.success_rate * 100).toFixed(1) }}%</div>
           </div>
           <div class="log-stat">
-            <div class="log-stat__title">平均耗时</div>
+            <div class="log-stat__title">{{ t("ai_logs.avgLatency") }}</div>
             <div class="log-stat__value">{{ stats.avg_latency_ms }} ms</div>
           </div>
           <div class="log-stat">
-            <div class="log-stat__title">失败数</div>
+            <div class="log-stat__title">{{ t("ai_logs.errorCount") }}</div>
             <div class="log-stat__value">{{ stats.error }}</div>
           </div>
         </div>
@@ -27,20 +27,22 @@
         <div class="log-charts">
           <div v-if="stats.trend?.length" class="log-chart-block">
             <div class="log-chart-head">
-              <span>调用趋势（近 {{ statsDays }} 天）</span>
+              <span>{{ t("ai_logs.callTrend", { days: statsDays }) }}</span>
               <div class="log-chart-head__ops">
                 <el-button size="small" :loading="statsLoading" @click="loadStats">
-                  刷新统计
+                  {{ t("ai_logs.refreshStats") }}
                 </el-button>
                 <el-button size="small" type="primary" plain :loading="exporting" @click="doExport">
-                  导出 CSV
+                  {{ t("ai_logs.exportCsv") }}
                 </el-button>
               </div>
             </div>
             <div ref="trendRef" class="log-chart" />
           </div>
           <div v-if="stats.by_model?.length" class="log-chart-block log-chart-block--model">
-            <div class="log-chart-head"><span>模型调用分布</span></div>
+            <div class="log-chart-head">
+              <span>{{ t("ai_logs.modelDist") }}</span>
+            </div>
             <div ref="modelRef" class="log-chart" />
           </div>
         </div>
@@ -66,38 +68,68 @@
                 @row-click="openDetail"
               >
                 <template #empty>
-                  <el-empty :image-size="80" description="暂无调用日志" />
+                  <el-empty :image-size="80" :description="t('ai_logs.noLogs')" />
                 </template>
-                <el-table-column fixed label="序号" min-width="60">
+                <el-table-column fixed :label="t('ai_logs.serial')" min-width="60">
                   <template #default="scope">
                     {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
                   </template>
                 </el-table-column>
                 <el-table-column
                   prop="created_time"
-                  label="时间"
+                  :label="t('ai_logs.time')"
                   min-width="180"
                   show-overflow-tooltip
                 />
-                <el-table-column prop="model_name" label="模型" min-width="180" show-overflow-tooltip>
+                <el-table-column
+                  prop="model_name"
+                  :label="t('ai_logs.model')"
+                  min-width="180"
+                  show-overflow-tooltip
+                >
                   <template #default="{ row }">{{ row.model_name || "—" }}</template>
                 </el-table-column>
-                <el-table-column prop="usage" label="用途" min-width="100" align="center" />
-                <el-table-column prop="latency_ms" label="耗时" min-width="100" align="center">
+                <el-table-column
+                  prop="usage"
+                  :label="t('ai_logs.usage')"
+                  min-width="100"
+                  align="center"
+                />
+                <el-table-column
+                  prop="latency_ms"
+                  :label="t('ai_logs.latency')"
+                  min-width="100"
+                  align="center"
+                >
                   <template #default="{ row }">{{ row.latency_ms }} ms</template>
                 </el-table-column>
-                <el-table-column prop="prompt_tokens" label="输入Token" min-width="110" align="center">
+                <el-table-column
+                  prop="prompt_tokens"
+                  :label="t('ai_logs.promptTokens')"
+                  min-width="110"
+                  align="center"
+                >
                   <template #default="{ row }">{{ row.prompt_tokens ?? 0 }}</template>
                 </el-table-column>
-                <el-table-column prop="completion_tokens" label="输出Token" min-width="110" align="center">
+                <el-table-column
+                  prop="completion_tokens"
+                  :label="t('ai_logs.completionTokens')"
+                  min-width="110"
+                  align="center"
+                >
                   <template #default="{ row }">{{ row.completion_tokens ?? 0 }}</template>
                 </el-table-column>
-                <el-table-column prop="cost" label="费用(元)" min-width="110" align="center">
+                <el-table-column
+                  prop="cost"
+                  :label="t('ai_logs.costYuan')"
+                  min-width="110"
+                  align="center"
+                >
                   <template #default="{ row }">
                     {{ row.cost != null ? Number(row.cost).toFixed(4) : "—" }}
                   </template>
                 </el-table-column>
-                <el-table-column label="结果" min-width="90" align="center">
+                <el-table-column :label="t('ai_logs.result')" min-width="90" align="center">
                   <template #default="{ row }">
                     <el-tag
                       :type="
@@ -113,17 +145,22 @@
                     >
                       {{
                         row.result === "success"
-                          ? "成功"
+                          ? t("ai_logs.success")
                           : row.result === "cancelled"
-                            ? "已取消"
+                            ? t("ai_logs.cancelled")
                             : row.result === "pending"
-                              ? "待审批"
-                              : "失败"
+                              ? t("ai_logs.pendingReview")
+                              : t("ai_logs.failed")
                       }}
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="error" label="错误" min-width="240" show-overflow-tooltip>
+                <el-table-column
+                  prop="error"
+                  :label="t('ai_logs.error')"
+                  min-width="240"
+                  show-overflow-tooltip
+                >
                   <template #default="{ row }">{{ row.error || "—" }}</template>
                 </el-table-column>
               </el-table>
@@ -134,18 +171,30 @@
     </el-card>
 
     <!-- 日志详情抽屉 -->
-    <el-drawer v-model="detailVisible" title="调用详情" size="480px" append-to-body>
+    <el-drawer v-model="detailVisible" :title="t('ai_logs.callDetail')" size="480px" append-to-body>
       <el-descriptions v-if="detail" :column="1" border size="small">
-        <el-descriptions-item label="时间">{{ detail.created_time }}</el-descriptions-item>
-        <el-descriptions-item label="模型">{{ detail.model_name || "—" }}</el-descriptions-item>
-        <el-descriptions-item label="用途">{{ detail.usage || "—" }}</el-descriptions-item>
-        <el-descriptions-item label="耗时">{{ detail.latency_ms }} ms</el-descriptions-item>
-        <el-descriptions-item label="输入Token">{{ detail.prompt_tokens ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="输出Token">{{ detail.completion_tokens ?? 0 }}</el-descriptions-item>
-        <el-descriptions-item label="费用(元)">
+        <el-descriptions-item :label="t('ai_logs.time')">
+          {{ detail.created_time }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.model')">
+          {{ detail.model_name || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.usage')">
+          {{ detail.usage || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.latency')">
+          {{ detail.latency_ms }} ms
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.promptTokens')">
+          {{ detail.prompt_tokens ?? 0 }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.completionTokens')">
+          {{ detail.completion_tokens ?? 0 }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.costYuan')">
           {{ detail.cost != null ? Number(detail.cost).toFixed(4) : "—" }}
         </el-descriptions-item>
-        <el-descriptions-item label="结果">
+        <el-descriptions-item :label="t('ai_logs.result')">
           <el-tag
             :type="
               detail.result === 'success'
@@ -160,18 +209,22 @@
           >
             {{
               detail.result === "success"
-                ? "成功"
+                ? t("ai_logs.success")
                 : detail.result === "cancelled"
-                  ? "已取消"
+                  ? t("ai_logs.cancelled")
                   : detail.result === "pending"
-                    ? "待审批"
-                    : "失败"
+                    ? t("ai_logs.pendingReview")
+                    : t("ai_logs.failed")
             }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="应用ID">{{ detail.app_id ?? "—" }}</el-descriptions-item>
-        <el-descriptions-item label="用户ID">{{ detail.user_id ?? "—" }}</el-descriptions-item>
-        <el-descriptions-item label="错误">
+        <el-descriptions-item :label="t('ai_logs.appId')">
+          {{ detail.app_id ?? "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.userId')">
+          {{ detail.user_id ?? "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.error')">
           <pre v-if="detail.error" class="log-error">{{ detail.error }}</pre>
           <span v-else>—</span>
         </el-descriptions-item>
@@ -182,6 +235,7 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import * as echarts from "echarts";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
@@ -196,6 +250,8 @@ defineOptions({
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick } = useCrudList();
 
+const { t } = useI18n();
+
 const searchConfig = reactive<ISearchConfig>({
   permPrefix: "module_ai:assistant",
   colon: true,
@@ -205,30 +261,38 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "usage",
-      label: "用途",
+      label: t("ai_logs.usage"),
       type: "select",
       options: [
-        { label: "聊天", value: "chat" },
-        { label: "应用", value: "app" },
-        { label: "助手", value: "assistant" },
+        { label: t("ai_logs.chat"), value: "chat" },
+        { label: t("ai_logs.app"), value: "app" },
+        { label: t("ai_logs.assistant"), value: "assistant" },
       ],
-      attrs: { placeholder: "请选择用途", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("ai_logs.selectUsage"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "result",
-      label: "结果",
+      label: t("ai_logs.result"),
       type: "select",
       options: [
-        { label: "成功", value: "success" },
-        { label: "失败", value: "error" },
+        { label: t("ai_logs.success"), value: "success" },
+        { label: t("ai_logs.failed"), value: "error" },
       ],
-      attrs: { placeholder: "请选择结果", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("ai_logs.selectResult"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "keyword",
-      label: "关键字",
+      label: t("ai_logs.keyword"),
       type: "input",
-      attrs: { placeholder: "模型名或错误信息", clearable: true },
+      attrs: { placeholder: t("ai_logs.keywordPlaceholder"), clearable: true },
     },
   ],
 });
@@ -289,19 +353,19 @@ function renderCharts() {
     trendChart = trendChart || echarts.init(trendRef.value);
     trendChart.setOption({
       tooltip: { trigger: "axis" },
-      legend: { data: ["调用", "失败"], top: 0, right: 8 },
+      legend: { data: [t("ai_logs.chartCalls"), t("ai_logs.chartErrors")], top: 0, right: 8 },
       grid: { left: 44, right: 20, top: 36, bottom: 26 },
       xAxis: { type: "category", data: (stats.trend || []).map((t: any) => t.date) },
       yAxis: { type: "value" },
       series: [
         {
-          name: "调用",
+          name: t("ai_logs.chartCalls"),
           type: "line",
           smooth: true,
           data: (stats.trend || []).map((t: any) => t.count),
         },
         {
-          name: "失败",
+          name: t("ai_logs.chartErrors"),
           type: "line",
           smooth: true,
           data: (stats.trend || []).map((t: any) => t.error),
@@ -377,9 +441,9 @@ async function doExport() {
     a.download = "ai_call_logs.csv";
     a.click();
     URL.revokeObjectURL(url);
-    ElMessage.success(`已导出 ${rows.length} 条日志`);
+    ElMessage.success(t("ai_logs.exportedRows", { count: rows.length }));
   } catch {
-    ElMessage.error("导出失败");
+    ElMessage.error(t("ai_logs.exportFailed"));
   } finally {
     exporting.value = false;
   }

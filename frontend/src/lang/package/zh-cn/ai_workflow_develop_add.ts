@@ -1,0 +1,387 @@
+export default {
+  // ===== develop (开放平台) =====
+  develop_tabApps: "应用管理",
+  develop_tabLogs: "调用日志",
+  develop_tabMcp: "MCP 会话",
+  develop_tabUsage: "用量报告",
+  develop_tabApprovals: "调用审批",
+  develop_tabDocs: "接入文档",
+  develop_keyword: "关键字",
+  develop_keywordPlaceholder: "名称 / AppID",
+  develop_query: "查询",
+  develop_alertExpiringTitle: "有 {count} 个应用即将过期",
+  develop_expiringItem: "{name} 将于 {expire} 过期",
+  develop_etc: "等",
+  develop_hintCreateApp: "为外部调用方授权能力，管理密钥、配额与审批。",
+  develop_appTotal: "共 {total} 个应用",
+  develop_newApp: "新建应用",
+  develop_name: "名称",
+  develop_namePlaceholder: "应用唯一名称",
+  develop_nameRequired: "请填写名称",
+  develop_copyAppid: "复制 AppID",
+  develop_status: "状态",
+  develop_enabled: "启用",
+  develop_enabledMsg: "已启用",
+  develop_disabledMsg: "已停用",
+  develop_expireTime: "过期时间",
+  develop_expirePlaceholder: "留空表示永不过期",
+  develop_forever: "永久",
+  develop_capabilities: "能力",
+  develop_callCount: "调用数",
+  develop_noData: "暂无应用，点击「新建应用」创建",
+  develop_action: "操作",
+  develop_detail: "详情",
+  develop_edit: "编辑",
+  develop_editAppTitle: "编辑应用 · {name}",
+  develop_delete: "删除",
+  develop_deleteConfirm: "将删除应用「{name}」，其 AppKey 将立即失效且不可恢复，是否继续？",
+  develop_deleteConfirmTitle: "删除确认",
+  develop_deleteSuccess: "应用已删除",
+  develop_deleteFail: "删除失败",
+  develop_embed: "嵌入",
+  develop_try: "试调",
+  develop_tryTitle: "能力试调",
+  develop_tryAlert: "使用该应用的凭证发送一次测试调用，查看原始响应。",
+  develop_selectCapability: "选择能力",
+  develop_selectCapabilityRequired: "请选择能力",
+  develop_payloadJson: "Payload（JSON）",
+  develop_payloadPlaceholder: '请求载荷，如 {"agent_name": "..."}',
+  develop_invalidJson: "JSON 格式错误",
+  develop_result: "结果",
+  develop_rawResponse: "原始响应",
+  develop_response: "响应",
+  develop_send: "发送",
+  develop_close: "关闭",
+  develop_trySuccess: "调用成功",
+  develop_tryError: "[{code}] {msg}",
+  develop_tryFailMsg: "请求失败",
+  develop_resultTaskId: "任务ID",
+  develop_resultDeletedId: "删除的ID",
+  develop_resultName: "名称",
+  develop_resultReply: "回复",
+  develop_resultSid: "SID",
+  develop_resultSessionId: "会话ID",
+  develop_resultTotal: "总数",
+  develop_resultStatus: "状态",
+  develop_resultEnabled: "启用",
+  develop_resultSourceApp: "来源应用",
+  develop_resultItemsCount: "条目数",
+  develop_itemsUnit: "项",
+  develop_yes: "是",
+  develop_no: "否",
+  develop_opFail: "操作失败",
+  develop_save: "保存",
+  develop_saveSuccess: "保存成功",
+  develop_saveFail: "保存失败",
+  develop_loadFail: "加载失败",
+  develop_cancel: "取消",
+  develop_copied: "已复制",
+  develop_copyFailManual: "复制失败，请手动复制",
+  develop_desc: "描述",
+  develop_descPlaceholder: "该应用的用途说明",
+  develop_authCaps: "授权能力",
+  develop_requiresApproval: "需审批",
+  develop_requiresApprovalTip: "敏感能力需先审批通过后再执行。",
+  develop_dailyQuota: "每日配额",
+  develop_quotaTip: "0 = 不限；按自然日统计。",
+  develop_unlimited: "不限",
+  develop_todayUsage: "今日 {usage}",
+  develop_catTrain: "训练",
+  develop_catAgent: "智能体",
+  develop_catChat: "对话",
+  develop_catBot: "机器人",
+  develop_catEmbed: "嵌入",
+  develop_keyTitle: "{name} · AppKey",
+  develop_keyEncrypted: "已加密",
+  develop_resetKey: "重置 AppKey",
+  develop_resetKeyTitle: "重置 AppKey",
+  develop_resetKeyConfirm:
+    "重置后「{name}」当前 AppKey 将立即失效，新密钥即刻生效且不可恢复，是否继续？",
+  develop_reset: "重置",
+  develop_keyResetSuccess: "AppKey 已重置",
+  develop_keyResetFail: "重置失败",
+  develop_createSuccessTitle: "创建成功",
+  develop_saveKeyAlert: "请立即保存 AppKey",
+  develop_saveKeyDesc: "AppKey 仅展示一次，关闭后将无法再次查看，请妥善保管。",
+  develop_iSaved: "我已保存",
+  develop_statTodayCalls: "今日调用",
+  develop_statSuccessRate: "成功率",
+  develop_statAvgLatency: "平均耗时",
+  develop_statPending: "待审批",
+  develop_suffixCount: "次",
+  develop_suffixRecords: "条",
+  develop_suffixItems: "个",
+  develop_appLabel: "应用",
+  develop_all: "全部",
+  develop_category: "分类",
+  develop_method: "方式",
+  develop_success: "成功",
+  develop_failed: "失败",
+  develop_denied: "拒绝",
+  develop_timeRange: "时间范围",
+  develop_to: "至",
+  develop_startTime: "开始时间",
+  develop_endTime: "结束时间",
+  develop_capability: "能力",
+  develop_exportCsv: "导出CSV",
+  develop_time: "时间",
+  develop_latency: "耗时",
+  develop_latencyTokens: "耗时 / Token",
+  develop_requestPath: "请求路径",
+  develop_resultSummary: "结果摘要",
+  develop_noLogs: "暂无调用日志",
+  develop_recent7: "近7天",
+  develop_recent30: "近30天",
+  develop_today: "今天",
+  develop_sparkTitle: "{date}：{calls} 次调用",
+  develop_topCapabilities: "Top 能力",
+  develop_topCapabilitiesShort: "高频能力",
+  develop_filterCapabilityTitle: "按 {capability} 筛选",
+  develop_logDetailTitle: "调用日志详情",
+  develop_methodStatus: "方式 / 状态",
+  develop_requestBody: "请求体",
+  develop_requestBodyShort: "请求载荷",
+  develop_errorStatus: "错误",
+  develop_error: "错误",
+  develop_successRate: "成功率",
+  develop_quotaHits: "配额命中",
+  develop_rateLimited: "限流",
+  develop_noUsage: "暂无用量数据",
+  develop_usageRange: "时间范围",
+  develop_recentDays: "近 {days} 天",
+  develop_recentDaysValue: "{days}天",
+  develop_calls: "调用数",
+  develop_usageLoadFail: "用量加载失败",
+  develop_sessionId: "会话ID",
+  develop_transport: "传输",
+  develop_transportStreamable: "Streamable HTTP",
+  develop_transportStdio: "stdio",
+  develop_client: "客户端",
+  develop_duration: "时长(秒)",
+  develop_toolCalls: "工具调用",
+  develop_closeReason: "关闭原因",
+  develop_noMcp: "暂无 MCP 会话",
+  develop_mcpStatSessions: "会话数",
+  develop_mcpStatToolCalls: "工具调用",
+  develop_mcpStatAvgDuration: "平均时长(秒)",
+  develop_mcpSparkTitle: "{date}：{sessions} 个会话 · {toolCalls} 次工具调用",
+  develop_approvalHint: "敏感能力「先审批后执行」，请审批下方待处理请求。",
+  develop_approvalPending: "待审批 {count}",
+  develop_approvalPendingStatus: "待审批",
+  develop_approve: "通过",
+  develop_approveExecute: "通过并执行",
+  develop_reject: "驳回",
+  develop_approvedStatus: "已通过",
+  develop_pendingStatus: "待审批",
+  develop_rejectedStatus: "已驳回",
+  develop_expiredStatus: "已过期",
+  develop_execFailStatus: "执行失败",
+  develop_batchApprove: "批量通过（{count}）",
+  develop_batchApproveTitle: "批量通过 {count} 项",
+  develop_batchApproveConfirm: "将批量通过并执行 {count} 条待审批的能力调用，是否继续？",
+  develop_batchApproveSuccess: "已通过 {count} 条请求",
+  develop_batchApprovePartial: "通过 {ok} 条，失败 {failed} 条。{msg}",
+  develop_batchApproveFail: "批量通过失败",
+  develop_applyTime: "申请时间",
+  develop_reviewTime: "审批时间",
+  develop_reviewNote: "审批备注",
+  develop_noApprovals: "暂无审批",
+  develop_approvalLoadFail: "审批列表加载失败",
+  develop_approvalDetailTitle: "审批详情",
+  develop_reviewApproveAction: "通过",
+  develop_reviewConfirmTitle: "{action}？",
+  develop_reviewApproveConfirm: "通过应用 {appid} 的能力「{capability}」调用并执行吗？",
+  develop_reviewRejectConfirm: "驳回能力「{capability}」的调用吗？",
+  develop_processed: "已处理",
+  develop_processFail: "处理失败",
+  develop_execResult: "执行结果",
+  develop_execFailTitle: "执行失败：{error}",
+  develop_notifyCfg: "通知配置",
+  develop_notifyCfgTitle: "审批通知",
+  develop_notifyAlert: "选择哪些渠道发送审批通知，并填写对应的 JSON 配置。",
+  develop_enableChannels: "启用渠道",
+  develop_channelConfig: "{name} 配置",
+  develop_notifyInvalidJson: "{name} 的 JSON 配置格式错误",
+  develop_notifyLoadFail: "通知配置加载失败",
+  develop_notifyBroken: "以下渠道配置异常：{broken}",
+  develop_saved: "已保存",
+  develop_docsCredTitle: "凭证",
+  develop_docsCredDesc:
+    "每个应用含 AppID + AppKey，调用方以「Bearer {appid}:{appkey}」鉴权；切勿在浏览器侧暴露 AppKey。",
+  develop_docsApprovalTitle: "需要审批吗？",
+  develop_docsApprovalDesc:
+    "敏感能力首次调用需应用级审批，请在应用的「授权能力」与「每日配额」中开启。",
+  develop_restCard: "REST",
+  develop_restDesc: "统一能力入口：以能力 code 调用任意能力。",
+  develop_capListCard: "能力清单",
+  develop_capDesc: "平台开放的全部能力，含所需权限与 MCP 工具名。",
+  develop_capCount: "{count} 项能力",
+  develop_capabilityName: "名称",
+  develop_capabilityCode: "编码",
+  develop_requiredPerm: "所需权限",
+  develop_mcpToolName: "MCP 工具",
+  develop_noCapabilities: "暂无能力",
+  develop_capLoadFail: "能力加载失败",
+  develop_mcpCard: "MCP",
+  develop_mcpDesc: "同一套能力经 MCP（Streamable HTTP）暴露，每次调用都写审计。",
+  develop_embedCard: "网页嵌入",
+  develop_embedDesc: "通过 iframe 或 Script SDK 把对话嵌入到你的页面，令牌由宿主服务端换票。",
+  develop_postMessageEvents: "postMessage 事件",
+  develop_embedFoot: "事件名与 setToken / sendMessage / resize / destroy 命令详见「嵌入」弹窗。",
+  develop_eventReady: "嵌入页初始化完成（含目标名与过期时间）",
+  develop_eventUserMessage: "用户发出消息",
+  develop_eventReplyStart: "开始流式回复",
+  develop_eventReplyDelta: "流式增量文本（高频）",
+  develop_eventReplyDone: "回复完成（全量文本）",
+  develop_eventError: "业务/网络/限流错误",
+  develop_eventTokenExpired: "凭证过期，宿主需换票后 setToken",
+  develop_exportFail: "导出失败",
+  develop_downloadStarted: "已开始下载",
+  develop_restExample: `# 1. 凭证校验：确认应用状态与已授权能力
+curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
+  -H "Authorization: Bearer {appid}:{appkey}"
+
+# 2. 能力清单：只返回本应用**已授权**的能力
+curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
+  -H "Authorization: Bearer {appid}:{appkey}"
+
+# 3. 调用能力（统一入口）：code 取自能力清单，body 固定为 {"payload": {...}}
+curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"payload": {"agent_name": "外部创建助手"}}'
+
+# 4. 对话（聚合回复，非流式）
+curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "你好"}}'
+
+# 5. 网页嵌入换票（浏览器面不接触 appkey）
+curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"kind": "agent", "target_id": 123}'`,
+  develop_mcpExample: `// 端点（Streamable HTTP）：https://<host>/api/v1/ai/develop-api/mcp
+// 鉴权：请求头 Authorization: Bearer {appid}:{appkey}（与 REST 同一套凭证）
+
+// 方式一：客户端原生支持自定义请求头（推荐）
+{
+  "mcpServers": {
+    "aistation": {
+      "type": "http",
+      "url": "https://<host>/api/v1/ai/develop-api/mcp",
+      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
+    }
+  }
+}
+
+// 方式二：客户端只支持 stdio（用 mcp-remote 代理转发请求头）
+{
+  "mcpServers": {
+    "aistation": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote",
+        "https://<host>/api/v1/ai/develop-api/mcp",
+        "--header", "Authorization: Bearer {appid}:{appkey}"
+      ]
+    }
+  }
+}
+
+// 工具 = 能力：tools/list 只返回该应用已授权的能力；每次调用都写审计。`,
+  develop_embedExample:
+    `<!-- 方式一：iframe 直嵌（token 由服务端换票注入） -->
+<iframe src="https://<host>/web/#/embed?token={access_token}"
+        width="420" height="620" style="border:0;border-radius:12px"></iframe>
+
+<!-- 方式二：Script SDK（推荐：事件回调 + 续期） -->
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
+    `ipt>
+<div id="ai-assistant" style="width:420px;height:620px"></div>
+<script>
+  const ai = AiAssistant.init({
+    container: "#ai-assistant",
+    token: "{access_token}",
+    apiBase: "https://<host>/api/v1/ai",
+    webBase: "https://<host>/web",
+    theme: { primary: "#409eff" }
+  });
+  ai.on("token_expired", async () => {
+    ai.setToken(await fetchTokenFromYourBackend());  // 服务端重新换票
+  });
+</scr` +
+    `ipt>`,
+
+  // ===== develop_embed (嵌入弹窗) =====
+  develop_embedTitle: "嵌入对话 · {name}",
+  develop_embedKind: "嵌入形态",
+  develop_embedApp: "AI 应用",
+  develop_embedWorkflow: "工作流",
+  develop_embedTarget: "嵌入目标",
+  develop_embedTargetPlaceholder: "选择要嵌入的目标",
+  develop_embedCode: "嵌入代码",
+  develop_embedTabIframe: "iframe 直嵌",
+  develop_embedCopyCode: "复制代码",
+  develop_embedMintToken: "生成体验 Token（2 小时）",
+  develop_embedCredTitle: "凭证说明",
+  develop_embedCredDesc:
+    "{access_token} 为短期凭证占位符：请由宿主服务端用 appid/appkey 调 POST {apiBase}/develop-api/auth/token 换票获取；切勿把 appkey 写入网页。过期后宿主重新换票并调用 setToken() 续期。",
+  develop_embedIssuedTokens: "已签发令牌",
+  develop_embedNoTokens: "暂无令牌（换票与体验票都会出现在这里）",
+  develop_embedKindShort: "形态",
+  develop_embedTrialTicket: "体验票",
+  develop_embedIssuedTicket: "换票",
+  develop_embedTargetShort: "目标",
+  develop_embedExpireTime: "过期时间",
+  develop_embedUsage: "使用",
+  develop_embedStatus: "状态",
+  develop_embedRevoked: "已吊销",
+  develop_embedValid: "有效",
+  develop_embedAction: "操作",
+  develop_embedRevoke: "吊销",
+  develop_embedRevokeFail: "吊销失败",
+  develop_embedRevokeTitle: "吊销令牌",
+  develop_embedRevokeConfirm:
+    "吊销后该令牌立即失效，使用它的嵌入页面将无法继续对话，且不可恢复。是否继续？",
+  develop_embedEvents: "事件契约",
+  develop_embedEventsNote:
+    "上行信封 source = ai-embed / version = 1；完整载荷与下行命令见「接入文档」页签。",
+  develop_embedRevealTitle: "体验 Token",
+  develop_embedRevealAlertTitle: "请复制后立即填入代码",
+  develop_embedRevealAlertDesc: "令牌明文仅在这里显示一次；过期后重新签发即可。",
+  develop_embedApplyCode: "填入代码",
+  develop_embedApplySuccess: "已填入代码，可直接复制使用",
+  develop_embedIframeTitle: "AI 对话",
+  develop_embedTargetsLoadFail: "加载目标列表失败",
+  develop_embedMintFail: "签发失败",
+
+  // ===== embed (公开嵌入页) =====
+  embed_brand: "AI 助手",
+  embed_missingTitle: "缺少访问凭证",
+  embed_missingDesc: "本页需要一次性访问凭证，请在你的服务端生成并以 ?token=... 打开链接。",
+  embed_conversation: "对话",
+  embed_aiAssistant: "AI 助手",
+  embed_you: "我",
+  embed_welcome: "你好，有什么可以帮你的吗？",
+  embed_hint: "在下方输入你的问题开始对话",
+  embed_inputPlaceholder: "输入你的问题…",
+  embed_send: "发送",
+  embed_stopGenerate: "停止生成",
+  embed_sourcesCount: "{count} 个引用",
+  embed_knowledgePiece: "知识",
+  embed_retry: "重试",
+  embed_metaLoadFail: "对话加载失败",
+  embed_noPermMsg: "无权访问该对话",
+  embed_rateLimitedMsg: "请求过于频繁，请稍后再试",
+  embed_rateLimitedNotice: "请求过于频繁，请稍后再试",
+  embed_notFoundMsg: "目标不存在",
+  embed_notFoundNotice: "目标不存在",
+  embed_networkMsg: "网络异常，请稍后重试",
+  embed_networkNotice: "网络异常，请稍后重试",
+  embed_expiredTitle: "访问凭证已过期",
+  embed_expiredDesc: "访问凭证已过期，请宿主重新换票并调用 setToken()。",
+  embed_forbiddenTitle: "无权限",
+  embed_forbiddenDesc: "你无权访问该对话。",
+};

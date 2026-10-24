@@ -5,7 +5,7 @@
       <div class="bs-controls">
         <el-select
           v-model="selectedLayoutId"
-          placeholder="选择布局"
+          :placeholder="t('video.bigScreen.selectLayout')"
           size="small"
           clearable
           filterable
@@ -20,10 +20,12 @@
           :type="patrolRunning ? 'danger' : 'primary'"
           @click="togglePatrol"
         >
-          {{ patrolRunning ? "停止轮巡" : "开始轮巡" }}
+          {{ patrolRunning ? t("video.bigScreen.stopTour") : t("video.bigScreen.startTour") }}
         </el-button>
-        <el-button size="small" @click="exitFullscreen">退出全屏</el-button>
-        <el-button size="small" @click="goBack">返回</el-button>
+        <el-button size="small" @click="exitFullscreen">
+          {{ t("video.bigScreen.exitFullscreen") }}
+        </el-button>
+        <el-button size="small" @click="goBack">{{ t("video.bigScreen.back") }}</el-button>
       </div>
     </div>
     <div v-loading="loading" class="bs-grid" :style="gridStyle">
@@ -37,7 +39,9 @@
           />
         </div>
         <div v-else class="bs-empty">
-          <span class="bs-empty-text">{{ camId ? "摄像机离线" : "空窗口" }}</span>
+          <span class="bs-empty-text">
+            {{ camId ? t("video.bigScreen.cameraOffline") : t("video.bigScreen.emptyWindow") }}
+          </span>
         </div>
       </div>
     </div>
@@ -48,17 +52,19 @@
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import { getLayoutList, getLayoutDetail } from "@/api/module_video/layout";
 import { getCameraList } from "@/api/module_video/camera";
 import LivePlayer from "@/components/Video/LivePlayer.vue";
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 
 const loading = ref(false);
 const layouts = ref<any[]>([]);
 const selectedLayoutId = ref<number | null>(null);
-const layoutTitle = ref("大屏展示");
+const layoutTitle = ref(t("video.bigScreen.title"));
 const layoutGridType = ref("4");
 const layoutWindows = ref<Record<string, number>>({});
 const layoutPatrolInterval = ref(0);
@@ -119,7 +125,7 @@ function startPatrol() {
   const cameras = Object.values(camerasMap.value).filter((c: any) => c.status === "ONLINE");
   const winKeys = Object.keys(layoutWindows.value);
   if (winKeys.length === 0 || cameras.length === 0) {
-    ElMessage.warning("轮巡需要至少一路在线摄像机");
+    ElMessage.warning(t("video.bigScreen.tourNeedCam"));
     return;
   }
   patrolRunning.value = true;

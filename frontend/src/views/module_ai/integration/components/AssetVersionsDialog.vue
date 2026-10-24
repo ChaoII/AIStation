@@ -2,7 +2,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="`资产版本 · ${table || ''}`"
+    :title="`${t('ai_workflow.ig_assetVersionsTitle')} · ${table || ''}`"
     width="900px"
     append-to-body
     destroy-on-close
@@ -14,11 +14,11 @@
         type="info"
         :closable="false"
         show-icon
-        title="版本在每次「保存/维护」时自动生成；「发布」把某版本标记为对外发布版，「回滚」把该版本恢复为当前生效内容。"
+        :title="t('ai_workflow.ig_assetVersionsHint')"
         style="margin-bottom: 12px"
       />
       <div v-if="releases.length" class="av-releases">
-        <span class="av-releases__label">已发布：</span>
+        <span class="av-releases__label">{{ t("ai_workflow.ig_assetVersionsReleased") }}</span>
         <el-tag
           v-for="r in releases"
           :key="r.id"
@@ -32,29 +32,51 @@
       </div>
       <el-table :data="versions" size="small" border max-height="60vh" stripe>
         <template #empty>
-          <el-empty description="暂无版本记录" :image-size="60" />
+          <el-empty :description="t('ai_workflow.ig_assetVersionsEmpty')" :image-size="60" />
         </template>
-        <el-table-column label="版本" width="80" align="center">
+        <el-table-column :label="t('ai_workflow.ig_version')" width="80" align="center">
           <template #default="{ row }">V{{ row.version }}</template>
         </el-table-column>
-        <el-table-column label="中文名" min-width="110" show-overflow-tooltip>
+        <el-table-column
+          :label="t('ai_workflow.ig_chineseName')"
+          min-width="110"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ row.snapshot?.alias || "-" }}</template>
         </el-table-column>
-        <el-table-column label="业务域" width="90" show-overflow-tooltip>
+        <el-table-column
+          :label="t('ai_workflow.ig_businessDomain')"
+          width="90"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ row.snapshot?.domain || "-" }}</template>
         </el-table-column>
-        <el-table-column label="描述" min-width="150" show-overflow-tooltip>
+        <el-table-column
+          :label="t('ai_workflow.ig_description')"
+          min-width="150"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ row.snapshot?.description || "-" }}</template>
         </el-table-column>
-        <el-table-column prop="operator" label="操作人" width="80" />
-        <el-table-column prop="time" label="时间" min-width="160" show-overflow-tooltip />
-        <el-table-column label="操作" width="180" align="center" fixed="right">
+        <el-table-column prop="operator" :label="t('ai_workflow.ig_operator')" width="80" />
+        <el-table-column
+          prop="time"
+          :label="t('ai_workflow.ig_time')"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          :label="t('ai_workflow.ig_action')"
+          width="180"
+          align="center"
+          fixed="right"
+        >
           <template #default="{ row }">
             <el-button icon="Upload" link type="primary" size="small" @click="publish(row)">
-              发布
+              {{ t("ai_workflow.ig_publish") }}
             </el-button>
             <el-button icon="RefreshLeft" link type="danger" size="small" @click="rollback(row)">
-              回滚
+              {{ t("ai_workflow.ig_rollback") }}
             </el-button>
           </template>
         </el-table-column>
@@ -66,6 +88,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { useI18n } from "vue-i18n";
 
 import {
   getAssetVersions,
@@ -78,6 +101,7 @@ defineOptions({ name: "AssetVersionsDialog" });
 
 const props = defineProps<{ modelValue: boolean; table?: string }>();
 const emit = defineEmits<{ (e: "update:modelValue", v: boolean): void }>();
+const { t } = useI18n();
 
 const loading = ref(false);
 const versions = ref<any[]>([]);
@@ -108,25 +132,33 @@ watch(
 );
 
 function publish(row: any) {
-  ElMessageBox.confirm(`确认把 V${row.version} 发布为对外发布版？`, "发布确认", {
-    confirmButtonText: "发布",
-    cancelButtonText: "取消",
-    type: "warning",
-  }).then(async () => {
+  ElMessageBox.confirm(
+    t("ai_workflow.ig_publishConfirm", { version: row.version }),
+    t("ai_workflow.ig_publishConfirmTitle"),
+    {
+      confirmButtonText: t("ai_workflow.ig_publish"),
+      cancelButtonText: t("ai_workflow.ig_cancel"),
+      type: "warning",
+    }
+  ).then(async () => {
     await publishAsset(props.table || "", row.id);
-    ElMessage.success("已发布");
+    ElMessage.success(t("ai_workflow.ig_published"));
     load();
   });
 }
 
 function rollback(row: any) {
   ElMessageBox.confirm(
-    `确认回滚到 V${row.version}？当前表/字段内容将被该版本覆盖，且不可恢复。`,
-    "回滚确认",
-    { confirmButtonText: "回滚", cancelButtonText: "取消", type: "warning" }
+    t("ai_workflow.ig_rollbackConfirm", { version: row.version }),
+    t("ai_workflow.ig_rollbackConfirmTitle"),
+    {
+      confirmButtonText: t("ai_workflow.ig_rollback"),
+      cancelButtonText: t("ai_workflow.ig_cancel"),
+      type: "warning",
+    }
   ).then(async () => {
     await rollbackAssetVersion(row.id);
-    ElMessage.success("已回滚");
+    ElMessage.success(t("ai_workflow.ig_rolledBack"));
     load();
   });
 }

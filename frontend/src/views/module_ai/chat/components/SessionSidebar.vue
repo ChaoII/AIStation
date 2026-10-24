@@ -1,13 +1,13 @@
 <template>
   <div class="session-sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-title">会话</span>
+      <span class="sidebar-title">{{ t("ai_chat.sessionSidebar_title") }}</span>
       <el-button size="small" :icon="Plus" circle @click="emit('create')" />
     </div>
     <el-input
       v-model="keyword"
       size="small"
-      placeholder="搜索会话"
+      :placeholder="t('ai_chat.sessionSidebar_search')"
       :prefix-icon="Search"
       clearable
       class="sidebar-search"
@@ -31,8 +31,10 @@
           />
         </template>
         <template v-else>
-          <span class="session-title">{{ s.title || "未命名会话" }}</span>
-          <span class="session-meta">{{ s.message_count }} 条</span>
+          <span class="session-title">{{ s.title || t("ai_chat.sessionSidebar_unnamed") }}</span>
+          <span class="session-meta">
+            {{ t("ai_chat.sessionSidebar_messageCount", { count: s.message_count }) }}
+          </span>
           <span class="session-actions" @click.stop>
             <el-icon class="action-icon" @click="startRename(s)"><Edit /></el-icon>
             <el-icon class="action-icon action-icon--danger" @click="handleRemove(s)">
@@ -41,13 +43,18 @@
           </span>
         </template>
       </div>
-      <el-empty v-if="!filtered.length" description="暂无会话" :image-size="52" />
+      <el-empty
+        v-if="!filtered.length"
+        :description="t('ai_chat.sessionSidebar_empty')"
+        :image-size="52"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { Plus, Search, Edit, Delete } from "@element-plus/icons-vue";
 import { ElMessageBox } from "element-plus";
 import type { AiSessionItem } from "@/api/module_ai/session";
@@ -66,6 +73,8 @@ interface Emits {
 
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
+
+const { t } = useI18n();
 
 const keyword = ref("");
 const editingId = ref<number | null>(null);
@@ -96,9 +105,16 @@ const cancelRename = () => {
 const handleRemove = async (s: AiSessionItem) => {
   try {
     await ElMessageBox.confirm(
-      `将删除会话「${s.title || "未命名会话"}」及其 ${s.message_count} 条消息，且不可恢复。`,
-      "删除会话",
-      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+      t("ai_chat.sessionSidebar_deleteConfirm", {
+        title: s.title || t("ai_chat.sessionSidebar_unnamed"),
+        count: s.message_count,
+      }),
+      t("ai_chat.sessionSidebar_deleteSession"),
+      {
+        type: "warning",
+        confirmButtonText: t("ai_chat.sessionSidebar_delete"),
+        cancelButtonText: t("ai_chat.sessionSidebar_cancel"),
+      }
     );
   } catch {
     return;

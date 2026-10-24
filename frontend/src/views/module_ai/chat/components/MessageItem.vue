@@ -43,7 +43,7 @@
               target="_blank"
               rel="noopener noreferrer"
             >
-              查看
+              {{ t("ai_chat.messageItem_view") }}
             </a>
           </div>
           <div v-else-if="isDataPart(p)" class="message-data">
@@ -60,22 +60,26 @@
         </div>
       </div>
       <div v-if="fullText" class="message-actions">
-        <el-tooltip content="复制" placement="top">
+        <el-tooltip :content="t('ai_chat.messageItem_copy')" placement="top">
           <span class="msg-action" @click="handleCopy">
             <el-icon><CopyDocument /></el-icon>
           </span>
         </el-tooltip>
-        <el-tooltip content="点赞" placement="top">
+        <el-tooltip :content="t('ai_chat.messageItem_like')" placement="top">
           <span class="msg-action" :class="{ 'is-on': liked }" @click="toggleLike">
             <el-icon><Star /></el-icon>
           </span>
         </el-tooltip>
-        <el-tooltip content="反馈" placement="top">
+        <el-tooltip :content="t('ai_chat.messageItem_feedback')" placement="top">
           <span class="msg-action" @click="feedback">
             <el-icon><EditPen /></el-icon>
           </span>
         </el-tooltip>
-        <el-tooltip v-if="message.role === 'user'" content="重新发送" placement="top">
+        <el-tooltip
+          v-if="message.role === 'user'"
+          :content="t('ai_chat.messageItem_resend')"
+          placement="top"
+        >
           <span class="msg-action" @click="emit('resend', fullText)">
             <el-icon><Refresh /></el-icon>
           </span>
@@ -87,6 +91,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   User,
@@ -114,10 +119,14 @@ interface Props {
 const props = defineProps<Props>();
 const emit = defineEmits<{ resend: [text: string] }>();
 
+const { t } = useI18n();
+
 const userStore = useUserStoreHook();
 
 const roleLabel = computed(() =>
-  props.message.role === "user" ? userStore.basicInfo.name || "用户" : "FA助手"
+  props.message.role === "user"
+    ? userStore.basicInfo.name || t("ai_chat.messageItem_user")
+    : t("ai_chat.messageItem_assistant")
 );
 
 const fullText = computed(() => textOf(props.message));
@@ -133,7 +142,7 @@ function isDataPart(p: any): p is { type: string; data: unknown } {
 }
 
 const sourceTitle = (p: any) =>
-  p.title || (p.type === "source-url" ? p.url || "" : "") || "引用来源";
+  p.title || (p.type === "source-url" ? p.url || "" : "") || t("ai_chat.messageItem_source");
 
 const renderData = (data: any) => {
   if (data && typeof data === "object") return JSON.stringify(data);
@@ -143,7 +152,7 @@ const renderData = (data: any) => {
 const handleCopy = async () => {
   try {
     await navigator.clipboard.writeText(fullText.value);
-    ElMessage.success("已复制到剪贴板");
+    ElMessage.success(t("ai_chat.messageItem_copied"));
   } catch {
     const textArea = document.createElement("textarea");
     textArea.value = fullText.value;
@@ -151,7 +160,7 @@ const handleCopy = async () => {
     textArea.select();
     document.execCommand("copy");
     document.body.removeChild(textArea);
-    ElMessage.success("已复制到剪贴板");
+    ElMessage.success(t("ai_chat.messageItem_copied"));
   }
 };
 
@@ -173,26 +182,32 @@ function toggleLike() {
   } catch {
     /* ignore */
   }
-  ElMessage.success(liked.value ? "已点赞" : "已取消点赞");
+  ElMessage.success(
+    liked.value ? t("ai_chat.messageItem_liked") : t("ai_chat.messageItem_unliked")
+  );
 }
 
 /** 反馈：弹窗收集说明，保存到 localStorage（可后续接后端）。 */
 async function feedback() {
-  const { value } = await ElMessageBox.prompt("请填写你的反馈（可选，仅用于改进回复）：", "反馈", {
-    confirmButtonText: "提交",
-    cancelButtonText: "取消",
-    inputPlaceholder: "如：回答不够准确 / 格式需要调整…",
-    inputType: "textarea",
-    inputValue: "",
-  }).catch(() => ({ value: "" }));
+  const { value } = await ElMessageBox.prompt(
+    t("ai_chat.messageItem_feedbackPrompt"),
+    t("ai_chat.messageItem_feedback"),
+    {
+      confirmButtonText: t("ai_chat.messageItem_submit"),
+      cancelButtonText: t("ai_chat.messageItem_cancel"),
+      inputPlaceholder: t("ai_chat.messageItem_feedbackPlaceholder"),
+      inputType: "textarea",
+      inputValue: "",
+    }
+  ).catch(() => ({ value: "" }));
   if (!value) return;
   try {
     const key = "ws_feedback_" + msgId.value;
     const rec = { msg: value, at: Date.now() };
     localStorage.setItem(key, JSON.stringify(rec));
-    ElMessage.success("反馈已记录");
+    ElMessage.success(t("ai_chat.messageItem_feedbackSaved"));
   } catch {
-    ElMessage.success("反馈已记录");
+    ElMessage.success(t("ai_chat.messageItem_feedbackSaved"));
   }
 }
 </script>

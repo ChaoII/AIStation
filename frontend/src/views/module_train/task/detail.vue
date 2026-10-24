@@ -26,16 +26,20 @@
       <el-row :gutter="16">
         <el-col :xs="24" :md="12">
           <el-card shadow="never" class="info-card">
-            <template #header><span class="card-title">任务信息</span></template>
+            <template #header>
+              <span class="card-title">{{ t("train.taskInfo") }}</span>
+            </template>
             <el-descriptions :column="1" size="small" border>
-              <el-descriptions-item label="数据集">
+              <el-descriptions-item :label="t('train.dataset')">
                 {{ task?.dataset_name || `#${task?.dataset_id}` }}
               </el-descriptions-item>
-              <el-descriptions-item label="创建时间">{{ task?.created_time }}</el-descriptions-item>
-              <el-descriptions-item label="Docker 镜像">
+              <el-descriptions-item :label="t('train.createdTime')">
+                {{ task?.created_time }}
+              </el-descriptions-item>
+              <el-descriptions-item :label="t('train.dockerImage')">
                 <code class="docker-tag">{{ task?.docker_image }}</code>
               </el-descriptions-item>
-              <el-descriptions-item label="Docker 命令">
+              <el-descriptions-item :label="t('train.dockerCommand')">
                 <pre
                   style="
                     margin: 0;
@@ -50,20 +54,26 @@
                   "
                   >{{ dockerCmd || "—" }}</pre>
               </el-descriptions-item>
-              <el-descriptions-item label="创建者 ID">{{ task?.created_id }}</el-descriptions-item>
-              <el-descriptions-item label="开始时间">
+              <el-descriptions-item :label="t('train.creatorId')">
+                {{ task?.created_id }}
+              </el-descriptions-item>
+              <el-descriptions-item :label="t('train.startedTime')">
                 {{ task?.started_at || "—" }}
               </el-descriptions-item>
-              <el-descriptions-item label="结束时间">
+              <el-descriptions-item :label="t('train.finishedTime')">
                 {{ task?.finished_at || "—" }}
               </el-descriptions-item>
-              <el-descriptions-item label="耗时">{{ durationText }}</el-descriptions-item>
+              <el-descriptions-item :label="t('train.duration')">
+                {{ durationText }}
+              </el-descriptions-item>
             </el-descriptions>
           </el-card>
         </el-col>
         <el-col :xs="24" :md="12">
           <el-card shadow="never" class="info-card">
-            <template #header><span class="card-title">超参数</span></template>
+            <template #header>
+              <span class="card-title">{{ t("train.hyperParams") }}</span>
+            </template>
             <el-descriptions v-if="task?.hyperparams" :column="1" size="small" border>
               <el-descriptions-item
                 v-for="(val, key) in task.hyperparams"
@@ -72,19 +82,21 @@
               >
                 <template v-if="typeof val === 'boolean'">
                   <el-tag :type="val ? 'success' : 'info'" size="small">
-                    {{ val ? "是" : "否" }}
+                    {{ val ? t("train.yes") : t("train.no") }}
                   </el-tag>
                 </template>
                 <template v-else>{{ val }}</template>
               </el-descriptions-item>
             </el-descriptions>
-            <el-empty v-else :image-size="40" description="无超参数" />
+            <el-empty v-else :image-size="40" :description="t('train.noHyperParams')" />
           </el-card>
         </el-col>
       </el-row>
 
       <el-card shadow="never" class="section-card">
-        <template #header><span class="card-title">操作</span></template>
+        <template #header>
+          <span class="card-title">{{ t("train.action") }}</span>
+        </template>
         <div class="action-buttons">
           <template v-if="task?.status === 'pending'">
             <el-button
@@ -93,10 +105,14 @@
               size="default"
               @click="handleStart"
             >
-              开始训练
+              {{ t("train.startTrain") }}
             </el-button>
-            <el-button v-hasPerm="'module_train:task:update'" size="default" @click="handleEditParams">
-              编辑参数
+            <el-button
+              v-hasPerm="'module_train:task:update'"
+              size="default"
+              @click="handleEditParams"
+            >
+              {{ t("train.editParams") }}
             </el-button>
             <el-button
               v-hasPerm="'module_train:task:delete'"
@@ -104,7 +120,7 @@
               size="default"
               @click="handleDelete"
             >
-              删除
+              {{ t("train.delete") }}
             </el-button>
           </template>
           <template v-else-if="task?.status === 'running'">
@@ -114,7 +130,7 @@
               size="default"
               @click="handleStop"
             >
-              停止训练
+              {{ t("train.stopTrain") }}
             </el-button>
           </template>
           <template v-else-if="task?.status === 'success'">
@@ -124,24 +140,20 @@
               size="default"
               @click="handleViewModel"
             >
-              查看模型
-            </el-button>
-            <el-button v-hasPerm="'module_train:eval:create'" size="default" @click="handleEvaluate">
-              评估模型
+              {{ t("train.viewModel") }}
             </el-button>
             <el-button
-              v-hasPerm="'module_train:model:update'"
+              v-hasPerm="'module_train:eval:create'"
               size="default"
-              @click="handleExport"
+              @click="handleEvaluate"
             >
-              导出模型
+              {{ t("train.evalModel") }}
             </el-button>
-            <el-button
-              v-hasPerm="'module_train:task:create'"
-              size="default"
-              @click="handleRetrain"
-            >
-              重新训练
+            <el-button v-hasPerm="'module_train:model:update'" size="default" @click="handleExport">
+              {{ t("train.exportModel") }}
+            </el-button>
+            <el-button v-hasPerm="'module_train:task:create'" size="default" @click="handleRetrain">
+              {{ t("train.retrain") }}
             </el-button>
             <el-button
               v-hasPerm="'module_train:task:delete'"
@@ -149,7 +161,7 @@
               size="default"
               @click="handleDelete"
             >
-              删除
+              {{ t("train.delete") }}
             </el-button>
           </template>
           <template v-else-if="task?.status === 'failed'">
@@ -159,10 +171,10 @@
               size="default"
               @click="handleRetrain"
             >
-              重新训练
+              {{ t("train.retrain") }}
             </el-button>
             <el-button v-hasPerm="'module_train:task:query'" size="default" @click="scrollToLog">
-              查看日志
+              {{ t("train.viewLog") }}
             </el-button>
             <el-button
               v-hasPerm="'module_train:task:delete'"
@@ -170,7 +182,7 @@
               size="default"
               @click="handleDelete"
             >
-              删除
+              {{ t("train.delete") }}
             </el-button>
           </template>
           <template v-else-if="task?.status === 'cancelled'">
@@ -180,14 +192,16 @@
               size="default"
               @click="handleRetrain"
             >
-              重新训练
+              {{ t("train.retrain") }}
             </el-button>
           </template>
         </div>
       </el-card>
 
       <el-card v-if="displayProgress > 0" shadow="never" class="section-card">
-        <template #header><span class="card-title">训练进度</span></template>
+        <template #header>
+          <span class="card-title">{{ t("train.trainProgress") }}</span>
+        </template>
         <el-progress
           :percentage="displayProgress"
           :stroke-width="20"
@@ -202,12 +216,14 @@
         />
         <div v-if="task?.status === 'running'" class="progress-eta">
           <span class="pulse-dot" />
-          训练中，预计剩余 {{ estimatedEta }}
+          {{ t("train.etaHint", { eta: estimatedEta }) }}
         </div>
       </el-card>
 
       <el-card shadow="never" class="section-card">
-        <template #header><span class="card-title">训练指标</span></template>
+        <template #header>
+          <span class="card-title">{{ t("train.trainMetrics") }}</span>
+        </template>
         <el-row :gutter="12">
           <el-col :xs="24" :sm="12" :md="6">
             <div class="metric-item">
@@ -243,7 +259,7 @@
 
       <el-alert
         v-if="task?.error_log"
-        title="训练失败"
+        :title="t('train.trainFailed')"
         type="error"
         :description="task.error_log.slice(0, 500)"
         show-icon
@@ -277,28 +293,30 @@
       <EnvMetricPanel v-if="isSimpleTask" :rows="envRows" />
 
       <el-card v-if="compareTableData.length" shadow="never" class="section-card">
-        <template #header><span class="card-title">指标对比</span></template>
+        <template #header>
+          <span class="card-title">{{ t("train.metricCompare") }}</span>
+        </template>
         <el-table stripe :data="compareTableData" border size="small" style="width: 100%">
-          <el-table-column prop="label" label="指标" width="140" />
-          <el-table-column label="最优值">
+          <el-table-column prop="label" :label="t('train.metric')" width="140" />
+          <el-table-column :label="t('train.bestValue')">
             <template #default="{ row }">
               <span v-if="row.bestRow && row.getter(row.bestRow) != null" class="mono">
                 {{ row.fmt(row.getter(row.bestRow)) }}
               </span>
               <span v-else class="text-muted">—</span>
               <span v-if="row.bestRow?.epoch" class="text-muted sub-epoch">
-                epoch {{ row.bestRow.epoch }}
+                {{ t("train.epochValue", { epoch: row.bestRow.epoch }) }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="最终值">
+          <el-table-column :label="t('train.finalValue')">
             <template #default="{ row }">
               <span v-if="row.lastRow && row.getter(row.lastRow) != null" class="mono">
                 {{ row.fmt(row.getter(row.lastRow)) }}
               </span>
               <span v-else class="text-muted">—</span>
               <span v-if="row.lastRow?.epoch" class="text-muted sub-epoch">
-                epoch {{ row.lastRow.epoch }}
+                {{ t("train.epochValue", { epoch: row.lastRow.epoch }) }}
               </span>
             </template>
           </el-table-column>
@@ -308,24 +326,26 @@
       <el-card shadow="never" class="section-card">
         <template #header>
           <div class="log-header">
-            <span class="card-title">训练日志</span>
+            <span class="card-title">{{ t("train.trainLog") }}</span>
             <div class="log-controls">
               <span class="log-status" :class="{ connected: wsConnected }">
-                {{ wsConnected ? "已连接" : "未连接" }}
+                {{ wsConnected ? t("train.connected") : t("train.disconnected") }}
               </span>
-              <span class="log-line-count">{{ logLineCount }} 行</span>
+              <span class="log-line-count">{{ t("train.logLines", { count: logLineCount }) }}</span>
               <el-switch
                 v-model="autoScroll"
-                active-text="自动滚动"
+                :active-text="t('train.autoScroll')"
                 size="small"
                 style="margin-right: 8px"
               />
-              <el-button size="small" text icon="Delete" @click="clearLogs">清空</el-button>
+              <el-button size="small" text icon="Delete" @click="clearLogs">
+                {{ t("train.clear") }}
+              </el-button>
             </div>
           </div>
         </template>
         <div ref="logRef" class="log-container">
-          <pre class="log-text">{{ logText || "等待日志..." }}</pre>
+          <pre class="log-text">{{ logText || t("train.waitingLog") }}</pre>
         </div>
       </el-card>
 
@@ -334,16 +354,20 @@
         shadow="never"
         class="section-card"
       >
-        <template #header><span class="card-title">模型输出</span></template>
+        <template #header>
+          <span class="card-title">{{ t("train.modelOutput") }}</span>
+        </template>
         <el-descriptions :column="2" size="small" border>
-          <el-descriptions-item label="模型仓库 ID">
+          <el-descriptions-item :label="t('train.modelRepoId')">
             <el-tag size="small">{{ task.model_repo_id }}</el-tag>
           </el-descriptions-item>
         </el-descriptions>
         <div style="margin-top: 12px">
-          <el-button type="primary" size="default" @click="handleViewModel">查看模型</el-button>
-          <el-button size="default" @click="handleExport">导出模型</el-button>
-          <el-button size="default" @click="handleEvaluate">评估模型</el-button>
+          <el-button type="primary" size="default" @click="handleViewModel">
+            {{ t("train.viewModel") }}
+          </el-button>
+          <el-button size="default" @click="handleExport">{{ t("train.exportModel") }}</el-button>
+          <el-button size="default" @click="handleEvaluate">{{ t("train.evalModel") }}</el-button>
         </div>
       </el-card>
     </div>
@@ -369,6 +393,7 @@ import {
   nextTick,
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowLeft, Clock, TrendCharts, DataBoard, DataAnalysis } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
@@ -390,6 +415,7 @@ import EnvMetricPanel from "../components/EnvMetricPanel.vue";
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const task = ref<any>(null);
 /**
  * 训练日志缓冲。
@@ -466,11 +492,11 @@ function statusLabel(s: string) {
   return (
     (
       {
-        pending: "待开始",
-        running: "训练中",
-        success: "已完成",
-        failed: "失败",
-        cancelled: "已取消",
+        pending: t("train.statusPending"),
+        running: t("train.statusRunning"),
+        success: t("train.statusSuccess"),
+        failed: t("train.statusFailed"),
+        cancelled: t("train.statusCancelled"),
       } as any
     )[s] || s
   );
@@ -495,9 +521,16 @@ const durationText = computed(() => {
   const start = new Date(task.value.started_at).getTime();
   const end = task.value.finished_at ? new Date(task.value.finished_at).getTime() : Date.now();
   const diff = Math.floor((end - start) / 1000);
-  if (diff < 60) return `${diff}秒`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}分${diff % 60}秒`;
-  return `${Math.floor(diff / 3600)}时${Math.floor((diff % 3600) / 60)}分`;
+  if (diff < 60) return t("train.durationSeconds", { count: diff });
+  if (diff < 3600)
+    return t("train.durationMinutesSeconds", {
+      minutes: Math.floor(diff / 60),
+      seconds: diff % 60,
+    });
+  return t("train.durationHoursMinutes", {
+    hours: Math.floor(diff / 3600),
+    minutes: Math.floor((diff % 3600) / 60),
+  });
 });
 
 const tempDir = ref("${TEMP_DIR}");
@@ -554,16 +587,23 @@ const displayProgress = computed(() => {
 
 const estimatedEta = computed(() => {
   const p = displayProgress.value;
-  if (p <= 0) return "计算中...";
-  if (p >= 100) return "即将完成";
+  if (p <= 0) return t("train.etaComputing");
+  if (p >= 100) return t("train.etaAlmostDone");
   const elapsed = task.value?.started_at
     ? (Date.now() - new Date(task.value.started_at).getTime()) / 1000
     : 0;
-  if (elapsed <= 0) return "计算中...";
+  if (elapsed <= 0) return t("train.etaComputing");
   const remaining = Math.max(0, (elapsed / p) * 100 - elapsed);
-  if (remaining < 60) return `${Math.round(remaining)}秒`;
-  if (remaining < 3600) return `${Math.floor(remaining / 60)}分${Math.round(remaining % 60)}秒`;
-  return `${Math.floor(remaining / 3600)}时${Math.floor((remaining % 3600) / 60)}分`;
+  if (remaining < 60) return t("train.durationSeconds", { count: Math.round(remaining) });
+  if (remaining < 3600)
+    return t("train.durationMinutesSeconds", {
+      minutes: Math.floor(remaining / 60),
+      seconds: Math.round(remaining % 60),
+    });
+  return t("train.durationHoursMinutes", {
+    hours: Math.floor(remaining / 3600),
+    minutes: Math.floor((remaining % 3600) / 60),
+  });
 });
 
 const yoloMetrics = reactive({
@@ -1006,8 +1046,8 @@ function scheduleChartRender() {
  */
 const chartGroups = computed(() =>
   [
-    { title: "训练指标趋势", items: trainMetricSpec.value },
-    { title: "评估指标趋势", items: evalMetricSpec.value },
+    { title: t("train.trainMetricsTrend"), items: trainMetricSpec.value },
+    { title: t("train.evalMetricsTrend"), items: evalMetricSpec.value },
   ].filter((g) => g.items.length > 0)
 );
 
@@ -1844,11 +1884,13 @@ async function handleStart() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm(`确定开始训练任务「${task.value?.name}」？`, "提示", {
-      type: "info",
-    });
+    await ElMessageBox.confirm(
+      t("train.startTrainConfirm", { name: task.value?.name }),
+      t("train.tipTitle"),
+      { type: "info" }
+    );
     await TrainAPI.startTask(task.value.id);
-    ElMessage.success("已启动");
+    ElMessage.success(t("train.started"));
     await loadTask();
     connectWs(task.value.id);
     startPoll();
@@ -1863,9 +1905,11 @@ async function handleStop() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm("确定停止该训练任务？", "提示", { type: "warning" });
+    await ElMessageBox.confirm(t("train.stopTrainConfirm"), t("train.tipTitle"), {
+      type: "warning",
+    });
     await TrainAPI.stopTask(task.value.id);
-    ElMessage.success("已停止");
+    ElMessage.success(t("train.stopped"));
     await loadTask();
   } catch {
     /* */
@@ -1882,12 +1926,13 @@ async function handleDelete() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm(`确定删除任务「${task.value?.name}」？`, "提示", {
-      type: "warning",
-      confirmButtonText: "删除",
-    });
+    await ElMessageBox.confirm(
+      t("train.taskDeleteConfirm", { name: task.value?.name }),
+      t("train.tipTitle"),
+      { type: "warning", confirmButtonText: t("train.delete") }
+    );
     await TrainAPI.deleteTask([task.value.id]);
-    ElMessage.success("删除成功");
+    ElMessage.success(t("train.deleteSuccess"));
     router.push("/train/task");
   } catch {
     /* */
@@ -1905,9 +1950,9 @@ async function handleRetrain() {
   }
   try {
     await ElMessageBox.confirm(
-      `重新训练任务「${task.value.name}」？将清除之前的训练结果。`,
-      "重新训练",
-      { type: "warning", confirmButtonText: "确定重新训练" }
+      t("train.retrainConfirm", { name: task.value.name }),
+      t("train.retrain"),
+      { type: "warning", confirmButtonText: t("train.retrainConfirmBtn") }
     );
     stopPoll();
     if (ws) {
@@ -1951,13 +1996,13 @@ async function handleRetrain() {
 
 function handleViewModel() {
   if (task.value?.model_repo_id) router.push(`/train/repo?model_id=${task.value.model_repo_id}`);
-  else ElMessage.warning("暂无关联模型");
+  else ElMessage.warning(t("train.noLinkedModel"));
 }
 
 function handleEvaluate() {
   const repoId = task.value?.model_repo_id;
   if (!repoId) {
-    ElMessage.warning("暂无关联模型，请先完成训练");
+    ElMessage.warning(t("train.noLinkedModelTrainFirst"));
     return;
   }
   router.push({ path: "/train/eval", query: { model_repo_id: String(repoId), autoCreate: "1" } });
@@ -1967,7 +2012,7 @@ const exportDialogVisible = ref(false);
 
 function handleExport() {
   if (!task.value?.model_repo_id) {
-    ElMessage.warning("暂无关联模型，请先完成训练");
+    ElMessage.warning(t("train.noLinkedModelTrainFirst"));
     return;
   }
   // 先验证模型是否存在
@@ -1976,11 +2021,11 @@ function handleExport() {
       if (res.data?.data) {
         exportDialogVisible.value = true;
       } else {
-        ElMessage.error("关联模型已不存在，请重新训练");
+        ElMessage.error(t("train.modelNotExistRetrain"));
       }
     })
     .catch(() => {
-      ElMessage.error("关联模型已不存在，请重新训练");
+      ElMessage.error(t("train.modelNotExistRetrain"));
     });
 }
 

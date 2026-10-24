@@ -608,7 +608,7 @@ export function saveQueryAsset(
     object_name_col?: string;
     object_icon?: string;
   },
-  opts?: { silent?: boolean },
+  opts?: { silent?: boolean }
 ) {
   return request({
     url: `${API_PATH}/assets/save`,

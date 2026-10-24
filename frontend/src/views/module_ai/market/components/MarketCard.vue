@@ -9,11 +9,14 @@
           <el-tag size="small" effect="plain">{{ assetLabel }}</el-tag>
           <span v-if="item.category" class="market-card__cat">{{ item.category }}</span>
           <span v-if="item.owner_name || item.is_official" class="market-card__author">
-            {{ item.owner_name || "官方" }}
+            {{ item.owner_name || t("ai_market.official") }}
           </span>
         </div>
       </div>
-      <el-tooltip :content="item.installed ? '已安装' : '安装'" placement="top">
+      <el-tooltip
+        :content="item.installed ? t('ai_market.installedBtn') : t('ai_market.installBtn')"
+        placement="top"
+      >
         <el-button
           v-hasPerm="['module_ai:market:install']"
           class="market-card__add"
@@ -25,16 +28,16 @@
         />
       </el-tooltip>
     </div>
-    <div class="market-card__desc">{{ item.description || "暂无描述" }}</div>
+    <div class="market-card__desc">{{ item.description || t("ai_market.noDescription") }}</div>
     <div class="market-card__foot">
-      <span class="metric" title="安装数">
+      <span class="metric" :title="t('ai_market.installCount')">
         <el-icon><Download /></el-icon>
         {{ formatCount(item.install_count) }}
       </span>
       <span
         class="metric metric--clickable"
         :class="{ 'is-on': item.favorited }"
-        title="收藏"
+        :title="t('ai_market.favoriteCount')"
         @click.stop="$emit('favorite', item)"
       >
         <el-icon><Star /></el-icon>
@@ -48,7 +51,7 @@
         :icon="Link"
         @click.stop
       >
-        文档
+        {{ t("ai_market.docs") }}
       </el-link>
     </div>
   </div>
@@ -57,6 +60,7 @@
 <script setup lang="ts">
 import { Check, Download, Link, Plus, Star } from "@element-plus/icons-vue";
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 
 import type { MarketItem } from "@/api/module_ai/market";
 
@@ -69,7 +73,14 @@ defineEmits<{
   favorite: [item: MarketItem];
 }>();
 
-const LABELS: Record<string, string> = { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" };
+const { t } = useI18n();
+
+const LABELS: Record<string, string> = {
+  tool: t("ai_market.assetTool"),
+  skill: t("ai_market.assetSkill"),
+  mcp: t("ai_market.assetMcp"),
+  plugin: t("ai_market.assetPlugin"),
+};
 const assetLabel = computed(() => LABELS[props.item.asset_type] || props.item.asset_type);
 
 /** MCP 等商品若带文档链接，卡片展示「文档」跳转 */
@@ -78,7 +89,7 @@ const docsUrl = computed(() => props.item.payload?.docs || "");
 /** 数量格式化：>=1 万显示「x.x万」 */
 function formatCount(n: number | undefined): string {
   const v = Number(n || 0);
-  if (v >= 10000) return `${(v / 10000).toFixed(1)}万`;
+  if (v >= 10000) return t("ai_market.countWan", { value: (v / 10000).toFixed(1) });
   return String(v);
 }
 </script>

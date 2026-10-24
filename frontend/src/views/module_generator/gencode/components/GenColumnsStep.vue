@@ -6,7 +6,7 @@
       type="success"
       :closable="false"
       show-icon
-      title="当前已启用主子表：以下为「主表」字段配置；子表字段来自数据库结构，保存后可在预览中查看子表生成代码。"
+      :title="t('generator.masterSubEnabled')"
     />
     <el-alert
       v-else-if="info.master_sub_hint"
@@ -17,7 +17,7 @@
       :title="info.master_sub_hint"
     />
     <p class="gencode-columns-tip">
-      菜单与路由、接口路径的对应见「基础配置」第一步中的折叠「对照」表。
+      {{ t("generator.columnsTip") }}
     </p>
     <el-alert
       v-if="columnKeyword.trim() && displayColumns.length === 0 && (info.columns?.length ?? 0) > 0"
@@ -25,51 +25,67 @@
       type="warning"
       :closable="false"
       show-icon
-      title="无匹配列，请调整筛选词或清空筛选框"
+      :title="t('generator.noMatchCols')"
     />
     <div class="mb-2 flex flex-wrap items-center gap-2">
       <el-input
         v-model="columnKeyword"
         clearable
-        placeholder="筛选列名或注释"
+        :placeholder="t('generator.filterPlaceholder')"
         class="gencode-column-filter"
         :prefix-icon="Search"
       />
-      <span class="gencode-bulk-hint">批量设置：</span>
+      <span class="gencode-bulk-hint">{{ t("generator.bulkSet") }}</span>
       <el-space size="small">
         <el-dropdown>
-          <el-button size="small" type="primary" plain>查询</el-button>
+          <el-button size="small" type="primary" plain>{{ t("generator.query") }}</el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="bulkSet('is_query', true)">全选</el-dropdown-item>
-              <el-dropdown-item @click="bulkSet('is_query', false)">全不选</el-dropdown-item>
+              <el-dropdown-item @click="bulkSet('is_query', true)">
+                {{ t("generator.allSelect") }}
+              </el-dropdown-item>
+              <el-dropdown-item @click="bulkSet('is_query', false)">
+                {{ t("generator.noneSelect") }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
         <el-dropdown>
-          <el-button size="small" type="success" plain>列表</el-button>
+          <el-button size="small" type="success" plain>{{ t("generator.list") }}</el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="bulkSet('is_list', true)">全选</el-dropdown-item>
-              <el-dropdown-item @click="bulkSet('is_list', false)">全不选</el-dropdown-item>
+              <el-dropdown-item @click="bulkSet('is_list', true)">
+                {{ t("generator.allSelect") }}
+              </el-dropdown-item>
+              <el-dropdown-item @click="bulkSet('is_list', false)">
+                {{ t("generator.noneSelect") }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
         <el-dropdown>
-          <el-button size="small" type="warning" plain>新增</el-button>
+          <el-button size="small" type="warning" plain>{{ t("generator.add") }}</el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="bulkSet('is_insert', true)">全选</el-dropdown-item>
-              <el-dropdown-item @click="bulkSet('is_insert', false)">全不选</el-dropdown-item>
+              <el-dropdown-item @click="bulkSet('is_insert', true)">
+                {{ t("generator.allSelect") }}
+              </el-dropdown-item>
+              <el-dropdown-item @click="bulkSet('is_insert', false)">
+                {{ t("generator.noneSelect") }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
         <el-dropdown>
-          <el-button size="small" type="danger" plain>编辑</el-button>
+          <el-button size="small" type="danger" plain>{{ t("generator.edit") }}</el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="bulkSet('is_edit', true)">全选</el-dropdown-item>
-              <el-dropdown-item @click="bulkSet('is_edit', false)">全不选</el-dropdown-item>
+              <el-dropdown-item @click="bulkSet('is_edit', true)">
+                {{ t("generator.allSelect") }}
+              </el-dropdown-item>
+              <el-dropdown-item @click="bulkSet('is_edit', false)">
+                {{ t("generator.noneSelect") }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -87,43 +103,48 @@
         stripe
       >
         <template #empty>
-          <el-empty :image-size="80" description="暂无数据" />
+          <el-empty :image-size="80" :description="t('generator.noData')" />
         </template>
-        <el-table-column label="拖拽" width="56" fixed align="center">
+        <el-table-column :label="t('generator.drag')" width="56" fixed align="center">
           <template #default>
             <span
               class="gencode-drag-handle"
               :class="{ disabled: !!columnKeyword.trim() }"
-              title="拖拽排序（筛选时禁用）"
+              :title="t('generator.dragTip')"
             >
               <el-icon><Rank /></el-icon>
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="序号" type="index" width="60" fixed />
+        <el-table-column :label="t('generator.serial')" type="index" width="60" fixed />
         <el-table-column
-          label="列名"
+          :label="t('generator.columnName')"
           prop="column_name"
           min-width="60"
           :show-overflow-tooltip="true"
         />
         <el-table-column
-          label="类型"
+          :label="t('generator.columnType')"
           prop="column_type"
           min-width="60"
           :show-overflow-tooltip="true"
         />
-        <el-table-column label="长度" prop="column_length" width="80" :show-overflow-tooltip="true">
+        <el-table-column
+          :label="t('generator.columnLength')"
+          prop="column_length"
+          width="80"
+          :show-overflow-tooltip="true"
+        >
           <template #default="scope">
             <el-input v-model="scope.row.column_length" :disabled="!!scope.row.is_pk" />
           </template>
         </el-table-column>
-        <el-table-column label="注释" min-width="60">
+        <el-table-column :label="t('generator.columnComment')" min-width="60">
           <template #default="scope">
             <el-input v-model="scope.row.column_comment"></el-input>
           </template>
         </el-table-column>
-        <el-table-column label="后端类型" min-width="60">
+        <el-table-column :label="t('generator.backendType')" min-width="60">
           <template #default="scope">
             <el-select v-model="scope.row.python_type">
               <el-option label="str" value="str" />
@@ -139,32 +160,32 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="后端属性" min-width="60">
+        <el-table-column :label="t('generator.backendField')" min-width="60">
           <template #default="scope">
             <el-input v-model="scope.row.python_field"></el-input>
           </template>
         </el-table-column>
-        <el-table-column label="新增" width="60">
+        <el-table-column :label="t('generator.add')" width="60">
           <template #default="scope">
             <el-checkbox v-model="scope.row.is_insert" />
           </template>
         </el-table-column>
-        <el-table-column label="编辑" width="60">
+        <el-table-column :label="t('generator.edit')" width="60">
           <template #default="scope">
             <el-checkbox v-model="scope.row.is_edit" />
           </template>
         </el-table-column>
-        <el-table-column label="列表" width="60">
+        <el-table-column :label="t('generator.list')" width="60">
           <template #default="scope">
             <el-checkbox v-model="scope.row.is_list" />
           </template>
         </el-table-column>
-        <el-table-column label="查询" width="60">
+        <el-table-column :label="t('generator.query')" width="60">
           <template #default="scope">
             <el-checkbox v-model="scope.row.is_query" />
           </template>
         </el-table-column>
-        <el-table-column label="查询方式" min-width="60">
+        <el-table-column :label="t('generator.queryType')" min-width="60">
           <template #default="scope">
             <el-select v-model="scope.row.query_type">
               <el-option label="=" value="EQ" />
@@ -179,7 +200,7 @@
           </template>
         </el-table-column>
         <el-table-column
-          label="默认值"
+          :label="t('generator.defaultVal')"
           prop="column_default"
           min-width="60"
           :show-overflow-tooltip="true"
@@ -188,44 +209,49 @@
             <el-input v-model="scope.row.column_default" :disabled="!!scope.row.is_pk" />
           </template>
         </el-table-column>
-        <el-table-column label="自增" width="60">
+        <el-table-column :label="t('generator.autoInc')" width="60">
           <template #default="scope">
             <el-checkbox v-model="scope.row.is_increment" />
           </template>
         </el-table-column>
-        <el-table-column label="可空" width="60">
+        <el-table-column :label="t('generator.nullable')" width="60">
           <template #default="scope">
             <el-checkbox v-model="scope.row.is_nullable" />
           </template>
         </el-table-column>
-        <el-table-column label="唯一" width="60">
+        <el-table-column :label="t('generator.unique')" width="60">
           <template #default="scope">
             <el-checkbox v-model="scope.row.is_unique" />
           </template>
         </el-table-column>
-        <el-table-column label="主键" width="60">
+        <el-table-column :label="t('generator.pk')" width="60">
           <template #default="scope">
             <el-checkbox v-model="scope.row.is_pk" />
           </template>
         </el-table-column>
-        <el-table-column label="表单类型">
+        <el-table-column :label="t('generator.formType')">
           <template #default="scope">
             <el-select v-model="scope.row.html_type">
-              <el-option label="文本框" value="input" />
-              <el-option label="文本域" value="textarea" />
-              <el-option label="下拉框" value="select" />
-              <el-option label="单选框" value="radio" />
-              <el-option label="复选框" value="checkbox" />
-              <el-option label="日期控件" value="datetime" />
-              <el-option label="图片上传" value="imageUpload" />
-              <el-option label="文件上传" value="fileUpload" />
-              <el-option label="富文本控件" value="editor" />
+              <el-option :label="t('generator.input')" value="input" />
+              <el-option :label="t('generator.textarea')" value="textarea" />
+              <el-option :label="t('generator.select')" value="select" />
+              <el-option :label="t('generator.radio')" value="radio" />
+              <el-option :label="t('generator.checkbox')" value="checkbox" />
+              <el-option :label="t('generator.datetime')" value="datetime" />
+              <el-option :label="t('generator.imageUpload')" value="imageUpload" />
+              <el-option :label="t('generator.fileUpload')" value="fileUpload" />
+              <el-option :label="t('generator.editor')" value="editor" />
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="字典类型" fixed="right">
+        <el-table-column :label="t('generator.dictType')" fixed="right">
           <template #default="scope">
-            <el-select v-model="scope.row.dict_type" clearable filterable placeholder="请选择">
+            <el-select
+              v-model="scope.row.dict_type"
+              clearable
+              filterable
+              :placeholder="t('generator.selectPlaceholder')"
+            >
               <el-option
                 v-for="dict in dictOptions"
                 :key="dict.dict_type"
@@ -247,12 +273,15 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from "vue";
+import { useI18n } from "vue-i18n";
 import { Search } from "@element-plus/icons-vue";
 import { useDraggable } from "vue-draggable-plus";
 import type { GenTableSchema } from "@/api/module_generator/gencode";
 import type { DictTable } from "@/api/module_system/dict";
 
 defineOptions({ name: "GenColumnsStep" });
+
+const { t } = useI18n();
 
 const props = defineProps<{
   info: GenTableSchema;

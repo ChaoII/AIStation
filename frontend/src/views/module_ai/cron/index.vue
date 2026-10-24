@@ -8,7 +8,7 @@
           <el-select
             v-model="triggerFilter"
             clearable
-            placeholder="触发方式"
+            :placeholder="t('ai_workflow.cron_triggerPlaceholder')"
             style="width: 130px"
             @change="page = 1"
           >
@@ -22,7 +22,7 @@
           <el-select
             v-model="targetFilter"
             clearable
-            placeholder="执行目标"
+            :placeholder="t('ai_workflow.cron_targetPlaceholder')"
             style="width: 130px"
             @change="page = 1"
           >
@@ -37,7 +37,7 @@
         <div class="cron-toolbar-right">
           <el-input
             v-model="keyword"
-            placeholder="搜索任务"
+            :placeholder="t('ai_workflow.cron_searchPlaceholder')"
             clearable
             :prefix-icon="Search"
             style="width: 220px"
@@ -49,7 +49,7 @@
             :icon="Plus"
             @click="openCreate"
           >
-            新建
+            {{ t("ai_workflow.cron_new") }}
           </el-button>
         </div>
       </div>
@@ -77,7 +77,9 @@
                 <el-tag size="small" effect="plain" :type="triggerMeta(row.trigger).type">
                   {{ triggerMeta(row.trigger).text }}
                 </el-tag>
-                <el-tag v-if="row.needs_review" size="small" type="warning">需人工确认</el-tag>
+                <el-tag v-if="row.needs_review" size="small" type="warning">
+                  {{ t("ai_workflow.cron_needsReview") }}
+                </el-tag>
               </div>
 
               <!-- 描述：固定两行高度（无描述显示占位符），保证卡片大小统一 -->
@@ -88,19 +90,19 @@
               <!-- 统一信息行：触发描述 / 下次运行 / 上次运行 -->
               <div class="cron-card__info">
                 <div class="cron-card__info-row">
-                  <span class="cron-card__label">触发：</span>
+                  <span class="cron-card__label">{{ t("ai_workflow.cron_triggerLabel") }}</span>
                   <span class="cron-card__value">
                     {{ row.trigger_describe || argsFallback(row) }}
                   </span>
                 </div>
                 <div class="cron-card__info-row">
-                  <span class="cron-card__label">下次：</span>
+                  <span class="cron-card__label">{{ t("ai_workflow.cron_nextLabel") }}</span>
                   <span class="cron-card__value" :class="{ 'is-empty': !row.next_run_time }">
                     {{ row.next_run_time || "—" }}
                   </span>
                 </div>
                 <div class="cron-card__info-row">
-                  <span class="cron-card__label">上次：</span>
+                  <span class="cron-card__label">{{ t("ai_workflow.cron_lastLabel") }}</span>
                   <span class="cron-card__value" :class="{ 'is-empty': !row.last_run_time }">
                     {{ row.last_run_time || "—" }}
                   </span>
@@ -109,7 +111,7 @@
 
               <div class="cron-card__foot">
                 <span class="cron-card__target">
-                  <span class="cron-card__label">目标：</span>
+                  <span class="cron-card__label">{{ t("ai_workflow.cron_targetLabel") }}</span>
                   <el-tag size="small" effect="plain" :type="targetMeta(row.target_type).type">
                     {{ targetMeta(row.target_type).text }}
                   </el-tag>
@@ -124,7 +126,7 @@
                     :icon="Clock"
                     @click="openHistory(row)"
                   >
-                    历史
+                    {{ t("ai_workflow.cron_history") }}
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:cron:run'"
@@ -135,7 +137,7 @@
                     :loading="runLoadingId === row.id"
                     @click="handleRun(row)"
                   >
-                    立即执行
+                    {{ t("ai_workflow.cron_runNow") }}
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:cron:update'"
@@ -145,7 +147,7 @@
                     :icon="Edit"
                     @click="openEdit(row)"
                   >
-                    编辑
+                    {{ t("ai_workflow.cron_edit") }}
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:cron:delete'"
@@ -155,14 +157,14 @@
                     :icon="Delete"
                     @click="handleDelete(row)"
                   >
-                    删除
+                    {{ t("ai_workflow.cron_delete") }}
                   </el-button>
                 </div>
               </div>
             </div>
           </el-col>
           <el-col v-if="!loading && !pagedRows.length" :span="24">
-            <el-empty description="暂无定时任务" />
+            <el-empty :description="t('ai_workflow.cron_noData')" />
           </el-col>
         </el-row>
       </div>
@@ -193,19 +195,23 @@
         label-width="90px"
         label-position="right"
       >
-        <el-form-item label="任务名称" prop="name">
-          <el-input v-model="formData.name" placeholder="请输入任务名称" :maxlength="64" />
+        <el-form-item :label="t('ai_workflow.cron_taskName')" prop="name">
+          <el-input
+            v-model="formData.name"
+            :placeholder="t('ai_workflow.cron_taskNamePlaceholder')"
+            :maxlength="64"
+          />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('ai_workflow.cron_description')">
           <el-input
             v-model="formData.description"
             :rows="3"
             :maxlength="255"
             type="textarea"
-            placeholder="请输入任务描述"
+            :placeholder="t('ai_workflow.cron_descriptionPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="触发方式">
+        <el-form-item :label="t('ai_workflow.cron_trigger')">
           <TriggerEditor
             v-model:trigger="formData.trigger"
             v-model:trigger-args="formData.trigger_args"
@@ -213,23 +219,23 @@
             @error="cronError = $event"
           />
         </el-form-item>
-        <el-form-item label="执行目标">
+        <el-form-item :label="t('ai_workflow.cron_target')">
           <el-select v-model="formData.target_type" style="width: 100%">
-            <el-option label="智能体" value="agent" />
-            <el-option label="工作流" value="workflow" />
-            <el-option label="应用" value="app" />
+            <el-option :label="t('ai_workflow.cron_agent')" value="agent" />
+            <el-option :label="t('ai_workflow.cron_workflow')" value="workflow" />
+            <el-option :label="t('ai_workflow.cron_app')" value="app" />
           </el-select>
         </el-form-item>
-        <el-form-item label="目标ID">
+        <el-form-item :label="t('ai_workflow.cron_targetId')">
           <el-input-number v-model="formData.target_id" :min="1" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="t('ai_workflow.cron_enabled')">
           <el-switch v-model="formData.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
+          <el-button @click="handleCloseDialog">{{ t("ai_workflow.cron_cancel") }}</el-button>
           <el-button
             v-hasPerm="[
               dialogVisible.type === 'create' ? 'module_ai:cron:create' : 'module_ai:cron:update',
@@ -238,7 +244,7 @@
             :loading="submitLoading"
             @click="handleSubmit"
           >
-            保存
+            {{ t("ai_workflow.cron_save") }}
           </el-button>
         </div>
       </template>
@@ -254,32 +260,38 @@
         max-height="420"
         size="small"
       >
-        <el-table-column prop="created_time" label="执行时间" width="160" />
-        <el-table-column label="结果" width="90">
+        <el-table-column prop="created_time" :label="t('ai_workflow.cron_runTime')" width="160" />
+        <el-table-column :label="t('ai_workflow.cron_result')" width="90">
           <template #default="{ row }">
             <el-tag
               size="small"
               effect="light"
               :type="row.result === 'success' ? 'success' : 'danger'"
             >
-              {{ row.result === "success" ? "成功" : "失败" }}
+              {{
+                row.result === "success"
+                  ? t("ai_workflow.cron_success")
+                  : t("ai_workflow.cron_fail")
+              }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="耗时" width="90">
-          <template #default="{ row }">{{ (Number(row.latency_ms || 0) / 1000).toFixed(1) }}s</template>
+        <el-table-column :label="t('ai_workflow.cron_latency')" width="90">
+          <template #default="{ row }">
+            {{ (Number(row.latency_ms || 0) / 1000).toFixed(1) }}s
+          </template>
         </el-table-column>
-        <el-table-column label="错误 / 输出摘要" min-width="320">
+        <el-table-column :label="t('ai_workflow.cron_errorSummary')" min-width="320">
           <template #default="{ row }">
             <span v-if="row.error" class="cron-history__error">{{ row.error }}</span>
             <span v-else-if="row.reply_preview" class="cron-history__reply">
               {{ row.reply_preview }}
             </span>
-            <span v-else class="cron-history__empty">（无输出）</span>
+            <span v-else class="cron-history__empty">{{ t("ai_workflow.cron_noOutput") }}</span>
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty :image-size="60" description="暂无执行记录（点「立即执行」或等待调度触发）" />
+          <el-empty :image-size="60" :description="t('ai_workflow.cron_noRun')" />
         </template>
       </el-table>
     </EnhancedDialog>
@@ -290,6 +302,7 @@
 import { Clock, Delete, Edit, Plus, Search, Timer, VideoPlay } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 
 import {
   createWorkspaceCron,
@@ -304,6 +317,8 @@ import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import TriggerEditor from "@/components/TriggerEditor/index.vue";
 
 defineOptions({ name: "AiCron" });
+
+const { t } = useI18n();
 
 const loading = ref(false);
 const submitLoading = ref(false);
@@ -320,40 +335,45 @@ const pageSize = 12;
 /** 触发类型 → 中文名 + 标签色（与 TriggerEditor 的四种类型一一对应） */
 type TagType = "primary" | "success" | "warning" | "info" | "danger";
 const triggerOptions = [
-  { label: "定时", value: "cron" },
-  { label: "间隔", value: "interval" },
-  { label: "单次", value: "date" },
-  { label: "立即", value: "now" },
+  { label: t("ai_workflow.cron_cron"), value: "cron" },
+  { label: t("ai_workflow.cron_interval"), value: "interval" },
+  { label: t("ai_workflow.cron_date"), value: "date" },
+  { label: t("ai_workflow.cron_now"), value: "now" },
 ];
 const targetOptions = [
-  { label: "智能体", value: "agent" },
-  { label: "工作流", value: "workflow" },
-  { label: "应用", value: "app" },
+  { label: t("ai_workflow.cron_agent"), value: "agent" },
+  { label: t("ai_workflow.cron_workflow"), value: "workflow" },
+  { label: t("ai_workflow.cron_app"), value: "app" },
 ];
 const TRIGGER_LABELS: Record<string, { text: string; type: TagType }> = {
-  cron: { text: "定时", type: "primary" },
-  interval: { text: "间隔", type: "success" },
-  date: { text: "单次", type: "warning" },
-  now: { text: "立即", type: "info" },
+  cron: { text: t("ai_workflow.cron_cron"), type: "primary" },
+  interval: { text: t("ai_workflow.cron_interval"), type: "success" },
+  date: { text: t("ai_workflow.cron_date"), type: "warning" },
+  now: { text: t("ai_workflow.cron_now"), type: "info" },
 };
 function triggerMeta(trigger: string): { text: string; type: TagType } {
-  return TRIGGER_LABELS[trigger] || { text: trigger || "未配置", type: "info" };
+  return (
+    TRIGGER_LABELS[trigger] || {
+      text: trigger || t("ai_workflow.cron_notConfigured"),
+      type: "info",
+    }
+  );
 }
 
 const TARGET_LABELS: Record<string, { text: string; type: TagType }> = {
-  agent: { text: "智能体", type: "primary" },
-  workflow: { text: "工作流", type: "success" },
-  app: { text: "应用", type: "info" },
+  agent: { text: t("ai_workflow.cron_agent"), type: "primary" },
+  workflow: { text: t("ai_workflow.cron_workflow"), type: "success" },
+  app: { text: t("ai_workflow.cron_app"), type: "info" },
 };
-function targetMeta(t: string): { text: string; type: TagType } {
-  return TARGET_LABELS[t] || { text: t || "—", type: "info" };
+function targetMeta(t2: string): { text: string; type: TagType } {
+  return TARGET_LABELS[t2] || { text: t2 || "—", type: "info" };
 }
 
 /** 人话描述缺失（脏数据）时的兜底：原样展示契约值，不自算 */
 function argsFallback(row: WorkspaceCronRow): string {
   const args = row.trigger_args;
   if (args === null || args === undefined || args === "") {
-    return row.trigger === "now" ? "—" : "未配置";
+    return row.trigger === "now" ? "—" : t("ai_workflow.cron_notConfigured");
   }
   return typeof args === "string" ? args : JSON.stringify(args);
 }
@@ -389,7 +409,7 @@ async function onToggleEnabled(row: WorkspaceCronRow, val: boolean) {
   row.enabled = val;
   try {
     await updateWorkspaceCron(row.id, { enabled: val });
-    ElMessage.success(val ? "已启用" : "已停用");
+    ElMessage.success(val ? t("ai_workflow.cron_enabledMsg") : t("ai_workflow.cron_disabledMsg"));
   } catch {
     row.enabled = prev;
   }
@@ -398,14 +418,18 @@ async function onToggleEnabled(row: WorkspaceCronRow, val: boolean) {
 /** 立即执行：二次确认后入队（接口只入队，执行走后台，与调度器同一路径） */
 async function handleRun(row: WorkspaceCronRow) {
   await ElMessageBox.confirm(
-    `将立即执行一次「${row.name}」，绑定目标会真实运行一次，是否继续？`,
-    "立即执行",
-    { confirmButtonText: "执行", cancelButtonText: "取消", type: "warning" }
+    t("ai_workflow.cron_runConfirm", { name: row.name }),
+    t("ai_workflow.cron_runNowTitle"),
+    {
+      confirmButtonText: t("ai_workflow.cron_execute"),
+      cancelButtonText: t("ai_workflow.cron_cancel"),
+      type: "warning",
+    }
   );
   runLoadingId.value = row.id;
   try {
     await runWorkspaceCron(row.id);
-    ElMessage.success("已触发执行");
+    ElMessage.success(t("ai_workflow.cron_triggered"));
     // 状态跃迁后刷新一次（上次运行时间由执行回写，不周期轮询）
     await loadRows();
   } finally {
@@ -416,12 +440,12 @@ async function handleRun(row: WorkspaceCronRow) {
 // ---- 执行历史 ----
 const historyVisible = ref(false);
 const historyLoading = ref(false);
-const historyTitle = ref("执行历史");
+const historyTitle = ref(t("ai_workflow.cron_historyTitle"));
 const historyRows = ref<Array<Record<string, unknown>>>([]);
 
 /** 打开执行历史：列出该定时任务每次调度/立即执行的结果。 */
 async function openHistory(row: WorkspaceCronRow) {
-  historyTitle.value = `执行历史 · ${row.name}`;
+  historyTitle.value = t("ai_workflow.cron_historyTitleWithName", { name: row.name });
   historyRows.value = [];
   historyVisible.value = true;
   historyLoading.value = true;
@@ -434,7 +458,7 @@ async function openHistory(row: WorkspaceCronRow) {
     const items = Array.isArray(payload) ? payload : payload?.items;
     historyRows.value = Array.isArray(items) ? items : [];
   } catch {
-    ElMessage.error("执行历史加载失败");
+    ElMessage.error(t("ai_workflow.cron_historyLoadFail"));
   } finally {
     historyLoading.value = false;
   }
@@ -442,12 +466,16 @@ async function openHistory(row: WorkspaceCronRow) {
 
 async function handleDelete(row: WorkspaceCronRow) {
   await ElMessageBox.confirm(
-    `将删除定时任务「${row.name}」，其调度将同步停止且不可恢复，是否继续？`,
-    "删除确认",
-    { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+    t("ai_workflow.cron_deleteConfirm", { name: row.name }),
+    t("ai_workflow.cron_deleteConfirmTitle"),
+    {
+      confirmButtonText: t("ai_workflow.cron_delete"),
+      cancelButtonText: t("ai_workflow.cron_cancel"),
+      type: "warning",
+    }
   );
   await deleteWorkspaceCron(row.id);
-  ElMessage.success("已删除");
+  ElMessage.success(t("ai_workflow.cron_deleted"));
   await loadRows();
 }
 
@@ -473,7 +501,7 @@ const formData = reactive({
 });
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入任务名称", trigger: "blur" }],
+  name: [{ required: true, message: t("ai_workflow.cron_taskNamePlaceholder"), trigger: "blur" }],
 });
 
 /** TriggerEditor 上抛的非法原因（非空即拦截保存）；空串表示配置合法 */
@@ -481,7 +509,7 @@ const cronError = ref("");
 
 function openCreate() {
   dialogVisible.type = "create";
-  dialogVisible.title = "新建定时任务";
+  dialogVisible.title = t("ai_workflow.cron_createTitle");
   cronError.value = "";
   formData.id = undefined;
   formData.name = "";
@@ -497,7 +525,7 @@ function openCreate() {
 
 function openEdit(row: WorkspaceCronRow) {
   dialogVisible.type = "update";
-  dialogVisible.title = "编辑定时任务";
+  dialogVisible.title = t("ai_workflow.cron_editTitle");
   cronError.value = "";
   formData.id = row.id;
   formData.name = row.name || "";
@@ -552,7 +580,7 @@ async function handleSubmit() {
     if (isEdit) await updateWorkspaceCron(formData.id!, payload);
     else await createWorkspaceCron(payload);
     dialogVisible.visible = false;
-    ElMessage.success(isEdit ? "已保存" : "定时任务已创建");
+    ElMessage.success(isEdit ? t("ai_workflow.cron_saved") : t("ai_workflow.cron_created"));
     await loadRows();
   } finally {
     submitLoading.value = false;

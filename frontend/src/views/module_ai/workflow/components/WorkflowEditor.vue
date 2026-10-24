@@ -2,7 +2,7 @@
 <template>
   <el-drawer
     v-model="dialogVisible"
-    :title="workflow ? '编辑工作流' : '新建工作流'"
+    :title="workflow ? t('ai_workflow.wf_edit_title') : t('ai_workflow.wf_new_title')"
     size="88%"
     class="ai-workflow-editor"
     destroy-on-close
@@ -13,23 +13,23 @@
         <el-splitter-panel size="240px" :min="200" :max="340">
           <el-scrollbar style="height: 100%">
             <div class="panel-section">
-              <div class="section-title">基础信息</div>
+              <div class="section-title">{{ t("ai_workflow.wf_basic_info") }}</div>
               <el-form :model="formData" label-position="top" size="small">
-                <el-form-item label="名称" required>
-                  <el-input v-model="formData.name" placeholder="工作流名称" />
+                <el-form-item :label="t('ai_workflow.wf_name')" required>
+                  <el-input v-model="formData.name" :placeholder="t('ai_workflow.wf_name_ph')" />
                 </el-form-item>
-                <el-form-item label="描述">
+                <el-form-item :label="t('ai_workflow.wf_description')">
                   <el-input
                     v-model="formData.description"
                     type="textarea"
                     :rows="2"
-                    placeholder="描述"
+                    :placeholder="t('ai_workflow.wf_description')"
                   />
                 </el-form-item>
-                <el-form-item label="快速模板">
+                <el-form-item :label="t('ai_workflow.wf_quick_template')">
                   <el-dropdown trigger="click" style="width: 100%" @command="applyTemplateByKey">
                     <el-button size="small" :icon="MagicStick" style="width: 100%">
-                      一键生成工作流
+                      {{ t("ai_workflow.wf_one_click_gen") }}
                     </el-button>
                     <template #dropdown>
                       <el-dropdown-menu>
@@ -39,8 +39,8 @@
                           :command="tpl.key"
                         >
                           <div class="tpl-menu">
-                            <span>{{ tpl.name }}</span>
-                            <span class="tpl-menu__desc">{{ tpl.desc }}</span>
+                            <span>{{ t(tpl.nameKey) }}</span>
+                            <span class="tpl-menu__desc">{{ t(tpl.descKey) }}</span>
                           </div>
                         </el-dropdown-item>
                       </el-dropdown-menu>
@@ -51,18 +51,18 @@
             </div>
             <el-divider style="margin: 4px 0" />
             <div class="panel-section">
-              <div class="section-title">节点</div>
-              <div class="palette-tip">点击或拖拽节点到画布</div>
+              <div class="section-title">{{ t("ai_workflow.wf_nodes") }}</div>
+              <div class="palette-tip">{{ t("ai_workflow.wf_palette_tip") }}</div>
               <el-input
                 v-model="paletteQuery"
                 size="small"
-                placeholder="搜索节点"
+                :placeholder="t('ai_workflow.wf_search_node')"
                 clearable
                 :prefix-icon="Search"
                 class="palette-search"
               />
               <div v-for="cat in NODE_CATEGORIES" :key="cat.key" class="palette-group">
-                <div class="palette-group__title">{{ cat.label }}</div>
+                <div class="palette-group__title">{{ t(`ai_workflow.${cat.labelKey}`) }}</div>
                 <el-space direction="vertical" :size="8" fill style="width: 100%">
                   <div
                     v-for="def in filteredPalette(cat.key)"
@@ -73,8 +73,10 @@
                     @click="onPaletteClick(def.type)"
                   >
                     <el-icon :color="def.color"><component :is="iconOf(def.type)" /></el-icon>
-                    <span>{{ def.label }}</span>
-                    <span class="palette-item__desc">{{ def.desc }}</span>
+                    <span>{{ t(`ai_workflow.node_${def.labelKey}`) }}</span>
+                    <span class="palette-item__desc">
+                      {{ t(`ai_workflow.node_${def.descKey}`) }}
+                    </span>
                   </div>
                 </el-space>
               </div>
@@ -109,28 +111,32 @@
                 <MiniMap pannable zoomable :node-color="minimapColor" />
                 <Panel position="top-right" class="wf-toolbar">
                   <el-button size="small" :icon="RefreshLeft" :disabled="!canUndo" @click="undo">
-                    撤销
+                    {{ t("ai_workflow.wf_undo") }}
                   </el-button>
                   <el-button size="small" :icon="RefreshRight" :disabled="!canRedo" @click="redo">
-                    重做
+                    {{ t("ai_workflow.wf_redo") }}
                   </el-button>
-                  <el-button size="small" :icon="FullScreen" @click="fitView()">适配视图</el-button>
+                  <el-button size="small" :icon="FullScreen" @click="fitView()">
+                    {{ t("ai_workflow.wf_fit_view") }}
+                  </el-button>
                   <el-button
                     size="small"
                     :icon="Aim"
                     :disabled="!selectedCount"
                     @click="focusSelection"
                   >
-                    聚焦选中
+                    {{ t("ai_workflow.wf_focus_selection") }}
                   </el-button>
-                  <el-button size="small" :icon="Promotion" @click="autoLayout">自动布局</el-button>
+                  <el-button size="small" :icon="Promotion" @click="autoLayout">
+                    {{ t("ai_workflow.wf_auto_layout") }}
+                  </el-button>
                   <el-button
                     size="small"
                     :icon="Clock"
                     :disabled="!workflowId"
                     @click="openVersions"
                   >
-                    版本
+                    {{ t("ai_workflow.wf_version") }}
                   </el-button>
                   <el-button
                     size="small"
@@ -138,7 +144,7 @@
                     :disabled="!workflowId"
                     @click="openRunHistory"
                   >
-                    历史
+                    {{ t("ai_workflow.wf_history") }}
                   </el-button>
                   <el-button
                     size="small"
@@ -146,64 +152,83 @@
                     :disabled="!workflowId"
                     @click="openStats"
                   >
-                    统计
+                    {{ t("ai_workflow.wf_stats") }}
                   </el-button>
-                  <el-button size="small" :icon="Link" @click="showEmbedHint">嵌入对话</el-button>
-                  <el-button size="small" :icon="Share" @click="topoVisible = true">拓扑</el-button>
+                  <el-button size="small" :icon="Link" @click="showEmbedHint">
+                    {{ t("ai_workflow.wf_embed_chat") }}
+                  </el-button>
+                  <el-button size="small" :icon="Share" @click="topoVisible = true">
+                    {{ t("ai_workflow.wf_topo") }}
+                  </el-button>
                   <el-button
                     size="small"
                     :icon="Timer"
                     :disabled="!workflowId"
                     @click="openSchedule"
                   >
-                    计划
+                    {{ t("ai_workflow.wf_schedule") }}
                   </el-button>
                   <el-popover trigger="click" placement="bottom-end" :disabled="!selectedCount">
                     <template #reference>
                       <el-button size="small" :icon="Grid" :disabled="!selectedCount">
-                        批量({{ selectedCount }})
+                        {{ t("ai_workflow.wf_batch_n", { count: selectedCount }) }}
                       </el-button>
                     </template>
                     <div class="batch-menu">
                       <div class="batch-menu__tip">
-                        已选 {{ selectedCount }} 个节点（Shift/Ctrl 多选）
+                        {{ t("ai_workflow.wf_batch_tip", { count: selectedCount }) }}
                       </div>
-                      <el-button size="small" @click="batchSetEnabled(true)">批量启用</el-button>
-                      <el-button size="small" @click="batchSetEnabled(false)">批量禁用</el-button>
+                      <el-button size="small" @click="batchSetEnabled(true)">
+                        {{ t("ai_workflow.wf_batch_enable") }}
+                      </el-button>
+                      <el-button size="small" @click="batchSetEnabled(false)">
+                        {{ t("ai_workflow.wf_batch_disable") }}
+                      </el-button>
                       <el-button size="small" @click="saveSelectionAsTemplate">
-                        保存为模板
+                        {{ t("ai_workflow.wf_save_as_tpl") }}
                       </el-button>
                       <el-button size="small" type="danger" @click="batchDelete">
-                        批量删除
+                        {{ t("ai_workflow.wf_batch_delete") }}
                       </el-button>
                     </div>
                   </el-popover>
                   <el-dropdown trigger="click" @command="insertTemplate">
-                    <el-button size="small" :icon="Collection">模板库</el-button>
+                    <el-button size="small" :icon="Collection">
+                      {{ t("ai_workflow.wf_tpl_lib") }}
+                    </el-button>
                     <template #dropdown>
                       <el-dropdown-menu>
                         <el-dropdown-item v-for="(tpl, i) in userTemplates" :key="i" :command="tpl">
-                          {{ tpl.name }}（{{ tpl.nodes.length }} 节点）
+                          {{
+                            t("ai_workflow.wf_tpl_node_count", {
+                              name: tpl.name,
+                              count: tpl.nodes.length,
+                            })
+                          }}
                         </el-dropdown-item>
                         <el-dropdown-item v-if="!userTemplates.length" disabled>
-                          暂无自定义模板
+                          {{ t("ai_workflow.wf_no_custom_tpl") }}
                         </el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
-                  <el-button size="small" :icon="Download" @click="handleExport">导出</el-button>
-                  <el-button size="small" :icon="DocumentCopy" @click="handleExportDoc">
-                    文档
+                  <el-button size="small" :icon="Download" @click="handleExport">
+                    {{ t("ai_workflow.wf_export") }}
                   </el-button>
-                  <el-button size="small" :icon="Upload" @click="triggerImport">导入</el-button>
+                  <el-button size="small" :icon="DocumentCopy" @click="handleExportDoc">
+                    {{ t("ai_workflow.wf_doc") }}
+                  </el-button>
+                  <el-button size="small" :icon="Upload" @click="triggerImport">
+                    {{ t("ai_workflow.wf_import") }}
+                  </el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
-                    运行
+                    {{ t("ai_workflow.wf_run") }}
                   </el-button>
                 </Panel>
                 <Panel position="bottom-center" class="wf-hint">
-                  操作：左侧点选/拖拽添加节点 → 点击节点在右侧编辑 → 拖动节点圆点连线 →
+                  {{ t("ai_workflow.wf_hint") }}
                   <el-button link type="primary" size="small" @click="fitView()">
-                    适配视图
+                    {{ t("ai_workflow.wf_fit_view") }}
                   </el-button>
                 </Panel>
               </VueFlow>
@@ -216,7 +241,11 @@
           <el-scrollbar style="height: 100%">
             <div class="panel-section">
               <div class="section-title">
-                节点：{{ nodeDefOf(selectedNode.type || "llm").label }}
+                {{
+                  t("ai_workflow.wf_node_title", {
+                    label: t(`ai_workflow.node_${nodeDefOf(selectedNode.type || "llm").labelKey}`),
+                  })
+                }}
                 <el-button
                   link
                   type="primary"
@@ -224,7 +253,7 @@
                   style="float: right; margin-right: 8px"
                   @click="openNodeDebug"
                 >
-                  调试此节点
+                  {{ t("ai_workflow.wf_debug_node") }}
                 </el-button>
                 <el-button
                   link
@@ -233,7 +262,7 @@
                   style="float: right; margin-right: 8px"
                   @click="copySelectedNode"
                 >
-                  复制
+                  {{ t("ai_workflow.wf_copy_node_btn") }}
                 </el-button>
                 <el-button
                   link
@@ -242,7 +271,7 @@
                   style="float: right"
                   @click="handleDeleteNode"
                 >
-                  删除
+                  {{ t("ai_workflow.wf_delete_node_btn") }}
                 </el-button>
               </div>
               <NodeConfigPanel
@@ -260,15 +289,17 @@
 
     <template #footer>
       <div class="wf-footer">
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存工作流</el-button>
+        <el-button @click="dialogVisible = false">{{ t("ai_workflow.wf_cancel") }}</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">
+          {{ t("ai_workflow.wf_save_workflow") }}
+        </el-button>
       </div>
     </template>
 
     <!-- 运行调试抽屉（对话式 + 节点执行详情） -->
     <el-drawer
       v-model="runVisible"
-      title="工作流运行"
+      :title="t('ai_workflow.wf_run_title')"
       size="520px"
       class="ai-run-drawer"
       append-to-body
@@ -276,12 +307,14 @@
     >
       <div class="chat-panel">
         <div class="chat-toolbar">
-          <span class="chat-toolbar__tip">多轮对话 · 每次运行可展开节点详情</span>
-          <el-button link size="small" :icon="Delete" @click="clearChat">清空对话</el-button>
+          <span class="chat-toolbar__tip">{{ t("ai_workflow.wf_run_tip") }}</span>
+          <el-button link size="small" :icon="Delete" @click="clearChat">
+            {{ t("ai_workflow.wf_clear_chat") }}
+          </el-button>
         </div>
         <div ref="runListRef" class="chat-list">
           <div v-if="!chatMessages.length" class="chat-empty">
-            输入消息开始测试工作流；每次运行都会展示每个节点的执行结果，点击可查看输入/输出/报错详情。
+            {{ t("ai_workflow.wf_chat_empty") }}
           </div>
           <div v-for="m in chatMessages" :key="m.id" class="chat-msg" :class="`is-${m.role}`">
             <div class="chat-msg__bubble">
@@ -289,14 +322,18 @@
               <template v-else>
                 <div v-if="m.running" class="chat-msg__load">
                   <el-icon class="is-loading"><Loading /></el-icon>
-                  执行中…
+                  {{ t("ai_workflow.wf_executing") }}
                 </div>
-                <div v-else-if="m.cancelled" class="chat-msg__cancel">已取消</div>
+                <div v-else-if="m.cancelled" class="chat-msg__cancel">
+                  {{ t("ai_workflow.wf_cancelled") }}
+                </div>
                 <div v-else-if="m.error" class="chat-msg__err">{{ m.error }}</div>
-                <div v-else class="chat-msg__ai">{{ m.content || "(无输出)" }}</div>
+                <div v-else class="chat-msg__ai">
+                  {{ m.content || t("ai_workflow.wf_no_output") }}
+                </div>
 
                 <div v-if="m.sources?.length" class="chat-sources">
-                  <div class="chat-sub-title">引用来源</div>
+                  <div class="chat-sub-title">{{ t("ai_workflow.wf_source_refs") }}</div>
                   <el-card
                     v-for="(s, si) in m.sources"
                     :key="si"
@@ -307,7 +344,7 @@
                       <el-icon><Document /></el-icon>
                       <span class="run-source-card__title">{{ s.title }}</span>
                       <el-tag v-if="s.score != null" size="small" type="info">
-                        相似度 {{ s.score }}
+                        {{ t("ai_workflow.wf_similarity", { score: s.score }) }}
                       </el-tag>
                     </div>
                     <div class="run-source-card__content">{{ s.content }}</div>
@@ -318,16 +355,16 @@
                 <div v-if="m.approval" class="run-approval">
                   <div class="run-approval__list">
                     <div
-                      v-for="t in m.approval.toolCalls"
-                      :key="t.toolCallId"
+                      v-for="tc in m.approval.toolCalls"
+                      :key="tc.toolCallId"
                       class="run-approval__item"
                     >
                       <div class="run-approval__name">
                         <el-icon><Tools /></el-icon>
-                        <span>{{ t.toolName }}</span>
+                        <span>{{ tc.toolName }}</span>
                       </div>
                       <pre class="run-approval__args">{{
-                        JSON.stringify(t.arguments, null, 2)
+                        JSON.stringify(tc.arguments, null, 2)
                       }}</pre>
                     </div>
                   </div>
@@ -338,7 +375,7 @@
                       :loading="approving"
                       @click="handleApprove('approve')"
                     >
-                      允许执行
+                      {{ t("ai_workflow.wf_allow") }}
                     </el-button>
                     <el-button
                       type="danger"
@@ -346,77 +383,77 @@
                       :loading="approving"
                       @click="handleApprove('reject')"
                     >
-                      拒绝执行
+                      {{ t("ai_workflow.wf_reject") }}
                     </el-button>
                   </div>
                   <div class="run-approval__hint">
-                    审批会话约 30 分钟内有效，超时后需重新运行工作流。
+                    {{ t("ai_workflow.wf_approval_hint") }}
                   </div>
                 </div>
 
                 <!-- 节点执行过程 -->
                 <div v-if="m.trace?.length" class="chat-trace">
-                  <div class="chat-sub-title">节点执行过程（点击查看详情）</div>
+                  <div class="chat-sub-title">{{ t("ai_workflow.wf_node_trace") }}</div>
                   <div
-                    v-for="(t, i) in m.trace"
+                    v-for="(tr, i) in m.trace"
                     :key="i"
                     class="trace-item"
-                    :class="`is-${t.status}`"
+                    :class="`is-${tr.status}`"
                   >
                     <div class="trace-item__head" @click="toggleTraceOpen(m.id + '_' + i)">
                       <span class="trace-item__chev">
                         {{ traceOpen[m.id + "_" + i] ? "▾" : "▸" }}
                       </span>
                       <span class="trace-item__dot" />
-                      <span class="trace-item__label">{{ t.label }}</span>
-                      <span v-if="t.duration != null" class="trace-item__dur">
-                        {{ t.duration }}ms
+                      <span class="trace-item__label">{{ tr.label }}</span>
+                      <span v-if="tr.duration != null" class="trace-item__dur">
+                        {{ tr.duration }}ms
                       </span>
-                      <span class="trace-item__status">{{ statusText(t.status) }}</span>
-                      <span v-if="t.error" class="trace-item__err">{{ t.error }}</span>
+                      <span class="trace-item__status">{{ statusText(tr.status) }}</span>
+                      <span v-if="tr.error" class="trace-item__err">{{ tr.error }}</span>
                     </div>
                     <div v-if="traceOpen[m.id + '_' + i]" class="trace-item__detail">
-                      <div v-if="t.input && Object.keys(t.input).length" class="trace-item__kv">
+                      <div v-if="tr.input && Object.keys(tr.input).length" class="trace-item__kv">
                         <div class="kv-t">
-                          输入
+                          {{ t("ai_workflow.wf_input") }}
                           <el-button
                             link
                             size="small"
                             class="kv-copy"
-                            @click.stop="copyText(formatJson(t.input))"
+                            @click.stop="copyText(formatJson(tr.input))"
                           >
-                            复制
+                            {{ t("ai_workflow.wf_copy") }}
                           </el-button>
                         </div>
-                        <pre class="kv-b">{{ formatJson(t.input) }}</pre>
+                        <pre class="kv-b">{{ formatJson(tr.input) }}</pre>
                       </div>
-                      <div v-if="t.output != null" class="trace-item__kv">
+                      <div v-if="tr.output != null" class="trace-item__kv">
                         <div class="kv-t">
-                          输出
+                          {{ t("ai_workflow.wf_output") }}
                           <el-button
                             link
                             size="small"
                             class="kv-copy"
-                            @click.stop="copyText(formatJson(t.output))"
+                            @click.stop="copyText(formatJson(tr.output))"
                           >
-                            复制
+                            {{ t("ai_workflow.wf_copy") }}
                           </el-button>
                         </div>
-                        <pre class="kv-b">{{ formatJson(t.output) }}</pre>
+                        <pre class="kv-b">{{ formatJson(tr.output) }}</pre>
                       </div>
-                      <div v-if="t.error" class="trace-item__kv">
+                      <div v-if="tr.error" class="trace-item__kv">
                         <div class="kv-t">
-                          错误
+                          {{ t("ai_workflow.wf_error") }}
                           <el-button
                             link
                             size="small"
                             class="kv-copy"
-                            @click.stop="copyText(t.error)"
+                            @click.stop="copyText(tr.error)"
                           >
-                            复制
+                            {{ t("ai_workflow.wf_copy") }}
                           </el-button>
                         </div>
-                        <pre class="kv-b is-err">{{ t.error }}</pre>
+                        <pre class="kv-b is-err">{{ tr.error }}</pre>
                       </div>
                     </div>
                   </div>
@@ -428,17 +465,17 @@
 
         <div class="chat-input">
           <el-collapse v-model="chatVarsOpen" class="chat-vars">
-            <el-collapse-item title="输入变量（JSON，可选）" name="vars">
+            <el-collapse-item :title="t('ai_workflow.wf_input_vars_json')" name="vars">
               <el-input
                 v-model="runVariables"
                 type="textarea"
                 :rows="3"
-                placeholder='如 {"query":"你好", "items":[1,2,3]}'
+                :placeholder="t('ai_workflow.wf_run_vars_ph')"
               />
               <el-input
                 v-model="runTimeout"
                 class="chat-timeout"
-                placeholder="运行超时（秒，可选 1-600）"
+                :placeholder="t('ai_workflow.wf_run_timeout_ph')"
                 size="small"
               />
             </el-collapse-item>
@@ -448,20 +485,25 @@
               v-model="runInput"
               type="textarea"
               :rows="2"
-              placeholder="输入消息，回车或点发送……"
+              :placeholder="t('ai_workflow.wf_run_input_ph')"
               @keydown.enter.exact.prevent="sendChat"
             />
             <el-button type="primary" :loading="running" :icon="Promotion" @click="sendChat">
-              发送
+              {{ t("ai_workflow.wf_send") }}
             </el-button>
             <el-button v-if="running" type="danger" plain :icon="VideoPause" @click="stopRun">
-              停止
+              {{ t("ai_workflow.wf_stop") }}
             </el-button>
           </div>
           <div class="chat-input__row chat-step-row">
-            <el-switch v-model="stepMode" inline-prompt active-text="逐步" inactive-text="连续" />
+            <el-switch
+              v-model="stepMode"
+              inline-prompt
+              :active-text="t('ai_workflow.wf_step_on')"
+              :inactive-text="t('ai_workflow.wf_step_off')"
+            />
             <span class="chat-step-tip">
-              {{ stepMode ? "每次只执行一个节点，点「下一步」继续" : "一键运行到底" }}
+              {{ stepMode ? t("ai_workflow.wf_step_tip_on") : t("ai_workflow.wf_step_tip_off") }}
             </span>
             <el-button
               v-if="stepMode"
@@ -471,7 +513,7 @@
               :icon="ArrowRight"
               @click="sendStep"
             >
-              下一步
+              {{ t("ai_workflow.wf_next") }}
             </el-button>
           </div>
         </div>
@@ -479,38 +521,43 @@
     </el-drawer>
 
     <!-- 单节点调试抽屉 -->
-    <el-drawer v-model="debugVisible" title="单节点调试" size="480px" append-to-body>
+    <el-drawer
+      v-model="debugVisible"
+      :title="t('ai_workflow.wf_debug_title')"
+      size="480px"
+      append-to-body
+    >
       <el-form label-position="top" size="small">
-        <el-form-item label="调试节点">
+        <el-form-item :label="t('ai_workflow.wf_debug_node_label')">
           <div class="debug-node-title">
             <el-icon :color="iconColor(debugNodeType)">
               <component :is="iconOf(debugNodeType)" />
             </el-icon>
-            <span>{{ nodeDefOf(debugNodeType).label }}</span>
+            <span>{{ t(`ai_workflow.node_${nodeDefOf(debugNodeType).labelKey}`) }}</span>
           </div>
         </el-form-item>
-        <el-form-item label="输入变量（JSON，可留空）">
+        <el-form-item :label="t('ai_workflow.wf_debug_vars')">
           <el-input
             v-model="debugVariables"
             type="textarea"
             :rows="3"
-            placeholder='如 {"query": "你好", "items": [1,2,3]}'
+            :placeholder="t('ai_workflow.wf_run_vars_ph')"
           />
         </el-form-item>
         <el-button type="primary" :loading="debugRunning" style="width: 100%" @click="runNodeDebug">
-          运行节点
+          {{ t("ai_workflow.wf_run_node") }}
         </el-button>
       </el-form>
       <div v-if="debugError" class="debug-result">
-        <div class="debug-result__title is-err">错误</div>
+        <div class="debug-result__title is-err">{{ t("ai_workflow.wf_debug_err") }}</div>
         <pre class="debug-result__body is-err">{{ debugError }}</pre>
       </div>
       <div v-if="debugInput" class="debug-result">
-        <div class="debug-result__title">输入</div>
+        <div class="debug-result__title">{{ t("ai_workflow.wf_input") }}</div>
         <pre class="debug-result__body">{{ debugInput }}</pre>
       </div>
       <div v-if="debugOutput != null" class="debug-result">
-        <div class="debug-result__title">输出</div>
+        <div class="debug-result__title">{{ t("ai_workflow.wf_output") }}</div>
         <pre class="debug-result__body">{{ debugOutput }}</pre>
       </div>
     </el-drawer>
@@ -524,28 +571,48 @@
         @contextmenu.prevent=""
       >
         <div class="ctx-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
-          <div class="ctx-title">节点操作</div>
-          <div class="ctx-item" @click.stop="ctxDebug">调试此节点</div>
-          <div class="ctx-item" @click.stop="ctxRetry">重试此节点</div>
-          <div class="ctx-item" @click.stop="ctxCopy">复制节点</div>
-          <div class="ctx-item" @click.stop="ctxAddToGroup">加入分组</div>
-          <div class="ctx-item" @click.stop="ctxRemoveGroup">移出分组</div>
-          <div class="ctx-item" @click.stop="ctxToggleEnable">
-            {{ contextMenuEnabled ? "禁用节点" : "启用节点" }}
+          <div class="ctx-title">{{ t("ai_workflow.wf_ctx_title") }}</div>
+          <div class="ctx-item" @click.stop="ctxDebug">{{ t("ai_workflow.wf_ctx_debug") }}</div>
+          <div class="ctx-item" @click.stop="ctxRetry">{{ t("ai_workflow.wf_ctx_retry") }}</div>
+          <div class="ctx-item" @click.stop="ctxCopy">{{ t("ai_workflow.wf_ctx_copy") }}</div>
+          <div class="ctx-item" @click.stop="ctxAddToGroup">
+            {{ t("ai_workflow.wf_ctx_add_group") }}
           </div>
-          <div class="ctx-item is-danger" @click.stop="ctxDelete">删除节点</div>
+          <div class="ctx-item" @click.stop="ctxRemoveGroup">
+            {{ t("ai_workflow.wf_ctx_remove_group") }}
+          </div>
+          <div class="ctx-item" @click.stop="ctxToggleEnable">
+            {{
+              contextMenuEnabled ? t("ai_workflow.wf_ctx_disable") : t("ai_workflow.wf_ctx_enable")
+            }}
+          </div>
+          <div class="ctx-item is-danger" @click.stop="ctxDelete">
+            {{ t("ai_workflow.wf_ctx_delete") }}
+          </div>
         </div>
       </div>
     </teleport>
 
     <!-- 加入分组选择弹窗 -->
-    <el-dialog v-model="groupDialogVisible" title="加入分组" width="400px" append-to-body>
-      <el-select v-model="groupSelect" filterable placeholder="选择分组" style="width: 100%">
+    <el-dialog
+      v-model="groupDialogVisible"
+      :title="t('ai_workflow.wf_group_dialog')"
+      width="400px"
+      append-to-body
+    >
+      <el-select
+        v-model="groupSelect"
+        filterable
+        :placeholder="t('ai_workflow.wf_select_group')"
+        style="width: 100%"
+      >
         <el-option v-for="g in groupOptions" :key="g.id" :label="g.label" :value="g.id" />
       </el-select>
       <template #footer>
-        <el-button @click="groupDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmJoinGroup">加入</el-button>
+        <el-button @click="groupDialogVisible = false">{{ t("ai_workflow.wf_cancel") }}</el-button>
+        <el-button type="primary" @click="confirmJoinGroup">
+          {{ t("ai_workflow.wf_join") }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -561,25 +628,25 @@
     <!-- 运行历史弹窗 -->
     <el-dialog
       v-model="historyVisible"
-      title="运行历史"
+      :title="t('ai_workflow.wf_history_title')"
       width="760px"
       append-to-body
       @closed="stopReplay"
     >
       <div class="history-stats">
-        <el-statistic title="总运行" :value="runHistoryList.length" />
-        <el-statistic title="成功" :value="historyStats.success" />
-        <el-statistic title="失败" :value="historyStats.fail" />
-        <el-statistic title="已取消" :value="historyStats.cancelled" />
-        <el-statistic title="平均耗时(ms)" :value="historyStats.avgMs" />
+        <el-statistic :title="t('ai_workflow.wf_total_runs')" :value="runHistoryList.length" />
+        <el-statistic :title="t('ai_workflow.wf_success')" :value="historyStats.success" />
+        <el-statistic :title="t('ai_workflow.wf_fail')" :value="historyStats.fail" />
+        <el-statistic :title="t('ai_workflow.wf_cancelled')" :value="historyStats.cancelled" />
+        <el-statistic :title="t('ai_workflow.wf_avg_ms')" :value="historyStats.avgMs" />
       </div>
       <div class="history-filter">
         <el-radio-group v-model="historyFilter" size="small">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="success">成功</el-radio-button>
-          <el-radio-button label="error">失败</el-radio-button>
-          <el-radio-button label="pending">审批中</el-radio-button>
-          <el-radio-button label="cancelled">已取消</el-radio-button>
+          <el-radio-button label="all">{{ t("ai_workflow.wf_all") }}</el-radio-button>
+          <el-radio-button label="success">{{ t("ai_workflow.wf_success") }}</el-radio-button>
+          <el-radio-button label="error">{{ t("ai_workflow.wf_fail") }}</el-radio-button>
+          <el-radio-button label="pending">{{ t("ai_workflow.wf_pending") }}</el-radio-button>
+          <el-radio-button label="cancelled">{{ t("ai_workflow.wf_cancelled") }}</el-radio-button>
         </el-radio-group>
       </div>
       <el-table
@@ -590,18 +657,18 @@
         stripe
         max-height="420"
       >
-        <el-table-column label="时间" width="180">
+        <el-table-column :label="t('ai_workflow.wf_time')" width="180">
           <template #default="{ row }">{{ formatTime(row.created_time) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="90">
+        <el-table-column :label="t('ai_workflow.wf_status')" width="90">
           <template #default="{ row }">
             <el-tag size="small" :type="runStatusTag(row.status)">
               {{ runStatusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="耗时" width="90" prop="duration_ms" />
-        <el-table-column label="输出预览">
+        <el-table-column :label="t('ai_workflow.wf_latency')" width="90" prop="duration_ms" />
+        <el-table-column :label="t('ai_workflow.wf_output_preview')">
           <template #default="{ row }">
             <span class="history-preview">{{ previewText(row.run_output) }}</span>
           </template>
@@ -609,7 +676,7 @@
         <el-table-column label="" width="70">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openRunDetail(row.id)">
-              详情
+              {{ t("ai_workflow.wf_detail") }}
             </el-button>
           </template>
         </el-table-column>
@@ -617,13 +684,18 @@
 
       <div v-if="runDetail" class="history-detail">
         <div class="history-detail__title">
-          节点执行过程
+          {{ t("ai_workflow.wf_node_exec_title") }}
           <span class="hd-replay">
             <el-button v-if="!replayPlaying" link type="primary" size="small" @click="startReplay">
-              画布回放
+              {{ t("ai_workflow.wf_canvas_replay") }}
             </el-button>
             <el-button v-else link type="danger" size="small" @click="stopReplay">
-              停止 ({{ replayIdx + 1 }}/{{ (runDetail.node_trace || []).length }})
+              {{
+                t("ai_workflow.wf_replay_stop", {
+                  idx: replayIdx + 1,
+                  total: (runDetail.node_trace || []).length,
+                })
+              }}
             </el-button>
           </span>
         </div>
@@ -633,11 +705,11 @@
             <span class="hd-replay-info__status">{{ replayStatusText(replayInfo.status) }}</span>
           </div>
           <div v-if="replayInfo.input && Object.keys(replayInfo.input).length" class="hd-kv">
-            <span class="hd-kv-t">输入</span>
+            <span class="hd-kv-t">{{ t("ai_workflow.wf_input") }}</span>
             <pre class="hd-pre">{{ formatJson(replayInfo.input) }}</pre>
           </div>
           <div v-if="replayInfo.output != null" class="hd-kv">
-            <span class="hd-kv-t">输出</span>
+            <span class="hd-kv-t">{{ t("ai_workflow.wf_output") }}</span>
             <pre class="hd-pre">{{ formatJson(replayInfo.output) }}</pre>
           </div>
           <div v-if="replayInfo.error" class="hd-err">{{ replayInfo.error }}</div>
@@ -659,22 +731,22 @@
             >
               {{
                 tr.status === "success"
-                  ? "完成"
+                  ? t("ai_workflow.wf_complete")
                   : tr.status === "error"
-                    ? "失败"
+                    ? t("ai_workflow.wf_fail")
                     : tr.status === "cancelled"
-                      ? "已取消"
-                      : "执行中"
+                      ? t("ai_workflow.wf_cancelled")
+                      : t("ai_workflow.wf_status_running")
               }}
             </el-tag>
           </div>
           <div v-if="tr.error" class="hd-err">{{ tr.error }}</div>
           <div v-if="tr.input && Object.keys(tr.input).length" class="hd-kv">
-            <span class="hd-kv-t">输入</span>
+            <span class="hd-kv-t">{{ t("ai_workflow.wf_input") }}</span>
             <pre class="hd-pre">{{ formatJson(tr.input) }}</pre>
           </div>
           <div v-if="tr.output != null" class="hd-kv">
-            <span class="hd-kv-t">输出</span>
+            <span class="hd-kv-t">{{ t("ai_workflow.wf_output") }}</span>
             <pre class="hd-pre">{{ formatJson(tr.output) }}</pre>
           </div>
         </div>
@@ -682,72 +754,102 @@
     </el-dialog>
 
     <!-- 运行统计抽屉 -->
-    <el-drawer v-model="statsVisible" title="工作流运行统计" size="420px" append-to-body>
+    <el-drawer
+      v-model="statsVisible"
+      :title="t('ai_workflow.wf_stats_title')"
+      size="420px"
+      append-to-body
+    >
       <div v-loading="statsLoading" class="stats-panel">
         <div class="stats-cards">
-          <el-statistic title="总运行" :value="stats.total" />
-          <el-statistic title="成功率" :value="stats.success_rate" suffix="%" />
-          <el-statistic title="平均耗时" :value="stats.avg_ms" suffix="ms" />
+          <el-statistic :title="t('ai_workflow.wf_total_runs')" :value="stats.total" />
+          <el-statistic
+            :title="t('ai_workflow.wf_success_rate')"
+            :value="stats.success_rate"
+            suffix="%"
+          />
+          <el-statistic
+            :title="t('ai_workflow.wf_avg_duration')"
+            :value="stats.avg_ms"
+            suffix="ms"
+          />
         </div>
         <div class="stats-cards">
-          <el-statistic title="成功" :value="stats.success" />
-          <el-statistic title="失败" :value="stats.error" />
-          <el-statistic title="审批中" :value="stats.pending" />
+          <el-statistic :title="t('ai_workflow.wf_success')" :value="stats.success" />
+          <el-statistic :title="t('ai_workflow.wf_fail')" :value="stats.error" />
+          <el-statistic :title="t('ai_workflow.wf_pending')" :value="stats.pending" />
         </div>
         <el-descriptions :column="1" border size="small" class="stats-detail">
-          <el-descriptions-item label="最短耗时">{{ stats.min_ms }} ms</el-descriptions-item>
-          <el-descriptions-item label="最长耗时">{{ stats.max_ms }} ms</el-descriptions-item>
+          <el-descriptions-item :label="t('ai_workflow.wf_min_ms')">
+            {{ stats.min_ms }} ms
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('ai_workflow.wf_max_ms')">
+            {{ stats.max_ms }} ms
+          </el-descriptions-item>
         </el-descriptions>
         <div class="stats-chart">
-          <div class="stats-chart__title">状态分布</div>
+          <div class="stats-chart__title">{{ t("ai_workflow.wf_status_dist") }}</div>
           <VChart class="stats-chart__item" :option="pieOption" autoresize />
         </div>
         <div class="stats-chart">
-          <div class="stats-chart__title">成功率趋势（最近 20 次）</div>
+          <div class="stats-chart__title">{{ t("ai_workflow.wf_success_trend") }}</div>
           <VChart class="stats-chart__item" :option="rateOption" autoresize />
         </div>
         <div class="stats-chart">
-          <div class="stats-chart__title">耗时趋势（最近 20 次，ms）</div>
+          <div class="stats-chart__title">{{ t("ai_workflow.wf_duration_trend") }}</div>
           <VChart class="stats-chart__item" :option="durationOption" autoresize />
         </div>
         <div class="stats-chart">
-          <div class="stats-chart__title">耗时分布（近 100 次）</div>
+          <div class="stats-chart__title">{{ t("ai_workflow.wf_duration_dist") }}</div>
           <VChart class="stats-chart__item" :option="histOption" autoresize />
         </div>
-        <el-empty v-if="!stats.total" description="暂无运行记录" />
+        <el-empty v-if="!stats.total" :description="t('ai_workflow.wf_no_run_records')" />
       </div>
     </el-drawer>
 
     <!-- 版本管理弹窗 -->
-    <el-dialog v-model="versionsVisible" title="版本管理" width="680px" append-to-body>
+    <el-dialog
+      v-model="versionsVisible"
+      :title="t('ai_workflow.wf_version_mgmt')"
+      width="680px"
+      append-to-body
+    >
       <div class="version-save-row">
         <el-input
           v-model="versionRemark"
-          placeholder="填写本次版本说明（可选）"
+          :placeholder="t('ai_workflow.wf_version_remark_ph')"
           style="flex: 1"
           size="small"
         />
         <el-button type="primary" size="small" :loading="savingVersion" @click="saveVersion">
-          保存当前版本
+          {{ t("ai_workflow.wf_save_current_version") }}
         </el-button>
       </div>
       <el-table v-loading="versionLoading" :data="versions" size="small" border stripe>
-        <el-table-column label="版本" width="80">
+        <el-table-column :label="t('ai_workflow.wf_version')" width="80">
           <template #default="{ row }">v{{ row.version_no }}</template>
         </el-table-column>
-        <el-table-column prop="remark" label="说明" />
-        <el-table-column label="状态" width="100">
+        <el-table-column prop="remark" :label="t('ai_workflow.wf_remark')" />
+        <el-table-column :label="t('ai_workflow.wf_status')" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.published" type="success" size="small">已发布</el-tag>
-            <el-tag v-else type="info" size="small">草稿</el-tag>
+            <el-tag v-if="row.published" type="success" size="small">
+              {{ t("ai_workflow.wf_published") }}
+            </el-tag>
+            <el-tag v-else type="info" size="small">{{ t("ai_workflow.wf_draft") }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_time" label="保存时间" width="180" />
-        <el-table-column label="操作" width="200">
+        <el-table-column prop="created_time" :label="t('ai_workflow.wf_save_time')" width="180" />
+        <el-table-column :label="t('ai_workflow.wf_ctx_title')" width="200">
           <template #default="{ row }">
-            <el-button link type="success" size="small" @click="openCompare(row)">对比</el-button>
-            <el-button link type="primary" size="small" @click="doPublish(row)">发布</el-button>
-            <el-button link type="warning" size="small" @click="doRollback(row)">回滚</el-button>
+            <el-button link type="success" size="small" @click="openCompare(row)">
+              {{ t("ai_workflow.wf_compare") }}
+            </el-button>
+            <el-button link type="primary" size="small" @click="doPublish(row)">
+              {{ t("ai_workflow.wf_publish") }}
+            </el-button>
+            <el-button link type="warning" size="small" @click="doRollback(row)">
+              {{ t("ai_workflow.wf_rollback") }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -755,13 +857,15 @@
 
     <!-- 版本对比弹窗 -->
     <el-dialog v-model="compareVisible" :title="compareTitle" width="520px" append-to-body>
-      <div v-if="!diffItems.length" class="compare-empty">该版本与当前画布内容一致。</div>
+      <div v-if="!diffItems.length" class="compare-empty">
+        {{ t("ai_workflow.wf_compare_empty") }}
+      </div>
       <div v-for="(d, i) in diffItems" :key="i" class="compare-item">
         <el-tag
           size="small"
-          :type="d.status === '新增' ? 'success' : d.status === '删除' ? 'danger' : 'warning'"
+          :type="d.status === 'new' ? 'success' : d.status === 'deleted' ? 'danger' : 'warning'"
         >
-          {{ d.status }}
+          {{ t(`ai_workflow.wf_diff_${d.status}_short`) }}
         </el-tag>
         <span class="compare-label">{{ d.label }}</span>
         <span class="compare-detail">{{ d.detail }}</span>
@@ -771,7 +875,7 @@
     <!-- 拓扑只读总览 -->
     <el-dialog
       v-model="topoVisible"
-      title="DAG 拓扑总览"
+      :title="t('ai_workflow.wf_topo_title')"
       width="800px"
       height="600px"
       append-to-body
@@ -785,9 +889,14 @@
       定时调度：触发配置统一走 TriggerEditor（定时/间隔/单次/立即 + 实时预览 + 非法拦截），
       不再自造 cron 输入框与「常用模板」——全平台只有这一套触发编辑口径。
     -->
-    <el-dialog v-model="scheduleVisible" title="定时调度" width="520px" append-to-body>
+    <el-dialog
+      v-model="scheduleVisible"
+      :title="t('ai_workflow.wf_schedule_title')"
+      width="520px"
+      append-to-body
+    >
       <el-form label-position="top" size="small">
-        <el-form-item label="触发方式">
+        <el-form-item :label="t('ai_workflow.wf_trigger_type')">
           <TriggerEditor
             v-model:trigger="scheduleTrigger"
             v-model:trigger-args="scheduleTriggerArgs"
@@ -795,7 +904,7 @@
             @error="scheduleError = $event"
           />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="t('ai_workflow.wf_enable')">
           <el-switch v-model="scheduleEnabled" />
         </el-form-item>
       </el-form>
@@ -803,11 +912,15 @@
         与 TriggerEditor 的「下次运行」预览区分：上面是**待保存草稿**的下次运行，
         这里是**已保存调度作业**的下次运行（唯一真源，保存/打开后回读）。
       -->
-      <div v-if="scheduleNext" class="schedule-next">当前已保存：下次运行 {{ scheduleNext }}</div>
+      <div v-if="scheduleNext" class="schedule-next">
+        {{ t("ai_workflow.wf_saved_next", { next: scheduleNext }) }}
+      </div>
       <template #footer>
-        <el-button @click="scheduleVisible = false">关闭</el-button>
-        <el-button @click="runScheduleNow">立即运行</el-button>
-        <el-button type="primary" :disabled="!!scheduleError" @click="saveSchedule">保存</el-button>
+        <el-button @click="scheduleVisible = false">{{ t("ai_workflow.wf_close") }}</el-button>
+        <el-button @click="runScheduleNow">{{ t("ai_workflow.wf_run_now") }}</el-button>
+        <el-button type="primary" :disabled="!!scheduleError" @click="saveSchedule">
+          {{ t("ai_workflow.wf_save") }}
+        </el-button>
       </template>
     </el-dialog>
   </el-drawer>
@@ -815,6 +928,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, markRaw, onMounted, onUnmounted, type Component } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox, ElNotification } from "element-plus";
 import { Panel, VueFlow, useVueFlow } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
@@ -913,6 +1027,7 @@ defineOptions({ name: "AiWorkflowEditor", inheritAttrs: false });
 
 const props = defineProps<{ visible: boolean; workflow?: any }>();
 const emit = defineEmits(["update:visible", "refresh"]);
+const { t } = useI18n();
 
 const dialogVisible = computed({
   get: () => props.visible,
@@ -1149,14 +1264,14 @@ function onNodeStatus(ns: any) {
 
 function statusText(s: string) {
   return s === "running"
-    ? "执行中"
+    ? t("ai_workflow.wf_status_running")
     : s === "error"
-      ? "失败"
+      ? t("ai_workflow.wf_fail")
       : s === "skipped"
-        ? "已跳过"
+        ? t("ai_workflow.wf_status_skipped")
         : s === "cancelled"
-          ? "已取消"
-          : "完成";
+          ? t("ai_workflow.wf_status_cancelled")
+          : t("ai_workflow.wf_complete");
 }
 
 function formatJson(v: any): string {
@@ -1171,8 +1286,8 @@ function formatJson(v: any): string {
 function copyText(text: string) {
   if (!text) return;
   navigator.clipboard.writeText(text).then(
-    () => ElMessage.success("已复制"),
-    () => ElMessage.error("复制失败")
+    () => ElMessage.success(t("ai_workflow.wf_copy_success")),
+    () => ElMessage.error(t("ai_workflow.wf_copy_fail"))
   );
 }
 
@@ -1225,7 +1340,7 @@ async function runNodeDebug() {
       body: JSON.stringify({ node_id: debugNodeId.value, variables }),
     });
     if (!resp.ok || !resp.body) {
-      debugError.value = `请求失败：${resp.status}`;
+      debugError.value = t("ai_workflow.wf_request_fail_status", { status: resp.status });
       return;
     }
     await readUiStream(resp, (obj) => {
@@ -1233,13 +1348,14 @@ async function runNodeDebug() {
         debugInput.value = obj.input ?? debugInput.value;
         debugOutput.value = obj.output ?? debugOutput.value;
         if (obj.error) debugError.value = obj.error;
-        if (obj.status === "error" && !obj.error) debugError.value = "节点执行失败";
+        if (obj.status === "error" && !obj.error)
+          debugError.value = t("ai_workflow.wf_node_exec_fail");
       } else if (obj.type === "error") {
-        debugError.value = obj.errorText || obj.message || "节点执行失败";
+        debugError.value = obj.errorText || obj.message || t("ai_workflow.wf_node_exec_fail");
       }
     });
   } catch (e: any) {
-    debugError.value = `调试失败：${e?.message || e}`;
+    debugError.value = t("ai_workflow.wf_debug_fail", { message: e?.message || e });
   } finally {
     debugRunning.value = false;
   }
@@ -1264,14 +1380,14 @@ const replayInfo = ref<any>(null);
 let replayTimer = 0;
 function replayStatusText(s: string) {
   return s === "success"
-    ? "完成"
+    ? t("ai_workflow.wf_complete")
     : s === "error"
-      ? "失败"
+      ? t("ai_workflow.wf_fail")
       : s === "skipped"
-        ? "已跳过"
+        ? t("ai_workflow.wf_status_skipped")
         : s === "cancelled"
-          ? "已取消"
-          : "执行中";
+          ? t("ai_workflow.wf_status_cancelled")
+          : t("ai_workflow.wf_status_running");
 }
 function startReplay() {
   const trace = runDetail.value?.node_trace || [];
@@ -1354,9 +1470,9 @@ const pieOption = computed(() => ({
       radius: ["40%", "70%"],
       label: { formatter: "{b}: {c}" },
       data: [
-        { name: "成功", value: stats.value.success },
-        { name: "失败", value: stats.value.error },
-        { name: "审批中", value: stats.value.pending },
+        { name: t("ai_workflow.wf_success"), value: stats.value.success },
+        { name: t("ai_workflow.wf_fail"), value: stats.value.error },
+        { name: t("ai_workflow.wf_pending"), value: stats.value.pending },
       ],
     },
   ],
@@ -1381,7 +1497,7 @@ const rateOption = computed(() => ({
   series: [
     {
       type: "line",
-      name: "成功率",
+      name: t("ai_workflow.wf_rate_series"),
       smooth: true,
       data: trendData.value.rate,
       itemStyle: { color: "#67c23a" },
@@ -1397,7 +1513,7 @@ const durationOption = computed(() => ({
   series: [
     {
       type: "line",
-      name: "耗时(ms)",
+      name: t("ai_workflow.wf_duration_series"),
       smooth: true,
       data: trendData.value.duration,
       itemStyle: { color: "#409eff" },
@@ -1425,7 +1541,7 @@ const histOption = computed(() => {
     series: [
       {
         type: "bar",
-        name: "次数",
+        name: t("ai_workflow.wf_hist_series"),
         data: counts,
         itemStyle: { color: "#e6a23c", borderRadius: [4, 4, 0, 0] },
       },
@@ -1434,7 +1550,7 @@ const histOption = computed(() => {
 });
 /** 旧分享通道已下线：对话嵌入统一到「AI 集成 → 嵌入」生成代码。 */
 function showEmbedHint() {
-  ElMessage.info("对话嵌入请前往「AI 集成 → 应用管理」，在目标应用的「嵌入」中生成代码");
+  ElMessage.info(t("ai_workflow.wf_embed_hint"));
 }
 
 // ---------- 定时调度 ----------
@@ -1462,7 +1578,7 @@ async function openSchedule() {
       : "";
     scheduleVisible.value = true;
   } catch {
-    ElMessage.error("读取调度配置失败");
+    ElMessage.error(t("ai_workflow.wf_read_schedule_fail"));
   }
 }
 async function saveSchedule() {
@@ -1486,18 +1602,18 @@ async function saveSchedule() {
     scheduleNext.value = d.next_run_time
       ? String(d.next_run_time).replace("T", " ").slice(0, 19)
       : "";
-    ElMessage.success("调度已保存");
+    ElMessage.success(t("ai_workflow.wf_schedule_saved"));
   } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败（触发配置可能无效）");
+    ElMessage.error(e?.message || t("ai_workflow.wf_save_fail_config"));
   }
 }
 async function runScheduleNow() {
   if (!workflowId.value) return;
   try {
     await runAiWorkflowSchedule(workflowId.value);
-    ElMessage.success("已触发运行（可在运行历史查看）");
+    ElMessage.success(t("ai_workflow.wf_run_triggered"));
   } catch (e: any) {
-    ElMessage.error(e?.message || "触发失败");
+    ElMessage.error(e?.message || t("ai_workflow.wf_trigger_fail"));
   }
 }
 
@@ -1516,11 +1632,11 @@ const historyStats = computed(() => {
 function runStatusLabel(status: string): string {
   return (
     {
-      success: "成功",
-      error: "失败",
-      pending: "审批中",
-      cancelled: "已取消",
-      running: "运行中",
+      success: t("ai_workflow.wf_success"),
+      error: t("ai_workflow.wf_fail"),
+      pending: t("ai_workflow.wf_pending"),
+      cancelled: t("ai_workflow.wf_status_cancelled"),
+      running: t("ai_workflow.wf_status_running"),
     }[status] || status
   );
 }
@@ -1567,16 +1683,19 @@ const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
 // 供属性面板「插入变量」使用：内置变量 + 输入变量 + 各节点输出变量
 const availableVars = computed(() => {
   const map = new Map<string, string>();
-  map.set("query", "用户输入 query");
-  map.set("assistant_text", "助手回复 assistant_text");
+  map.set("query", t("ai_workflow.p_var_query_label"));
+  map.set("assistant_text", t("ai_workflow.p_var_assistant_label"));
   nodes.value.forEach((n) => {
     if (n.type === "start") {
       (n.data.variables || []).forEach((v: any) => {
-        if (v.name) map.set(v.name, `输入变量 ${v.name}`);
+        if (v.name) map.set(v.name, t("ai_workflow.p_var_input_label", { name: v.name }));
       });
     }
     if (n.data?.output_variable) {
-      map.set(n.data.output_variable, `节点输出 ${n.data.output_variable}`);
+      map.set(
+        n.data.output_variable,
+        t("ai_workflow.p_var_node_output_label", { name: n.data.output_variable })
+      );
     }
   });
   return Array.from(map, ([name, label]) => ({ name, label }));
@@ -1587,7 +1706,7 @@ const varSources = computed(() => {
   const m: Record<string, string> = {};
   nodes.value.forEach((n) => {
     const ov = n.data?.output_variable;
-    if (ov) m[ov] = nodeDefOf(n.type || "llm").label;
+    if (ov) m[ov] = t(`ai_workflow.node_${nodeDefOf(n.type || "llm").labelKey}`);
   });
   return m;
 });
@@ -1611,7 +1730,7 @@ const nodeChain = computed(() => {
     if (path) {
       return path.map((id) => {
         const n = nodes.value.find((x) => x.id === id);
-        return nodeDefOf(n?.type || "llm").label;
+        return t(`ai_workflow.node_${nodeDefOf(n?.type || "llm").labelKey}`);
       });
     }
   }
@@ -1759,29 +1878,29 @@ function openCompare(row: any) {
     const v = vMap.get(id);
     if (!v) {
       items.push({
-        label: nodeDefOf(n.type || "llm").label,
-        status: "新增",
-        detail: "当前画布新增节点",
+        label: t(`ai_workflow.node_${nodeDefOf(n.type || "llm").labelKey}`),
+        status: "new",
+        detail: t("ai_workflow.wf_diff_new"),
       });
     } else if (JSON.stringify(n.data || {}) !== JSON.stringify(v.data || {})) {
       items.push({
-        label: nodeDefOf(n.type || "llm").label,
-        status: "修改",
-        detail: "节点参数已变化",
+        label: t(`ai_workflow.node_${nodeDefOf(n.type || "llm").labelKey}`),
+        status: "modified",
+        detail: t("ai_workflow.wf_diff_modified"),
       });
     }
   });
   vMap.forEach((v, id) => {
     if (!cMap.has(id)) {
       items.push({
-        label: nodeDefOf(v.type || "llm").label,
-        status: "删除",
-        detail: "该版本有、当前画布无",
+        label: t(`ai_workflow.node_${nodeDefOf(v.type || "llm").labelKey}`),
+        status: "deleted",
+        detail: t("ai_workflow.wf_diff_deleted"),
       });
     }
   });
   diffItems.value = items;
-  compareTitle.value = `版本 v${row.version_no} vs 当前画布`;
+  compareTitle.value = t("ai_workflow.wf_compare_title", { no: row.version_no });
   compareVisible.value = true;
 }
 
@@ -1812,11 +1931,11 @@ async function saveVersion() {
       remark: versionRemark.value,
       graph: buildGraph(),
     });
-    ElMessage.success("版本已保存");
+    ElMessage.success(t("ai_workflow.wf_version_saved"));
     versionRemark.value = "";
     await loadVersions();
   } catch {
-    ElMessage.error("保存版本失败");
+    ElMessage.error(t("ai_workflow.wf_save_version_fail"));
   } finally {
     savingVersion.value = false;
   }
@@ -1825,29 +1944,37 @@ async function saveVersion() {
 async function doPublish(v: any) {
   if (!workflowId.value) return;
   await ElMessageBox.confirm(
-    `确认发布版本 v${v.version_no} 为线上版本吗？将用该版本的 DAG 覆盖当前工作流。`,
-    "发布确认",
-    { confirmButtonText: "发布", cancelButtonText: "取消", type: "warning" }
+    t("ai_workflow.wf_publish_confirm", { no: v.version_no }),
+    t("ai_workflow.wf_publish_confirm_title"),
+    {
+      confirmButtonText: t("ai_workflow.wf_publish"),
+      cancelButtonText: t("ai_workflow.wf_cancel"),
+      type: "warning",
+    }
   );
   try {
     await publishAiWorkflowVersion(workflowId.value, v.id);
-    ElMessage.success("发布成功");
+    ElMessage.success(t("ai_workflow.wf_publish_success"));
     await loadVersions();
   } catch {
-    ElMessage.error("发布失败");
+    ElMessage.error(t("ai_workflow.wf_publish_fail"));
   }
 }
 
 async function doRollback(v: any) {
   if (!workflowId.value) return;
   await ElMessageBox.confirm(
-    `确认回滚到版本 v${v.version_no} 吗？当前画布内容将被该版本的 DAG 覆盖，且不可恢复。`,
-    "回滚确认",
-    { confirmButtonText: "回滚", cancelButtonText: "取消", type: "warning" }
+    t("ai_workflow.wf_rollback_confirm", { no: v.version_no }),
+    t("ai_workflow.wf_rollback_confirm_title"),
+    {
+      confirmButtonText: t("ai_workflow.wf_rollback"),
+      cancelButtonText: t("ai_workflow.wf_cancel"),
+      type: "warning",
+    }
   );
   try {
     const res = await rollbackAiWorkflowVersion(workflowId.value, v.id);
-    ElMessage.success("回滚成功");
+    ElMessage.success(t("ai_workflow.wf_rollback_success"));
     const g = res.data?.data?.graph;
     if (g) {
       nodes.value = g.nodes.map((n: any) => ({
@@ -1871,7 +1998,7 @@ async function doRollback(v: any) {
     }
     await loadVersions();
   } catch {
-    ElMessage.error("回滚失败");
+    ElMessage.error(t("ai_workflow.wf_rollback_fail"));
   }
 }
 
@@ -2025,9 +2152,15 @@ function onPaletteClick(type: string) {
       animated: true,
     });
     autoFillOnConnect({ source: from.id, target: id });
-    ElMessage.success(`已连接「${nodeDefOf(from.type || "llm").label}」→ 新节点`);
+    ElMessage.success(
+      t("ai_workflow.wf_connected", {
+        from: t(`ai_workflow.node_${nodeDefOf(from.type || "llm").labelKey}`),
+      })
+    );
   } else {
-    ElMessage.success(`已添加「${nodeDefOf(type).label}」节点，请在右侧编辑`);
+    ElMessage.success(
+      t("ai_workflow.wf_added_node", { label: t(`ai_workflow.node_${nodeDefOf(type).labelKey}`) })
+    );
   }
 }
 
@@ -2111,9 +2244,9 @@ function defaultData(type: string): Record<string, any> {
     case "database":
       return { dsn: "", sql: "", output_variable: "" };
     case "note":
-      return { title: "说明", content: "" };
+      return { title: t("ai_workflow.wf_note_default_title"), content: "" };
     case "group":
-      return { title: "分组", width: 640, height: 420 };
+      return { title: t("ai_workflow.wf_group_default_title"), width: 640, height: 420 };
     case "end":
       return { output_template: "" };
     default:
@@ -2125,7 +2258,9 @@ function defaultData(type: string): Record<string, any> {
 interface WfTemplate {
   key: string;
   name: string;
+  nameKey: string;
   desc: string;
+  descKey: string;
   build: () => { nodes: Node[]; edges: Edge[] };
 }
 
@@ -2133,7 +2268,9 @@ const WF_TEMPLATES: WfTemplate[] = [
   {
     key: "qa",
     name: "客服问答",
+    nameKey: "wf_tpl_qa",
     desc: "start → LLM → 结束",
+    descKey: "wf_tpl_qa_desc",
     build: () => {
       const t = Date.now();
       const nodes: Node[] = [
@@ -2173,7 +2310,9 @@ const WF_TEMPLATES: WfTemplate[] = [
   {
     key: "rag",
     name: "知识库检索问答",
+    nameKey: "wf_tpl_rag",
     desc: "start → 知识检索 → LLM → 结束",
+    descKey: "wf_tpl_rag_desc",
     build: () => {
       const t = Date.now();
       const nodes: Node[] = [
@@ -2221,7 +2360,9 @@ const WF_TEMPLATES: WfTemplate[] = [
   {
     key: "condition",
     name: "条件分派",
+    nameKey: "wf_tpl_condition",
     desc: "start → LLM → 条件分支",
+    descKey: "wf_tpl_condition_desc",
     build: () => {
       const t = Date.now();
       const nodes: Node[] = [
@@ -2275,7 +2416,9 @@ const WF_TEMPLATES: WfTemplate[] = [
   {
     key: "batch",
     name: "批量处理",
+    nameKey: "wf_tpl_batch",
     desc: "start → 迭代(工具) → 结束",
+    descKey: "wf_tpl_batch_desc",
     build: () => {
       const t = Date.now();
       const nodes: Node[] = [
@@ -2316,7 +2459,9 @@ const WF_TEMPLATES: WfTemplate[] = [
   {
     key: "doc",
     name: "文档摘要",
+    nameKey: "wf_tpl_doc",
     desc: "start → 文档提取 → LLM → 结束",
+    descKey: "wf_tpl_doc_desc",
     build: () => {
       const t = Date.now();
       const nodes: Node[] = [
@@ -2364,7 +2509,9 @@ const WF_TEMPLATES: WfTemplate[] = [
   {
     key: "web",
     name: "实时网页搜索问答",
+    nameKey: "wf_tpl_web",
     desc: "start → 网页搜索 → LLM → 结束",
+    descKey: "wf_tpl_web_desc",
     build: () => {
       const t = Date.now();
       const nodes: Node[] = [
@@ -2416,7 +2563,9 @@ const WF_TEMPLATES: WfTemplate[] = [
   {
     key: "data",
     name: "数据查询",
+    nameKey: "wf_tpl_data",
     desc: "start → 数据库 → 模板 → 结束",
+    descKey: "wf_tpl_data_desc",
     build: () => {
       const t = Date.now();
       const nodes: Node[] = [
@@ -2472,18 +2621,22 @@ async function applyTemplateByKey(key: string) {
   if (!tpl) return;
   if (nodes.value.length) {
     await ElMessageBox.confirm(
-      "应用模板将替换当前画布内容，此操作不可恢复。是否继续？",
-      "应用模板",
-      { confirmButtonText: "应用", cancelButtonText: "取消", type: "warning" }
+      t("ai_workflow.wf_apply_tpl_confirm"),
+      t("ai_workflow.wf_apply_tpl_title"),
+      {
+        confirmButtonText: t("ai_workflow.wf_apply"),
+        cancelButtonText: t("ai_workflow.wf_cancel"),
+        type: "warning",
+      }
     );
   }
   const { nodes: tn, edges: te } = tpl.build();
   pushHistory();
   nodes.value = tn;
   edges.value = te as Edge[];
-  if (!formData.name.trim()) formData.name = tpl.name;
+  if (!formData.name.trim()) formData.name = t(tpl.nameKey);
   selectedNode.value = undefined;
-  ElMessage.success(`已应用模板「${tpl.name}」`);
+  ElMessage.success(t("ai_workflow.wf_applied_tpl", { name: t(tpl.nameKey) }));
 }
 
 function onNodeConfigChange(data: Record<string, any>) {
@@ -2499,9 +2652,9 @@ function onNodeConfigChange(data: Record<string, any>) {
 function handleDeleteNode() {
   if (!selectedNode.value) return;
   const id = selectedNode.value.id;
-  ElMessageBox.confirm("确定删除该节点吗？", "提示", {
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
+  ElMessageBox.confirm(t("ai_workflow.wf_delete_node_confirm"), t("ai_workflow.wf_confirm_title"), {
+    confirmButtonText: t("ai_workflow.wf_delete"),
+    cancelButtonText: t("ai_workflow.wf_cancel"),
     type: "warning",
   }).then(() => {
     pushHistory();
@@ -2517,7 +2670,7 @@ function handleDeleteNode() {
     nodes.value = nodes.value.filter((n) => n.id !== id);
     edges.value = edges.value.filter((e) => e.source !== id && e.target !== id);
     selectedNode.value = undefined;
-    ElMessage.success("节点已删除");
+    ElMessage.success(t("ai_workflow.wf_node_deleted"));
   });
 }
 
@@ -2548,7 +2701,7 @@ function copySelectedNode() {
   pushHistory();
   addNodes([node]);
   selectedNode.value = node;
-  ElMessage.success("已复制节点，可修改其配置");
+  ElMessage.success(t("ai_workflow.wf_node_copied"));
 }
 
 // ---------- 节点右键菜单 ----------
@@ -2612,7 +2765,7 @@ function ctxRetry() {
   if (n) {
     selectedNode.value = n;
     openNodeDebug();
-    ElMessage.info("已打开单节点调试，可重跑该节点查看结果");
+    ElMessage.info(t("ai_workflow.wf_open_debug"));
   }
 }
 function ctxCopy() {
@@ -2644,7 +2797,7 @@ const groupTargetId = ref("");
 const groupOptions = computed(() =>
   nodes.value
     .filter((n) => n.type === "group")
-    .map((n) => ({ id: n.id, label: n.data?.title || "分组" }))
+    .map((n) => ({ id: n.id, label: n.data?.title || t("ai_workflow.wf_group_default_title") }))
 );
 function ctxAddToGroup() {
   const id = contextMenu.value?.nodeId;
@@ -2652,7 +2805,7 @@ function ctxAddToGroup() {
   if (!id) return;
   const target = nodes.value.find((n) => n.id === id);
   if (!target || target.type === "group") {
-    ElMessage.warning("分组节点不能加入分组");
+    ElMessage.warning(t("ai_workflow.wf_group_cant_join"));
     return;
   }
   groupTargetId.value = id;
@@ -2662,7 +2815,7 @@ function ctxAddToGroup() {
 function confirmJoinGroup() {
   const gid = groupSelect.value;
   if (!gid) {
-    ElMessage.warning("请选择分组");
+    ElMessage.warning(t("ai_workflow.wf_please_select_group"));
     return;
   }
   const child = nodes.value.find((n) => n.id === groupTargetId.value);
@@ -2674,7 +2827,7 @@ function confirmJoinGroup() {
   child.parentNode = g.id;
   child.position = { x: (child.position?.x ?? 0) - gx, y: (child.position?.y ?? 0) - gy };
   groupDialogVisible.value = false;
-  ElMessage.success("已加入分组");
+  ElMessage.success(t("ai_workflow.wf_joined_group"));
 }
 function ctxRemoveGroup() {
   const id = contextMenu.value?.nodeId;
@@ -2688,7 +2841,7 @@ function ctxRemoveGroup() {
   const gy = g?.position?.y ?? 0;
   child.position = { x: (child.position?.x ?? 0) + gx, y: (child.position?.y ?? 0) + gy };
   child.parentNode = undefined;
-  ElMessage.success("已移出分组");
+  ElMessage.success(t("ai_workflow.wf_removed_group"));
 }
 
 // ---------- 批量操作 ----------
@@ -2705,25 +2858,31 @@ function _selectedIds(): string[] {
 function batchSetEnabled(enabled: boolean) {
   const ids = new Set(_selectedIds());
   if (!ids.size) {
-    ElMessage.info("请先选节点（Shift/Ctrl 多选）");
+    ElMessage.info(t("ai_workflow.wf_select_nodes_first"));
     return;
   }
   pushHistory();
   nodes.value.forEach((n) => {
     if (ids.has(n.id)) n.data = { ...(n.data || {}), enabled };
   });
-  ElMessage.success(enabled ? "已批量启用" : "已批量禁用");
+  ElMessage.success(
+    enabled ? t("ai_workflow.wf_batch_enabled") : t("ai_workflow.wf_batch_disabled")
+  );
 }
 function batchDelete() {
   const ids = new Set(_selectedIds());
   if (!ids.size) {
-    ElMessage.info("请先选节点（Shift/Ctrl 多选）");
+    ElMessage.info(t("ai_workflow.wf_select_nodes_first"));
     return;
   }
   ElMessageBox.confirm(
-    `将删除选中的 ${ids.size} 个节点及其关联连线，且不可恢复。是否继续？`,
-    "批量删除",
-    { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+    t("ai_workflow.wf_batch_del_confirm", { count: ids.size }),
+    t("ai_workflow.wf_batch_del_title"),
+    {
+      confirmButtonText: t("ai_workflow.wf_delete"),
+      cancelButtonText: t("ai_workflow.wf_cancel"),
+      type: "warning",
+    }
   )
     .then(() => {
       pushHistory();
@@ -2742,7 +2901,7 @@ function batchDelete() {
       nodes.value = nodes.value.filter((n) => !ids.has(n.id));
       edges.value = edges.value.filter((e) => !ids.has(e.source) && !ids.has(e.target));
       selectedNode.value = undefined;
-      ElMessage.success("已批量删除");
+      ElMessage.success(t("ai_workflow.wf_batch_deleted"));
     })
     .catch(() => {
       /* 取消 */
@@ -2771,19 +2930,19 @@ function saveSelectionAsTemplate() {
   const ids = new Set(_selectedIds());
   const selNodes = nodes.value.filter((n) => ids.has(n.id));
   if (!selNodes.length) {
-    ElMessage.info("请先选节点（Shift/Ctrl 多选）再保存为模板");
+    ElMessage.info(t("ai_workflow.wf_select_nodes_tpl"));
     return;
   }
   const selEdges = edges.value.filter((e) => ids.has(e.source) && ids.has(e.target));
-  ElMessageBox.prompt("模板名称", "保存为模板", {
-    confirmButtonText: "保存",
-    cancelButtonText: "取消",
-    inputPlaceholder: "如：检索问答子图",
-    inputValue: "我的模板",
+  ElMessageBox.prompt(t("ai_workflow.wf_tpl_name_label"), t("ai_workflow.wf_save_as_tpl_title"), {
+    confirmButtonText: t("ai_workflow.wf_save"),
+    cancelButtonText: t("ai_workflow.wf_cancel"),
+    inputPlaceholder: t("ai_workflow.wf_tpl_name_ph"),
+    inputValue: t("ai_workflow.wf_my_tpl"),
   })
     .then(({ value }) => {
       const tpl: UserTemplate = {
-        name: value || "未命名",
+        name: value || t("ai_workflow.wf_unnamed"),
         nodes: selNodes.map((n) => ({
           id: n.id,
           type: n.type as string,
@@ -2801,7 +2960,7 @@ function saveSelectionAsTemplate() {
       const list = loadUserTemplates();
       list.push(tpl);
       saveUserTemplates(list);
-      ElMessage.success("已保存模板");
+      ElMessage.success(t("ai_workflow.wf_tpl_saved"));
     })
     .catch(() => {
       /* 取消 */
@@ -2810,10 +2969,10 @@ function saveSelectionAsTemplate() {
 function insertTemplate(tpl: UserTemplate) {
   if (!tpl.nodes.length) return;
   pushHistory();
-  const t = Date.now();
+  const ts = Date.now();
   const idMap: Record<string, string> = {};
   const newNodes = tpl.nodes.map((n, i) => {
-    const nid = `node_${t}_${i}`;
+    const nid = `node_${ts}_${i}`;
     idMap[n.id] = nid;
     return {
       id: nid,
@@ -2823,7 +2982,7 @@ function insertTemplate(tpl: UserTemplate) {
     } as Node;
   });
   const newEdges = tpl.edges.map((e, i) => ({
-    id: `edge_${t}_${i}`,
+    id: `edge_${ts}_${i}`,
     source: idMap[e.source],
     target: idMap[e.target],
     sourceHandle: e.sourceHandle,
@@ -2832,16 +2991,16 @@ function insertTemplate(tpl: UserTemplate) {
   }));
   addNodes(newNodes);
   newEdges.forEach((ed) => addEdges(ed));
-  ElMessage.success(`已插入模板「${tpl.name}」（${newNodes.length} 个节点）`);
+  ElMessage.success(t("ai_workflow.wf_inserted_tpl", { name: tpl.name, count: newNodes.length }));
 }
 
 function autoLayout() {
   if (nodes.value.length === 0) {
-    ElMessage.warning("画布中没有节点");
+    ElMessage.warning(t("ai_workflow.wf_no_nodes"));
     return;
   }
   if (nodes.value.some((n) => n.type === "group")) {
-    ElMessage.warning("存在分组，自动布局可能打乱分组关系，请手动调整");
+    ElMessage.warning(t("ai_workflow.wf_group_layout_warn"));
     return;
   }
   const g = new dagre.graphlib.Graph();
@@ -2884,7 +3043,7 @@ function buildGraph() {
 const importFileRef = ref<HTMLInputElement>();
 function handleExport() {
   const data = {
-    name: formData.name || "未命名工作流",
+    name: formData.name || t("ai_workflow.wf_unnamed_wf"),
     description: formData.description,
     graph: buildGraph(),
   };
@@ -2895,7 +3054,7 @@ function handleExport() {
   a.download = `${(formData.name || "workflow").replace(/[\\/:*?"<>|]/g, "_")}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  ElMessage.success("已导出工作流 JSON");
+  ElMessage.success(t("ai_workflow.wf_exported_json"));
 }
 function triggerImport() {
   importFileRef.value?.click();
@@ -2904,32 +3063,35 @@ function triggerImport() {
 // 导出为可执行文档（Markdown 描述）
 function handleExportDoc() {
   const lines: string[] = [];
-  lines.push(`# 工作流：${formData.name || "未命名"}`);
-  if (formData.description) lines.push(`\n> 描述：${formData.description}`);
+  lines.push(t("ai_workflow.wf_doc_title", { name: formData.name || t("ai_workflow.wf_unnamed") }));
+  if (formData.description)
+    lines.push(t("ai_workflow.wf_doc_desc", { desc: formData.description }));
   lines.push("");
-  lines.push("## 节点");
+  lines.push(t("ai_workflow.wf_doc_nodes"));
   lines.push("");
-  lines.push("| # | 类型 | 名称 | 输出变量 |");
+  lines.push(t("ai_workflow.wf_doc_cols"));
   lines.push("| --- | --- | --- | --- |");
   nodes.value.forEach((n, i) => {
     lines.push(
-      `| ${i + 1} | ${nodeDefOf(n.type || "llm").label} | ${n.data?.note || n.data?.title || "-"} | ${n.data?.output_variable || "-"} |`
+      `| ${i + 1} | ${t(`ai_workflow.node_${nodeDefOf(n.type || "llm").labelKey}`)} | ${n.data?.note || n.data?.title || "-"} | ${n.data?.output_variable || "-"} |`
     );
   });
   lines.push("");
-  lines.push("## 连线");
+  lines.push(t("ai_workflow.wf_doc_edges"));
   lines.push("");
   edges.value.forEach((e) => {
     const s = nodes.value.find((n) => n.id === e.source);
-    const t = nodes.value.find((n) => n.id === e.target);
+    const tgt = nodes.value.find((n) => n.id === e.target);
     lines.push(
-      `- ${nodeDefOf(s?.type || "llm").label} → ${nodeDefOf(t?.type || "llm").label}${e.sourceHandle ? `（${e.sourceHandle}）` : ""}`
+      `- ${t(`ai_workflow.node_${nodeDefOf(s?.type || "llm").labelKey}`)} → ${t(`ai_workflow.node_${nodeDefOf(tgt?.type || "llm").labelKey}`)}${e.sourceHandle ? `（${e.sourceHandle}）` : ""}`
     );
   });
   lines.push("");
-  lines.push("## 执行概要");
+  lines.push(t("ai_workflow.wf_doc_summary"));
   lines.push("");
-  lines.push(`- 节点数：${nodes.value.length}，连线数：${edges.value.length}`);
+  lines.push(
+    t("ai_workflow.wf_doc_node_count", { nodes: nodes.value.length, edges: edges.value.length })
+  );
   const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -2937,7 +3099,7 @@ function handleExportDoc() {
   a.download = `${(formData.name || "workflow").replace(/[\\/:*?"<>|]/g, "_")}.md`;
   a.click();
   URL.revokeObjectURL(url);
-  ElMessage.success("已导出工作流文档");
+  ElMessage.success(t("ai_workflow.wf_exported_doc"));
 }
 async function onImportFileChange(e: Event) {
   const input = e.target as HTMLInputElement;
@@ -2948,25 +3110,29 @@ async function onImportFileChange(e: Event) {
   try {
     parsed = JSON.parse(await file.text());
   } catch {
-    ElMessage.error("文件不是有效的 JSON");
+    ElMessage.error(t("ai_workflow.wf_import_invalid"));
     return;
   }
   const graph = parsed?.graph || parsed;
   const inodes = (graph?.nodes || []) as any[];
   const iedges = (graph?.edges || []) as any[];
   if (!Array.isArray(inodes)) {
-    ElMessage.error("JSON 中缺少 nodes 数组");
+    ElMessage.error(t("ai_workflow.wf_missing_nodes"));
     return;
   }
   await ElMessageBox.confirm(
-    `将导入 ${inodes.length} 个节点、${iedges.length} 条连线，并替换当前画布内容，此操作不可恢复。是否继续？`,
-    "导入工作流",
-    { confirmButtonText: "导入", cancelButtonText: "取消", type: "warning" }
+    t("ai_workflow.wf_import_confirm", { nodes: inodes.length, edges: iedges.length }),
+    t("ai_workflow.wf_import_title"),
+    {
+      confirmButtonText: t("ai_workflow.wf_import"),
+      cancelButtonText: t("ai_workflow.wf_cancel"),
+      type: "warning",
+    }
   );
   pushHistory();
-  const t = Date.now();
+  const ts = Date.now();
   nodes.value = inodes.map((n: any, i: number) => ({
-    id: n.id || `imp_${t}_${i}`,
+    id: n.id || `imp_${ts}_${i}`,
     type: n.type || "llm",
     position: { x: n.x ?? 40, y: n.y ?? 40 * (i + 1) },
     data: { ...(n.data || {}) },
@@ -2974,7 +3140,7 @@ async function onImportFileChange(e: Event) {
     ...(n.type === "group" ? { width: n.data?.width ?? 640, height: n.data?.height ?? 420 } : {}),
   })) as Node[];
   edges.value = iedges.map((e: any) => ({
-    id: e.id || `imp_${t}_e${Math.random().toString(36).slice(2)}`,
+    id: e.id || `imp_${ts}_e${Math.random().toString(36).slice(2)}`,
     source: e.source,
     target: e.target,
     sourceHandle: e.sourceHandle || undefined,
@@ -2983,18 +3149,18 @@ async function onImportFileChange(e: Event) {
   if (parsed?.description && !formData.description.trim())
     formData.description = parsed.description;
   selectedNode.value = undefined;
-  ElMessage.success(`已导入工作流，共 ${inodes.length} 个节点`);
+  ElMessage.success(t("ai_workflow.wf_imported", { count: inodes.length }));
 }
 
 async function handleSave() {
   if (!formData.name) {
-    ElMessage.warning("请填写工作流名称");
+    ElMessage.warning(t("ai_workflow.wf_enter_name"));
     return;
   }
   const hasStart = nodes.value.some((n) => n.type === "start");
   const hasEnd = nodes.value.some((n) => n.type === "end");
   if (!hasStart || !hasEnd) {
-    ElMessage.warning("工作流需包含「开始」与「结束」节点");
+    ElMessage.warning(t("ai_workflow.wf_need_start_end"));
     return;
   }
   saving.value = true;
@@ -3015,11 +3181,11 @@ async function handleSave() {
       });
       workflowId.value = res.data?.data?.id;
     }
-    ElMessage.success("保存成功");
+    ElMessage.success(t("ai_workflow.wf_save_success"));
     emit("refresh");
     dialogVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败");
+    ElMessage.error(e?.message || t("ai_workflow.wf_save_fail"));
   } finally {
     saving.value = false;
   }
@@ -3049,7 +3215,7 @@ async function sendStep() {
     await handleSave();
     if (!workflowId.value) return;
   }
-  const text = runInput.value.trim() || "继续";
+  const text = runInput.value.trim() || t("ai_workflow.wf_continue");
   const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
   const msg = reactive<ChatMsg>({
     id: ++chatSeq,
@@ -3075,7 +3241,7 @@ async function sendStep() {
       }),
     });
     if (!resp.ok || !resp.body) {
-      msg.error = `请求失败：${resp.status}`;
+      msg.error = t("ai_workflow.wf_request_fail_status", { status: resp.status });
       return;
     }
     await readUiStream(resp, (obj) => {
@@ -3086,13 +3252,13 @@ async function sendStep() {
         scrollRunBottom();
       } else if (obj.type === "data-step") {
         stepRunId.value = obj.data?.run_id || stepRunId.value;
-        if (obj.data?.done) msg.content = msg.content || "(已执行完毕)";
+        if (obj.data?.done) msg.content = msg.content || t("ai_workflow.wf_exec_done");
       } else if (obj.type === "error") {
-        msg.error = obj.errorText || obj.message || "步骤失败";
+        msg.error = obj.errorText || obj.message || t("ai_workflow.wf_step_failed");
       }
     });
   } catch (e: any) {
-    msg.error = `步骤失败：${e?.message || e}`;
+    msg.error = t("ai_workflow.wf_step_failed_detail", { message: e?.message || e });
   } finally {
     msg.running = false;
     running.value = false;
@@ -3130,7 +3296,7 @@ async function readUiStream(resp: Response, onFrame: (obj: any) => void) {
 async function sendChat() {
   const text = runInput.value.trim();
   if (!text) {
-    ElMessage.warning("请输入消息");
+    ElMessage.warning(t("ai_workflow.wf_enter_msg"));
     return;
   }
   if (!workflowId.value) {
@@ -3179,7 +3345,7 @@ async function sendChat() {
       }),
     });
     if (!resp.ok || !resp.body) {
-      msg.error = `请求失败：${resp.status}`;
+      msg.error = t("ai_workflow.wf_request_fail_status", { status: resp.status });
       return;
     }
     await readUiStream(resp, (obj) => {
@@ -3210,7 +3376,7 @@ async function sendChat() {
       msg.cancelled = true;
       msg.running = false;
     } else {
-      msg.error = `运行失败：${e?.message || e}`;
+      msg.error = t("ai_workflow.wf_run_failed_detail", { message: e?.message || e });
     }
   } finally {
     runAbort = null;
@@ -3219,7 +3385,12 @@ async function sendChat() {
     running.value = false;
     scrollRunBottom();
     if (msg.error) {
-      ElNotification({ title: "运行失败", message: msg.error, type: "warning", duration: 4500 });
+      ElNotification({
+        title: t("ai_workflow.wf_run_failed"),
+        message: msg.error,
+        type: "warning",
+        duration: 4500,
+      });
     }
   }
 }
@@ -3237,11 +3408,11 @@ async function waitRunLogId(timeoutMs: number): Promise<number | null> {
 
 async function stopRun() {
   try {
-    await ElMessageBox.confirm(
-      "将立即中断本次运行（当前节点会被打断），本次运行会记为「已取消」。是否继续？",
-      "停止运行",
-      { confirmButtonText: "停止运行", cancelButtonText: "继续运行", type: "warning" }
-    );
+    await ElMessageBox.confirm(t("ai_workflow.wf_stop_confirm"), t("ai_workflow.wf_stop_title"), {
+      confirmButtonText: t("ai_workflow.wf_stop_run"),
+      cancelButtonText: t("ai_workflow.wf_continue_run"),
+      type: "warning",
+    });
   } catch {
     return; // 用户取消
   }
@@ -3261,19 +3432,19 @@ async function stopRun() {
   if (logId) {
     try {
       await cancelAiWorkflowRun(logId);
-      ElMessage.info("已请求停止运行");
+      ElMessage.info(t("ai_workflow.wf_stop_requested"));
       // 兜底：服务端若 3 秒内仍未收尾，就断开连接（不再干等）
       window.setTimeout(() => {
         if (running.value) runAbort?.abort();
       }, 3000);
     } catch (e: any) {
-      ElMessage.warning(`取消请求失败：${e?.message || e}`);
+      ElMessage.warning(t("ai_workflow.wf_cancel_fail", { message: e?.message || e }));
       runAbort?.abort();
     }
   } else {
     // 拿不到运行记录：只能断开连接（服务端能否停下取决于断开是否传播）
     runAbort?.abort();
-    ElMessage.warning("未能定位本次运行，已断开连接");
+    ElMessage.warning(t("ai_workflow.wf_no_run_found"));
   }
 }
 
@@ -3296,7 +3467,7 @@ async function handleApprove(decision: "approve" | "reject") {
       body: JSON.stringify({ run_id: runId, decision }),
     });
     if (!resp.ok || !resp.body) {
-      am.error = `审批请求失败：${resp.status}`;
+      am.error = t("ai_workflow.wf_request_fail_status", { status: resp.status });
       return;
     }
     await readUiStream(resp, (obj) => {
@@ -3306,10 +3477,10 @@ async function handleApprove(decision: "approve" | "reject") {
         pushNodeTrace(am.trace, obj);
       } else if (obj.type === "data-finish") am.content = dataOf(obj).reply || am.content;
       else if (obj.type === "error")
-        am.error = obj.errorText || obj.msg || obj.message || "审批失败";
+        am.error = obj.errorText || obj.msg || obj.message || t("ai_workflow.wf_approval_fail");
     });
   } catch (e: any) {
-    am.error = `审批续跑失败：${e?.message || e}`;
+    am.error = t("ai_workflow.wf_approval_resume_fail", { message: e?.message || e });
   } finally {
     am.running = false;
     running.value = false;

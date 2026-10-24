@@ -1,11 +1,11 @@
 <template>
-  <el-row v-loading="previewLoading" element-loading-text="正在加载预览…">
+  <el-row v-loading="previewLoading" :element-loading-text="t('generator.loadingPreview')">
     <el-col v-if="!previewLoading && isTreeEmpty" :span="24">
       <el-empty>
         <template #description>
-          <p class="mb-1 font-medium">暂无预览文件</p>
+          <p class="mb-1 font-medium">{{ t("generator.noPreviewFiles") }}</p>
           <p class="gencode-preview-empty-tip">
-            若刚保存过仍为空，可将「预览范围」改为「全部」；或返回上一步检查字段与主子表后重新进入。
+            {{ t("generator.previewEmptyTip") }}
           </p>
         </template>
       </el-empty>
@@ -13,13 +13,13 @@
     <template v-else>
       <el-col :span="24" class="mb-2">
         <div class="flex-y-center gap-3">
-          <span class="text-sm color-#909399">预览范围</span>
+          <span class="text-sm color-#909399">{{ t("generator.previewScope") }}</span>
           <el-radio-group v-model="previewScope" size="small">
-            <el-radio-button value="all">全部</el-radio-button>
-            <el-radio-button value="frontend">前端</el-radio-button>
-            <el-radio-button value="backend">后端</el-radio-button>
+            <el-radio-button value="all">{{ t("generator.all") }}</el-radio-button>
+            <el-radio-button value="frontend">{{ t("generator.frontend") }}</el-radio-button>
+            <el-radio-button value="backend">{{ t("generator.backend") }}</el-radio-button>
           </el-radio-group>
-          <span class="ml-3 text-sm color-#909399">类型</span>
+          <span class="ml-3 text-sm color-#909399">{{ t("generator.typeLabel") }}</span>
           <el-checkbox-group v-model="previewTypes" size="small">
             <el-checkbox-button v-for="t in previewTypeOptions" :key="t" :value="t">
               {{ t }}
@@ -51,7 +51,7 @@
               <el-icon>
                 <CopyDocument />
               </el-icon>
-              复制代码
+              {{ t("generator.copyCode") }}
             </el-link>
           </div>
           <CodeEditor
@@ -70,11 +70,14 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import CodeEditor from "@/components/CodeEditor/index.vue";
 import { CopyDocument } from "@element-plus/icons-vue";
 import type { TreeNode } from "../types";
 
 defineOptions({ name: "GenPreviewStep" });
+
+const { t } = useI18n();
 
 const previewScope = defineModel<"all" | "frontend" | "backend">("previewScope", {
   required: true,

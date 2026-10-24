@@ -44,7 +44,9 @@
         </el-button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item icon="Check" @click="$emit('more', '0')">{{ t("common.batchEnable") }}</el-dropdown-item>
+            <el-dropdown-item icon="Check" @click="$emit('more', '0')">
+              {{ t("common.batchEnable") }}
+            </el-dropdown-item>
             <el-dropdown-item icon="CircleClose" @click="$emit('more', '1')">
               {{ t("common.batchDisable") }}
             </el-dropdown-item>

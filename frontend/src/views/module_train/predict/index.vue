@@ -31,7 +31,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无预测任务" />
+              <el-empty :image-size="80" :description="t('train.predictNoData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -42,7 +42,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('train.serial')"
               width="60"
             >
               <template #default="scope">
@@ -52,7 +52,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'model_version')?.show"
               key="model_version"
-              label="模型版本"
+              :label="t('train.modelVersion')"
               prop="model_version"
               min-width="150"
               show-overflow-tooltip
@@ -64,7 +64,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'framework')?.show"
               key="framework"
-              label="框架"
+              :label="t('train.framework')"
               prop="framework"
               width="100"
             >
@@ -86,18 +86,20 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'source_type')?.show"
               key="source_type"
-              label="图片来源"
+              :label="t('train.sourceType')"
               prop="source_type"
               width="120"
             >
               <template #default="scope">
-                {{ scope.row.source_type === "dataset" ? "数据集" : "上传图片" }}
+                {{
+                  scope.row.source_type === "dataset" ? t("train.dataset") : t("train.uploadImage")
+                }}
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('train.status')"
               prop="status"
               width="110"
               align="center"
@@ -111,7 +113,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'progress')?.show"
               key="progress"
-              label="进度"
+              :label="t('train.progress')"
               prop="progress"
               width="180"
             >
@@ -133,14 +135,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="t('train.createdTime')"
               prop="created_time"
               min-width="170"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('train.action')"
               align="center"
               min-width="240"
             >
@@ -154,7 +156,7 @@
                   icon="VideoPlay"
                   @click="handleStart(scope.row.id)"
                 >
-                  开始预测
+                  {{ t("train.startPredict") }}
                 </el-button>
                 <el-button
                   v-if="scope.row.status === 'running'"
@@ -165,7 +167,7 @@
                   icon="VideoPause"
                   @click="handleStop(scope.row.id)"
                 >
-                  停止
+                  {{ t("train.stop") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_train:predict:query']"
@@ -174,7 +176,7 @@
                   icon="Search"
                   @click="router.push('/train/predict/' + scope.row.id)"
                 >
-                  详情
+                  {{ t("train.detail") }}
                 </el-button>
                 <el-button
                   v-if="scope.row.result_zip_path"
@@ -185,12 +187,12 @@
                   icon="Download"
                   @click="downloadZip(scope.row.result_zip_path)"
                 >
-                  下载
+                  {{ t("train.download") }}
                 </el-button>
                 <el-popconfirm
-                  title="确定删除该预测？"
-                  confirm-button-text="删除"
-                  cancel-button-text="取消"
+                  :title="t('train.predictDeleteConfirm')"
+                  :confirm-button-text="t('train.delete')"
+                  :cancel-button-text="t('train.cancel')"
                   width="180"
                   @confirm="handleDelete([scope.row.id])"
                 >
@@ -202,7 +204,7 @@
                       link
                       icon="Delete"
                     >
-                      删除
+                      {{ t("train.delete") }}
                     </el-button>
                   </template>
                 </el-popconfirm>
@@ -214,14 +216,19 @@
     </PageContent>
 
     <!-- Create Dialog -->
-    <EnhancedDialog v-model="showCreateDialog" title="创建预测任务" append-to-body width="600px">
+    <EnhancedDialog
+      v-model="showCreateDialog"
+      :title="t('train.predictCreateTitle')"
+      append-to-body
+      width="600px"
+    >
       <el-form label-width="100px">
-        <el-form-item label="模型版本" required>
+        <el-form-item :label="t('train.modelVersion')" required>
           <el-select
             v-model="createForm.modelId"
             filterable
             style="width: 100%"
-            placeholder="选择模型版本"
+            :placeholder="t('train.selectModelVersion')"
             @change="onPredictModelChange"
           >
             <el-option
@@ -233,38 +240,42 @@
           </el-select>
         </el-form-item>
         <template v-if="selectedModelFramework === 'paddlex'">
-          <el-form-item label="任务类型">
+          <el-form-item :label="t('train.taskType')">
             <el-select v-model="createForm.hyperparams.mode" style="width: 100%">
-              <el-option label="文本检测 (det)" value="det" />
-              <el-option label="文本识别 (rec)" value="rec" />
+              <el-option :label="t('train.taskTypeDet')" value="det" />
+              <el-option :label="t('train.taskTypeRec')" value="rec" />
             </el-select>
           </el-form-item>
-          <el-form-item label="模型规格">
+          <el-form-item :label="t('train.modelSize')">
             <el-select v-model="createForm.hyperparams.model_size" style="width: 100%">
-              <el-option label="tiny（轻量）" value="tiny" />
-              <el-option label="small（推荐）" value="small" />
-              <el-option label="medium（高精度）" value="medium" />
+              <el-option :label="t('train.modelSizeTiny')" value="tiny" />
+              <el-option :label="t('train.modelSizeSmall')" value="small" />
+              <el-option :label="t('train.modelSizeMedium')" value="medium" />
             </el-select>
           </el-form-item>
         </template>
-        <el-form-item label="图片来源">
+        <el-form-item :label="t('train.sourceType')">
           <el-radio-group v-model="createForm.sourceType">
-            <el-radio value="dataset">从数据集</el-radio>
-            <el-radio value="upload">上传图片</el-radio>
+            <el-radio value="dataset">{{ t("train.fromDataset") }}</el-radio>
+            <el-radio value="upload">{{ t("train.uploadImage") }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="createForm.sourceType === 'dataset'" label="数据集" required>
+        <el-form-item
+          v-if="createForm.sourceType === 'dataset'"
+          :label="t('train.dataset')"
+          required
+        >
           <el-select
             v-model="createForm.sourceDatasetId"
             filterable
             style="width: 100%"
-            placeholder="选择数据集"
+            :placeholder="t('train.selectDataset')"
             @visible-change="(v: boolean) => v && loadDatasets()"
           >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="createForm.sourceType === 'upload'" label="图片" required>
+        <el-form-item v-if="createForm.sourceType === 'upload'" :label="t('train.image')" required>
           <el-upload
             ref="uploadRef"
             list-type="picture-card"
@@ -291,8 +302,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="handleCreate">创建</el-button>
+        <el-button @click="showCreateDialog = false">{{ t("train.cancel") }}</el-button>
+        <el-button type="primary" :loading="creating" @click="handleCreate">
+          {{ t("train.create") }}
+        </el-button>
       </template>
     </EnhancedDialog>
   </div>
@@ -301,6 +314,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
@@ -321,6 +335,7 @@ interface TablePageQuery {
 
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const uploadRef = ref<any>(null);
 
@@ -402,11 +417,11 @@ function statusLabel(s: string) {
   return (
     (
       {
-        pending: "待开始",
-        running: "预测中",
-        success: "已完成",
-        failed: "失败",
-        cancelled: "已取消",
+        pending: t("train.statusPending"),
+        running: t("train.predictStatusRunning"),
+        success: t("train.statusSuccess"),
+        failed: t("train.statusFailed"),
+        cancelled: t("train.statusCancelled"),
       } as any
     )[s] || s
   );
@@ -418,15 +433,15 @@ function onUploadChange(_file: any, fileList: any[]) {
 
 async function handleCreate() {
   if (!createForm.modelId) {
-    ElMessage.warning("请选择模型版本");
+    ElMessage.warning(t("train.warnSelectModelVersion"));
     return;
   }
   if (createForm.sourceType === "dataset" && !createForm.sourceDatasetId) {
-    ElMessage.warning("请选择数据集");
+    ElMessage.warning(t("train.warnSelectDataset"));
     return;
   }
   if (createForm.sourceType === "upload" && pendingFiles.value.length === 0) {
-    ElMessage.warning("请上传图片");
+    ElMessage.warning(t("train.warnUploadImage"));
     return;
   }
 
@@ -446,7 +461,7 @@ async function handleCreate() {
       source_images: sourceImages,
       hyperparams: createForm.hyperparams,
     });
-    ElMessage.success("保存成功");
+    ElMessage.success(t("train.saveSuccess"));
     showCreateDialog.value = false;
     createForm.modelId = null;
     createForm.sourceType = "dataset";
@@ -470,9 +485,11 @@ async function handleCreate() {
 
 async function handleStart(id: number) {
   try {
-    await ElMessageBox.confirm("确定开始预测？", "提示", { type: "info" });
+    await ElMessageBox.confirm(t("train.startPredictConfirm"), t("train.tipTitle"), {
+      type: "info",
+    });
     await TrainAPI.startPredict(id);
-    ElMessage.success("已启动");
+    ElMessage.success(t("train.started"));
     refreshList();
   } catch {
     /* 提示由请求拦截器统一处理 */
@@ -481,9 +498,11 @@ async function handleStart(id: number) {
 
 async function handleStop(id: number) {
   try {
-    await ElMessageBox.confirm("确定停止预测？", "提示", { type: "warning" });
+    await ElMessageBox.confirm(t("train.stopPredictConfirm"), t("train.tipTitle"), {
+      type: "warning",
+    });
     await TrainAPI.stopPredict(id);
-    ElMessage.success("已停止");
+    ElMessage.success(t("train.stopped"));
     refreshList();
   } catch {
     /* 提示由请求拦截器统一处理 */
@@ -496,7 +515,7 @@ function downloadZip(url: string) {
 
 async function handleDelete(ids: number[]) {
   await TrainAPI.deletePredict(ids);
-  ElMessage.success("删除成功");
+  ElMessage.success(t("train.deleteSuccess"));
   refreshList();
 }
 
@@ -509,29 +528,37 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "模型名称",
+      label: t("train.modelName"),
       type: "input",
-      attrs: { placeholder: "请输入模型名称", clearable: true },
+      attrs: { placeholder: t("train.modelNamePlaceholder"), clearable: true },
     },
     {
       prop: "framework",
-      label: "框架",
+      label: t("train.framework"),
       type: "select",
-      options: [{ label: "TorchKiln（自研）", value: "torchkiln" }],
-      attrs: { placeholder: "请选择框架", clearable: true, style: { width: "167.5px" } },
+      options: [{ label: t("train.torchKilnSelf"), value: "torchkiln" }],
+      attrs: {
+        placeholder: t("train.frameworkPlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("train.status"),
       type: "select",
       options: [
-        { label: "待开始", value: "pending" },
-        { label: "预测中", value: "running" },
-        { label: "已完成", value: "success" },
-        { label: "失败", value: "failed" },
-        { label: "已取消", value: "cancelled" },
+        { label: t("train.statusPending"), value: "pending" },
+        { label: t("train.predictStatusRunning"), value: "running" },
+        { label: t("train.statusSuccess"), value: "success" },
+        { label: t("train.statusFailed"), value: "failed" },
+        { label: t("train.statusCancelled"), value: "cancelled" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("train.statusPlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
@@ -543,15 +570,15 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "model_version", label: "模型版本", show: true },
-  { prop: "framework", label: "框架", show: true },
-  { prop: "source_type", label: "图片来源", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "progress", label: "进度", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("train.selection"), show: true },
+  { prop: "index", label: t("train.serial"), show: true },
+  { prop: "model_version", label: t("train.modelVersion"), show: true },
+  { prop: "framework", label: t("train.framework"), show: true },
+  { prop: "source_type", label: t("train.sourceType"), show: true },
+  { prop: "status", label: t("train.status"), show: true },
+  { prop: "progress", label: t("train.progress"), show: true },
+  { prop: "created_time", label: t("train.createdTime"), show: true },
+  { prop: "operation", label: t("train.action"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({

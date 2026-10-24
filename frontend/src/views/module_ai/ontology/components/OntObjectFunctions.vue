@@ -5,7 +5,7 @@
 <template>
   <section class="ont-sec">
     <div class="ont-sec__head">
-      <span class="ont-sec__title">本体计算函数</span>
+      <span class="ont-sec__title">{{ i18nT("ai_ontology.ontologyComputeFunctions") }}</span>
       <el-tag size="small" type="info" effect="plain">{{ list.length }}</el-tag>
       <el-button
         class="ont-sec__op"
@@ -14,53 +14,78 @@
         :icon="Plus"
         @click="openFuncEdit()"
       >
-        新建函数
+        {{ i18nT("ai_ontology.newFunction") }}
       </el-button>
     </div>
     <el-alert
       type="info"
       :closable="false"
       class="ont-obj__note"
-      title="函数会作为 Agent 的能力（工具）暴露给 AI 使用。改动进入待保存列表，点「保存」后生效。"
+      :title="i18nT('ai_ontology.fnExposedHint')"
     />
     <el-table :data="list" size="small" border max-height="460" class="ont-fn__table" stripe>
       <template #empty>
-        <el-empty :image-size="50" description="暂无函数，点右上角「新建函数」" />
+        <el-empty
+          :image-size="50"
+          :description="i18nT('ai_ontology.noFunctionsClickNewFunctionAtTopRight')"
+        />
       </template>
-      <el-table-column prop="name" label="函数名" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="code" label="编码" min-width="130" show-overflow-tooltip />
-      <el-table-column label="形态" width="110">
+      <el-table-column
+        prop="name"
+        :label="i18nT('ai_ontology.functionName')"
+        min-width="140"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        prop="code"
+        :label="i18nT('ai_ontology.code')"
+        min-width="130"
+        show-overflow-tooltip
+      />
+      <el-table-column :label="i18nT('ai_ontology.shape')" width="110">
         <template #default="{ row }">
           <el-tag size="small" effect="plain">{{ fnKindLabel(row.kind) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="description" label="描述" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="200" align="center">
+      <el-table-column
+        prop="description"
+        :label="i18nT('ai_ontology.description')"
+        min-width="160"
+        show-overflow-tooltip
+      />
+      <el-table-column :label="i18nT('ai_ontology.operations')" width="200" align="center">
         <template #default="{ row }">
           <el-button icon="VideoPlay" link type="primary" size="small" @click="openFnRun(row)">
-            运行
+            {{ i18nT("ai_ontology.run") }}
           </el-button>
           <el-button icon="edit" link type="primary" size="small" @click="openFuncEdit(row)">
-            编辑
+            {{ i18nT("ai_ontology.edit") }}
           </el-button>
-          <el-button link type="danger" size="small" @click="removeFunc(row)">删</el-button>
+          <el-button link type="danger" size="small" @click="removeFunc(row)">
+            {{ i18nT("ai_ontology.delete") }}
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <!-- 新建 / 编辑函数 -->
-    <el-dialog v-model="funcDialog" title="本体计算函数" width="900px" append-to-body>
+    <el-dialog
+      v-model="funcDialog"
+      :title="i18nT('ai_ontology.ontologyComputeFunctions')"
+      width="900px"
+      append-to-body
+    >
       <el-form :model="funcForm" label-width="140px">
-        <el-form-item label="函数名" required>
-          <el-input v-model="funcForm.name" placeholder="如 摄像机在线率（%）" />
+        <el-form-item :label="i18nT('ai_ontology.functionName')" required>
+          <el-input v-model="funcForm.name" :placeholder="i18nT('ai_ontology.fnNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="编码" required>
+        <el-form-item :label="i18nT('ai_ontology.code')" required>
           <el-input v-model="funcForm.code" placeholder="cam_online_rate" />
         </el-form-item>
-        <el-form-item label="所属对象类型" required>
+        <el-form-item :label="i18nT('ai_ontology.owningObjectType')" required>
           <el-tag size="small" type="primary" effect="dark">{{ objectLabel(props.code) }}</el-tag>
         </el-form-item>
-        <el-form-item label="函数形态" required>
+        <el-form-item :label="i18nT('ai_ontology.functionShape')" required>
           <el-radio-group v-model="funcForm.kind">
             <el-radio-button v-for="k in FN_KINDS" :key="k.value" :value="k.value">
               {{ k.label }}
@@ -69,22 +94,25 @@
           <div class="ont-hint">{{ fnKindHint }}</div>
         </el-form-item>
 
-        <el-form-item v-if="funcForm.kind === 'expression'" label="表达式">
+        <el-form-item
+          v-if="funcForm.kind === 'expression'"
+          :label="i18nT('ai_ontology.expression')"
+        >
           <el-input
             v-model="funcForm.expr"
             type="textarea"
             :rows="2"
-            placeholder="如 round(percent(online_count, total_count), 1)"
+            :placeholder="i18nT('ai_ontology.fnExprPlaceholder')"
           />
           <div class="ont-hint">
-            支持 + - * / 与比较、三元表达式，以及 {{ fnBuiltins.length }} 个内置函数。
+            {{ i18nT("ai_ontology.exprBuiltinsHint", { count: fnBuiltins.length }) }}
             <el-button
               :icon="showBuiltins ? 'ArrowUp' : 'View'"
               type="primary"
               link
               @click="showBuiltins = !showBuiltins"
             >
-              {{ showBuiltins ? "收起" : "查看内置函数" }}
+              {{ showBuiltins ? i18nT("ai_ontology.collapse") : i18nT("ai_ontology.viewBuiltins") }}
             </el-button>
           </div>
           <div v-if="showBuiltins" class="ont-builtins">
@@ -100,7 +128,7 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="入参（JSON）">
+        <el-form-item :label="i18nT('ai_ontology.inputsJson')">
           <el-input
             v-model="funcForm.parametersText"
             type="textarea"
@@ -108,25 +136,24 @@
             :placeholder="fnParamsPlaceholder"
           />
           <div class="ont-hint">
-            声明后生成 Agent 工具入参。
-            <code>source</code>
-            可为 parameter（调用方传入）、 object_property（取对象属性，需填
-            <code>object_property</code>
-            ）、static、 current_user、current_time。
+            {{ i18nT("ai_ontology.paramsSourceHint") }}
           </div>
         </el-form-item>
 
-        <el-form-item label="出参（JSON）">
+        <el-form-item :label="i18nT('ai_ontology.outputsJson')">
           <el-input
             v-model="funcForm.outputsText"
             type="textarea"
             :rows="2"
             placeholder='[{"key":"rate","name":"在线率(%)","type":"number"}]'
           />
-          <div class="ont-hint">声明返回值结构，会写进 Agent 工具说明</div>
+          <div class="ont-hint">{{ i18nT("ai_ontology.outputsHint") }}</div>
         </el-form-item>
 
-        <el-form-item v-if="funcForm.kind !== 'expression'" label="形态配置（JSON）">
+        <el-form-item
+          v-if="funcForm.kind !== 'expression'"
+          :label="i18nT('ai_ontology.configJson')"
+        >
           <el-input
             v-model="funcForm.configText"
             type="textarea"
@@ -136,7 +163,7 @@
           <div class="ont-hint">{{ fnConfigHint }}</div>
         </el-form-item>
 
-        <el-form-item label="描述">
+        <el-form-item :label="i18nT('ai_ontology.description')">
           <el-input v-model="funcForm.description" type="textarea" :rows="2" />
         </el-form-item>
         <el-form-item label="Tool description">
@@ -144,23 +171,25 @@
             v-model="funcForm.tool_description"
             type="textarea"
             :rows="2"
-            placeholder="给 AI 看的工具描述：这个函数算什么、什么时候该调用。留空则回退到「描述」"
+            :placeholder="i18nT('ai_ontology.fnToolDescriptionPlaceholder')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="funcDialog = false">取消</el-button>
+        <el-button @click="funcDialog = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button v-hasPerm="'module_ai:ontology:edit'" :loading="fnChecking" @click="checkFunc">
-          校验定义
+          {{ i18nT("ai_ontology.validateDefinition") }}
         </el-button>
-        <el-button type="primary" :loading="savingObj" @click="saveFunc">保存</el-button>
+        <el-button type="primary" :loading="savingObj" @click="saveFunc">
+          {{ i18nT("ai_ontology.save") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 函数运行 / 试运行 -->
     <el-dialog
       v-model="fnRunDialog"
-      title="运行函数（不会写入任何数据）"
+      :title="i18nT('ai_ontology.runFunctionWritesNoData')"
       width="600px"
       append-to-body
     >
@@ -168,15 +197,23 @@
         type="info"
         :closable="false"
         class="ont-note"
-        :title="`函数：${fnRunTarget?.name || ''}（${fnKindLabel(fnRunTarget?.kind)}）`"
+        :title="
+          i18nT('ai_ontology.functionColonName', {
+            name: fnRunTarget?.name || '',
+            kind: fnKindLabel(fnRunTarget?.kind),
+          })
+        "
       />
       <el-form label-width="130px">
-        <el-form-item v-if="fnRunNeedsObjectKey" label="对象行 ID">
-          <el-input v-model="fnRunForm.object_key" placeholder="聚合/对象上下文的实例主键" />
+        <el-form-item v-if="fnRunNeedsObjectKey" :label="i18nT('ai_ontology.objectRowId')">
+          <el-input
+            v-model="fnRunForm.object_key"
+            :placeholder="i18nT('ai_ontology.fnAggObjectKeyPlaceholder')"
+          />
         </el-form-item>
         <el-form-item v-for="p in fnRunInputs" :key="p.key" :label="p.name || p.key">
           <el-input v-model="fnRunForm.args[p.key]" :placeholder="p.description || p.key" />
-          <div v-if="p.required" class="ont-hint">必填</div>
+          <div v-if="p.required" class="ont-hint">{{ i18nT("ai_ontology.required") }}</div>
         </el-form-item>
       </el-form>
       <el-alert
@@ -184,7 +221,7 @@
         type="info"
         :closable="false"
         class="ont-note"
-        title="该函数未声明入参，下面按表达式里的变量推断。建议到「编辑」里正式声明入参，这样 AI 调用时也能正确传值。"
+        :title="i18nT('ai_ontology.fnInferredParamsHint')"
       />
       <el-button
         v-hasPerm="'module_ai:ontology:edit'"
@@ -192,22 +229,26 @@
         :loading="fnRunning"
         @click="runFunc"
       >
-        运行
+        {{ i18nT("ai_ontology.run") }}
       </el-button>
       <template v-if="fnRunResult">
         <el-divider />
         <el-alert
           :type="fnRunResult.ok ? 'success' : 'error'"
           :closable="false"
-          :title="fnRunResult.ok ? '执行成功' : fnRunResult.msg || '执行失败'"
+          :title="
+            fnRunResult.ok
+              ? i18nT('ai_ontology.runSuccess')
+              : fnRunResult.msg || i18nT('ai_ontology.executeFailed')
+          "
         />
         <template v-if="fnRunResult.ok">
           <div class="ont-test__block">
-            <div class="ont-sec__title">返回值</div>
+            <div class="ont-sec__title">{{ i18nT("ai_ontology.returnValue") }}</div>
             <pre class="ont-run__out">{{ JSON.stringify(fnRunResult.value, null, 2) }}</pre>
           </div>
           <div class="ont-test__block">
-            <div class="ont-sec__title">实际入参</div>
+            <div class="ont-sec__title">{{ i18nT("ai_ontology.actualInputs") }}</div>
             <pre class="ont-run__out">{{ JSON.stringify(fnRunResult.inputs, null, 2) }}</pre>
           </div>
         </template>
@@ -217,11 +258,14 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
 import { checkOntFunction, getOntFunctionBuiltins, runOntFunction } from "@/api/module_ai/ontology";
 import { useOntologyData } from "../composables/useOntologyData";
+
+const { t: i18nT } = useI18n();
 
 const props = defineProps<{ code: string }>();
 
@@ -231,36 +275,50 @@ const list = computed(() => functionsOf(props.code));
 
 /* ---------------- 函数形态 ---------------- */
 const FN_KINDS = [
-  { value: "expression", label: "表达式" },
-  { value: "aggregate", label: "关联聚合" },
-  { value: "http", label: "外部服务" },
-  { value: "model", label: "模型调用" },
+  { value: "expression", label: i18nT("ai_ontology.expression") },
+  { value: "aggregate", label: i18nT("ai_ontology.relatedAggregate") },
+  { value: "http", label: i18nT("ai_ontology.externalService") },
+  { value: "model", label: i18nT("ai_ontology.modelCall") },
 ];
 function fnKindLabel(k: string) {
-  return FN_KINDS.find((x) => x.value === k)?.label || k || "表达式";
+  return FN_KINDS.find((x) => x.value === k)?.label || k || i18nT("ai_ontology.expression");
 }
 const fnKindHint = computed(() => {
   switch (funcForm.kind) {
     case "aggregate":
-      return "沿关系链在关联对象上聚合（count/sum/avg/min/max/first/last/collect_list/collect_set），需要对象主键作上下文";
+      return i18nT("ai_ontology.fnKindAggregateHint");
     case "http":
-      return "调用外部 REST API，按 result_path 从响应里取值";
+      return i18nT("ai_ontology.fnKindHttpHint");
     case "model":
-      return "调用平台已登记的模型（AI 管理 → 模型配置），把响应文本作为返回值";
+      return i18nT("ai_ontology.fnKindModelHint");
     default:
-      return "受控表达式：算术、比较、三元表达式 + 内置函数；无字段访问、无任意代码执行";
+      return i18nT("ai_ontology.fnKindExprHint");
   }
 });
 const fnParamsPlaceholder = computed(() => {
   switch (funcForm.kind) {
     case "aggregate":
-      return '[{"key":"object_key","name":"对象ID","type":"string","required":true}]';
+      return JSON.stringify([
+        { key: "object_key", name: i18nT("ai_ontology.objectId"), type: "string", required: true },
+      ]);
     case "http":
-      return '[{"key":"text","name":"文本","type":"string","required":true}]';
+      return JSON.stringify([
+        { key: "text", name: i18nT("ai_ontology.text"), type: "string", required: true },
+      ]);
     case "model":
-      return '[{"key":"text","name":"文本","type":"string","required":true}]';
+      return JSON.stringify([
+        { key: "text", name: i18nT("ai_ontology.text"), type: "string", required: true },
+      ]);
     default:
-      return '[{"key":"online_count","name":"在线路数","type":"number","required":true,"description":"当前在线摄像机数量"}]';
+      return JSON.stringify([
+        {
+          key: "online_count",
+          name: i18nT("ai_ontology.onlineCount"),
+          type: "number",
+          required: true,
+          description: i18nT("ai_ontology.currentOnlineCameras"),
+        },
+      ]);
   }
 });
 const fnConfigPlaceholder = computed(() => {
@@ -293,7 +351,12 @@ const fnConfigPlaceholder = computed(() => {
       );
     default:
       return JSON.stringify(
-        { model_id: 1, system: "你是简洁的助手", prompt: "概括：{{text}}", temperature: 0.2 },
+        {
+          model_id: 1,
+          system: i18nT("ai_ontology.youAreAConciseAssistant"),
+          prompt: i18nT("ai_ontology.summarizePrompt"),
+          temperature: 0.2,
+        },
         null,
         2
       );
@@ -301,10 +364,10 @@ const fnConfigPlaceholder = computed(() => {
 });
 const fnConfigHint = computed(() =>
   funcForm.kind === "aggregate"
-    ? "link_path 是关系 ID 数组（最多 3 层）；property 在 count 时可留空"
+    ? i18nT("ai_ontology.fnConfigHintAggregate")
     : funcForm.kind === "http"
-      ? "URL 必须是 http/https；body_template 支持 {{参数名}} 占位"
-      : "model_id 留空则用默认模型；prompt 支持 {{参数名}} 占位"
+      ? i18nT("ai_ontology.fnConfigHintHttp")
+      : i18nT("ai_ontology.fnConfigHintModel")
 );
 const fnBuiltins = ref<string[]>([]);
 const showBuiltins = ref(false);
@@ -344,9 +407,9 @@ function parseJsonList(text: string, label: string): any[] {
   try {
     v = JSON.parse(s);
   } catch {
-    throw new Error(`${label}不是合法 JSON`);
+    throw new Error(i18nT("ai_ontology.notValidJson", { label }));
   }
-  if (!Array.isArray(v)) throw new Error(`${label}必须是 JSON 数组`);
+  if (!Array.isArray(v)) throw new Error(i18nT("ai_ontology.mustBeJsonArray", { label }));
   return v;
 }
 
@@ -356,16 +419,17 @@ function funcPayload(): Record<string, any> | null {
   let outputs: any[] = [];
   let config: Record<string, any> = {};
   try {
-    parameters = parseJsonList(funcForm.parametersText, "入参");
-    outputs = parseJsonList(funcForm.outputsText, "出参");
+    parameters = parseJsonList(funcForm.parametersText, i18nT("ai_ontology.inputs"));
+    outputs = parseJsonList(funcForm.outputsText, i18nT("ai_ontology.outputs"));
     const raw = (funcForm.configText || "").trim();
     if (raw) {
       const v = JSON.parse(raw);
-      if (typeof v !== "object" || Array.isArray(v)) throw new Error("形态配置必须是 JSON 对象");
+      if (typeof v !== "object" || Array.isArray(v))
+        throw new Error(i18nT("ai_ontology.configMustBeJsonObject"));
       config = v;
     }
   } catch (e: any) {
-    ElMessage.error(e.message || "JSON 解析失败");
+    ElMessage.error(e.message || i18nT("ai_ontology.jsonParseFailed"));
     return null;
   }
   const payload: Record<string, any> = {};
@@ -387,7 +451,8 @@ function funcLocalErrors(payload: Record<string, any>): string[] {
     new Set<string>(((funcForm.expr as string) || "").match(/[A-Za-z_][A-Za-z0-9_]*/g) || [])
   );
   const missing = ids.filter((v) => !declared.includes(v) && !fnBuiltins.value.includes(v));
-  if (missing.length) errs.push(`表达式里的变量 ${missing.join("、")} 未在入参中声明`);
+  if (missing.length)
+    errs.push(i18nT("ai_ontology.exprVarsNotDeclared", { vars: missing.join("、") }));
   return errs;
 }
 
@@ -399,11 +464,15 @@ async function checkFunc() {
   try {
     const r = await checkOntFunction(payload);
     const errs = [...local, ...((r.data?.data?.errors as string[]) || [])];
-    if (!errs.length) ElMessage.success("定义正确");
+    if (!errs.length) ElMessage.success(i18nT("ai_ontology.definitionCorrect"));
     else
-      ElMessageBox.alert(errs.map((e: string) => `· ${e}`).join("<br/>"), "发现以下问题", {
-        dangerouslyUseHTMLString: true,
-      });
+      ElMessageBox.alert(
+        errs.map((e: string) => `· ${e}`).join("<br/>"),
+        i18nT("ai_ontology.foundTheFollowingIssues"),
+        {
+          dangerouslyUseHTMLString: true,
+        }
+      );
   } finally {
     fnChecking.value = false;
   }
@@ -412,7 +481,7 @@ async function checkFunc() {
 const savingObj = ref(false);
 async function saveFunc() {
   if (!funcForm.code?.trim() || !funcForm.name?.trim() || !funcForm.object_code)
-    return ElMessage.warning("请填函数名、编码与所属对象类型");
+    return ElMessage.warning(i18nT("ai_ontology.pleaseEnterFunctionNameCodeAndOwningObjectType"));
   const payload = funcPayload();
   if (!payload) return;
   const errs = funcLocalErrors(payload);
@@ -427,11 +496,20 @@ async function saveFunc() {
 }
 async function removeFunc(f: any) {
   await ElMessageBox.confirm(
-    `将删除函数「${f.name}」，引用它的智能体能力会失效。改动会先进入待保存列表，确认删除？`,
-    "删除函数",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    i18nT("ai_ontology.deleteFunctionConfirm", { name: f.name }),
+    i18nT("ai_ontology.deleteFunction"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
-  await stage("function", "delete", { id: f.id, code: f.code, name: f.name }, "已暂存删除");
+  await stage(
+    "function",
+    "delete",
+    { id: f.id, code: f.code, name: f.name },
+    i18nT("ai_ontology.deleteStaged")
+  );
   await reloadAll();
 }
 
@@ -485,7 +563,7 @@ async function runFunc() {
     });
     fnRunResult.value = r.data?.data || null;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "运行失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.runFailed"));
   } finally {
     fnRunning.value = false;
   }

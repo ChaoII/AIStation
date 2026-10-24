@@ -2,7 +2,7 @@
   <div class="app-container">
     <el-tabs type="border-card" class="cache-page-tabs">
       <!-- 监控信息 Tab -->
-      <el-tab-pane class="monitor" label="监控信息">
+      <el-tab-pane class="monitor" :label="t('monitor.cacheMonitorInfo')">
         <div class="monitor-tab">
           <el-row :gutter="16">
             <!-- 基本信息 -->
@@ -13,8 +13,8 @@
                     <el-icon>
                       <Monitor />
                     </el-icon>
-                    <span>Redis监控信息</span>
-                    <el-tooltip content="展示Redis监控信息详情">
+                    <span>{{ t("monitor.cacheRedisMonitor") }}</span>
+                    <el-tooltip :content="t('monitor.cacheRedisMonitorTip')">
                       <el-icon>
                         <QuestionFilled />
                       </el-icon>
@@ -22,44 +22,50 @@
                   </div>
                 </template>
                 <el-descriptions :column="12" border :direction="'vertical'">
-                  <el-descriptions-item label="Redis版本">
+                  <el-descriptions-item :label="t('monitor.cacheRedisVersion')">
                     {{ cache.info?.redis_version || "-" }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="运行模式">
-                    {{ cache.info?.redis_mode === "standalone" ? "单机" : "集群" }}
+                  <el-descriptions-item :label="t('monitor.cacheRunMode')">
+                    {{
+                      cache.info?.redis_mode === "standalone"
+                        ? t("monitor.cacheStandalone")
+                        : t("monitor.cacheCluster")
+                    }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="端口">
+                  <el-descriptions-item :label="t('monitor.cachePort')">
                     {{ cache.info?.tcp_port || "-" }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="客户端数">
+                  <el-descriptions-item :label="t('monitor.cacheClients')">
                     {{ cache.info?.connected_clients || 0 }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="运行时间(天)">
+                  <el-descriptions-item :label="t('monitor.cacheUptimeDays')">
                     {{ cache.info?.uptime_in_days || 0 }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="使用内存">
+                  <el-descriptions-item :label="t('monitor.cacheUsedMem')">
                     {{ cache.info?.used_memory_human || "-" }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="使用CPU">
+                  <el-descriptions-item :label="t('monitor.cacheUsedCpu')">
                     {{
                       cache.info?.used_cpu_user_children
                         ? parseFloat(cache.info.used_cpu_user_children).toFixed(2)
                         : "-"
                     }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="内存配置">
+                  <el-descriptions-item :label="t('monitor.cacheMemConfig')">
                     {{ cache.info?.maxmemory_human || "-" }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="AOF是否开启">
-                    {{ cache.info?.aof_enabled === "0" ? "否" : "是" }}
+                  <el-descriptions-item :label="t('monitor.cacheAofEnabled')">
+                    {{
+                      cache.info?.aof_enabled === "0" ? t("monitor.cacheNo") : t("monitor.cacheYes")
+                    }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="RDB是否成功">
+                  <el-descriptions-item :label="t('monitor.cacheRdbSuccess')">
                     {{ cache.info?.rdb_last_bgsave_status || "-" }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="Key数量">
+                  <el-descriptions-item :label="t('monitor.cacheKeyCount')">
                     {{ cache.db_size || 0 }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="网络入口/出口">
+                  <el-descriptions-item :label="t('monitor.cacheNetworkIo')">
                     {{
                       `${cache.info?.instantaneous_input_kbps || 0}kps/${cache.info?.instantaneous_output_kbps || 0}kps`
                     }}
@@ -78,8 +84,8 @@
                     <el-icon>
                       <Stopwatch />
                     </el-icon>
-                    <span class="title">命令统计</span>
-                    <el-tooltip content="展示命令统计详情">
+                    <span class="title">{{ t("monitor.cacheCmdStats") }}</span>
+                    <el-tooltip :content="t('monitor.cacheCmdStatsTip')">
                       <el-icon>
                         <QuestionFilled />
                       </el-icon>
@@ -97,8 +103,8 @@
                     <el-icon>
                       <Stopwatch />
                     </el-icon>
-                    <span>内存信息</span>
-                    <el-tooltip content="展示内存信息详情">
+                    <span>{{ t("monitor.cacheMemInfo") }}</span>
+                    <el-tooltip :content="t('monitor.cacheMemInfoTip')">
                       <el-icon>
                         <QuestionFilled />
                       </el-icon>
@@ -113,7 +119,7 @@
       </el-tab-pane>
 
       <!-- 缓存管理 Tab -->
-      <el-tab-pane class="cache" label="缓存管理">
+      <el-tab-pane class="cache" :label="t('monitor.cacheMgmt')">
         <div class="cache-mgmt-tab">
           <el-row :gutter="16" class="cache-mgmt-row">
             <!-- 缓存列表 -->
@@ -125,8 +131,8 @@
                       <el-icon>
                         <Tickets />
                       </el-icon>
-                      <span class="flex items-center gap-2">缓存列表</span>
-                      <el-tooltip content="展示缓存列表详情">
+                      <span class="flex items-center gap-2">{{ t("monitor.cacheList") }}</span>
+                      <el-tooltip :content="t('monitor.cacheListTip')">
                         <el-icon>
                           <QuestionFilled />
                         </el-icon>
@@ -152,9 +158,13 @@
                   stripe
                 >
                   <template #empty>
-                    <el-empty :image-size="80" description="暂无数据" />
+                    <el-empty :image-size="80" :description="t('monitor.noData')" />
                   </template>
-                  <el-table-column prop="cache_name" label="缓存名称" show-overflow-tooltip>
+                  <el-table-column
+                    prop="cache_name"
+                    :label="t('monitor.cacheName')"
+                    show-overflow-tooltip
+                  >
                     <template #default="{ row }">
                       <el-button
                         v-hasPerm="['module_monitor:cache:query']"
@@ -166,12 +176,16 @@
                       </el-button>
                     </template>
                   </el-table-column>
-                  <el-table-column prop="remark" label="备注" show-overflow-tooltip />
-                  <el-table-column label="操作" width="60" align="center">
+                  <el-table-column
+                    prop="remark"
+                    :label="t('monitor.cacheRemark')"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column :label="t('monitor.operation')" width="60" align="center">
                     <template #default="{ row }">
                       <el-popconfirm
                         class="box-item"
-                        :title="`确认删除缓存 ${row.cache_name} 吗？`"
+                        :title="t('monitor.cacheDeleteNameConfirm', { name: row.cache_name })"
                         placement="top"
                         @confirm="handleClearCacheName(row as CacheInfo)"
                       >
@@ -200,8 +214,8 @@
                       <el-icon>
                         <Key />
                       </el-icon>
-                      <span class="flex items-center gap-2">键名列表</span>
-                      <el-tooltip content="展示键名列表详情">
+                      <span class="flex items-center gap-2">{{ t("monitor.cacheKeyList") }}</span>
+                      <el-tooltip :content="t('monitor.cacheKeyListTip')">
                         <el-icon>
                           <QuestionFilled />
                         </el-icon>
@@ -227,9 +241,13 @@
                   border
                 >
                   <template #empty>
-                    <el-empty :image-size="80" description="暂无数据" />
+                    <el-empty :image-size="80" :description="t('monitor.noData')" />
                   </template>
-                  <el-table-column prop="cacheKey" label="缓存键名" show-overflow-tooltip>
+                  <el-table-column
+                    prop="cacheKey"
+                    :label="t('monitor.cacheKeyName')"
+                    show-overflow-tooltip
+                  >
                     <template #default="{ row }">
                       <el-button
                         v-hasPerm="['module_monitor:cache:detail']"
@@ -241,11 +259,11 @@
                       </el-button>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="60" align="center">
+                  <el-table-column :label="t('monitor.operation')" width="60" align="center">
                     <template #default="{ row }">
                       <el-popconfirm
                         class="box-item"
-                        :title="`确认删除键 ${row.cacheKey} 吗？`"
+                        :title="t('monitor.cacheDeleteKeyConfirm', { key: row.cacheKey })"
                         placement="top"
                         @confirm="handleClearCacheKey(row.cacheKey)"
                       >
@@ -274,8 +292,8 @@
                       <el-icon>
                         <Key />
                       </el-icon>
-                      <span class="flex items-center gap-2">缓存内容</span>
-                      <el-tooltip content="展示缓存内容详情">
+                      <span class="flex items-center gap-2">{{ t("monitor.cacheContent") }}</span>
+                      <el-tooltip :content="t('monitor.cacheContentTip')">
                         <el-icon>
                           <QuestionFilled />
                         </el-icon>
@@ -289,7 +307,7 @@
                         icon="delete"
                         @click="handleClearCacheAll"
                       >
-                        清理全部
+                        {{ t("monitor.cacheClearAll") }}
                       </el-button>
                     </div>
                   </div>
@@ -300,19 +318,27 @@
                   label-width="auto"
                   label-position="top"
                 >
-                  <el-form-item label="缓存名称">
-                    <el-input v-model="cacheForm.cache_name" readonly placeholder="缓存名称" />
+                  <el-form-item :label="t('monitor.cacheName')">
+                    <el-input
+                      v-model="cacheForm.cache_name"
+                      readonly
+                      :placeholder="t('monitor.cacheName')"
+                    />
                   </el-form-item>
-                  <el-form-item label="缓存键名">
-                    <el-input v-model="cacheForm.cache_key" readonly placeholder="缓存键名" />
+                  <el-form-item :label="t('monitor.cacheKeyName')">
+                    <el-input
+                      v-model="cacheForm.cache_key"
+                      readonly
+                      :placeholder="t('monitor.cacheKeyName')"
+                    />
                   </el-form-item>
-                  <el-form-item label="缓存内容">
+                  <el-form-item :label="t('monitor.cacheContent')">
                     <el-input
                       v-model="cacheForm.cache_value"
                       type="textarea"
                       :rows="20"
                       readonly
-                      placeholder="缓存内容"
+                      :placeholder="t('monitor.cacheContent')"
                     />
                   </el-form-item>
                 </el-form>
@@ -333,8 +359,10 @@ import CacheAPI, {
   type RedisInfo,
 } from "@/api/module_monitor/cache";
 import * as echarts from "echarts";
+import { useI18n } from "vue-i18n";
 
 // 响应式状态定义
+const { t } = useI18n();
 const cacheNames = ref<CacheInfo[]>([]);
 const cacheKeys = ref<string[]>([]);
 const loading = ref(true);
@@ -373,7 +401,7 @@ const getCacheNameList = async () => {
     cacheNames.value = response.data.data;
     resetCacheForm();
   } catch (error) {
-    console.error("获取缓存列表出错:", error);
+    console.error(t("monitor.cacheGetListError"), error);
   } finally {
     loading.value = false;
   }
@@ -390,7 +418,7 @@ const handleClearCacheName = async (row: CacheInfo) => {
     await CacheAPI.deleteCacheName(row.cache_name);
     refreshCacheNames();
   } catch (error) {
-    console.error("清理缓存名称出错:", error);
+    console.error(t("monitor.cacheClearNameError"), error);
   }
 };
 
@@ -410,7 +438,7 @@ const getCacheKeyList = async (row?: CacheInfo) => {
       cache_value: "",
     };
   } catch (error) {
-    console.error("获取缓存键名列表出错:", error);
+    console.error(t("monitor.cacheGetKeysError"), error);
   } finally {
     subLoading.value = false;
   }
@@ -427,7 +455,7 @@ async function handleClearCacheKey(cacheKey: string) {
     await CacheAPI.deleteCacheKey(cacheKey);
     getCacheKeyList();
   } catch (error) {
-    console.error("清理缓存键名出错:", error);
+    console.error(t("monitor.cacheClearKeyError"), error);
   }
 }
 
@@ -438,7 +466,7 @@ async function handleCacheValue(cacheKey: string) {
     const response = await CacheAPI.getCacheValue(nowCacheName.value, cacheKey);
     cacheForm.value = response.data.data;
   } catch (error) {
-    console.error("获取缓存内容失败:", error);
+    console.error(t("monitor.cacheGetContentError"), error);
   } finally {
     loading.value = false;
   }
@@ -446,9 +474,9 @@ async function handleCacheValue(cacheKey: string) {
 
 // 清理全部缓存
 const handleClearCacheAll = async () => {
-  ElMessageBox.confirm("确定要清理全部缓存吗？", "危险！", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
+  ElMessageBox.confirm(t("monitor.cacheClearAllConfirm"), t("monitor.cacheDanger"), {
+    confirmButtonText: t("monitor.confirm"),
+    cancelButtonText: t("monitor.cancel"),
     type: "warning",
   })
     .then(async () => {
@@ -459,7 +487,7 @@ const handleClearCacheAll = async () => {
     })
     .catch((error) => {
       if (error !== "cancel") {
-        console.error("清理全部缓存失败:", error);
+        console.error(t("monitor.cacheClearAllError"), error);
       }
     });
 };
@@ -476,7 +504,7 @@ const getInfo = async () => {
     };
     initCharts();
   } catch (error) {
-    console.error("获取缓存监控数据失败:", error);
+    console.error(t("monitor.cacheGetInfoError"), error);
   } finally {
     loading.value = false;
   }
@@ -496,7 +524,7 @@ const initCharts = () => {
     },
     series: [
       {
-        name: "命令",
+        name: t("monitor.cacheCommand"),
         type: "pie",
         roseType: "radius",
         radius: [15, 95],
@@ -515,7 +543,7 @@ const initCharts = () => {
     },
     series: [
       {
-        name: "峰值",
+        name: t("monitor.cachePeak"),
         type: "gauge",
         min: 0,
         max: 1000,
@@ -525,7 +553,7 @@ const initCharts = () => {
         data: [
           {
             value: parseFloat(usedMemory) || 0,
-            name: "内存消耗",
+            name: t("monitor.cacheMemConsume"),
           },
         ],
       },

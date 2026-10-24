@@ -3,17 +3,17 @@
     <el-card shadow="never">
       <template #header>
         <div class="r-head">
-          <span>报表模板</span>
+          <span>{{ t("ai_logs.reportTemplates") }}</span>
           <div class="r-head__ops">
             <el-select
               v-model="datasource"
               size="small"
               clearable
-              placeholder="全部数据源"
+              :placeholder="t('ai_logs.allDatasources')"
               style="width: 180px"
               @change="load"
             >
-              <el-option label="系统库（本体支撑表）" value="system" />
+              <el-option :label="t('ai_logs.systemDsLabel')" value="system" />
               <el-option
                 v-for="d in datasources"
                 :key="d.code || d.id"
@@ -21,8 +21,10 @@
                 :value="d.code || `ds:${d.id}`"
               />
             </el-select>
-            <el-checkbox v-model="verifiedOnly" size="small" @change="load">只看已确认</el-checkbox>
-            <el-button size="small" @click="load">刷新</el-button>
+            <el-checkbox v-model="verifiedOnly" size="small" @change="load">
+              {{ t("ai_logs.onlyConfirmed") }}
+            </el-checkbox>
+            <el-button size="small" @click="load">{{ t("ai_logs.refresh") }}</el-button>
           </div>
         </div>
       </template>
@@ -31,36 +33,55 @@
         type="info"
         :closable="false"
         show-icon
-        title="报表由「智能问数」结果页的「存为报表」沉淀而来。确认后才是正式报表；困难题因此可一次沉淀、长期复用。"
+        :title="t('ai_logs.reportOrigTip')"
         class="r-tip"
       />
 
       <el-table v-loading="loading" :data="rows" size="small" border stripe>
-        <el-table-column type="index" label="#" width="52" />
-        <el-table-column prop="name" label="报表名" min-width="170" show-overflow-tooltip />
-        <el-table-column prop="key" label="标识" width="120" show-overflow-tooltip />
-        <el-table-column prop="datasource" label="数据源" width="90" />
-        <el-table-column prop="question" label="来源问题" min-width="190" show-overflow-tooltip />
-        <el-table-column label="参数" width="80" align="center">
+        <el-table-column type="index" :label="t('ai_logs.noSign')" width="52" />
+        <el-table-column
+          prop="name"
+          :label="t('ai_logs.reportName')"
+          min-width="170"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="key"
+          :label="t('ai_logs.reportKey')"
+          width="120"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="datasource" :label="t('ai_logs.datasource')" width="90" />
+        <el-table-column
+          prop="question"
+          :label="t('ai_logs.sourceQuestion')"
+          min-width="190"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="t('ai_logs.params')" width="80" align="center">
           <template #default="{ row }">
             <el-tag v-if="(row.params || []).length" size="small" effect="plain">
-              {{ row.params.length }} 个
+              {{ row.params.length }} {{ t("ai_logs.countUnit") }}
             </el-tag>
             <span v-else class="r-dim">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column :label="t('ai_logs.status')" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.verified" size="small" type="success">已确认</el-tag>
-            <el-tag v-else size="small" type="warning">草稿</el-tag>
+            <el-tag v-if="row.verified" size="small" type="success">
+              {{ t("ai_logs.confirmed") }}
+            </el-tag>
+            <el-tag v-else size="small" type="warning">{{ t("ai_logs.draft") }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column :label="t('ai_logs.operation')" width="220" fixed="right">
           <template #default="{ row }">
             <el-button icon="VideoPlay" link type="primary" size="small" @click="openRun(row)">
-              运行
+              {{ t("ai_logs.run") }}
             </el-button>
-            <el-button icon="Setting" link size="small" @click="openParams(row)">参数</el-button>
+            <el-button icon="Setting" link size="small" @click="openParams(row)">
+              {{ t("ai_logs.params") }}
+            </el-button>
             <el-button
               v-if="!row.verified"
               icon="Check"
@@ -69,20 +90,20 @@
               size="small"
               @click="verify(row)"
             >
-              确认
+              {{ t("ai_logs.confirm") }}
             </el-button>
             <el-button icon="delete" link type="danger" size="small" @click="remove(row)">
-              删除
+              {{ t("ai_logs.delete") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <div class="r-total">共 {{ rows.length }} 个报表</div>
+      <div class="r-total">{{ t("ai_logs.totalReports", { count: rows.length }) }}</div>
     </el-card>
 
     <el-dialog
       v-model="runVisible"
-      :title="`运行报表：${cur?.name || ''}`"
+      :title="t('ai_logs.runReportTitle', { name: cur?.name || '' })"
       width="900px"
       append-to-body
     >
@@ -129,10 +150,12 @@
         type="info"
         :closable="false"
         show-icon
-        title="该报表无需参数"
+        :title="t('ai_logs.noParamsTip')"
         class="r-tip"
       />
-      <el-button type="primary" size="small" :loading="running" @click="doRun">执行</el-button>
+      <el-button type="primary" size="small" :loading="running" @click="doRun">
+        {{ t("ai_logs.execute") }}
+      </el-button>
       <el-table
         v-if="result.columns.length"
         :data="resultRows"
@@ -152,13 +175,13 @@
         />
       </el-table>
       <template #footer>
-        <el-button @click="runVisible = false">关闭</el-button>
+        <el-button @click="runVisible = false">{{ t("ai_logs.close") }}</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="paramVisible"
-      :title="`参数定义：${cur?.name || ''}`"
+      :title="t('ai_logs.paramDefTitle', { name: cur?.name || '' })"
       width="900px"
       append-to-body
     >
@@ -166,40 +189,44 @@
         type="info"
         :closable="false"
         show-icon
-        title="参数来自 SQL 模板里的 {占位符}（保存时自动抽取）。这里可改中文名/类型/必填/默认值，运行时会按此校验。"
+        :title="t('ai_logs.paramOriginTip')"
         class="r-tip"
       />
       <el-table :data="paramDefs" size="small" border stripe>
-        <el-table-column label="占位符 key" width="150">
+        <el-table-column :label="t('ai_logs.placeholderKey')" width="150">
           <template #default="{ row }">
-            <el-input v-model="row.key" size="small" placeholder="如 start_date" />
+            <el-input
+              v-model="row.key"
+              size="small"
+              :placeholder="t('ai_logs.placeholderKeyHint')"
+            />
           </template>
         </el-table-column>
-        <el-table-column label="中文名" width="140">
+        <el-table-column :label="t('ai_logs.chineseName')" width="140">
           <template #default="{ row }">
             <el-input v-model="row.label" size="small" />
           </template>
         </el-table-column>
-        <el-table-column label="类型" width="120">
+        <el-table-column :label="t('ai_logs.type')" width="120">
           <template #default="{ row }">
             <el-select v-model="row.type" size="small">
-              <el-option label="文本" value="text" />
-              <el-option label="数字" value="number" />
-              <el-option label="日期" value="date" />
+              <el-option :label="t('ai_logs.typeText')" value="text" />
+              <el-option :label="t('ai_logs.typeNumber')" value="number" />
+              <el-option :label="t('ai_logs.typeDate')" value="date" />
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="必填" width="80" align="center">
+        <el-table-column :label="t('ai_logs.required')" width="80" align="center">
           <template #default="{ row }">
             <el-switch v-model="row.required" size="small" />
           </template>
         </el-table-column>
-        <el-table-column label="默认值" min-width="140">
+        <el-table-column :label="t('ai_logs.defaultValue')" min-width="140">
           <template #default="{ row }">
             <el-input v-model="row.default" size="small" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="70" align="center">
+        <el-table-column :label="t('ai_logs.operation')" width="70" align="center">
           <template #default="{ $index }">
             <el-button
               icon="delete"
@@ -208,17 +235,19 @@
               size="small"
               @click="paramDefs.splice($index, 1)"
             >
-              移除
+              {{ t("ai_logs.remove") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
       <el-button icon="Plus" link type="primary" size="small" class="r-addparam" @click="addParam">
-        + 添加参数
+        + {{ t("ai_logs.addParam") }}
       </el-button>
       <template #footer>
-        <el-button @click="paramVisible = false">取消</el-button>
-        <el-button type="primary" :loading="paramSaving" @click="saveParams">保存</el-button>
+        <el-button @click="paramVisible = false">{{ t("ai_logs.cancel") }}</el-button>
+        <el-button type="primary" :loading="paramSaving" @click="saveParams">
+          {{ t("ai_logs.save") }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -226,6 +255,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   deleteQueryReports,
@@ -237,6 +267,8 @@ import {
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiQueryReports" });
+
+const { t } = useI18n();
 
 const rows = ref<any[]>([]);
 const datasources = ref<any[]>([]);
@@ -296,7 +328,7 @@ async function doRun() {
     return v === undefined || v === null || String(v).trim() === "";
   });
   if (missing) {
-    runError.value = `请填写必填参数「${missing.label || missing.key}」`;
+    runError.value = t("ai_logs.requiredParam", { name: missing.label || missing.key });
     return;
   }
   runError.value = "";
@@ -305,9 +337,9 @@ async function doRun() {
     const r = await runQueryReport(cur.value.id, paramValues.value);
     const d = r.data?.data || {};
     result.value = { columns: d.columns || [], rows: d.rows || [] };
-    ElMessage.success(`执行完成，共 ${result.value.rows.length} 行`);
+    ElMessage.success(t("ai_logs.runDoneRows", { count: result.value.rows.length }));
   } catch (e: any) {
-    runError.value = e?.msg || "执行失败";
+    runError.value = e?.msg || t("ai_logs.runFailed");
     ElMessage.error(runError.value);
   } finally {
     running.value = false;
@@ -342,7 +374,7 @@ function addParam() {
 async function saveParams() {
   if (!cur.value) return;
   if (paramDefs.value.some((p) => !String(p.key || "").trim())) {
-    ElMessage.warning("参数占位符 key 不能为空");
+    ElMessage.warning(t("ai_logs.paramKeyRequired"));
     return;
   }
   paramSaving.value = true;
@@ -359,11 +391,11 @@ async function saveParams() {
       params: paramDefs.value,
       verified: cur.value.verified,
     });
-    ElMessage.success("参数已保存");
+    ElMessage.success(t("ai_logs.paramsSaved"));
     paramVisible.value = false;
     await load();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_logs.saveFailed"));
   } finally {
     paramSaving.value = false;
   }
@@ -371,31 +403,39 @@ async function saveParams() {
 
 async function verify(row: any) {
   await ElMessageBox.confirm(
-    `确认报表「${row.name}」后，同类问题会被推荐使用它（正式生效）。`,
-    "确认报表",
-    { type: "warning", confirmButtonText: "确认", cancelButtonText: "取消" }
+    t("ai_logs.confirmReportMsg", { name: row.name }),
+    t("ai_logs.confirmReport"),
+    {
+      type: "warning",
+      confirmButtonText: t("ai_logs.confirm"),
+      cancelButtonText: t("ai_logs.cancel"),
+    }
   );
   try {
     await verifyQueryReport(row.id);
-    ElMessage.success("已确认");
+    ElMessage.success(t("ai_logs.confirmed"));
     await load();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "确认失败");
+    ElMessage.error(e?.msg || t("ai_logs.confirmFailed"));
   }
 }
 
 async function remove(row: any) {
-  await ElMessageBox.confirm(`将删除报表「${row.name}」，且不可恢复。`, "删除报表", {
-    type: "warning",
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
-  });
+  await ElMessageBox.confirm(
+    t("ai_logs.deleteReportMsg", { name: row.name }),
+    t("ai_logs.deleteReport"),
+    {
+      type: "warning",
+      confirmButtonText: t("ai_logs.delete"),
+      cancelButtonText: t("ai_logs.cancel"),
+    }
+  );
   try {
     await deleteQueryReports([row.id]);
-    ElMessage.success("已删除");
+    ElMessage.success(t("ai_logs.deleted"));
     await load();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "删除失败");
+    ElMessage.error(e?.msg || t("ai_logs.deleteFailed"));
   }
 }
 

@@ -35,7 +35,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('video.common.noData')" />
             </template>
             <el-table-column
               v-if="deployCols.find((c) => c.prop === 'selection')?.show"
@@ -47,14 +47,14 @@
               v-if="deployCols.find((c) => c.prop === 'index')?.show"
               type="index"
               fixed
-              label="序号"
+              :label="t('video.common.sequence')"
               min-width="60"
               align="center"
             />
             <el-table-column
               v-if="deployCols.find((c) => c.prop === 'camera')?.show"
               key="camera"
-              label="监控点位"
+              :label="t('video.deploy.monitorPoint')"
               min-width="150"
             >
               <template #default="scope">
@@ -64,7 +64,7 @@
             <el-table-column
               v-if="deployCols.find((c) => c.prop === 'algorithm')?.show"
               key="algorithm"
-              label="智能算法"
+              :label="t('video.deploy.smartAlgorithm')"
               min-width="140"
             >
               <template #default="scope">
@@ -74,12 +74,14 @@
             <el-table-column
               v-if="deployCols.find((c) => c.prop === 'schedule')?.show"
               key="schedule"
-              label="布控时段"
+              :label="t('video.deploy.deployPeriod')"
               min-width="160"
               show-overflow-tooltip
             >
               <template #default="scope">
-                <span v-if="!scope.row.schedule_json?.slots?.length" class="text-muted">全天</span>
+                <span v-if="!scope.row.schedule_json?.slots?.length" class="text-muted">
+                  {{ t("video.deploy.allDay") }}
+                </span>
                 <span v-else class="schedule-summary">
                   {{ scheduleSummary(scope.row.schedule_json) }}
                 </span>
@@ -88,7 +90,7 @@
             <el-table-column
               v-if="deployCols.find((c) => c.prop === 'sensitivity')?.show"
               key="sensitivity"
-              label="灵敏度"
+              :label="t('video.deploy.sensitivity')"
               prop="sensitivity"
               width="80"
               align="center"
@@ -96,31 +98,43 @@
             <el-table-column
               v-if="deployCols.find((c) => c.prop === 'stream_type')?.show"
               key="stream_type"
-              label="码流"
+              :label="t('video.record.streamType')"
               width="70"
               align="center"
             >
               <template #default="scope">
-                <el-tag size="small">{{ scope.row.stream_type === "MAIN" ? "主" : "子" }}</el-tag>
+                <el-tag size="small">
+                  {{
+                    scope.row.stream_type === "MAIN"
+                      ? t("video.record.main")
+                      : t("video.record.sub")
+                  }}
+                </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="deployCols.find((c) => c.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('video.common.status')"
               width="140"
               align="center"
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status === 'RUNNING' ? 'success' : 'info'" size="small">
-                  {{ scope.row.status === "RUNNING" ? "运行中" : "已停止" }}
+                  {{
+                    scope.row.status === "RUNNING"
+                      ? t("video.deploy.running")
+                      : t("video.deploy.stopped")
+                  }}
                 </el-tag>
                 <el-tooltip
                   v-if="scope.row.error_log"
                   :content="scope.row.error_log"
                   placement="top"
                 >
-                  <el-tag type="danger" size="small" class="error-log-tag">失败</el-tag>
+                  <el-tag type="danger" size="small" class="error-log-tag">
+                    {{ t("video.deploy.failed") }}
+                  </el-tag>
                 </el-tooltip>
                 <span v-if="scope.row._inferenceStatus" class="inference-meta">
                   {{
@@ -134,7 +148,7 @@
             <el-table-column
               v-if="deployCols.find((c) => c.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('video.common.operation')"
               align="center"
               min-width="190"
             >
@@ -146,7 +160,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("video.common.edit") }}
                 </el-button>
                 <el-button
                   type="danger"
@@ -155,7 +169,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("video.common.delete") }}
                 </el-button>
                 <el-button
                   :icon="scope.row.status === 'RUNNING' ? 'VideoPause' : 'VideoPlay'"
@@ -164,7 +178,11 @@
                   link
                   @click="handleToggleInference(scope.row)"
                 >
-                  {{ scope.row.status === "RUNNING" ? "停止" : "启动" }}
+                  {{
+                    scope.row.status === "RUNNING"
+                      ? t("video.deploy.stop")
+                      : t("video.deploy.start")
+                  }}
                 </el-button>
                 <el-button
                   v-if="scope.row.edge_device_id"
@@ -174,7 +192,7 @@
                   icon="view"
                   @click="handleOpenPreview(scope.row)"
                 >
-                  预览
+                  {{ t("video.deploy.preview") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -192,19 +210,19 @@
     >
       <el-form ref="dataFormRef" :model="formData" label-width="110px" size="default">
         <div class="form-section">
-          <div class="form-section-title">布控配置</div>
-          <el-form-item label="监控点位" prop="camera_id">
+          <div class="form-section-title">{{ t("video.deploy.deployConfig") }}</div>
+          <el-form-item :label="t('video.deploy.monitorPoint')" prop="camera_id">
             <el-select
               v-model="formData.camera_id"
               filterable
-              placeholder="选择摄像机"
+              :placeholder="t('video.deploy.selectCamera')"
               style="width: 280px"
               @visible-change="(v: boolean) => v && ensureCameraOptions()"
             >
               <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="推理设备">
+          <el-form-item :label="t('video.deploy.inferenceDevice')">
             <EdgeDeviceSelect v-model="formData.edge_device_id" />
           </el-form-item>
           <div v-if="selectedDevice" class="device-status-row">
@@ -212,15 +230,19 @@
               {{ selectedDevice.status }}
             </el-tag>
             <span class="device-status-meta">
-              在跑 {{ selectedDevice.metrics?.running_channels ?? 0 }} /
-              {{ selectedDevice.capabilities?.max_channels ?? "-" }}
+              {{
+                t("video.deploy.runningCount", {
+                  running: selectedDevice.metrics?.running_channels ?? 0,
+                  max: selectedDevice.capabilities?.max_channels ?? "-",
+                })
+              }}
             </span>
           </div>
-          <el-form-item label="智能算法" prop="algorithm_id">
+          <el-form-item :label="t('video.deploy.smartAlgorithm')" prop="algorithm_id">
             <el-select
               v-model="formData.algorithm_id"
               filterable
-              placeholder="选择算法"
+              :placeholder="t('video.deploy.selectAlgorithm')"
               style="width: 280px"
               @change="handleAlgorithmChange"
               @visible-change="(v: boolean) => v && ensureAlgorithmOptions()"
@@ -230,15 +252,15 @@
           </el-form-item>
           <el-row :gutter="20">
             <el-col :span="12">
-              <el-form-item label="分析码流" prop="stream_type">
+              <el-form-item :label="t('video.deploy.analyzeStream')" prop="stream_type">
                 <el-select v-model="formData.stream_type" style="width: 100%">
-                  <el-option label="主码流（高清）" value="MAIN" />
-                  <el-option label="子码流（流畅）" value="SUB" />
+                  <el-option :label="t('video.record.mainStreamHd')" value="MAIN" />
+                  <el-option :label="t('video.record.subStreamSmooth')" value="SUB" />
                 </el-select>
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="灵敏度" prop="sensitivity">
+              <el-form-item :label="t('video.deploy.sensitivity')" prop="sensitivity">
                 <el-input-number
                   v-model="formData.sensitivity"
                   :min="1"
@@ -254,16 +276,16 @@
 
         <div class="form-section">
           <div class="form-section-title">
-            检测区域（ROI）
-            <span class="form-section-desc">在预览画面上点击绘制多边形；留空表示全画面</span>
+            {{ t("video.deploy.roiArea") }}
+            <span class="form-section-desc">{{ t("video.deploy.roiHint") }}</span>
           </div>
           <RoiEditor v-model="formData.detect_region_points" :stream-id="selectedStreamId" />
         </div>
 
         <div class="form-section">
           <div class="form-section-title">
-            布控时段
-            <span class="form-section-desc">选择算法生效的时间段</span>
+            {{ t("video.deploy.deployPeriod") }}
+            <span class="form-section-desc">{{ t("video.deploy.effectivePeriod") }}</span>
           </div>
           <div class="schedule-grid-wrapper">
             <div class="schedule-header-row">
@@ -285,48 +307,60 @@
             </div>
           </div>
           <div class="schedule-actions">
-            <el-button size="small" @click="fillSchedule(true)">全选</el-button>
-            <el-button size="small" @click="fillSchedule(false)">清空</el-button>
-            <el-button size="small" @click="fillWorkHours">工作日 08-18</el-button>
+            <el-button size="small" @click="fillSchedule(true)">
+              {{ t("video.record.selectAll") }}
+            </el-button>
+            <el-button size="small" @click="fillSchedule(false)">
+              {{ t("video.record.clear") }}
+            </el-button>
+            <el-button size="small" @click="fillWorkHours">
+              {{ t("video.record.workday0818") }}
+            </el-button>
           </div>
         </div>
 
         <div class="form-section">
-          <div class="form-section-title">其他</div>
-          <el-form-item label="状态" prop="status">
-            <el-switch v-model="formData.statusBool" active-text="运行中" inactive-text="已停止" />
+          <div class="form-section-title">{{ t("video.deploy.other") }}</div>
+          <el-form-item :label="t('video.common.status')" prop="status">
+            <el-switch
+              v-model="formData.statusBool"
+              :active-text="t('video.deploy.running')"
+              :inactive-text="t('video.deploy.stopped')"
+            />
           </el-form-item>
-          <el-form-item label="备注" prop="description">
+          <el-form-item :label="t('video.deploy.remark')" prop="description">
             <el-input
               v-model="formData.description"
               type="textarea"
               :rows="2"
-              placeholder="可选备注"
+              :placeholder="t('video.common.optionalNote')"
             />
           </el-form-item>
         </div>
 
         <div v-if="algoConfig" class="form-section">
           <div class="form-section-title">
-            算法参数覆盖
-            <span class="form-section-desc">不填则使用算法预设值</span>
+            {{ t("video.deploy.algoParamOverride") }}
+            <span class="form-section-desc">{{ t("video.deploy.overrideHint") }}</span>
           </div>
           <div class="algo-config-header">
-            <span class="config-block-title">模型 / 运行时</span>
+            <span class="config-block-title">{{ t("video.deploy.modelRuntime") }}</span>
             <span class="config-summary">
-              格式: {{ algoConfig.model?.format || "-" }}
+              {{ t("video.deploy.format", { format: algoConfig.model?.format || "-" }) }}
               <template v-if="algoConfig.runtime">
-                | 引擎: {{ algoConfig.runtime.engine || "-" }} | GPU:
+                | {{ t("video.deploy.engine", { engine: algoConfig.runtime.engine || "-" }) }} |
                 {{
-                  algoConfig.runtime.gpu?.enabled
-                    ? "设备" + algoConfig.runtime.gpu.device_id
-                    : "关闭"
+                  t("video.deploy.gpu", {
+                    gpu: algoConfig.runtime.gpu?.enabled
+                      ? t("video.deploy.device", { id: algoConfig.runtime.gpu.device_id })
+                      : t("video.deploy.off"),
+                  })
                 }}
               </template>
             </span>
           </div>
           <div class="config-block">
-            <div class="config-block-title">算法参数</div>
+            <div class="config-block-title">{{ t("video.deploy.algoParams") }}</div>
             <div v-for="(val, key) in algoConfig.params" :key="key" class="config-override-row">
               <span class="override-label">{{ paramLabel(key) }}</span>
 
@@ -354,7 +388,7 @@
                 default-first-option
                 size="small"
                 style="width: 240px"
-                placeholder="多选，可输入新增"
+                :placeholder="t('video.deploy.multiSelect')"
               >
                 <el-option v-for="opt in val" :key="opt" :label="opt" :value="opt" />
               </el-select>
@@ -367,26 +401,30 @@
                 style="width: 200px"
               />
 
-              <span class="override-default">预设: {{ displayVal(val) }}</span>
+              <span class="override-default">
+                {{ t("video.deploy.preset", { value: displayVal(val) }) }}
+              </span>
             </div>
           </div>
         </div>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("video.common.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("video.common.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
     <el-dialog
       v-model="previewVisible"
-      title="边缘快照预览"
+      :title="t('video.deploy.previewTitle')"
       append-to-body
       width="560px"
       @close="handleClosePreview"
     >
       <SnapshotImage :src="previewSrc" height="320" />
-      <div class="preview-hint">每 2 秒自动刷新；无画面请确认边缘设备在线且布控任务已启动。</div>
+      <div class="preview-hint">{{ t("video.deploy.previewHint") }}</div>
     </el-dialog>
   </div>
 </template>
@@ -394,6 +432,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onBeforeMount, onBeforeUnmount } from "vue";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import { getCameraList } from "@/api/module_video/camera";
 import { getAlgorithmList } from "@/api/module_video/algorithm";
 import { getEdgeDeviceDetail, edgeTaskSnapshotUrl } from "@/api/module_video/edge";
@@ -419,7 +458,17 @@ interface TablePageQuery {
   [key: string]: any;
 }
 
-const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const { t } = useI18n();
+
+const weekDays = [
+  t("video.common.monday"),
+  t("video.common.tuesday"),
+  t("video.common.wednesday"),
+  t("video.common.thursday"),
+  t("video.common.friday"),
+  t("video.common.saturday"),
+  t("video.common.sunday"),
+];
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
@@ -451,11 +500,11 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "camera_id",
-      label: "监控点位",
+      label: t("video.deploy.monitorPoint"),
       type: "select",
       options: [],
       attrs: {
-        placeholder: "选择摄像机",
+        placeholder: t("video.deploy.selectCamera"),
         clearable: true,
         filterable: true,
         style: { width: "180px" },
@@ -466,27 +515,27 @@ const searchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("video.common.status"),
       type: "select",
       options: [
-        { label: "运行中", value: "RUNNING" },
-        { label: "已停止", value: "STOPPED" },
+        { label: t("video.deploy.running"), value: "RUNNING" },
+        { label: t("video.deploy.stopped"), value: "STOPPED" },
       ],
-      attrs: { placeholder: "全部", clearable: true, style: { width: "120px" } },
+      attrs: { placeholder: t("video.common.all"), clearable: true, style: { width: "120px" } },
     },
   ],
 });
 
 const deployCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "camera", label: "监控点位", show: true },
-  { prop: "algorithm", label: "智能算法", show: true },
-  { prop: "schedule", label: "布控时段", show: true },
-  { prop: "sensitivity", label: "灵敏度", show: true },
-  { prop: "stream_type", label: "码流", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "camera", label: t("video.deploy.monitorPoint"), show: true },
+  { prop: "algorithm", label: t("video.deploy.smartAlgorithm"), show: true },
+  { prop: "schedule", label: t("video.deploy.deployPeriod"), show: true },
+  { prop: "sensitivity", label: t("video.deploy.sensitivity"), show: true },
+  { prop: "stream_type", label: t("video.record.streamType"), show: true },
+  { prop: "status", label: t("video.common.status"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -644,9 +693,9 @@ function fillWorkHours() {
 }
 
 function scheduleSummary(json: any): string {
-  if (!json?.slots?.length) return "未配置";
+  if (!json?.slots?.length) return t("video.common.notConfigured");
   const totalHours = json.slots.reduce((sum: number, s: any) => sum + (s.end - s.start), 0);
-  return `每周 ${totalHours} 小时`;
+  return t("video.deploy.weeklyHours", { hours: totalHours });
 }
 
 async function resetForm() {
@@ -671,7 +720,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   ensureCameraOptions();
   ensureAlgorithmOptions();
   if (id && type === "update") {
-    dialogVisible.title = "编辑布控计划";
+    dialogVisible.title = t("video.deploy.editPlan");
     const res = await getAlgorithmTaskList({ page_no: 1, page_size: 100 });
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
@@ -695,7 +744,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       }
     }
   } else {
-    dialogVisible.title = "新增布控计划";
+    dialogVisible.title = t("video.deploy.addPlan");
     await resetForm();
   }
   dialogVisible.visible = true;
@@ -737,7 +786,7 @@ async function handleSubmit() {
         } else {
           await createAlgorithmTask(payload);
         }
-        ElMessage.success("保存成功");
+        ElMessage.success(t("video.common.saveSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -783,14 +832,14 @@ async function handleToggleInference(row: any) {
   try {
     if (row.status === "RUNNING") {
       await stopInferenceTask(row.id);
-      ElMessage.success("推理已停止");
+      ElMessage.success(t("video.deploy.inferenceStopped"));
     } else {
       await startInferenceTask(row.id);
-      ElMessage.success("推理已启动");
+      ElMessage.success(t("video.deploy.inferenceStarted"));
     }
     refreshList();
   } catch {
-    ElMessage.error("操作失败");
+    ElMessage.error(t("video.deploy.opFail"));
   }
 }
 

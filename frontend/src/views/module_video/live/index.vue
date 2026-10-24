@@ -3,19 +3,19 @@
     <div ref="toolbarRef" class="live-toolbar">
       <div class="toolbar-brand">
         <span class="brand-dot" />
-        <span class="brand-text">实时预览</span>
+        <span class="brand-text">{{ t("video.live.realtimePreview") }}</span>
       </div>
 
       <span class="toolbar-divider" />
 
       <div class="panel-toggles">
-        <el-tooltip content="设备面板开关" placement="bottom">
+        <el-tooltip :content="t('video.live.devicePanelToggle')" placement="bottom">
           <span class="panel-switch-item">
             <el-icon><Icon icon="mdi:file-tree" /></el-icon>
             <el-switch v-model="showDevicePanel" size="small" />
           </span>
         </el-tooltip>
-        <el-tooltip content="告警面板开关" placement="bottom">
+        <el-tooltip :content="t('video.live.alarmPanelToggle')" placement="bottom">
           <span class="panel-switch-item">
             <el-icon><Bell /></el-icon>
             <el-switch v-model="showAlarmPanel" size="small" />
@@ -26,7 +26,7 @@
       <span class="toolbar-divider" />
 
       <div class="toolbar-group">
-        <span class="toolbar-label">布局</span>
+        <span class="toolbar-label">{{ t("video.live.layout") }}</span>
         <el-popover
           v-model:visible="showLayoutPopover"
           trigger="click"
@@ -54,7 +54,7 @@
       </div>
 
       <div class="toolbar-group">
-        <span class="toolbar-label">协议</span>
+        <span class="toolbar-label">{{ t("video.live.protocol") }}</span>
         <el-select v-model="globalProtocol" size="small" style="width: 100px">
           <el-option v-for="p in protocols" :key="p.value" :value="p.value" :label="p.label" />
         </el-select>
@@ -65,20 +65,24 @@
           <el-dropdown trigger="click" @command="handleLayoutSelect">
             <button class="scheme-split-select">
               <el-icon><Download /></el-icon>
-              <span>{{ selectedLayoutName || "加载方案" }}</span>
+              <span>{{ selectedLayoutName || t("video.live.loadScheme") }}</span>
               <el-icon class="scheme-arrow"><ArrowDown /></el-icon>
             </button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item v-for="ly in savedLayouts" :key="ly.id" :command="ly">
                   {{ ly.name }}
-                  <span class="layout-option-meta">({{ ly.grid_type }}路)</span>
+                  <span class="layout-option-meta">
+                    ({{ ly.grid_type }}{{ t("video.live.way") }})
+                  </span>
                 </el-dropdown-item>
-                <el-dropdown-item v-if="!savedLayouts.length" disabled>暂无方案</el-dropdown-item>
+                <el-dropdown-item v-if="!savedLayouts.length" disabled>
+                  {{ t("video.live.noScheme") }}
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <el-tooltip content="保存当前布局" placement="bottom">
+          <el-tooltip :content="t('video.live.saveLayout')" placement="bottom">
             <button class="scheme-split-save" :disabled="boundCount === 0" @click="openSaveLayout">
               <el-icon><Icon icon="mdi:content-save" /></el-icon>
             </button>
@@ -89,7 +93,7 @@
       <span class="toolbar-divider" />
 
       <div class="toolbar-group">
-        <el-tooltip content="自动轮巡切换摄像机画面" placement="bottom">
+        <el-tooltip :content="t('video.live.tour')" placement="bottom">
           <span class="panel-switch-item">
             <el-icon><Refresh /></el-icon>
             <el-switch v-model="tourMode" size="small" />
@@ -105,22 +109,28 @@
           controls-position="right"
           style="width: 84px"
         >
-          <template #suffix><span class="suffix-unit">秒</span></template>
+          <template #suffix>
+            <span class="suffix-unit">{{ t("video.live.seconds") }}</span>
+          </template>
         </el-input-number>
       </div>
 
       <div class="toolbar-right">
-        <el-tooltip content="清空所有窗口" placement="bottom">
+        <el-tooltip :content="t('video.live.clearWindows')" placement="bottom">
           <button class="layout-btn" :disabled="boundCount === 0" @click="handleClearAll">
             <el-icon><Delete /></el-icon>
           </button>
         </el-tooltip>
-        <el-tooltip content="全屏" placement="bottom">
+        <el-tooltip :content="t('video.live.fullscreen')" placement="bottom">
           <button class="layout-btn" @click="handleToggleFullscreen">
             <el-icon><FullScreen /></el-icon>
           </button>
         </el-tooltip>
-        <el-tooltip v-if="isFullscreen" content="退出全屏" placement="bottom">
+        <el-tooltip
+          v-if="isFullscreen"
+          :content="t('video.live.exitFullscreen')"
+          placement="bottom"
+        >
           <button class="layout-btn" @click="exitFullscreen">
             <el-icon><Close /></el-icon>
           </button>
@@ -132,14 +142,14 @@
       <div v-show="showDevicePanel" class="live-device-panel">
         <div class="panel-header">
           <el-icon :size="14"><FolderOpened /></el-icon>
-          <span>设备列表</span>
+          <span>{{ t("video.live.deviceList") }}</span>
         </div>
         <div class="panel-body">
           <div class="tree-filter">
             <el-input
               v-model="deviceSearch"
               size="small"
-              placeholder="搜索..."
+              :placeholder="t('video.live.searchDevice')"
               clearable
               :prefix-icon="Search"
             />
@@ -217,7 +227,7 @@
           <div v-if="showPtz && activeWindowId && !fullscreenWindow" class="ptz-panel">
             <div class="ptz-header">
               <el-icon :size="12"><Monitor /></el-icon>
-              <span>云台控制</span>
+              <span>{{ t("video.live.ptzControl") }}</span>
               <el-tag size="small" effect="dark" class="ptz-window-tag">
                 {{ activeWindowId }}
               </el-tag>
@@ -227,25 +237,37 @@
             </div>
             <div class="ptz-body">
               <div class="ptz-dpad">
-                <button class="ptz-btn ptz-up" title="上" @mousedown="handlePtz">
+                <button class="ptz-btn ptz-up" :title="t('video.live.up')" @mousedown="handlePtz">
                   <el-icon><Top /></el-icon>
                 </button>
-                <button class="ptz-btn ptz-left" title="左" @mousedown="handlePtz">
+                <button
+                  class="ptz-btn ptz-left"
+                  :title="t('video.live.left')"
+                  @mousedown="handlePtz"
+                >
                   <el-icon><Back /></el-icon>
                 </button>
                 <button class="ptz-btn ptz-center" disabled />
-                <button class="ptz-btn ptz-right" title="右" @mousedown="handlePtz">
+                <button
+                  class="ptz-btn ptz-right"
+                  :title="t('video.live.right')"
+                  @mousedown="handlePtz"
+                >
                   <el-icon><Right /></el-icon>
                 </button>
-                <button class="ptz-btn ptz-down" title="下" @mousedown="handlePtz">
+                <button
+                  class="ptz-btn ptz-down"
+                  :title="t('video.live.down')"
+                  @mousedown="handlePtz"
+                >
                   <el-icon><Bottom /></el-icon>
                 </button>
               </div>
               <div class="ptz-zoom">
-                <button class="ptz-btn" title="变焦+">
+                <button class="ptz-btn" :title="t('video.live.zoomIn')">
                   <el-icon><ZoomIn /></el-icon>
                 </button>
-                <button class="ptz-btn" title="变焦-">
+                <button class="ptz-btn" :title="t('video.live.zoomOut')">
                   <el-icon><ZoomOut /></el-icon>
                 </button>
               </div>
@@ -257,10 +279,12 @@
       <div v-show="showAlarmPanel" class="live-alarm-panel">
         <div class="panel-header">
           <el-icon :size="14"><Bell /></el-icon>
-          <span>实时告警</span>
+          <span>{{ t("video.live.realtimeAlarm") }}</span>
           <span v-if="alarmList.length" class="alarm-badge">{{ alarmList.length }}</span>
           <div class="panel-header-actions">
-            <el-button text size="small" @click="handleClearAlarms">清空</el-button>
+            <el-button text size="small" @click="handleClearAlarms">
+              {{ t("video.live.clearAlarms") }}
+            </el-button>
           </div>
         </div>
         <div class="panel-body">
@@ -284,7 +308,9 @@
               @click="handleAlarmClick(alarm)"
             >
               <div class="alarm-item-header">
-                <span class="alarm-camera-name">{{ alarm.camera?.name || "未知" }}</span>
+                <span class="alarm-camera-name">
+                  {{ alarm.camera?.name || t("video.live.unknown") }}
+                </span>
                 <el-tag
                   :type="severityTag(alarm.severity)"
                   size="small"
@@ -304,11 +330,15 @@
                   type="primary"
                   @click.stop="handleConfirmAlarm(alarm.id)"
                 >
-                  确认
+                  {{ t("video.common.confirm") }}
                 </el-button>
               </div>
             </div>
-            <el-empty v-if="!filteredAlarms.length" :image-size="40" description="暂无告警" />
+            <el-empty
+              v-if="!filteredAlarms.length"
+              :image-size="40"
+              :description="t('video.live.noAlarm')"
+            />
           </div>
         </div>
       </div>
@@ -317,29 +347,29 @@
     <div class="live-statusbar">
       <div class="statusbar-left">
         <span class="status-item">
-          设备总数:
+          {{ t("video.live.totalDevices") }}
           <strong>{{ cameras.length }}</strong>
         </span>
         <span class="status-divider" />
         <span class="status-item online">
-          在线:
+          {{ t("video.live.onlineCount") }}
           <strong>{{ onlineCount }}</strong>
         </span>
         <span class="status-divider" />
         <span class="status-item offline">
-          离线:
+          {{ t("video.live.offlineCount") }}
           <strong>{{ offlineCount }}</strong>
         </span>
         <span class="status-divider" />
         <span class="status-item">
-          播放中:
+          {{ t("video.live.playing") }}
           <strong>{{ boundCount }}</strong>
-          路
+          {{ t("video.live.way") }}
         </span>
       </div>
       <div class="statusbar-center">
         <template v-if="tourMode">
-          <span class="status-item">轮巡 {{ tourInterval }}秒</span>
+          <span class="status-item">{{ t("video.live.tourSeconds", { sec: tourInterval }) }}</span>
           <div class="tour-progress">
             <div class="tour-progress-bar" :style="{ width: tourProgress + '%' }" />
           </div>
@@ -353,7 +383,7 @@
     <!-- 保存布局对话框 -->
     <el-dialog
       v-model="showSaveLayout"
-      title="保存布局方案"
+      :title="t('video.live.saveLayoutTitle')"
       width="460px"
       append-to-body
       @close="
@@ -363,18 +393,18 @@
       "
     >
       <el-form label-width="90px">
-        <el-form-item label="操作方式">
+        <el-form-item :label="t('video.live.operationMode')">
           <el-radio-group v-model="saveMode">
-            <el-radio value="create">创建新方案</el-radio>
-            <el-radio value="overwrite">覆盖现有方案</el-radio>
+            <el-radio value="create">{{ t("video.live.createScheme") }}</el-radio>
+            <el-radio value="overwrite">{{ t("video.live.overwriteScheme") }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
         <template v-if="saveMode === 'create'">
-          <el-form-item label="方案名称" :error="layoutNameError">
+          <el-form-item :label="t('video.live.schemeName')" :error="layoutNameError">
             <el-input
               v-model="layoutName"
-              placeholder="例如：4路默认布局"
+              :placeholder="t('video.live.schemeNameExample')"
               maxlength="64"
               @input="validateLayoutName"
             />
@@ -382,30 +412,34 @@
         </template>
 
         <template v-if="saveMode === 'overwrite'">
-          <el-form-item label="选择方案">
+          <el-form-item :label="t('video.live.selectScheme')">
             <el-select
               v-model="selectedOverwriteId"
-              placeholder="选择要覆盖的方案"
+              :placeholder="t('video.live.selectSchemeToOverwrite')"
               style="width: 100%"
             >
               <el-option
                 v-for="ly in savedLayouts"
                 :key="ly.id"
                 :value="ly.id"
-                :label="`${ly.name} (${ly.grid_type}路)`"
+                :label="`${ly.name} (${ly.grid_type}${t('video.live.way')})`"
               />
             </el-select>
           </el-form-item>
         </template>
 
-        <el-form-item label="当前布局">
-          <span class="live-layout-summary">{{ layoutType }}路 · {{ boundCount }} 个窗口</span>
+        <el-form-item :label="t('video.live.currentLayout')">
+          <span class="live-layout-summary">
+            {{ t("video.live.windowsCount", { type: layoutType, count: boundCount }) }}
+          </span>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showSaveLayout = false">取消</el-button>
+        <el-button @click="showSaveLayout = false">{{ t("video.common.cancel") }}</el-button>
         <el-button type="primary" :disabled="!canSave" :loading="savingLayout" @click="saveLayout">
-          {{ saveMode === "overwrite" ? "覆盖保存" : "创建保存" }}
+          {{
+            saveMode === "overwrite" ? t("video.live.overwriteSave") : t("video.live.createSave")
+          }}
         </el-button>
       </template>
     </el-dialog>
@@ -417,6 +451,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue"
 import { Icon } from "@iconify/vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import {
   Bell,
   FolderOpened,
@@ -445,6 +480,8 @@ import { getRealtimeAlarms, confirmAlarm } from "@/api/module_video/alarm";
 import { getLayoutList, createLayout, updateLayout } from "@/api/module_video/layout";
 import { startRecord, stopRecord } from "@/api/module_video/record";
 import MultiCameraGrid from "@/components/Video/MultiCameraGrid.vue";
+
+const { t } = useI18n();
 
 const layouts = [
   {
@@ -530,10 +567,10 @@ const currentTime = ref("");
 let unmounted = false;
 
 const alarmFilters = [
-  { key: "all", label: "全部" },
-  { key: "CRITICAL", label: "紧急" },
-  { key: "WARNING", label: "警告" },
-  { key: "INFO", label: "一般" },
+  { key: "all", label: t("video.common.all") },
+  { key: "CRITICAL", label: t("video.live.critical") },
+  { key: "WARNING", label: t("video.live.warningLevel") },
+  { key: "INFO", label: t("video.live.info") },
 ];
 
 const selectedLayoutName = computed(() => {
@@ -549,7 +586,7 @@ const layoutNameError = computed(() => {
   const exists = savedLayouts.value.some(
     (l: any) => l.name === layoutName.value.trim() && l.id !== selectedOverwriteId.value
   );
-  return exists ? "该名称已存在" : "";
+  return exists ? t("video.live.nameExists") : "";
 });
 
 const canSave = computed(() => {
@@ -621,7 +658,7 @@ const deviceTreeData = computed(() => {
   if (ungrouped.length) {
     treeChildren.push({
       id: "ungrouped",
-      label: "未分组",
+      label: t("video.live.ungrouped"),
       type: "group",
       cameraCount: ungrouped.length,
       children: ungrouped,
@@ -631,7 +668,7 @@ const deviceTreeData = computed(() => {
   return [
     {
       id: "root",
-      label: "所有设备",
+      label: t("video.live.allDevices"),
       type: "root",
       cameraCount: cameras.value.length,
       children: treeChildren,
@@ -713,7 +750,7 @@ async function getOrCreatePlayUrl(camera: any): Promise<any> {
     // 未推流：尝试自动推流后再取播放地址（逻辑闭环，无需跳转摄像头管理页）
     try {
       await startStream(camera.id);
-      ElMessage.success("已启动");
+      ElMessage.success(t("video.common.started"));
     } catch {
       return camera;
     }
@@ -827,7 +864,7 @@ async function saveLayout() {
     } else {
       await createLayout(data);
     }
-    ElMessage.success("保存成功");
+    ElMessage.success(t("video.common.saveSuccess"));
     showSaveLayout.value = false;
     fetchSavedLayouts();
   } catch {}
@@ -912,7 +949,7 @@ function handleClearAlarms() {
 async function handleStartRecord(windowId: string, cameraId: number, streamId: string) {
   try {
     await startRecord(cameraId, streamId);
-    ElMessage.success("已启动");
+    ElMessage.success(t("video.common.started"));
     recordingWindows.value = { ...recordingWindows.value, [windowId]: true };
   } catch {
     /* noop */
@@ -926,7 +963,7 @@ async function handleStopRecord(windowId: string, streamId: string) {
     delete copy[windowId];
     recordingWindows.value = copy;
     ElMessage.success({
-      message: "录像已保存",
+      message: t("video.live.recordSaved"),
       duration: 4000,
     });
   } catch {
@@ -1019,7 +1056,7 @@ function onDeviceDragStart(camera: any, event: DragEvent) {
   event.dataTransfer?.setData("application/camera", JSON.stringify(camera));
 
   const ghost = document.createElement("div");
-  ghost.textContent = camera.name || "摄像头";
+  ghost.textContent = camera.name || t("video.live.camera");
   ghost.style.cssText =
     "display:flex;align-items:center;gap:6px;padding:4px 10px;font-size: var(--el-font-size-small);color:#fff;background:rgba(0,0,0,.75);border-radius:4px;white-space:nowrap";
   const icon = document.createElement("span");
@@ -1036,7 +1073,7 @@ function onDeviceDragEnd() {
 }
 
 function handlePtz() {
-  ElMessage.info("当前设备暂不支持云台(PTZ)控制");
+  ElMessage.info(t("video.live.ptzNotSupported"));
 }
 
 function updateTime() {
@@ -1436,50 +1473,6 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
   opacity: 0.4;
 }
-.count-total::before {
-  content: "共 ";
-}
-.count-total::after {
-  content: " 台";
-}
-.count-total {
-  color: var(--el-text-color-secondary);
-}
-
-.count-online::before {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 4px;
-  vertical-align: middle;
-  content: "";
-  background: var(--el-color-success);
-  border-radius: 50%;
-}
-.count-online::after {
-  content: " 在线";
-}
-.count-online {
-  color: var(--el-color-success);
-}
-
-.count-offline::before {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 4px;
-  vertical-align: middle;
-  content: "";
-  background: var(--el-color-info);
-  border-radius: 50%;
-}
-.count-offline::after {
-  content: " 离线";
-}
-.count-offline {
-  color: var(--el-color-info);
-}
-
 /* ==================== Main Layout ==================== */
 .live-main {
   display: flex;

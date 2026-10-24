@@ -59,8 +59,12 @@
         </el-form>
 
         <template #footer>
-          <el-button v-if="!formDisable" type="primary" @click="handleSubmit">{{ t("common.ok") }}</el-button>
-          <el-button @click="handleClose">{{ !formDisable ? t("common.cancel") : t("common.close") }}</el-button>
+          <el-button v-if="!formDisable" type="primary" @click="handleSubmit">
+            {{ t("common.ok") }}
+          </el-button>
+          <el-button @click="handleClose">
+            {{ !formDisable ? t("common.cancel") : t("common.close") }}
+          </el-button>
         </template>
       </el-drawer>
     </template>
@@ -127,8 +131,12 @@
         </el-form>
 
         <template #footer>
-          <el-button v-if="!formDisable" type="primary" @click="handleSubmit">{{ t("common.ok") }}</el-button>
-          <el-button @click="handleClose">{{ !formDisable ? t("common.cancel") : t("common.close") }}</el-button>
+          <el-button v-if="!formDisable" type="primary" @click="handleSubmit">
+            {{ t("common.ok") }}
+          </el-button>
+          <el-button @click="handleClose">
+            {{ !formDisable ? t("common.cancel") : t("common.close") }}
+          </el-button>
         </template>
       </EnhancedDialog>
     </template>

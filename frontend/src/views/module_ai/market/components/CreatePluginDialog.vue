@@ -3,55 +3,64 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="props.realId ? '编辑能力插件' : '新增能力插件'"
+    :title="props.realId ? t('ai_market.editPlugin') : t('ai_market.createPlugin')"
     width="600px"
     append-to-body
     destroy-on-close
     @closed="resetForm"
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
-      <el-form-item label="标识" prop="key">
+      <el-form-item :label="t('ai_market.keyLabel')" prop="key">
         <el-input
           v-model="form.key"
           :disabled="!!form.id"
           maxlength="64"
-          placeholder="如：web_fetch"
+          :placeholder="t('ai_market.pluginKeyPlaceholder')"
         />
       </el-form-item>
-      <el-form-item label="名称" prop="label">
-        <el-input v-model="form.label" maxlength="128" placeholder="展示名" />
+      <el-form-item :label="t('ai_market.nameLabel')" prop="label">
+        <el-input
+          v-model="form.label"
+          maxlength="128"
+          :placeholder="t('ai_market.displayNamePlaceholder')"
+        />
       </el-form-item>
-      <el-form-item label="描述">
+      <el-form-item :label="t('ai_market.description')">
         <el-input v-model="form.description" type="textarea" :rows="2" maxlength="500" />
       </el-form-item>
-      <el-form-item label="配置">
+      <el-form-item :label="t('ai_market.configLabel')">
         <el-input
           v-model="configText"
           type="textarea"
           :rows="4"
-          placeholder='JSON 配置，例如：{"timeout": 15}'
+          :placeholder="t('ai_market.jsonConfigPlaceholder')"
         />
       </el-form-item>
-      <el-form-item label="启用">
+      <el-form-item :label="t('ai_market.enableLabel')">
         <el-switch v-model="form.enabled" />
       </el-form-item>
     </el-form>
 
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+      <el-button @click="visible = false">{{ t("ai_market.cancel") }}</el-button>
+      <el-button type="primary" :loading="saving" @click="handleSave">
+        {{ t("ai_market.save") }}
+      </el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, type FormInstance } from "element-plus";
 
 import { createPlugin, getPluginList, updatePlugin } from "@/api/module_ai/plugin";
 
 const props = defineProps<{ modelValue: boolean; realId?: number | null }>();
 const emit = defineEmits<{ "update:modelValue": [v: boolean]; saved: [] }>();
+
+const { t } = useI18n();
 
 const visible = computed({
   get: () => props.modelValue,
@@ -64,8 +73,8 @@ const form = reactive({ id: 0, key: "", label: "", description: "", enabled: tru
 const configText = ref("{}");
 
 const rules = {
-  key: [{ required: true, message: "请输入插件标识", trigger: "blur" }],
-  label: [{ required: true, message: "请输入名称", trigger: "blur" }],
+  key: [{ required: true, message: t("ai_market.requirePluginKey"), trigger: "blur" }],
+  label: [{ required: true, message: t("ai_market.requiredName"), trigger: "blur" }],
 };
 
 function resetForm() {
@@ -101,7 +110,7 @@ async function handleSave() {
   try {
     config = configText.value.trim() ? JSON.parse(configText.value) : {};
   } catch {
-    ElMessage.warning("配置必须是合法 JSON");
+    ElMessage.warning(t("ai_market.invalidJson"));
     return;
   }
   saving.value = true;
@@ -113,7 +122,7 @@ async function handleSave() {
         enabled: form.enabled,
         config,
       });
-      ElMessage.success("修改成功");
+      ElMessage.success(t("ai_market.updateSuccess"));
     } else {
       await createPlugin({
         key: form.key,
@@ -123,12 +132,12 @@ async function handleSave() {
         config,
         kind: "custom",
       });
-      ElMessage.success("创建成功");
+      ElMessage.success(t("ai_market.createSuccess"));
     }
     visible.value = false;
     emit("saved");
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "保存失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_market.saveFailed"));
   } finally {
     saving.value = false;
   }

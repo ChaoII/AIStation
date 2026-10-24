@@ -4,27 +4,24 @@
     <el-row :gutter="12" class="mb-3">
       <el-col :span="24">
         <el-card shadow="never" class="gen-echo-card">
-          <div class="gen-echo-card__title">生成回显 / 生成文件路径</div>
+          <div class="gen-echo-card__title">{{ t("generator.echoTitle") }}</div>
           <div class="gen-echo-grid">
             <div class="gen-echo-item">
-              <div class="gen-echo-item__k">后端路径</div>
+              <div class="gen-echo-item__k">{{ t("generator.backendPath") }}</div>
               <code class="gen-echo-item__v">{{ backendModuleDirPreview }}</code>
             </div>
             <div class="gen-echo-item">
-              <div class="gen-echo-item__k">前端视图路径</div>
+              <div class="gen-echo-item__k">{{ t("generator.frontendViewPath") }}</div>
               <code class="gen-echo-item__v">{{ frontendViewDirPreview }}</code>
             </div>
             <div class="gen-echo-item">
-              <div class="gen-echo-item__k">前端 API 文件</div>
+              <div class="gen-echo-item__k">{{ t("generator.frontendApiFile") }}</div>
               <code class="gen-echo-item__v">{{ frontendApiFilePreview }}</code>
             </div>
             <div class="gen-echo-item">
               <div class="gen-echo-item__k gen-echo-item__k--with-tip">
-                权限
-                <el-tooltip
-                  content="前两段为包名、模块名；第三段为操作类型（与接口/按钮一致）：query、detail、create、update、delete、patch、export、import、download。"
-                  placement="top"
-                >
+                {{ t("generator.permission") }}
+                <el-tooltip :content="t('generator.permissionTip')" placement="top">
                   <el-icon class="gen-echo-item__tip"><QuestionFilled /></el-icon>
                 </el-tooltip>
               </div>
@@ -35,7 +32,7 @@
             v-if="info.sub_table_name && info.sub_table_fk_name && !info.master_sub_hint"
             class="gen-echo-warn"
           >
-            将额外生成子表代码（不创建子表菜单）
+            {{ t("generator.subTableExtra") }}
           </div>
         </el-card>
       </el-col>
@@ -46,34 +43,37 @@
         <el-card shadow="never" class="gen-form-card">
           <template #header>
             <div class="gen-form-card__header">
-              <span class="font-medium">基础信息</span>
-              <span class="gen-form-card__hint">切换步骤会先保存当前页</span>
+              <span class="font-medium">{{ t("generator.basicInfo") }}</span>
+              <span class="gen-form-card__hint">{{ t("generator.stepSaveHint") }}</span>
             </div>
           </template>
           <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="表名称" prop="table_name">
-                <el-input v-model="info.table_name" placeholder="请输入表名称" />
+              <el-form-item :label="t('generator.tableName')" prop="table_name">
+                <el-input v-model="info.table_name" :placeholder="t('generator.inputTableName')" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="表描述" prop="table_comment">
-                <el-input v-model="info.table_comment" placeholder="请输入表描述" />
+              <el-form-item :label="t('generator.tableComment')" prop="table_comment">
+                <el-input
+                  v-model="info.table_comment"
+                  :placeholder="t('generator.inputTableComment')"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="实体类名称" prop="class_name">
-                <el-input v-model="info.class_name" placeholder="请输入" />
+              <el-form-item :label="t('generator.entityName')" prop="class_name">
+                <el-input
+                  v-model="info.class_name"
+                  :placeholder="t('generator.inputPlaceholder')"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item prop="package_name">
                 <template #label>
-                  包名
-                  <el-tooltip
-                    content="插件包名（plugin 顶层目录）。三段式示例：module_example"
-                    placement="top"
-                  >
+                  {{ t("generator.packageName") }}
+                  <el-tooltip :content="t('generator.packageTip')" placement="top">
                     <el-icon><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </template>
@@ -81,7 +81,7 @@
                   <el-input
                     v-model="info.package_name"
                     class="gen-package-row__input"
-                    placeholder="例如 module_example"
+                    :placeholder="t('generator.packagePlaceholder')"
                     clearable
                   />
                 </div>
@@ -90,28 +90,29 @@
             <el-col :span="12">
               <el-form-item prop="module_name">
                 <template #label>
-                  模块名
-                  <el-tooltip content="包名下第二层目录。示例：demo / gen_demo02" placement="top">
+                  {{ t("generator.moduleName") }}
+                  <el-tooltip :content="t('generator.moduleTip')" placement="top">
                     <el-icon><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </template>
-                <el-input v-model="info.module_name" placeholder="例如 demo" clearable />
+                <el-input
+                  v-model="info.module_name"
+                  :placeholder="t('generator.modulePlaceholder')"
+                  clearable
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item prop="business_name">
                 <template #label>
-                  业务名
-                  <el-tooltip
-                    content="模块下第三层目录（可为空）。示例：demo01；留空表示仅到模块目录"
-                    placement="top"
-                  >
+                  {{ t("generator.businessName") }}
+                  <el-tooltip :content="t('generator.businessTip')" placement="top">
                     <el-icon><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </template>
                 <el-input
                   v-model="info.business_name"
-                  placeholder="例如 demo01（可留空）"
+                  :placeholder="t('generator.businessPlaceholder')"
                   clearable
                 />
               </el-form-item>
@@ -119,26 +120,29 @@
             <el-col :span="12">
               <el-form-item prop="function_name">
                 <template #label>
-                  功能名
-                  <el-tooltip content="写入本地时作为菜单名称，例如 用户管理" placement="top">
+                  {{ t("generator.functionName") }}
+                  <el-tooltip :content="t('generator.functionTip')" placement="top">
                     <el-icon><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </template>
-                <el-input v-model="info.function_name" placeholder="例如 用户管理" />
+                <el-input
+                  v-model="info.function_name"
+                  :placeholder="t('generator.functionPlaceholder')"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item>
                 <template #label>
-                  上级菜单
-                  <el-tooltip content="仅可选目录；留空则在侧栏根下创建模块目录" placement="top">
+                  {{ t("generator.parentMenu") }}
+                  <el-tooltip :content="t('generator.parentMenuTip')" placement="top">
                     <el-icon><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </template>
                 <el-tree-select
                   v-model="info.parent_menu_id"
                   :data="menuOptions"
-                  placeholder="不选=根目录下挂模块目录；选=挂到该目录下"
+                  :placeholder="t('generator.parentMenuPlaceholder')"
                   check-strictly
                   filterable
                   default-expand-all
@@ -149,7 +153,7 @@
               </el-form-item>
             </el-col>
             <el-col :span="24">
-              <el-form-item label="备注" prop="description">
+              <el-form-item :label="t('generator.remark')" prop="description">
                 <el-input v-model="info.description" type="textarea" :rows="3"></el-input>
               </el-form-item>
             </el-col>
@@ -159,17 +163,14 @@
                   <el-col :span="12">
                     <el-form-item prop="sub_table_name">
                       <template #label>
-                        子表表名
-                        <el-tooltip
-                          content="数据库中已存在的物理表名，例如 gen_order_item"
-                          placement="top"
-                        >
+                        {{ t("generator.subTableName") }}
+                        <el-tooltip :content="t('generator.subTableNameTip')" placement="top">
                           <el-icon><QuestionFilled /></el-icon>
                         </el-tooltip>
                       </template>
                       <el-input
                         v-model="info.sub_table_name"
-                        placeholder="与下栏同时填写，如 gen_order_item"
+                        :placeholder="t('generator.subTableNameMasterSubPlaceholder')"
                         clearable
                         @blur="emit('master-sub-blur')"
                       />
@@ -178,17 +179,14 @@
                   <el-col :span="12">
                     <el-form-item prop="sub_table_fk_name">
                       <template #label>
-                        子表外键列
-                        <el-tooltip
-                          content="子表中指向主表主键的列名，例如 order_id（类型需与主键匹配）"
-                          placement="top"
-                        >
+                        {{ t("generator.subFkColumn") }}
+                        <el-tooltip :content="t('generator.subFkColumnTip')" placement="top">
                           <el-icon><QuestionFilled /></el-icon>
                         </el-tooltip>
                       </template>
                       <el-input
                         v-model="info.sub_table_fk_name"
-                        placeholder="与上栏同时填写，如 order_id"
+                        :placeholder="t('generator.subFkColumnPlaceholder')"
                         clearable
                         @blur="emit('master-sub-blur')"
                       />
@@ -209,7 +207,7 @@
                   type="success"
                   :closable="false"
                   show-icon
-                  title="主子表结构已从数据库加载，预览与生成将包含子表代码。"
+                  :title="t('generator.masterSubLoaded')"
                 />
               </el-card>
             </el-col>
@@ -222,12 +220,15 @@
 
 <script setup lang="ts">
 import { computed, inject, onUnmounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import type { FormInstance, FormRules } from "element-plus";
 import { QuestionFilled } from "@element-plus/icons-vue";
 import type { GenTableSchema } from "@/api/module_generator/gencode";
 import { GENCODE_BASIC_FORM_KEY } from "../gencodeInjectionKeys";
 
 defineOptions({ name: "GenBasicStep" });
+
+const { t } = useI18n();
 
 const props = defineProps<{
   info: GenTableSchema;
@@ -264,7 +265,7 @@ const effectivePackageName = computed(() => {
 const permissionPreview = computed(() => {
   const pkg = effectivePackageName.value;
   const mod = (props.info.module_name || "").trim();
-  if (!pkg || !mod) return "<module_xxx>:<module>:<操作>";
+  if (!pkg || !mod) return t("generator.permissionPlaceholder");
   // 与后端 permission_prefix + 模板一致；第三段为操作类型，示例用 query
   return `${pkg}:${mod}:query`;
 });

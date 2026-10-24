@@ -20,31 +20,41 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('task.noData')" />
             </template>
             <el-table-column type="selection" align="center" min-width="55" />
-            <el-table-column type="index" fixed label="序号" min-width="60">
+            <el-table-column type="index" fixed :label="t('task.serial')" min-width="60">
               <template #default="scope">
                 {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column label="ID" prop="id" min-width="70" />
-            <el-table-column label="名称" prop="name" min-width="140" show-overflow-tooltip />
-            <el-table-column label="编码" prop="code" min-width="120" show-overflow-tooltip />
-            <el-table-column label="分类" prop="category" min-width="100">
+            <el-table-column :label="t('task.id')" prop="id" min-width="70" />
+            <el-table-column
+              :label="t('task.name')"
+              prop="name"
+              min-width="140"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              :label="t('task.code')"
+              prop="code"
+              min-width="120"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('task.category')" prop="category" min-width="100">
               <template #default="scope">
                 {{ categoryLabel(scope.row.category) }}
               </template>
             </el-table-column>
-            <el-table-column label="排序" prop="sort_order" min-width="80" />
-            <el-table-column label="启用" prop="is_active" min-width="80">
+            <el-table-column :label="t('task.sortOrder')" prop="sort_order" min-width="80" />
+            <el-table-column :label="t('task.isActive')" prop="is_active" min-width="80">
               <template #default="scope">
                 <el-tag :type="scope.row.is_active ? 'success' : 'info'">
-                  {{ scope.row.is_active ? "是" : "否" }}
+                  {{ scope.row.is_active ? t("task.yes") : t("task.no") }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="创建时间" prop="created_time" min-width="170" />
+            <el-table-column :label="t('task.createdTime')" prop="created_time" min-width="170" />
 
             <OperationColumn :list-data-length="data.length">
               <template #default="scope">
@@ -57,7 +67,7 @@
                     icon="edit"
                     @click="openDialog(scope.row.id)"
                   >
-                    编辑
+                    {{ t("task.edit") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_task:workflow:node-type:delete']"
@@ -67,7 +77,7 @@
                     icon="delete"
                     @click="handleRowDelete(scope.row.id)"
                   >
-                    删除
+                    {{ t("task.delete") }}
                   </el-button>
                 </el-space>
               </template>
@@ -85,49 +95,51 @@
       @close="handleCloseDialog"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item label="名称" prop="name">
+        <el-form-item :label="t('task.name')" prop="name">
           <el-input v-model="form.name" maxlength="128" show-word-limit />
         </el-form-item>
-        <el-form-item label="编码" prop="code">
+        <el-form-item :label="t('task.code')" prop="code">
           <el-input v-model="form.code" maxlength="64" show-word-limit :disabled="!!editingId" />
         </el-form-item>
-        <el-form-item label="分类" prop="category">
+        <el-form-item :label="t('task.category')" prop="category">
           <el-select v-model="form.category" style="width: 100%">
-            <el-option label="触发器" value="trigger" />
-            <el-option label="动作" value="action" />
-            <el-option label="条件" value="condition" />
-            <el-option label="控制" value="control" />
+            <el-option :label="t('task.trigger')" value="trigger" />
+            <el-option :label="t('task.action')" value="action" />
+            <el-option :label="t('task.condition')" value="condition" />
+            <el-option :label="t('task.control')" value="control" />
           </el-select>
         </el-form-item>
-        <el-form-item label="代码块" prop="func">
+        <el-form-item :label="t('task.codeBlock')" prop="func">
           <el-input
             v-model="form.func"
             type="textarea"
             :rows="12"
-            placeholder="须定义 handler(*args, **kwargs)，可接收 upstream、variables"
+            :placeholder="t('task.funcPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="位置参数" prop="args">
-          <el-input v-model="form.args" placeholder="逗号分隔，如 a, b" />
+        <el-form-item :label="t('task.positionalArgs')" prop="args">
+          <el-input v-model="form.args" :placeholder="t('task.argsPlaceholder')" />
         </el-form-item>
-        <el-form-item label="关键字参数" prop="kwargs">
+        <el-form-item :label="t('task.kwArgs')" prop="kwargs">
           <el-input
             v-model="form.kwargs"
             type="textarea"
             :rows="3"
-            placeholder='JSON，如 {"key": "v"}'
+            :placeholder="t('task.kwargsPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="排序" prop="sort_order">
+        <el-form-item :label="t('task.sortOrder')" prop="sort_order">
           <el-input-number v-model="form.sort_order" :min="0" />
         </el-form-item>
-        <el-form-item label="启用" prop="is_active">
+        <el-form-item :label="t('task.isActive')" prop="is_active">
           <el-switch v-model="form.is_active" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ t("task.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitForm">
+          {{ t("task.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
   </div>
@@ -139,7 +151,10 @@ defineOptions({
   inheritAttrs: false,
 });
 
+const { t } = useI18n();
+
 import { onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
@@ -156,7 +171,7 @@ import WorkflowNodeTypeAPI, {
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
 const dialogVisible = ref(false);
-const dialogTitle = ref("新增节点类型");
+const dialogTitle = ref(t("task.createNodeType"));
 const editingId = ref<number | null>(null);
 const submitting = ref(false);
 const formRef = ref<FormInstance>();
@@ -170,27 +185,27 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "名称",
+      label: t("task.name"),
       type: "input",
-      attrs: { placeholder: "名称", clearable: true },
+      attrs: { placeholder: t("task.name"), clearable: true },
     },
     {
       prop: "code",
-      label: "编码",
+      label: t("task.code"),
       type: "input",
-      attrs: { placeholder: "编码", clearable: true },
+      attrs: { placeholder: t("task.code"), clearable: true },
     },
     {
       prop: "category",
-      label: "分类",
+      label: t("task.category"),
       type: "select",
       options: [
-        { label: "触发器", value: "trigger" },
-        { label: "动作", value: "action" },
-        { label: "条件", value: "condition" },
-        { label: "控制", value: "control" },
+        { label: t("task.trigger"), value: "trigger" },
+        { label: t("task.action"), value: "action" },
+        { label: t("task.condition"), value: "condition" },
+        { label: t("task.control"), value: "control" },
       ],
-      attrs: { placeholder: "全部", clearable: true, style: { width: "170px" } },
+      attrs: { placeholder: t("task.all"), clearable: true, style: { width: "170px" } },
     },
   ],
 });
@@ -206,7 +221,7 @@ const contentConfig = reactive<IContentConfig<WorkflowNodeTypePageQuery>>({
   cols: [],
   hideColumnFilter: true,
   toolbar: [
-    { name: "add", text: "新增", attrs: { icon: "plus", type: "success" }, perm: "create" },
+    { name: "add", text: t("task.add"), attrs: { icon: "plus", type: "success" }, perm: "create" },
     "delete",
   ],
   defaultToolbar: ["refresh"],
@@ -233,8 +248,8 @@ const contentConfig = reactive<IContentConfig<WorkflowNodeTypePageQuery>>({
         .filter((n) => !Number.isNaN(n) && n > 0)
     ),
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除选中的编排节点类型吗？",
+    title: t("task.warn"),
+    message: t("task.deleteNodeTypeConfirm"),
     type: "warning",
   },
 });
@@ -246,10 +261,10 @@ function handleRowDelete(id?: number) {
 
 function categoryLabel(c?: string) {
   const m: Record<string, string> = {
-    trigger: "触发器",
-    action: "动作",
-    condition: "条件",
-    control: "控制",
+    trigger: t("task.trigger"),
+    action: t("task.action"),
+    condition: t("task.condition"),
+    control: t("task.control"),
   };
   return c ? m[c] || c : "-";
 }
@@ -268,10 +283,10 @@ const defaultForm = (): WorkflowNodeTypeForm => ({
 const form = reactive<WorkflowNodeTypeForm>(defaultForm());
 
 const rules: FormRules = {
-  name: [{ required: true, message: "请输入名称", trigger: "blur" }],
-  code: [{ required: true, message: "请输入编码", trigger: "blur" }],
-  category: [{ required: true, message: "请选择分类", trigger: "change" }],
-  func: [{ required: true, message: "请输入代码块", trigger: "blur" }],
+  name: [{ required: true, message: t("task.inputName"), trigger: "blur" }],
+  code: [{ required: true, message: t("task.inputCode"), trigger: "blur" }],
+  category: [{ required: true, message: t("task.selectCategory"), trigger: "change" }],
+  func: [{ required: true, message: t("task.inputFunc"), trigger: "blur" }],
 };
 
 function resetForm() {
@@ -286,7 +301,7 @@ function handleCloseDialog() {
 
 async function openDialog(id?: number) {
   resetForm();
-  dialogTitle.value = id ? "编辑节点类型" : "新增节点类型";
+  dialogTitle.value = id ? t("task.editNodeType") : t("task.createNodeType");
   editingId.value = id ?? null;
   if (id) {
     try {
@@ -303,7 +318,7 @@ async function openDialog(id?: number) {
         form.is_active = d.is_active ?? true;
       }
     } catch {
-      ElMessage.error("加载详情失败");
+      ElMessage.error(t("task.loadDetailFailed"));
       return;
     }
   }
@@ -317,7 +332,7 @@ async function submitForm() {
     try {
       JSON.parse(form.kwargs);
     } catch {
-      ElMessage.error("关键字参数须为合法 JSON");
+      ElMessage.error(t("task.kwargsInvalidJson"));
       return;
     }
   }
@@ -325,15 +340,15 @@ async function submitForm() {
   try {
     if (editingId.value) {
       await WorkflowNodeTypeAPI.updateWorkflowNodeType(editingId.value, form);
-      ElMessage.success("更新成功");
+      ElMessage.success(t("task.updateSuccess"));
     } else {
       await WorkflowNodeTypeAPI.createWorkflowNodeType(form);
-      ElMessage.success("创建成功");
+      ElMessage.success(t("task.createSuccess"));
     }
     dialogVisible.value = false;
     refreshList();
   } catch {
-    ElMessage.error(editingId.value ? "更新失败" : "创建失败");
+    ElMessage.error(editingId.value ? t("task.updateFailed") : t("task.createFailed"));
   } finally {
     submitting.value = false;
   }

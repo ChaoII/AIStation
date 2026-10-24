@@ -4,27 +4,29 @@
     <el-card shadow="never" class="toolbar-card">
       <div class="toolbar">
         <el-radio-group v-model="direction" @change="load">
-          <el-radio-button value="in">收到的</el-radio-button>
-          <el-radio-button value="out">发出的</el-radio-button>
+          <el-radio-button value="in">{{ t("ai_market.received") }}</el-radio-button>
+          <el-radio-button value="out">{{ t("ai_market.sent") }}</el-radio-button>
         </el-radio-group>
         <el-select
           v-model="status"
           class="status-select"
-          placeholder="全部状态"
+          :placeholder="t('ai_market.allStatus')"
           clearable
           @change="load"
         >
-          <el-option label="待处理" value="pending" />
-          <el-option label="已接收" value="accepted" />
-          <el-option label="已拒绝" value="rejected" />
+          <el-option :label="t('ai_market.statusPending')" value="pending" />
+          <el-option :label="t('ai_market.statusAccepted')" value="accepted" />
+          <el-option :label="t('ai_market.statusRejected')" value="rejected" />
         </el-select>
-        <el-button type="primary" :icon="Refresh" @click="load">刷新</el-button>
+        <el-button type="primary" :icon="Refresh" @click="load">
+          {{ t("ai_market.refresh") }}
+        </el-button>
       </div>
     </el-card>
 
     <el-card shadow="never">
       <el-table v-loading="loading" :data="items" border stripe>
-        <el-table-column label="商品" min-width="200">
+        <el-table-column :label="t('ai_market.productLabel')" min-width="200">
           <template #default="{ row }">
             <span class="item-icon">{{ row.item_icon || "📦" }}</span>
             <span>{{ row.item_name }}</span>
@@ -33,21 +35,31 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="分享人" width="140">
+        <el-table-column :label="t('ai_market.fromUser')" width="140">
           <template #default="{ row }">{{ row.from_user_name || row.from_user_id }}</template>
         </el-table-column>
-        <el-table-column label="接收人" width="140">
+        <el-table-column :label="t('ai_market.toUser')" width="140">
           <template #default="{ row }">{{ row.to_user_name || row.to_user_id }}</template>
         </el-table-column>
-        <el-table-column prop="message" label="留言" min-width="140" show-overflow-tooltip />
-        <el-table-column label="状态" width="100">
+        <el-table-column
+          prop="message"
+          :label="t('ai_market.messageLabel')"
+          min-width="140"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="t('ai_market.statusLabel')" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="statusTagType(row.status)" effect="plain">
               {{ statusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="direction === 'in'" label="操作" width="180" fixed="right">
+        <el-table-column
+          v-if="direction === 'in'"
+          :label="t('ai_market.actionLabel')"
+          width="180"
+          fixed="right"
+        >
           <template #default="{ row }">
             <template v-if="row.status === 'pending'">
               <el-button
@@ -57,7 +69,7 @@
                 :icon="Check"
                 @click="accept(row as any)"
               >
-                接收
+                {{ t("ai_market.accept") }}
               </el-button>
               <el-button
                 v-hasPerm="'module_ai:market:manage'"
@@ -65,15 +77,17 @@
                 :icon="Close"
                 @click="reject(row as any)"
               >
-                拒绝
+                {{ t("ai_market.reject") }}
               </el-button>
-              <span v-if="!hasPerm('module_ai:market:manage')" class="done-text">无接收权限</span>
+              <span v-if="!hasPerm('module_ai:market:manage')" class="done-text">
+                {{ t("ai_market.noReceivePerm") }}
+              </span>
             </template>
-            <span v-else class="done-text">已处理</span>
+            <span v-else class="done-text">{{ t("ai_market.handled") }}</span>
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!loading && !items.length" description="暂无分享记录" />
+      <el-empty v-if="!loading && !items.length" :description="t('ai_market.noShareRecords')" />
     </el-card>
   </div>
 </template>
@@ -82,6 +96,7 @@
 import { Check, Close, Refresh } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 
 import {
   acceptMarketShare,
@@ -93,6 +108,8 @@ import { ROLE_ROOT } from "@/constants";
 import { useUserStore } from "@/store";
 
 defineOptions({ name: "MarketShared" });
+
+const { t } = useI18n();
 
 const loading = ref(false);
 const direction = ref("in");
@@ -107,11 +124,24 @@ function hasPerm(perm: string): boolean {
 }
 
 function assetLabel(type: string) {
-  return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+  return (
+    {
+      tool: t("ai_market.assetTool"),
+      skill: t("ai_market.assetSkill"),
+      mcp: t("ai_market.assetMcp"),
+      plugin: t("ai_market.assetPlugin"),
+    }[type] || type
+  );
 }
 
 function statusLabel(s: string) {
-  return { pending: "待处理", accepted: "已接收", rejected: "已拒绝" }[s] || s;
+  return (
+    {
+      pending: t("ai_market.statusPending"),
+      accepted: t("ai_market.statusAccepted"),
+      rejected: t("ai_market.statusRejected"),
+    }[s] || s
+  );
 }
 
 function statusTagType(s: string): "primary" | "success" | "warning" | "info" | "danger" {
@@ -134,23 +164,31 @@ async function load() {
 
 async function accept(row: MarketShare) {
   await ElMessageBox.confirm(
-    `接收后「${row.item_name}」会复制为你自己的资产（可在对应管理页维护）。是否接收？`,
-    "接收确认",
-    { confirmButtonText: "接收", cancelButtonText: "取消", type: "info" }
+    t("ai_market.acceptConfirm", { name: row.item_name }),
+    t("ai_market.acceptConfirmTitle"),
+    {
+      confirmButtonText: t("ai_market.accept"),
+      cancelButtonText: t("ai_market.cancel"),
+      type: "info",
+    }
   );
   await acceptMarketShare(row.id);
-  ElMessage.success("已接收，资产已添加到你的账户");
+  ElMessage.success(t("ai_market.acceptSuccess"));
   load();
 }
 
 async function reject(row: MarketShare) {
-  await ElMessageBox.confirm(`确定拒绝「${row.item_name}」的分享吗？`, "拒绝确认", {
-    confirmButtonText: "拒绝",
-    cancelButtonText: "取消",
-    type: "warning",
-  });
+  await ElMessageBox.confirm(
+    t("ai_market.rejectConfirm", { name: row.item_name }),
+    t("ai_market.rejectConfirmTitle"),
+    {
+      confirmButtonText: t("ai_market.reject"),
+      cancelButtonText: t("ai_market.cancel"),
+      type: "warning",
+    }
+  );
   await rejectMarketShare(row.id);
-  ElMessage.success("已拒绝");
+  ElMessage.success(t("ai_market.rejected"));
   load();
 }
 

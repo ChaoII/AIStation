@@ -4,7 +4,7 @@
   <div>
     <el-card v-if="rows.length" shadow="never" class="section-card">
       <template #header>
-        <span class="card-title">环境指标</span>
+        <span class="card-title">{{ t("train.envTitle") }}</span>
       </template>
 
       <!-- 当前值：最新一条 env 行（GPU 每卡 / CPU / 内存 / 磁盘 / 网络） -->
@@ -29,7 +29,12 @@
               <span class="mini-name" :style="{ color: s.color }">{{ s.label }}</span>
               <span class="mini-val">{{ s.latest }}</span>
             </div>
-            <MetricMiniChart :points="s.points" :color="s.color" :height="132" x-label="秒" />
+            <MetricMiniChart
+              :points="s.points"
+              :color="s.color"
+              :height="132"
+              :x-label="t('train.envSeconds')"
+            />
           </el-card>
         </el-col>
       </el-row>
@@ -39,6 +44,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { Box, Connection, Cpu, DataLine, Odometer } from "@element-plus/icons-vue";
 import { metricColor } from "@/utils/trainMetrics";
 import MetricMiniChart from "./MetricMiniChart.vue";
@@ -55,6 +61,8 @@ import MetricMiniChart from "./MetricMiniChart.vue";
  * 样式全部复用 train-detail.css 全局类（section-card / metric-item /
  * mini-chart-card …）与 Element Plus 组件，不新增自定义字号/主题色。
  */
+const { t } = useI18n();
+
 const props = defineProps<{
   /** env 行：`{_kind:"env", seq, ts(epoch秒), gpu:[{id,util,mem_allocated_mb,mem_total_mb,temp_c,power_w}], cpu, mem:{used_mb,total_mb}, disk:{read_mb_s,write_mb_s}, net:{rx_mb_s,tx_mb_s}}` */
   rows: any[];
@@ -120,7 +128,7 @@ const currentItems = computed<CurrentItem[]>(() => {
     items.push({
       key: "gpu_none",
       label: "GPU",
-      value: "未检测到 GPU",
+      value: t("train.envNoGpu"),
       icon: Cpu,
       color: metricColor("gpu_none"),
     });
@@ -136,7 +144,7 @@ const currentItems = computed<CurrentItem[]>(() => {
   const memTotal = num(r?.mem?.total_mb);
   items.push({
     key: "mem",
-    label: "内存",
+    label: t("train.envMemory"),
     value: memUsed != null && memTotal ? fmtPct((memUsed / memTotal) * 100) : "—",
     sub:
       memUsed != null && memTotal
@@ -147,7 +155,7 @@ const currentItems = computed<CurrentItem[]>(() => {
   });
   items.push({
     key: "disk",
-    label: "磁盘读 / 写",
+    label: t("train.envDiskRW"),
     value: `${fmtRate(r?.disk?.read_mb_s)} / ${fmtRate(r?.disk?.write_mb_s)}`,
     sub: "MB/s",
     icon: DataLine,
@@ -155,7 +163,7 @@ const currentItems = computed<CurrentItem[]>(() => {
   });
   items.push({
     key: "net",
-    label: "网络收 / 发",
+    label: t("train.envNetRX"),
     value: `${fmtRate(r?.net?.rx_mb_s)} / ${fmtRate(r?.net?.tx_mb_s)}`,
     sub: "MB/s",
     icon: Connection,
@@ -182,28 +190,28 @@ interface SeriesDef {
 const SERIES_DEFS: SeriesDef[] = [
   {
     key: "env_gpu_util",
-    label: (i) => `GPU ${i} 利用率`,
+    label: (i) => t("train.envGpuUtil", { i }),
     unit: "%",
     div: 1,
     pick: (r) => num(r?.gpu?.[0]?.util),
   },
   {
     key: "env_gpu_mem",
-    label: (i) => `GPU ${i} 显存`,
+    label: (i) => t("train.envGpuMem", { i }),
     unit: " GB",
     div: 1024,
     pick: (r) => num(r?.gpu?.[0]?.mem_allocated_mb),
   },
   {
     key: "env_gpu_temp",
-    label: (i) => `GPU ${i} 温度`,
+    label: (i) => t("train.envGpuTemp", { i }),
     unit: "°C",
     div: 1,
     pick: (r) => num(r?.gpu?.[0]?.temp_c),
   },
   {
     key: "env_gpu_power",
-    label: (i) => `GPU ${i} 功耗`,
+    label: (i) => t("train.envGpuPower", { i }),
     unit: " W",
     div: 1,
     pick: (r) => num(r?.gpu?.[0]?.power_w),
@@ -211,35 +219,35 @@ const SERIES_DEFS: SeriesDef[] = [
   { key: "env_cpu", label: () => "CPU", unit: "%", div: 1, pick: (r) => num(r?.cpu) },
   {
     key: "env_mem",
-    label: () => "内存",
+    label: () => t("train.envMemory"),
     unit: " GB",
     div: 1024,
     pick: (r) => num(r?.mem?.used_mb),
   },
   {
     key: "env_disk_read",
-    label: () => "磁盘读",
+    label: () => t("train.envDiskRead"),
     unit: " MB/s",
     div: 1,
     pick: (r) => num(r?.disk?.read_mb_s),
   },
   {
     key: "env_disk_write",
-    label: () => "磁盘写",
+    label: () => t("train.envDiskWrite"),
     unit: " MB/s",
     div: 1,
     pick: (r) => num(r?.disk?.write_mb_s),
   },
   {
     key: "env_net_rx",
-    label: () => "网络收",
+    label: () => t("train.envNetRx"),
     unit: " MB/s",
     div: 1,
     pick: (r) => num(r?.net?.rx_mb_s),
   },
   {
     key: "env_net_tx",
-    label: () => "网络发",
+    label: () => t("train.envNetTx"),
     unit: " MB/s",
     div: 1,
     pick: (r) => num(r?.net?.tx_mb_s),

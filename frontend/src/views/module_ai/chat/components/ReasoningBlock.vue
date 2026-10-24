@@ -5,7 +5,9 @@
         <Loading v-if="streaming" />
         <CircleCheck v-else />
       </el-icon>
-      <span class="reasoning-title">{{ streaming ? "思考中…" : "思考过程" }}</span>
+      <span class="reasoning-title">
+        {{ streaming ? t("ai_chat.reasoning_thinking") : t("ai_chat.reasoning_process") }}
+      </span>
       <el-icon class="reasoning-caret">
         <ArrowUp v-if="expanded" />
         <ArrowDown v-else />
@@ -22,6 +24,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { Loading, CircleCheck, ArrowUp, ArrowDown } from "@element-plus/icons-vue";
 
 interface Props {
@@ -30,6 +33,8 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+
+const { t } = useI18n();
 
 const expanded = ref(true);
 

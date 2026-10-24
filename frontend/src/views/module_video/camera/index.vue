@@ -35,7 +35,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('video.common.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -46,7 +46,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('video.common.sequence')"
               width="60"
             >
               <template #default="scope">
@@ -56,7 +56,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="名称"
+              :label="t('video.common.name')"
               prop="name"
               min-width="140"
               show-overflow-tooltip
@@ -64,7 +64,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'device_type')?.show"
               key="device_type"
-              label="类型"
+              :label="t('video.common.type')"
               prop="device_type"
               width="120"
             >
@@ -77,7 +77,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('video.common.status')"
               prop="reachable"
               width="100"
               align="center"
@@ -85,22 +85,22 @@
               <template #default="scope">
                 <el-tag v-if="scope.row.reachable === true" type="success" size="small">
                   <span class="status-dot" style="background: #67c23a" />
-                  在线
+                  {{ t("video.common.online") }}
                 </el-tag>
                 <el-tag v-else-if="scope.row.reachable === false" type="danger" size="small">
                   <span class="status-dot" style="background: #f56c6c" />
-                  离线
+                  {{ t("video.common.offline") }}
                 </el-tag>
                 <el-tag v-else type="info" size="small">
                   <span class="status-dot" style="background: #909399" />
-                  未推流
+                  {{ t("video.camera.noStream") }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'location')?.show"
               key="location"
-              label="位置"
+              :label="t('video.common.location')"
               prop="location"
               min-width="120"
               show-overflow-tooltip
@@ -108,7 +108,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'brand')?.show"
               key="brand"
-              label="品牌"
+              :label="t('video.common.brand')"
               prop="brand"
               width="100"
               show-overflow-tooltip
@@ -116,7 +116,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'stream_id')?.show"
               key="stream_id"
-              label="流状态"
+              :label="t('video.camera.flowStatus')"
               prop="stream_id"
               width="100"
               align="center"
@@ -127,22 +127,22 @@
                   type="success"
                   size="small"
                 >
-                  推流中
+                  {{ t("video.camera.streaming") }}
                 </el-tag>
                 <el-tag
                   v-else-if="scope.row.stream_id && scope.row.stream_source === 'EXTERNAL'"
                   type="primary"
                   size="small"
                 >
-                  外部流
+                  {{ t("video.camera.externalStream") }}
                 </el-tag>
-                <el-tag v-else type="info" size="small">未推流</el-tag>
+                <el-tag v-else type="info" size="small">{{ t("video.camera.noStream") }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="t('video.common.createdTime')"
               prop="created_time"
               min-width="170"
               sortable
@@ -150,7 +150,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('video.common.operation')"
               align="center"
               min-width="270"
             >
@@ -164,7 +164,7 @@
                   icon="VideoPlay"
                   @click="handleStartStream(scope.row)"
                 >
-                  推流
+                  {{ t("video.camera.pushStream") }}
                 </el-button>
                 <el-button
                   v-else-if="scope.row.stream_source === 'SYSTEM'"
@@ -175,7 +175,7 @@
                   icon="VideoPause"
                   @click="handleStopStream(scope.row)"
                 >
-                  停止
+                  {{ t("video.camera.stop") }}
                 </el-button>
                 <el-button
                   v-if="scope.row.rtsp_url_main || scope.row.stream_id"
@@ -186,7 +186,7 @@
                   icon="VideoPlay"
                   @click="handlePlayTest(scope.row)"
                 >
-                  播放测试
+                  {{ t("video.camera.playTest") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:camera:update']"
@@ -196,7 +196,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("video.common.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:camera:delete']"
@@ -206,7 +206,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("video.common.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -231,12 +231,12 @@
       >
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="名称" prop="name">
-              <el-input v-model="formData.name" placeholder="请输入摄像机名称" />
+            <el-form-item :label="t('video.common.name')" prop="name">
+              <el-input v-model="formData.name" :placeholder="t('video.camera.enterCameraName')" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="设备类型" prop="device_type">
+            <el-form-item :label="t('video.camera.deviceType')" prop="device_type">
               <el-select v-model="formData.device_type" style="width: 100%">
                 <el-option label="IP Camera" value="IP_CAMERA" />
                 <el-option label="GB28181" value="GB28181" />
@@ -246,50 +246,56 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="主码流RTSP" prop="rtsp_url_main">
+        <el-form-item :label="t('video.camera.mainRtsp')" prop="rtsp_url_main">
           <el-input v-model="formData.rtsp_url_main" placeholder="rtsp://..." />
         </el-form-item>
-        <el-form-item label="子码流RTSP" prop="rtsp_url_sub">
+        <el-form-item :label="t('video.camera.subRtsp')" prop="rtsp_url_sub">
           <el-input v-model="formData.rtsp_url_sub" placeholder="rtsp://..." />
         </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="用户名" prop="username">
-              <el-input v-model="formData.username" placeholder="登录用户名" />
+            <el-form-item :label="t('video.camera.username')" prop="username">
+              <el-input
+                v-model="formData.username"
+                :placeholder="t('video.camera.loginUsername')"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="密码" prop="password">
+            <el-form-item :label="t('video.camera.password')" prop="password">
               <el-input
                 v-model="formData.password"
                 type="password"
                 show-password
-                placeholder="登录密码"
+                :placeholder="t('video.camera.loginPassword')"
               />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="安装位置" prop="location">
-              <el-input v-model="formData.location" placeholder="例如：一楼大厅" />
+            <el-form-item :label="t('video.camera.installLocation')" prop="location">
+              <el-input
+                v-model="formData.location"
+                :placeholder="t('video.camera.locationExample')"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="排序" prop="sort_order">
+            <el-form-item :label="t('video.common.sortOrder')" prop="sort_order">
               <el-input-number v-model="formData.sort_order" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="所属分组" prop="group_id">
+            <el-form-item :label="t('video.camera.group')" prop="group_id">
               <el-tree-select
                 v-model="formData.group_id"
                 :data="groupOptions"
                 :props="{ children: 'children', label: 'label', disabled: 'disabled' }"
                 value-key="value"
-                placeholder="请选择分组"
+                :placeholder="t('video.camera.selectGroup')"
                 clearable
                 filterable
                 style="width: 100%"
@@ -297,36 +303,41 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="品牌" prop="brand">
-              <el-input v-model="formData.brand" placeholder="例如：海康威视" />
+            <el-form-item :label="t('video.common.brand')" prop="brand">
+              <el-input v-model="formData.brand" :placeholder="t('video.camera.brandExample')" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="型号" prop="model_name">
-              <el-input v-model="formData.model_name" placeholder="例如：DS-2CD3T86" />
+            <el-form-item :label="t('video.camera.model')" prop="model_name">
+              <el-input
+                v-model="formData.model_name"
+                :placeholder="t('video.camera.modelExample')"
+              />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="备注" prop="description">
+        <el-form-item :label="t('video.camera.remark')" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="2"
-            placeholder="可选备注信息"
+            :placeholder="t('video.common.optionalRemark')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("video.common.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("video.common.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
     <el-dialog
       v-model="playerVisible"
-      title="播放测试"
+      :title="t('video.camera.playTest')"
       width="720px"
       append-to-body
       destroy-on-close
@@ -340,7 +351,9 @@
               <el-tag :type="protoTag(proto)" size="small" class="url-tag">{{ proto }}</el-tag>
               <el-input :model-value="url" readonly size="small" class="url-value">
                 <template #append>
-                  <el-button size="small" @click="copyUrl(url)">复制</el-button>
+                  <el-button size="small" @click="copyUrl(url)">
+                    {{ t("video.camera.copy") }}
+                  </el-button>
                 </template>
               </el-input>
             </div>
@@ -362,6 +375,7 @@
 import { ref, reactive, onBeforeMount } from "vue";
 import { ElMessage } from "element-plus";
 import { useClipboard } from "@vueuse/core";
+import { useI18n } from "vue-i18n";
 import { VideoCamera } from "@element-plus/icons-vue";
 import LivePlayer from "@/components/Video/LivePlayer.vue";
 import {
@@ -386,6 +400,7 @@ interface TablePageQuery {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const { t } = useI18n();
 
 const groupOptions = ref<any[]>([]);
 
@@ -410,13 +425,13 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "名称",
+      label: t("video.common.name"),
       type: "input",
-      attrs: { placeholder: "请输入摄像机名称", clearable: true },
+      attrs: { placeholder: t("video.camera.enterCameraName"), clearable: true },
     },
     {
       prop: "device_type",
-      label: "设备类型",
+      label: t("video.camera.deviceType"),
       type: "select",
       options: [
         { label: "IP Camera", value: "IP_CAMERA" },
@@ -424,24 +439,32 @@ const searchConfig = reactive<ISearchConfig>({
         { label: "ONVIF", value: "ONVIF" },
         { label: "NVR", value: "NVR" },
       ],
-      attrs: { placeholder: "请选择设备类型", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("video.camera.selectDeviceType"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("video.common.status"),
       type: "select",
       options: [
-        { label: "在线", value: "ONLINE" },
-        { label: "离线", value: "OFFLINE" },
-        { label: "异常", value: "ERROR" },
+        { label: t("video.common.online"), value: "ONLINE" },
+        { label: t("video.common.offline"), value: "OFFLINE" },
+        { label: t("video.common.abnormal"), value: "ERROR" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("video.camera.selectStatus"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "location",
-      label: "位置",
+      label: t("video.common.location"),
       type: "input",
-      attrs: { placeholder: "请输入安装位置", clearable: true },
+      attrs: { placeholder: t("video.camera.enterLocation"), clearable: true },
     },
   ],
 });
@@ -453,16 +476,16 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "名称", show: true },
-  { prop: "device_type", label: "类型", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "location", label: "位置", show: true },
-  { prop: "brand", label: "品牌", show: true },
-  { prop: "stream_id", label: "流状态", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "name", label: t("video.common.name"), show: true },
+  { prop: "device_type", label: t("video.common.type"), show: true },
+  { prop: "status", label: t("video.common.status"), show: true },
+  { prop: "location", label: t("video.common.location"), show: true },
+  { prop: "brand", label: t("video.common.brand"), show: true },
+  { prop: "stream_id", label: t("video.camera.flowStatus"), show: true },
+  { prop: "created_time", label: t("video.common.createdTime"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -493,8 +516,8 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("video.common.warning"),
+    message: t("video.common.deleteConfirmMsg"),
     type: "warning",
   },
 });
@@ -542,7 +565,7 @@ const initialFormData = {
 };
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入摄像机名称", trigger: "blur" }],
+  name: [{ required: true, message: t("video.camera.enterCameraName"), trigger: "blur" }],
 });
 
 async function resetForm() {
@@ -561,11 +584,11 @@ async function handleCloseDialog() {
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   if (id && type === "update") {
-    dialogVisible.title = "编辑摄像机";
+    dialogVisible.title = t("video.camera.editCamera");
     const res = await getCameraDetail(id);
     Object.assign(formData, res.data.data);
   } else {
-    dialogVisible.title = "新增摄像机";
+    dialogVisible.title = t("video.camera.addCamera");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -582,7 +605,7 @@ async function handleSubmit() {
         } else {
           await createCamera(formData);
         }
-        ElMessage.success("保存成功");
+        ElMessage.success(t("video.common.saveSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -598,7 +621,7 @@ async function handleSubmit() {
 async function handleStartStream(row: any) {
   try {
     await startStream(row.id);
-    ElMessage.success("已启动");
+    ElMessage.success(t("video.common.started"));
     refreshList();
   } catch {
     /* 拦截器已提示错误 */
@@ -608,7 +631,7 @@ async function handleStartStream(row: any) {
 async function handleStopStream(row: any) {
   try {
     await stopStream(row.id);
-    ElMessage.success("已停止");
+    ElMessage.success(t("video.common.stopped"));
     refreshList();
   } catch {
     /* 拦截器已提示错误 */
@@ -620,13 +643,13 @@ const playerCamera = ref<any>(null);
 const playerStreamId = ref("");
 const playerUrls = ref<Record<string, string>>({});
 const playerReady = ref(false);
-const playerLoadingText = ref("准备中...");
+const playerLoadingText = ref(t("video.camera.preparing"));
 
 const { copy } = useClipboard();
 
 function copyUrl(url: string) {
   copy(url);
-  ElMessage.success("已复制");
+  ElMessage.success(t("video.common.copied"));
 }
 
 async function handlePlayTest(row: any) {
@@ -634,7 +657,7 @@ async function handlePlayTest(row: any) {
   playerStreamId.value = row.stream_id || "";
   playerVisible.value = true;
   playerReady.value = false;
-  playerLoadingText.value = "获取播放地址...";
+  playerLoadingText.value = t("video.camera.getPlayAddr");
   try {
     if (row.stream_id) {
       const res = await getStreamUrls(row.id);
@@ -649,10 +672,10 @@ async function handlePlayTest(row: any) {
       playerReady.value = true;
       refreshList();
     } else {
-      playerLoadingText.value = "获取播放地址失败";
+      playerLoadingText.value = t("video.camera.getPlayUrlFail");
     }
   } catch (e: any) {
-    playerLoadingText.value = e?.message || "启动推流失败";
+    playerLoadingText.value = e?.message || t("video.camera.startPushFail");
     setTimeout(() => {
       playerVisible.value = false;
     }, 2000);
@@ -679,7 +702,7 @@ function protoTag(
 
 function deviceTypeLabel(type: string) {
   const map: Record<string, string> = {
-    IP_CAMERA: "IP摄像机",
+    IP_CAMERA: t("video.camera.ipCamera"),
     GB28181: "GB28181",
     ONVIF: "ONVIF",
     NVR: "NVR",

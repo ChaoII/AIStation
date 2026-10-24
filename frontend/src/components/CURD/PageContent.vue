@@ -429,7 +429,7 @@ function createToolbar(toolbar: Array<string | IToolsButton>, attr = {}) {
       name,
       text: isString
         ? t(`common.${item}`)
-        : item?.text ?? (base?.key ? t(`common.${base.key}`) : ""),
+        : (item?.text ?? (base?.key ? t(`common.${base.key}`) : "")),
       // 对象写法（如 { name: 'refresh', perm: 'refresh' }）需合并 buttonConfig 默认 attrs，否则无 icon/type
       attrs: {
         ...attr,
@@ -860,7 +860,11 @@ function handleOperate(data: IOperateData) {
 }
 
 // 属性修改
-async function handleModify(field: string, value: boolean | string | number, row: Record<string, any>) {
+async function handleModify(
+  field: string,
+  value: boolean | string | number,
+  row: Record<string, any>
+) {
   if (props.contentConfig.modifyAction) {
     try {
       await props.contentConfig.modifyAction({

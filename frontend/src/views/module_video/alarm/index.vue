@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
     <el-tabs v-model="activeTab" class="page-tabs">
-      <el-tab-pane label="告警记录" name="record">
+      <el-tab-pane :label="t('video.alarm.recordTab')" name="record">
         <PageSearch
           ref="recordSearchRef"
           :search-config="recordSearchConfig"
@@ -34,7 +34,7 @@
                 @selection-change="onSelectionChange"
               >
                 <template #empty>
-                  <el-empty :image-size="80" description="暂无数据" />
+                  <el-empty :image-size="80" :description="t('video.common.noData')" />
                 </template>
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'selection')?.show"
@@ -45,7 +45,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'index')?.show"
                   fixed
-                  label="序号"
+                  :label="t('video.common.sequence')"
                   width="60"
                 >
                   <template #default="scope">
@@ -55,7 +55,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'alarm_time')?.show"
                   key="alarm_time"
-                  label="告警时间"
+                  :label="t('video.alarm.alarmTime')"
                   prop="alarm_time"
                   width="160"
                   sortable
@@ -63,7 +63,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'snapshot')?.show"
                   key="snapshot"
-                  label="快照"
+                  :label="t('video.alarm.snapshot')"
                   width="72"
                   align="center"
                 >
@@ -78,7 +78,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'camera')?.show"
                   key="camera"
-                  label="摄像机"
+                  :label="t('video.alarm.camera')"
                   min-width="130"
                   show-overflow-tooltip
                 >
@@ -89,7 +89,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'rule')?.show"
                   key="rule"
-                  label="触发规则"
+                  :label="t('video.alarm.triggerRule')"
                   min-width="120"
                   show-overflow-tooltip
                 >
@@ -100,7 +100,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'alarm_type')?.show"
                   key="alarm_type"
-                  label="告警类型"
+                  :label="t('video.alarm.alarmType')"
                   prop="alarm_type"
                   width="110"
                   show-overflow-tooltip
@@ -108,7 +108,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'severity')?.show"
                   key="severity"
-                  label="级别"
+                  :label="t('video.alarm.severity')"
                   prop="severity"
                   width="80"
                   align="center"
@@ -122,7 +122,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'status')?.show"
                   key="status"
-                  label="状态"
+                  :label="t('video.common.status')"
                   prop="status"
                   width="100"
                   align="center"
@@ -136,7 +136,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'description')?.show"
                   key="description"
-                  label="描述"
+                  :label="t('video.common.description')"
                   prop="description"
                   min-width="160"
                   show-overflow-tooltip
@@ -144,7 +144,7 @@
                 <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'operation')?.show"
                   fixed="right"
-                  label="操作"
+                  :label="t('video.common.operation')"
                   align="center"
                   min-width="200"
                 >
@@ -156,7 +156,7 @@
                       link
                       @click="handleViewDetail(scope.row)"
                     >
-                      详情
+                      {{ t("video.alarm.detail") }}
                     </el-button>
                     <el-button
                       v-if="scope.row.status === 'PENDING'"
@@ -166,7 +166,7 @@
                       plain
                       @click="handleConfirm(scope.row.id, 'CONFIRMED')"
                     >
-                      确认
+                      {{ t("video.alarm.confirm") }}
                     </el-button>
                     <el-button
                       v-if="scope.row.status === 'PENDING'"
@@ -175,7 +175,7 @@
                       plain
                       @click="handleConfirm(scope.row.id, 'FALSE_ALARM')"
                     >
-                      误报
+                      {{ t("video.alarm.falseAlarm") }}
                     </el-button>
                     <el-button
                       v-hasPerm="['module_video:alarm:delete']"
@@ -185,7 +185,7 @@
                       link
                       @click="handleRecordDelete(scope.row.id)"
                     >
-                      删除
+                      {{ t("video.common.delete") }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -195,7 +195,7 @@
         </PageContent>
       </el-tab-pane>
 
-      <el-tab-pane label="告警规则" name="rule" lazy>
+      <el-tab-pane :label="t('video.alarm.ruleTab')" name="rule" lazy>
         <PageSearch
           ref="ruleSearchRef"
           :search-config="ruleSearchConfig"
@@ -231,7 +231,7 @@
                 @selection-change="onSelectionChange"
               >
                 <template #empty>
-                  <el-empty :image-size="80" description="暂无数据" />
+                  <el-empty :image-size="80" :description="t('video.common.noData')" />
                 </template>
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'selection')?.show"
@@ -242,7 +242,7 @@
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'index')?.show"
                   fixed
-                  label="序号"
+                  :label="t('video.common.sequence')"
                   width="60"
                 >
                   <template #default="scope">
@@ -252,7 +252,7 @@
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'name')?.show"
                   key="name"
-                  label="规则名称"
+                  :label="t('video.alarm.ruleName')"
                   prop="name"
                   min-width="150"
                   show-overflow-tooltip
@@ -260,7 +260,7 @@
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'scope')?.show"
                   key="scope"
-                  label="作用域"
+                  :label="t('video.alarm.scope')"
                   min-width="150"
                   show-overflow-tooltip
                 >
@@ -271,14 +271,14 @@
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'alarm_type')?.show"
                   key="alarm_type"
-                  label="告警类型"
+                  :label="t('video.alarm.alarmType')"
                   prop="alarm_type"
                   width="120"
                 />
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'severity')?.show"
                   key="severity"
-                  label="级别"
+                  :label="t('video.alarm.severity')"
                   prop="severity"
                   width="80"
                   align="center"
@@ -292,7 +292,7 @@
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'sensitivity')?.show"
                   key="sensitivity"
-                  label="灵敏度"
+                  :label="t('video.alarm.sensitivity')"
                   prop="sensitivity"
                   width="80"
                   align="center"
@@ -300,7 +300,7 @@
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'interval_seconds')?.show"
                   key="interval_seconds"
-                  label="间隔(秒)"
+                  :label="t('video.alarm.interval')"
                   prop="interval_seconds"
                   width="90"
                   align="center"
@@ -308,7 +308,7 @@
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'rollout')?.show"
                   key="rollout"
-                  label="灰度"
+                  :label="t('video.alarm.rollout')"
                   min-width="190"
                   show-overflow-tooltip
                 >
@@ -321,7 +321,7 @@
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'status')?.show"
                   key="status"
-                  label="状态"
+                  :label="t('video.common.status')"
                   prop="status"
                   width="80"
                   align="center"
@@ -333,7 +333,7 @@
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'operation')?.show"
                   fixed="right"
-                  label="操作"
+                  :label="t('video.common.operation')"
                   align="center"
                   min-width="160"
                 >
@@ -346,7 +346,7 @@
                       icon="edit"
                       @click="handleOpenRuleDialog('update', scope.row.id)"
                     >
-                      编辑
+                      {{ t("video.common.edit") }}
                     </el-button>
                     <el-button
                       v-hasPerm="['module_video:alarm_rule:delete']"
@@ -356,7 +356,7 @@
                       icon="delete"
                       @click="handleRuleDelete(scope.row.id)"
                     >
-                      删除
+                      {{ t("video.common.delete") }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -375,26 +375,26 @@
       @close="handleCloseRuleDialog"
     >
       <el-form ref="ruleFormRef" :model="ruleForm" label-width="100px" size="default">
-        <el-form-item label="规则名称" prop="name">
-          <el-input v-model="ruleForm.name" placeholder="请输入规则名称" />
+        <el-form-item :label="t('video.alarm.ruleName')" prop="name">
+          <el-input v-model="ruleForm.name" :placeholder="t('video.alarm.enterRuleName')" />
         </el-form-item>
-        <el-form-item label="算法布控任务" prop="algorithm_task_id">
+        <el-form-item :label="t('video.alarm.algoTask')" prop="algorithm_task_id">
           <el-select
             v-model="ruleForm.algorithm_task_id"
             filterable
             clearable
-            placeholder="可选—关联智能布控任务"
+            :placeholder="t('video.alarm.selectTask')"
             style="width: 100%"
           >
             <el-option
-              v-for="t in algorithmTaskOptions"
-              :key="t.id"
-              :label="(t.camera?.name || '?') + ' — ' + (t.algorithm?.name || '?')"
-              :value="t.id"
+              v-for="task in algorithmTaskOptions"
+              :key="task.id"
+              :label="(task.camera?.name || '?') + ' — ' + (task.algorithm?.name || '?')"
+              :value="task.id"
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="规则场景" prop="scene_type">
+        <el-form-item :label="t('video.alarm.ruleScene')" prop="scene_type">
           <RuleEditor
             ref="ruleEditorRef"
             v-model="ruleEditorModel"
@@ -402,41 +402,41 @@
             @update:scene-type="handleSceneTypeChange"
           />
         </el-form-item>
-        <el-form-item label="级别" prop="severity">
+        <el-form-item :label="t('video.alarm.severity')" prop="severity">
           <el-select v-model="ruleForm.severity" style="width: 100%">
-            <el-option label="严重" value="CRITICAL" />
-            <el-option label="警告" value="WARNING" />
-            <el-option label="信息" value="INFO" />
+            <el-option :label="t('video.alarm.severityCritical')" value="CRITICAL" />
+            <el-option :label="t('video.alarm.severityWarning')" value="WARNING" />
+            <el-option :label="t('video.alarm.severityInfo')" value="INFO" />
           </el-select>
         </el-form-item>
-        <el-form-item label="通知方式" prop="notify_channels">
+        <el-form-item :label="t('video.alarm.notifyChannels')" prop="notify_channels">
           <div style="width: 100%">
             <el-checkbox-group v-model="ruleChannelSelection">
-              <el-checkbox label="WS_PUSH">WS 推送</el-checkbox>
-              <el-checkbox label="SMS">短信</el-checkbox>
-              <el-checkbox label="EMAIL">邮件</el-checkbox>
-              <el-checkbox label="WEBHOOK">Webhook/REST API</el-checkbox>
+              <el-checkbox label="WS_PUSH">{{ t("video.alarm.wsPush") }}</el-checkbox>
+              <el-checkbox label="SMS">{{ t("video.alarm.sms") }}</el-checkbox>
+              <el-checkbox label="EMAIL">{{ t("video.alarm.email") }}</el-checkbox>
+              <el-checkbox label="WEBHOOK">{{ t("video.alarm.webhook") }}</el-checkbox>
             </el-checkbox-group>
             <div v-if="ruleChannelSelection.includes('EMAIL')" class="notify-config-block">
-              <div class="notify-config-label">邮件收件人</div>
+              <div class="notify-config-label">{{ t("video.alarm.emailRecipients") }}</div>
               <el-input
                 v-model="ruleChannelEmailTo"
-                placeholder="admin@example.com, ops@example.com（逗号分隔）"
+                :placeholder="t('video.alarm.emailPlaceholder')"
                 clearable
                 size="small"
               />
             </div>
             <div v-if="ruleChannelSelection.includes('SMS')" class="notify-config-block">
-              <div class="notify-config-label">短信接收号码</div>
+              <div class="notify-config-label">{{ t("video.alarm.smsPhones") }}</div>
               <el-input
                 v-model="ruleChannelSmsPhones"
-                placeholder="13800138000, 13900139000（逗号分隔）"
+                :placeholder="t('video.alarm.smsPlaceholder')"
                 clearable
                 size="small"
               />
             </div>
             <div v-if="ruleChannelSelection.includes('WEBHOOK')" class="notify-config-block">
-              <div class="notify-config-label">Webhook URL</div>
+              <div class="notify-config-label">{{ t("video.alarm.webhookUrl") }}</div>
               <div class="notify-webhook-row">
                 <el-select v-model="ruleChannelWebhookMethod" size="small" style="width: 100px">
                   <el-option label="POST" value="POST" />
@@ -444,22 +444,24 @@
                 </el-select>
                 <el-input
                   v-model="ruleChannelWebhookUrl"
-                  placeholder="https://hooks.example.com/alarm"
+                  :placeholder="t('video.alarm.webhookUrlPlaceholder')"
                   clearable
                   size="small"
                 />
               </div>
-              <div class="notify-config-label" style="margin-top: 6px">签名密钥（可选）</div>
+              <div class="notify-config-label" style="margin-top: 6px">
+                {{ t("video.alarm.webhookSecret") }}
+              </div>
               <el-input
                 v-model="ruleChannelWebhookSecret"
-                placeholder="留空则使用全局配置"
+                :placeholder="t('video.alarm.webhookSecretPlaceholder')"
                 clearable
                 size="small"
                 type="password"
                 show-password
               />
               <div class="notify-config-label" style="margin-top: 6px">
-                自定义请求头（JSON 格式，可选）
+                {{ t("video.alarm.webhookHeaders") }}
               </div>
               <el-input
                 v-model="ruleChannelWebhookHeaders"
@@ -470,18 +472,18 @@
                 type="textarea"
               />
               <div class="notify-config-label" style="margin-top: 6px">
-                请求体模板（可选，支持变量替换）
+                {{ t("video.alarm.webhookTemplate") }}
               </div>
               <el-input
                 v-model="ruleChannelWebhookTemplate"
-                placeholder='留空则发送完整JSON: {"alarm_id":1,"alarm_type":"INTRUSION",...}'
+                :placeholder="t('video.alarm.webhookTemplatePlaceholder')"
                 clearable
                 size="small"
                 :rows="3"
                 type="textarea"
               />
               <div class="notify-config-hint">
-                可用变量:
+                {{ t("video.alarm.availableVars") }}
                 <code>{{ alarm_vars.alarm_type }}</code>
                 <code>{{ alarm_vars.severity }}</code>
                 <code>{{ alarm_vars.camera_name }}</code>
@@ -496,12 +498,12 @@
         </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="灵敏度" prop="sensitivity">
+            <el-form-item :label="t('video.alarm.sensitivity')" prop="sensitivity">
               <el-slider v-model="ruleForm.sensitivity" :min="1" :max="100" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="间隔(秒)" prop="interval_seconds">
+            <el-form-item :label="t('video.alarm.interval')" prop="interval_seconds">
               <el-input-number
                 v-model="ruleForm.interval_seconds"
                 :min="1"
@@ -511,22 +513,22 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="状态" prop="status">
+        <el-form-item :label="t('video.common.status')" prop="status">
           <el-switch v-model="ruleForm.status" />
         </el-form-item>
-        <el-form-item label="描述" prop="description">
+        <el-form-item :label="t('video.common.description')" prop="description">
           <el-input
             v-model="ruleForm.description"
             type="textarea"
             :rows="2"
-            placeholder="可选描述"
+            :placeholder="t('video.common.optionalRemark')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseRuleDialog">取消</el-button>
+        <el-button @click="handleCloseRuleDialog">{{ t("video.common.cancel") }}</el-button>
         <el-button type="primary" :loading="ruleSubmitLoading" @click="handleSubmitRule">
-          保存
+          {{ t("video.common.save") }}
         </el-button>
       </template>
     </EnhancedDialog>
@@ -549,44 +551,53 @@
         </div>
 
         <el-descriptions :column="1" border class="detail-info">
-          <el-descriptions-item label="告警时间">
+          <el-descriptions-item :label="t('video.alarm.alarmTime')">
             {{ detailDrawer.data.alarm_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="摄像机">
+          <el-descriptions-item :label="t('video.alarm.camera')">
             {{ detailDrawer.data.camera?.name || detailDrawer.data.camera_id }}
           </el-descriptions-item>
-          <el-descriptions-item label="触发规则">
+          <el-descriptions-item :label="t('video.alarm.triggerRule')">
             {{ detailDrawer.data.rule?.name || "-" }}
           </el-descriptions-item>
-          <el-descriptions-item label="规则作用域">
+          <el-descriptions-item :label="t('video.alarm.ruleScopeDetail')">
             {{ ruleScopeText(detailDrawer.data.rule_id) }}
           </el-descriptions-item>
-          <el-descriptions-item label="告警类型">
+          <el-descriptions-item :label="t('video.alarm.alarmType')">
             {{ detailDrawer.data.alarm_type }}
           </el-descriptions-item>
-          <el-descriptions-item label="严重级别">
+          <el-descriptions-item :label="t('video.alarm.severeLevel')">
             <el-tag :type="severityTag(detailDrawer.data.severity)" size="small" effect="dark">
               {{ detailDrawer.data.severity }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="状态">
+          <el-descriptions-item :label="t('video.common.status')">
             <el-tag :type="statusTag(detailDrawer.data.status)" size="small">
               {{ statusLabel(detailDrawer.data.status) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item v-if="detailDrawer.data.confirm_time" label="确认时间">
+          <el-descriptions-item
+            v-if="detailDrawer.data.confirm_time"
+            :label="t('video.alarm.confirmTime')"
+          >
             {{ detailDrawer.data.confirm_time }}
           </el-descriptions-item>
-          <el-descriptions-item v-if="detailDrawer.data.confirm_user" label="确认人">
+          <el-descriptions-item
+            v-if="detailDrawer.data.confirm_user"
+            :label="t('video.alarm.confirmUser')"
+          >
             {{ detailDrawer.data.confirm_user }}
           </el-descriptions-item>
-          <el-descriptions-item label="录像片段">
+          <el-descriptions-item :label="t('video.alarm.videoClip')">
             <span v-if="detailDrawer.data.video_clip_path">
               {{ detailDrawer.data.video_clip_path }}
             </span>
-            <span v-else class="text-muted">无</span>
+            <span v-else class="text-muted">{{ t("video.alarm.none") }}</span>
           </el-descriptions-item>
-          <el-descriptions-item v-if="detailDrawer.data.ai_result" label="AI识别">
+          <el-descriptions-item
+            v-if="detailDrawer.data.ai_result"
+            :label="t('video.alarm.aiResult')"
+          >
             <pre class="ai-result">{{ JSON.stringify(detailDrawer.data.ai_result, null, 2) }}</pre>
           </el-descriptions-item>
         </el-descriptions>
@@ -597,13 +608,13 @@
             type="success"
             @click="handleConfirm(detailDrawer.data.id, 'CONFIRMED')"
           >
-            确认告警
+            {{ t("video.alarm.confirmAlarm") }}
           </el-button>
           <el-button
             v-if="detailDrawer.data.status === 'PENDING'"
             @click="handleConfirm(detailDrawer.data.id, 'FALSE_ALARM')"
           >
-            标记误报
+            {{ t("video.alarm.markFalse") }}
           </el-button>
         </div>
       </template>
@@ -614,6 +625,7 @@
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, computed } from "vue";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
 import { getAlgorithmTaskList } from "@/api/module_video/deploy";
 import {
@@ -641,6 +653,7 @@ interface TablePageQuery {
 }
 
 const activeTab = ref("record");
+const { t } = useI18n();
 
 const {
   searchRef: recordSearchRef,
@@ -695,7 +708,7 @@ const detailDrawer = reactive({
 
 function handleViewDetail(row: any) {
   detailDrawer.data = row;
-  detailDrawer.title = `告警详情 - ${row.alarm_type}`;
+  detailDrawer.title = t("video.alarm.detailTitle", { type: row.alarm_type });
   detailDrawer.visible = true;
   ensureGroupOptions();
   ensureRuleLookup();
@@ -710,11 +723,11 @@ const recordSearchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "camera_id",
-      label: "摄像机",
+      label: t("video.alarm.camera"),
       type: "select",
       options: [],
       attrs: {
-        placeholder: "请选择摄像机",
+        placeholder: t("video.alarm.selectCamera"),
         clearable: true,
         filterable: true,
         style: { width: "180px" },
@@ -725,41 +738,49 @@ const recordSearchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "severity",
-      label: "级别",
+      label: t("video.alarm.severity"),
       type: "select",
       options: [
-        { label: "严重", value: "CRITICAL" },
-        { label: "警告", value: "WARNING" },
-        { label: "信息", value: "INFO" },
+        { label: t("video.alarm.severityCritical"), value: "CRITICAL" },
+        { label: t("video.alarm.severityWarning"), value: "WARNING" },
+        { label: t("video.alarm.severityInfo"), value: "INFO" },
       ],
-      attrs: { placeholder: "请选择级别", clearable: true, style: { width: "140px" } },
+      attrs: {
+        placeholder: t("video.alarm.selectSeverity"),
+        clearable: true,
+        style: { width: "140px" },
+      },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("video.common.status"),
       type: "select",
       options: [
-        { label: "待处理", value: "PENDING" },
-        { label: "已确认", value: "CONFIRMED" },
-        { label: "已忽略", value: "IGNORED" },
-        { label: "误报", value: "FALSE_ALARM" },
+        { label: t("video.alarm.pending"), value: "PENDING" },
+        { label: t("video.alarm.confirmed"), value: "CONFIRMED" },
+        { label: t("video.alarm.ignored"), value: "IGNORED" },
+        { label: t("video.alarm.falseAlarm"), value: "FALSE_ALARM" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "140px" } },
+      attrs: {
+        placeholder: t("video.alarm.selectStatus"),
+        clearable: true,
+        style: { width: "140px" },
+      },
     },
   ],
 });
 
 const recordCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "alarm_time", label: "告警时间", show: true },
-  { prop: "snapshot", label: "快照", show: true },
-  { prop: "camera", label: "摄像机", show: true },
-  { prop: "rule", label: "触发规则", show: true },
-  { prop: "alarm_type", label: "类型", show: true },
-  { prop: "severity", label: "级别", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "alarm_time", label: t("video.alarm.alarmTime"), show: true },
+  { prop: "snapshot", label: t("video.alarm.snapshot"), show: true },
+  { prop: "camera", label: t("video.alarm.camera"), show: true },
+  { prop: "rule", label: t("video.alarm.triggerRule"), show: true },
+  { prop: "alarm_type", label: t("video.alarm.alarmType"), show: true },
+  { prop: "severity", label: t("video.alarm.severity"), show: true },
+  { prop: "status", label: t("video.common.status"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 const recordContentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -784,8 +805,8 @@ const recordContentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("video.common.warning"),
+    message: t("video.common.deleteConfirmMsg"),
     type: "warning",
   },
 });
@@ -799,40 +820,44 @@ const ruleSearchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "规则名称",
+      label: t("video.alarm.ruleName"),
       type: "input",
-      attrs: { placeholder: "请输入规则名称", clearable: true },
+      attrs: { placeholder: t("video.alarm.enterRuleName"), clearable: true },
     },
     {
       prop: "alarm_type",
-      label: "告警类型",
+      label: t("video.alarm.alarmType"),
       type: "select",
       options: [
-        { label: "运动检测", value: "MOTION" },
-        { label: "越界检测", value: "LINE_CROSSING" },
-        { label: "区域入侵", value: "INTRUSION" },
-        { label: "人脸识别", value: "FACE_DETECT" },
-        { label: "移动侦测", value: "MOVEMENT" },
-        { label: "视频遮挡", value: "VIDEO_BLOCK" },
-        { label: "视频丢失", value: "VIDEO_LOST" },
+        { label: t("video.alarm.motionDetect"), value: "MOTION" },
+        { label: t("video.alarm.lineCrossing"), value: "LINE_CROSSING" },
+        { label: t("video.alarm.areaIntrusion"), value: "INTRUSION" },
+        { label: t("video.alarm.faceDetect"), value: "FACE_DETECT" },
+        { label: t("video.alarm.movement"), value: "MOVEMENT" },
+        { label: t("video.alarm.videoBlock"), value: "VIDEO_BLOCK" },
+        { label: t("video.alarm.videoLost"), value: "VIDEO_LOST" },
       ],
-      attrs: { placeholder: "请选择告警类型", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("video.alarm.selectAlarmType"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
 
 const ruleCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "规则名称", show: true },
-  { prop: "scope", label: "作用域", show: true },
-  { prop: "alarm_type", label: "告警类型", show: true },
-  { prop: "severity", label: "级别", show: true },
-  { prop: "sensitivity", label: "灵敏度", show: true },
-  { prop: "interval_seconds", label: "间隔(秒)", show: true },
-  { prop: "rollout", label: "灰度", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "name", label: t("video.alarm.ruleName"), show: true },
+  { prop: "scope", label: t("video.alarm.scope"), show: true },
+  { prop: "alarm_type", label: t("video.alarm.alarmType"), show: true },
+  { prop: "severity", label: t("video.alarm.severity"), show: true },
+  { prop: "sensitivity", label: t("video.alarm.sensitivity"), show: true },
+  { prop: "interval_seconds", label: t("video.alarm.interval"), show: true },
+  { prop: "rollout", label: t("video.alarm.rollout"), show: true },
+  { prop: "status", label: t("video.common.status"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 const ruleContentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -857,8 +882,8 @@ const ruleContentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("video.common.warning"),
+    message: t("video.common.deleteConfirmMsg"),
     type: "warning",
   },
 });
@@ -965,10 +990,10 @@ function flattenGroupTree(nodes: any[], out: any[] = []): any[] {
 function ruleScopeLabel(row: any): string {
   if (row?.group_id) {
     const g = groupOptions.value.find((x) => x.id === row.group_id);
-    return `相机组：${g?.name || `#${row.group_id}`}`;
+    return t("video.alarm.ruleScopeGroup", { name: g?.name || `#${row.group_id}` });
   }
   if (row?.camera_id) {
-    return `相机：${row?.camera?.name || `#${row.camera_id}`}`;
+    return t("video.alarm.ruleScopeCamera", { name: row?.camera?.name || `#${row.camera_id}` });
   }
   return "-";
 }
@@ -1011,7 +1036,15 @@ function handleSceneTypeChange(code: string) {
   ruleForm.alarm_type = code || ruleForm.alarm_type;
 }
 
-const WEEK_DAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const WEEK_DAY_LABELS = [
+  t("video.common.monday"),
+  t("video.common.tuesday"),
+  t("video.common.wednesday"),
+  t("video.common.thursday"),
+  t("video.common.friday"),
+  t("video.common.saturday"),
+  t("video.common.sunday"),
+];
 
 /** 生效时间段摘要：相同窗口的连续天合并，如「周一至周五 09:00-18:00」；无配置返回空串 */
 function ruleScheduleSummary(json: any): string {
@@ -1034,7 +1067,12 @@ function ruleScheduleSummary(json: any): string {
   const flush = () => {
     if (start < 0) return;
     const label =
-      start === end ? WEEK_DAY_LABELS[start] : `${WEEK_DAY_LABELS[start]}至${WEEK_DAY_LABELS[end]}`;
+      start === end
+        ? WEEK_DAY_LABELS[start]
+        : t("video.alarm.mondayToFriday", {
+            start: WEEK_DAY_LABELS[start],
+            end: WEEK_DAY_LABELS[end],
+          });
     parts.push(`${label} ${win}`);
   };
   for (let d = 0; d < 7; d++) {
@@ -1065,13 +1103,13 @@ function ruleRolloutSummary(row: any): string {
   const parts: string[] = [];
   const percent = rollout.percent;
   if (typeof percent === "number" && percent < 100) {
-    parts.push(percent <= 0 ? "不生效" : `${percent}%`);
+    parts.push(percent <= 0 ? t("video.alarm.notEffective") : `${percent}%`);
   }
   if (Array.isArray(rollout.whitelist) && rollout.whitelist.length) {
-    parts.push(`白名单 ${rollout.whitelist.length} 台`);
+    parts.push(t("video.alarm.whitelist", { count: rollout.whitelist.length }));
   }
   if (Array.isArray(rollout.blacklist) && rollout.blacklist.length) {
-    parts.push(`黑名单 ${rollout.blacklist.length} 台`);
+    parts.push(t("video.alarm.blacklist", { count: rollout.blacklist.length }));
   }
   const schedule = ruleScheduleSummary(row?.schedule_json);
   if (schedule) parts.push(schedule);
@@ -1111,18 +1149,18 @@ async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
   ensureGroupOptions();
   ensureAlgorithmTaskOptions();
   if (id && type === "update") {
-    ruleDialogVisible.title = "编辑规则";
+    ruleDialogVisible.title = t("video.alarm.editRule");
     // 按 id 精确取回（不再只取前 100 条做匹配：规则数 >100 时会把编辑误判为新建）
     let item: any = null;
     try {
       const res = await getAlarmRuleDetail(id);
       item = res.data?.data ?? null;
     } catch {
-      ElMessage.error("规则不存在或已被删除，请刷新列表后重试");
+      ElMessage.error(t("video.alarm.ruleNotExist"));
       return;
     }
     if (!item) {
-      ElMessage.error("规则不存在或已被删除，请刷新列表后重试");
+      ElMessage.error(t("video.alarm.ruleNotExist"));
       return;
     }
     // 无条件回填 id：即便后续字段异常也绝不允许退化为「新建」
@@ -1171,7 +1209,7 @@ async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
       }
     }
   } else {
-    ruleDialogVisible.title = "新增规则";
+    ruleDialogVisible.title = t("video.alarm.addRule");
     ruleForm.id = undefined;
   }
   ruleDialogVisible.visible = true;
@@ -1255,7 +1293,7 @@ async function handleSubmitRule() {
     } else {
       await createAlarmRule(payload);
     }
-    ElMessage.success("保存成功");
+    ElMessage.success(t("video.common.saveSuccess"));
     ruleDialogVisible.visible = false;
     await resetRuleForm();
     refreshRuleList();
@@ -1292,10 +1330,10 @@ function statusTag(status: string): any {
 
 function statusLabel(status: string) {
   const map: Record<string, string> = {
-    PENDING: "待处理",
-    CONFIRMED: "已确认",
-    IGNORED: "已忽略",
-    FALSE_ALARM: "误报",
+    PENDING: t("video.alarm.pending"),
+    CONFIRMED: t("video.alarm.confirmed"),
+    IGNORED: t("video.alarm.ignored"),
+    FALSE_ALARM: t("video.alarm.falseAlarm"),
   };
   return map[(status || "").toUpperCase()] || status;
 }

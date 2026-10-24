@@ -22,44 +22,56 @@
           v-model="agnoFields[field.key]"
           type="password"
           show-password
-          :placeholder="field.required ? '必填' : '可选'"
+          :placeholder="field.required ? t('ai_market.required') : t('ai_market.optional')"
         />
         <el-input
           v-else
           v-model="agnoFields[field.key]"
-          :placeholder="field.required ? '必填' : '可选'"
+          :placeholder="field.required ? t('ai_market.required') : t('ai_market.optional')"
         />
       </el-form-item>
 
-      <el-divider content-position="left">自定义参数</el-divider>
+      <el-divider content-position="left">{{ t("ai_market.customParams") }}</el-divider>
       <div v-for="(param, index) in customParams" :key="index" class="custom-param">
-        <el-input v-model="param.key" placeholder="参数名" class="custom-param__key" />
-        <el-input v-model="param.value" placeholder="参数值" class="custom-param__value" />
+        <el-input
+          v-model="param.key"
+          :placeholder="t('ai_market.paramNamePlaceholder')"
+          class="custom-param__key"
+        />
+        <el-input
+          v-model="param.value"
+          :placeholder="t('ai_market.paramValuePlaceholder')"
+          class="custom-param__value"
+        />
         <el-button text type="danger" :icon="Delete" @click="removeCustomParam(index)" />
       </div>
-      <el-button text type="primary" :icon="Plus" @click="addCustomParam">添加参数</el-button>
+      <el-button text type="primary" :icon="Plus" @click="addCustomParam">
+        {{ t("ai_market.addParam") }}
+      </el-button>
     </el-form>
 
     <!-- HTTP / 脚本 工具表单 -->
     <el-form v-else :model="httpForm" label-width="120px">
-      <el-form-item label="工具名" required>
-        <el-input v-model="httpForm.name" placeholder="唯一名称，供模型调用" />
+      <el-form-item :label="t('ai_market.toolName')" required>
+        <el-input v-model="httpForm.name" :placeholder="t('ai_market.toolNamePlaceholder')" />
       </el-form-item>
-      <el-form-item label="工具类型">
+      <el-form-item :label="t('ai_market.toolType')">
         <el-radio-group v-model="httpForm.kind" :disabled="kindLocked">
-          <el-radio-button value="http">HTTP 请求</el-radio-button>
-          <el-radio-button value="script" :disabled="scriptLocked">Python 脚本</el-radio-button>
+          <el-radio-button value="http">{{ t("ai_market.httpRequest") }}</el-radio-button>
+          <el-radio-button value="script" :disabled="scriptLocked">
+            {{ t("ai_market.pythonScript") }}
+          </el-radio-button>
         </el-radio-group>
         <el-alert
           v-if="scriptLocked"
           type="warning"
           :closable="false"
           show-icon
-          title="平台已禁用脚本工具，仅系统管理员可创建"
+          :title="t('ai_market.scriptDisabledAlert')"
           class="script-locked-tip"
         />
       </el-form-item>
-      <el-form-item v-if="httpForm.kind === 'http'" label="请求方法">
+      <el-form-item v-if="httpForm.kind === 'http'" :label="t('ai_market.requestMethod')">
         <el-select v-model="httpForm.method" style="width: 100%">
           <el-option label="GET" value="GET" />
           <el-option label="POST" value="POST" />
@@ -68,17 +80,14 @@
           <el-option label="DELETE" value="DELETE" />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="httpForm.kind === 'http'" label="请求地址" required>
-        <el-input
-          v-model="httpForm.url"
-          placeholder="如 https://api.example.com/items/{id}，{id} 会被入参替换"
-        />
+      <el-form-item v-if="httpForm.kind === 'http'" :label="t('ai_market.requestUrl')" required>
+        <el-input v-model="httpForm.url" :placeholder="t('ai_market.urlPlaceholder')" />
       </el-form-item>
-      <el-form-item v-if="httpForm.kind === 'http'" label="请求头">
+      <el-form-item v-if="httpForm.kind === 'http'" :label="t('ai_market.requestHeaders')">
         <div class="header-builder">
           <div v-for="(h, i) in httpForm.headerFields" :key="i" class="header-row">
-            <el-input v-model="h.key" placeholder="请求头名，如 Authorization" />
-            <el-input v-model="h.value" placeholder="值" />
+            <el-input v-model="h.key" :placeholder="t('ai_market.headerNamePlaceholder')" />
+            <el-input v-model="h.value" :placeholder="t('ai_market.valuePlaceholder')" />
             <el-button
               text
               type="danger"
@@ -92,24 +101,34 @@
             :icon="Plus"
             @click="httpForm.headerFields.push({ key: '', value: '' })"
           >
-            添加请求头
+            {{ t("ai_market.addHeader") }}
           </el-button>
         </div>
       </el-form-item>
-      <el-form-item label="入参字段">
+      <el-form-item :label="t('ai_market.paramFieldsLabel')">
         <div class="header-builder">
           <div v-for="(p, i) in httpForm.paramFields" :key="i" class="field-param-row">
-            <el-input v-model="p.key" placeholder="字段名，如 id" class="field-row__key" />
+            <el-input
+              v-model="p.key"
+              :placeholder="t('ai_market.fieldNamePlaceholder')"
+              class="field-row__key"
+            />
             <el-select v-model="p.type" class="field-row__type">
-              <el-option label="文本" value="string" />
-              <el-option label="整数" value="integer" />
-              <el-option label="数值" value="number" />
-              <el-option label="布尔" value="boolean" />
-              <el-option label="数组" value="array" />
-              <el-option label="对象" value="object" />
+              <el-option :label="t('ai_market.typeText')" value="string" />
+              <el-option :label="t('ai_market.typeInteger')" value="integer" />
+              <el-option :label="t('ai_market.typeNumber')" value="number" />
+              <el-option :label="t('ai_market.typeBoolean')" value="boolean" />
+              <el-option :label="t('ai_market.typeArray')" value="array" />
+              <el-option :label="t('ai_market.typeObject')" value="object" />
             </el-select>
-            <el-input v-model="p.default" placeholder="默认值" class="field-row__default" />
-            <el-checkbox v-model="p.required" class="field-row__req">必填</el-checkbox>
+            <el-input
+              v-model="p.default"
+              :placeholder="t('ai_market.defaultPlaceholder')"
+              class="field-row__default"
+            />
+            <el-checkbox v-model="p.required" class="field-row__req">
+              {{ t("ai_market.fieldRequired") }}
+            </el-checkbox>
             <el-button
               text
               type="danger"
@@ -131,25 +150,28 @@
               })
             "
           >
-            添加字段
+            {{ t("ai_market.addField") }}
           </el-button>
         </div>
       </el-form-item>
-      <el-form-item v-if="httpForm.kind === 'http'" label="请求体类型">
+      <el-form-item v-if="httpForm.kind === 'http'" :label="t('ai_market.bodyTypeLabel')">
         <el-select v-model="httpForm.bodyType" style="width: 100%" :disabled="isGetOrDelete">
-          <el-option label="无（参数走查询串）" value="none" />
+          <el-option :label="t('ai_market.bodyNone')" value="none" />
           <el-option label="JSON" value="json" />
           <el-option label="Form Data" value="form-data" />
         </el-select>
       </el-form-item>
-      <el-form-item v-if="httpForm.kind === 'http' && bodyHintText" label="请求体">
+      <el-form-item
+        v-if="httpForm.kind === 'http' && bodyHintText"
+        :label="t('ai_market.requestBodyLabel')"
+      >
         <el-alert type="info" :closable="false" show-icon :title="bodyHintText" />
       </el-form-item>
       <template v-if="httpForm.kind === 'script'">
-        <el-form-item label="脚本代码" required>
+        <el-form-item :label="t('ai_market.scriptCode')" required>
           <div class="script-editor">
             <div class="script-editor__toolbar">
-              <span class="script-editor__label">Python 脚本</span>
+              <span class="script-editor__label">{{ t("ai_market.pythonScript") }}</span>
               <div class="script-editor__actions">
                 <el-button
                   size="small"
@@ -157,7 +179,7 @@
                   :loading="inspecting"
                   @click="handleInspectScript"
                 >
-                  从代码提取参数
+                  {{ t("ai_market.extractParams") }}
                 </el-button>
                 <el-button
                   size="small"
@@ -165,10 +187,14 @@
                   :loading="formatting"
                   @click="handleFormatScript"
                 >
-                  格式化
+                  {{ t("ai_market.formatScript") }}
                 </el-button>
-                <el-button size="small" text @click="fillScriptTemplate">填入示例</el-button>
-                <el-button size="small" text type="danger" @click="clearScriptCode">清空</el-button>
+                <el-button size="small" text @click="fillScriptTemplate">
+                  {{ t("ai_market.fillTemplate") }}
+                </el-button>
+                <el-button size="small" text type="danger" @click="clearScriptCode">
+                  {{ t("ai_market.clearScript") }}
+                </el-button>
               </div>
             </div>
             <CodeEditor
@@ -180,18 +206,22 @@
             />
           </div>
         </el-form-item>
-        <el-form-item label="执行超时(秒)">
+        <el-form-item :label="t('ai_market.timeoutLabel')">
           <el-input-number v-model="httpForm.timeout" :min="1" :max="60" />
         </el-form-item>
-        <el-form-item label="运行时参数">
+        <el-form-item :label="t('ai_market.runtimeParamsLabel')">
           <div class="header-builder">
             <div v-for="(rq, ri) in runtimeConfig" :key="ri" class="header-row">
-              <el-input v-model="rq.key" placeholder="参数名，如 api_key" class="field-row__key" />
+              <el-input
+                v-model="rq.key"
+                :placeholder="t('ai_market.runtimeParamKeyPlaceholder')"
+                class="field-row__key"
+              />
               <el-input
                 v-model="rq.value"
                 type="password"
                 show-password
-                placeholder="值（保存后不可见）"
+                :placeholder="t('ai_market.runtimeValuePlaceholder')"
                 class="field-row__default"
               />
               <el-button text type="danger" :icon="Delete" @click="runtimeConfig.splice(ri, 1)" />
@@ -202,42 +232,40 @@
               :icon="Plus"
               @click="runtimeConfig.push({ key: '', value: '' })"
             >
-              添加参数
+              {{ t("ai_market.addParam") }}
             </el-button>
           </div>
           <div class="runtime-config__tip">
-            用于密钥/敏感值/按用户区分的参数（如 api_key、用户名）。脚本内通过
+            {{ t("ai_market.runtimeTipPre") }}
             <code>TOOL_CONFIG["参数名"]</code>
-            读取，不写进源码；值保存后一律不可见。
+            {{ t("ai_market.runtimeTipPost") }}
           </div>
         </el-form-item>
-        <el-alert
-          type="info"
-          :closable="false"
-          show-icon
-          title="脚本在受控沙箱内运行：仅允许导入 json/math/re/datetime 等白名单模块，禁止文件、网络与系统调用。建议用带类型注解的多参数签名（如 def run(name: str = 'x')），点击「从代码提取参数」自动生成入参表。"
-        />
+        <el-alert type="info" :closable="false" show-icon :title="t('ai_market.sandboxAlert')" />
       </template>
-      <el-form-item label="启用">
+      <el-form-item :label="t('ai_market.enableLabel')">
         <el-switch v-model="httpForm.enabled" />
       </el-form-item>
     </el-form>
 
     <template #footer>
       <el-button v-if="mode === 'http-edit'" :loading="testing" @click="handleTestTool">
-        测试
+        {{ t("ai_market.test") }}
       </el-button>
       <el-button v-if="mode === 'script-edit'" :loading="testing" @click="handleTestScript">
-        试运行
+        {{ t("ai_market.trialRun") }}
       </el-button>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+      <el-button @click="visible = false">{{ t("ai_market.cancel") }}</el-button>
+      <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+        {{ t("ai_market.save") }}
+      </el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Delete, MagicStick, Plus, RefreshRight } from "@element-plus/icons-vue";
 
@@ -260,6 +288,8 @@ import {
 const props = defineProps<{ modelValue: boolean; realId?: number | null }>();
 const emit = defineEmits<{ "update:modelValue": [v: boolean]; saved: [] }>();
 
+const { t } = useI18n();
+
 const visible = computed({
   get: () => props.modelValue,
   set: (v) => emit("update:modelValue", v),
@@ -269,8 +299,8 @@ type DialogMode = "http-create" | "http-edit" | "script-create" | "script-edit" 
 
 const mode = ref<DialogMode>("http-create");
 const dialogTitle = computed(() => {
-  if (mode.value === "agno-config") return "配置工具";
-  return props.realId ? "编辑工具" : "新增工具";
+  if (mode.value === "agno-config") return t("ai_market.configTool");
+  return props.realId ? t("ai_market.editTool") : t("ai_market.createTool");
 });
 
 const submitLoading = ref(false);
@@ -326,14 +356,13 @@ const bodyHintText = computed(() => {
   const m = httpForm.method;
   const bt = isGetOrDelete.value ? "none" : httpForm.bodyType;
   if (bt === "none") {
-    if (isGetOrDelete.value) return `${m} 无请求体，剩余入参字段作为查询串。`;
-    return `以 ${m} 发送，不携带请求体，剩余入参字段作为查询串。`;
+    if (isGetOrDelete.value) return t("ai_market.bodyHintGet", { m });
+    return t("ai_market.bodyHintNoBody", { m });
   }
-  if (bt === "form-data")
-    return `以 ${m} 发送，剩余入参字段作为 application/x-www-form-urlencoded 表单（Form Data）。`;
-  if (m === "POST") return "以 POST 发送，剩余入参字段作为 JSON 请求体。";
-  if (m === "PUT") return "以 PUT 发送，剩余入参字段作为 JSON 请求体（整体替换）。";
-  if (m === "PATCH") return "以 PATCH 发送，剩余入参字段作为 JSON 请求体（局部更新）。";
+  if (bt === "form-data") return t("ai_market.bodyHintFormData", { m });
+  if (m === "POST") return t("ai_market.bodyHintPost");
+  if (m === "PUT") return t("ai_market.bodyHintPut");
+  if (m === "PATCH") return t("ai_market.bodyHintPatch");
   return "";
 });
 
@@ -523,7 +552,7 @@ async function submitAgnoConfig() {
   for (const field of currentConfigFields.value) {
     const value = agnoFields[field.key];
     if (field.required && (value === undefined || value === "")) {
-      ElMessage.warning(`请填写必填项：${field.label || field.key}`);
+      ElMessage.warning(t("ai_market.requiredFieldMessage", { name: field.label || field.key }));
       return;
     }
     config[field.key] = value === undefined ? "" : value;
@@ -538,9 +567,9 @@ async function submitAgnoConfig() {
     await updateAiTool(tool.id, { config });
     visible.value = false;
     emit("saved");
-    ElMessage.success("配置已保存");
+    ElMessage.success(t("ai_market.configSaved"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_market.saveFailed"));
   } finally {
     submitLoading.value = false;
   }
@@ -548,17 +577,17 @@ async function submitAgnoConfig() {
 
 async function submitHttpForm() {
   if (!httpForm.name.trim()) {
-    ElMessage.warning("请填写工具名");
+    ElMessage.warning(t("ai_market.requireToolName"));
     return;
   }
   const isScript = httpForm.kind === "script";
   if (isScript && scriptLocked.value) {
-    ElMessage.error("平台已禁用脚本工具，仅系统管理员可创建");
+    ElMessage.error(t("ai_market.scriptDisabledAlert"));
     return;
   }
   if (isScript) {
     if (!httpForm.code.trim()) {
-      ElMessage.warning("请填写脚本代码");
+      ElMessage.warning(t("ai_market.requireScriptCode"));
       return;
     }
     // 保存前静默校验脚本（语法 + 安全白名单）
@@ -567,7 +596,7 @@ async function submitHttpForm() {
       const res: any = await inspectAiScript(httpForm.code);
       const data = res.data?.data || {};
       if (!data.valid) {
-        ElMessage.error(data.error || "脚本校验未通过");
+        ElMessage.error(data.error || t("ai_market.scriptInvalid"));
         return;
       }
       // 若尚未提取参数且代码存在多参签名，自动提取
@@ -584,7 +613,7 @@ async function submitHttpForm() {
       inspecting.value = false;
     }
   } else if (!httpForm.url.trim()) {
-    ElMessage.warning("请填写请求地址");
+    ElMessage.warning(t("ai_market.requireRequestUrl"));
     return;
   }
   const paramsSchema = paramFieldsToSchema(httpForm.paramFields);
@@ -611,9 +640,9 @@ async function submitHttpForm() {
     else await createAiTool(payload);
     visible.value = false;
     emit("saved");
-    ElMessage.success("保存成功");
+    ElMessage.success(t("ai_market.saveSuccess"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_market.saveFailed"));
   } finally {
     submitLoading.value = false;
   }
@@ -633,9 +662,9 @@ async function handleTestTool() {
   testing.value = true;
   try {
     await testAiTool(tool.id);
-    ElMessage.success("测试完成");
+    ElMessage.success(t("ai_market.testDone"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "测试失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_market.testFailed"));
   } finally {
     testing.value = false;
   }
@@ -651,7 +680,7 @@ function escapeHtml(text: string): string {
 
 async function handleTestScript() {
   if (!httpForm.id) {
-    ElMessage.warning("请先保存脚本，再试运行");
+    ElMessage.warning(t("ai_market.saveBeforeTrial"));
     return;
   }
   testing.value = true;
@@ -663,14 +692,14 @@ async function handleTestScript() {
         `<pre style="max-height:320px;overflow:auto;margin:0">${escapeHtml(
           JSON.stringify(data.result, null, 2)
         )}</pre>`,
-        "试运行结果",
-        { dangerouslyUseHTMLString: true, confirmButtonText: "关闭" }
+        t("ai_market.trialResultTitle"),
+        { dangerouslyUseHTMLString: true, confirmButtonText: t("ai_market.close") }
       );
     } else {
-      ElMessage.error(data.error || "试运行失败");
+      ElMessage.error(data.error || t("ai_market.trialFailed"));
     }
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "试运行失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_market.trialFailed"));
   } finally {
     testing.value = false;
   }
@@ -679,7 +708,7 @@ async function handleTestScript() {
 /** 从代码自动提取参数：解析 run 签名，回填参数表 */
 async function handleInspectScript() {
   if (!httpForm.code.trim()) {
-    ElMessage.warning("请先编写脚本代码");
+    ElMessage.warning(t("ai_market.writeCodeFirst"));
     return;
   }
   inspecting.value = true;
@@ -687,7 +716,7 @@ async function handleInspectScript() {
     const res: any = await inspectAiScript(httpForm.code);
     const data = res.data?.data || {};
     if (!data.valid) {
-      ElMessage.error(data.error || "脚本校验未通过");
+      ElMessage.error(data.error || t("ai_market.scriptInvalid"));
       return;
     }
     const params = (data.params || []) as {
@@ -698,9 +727,7 @@ async function handleInspectScript() {
     }[];
     if (!params.length) {
       // 兼容 run(args) 单参形态：无多参可提取，提示改为手动声明
-      ElMessage.info(
-        "未检测到多参数：当前为 run(args) 形态，可改用带类型注解的多参数签名以便自动提取"
-      );
+      ElMessage.info(t("ai_market.noMultiParams"));
       return;
     }
     httpForm.paramFields = params.map((p) => ({
@@ -710,9 +737,9 @@ async function handleInspectScript() {
       required: !!p.required,
       description: "",
     }));
-    ElMessage.success(`已从代码提取 ${params.length} 个参数`);
+    ElMessage.success(t("ai_market.extractedParams", { count: params.length }));
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "解析失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_market.parseFailed"));
   } finally {
     inspecting.value = false;
   }
@@ -726,7 +753,7 @@ async function handleFormatScript() {
     const res: any = await formatAiScript(httpForm.code);
     httpForm.code = res.data?.code ?? httpForm.code;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "格式化失败");
+    ElMessage.error(e?.msg || t("ai_market.formatFailed"));
   } finally {
     formatting.value = false;
   }

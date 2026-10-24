@@ -8,17 +8,33 @@
     <!-- ============ 对象类型组 ============ -->
     <template v-if="section === 'groups'">
       <div class="ont-bar">
-        <el-button type="primary" size="small" :icon="Plus" @click="openGroup()">新建组</el-button>
-        <el-tag size="small" type="info" effect="plain">共 {{ groups.length }}</el-tag>
+        <el-button type="primary" size="small" :icon="Plus" @click="openGroup()">
+          {{ i18nT("ai_ontology.newGroup") }}
+        </el-button>
+        <el-tag size="small" type="info" effect="plain">
+          {{ i18nT("ai_ontology.totalCountShort", { count: groups.length }) }}
+        </el-tag>
         <span class="ont-hint">
-          组是**跨对象类型**的多对多分组（不同于「所属本体」的一对一归属），可用于筛选与批量操作
+          {{ i18nT("ai_ontology.groupHint") }}
         </span>
       </div>
       <el-table :data="groups" size="small" border max-height="480" stripe>
-        <template #empty><el-empty :image-size="50" description="暂无分组" /></template>
-        <el-table-column prop="name" label="组名" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="code" label="编码" min-width="120" show-overflow-tooltip />
-        <el-table-column label="成员" min-width="260">
+        <template #empty>
+          <el-empty :image-size="50" :description="i18nT('ai_ontology.noGroups')" />
+        </template>
+        <el-table-column
+          prop="name"
+          :label="i18nT('ai_ontology.groupName')"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="code"
+          :label="i18nT('ai_ontology.code')"
+          min-width="120"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.members')" min-width="260">
           <template #default="{ row }">
             <template v-if="row.members?.length">
               <el-tag
@@ -34,14 +50,19 @@
                 +{{ row.members.length - 4 }}
               </span>
             </template>
-            <span v-else class="ont-none">无成员</span>
+            <span v-else class="ont-none">{{ i18nT("ai_ontology.noMembers") }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="130" align="center">
+        <el-table-column
+          prop="description"
+          :label="i18nT('ai_ontology.note')"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="130" align="center">
           <template #default="{ row }">
             <el-button icon="edit" link type="primary" size="small" @click="openGroup(row)">
-              编辑
+              {{ i18nT("ai_ontology.edit") }}
             </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
@@ -50,7 +71,7 @@
               size="small"
               @click="delGroup(row)"
             >
-              删
+              {{ i18nT("ai_ontology.delete") }}
             </el-button>
           </template>
         </el-table-column>
@@ -60,43 +81,65 @@
     <!-- ============ 值类型 ============ -->
     <template v-else-if="section === 'valueTypes'">
       <div class="ont-bar">
-        <el-button type="primary" size="small" :icon="Plus" @click="openVt()">新建值类型</el-button>
-        <el-tag size="small" type="info" effect="plain">共 {{ valueTypes.length }}</el-tag>
+        <el-button type="primary" size="small" :icon="Plus" @click="openVt()">
+          {{ i18nT("ai_ontology.newValueType") }}
+        </el-button>
+        <el-tag size="small" type="info" effect="plain">
+          {{ i18nT("ai_ontology.totalCountShort", { count: valueTypes.length }) }}
+        </el-tag>
         <span class="ont-hint">
-          值类型是基础类型之上的**语义包装**（邮箱/URL/UUID/枚举…）＋约束＋版本；属性可引用它
+          {{ i18nT("ai_ontology.valueTypeHint") }}
         </span>
       </div>
       <el-table :data="valueTypes" size="small" border max-height="480" stripe>
-        <template #empty><el-empty :image-size="50" description="暂无值类型" /></template>
-        <el-table-column prop="name" label="显示名" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="code" label="编码" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="base_type" label="基础类型" width="110" />
-        <el-table-column label="约束" min-width="200" show-overflow-tooltip>
+        <template #empty>
+          <el-empty :image-size="50" :description="i18nT('ai_ontology.noValueTypes')" />
+        </template>
+        <el-table-column
+          prop="name"
+          :label="i18nT('ai_ontology.displayName')"
+          min-width="150"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="code"
+          :label="i18nT('ai_ontology.code')"
+          min-width="130"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="base_type" :label="i18nT('ai_ontology.baseType')" width="110" />
+        <el-table-column
+          :label="i18nT('ai_ontology.constraints')"
+          min-width="200"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">
             <span :class="{ 'ont-none': !Object.keys(row.constraints || {}).length }">
               {{
-                Object.keys(row.constraints || {}).length ? JSON.stringify(row.constraints) : "无"
+                Object.keys(row.constraints || {}).length
+                  ? JSON.stringify(row.constraints)
+                  : i18nT("ai_ontology.none")
               }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="version" label="版本" width="80">
+        <el-table-column prop="version" :label="i18nT('ai_ontology.version')" width="80">
           <template #default="{ row }">v{{ row.version }}</template>
         </el-table-column>
-        <el-table-column label="引用" width="80" align="center">
+        <el-table-column :label="i18nT('ai_ontology.reference')" width="80" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.ref_count ? 'warning' : 'info'" effect="plain">
               {{ row.ref_count }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" align="center">
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="180" align="center">
           <template #default="{ row }">
             <el-button icon="edit" link type="primary" size="small" @click="openVt(row)">
-              编辑
+              {{ i18nT("ai_ontology.edit") }}
             </el-button>
             <el-button icon="Checked" link type="primary" size="small" @click="openValidate(row)">
-              试校验
+              {{ i18nT("ai_ontology.draftValidate") }}
             </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
@@ -105,7 +148,7 @@
               size="small"
               @click="delVt(row)"
             >
-              删
+              {{ i18nT("ai_ontology.delete") }}
             </el-button>
           </template>
         </el-table-column>
@@ -116,27 +159,46 @@
     <template v-else-if="section === 'shared'">
       <div class="ont-bar">
         <el-button type="primary" size="small" :icon="Plus" @click="openSp()">
-          新建共享属性
+          {{ i18nT("ai_ontology.newSharedProperty") }}
         </el-button>
-        <el-tag size="small" type="info" effect="plain">共 {{ shared.length }}</el-tag>
+        <el-tag size="small" type="info" effect="plain">
+          {{ i18nT("ai_ontology.totalCountShort", { count: shared.length }) }}
+        </el-tag>
         <span class="ont-hint">
-          定义一次、多个对象类型引用；**只共享元数据，不共享数据**。改元数据会同步到引用方
+          {{ i18nT("ai_ontology.sharedHint") }}
         </span>
       </div>
       <el-table :data="shared" size="small" border max-height="480" stripe>
-        <template #empty><el-empty :image-size="50" description="暂无共享属性" /></template>
-        <el-table-column prop="name" label="显示名" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="code" label="属性 ID" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="api_name" label="API 名" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="prop_type" label="类型" width="100" />
-        <el-table-column label="值类型" min-width="120">
+        <template #empty>
+          <el-empty :image-size="50" :description="i18nT('ai_ontology.noSharedProperties')" />
+        </template>
+        <el-table-column
+          prop="name"
+          :label="i18nT('ai_ontology.displayName')"
+          min-width="140"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="code"
+          :label="i18nT('ai_ontology.attributeId')"
+          min-width="130"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="api_name"
+          :label="i18nT('ai_ontology.apiName')"
+          min-width="130"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="prop_type" :label="i18nT('ai_ontology.type')" width="100" />
+        <el-table-column :label="i18nT('ai_ontology.valueType')" min-width="120">
           <template #default="{ row }">
             <span :class="{ 'ont-none': !row.value_type_code }">
               {{ row.value_type_code || "—" }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="被引用" min-width="220">
+        <el-table-column :label="i18nT('ai_ontology.referenced')" min-width="220">
           <template #default="{ row }">
             <el-tag
               v-for="r in (row.refs || []).slice(0, 3)"
@@ -147,13 +209,15 @@
             >
               {{ objectLabel(r.where.split(".")[0]) }}
             </el-tag>
-            <span v-if="!row.refs?.length" class="ont-none">未被引用</span>
+            <span v-if="!row.refs?.length" class="ont-none">
+              {{ i18nT("ai_ontology.notReferenced") }}
+            </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="130" align="center">
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="130" align="center">
           <template #default="{ row }">
             <el-button icon="edit" link type="primary" size="small" @click="openSp(row)">
-              编辑
+              {{ i18nT("ai_ontology.edit") }}
             </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
@@ -162,7 +226,7 @@
               size="small"
               @click="delSp(row)"
             >
-              删
+              {{ i18nT("ai_ontology.delete") }}
             </el-button>
           </template>
         </el-table-column>
@@ -172,32 +236,52 @@
     <!-- ============ 接口 ============ -->
     <template v-else>
       <div class="ont-bar">
-        <el-button type="primary" size="small" :icon="Plus" @click="openIf()">新建接口</el-button>
-        <el-button size="small" :icon="Search" :loading="checking" @click="runCheck">
-          合规检查
+        <el-button type="primary" size="small" :icon="Plus" @click="openIf()">
+          {{ i18nT("ai_ontology.newInterface") }}
         </el-button>
-        <el-tag size="small" type="info" effect="plain">共 {{ interfaces.length }}</el-tag>
+        <el-button size="small" :icon="Search" :loading="checking" @click="runCheck">
+          {{ i18nT("ai_ontology.complianceCheck") }}
+        </el-button>
+        <el-tag size="small" type="info" effect="plain">
+          {{ i18nT("ai_ontology.totalCountShort", { count: interfaces.length }) }}
+        </el-tag>
         <el-tag v-if="issues.length" size="small" type="danger" effect="plain">
-          不合规 {{ issues.length }}
+          {{ i18nT("ai_ontology.nonCompliantCount", { count: issues.length }) }}
         </el-tag>
         <span class="ont-hint">
-          接口声明必需属性/关系/动作；让对象类型实现时**约束在实现侧强制**，不满足会被拒绝
+          {{ i18nT("ai_ontology.interfaceHint") }}
         </span>
       </div>
       <el-table :data="interfaces" size="small" border max-height="440" stripe>
-        <template #empty><el-empty :image-size="50" description="暂无接口" /></template>
-        <el-table-column prop="name" label="接口名" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="code" label="编码" min-width="120" show-overflow-tooltip />
-        <el-table-column label="必需属性" width="100" align="center">
+        <template #empty>
+          <el-empty :image-size="50" :description="i18nT('ai_ontology.noInterfaces')" />
+        </template>
+        <el-table-column
+          prop="name"
+          :label="i18nT('ai_ontology.interfaceName')"
+          min-width="150"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="code"
+          :label="i18nT('ai_ontology.code')"
+          min-width="120"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          :label="i18nT('ai_ontology.requiredProperties')"
+          width="100"
+          align="center"
+        >
           <template #default="{ row }">{{ row.required_properties?.length || 0 }}</template>
         </el-table-column>
-        <el-table-column label="必需关系" width="100" align="center">
+        <el-table-column :label="i18nT('ai_ontology.requiredRelations')" width="100" align="center">
           <template #default="{ row }">{{ row.required_links?.length || 0 }}</template>
         </el-table-column>
-        <el-table-column label="必需动作" width="100" align="center">
+        <el-table-column :label="i18nT('ai_ontology.requiredActions')" width="100" align="center">
           <template #default="{ row }">{{ row.required_actions?.length || 0 }}</template>
         </el-table-column>
-        <el-table-column label="实现者" min-width="240">
+        <el-table-column :label="i18nT('ai_ontology.implementor')" min-width="240">
           <template #default="{ row }">
             <template v-if="row.implementations?.length">
               <el-tag
@@ -211,13 +295,13 @@
                 {{ objectLabel(oc) }}
               </el-tag>
             </template>
-            <span v-else class="ont-none">暂无实现</span>
+            <span v-else class="ont-none">{{ i18nT("ai_ontology.noImplementor") }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="130" align="center">
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="130" align="center">
           <template #default="{ row }">
             <el-button icon="edit" link type="primary" size="small" @click="openIf(row)">
-              编辑
+              {{ i18nT("ai_ontology.edit") }}
             </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
@@ -226,19 +310,29 @@
               size="small"
               @click="delIf(row)"
             >
-              删
+              {{ i18nT("ai_ontology.delete") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
 
-      <div v-if="issues.length" class="ont-sub-title">不合规的实现</div>
+      <div v-if="issues.length" class="ont-sub-title">
+        {{ i18nT("ai_ontology.nonCompliantImplementations") }}
+      </div>
       <el-table v-if="issues.length" :data="issues" size="small" border max-height="220" stripe>
-        <el-table-column prop="interface_name" label="接口" min-width="140" />
-        <el-table-column label="对象类型" min-width="150">
+        <el-table-column
+          prop="interface_name"
+          :label="i18nT('ai_ontology.interface')"
+          min-width="140"
+        />
+        <el-table-column :label="i18nT('ai_ontology.objectType')" min-width="150">
           <template #default="{ row }">{{ objectLabel(row.object_code) }}</template>
         </el-table-column>
-        <el-table-column label="缺失" min-width="300" show-overflow-tooltip>
+        <el-table-column
+          :label="i18nT('ai_ontology.missing')"
+          min-width="300"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ missingText(row.missing) }}</template>
         </el-table-column>
       </el-table>
@@ -247,19 +341,19 @@
     <!-- ============ 编辑弹窗 ============ -->
     <el-dialog v-model="dlg" :title="dlgTitle" width="600px" append-to-body>
       <el-form label-width="130px" size="small">
-        <el-form-item label="显示名" required>
+        <el-form-item :label="i18nT('ai_ontology.displayName')" required>
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="编码" required>
+        <el-form-item :label="i18nT('ai_ontology.code')" required>
           <el-input v-model="form.code" :disabled="!!form.id" />
         </el-form-item>
-        <el-form-item label="说明">
+        <el-form-item :label="i18nT('ai_ontology.note')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
 
         <!-- 组 -->
         <template v-if="section === 'groups'">
-          <el-form-item label="成员对象类型">
+          <el-form-item :label="i18nT('ai_ontology.memberObjectTypes')">
             <el-select v-model="form.members" multiple filterable style="width: 100%">
               <el-option
                 v-for="o in objects"
@@ -273,12 +367,12 @@
 
         <!-- 值类型 -->
         <template v-else-if="section === 'valueTypes'">
-          <el-form-item label="基础类型">
+          <el-form-item :label="i18nT('ai_ontology.baseType')">
             <el-select v-model="form.base_type" style="width: 100%">
               <el-option v-for="b in BASE_TYPE_VALUES" :key="b" :label="b" :value="b" />
             </el-select>
           </el-form-item>
-          <el-form-item label="约束（JSON）">
+          <el-form-item :label="i18nT('ai_ontology.constraintsJson')">
             <el-input
               v-model="form.constraintsText"
               type="textarea"
@@ -286,17 +380,17 @@
               placeholder='{"pattern":"^[\\w.+-]+@[\\w-]+\\.[\\w.]+$","max_length":120}'
             />
             <span class="ont-hint">
-              支持 pattern / min / max / min_length / max_length / options
+              {{ i18nT("ai_ontology.constraintsSupportHint") }}
             </span>
           </el-form-item>
-          <el-form-item label="权限角色">
+          <el-form-item :label="i18nT('ai_ontology.permissionRoles')">
             <el-select
               v-model="form.roles"
               multiple
               filterable
               allow-create
               default-first-option
-              placeholder="留空 = 全部可用"
+              :placeholder="i18nT('ai_ontology.leaveEmptyAllAvailable')"
               style="width: 100%"
             />
           </el-form-item>
@@ -304,25 +398,28 @@
 
         <!-- 共享属性 -->
         <template v-else-if="section === 'shared'">
-          <el-form-item label="类型">
+          <el-form-item :label="i18nT('ai_ontology.type')">
             <el-select v-model="form.prop_type" style="width: 100%">
-              <el-option label="字符串 string" value="string" />
-              <el-option label="数值 number" value="number" />
-              <el-option label="布尔 boolean" value="boolean" />
-              <el-option label="日期 date" value="date" />
-              <el-option label="枚举 enum" value="enum" />
-              <el-option label="时间戳 timestamp" value="timestamp" />
+              <el-option :label="i18nT('ai_ontology.typeString')" value="string" />
+              <el-option :label="i18nT('ai_ontology.typeNumber')" value="number" />
+              <el-option :label="i18nT('ai_ontology.typeBoolean')" value="boolean" />
+              <el-option :label="i18nT('ai_ontology.typeDate')" value="date" />
+              <el-option :label="i18nT('ai_ontology.typeEnum')" value="enum" />
+              <el-option :label="i18nT('ai_ontology.typeTimestamp')" value="timestamp" />
             </el-select>
           </el-form-item>
-          <el-form-item label="基础类型">
+          <el-form-item :label="i18nT('ai_ontology.baseType')">
             <el-select v-model="form.base_type" style="width: 100%">
               <el-option v-for="b in BASE_TYPE_VALUES" :key="b" :label="b" :value="b" />
             </el-select>
           </el-form-item>
-          <el-form-item label="API 名">
-            <el-input v-model="form.api_name" placeholder="留空自动推导" />
+          <el-form-item :label="i18nT('ai_ontology.apiName')">
+            <el-input
+              v-model="form.api_name"
+              :placeholder="i18nT('ai_ontology.leaveEmptyToAutoDerive')"
+            />
           </el-form-item>
-          <el-form-item label="值类型">
+          <el-form-item :label="i18nT('ai_ontology.valueType')">
             <el-select v-model="form.value_type_code" clearable style="width: 100%">
               <el-option
                 v-for="v in valueTypes"
@@ -336,31 +433,31 @@
 
         <!-- 接口 -->
         <template v-else>
-          <el-form-item label="必需属性（JSON）">
+          <el-form-item :label="i18nT('ai_ontology.requiredPropertiesJson')">
             <el-input
               v-model="form.reqPropsText"
               type="textarea"
               :rows="3"
-              placeholder='[{"code":"name","name":"名称","base_type":"string"}]'
+              :placeholder="i18nT('ai_ontology.requiredPropsPlaceholder')"
             />
           </el-form-item>
-          <el-form-item label="必需关系（JSON）">
+          <el-form-item :label="i18nT('ai_ontology.requiredRelationsJson')">
             <el-input
               v-model="form.reqLinksText"
               type="textarea"
               :rows="3"
-              placeholder='[{"api_name":"video_camera_groups","name":"摄像机分组"}]'
+              :placeholder="i18nT('ai_ontology.requiredLinksPlaceholder')"
             />
           </el-form-item>
-          <el-form-item label="必需动作（JSON）">
+          <el-form-item :label="i18nT('ai_ontology.requiredActionsJson')">
             <el-input
               v-model="form.reqActsText"
               type="textarea"
               :rows="3"
-              placeholder='[{"code":"cam_rename","name":"修改名称"}]'
+              :placeholder="i18nT('ai_ontology.requiredActionsPlaceholder')"
             />
           </el-form-item>
-          <el-form-item label="实现者">
+          <el-form-item :label="i18nT('ai_ontology.implementor')">
             <el-select v-model="form.object_codes" multiple filterable style="width: 100%">
               <el-option
                 v-for="o in objects"
@@ -369,48 +466,59 @@
                 :value="o.code"
               />
             </el-select>
-            <span class="ont-hint">不满足约束的对象类型会被拒绝，并列出缺失项</span>
+            <span class="ont-hint">
+              {{
+                i18nT(
+                  "ai_ontology.objectTypesThatDonTSatisfyConstraintsAreRejectedAndListMissingItems"
+                )
+              }}
+            </span>
           </el-form-item>
         </template>
       </el-form>
       <template #footer>
-        <el-button @click="dlg = false">取消</el-button>
+        <el-button @click="dlg = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           type="primary"
           :loading="saving"
           @click="save"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- ============ 值类型：试校验（约束到底生效没有，只有试一次才知道） ============ -->
-    <el-dialog v-model="validateVisible" title="按值类型约束校验取值" width="520px" append-to-body>
+    <el-dialog
+      v-model="validateVisible"
+      :title="i18nT('ai_ontology.validateValueAgainstValueTypeConstraints')"
+      width="520px"
+      append-to-body
+    >
       <el-descriptions :column="1" size="small" border>
-        <el-descriptions-item label="值类型">
+        <el-descriptions-item :label="i18nT('ai_ontology.valueType')">
           {{ validateTarget?.name }}
           <span class="ont-mono">（{{ validateTarget?.code }}）</span>
         </el-descriptions-item>
-        <el-descriptions-item label="基础类型">
+        <el-descriptions-item :label="i18nT('ai_ontology.baseType')">
           {{ validateTarget?.base_type }}
         </el-descriptions-item>
-        <el-descriptions-item label="约束">
+        <el-descriptions-item :label="i18nT('ai_ontology.constraints')">
           <span :class="{ 'ont-none': !Object.keys(validateTarget?.constraints || {}).length }">
             {{
               Object.keys(validateTarget?.constraints || {}).length
                 ? JSON.stringify(validateTarget.constraints)
-                : "无"
+                : i18nT("ai_ontology.none")
             }}
           </span>
         </el-descriptions-item>
       </el-descriptions>
       <el-form label-width="70px" class="ont-note">
-        <el-form-item label="取值">
+        <el-form-item :label="i18nT('ai_ontology.value2')">
           <el-input
             v-model="validateInput"
-            placeholder="填一个值，如 abc@example.com"
+            :placeholder="i18nT('ai_ontology.validateValuePlaceholder')"
             @keyup.enter="doValidate"
           />
         </el-form-item>
@@ -420,21 +528,28 @@
         :type="validateResult.ok ? 'success' : 'error'"
         :closable="false"
         show-icon
-        :title="validateResult.ok ? '校验通过' : '校验不通过'"
+        :title="
+          validateResult.ok
+            ? i18nT('ai_ontology.validatePass')
+            : i18nT('ai_ontology.validateNotPass')
+        "
       >
         <ul v-if="!validateResult.ok" class="ont-validate__errs">
           <li v-for="(e, i) in validateResult.errors || []" :key="i">{{ e }}</li>
         </ul>
       </el-alert>
       <template #footer>
-        <el-button @click="validateVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="validating" @click="doValidate">校验</el-button>
+        <el-button @click="validateVisible = false">{{ i18nT("ai_ontology.close") }}</el-button>
+        <el-button type="primary" :loading="validating" @click="doValidate">
+          {{ i18nT("ai_ontology.validate") }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Search } from "@element-plus/icons-vue";
@@ -458,6 +573,8 @@ import {
 } from "@/api/module_ai/ontology";
 import { BASE_TYPE_VALUES } from "../constants";
 
+const { t: i18nT } = useI18n();
+
 const props = defineProps<{
   section: "groups" | "valueTypes" | "shared" | "interfaces";
   objects: any[];
@@ -477,19 +594,19 @@ const form = reactive<Record<string, any>>({});
 const dlgTitle = computed(
   () =>
     ({
-      groups: "对象类型组",
-      valueTypes: "值类型",
-      shared: "共享属性",
-      interfaces: "接口",
+      groups: i18nT("ai_ontology.objectTypeGroup"),
+      valueTypes: i18nT("ai_ontology.valueType"),
+      shared: i18nT("ai_ontology.sharedProperty"),
+      interfaces: i18nT("ai_ontology.interface"),
     })[props.section] || ""
 );
 
 function missingText(m: any) {
   if (!m) return "";
   const parts: string[] = [];
-  if (m.properties?.length) parts.push("属性：" + m.properties.join("、"));
-  if (m.links?.length) parts.push("关系：" + m.links.join("、"));
-  if (m.actions?.length) parts.push("动作：" + m.actions.join("、"));
+  if (m.properties?.length) parts.push(i18nT("ai_ontology.property2") + m.properties.join("、"));
+  if (m.links?.length) parts.push(i18nT("ai_ontology.relation2") + m.links.join("、"));
+  if (m.actions?.length) parts.push(i18nT("ai_ontology.action2") + m.actions.join("、"));
   return parts.join("；") || m.msg || "";
 }
 
@@ -497,7 +614,7 @@ function parseJson(text: string, what: string) {
   try {
     return JSON.parse(text || "[]");
   } catch {
-    throw new Error(`${what} 不是合法 JSON`);
+    throw new Error(i18nT("ai_ontology.notValidJson", { label: what }));
   }
 }
 
@@ -600,7 +717,8 @@ function openIf(row?: any) {
 }
 
 async function save() {
-  if (!form.code?.trim() || !form.name?.trim()) return ElMessage.warning("请填显示名与编码");
+  if (!form.code?.trim() || !form.name?.trim())
+    return ElMessage.warning(i18nT("ai_ontology.pleaseEnterDisplayNameAndCode"));
   saving.value = true;
   try {
     if (props.section === "groups") {
@@ -612,7 +730,7 @@ async function save() {
         members: form.members,
       });
     } else if (props.section === "valueTypes") {
-      const constraints = parseJson(form.constraintsText || "{}", "约束");
+      const constraints = parseJson(form.constraintsText || "{}", i18nT("ai_ontology.constraints"));
       await saveOntValueType({
         id: form.id,
         code: form.code,
@@ -639,9 +757,15 @@ async function save() {
         code: form.code,
         name: form.name,
         description: form.description,
-        required_properties: parseJson(form.reqPropsText || "[]", "必需属性"),
-        required_links: parseJson(form.reqLinksText || "[]", "必需关系"),
-        required_actions: parseJson(form.reqActsText || "[]", "必需动作"),
+        required_properties: parseJson(
+          form.reqPropsText || "[]",
+          i18nT("ai_ontology.requiredProperties")
+        ),
+        required_links: parseJson(
+          form.reqLinksText || "[]",
+          i18nT("ai_ontology.requiredRelations")
+        ),
+        required_actions: parseJson(form.reqActsText || "[]", i18nT("ai_ontology.requiredActions")),
       });
       void r;
       const res = await setImpls(form.code, form.object_codes);
@@ -652,9 +776,9 @@ async function save() {
     }
     dlg.value = false;
     await load();
-    ElMessage.success("已保存");
+    ElMessage.success(i18nT("ai_ontology.saved"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "保存失败");
+    ElMessage.error(e?.msg || e?.message || i18nT("ai_ontology.saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -681,9 +805,15 @@ async function doValidate() {
   try {
     const r = await validateOntValue(validateTarget.value.code, validateInput.value);
     // request() 返回 axios response，业务数据在 data.data
-    validateResult.value = r.data?.data || { ok: false, errors: [r.data?.msg || "校验失败"] };
+    validateResult.value = r.data?.data || {
+      ok: false,
+      errors: [r.data?.msg || i18nT("ai_ontology.validateFailed")],
+    };
   } catch (e: any) {
-    validateResult.value = { ok: false, errors: [e?.msg || "校验请求失败"] };
+    validateResult.value = {
+      ok: false,
+      errors: [e?.msg || i18nT("ai_ontology.validateRequestFailed")],
+    };
   } finally {
     validating.value = false;
   }
@@ -693,11 +823,15 @@ async function setImpls(code: string, codes: string[]): Promise<string> {
   const r = await setOntInterfaceImpls(code, codes);
   const d = r.data?.data || {};
   if (d.rejected?.length) {
-    return `${r.data?.msg || "已保存"}；被拒：${d.rejected
+    const detail = d.rejected
       .map((x: any) => `${props.objectLabel(x.object_code)}（${missingText(x.missing)}）`)
-      .join("；")}`;
+      .join("；");
+    return i18nT("ai_ontology.rejectedDetail", {
+      base: r.data?.msg || i18nT("ai_ontology.saved"),
+      detail,
+    });
   }
-  return r.data?.msg || "已保存";
+  return r.data?.msg || i18nT("ai_ontology.saved");
 }
 
 /** 删除前统一做引用检查，把引用方摊开给用户看 */
@@ -705,44 +839,49 @@ async function guardDelete(kind: string, code: string, label: string) {
   const r = await getOntReferences(kind, code);
   const d = r.data?.data || {};
   if (d.count) {
+    const refs = d.refs
+      .slice(0, 8)
+      .map((x: any) => x.where || x.name)
+      .join("、");
     await ElMessageBox.alert(
-      `「${label}」仍有 ${d.count} 处引用：${d.refs
-        .slice(0, 8)
-        .map((x: any) => x.where || x.name)
-        .join("、")}`,
-      "无法删除",
-      { type: "warning", confirmButtonText: "知道了" }
+      i18nT("ai_ontology.stillReferencedCount", { label, count: d.count, refs }),
+      i18nT("ai_ontology.cannotDelete"),
+      { type: "warning", confirmButtonText: i18nT("ai_ontology.gotIt") }
     );
     return false;
   }
-  await ElMessageBox.confirm(`将删除「${label}」，确认？`, "删除", {
-    type: "warning",
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
-  });
+  await ElMessageBox.confirm(
+    i18nT("ai_ontology.deleteConfirmLabel", { label }),
+    i18nT("ai_ontology.delete2"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
+  );
   return true;
 }
 
 async function delGroup(row: any) {
   if (!(await guardDelete("group", row.code, row.name))) return;
   await removeOntGroup(row.id);
-  ElMessage.success("已删除");
+  ElMessage.success(i18nT("ai_ontology.deleted"));
   await load();
 }
 async function delVt(row: any) {
   if (!(await guardDelete("value_type", row.code, row.name))) return;
   const r = await removeOntValueType(row.id);
   const d = r.data?.data || {};
-  if (!d.ok) return ElMessage.warning(r.data?.msg || "删除失败");
-  ElMessage.success("已删除");
+  if (!d.ok) return ElMessage.warning(r.data?.msg || i18nT("ai_ontology.deleteFailed"));
+  ElMessage.success(i18nT("ai_ontology.deleted"));
   await load();
 }
 async function delSp(row: any) {
   if (!(await guardDelete("shared_property", row.code, row.name))) return;
   const r = await removeOntSharedProperty(row.id);
   const d = r.data?.data || {};
-  if (!d.ok) return ElMessage.warning(r.data?.msg || "删除失败");
-  ElMessage.success("已删除");
+  if (!d.ok) return ElMessage.warning(r.data?.msg || i18nT("ai_ontology.deleteFailed"));
+  ElMessage.success(i18nT("ai_ontology.deleted"));
   await load();
 }
 async function delIf(row: any) {
@@ -750,8 +889,8 @@ async function delIf(row: any) {
   if (!(await guardDelete("interface", row.code, row.name))) return;
   const r = await removeOntInterface(row.id);
   const d = r.data?.data || {};
-  if (!d.ok) return ElMessage.warning(r.data?.msg || "删除失败");
-  ElMessage.success("已删除");
+  if (!d.ok) return ElMessage.warning(r.data?.msg || i18nT("ai_ontology.deleteFailed"));
+  ElMessage.success(i18nT("ai_ontology.deleted"));
   await load();
 }
 
@@ -761,7 +900,9 @@ async function runCheck() {
     const r = await checkOntInterface();
     issues.value = r.data?.data || [];
     ElMessage[issues.value.length ? "warning" : "success"](
-      issues.value.length ? `发现 ${issues.value.length} 处不合规` : "全部合规"
+      issues.value.length
+        ? i18nT("ai_ontology.foundNonCompliant", { count: issues.value.length })
+        : i18nT("ai_ontology.allCompliant")
     );
   } finally {
     checking.value = false;

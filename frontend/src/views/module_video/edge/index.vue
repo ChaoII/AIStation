@@ -34,7 +34,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('video.common.noData')" />
             </template>
             <el-table-column
               v-if="edgeCols.find((c) => c.prop === 'selection')?.show"
@@ -46,32 +46,42 @@
               v-if="edgeCols.find((c) => c.prop === 'index')?.show"
               type="index"
               fixed
-              label="序号"
+              :label="t('video.common.sequence')"
               width="60"
               align="center"
             />
-            <el-table-column label="设备名称" prop="name" min-width="130" show-overflow-tooltip />
-            <el-table-column label="设备编码" prop="code" min-width="130" show-overflow-tooltip />
-            <el-table-column label="状态" width="100" align="center">
+            <el-table-column
+              :label="t('video.edge.deviceName')"
+              prop="name"
+              min-width="130"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              :label="t('video.edge.deviceCode')"
+              prop="code"
+              min-width="130"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('video.common.status')" width="100" align="center">
               <template #default="scope">
                 <el-tag :type="statusTag(scope.row.status)" size="small">
                   {{ statusLabel(scope.row.status) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="在跑/上限" width="110" align="center">
+            <el-table-column :label="t('video.edge.runningCap')" width="110" align="center">
               <template #default="scope">
                 {{ runningOf(scope.row) }} / {{ scope.row.capabilities?.max_channels ?? "-" }}
               </template>
             </el-table-column>
             <el-table-column
-              label="最后心跳"
+              :label="t('video.edge.lastHeartbeat')"
               prop="last_heartbeat"
               width="170"
               show-overflow-tooltip
             />
             <el-table-column
-              label="控制地址"
+              :label="t('video.edge.controlUrl')"
               prop="control_url"
               min-width="160"
               show-overflow-tooltip
@@ -79,7 +89,7 @@
             <el-table-column
               v-if="edgeCols.find((c) => c.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('video.common.operation')"
               align="center"
               min-width="160"
             >
@@ -91,7 +101,7 @@
                   link
                   @click="handleViewDetail(scope.row)"
                 >
-                  详情
+                  {{ t("video.edge.detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:edge:update']"
@@ -101,7 +111,7 @@
                   link
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("video.common.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:edge:delete']"
@@ -111,7 +121,7 @@
                   link
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("video.common.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -129,54 +139,67 @@
     >
       <el-form ref="dataFormRef" :model="formData" label-width="100px" size="default">
         <el-form-item
-          label="设备名称"
+          :label="t('video.edge.deviceName')"
           prop="name"
-          :rules="[{ required: true, message: '请输入设备名称', trigger: 'blur' }]"
+          :rules="[{ required: true, message: t('video.edge.enterDeviceName'), trigger: 'blur' }]"
         >
-          <el-input v-model="formData.name" placeholder="如：一号车间边缘盒" />
+          <el-input v-model="formData.name" :placeholder="t('video.edge.nameExample')" />
         </el-form-item>
         <el-form-item
-          label="设备编码"
+          :label="t('video.edge.deviceCode')"
           prop="code"
-          :rules="[{ required: true, message: '请输入设备编码', trigger: 'blur' }]"
+          :rules="[{ required: true, message: t('video.edge.enterDeviceCode'), trigger: 'blur' }]"
         >
-          <el-input v-model="formData.code" placeholder="唯一编码，如 edge-01" />
+          <el-input v-model="formData.code" :placeholder="t('video.edge.codeExample')" />
         </el-form-item>
-        <el-form-item label="控制地址" prop="control_url">
-          <el-input v-model="formData.control_url" placeholder="http://192.168.1.10:8080" />
+        <el-form-item :label="t('video.edge.controlUrl')" prop="control_url">
+          <el-input
+            v-model="formData.control_url"
+            :placeholder="t('video.edge.controlUrlExample')"
+          />
         </el-form-item>
-        <el-form-item label="鉴权密钥" prop="secret">
+        <el-form-item :label="t('video.edge.authSecret')" prop="secret">
           <el-input
             v-model="formData.secret"
             type="password"
             show-password
-            :placeholder="dialogVisible.type === 'update' ? '留空表示不变更' : 'Agent 控制面密钥'"
+            :placeholder="
+              dialogVisible.type === 'update'
+                ? t('video.edge.leaveBlank')
+                : t('video.edge.agentSecret')
+            "
           />
         </el-form-item>
-        <el-form-item label="备注" prop="description">
+        <el-form-item :label="t('video.edge.remark')" prop="description">
           <el-input v-model="formData.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("video.common.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("video.common.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
-    <el-drawer v-model="detailDrawer.visible" title="边缘设备详情" size="560px">
+    <el-drawer v-model="detailDrawer.visible" :title="t('video.edge.edgeDetail')" size="560px">
       <template v-if="detailDrawer.data">
         <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="名称">{{ detailDrawer.data.name }}</el-descriptions-item>
-          <el-descriptions-item label="编码">{{ detailDrawer.data.code }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
+          <el-descriptions-item :label="t('video.common.name')">
+            {{ detailDrawer.data.name }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('video.edge.deviceCode')">
+            {{ detailDrawer.data.code }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('video.common.status')">
             <el-tag :type="statusTag(detailDrawer.data.status)" size="small">
               {{ statusLabel(detailDrawer.data.status) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="控制地址">
+          <el-descriptions-item :label="t('video.edge.controlUrl')">
             {{ detailDrawer.data.control_url || "-" }}
           </el-descriptions-item>
-          <el-descriptions-item label="最后心跳">
+          <el-descriptions-item :label="t('video.edge.lastHeartbeat')">
             {{ detailDrawer.data.last_heartbeat || "-" }}
           </el-descriptions-item>
         </el-descriptions>
@@ -193,6 +216,7 @@
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, onBeforeUnmount } from "vue";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import {
   getEdgeDeviceList,
   getEdgeDeviceDetail,
@@ -211,6 +235,7 @@ interface TablePageQuery {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const { t } = useI18n();
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
@@ -224,29 +249,33 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "设备名称",
+      label: t("video.edge.deviceName"),
       type: "input",
-      attrs: { placeholder: "设备名称", clearable: true, style: { width: "180px" } },
+      attrs: {
+        placeholder: t("video.edge.deviceName"),
+        clearable: true,
+        style: { width: "180px" },
+      },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("video.common.status"),
       type: "select",
       options: [
-        { label: "在线", value: "online" },
-        { label: "离线", value: "offline" },
-        { label: "繁忙", value: "busy" },
-        { label: "异常", value: "error" },
+        { label: t("video.common.online"), value: "online" },
+        { label: t("video.common.offline"), value: "offline" },
+        { label: t("video.edge.busy"), value: "busy" },
+        { label: t("video.common.abnormal"), value: "error" },
       ],
-      attrs: { placeholder: "全部", clearable: true, style: { width: "120px" } },
+      attrs: { placeholder: t("video.common.all"), clearable: true, style: { width: "120px" } },
     },
   ],
 });
 
 const edgeCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -301,7 +330,14 @@ function statusTag(status: string): "success" | "info" | "warning" | "danger" {
 
 function statusLabel(status: string): string {
   return (
-    { online: "在线", offline: "离线", busy: "繁忙", error: "异常" }[status] || status || "未知"
+    {
+      online: t("video.common.online"),
+      offline: t("video.common.offline"),
+      busy: t("video.edge.busy"),
+      error: t("video.common.abnormal"),
+    }[status] ||
+    status ||
+    t("video.common.unknown")
   );
 }
 
@@ -341,7 +377,7 @@ async function handleCloseDialog() {
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   if (id && type === "update") {
-    dialogVisible.title = "编辑边缘设备";
+    dialogVisible.title = t("video.edge.editDevice");
     const res = await getEdgeDeviceDetail(id);
     const item = res.data?.data;
     if (item) {
@@ -353,7 +389,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.secret = undefined;
     }
   } else {
-    dialogVisible.title = "新增边缘设备";
+    dialogVisible.title = t("video.edge.addDevice");
     await resetForm();
   }
   dialogVisible.visible = true;
@@ -377,7 +413,7 @@ async function handleSubmit() {
       } else {
         await createEdgeDevice(payload);
       }
-      ElMessage.success("保存成功");
+      ElMessage.success(t("video.common.saveSuccess"));
       dialogVisible.visible = false;
       await resetForm();
       refreshList();

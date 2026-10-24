@@ -16,56 +16,64 @@
         <el-tag size="small" type="info" effect="plain">{{ cardLabel }}</el-tag>
       </div>
       <div class="ont-link__ops">
-        <el-button size="small" :icon="Edit" @click="emit('edit')">编辑关系</el-button>
+        <el-button size="small" :icon="Edit" @click="emit('edit')">
+          {{ i18nT("ai_ontology.editRelation") }}
+        </el-button>
       </div>
     </div>
 
     <!-- ============ Overview ============ -->
     <template v-if="page === 'overview'">
       <section class="ont-sec">
-        <div class="ont-sec__head"><span class="ont-sec__title">元数据</span></div>
+        <div class="ont-sec__head">
+          <span class="ont-sec__title">{{ i18nT("ai_ontology.metadata") }}</span>
+        </div>
         <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="关系名">{{ link.name || "—" }}</el-descriptions-item>
-          <el-descriptions-item label="基数">
+          <el-descriptions-item :label="i18nT('ai_ontology.relationName')">
+            {{ link.name || "—" }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.cardinality')">
             <el-tag size="small" effect="plain">{{ cardLabel }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="API 名">
+          <el-descriptions-item :label="i18nT('ai_ontology.apiName')">
             <span class="ont-mono">{{ link.api_name || "—" }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="状态">
+          <el-descriptions-item :label="i18nT('ai_ontology.status')">
             <el-tag size="small" effect="plain" :type="statusTagType(link.status)">
               {{ labelOf(ONT_STATUS, link.status) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="源对象类型">
+          <el-descriptions-item :label="i18nT('ai_ontology.sourceObjectType')">
             {{ srcObj?.name || link.source_object }}
             <span class="ont-mono">（{{ link.source_object }}）</span>
           </el-descriptions-item>
-          <el-descriptions-item label="可见性">
+          <el-descriptions-item :label="i18nT('ai_ontology.visibility')">
             <el-tag size="small" effect="plain" :type="visibilityTagType(link.visibility)">
               {{ labelOf(ONT_VISIBILITY, link.visibility) }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="源侧显示名">
+          <el-descriptions-item :label="i18nT('ai_ontology.sourceDisplayName')">
             {{ link.source_name || "—" }}
           </el-descriptions-item>
-          <el-descriptions-item label="源侧复数名">
+          <el-descriptions-item :label="i18nT('ai_ontology.sourcePluralName')">
             {{ link.source_plural_name || "—" }}
           </el-descriptions-item>
-          <el-descriptions-item label="目标对象类型">
+          <el-descriptions-item :label="i18nT('ai_ontology.targetObjectType2')">
             {{ tgtObj?.name || link.target_object }}
             <span class="ont-mono">（{{ link.target_object }}）</span>
           </el-descriptions-item>
-          <el-descriptions-item label="目标侧显示名">
+          <el-descriptions-item :label="i18nT('ai_ontology.targetDisplayName')">
             {{ link.target_name || "—" }}
           </el-descriptions-item>
-          <el-descriptions-item label="目标侧复数名">
+          <el-descriptions-item :label="i18nT('ai_ontology.targetPluralName')">
             {{ link.target_plural_name || "—" }}
           </el-descriptions-item>
-          <el-descriptions-item label="所属本体">{{ domainLabel() }}</el-descriptions-item>
-          <el-descriptions-item label="描述" :span="2">
+          <el-descriptions-item :label="i18nT('ai_ontology.owningOntology')">
+            {{ domainLabel() }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.description')" :span="2">
             <span :class="{ 'ont-none': !link.description }">
-              {{ link.description || "未填写" }}
+              {{ link.description || i18nT("ai_ontology.notFilled") }}
             </span>
           </el-descriptions-item>
         </el-descriptions>
@@ -73,21 +81,27 @@
           type="info"
           :closable="false"
           class="ont-note"
-          title="关系类型有方向：两侧各有独立的显示名、复数名与可见性（对齐官方）。ID / RID 由平台生成，暂未落地。"
+          :title="i18nT('ai_ontology.relationTypeInfoAlert')"
         />
       </section>
 
       <!-- Configuration：Join method 三选一 + 端点属性 -->
       <section class="ont-sec">
         <div class="ont-sec__head">
-          <span class="ont-sec__title">配置</span>
+          <span class="ont-sec__title">{{ i18nT("ai_ontology.config") }}</span>
         </div>
         <div class="ont-field">
-          <div class="ont-field__label">连接方式</div>
+          <div class="ont-field__label">{{ i18nT("ai_ontology.joinMode") }}</div>
           <el-radio-group v-model="form.join_method" @change="onJoinChange">
-            <el-radio-button value="foreign_key">外键 Foreign key</el-radio-button>
-            <el-radio-button value="dataset">连接表 Dataset</el-radio-button>
-            <el-radio-button value="object_type">中间对象 Object type</el-radio-button>
+            <el-radio-button value="foreign_key">
+              {{ i18nT("ai_ontology.joinForeignKey") }}
+            </el-radio-button>
+            <el-radio-button value="dataset">
+              {{ i18nT("ai_ontology.joinDataset") }}
+            </el-radio-button>
+            <el-radio-button value="object_type">
+              {{ i18nT("ai_ontology.joinObjectType") }}
+            </el-radio-button>
           </el-radio-group>
         </div>
         <div class="ont-hint">{{ joinHint }}</div>
@@ -102,7 +116,7 @@
             <el-select
               v-model="form.source_field"
               size="small"
-              placeholder="选择属性"
+              :placeholder="i18nT('ai_ontology.selectProperty')"
               class="ont-endpoint__sel"
             >
               <el-option
@@ -121,13 +135,13 @@
               <el-icon><component :is="iconName(tgtObj?.icon)" /></el-icon>
               <span>{{ tgtObj?.name || link.target_object }}</span>
               <el-tag v-if="tgtObj?.key_prop" size="small" type="warning" effect="plain">
-                主键: {{ tgtObj.key_prop }}
+                {{ i18nT("ai_ontology.primaryKeyColon", { name: tgtObj.key_prop }) }}
               </el-tag>
             </div>
             <el-select
               v-model="form.target_field"
               size="small"
-              placeholder="选择属性"
+              :placeholder="i18nT('ai_ontology.selectProperty')"
               class="ont-endpoint__sel"
             >
               <el-option
@@ -152,53 +166,74 @@
             <span class="ont-joinviz__dot" />
           </div>
           <div class="ont-joinviz__tip">
-            {{ form.source_field || "源属性" }} → {{ form.target_field || "目标属性" }}
+            {{ form.source_field || i18nT("ai_ontology.sourceProperty") }} →
+            {{ form.target_field || i18nT("ai_ontology.targetProperty") }}
           </div>
         </div>
 
         <div class="ont-sec__head ont-sec__head--mt">
           <el-button type="primary" size="small" :loading="saving" @click="save">
-            保存配置
+            {{ i18nT("ai_ontology.saveConfig") }}
           </el-button>
-          <span class="ont-hint">关系来自数据库真实外键；此处可调整连接方式与关联字段</span>
+          <span class="ont-hint">
+            {{
+              i18nT(
+                "ai_ontology.relationsComeFromRealDatabaseForeignKeysAdjustJoinModeAndFieldsHere"
+              )
+            }}
+          </span>
         </div>
       </section>
 
       <!-- 关系自身的属性（官方 Link type 也可带属性） -->
       <section class="ont-sec">
         <div class="ont-sec__head">
-          <span class="ont-sec__title">关系属性</span>
+          <span class="ont-sec__title">{{ i18nT("ai_ontology.relationProperties") }}</span>
           <el-tag size="small" type="info" effect="plain">0</el-tag>
         </div>
-        <el-empty :image-size="50" description="关系类型自身的属性（object-backed link）暂未支持" />
+        <el-empty
+          :image-size="50"
+          :description="i18nT('ai_ontology.relationOwnPropsNotSupported')"
+        />
       </section>
     </template>
 
     <!-- ============ Security ============ -->
     <section v-else-if="page === 'security'" class="ont-sec">
-      <div class="ont-sec__head"><span class="ont-sec__title">安全</span></div>
+      <div class="ont-sec__head">
+        <span class="ont-sec__title">{{ i18nT("ai_ontology.security") }}</span>
+      </div>
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
-        title="关系权限随两端对象类型的 backing datasource 权限。字段级限制见各对象类型的「安全」子页。"
+        :title="i18nT('ai_ontology.relationSecurityAlert')"
       />
       <el-table :data="[...srcProps, ...tgtProps]" size="small" border max-height="380" stripe>
-        <template #empty><el-empty :image-size="50" description="暂无属性" /></template>
-        <el-table-column prop="name" label="属性" min-width="150" show-overflow-tooltip />
+        <template #empty>
+          <el-empty :image-size="50" :description="i18nT('ai_ontology.noProperties')" />
+        </template>
         <el-table-column
-          prop="object_code"
-          label="所属对象类型"
+          prop="name"
+          :label="i18nT('ai_ontology.property')"
           min-width="150"
           show-overflow-tooltip
         />
-        <el-table-column label="敏感" width="80" align="center">
+        <el-table-column
+          prop="object_code"
+          :label="i18nT('ai_ontology.owningObjectType')"
+          min-width="150"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.sensitive')" width="80" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.sensitive" size="small" type="danger" effect="plain">是</el-tag>
-            <span v-else class="ont-none">否</span>
+            <el-tag v-if="row.sensitive" size="small" type="danger" effect="plain">
+              {{ i18nT("ai_ontology.yes") }}
+            </el-tag>
+            <span v-else class="ont-none">{{ i18nT("ai_ontology.no") }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="可见角色" min-width="200">
+        <el-table-column :label="i18nT('ai_ontology.visibleRoles')" min-width="200">
           <template #default="{ row }">
             <template v-if="row.roles?.length">
               <el-tag
@@ -211,7 +246,7 @@
                 {{ r }}
               </el-tag>
             </template>
-            <span v-else class="ont-none">公开</span>
+            <span v-else class="ont-none">{{ i18nT("ai_ontology.public") }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -219,40 +254,47 @@
 
     <!-- ============ Datasources ============ -->
     <section v-else-if="page === 'datasources'" class="ont-sec">
-      <div class="ont-sec__head"><span class="ont-sec__title">数据源</span></div>
+      <div class="ont-sec__head">
+        <span class="ont-sec__title">{{ i18nT("ai_ontology.dataSource") }}</span>
+      </div>
       <el-descriptions :column="1" size="small" border>
-        <el-descriptions-item label="连接方式">{{ joinLabel }}</el-descriptions-item>
-        <el-descriptions-item label="源字段">
+        <el-descriptions-item :label="i18nT('ai_ontology.joinMode')">
+          {{ joinLabel }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="i18nT('ai_ontology.sourceField')">
           <span v-if="link.source_field" class="ont-mono">
             {{ link.source_object }}.{{ link.source_field }}
           </span>
-          <span v-else class="ont-none">未设置</span>
+          <span v-else class="ont-none">{{ i18nT("ai_ontology.notSet") }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="目标字段">
+        <el-descriptions-item :label="i18nT('ai_ontology.targetField')">
           <span v-if="link.target_field" class="ont-mono">
             {{ link.target_object }}.{{ link.target_field }}
           </span>
-          <span v-else class="ont-none">未设置</span>
+          <span v-else class="ont-none">{{ i18nT("ai_ontology.notSet") }}</span>
         </el-descriptions-item>
       </el-descriptions>
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
-        title="many-to-many 必须由连接表数据集支撑；object-backed link 需要中间对象类型。相关配置当前版本尚未支持齐。"
+        :title="i18nT('ai_ontology.datasourceAlert')"
       />
     </section>
 
     <!-- ============ Usage ============ -->
     <section v-else class="ont-sec">
-      <div class="ont-sec__head"><span class="ont-sec__title">使用量</span></div>
-      <el-empty :image-size="60" description="用量统计暂未接入" />
+      <div class="ont-sec__head">
+        <span class="ont-sec__title">{{ i18nT("ai_ontology.usage") }}</span>
+      </div>
+      <el-empty :image-size="60" :description="i18nT('ai_ontology.usageStatsNotConnectedYet')" />
     </section>
   </div>
-  <el-empty v-else description="未找到该关系类型" />
+  <el-empty v-else :description="i18nT('ai_ontology.relationTypeNotFound')" />
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { Edit, Right, Switch } from "@element-plus/icons-vue";
@@ -265,6 +307,8 @@ import {
   statusTagType,
   visibilityTagType,
 } from "../constants";
+
+const { t: i18nT } = useI18n();
 
 const props = defineProps<{ id: number; page: string }>();
 const emit = defineEmits<{
@@ -279,31 +323,34 @@ const srcObj = computed(() => (link.value ? objectByCode(link.value.source_objec
 const tgtObj = computed(() => (link.value ? objectByCode(link.value.target_object) : null));
 
 const CARD_LABEL: Record<string, string> = {
-  one_to_one: "一对一关系类型",
-  one_to_many: "一对多关系类型",
-  many_to_one: "多对一关系类型",
-  many_to_many: "多对多关系类型",
+  one_to_one: i18nT("ai_ontology.oneToOneRelationType"),
+  one_to_many: i18nT("ai_ontology.oneToManyRelationType"),
+  many_to_one: i18nT("ai_ontology.manyToOneRelationType"),
+  many_to_many: i18nT("ai_ontology.manyToManyRelationType"),
 };
 const cardLabel = computed(() => CARD_LABEL[link.value?.card] || link.value?.card || "—");
 
 const JOIN_LABEL: Record<string, string> = {
-  foreign_key: "外键（Foreign key）",
-  dataset: "连接表（Dataset）",
-  object_type: "中间对象（Object type）",
+  foreign_key: i18nT("ai_ontology.joinForeignKey"),
+  dataset: i18nT("ai_ontology.joinDataset"),
+  object_type: i18nT("ai_ontology.joinObjectType"),
 };
 const joinLabel = computed(() => JOIN_LABEL[form.join_method] || form.join_method);
 const joinHint = computed(() => {
-  if (form.join_method === "foreign_key")
-    return "一侧持有指向另一侧主键的外键属性。适用于一对多 / 多对一。";
+  if (form.join_method === "foreign_key") return i18nT("ai_ontology.foreignKeyJoinHint");
   if (form.join_method === "dataset")
-    return "用一张连接表数据集承载关系。多对多必须使用此方式，也是唯一支持用户编辑与回写的方式。";
-  return "用中间对象类型承载关系，可附加额外元数据与受限视图。";
+    return i18nT(
+      "ai_ontology.useAJoinTableDatasetForRelationsRequiredForManyToManyTheOnlyEditableWritebackWay"
+    );
+  return i18nT(
+    "ai_ontology.useAnIntermediateObjectTypeForRelationsWithExtraMetadataAndRestrictedViews"
+  );
 });
 
 /** 所属本体：显示**中文名**而不是原始 code（与对象类型详情的 `domainName()` 同口径）。
  *  原先这里直接回显 `domain_code`（如 `data_table`），同一概念在另一处却显示中文名。 */
 function domainName(code?: string): string {
-  if (!code) return "未分组";
+  if (!code) return i18nT("ai_ontology.uncategorized");
   const hit = (domains.value || []).find((d: any) => d.code === code);
   return hit?.name || code;
 }
@@ -311,7 +358,7 @@ function domainName(code?: string): string {
 function domainLabel() {
   const a = srcObj.value?.domain_code;
   const b = tgtObj.value?.domain_code;
-  if (!a && !b) return "未分组";
+  if (!a && !b) return i18nT("ai_ontology.uncategorized");
   return a && a === b ? domainName(a) : `${domainName(a)} / ${domainName(b)}`;
 }
 function iconName(raw?: string) {
@@ -375,15 +422,15 @@ async function save() {
   if (!link.value) return;
   // 官方约束：多对多必须由连接表数据集支撑
   if (form.card === "many_to_many" && form.join_method !== "dataset") {
-    return ElMessage.warning("多对多关系必须使用「连接表 Dataset」连接方式");
+    return ElMessage.warning(i18nT("ai_ontology.manyToManyJoinDatasetWarning"));
   }
   saving.value = true;
   try {
     await stage("link", "update", { ...form, id: link.value.id });
-    ElMessage.success("已暂存（点右上角「保存」才生效）");
+    ElMessage.success(i18nT("ai_ontology.stagedClickSaveAtTopRightToApply"));
     emit("refresh");
   } catch (e: any) {
-    ElMessage.error(e?.msg || "暂存失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.stagingFailed"));
   } finally {
     saving.value = false;
   }

@@ -15,15 +15,17 @@
     <el-card v-hasPerm="'module_ai:report:query'" shadow="never" class="ov-recent-card">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AI 报告</span>
+          <span>{{ t("ai_logs.aiReport") }}</span>
           <div class="flex items-center" style="gap: 10px">
-            <span class="ai-sub">AI 生成报告 · 查看 / 删除</span>
-            <el-button type="primary" size="small" @click="openReportDrawer">查看</el-button>
+            <span class="ai-sub">{{ t("ai_logs.aiReportSub") }}</span>
+            <el-button type="primary" size="small" @click="openReportDrawer">
+              {{ t("ai_logs.view") }}
+            </el-button>
           </div>
         </div>
       </template>
       <div class="ov-usage-row">
-        <span>已生成报告</span>
+        <span>{{ t("ai_logs.generatedReports") }}</span>
         <b>{{ stats.reports ?? 0 }}</b>
       </div>
     </el-card>
@@ -31,25 +33,27 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-bottom: 12px">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>Compass 全局数据目录</span>
+          <span>{{ t("ai_logs.compassCatalog") }}</span>
           <div class="ov-usage-row">
-            <span class="ai-sub">搜索 表 / 对象 / 指标 / 术语</span>
+            <span class="ai-sub">{{ t("ai_logs.compassSearchSub") }}</span>
           </div>
         </div>
       </template>
       <div class="compass-bar">
         <el-input
           v-model="compassKw"
-          placeholder="输入关键词，如 摄像头 / 告警 / 订单"
+          :placeholder="t('ai_logs.compassPlaceholder')"
           clearable
           class="flex-1"
           @keyup.enter="runCompass"
         />
-        <el-button type="primary" :loading="compassLoading" @click="runCompass">搜索</el-button>
+        <el-button type="primary" :loading="compassLoading" @click="runCompass">
+          {{ t("ai_logs.search") }}
+        </el-button>
       </div>
       <template v-if="compassResult">
         <div v-if="compassResult.assets?.length" class="gov-section mt-2">
-          表（{{ compassResult.assets.length }}）
+          {{ t("ai_logs.tablesCount", { count: compassResult.assets.length }) }}
         </div>
         <div>
           <el-tag
@@ -63,7 +67,7 @@
           </el-tag>
         </div>
         <div v-if="compassResult.objects?.length" class="gov-section mt-2">
-          对象（{{ compassResult.objects.length }}）
+          {{ t("ai_logs.objectsCount", { count: compassResult.objects.length }) }}
         </div>
         <div>
           <el-tag
@@ -78,7 +82,7 @@
           </el-tag>
         </div>
         <div v-if="compassResult.metrics?.length" class="gov-section mt-2">
-          指标（{{ compassResult.metrics.length }}）
+          {{ t("ai_logs.metricsCount", { count: compassResult.metrics.length }) }}
         </div>
         <div>
           <el-tag
@@ -93,7 +97,7 @@
           </el-tag>
         </div>
         <div v-if="compassResult.terms?.length" class="gov-section mt-2">
-          术语（{{ compassResult.terms.length }}）
+          {{ t("ai_logs.termsCount", { count: compassResult.terms.length }) }}
         </div>
         <div>
           <el-tag
@@ -115,7 +119,7 @@
             !compassResult.terms?.length
           "
           :image-size="30"
-          description="无匹配结果"
+          :description="t('ai_logs.noMatchResult')"
         />
       </template>
     </el-card>
@@ -123,13 +127,13 @@
     <el-row :gutter="12" class="ov-body">
       <el-col :md="15">
         <el-card shadow="never" class="ov-chart-card">
-          <template #header>调用趋势（近 7 天）</template>
+          <template #header>{{ t("ai_logs.callTrendTitle") }}</template>
           <div ref="trendRef" class="ov-chart" />
         </el-card>
       </el-col>
       <el-col :md="9">
         <el-card shadow="never" class="ov-chart-card">
-          <template #header>模型用量对比</template>
+          <template #header>{{ t("ai_logs.modelUsageCompare") }}</template>
           <div ref="modelRef" class="ov-chart" />
         </el-card>
       </el-col>
@@ -138,7 +142,7 @@
     <el-row :gutter="12" class="ov-body">
       <el-col :md="12">
         <el-card shadow="never" class="ov-chart-card">
-          <template #header>快捷入口</template>
+          <template #header>{{ t("ai_logs.quickEntries") }}</template>
           <div class="ov-entry-list">
             <div v-for="e in entries" :key="e.path" class="ov-entry" @click="$router.push(e.path)">
               <el-icon class="ov-entry__icon"><component :is="e.icon" /></el-icon>
@@ -152,22 +156,22 @@
       </el-col>
       <el-col :md="12">
         <el-card shadow="never" class="ov-chart-card">
-          <template #header>用量与成本</template>
+          <template #header>{{ t("ai_logs.usageAndCost") }}</template>
           <div class="ov-usage-list">
             <div class="ov-usage-row">
-              <span>调用模型</span>
+              <span>{{ t("ai_logs.calledModels") }}</span>
               <b>{{ (stats.by_model || []).length }}</b>
             </div>
             <div class="ov-usage-row">
-              <span>总输入 token</span>
+              <span>{{ t("ai_logs.totalPromptTokens") }}</span>
               <b>{{ sumTokens(stats.by_model, "prompt_tokens") }}</b>
             </div>
             <div class="ov-usage-row">
-              <span>总输出 token</span>
+              <span>{{ t("ai_logs.totalCompletionTokens") }}</span>
               <b>{{ sumTokens(stats.by_model, "completion_tokens") }}</b>
             </div>
             <div class="ov-usage-row">
-              <span>总成本(元)</span>
+              <span>{{ t("ai_logs.totalCostYuan") }}</span>
               <b>{{ sumCost(stats.by_model) }}</b>
             </div>
           </div>
@@ -176,7 +180,7 @@
     </el-row>
 
     <el-card shadow="never" class="ov-recent-card">
-      <template #header>最近调用</template>
+      <template #header>{{ t("ai_logs.recentCalls") }}</template>
       <el-table
         :data="stats.recent_calls || []"
         size="small"
@@ -185,33 +189,41 @@
         border
         stripe
       >
-        <el-table-column prop="created_time" label="时间" min-width="160" />
-        <el-table-column prop="model_name" label="模型" min-width="150" />
-        <el-table-column prop="usage" label="用途" width="100" />
-        <el-table-column prop="latency_ms" label="耗时" width="90" align="center">
+        <el-table-column prop="created_time" :label="t('ai_logs.time')" min-width="160" />
+        <el-table-column prop="model_name" :label="t('ai_logs.model')" min-width="150" />
+        <el-table-column prop="usage" :label="t('ai_logs.usage')" width="100" />
+        <el-table-column prop="latency_ms" :label="t('ai_logs.latency')" width="90" align="center">
           <template #default="{ row }">{{ row.latency_ms }} ms</template>
         </el-table-column>
-        <el-table-column label="结果" width="90" align="center">
+        <el-table-column :label="t('ai_logs.result')" width="90" align="center">
           <template #default="{ row }">
             <el-tag :type="row.result === 'success' ? 'success' : 'danger'" size="small">
-              {{ row.result === "success" ? "成功" : "失败" }}
+              {{ row.result === "success" ? t("ai_logs.success") : t("ai_logs.failed") }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="error" label="错误" min-width="200" />
+        <el-table-column prop="error" :label="t('ai_logs.error')" min-width="200" />
       </el-table>
     </el-card>
 
     <el-card shadow="never" class="ov-recent-card mt-3">
-      <template #header>系统运行监控</template>
+      <template #header>{{ t("ai_logs.runtimeMonitor") }}</template>
       <el-row v-if="runtime" :gutter="12">
-        <el-col :span="4"><el-statistic title="应用" :value="runtime.apps ?? 0" /></el-col>
-        <el-col :span="4"><el-statistic title="工作流" :value="runtime.workflows ?? 0" /></el-col>
-        <el-col :span="4"><el-statistic title="模型" :value="runtime.models ?? 0" /></el-col>
-        <el-col :span="4"><el-statistic title="智能体" :value="runtime.agents ?? 0" /></el-col>
+        <el-col :span="4">
+          <el-statistic :title="t('ai_logs.apps')" :value="runtime.apps ?? 0" />
+        </el-col>
+        <el-col :span="4">
+          <el-statistic :title="t('ai_logs.workflows')" :value="runtime.workflows ?? 0" />
+        </el-col>
+        <el-col :span="4">
+          <el-statistic :title="t('ai_logs.models')" :value="runtime.models ?? 0" />
+        </el-col>
+        <el-col :span="4">
+          <el-statistic :title="t('ai_logs.agents')" :value="runtime.agents ?? 0" />
+        </el-col>
         <el-col :span="4">
           <div class="ov-usage-row">
-            <span>AI健康</span>
+            <span>{{ t("ai_logs.aiHealth") }}</span>
             <el-tag
               size="small"
               :type="
@@ -225,19 +237,19 @@
             >
               {{
                 runtime.health?.status === "healthy"
-                  ? "健康"
+                  ? t("ai_logs.healthy")
                   : runtime.health?.status === "warning"
-                    ? "预警"
-                    : "严重"
+                    ? t("ai_logs.warning")
+                    : t("ai_logs.severe")
               }}
             </el-tag>
           </div>
         </el-col>
         <el-col :span="4">
-          <el-statistic title="近7天调用" :value="runtime.health?.calls ?? 0" />
+          <el-statistic :title="t('ai_logs.last7dCalls')" :value="runtime.health?.calls ?? 0" />
         </el-col>
       </el-row>
-      <div v-if="runtime" class="gov-section mt-2">管道运行状态</div>
+      <div v-if="runtime" class="gov-section mt-2">{{ t("ai_logs.pipelineStatus") }}</div>
       <div v-if="runtime">
         <el-tag
           v-for="(cnt, st) in runtime.pipeline_status || {}"
@@ -257,7 +269,7 @@
           type="info"
           effect="plain"
         >
-          暂无管道运行
+          {{ t("ai_logs.noPipelineRun") }}
         </el-tag>
       </div>
     </el-card>
@@ -265,18 +277,20 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AIP 控制台 · 运行追踪</span>
-          <span class="ai-sub">Agent/AI 调用运行追踪 · 用途分布 · 人工审核队列</span>
+          <span>{{ t("ai_logs.aipConsole") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.aipConsoleSub") }}</span>
         </div>
       </template>
       <el-row v-if="aip" :gutter="12" class="mb-2">
-        <el-col :span="8"><el-statistic title="运行记录" :value="aip.total ?? 0" /></el-col>
         <el-col :span="8">
-          <el-statistic title="人工审核待办" :value="aip.pending_review ?? 0" />
+          <el-statistic :title="t('ai_logs.runRecords')" :value="aip.total ?? 0" />
+        </el-col>
+        <el-col :span="8">
+          <el-statistic :title="t('ai_logs.pendingReview')" :value="aip.pending_review ?? 0" />
         </el-col>
         <el-col :span="8">
           <div style="display: flex; align-items: center; gap: 6px">
-            <span class="ai-sub">用途分布</span>
+            <span class="ai-sub">{{ t("ai_logs.usageDist") }}</span>
             <el-tag
               v-for="(n, u) in aip.usage_dist || {}"
               :key="u"
@@ -290,11 +304,16 @@
         </el-col>
       </el-row>
       <el-table :data="aip?.runs || []" size="small" max-height="360" border stripe>
-        <el-table-column prop="time" label="时间" width="100" />
-        <el-table-column prop="model" label="模型" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="usage" label="用途" width="110" />
-        <el-table-column prop="latency_ms" label="耗时(ms)" width="90" />
-        <el-table-column label="结果" width="90" align="center">
+        <el-table-column prop="time" :label="t('ai_logs.time')" width="100" />
+        <el-table-column
+          prop="model"
+          :label="t('ai_logs.model')"
+          min-width="130"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="usage" :label="t('ai_logs.usage')" width="110" />
+        <el-table-column prop="latency_ms" :label="t('ai_logs.latencyMs')" width="90" />
+        <el-table-column :label="t('ai_logs.result')" width="90" align="center">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -305,12 +324,12 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="Tokens" width="110" align="center">
+        <el-table-column :label="t('ai_logs.tokens')" width="110" align="center">
           <template #default="{ row }">
             {{ row.prompt_tokens ?? 0 }} / {{ row.completion_tokens ?? 0 }}
           </template>
         </el-table-column>
-        <el-table-column label="费用(元)" width="90" align="center">
+        <el-table-column :label="t('ai_logs.costYuan')" width="90" align="center">
           <template #default="{ row }">{{ row.cost ?? 0 }}</template>
         </el-table-column>
       </el-table>
@@ -319,32 +338,40 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>Agent 编排运行看板</span>
-          <span class="ai-sub">运行量/错误率/延迟 + 绑定工具·技能·能力矩阵</span>
+          <span>{{ t("ai_logs.agentDashboard") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.agentDashboardSub") }}</span>
         </div>
       </template>
       <el-row v-if="agentDash" :gutter="12" class="mb-2">
         <el-col :span="8">
-          <el-statistic title="智能体总数" :value="agentDash.total_agents ?? 0" />
+          <el-statistic :title="t('ai_logs.totalAgents')" :value="agentDash.total_agents ?? 0" />
         </el-col>
         <el-col :span="8">
-          <el-statistic title="已启用" :value="agentDash.enabled_agents ?? 0" />
+          <el-statistic
+            :title="t('ai_logs.enabledAgents')"
+            :value="agentDash.enabled_agents ?? 0"
+          />
         </el-col>
         <el-col :span="8">
-          <el-statistic title="累计运行" :value="agentDash.total_runs ?? 0" />
+          <el-statistic :title="t('ai_logs.totalRuns')" :value="agentDash.total_runs ?? 0" />
         </el-col>
       </el-row>
       <el-table :data="agentDash?.agents || []" size="small" max-height="300" border stripe>
-        <el-table-column prop="name" label="智能体" min-width="120" show-overflow-tooltip />
-        <el-table-column label="状态" width="70" align="center">
+        <el-table-column
+          prop="name"
+          :label="t('ai_logs.agent')"
+          min-width="120"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="t('ai_logs.status')" width="70" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.enabled ? 'success' : 'info'" effect="plain">
-              {{ row.enabled ? "启用" : "停用" }}
+              {{ row.enabled ? t("ai_logs.enabled") : t("ai_logs.disabled") }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="runs" label="运行" width="70" align="center" />
-        <el-table-column label="错误率" width="90" align="center">
+        <el-table-column prop="runs" :label="t('ai_logs.runs')" width="70" align="center" />
+        <el-table-column :label="t('ai_logs.errorRate')" width="90" align="center">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -355,15 +382,22 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="avg_latency" label="延迟(ms)" width="90" align="center" />
-        <el-table-column label="编排矩阵" min-width="200">
+        <el-table-column
+          prop="avg_latency"
+          :label="t('ai_logs.latencyMs')"
+          width="90"
+          align="center"
+        />
+        <el-table-column :label="t('ai_logs.orchestrationMatrix')" min-width="200">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain" class="mr-1 mb-1">工具 {{ row.tools }}</el-tag>
+            <el-tag size="small" effect="plain" class="mr-1 mb-1">
+              {{ t("ai_logs.tools", { count: row.tools }) }}
+            </el-tag>
             <el-tag size="small" type="warning" effect="plain" class="mr-1 mb-1">
-              技能 {{ row.skills }}
+              {{ t("ai_logs.skills", { count: row.skills }) }}
             </el-tag>
             <el-tag size="small" type="info" effect="plain" class="mr-1 mb-1">
-              知识 {{ row.knowledge }}
+              {{ t("ai_logs.knowledge", { count: row.knowledge }) }}
             </el-tag>
             <el-tag
               v-for="cap in (row.capabilities || []).slice(0, 3)"
@@ -383,12 +417,12 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>安全与合规姿态</span>
-          <span class="ai-sub">敏感识别 / 权限覆盖 / 数据域 / 数据质量 / 审批积压 / 调用合规</span>
+          <span>{{ t("ai_logs.securityPosture") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.securityPostureSub") }}</span>
         </div>
       </template>
       <div v-if="posture" class="ov-usage-row" style="margin-bottom: 8px; gap: 12px">
-        <span>综合评分</span>
+        <span>{{ t("ai_logs.compositeScore") }}</span>
         <el-progress
           type="circle"
           :width="90"
@@ -407,7 +441,11 @@
           effect="plain"
         >
           {{
-            posture.level === "excellent" ? "优秀" : posture.level === "good" ? "良好" : "需关注"
+            posture.level === "excellent"
+              ? t("ai_logs.excellent")
+              : posture.level === "good"
+                ? t("ai_logs.good")
+                : t("ai_logs.attention")
           }}
         </el-tag>
       </div>
@@ -428,7 +466,7 @@
           </div>
         </el-col>
       </el-row>
-      <div v-if="posture" class="gov-section mt-2">整改项</div>
+      <div v-if="posture" class="gov-section mt-2">{{ t("ai_logs.remediationItems") }}</div>
       <div v-if="posture">
         <el-tag
           v-for="(f, i) in posture.findings"
@@ -446,34 +484,40 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>多智能体协作编排</span>
-          <span class="ai-sub">输入问题，按本体能力分解子任务并匹配合适智能体</span>
+          <span>{{ t("ai_logs.multiAgentOrchestration") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.multiAgentSub") }}</span>
         </div>
       </template>
       <div class="compass-bar">
         <el-input
           v-model="orchInput"
-          placeholder="如：今天有多少条告警？"
+          :placeholder="t('ai_logs.orchPlaceholder')"
           clearable
           class="flex-1"
           @keyup.enter="runOrchestrate"
         />
-        <el-button type="primary" :loading="orchLoading" @click="runOrchestrate">编排</el-button>
+        <el-button type="primary" :loading="orchLoading" @click="runOrchestrate">
+          {{ t("ai_logs.orchestrate") }}
+        </el-button>
       </div>
       <template v-if="orchResult">
-        <div class="gov-section mt-2">识别意图：{{ orchResult.intent }}</div>
+        <div class="gov-section mt-2">
+          {{ t("ai_logs.detectIntent", { intent: orchResult.intent }) }}
+        </div>
         <el-steps :active="orchResult.steps.length" direction="vertical" style="margin-top: 4px">
           <el-step
             v-for="(s, i) in orchResult.steps"
             :key="i"
             :title="s.task"
-            :description="`能力要求：${s.capability}`"
+            :description="t('ai_logs.capabilityReq', { cap: s.capability })"
           />
         </el-steps>
-        <div class="gov-section mt-2">可参与智能体（{{ orchResult.agents_involved.length }}）</div>
+        <div class="gov-section mt-2">
+          {{ t("ai_logs.participantAgents", { count: orchResult.agents_involved.length }) }}
+        </div>
         <div>
           <el-tag v-if="!orchResult.agents_involved.length" size="small" type="info" effect="plain">
-            未匹配到启用且具备能力属性的智能体
+            {{ t("ai_logs.noParticipantAgent") }}
           </el-tag>
           <el-tag
             v-for="a in orchResult.agents_involved"
@@ -491,23 +535,27 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>治理巡检（候选行动）</span>
-          <span class="ai-sub">规则扫描治理/质量/安全/审批，生成候选自主行动</span>
+          <span>{{ t("ai_logs.governanceInspection") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.governanceInspectionSub") }}</span>
         </div>
       </template>
       <div class="ov-usage-row mb-2">
-        <el-button size="small" :loading="autoLoading" @click="loadAutopilot">重新扫描</el-button>
-        <el-button size="small" type="danger" :loading="autoFixing" @click="runAutoFix">
-          一键自动修复
+        <el-button size="small" :loading="autoLoading" @click="loadAutopilot">
+          {{ t("ai_logs.rescan") }}
         </el-button>
-        <el-tag size="small" type="info" effect="plain">候选 {{ autopilot?.total ?? 0 }} 项</el-tag>
+        <el-button size="small" type="danger" :loading="autoFixing" @click="runAutoFix">
+          {{ t("ai_logs.oneClickFix") }}
+        </el-button>
+        <el-tag size="small" type="info" effect="plain">
+          {{ t("ai_logs.candidatesCount", { count: autopilot?.total ?? 0 }) }}
+        </el-tag>
         <el-tag
           v-if="!autopilot?.actions?.length && !autoLoading"
           size="small"
           type="success"
           effect="plain"
         >
-          暂无风险建议
+          {{ t("ai_logs.noRiskSuggest") }}
         </el-tag>
       </div>
       <template v-if="autopilot?.actions?.length">
@@ -536,9 +584,11 @@
             :loading="autoExecuting === a.executable + a.tables[0]"
             @click="runAutopilot(a.executable, a.tables[0])"
           >
-            自动处理
+            {{ t("ai_logs.autoHandle") }}
           </el-button>
-          <el-button v-else size="small" @click="runAutopilot('none', '')">查看</el-button>
+          <el-button v-else size="small" @click="runAutopilot('none', '')">
+            {{ t("ai_logs.view") }}
+          </el-button>
         </div>
       </template>
     </el-card>
@@ -546,17 +596,24 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>Ontology 派生指标</span>
-          <span class="ai-sub">基于基础指标自动推导派生指标（分子/分母/除数规则引擎）</span>
+          <span>{{ t("ai_logs.derivedMetrics") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.derivedMetricsSub") }}</span>
         </div>
       </template>
       <div class="ov-usage-row mb-2">
-        <el-button size="small" :loading="derivedLoading" @click="loadDerived">刷新</el-button>
+        <el-button size="small" :loading="derivedLoading" @click="loadDerived">
+          {{ t("ai_logs.refresh") }}
+        </el-button>
       </div>
       <el-table :data="derived" size="small" border stripe>
-        <el-table-column prop="name" label="派生指标" min-width="120" />
-        <el-table-column prop="formula" label="规则" min-width="180" show-overflow-tooltip />
-        <el-table-column label="基础指标" min-width="160">
+        <el-table-column prop="name" :label="t('ai_logs.derivedMetric')" min-width="120" />
+        <el-table-column
+          prop="formula"
+          :label="t('ai_logs.rule')"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="t('ai_logs.baseMetrics')" min-width="160">
           <template #default="{ row }">
             <el-tag
               v-for="b in row.base"
@@ -570,7 +627,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="计算值" width="110" align="center">
+        <el-table-column :label="t('ai_logs.computedValue')" width="110" align="center">
           <template #default="{ row }">
             <span v-if="derivedValues[row.key]?.ok">
               {{ derivedValues[row.key].value }} {{ row.unit }}
@@ -578,10 +635,10 @@
             <span v-else class="ai-sub">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="90" align="center">
+        <el-table-column :label="t('ai_logs.operation')" width="90" align="center">
           <template #default="{ row }">
             <el-button icon="Cpu" size="small" type="primary" link @click="computeDerived(row.key)">
-              计算
+              {{ t("ai_logs.compute") }}
             </el-button>
           </template>
         </el-table-column>
@@ -591,14 +648,21 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>数据安全与访问审计</span>
-          <span class="ai-sub">敏感资产 · 数据源只读 · ABAC 规则 · 访问审计日志</span>
+          <span>{{ t("ai_logs.securityAudit") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.securityAuditSub") }}</span>
         </div>
       </template>
       <div class="ov-usage-row mb-2">
-        <el-button size="small" :loading="securityLoading" @click="loadSecurity">刷新</el-button>
+        <el-button size="small" :loading="securityLoading" @click="loadSecurity">
+          {{ t("ai_logs.refresh") }}
+        </el-button>
         <el-tag size="small" type="info" effect="plain">
-          基础数据 {{ security?.assets ?? 0 }} 表 · 敏感字段 {{ security?.sensitive_fields ?? 0 }}
+          {{
+            t("ai_logs.securitySummary", {
+              tables: security?.assets ?? 0,
+              fields: security?.sensitive_fields ?? 0,
+            })
+          }}
         </el-tag>
         <el-tag
           v-if="security"
@@ -606,7 +670,7 @@
           :type="security.score >= 80 ? 'success' : security.score >= 60 ? 'warning' : 'danger'"
           effect="plain"
         >
-          安全评分 {{ security.score }}
+          {{ t("ai_logs.securityScore", { score: security.score }) }}
         </el-tag>
       </div>
       <el-row v-if="security" :gutter="12">
@@ -627,7 +691,7 @@
         </el-col>
       </el-row>
       <div v-if="security?.log_count" class="gov-section mt-2">
-        访问审计日志（近 {{ security.log_count }} 条）
+        {{ t("ai_logs.auditLogCount", { count: security.log_count }) }}
       </div>
       <el-table
         v-if="security?.log_count"
@@ -637,10 +701,20 @@
         border
         stripe
       >
-        <el-table-column prop="time" label="时间" width="120" />
-        <el-table-column prop="action" label="动作" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="table" label="对象表" min-width="130" show-overflow-tooltip />
-        <el-table-column label="结果" width="90" align="center">
+        <el-table-column prop="time" :label="t('ai_logs.time')" width="120" />
+        <el-table-column
+          prop="action"
+          :label="t('ai_logs.action')"
+          min-width="110"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="table"
+          :label="t('ai_logs.objectTable')"
+          min-width="130"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="t('ai_logs.result')" width="90" align="center">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -657,28 +731,33 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="operator" label="操作人" width="90" />
+        <el-table-column prop="operator" :label="t('ai_logs.operator')" width="90" />
       </el-table>
     </el-card>
 
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>Ontology 派生对象</span>
-          <span class="ai-sub">从启用对象的数据资产，按数据域聚类派生对象并汇总派生属性</span>
+          <span>{{ t("ai_logs.derivedObjects") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.derivedObjectsSub") }}</span>
         </div>
       </template>
       <div class="ov-usage-row mb-2">
         <el-button size="small" :loading="derivedObjLoading" @click="loadDerivedObj">
-          刷新
+          {{ t("ai_logs.refresh") }}
         </el-button>
         <el-tag size="small" type="info" effect="plain">
-          基础对象 {{ derivedObj?.base_objects ?? 0 }} · 派生 {{ derivedObj?.total_derived ?? 0 }}
+          {{
+            t("ai_logs.derivedObjSummary", {
+              base: derivedObj?.base_objects ?? 0,
+              derived: derivedObj?.total_derived ?? 0,
+            })
+          }}
         </el-tag>
       </div>
       <el-table :data="derivedObj?.derived_objects || []" size="small" border stripe>
-        <el-table-column prop="name" label="派生对象" min-width="120" />
-        <el-table-column label="基础对象" min-width="180">
+        <el-table-column prop="name" :label="t('ai_logs.derivedObject')" min-width="120" />
+        <el-table-column :label="t('ai_logs.baseObjects')" min-width="180">
           <template #default="{ row }">
             <el-tag
               v-for="t in row.base_objects"
@@ -691,17 +770,17 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="count" label="对象数" width="80" align="center" />
-        <el-table-column label="派生属性" min-width="180">
+        <el-table-column prop="count" :label="t('ai_logs.objectCount')" width="80" align="center" />
+        <el-table-column :label="t('ai_logs.derivedAttributes')" min-width="180">
           <template #default="{ row }">
             <el-tag size="small" type="info" effect="plain" class="mr-1 mb-1">
-              列 {{ row.attributes?.total_columns ?? 0 }}
+              {{ t("ai_logs.columns", { count: row.attributes?.total_columns ?? 0 }) }}
             </el-tag>
             <el-tag size="small" type="warning" effect="plain" class="mr-1 mb-1">
-              敏感 {{ row.attributes?.sensitive_fields ?? 0 }}
+              {{ t("ai_logs.sensitive", { count: row.attributes?.sensitive_fields ?? 0 }) }}
             </el-tag>
             <el-tag size="small" type="success" effect="plain" class="mr-1 mb-1">
-              血缘 {{ row.attributes?.lineage_count ?? 0 }}
+              {{ t("ai_logs.lineage", { count: row.attributes?.lineage_count ?? 0 }) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -711,13 +790,13 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>Compass 收藏与 AIP 插件</span>
-          <span class="ai-sub">个人收藏引用 · AIP 插件/工具市场</span>
+          <span>{{ t("ai_logs.compassFavorites") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.compassFavoritesSub") }}</span>
         </div>
       </template>
       <el-row :gutter="12">
         <el-col :sm="24" :md="12">
-          <div class="gov-section">我的收藏（{{ favorites.length }}）</div>
+          <div class="gov-section">{{ t("ai_logs.myFavorites", { count: favorites.length }) }}</div>
           <div v-if="favorites.length">
             <div
               v-for="f in favorites"
@@ -732,14 +811,14 @@
                 </span>
               </div>
               <el-button icon="delete" link type="danger" size="small" @click="removeFav(f.id)">
-                移除
+                {{ t("ai_logs.remove") }}
               </el-button>
             </div>
           </div>
-          <div v-else class="gov-empty">暂无收藏，可在资产/对象/指标处收藏</div>
+          <div v-else class="gov-empty">{{ t("ai_logs.noFavorites") }}</div>
         </el-col>
         <el-col :sm="24" :md="12">
-          <div class="gov-section">AIP 插件（{{ plugins.length }}）</div>
+          <div class="gov-section">{{ t("ai_logs.aipPlugins", { count: plugins.length }) }}</div>
           <el-tag v-for="p in plugins" :key="p.key" size="small" effect="plain" class="mr-1 mb-1">
             {{ p.name }} · {{ p.kind }}
           </el-tag>
@@ -750,17 +829,21 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AI 异常检测与决策中心</span>
-          <span class="ai-sub">按日聚合对比基线识别异常 · 汇聚行动决策建议</span>
+          <span>{{ t("ai_logs.anomalyCenter") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.anomalyCenterSub") }}</span>
         </div>
       </template>
       <div class="ov-usage-row mb-2">
-        <el-button size="small" @click="loadAnomaly">重扫异常</el-button>
-        <el-button size="small" type="primary" @click="loadDecision">刷新决策</el-button>
+        <el-button size="small" @click="loadAnomaly">{{ t("ai_logs.rescanAnomaly") }}</el-button>
+        <el-button size="small" type="primary" @click="loadDecision">
+          {{ t("ai_logs.refreshDecision") }}
+        </el-button>
       </div>
       <el-row :gutter="12">
         <el-col :sm="24" :md="12">
-          <div class="gov-section">异常（{{ anomaly?.total ?? 0 }}）</div>
+          <div class="gov-section">
+            {{ t("ai_logs.anomalies", { count: anomaly?.total ?? 0 }) }}
+          </div>
           <div v-if="anomaly?.anomalies?.length">
             <div v-for="(a, i) in anomaly.anomalies" :key="i" class="ov-usage-row mb-1">
               <el-tag
@@ -773,10 +856,12 @@
               <span class="text-xs">{{ a.msg }}</span>
             </div>
           </div>
-          <el-empty v-else-if="anomaly" :image-size="30" description="未见异常" />
+          <el-empty v-else-if="anomaly" :image-size="30" :description="t('ai_logs.noAnomaly')" />
         </el-col>
         <el-col :sm="24" :md="12">
-          <div class="gov-section">决策建议（{{ decision?.total ?? 0 }}）</div>
+          <div class="gov-section">
+            {{ t("ai_logs.decisionSuggestions", { count: decision?.total ?? 0 }) }}
+          </div>
           <div v-if="decision?.decisions?.length">
             <div v-for="(d, i) in decision.decisions" :key="i" class="decision-item">
               <div class="ov-usage-row flex justify-between">
@@ -796,7 +881,7 @@
                     link
                     @click="runDecision(d)"
                   >
-                    执行
+                    {{ t("ai_logs.execute") }}
                   </el-button>
                 </div>
               </div>
@@ -804,7 +889,7 @@
               <div class="decision-action">→ {{ d.action }}</div>
             </div>
           </div>
-          <el-empty v-else-if="decision" :image-size="30" description="暂无待决策项" />
+          <el-empty v-else-if="decision" :image-size="30" :description="t('ai_logs.noDecision')" />
         </el-col>
       </el-row>
     </el-card>
@@ -812,23 +897,27 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>影响传播与数据质量规则</span>
-          <span class="ai-sub">端到端影响传播（下游表/指标） · 数据质量规则引擎</span>
+          <span>{{ t("ai_logs.impactPropagation") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.impactPropagationSub") }}</span>
         </div>
       </template>
       <div class="compass-bar mb-2">
         <el-input
           v-model="propTable"
-          placeholder="输入主表名，如 video_alarm_records"
+          :placeholder="t('ai_logs.propTablePlaceholder')"
           class="flex-1"
           @keyup.enter="runPropagate"
         />
-        <el-button type="primary" :loading="propLoading" @click="runPropagate">影响传播</el-button>
-        <el-button @click="loadDqRules">刷新规则</el-button>
+        <el-button type="primary" :loading="propLoading" @click="runPropagate">
+          {{ t("ai_logs.propagate") }}
+        </el-button>
+        <el-button @click="loadDqRules">{{ t("ai_logs.refreshRules") }}</el-button>
       </div>
       <el-row :gutter="12">
         <el-col :sm="24" :md="12">
-          <div class="gov-section">受影响下游（{{ propResult?.affected_count ?? 0 }}）</div>
+          <div class="gov-section">
+            {{ t("ai_logs.affectedDownstream", { count: propResult?.affected_count ?? 0 }) }}
+          </div>
           <div v-if="propResult?.affected_tables?.length" class="obj-rel-graph">
             <svg :width="propLayout.W" :height="propLayout.H" viewBox="0 0 290 200">
               <g>
@@ -862,7 +951,9 @@
               {{ t }}
             </el-tag>
           </div>
-          <div v-if="propResult?.affected_metrics?.length" class="gov-section">受影响指标</div>
+          <div v-if="propResult?.affected_metrics?.length" class="gov-section">
+            {{ t("ai_logs.affectedMetrics") }}
+          </div>
           <div v-if="propResult?.affected_metrics?.length">
             <el-tag
               v-for="m in propResult.affected_metrics"
@@ -877,7 +968,7 @@
           </div>
         </el-col>
         <el-col :sm="24" :md="12">
-          <div class="gov-section">数据质量规则</div>
+          <div class="gov-section">{{ t("ai_logs.dqRules") }}</div>
           <div
             v-for="r in dqRules"
             :key="r.key"
@@ -891,12 +982,13 @@
               </span>
             </div>
             <el-button size="small" :loading="dqRunKey === r.key" @click="runRule(r)">
-              校验
+              {{ t("ai_logs.validate") }}
             </el-button>
           </div>
           <div v-if="dqRunResult" style="margin-top: 4px">
             <el-tag size="small" :type="dqRunResult.passed ? 'success' : 'danger'" effect="plain">
-              {{ dqRunResult.rule }} · 通过率 {{ dqRunResult.pass_rate }}% ·
+              {{ dqRunResult.rule }} ·
+              {{ t("ai_logs.passRate", { rate: dqRunResult.pass_rate }) }} ·
               {{ dqRunResult.valid }}/{{ dqRunResult.total }}
             </el-tag>
           </div>
@@ -907,22 +999,34 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>我的数据分享</span>
-          <span class="ai-sub">共享链接 · 一键复制 / 撤销</span>
+          <span>{{ t("ai_logs.myShares") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.mySharesSub") }}</span>
         </div>
       </template>
       <div class="ov-usage-row mb-2">
-        <el-button size="small" @click="loadShares">刷新</el-button>
-        <el-tag size="small" type="info" effect="plain">{{ shares.length }} 条分享</el-tag>
+        <el-button size="small" @click="loadShares">{{ t("ai_logs.refresh") }}</el-button>
+        <el-tag size="small" type="info" effect="plain">
+          {{ t("ai_logs.sharesCount", { count: shares.length }) }}
+        </el-tag>
       </div>
       <el-table v-if="shares.length" :data="shares" size="small" border stripe>
-        <el-table-column prop="table" label="数据集" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="time" label="分享时间" width="150" />
-        <el-table-column prop="token" label="Token" width="120" show-overflow-tooltip />
-        <el-table-column label="操作" width="120" align="center">
+        <el-table-column
+          prop="table"
+          :label="t('ai_logs.dataset')"
+          min-width="150"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="time" :label="t('ai_logs.shareTime')" width="150" />
+        <el-table-column
+          prop="token"
+          :label="t('ai_logs.token')"
+          width="120"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="t('ai_logs.operation')" width="120" align="center">
           <template #default="{ row }">
             <el-button icon="CopyDocument" link type="primary" size="small" @click="copyShare(row)">
-              复制
+              {{ t("ai_logs.copy") }}
             </el-button>
             <el-button
               icon="RefreshLeft"
@@ -931,24 +1035,26 @@
               size="small"
               @click="revokeShare(row.id)"
             >
-              撤销
+              {{ t("ai_logs.revoke") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <div v-else class="gov-empty">暂无分享（分享入口暂未开放，待 ?share= 消费方实现后恢复）</div>
+      <div v-else class="gov-empty">{{ t("ai_logs.noShares") }}</div>
     </el-card>
 
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>统一活动时间线</span>
-          <span class="ai-sub">AI 调用 / 动作 / 审批 统一时间线（近 7 天）</span>
+          <span>{{ t("ai_logs.unifiedTimeline") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.unifiedTimelineSub") }}</span>
         </div>
       </template>
       <div class="ov-usage-row mb-2">
-        <el-button size="small" @click="loadTimeline">刷新</el-button>
-        <el-tag size="small" type="info" effect="plain">{{ timeline?.total ?? 0 }} 条事件</el-tag>
+        <el-button size="small" @click="loadTimeline">{{ t("ai_logs.refresh") }}</el-button>
+        <el-tag size="small" type="info" effect="plain">
+          {{ t("ai_logs.eventsCount", { count: timeline?.total ?? 0 }) }}
+        </el-tag>
       </div>
       <el-timeline v-if="timeline?.events?.length">
         <el-timeline-item
@@ -976,21 +1082,23 @@
           <div class="ai-sub">{{ e.detail }} · {{ e.actor }}</div>
         </el-timeline-item>
       </el-timeline>
-      <div v-else class="gov-empty">近 7 天暂无活动</div>
+      <div v-else class="gov-empty">{{ t("ai_logs.noActivity") }}</div>
     </el-card>
 
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>Compass 目录 · 对象关系 · 访问演练</span>
-          <span class="ai-sub">数据目录分类 / 对象关系图 / 数据访问沙箱</span>
+          <span>{{ t("ai_logs.compassRelationsDrill") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.compassRelationsSub") }}</span>
         </div>
       </template>
       <el-row :gutter="12">
         <el-col :sm="24" :md="8">
-          <div class="gov-section">Compass 目录分类（{{ catalog?.category_count ?? 0 }}）</div>
+          <div class="gov-section">
+            {{ t("ai_logs.catalogCategories", { count: catalog?.category_count ?? 0 }) }}
+          </div>
           <el-button size="small" class="mb-1" :loading="catalogLoading" @click="loadCatalog">
-            刷新
+            {{ t("ai_logs.refresh") }}
           </el-button>
           <div
             v-for="c in catalog?.categories || []"
@@ -1004,10 +1112,15 @@
         </el-col>
         <el-col :sm="24" :md="8">
           <div class="gov-section">
-            对象关系图（{{ objRel?.edge_count ?? 0 }} 边 / {{ objRel?.node_count ?? 0 }} 对象）
+            {{
+              t("ai_logs.objectRelations", {
+                edges: objRel?.edge_count ?? 0,
+                nodes: objRel?.node_count ?? 0,
+              })
+            }}
           </div>
           <el-button size="small" class="mb-1" :loading="objRelLoading" @click="loadObjRel">
-            刷新
+            {{ t("ai_logs.refresh") }}
           </el-button>
           <div v-if="objRel?.edges?.length" class="obj-rel-graph">
             <svg :width="objRelLayout.W" :height="objRelLayout.H" viewBox="0 0 500 300">
@@ -1040,27 +1153,37 @@
               </g>
             </svg>
           </div>
-          <div v-else>暂无对象关系</div>
+          <div v-else>{{ t("ai_logs.noObjectRelations") }}</div>
         </el-col>
         <el-col :sm="24" :md="8">
-          <div class="gov-section">数据访问演练（用户 {{ walkthroughId }}）</div>
+          <div class="gov-section">{{ t("ai_logs.accessDrill", { user: walkthroughId }) }}</div>
           <div class="compass-bar mb-1">
             <el-input-number v-model="walkthroughId" :min="0" size="small" style="width: 110px" />
-            <el-button size="small" :loading="walkLoading" @click="loadWalkthrough">演练</el-button>
+            <el-button size="small" :loading="walkLoading" @click="loadWalkthrough">
+              {{ t("ai_logs.drill") }}
+            </el-button>
           </div>
           <div v-if="walkthrough" class="ov-usage-row mb-1">
             <el-tag size="small" type="success" effect="plain">
-              可访问 {{ walkthrough.allowed_count }}
+              {{ t("ai_logs.accessAllowed", { count: walkthrough.allowed_count }) }}
             </el-tag>
             <el-tag size="small" type="danger" effect="plain">
-              受限 {{ walkthrough.blocked_count }}
+              {{ t("ai_logs.accessRestricted", { count: walkthrough.blocked_count }) }}
             </el-tag>
             <el-tag size="small" type="info" effect="plain">
-              敏感可见 {{ walkthrough.can_see_sensitive ? "是" : "否" }}
+              {{
+                t("ai_logs.sensitiveVisible", {
+                  value: walkthrough.can_see_sensitive ? t("ai_logs.yes") : t("ai_logs.no"),
+                })
+              }}
             </el-tag>
           </div>
           <div v-if="walkthrough?.allowed?.length" class="ai-sub ai-ellipsis">
-            可访问：{{ walkthrough.allowed.map((x: any) => x.alias || x.table).join("、") }}
+            {{
+              t("ai_logs.accessAllowedList", {
+                list: walkthrough.allowed.map((x: any) => x.alias || x.table).join("、"),
+              })
+            }}
           </div>
         </el-col>
       </el-row>
@@ -1069,12 +1192,12 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AIP 安全护栏</span>
-          <span class="ai-sub">ABAC / 数据域 / 敏感剔除 / 审批 / 审计 / 版本 护栏状态</span>
+          <span>{{ t("ai_logs.aipGuardrails") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.aipGuardrailsSub") }}</span>
         </div>
       </template>
       <div class="ov-usage-row mb-2">
-        <el-button size="small" @click="loadGuardrails">刷新</el-button>
+        <el-button size="small" @click="loadGuardrails">{{ t("ai_logs.refresh") }}</el-button>
         <el-progress
           :percentage="guardrails?.score ?? 0"
           :show-text="true"
@@ -1102,14 +1225,14 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>对象数据浏览器</span>
-          <span class="ai-sub">真实表数据分页浏览（对象实例预览）</span>
+          <span>{{ t("ai_logs.objectBrowser") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.objectBrowserSub") }}</span>
         </div>
       </template>
       <div class="compass-bar mb-2">
         <el-input
           v-model="browseTable"
-          placeholder="输入表名，如 video_alarm_records"
+          :placeholder="t('ai_logs.browseTablePlaceholder')"
           class="flex-1"
           @keyup.enter="
             browsePage = 1;
@@ -1124,13 +1247,13 @@
             loadBrowse();
           "
         >
-          浏览
+          {{ t("ai_logs.browse") }}
         </el-button>
       </div>
       <template v-if="browse?.ok">
         <div class="ov-usage-row mb-1">
           <el-tag size="small" type="info" effect="plain">
-            共 {{ browse.total }} 行 · 第 {{ browse.page }} 页
+            {{ t("ai_logs.browseSummary", { total: browse.total, page: browse.page }) }}
           </el-tag>
           <el-pagination
             v-model:current-page="browsePage"
@@ -1158,26 +1281,34 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AIP 数据治理报告</span>
-          <span class="ai-sub">一键聚合治理总览 / 合规 / 安全 / 护栏，生成并导出 Markdown</span>
+          <span>{{ t("ai_logs.aipGovernanceReport") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.aipGovernanceReportSub") }}</span>
         </div>
       </template>
       <div class="ov-usage-row mb-2">
-        <el-button type="primary" :loading="reportLoading" @click="loadReport">生成报告</el-button>
-        <el-button :disabled="!report" @click="downloadReport">导出 MD</el-button>
+        <el-button type="primary" :loading="reportLoading" @click="loadReport">
+          {{ t("ai_logs.generateReport") }}
+        </el-button>
+        <el-button :disabled="!report" @click="downloadReport">
+          {{ t("ai_logs.exportMd") }}
+        </el-button>
         <el-tag v-if="report" size="small" type="info" effect="plain">
           {{ report.generated_at }}
         </el-tag>
       </div>
       <template v-if="report">
         <el-row :gutter="12" class="mb-2">
-          <el-col :span="8"><el-statistic title="合规" :value="report.scores.compliance" /></el-col>
-          <el-col :span="8"><el-statistic title="安全" :value="report.scores.security" /></el-col>
           <el-col :span="8">
-            <el-statistic title="治理检查" :value="report.scores.guardrails" />
+            <el-statistic :title="t('ai_logs.compliance')" :value="report.scores.compliance" />
+          </el-col>
+          <el-col :span="8">
+            <el-statistic :title="t('ai_logs.security')" :value="report.scores.security" />
+          </el-col>
+          <el-col :span="8">
+            <el-statistic :title="t('ai_logs.governanceCheck')" :value="report.scores.guardrails" />
           </el-col>
         </el-row>
-        <div class="gov-section">摘要</div>
+        <div class="gov-section">{{ t("ai_logs.summary") }}</div>
         <div v-for="(s, i) in report.summary" :key="i" class="report-line">• {{ s }}</div>
       </template>
     </el-card>
@@ -1185,14 +1316,16 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>资产热点与对象生命周期</span>
-          <span class="ai-sub">被指标引用排行 · 对象发布状态概览</span>
+          <span>{{ t("ai_logs.assetHotspots") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.assetHotspotsSub") }}</span>
         </div>
       </template>
       <el-row :gutter="12">
         <el-col :sm="24" :md="12">
-          <div class="gov-section">数据资产热点（按指标引用）</div>
-          <el-button size="small" class="mb-1" @click="loadHotspots">刷新</el-button>
+          <div class="gov-section">{{ t("ai_logs.assetHotspotsTitle") }}</div>
+          <el-button size="small" class="mb-1" @click="loadHotspots">
+            {{ t("ai_logs.refresh") }}
+          </el-button>
           <div
             v-for="h in (hotspots?.hot || []).slice(0, 8)"
             :key="h.table"
@@ -1202,23 +1335,31 @@
             <span class="ai-ellipsis">
               {{ h.alias || h.table }}
             </span>
-            <el-tag size="small" type="info" effect="plain">引用 {{ h.refs }}</el-tag>
+            <el-tag size="small" type="info" effect="plain">
+              {{ t("ai_logs.refs", { count: h.refs }) }}
+            </el-tag>
           </div>
         </el-col>
         <el-col :sm="24" :md="12">
-          <div class="gov-section">对象生命周期</div>
-          <el-button size="small" class="mb-1" @click="loadLifecycle">刷新</el-button>
+          <div class="gov-section">{{ t("ai_logs.objectLifecycle") }}</div>
+          <el-button size="small" class="mb-1" @click="loadLifecycle">
+            {{ t("ai_logs.refresh") }}
+          </el-button>
           <div v-if="lifecycle" class="ov-usage-row" style="margin-bottom: 6px">
-            <el-tag size="small" type="success" effect="plain">对象 {{ lifecycle.objects }}</el-tag>
-            <el-tag size="small" type="primary" effect="plain">
-              已发布 {{ lifecycle.published }}
+            <el-tag size="small" type="success" effect="plain">
+              {{ t("ai_logs.objects", { count: lifecycle.objects }) }}
             </el-tag>
-            <el-tag size="small" type="warning" effect="plain">草稿 {{ lifecycle.draft }}</el-tag>
+            <el-tag size="small" type="primary" effect="plain">
+              {{ t("ai_logs.published", { count: lifecycle.published }) }}
+            </el-tag>
+            <el-tag size="small" type="warning" effect="plain">
+              {{ t("ai_logs.draftCount", { count: lifecycle.draft }) }}
+            </el-tag>
             <el-tag size="small" type="danger" effect="plain">
-              敏感 {{ lifecycle.sensitive_objects }}
+              {{ t("ai_logs.sensitiveCount", { count: lifecycle.sensitive_objects }) }}
             </el-tag>
           </div>
-          <div v-if="lifecycle" class="gov-section">对象列表</div>
+          <div v-if="lifecycle" class="gov-section">{{ t("ai_logs.objectList") }}</div>
           <el-tag
             v-for="o in (lifecycle?.objects_list || []).slice(0, 8)"
             :key="o.table"
@@ -1235,16 +1376,20 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AI 能力评测与统一审计</span>
-          <span class="ai-sub">制品化回归对比 · 跨模块全链路审计</span>
+          <span>{{ t("ai_logs.evalAndAudit") }}</span>
+          <span class="ai-sub">{{ t("ai_logs.evalAndAuditSub") }}</span>
         </div>
       </template>
       <el-row :gutter="12">
         <el-col :sm="24" :md="12">
-          <div class="gov-section">评测基准（制品化回归）</div>
+          <div class="gov-section">{{ t("ai_logs.evalBenchmark") }}</div>
           <div class="ov-usage-row mb-1">
-            <el-button size="small" type="primary" @click="runBench">运行并固化</el-button>
-            <el-button size="small" :loading="benchLoading" @click="loadBench">刷新</el-button>
+            <el-button size="small" type="primary" @click="runBench">
+              {{ t("ai_logs.runAndFix") }}
+            </el-button>
+            <el-button size="small" :loading="benchLoading" @click="loadBench">
+              {{ t("ai_logs.refresh") }}
+            </el-button>
           </div>
           <div v-if="bench.length">
             <div
@@ -1256,7 +1401,7 @@
               <span class="text-xs">
                 {{ b.name }}
                 <span style="color: var(--el-text-color-secondary)">
-                  · {{ b.total }} 例 · {{ b.time }}
+                  · {{ b.total }} {{ t("ai_logs.cases") }} · {{ b.time }}
                 </span>
               </span>
               <el-tag
@@ -1268,16 +1413,24 @@
               </el-tag>
             </div>
           </div>
-          <div v-else class="gov-empty">暂无评测记录</div>
+          <div v-else class="gov-empty">{{ t("ai_logs.noEvalRecords") }}</div>
         </el-col>
         <el-col :sm="24" :md="12">
-          <div class="gov-section">统一审计（近 {{ unified?.days ?? 7 }} 天）</div>
+          <div class="gov-section">
+            {{ t("ai_logs.unifiedAuditDays", { days: unified?.days ?? 7 }) }}
+          </div>
           <div v-if="unified" class="ov-usage-row" style="margin-bottom: 6px">
-            <el-tag size="small" type="info" effect="plain">AI调用 {{ unified.ai_calls }}</el-tag>
-            <el-tag size="small" type="danger" effect="plain">失败 {{ unified.ai_errors }}</el-tag>
-            <el-tag size="small" type="success" effect="plain">动作 {{ unified.actions }}</el-tag>
+            <el-tag size="small" type="info" effect="plain">
+              {{ t("ai_logs.aiCalls", { count: unified.ai_calls }) }}
+            </el-tag>
+            <el-tag size="small" type="danger" effect="plain">
+              {{ t("ai_logs.failedCount", { count: unified.ai_errors }) }}
+            </el-tag>
+            <el-tag size="small" type="success" effect="plain">
+              {{ t("ai_logs.actionsCount", { count: unified.actions }) }}
+            </el-tag>
             <el-tag size="small" type="warning" effect="plain">
-              待审批 {{ unified.approvals }}
+              {{ t("ai_logs.pendingApprovals", { count: unified.approvals }) }}
             </el-tag>
           </div>
           <div v-if="unified?.audit_log?.length">
@@ -1306,9 +1459,9 @@
     <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
         <div class="ov-usage-row flex justify-between">
-          <span>AI 能力评测（Capability Eval · 影子回归）</span>
+          <span>{{ t("ai_logs.capabilityEval") }}</span>
           <span class="ai-sub">
-            每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
+            {{ t("ai_logs.capabilityEvalSub") }}
           </span>
         </div>
       </template>
@@ -1316,16 +1469,20 @@
         v-model="evalSamplesText"
         type="textarea"
         :rows="5"
-        placeholder='示例：[{"input":"订单金额总和","expected_keywords":["90500"],"actual":"订单金额总和是 90500"}]'
+        :placeholder="t('ai_logs.evalSamplePlaceholder')"
       />
       <div class="ops-bar mt-2">
         <el-button type="primary" size="small" :loading="evalLoading" @click="runEval">
-          运行评估
+          {{ t("ai_logs.runEval") }}
         </el-button>
-        <el-button size="small" @click="loadEvalTemplate">载入示例</el-button>
+        <el-button size="small" @click="loadEvalTemplate">{{ t("ai_logs.loadSample") }}</el-button>
         <el-tag v-if="evalResult" size="small" type="info" effect="plain">
-          精度 {{ (evalResult.precision * 100).toFixed(1) }}% · {{ evalResult.passed }}/{{
-            evalResult.total
+          {{
+            t("ai_logs.evalPrecision", {
+              pct: (evalResult.precision * 100).toFixed(1),
+              passed: evalResult.passed,
+              total: evalResult.total,
+            })
           }}
         </el-tag>
       </div>
@@ -1338,11 +1495,16 @@
         class="mt-2"
         stripe
       >
-        <el-table-column prop="input" label="输入" min-width="180" show-overflow-tooltip />
-        <el-table-column label="通过" width="80" align="center">
+        <el-table-column
+          prop="input"
+          :label="t('ai_logs.input')"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="t('ai_logs.pass')" width="80" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.ok ? 'success' : 'danger'" effect="plain">
-              {{ row.ok ? "通过" : "未过" }}
+              {{ row.ok ? t("ai_logs.passed") : t("ai_logs.notPassed") }}
             </el-tag>
           </template>
         </el-table-column>
@@ -1354,8 +1516,8 @@
         <el-card shadow="never">
           <template #header>
             <div class="ov-usage-row flex justify-between">
-              <span>AI 健康（近 {{ health?.days ?? 7 }} 天）</span>
-              <el-button size="small" @click="loadHealth">刷新</el-button>
+              <span>{{ t("ai_logs.aiHealthDays", { days: health?.days ?? 7 }) }}</span>
+              <el-button size="small" @click="loadHealth">{{ t("ai_logs.refresh") }}</el-button>
             </div>
           </template>
           <div v-if="health">
@@ -1371,18 +1533,22 @@
               effect="plain"
             >
               {{
-                health.status === "healthy" ? "健康" : health.status === "warning" ? "预警" : "严重"
+                health.status === "healthy"
+                  ? t("ai_logs.healthy")
+                  : health.status === "warning"
+                    ? t("ai_logs.warning")
+                    : t("ai_logs.severe")
               }}
             </el-tag>
             <div class="ov-usage-row mt-2">
-              <span>调用</span>
+              <span>{{ t("ai_logs.calls") }}</span>
               <b>{{ health.calls }}</b>
-              <span>错误率</span>
+              <span>{{ t("ai_logs.errorRate") }}</span>
               <b>{{ (health.error_rate * 100).toFixed(1) }}%</b>
-              <span>平均延迟</span>
+              <span>{{ t("ai_logs.avgLatency") }}</span>
               <b>{{ health.avg_latency_ms }}ms</b>
-              <span>成本</span>
-              <b>{{ health.total_cost }}元</b>
+              <span>{{ t("ai_logs.cost") }}</span>
+              <b>{{ t("ai_logs.costYuanValue", { value: health.total_cost }) }}</b>
             </div>
             <div
               v-for="(a, i) in health.alerts"
@@ -1394,7 +1560,11 @@
                 {{ a.msg }}
               </el-tag>
             </div>
-            <el-empty v-if="!health.alerts.length" :image-size="30" description="无告警" />
+            <el-empty
+              v-if="!health.alerts.length"
+              :image-size="30"
+              :description="t('ai_logs.noAlerts')"
+            />
           </div>
         </el-card>
       </el-col>
@@ -1402,22 +1572,22 @@
         <el-card shadow="never">
           <template #header>
             <div class="ov-usage-row flex justify-between">
-              <span>合规审计（近 {{ audit?.days ?? 7 }} 天）</span>
-              <el-button size="small" @click="loadAudit">刷新</el-button>
+              <span>{{ t("ai_logs.complianceAuditDays", { days: audit?.days ?? 7 }) }}</span>
+              <el-button size="small" @click="loadAudit">{{ t("ai_logs.refresh") }}</el-button>
             </div>
           </template>
           <div v-if="audit">
             <el-tag size="small" :type="audit.compliant ? 'success' : 'warning'" effect="plain">
-              {{ audit.compliant ? "合规" : "存在风险" }}
+              {{ audit.compliant ? t("ai_logs.compliant") : t("ai_logs.riskExists") }}
             </el-tag>
             <div class="ov-usage-row mt-2">
-              <span>调用</span>
+              <span>{{ t("ai_logs.calls") }}</span>
               <b>{{ audit.total }}</b>
-              <span>未鉴权</span>
+              <span>{{ t("ai_logs.unauthenticated") }}</span>
               <b style="color: var(--el-color-danger)">{{ audit.anonymous_calls }}</b>
-              <span>失败</span>
+              <span>{{ t("ai_logs.failed") }}</span>
               <b style="color: var(--el-color-warning)">{{ audit.error_calls }}</b>
-              <span>高成本</span>
+              <span>{{ t("ai_logs.highCost") }}</span>
               <b>{{ audit.high_cost_calls }}</b>
             </div>
             <div
@@ -1428,16 +1598,27 @@
             >
               <el-tag size="small" type="warning">{{ a.msg }}</el-tag>
             </div>
-            <el-empty v-if="!audit.issues.length" :image-size="30" description="无合规问题" />
+            <el-empty
+              v-if="!audit.issues.length"
+              :image-size="30"
+              :description="t('ai_logs.noComplianceIssues')"
+            />
           </div>
         </el-card>
       </el-col>
     </el-row>
 
-    <el-drawer v-model="reportDrawerVisible" title="AI 报告" size="600px" append-to-body>
+    <el-drawer
+      v-model="reportDrawerVisible"
+      :title="t('ai_logs.aiReport')"
+      size="600px"
+      append-to-body
+    >
       <div v-loading="reportListLoading" class="ai-report-drawer">
         <div class="flex items-center justify-between mb-2">
-          <span class="ai-report-sub">共 {{ reportList.length }} 条</span>
+          <span class="ai-report-sub">
+            {{ t("ai_logs.reportCount", { count: reportList.length }) }}
+          </span>
           <el-button
             v-hasPerm="'module_ai:report:delete'"
             type="danger"
@@ -1446,7 +1627,7 @@
             :disabled="!reportSelection.length"
             @click="batchDeleteReports"
           >
-            删除选中（{{ reportSelection.length }}）
+            {{ t("ai_logs.deleteSelected", { count: reportSelection.length }) }}
           </el-button>
         </div>
         <el-table
@@ -1460,17 +1641,22 @@
           @selection-change="onReportSelect"
         >
           <el-table-column type="selection" width="46" />
-          <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
-          <el-table-column label="类型" width="110">
+          <el-table-column
+            prop="title"
+            :label="t('ai_logs.title')"
+            min-width="180"
+            show-overflow-tooltip
+          />
+          <el-table-column :label="t('ai_logs.type')" width="110">
             <template #default="{ row }">
               <el-tag size="small" type="info" effect="plain">{{ reportSourceLabel(row) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_time" label="创建时间" min-width="150" />
-          <el-table-column label="操作" width="130" align="center">
+          <el-table-column prop="created_time" :label="t('ai_logs.createdTime')" min-width="150" />
+          <el-table-column :label="t('ai_logs.operation')" width="130" align="center">
             <template #default="{ row }">
               <el-button icon="View" link type="primary" size="small" @click="viewReport(row)">
-                查看
+                {{ t("ai_logs.view") }}
               </el-button>
               <el-button
                 v-hasPerm="'module_ai:report:delete'"
@@ -1480,18 +1666,22 @@
                 size="small"
                 @click="deleteReport(row)"
               >
-                删除
+                {{ t("ai_logs.delete") }}
               </el-button>
             </template>
           </el-table-column>
         </el-table>
-        <el-empty v-else-if="!reportListLoading" :image-size="60" description="暂无 AI 报告" />
+        <el-empty
+          v-else-if="!reportListLoading"
+          :image-size="60"
+          :description="t('ai_logs.noAiReports')"
+        />
       </div>
     </el-drawer>
 
     <el-dialog
       v-model="reportDetailVisible"
-      :title="reportDetail?.title || 'AI 报告详情'"
+      :title="reportDetail?.title || t('ai_logs.aiReportDetail')"
       width="600px"
       append-to-body
     >
@@ -1500,10 +1690,16 @@
           <el-tag size="small" type="info" effect="plain">
             {{ reportSourceLabel(reportDetail) }}
           </el-tag>
-          <span class="ai-report-sub">创建于 {{ reportDetail?.created_time || "-" }}</span>
+          <span class="ai-report-sub">
+            {{ t("ai_logs.createdAt", { time: reportDetail?.created_time || "-" }) }}
+          </span>
         </div>
         <MarkdownRenderer v-if="reportDetail?.content" :content="reportDetail.content" />
-        <el-empty v-else-if="!reportDetailLoading" :image-size="40" description="无正文内容" />
+        <el-empty
+          v-else-if="!reportDetailLoading"
+          :image-size="40"
+          :description="t('ai_logs.noContent')"
+        />
       </div>
     </el-dialog>
   </div>
@@ -1511,6 +1707,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import * as echarts from "echarts";
 import {
   Collection,
@@ -1562,6 +1759,8 @@ import { orchestrateAgents } from "@/api/module_ai/agent";
 import { getAiReportList, getAiReportDetail, deleteAiReports } from "@/api/module_ai/report";
 
 defineOptions({ name: "AiOverview" });
+
+const { t } = useI18n();
 
 const stats = reactive<any>({});
 const evalSamplesText = ref("");
@@ -1619,11 +1818,11 @@ async function runDecision(d: any) {
     if (r.data?.data?.navigate) {
       ElMessage.info(r.data?.data?.msg || d.action);
     } else {
-      ElMessage.success(r.data?.data?.msg || "已执行");
+      ElMessage.success(r.data?.data?.msg || t("ai_logs.executed"));
       loadDecision();
     }
   } catch (e: any) {
-    ElMessage.error(e?.msg || "执行失败");
+    ElMessage.error(e?.msg || t("ai_logs.executeFailed"));
   }
 }
 const timeline = ref<any>(null);
@@ -1663,16 +1862,16 @@ async function loadAutopilot() {
 }
 async function runAutopilot(executable: string, table: string) {
   if (executable === "none") {
-    ElMessage.info("该行动为人工处理项，请在对应模块处理");
+    ElMessage.info(t("ai_logs.manualHandle"));
     return;
   }
   autoExecuting.value = executable + table;
   try {
     const r = await autopilotExecute(executable, table);
-    ElMessage.success(r.data?.data?.msg || "已执行");
+    ElMessage.success(r.data?.data?.msg || t("ai_logs.executed"));
     loadAutopilot();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "执行失败");
+    ElMessage.error(e?.msg || t("ai_logs.executeFailed"));
   } finally {
     autoExecuting.value = "";
   }
@@ -1695,7 +1894,7 @@ async function computeDerived(key: string) {
     const r = await computeDerivedMetric(key);
     derivedValues.value = { ...derivedValues.value, [key]: r.data?.data || null };
   } catch (e: any) {
-    ElMessage.error(e?.msg || "计算失败");
+    ElMessage.error(e?.msg || t("ai_logs.computeFailed"));
   }
 }
 const security = ref<any>(null);
@@ -1726,11 +1925,11 @@ const autoFixed = ref<any>(null);
 const autoFixing = ref(false);
 async function runAutoFix() {
   try {
-    await ElMessageBox.confirm(
-      "将自动执行所有可修复项（敏感扫描/补全描述/DQ重扫），是否继续？",
-      "AIP 自主修复",
-      { type: "warning", confirmButtonText: "执行修复", cancelButtonText: "取消" }
-    );
+    await ElMessageBox.confirm(t("ai_logs.autoFixConfirm"), t("ai_logs.autoFixTitle"), {
+      type: "warning",
+      confirmButtonText: t("ai_logs.runFix"),
+      cancelButtonText: t("ai_logs.cancel"),
+    });
   } catch {
     return;
   }
@@ -1739,11 +1938,14 @@ async function runAutoFix() {
     const r = await autopilotAutoFix();
     autoFixed.value = r.data?.data || null;
     ElMessage.success(
-      `修复完成：${autoFixed.value?.fixed ?? 0}/${autoFixed.value?.attempted ?? 0}`
+      t("ai_logs.autoFixDone", {
+        fixed: autoFixed.value?.fixed ?? 0,
+        attempted: autoFixed.value?.attempted ?? 0,
+      })
     );
     loadAutopilot();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "自动修复失败");
+    ElMessage.error(e?.msg || t("ai_logs.autoFixFailed"));
   } finally {
     autoFixing.value = false;
   }
@@ -1769,7 +1971,7 @@ async function removeFav(id: number) {
     await removeFavorite(id);
     loadFavorites();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "移除失败");
+    ElMessage.error(e?.msg || t("ai_logs.removeFailed"));
   }
 }
 const propTable = ref("video_alarm_records");
@@ -1825,7 +2027,7 @@ async function runRule(r: any) {
   try {
     dqRunResult.value = (await runDqRule(table, "id", r.key)).data?.data || null;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "规则校验失败");
+    ElMessage.error(e?.msg || t("ai_logs.ruleValidateFailed"));
   } finally {
     dqRunKey.value = "";
   }
@@ -1843,16 +2045,18 @@ async function revokeShare(id: number) {
     await removeShare(id);
     loadShares();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "撤销失败");
+    ElMessage.error(e?.msg || t("ai_logs.revokeFailed"));
   }
 }
 async function copyShare(row: any) {
   const link = `${location.origin}${row.link || ""}`;
   try {
     await navigator.clipboard.writeText(link);
-    ElMessage.success("已复制分享链接");
+    ElMessage.success(t("ai_logs.copiedShareLink"));
   } catch {
-    ElMessageBox.alert(`分享链接：${link}`, "数据集分享", { confirmButtonText: "复制" });
+    ElMessageBox.alert(t("ai_logs.shareLinkMsg", { link }), t("ai_logs.datasetShare"), {
+      confirmButtonText: t("ai_logs.copy"),
+    });
   }
 }
 const catalog = ref<any>(null);
@@ -1962,7 +2166,7 @@ function downloadReport() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `治理报告_${report.value.generated_at?.replace(/[ :]/g, "-") || "now"}.md`;
+  a.download = `${t("ai_logs.governanceReportFile")}_${report.value.generated_at?.replace(/[ :]/g, "-") || "now"}.md`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1979,30 +2183,30 @@ const reportDetailLoading = ref(false);
 
 function reportSourceLabel(row: any): string {
   const raw = row?.source;
-  if (!raw) return "AI 报告";
+  if (!raw) return t("ai_logs.aiReport");
   let obj: any = raw;
   if (typeof raw === "string") {
     try {
       obj = JSON.parse(raw);
     } catch {
-      return "AI 报告";
+      return t("ai_logs.aiReport");
     }
   }
   if (obj?.plugin) {
-    const pmap: Record<string, string> = { report_generate: "报告生成" };
+    const pmap: Record<string, string> = { report_generate: t("ai_logs.reportGenerate") };
     return pmap[obj.plugin] || String(obj.plugin);
   }
   if (obj?.scope) {
     const smap: Record<string, string> = {
-      annotation: "标注",
-      train: "训练",
-      video: "视频",
-      all: "综合",
+      annotation: t("ai_logs.scopeAnnotation"),
+      train: t("ai_logs.scopeTrain"),
+      video: t("ai_logs.scopeVideo"),
+      all: t("ai_logs.scopeAll"),
     };
     return smap[obj.scope] || String(obj.scope);
   }
-  if (obj?.topic) return "专题报告";
-  return "AI 报告";
+  if (obj?.topic) return t("ai_logs.topicReport");
+  return t("ai_logs.aiReport");
 }
 
 async function openReportDrawer() {
@@ -2041,11 +2245,15 @@ async function viewReport(row: any) {
 
 async function deleteReport(row: any) {
   try {
-    await ElMessageBox.confirm(`将删除报告「${row.title}」，且不可恢复。是否继续？`, "删除报告", {
-      type: "warning",
-      confirmButtonText: "删除",
-      cancelButtonText: "取消",
-    });
+    await ElMessageBox.confirm(
+      t("ai_logs.deleteReportMsg", { title: row.title }),
+      t("ai_logs.deleteReport"),
+      {
+        type: "warning",
+        confirmButtonText: t("ai_logs.delete"),
+        cancelButtonText: t("ai_logs.cancel"),
+      }
+    );
   } catch {
     return;
   }
@@ -2064,9 +2272,13 @@ async function batchDeleteReports() {
   if (!ids.length) return;
   try {
     await ElMessageBox.confirm(
-      `将删除选中的 ${ids.length} 条 AI 报告，且不可恢复。是否继续？`,
-      "批量删除报告",
-      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+      t("ai_logs.batchDeleteReportsMsg", { count: ids.length }),
+      t("ai_logs.batchDeleteReports"),
+      {
+        type: "warning",
+        confirmButtonText: t("ai_logs.delete"),
+        cancelButtonText: t("ai_logs.cancel"),
+      }
     );
   } catch {
     return;
@@ -2114,13 +2326,17 @@ async function loadBench() {
 async function runBench() {
   try {
     const samples = [
-      { input: "今天多少告警", expected_keywords: ["告警"], actual: "今日告警 100 条" },
+      {
+        input: t("ai_logs.benchInput"),
+        expected_keywords: [t("ai_logs.benchKw")],
+        actual: t("ai_logs.benchActual"),
+      },
     ];
-    await runEvalBench(samples, "控制台基准");
-    ElMessage.success("评测已固化");
+    await runEvalBench(samples, t("ai_logs.benchName"));
+    ElMessage.success(t("ai_logs.benchDone"));
     loadBench();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "评测失败");
+    ElMessage.error(e?.msg || t("ai_logs.benchFailed"));
   }
 }
 const unified = ref<any>(null);
@@ -2168,8 +2384,16 @@ async function loadAudit() {
 }
 function loadEvalTemplate() {
   evalSamplesText.value = JSON.stringify([
-    { input: "订单金额总和", expected_keywords: ["90500"], actual: "订单金额总和是 90500" },
-    { input: "设备健康度", expected_keywords: ["%"], actual: "设备健康度为 95.5%" },
+    {
+      input: t("ai_logs.sampleOrderInput"),
+      expected_keywords: [t("ai_logs.sampleOrderKw")],
+      actual: t("ai_logs.sampleOrderActual"),
+    },
+    {
+      input: t("ai_logs.sampleHealthInput"),
+      expected_keywords: ["%"],
+      actual: t("ai_logs.sampleHealthActual"),
+    },
   ]);
 }
 async function runEval() {
@@ -2179,13 +2403,13 @@ async function runEval() {
     try {
       samples = JSON.parse(evalSamplesText.value || "[]");
     } catch {
-      ElMessage.warning("样本 JSON 格式有误");
+      ElMessage.warning(t("ai_logs.sampleJsonError"));
       return;
     }
     const r = await runAiEval(samples);
     evalResult.value = r.data?.data || null;
   } catch (e: any) {
-    ElMessage.error(e?.message || "评估失败");
+    ElMessage.error(e?.message || t("ai_logs.evalFailed"));
   } finally {
     evalLoading.value = false;
   }
@@ -2204,29 +2428,101 @@ function sumCost(list: any[]) {
 }
 
 const cards = [
-  { key: "models", title: "模型配置", hint: "已接入大模型", route: "/ai/model", icon: Cpu },
-  { key: "providers", title: "供应商", hint: "模型服务商", route: "/ai/provider", icon: Link },
+  {
+    key: "models",
+    title: t("ai_logs.cardModels"),
+    hint: t("ai_logs.cardModelsHint"),
+    route: "/ai/model",
+    icon: Cpu,
+  },
+  {
+    key: "providers",
+    title: t("ai_logs.cardProviders"),
+    hint: t("ai_logs.cardProvidersHint"),
+    route: "/ai/provider",
+    icon: Link,
+  },
   {
     key: "knowledge_bases",
-    title: "知识库",
-    hint: "RAG 知识库",
+    title: t("ai_logs.cardKnowledge"),
+    hint: t("ai_logs.cardKnowledgeHint"),
     route: "/ai/knowledge",
     icon: Collection,
   },
-  { key: "apps", title: "组件", hint: "应用/智能体", route: "/ai/app", icon: MagicStick },
-  { key: "workflows", title: "工作流", hint: "编排流程", route: "/ai/workflow", icon: SetUp },
-  { key: "calls", title: "累计调用", hint: "全部 AI 调用", route: "/ai/logs", icon: Message },
-  { key: "today_calls", title: "今日调用", hint: "今日次数", route: "/ai/logs", icon: Coin },
-  { key: "success_rate", title: "成功率", hint: "调用成功率", route: "/ai/logs", icon: Files },
+  {
+    key: "apps",
+    title: t("ai_logs.cardApps"),
+    hint: t("ai_logs.cardAppsHint"),
+    route: "/ai/app",
+    icon: MagicStick,
+  },
+  {
+    key: "workflows",
+    title: t("ai_logs.cardWorkflows"),
+    hint: t("ai_logs.cardWorkflowsHint"),
+    route: "/ai/workflow",
+    icon: SetUp,
+  },
+  {
+    key: "calls",
+    title: t("ai_logs.cardCalls"),
+    hint: t("ai_logs.cardCallsHint"),
+    route: "/ai/logs",
+    icon: Message,
+  },
+  {
+    key: "today_calls",
+    title: t("ai_logs.cardTodayCalls"),
+    hint: t("ai_logs.cardTodayCallsHint"),
+    route: "/ai/logs",
+    icon: Coin,
+  },
+  {
+    key: "success_rate",
+    title: t("ai_logs.cardSuccessRate"),
+    hint: t("ai_logs.cardSuccessRateHint"),
+    route: "/ai/logs",
+    icon: Files,
+  },
 ];
 
 const entries = [
-  { name: "知识库", desc: "RAG + 引用溯源 + 图谱", path: "/ai/knowledge", icon: Collection },
-  { name: "组件", desc: "聊天/智能体/工作流/知识库", path: "/ai/app", icon: MagicStick },
-  { name: "工作流", desc: "编排/调试/HITL", path: "/ai/workflow", icon: SetUp },
-  { name: "模型配置", desc: "接入与管理大模型", path: "/ai/model", icon: Cpu },
-  { name: "供应商", desc: "模型服务商管理", path: "/ai/provider", icon: Link },
-  { name: "调用日志", desc: "统计/详情/导出", path: "/ai/logs", icon: Message },
+  {
+    name: t("ai_logs.entryKnowledge"),
+    desc: t("ai_logs.entryKnowledgeDesc"),
+    path: "/ai/knowledge",
+    icon: Collection,
+  },
+  {
+    name: t("ai_logs.entryApps"),
+    desc: t("ai_logs.entryAppsDesc"),
+    path: "/ai/app",
+    icon: MagicStick,
+  },
+  {
+    name: t("ai_logs.entryWorkflows"),
+    desc: t("ai_logs.entryWorkflowsDesc"),
+    path: "/ai/workflow",
+    icon: SetUp,
+  },
+  {
+    name: t("ai_logs.entryModels"),
+    desc: t("ai_logs.entryModelsDesc"),
+    path: "/ai/model",
+    icon: Cpu,
+  },
+  {
+    name: t("ai_logs.entryProviders"),
+    desc: t("ai_logs.entryProvidersDesc"),
+    path: "/ai/provider",
+    icon: Link,
+  },
+  {
+    name: t("ai_logs.entryLogs"),
+    desc: t("ai_logs.entryLogsDesc"),
+    path: "/ai/logs",
+    icon: Message,
+  },
 ];
 
 function go(route?: string) {
@@ -2247,21 +2543,26 @@ async function load() {
 function render() {
   if (trendRef.value) {
     trendChart = trendChart || echarts.init(trendRef.value);
-    const t = stats.trend || [];
+    const trend = stats.trend || [];
     trendChart.setOption({
       tooltip: { trigger: "axis" },
-      legend: { data: ["调用", "失败"], top: 0, right: 8 },
+      legend: { data: [t("ai_logs.chartCalls"), t("ai_logs.chartErrors")], top: 0, right: 8 },
       grid: { left: 44, right: 20, top: 36, bottom: 26 },
-      xAxis: { type: "category", data: t.map((x: any) => x.date) },
+      xAxis: { type: "category", data: trend.map((x: any) => x.date) },
       yAxis: { type: "value" },
       series: [
         {
-          name: "调用",
+          name: t("ai_logs.chartCalls"),
           type: "bar",
-          data: t.map((x: any) => x.count),
+          data: trend.map((x: any) => x.count),
           itemStyle: { color: "#409eff" },
         },
-        { name: "失败", type: "line", smooth: true, data: t.map((x: any) => x.error) },
+        {
+          name: t("ai_logs.chartErrors"),
+          type: "line",
+          smooth: true,
+          data: trend.map((x: any) => x.error),
+        },
       ],
     });
   }
@@ -2281,7 +2582,7 @@ function render() {
       },
       series: [
         {
-          name: "调用",
+          name: t("ai_logs.chartCalls"),
           type: "bar",
           data: m.map((x: any) => x.count),
           itemStyle: { color: "#67c23a" },

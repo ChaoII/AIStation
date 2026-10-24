@@ -5,5 +5,6 @@ export default {
   backToLogin: "Back to login",
   entrySystem: "Entry the system",
   placeholder: "Please enter the lock screen password",
+  required: "Please enter required field",
   message: "Lock screen password error",
 };

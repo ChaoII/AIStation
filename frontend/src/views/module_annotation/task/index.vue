@@ -35,29 +35,39 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="$t('annotation.noData')" />
             </template>
             <el-table-column type="selection" width="55" align="center" />
-            <el-table-column fixed label="序号" width="60">
+            <el-table-column fixed :label="$t('annotation.serial')" width="60">
               <template #default="scope">
                 {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column label="任务名称" prop="name" min-width="160" show-overflow-tooltip />
             <el-table-column
-              label="数据集"
+              :label="$t('annotation.taskName')"
+              prop="name"
+              min-width="160"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              :label="$t('annotation.dataset')"
               prop="dataset_name"
               min-width="140"
               show-overflow-tooltip
             />
-            <el-table-column label="标注类型" prop="task_type" width="120" align="center">
+            <el-table-column
+              :label="$t('annotation.annotationType')"
+              prop="task_type"
+              width="120"
+              align="center"
+            >
               <template #default="scope">
                 <el-tag :type="annotationTypeTag(scope.row.task_type)" size="small" effect="plain">
                   {{ annotationTypeLabel(scope.row.task_type) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="进度" prop="progress" min-width="180">
+            <el-table-column :label="$t('annotation.progress')" prop="progress" min-width="180">
               <template #default="scope">
                 <el-progress
                   :percentage="scope.row.progress || 0"
@@ -67,7 +77,7 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="标注员" prop="assignees" min-width="140">
+            <el-table-column :label="$t('annotation.annotators')" prop="assignees" min-width="140">
               <template #default="scope">
                 <el-tag
                   v-for="name in scope.row.assignees || []"
@@ -79,7 +89,12 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="状态" prop="status" width="100" align="center">
+            <el-table-column
+              :label="$t('annotation.status')"
+              prop="status"
+              width="100"
+              align="center"
+            >
               <template #default="scope">
                 <el-tag
                   :type="
@@ -93,16 +108,25 @@
                 >
                   {{
                     scope.row.status === "completed"
-                      ? "已完成"
+                      ? $t("annotation.statusCompleted")
                       : scope.row.status === "in_progress"
-                        ? "进行中"
-                        : "待开始"
+                        ? $t("annotation.statusInProgress")
+                        : $t("annotation.statusPending")
                   }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="创建时间" prop="created_time" min-width="170" />
-            <el-table-column label="操作" fixed="right" align="center" min-width="250">
+            <el-table-column
+              :label="$t('annotation.createdTime')"
+              prop="created_time"
+              min-width="170"
+            />
+            <el-table-column
+              :label="$t('annotation.operation')"
+              fixed="right"
+              align="center"
+              min-width="250"
+            >
               <template #default="scope">
                 <el-button
                   v-hasPerm="['module_annotation:task:workbench']"
@@ -112,7 +136,7 @@
                   icon="Edit"
                   @click.stop="handleEnterWorkbench(scope.row)"
                 >
-                  进入标注
+                  {{ $t("annotation.enterAnnotation") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_annotation:task:update']"
@@ -122,7 +146,7 @@
                   icon="edit"
                   @click.stop="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ $t("annotation.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_annotation:task:delete']"
@@ -132,7 +156,7 @@
                   icon="delete"
                   @click.stop="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ $t("annotation.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -155,13 +179,13 @@
         label-width="110px"
         size="default"
       >
-        <el-form-item label="任务名称" prop="name">
-          <el-input v-model="formData.name" placeholder="请输入任务名称" />
+        <el-form-item :label="$t('annotation.taskName')" prop="name">
+          <el-input v-model="formData.name" :placeholder="$t('annotation.taskNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="选择数据集" prop="dataset_id">
+        <el-form-item :label="$t('annotation.selectDataset')" prop="dataset_id">
           <el-select
             v-model="formData.dataset_id"
-            placeholder="请选择数据集"
+            :placeholder="$t('annotation.datasetPlaceholder')"
             filterable
             style="width: 100%"
           >
@@ -173,38 +197,48 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="标注类型" prop="task_type">
-          <el-select v-model="formData.task_type" placeholder="请选择标注类型" style="width: 100%">
-            <el-option label="目标检测" value="detection" />
-            <el-option label="旋转框检测" value="rotated_detection" />
-            <el-option label="实例分割" value="segmentation" />
-            <el-option label="语义分割" value="semantic_segmentation" />
-            <el-option label="关键点" value="keypoint" />
-            <el-option label="OCR文本" value="ocr" />
-            <el-option label="图像分类" value="classification" />
-            <el-option label="折线" value="polyline" />
-            <el-option label="全景分割" value="panoptic_segmentation" />
-            <el-option label="3D 目标检测" value="cuboid" />
-            <el-option label="文本NER" value="text_ner" />
-            <el-option label="音频事件" value="audio_event" />
+        <el-form-item :label="$t('annotation.annotationType')" prop="task_type">
+          <el-select
+            v-model="formData.task_type"
+            :placeholder="$t('annotation.annotationTypePlaceholder')"
+            style="width: 100%"
+          >
+            <el-option :label="$t('annotation.typeDetection')" value="detection" />
+            <el-option :label="$t('annotation.typeRotatedDetection')" value="rotated_detection" />
+            <el-option :label="$t('annotation.typeSegmentation')" value="segmentation" />
+            <el-option
+              :label="$t('annotation.typeSemanticSegmentation')"
+              value="semantic_segmentation"
+            />
+            <el-option :label="$t('annotation.typeKeypoint')" value="keypoint" />
+            <el-option :label="$t('annotation.typeOcr')" value="ocr" />
+            <el-option :label="$t('annotation.typeImageClassification')" value="classification" />
+            <el-option :label="$t('annotation.typePolyline')" value="polyline" />
+            <el-option
+              :label="$t('annotation.typePanopticSegmentation')"
+              value="panoptic_segmentation"
+            />
+            <el-option :label="$t('annotation.typeCuboid')" value="cuboid" />
+            <el-option :label="$t('annotation.typeTextNer')" value="text_ner" />
+            <el-option :label="$t('annotation.typeAudioEvent')" value="audio_event" />
           </el-select>
         </el-form-item>
         <el-form-item
           v-if="formData.task_type === 'classification'"
-          label="分类模式"
+          :label="$t('annotation.classificationMode')"
           prop="classification_mode"
         >
           <el-radio-group v-model="formData.classification_mode">
-            <el-radio value="single">单标签（每张图一个类别）</el-radio>
-            <el-radio value="multi">多标签（每张图多个类别）</el-radio>
+            <el-radio value="single">{{ $t("annotation.singleLabel") }}</el-radio>
+            <el-radio value="multi">{{ $t("annotation.multiLabel") }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="标注员" prop="assignees">
+        <el-form-item :label="$t('annotation.annotators')" prop="assignees">
           <el-select
             v-model="formData.assignees"
             multiple
             filterable
-            placeholder="请选择标注员"
+            :placeholder="$t('annotation.annotatorsPlaceholder')"
             style="width: 100%"
           >
             <el-option
@@ -215,19 +249,21 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="类别">
+        <el-form-item :label="$t('annotation.category')">
           <div style="width: 100%">
             <!-- 文本NER：实体 + 关系 类型配置（classes 为字典） -->
             <template v-if="formData.task_type === 'text_ner'">
-              <div class="ner-sub-title">实体类型</div>
+              <div class="ner-sub-title">{{ $t("annotation.entityType") }}</div>
               <div style="display: flex; gap: 8px; margin-bottom: 8px">
                 <el-input
                   v-model="newEntityName"
-                  placeholder="输入实体类型名称，如 人物"
+                  :placeholder="$t('annotation.entityNamePlaceholder')"
                   @keyup.enter="handleAddEntity"
                 />
                 <el-color-picker v-model="newEntityColor" />
-                <el-button type="primary" icon="plus" @click="handleAddEntity">添加</el-button>
+                <el-button type="primary" icon="plus" @click="handleAddEntity">
+                  {{ $t("annotation.add") }}
+                </el-button>
               </div>
               <div v-if="entities.length" style="display: flex; flex-direction: column; gap: 6px">
                 <div
@@ -245,16 +281,18 @@
                   </el-tag>
                 </div>
               </div>
-              <div v-else class="ner-empty">暂无实体类型，添加后可在标注工作台使用</div>
+              <div v-else class="ner-empty">{{ $t("annotation.entityEmpty") }}</div>
 
-              <div class="ner-sub-title">关系类型</div>
+              <div class="ner-sub-title">{{ $t("annotation.relationType") }}</div>
               <div style="display: flex; gap: 8px; margin-bottom: 8px">
                 <el-input
                   v-model="newRelationName"
-                  placeholder="输入关系类型名称，如 隶属"
+                  :placeholder="$t('annotation.relationNamePlaceholder')"
                   @keyup.enter="handleAddRelation"
                 />
-                <el-button type="primary" icon="plus" @click="handleAddRelation">添加</el-button>
+                <el-button type="primary" icon="plus" @click="handleAddRelation">
+                  {{ $t("annotation.add") }}
+                </el-button>
               </div>
               <div v-if="relations.length" style="display: flex; flex-direction: column; gap: 6px">
                 <div
@@ -267,17 +305,19 @@
                   </el-tag>
                 </div>
               </div>
-              <div v-else class="ner-empty">暂无关系类型，添加后可在标注工作台使用</div>
+              <div v-else class="ner-empty">{{ $t("annotation.relationEmpty") }}</div>
             </template>
             <!-- 其他类型：类别列表（classes 为数组） -->
             <template v-else>
               <div style="display: flex; gap: 8px; margin-bottom: 8px">
                 <el-input
                   v-model="newClassName"
-                  placeholder="输入类别名称，如 person"
+                  :placeholder="$t('annotation.classNamePlaceholder')"
                   @keyup.enter="handleAddClass"
                 />
-                <el-button type="primary" icon="plus" @click="handleAddClass">添加</el-button>
+                <el-button type="primary" icon="plus" @click="handleAddClass">
+                  {{ $t("annotation.add") }}
+                </el-button>
               </div>
               <div
                 v-if="formData.classes.length"
@@ -299,27 +339,29 @@
                   <el-switch
                     v-model="cls.is_instance"
                     size="small"
-                    :active-text="'实例'"
-                    :inactive-text="'背景'"
+                    :active-text="$t('annotation.instance')"
+                    :inactive-text="$t('annotation.background')"
                   />
                 </div>
               </div>
-              <span v-else class="ner-empty">暂无类别，添加后可在标注工作台使用</span>
+              <span v-else class="ner-empty">{{ $t("annotation.classEmpty") }}</span>
             </template>
           </div>
         </el-form-item>
-        <el-form-item label="备注" prop="description">
+        <el-form-item :label="$t('annotation.remark')" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="3"
-            placeholder="可选备注信息"
+            :placeholder="$t('annotation.remarkPlaceholder')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ $t("annotation.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ $t("annotation.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
   </div>
@@ -329,6 +371,7 @@
 import { ref, reactive, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { useI18n } from "vue-i18n";
 
 import { AnnotationAPI } from "@/api/module_annotation";
 import UserAPI from "@/api/module_system/user";
@@ -367,6 +410,7 @@ const CLASS_COLORS = [
 const router = useRouter();
 const route = useRoute();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const { t } = useI18n();
 
 // 兼容旧链接 /annotation/task?task_id=：直接进入该任务工作台
 onMounted(() => {
@@ -415,53 +459,61 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "任务名称",
+      label: t("annotation.taskName"),
       type: "input",
-      attrs: { placeholder: "请输入任务名称", clearable: true },
+      attrs: { placeholder: t("annotation.taskNamePlaceholder"), clearable: true },
     },
     {
       prop: "annotation_type",
-      label: "标注类型",
+      label: t("annotation.annotationType"),
       type: "select",
       options: [
-        { label: "目标检测", value: "detection" },
-        { label: "旋转框检测", value: "rotated_detection" },
-        { label: "实例分割", value: "segmentation" },
-        { label: "语义分割", value: "semantic_segmentation" },
-        { label: "关键点", value: "keypoint" },
-        { label: "OCR文本", value: "ocr" },
-        { label: "分类", value: "classification" },
-        { label: "折线", value: "polyline" },
-        { label: "全景分割", value: "panoptic_segmentation" },
-        { label: "3D 目标检测", value: "cuboid" },
-        { label: "文本NER", value: "text_ner" },
+        { label: t("annotation.typeDetection"), value: "detection" },
+        { label: t("annotation.typeRotatedDetection"), value: "rotated_detection" },
+        { label: t("annotation.typeSegmentation"), value: "segmentation" },
+        { label: t("annotation.typeSemanticSegmentation"), value: "semantic_segmentation" },
+        { label: t("annotation.typeKeypoint"), value: "keypoint" },
+        { label: t("annotation.typeOcr"), value: "ocr" },
+        { label: t("annotation.typeClassification"), value: "classification" },
+        { label: t("annotation.typePolyline"), value: "polyline" },
+        { label: t("annotation.typePanopticSegmentation"), value: "panoptic_segmentation" },
+        { label: t("annotation.typeCuboid"), value: "cuboid" },
+        { label: t("annotation.typeTextNer"), value: "text_ner" },
       ],
-      attrs: { placeholder: "请选择标注类型", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("annotation.annotationTypePlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("annotation.status"),
       type: "select",
       options: [
-        { label: "进行中", value: "in_progress" },
-        { label: "已完成", value: "completed" },
+        { label: t("annotation.statusInProgress"), value: "in_progress" },
+        { label: t("annotation.statusCompleted"), value: "completed" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("annotation.statusPlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
 
 const contentCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "任务名称", show: true },
-  { prop: "dataset_name", label: "数据集", show: true },
-  { prop: "task_type", label: "标注类型", show: true },
-  { prop: "progress", label: "进度", show: true },
-  { prop: "assignees", label: "标注员", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("annotation.selectionCol"), show: true },
+  { prop: "index", label: t("annotation.serial"), show: true },
+  { prop: "name", label: t("annotation.taskName"), show: true },
+  { prop: "dataset_name", label: t("annotation.dataset"), show: true },
+  { prop: "task_type", label: t("annotation.annotationType"), show: true },
+  { prop: "progress", label: t("annotation.progress"), show: true },
+  { prop: "assignees", label: t("annotation.annotators"), show: true },
+  { prop: "status", label: t("annotation.status"), show: true },
+  { prop: "created_time", label: t("annotation.createdTime"), show: true },
+  { prop: "operation", label: t("annotation.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TaskPageQuery>>({
@@ -492,8 +544,8 @@ const contentConfig = reactive<IContentConfig<TaskPageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("annotation.warning"),
+    message: t("annotation.deleteTaskConfirm"),
     type: "warning",
   },
 });
@@ -606,9 +658,11 @@ function normalizeClasses(raw: unknown): TaskClass[] {
 }
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入任务名称", trigger: "blur" }],
-  dataset_id: [{ required: true, message: "请选择数据集", trigger: "change" }],
-  task_type: [{ required: true, message: "请选择标注类型", trigger: "change" }],
+  name: [{ required: true, message: t("annotation.taskNamePlaceholder"), trigger: "blur" }],
+  dataset_id: [{ required: true, message: t("annotation.datasetPlaceholder"), trigger: "change" }],
+  task_type: [
+    { required: true, message: t("annotation.annotationTypePlaceholder"), trigger: "change" },
+  ],
 });
 
 async function resetForm() {
@@ -628,11 +682,11 @@ async function resetForm() {
 function handleAddClass() {
   const name = newClassName.value.trim();
   if (!name) {
-    ElMessage.warning("请输入类别名称");
+    ElMessage.warning(t("annotation.classNameRequired"));
     return;
   }
   if (formData.classes.some((c) => c.name === name)) {
-    ElMessage.warning("类别名称已存在");
+    ElMessage.warning(t("annotation.classNameExists"));
     return;
   }
   const nextId = formData.classes.reduce((max, c) => Math.max(max, c.id + 1), 0);
@@ -652,11 +706,11 @@ function handleRemoveClass(index: number) {
 function handleAddEntity() {
   const name = newEntityName.value.trim();
   if (!name) {
-    ElMessage.warning("请输入实体类型名称");
+    ElMessage.warning(t("annotation.entityNameRequired"));
     return;
   }
   if (entities.value.some((e) => e.name === name)) {
-    ElMessage.warning("实体类型名称已存在");
+    ElMessage.warning(t("annotation.entityNameExists"));
     return;
   }
   const nextId = entities.value.reduce((max, e) => Math.max(max, e.id + 1), 0);
@@ -672,11 +726,15 @@ async function handleRemoveEntity(index: number) {
   const entity = entities.value[index];
   if (!entity) return;
   try {
-    await ElMessageBox.confirm(`确认删除实体类型「${entity.name}」？该操作不可恢复。`, "警告", {
-      type: "warning",
-      confirmButtonText: "删除",
-      cancelButtonText: "取消",
-    });
+    await ElMessageBox.confirm(
+      t("annotation.deleteEntityConfirm", { name: entity.name }),
+      t("annotation.warning"),
+      {
+        type: "warning",
+        confirmButtonText: t("annotation.delete"),
+        cancelButtonText: t("annotation.cancel"),
+      }
+    );
   } catch {
     return;
   }
@@ -686,11 +744,11 @@ async function handleRemoveEntity(index: number) {
 function handleAddRelation() {
   const name = newRelationName.value.trim();
   if (!name) {
-    ElMessage.warning("请输入关系类型名称");
+    ElMessage.warning(t("annotation.relationNameRequired"));
     return;
   }
   if (relations.value.some((r) => r.name === name)) {
-    ElMessage.warning("关系类型名称已存在");
+    ElMessage.warning(t("annotation.relationNameExists"));
     return;
   }
   const nextId = relations.value.reduce((max, r) => Math.max(max, r.id + 1), 0);
@@ -702,11 +760,15 @@ async function handleRemoveRelation(index: number) {
   const relation = relations.value[index];
   if (!relation) return;
   try {
-    await ElMessageBox.confirm(`确认删除关系类型「${relation.name}」？该操作不可恢复。`, "警告", {
-      type: "warning",
-      confirmButtonText: "删除",
-      cancelButtonText: "取消",
-    });
+    await ElMessageBox.confirm(
+      t("annotation.deleteRelationConfirm", { name: relation.name }),
+      t("annotation.warning"),
+      {
+        type: "warning",
+        confirmButtonText: t("annotation.delete"),
+        cancelButtonText: t("annotation.cancel"),
+      }
+    );
   } catch {
     return;
   }
@@ -722,7 +784,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   loadOptions();
   if (id && type === "update") {
-    dialogVisible.title = "编辑任务";
+    dialogVisible.title = t("annotation.editTask");
     const res = await AnnotationAPI.getTaskDetail(id);
     const item = res.data.data;
     if (item) {
@@ -756,7 +818,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       }
     }
   } else {
-    dialogVisible.title = "新增任务";
+    dialogVisible.title = t("annotation.newTask");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -807,21 +869,21 @@ async function handleSubmit() {
 
 function annotationTypeLabel(type: string) {
   const map: Record<string, string> = {
-    detection: "目标检测",
-    rotated_detection: "旋转框检测",
-    segmentation: "实例分割",
-    semantic_segmentation: "语义分割",
-    keypoint: "关键点",
-    ocr: "OCR文本",
-    classification: "图像分类",
-    polyline: "折线",
-    panoptic_segmentation: "全景分割",
-    cuboid: "3D 目标检测",
-    text_ner: "文本NER",
-    audio_event: "音频事件",
-    time_series_event: "时间序列事件",
-    video_event: "视频事件",
-    video_detection: "视频目标检测",
+    detection: t("annotation.typeDetection"),
+    rotated_detection: t("annotation.typeRotatedDetection"),
+    segmentation: t("annotation.typeSegmentation"),
+    semantic_segmentation: t("annotation.typeSemanticSegmentation"),
+    keypoint: t("annotation.typeKeypoint"),
+    ocr: t("annotation.typeOcr"),
+    classification: t("annotation.typeImageClassification"),
+    polyline: t("annotation.typePolyline"),
+    panoptic_segmentation: t("annotation.typePanopticSegmentation"),
+    cuboid: t("annotation.typeCuboid"),
+    text_ner: t("annotation.typeTextNer"),
+    audio_event: t("annotation.typeAudioEvent"),
+    time_series_event: t("annotation.typeTimeSeriesEvent"),
+    video_event: t("annotation.typeVideoEvent"),
+    video_detection: t("annotation.typeVideoDetection"),
   };
   return map[type] || type;
 }

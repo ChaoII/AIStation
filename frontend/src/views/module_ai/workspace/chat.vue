@@ -5,12 +5,14 @@
     <aside class="chat-side">
       <div class="chat-side-head">
         <span class="chat-side-name">{{ assetLabel }}</span>
-        <el-button size="small" type="primary" :icon="Plus" @click="newSession">新建会话</el-button>
+        <el-button size="small" type="primary" :icon="Plus" @click="newSession">
+          {{ t("ai_chat.workspaceChat_newSession") }}
+        </el-button>
       </div>
       <div class="chat-search">
         <el-input
           v-model="sessionSearch"
-          placeholder="搜索会话..."
+          :placeholder="t('ai_chat.workspaceChat_searchSession')"
           :prefix-icon="Search"
           size="small"
           clearable
@@ -21,14 +23,14 @@
           <div class="chat-group-head">
             <span class="chat-group-label">{{ group.label }}</span>
             <el-button
-              v-if="group.label === '今天' && todaySessions.length"
+              v-if="group.key === 'today' && todaySessions.length"
               icon="Delete"
               link
               size="small"
               class="chat-group-del"
               @click="delToday"
             >
-              删除今天
+              {{ t("ai_chat.workspaceChat_deleteToday") }}
             </el-button>
           </div>
           <div
@@ -38,15 +40,21 @@
             :class="{ 'chat-sess--active': s.id === currentSessionId }"
             @click="openSession(s)"
           >
-            <div class="chat-sess-title">{{ s.title || "未命名会话" }}</div>
+            <div class="chat-sess-title">
+              {{ s.title || t("ai_chat.workspaceChat_unnamed") }}
+            </div>
             <div class="chat-sess-meta">
-              <span>{{ s.message_count ?? 0 }} 条</span>
+              <span>
+                {{ t("ai_chat.workspaceChat_messageCount", { count: s.message_count ?? 0 }) }}
+              </span>
               <span>· {{ fmtTime(s.updated_time) }}</span>
             </div>
             <el-icon class="chat-sess-del" @click.stop="delSession(s.id)"><Delete /></el-icon>
           </div>
         </template>
-        <div v-if="!sessionGroups.length" class="chat-side-empty">暂无会话，点「新建会话」开始</div>
+        <div v-if="!sessionGroups.length" class="chat-side-empty">
+          {{ t("ai_chat.workspaceChat_empty") }}
+        </div>
       </el-scrollbar>
       <div class="chat-side-foot">
         <el-button
@@ -56,7 +64,7 @@
           :disabled="!sessions.length"
           @click="delAllSessions"
         >
-          删除全部
+          {{ t("ai_chat.workspaceChat_deleteAll") }}
         </el-button>
       </div>
     </aside>
@@ -66,7 +74,7 @@
       <div class="chat-main-head">
         <span class="chat-main-title">{{ currentSessionTitle }}</span>
         <div class="chat-main-actions">
-          <el-tooltip content="导出会话为 Markdown" placement="top">
+          <el-tooltip :content="t('ai_chat.workspaceChat_exportTip')" placement="top">
             <el-button
               size="small"
               text
@@ -74,7 +82,7 @@
               :disabled="!chat.messages.value.length"
               @click="exportSession"
             >
-              导出
+              {{ t("ai_chat.workspaceChat_export") }}
             </el-button>
           </el-tooltip>
         </div>
@@ -106,6 +114,7 @@
 import { Delete, Download, Plus, Search } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 
 import {
@@ -122,6 +131,8 @@ import { useAiChat } from "@/composables/ai/useAiChat";
 
 defineOptions({ name: "AiWorkspaceChat" });
 
+const { t } = useI18n();
+
 const route = useRoute();
 const router = useRouter();
 const kind = String(route.params.kind || "agent");
@@ -136,12 +147,17 @@ const pathMap: Record<string, string> = {
 // agent 的 run 接口（拿 cron id 当 agent id），直达旧 URL 会打错接口——这里直接送回工作台。
 onMounted(() => {
   if (!pathMap[kind]) {
-    ElMessage.info("该条目类型已不再支持对话，已返回工作台");
+    ElMessage.info(t("ai_chat.workspaceChat_noLongerSupported"));
     router.replace("/ai/workspace");
   }
 });
 const assetLabel = computed(
-  () => ({ agent: "智能体", app: "应用", workflow: "工作流" })[kind] || "对话"
+  () =>
+    ({
+      agent: t("ai_chat.workspaceChat_agent"),
+      app: t("ai_chat.workspaceChat_app"),
+      workflow: t("ai_chat.workspaceChat_workflow"),
+    })[kind] || t("ai_chat.workspaceChat_chat")
 );
 // ---- 会话 ----
 const sessions = ref<AiSessionItem[]>([]);
@@ -198,11 +214,11 @@ const sessionGroups = computed(() => {
   const list = q
     ? sessions.value.filter((s) => (s.title || "").toLowerCase().includes(q))
     : sessions.value;
-  const groups: { label: string; items: AiSessionItem[] }[] = [
-    { label: "今天", items: [] },
-    { label: "昨天", items: [] },
-    { label: "近 7 天", items: [] },
-    { label: "更早", items: [] },
+  const groups: { key: string; label: string; items: AiSessionItem[] }[] = [
+    { key: "today", label: t("ai_chat.workspaceChat_today"), items: [] },
+    { key: "yesterday", label: t("ai_chat.workspaceChat_yesterday"), items: [] },
+    { key: "week", label: t("ai_chat.workspaceChat_week"), items: [] },
+    { key: "earlier", label: t("ai_chat.workspaceChat_earlier"), items: [] },
   ];
   const today = new Date();
   const yesterday = new Date();
@@ -254,11 +270,15 @@ async function delSession(id: number) {
 async function delToday() {
   const ids = todaySessions.value.map((s) => s.id);
   if (!ids.length) return;
-  await ElMessageBox.confirm(`将删除今天的 ${ids.length} 个会话，是否继续？`, "删除今天", {
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
-    type: "warning",
-  });
+  await ElMessageBox.confirm(
+    t("ai_chat.workspaceChat_deleteTodayConfirm", { count: ids.length }),
+    t("ai_chat.workspaceChat_deleteToday"),
+    {
+      confirmButtonText: t("ai_chat.workspaceChat_delete"),
+      cancelButtonText: t("ai_chat.workspaceChat_cancel"),
+      type: "warning",
+    }
+  );
   await deleteAiSessions(ids);
   sessions.value = sessions.value.filter((s) => !ids.includes(s.id));
   if (currentSessionId.value && ids.includes(currentSessionId.value)) {
@@ -269,11 +289,15 @@ async function delToday() {
 
 async function delAllSessions() {
   if (!sessions.value.length) return;
-  await ElMessageBox.confirm(`将删除全部 ${sessions.value.length} 个会话，是否继续？`, "删除全部", {
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
-    type: "warning",
-  });
+  await ElMessageBox.confirm(
+    t("ai_chat.workspaceChat_deleteAllConfirm", { count: sessions.value.length }),
+    t("ai_chat.workspaceChat_deleteAll"),
+    {
+      confirmButtonText: t("ai_chat.workspaceChat_delete"),
+      cancelButtonText: t("ai_chat.workspaceChat_cancel"),
+      type: "warning",
+    }
+  );
   await deleteAiSessions(sessions.value.map((s) => s.id));
   sessions.value = [];
   currentSessionId.value = null;
@@ -282,7 +306,7 @@ async function delAllSessions() {
 
 const currentSessionTitle = computed(() => {
   const s = sessions.value.find((x) => x.id === currentSessionId.value);
-  return s?.title || "新会话";
+  return s?.title || t("ai_chat.workspaceChat_newSession");
 });
 
 /** 导出当前会话为 Markdown 文件（用于数据训练/标注）。 */
@@ -290,7 +314,8 @@ function exportSession() {
   const msgs = chat.messages.value;
   const lines: string[] = [`# ${currentSessionTitle.value}\n`];
   for (const m of msgs) {
-    const role = m.role === "user" ? "用户" : "AI";
+    const role =
+      m.role === "user" ? t("ai_chat.workspaceChat_user") : t("ai_chat.workspaceChat_ai");
     const text = (m.parts || [])
       .filter((p: any) => p.type === "text")
       .map((p: any) => p.text || "")
@@ -302,7 +327,7 @@ function exportSession() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${currentSessionTitle.value || "会话"}.md`;
+  a.download = `${currentSessionTitle.value || t("ai_chat.workspaceChat_session")}.md`;
   a.click();
   URL.revokeObjectURL(url);
 }

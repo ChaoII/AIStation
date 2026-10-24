@@ -6,8 +6,8 @@
           <template #header>
             <div class="flex items-center gap-2">
               <el-icon><Cpu /></el-icon>
-              <span class="flex items-center gap-2">CPU使用情况</span>
-              <el-tooltip content="展示CPU核心数及使用率">
+              <span class="flex items-center gap-2">{{ t("monitor.serverCpuUsage") }}</span>
+              <el-tooltip :content="t('monitor.serverCpuTip')">
                 <el-icon><QuestionFilled /></el-icon>
               </el-tooltip>
             </div>
@@ -16,7 +16,7 @@
             <!-- CPU核心数卡片 -->
             <el-col :span="12">
               <el-card shadow="hover">
-                <span>核心数</span>
+                <span>{{ t("monitor.serverCoreCount") }}</span>
                 <el-tooltip :content="(server.cpu?.cpu_num || 0).toFixed(1)">
                   <div class="text-center mb-4">
                     <el-progress
@@ -27,13 +27,13 @@
                   </div>
                 </el-tooltip>
                 <el-descriptions :column="1" border>
-                  <el-descriptions-item label="总核心数">
+                  <el-descriptions-item :label="t('monitor.serverTotalCores')">
                     {{ server.cpu?.cpu_num || 0 }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="已用核心">
+                  <el-descriptions-item :label="t('monitor.serverUsedCores')">
                     {{ Math.floor(((server.cpu?.used || 0) * server.cpu?.cpu_num) / 100) }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="空闲核心">
+                  <el-descriptions-item :label="t('monitor.serverFreeCores')">
                     {{ Math.floor(((server.cpu?.free || 0) * server.cpu?.cpu_num) / 100) }}
                   </el-descriptions-item>
                 </el-descriptions>
@@ -42,7 +42,7 @@
             <!-- CPU使用率卡片 -->
             <el-col :span="12">
               <el-card shadow="hover" class="h-full">
-                <span>使用率</span>
+                <span>{{ t("monitor.usageRate") }}</span>
                 <el-tooltip :content="(server.cpu?.used || 0).toFixed(1) + '%'">
                   <div class="text-center mb-4">
                     <el-progress
@@ -59,13 +59,13 @@
                   </div>
                 </el-tooltip>
                 <el-descriptions :column="1" border>
-                  <el-descriptions-item label="用户使用率">
+                  <el-descriptions-item :label="t('monitor.serverUserUsageRate')">
                     {{ (server.cpu?.used || 0).toFixed(1) + "%" }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="系统使用率">
+                  <el-descriptions-item :label="t('monitor.serverSysUsageRate')">
                     {{ (server.cpu?.sys || 0).toFixed(1) + "%" }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="当前空闲率">
+                  <el-descriptions-item :label="t('monitor.serverFreeRate')">
                     {{ (server.cpu?.free || 0).toFixed(1) + "%" }}
                   </el-descriptions-item>
                 </el-descriptions>
@@ -80,8 +80,8 @@
           <template #header>
             <div class="flex items-center gap-2">
               <el-icon><Memo /></el-icon>
-              <span>内存使用情况</span>
-              <el-tooltip content="展示系统内存和Python程序内存使用情况">
+              <span>{{ t("monitor.serverMemUsage") }}</span>
+              <el-tooltip :content="t('monitor.serverMemTip')">
                 <el-icon><QuestionFilled /></el-icon>
               </el-tooltip>
             </div>
@@ -90,7 +90,7 @@
             <!-- 系统内存卡片 -->
             <el-col :span="12">
               <el-card shadow="hover" class="h-full">
-                <span>系统内存</span>
+                <span>{{ t("monitor.serverSysMem") }}</span>
                 <el-tooltip :content="(server.mem?.usage || 0).toFixed(1) + '%'">
                   <div class="text-center mb-4">
                     <el-progress
@@ -107,13 +107,13 @@
                   </div>
                 </el-tooltip>
                 <el-descriptions :column="1" border>
-                  <el-descriptions-item label="总内存">
+                  <el-descriptions-item :label="t('monitor.totalMem')">
                     {{ server.mem?.total }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="已用内存">
+                  <el-descriptions-item :label="t('monitor.usedMem')">
                     {{ server.mem?.used }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="空闲内存">
+                  <el-descriptions-item :label="t('monitor.freeMem')">
                     {{ server.mem?.free }}
                   </el-descriptions-item>
                 </el-descriptions>
@@ -122,7 +122,7 @@
             <!-- Python内存卡片 -->
             <el-col :span="12">
               <el-card shadow="hover" class="h-full">
-                <span>Python内存</span>
+                <span>{{ t("monitor.serverPyMem") }}</span>
                 <el-tooltip :content="(server.py?.memory_usage || 0).toFixed(1) + '%'">
                   <div class="text-center mb-4">
                     <el-progress
@@ -139,13 +139,13 @@
                   </div>
                 </el-tooltip>
                 <el-descriptions :column="1" border>
-                  <el-descriptions-item label="总内存">
+                  <el-descriptions-item :label="t('monitor.totalMem')">
                     {{ server.py?.memory_total }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="已用内存">
+                  <el-descriptions-item :label="t('monitor.usedMem')">
                     {{ server.py?.memory_used }}
                   </el-descriptions-item>
-                  <el-descriptions-item label="空闲内存">
+                  <el-descriptions-item :label="t('monitor.freeMem')">
                     {{ server.py?.memory_free }}
                   </el-descriptions-item>
                 </el-descriptions>
@@ -160,15 +160,15 @@
           <template #header>
             <div class="flex items-center gap-2">
               <el-icon><Odometer /></el-icon>
-              <span class="font-medium">GPU 使用情况</span>
-              <el-tooltip content="宿主机 NVIDIA 显卡实时状态，与训练容器是否可用无关">
+              <span class="font-medium">{{ t("monitor.serverGpuUsage") }}</span>
+              <el-tooltip :content="t('monitor.serverGpuTip')">
                 <el-icon><QuestionFilled /></el-icon>
               </el-tooltip>
               <el-tag v-if="server.gpu?.driver_version" size="small" type="info">
-                驱动 {{ server.gpu.driver_version }}
+                {{ t("monitor.serverGpuDriver", { ver: server.gpu.driver_version }) }}
               </el-tag>
               <el-tag v-if="server.gpu?.cuda_version" size="small" type="info">
-                驱动支持 CUDA {{ server.gpu.cuda_version }}
+                {{ t("monitor.serverGpuCuda", { ver: server.gpu.cuda_version }) }}
               </el-tag>
             </div>
           </template>
@@ -176,7 +176,7 @@
           <el-empty
             v-if="!server.gpu?.available"
             :image-size="60"
-            :description="server.gpu?.error || '未检测到 NVIDIA GPU'"
+            :description="server.gpu?.error || t('monitor.serverNoGpu')"
           />
 
           <el-row v-else :gutter="16">
@@ -191,7 +191,9 @@
             >
               <el-card shadow="never">
                 <div class="flex items-center gap-2 mb-3">
-                  <span class="font-medium">GPU {{ d.index }}</span>
+                  <span class="font-medium">
+                    {{ t("monitor.serverGpuIndex", { index: d.index }) }}
+                  </span>
                   <span>{{ d.name }}</span>
                   <el-tooltip v-if="d.uuid" :content="d.uuid">
                     <el-tag size="small" type="info">{{ d.uuid.slice(0, 12) }}…</el-tag>
@@ -199,7 +201,7 @@
                 </div>
                 <el-row :gutter="16">
                   <el-col :span="12">
-                    <span>显存</span>
+                    <span>{{ t("monitor.serverVram") }}</span>
                     <div class="text-center my-2">
                       <el-progress
                         type="circle"
@@ -209,13 +211,19 @@
                       />
                     </div>
                     <el-descriptions :column="1" border>
-                      <el-descriptions-item label="总量">{{ d.total }}</el-descriptions-item>
-                      <el-descriptions-item label="已用">{{ d.used }}</el-descriptions-item>
-                      <el-descriptions-item label="可用">{{ d.free }}</el-descriptions-item>
+                      <el-descriptions-item :label="t('monitor.serverTotal')">
+                        {{ d.total }}
+                      </el-descriptions-item>
+                      <el-descriptions-item :label="t('monitor.serverUsed')">
+                        {{ d.used }}
+                      </el-descriptions-item>
+                      <el-descriptions-item :label="t('monitor.serverFree')">
+                        {{ d.free }}
+                      </el-descriptions-item>
                     </el-descriptions>
                   </el-col>
                   <el-col :span="12">
-                    <span>核心利用率</span>
+                    <span>{{ t("monitor.serverCoreUtil") }}</span>
                     <div class="text-center my-2">
                       <el-progress
                         type="circle"
@@ -225,13 +233,13 @@
                       />
                     </div>
                     <el-descriptions :column="1" border>
-                      <el-descriptions-item label="温度">
+                      <el-descriptions-item :label="t('monitor.serverTemp')">
                         {{ d.temperature ?? "-" }} ℃
                       </el-descriptions-item>
-                      <el-descriptions-item label="当前功耗">
+                      <el-descriptions-item :label="t('monitor.serverPower')">
                         {{ d.power || "-" }}
                       </el-descriptions-item>
-                      <el-descriptions-item label="功耗上限">
+                      <el-descriptions-item :label="t('monitor.serverPowerLimit')">
                         {{ d.power_limit || "-" }}
                       </el-descriptions-item>
                     </el-descriptions>
@@ -248,23 +256,23 @@
           <template #header>
             <div class="flex items-center gap-2">
               <el-icon><Monitor /></el-icon>
-              <span class="font-medium">服务器基本信息</span>
-              <el-tooltip content="展示服务器基本配置信息">
+              <span class="font-medium">{{ t("monitor.serverBasicInfo") }}</span>
+              <el-tooltip :content="t('monitor.serverBasicInfoTip')">
                 <el-icon><QuestionFilled /></el-icon>
               </el-tooltip>
             </div>
           </template>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="服务器名称">
+            <el-descriptions-item :label="t('monitor.serverName')">
               {{ server.sys?.computer_name || "-" }}
             </el-descriptions-item>
-            <el-descriptions-item label="操作系统">
+            <el-descriptions-item :label="t('monitor.os')">
               {{ server.sys?.os_name || "-" }}
             </el-descriptions-item>
-            <el-descriptions-item label="服务器IP">
+            <el-descriptions-item :label="t('monitor.serverIp')">
               {{ server.sys?.computer_ip || "-" }}
             </el-descriptions-item>
-            <el-descriptions-item label="系统架构">
+            <el-descriptions-item :label="t('monitor.serverArch')">
               {{ server.sys?.os_arch || "-" }}
             </el-descriptions-item>
           </el-descriptions>
@@ -276,10 +284,8 @@
           <template #header>
             <div class="flex items-center gap-2">
               <el-icon><Platform /></el-icon>
-              <span class="font-medium">训练环境</span>
-              <el-tooltip
-                content="训练服务（TorchKiln）上报的运行时版本——torch / CUDA / cuDNN 只有训练容器里才有，本机不装 torch"
-              >
+              <span class="font-medium">{{ t("monitor.serverTrainEnv") }}</span>
+              <el-tooltip :content="t('monitor.serverTrainEnvTip')">
                 <el-icon><QuestionFilled /></el-icon>
               </el-tooltip>
             </div>
@@ -289,32 +295,32 @@
             v-if="!server.torch_env?.available"
             type="warning"
             :closable="false"
-            :title="server.torch_env?.error || '训练服务不可达'"
-            description="训练环境版本需从训练服务读取，服务未启动时无法展示；上方 GPU 信息不受影响。"
+            :title="server.torch_env?.error || t('monitor.serverTrainEnvUnavailable')"
+            :description="t('monitor.serverTrainEnvUnavailableDesc')"
           />
 
           <template v-else>
             <el-descriptions :column="3" border>
-              <el-descriptions-item label="训练框架">
+              <el-descriptions-item :label="t('monitor.serverTrainFramework')">
                 {{ server.torch_env?.framework || "-" }}
                 {{ server.torch_env?.framework_version || "" }}
               </el-descriptions-item>
-              <el-descriptions-item label="PyTorch">
+              <el-descriptions-item :label="t('monitor.serverPytorch')">
                 {{ server.torch_env?.torch || "-" }}
               </el-descriptions-item>
-              <el-descriptions-item label="CUDA 运行时">
+              <el-descriptions-item :label="t('monitor.serverCudaRuntime')">
                 {{ server.torch_env?.cuda || "-" }}
               </el-descriptions-item>
-              <el-descriptions-item label="cuDNN">
+              <el-descriptions-item :label="t('monitor.serverCudnn')">
                 {{ server.torch_env?.cudnn || "-" }}
               </el-descriptions-item>
-              <el-descriptions-item label="Python">
+              <el-descriptions-item :label="t('monitor.serverPython')">
                 {{ server.torch_env?.python || "-" }}
               </el-descriptions-item>
-              <el-descriptions-item label="训练用 GPU">
+              <el-descriptions-item :label="t('monitor.serverTrainGpu')">
                 {{ server.torch_env?.device || "-" }}
                 <template v-if="server.torch_env?.device_count">
-                  （{{ server.torch_env.device_count }} 张）
+                  {{ t("monitor.serverGpuCount", { count: server.torch_env.device_count }) }}
                 </template>
               </el-descriptions-item>
             </el-descriptions>
@@ -323,8 +329,8 @@
               class="mt-3"
               type="info"
               :closable="false"
-              title="两个 CUDA 版本的区别"
-              description="「驱动支持 CUDA」是本机显卡驱动能支持的上限；「CUDA 运行时」是训练环境的 PyTorch 编译时链接的版本。两者不一致是正常的，实际训练用的是运行时版本。"
+              :title="t('monitor.serverCudaDiffTitle')"
+              :description="t('monitor.serverCudaDiffDesc')"
             />
           </template>
         </el-card>
@@ -335,29 +341,29 @@
           <template #header>
             <div class="flex items-center gap-2">
               <el-icon><Dish /></el-icon>
-              <span class="font-medium">Python运行环境</span>
-              <el-tooltip content="展示Python环境配置及运行状态">
+              <span class="font-medium">{{ t("monitor.serverPyEnv") }}</span>
+              <el-tooltip :content="t('monitor.serverPyEnvTip')">
                 <el-icon><QuestionFilled /></el-icon>
               </el-tooltip>
             </div>
           </template>
           <el-descriptions :column="3" border>
-            <el-descriptions-item label="Python名称">
+            <el-descriptions-item :label="t('monitor.serverPyName')">
               {{ server.py?.name || "-" }}
             </el-descriptions-item>
-            <el-descriptions-item label="Python版本">
+            <el-descriptions-item :label="t('monitor.serverPyVersion')">
               {{ server.py?.version || "-" }}
             </el-descriptions-item>
-            <el-descriptions-item label="启动时间">
+            <el-descriptions-item :label="t('monitor.serverPyStartTime')">
               {{ server.py?.start_time || "-" }}
             </el-descriptions-item>
-            <el-descriptions-item label="运行时长">
+            <el-descriptions-item :label="t('monitor.serverPyRunTime')">
               {{ server.py?.run_time || "-" }}
             </el-descriptions-item>
-            <el-descriptions-item label="安装路径">
+            <el-descriptions-item :label="t('monitor.serverPyInstallPath')">
               {{ server.py?.home || "-" }}
             </el-descriptions-item>
-            <el-descriptions-item label="项目路径">
+            <el-descriptions-item :label="t('monitor.serverPyProjectPath')">
               {{ server.sys?.user_dir || "-" }}
             </el-descriptions-item>
           </el-descriptions>
@@ -371,20 +377,29 @@
               <el-icon>
                 <Files />
               </el-icon>
-              <span class="font-medium">磁盘使用情况</span>
-              <el-tooltip content="展示磁盘空间使用详情">
+              <span class="font-medium">{{ t("monitor.serverDiskUsage") }}</span>
+              <el-tooltip :content="t('monitor.serverDiskTip')">
                 <el-icon><QuestionFilled /></el-icon>
               </el-tooltip>
             </div>
           </template>
           <el-table :data="server.disks" border stripe>
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('monitor.noData')" />
             </template>
-            <el-table-column label="盘符路径" prop="dir_name" :show-overflow-tooltip="true" />
-            <el-table-column label="文件系统" prop="sys_type_name" align="center" width="100" />
-            <el-table-column label="盘符名称" prop="type_name" />
-            <el-table-column prop="usage" label="使用率" align="center">
+            <el-table-column
+              :label="t('monitor.serverDiskPath')"
+              prop="dir_name"
+              :show-overflow-tooltip="true"
+            />
+            <el-table-column
+              :label="t('monitor.serverFileSystem')"
+              prop="sys_type_name"
+              align="center"
+              width="100"
+            />
+            <el-table-column :label="t('monitor.serverDiskName')" prop="type_name" />
+            <el-table-column prop="usage" :label="t('monitor.usageRate')" align="center">
               <template #default="{ row }">
                 <!-- 使用 element-plus 的 Progress 组件 -->
                 <div>
@@ -397,9 +412,24 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="总大小" prop="total" align="center" width="100" />
-            <el-table-column label="可用大小" prop="free" align="center" width="100" />
-            <el-table-column label="已用大小" prop="used" align="center" width="100" />
+            <el-table-column
+              :label="t('monitor.serverDiskTotal')"
+              prop="total"
+              align="center"
+              width="100"
+            />
+            <el-table-column
+              :label="t('monitor.serverDiskFree')"
+              prop="free"
+              align="center"
+              width="100"
+            />
+            <el-table-column
+              :label="t('monitor.serverDiskUsed')"
+              prop="used"
+              align="center"
+              width="100"
+            />
           </el-table>
         </el-card>
       </el-col>
@@ -408,7 +438,10 @@
 </template>
 
 <script lang="ts" setup>
+import { useI18n } from "vue-i18n";
 import ServerAPI, { type ServerInfo } from "@/api/module_monitor/server";
+
+const { t } = useI18n();
 
 const loading = ref(false);
 const server = ref<ServerInfo>({
@@ -478,7 +511,7 @@ async function getList() {
     const response = await ServerAPI.getServer();
     server.value = response.data.data;
   } catch (error) {
-    console.error("获取服务器信息失败:", error);
+    console.error(t("monitor.serverGetInfoError"), error);
   } finally {
     loading.value = false;
   }

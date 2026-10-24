@@ -11,57 +11,89 @@
     <!-- 统计 -->
     <el-row :gutter="12" class="ont-dec__stats">
       <el-col :xs="12" :sm="8" :md="6" :lg="4">
-        <el-card shadow="never"><el-statistic title="决策总数" :value="stats.total" /></el-card>
-      </el-col>
-      <el-col :xs="12" :sm="8" :md="6" :lg="4">
-        <el-card shadow="never"><el-statistic title="待决" :value="stats.pending" /></el-card>
-      </el-col>
-      <el-col :xs="12" :sm="8" :md="6" :lg="4">
         <el-card shadow="never">
-          <el-statistic title="已拍板率" :value="stats.decided_rate" suffix="%" />
+          <el-statistic :title="i18nT('ai_ontology.totalDecisions')" :value="stats.total" />
         </el-card>
       </el-col>
       <el-col :xs="12" :sm="8" :md="6" :lg="4">
         <el-card shadow="never">
-          <el-statistic title="已执行率" :value="stats.executed_rate" suffix="%" />
+          <el-statistic :title="i18nT('ai_ontology.pending')" :value="stats.pending" />
         </el-card>
       </el-col>
       <el-col :xs="12" :sm="8" :md="6" :lg="4">
         <el-card shadow="never">
-          <el-statistic title="智能体提出" :value="stats.by_channel?.['智能体'] || 0" />
+          <el-statistic
+            :title="i18nT('ai_ontology.decidedRate')"
+            :value="stats.decided_rate"
+            suffix="%"
+          />
         </el-card>
       </el-col>
       <el-col :xs="12" :sm="8" :md="6" :lg="4">
         <el-card shadow="never">
-          <el-statistic title="人工提出" :value="stats.by_channel?.['本体控制台'] || 0" />
+          <el-statistic
+            :title="i18nT('ai_ontology.executedRate')"
+            :value="stats.executed_rate"
+            suffix="%"
+          />
+        </el-card>
+      </el-col>
+      <el-col :xs="12" :sm="8" :md="6" :lg="4">
+        <el-card shadow="never">
+          <el-statistic
+            :title="i18nT('ai_ontology.proposedByAgent')"
+            :value="stats.by_channel?.['智能体'] || 0"
+          />
+        </el-card>
+      </el-col>
+      <el-col :xs="12" :sm="8" :md="6" :lg="4">
+        <el-card shadow="never">
+          <el-statistic
+            :title="i18nT('ai_ontology.proposedByHuman')"
+            :value="stats.by_channel?.['本体控制台'] || 0"
+          />
         </el-card>
       </el-col>
     </el-row>
 
     <el-card shadow="never">
       <div class="ont-sec__head">
-        <span class="ont-sec__title">决策记录</span>
+        <span class="ont-sec__title">{{ i18nT("ai_ontology.decisionLog") }}</span>
         <el-button class="ont-sec__op" type="primary" size="small" :icon="Plus" @click="openForm()">
-          提出决策
+          {{ i18nT("ai_ontology.proposeDecision") }}
         </el-button>
-        <el-button size="small" :icon="Share" @click="openGraph">谱系图</el-button>
-        <el-button size="small" :icon="Refresh" @click="load">刷新</el-button>
+        <el-button size="small" :icon="Share" @click="openGraph">
+          {{ i18nT("ai_ontology.lineageGraph") }}
+        </el-button>
+        <el-button size="small" :icon="Refresh" @click="load">
+          {{ i18nT("ai_ontology.refresh") }}
+        </el-button>
       </div>
 
       <div class="ont-dec__filters">
-        <el-select v-model="filter.status" placeholder="状态" clearable style="width: 130px">
+        <el-select
+          v-model="filter.status"
+          :placeholder="i18nT('ai_ontology.status')"
+          clearable
+          style="width: 130px"
+        >
           <el-option v-for="s in STATUS_OPTIONS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
         <el-select
           v-model="filter.object_code"
-          placeholder="对象类型"
+          :placeholder="i18nT('ai_ontology.objectType')"
           clearable
           filterable
           style="width: 180px"
         >
           <el-option v-for="o in objects" :key="o.code" :label="o.name" :value="o.code" />
         </el-select>
-        <el-select v-model="filter.channel" placeholder="来源" clearable style="width: 130px">
+        <el-select
+          v-model="filter.channel"
+          :placeholder="i18nT('ai_ontology.source2')"
+          clearable
+          style="width: 130px"
+        >
           <el-option
             v-for="(label, value) in CHANNEL_OPTIONS"
             :key="value"
@@ -71,31 +103,41 @@
         </el-select>
         <el-input
           v-model="filter.keyword"
-          placeholder="标题 / 理由关键词"
+          :placeholder="i18nT('ai_ontology.titleReasonPlaceholder')"
           clearable
           style="width: 220px"
           @keyup.enter="load"
         />
-        <el-button type="primary" size="small" @click="load">查询</el-button>
+        <el-button type="primary" size="small" @click="load">
+          {{ i18nT("ai_ontology.query") }}
+        </el-button>
       </div>
 
       <el-table v-loading="loading" :data="rows" size="small" border max-height="560" stripe>
         <template #empty>
-          <el-empty :image-size="60" description="还没有决策记录" />
+          <el-empty :image-size="60" :description="i18nT('ai_ontology.noDecisionRecordsYet')" />
         </template>
-        <el-table-column label="决策" min-width="240" show-overflow-tooltip>
+        <el-table-column
+          :label="i18nT('ai_ontology.decision')"
+          min-width="240"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">{{ row.title }}</el-button>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="96">
+        <el-table-column :label="i18nT('ai_ontology.status')" width="96">
           <template #default="{ row }">
             <el-tag size="small" :type="statusTagType(row.status)" effect="plain">
               {{ row.status_label }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="针对对象" min-width="150" show-overflow-tooltip>
+        <el-table-column
+          :label="i18nT('ai_ontology.targetObject')"
+          min-width="150"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">
             <span v-if="row.object_code" class="ont-mono">
               {{ objectLabel(row.object_code) }}#{{ row.object_key }}
@@ -103,25 +145,29 @@
             <span v-else class="ont-none">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="执行动作" width="150" show-overflow-tooltip>
+        <el-table-column
+          :label="i18nT('ai_ontology.actionToExecute')"
+          width="150"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">
             <span :class="{ 'ont-none': !row.action_code }">{{ row.action_code || "—" }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="决策数据" width="180">
+        <el-table-column :label="i18nT('ai_ontology.decisionData')" width="180">
           <template #default="{ row }">
             <el-tag size="small" effect="plain" class="ont-tag-gap">
-              依据 {{ row.evidence_count }}
+              {{ i18nT("ai_ontology.evidenceCount", { count: row.evidence_count }) }}
             </el-tag>
             <el-tag size="small" effect="plain" class="ont-tag-gap">
-              选项 {{ row.option_count }}
+              {{ i18nT("ai_ontology.optionCount", { count: row.option_count }) }}
             </el-tag>
             <el-tag size="small" effect="plain" class="ont-tag-gap">
-              影响 {{ row.impact_count }}
+              {{ i18nT("ai_ontology.impactCount", { count: row.impact_count }) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="来源" width="100">
+        <el-table-column :label="i18nT('ai_ontology.source2')" width="100">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -132,14 +178,29 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="made_by" label="提出人" width="110" show-overflow-tooltip />
-        <el-table-column label="数据版本" width="90" align="center">
+        <el-table-column
+          prop="made_by"
+          :label="i18nT('ai_ontology.proposedBy')"
+          width="110"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.dataVersion')" width="90" align="center">
           <template #default="{ row }">
             <span class="ont-mono">v{{ row.data_version }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="made_at" label="提出时间" width="150" show-overflow-tooltip />
-        <el-table-column label="操作" width="200" align="center" fixed="right">
+        <el-table-column
+          prop="made_at"
+          :label="i18nT('ai_ontology.proposedTime')"
+          width="150"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          :label="i18nT('ai_ontology.operations')"
+          width="200"
+          align="center"
+          fixed="right"
+        >
           <template #default="{ row }">
             <el-button
               v-if="row.status === 'proposed'"
@@ -149,7 +210,7 @@
               size="small"
               @click="openDecide(row)"
             >
-              拍板
+              {{ i18nT("ai_ontology.decide") }}
             </el-button>
             <el-button
               v-if="row.status === 'approved'"
@@ -160,13 +221,13 @@
               size="small"
               @click="doExecute(row)"
             >
-              执行
+              {{ i18nT("ai_ontology.execute") }}
             </el-button>
             <el-button icon="Share" link type="primary" size="small" @click="openLineage(row)">
-              谱系
+              {{ i18nT("ai_ontology.lineage") }}
             </el-button>
             <el-button icon="edit" link type="primary" size="small" @click="openForm(row)">
-              编辑
+              {{ i18nT("ai_ontology.edit") }}
             </el-button>
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
@@ -176,7 +237,7 @@
               size="small"
               @click="doRemove(row)"
             >
-              删除
+              {{ i18nT("ai_ontology.delete2") }}
             </el-button>
           </template>
         </el-table-column>
@@ -184,88 +245,121 @@
     </el-card>
 
     <!-- 详情 -->
-    <el-drawer v-model="detailVisible" :title="detail?.title || '决策详情'" size="60%">
+    <el-drawer
+      v-model="detailVisible"
+      :title="detail?.title || i18nT('ai_ontology.decisionDetails')"
+      size="60%"
+    >
       <template v-if="detail">
         <el-descriptions :column="2" size="small" border>
-          <el-descriptions-item label="编码">
+          <el-descriptions-item :label="i18nT('ai_ontology.code')">
             <span class="ont-mono">{{ detail.code }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="状态">
+          <el-descriptions-item :label="i18nT('ai_ontology.status')">
             <el-tag size="small" :type="statusTagType(detail.status)" effect="plain">
               {{ detail.status_label }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="针对对象">
+          <el-descriptions-item :label="i18nT('ai_ontology.targetObject')">
             <span v-if="detail.object_code" class="ont-mono">
               {{ objectLabel(detail.object_code) }}#{{ detail.object_key }}
             </span>
             <span v-else class="ont-none">—</span>
           </el-descriptions-item>
-          <el-descriptions-item label="执行动作">
+          <el-descriptions-item :label="i18nT('ai_ontology.actionToExecute')">
             <span class="ont-mono">{{ detail.action_code || "—" }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="提出人 / 时间">
+          <el-descriptions-item :label="i18nT('ai_ontology.proposedByTime')">
             {{ detail.made_by || "—" }} · {{ detail.made_at }}
           </el-descriptions-item>
-          <el-descriptions-item label="拍板人 / 时间">
+          <el-descriptions-item :label="i18nT('ai_ontology.decidedByTime')">
             <span v-if="detail.decided_by">{{ detail.decided_by }} · {{ detail.decided_at }}</span>
-            <span v-else class="ont-none">尚未拍板</span>
+            <span v-else class="ont-none">{{ i18nT("ai_ontology.notDecided") }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="基于数据版本">
+          <el-descriptions-item :label="i18nT('ai_ontology.basedOnDataVersion')">
             <el-tag size="small" effect="plain">v{{ detail.data_version }}</el-tag>
-            <span class="ont-hint">决策作出时该对象类型已发布的版本</span>
+            <span class="ont-hint">
+              {{ i18nT("ai_ontology.versionPublishedForThisObjectTypeAtDecisionTime") }}
+            </span>
           </el-descriptions-item>
-          <el-descriptions-item label="来源应用">
+          <el-descriptions-item :label="i18nT('ai_ontology.sourceApp')">
             <el-tag size="small" effect="plain">{{ detail.channel_label }}</el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="执行时间">
+          <el-descriptions-item :label="i18nT('ai_ontology.executedTime')">
             <span v-if="detail.executed_at">{{ detail.executed_at }}</span>
-            <span v-else class="ont-none">尚未执行</span>
+            <span v-else class="ont-none">{{ i18nT("ai_ontology.notExecuted") }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="执行留痕 ID">
+          <el-descriptions-item :label="i18nT('ai_ontology.executionTraceId')">
             <span v-if="detail.execution_id" class="ont-mono">#{{ detail.execution_id }}</span>
             <span v-else class="ont-none">—</span>
           </el-descriptions-item>
-          <el-descriptions-item label="决策理由" :span="2">
+          <el-descriptions-item :label="i18nT('ai_ontology.decisionRationale')" :span="2">
             <div class="ont-dec__text">{{ detail.rationale || "—" }}</div>
           </el-descriptions-item>
-          <el-descriptions-item v-if="detail.decision_note" label="拍板意见" :span="2">
+          <el-descriptions-item
+            v-if="detail.decision_note"
+            :label="i18nT('ai_ontology.decisionOpinion')"
+            :span="2"
+          >
             <div class="ont-dec__text">{{ detail.decision_note }}</div>
           </el-descriptions-item>
-          <el-descriptions-item v-if="hasKeys(detail.expected_impact)" label="事前预期" :span="2">
+          <el-descriptions-item
+            v-if="hasKeys(detail.expected_impact)"
+            :label="i18nT('ai_ontology.expected')"
+            :span="2"
+          >
             <pre class="ont-dec__json">{{ pretty(detail.expected_impact) }}</pre>
           </el-descriptions-item>
-          <el-descriptions-item v-if="hasKeys(detail.outcome)" label="事后结果" :span="2">
+          <el-descriptions-item
+            v-if="hasKeys(detail.outcome)"
+            :label="i18nT('ai_ontology.actualResult')"
+            :span="2"
+          >
             <pre class="ont-dec__json">{{ pretty(detail.outcome) }}</pre>
           </el-descriptions-item>
-          <el-descriptions-item v-if="hasKeys(detail.params)" label="执行参数" :span="2">
+          <el-descriptions-item
+            v-if="hasKeys(detail.params)"
+            :label="i18nT('ai_ontology.executionParams')"
+            :span="2"
+          >
             <pre class="ont-dec__json">{{ pretty(detail.params) }}</pre>
           </el-descriptions-item>
         </el-descriptions>
 
         <!-- 评估过的选项 -->
         <div class="ont-sec__head ont-sec__head--mt">
-          <span class="ont-sec__title">评估过的选项</span>
+          <span class="ont-sec__title">{{ i18nT("ai_ontology.evaluatedOptions") }}</span>
           <el-tag size="small" effect="plain">{{ detail.options.length }}</el-tag>
         </div>
         <el-table :data="detail.options" size="small" border stripe>
           <template #empty>
-            <el-empty :image-size="50" description="未记录备选方案" />
+            <el-empty :image-size="50" :description="i18nT('ai_ontology.noAlternativesRecorded')" />
           </template>
-          <el-table-column label="选项" min-width="170">
+          <el-table-column :label="i18nT('ai_ontology.options')" min-width="170">
             <template #default="{ row }">
-              <el-tag v-if="row.chosen" size="small" type="success" effect="dark">已采纳</el-tag>
+              <el-tag v-if="row.chosen" size="small" type="success" effect="dark">
+                {{ i18nT("ai_ontology.adopted") }}
+              </el-tag>
               <span v-else>{{ row.label }}</span>
               <span v-if="row.chosen" class="ont-dec__chosen">{{ row.label }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="score" label="评分" width="80" align="center">
+          <el-table-column
+            prop="score"
+            :label="i18nT('ai_ontology.score')"
+            width="80"
+            align="center"
+          >
             <template #default="{ row }">
               <span v-if="row.score !== null">{{ row.score }}</span>
               <span v-else class="ont-none">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="预计影响" min-width="180" show-overflow-tooltip>
+          <el-table-column
+            :label="i18nT('ai_ontology.expectedImpact')"
+            min-width="180"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
               <span v-if="hasKeys(row.projected_impact)" class="ont-mono">
                 {{ compact(row.projected_impact) }}
@@ -273,7 +367,11 @@
               <span v-else class="ont-none">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="落选原因" min-width="180" show-overflow-tooltip>
+          <el-table-column
+            :label="i18nT('ai_ontology.rejectionReason')"
+            min-width="180"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
               <span :class="{ 'ont-none': !row.reject_reason }">
                 {{ row.reject_reason || "—" }}
@@ -284,16 +382,25 @@
 
         <!-- 上下文依据 -->
         <div class="ont-sec__head ont-sec__head--mt">
-          <span class="ont-sec__title">决策上下文（依据）</span>
+          <span class="ont-sec__title">{{ i18nT("ai_ontology.decisionContextBasis") }}</span>
           <el-tag size="small" effect="plain">{{ detail.evidence.length }}</el-tag>
         </div>
         <el-table :data="detail.evidence" size="small" border stripe>
           <template #empty>
-            <el-empty :image-size="50" description="未记录依据" />
+            <el-empty :image-size="50" :description="i18nT('ai_ontology.noBasisRecorded')" />
           </template>
-          <el-table-column prop="kind_label" label="种类" width="110" />
-          <el-table-column prop="label" label="说明" min-width="180" show-overflow-tooltip />
-          <el-table-column label="引用" min-width="170" show-overflow-tooltip>
+          <el-table-column prop="kind_label" :label="i18nT('ai_ontology.kind')" width="110" />
+          <el-table-column
+            prop="label"
+            :label="i18nT('ai_ontology.note')"
+            min-width="180"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            :label="i18nT('ai_ontology.reference')"
+            min-width="170"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
               <el-button
                 v-if="row.kind === 'decision' && row.ref"
@@ -307,7 +414,11 @@
               <span v-else class="ont-mono">{{ row.ref || "—" }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="当时取值" min-width="200" show-overflow-tooltip>
+          <el-table-column
+            :label="i18nT('ai_ontology.valueAtTime')"
+            min-width="200"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
               <span v-if="hasKeys(row.value)" class="ont-mono">{{ compact(row.value) }}</span>
               <span v-else class="ont-none">—</span>
@@ -317,17 +428,27 @@
 
         <!-- 下游影响 -->
         <div class="ont-sec__head ont-sec__head--mt">
-          <span class="ont-sec__title">下游影响</span>
+          <span class="ont-sec__title">{{ i18nT("ai_ontology.downstreamImpact") }}</span>
           <el-tag size="small" effect="plain">{{ detail.impacts.length }}</el-tag>
-          <span class="ont-hint">执行后自动对比对象前后快照得出</span>
+          <span class="ont-hint">
+            {{ i18nT("ai_ontology.derivedByComparingObjectSnapshotsAfterExecution") }}
+          </span>
         </div>
         <el-table :data="detail.impacts" size="small" border stripe>
           <template #empty>
-            <el-empty :image-size="50" description="尚未执行或没有字段变化" />
+            <el-empty
+              :image-size="50"
+              :description="i18nT('ai_ontology.notExecutedOrNoFieldChanges')"
+            />
           </template>
-          <el-table-column prop="kind_label" label="种类" width="110" />
-          <el-table-column prop="label" label="说明" min-width="200" show-overflow-tooltip />
-          <el-table-column label="变化" min-width="280">
+          <el-table-column prop="kind_label" :label="i18nT('ai_ontology.kind')" width="110" />
+          <el-table-column
+            prop="label"
+            :label="i18nT('ai_ontology.note')"
+            min-width="200"
+            show-overflow-tooltip
+          />
+          <el-table-column :label="i18nT('ai_ontology.change')" min-width="280">
             <template #default="{ row }">
               <div class="ont-dec__diff">
                 <span v-for="(v, k) in diffPairs(row)" :key="k" class="ont-mono">
@@ -336,17 +457,19 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="自动" width="70" align="center">
+          <el-table-column :label="i18nT('ai_ontology.auto')" width="70" align="center">
             <template #default="{ row }">
-              <el-tag v-if="row.auto" size="small" type="info" effect="plain">自动</el-tag>
-              <span v-else class="ont-none">手工</span>
+              <el-tag v-if="row.auto" size="small" type="info" effect="plain">
+                {{ i18nT("ai_ontology.auto") }}
+              </el-tag>
+              <span v-else class="ont-none">{{ i18nT("ai_ontology.manual2") }}</span>
             </template>
           </el-table-column>
         </el-table>
 
         <div class="ont-dec__actions">
           <el-button v-if="detail.status === 'proposed'" type="primary" @click="openDecide(detail)">
-            拍板
+            {{ i18nT("ai_ontology.decide") }}
           </el-button>
           <el-button
             v-if="detail.status === 'approved'"
@@ -354,64 +477,77 @@
             type="success"
             @click="doExecute(detail)"
           >
-            执行决策
+            {{ i18nT("ai_ontology.executeDecision") }}
           </el-button>
           <el-button v-if="detail.status === 'executed'" @click="openOutcome(detail)">
-            记录事后结果
+            {{ i18nT("ai_ontology.recordOutcome") }}
           </el-button>
-          <el-button @click="openLineage(detail)">查看谱系</el-button>
+          <el-button @click="openLineage(detail)">{{ i18nT("ai_ontology.viewLineage") }}</el-button>
         </div>
       </template>
     </el-drawer>
 
     <!-- 提出/编辑决策 -->
-    <el-dialog v-model="formVisible" title="提出决策" width="900px" append-to-body>
+    <el-dialog
+      v-model="formVisible"
+      :title="i18nT('ai_ontology.proposeDecision')"
+      width="900px"
+      append-to-body
+    >
       <el-form :model="form" label-width="130px">
-        <el-form-item label="决策标题" required>
-          <el-input v-model="form.title" placeholder="一句话说清要决定什么" />
+        <el-form-item :label="i18nT('ai_ontology.decisionTitle')" required>
+          <el-input
+            v-model="form.title"
+            :placeholder="i18nT('ai_ontology.stateInOneSentenceWhatToDecide')"
+          />
         </el-form-item>
-        <el-form-item label="说明">
+        <el-form-item :label="i18nT('ai_ontology.note')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="针对对象类型">
+        <el-form-item :label="i18nT('ai_ontology.targetObjectType3')">
           <el-select v-model="form.object_code" filterable clearable style="width: 100%">
             <el-option v-for="o in objects" :key="o.code" :label="o.name" :value="o.code" />
           </el-select>
         </el-form-item>
-        <el-form-item label="对象主键">
-          <el-input v-model="form.object_key" placeholder="目标实例的 key" />
+        <el-form-item :label="i18nT('ai_ontology.objectPrimaryKey')">
+          <el-input
+            v-model="form.object_key"
+            :placeholder="i18nT('ai_ontology.targetInstanceKey')"
+          />
         </el-form-item>
-        <el-form-item label="执行动作">
+        <el-form-item :label="i18nT('ai_ontology.actionToExecute')">
           <el-select v-model="form.action_code" filterable clearable style="width: 100%">
             <el-option
               v-for="a in actions"
               :key="a.code"
-              :label="`${a.name}（${a.code}）`"
+              :label="i18nT('ai_ontology.nameWithCode', { name: a.name, code: a.code })"
               :value="a.code"
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="执行参数（JSON）">
+        <el-form-item :label="i18nT('ai_ontology.executionParamsJson')">
           <el-input v-model="form.paramsText" type="textarea" :rows="2" placeholder="{}" />
         </el-form-item>
-        <el-form-item label="决策理由">
+        <el-form-item :label="i18nT('ai_ontology.decisionRationale')">
           <el-input
             v-model="form.rationale"
             type="textarea"
             :rows="3"
-            placeholder="为什么这么决定？依据是什么？"
+            :placeholder="i18nT('ai_ontology.whyThisDecisionWhatIsTheBasis')"
           />
         </el-form-item>
-        <el-form-item label="评估过的选项">
+        <el-form-item :label="i18nT('ai_ontology.evaluatedOptions')">
           <el-input
             v-model="form.optionsText"
             type="textarea"
             :rows="6"
             placeholder='[{"code":"opt1","label":"方案A","chosen":true,"score":85},{"code":"opt2","label":"方案B","chosen":false,"reject_reason":"成本高"}]'
           />
-          <div class="ont-hint">被否决的方案也要记录，这才是「评估过的不同选项」</div>
+          <div class="ont-hint">
+            {{ i18nT("ai_ontology.rejectedPlansShouldAlsoBeRecordedAsEvaluatedAlternatives") }}
+          </div>
         </el-form-item>
-        <el-form-item label="上下文依据">
+        <el-form-item :label="i18nT('ai_ontology.contextBasis')">
           <el-input
             v-model="form.evidenceText"
             type="textarea"
@@ -419,16 +555,13 @@
             placeholder='[{"kind":"object","ref":"video_cameras:1","label":"摄像机实例"},{"kind":"decision","ref":"dec_xxx","label":"上次处置决策"}]'
           />
           <div class="ont-hint">
-            kind 可为 object / property / link / function / metric / version / decision / external /
-            manual。填
-            <code>decision</code>
-            并引用另一条决策编码即可形成决策谱系
+            {{ i18nT("ai_ontology.evidenceKindHint") }}
           </div>
         </el-form-item>
-        <el-form-item label="事前预期（JSON）">
+        <el-form-item :label="i18nT('ai_ontology.expectedJson')">
           <el-input v-model="form.expectedText" type="textarea" :rows="2" placeholder="{}" />
         </el-form-item>
-        <el-form-item label="来源应用">
+        <el-form-item :label="i18nT('ai_ontology.sourceApp')">
           <el-radio-group v-model="form.channel">
             <el-radio-button v-for="(label, value) in CHANNEL_OPTIONS" :key="value" :value="value">
               {{ label }}
@@ -437,95 +570,128 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">取消</el-button>
+        <el-button @click="formVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           type="primary"
           :loading="saving"
           @click="doSave"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 拍板 -->
-    <el-dialog v-model="decideVisible" title="拍板" width="520px" append-to-body>
+    <el-dialog
+      v-model="decideVisible"
+      :title="i18nT('ai_ontology.decide')"
+      width="520px"
+      append-to-body
+    >
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
-        :title="`决策：${decideTarget?.title || ''}`"
+        :title="i18nT('ai_ontology.decisionColon', { title: decideTarget?.title || '' })"
       />
       <el-form label-width="90px">
-        <el-form-item label="结论">
+        <el-form-item :label="i18nT('ai_ontology.conclusion')">
           <el-radio-group v-model="decideApprove">
-            <el-radio-button :value="true">批准</el-radio-button>
-            <el-radio-button :value="false">否决</el-radio-button>
+            <el-radio-button :value="true">{{ i18nT("ai_ontology.approve") }}</el-radio-button>
+            <el-radio-button :value="false">{{ i18nT("ai_ontology.reject") }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="意见">
-          <el-input v-model="decideNote" type="textarea" :rows="3" placeholder="拍板理由（可选）" />
+        <el-form-item :label="i18nT('ai_ontology.opinion')">
+          <el-input
+            v-model="decideNote"
+            type="textarea"
+            :rows="3"
+            :placeholder="i18nT('ai_ontology.decisionRationaleOptional')"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="decideVisible = false">取消</el-button>
+        <el-button @click="decideVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:manage'"
           type="primary"
           :loading="saving"
           @click="doDecide"
         >
-          提交
+          {{ i18nT("ai_ontology.submit") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 事后结果 -->
-    <el-dialog v-model="outcomeVisible" title="记录事后结果" width="600px" append-to-body>
+    <el-dialog
+      v-model="outcomeVisible"
+      :title="i18nT('ai_ontology.recordOutcome')"
+      width="600px"
+      append-to-body
+    >
       <el-form label-width="110px">
-        <el-form-item label="指标名">
-          <el-input v-model="outcomeForm.metric" placeholder="如 downtime_minutes" />
+        <el-form-item :label="i18nT('ai_ontology.metricName')">
+          <el-input
+            v-model="outcomeForm.metric"
+            :placeholder="i18nT('ai_ontology.metricPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="事前预期">
+        <el-form-item :label="i18nT('ai_ontology.expected')">
           <el-input v-model="outcomeForm.expected" />
         </el-form-item>
-        <el-form-item label="实际结果">
+        <el-form-item :label="i18nT('ai_ontology.actualResult2')">
           <el-input v-model="outcomeForm.actual" />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item :label="i18nT('ai_ontology.remark')">
           <el-input v-model="outcomeForm.note" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="outcomeVisible = false">取消</el-button>
+        <el-button @click="outcomeVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:manage'"
           type="primary"
           :loading="saving"
           @click="doOutcome"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 谱系 -->
-    <el-dialog v-model="lineageVisible" title="决策谱系" width="900px" append-to-body>
+    <el-dialog
+      v-model="lineageVisible"
+      :title="i18nT('ai_ontology.decisionLineage')"
+      width="900px"
+      append-to-body
+    >
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
-        title="上游 = 这条决策依据了什么；下游 = 这条决策影响了什么、又引发了哪些后续决策"
+        :title="i18nT('ai_ontology.lineageHint')"
       />
       <div v-if="lineage" class="ont-dec__lin-sum">
-        <el-tag size="small" effect="plain">依据 {{ lineage.summary.evidence }}</el-tag>
-        <el-tag size="small" effect="plain">影响 {{ lineage.summary.impacts }}</el-tag>
         <el-tag size="small" effect="plain">
-          上游决策 {{ lineage.summary.upstream_decisions }}
+          {{ i18nT("ai_ontology.evidenceCount", { count: lineage.summary.evidence }) }}
         </el-tag>
         <el-tag size="small" effect="plain">
-          下游决策 {{ lineage.summary.downstream_decisions }}
+          {{ i18nT("ai_ontology.impactCount", { count: lineage.summary.impacts }) }}
+        </el-tag>
+        <el-tag size="small" effect="plain">
+          {{
+            i18nT("ai_ontology.upstreamDecisions", { count: lineage.summary.upstream_decisions })
+          }}
+        </el-tag>
+        <el-tag size="small" effect="plain">
+          {{
+            i18nT("ai_ontology.downstreamDecisions", {
+              count: lineage.summary.downstream_decisions,
+            })
+          }}
         </el-tag>
       </div>
       <div v-if="lineage" class="ont-dec__tree">
@@ -546,12 +712,17 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="lineageVisible = false">关闭</el-button>
+        <el-button @click="lineageVisible = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 谱系图 -->
-    <el-dialog v-model="graphVisible" title="决策谱系图" width="900px" append-to-body>
+    <el-dialog
+      v-model="graphVisible"
+      :title="i18nT('ai_ontology.decisionLineageGraph')"
+      width="900px"
+      append-to-body
+    >
       <GraphCanvas
         v-if="graphVisible && graph.nodes.length"
         :nodes="graph.nodes"
@@ -560,12 +731,13 @@
         layout-name="force"
         @node-tap="onGraphNode"
       />
-      <el-empty v-else :image-size="60" description="暂无可绘制的决策" />
+      <el-empty v-else :image-size="60" :description="i18nT('ai_ontology.noDecisionsToDraw')" />
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Refresh, Share } from "@element-plus/icons-vue";
@@ -584,25 +756,27 @@ import {
 } from "@/api/module_ai/ontology";
 import { useOntologyData } from "../composables/useOntologyData";
 
+const { t: i18nT } = useI18n();
+
 const emit = defineEmits<{ (e: "refresh"): void }>();
 
 const { objects, actions, objectLabel } = useOntologyData();
 
 const STATUS_OPTIONS = [
-  { value: "proposed", label: "待决" },
-  { value: "approved", label: "已批准" },
-  { value: "rejected", label: "已否决" },
-  { value: "executed", label: "已执行" },
-  { value: "superseded", label: "已被取代" },
-  { value: "expired", label: "已过期" },
-  { value: "withdrawn", label: "已撤回" },
+  { value: "proposed", label: i18nT("ai_ontology.pending") },
+  { value: "approved", label: i18nT("ai_ontology.approved") },
+  { value: "rejected", label: i18nT("ai_ontology.rejected") },
+  { value: "executed", label: i18nT("ai_ontology.executed") },
+  { value: "superseded", label: i18nT("ai_ontology.superseded") },
+  { value: "expired", label: i18nT("ai_ontology.expired2") },
+  { value: "withdrawn", label: i18nT("ai_ontology.withdrawn") },
 ];
 const CHANNEL_OPTIONS: Record<string, string> = {
-  ontology: "本体控制台",
-  agent: "智能体",
-  api: "外部接口",
-  automation: "自动化",
-  import: "导入",
+  ontology: i18nT("ai_ontology.ontologyConsole"),
+  agent: i18nT("ai_ontology.agent"),
+  api: i18nT("ai_ontology.externalInterface"),
+  automation: i18nT("ai_ontology.automation"),
+  import: i18nT("ai_ontology.import"),
 };
 
 function statusTagType(s: string) {
@@ -629,11 +803,11 @@ function diffPairs(row: any): Record<string, string> {
     const a = row.after?.[k];
     if (JSON.stringify(b) !== JSON.stringify(a)) out[k] = `${fmt(b)} → ${fmt(a)}`;
   });
-  if (!Object.keys(out).length && row.note) out["说明"] = row.note;
+  if (!Object.keys(out).length && row.note) out[i18nT("ai_ontology.note")] = row.note;
   return out;
 }
 function fmt(v: any) {
-  if (v === null || v === undefined) return "空";
+  if (v === null || v === undefined) return i18nT("ai_ontology.empty");
   const s = typeof v === "object" ? JSON.stringify(v) : String(v);
   return s.length > 40 ? s.slice(0, 37) + "…" : s;
 }
@@ -662,7 +836,7 @@ async function load() {
     rows.value = list;
     stats.value = s.data?.data || stats.value;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "加载决策失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.loadDecisionFailed"));
   } finally {
     loading.value = false;
   }
@@ -757,18 +931,18 @@ function openForm(row?: any) {
 }
 
 async function doSave() {
-  if (!form.title?.trim()) return ElMessage.warning("请填决策标题");
+  if (!form.title?.trim()) return ElMessage.warning(i18nT("ai_ontology.pleaseEnterDecisionTitle"));
   let params: any = {};
   let options: any[] = [];
   let evidence: any[] = [];
   let expected: any = {};
   try {
-    params = parseJson(form.paramsText, "执行参数", {});
-    options = parseJson(form.optionsText, "选项", []);
-    evidence = parseJson(form.evidenceText, "依据", []);
-    expected = parseJson(form.expectedText, "事前预期", {});
+    params = parseJson(form.paramsText, i18nT("ai_ontology.executionParams"), {});
+    options = parseJson(form.optionsText, i18nT("ai_ontology.options"), []);
+    evidence = parseJson(form.evidenceText, i18nT("ai_ontology.basis"), []);
+    expected = parseJson(form.expectedText, i18nT("ai_ontology.expected"), {});
   } catch (e: any) {
-    return ElMessage.error(`JSON 解析失败：${e.message}`);
+    return ElMessage.error(i18nT("ai_ontology.jsonParseFailedColon", { msg: e.message }));
   }
   saving.value = true;
   try {
@@ -788,12 +962,12 @@ async function doSave() {
       channel: form.channel,
       status: form.status,
     });
-    ElMessage.success(r.data?.msg || "已保存");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.saved"));
     formVisible.value = false;
     await load();
     emit("refresh");
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -819,12 +993,12 @@ async function doDecide() {
       decideApprove.value,
       decideNote.value
     );
-    ElMessage.success(r.data?.msg || "已处理");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.processed"));
     decideVisible.value = false;
     detailVisible.value = false;
     await load();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "操作失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.operationFailed"));
   } finally {
     saving.value = false;
   }
@@ -832,21 +1006,25 @@ async function doDecide() {
 
 async function doExecute(row: any) {
   await ElMessageBox.confirm(
-    `将执行决策「${row.title}」${row.action_code ? `（动作 ${row.action_code}）` : ""}，` +
-      "会真实写入目标对象的真实数据表，且不可自动撤销。确认执行？",
-    "执行决策",
-    { type: "warning", confirmButtonText: "执行", cancelButtonText: "取消" }
+    `${i18nT("ai_ontology.executeDecisionConfirm", { title: row.title })}${row.action_code ? i18nT("ai_ontology.actionWithCode", { action: row.action_code }) : ""}，` +
+      i18nT("ai_ontology.reallyWritesIntoTheTargetObjectSRealTableCannotBeAutoUndoneExecute"),
+    i18nT("ai_ontology.executeDecision"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.execute"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   try {
     const r = await executeOntDecision(row.code, false);
     const d = r.data?.data || {};
-    ElMessage.success(r.data?.msg || "已执行");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.executed"));
     if (d.changed && Object.keys(d.changed).length) {
       ElMessageBox.alert(
         Object.entries(d.changed)
           .map(([k, v]: any) => `${k}: ${fmt(v.before)} → ${fmt(v.after)}`)
           .join("<br/>"),
-        "捕获到的下游影响",
+        i18nT("ai_ontology.capturedDownstreamImpact"),
         { dangerouslyUseHTMLString: true }
       );
     }
@@ -854,7 +1032,7 @@ async function doExecute(row: any) {
     await load();
     emit("refresh");
   } catch (e: any) {
-    ElMessage.error(e?.msg || "执行失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.executeFailed"));
   }
 }
 
@@ -872,12 +1050,12 @@ async function doOutcome() {
   saving.value = true;
   try {
     await recordOntDecisionOutcome(detail.value.code, { ...outcomeForm });
-    ElMessage.success("已记录事后结果");
+    ElMessage.success(i18nT("ai_ontology.outcomeRecorded"));
     outcomeVisible.value = false;
     await openDetail(detail.value);
     await load();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -885,17 +1063,25 @@ async function doOutcome() {
 
 async function doRemove(row: any) {
   await ElMessageBox.confirm(
-    `将删除决策「${row.title}」及其 ${row.option_count} 个选项、${row.evidence_count} 条依据、` +
-      `${row.impact_count} 条影响记录，且不可恢复。确认删除？`,
-    "删除决策",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    i18nT("ai_ontology.deleteDecisionConfirm", {
+      title: row.title,
+      options: row.option_count,
+      evidence: row.evidence_count,
+      impacts: row.impact_count,
+    }),
+    i18nT("ai_ontology.deleteDecision"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   try {
     const r = await removeOntDecision(row.code);
-    ElMessage.success(r.data?.msg || "已删除");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.deleted"));
     await load();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "删除失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.deleteFailed"));
   }
 }
 
@@ -918,7 +1104,7 @@ async function openLineageByCode(code: string) {
     lineage.value = r.data?.data || null;
     lineageVisible.value = true;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "查询谱系失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.queryLineageFailed"));
   }
 }
 
@@ -932,7 +1118,7 @@ async function openGraph() {
     graph.value = { nodes: d.nodes || [], edges: d.edges || [] };
     graphVisible.value = true;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "加载谱系图失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.loadLineageGraphFailed"));
   }
 }
 function onGraphNode(name: string) {

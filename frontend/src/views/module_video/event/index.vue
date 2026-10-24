@@ -35,7 +35,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('video.common.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -46,7 +46,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('video.common.sequence')"
               width="60"
             >
               <template #default="scope">
@@ -56,7 +56,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="联动名称"
+              :label="t('video.event.linkageName')"
               prop="name"
               min-width="160"
               show-overflow-tooltip
@@ -64,7 +64,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'trigger_event')?.show"
               key="trigger_event"
-              label="触发事件"
+              :label="t('video.event.triggerEvent')"
               prop="trigger_event"
               width="130"
               align="center"
@@ -78,7 +78,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'action_type')?.show"
               key="action_type"
-              label="动作类型"
+              :label="t('video.event.actionType')"
               prop="action_type"
               width="130"
               align="center"
@@ -92,19 +92,25 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'trigger_camera_ids')?.show"
               key="trigger_camera_ids"
-              label="关联摄像机"
+              :label="t('video.event.linkCamera')"
               prop="trigger_camera_ids"
               min-width="120"
               show-overflow-tooltip
             >
               <template #default="scope">
-                <span>{{ scope.row.trigger_camera_ids?.length || 0 }}台</span>
+                <span>
+                  {{
+                    t("video.event.cameraCount", {
+                      count: scope.row.trigger_camera_ids?.length || 0,
+                    })
+                  }}
+                </span>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('video.common.status')"
               prop="status"
               width="80"
               align="center"
@@ -116,7 +122,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="t('video.common.createdTime')"
               prop="created_time"
               min-width="170"
               sortable
@@ -124,7 +130,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('video.common.operation')"
               align="center"
               min-width="160"
             >
@@ -137,7 +143,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("video.common.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:event:delete']"
@@ -147,7 +153,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("video.common.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -164,50 +170,50 @@
       @close="handleCloseDialog"
     >
       <el-form ref="dataFormRef" :model="formData" label-width="110px" size="default">
-        <el-form-item label="联动名称" prop="name">
-          <el-input v-model="formData.name" placeholder="例如：入侵检测联动录像" />
+        <el-form-item :label="t('video.event.linkageName')" prop="name">
+          <el-input v-model="formData.name" :placeholder="t('video.event.nameExample')" />
         </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="触发事件" prop="trigger_event">
+            <el-form-item :label="t('video.event.triggerEvent')" prop="trigger_event">
               <el-select v-model="formData.trigger_event" style="width: 100%">
-                <el-option label="告警触发" value="ALARM" />
-                <el-option label="移动侦测" value="MOTION" />
-                <el-option label="设备离线" value="OFFLINE" />
-                <el-option label="设备上线" value="ONLINE" />
-                <el-option label="视频丢失" value="VIDEO_LOST" />
-                <el-option label="定时触发" value="SCHEDULE" />
+                <el-option :label="t('video.event.alarmTrigger')" value="ALARM" />
+                <el-option :label="t('video.event.motionDetect')" value="MOTION" />
+                <el-option :label="t('video.event.deviceOffline')" value="OFFLINE" />
+                <el-option :label="t('video.event.deviceOnline')" value="ONLINE" />
+                <el-option :label="t('video.event.videoLost')" value="VIDEO_LOST" />
+                <el-option :label="t('video.event.scheduleTrigger')" value="SCHEDULE" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="动作类型" prop="action_type">
+            <el-form-item :label="t('video.event.actionType')" prop="action_type">
               <el-select v-model="formData.action_type" style="width: 100%">
-                <el-option label="启动录像" value="RECORD" />
-                <el-option label="发送告警" value="ALERT" />
-                <el-option label="云台控制" value="PTZ" />
-                <el-option label="消息推送" value="PUSH" />
+                <el-option :label="t('video.event.startRecord')" value="RECORD" />
+                <el-option :label="t('video.event.sendAlarm')" value="ALERT" />
+                <el-option :label="t('video.event.ptzControl')" value="PTZ" />
+                <el-option :label="t('video.event.msgPush')" value="PUSH" />
               </el-select>
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="关联摄像机" prop="trigger_camera_ids">
+        <el-form-item :label="t('video.event.linkCamera')" prop="trigger_camera_ids">
           <el-select
             v-model="formData.trigger_camera_ids"
             multiple
             filterable
             style="width: 100%"
-            placeholder="选择摄像机（可选，不选则对所有摄像机生效）"
+            :placeholder="t('video.event.selectCameraHint')"
             @visible-change="(v: boolean) => v && ensureCameras()"
           >
             <el-option v-for="c in cameras" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="动作参数" prop="action_params">
+        <el-form-item :label="t('video.event.actionParams')" prop="action_params">
           <div class="action-params">
             <template v-if="formData.action_type === 'RECORD'">
               <div class="action-params__row">
-                <span class="action-params__label">录像保留天数</span>
+                <span class="action-params__label">{{ t("video.event.recordRetention") }}</span>
                 <el-input-number
                   v-model="formData.action_params.storage_days"
                   :min="1"
@@ -217,57 +223,59 @@
             </template>
             <template v-else-if="formData.action_type === 'PTZ'">
               <div class="action-params__row">
-                <span class="action-params__label">预置位编号</span>
+                <span class="action-params__label">{{ t("video.event.presetId") }}</span>
                 <el-input-number v-model="formData.action_params.preset_id" :min="0" />
               </div>
             </template>
             <template v-else-if="formData.action_type === 'ALERT'">
               <div class="action-params__row">
-                <span class="action-params__label">告警级别</span>
+                <span class="action-params__label">{{ t("video.event.alarmLevel") }}</span>
                 <el-select v-model="formData.action_params.level" style="width: 140px">
-                  <el-option label="中" value="middle" />
-                  <el-option label="高" value="high" />
-                  <el-option label="严重" value="critical" />
+                  <el-option :label="t('video.event.middle')" value="middle" />
+                  <el-option :label="t('video.event.high')" value="high" />
+                  <el-option :label="t('video.event.critical')" value="critical" />
                 </el-select>
               </div>
             </template>
             <template v-else-if="formData.action_type === 'PUSH'">
               <div class="action-params__row">
-                <span class="action-params__label">推送渠道</span>
+                <span class="action-params__label">{{ t("video.event.pushChannel") }}</span>
                 <el-input
                   v-model="formData.action_params.channel"
-                  placeholder="如 webhook_target"
+                  :placeholder="t('video.event.channelExample')"
                   style="width: 200px"
                 />
               </div>
             </template>
             <el-collapse class="action-params__advanced">
-              <el-collapse-item title="高级 JSON（可选，覆盖上方字段）">
+              <el-collapse-item :title="t('video.event.advancedJson')">
                 <el-input
                   v-model="actionParamsText"
                   type="textarea"
                   :rows="2"
-                  placeholder='当有更复杂参数时填写，如 {"storage_days": 30}'
+                  :placeholder="t('video.event.advancedJsonPlaceholder')"
                 />
               </el-collapse-item>
             </el-collapse>
           </div>
         </el-form-item>
-        <el-form-item label="状态" prop="status">
+        <el-form-item :label="t('video.common.status')" prop="status">
           <el-switch v-model="formData.status" />
         </el-form-item>
-        <el-form-item label="描述" prop="description">
+        <el-form-item :label="t('video.common.description')" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="2"
-            placeholder="可选描述"
+            :placeholder="t('video.common.optionalRemark')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("video.common.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("video.common.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
   </div>
@@ -276,6 +284,7 @@
 <script setup lang="ts">
 import { ref, reactive } from "vue";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import { getCameraList } from "@/api/module_video/camera";
 import { getEventList, createEvent, updateEvent, deleteEvent } from "@/api/module_video/event";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -289,6 +298,7 @@ interface TablePageQuery {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const { t } = useI18n();
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
@@ -303,49 +313,57 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "联动名称",
+      label: t("video.event.linkageName"),
       type: "input",
-      attrs: { placeholder: "请输入联动名称", clearable: true },
+      attrs: { placeholder: t("video.event.enterLinkageName"), clearable: true },
     },
     {
       prop: "trigger_event",
-      label: "触发事件",
+      label: t("video.event.triggerEvent"),
       type: "select",
       options: [
-        { label: "告警触发", value: "ALARM" },
-        { label: "移动侦测", value: "MOTION" },
-        { label: "设备离线", value: "OFFLINE" },
-        { label: "设备上线", value: "ONLINE" },
-        { label: "视频丢失", value: "VIDEO_LOST" },
-        { label: "定时触发", value: "SCHEDULE" },
+        { label: t("video.event.alarmTrigger"), value: "ALARM" },
+        { label: t("video.event.motionDetect"), value: "MOTION" },
+        { label: t("video.event.deviceOffline"), value: "OFFLINE" },
+        { label: t("video.event.deviceOnline"), value: "ONLINE" },
+        { label: t("video.event.videoLost"), value: "VIDEO_LOST" },
+        { label: t("video.event.scheduleTrigger"), value: "SCHEDULE" },
       ],
-      attrs: { placeholder: "请选择触发事件", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("video.event.selectTriggerEvent"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "action_type",
-      label: "动作类型",
+      label: t("video.event.actionType"),
       type: "select",
       options: [
-        { label: "启动录像", value: "RECORD" },
-        { label: "发送告警", value: "ALERT" },
-        { label: "云台控制", value: "PTZ" },
-        { label: "消息推送", value: "PUSH" },
+        { label: t("video.event.startRecord"), value: "RECORD" },
+        { label: t("video.event.sendAlarm"), value: "ALERT" },
+        { label: t("video.event.ptzControl"), value: "PTZ" },
+        { label: t("video.event.msgPush"), value: "PUSH" },
       ],
-      attrs: { placeholder: "请选择动作类型", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("video.event.selectActionType"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
 
 const contentCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "联动名称", show: true },
-  { prop: "trigger_event", label: "触发事件", show: true },
-  { prop: "action_type", label: "动作类型", show: true },
-  { prop: "trigger_camera_ids", label: "关联摄像机", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "name", label: t("video.event.linkageName"), show: true },
+  { prop: "trigger_event", label: t("video.event.triggerEvent"), show: true },
+  { prop: "action_type", label: t("video.event.actionType"), show: true },
+  { prop: "trigger_camera_ids", label: t("video.event.linkCamera"), show: true },
+  { prop: "status", label: t("video.common.status"), show: true },
+  { prop: "created_time", label: t("video.common.createdTime"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -370,8 +388,8 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("video.common.warning"),
+    message: t("video.common.deleteConfirmMsg"),
     type: "warning",
   },
 });
@@ -441,7 +459,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   ensureCameras();
   if (id && type === "update") {
-    dialogVisible.title = "编辑联动";
+    dialogVisible.title = t("video.event.editLinkage");
     const res = await getEventList({ page_no: 1, page_size: 100 });
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
@@ -452,7 +470,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
         : "";
     }
   } else {
-    dialogVisible.title = "新建联动";
+    dialogVisible.title = t("video.event.newLinkage");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -466,7 +484,7 @@ async function handleSubmit() {
       try {
         formData.action_params = JSON.parse(actionParamsText.value);
       } catch {
-        ElMessage.warning("高级 JSON 格式错误，已忽略");
+        ElMessage.warning(t("video.event.jsonFormatError"));
       }
     }
     if (id) {
@@ -474,7 +492,7 @@ async function handleSubmit() {
     } else {
       await createEvent(formData);
     }
-    ElMessage.success("保存成功");
+    ElMessage.success(t("video.common.saveSuccess"));
     dialogVisible.visible = false;
     await resetForm();
     refreshList();
@@ -487,12 +505,12 @@ async function handleSubmit() {
 
 function eventLabel(type: string) {
   const map: Record<string, string> = {
-    ALARM: "告警触发",
-    MOTION: "移动侦测",
-    OFFLINE: "设备离线",
-    ONLINE: "设备上线",
-    VIDEO_LOST: "视频丢失",
-    SCHEDULE: "定时触发",
+    ALARM: t("video.event.alarmTrigger"),
+    MOTION: t("video.event.motionDetect"),
+    OFFLINE: t("video.event.deviceOffline"),
+    ONLINE: t("video.event.deviceOnline"),
+    VIDEO_LOST: t("video.event.videoLost"),
+    SCHEDULE: t("video.event.scheduleTrigger"),
   };
   return map[type] || type;
 }
@@ -511,10 +529,10 @@ function eventTag(type: string): any {
 
 function actionLabel(type: string) {
   const map: Record<string, string> = {
-    RECORD: "启动录像",
-    ALERT: "发送告警",
-    PTZ: "云台控制",
-    PUSH: "消息推送",
+    RECORD: t("video.event.startRecord"),
+    ALERT: t("video.event.sendAlarm"),
+    PTZ: t("video.event.ptzControl"),
+    PUSH: t("video.event.msgPush"),
   };
   return map[type] || type;
 }

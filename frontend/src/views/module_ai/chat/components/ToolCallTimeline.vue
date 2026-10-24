@@ -16,11 +16,11 @@
       </div>
       <div v-show="isOpen(i)" class="tool-item__body">
         <div v-if="part.input != null" class="tool-io">
-          <div class="tool-io__label">输入</div>
+          <div class="tool-io__label">{{ t("ai_chat.toolTimeline_input") }}</div>
           <JsonPretty :data="normalize(part.input)" />
         </div>
         <div v-if="part.output != null" class="tool-io">
-          <div class="tool-io__label">输出</div>
+          <div class="tool-io__label">{{ t("ai_chat.toolTimeline_output") }}</div>
           <JsonPretty :data="normalize(part.output)" />
         </div>
         <div v-if="part.errorText" class="tool-io tool-io--error">
@@ -34,6 +34,7 @@
 
 <script setup lang="ts">
 import { ref, type Component } from "vue";
+import { useI18n } from "vue-i18n";
 import { Loading, CircleCheck, CircleClose, ArrowUp, ArrowDown } from "@element-plus/icons-vue";
 import JsonPretty from "vue-json-pretty";
 import "vue-json-pretty/lib/styles.css";
@@ -45,6 +46,8 @@ interface Props {
 }
 
 defineProps<Props>();
+
+const { t } = useI18n();
 
 const open = ref<Record<number, boolean>>({});
 
@@ -62,11 +65,11 @@ interface StateMeta {
 function meta(part: AiUIPart): StateMeta {
   switch (part.state) {
     case "output-available":
-      return { label: "完成", tag: "success", icon: CircleCheck };
+      return { label: t("ai_chat.toolTimeline_done"), tag: "success", icon: CircleCheck };
     case "output-error":
-      return { label: "失败", tag: "danger", icon: CircleClose };
+      return { label: t("ai_chat.toolTimeline_failed"), tag: "danger", icon: CircleClose };
     default:
-      return { label: "进行中", tag: "primary", icon: Loading };
+      return { label: t("ai_chat.toolTimeline_running"), tag: "primary", icon: Loading };
   }
 }
 

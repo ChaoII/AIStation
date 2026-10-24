@@ -13,17 +13,19 @@
       <div ref="containerRef" class="input-container" :class="{ 'is-locked': disabled || sending }">
         <div ref="editorEl" class="cm-host" :class="{ 'is-readonly': disabled || sending }"></div>
         <div v-if="atMenuVisible" class="at-menu" :style="atMenuStyle">
-          <div class="at-menu__title">快捷指令</div>
+          <div class="at-menu__title">{{ t("ai_chat.chatInput_slashCommands") }}</div>
           <div
             v-for="cmd in filteredAtCommands"
             :key="cmd.name"
             class="at-item"
             @click="chooseAt(cmd)"
           >
-            <span class="at-item__name">#{{ cmd.name }}</span>
+            <span class="at-item__name">#{{ cmd.label }}</span>
             <span class="at-item__desc">{{ cmd.desc }}</span>
           </div>
-          <div v-if="filteredAtCommands.length === 0" class="at-menu__empty">无匹配指令</div>
+          <div v-if="filteredAtCommands.length === 0" class="at-menu__empty">
+            {{ t("ai_chat.chatInput_noMatchCommand") }}
+          </div>
         </div>
 
         <div class="input-footer">
@@ -47,7 +49,13 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-tooltip :content="thinking === 'deep' ? '深度思考' : '快速'">
+            <el-tooltip
+              :content="
+                thinking === 'deep'
+                  ? t('ai_chat.chatInput_deepThinking')
+                  : t('ai_chat.chatInput_quick')
+              "
+            >
               <span
                 class="thinking-toggle"
                 :class="{ 'is-deep': thinking === 'deep' }"
@@ -65,7 +73,7 @@
               accept="image/*"
               :multiple="true"
             >
-              <el-tooltip content="发送图片" placement="top">
+              <el-tooltip :content="t('ai_chat.chatInput_sendImage')" placement="top">
                 <span class="upload-btn">
                   <el-icon><Picture /></el-icon>
                 </span>
@@ -79,13 +87,17 @@
               :accept="acceptTypes"
               :multiple="true"
             >
-              <el-tooltip content="上传文件" placement="top">
+              <el-tooltip :content="t('ai_chat.chatInput_uploadFile')" placement="top">
                 <span class="upload-btn">
                   <el-icon><Paperclip /></el-icon>
                 </span>
               </el-tooltip>
             </el-upload>
-            <el-tooltip v-if="showSpace" content="从个人空间选择文件" placement="top">
+            <el-tooltip
+              v-if="showSpace"
+              :content="t('ai_chat.chatInput_pickFromSpace')"
+              placement="top"
+            >
               <span class="upload-btn" @click="emit('space')">
                 <el-icon><FolderOpened /></el-icon>
               </span>
@@ -118,13 +130,14 @@
           </div>
         </div>
       </div>
-      <div class="input-hint">支持图片与文件 · Enter 发送，Shift+Enter 换行</div>
+      <div class="input-hint">{{ t("ai_chat.chatInput_hint") }}</div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { useI18n } from "vue-i18n";
 import type { UploadFile } from "element-plus";
 import { ElMessage } from "element-plus";
 import {
@@ -185,9 +198,11 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>();
 
+const { t } = useI18n();
+
 const chatModelLabel = computed(() => {
   const m = props.models.find((x) => x.id === props.modelId);
-  return m?.name || "选择模型";
+  return m?.name || t("ai_chat.chatInput_selectModel");
 });
 
 const inputMessage = ref("");
@@ -209,17 +224,33 @@ const atMenuStyle = computed(() => ({
 }));
 
 const atCommands = [
-  { name: "联网搜索", desc: "联网检索最新信息" },
-  { name: "生成报告", desc: "基于检索结果生成报告" },
-  { name: "创建数据集", desc: "调用数据集创建工具" },
-  { name: "创建标注任务", desc: "创建标注任务" },
+  {
+    name: "联网搜索",
+    label: t("ai_chat.chatInput_cmdSearchName"),
+    desc: t("ai_chat.chatInput_cmdSearchDesc"),
+  },
+  {
+    name: "生成报告",
+    label: t("ai_chat.chatInput_cmdReportName"),
+    desc: t("ai_chat.chatInput_cmdReportDesc"),
+  },
+  {
+    name: "创建数据集",
+    label: t("ai_chat.chatInput_cmdDatasetName"),
+    desc: t("ai_chat.chatInput_cmdDatasetDesc"),
+  },
+  {
+    name: "创建标注任务",
+    label: t("ai_chat.chatInput_cmdAnnotateName"),
+    desc: t("ai_chat.chatInput_cmdAnnotateDesc"),
+  },
 ];
 
 /** 根据 `@` 后已输入文本过滤快捷指令。 */
 const filteredAtCommands = computed(() => {
   const q = atQuery.value.trim();
   if (!q) return atCommands;
-  return atCommands.filter((c) => c.name.includes(q) || c.desc.includes(q));
+  return atCommands.filter((c) => c.name.includes(q) || c.label.includes(q) || c.desc.includes(q));
 });
 
 /** 高亮 `#指令名` token。 */
@@ -259,7 +290,7 @@ onMounted(() => {
       extensions: [
         minimalSetup,
         EditorView.lineWrapping,
-        placeholder("输入消息…"),
+        placeholder(t("ai_chat.chatInput_placeholder")),
         mentionHighlight,
         EditorView.updateListener.of((u) => {
           if (u.docChanged) {
@@ -345,7 +376,7 @@ const handleFileChange = (uploadFile: UploadFile) => {
   if (!file) return;
   const maxSize = 10 * 1024 * 1024;
   if (file.size > maxSize) {
-    ElMessage.warning("文件大小不能超过10MB");
+    ElMessage.warning(t("ai_chat.chatInput_fileTooLarge"));
     return;
   }
   const uploadedFile: UploadedFile = {

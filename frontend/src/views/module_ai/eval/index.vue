@@ -1,22 +1,22 @@
 <template>
   <div class="app-container ai-eval-page">
     <el-tabs v-model="tab" type="border-card">
-      <el-tab-pane label="测试集" name="cases">
+      <el-tab-pane :label="$t('ai_workflow.eval_testset')" name="cases">
         <EvalCases />
       </el-tab-pane>
-      <el-tab-pane label="运行" name="run">
+      <el-tab-pane :label="$t('ai_workflow.eval_run')" name="run">
         <EvalRunPanel @started="onStarted" @finished="onFinished" @select="onSelect" />
       </el-tab-pane>
-      <el-tab-pane label="报表" name="report">
+      <el-tab-pane :label="$t('ai_workflow.eval_report')" name="report">
         <EvalReport :run-id="runId" />
       </el-tab-pane>
-      <el-tab-pane label="消融" name="ablation">
+      <el-tab-pane :label="$t('ai_workflow.eval_ablation')" name="ablation">
         <EvalAblation />
       </el-tab-pane>
-      <el-tab-pane label="方差" name="variance">
+      <el-tab-pane :label="$t('ai_workflow.eval_variance')" name="variance">
         <EvalVariance />
       </el-tab-pane>
-      <el-tab-pane label="基准测试" name="benchmark">
+      <el-tab-pane :label="$t('ai_workflow.eval_benchmark')" name="benchmark">
         <EvalBenchmark />
       </el-tab-pane>
     </el-tabs>

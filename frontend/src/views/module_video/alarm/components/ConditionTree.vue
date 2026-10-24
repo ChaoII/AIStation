@@ -7,16 +7,16 @@
       type="warning"
       :closable="false"
       show-icon
-      title="检测到历史一元 NOT 条件"
+      :title="t('video.cond.notAlertTitle')"
     >
       <div class="condition-tree__alert-tip">
-        当前条件树只支持 AND/OR，NOT 节点不可编辑；保存时按原样保留：
+        {{ t("video.cond.notTip") }}
       </div>
       <pre class="condition-tree__json">{{ stringify(notNodes) }}</pre>
     </el-alert>
 
     <!-- 叶子能力异步加载中 -->
-    <div v-if="loading" class="condition-tree__loading">正在加载规则能力…</div>
+    <div v-if="loading" class="condition-tree__loading">{{ t("video.cond.loadingCap") }}</div>
 
     <!-- 条件树主体：第三方 FilterBuilder；必须由 Willow 提供 .wx-willow-theme 变量，否则无样式 -->
     <Willow v-else :fonts="false">
@@ -25,7 +25,7 @@
 
     <!-- 无法识别的条件叶子：只读提示（保存时不保留，后端也会拒绝） -->
     <div v-if="unsupportedLeaves.length" class="condition-tree__section">
-      <div class="condition-tree__section-title">无法识别的条件（只读，保存时不保留）</div>
+      <div class="condition-tree__section-title">{{ t("video.cond.unsupportedTitle") }}</div>
       <div class="condition-tree__tags">
         <el-tag
           v-for="(leaf, i) in unsupportedLeaves"
@@ -34,14 +34,14 @@
           size="small"
           disable-transitions
         >
-          {{ leaf.subject || "未知叶子" }}
+          {{ leaf.subject || t("video.cond.unknownLeaf") }}
         </el-tag>
       </div>
     </div>
 
     <!-- 未实现叶子：库不支持禁用单个字段，故不进 fields，仅置灰列出 -->
     <div v-if="unavailableLeaves.length" class="condition-tree__section">
-      <div class="condition-tree__section-title">暂不支持的叶子</div>
+      <div class="condition-tree__section-title">{{ t("video.cond.unavailableTitle") }}</div>
       <div class="condition-tree__tags">
         <span
           v-for="leaf in unavailableLeaves"
@@ -49,14 +49,16 @@
           class="condition-tree__tag-pair"
         >
           <el-tag type="info" size="small" disable-transitions>{{ leaf.label }}</el-tag>
-          <el-tag type="info" size="small" effect="plain" disable-transitions>未实现</el-tag>
+          <el-tag type="info" size="small" effect="plain" disable-transitions>
+            {{ t("video.cond.notImplemented") }}
+          </el-tag>
         </span>
       </div>
     </div>
 
     <!-- 只读预览：便于核对将要保存的条件树 JSON -->
     <div class="condition-tree__section">
-      <div class="condition-tree__section-title">条件 JSON 预览（只读）</div>
+      <div class="condition-tree__section-title">{{ t("video.cond.previewTitle") }}</div>
       <pre class="condition-tree__json">{{ preview }}</pre>
     </div>
   </div>
@@ -74,6 +76,7 @@ import {
   type TType,
 } from "@svar-ui/vue-filter";
 import "@svar-ui/vue-filter/all.css";
+import { useI18n } from "vue-i18n";
 import { getRuleCapabilities, type LeafCapability } from "@/api/module_video/scene";
 import type { AlarmRuleScope } from "@/api/module_video/alarm";
 
@@ -109,6 +112,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{ "update:modelValue": [value: Record<string, unknown>] }>();
+const { t } = useI18n();
 
 /** 库的 filter id → 项目算子；e.g. greater→">"、equal→"=="、less→"<"（POC 实测 id） */
 const OP_MAP: Record<string, string> = {

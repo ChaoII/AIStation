@@ -5,36 +5,36 @@
 <template>
   <section class="ont-sec">
     <div class="ont-sec__head">
-      <span class="ont-sec__title">导入 / 导出</span>
+      <span class="ont-sec__title">{{ i18nT("ai_ontology.importExportTitle") }}</span>
     </div>
     <el-alert
       type="warning"
       :closable="false"
       class="ont-obj__note"
-      :title="`导出/导入作用于当前本体「${currentDomainName}」（整个 domain），不限于本对象类型。`"
+      :title="i18nT('ai_ontology.exportImportDomainNote', { name: currentDomainName })"
     />
 
     <!-- 导出 -->
     <div class="ont-imp__block">
-      <div class="ont-sec__title">导出本体</div>
+      <div class="ont-sec__title">{{ i18nT("ai_ontology.exportOntology") }}</div>
       <el-button size="small" type="primary" :loading="transferLoading" @click="doExport">
-        导出 JSON
+        {{ i18nT("ai_ontology.exportJson") }}
       </el-button>
-      <span class="ont-hint">下载当前本体的对象/属性/关系/动作定义，可用于迁移或备份</span>
+      <span class="ont-hint">{{ i18nT("ai_ontology.exportJsonHint") }}</span>
     </div>
 
     <!-- 导入 -->
     <div class="ont-imp__block">
-      <div class="ont-sec__title">导入本体</div>
+      <div class="ont-sec__title">{{ i18nT("ai_ontology.importOntology") }}</div>
       <el-upload :show-file-list="false" :auto-upload="false" accept=".json" @change="onImportFile">
-        <el-button size="small" :icon="Upload">选择 JSON 文件</el-button>
+        <el-button size="small" :icon="Upload">{{ i18nT("ai_ontology.selectJsonFile") }}</el-button>
       </el-upload>
       <el-input
         v-model="importText"
         type="textarea"
         :rows="6"
         class="ont-imp__area"
-        placeholder="粘贴本体 JSON，或点上方「选择 JSON 文件」读取。格式与导出一致。"
+        :placeholder="i18nT('ai_ontology.importTextPlaceholder')"
       />
       <div class="ont-imp__actions">
         <el-button
@@ -43,7 +43,7 @@
           :loading="transferLoading"
           @click="doImport('stage')"
         >
-          暂存导入
+          {{ i18nT("ai_ontology.stageImport") }}
         </el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
@@ -52,38 +52,42 @@
           :loading="transferLoading"
           @click="doImport('apply')"
         >
-          直接导入
+          {{ i18nT("ai_ontology.importDirectly") }}
         </el-button>
       </div>
       <el-alert
         type="info"
         :closable="false"
         class="ont-obj__note"
-        title="暂存导入 = 改动先进待保存列表；直接导入 = 立即写入并可能覆盖同名定义（会二次确认）。"
+        :title="i18nT('ai_ontology.stageImportNote')"
       />
     </div>
 
     <!-- 数据源批量导入 -->
     <div class="ont-imp__block">
-      <div class="ont-sec__title">从数据源批量导入</div>
+      <div class="ont-sec__title">{{ i18nT("ai_ontology.batchImportFromDataSource") }}</div>
       <div class="ont-imp__row">
         <el-select
           v-model="impDs"
           size="small"
           filterable
-          placeholder="选择数据源"
+          :placeholder="i18nT('ai_ontology.selectDataSource')"
           style="width: 260px"
           @change="onImportDsChange"
         >
           <el-option
             v-for="d in datasources"
             :key="d.id"
-            :label="`${d.name}（${d.table_count} 表）`"
+            :label="i18nT('ai_ontology.tableCountOption', { name: d.name, count: d.table_count })"
             :value="d.id"
           />
         </el-select>
-        <el-tag v-if="impDs" size="small" effect="plain">{{ impTableCount }} 张表</el-tag>
-        <el-checkbox v-model="impIncludeTechnical" size="small">含技术字段</el-checkbox>
+        <el-tag v-if="impDs" size="small" effect="plain">
+          {{ i18nT("ai_ontology.tablesCount", { count: impTableCount }) }}
+        </el-tag>
+        <el-checkbox v-model="impIncludeTechnical" size="small">
+          {{ i18nT("ai_ontology.includeTechnicalFields") }}
+        </el-checkbox>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           size="small"
@@ -92,15 +96,17 @@
           :loading="impLoading"
           @click="doBatchImport"
         >
-          开始导入
+          {{ i18nT("ai_ontology.startImport") }}
         </el-button>
       </div>
-      <span class="ont-hint">从数据源的表结构按列映射生成对象类型与属性</span>
+      <span class="ont-hint">
+        {{ i18nT("ai_ontology.generateObjectTypesAndPropertiesByMappingDataSourceColumns") }}
+      </span>
     </div>
 
     <!-- 行业模板 -->
     <div class="ont-imp__block">
-      <div class="ont-sec__title">应用行业模板</div>
+      <div class="ont-sec__title">{{ i18nT("ai_ontology.applyIndustryTemplate") }}</div>
       <div v-for="t in industryTemplates" :key="t.id" class="ont-imp__template">
         <div class="ont-imp__template-info">
           <div class="ont-imp__template-name">{{ t.name }}</div>
@@ -112,15 +118,20 @@
           :loading="tplLoading === t.id"
           @click="applyTemplate(t)"
         >
-          应用
+          {{ i18nT("ai_ontology.apps") }}
         </el-button>
       </div>
-      <el-empty v-if="!industryTemplates.length" :image-size="40" description="暂无行业模板" />
+      <el-empty
+        v-if="!industryTemplates.length"
+        :image-size="40"
+        :description="i18nT('ai_ontology.noIndustryTemplates')"
+      />
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox, type UploadFile } from "element-plus";
 import { Upload } from "@element-plus/icons-vue";
@@ -133,6 +144,8 @@ import {
   applyIndustryTemplate,
 } from "@/api/module_ai/query";
 import { useOntologyData } from "../composables/useOntologyData";
+
+const { t: i18nT } = useI18n();
 
 defineProps<{ code: string }>();
 
@@ -164,10 +177,15 @@ async function doExport() {
     URL.revokeObjectURL(url);
     const c = data.counts || {};
     ElMessage.success(
-      `已导出 ${c.objects || 0} 对象 / ${c.properties || 0} 属性 / ${c.links || 0} 关系 / ${c.actions || 0} 动作`
+      i18nT("ai_ontology.exportSummary", {
+        objects: c.objects || 0,
+        properties: c.properties || 0,
+        links: c.links || 0,
+        actions: c.actions || 0,
+      })
     );
   } catch (e: any) {
-    ElMessage.error(e?.msg || "导出失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.exportFailed"));
   } finally {
     transferLoading.value = false;
   }
@@ -178,15 +196,19 @@ async function doImport(mode: "stage" | "apply") {
   try {
     payload = JSON.parse(importText.value || "{}");
   } catch {
-    return ElMessage.error("JSON 解析失败，请检查粘贴内容");
+    return ElMessage.error(i18nT("ai_ontology.jsonParseFailedCheckContent"));
   }
-  if (!payload.objects) return ElMessage.error("不是合法的本体定义（缺少 objects）");
+  if (!payload.objects) return ElMessage.error(i18nT("ai_ontology.notValidOntologyMissingObjects"));
   if (mode === "apply") {
     try {
       await ElMessageBox.confirm(
-        "将把导入内容**直接写入**本体（不经过待保存列表），可能覆盖现有同名定义。确认直接导入？",
-        "直接导入",
-        { type: "warning", confirmButtonText: "直接导入", cancelButtonText: "取消" }
+        i18nT("ai_ontology.importDirectlyConfirm"),
+        i18nT("ai_ontology.importDirectly"),
+        {
+          type: "warning",
+          confirmButtonText: i18nT("ai_ontology.importDirectly"),
+          cancelButtonText: i18nT("ai_ontology.cancel"),
+        }
       );
     } catch {
       return;
@@ -195,12 +217,12 @@ async function doImport(mode: "stage" | "apply") {
   transferLoading.value = true;
   try {
     const r = await importOntology(payload, mode);
-    ElMessage.success(r.data?.msg || "已导入");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.imported"));
     await reloadAll();
     await refreshWip();
     if (mode === "stage") importText.value = "";
   } catch (e: any) {
-    ElMessage.error(e?.msg || "导入失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.importFailed"));
   } finally {
     transferLoading.value = false;
   }
@@ -253,10 +275,12 @@ async function doBatchImport() {
   try {
     const r = await importDsAsOntologyBatch(impDs.value, null, impIncludeTechnical.value);
     const d = r.data?.data || {};
-    ElMessage.success(r.data?.msg || `已导入 ${d.imported ?? 0} 个对象`);
+    ElMessage.success(
+      r.data?.msg || i18nT("ai_ontology.importedObjects", { count: d.imported ?? 0 })
+    );
     await reloadAll();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "导入失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.importFailed"));
   } finally {
     impLoading.value = false;
   }
@@ -266,10 +290,10 @@ async function applyTemplate(t: any) {
   tplLoading.value = t.id;
   try {
     const r = await applyIndustryTemplate(t.id);
-    ElMessage.success(r.data?.msg || `已应用模板「${t.name}」`);
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.appliedTemplate", { name: t.name }));
     await reloadAll();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "应用失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.applyFailed"));
   } finally {
     tplLoading.value = "";
   }

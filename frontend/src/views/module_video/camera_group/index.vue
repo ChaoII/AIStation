@@ -37,7 +37,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('video.common.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -49,14 +49,14 @@
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               type="index"
               fixed
-              label="序号"
+              :label="t('video.common.sequence')"
               min-width="60"
               align="center"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="分组名称"
+              :label="t('video.cameraGroup.groupName')"
               prop="name"
               min-width="160"
               show-overflow-tooltip
@@ -64,7 +64,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'sort_order')?.show"
               key="sort_order"
-              label="排序"
+              :label="t('video.common.sortOrder')"
               prop="sort_order"
               width="80"
               align="center"
@@ -72,21 +72,21 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('video.common.status')"
               prop="status"
               width="80"
               align="center"
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status ? 'success' : 'danger'" size="small">
-                  {{ scope.row.status ? "启用" : "停用" }}
+                  {{ scope.row.status ? t("video.common.enabled") : t("video.common.disabled") }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'description')?.show"
               key="description"
-              label="备注"
+              :label="t('video.cameraGroup.remark')"
               prop="description"
               min-width="160"
               show-overflow-tooltip
@@ -94,14 +94,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_at')?.show"
               key="created_at"
-              label="创建时间"
+              :label="t('video.common.createdTime')"
               prop="created_at"
               min-width="170"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('video.common.operation')"
               align="center"
               width="160"
             >
@@ -114,7 +114,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("video.common.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:camera:delete']"
@@ -124,7 +124,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("video.common.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -147,16 +147,16 @@
         label-width="100px"
         size="default"
       >
-        <el-form-item label="分组名称" prop="name">
-          <el-input v-model="formData.name" placeholder="请输入分组名称" />
+        <el-form-item :label="t('video.cameraGroup.groupName')" prop="name">
+          <el-input v-model="formData.name" :placeholder="t('video.cameraGroup.enterGroupName')" />
         </el-form-item>
-        <el-form-item label="上级分组" prop="parent_id">
+        <el-form-item :label="t('video.cameraGroup.parentGroup')" prop="parent_id">
           <el-tree-select
             v-model="formData.parent_id"
             :data="treeOptions"
             :props="{ children: 'children', label: 'label', disabled: 'disabled' }"
             value-key="value"
-            placeholder="请选择上级分组（不选为顶级）"
+            :placeholder="t('video.cameraGroup.selectParent')"
             clearable
             filterable
             style="width: 100%"
@@ -164,28 +164,34 @@
         </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="排序" prop="sort_order">
+            <el-form-item :label="t('video.common.sortOrder')" prop="sort_order">
               <el-input-number v-model="formData.sort_order" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="状态" prop="status">
-              <el-switch v-model="formData.status" active-text="启用" inactive-text="停用" />
+            <el-form-item :label="t('video.common.status')" prop="status">
+              <el-switch
+                v-model="formData.status"
+                :active-text="t('video.common.enabled')"
+                :inactive-text="t('video.common.disabled')"
+              />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="备注" prop="description">
+        <el-form-item :label="t('video.cameraGroup.remark')" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="2"
-            placeholder="可选备注信息"
+            :placeholder="t('video.common.optionalRemark')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("video.common.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("video.common.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
   </div>
@@ -194,6 +200,7 @@
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount } from "vue";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import {
   getCameraGroupList,
   createCameraGroup,
@@ -211,6 +218,7 @@ interface TablePageQuery {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const { t } = useI18n();
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
@@ -226,9 +234,9 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "分组名称",
+      label: t("video.cameraGroup.groupName"),
       type: "input",
-      attrs: { placeholder: "请输入分组名称", clearable: true },
+      attrs: { placeholder: t("video.cameraGroup.enterGroupName"), clearable: true },
     },
   ],
 });
@@ -240,14 +248,14 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "分组名称", show: true },
-  { prop: "sort_order", label: "排序", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "description", label: "备注", show: true },
-  { prop: "created_at", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "name", label: t("video.cameraGroup.groupName"), show: true },
+  { prop: "sort_order", label: t("video.common.sortOrder"), show: true },
+  { prop: "status", label: t("video.common.status"), show: true },
+  { prop: "description", label: t("video.cameraGroup.remark"), show: true },
+  { prop: "created_at", label: t("video.common.createdTime"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 async function fetchGroupData(params?: any) {
@@ -300,8 +308,8 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除该分组? 子分组将一并删除。",
+    title: t("video.common.warning"),
+    message: t("video.cameraGroup.deleteGroupConfirm"),
     type: "warning",
   },
 });
@@ -335,7 +343,7 @@ const initialFormData = {
 };
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入分组名称", trigger: "blur" }],
+  name: [{ required: true, message: t("video.cameraGroup.enterGroupName"), trigger: "blur" }],
 });
 
 async function resetForm() {
@@ -370,7 +378,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   const treeList = res.data.data || [];
   dialogVisible.type = type;
   if (id && type === "update") {
-    dialogVisible.title = "编辑分组";
+    dialogVisible.title = t("video.cameraGroup.editGroup");
     const item = rawList.value.find((i: any) => i.id === id);
     if (item) {
       formData.id = item.id;
@@ -382,7 +390,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
     }
     treeOptions.value = formatTree(excludeSelfAndChildren(treeList, id));
   } else {
-    dialogVisible.title = "新增分组";
+    dialogVisible.title = t("video.cameraGroup.addGroup");
     Object.assign(formData, initialFormData);
     treeOptions.value = formatTree(treeList);
   }
@@ -400,7 +408,7 @@ async function handleSubmit() {
         } else {
           await createCameraGroup(formData);
         }
-        ElMessage.success("保存成功");
+        ElMessage.success(t("video.common.saveSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();

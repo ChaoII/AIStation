@@ -39,7 +39,6 @@ const AuthAPI = {
       data: body,
     });
   },
-
 };
 
 export default AuthAPI;

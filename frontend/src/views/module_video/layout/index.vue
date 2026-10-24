@@ -33,7 +33,9 @@
             stripe
             @selection-change="onSelectionChange"
           >
-            <template #empty><el-empty :image-size="80" description="暂无数据" /></template>
+            <template #empty>
+              <el-empty :image-size="80" :description="t('video.common.noData')" />
+            </template>
             <el-table-column
               v-if="contentCols.find((c) => c.prop === 'selection')?.show"
               type="selection"
@@ -43,7 +45,7 @@
             <el-table-column
               v-if="contentCols.find((c) => c.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('video.common.sequence')"
               width="60"
             >
               <template #default="scope">
@@ -53,7 +55,7 @@
             <el-table-column
               v-if="contentCols.find((c) => c.prop === 'name')?.show"
               key="name"
-              label="布局名称"
+              :label="t('video.layout.layoutName')"
               prop="name"
               min-width="140"
               show-overflow-tooltip
@@ -61,36 +63,47 @@
             <el-table-column
               v-if="contentCols.find((c) => c.prop === 'grid_type')?.show"
               key="grid_type"
-              label="画面数"
+              :label="t('video.layout.gridCount')"
               width="80"
               align="center"
             >
-              <template #default="scope">{{ scope.row.grid_type }}路</template>
+              <template #default="scope">
+                {{ scope.row.grid_type }}{{ t("video.live.way") }}
+              </template>
             </el-table-column>
-            <el-table-column key="preview" label="预览" width="120" align="center">
+            <el-table-column
+              key="preview"
+              :label="t('video.layout.preview')"
+              width="120"
+              align="center"
+            >
               <template #default="scope">
                 <span class="preview-svg" v-html="layoutSvg(scope.row.grid_type)" />
               </template>
             </el-table-column>
-            <el-table-column label="模板" width="60" align="center">
+            <el-table-column :label="t('video.layout.template')" width="60" align="center">
               <template #default="scope">
-                <el-tag v-if="scope.row.is_template" type="warning" size="small">模板</el-tag>
+                <el-tag v-if="scope.row.is_template" type="warning" size="small">
+                  {{ t("video.layout.template") }}
+                </el-tag>
                 <span v-else style="color: var(--el-text-color-placeholder)">-</span>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((c) => c.prop === 'is_default')?.show"
               key="is_default"
-              label="默认"
+              :label="t('video.layout.default')"
               width="60"
               align="center"
             >
               <template #default="scope">
-                <el-tag v-if="scope.row.is_default" type="success" size="small">默认</el-tag>
+                <el-tag v-if="scope.row.is_default" type="success" size="small">
+                  {{ t("video.layout.default") }}
+                </el-tag>
                 <span v-else style="color: var(--el-text-color-placeholder)">-</span>
               </template>
             </el-table-column>
-            <el-table-column label="轮巡" width="80" align="center">
+            <el-table-column :label="t('video.layout.tour')" width="80" align="center">
               <template #default="scope">
                 <span v-if="scope.row.patrol_interval" class="patrol-cell">
                   {{ scope.row.patrol_interval }}s
@@ -101,12 +114,17 @@
             <el-table-column
               v-if="contentCols.find((c) => c.prop === 'description')?.show"
               key="description"
-              label="描述"
+              :label="t('video.common.description')"
               prop="description"
               min-width="140"
               show-overflow-tooltip
             />
-            <el-table-column fixed="right" label="操作" align="center" min-width="200">
+            <el-table-column
+              fixed="right"
+              :label="t('video.common.operation')"
+              align="center"
+              min-width="200"
+            >
               <template #default="scope">
                 <div style="display: flex; flex-direction: column; gap: 4px">
                   <div style="display: flex; gap: 4px; justify-content: center">
@@ -117,7 +135,7 @@
                       icon="View"
                       @click="handlePreview(scope.row)"
                     >
-                      预览
+                      {{ t("video.layout.preview") }}
                     </el-button>
                     <el-button
                       size="small"
@@ -126,7 +144,7 @@
                       icon="VideoPlay"
                       @click="handleApplyLayout(scope.row)"
                     >
-                      应用
+                      {{ t("video.layout.apply") }}
                     </el-button>
                   </div>
                   <div style="display: flex; gap: 4px; justify-content: center">
@@ -137,25 +155,29 @@
                       icon="FullScreen"
                       @click="handleBigScreen(scope.row)"
                     >
-                      大屏
+                      {{ t("video.layout.bigScreen") }}
                     </el-button>
                     <el-dropdown
                       trigger="click"
                       @command="(cmd: string) => handleMoreAction(cmd, scope.row)"
                     >
-                      <el-button size="small" type="info" link icon="MoreFilled">更多</el-button>
+                      <el-button size="small" type="info" link icon="MoreFilled">
+                        {{ t("video.layout.more") }}
+                      </el-button>
                       <template #dropdown>
                         <el-dropdown-menu>
-                          <el-dropdown-item command="edit" icon="edit">编辑</el-dropdown-item>
+                          <el-dropdown-item command="edit" icon="edit">
+                            {{ t("video.common.edit") }}
+                          </el-dropdown-item>
                           <el-dropdown-item command="duplicate" icon="CopyDocument">
-                            复制
+                            {{ t("video.layout.duplicate") }}
                           </el-dropdown-item>
                           <el-dropdown-item
                             v-if="!scope.row.is_default"
                             command="setDefault"
                             icon="Star"
                           >
-                            设为默认
+                            {{ t("video.layout.setDefault") }}
                           </el-dropdown-item>
                           <el-dropdown-item
                             command="delete"
@@ -163,7 +185,7 @@
                             divided
                             style="color: var(--el-color-danger)"
                           >
-                            删除
+                            {{ t("video.common.delete") }}
                           </el-dropdown-item>
                         </el-dropdown-menu>
                       </template>
@@ -186,10 +208,10 @@
       @close="handleCloseDialog"
     >
       <el-form ref="dataFormRef" :model="formData" label-width="100px" size="default">
-        <el-form-item label="布局名称" prop="name">
-          <el-input v-model="formData.name" placeholder="例如：4路默认" />
+        <el-form-item :label="t('video.layout.layoutName')" prop="name">
+          <el-input v-model="formData.name" :placeholder="t('video.layout.nameExample')" />
         </el-form-item>
-        <el-form-item label="画面数" prop="grid_type">
+        <el-form-item :label="t('video.layout.gridCount')" prop="grid_type">
           <div class="grid-type-picker">
             <button
               v-for="g in gridOptions"
@@ -203,13 +225,13 @@
             </button>
           </div>
         </el-form-item>
-        <el-form-item label="设为默认">
+        <el-form-item :label="t('video.layout.setAsDefault')">
           <el-switch v-model="formData.is_default" />
         </el-form-item>
-        <el-form-item label="标记为模板">
+        <el-form-item :label="t('video.layout.markTemplate')">
           <el-switch v-model="formData.is_template" />
         </el-form-item>
-        <el-form-item label="轮巡间隔" prop="patrol_interval">
+        <el-form-item :label="t('video.layout.tourInterval')" prop="patrol_interval">
           <div style="display: flex; align-items: center; gap: 8px">
             <el-input-number
               v-model="formData.patrol_interval"
@@ -218,23 +240,25 @@
               :step="5"
               controls-position="right"
               style="width: 140px"
-              placeholder="0 表示不轮巡"
+              :placeholder="t('video.layout.zeroNoTour')"
             />
-            <span class="field-hint">秒（0 表示不轮巡）</span>
+            <span class="field-hint">{{ t("video.layout.secondsHint") }}</span>
           </div>
         </el-form-item>
-        <el-form-item label="备注" prop="description">
+        <el-form-item :label="t('video.common.description')" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="2"
-            placeholder="可选描述"
+            :placeholder="t('video.layout.optionalDesc')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("video.common.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("video.common.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
@@ -255,12 +279,12 @@
             <span class="preview-cell-id">#{{ previewWindows[`w${i}`] }}</span>
           </div>
           <div v-else class="preview-cell-inner">
-            <span class="preview-cell-empty-icon">空</span>
+            <span class="preview-cell-empty-icon">{{ t("video.layout.empty") }}</span>
           </div>
           <div class="preview-cell-edit">
             <el-select
               v-model="previewWindows[`w${i}`]"
-              placeholder="选择摄像机"
+              :placeholder="t('video.layout.selectCamera')"
               size="small"
               clearable
               filterable
@@ -274,9 +298,9 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="previewVisible = false">关闭</el-button>
+        <el-button @click="previewVisible = false">{{ t("video.layout.close") }}</el-button>
         <el-button type="primary" :loading="savingWindows" @click="handleSaveWindows">
-          保存窗口分配
+          {{ t("video.layout.saveWindows") }}
         </el-button>
       </template>
     </el-dialog>
@@ -286,6 +310,7 @@
 <script setup lang="ts">
 import { ref, reactive } from "vue";
 import { useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { getLayoutList, createLayout, updateLayout, deleteLayout } from "@/api/module_video/layout";
 import { getCameraList } from "@/api/module_video/camera";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -301,18 +326,19 @@ interface TablePageQuery {
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const router = useRouter();
+const { t } = useI18n();
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
 
 const gridOptions = [
-  { label: "1路", value: "1" },
-  { label: "4路", value: "4" },
-  { label: "6路", value: "6" },
-  { label: "8路", value: "8" },
-  { label: "9路", value: "9" },
-  { label: "13路", value: "13" },
-  { label: "16路", value: "16" },
+  { label: t("video.layout.way1"), value: "1" },
+  { label: t("video.layout.way4"), value: "4" },
+  { label: t("video.layout.way6"), value: "6" },
+  { label: t("video.layout.way8"), value: "8" },
+  { label: t("video.layout.way9"), value: "9" },
+  { label: t("video.layout.way13"), value: "13" },
+  { label: t("video.layout.way16"), value: "16" },
 ];
 
 const searchConfig = reactive<ISearchConfig>({
@@ -324,28 +350,32 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "布局名称",
+      label: t("video.layout.layoutName"),
       type: "input",
-      attrs: { placeholder: "请输入布局名称", clearable: true },
+      attrs: { placeholder: t("video.layout.enterLayoutName"), clearable: true },
     },
     {
       prop: "grid_type",
-      label: "画面数",
+      label: t("video.layout.gridCount"),
       type: "select",
       options: gridOptions,
-      attrs: { placeholder: "请选择画面数", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("video.layout.selectGridCount"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
 
 const contentCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "布局名称", show: true },
-  { prop: "grid_type", label: "画面数", show: true },
-  { prop: "is_default", label: "默认布局", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "name", label: t("video.layout.layoutName"), show: true },
+  { prop: "grid_type", label: t("video.layout.gridCount"), show: true },
+  { prop: "is_default", label: t("video.layout.defaultLayout"), show: true },
+  { prop: "description", label: t("video.common.description"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -370,8 +400,8 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("video.common.warning"),
+    message: t("video.common.deleteConfirmMsg"),
     type: "warning",
   },
 });
@@ -465,7 +495,7 @@ async function handleSaveWindows() {
         grid_type: String(previewCount.value),
       },
     });
-    ElMessage.success("窗口分配已保存");
+    ElMessage.success(t("video.layout.windowsSaved"));
     previewVisible.value = false;
     refreshList();
   } catch {
@@ -489,18 +519,18 @@ async function handleMoreAction(cmd: string, row: any) {
     handleRowDelete(row.id);
   } else if (cmd === "duplicate") {
     await createLayout({
-      name: `${row.name} (副本)`,
+      name: t("video.layout.duplicateCopy", { name: row.name }),
       grid_type: row.grid_type,
       layout_config: row.layout_config,
       is_default: false,
       is_template: false,
       description: row.description,
     });
-    ElMessage.success("已复制布局");
+    ElMessage.success(t("video.layout.layoutCopied"));
     refreshList();
   } else if (cmd === "setDefault") {
     await updateLayout(row.id, { is_default: true });
-    ElMessage.success("已设为默认布局");
+    ElMessage.success(t("video.layout.setDefaultDone"));
     refreshList();
   }
 }
@@ -553,12 +583,12 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   fetchCameras();
   if (id && type === "update") {
-    dialogVisible.title = "编辑布局";
+    dialogVisible.title = t("video.layout.editLayout");
     const res = await getLayoutList({ page_no: 1, page_size: 100 });
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) Object.assign(formData, item);
   } else {
-    dialogVisible.title = "新建布局";
+    dialogVisible.title = t("video.layout.newLayout");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -570,7 +600,7 @@ async function handleSubmit() {
   try {
     if (id) await updateLayout(id, { ...formData, id });
     else await createLayout(formData);
-    ElMessage.success("保存成功");
+    ElMessage.success(t("video.common.saveSuccess"));
     dialogVisible.visible = false;
     await resetForm();
     refreshList();

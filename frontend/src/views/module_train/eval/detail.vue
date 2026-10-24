@@ -4,7 +4,7 @@
       <el-button text size="small" @click="router.back()">
         <el-icon><ArrowLeft /></el-icon>
       </el-button>
-      <span class="task-name">评估 #{{ evalData?.id }}</span>
+      <span class="task-name">{{ t("train.evalDetailTitle", { id: evalData?.id }) }}</span>
       <el-tag :type="tagType(evalData?.status || '') as any" size="small">
         {{ tagLabel(evalData?.status || "") }}
       </el-tag>
@@ -13,33 +13,39 @@
     <el-row :gutter="16">
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="info-card">
-          <template #header><span class="card-title">评估信息</span></template>
+          <template #header>
+            <span class="card-title">{{ t("train.evalInfo") }}</span>
+          </template>
           <el-descriptions :column="1" size="small" border>
-            <el-descriptions-item label="模型仓库 ID">
+            <el-descriptions-item :label="t('train.modelRepoId')">
               {{ evalData?.model_repo_id }}
             </el-descriptions-item>
-            <el-descriptions-item label="模型版本 ID">
+            <el-descriptions-item :label="t('train.modelVersionId')">
               {{ evalData?.model_id || "—" }}
             </el-descriptions-item>
-            <el-descriptions-item label="评估数据集">
+            <el-descriptions-item :label="t('train.evalDataset')">
               {{ evalData?.eval_dataset_name || `#${evalData?.eval_dataset_id}` }}
             </el-descriptions-item>
-            <el-descriptions-item label="创建时间">
+            <el-descriptions-item :label="t('train.createdTime')">
               {{ evalData?.created_time }}
             </el-descriptions-item>
-            <el-descriptions-item label="开始时间">
+            <el-descriptions-item :label="t('train.startedTime')">
               {{ evalData?.started_at || "—" }}
             </el-descriptions-item>
-            <el-descriptions-item label="完成时间">
+            <el-descriptions-item :label="t('train.finishedTime')">
               {{ evalData?.finished_at || "—" }}
             </el-descriptions-item>
-            <el-descriptions-item label="耗时">{{ durationText }}</el-descriptions-item>
+            <el-descriptions-item :label="t('train.duration')">
+              {{ durationText }}
+            </el-descriptions-item>
           </el-descriptions>
         </el-card>
       </el-col>
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="info-card">
-          <template #header><span class="card-title">评估参数</span></template>
+          <template #header>
+            <span class="card-title">{{ t("train.evalParams") }}</span>
+          </template>
           <div class="hp-grid">
             <div class="hp-item">
               <span class="hp-label">imgsz</span>
@@ -58,7 +64,7 @@
               <span class="hp-value">{{ evalData?.hyperparams?.iou ?? 0.6 }}</span>
             </div>
             <div class="hp-item">
-              <span class="hp-label">GPU 设备</span>
+              <span class="hp-label">{{ t("train.gpuDevice") }}</span>
               <span class="hp-value">{{ evalData?.hyperparams?.device ?? "0" }}</span>
             </div>
           </div>
@@ -67,7 +73,9 @@
     </el-row>
 
     <el-card shadow="never" class="section-card">
-      <template #header><span class="card-title">操作</span></template>
+      <template #header>
+        <span class="card-title">{{ t("train.action") }}</span>
+      </template>
       <div class="action-buttons">
         <template v-if="evalData?.status === 'pending'">
           <el-button
@@ -76,7 +84,7 @@
             size="default"
             @click="handleStart"
           >
-            开始评估
+            {{ t("train.startEval") }}
           </el-button>
           <el-button
             v-hasPerm="'module_train:eval:delete'"
@@ -84,7 +92,7 @@
             size="default"
             @click="handleDelete"
           >
-            删除
+            {{ t("train.delete") }}
           </el-button>
         </template>
         <template v-else-if="evalData?.status === 'running'">
@@ -94,16 +102,12 @@
             size="default"
             @click="handleStop"
           >
-            停止评估
+            {{ t("train.stopEval") }}
           </el-button>
         </template>
         <template v-else-if="evalData?.status === 'success'">
-          <el-button
-            v-hasPerm="'module_train:eval:create'"
-            size="default"
-            @click="handleReEval"
-          >
-            重新评估
+          <el-button v-hasPerm="'module_train:eval:create'" size="default" @click="handleReEval">
+            {{ t("train.reEval") }}
           </el-button>
           <el-button
             v-hasPerm="'module_train:eval:delete'"
@@ -111,7 +115,7 @@
             size="default"
             @click="handleDelete"
           >
-            删除
+            {{ t("train.delete") }}
           </el-button>
         </template>
         <template v-else-if="evalData?.status === 'failed'">
@@ -121,10 +125,10 @@
             size="default"
             @click="handleReEval"
           >
-            重新评估
+            {{ t("train.reEval") }}
           </el-button>
           <el-button v-hasPerm="'module_train:eval:query'" size="default" @click="scrollToLog">
-            查看日志
+            {{ t("train.viewLog") }}
           </el-button>
           <el-button
             v-hasPerm="'module_train:eval:delete'"
@@ -132,7 +136,7 @@
             size="default"
             @click="handleDelete"
           >
-            删除
+            {{ t("train.delete") }}
           </el-button>
         </template>
         <template v-else-if="evalData?.status === 'cancelled'">
@@ -142,14 +146,16 @@
             size="default"
             @click="handleReEval"
           >
-            重新评估
+            {{ t("train.reEval") }}
           </el-button>
         </template>
       </div>
     </el-card>
 
     <el-card shadow="never" class="section-card">
-      <template #header><span class="card-title">评估指标</span></template>
+      <template #header>
+        <span class="card-title">{{ t("train.evalMetrics") }}</span>
+      </template>
       <!--
         指标清单来自 metrics **本身**（scalarMetricKeys），不按框架硬编码 ——
         模型算出什么就显示什么。格式化走 fmtMetricValue（按 key + 数值区间双判定），
@@ -168,7 +174,7 @@
           </div>
         </el-col>
       </el-row>
-      <el-empty v-else :image-size="40" description="暂无评估指标" />
+      <el-empty v-else :image-size="40" :description="t('train.evalMetricNoData')" />
     </el-card>
 
     <!--
@@ -179,7 +185,9 @@
     -->
     <el-card v-if="histSpec.length" shadow="never" class="section-card">
       <template #header>
-        <span class="card-title">历史评估趋势（{{ histEvals.length }} 次）</span>
+        <span class="card-title">
+          {{ t("train.evalHistoryTrend", { count: histEvals.length }) }}
+        </span>
       </template>
       <el-row :gutter="12">
         <el-col v-for="s in histSpec" :key="s.key" :xs="24" :sm="12" :md="8" :lg="6">
@@ -194,7 +202,7 @@
               :points="histSeries[s.key] || []"
               :color="s.color"
               :height="132"
-              x-label="评估次序"
+              :x-label="t('train.evalOrder')"
             />
           </el-card>
         </el-col>
@@ -203,9 +211,11 @@
 
     <!-- Per-class metrics table -->
     <el-card v-if="evalData?.metrics?.classes" shadow="never" class="section-card">
-      <template #header><span class="card-title">各类别指标</span></template>
+      <template #header>
+        <span class="card-title">{{ t("train.classMetrics") }}</span>
+      </template>
       <el-table stripe :data="classTableData" border size="small" style="width: 100%">
-        <el-table-column prop="cls" label="类别" width="100" />
+        <el-table-column prop="cls" :label="t('train.className')" width="100" />
         <el-table-column label="Precision">
           <template #default="{ row }">{{ fmtPct(row.precision) }}</template>
         </el-table-column>
@@ -223,7 +233,7 @@
 
     <el-alert
       v-if="evalData?.error_log"
-      title="评估失败"
+      :title="t('train.evalFailed')"
       type="error"
       :description="evalData.error_log.slice(0, 500)"
       show-icon
@@ -235,44 +245,50 @@
     <el-card shadow="never" class="section-card">
       <template #header>
         <div class="log-header">
-          <span class="card-title">评估日志</span>
+          <span class="card-title">{{ t("train.evalLog") }}</span>
           <div class="log-controls">
             <span class="log-status" :class="{ connected: wsConnected }">
-              {{ wsConnected ? "已连接" : "未连接" }}
+              {{ wsConnected ? t("train.connected") : t("train.disconnected") }}
             </span>
-            <span class="log-line-count">{{ logLineCount }} 行</span>
+            <span class="log-line-count">{{ t("train.logLines", { count: logLineCount }) }}</span>
             <el-switch
               v-model="autoScroll"
-              active-text="自动滚动"
+              :active-text="t('train.autoScroll')"
               size="small"
               style="margin-right: 8px"
             />
-            <el-button size="small" text icon="Delete" @click="clearLogs">清空</el-button>
+            <el-button size="small" text icon="Delete" @click="clearLogs">
+              {{ t("train.clear") }}
+            </el-button>
           </div>
         </div>
       </template>
       <div ref="logRef" class="log-container">
-        <pre class="log-text">{{ logText || "等待日志..." }}</pre>
+        <pre class="log-text">{{ logText || t("train.waitingLog") }}</pre>
       </div>
     </el-card>
 
     <el-card v-if="evalData?.model_repo_id" shadow="never" class="section-card">
-      <template #header><span class="card-title">模型输出</span></template>
+      <template #header>
+        <span class="card-title">{{ t("train.modelOutput") }}</span>
+      </template>
       <el-descriptions :column="2" size="small" border>
-        <el-descriptions-item label="模型仓库 ID">
+        <el-descriptions-item :label="t('train.modelRepoId')">
           <el-tag size="small">{{ evalData.model_repo_id }}</el-tag>
         </el-descriptions-item>
       </el-descriptions>
       <div style="margin-top: 12px">
-        <el-button type="primary" size="default" @click="handleViewModel">查看模型</el-button>
-        <el-button size="default" @click="handleExport">导出模型</el-button>
+        <el-button type="primary" size="default" @click="handleViewModel">
+          {{ t("train.viewModel") }}
+        </el-button>
+        <el-button size="default" @click="handleExport">{{ t("train.exportModel") }}</el-button>
         <el-button
           v-if="evalData?.status === 'success'"
           size="default"
           type="primary"
           @click="handleGoPredict"
         >
-          去预测
+          {{ t("train.goPredict") }}
         </el-button>
       </div>
     </el-card>
@@ -280,7 +296,7 @@
     <ModelExportDialog
       v-model="exportDialogVisible"
       :model-id="evalData?.model_id || 0"
-      :model-name="evalData?.model_id ? `评估 #${evalData?.id}` : ''"
+      :model-name="evalData?.model_id ? t('train.evalDetailTitle', { id: evalData?.id }) : ''"
       @done="loadEval"
     />
   </div>
@@ -289,6 +305,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowLeft } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
@@ -305,6 +322,7 @@ import ModelExportDialog from "@/components/ModelExportDialog/index.vue";
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const evalData = ref<any>(null);
 const logText = ref("");
 const logRef = ref<HTMLElement | null>(null);
@@ -332,11 +350,11 @@ function tagLabel(s: string) {
   return (
     (
       {
-        pending: "待开始",
-        running: "评估中",
-        success: "已完成",
-        failed: "失败",
-        cancelled: "已取消",
+        pending: t("train.statusPending"),
+        running: t("train.evalStatusRunning"),
+        success: t("train.statusSuccess"),
+        failed: t("train.statusFailed"),
+        cancelled: t("train.statusCancelled"),
       } as any
     )[s] || s
   );
@@ -459,9 +477,16 @@ const durationText = computed(() => {
     ? new Date(evalData.value.finished_at).getTime()
     : Date.now();
   const diff = Math.floor((end - start) / 1000);
-  if (diff < 60) return `${diff}秒`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}分${diff % 60}秒`;
-  return `${Math.floor(diff / 3600)}时${Math.floor((diff % 3600) / 60)}分`;
+  if (diff < 60) return t("train.durationSeconds", { count: diff });
+  if (diff < 3600)
+    return t("train.durationMinutesSeconds", {
+      minutes: Math.floor(diff / 60),
+      seconds: diff % 60,
+    });
+  return t("train.durationHoursMinutes", {
+    hours: Math.floor(diff / 3600),
+    minutes: Math.floor((diff % 3600) / 60),
+  });
 });
 
 function connectWs(evalId: number) {
@@ -536,11 +561,15 @@ async function handleStart() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm(`确定开始评估任务 #${evalData.value?.id}？`, "提示", {
-      type: "info",
-    });
+    await ElMessageBox.confirm(
+      t("train.startEvalDetailConfirm", { id: evalData.value?.id }),
+      t("train.tipTitle"),
+      {
+        type: "info",
+      }
+    );
     await TrainAPI.startEval(evalData.value.id);
-    ElMessage.success("已启动");
+    ElMessage.success(t("train.started"));
     await loadEval();
     connectWs(evalData.value.id);
     startPoll();
@@ -555,9 +584,11 @@ async function handleStop() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm("确定停止该评估？", "提示", { type: "warning" });
+    await ElMessageBox.confirm(t("train.stopEvalConfirm"), t("train.tipTitle"), {
+      type: "warning",
+    });
     await TrainAPI.stopEval(evalData.value.id);
-    ElMessage.success("已停止");
+    ElMessage.success(t("train.stopped"));
     await loadEval();
   } catch {
     /* */
@@ -570,12 +601,16 @@ async function handleDelete() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm(`确定删除评估 #${evalData.value?.id}？`, "提示", {
-      type: "warning",
-      confirmButtonText: "删除",
-    });
+    await ElMessageBox.confirm(
+      t("train.deleteEvalConfirm", { id: evalData.value?.id }),
+      t("train.tipTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("train.delete"),
+      }
+    );
     await TrainAPI.deleteEval([evalData.value.id]);
-    ElMessage.success("删除成功");
+    ElMessage.success(t("train.deleteSuccess"));
     router.push("/train/eval");
   } catch {
     /* */
@@ -593,9 +628,9 @@ async function handleReEval() {
   }
   try {
     await ElMessageBox.confirm(
-      `确定重新评估 #${evalData.value.id}？将清除之前的评估结果。`,
-      "重新评估",
-      { type: "warning", confirmButtonText: "确定重新评估" }
+      t("train.reEvalConfirm", { id: evalData.value.id }),
+      t("train.reEval"),
+      { type: "warning", confirmButtonText: t("train.reEvalConfirmBtn") }
     );
     stopPoll();
     if (ws) {
@@ -617,12 +652,12 @@ async function handleReEval() {
 function handleViewModel() {
   if (evalData.value?.model_repo_id)
     router.push(`/train/repo?model_id=${evalData.value.model_repo_id}`);
-  else ElMessage.warning("暂无关联模型");
+  else ElMessage.warning(t("train.noLinkedModel"));
 }
 
 function handleGoPredict() {
   if (!evalData.value?.model_id) {
-    ElMessage.warning("暂无模型版本，无法预测");
+    ElMessage.warning(t("train.noModelVersion"));
     return;
   }
   router.push({
@@ -639,7 +674,7 @@ const exportDialogVisible = ref(false);
 
 function handleExport() {
   if (!evalData.value?.model_id) {
-    ElMessage.warning("暂无关联模型");
+    ElMessage.warning(t("train.noLinkedModel"));
     return;
   }
   // 导出需要版本 id（model_id），仓库 id 不能用于 export 接口
@@ -648,11 +683,11 @@ function handleExport() {
       if (res.data?.data) {
         exportDialogVisible.value = true;
       } else {
-        ElMessage.error("关联模型已不存在");
+        ElMessage.error(t("train.modelNotExist"));
       }
     })
     .catch(() => {
-      ElMessage.error("关联模型已不存在");
+      ElMessage.error(t("train.modelNotExist"));
     });
 }
 

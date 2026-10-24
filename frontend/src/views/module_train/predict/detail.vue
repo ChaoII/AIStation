@@ -4,7 +4,7 @@
       <el-button text size="small" @click="router.back()">
         <el-icon><ArrowLeft /></el-icon>
       </el-button>
-      <span class="task-name">预测 #{{ predict?.id }}</span>
+      <span class="task-name">{{ t("train.predictDetailTitle", { id: predict?.id }) }}</span>
       <el-tag :type="tagType(predict?.status || '') as any" size="small">
         {{ tagLabel(predict?.status || "") }}
       </el-tag>
@@ -13,34 +13,42 @@
     <el-row :gutter="16">
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="info-card">
-          <template #header><span class="card-title">预测信息</span></template>
+          <template #header>
+            <span class="card-title">{{ t("train.predictInfo") }}</span>
+          </template>
           <el-descriptions :column="1" size="small" border>
-            <el-descriptions-item label="模型版本 ID">{{ predict?.model_id }}</el-descriptions-item>
-            <el-descriptions-item label="模型仓库 ID">
+            <el-descriptions-item :label="t('train.modelVersionId')">
+              {{ predict?.model_id }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('train.modelRepoId')">
               {{ predict?.model_repo_id }}
             </el-descriptions-item>
-            <el-descriptions-item label="图片来源">
-              {{ predict?.source_type === "dataset" ? "数据集" : "上传图片" }}
+            <el-descriptions-item :label="t('train.sourceType')">
+              {{ predict?.source_type === "dataset" ? t("train.dataset") : t("train.uploadImage") }}
             </el-descriptions-item>
-            <el-descriptions-item label="源数据集 ID">
+            <el-descriptions-item :label="t('train.sourceDatasetId')">
               {{ predict?.source_dataset_id || "—" }}
             </el-descriptions-item>
-            <el-descriptions-item label="创建时间">
+            <el-descriptions-item :label="t('train.createdTime')">
               {{ predict?.created_time }}
             </el-descriptions-item>
-            <el-descriptions-item label="开始时间">
+            <el-descriptions-item :label="t('train.startedTime')">
               {{ predict?.started_at || "—" }}
             </el-descriptions-item>
-            <el-descriptions-item label="完成时间">
+            <el-descriptions-item :label="t('train.finishedTime')">
               {{ predict?.finished_at || "—" }}
             </el-descriptions-item>
-            <el-descriptions-item label="耗时">{{ durationText }}</el-descriptions-item>
+            <el-descriptions-item :label="t('train.duration')">
+              {{ durationText }}
+            </el-descriptions-item>
           </el-descriptions>
         </el-card>
       </el-col>
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="info-card">
-          <template #header><span class="card-title">预测参数</span></template>
+          <template #header>
+            <span class="card-title">{{ t("train.predictParams") }}</span>
+          </template>
           <div class="hp-grid">
             <div class="hp-item">
               <span class="hp-label">conf</span>
@@ -55,7 +63,7 @@
               <span class="hp-value">{{ predict?.hyperparams?.imgsz ?? 640 }}</span>
             </div>
             <div class="hp-item">
-              <span class="hp-label">GPU 设备</span>
+              <span class="hp-label">{{ t("train.gpuDevice") }}</span>
               <span class="hp-value">{{ predict?.hyperparams?.device ?? "0" }}</span>
             </div>
           </div>
@@ -64,7 +72,9 @@
     </el-row>
 
     <el-card shadow="never" class="section-card">
-      <template #header><span class="card-title">操作</span></template>
+      <template #header>
+        <span class="card-title">{{ t("train.action") }}</span>
+      </template>
       <div class="action-buttons">
         <template v-if="predict?.status === 'pending'">
           <el-button
@@ -73,7 +83,7 @@
             size="default"
             @click="handleStart"
           >
-            开始预测
+            {{ t("train.startPredict") }}
           </el-button>
           <el-button
             v-hasPerm="'module_train:predict:delete'"
@@ -81,7 +91,7 @@
             size="default"
             @click="handleDelete"
           >
-            删除
+            {{ t("train.delete") }}
           </el-button>
         </template>
         <template v-else-if="predict?.status === 'running'">
@@ -91,7 +101,7 @@
             size="default"
             @click="handleStop"
           >
-            停止预测
+            {{ t("train.stopPredict") }}
           </el-button>
         </template>
         <template v-else-if="predict?.status === 'success'">
@@ -102,7 +112,7 @@
             size="default"
             @click="downloadZip(predict.result_zip_path)"
           >
-            下载结果
+            {{ t("train.downloadResult") }}
           </el-button>
           <el-button
             v-hasPerm="'module_train:predict:delete'"
@@ -110,7 +120,7 @@
             size="default"
             @click="handleDelete"
           >
-            删除
+            {{ t("train.delete") }}
           </el-button>
         </template>
         <template v-else-if="predict?.status === 'failed'">
@@ -120,10 +130,10 @@
             size="default"
             @click="handleStart"
           >
-            重新预测
+            {{ t("train.rePredict") }}
           </el-button>
           <el-button v-hasPerm="'module_train:predict:query'" size="default" @click="scrollToLog">
-            查看日志
+            {{ t("train.viewLog") }}
           </el-button>
           <el-button
             v-hasPerm="'module_train:predict:delete'"
@@ -131,7 +141,7 @@
             size="default"
             @click="handleDelete"
           >
-            删除
+            {{ t("train.delete") }}
           </el-button>
         </template>
         <template v-else-if="predict?.status === 'cancelled'">
@@ -141,14 +151,16 @@
             size="default"
             @click="handleStart"
           >
-            重新预测
+            {{ t("train.rePredict") }}
           </el-button>
         </template>
       </div>
     </el-card>
 
     <el-card shadow="never" class="section-card">
-      <template #header><span class="card-title">预测结果</span></template>
+      <template #header>
+        <span class="card-title">{{ t("train.predictResult") }}</span>
+      </template>
       <el-row :gutter="12">
         <el-col v-for="(url, i) in predict.result_images" :key="i" :xs="24" :sm="12" :md="6">
           <div class="result-item">
@@ -164,13 +176,13 @@
       <el-empty
         v-if="!predict.result_images || predict.result_images.length === 0"
         :image-size="40"
-        description="暂无预测结果"
+        :description="t('train.predictResultNoData')"
       />
     </el-card>
 
     <el-alert
       v-if="predict?.log && predict?.status === 'failed'"
-      title="预测失败"
+      :title="t('train.predictFailed')"
       type="error"
       :description="predict.log.slice(0, 500)"
       show-icon
@@ -181,24 +193,26 @@
     <el-card shadow="never" class="section-card">
       <template #header>
         <div class="log-header">
-          <span class="card-title">预测日志</span>
+          <span class="card-title">{{ t("train.predictLog") }}</span>
           <div class="log-controls">
             <span class="log-status" :class="{ connected: wsConnected }">
-              {{ wsConnected ? "已连接" : "未连接" }}
+              {{ wsConnected ? t("train.connected") : t("train.disconnected") }}
             </span>
-            <span class="log-line-count">{{ logLineCount }} 行</span>
+            <span class="log-line-count">{{ t("train.logLines", { count: logLineCount }) }}</span>
             <el-switch
               v-model="autoScroll"
-              active-text="自动滚动"
+              :active-text="t('train.autoScroll')"
               size="small"
               style="margin-right: 8px"
             />
-            <el-button size="small" text icon="Delete" @click="clearLogs">清空</el-button>
+            <el-button size="small" text icon="Delete" @click="clearLogs">
+              {{ t("train.clear") }}
+            </el-button>
           </div>
         </div>
       </template>
       <div ref="logRef" class="log-container">
-        <pre class="log-text">{{ logText || "等待日志..." }}</pre>
+        <pre class="log-text">{{ logText || t("train.waitingLog") }}</pre>
       </div>
     </el-card>
   </div>
@@ -207,12 +221,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowLeft } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 const predict = ref<any>(null);
 const logText = ref("");
 const logRef = ref<HTMLElement | null>(null);
@@ -240,11 +256,11 @@ function tagLabel(s: string) {
   return (
     (
       {
-        pending: "待开始",
-        running: "预测中",
-        success: "已完成",
-        failed: "失败",
-        cancelled: "已取消",
+        pending: t("train.statusPending"),
+        running: t("train.predictStatusRunning"),
+        success: t("train.statusSuccess"),
+        failed: t("train.statusFailed"),
+        cancelled: t("train.statusCancelled"),
       } as any
     )[s] || s
   );
@@ -257,9 +273,16 @@ const durationText = computed(() => {
     ? new Date(predict.value.finished_at).getTime()
     : Date.now();
   const diff = Math.floor((end - start) / 1000);
-  if (diff < 60) return `${diff}秒`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}分${diff % 60}秒`;
-  return `${Math.floor(diff / 3600)}时${Math.floor((diff % 3600) / 60)}分`;
+  if (diff < 60) return t("train.durationSeconds", { count: diff });
+  if (diff < 3600)
+    return t("train.durationMinutesSeconds", {
+      minutes: Math.floor(diff / 60),
+      seconds: diff % 60,
+    });
+  return t("train.durationHoursMinutes", {
+    hours: Math.floor(diff / 3600),
+    minutes: Math.floor((diff % 3600) / 60),
+  });
 });
 
 function connectWs(predictId: number) {
@@ -331,11 +354,15 @@ async function handleStart() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm(`确定开始预测任务 #${predict.value?.id}？`, "提示", {
-      type: "info",
-    });
+    await ElMessageBox.confirm(
+      t("train.startPredictDetailConfirm", { id: predict.value?.id }),
+      t("train.tipTitle"),
+      {
+        type: "info",
+      }
+    );
     await TrainAPI.startPredict(predict.value.id);
-    ElMessage.success("已启动");
+    ElMessage.success(t("train.started"));
     await loadPredict();
     connectWs(predict.value.id);
     startPoll();
@@ -350,9 +377,11 @@ async function handleStop() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm("确定停止该预测？", "提示", { type: "warning" });
+    await ElMessageBox.confirm(t("train.stopPredictConfirm"), t("train.tipTitle"), {
+      type: "warning",
+    });
     await TrainAPI.stopPredict(predict.value.id);
-    ElMessage.success("已停止");
+    ElMessage.success(t("train.stopped"));
     await loadPredict();
   } catch {
     /* */
@@ -365,12 +394,16 @@ async function handleDelete() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm(`确定删除预测 #${predict.value?.id}？`, "提示", {
-      type: "warning",
-      confirmButtonText: "删除",
-    });
+    await ElMessageBox.confirm(
+      t("train.deletePredictConfirm", { id: predict.value?.id }),
+      t("train.tipTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("train.delete"),
+      }
+    );
     await TrainAPI.deletePredict([predict.value.id]);
-    ElMessage.success("删除成功");
+    ElMessage.success(t("train.deleteSuccess"));
     router.push("/train/predict");
   } catch {
     /* */

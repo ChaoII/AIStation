@@ -12,19 +12,25 @@
     <el-card class="edge-event-switch" shadow="never">
       <div class="edge-event-switch__bar">
         <el-radio-group v-model="activeView">
-          <el-radio-button value="live">实时</el-radio-button>
-          <el-radio-button value="history">历史</el-radio-button>
+          <el-radio-button value="live">{{ t("video.eventStream.live") }}</el-radio-button>
+          <el-radio-button value="history">{{ t("video.eventStream.history") }}</el-radio-button>
         </el-radio-group>
 
         <div v-if="activeView === 'live'" class="edge-event-switch__right">
           <el-tag :type="wsStatusTag" size="small">{{ wsStatusLabel }}</el-tag>
           <el-button size="small" @click="togglePause">{{ pauseLabel }}</el-button>
-          <el-button size="small" @click="clearLive">清屏</el-button>
+          <el-button size="small" @click="clearLive">{{ t("video.eventStream.clear") }}</el-button>
           <span class="edge-event-switch__count">
-            展示 {{ filteredLiveRows.length }} / 缓存 {{ liveRows.length }}（上限 {{ LIVE_LIMIT }}）
+            {{
+              t("video.eventStream.showing", {
+                shown: filteredLiveRows.length,
+                cached: liveRows.length,
+                limit: LIVE_LIMIT,
+              })
+            }}
           </span>
         </div>
-        <div v-else class="edge-event-switch__count">按筛选条件查询历史事件</div>
+        <div v-else class="edge-event-switch__count">{{ t("video.eventStream.queryHistory") }}</div>
       </div>
     </el-card>
 
@@ -46,29 +52,41 @@
           @row-click="handleRowClick"
         >
           <template #empty>
-            <el-empty :image-size="80" description="等待实时事件推送…" />
+            <el-empty :image-size="80" :description="t('video.eventStream.waitingPush')" />
           </template>
-          <el-table-column label="时间" width="170">
+          <el-table-column :label="t('video.eventStream.time')" width="170">
             <template #default="scope">{{ formatTime(scope.row.ts) }}</template>
           </el-table-column>
-          <el-table-column label="相机" min-width="130" show-overflow-tooltip>
+          <el-table-column
+            :label="t('video.eventStream.camera')"
+            min-width="130"
+            show-overflow-tooltip
+          >
             <template #default="scope">{{ cameraLabel(scope.row.camera_id) }}</template>
           </el-table-column>
-          <el-table-column label="场景" min-width="130" show-overflow-tooltip>
+          <el-table-column
+            :label="t('video.eventStream.scene')"
+            min-width="130"
+            show-overflow-tooltip
+          >
             <template #default="scope">{{ sceneLabel(scope.row.algorithm_type) }}</template>
           </el-table-column>
-          <el-table-column label="目标摘要" min-width="180" show-overflow-tooltip>
+          <el-table-column
+            :label="t('video.eventStream.targetSummary')"
+            min-width="180"
+            show-overflow-tooltip
+          >
             <template #default="scope">{{ summaryText(scope.row) }}</template>
           </el-table-column>
-          <el-table-column label="延迟" width="100" align="center">
+          <el-table-column :label="t('video.eventStream.latency')" width="100" align="center">
             <template #default="scope">
               {{ scope.row.latency_ms != null ? `${scope.row.latency_ms} ms` : "-" }}
             </template>
           </el-table-column>
-          <el-table-column label="命中" width="90" align="center">
+          <el-table-column :label="t('video.eventStream.hit')" width="90" align="center">
             <template #default="scope">
               <el-tag :type="scope.row.matched ? 'success' : 'info'" size="small" effect="dark">
-                {{ scope.row.matched ? "命中" : "未命中" }}
+                {{ scope.row.matched ? t("video.eventStream.hit") : t("video.eventStream.miss") }}
               </el-tag>
             </template>
           </el-table-column>
@@ -90,29 +108,41 @@
             @row-click="handleRowClick"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('video.common.noData')" />
             </template>
-            <el-table-column label="时间" width="170">
+            <el-table-column :label="t('video.eventStream.time')" width="170">
               <template #default="scope">{{ formatTime(scope.row.ts) }}</template>
             </el-table-column>
-            <el-table-column label="相机" min-width="130" show-overflow-tooltip>
+            <el-table-column
+              :label="t('video.eventStream.camera')"
+              min-width="130"
+              show-overflow-tooltip
+            >
               <template #default="scope">{{ cameraLabel(scope.row.camera_id) }}</template>
             </el-table-column>
-            <el-table-column label="场景" min-width="130" show-overflow-tooltip>
+            <el-table-column
+              :label="t('video.eventStream.scene')"
+              min-width="130"
+              show-overflow-tooltip
+            >
               <template #default="scope">{{ sceneLabel(scope.row.algorithm_type) }}</template>
             </el-table-column>
-            <el-table-column label="目标摘要" min-width="180" show-overflow-tooltip>
+            <el-table-column
+              :label="t('video.eventStream.targetSummary')"
+              min-width="180"
+              show-overflow-tooltip
+            >
               <template #default="scope">{{ summaryText(scope.row) }}</template>
             </el-table-column>
-            <el-table-column label="延迟" width="100" align="center">
+            <el-table-column :label="t('video.eventStream.latency')" width="100" align="center">
               <template #default="scope">
                 {{ scope.row.latency_ms != null ? `${scope.row.latency_ms} ms` : "-" }}
               </template>
             </el-table-column>
-            <el-table-column label="命中" width="90" align="center">
+            <el-table-column :label="t('video.eventStream.hit')" width="90" align="center">
               <template #default="scope">
                 <el-tag :type="scope.row.matched ? 'success' : 'info'" size="small" effect="dark">
-                  {{ scope.row.matched ? "命中" : "未命中" }}
+                  {{ scope.row.matched ? t("video.eventStream.hit") : t("video.eventStream.miss") }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -125,33 +155,33 @@
     <el-drawer v-model="drawer.visible" :title="drawerTitle" size="620px">
       <div v-if="drawer.detail" class="event-detail">
         <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="事件时间" :span="2">
+          <el-descriptions-item :label="t('video.eventStream.eventTime')" :span="2">
             {{ formatTime(drawer.detail.ts) }}
           </el-descriptions-item>
-          <el-descriptions-item label="相机">
+          <el-descriptions-item :label="t('video.eventStream.camera')">
             {{ cameraLabel(drawer.detail.camera_id) }}
           </el-descriptions-item>
-          <el-descriptions-item label="场景">
+          <el-descriptions-item :label="t('video.eventStream.scene')">
             {{ sceneLabel(drawer.detail.algorithm_type) }}
           </el-descriptions-item>
-          <el-descriptions-item label="任务ID">
+          <el-descriptions-item :label="t('video.eventStream.taskId')">
             {{ drawer.detail.task_id ?? "-" }}
           </el-descriptions-item>
-          <el-descriptions-item label="边缘设备">
+          <el-descriptions-item :label="t('video.eventStream.edgeDevice')">
             {{ drawer.detail.edge_code || "-" }}
           </el-descriptions-item>
-          <el-descriptions-item label="延迟">
+          <el-descriptions-item :label="t('video.eventStream.latency')">
             {{ drawer.detail.latency_ms != null ? `${drawer.detail.latency_ms} ms` : "-" }}
           </el-descriptions-item>
-          <el-descriptions-item label="命中">
+          <el-descriptions-item :label="t('video.eventStream.hit')">
             <el-tag :type="drawer.detail.matched ? 'success' : 'info'" size="small" effect="dark">
-              {{ drawer.detail.matched ? "命中" : "未命中" }}
+              {{ drawer.detail.matched ? t("video.eventStream.hit") : t("video.eventStream.miss") }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="命中规则">
+          <el-descriptions-item :label="t('video.eventStream.matchedRule')">
             {{ drawer.detail.matched_rule_id ?? "-" }}
           </el-descriptions-item>
-          <el-descriptions-item label="快照">
+          <el-descriptions-item :label="t('video.eventStream.snapshot')">
             <el-link
               v-if="isHttpUrl(snapshotSrc)"
               type="primary"
@@ -160,7 +190,7 @@
             >
               {{ snapshotSrc }}
             </el-link>
-            <span v-else>{{ snapshotSrc || "无" }}</span>
+            <span v-else>{{ snapshotSrc || t("video.eventStream.none") }}</span>
           </el-descriptions-item>
         </el-descriptions>
 
@@ -174,7 +204,7 @@
         </div>
 
         <div class="event-detail__section">
-          <div class="event-detail__title">命中叶子</div>
+          <div class="event-detail__title">{{ t("video.eventStream.matchedLeaves") }}</div>
           <div class="event-detail__leaves">
             <el-tag
               v-for="(leaf, index) in drawer.detail.matched_leaves || []"
@@ -184,36 +214,57 @@
               effect="dark"
             >
               <span class="event-detail__leaf-path">{{ leaf.path || leaf.subject }}</span>
-              <span v-if="leaf.negated" class="event-detail__leaf-neg">非</span>
+              <span v-if="leaf.negated" class="event-detail__leaf-neg">
+                {{ t("video.eventStream.neg") }}
+              </span>
               {{ leaf.detail || leaf.subject }}
             </el-tag>
             <span v-if="!(drawer.detail.matched_leaves || []).length" class="text-muted">
-              {{ drawer.detail.matched ? "（无叶子明细）" : "未命中任何条件" }}
+              {{
+                drawer.detail.matched
+                  ? t("video.eventStream.noLeafDetail")
+                  : t("video.eventStream.noMatch")
+              }}
             </span>
           </div>
           <!-- 反向不一致说明：后端 rule_error_list 只存在于内部推理回调响应，不落库、无事件级入口，
                在此显式说明，避免运维误以为「规则评估失败」可从事件详情排查。 -->
           <div class="event-detail__hint">
-            规则评估失败清单（rule_error_list）仅随内部推理回调响应返回，不随事件落库；若怀疑某规则未生效，
-            请在后端日志中按规则名/rule_id 排查。
+            {{ t("video.eventStream.ruleEvalHint") }}
           </div>
         </div>
 
         <div class="event-detail__section">
-          <div class="event-detail__title">检测目标（{{ detectionRows.length }}）</div>
+          <div class="event-detail__title">
+            {{ t("video.eventStream.detectTargets", { count: detectionRows.length }) }}
+          </div>
           <el-table :data="detectionRows" border stripe size="small" max-height="320px">
             <template #empty>
-              <el-empty :image-size="60" description="无检测目标" />
+              <el-empty :image-size="60" :description="t('video.eventStream.noTarget')" />
             </template>
-            <el-table-column prop="label" label="标签" width="110" show-overflow-tooltip />
-            <el-table-column label="置信度" width="90" align="center">
+            <el-table-column
+              prop="label"
+              :label="t('video.eventStream.label')"
+              width="110"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('video.eventStream.confidence')" width="90" align="center">
               <template #default="scope">{{ fmtConfidence(scope.row.confidence) }}</template>
             </el-table-column>
             <el-table-column prop="track_id" label="track_id" width="90" align="center" />
-            <el-table-column label="属性" min-width="180" show-overflow-tooltip>
+            <el-table-column
+              :label="t('video.eventStream.attributes')"
+              min-width="180"
+              show-overflow-tooltip
+            >
               <template #default="scope">{{ formatAttributes(scope.row.attributes) }}</template>
             </el-table-column>
-            <el-table-column prop="text" label="文本" min-width="120" show-overflow-tooltip />
+            <el-table-column
+              prop="text"
+              :label="t('video.eventStream.text')"
+              min-width="120"
+              show-overflow-tooltip
+            />
           </el-table>
         </div>
       </div>
@@ -223,6 +274,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { Auth } from "@/utils/auth";
 import { getCameraList } from "@/api/module_video/camera";
 import { getSceneCatalog, type SceneDefinition } from "@/api/module_video/scene";
@@ -249,6 +301,7 @@ defineOptions({ name: "EdgeEventStream" });
 const LIVE_LIMIT = 200;
 
 const { searchRef, contentRef } = useCrudList();
+const { t } = useI18n();
 
 const activeView = ref<"live" | "history">("live");
 
@@ -267,11 +320,11 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "camera_id",
-      label: "相机",
+      label: t("video.eventStream.camera"),
       type: "select",
       options: [],
       attrs: {
-        placeholder: "请选择相机",
+        placeholder: t("video.eventStream.selectCamera"),
         clearable: true,
         filterable: true,
         style: { width: "180px" },
@@ -282,11 +335,11 @@ const searchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "algorithm_type",
-      label: "场景",
+      label: t("video.eventStream.scene"),
       type: "select",
       options: [],
       attrs: {
-        placeholder: "请选择场景",
+        placeholder: t("video.eventStream.selectScene"),
         clearable: true,
         filterable: true,
         style: { width: "180px" },
@@ -297,44 +350,44 @@ const searchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "matched",
-      label: "是否命中",
+      label: t("video.eventStream.matched"),
       type: "select",
       options: [
-        { label: "命中", value: true },
-        { label: "未命中", value: false },
+        { label: t("video.eventStream.hit"), value: true },
+        { label: t("video.eventStream.miss"), value: false },
       ],
-      attrs: { placeholder: "请选择", clearable: true, style: { width: "140px" } },
+      attrs: { placeholder: t("video.record.select"), clearable: true, style: { width: "140px" } },
     },
     {
       prop: "time_range",
-      label: "时间范围",
+      label: t("video.eventStream.eventTime"),
       type: "date-picker",
       initialValue: [],
       attrs: {
         type: "datetimerange",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
-        rangeSeparator: "至",
-        startPlaceholder: "开始时间",
-        endPlaceholder: "结束时间",
+        rangeSeparator: t("video.record.to"),
+        startPlaceholder: t("video.eventStream.startTime"),
+        endPlaceholder: t("video.eventStream.endTime"),
         style: { width: "360px" },
       },
     },
     {
       prop: "keyword",
-      label: "关键字",
+      label: t("video.eventStream.keyword"),
       type: "input",
-      attrs: { placeholder: "目标 label / 文本", clearable: true },
+      attrs: { placeholder: t("video.eventStream.targetLabel"), clearable: true },
     },
   ],
 });
 
 const historyCols = reactive([
-  { prop: "ts", label: "时间", show: true },
-  { prop: "camera_id", label: "相机", show: true },
-  { prop: "algorithm_type", label: "场景", show: true },
-  { prop: "labels", label: "目标摘要", show: true },
-  { prop: "latency_ms", label: "延迟", show: true },
-  { prop: "matched", label: "命中", show: true },
+  { prop: "ts", label: t("video.eventStream.time"), show: true },
+  { prop: "camera_id", label: t("video.eventStream.camera"), show: true },
+  { prop: "algorithm_type", label: t("video.eventStream.scene"), show: true },
+  { prop: "labels", label: t("video.eventStream.targetSummary"), show: true },
+  { prop: "latency_ms", label: t("video.eventStream.latency"), show: true },
+  { prop: "matched", label: t("video.eventStream.hit"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<Record<string, any>>>({
@@ -361,7 +414,9 @@ const drawer = reactive<{ visible: boolean; detail: EdgeEventDetail | null }>({
 
 const drawerTitle = computed(() => {
   const eventId = drawer.detail?.event_id;
-  return eventId ? `边缘事件详情 - ${eventId}` : "边缘事件详情";
+  return eventId
+    ? t("video.eventStream.detailTitle", { id: eventId })
+    : t("video.eventStream.detailTitlePlain");
 });
 
 /** 实时视图 */
@@ -371,13 +426,20 @@ const pendingCount = ref(0);
 const pendingRows: EdgeEventItem[] = [];
 
 const pauseLabel = computed(() => {
-  if (!paused.value) return "暂停";
-  return pendingCount.value ? `继续（${pendingCount.value}）` : "继续";
+  if (!paused.value) return t("video.eventStream.pause");
+  return pendingCount.value
+    ? t("video.eventStream.resumeCount", { count: pendingCount.value })
+    : t("video.eventStream.resume");
 });
 
 const wsStatus = ref<"closed" | "connecting" | "open">("closed");
 const wsStatusLabel = computed(
-  () => ({ closed: "未连接", connecting: "连接中", open: "已连接" })[wsStatus.value]
+  () =>
+    ({
+      closed: t("video.eventStream.notConnected"),
+      connecting: t("video.eventStream.connecting"),
+      open: t("video.eventStream.connected"),
+    })[wsStatus.value]
 );
 const wsStatusTag = computed(
   () =>
@@ -628,7 +690,7 @@ function sceneLabel(code?: string): string {
 
 function summaryText(row: any): string {
   const labels = row.labels || [];
-  const names = labels.length ? labels.join("、") : "目标";
+  const names = labels.length ? labels.join("、") : t("video.eventStream.target");
   return `${names} × ${row.object_count ?? 0}`;
 }
 

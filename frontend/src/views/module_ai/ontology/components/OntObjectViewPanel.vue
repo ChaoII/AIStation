@@ -11,34 +11,40 @@
 <template>
   <section class="ont-ov">
     <div class="ont-sec__head">
-      <span class="ont-sec__title">对象视图</span>
+      <span class="ont-sec__title">{{ i18nT("ai_ontology.objectView") }}</span>
       <el-radio-group v-model="formFactor" size="small" @change="reload">
-        <el-radio-button value="full">完整视图</el-radio-button>
-        <el-radio-button value="panel">面板视图</el-radio-button>
+        <el-radio-button value="full">{{ i18nT("ai_ontology.fullView") }}</el-radio-button>
+        <el-radio-button value="panel">{{ i18nT("ai_ontology.panelView") }}</el-radio-button>
       </el-radio-group>
       <el-tag size="small" effect="plain" :type="current?.is_managed ? 'warning' : 'success'">
-        {{ current?.is_managed ? "手工维护" : "跟随对象类型" }}
+        {{
+          current?.is_managed
+            ? i18nT("ai_ontology.manualMaintenance")
+            : i18nT("ai_ontology.followObjectType")
+        }}
       </el-tag>
       <el-button class="ont-sec__op" size="small" type="primary" :icon="Plus" @click="openEditor()">
-        新建视图
+        {{ i18nT("ai_ontology.newView") }}
       </el-button>
       <el-dropdown class="ont-sec__op" @command="onViewMore">
         <el-button size="small">
-          更多
+          {{ i18nT("ai_ontology.more") }}
           <el-icon class="el-icon--right"><ArrowDown /></el-icon>
         </el-button>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="edit" :disabled="!current" :icon="Edit">
-              编辑
+              {{ i18nT("ai_ontology.edit") }}
             </el-dropdown-item>
             <el-dropdown-item command="share" :disabled="!current" :icon="Share">
-              共享
+              {{ i18nT("ai_ontology.share") }}
             </el-dropdown-item>
             <el-dropdown-item command="link" :disabled="!current" :icon="Link">
-              复制链接
+              {{ i18nT("ai_ontology.copyLink") }}
             </el-dropdown-item>
-            <el-dropdown-item command="refresh" :icon="Refresh">刷新</el-dropdown-item>
+            <el-dropdown-item command="refresh" :icon="Refresh">
+              {{ i18nT("ai_ontology.refresh") }}
+            </el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -48,27 +54,36 @@
       type="info"
       :closable="false"
       class="ont-note"
-      title="视图是对象数据的可复用呈现。默认视图由对象类型自动生成；一旦你编辑它，就转为手工维护，之后对象类型的变化不会再自动同步进来。"
+      :title="i18nT('ai_ontology.viewInfoAlert')"
     />
 
     <el-tabs v-model="activeTab" class="ont-ov__tabs">
-      <el-tab-pane label="配置预览" name="config">
+      <el-tab-pane :label="i18nT('ai_ontology.configPreview')" name="config">
         <div class="ont-ov__switch">
-          <span class="ont-hint">对比：</span>
+          <span class="ont-hint">{{ i18nT("ai_ontology.compare2") }}</span>
           <el-radio-group v-model="previewMode" size="small">
-            <el-radio-button value="configured">可配置视图</el-radio-button>
-            <el-radio-button value="standard">标准视图（自动生成）</el-radio-button>
+            <el-radio-button value="configured">
+              {{ i18nT("ai_ontology.configurableView") }}
+            </el-radio-button>
+            <el-radio-button value="standard">
+              {{ i18nT("ai_ontology.standardViewAuto") }}
+            </el-radio-button>
           </el-radio-group>
-          <el-input v-model="objectKey" size="small" placeholder="对象主键" style="width: 140px" />
+          <el-input
+            v-model="objectKey"
+            size="small"
+            :placeholder="i18nT('ai_ontology.objectPrimaryKey')"
+            style="width: 140px"
+          />
           <el-button size="small" type="primary" :loading="rendering" @click="doRender">
-            渲染
+            {{ i18nT("ai_ontology.render") }}
           </el-button>
         </div>
 
         <el-empty
           v-if="!tabsShown.length"
           :image-size="60"
-          description="还没有视图，点「新建视图」或让系统自动生成"
+          :description="i18nT('ai_ontology.noViewsYetClickNewViewOrLetTheSystemAutoGenerate')"
         />
 
         <el-tabs v-else v-model="activeRenderTab" type="border-card">
@@ -96,7 +111,7 @@
                 <el-descriptions-item v-for="it in w.items" :key="it.code" :label="it.name">
                   {{ it.value ?? "—" }}
                   <el-tag v-if="it.sensitive" size="small" type="danger" effect="plain">
-                    敏感
+                    {{ i18nT("ai_ontology.sensitive") }}
                   </el-tag>
                 </el-descriptions-item>
               </el-descriptions>
@@ -108,9 +123,17 @@
                 border
                 stripe
               >
-                <el-table-column prop="name" label="关系" min-width="140" />
-                <el-table-column prop="target_object" label="目标对象类型" min-width="140" />
-                <el-table-column prop="card" label="基数" width="90" />
+                <el-table-column
+                  prop="name"
+                  :label="i18nT('ai_ontology.relation')"
+                  min-width="140"
+                />
+                <el-table-column
+                  prop="target_object"
+                  :label="i18nT('ai_ontology.targetObjectType2')"
+                  min-width="140"
+                />
+                <el-table-column prop="card" :label="i18nT('ai_ontology.cardinality')" width="90" />
               </el-table>
               <el-table
                 v-else-if="w.type === 'related'"
@@ -191,11 +214,14 @@
                 v-model="viewScen"
                 size="small"
                 clearable
-                placeholder="主本体"
+                :placeholder="i18nT('ai_ontology.primaryOntology')"
                 class="ont-ov__scen"
                 @change="doRender"
               >
-                <el-option label="主本体（不叠加场景）" value="" />
+                <el-option
+                  :label="i18nT('ai_ontology.primaryOntologyNoScenarioOverlay')"
+                  value=""
+                />
                 <el-option
                   v-for="s in w.items || []"
                   :key="s.code"
@@ -221,43 +247,73 @@
                     effect="plain"
                     class="ont-tag-gap"
                   >
-                    生效中
+                    {{ i18nT("ai_ontology.active") }}
                   </el-tag>
                 </div>
               </div>
-              <div v-else class="ont-hint">该组件类型暂无预览</div>
+              <div v-else class="ont-hint">
+                {{ i18nT("ai_ontology.noPreviewForThisComponentType") }}
+              </div>
             </div>
           </el-tab-pane>
         </el-tabs>
       </el-tab-pane>
 
-      <el-tab-pane label="视图列表" name="list">
+      <el-tab-pane :label="i18nT('ai_ontology.viewList')" name="list">
         <el-table :data="views" size="small" border stripe>
-          <template #empty><el-empty :image-size="50" description="暂无视图" /></template>
-          <el-table-column prop="name" label="视图" min-width="200" show-overflow-tooltip />
-          <el-table-column prop="code" label="编码" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="form_factor_label" label="形态" width="100" />
-          <el-table-column label="默认" width="70" align="center">
+          <template #empty>
+            <el-empty :image-size="50" :description="i18nT('ai_ontology.noViews')" />
+          </template>
+          <el-table-column
+            prop="name"
+            :label="i18nT('ai_ontology.view')"
+            min-width="200"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            prop="code"
+            :label="i18nT('ai_ontology.code')"
+            min-width="180"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            prop="form_factor_label"
+            :label="i18nT('ai_ontology.shape')"
+            width="100"
+          />
+          <el-table-column :label="i18nT('ai_ontology.default')" width="70" align="center">
             <template #default="{ row }">
-              <el-tag v-if="row.is_default" size="small" type="success" effect="plain">默认</el-tag>
+              <el-tag v-if="row.is_default" size="small" type="success" effect="plain">
+                {{ i18nT("ai_ontology.default") }}
+              </el-tag>
               <span v-else class="ont-none">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="维护方式" width="110" align="center">
+          <el-table-column :label="i18nT('ai_ontology.maintenanceMode')" width="110" align="center">
             <template #default="{ row }">
               <el-tag size="small" effect="plain" :type="row.is_managed ? 'warning' : 'success'">
-                {{ row.is_managed ? "手工" : "自动" }}
+                {{ row.is_managed ? i18nT("ai_ontology.manual") : i18nT("ai_ontology.auto") }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="页签/组件" width="110" align="center">
+          <el-table-column :label="i18nT('ai_ontology.tabsWidgets')" width="110" align="center">
             <template #default="{ row }">{{ row.tab_count }} / {{ row.widget_count }}</template>
           </el-table-column>
-          <el-table-column prop="version" label="版本" width="70" align="center" />
-          <el-table-column label="操作" width="220" align="center" fixed="right">
+          <el-table-column
+            prop="version"
+            :label="i18nT('ai_ontology.version')"
+            width="70"
+            align="center"
+          />
+          <el-table-column
+            :label="i18nT('ai_ontology.operations')"
+            width="220"
+            align="center"
+            fixed="right"
+          >
             <template #default="{ row }">
               <el-button icon="edit" link type="primary" size="small" @click="openEditor(row)">
-                编辑
+                {{ i18nT("ai_ontology.edit") }}
               </el-button>
               <el-button
                 v-hasPerm="'module_ai:ontology:edit'"
@@ -268,10 +324,10 @@
                 :disabled="row.is_default"
                 @click="doSetDefault(row)"
               >
-                设为默认
+                {{ i18nT("ai_ontology.setAsDefault") }}
               </el-button>
               <el-button link type="primary" size="small" @click="openVersions(row)">
-                版本
+                {{ i18nT("ai_ontology.version") }}
               </el-button>
               <el-button
                 v-hasPerm="'module_ai:ontology:edit'"
@@ -281,7 +337,7 @@
                 size="small"
                 @click="doRemove(row)"
               >
-                删除
+                {{ i18nT("ai_ontology.delete2") }}
               </el-button>
             </template>
           </el-table-column>
@@ -290,39 +346,46 @@
     </el-tabs>
 
     <!-- 编辑器 -->
-    <el-dialog v-model="editorVisible" title="编辑对象视图" width="900px" append-to-body>
+    <el-dialog
+      v-model="editorVisible"
+      :title="i18nT('ai_ontology.editObjectView')"
+      width="900px"
+      append-to-body
+    >
       <el-form label-width="100px">
-        <el-form-item label="视图名称">
+        <el-form-item :label="i18nT('ai_ontology.viewName')">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="形态">
+        <el-form-item :label="i18nT('ai_ontology.shape')">
           <el-radio-group v-model="form.form_factor">
-            <el-radio-button value="full">完整视图</el-radio-button>
-            <el-radio-button value="panel">面板视图</el-radio-button>
+            <el-radio-button value="full">{{ i18nT("ai_ontology.fullView") }}</el-radio-button>
+            <el-radio-button value="panel">{{ i18nT("ai_ontology.panelView") }}</el-radio-button>
           </el-radio-group>
-          <span class="ont-hint">面板视图只放关键信息，供其它应用嵌入</span>
+          <span class="ont-hint">
+            {{ i18nT("ai_ontology.panelViewHoldsKeyInfoForEmbeddingByOtherApps") }}
+          </span>
         </el-form-item>
-        <el-form-item label="设为默认">
+        <el-form-item :label="i18nT('ai_ontology.setAsDefault')">
           <el-switch v-model="form.is_default" />
         </el-form-item>
       </el-form>
 
       <div class="ont-sec__head">
-        <span class="ont-sec__title">标签页与组件</span>
+        <span class="ont-sec__title">{{ i18nT("ai_ontology.tabsAndComponents") }}</span>
         <el-button class="ont-sec__op" size="small" :icon="Plus" @click="addTab">
-          加标签页
+          {{ i18nT("ai_ontology.addTab") }}
         </el-button>
       </div>
       <el-collapse v-model="openTabs">
         <el-collapse-item v-for="(t, ti) in form.tabs" :key="ti" :name="String(ti)">
           <template #title>
-            <span>{{ t.label || t.key || `标签页 ${ti + 1}` }}</span>
+            <span>{{ t.label || t.key || i18nT("ai_ontology.tabIndex", { index: ti + 1 }) }}</span>
             <el-tag size="small" effect="plain" class="ont-tag-gap">
-              {{ (t.widgets || []).length }} 个组件
+              {{ i18nT("ai_ontology.componentCount", { count: (t.widgets || []).length }) }}
             </el-tag>
           </template>
           <el-form label-width="80px" size="small">
-            <el-form-item label="标题">
+            <el-form-item :label="i18nT('ai_ontology.title')">
               <el-input v-model="t.label" style="width: 220px" />
             </el-form-item>
           </el-form>
@@ -335,7 +398,12 @@
                 :value="m.value"
               />
             </el-select>
-            <el-input v-model="w.title" size="small" placeholder="组件标题" style="width: 180px" />
+            <el-input
+              v-model="w.title"
+              size="small"
+              :placeholder="i18nT('ai_ontology.componentTitle')"
+              style="width: 180px"
+            />
             <el-select
               v-if="w.type === 'properties'"
               v-model="w.config.props"
@@ -343,7 +411,7 @@
               filterable
               collapse-tags
               size="small"
-              placeholder="留空 = 全部属性"
+              :placeholder="i18nT('ai_ontology.leaveEmptyAllProperties')"
               style="width: 260px"
             >
               <el-option v-for="p in props_" :key="p.code" :label="p.name" :value="p.code" />
@@ -353,7 +421,7 @@
               v-model="w.config.link_ids"
               multiple
               size="small"
-              placeholder="留空 = 全部关系"
+              :placeholder="i18nT('ai_ontology.leaveEmptyAllRelations')"
               style="width: 220px"
             >
               <el-option v-for="l in links" :key="l.id" :label="l.name" :value="l.id" />
@@ -362,7 +430,7 @@
               v-else-if="w.type === 'related'"
               v-model="w.config.link_id"
               size="small"
-              placeholder="选一条关系"
+              :placeholder="i18nT('ai_ontology.pickARelation')"
               style="width: 200px"
             >
               <el-option v-for="l in links" :key="l.id" :label="l.name" :value="l.id" />
@@ -371,7 +439,7 @@
               <el-select
                 v-model="w.config.group_by"
                 size="small"
-                placeholder="分组字段"
+                :placeholder="i18nT('ai_ontology.groupField')"
                 style="width: 180px"
               >
                 <el-option v-for="p in props_" :key="p.code" :label="p.name" :value="p.code" />
@@ -385,7 +453,7 @@
                     v-model="f.prop"
                     size="small"
                     filterable
-                    placeholder="字段"
+                    :placeholder="i18nT('ai_ontology.field')"
                     style="width: 150px"
                   >
                     <el-option v-for="p in props_" :key="p.code" :label="p.name" :value="p.code" />
@@ -401,7 +469,7 @@
                   <el-input
                     v-model="f.value"
                     size="small"
-                    placeholder="值"
+                    :placeholder="i18nT('ai_ontology.value')"
                     style="width: 130px"
                     :disabled="f.op === 'is_empty' || f.op === 'not_empty'"
                   />
@@ -412,22 +480,24 @@
                     @click="w.config.filters.splice(fi, 1)"
                   />
                 </div>
-                <el-button size="small" :icon="Plus" @click="addFilter(w)">加条件</el-button>
-                <span class="ont-hint">筛选器作用于同一标签页里的表格 / 关联对象</span>
+                <el-button size="small" :icon="Plus" @click="addFilter(w)">
+                  {{ i18nT("ai_ontology.addCondition") }}
+                </el-button>
+                <span class="ont-hint">{{ i18nT("ai_ontology.filterAppliesHint") }}</span>
               </div>
             </template>
             <template v-else-if="w.type === 'metric'">
               <el-input
                 v-model="w.config.prop"
                 size="small"
-                placeholder="属性 ID"
+                :placeholder="i18nT('ai_ontology.attributeId')"
                 style="width: 140px"
               />
               <el-select
                 v-model="w.config.function_code"
                 size="small"
                 clearable
-                placeholder="或选一个函数"
+                :placeholder="i18nT('ai_ontology.orPickAFunction')"
                 style="width: 180px"
               >
                 <el-option v-for="f in funcs" :key="f.code" :label="f.name" :value="f.code" />
@@ -438,7 +508,7 @@
               v-model="w.config.action_codes"
               multiple
               size="small"
-              placeholder="留空 = 全部动作"
+              :placeholder="i18nT('ai_ontology.leaveEmptyAllActions')"
               style="width: 220px"
             >
               <el-option v-for="a in actions" :key="a.code" :label="a.name" :value="a.code" />
@@ -447,40 +517,52 @@
               v-else-if="w.type === 'text'"
               v-model="w.config.markdown"
               size="small"
-              placeholder="说明文字"
+              :placeholder="i18nT('ai_ontology.descriptionText')"
               style="width: 300px"
             />
             <el-button size="small" :icon="Delete" circle @click="t.widgets.splice(wi, 1)" />
           </div>
-          <el-button size="small" :icon="Plus" @click="addWidget(t)">加组件</el-button>
+          <el-button size="small" :icon="Plus" @click="addWidget(t)">
+            {{ i18nT("ai_ontology.addComponent") }}
+          </el-button>
           <el-button size="small" type="danger" plain @click="form.tabs.splice(ti, 1)">
-            删标签页
+            {{ i18nT("ai_ontology.removeTab") }}
           </el-button>
         </el-collapse-item>
       </el-collapse>
       <template #footer>
-        <el-button @click="editorVisible = false">取消</el-button>
+        <el-button @click="editorVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           type="primary"
           :loading="saving"
           @click="doSave"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 共享 -->
-    <el-dialog v-model="shareVisible" title="共享视图" width="600px" append-to-body>
+    <el-dialog
+      v-model="shareVisible"
+      :title="i18nT('ai_ontology.sharedView')"
+      width="600px"
+      append-to-body
+    >
       <el-form label-width="110px">
-        <el-form-item label="共享方式">
+        <el-form-item :label="i18nT('ai_ontology.shareMode')">
           <el-radio-group v-model="shareForm.share_mode">
-            <el-radio-button value="inherit">跟随对象类型</el-radio-button>
-            <el-radio-button value="roles">按角色共享</el-radio-button>
+            <el-radio-button value="inherit">
+              {{ i18nT("ai_ontology.followObjectType") }}
+            </el-radio-button>
+            <el-radio-button value="roles">{{ i18nT("ai_ontology.shareByRole") }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="shareForm.share_mode === 'roles'" label="可见角色">
+        <el-form-item
+          v-if="shareForm.share_mode === 'roles'"
+          :label="i18nT('ai_ontology.visibleRoles')"
+        >
           <el-select v-model="shareForm.share_roles" multiple filterable style="width: 100%">
             <el-option v-for="r in roles" :key="r.code" :label="r.name" :value="r.code" />
           </el-select>
@@ -490,29 +572,41 @@
         type="warning"
         :closable="false"
         class="ont-note"
-        title="只看得到视图 ≠ 看得到数据：数据仍然走对象权限与行/列级策略。"
+        :title="i18nT('ai_ontology.shareViewAlert')"
       />
       <template #footer>
-        <el-button @click="shareVisible = false">取消</el-button>
+        <el-button @click="shareVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           type="primary"
           :loading="saving"
           @click="doShare"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
     <!-- 版本 -->
-    <el-dialog v-model="verVisible" title="视图版本" width="600px" append-to-body>
+    <el-dialog
+      v-model="verVisible"
+      :title="i18nT('ai_ontology.viewVersion')"
+      width="600px"
+      append-to-body
+    >
       <el-table :data="versions" size="small" border stripe>
-        <template #empty><el-empty :image-size="50" description="暂无历史版本" /></template>
-        <el-table-column prop="version" label="版本" width="80" />
-        <el-table-column prop="note" label="说明" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="created_by" label="修改人" width="120" />
-        <el-table-column prop="created_time" label="时间" width="160" />
-        <el-table-column label="操作" width="90" align="center">
+        <template #empty>
+          <el-empty :image-size="50" :description="i18nT('ai_ontology.noHistoricalVersions')" />
+        </template>
+        <el-table-column prop="version" :label="i18nT('ai_ontology.version')" width="80" />
+        <el-table-column
+          prop="note"
+          :label="i18nT('ai_ontology.note')"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="created_by" :label="i18nT('ai_ontology.modifiedBy')" width="120" />
+        <el-table-column prop="created_time" :label="i18nT('ai_ontology.time')" width="160" />
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="90" align="center">
           <template #default="{ row }">
             <el-button
               v-hasPerm="'module_ai:ontology:edit'"
@@ -522,7 +616,7 @@
               size="small"
               @click="doRestore(row)"
             >
-              回滚
+              {{ i18nT("ai_ontology.rollback") }}
             </el-button>
           </template>
         </el-table-column>
@@ -532,6 +626,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowDown, Delete, Edit, Link, Plus, Refresh, Share } from "@element-plus/icons-vue";
@@ -553,6 +648,8 @@ import {
   shareOntObjectView,
 } from "@/api/module_ai/ontology";
 import { useOntologyData } from "../composables/useOntologyData";
+
+const { t: i18nT } = useI18n();
 
 const props = defineProps<{ code: string; presetView?: string; presetKey?: string }>();
 
@@ -642,7 +739,7 @@ async function reload() {
     }
     await doRender();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "加载视图失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.loadViewFailed"));
   }
 }
 
@@ -670,7 +767,11 @@ async function doRender() {
     }
   } catch (e: any) {
     const msg = e?.msg || "";
-    ElMessage.error(msg.includes("不存在") ? "该对象类型暂无对应实例可预览" : msg || "渲染失败");
+    ElMessage.error(
+      msg.includes(i18nT("ai_ontology.doesNotExist"))
+        ? i18nT("ai_ontology.noInstancesToPreviewForThisObjectType")
+        : msg || i18nT("ai_ontology.renderFailed")
+    );
   } finally {
     rendering.value = false;
   }
@@ -709,10 +810,10 @@ function openEditor(row?: any) {
   } else {
     Object.assign(form, {
       code: "",
-      name: `${props.code} 自定义视图`,
+      name: i18nT("ai_ontology.customViewName", { code: props.code }),
       form_factor: formFactor.value,
       is_default: false,
-      tabs: [{ key: "overview", label: "概览", widgets: [] }],
+      tabs: [{ key: "overview", label: i18nT("ai_ontology.overview"), widgets: [] }],
     });
   }
   form.tabs.forEach((t: any) => {
@@ -724,7 +825,11 @@ function openEditor(row?: any) {
 }
 
 function addTab() {
-  form.tabs.push({ key: `tab${form.tabs.length + 1}`, label: "新标签页", widgets: [] });
+  form.tabs.push({
+    key: `tab${form.tabs.length + 1}`,
+    label: i18nT("ai_ontology.newTab"),
+    widgets: [],
+  });
 }
 function addWidget(t: any) {
   t.widgets = t.widgets || [];
@@ -745,12 +850,12 @@ async function doSave() {
       object_code: props.code,
       _mode: form.code ? "update" : "create",
     });
-    ElMessage.success(r.data?.msg || "已保存");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.saved"));
     editorVisible.value = false;
     stdView.value = null;
     await reload();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -758,18 +863,22 @@ async function doSave() {
 
 async function doSetDefault(row: any) {
   await setDefaultOntObjectView(row.code);
-  ElMessage.success("已设为默认视图");
+  ElMessage.success(i18nT("ai_ontology.setAsDefaultView"));
   await reload();
 }
 
 async function doRemove(row: any) {
   await ElMessageBox.confirm(
-    `将删除视图「${row.name}」及其 ${row.version} 个历史版本，且不可恢复。确认删除？`,
-    "删除视图",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    i18nT("ai_ontology.deleteObjectViewConfirm", { name: row.name, count: row.version }),
+    i18nT("ai_ontology.deleteView"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   await removeOntObjectView(row.code);
-  ElMessage.success("已删除");
+  ElMessage.success(i18nT("ai_ontology.deleted"));
   await reload();
 }
 
@@ -787,12 +896,16 @@ async function openVersions(row: any) {
 
 async function doRestore(row: any) {
   await ElMessageBox.confirm(
-    `将把视图回滚到 v${row.version}（当前内容会先存为新版本）。确认回滚？`,
-    "回滚视图",
-    { type: "warning", confirmButtonText: "回滚", cancelButtonText: "取消" }
+    i18nT("ai_ontology.rollbackViewConfirm", { version: row.version }),
+    i18nT("ai_ontology.rollbackView"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.rollback"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   await restoreOntObjectView(verCode.value, row.version);
-  ElMessage.success("已回滚");
+  ElMessage.success(i18nT("ai_ontology.rolledBack"));
   verVisible.value = false;
   await reload();
 }
@@ -802,7 +915,9 @@ function filterSummary(filters: any[]) {
   const parts = (filters || []).map(
     (f: any) => `${f.prop} ${f.op}${f.value !== undefined && f.value !== "" ? " " + f.value : ""}`
   );
-  return `本标签页生效的筛选：${parts.join(" 且 ")}`;
+  return i18nT("ai_ontology.activeFiltersSummary", {
+    filters: parts.join(i18nT("ai_ontology.and")),
+  });
 }
 
 /* ---------------- 共享 ---------------- */
@@ -837,11 +952,11 @@ async function doShare() {
       shareForm.share_mode,
       shareForm.share_roles
     );
-    ElMessage.success(r.data?.msg || "已设置");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.set"));
     shareVisible.value = false;
     await reload();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "设置失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.setFailed"));
   } finally {
     saving.value = false;
   }
@@ -855,9 +970,9 @@ async function copyLink() {
     const url = r.data?.data?.url || "";
     const abs = `${location.origin}${location.pathname}${url}`;
     await navigator.clipboard.writeText(abs);
-    ElMessage.success(`链接已复制：${abs}`);
+    ElMessage.success(i18nT("ai_ontology.linkCopied", { url: abs }));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "生成链接失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.generateLinkFailed"));
   }
 }
 

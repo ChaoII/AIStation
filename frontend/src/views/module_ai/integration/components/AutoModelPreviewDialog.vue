@@ -16,7 +16,7 @@
     @closed="reset"
   >
     <el-alert v-if="loading" type="info" :closable="false" show-icon>
-      正在调用大模型分析「{{ datasource }}」的前 {{ maxObjects }} 个对象，通常需要十几秒……
+      {{ t("ai_workflow.ig_modelingLoading", { datasource, maxObjects: props.maxObjects }) }}
     </el-alert>
 
     <template v-else>
@@ -26,8 +26,17 @@
 
       <template v-else>
         <div class="am-head">
-          <span>共 {{ items.length }} 条候选，已选 {{ selected.length }} 条</span>
-          <el-button link type="primary" size="small" @click="toggleAll">全选 / 全不选</el-button>
+          <span>
+            {{
+              t("ai_workflow.ig_candidateCount", {
+                total: items.length,
+                selected: selected.length,
+              })
+            }}
+          </span>
+          <el-button link type="primary" size="small" @click="toggleAll">
+            {{ t("ai_workflow.ig_selectAllNone") }}
+          </el-button>
         </div>
 
         <el-table
@@ -41,42 +50,52 @@
         >
           <el-table-column type="selection" width="42" />
           <template v-if="scope === 'metrics'">
-            <el-table-column prop="name" label="指标名" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="key" label="标识" min-width="120" show-overflow-tooltip />
+            <el-table-column
+              prop="name"
+              :label="t('ai_workflow.ig_metricName')"
+              min-width="140"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              prop="key"
+              :label="t('ai_workflow.ig_identifier')"
+              min-width="120"
+              show-overflow-tooltip
+            />
             <el-table-column
               prop="object_code"
-              label="对象"
+              :label="t('ai_workflow.ig_object')"
               min-width="110"
               show-overflow-tooltip
             />
             <el-table-column
               prop="property_code"
-              label="属性"
+              :label="t('ai_workflow.ig_property')"
               min-width="110"
               show-overflow-tooltip
             />
-            <el-table-column prop="agg_fn" label="聚合" width="80" />
+            <el-table-column prop="agg_fn" :label="t('ai_workflow.ig_agg')" width="80" />
           </template>
           <template v-else>
             <el-table-column
               prop="object_name"
-              label="对象"
+              :label="t('ai_workflow.ig_object')"
               min-width="130"
               show-overflow-tooltip
             />
             <el-table-column
               prop="object_code"
-              label="标识"
+              :label="t('ai_workflow.ig_identifier')"
               min-width="120"
               show-overflow-tooltip
             />
             <el-table-column
               prop="description"
-              label="描述"
+              :label="t('ai_workflow.ig_description')"
               min-width="200"
               show-overflow-tooltip
             />
-            <el-table-column label="字段数" width="80">
+            <el-table-column :label="t('ai_workflow.ig_columnCount')" width="80">
               <template #default="{ row }">{{ (row.fields || []).length }}</template>
             </el-table-column>
           </template>
@@ -86,15 +105,15 @@
       <!-- 拒绝原因：**有候选（部分被拒）或没有候选（全被拒）都要显示** ——
            否则用户只看到"没有候选"，不知道是数据源不通、还是口径跑不过。 -->
       <div v-if="reasons.length" class="am-reasons">
-        <div class="am-reasons__title">未通过校验的候选（不会落库）</div>
+        <div class="am-reasons__title">{{ t("ai_workflow.ig_invalidCandidates") }}</div>
         <div v-for="(r, i) in reasons" :key="i" class="am-reasons__item">{{ r }}</div>
       </div>
     </template>
 
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
+      <el-button @click="visible = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
       <el-button type="primary" :loading="applying" :disabled="!selected.length" @click="apply">
-        应用选中 {{ selected.length }} 条
+        {{ t("ai_workflow.ig_applySelected", { count: selected.length }) }}
       </el-button>
     </template>
   </el-dialog>
@@ -103,6 +122,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 
 import { autoModelApply, autoModelPreview } from "@/api/module_ai/ontology";
 
@@ -115,6 +135,7 @@ interface Props {
 const props = defineProps<Props>();
 const visible = defineModel<boolean>({ default: false });
 const emit = defineEmits<{ (e: "applied", result: any): void }>();
+const { t } = useI18n();
 
 const tableRef = ref();
 const loading = ref(false);
@@ -124,12 +145,14 @@ const selected = ref<any[]>([]);
 const reasons = ref<string[]>([]);
 
 const title = computed(() =>
-  props.scope === "metrics" ? "自动生成绑定型指标（预览）" : "自动生成对象/属性标注（预览）"
+  props.scope === "metrics"
+    ? t("ai_workflow.ig_autoModelTitleMetric")
+    : t("ai_workflow.ig_autoModelTitleAnnotation")
 );
 const emptyHint = computed(() =>
   props.scope === "metrics"
-    ? "该数据源这批对象没有可用的指标候选（可能是对象没有可聚合的数值属性，或大模型未给出可验证的指标）"
-    : "该数据源这批对象没有可用的标注候选"
+    ? t("ai_workflow.ig_emptyHintMetric")
+    : t("ai_workflow.ig_emptyHintAnnotation")
 );
 
 function onSelectionChange(rows: any[]) {
@@ -158,7 +181,7 @@ async function runPreview() {
     // 默认全选：预览的全部候选都是已通过校验的，用户只需剔掉不要的
     items.value.forEach((row) => tableRef.value?.toggleRowSelection(row, true));
   } catch (e: any) {
-    ElMessage.error(e?.message || "分析失败");
+    ElMessage.error(e?.message || t("ai_workflow.ig_analysisFail"));
   } finally {
     loading.value = false;
   }
@@ -176,14 +199,16 @@ async function apply() {
     const saved = data?.saved ?? 0;
     const failed: string[] = data?.reasons || [];
     if (failed.length) {
-      ElMessage.warning(`已落库 ${saved} 条，${failed.length} 条失败：${failed[0]}`);
+      ElMessage.warning(
+        t("ai_workflow.ig_applyMixed", { saved, failed: failed.length, first: failed[0] })
+      );
     } else {
-      ElMessage.success(`已落库 ${saved} 条`);
+      ElMessage.success(t("ai_workflow.ig_applySuccess", { saved }));
     }
     emit("applied", data);
     visible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.message || "应用失败");
+    ElMessage.error(e?.message || t("ai_workflow.ig_applyFail"));
   } finally {
     applying.value = false;
   }

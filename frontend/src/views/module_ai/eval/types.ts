@@ -108,21 +108,22 @@ export interface EvalAblationReport {
   error?: string;
 }
 
-/** 8 个消融开关 → 中文展示名。 */
+/** 8 个消融开关 → 展示名（存放 i18n key 后缀，展示时用 t('ai_workflow.' + label) 取）。 */
 export const ABLATION_KEYS: { key: string; label: string }[] = [
-  { key: "recall_enabled", label: "召回服务" },
-  { key: "agno_semantic_enabled", label: "语义向量召回" },
-  { key: "kg_enabled", label: "知识图谱" },
-  { key: "agno_tool_agent", label: "工具调用智能体" },
+  { key: "recall_enabled", label: "eval_ablRecall" },
+  { key: "agno_semantic_enabled", label: "eval_ablSemantic" },
+  { key: "kg_enabled", label: "eval_ablKg" },
+  { key: "agno_tool_agent", label: "eval_ablTool" },
   // 诚实命名：它只在提示词里加一条「先判断单表/联表/嵌套」，**不是真分解**
   // （真分解是 two_stage_planning：先出执行计划再写 SQL；修复 _cfg_bool 后重测 B 半 A/B：
   //  **−7.55 分 + 错误率 0→9.4%**（计划诱发表名幻觉）→ **保持默认关**）
-  { key: "decomposed_planning", label: "规划提示（单表/联表/嵌套）" },
-  { key: "empty_self_correct", label: "空结果自纠错" },
-  { key: "fewshot_auto_curate", label: "Few-shot 自动沉淀" },
-  { key: "enum_hint_enabled", label: "枚举取值提示" },
+  { key: "decomposed_planning", label: "eval_ablPlan" },
+  { key: "empty_self_correct", label: "eval_ablSelfCorrect" },
+  { key: "fewshot_auto_curate", label: "eval_ablFewshot" },
+  { key: "enum_hint_enabled", label: "eval_ablEnum" },
 ];
 
+// 难度/形式：数组元素为发送给后端的原始枚举值（数据），展示时用下面的 key 经 i18n 翻译。
 export const DIFFICULTIES = ["简单", "中等", "困难"];
 
 export const FORMS = [
@@ -137,6 +138,34 @@ export const FORMS = [
   "业务黑话",
   "快路径指标",
 ];
+
+// 与 DIFFICULTIES / FORMS 顺序一一对应，返回 i18n key 后缀（不含 ai_workflow. 前缀）。
+export const DIFFICULTY_KEYS = ["eval_diff_easy", "eval_diff_medium", "eval_diff_hard"];
+
+export const FORM_KEYS = [
+  "eval_form_single",
+  "eval_form_multi",
+  "eval_form_timewin",
+  "eval_form_ratio",
+  "eval_form_topn",
+  "eval_form_windowfn",
+  "eval_form_distinct",
+  "eval_form_nested",
+  "eval_form_jargon",
+  "eval_form_fast",
+];
+
+/** 难度原始值 → i18n key 后缀（找不到则回退未知）。 */
+export function diffKey(d: string): string {
+  const i = DIFFICULTIES.indexOf(d);
+  return i < 0 ? "eval_diff_default" : DIFFICULTY_KEYS[i];
+}
+
+/** 形式原始值 → i18n key 后缀（找不到则回退未知）。 */
+export function formKey(f: string): string {
+  const i = FORMS.indexOf(f);
+  return i < 0 ? "eval_form_default" : FORM_KEYS[i];
+}
 
 /** 难度 → el-tag 类型。 */
 export function difficultyTag(d: string): "success" | "warning" | "danger" | "info" {

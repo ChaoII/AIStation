@@ -6,7 +6,7 @@
       <el-card shadow="never" class="space-side">
         <template #header>
           <div class="space-side-head">
-            <span>文件</span>
+            <span>{{ t("ai_chat.space_files") }}</span>
             <el-button
               v-hasPerm="'module_ai:space:manage'"
               link
@@ -54,18 +54,26 @@
               </span>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="addchild">新建文件夹</el-dropdown-item>
-                  <el-dropdown-item command="upload">上传文件到此</el-dropdown-item>
-                  <el-dropdown-item icon="EditPen" command="rename">重命名</el-dropdown-item>
+                  <el-dropdown-item command="addchild">
+                    {{ t("ai_chat.space_createFolder") }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="upload">
+                    {{ t("ai_chat.space_uploadToFolder") }}
+                  </el-dropdown-item>
+                  <el-dropdown-item icon="EditPen" command="rename">
+                    {{ t("ai_chat.space_rename") }}
+                  </el-dropdown-item>
                   <el-dropdown-item
                     icon="delete"
                     command="delete"
                     style="color: var(--el-color-danger)"
                     divided
                   >
-                    删除
+                    {{ t("ai_chat.space_delete") }}
                   </el-dropdown-item>
-                  <el-dropdown-item icon="refresh" command="refresh">刷新</el-dropdown-item>
+                  <el-dropdown-item icon="refresh" command="refresh">
+                    {{ t("ai_chat.space_refresh") }}
+                  </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -79,7 +87,7 @@
           <el-breadcrumb separator="/">
             <el-breadcrumb-item>
               <el-button icon="Folder" link type="primary" @click="onFolderClick(null)">
-                全部文件
+                {{ t("ai_chat.space_allFiles") }}
               </el-button>
             </el-breadcrumb-item>
             <el-breadcrumb-item v-for="f in breadcrumb" :key="f.id">
@@ -104,12 +112,12 @@
                 type="primary"
                 @click="openQuotaDialog"
               >
-                申请扩容
+                {{ t("ai_chat.space_applyExpand") }}
               </el-button>
             </div>
             <el-input
               v-model="keyword"
-              placeholder="搜索个人空间文件…"
+              :placeholder="t('ai_chat.space_searchPlaceholder')"
               clearable
               :prefix-icon="Search"
               style="width: 200px"
@@ -118,7 +126,7 @@
             />
             <el-select
               v-model="typeFilter"
-              placeholder="类型"
+              :placeholder="t('ai_chat.space_type')"
               clearable
               style="width: 120px"
               @change="loadFiles(1)"
@@ -136,7 +144,9 @@
               :multiple="true"
               :http-request="doUpload"
             >
-              <el-button type="primary" :icon="Upload">上传文件</el-button>
+              <el-button type="primary" :icon="Upload">
+                {{ t("ai_chat.space_uploadFile") }}
+              </el-button>
             </el-upload>
           </div>
         </div>
@@ -161,14 +171,14 @@
             @selection-change="(rows: SpaceRow[]) => (selectedIds = rows.map((r) => r.id))"
           >
             <template #empty>
-              <el-empty :image-size="80" description="当前目录暂无文件" />
+              <el-empty :image-size="80" :description="t('ai_chat.space_noFiles')" />
             </template>
             <el-table-column
               type="selection"
               width="46"
               :selectable="(row: SpaceRow) => row.kind === 'file'"
             />
-            <el-table-column label="名称" min-width="240" show-overflow-tooltip>
+            <el-table-column :label="t('ai_chat.space_name')" min-width="240" show-overflow-tooltip>
               <template #default="{ row }">
                 <!-- 文件夹：点击进入目录 -->
                 <span
@@ -188,18 +198,20 @@
                 </span>
               </template>
             </el-table-column>
-            <el-table-column label="类型" width="90" align="center">
+            <el-table-column :label="t('ai_chat.space_type')" width="90" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.kind === 'folder'" size="small" effect="plain">文件夹</el-tag>
+                <el-tag v-if="row.kind === 'folder'" size="small" effect="plain">
+                  {{ t("ai_chat.space_folder") }}
+                </el-tag>
                 <el-tag v-else size="small" effect="plain">{{ typeLabel(row.file_type) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="大小" width="100" align="right">
+            <el-table-column :label="t('ai_chat.space_size')" width="100" align="right">
               <template #default="{ row }">
                 {{ formatSize(row.size) }}
               </template>
             </el-table-column>
-            <el-table-column label="来源" width="100" align="center">
+            <el-table-column :label="t('ai_chat.space_source')" width="100" align="center">
               <template #default="{ row }">
                 <el-tag
                   v-if="row.kind === 'file' && row.source === 'agent'"
@@ -207,23 +219,28 @@
                   type="success"
                   effect="plain"
                 >
-                  AI 生成
+                  {{ t("ai_chat.space_aiGenerated") }}
                 </el-tag>
                 <el-tag v-else-if="row.kind === 'file'" size="small" type="info" effect="plain">
-                  用户上传
+                  {{ t("ai_chat.space_userUploaded") }}
                 </el-tag>
                 <span v-else>—</span>
               </template>
             </el-table-column>
-            <el-table-column label="创建时间" width="170">
+            <el-table-column :label="t('ai_chat.space_createdTime')" width="170">
               <template #default="{ row }">{{ formatTime(row.created_time) }}</template>
             </el-table-column>
-            <el-table-column label="更新时间" width="170">
+            <el-table-column :label="t('ai_chat.space_updatedTime')" width="170">
               <template #default="{ row }">
                 {{ row.kind === "folder" ? "—" : formatTime(row.updated_time) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="250" align="center" fixed="right">
+            <el-table-column
+              :label="t('ai_chat.space_action')"
+              width="250"
+              align="center"
+              fixed="right"
+            >
               <template #default="{ row }">
                 <!-- 文件夹操作：打开 / 重命名 / 删除 -->
                 <template v-if="row.kind === 'folder'">
@@ -234,7 +251,7 @@
                     type="primary"
                     @click="onFolderClick(row.id)"
                   >
-                    打开
+                    {{ t("ai_chat.space_open") }}
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:manage'"
@@ -244,7 +261,7 @@
                     type="primary"
                     @click="openFolderRename(row)"
                   >
-                    重命名
+                    {{ t("ai_chat.space_rename") }}
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:manage'"
@@ -254,13 +271,13 @@
                     type="danger"
                     @click="onFolderCmd(row, 'delete')"
                   >
-                    删除
+                    {{ t("ai_chat.space_delete") }}
                   </el-button>
                 </template>
                 <!-- 文件操作：预览 / 下载 / 重命名 / 移动 / 删除 -->
                 <template v-else>
                   <el-button icon="View" size="small" link type="primary" @click="openPreview(row)">
-                    预览
+                    {{ t("ai_chat.space_preview") }}
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:download'"
@@ -270,7 +287,7 @@
                     type="primary"
                     @click="downloadFile(row)"
                   >
-                    下载
+                    {{ t("ai_chat.space_download") }}
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:manage'"
@@ -280,7 +297,7 @@
                     type="primary"
                     @click="openRename(row)"
                   >
-                    重命名
+                    {{ t("ai_chat.space_rename") }}
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:manage'"
@@ -290,7 +307,7 @@
                     type="primary"
                     @click="openMove(row)"
                   >
-                    移动
+                    {{ t("ai_chat.space_move") }}
                   </el-button>
                   <el-button
                     v-hasPerm="'module_ai:space:delete'"
@@ -300,7 +317,7 @@
                     type="danger"
                     @click="deleteFiles([row.id], row.name)"
                   >
-                    删除
+                    {{ t("ai_chat.space_delete") }}
                   </el-button>
                 </template>
               </template>
@@ -316,9 +333,14 @@
               type="danger"
               plain
               :icon="Delete"
-              @click="deleteFiles(selectedIds, `${selectedIds.length} 个文件`)"
+              @click="
+                deleteFiles(
+                  selectedIds,
+                  t('ai_chat.space_fileCountLabel', { count: selectedIds.length })
+                )
+              "
             >
-              删除选中（{{ selectedIds.length }}）
+              {{ t("ai_chat.space_deleteSelected") }}（{{ selectedIds.length }}）
             </el-button>
           </div>
           <el-pagination
@@ -335,31 +357,47 @@
     <!-- 新建/重命名文件夹 -->
     <el-dialog v-model="folderDialogVisible" :title="folderDialogTitle" width="520px">
       <el-form label-width="80px" @submit.prevent>
-        <el-form-item label="名称">
-          <el-input v-model="folderName" placeholder="请输入文件夹名称" maxlength="255" />
+        <el-form-item :label="t('ai_chat.space_name')">
+          <el-input
+            v-model="folderName"
+            :placeholder="t('ai_chat.space_inputFolderName')"
+            maxlength="255"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="folderDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitFolder">确定</el-button>
+        <el-button @click="folderDialogVisible = false">
+          {{ t("ai_chat.space_cancel") }}
+        </el-button>
+        <el-button type="primary" @click="submitFolder">
+          {{ t("ai_chat.space_confirm") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 重命名文件 -->
-    <el-dialog v-model="renameVisible" title="重命名文件" width="520px">
+    <el-dialog v-model="renameVisible" :title="t('ai_chat.space_renameFile')" width="520px">
       <el-form label-width="80px" @submit.prevent>
-        <el-form-item label="文件名">
-          <el-input v-model="renameName" placeholder="请输入文件名（含扩展名）" maxlength="255" />
+        <el-form-item :label="t('ai_chat.space_fileName')">
+          <el-input
+            v-model="renameName"
+            :placeholder="t('ai_chat.space_inputFileName')"
+            maxlength="255"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="renameVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitRename">确定</el-button>
+        <el-button @click="renameVisible = false">
+          {{ t("ai_chat.space_cancel") }}
+        </el-button>
+        <el-button type="primary" @click="submitRename">
+          {{ t("ai_chat.space_confirm") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 移动文件 -->
-    <el-dialog v-model="moveVisible" title="移动到文件夹" width="520px">
+    <el-dialog v-model="moveVisible" :title="t('ai_chat.space_moveToFolder')" width="520px">
       <el-tree
         :data="treeData"
         node-key="id"
@@ -369,9 +407,11 @@
         @node-click="(d: any) => (moveTarget = d.id)"
       />
       <template #footer>
-        <el-button @click="moveVisible = false">取消</el-button>
+        <el-button @click="moveVisible = false">
+          {{ t("ai_chat.space_cancel") }}
+        </el-button>
         <el-button type="primary" :disabled="moveTarget == null" @click="submitMove">
-          确定
+          {{ t("ai_chat.space_confirm") }}
         </el-button>
       </template>
     </el-dialog>
@@ -422,21 +462,25 @@
           </template>
         </div>
         <div v-else-if="previewKind === 'docx'" class="space-preview-html" v-html="previewHtml" />
-        <div v-else class="space-preview-text">{{ previewContent || "（空文档）" }}</div>
+        <div v-else class="space-preview-text">
+          {{ previewContent || t("ai_chat.space_emptyDoc") }}
+        </div>
       </div>
       <template #footer>
-        <el-button @click="previewVisible = false">关闭</el-button>
+        <el-button @click="previewVisible = false">
+          {{ t("ai_chat.space_close") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 申请扩容 -->
-    <el-dialog v-model="quotaDialogVisible" title="申请扩容" width="600px">
+    <el-dialog v-model="quotaDialogVisible" :title="t('ai_chat.space_applyExpand')" width="600px">
       <div class="quota-current">
-        <span>当前配额：{{ formatQuotaSize(quotaTotal) }}</span>
-        <span>已用：{{ formatQuotaSize(quotaUsed) }}</span>
+        <span>{{ t("ai_chat.space_currentQuota", { size: formatQuotaSize(quotaTotal) }) }}</span>
+        <span>{{ t("ai_chat.space_used", { size: formatQuotaSize(quotaUsed) }) }}</span>
       </div>
       <el-form v-if="!quotaHasPending" label-width="90px" class="quota-form" @submit.prevent>
-        <el-form-item label="目标配额">
+        <el-form-item :label="t('ai_chat.space_targetQuota')">
           <el-input-number
             v-model="quotaTargetGb"
             :min="quotaTargetMinGb"
@@ -445,14 +489,14 @@
           />
           <span class="quota-unit">GB</span>
         </el-form-item>
-        <el-form-item label="申请理由">
+        <el-form-item :label="t('ai_chat.space_reason')">
           <el-input
             v-model="quotaReason"
             type="textarea"
             :rows="3"
             maxlength="500"
             show-word-limit
-            placeholder="请说明申请扩容的原因，如：需要存储更多模型训练产物。"
+            :placeholder="t('ai_chat.space_reasonPlaceholder')"
           />
         </el-form-item>
       </el-form>
@@ -461,47 +505,53 @@
         type="info"
         :closable="false"
         show-icon
-        title="您已有一笔待审核的扩容申请，请耐心等待管理员处理。"
+        :title="t('ai_chat.space_pendingAlert')"
       />
       <div class="quota-mine">
-        <div class="quota-mine-title">我的申请</div>
+        <div class="quota-mine-title">{{ t("ai_chat.space_myRequests") }}</div>
         <el-table
           v-loading="quotaMineLoading"
           :data="quotaMine"
           size="small"
-          empty-text="暂无申请记录"
+          :empty-text="t('ai_chat.space_noRequests')"
           border
           stripe
         >
-          <el-table-column label="目标配额" width="110">
+          <el-table-column :label="t('ai_chat.space_targetQuota')" width="110">
             <template #default="{ row }">
               {{ formatQuotaSize(row.target_mb * 1024 * 1024) }}
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="100">
+          <el-table-column :label="t('ai_chat.space_status')" width="100">
             <template #default="{ row }">
               <el-tag size="small" :type="quotaStatusType(row.status)" effect="plain">
                 {{ quotaStatusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="申请时间" width="150">
+          <el-table-column :label="t('ai_chat.space_appliedTime')" width="150">
             <template #default="{ row }">{{ formatTime(row.created_time) }}</template>
           </el-table-column>
-          <el-table-column label="审核备注" min-width="140" show-overflow-tooltip>
+          <el-table-column
+            :label="t('ai_chat.space_reviewNote')"
+            min-width="140"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">{{ row.review_note || "—" }}</template>
           </el-table-column>
         </el-table>
       </div>
       <template #footer>
-        <el-button @click="quotaDialogVisible = false">关闭</el-button>
+        <el-button @click="quotaDialogVisible = false">
+          {{ t("ai_chat.space_close") }}
+        </el-button>
         <el-button
           v-if="!quotaHasPending"
           type="primary"
           :loading="quotaSubmitting"
           @click="submitQuotaRequest"
         >
-          提交申请
+          {{ t("ai_chat.space_submitRequest") }}
         </el-button>
       </template>
     </el-dialog>
@@ -510,6 +560,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Delete,
@@ -574,6 +625,8 @@ const breadcrumb = ref<SpaceTreeNode[]>([]);
 const keyword = ref("");
 const typeFilter = ref("");
 const loading = ref(false);
+
+const { t } = useI18n();
 
 const files = ref<SpaceFileItem[]>([]);
 const total = ref(0);
@@ -644,36 +697,36 @@ const quotaText = computed(
 );
 
 const typeOptions = [
-  { value: "image", label: "图片" },
+  { value: "image", label: t("ai_chat.space_typeImage") },
   { value: "pdf", label: "PDF" },
-  { value: "docx", label: "文档" },
-  { value: "xlsx", label: "表格" },
-  { value: "pptx", label: "演示" },
-  { value: "txt", label: "文本" },
+  { value: "docx", label: t("ai_chat.space_typeDoc") },
+  { value: "xlsx", label: t("ai_chat.space_typeSheet") },
+  { value: "pptx", label: t("ai_chat.space_typeSlide") },
+  { value: "txt", label: t("ai_chat.space_typeText") },
   { value: "md", label: "Markdown" },
   { value: "html", label: "HTML" },
-  { value: "code", label: "代码" },
+  { value: "code", label: t("ai_chat.space_typeCode") },
   { value: "csv", label: "CSV" },
   { value: "json", label: "JSON" },
-  { value: "video", label: "视频" },
-  { value: "audio", label: "音频" },
+  { value: "video", label: t("ai_chat.space_typeVideo") },
+  { value: "audio", label: t("ai_chat.space_typeAudio") },
 ];
 
 const typeLabels: Record<string, string> = {
-  image: "图片",
+  image: t("ai_chat.space_typeImage"),
   pdf: "PDF",
-  docx: "文档",
-  xlsx: "表格",
-  pptx: "演示",
-  txt: "文本",
+  docx: t("ai_chat.space_typeDoc"),
+  xlsx: t("ai_chat.space_typeSheet"),
+  pptx: t("ai_chat.space_typeSlide"),
+  txt: t("ai_chat.space_typeText"),
   md: "MD",
   html: "HTML",
-  code: "代码",
+  code: t("ai_chat.space_typeCode"),
   csv: "CSV",
   json: "JSON",
-  video: "视频",
-  audio: "音频",
-  other: "其他",
+  video: t("ai_chat.space_typeVideo"),
+  audio: t("ai_chat.space_typeAudio"),
+  other: t("ai_chat.space_typeOther"),
 };
 
 // ---------------------------------------------------------------- 工具
@@ -708,7 +761,7 @@ function formatTime(t?: string): string {
 }
 
 function typeLabel(ft: string): string {
-  return typeLabels[ft] || ft || "其他";
+  return typeLabels[ft] || ft || t("ai_chat.space_typeOther");
 }
 
 function fileIcon(ft: string) {
@@ -869,10 +922,10 @@ async function uploadFilesTo(files: File[], folderId: number | null) {
   if (!files.length) return;
   try {
     for (const f of files) await uploadSpaceFile(f, folderId);
-    ElMessage.success(`已上传 ${files.length} 个文件`);
+    ElMessage.success(t("ai_chat.space_uploadedCount", { count: files.length }));
     await refreshAll();
   } catch (e: any) {
-    ElMessage.error(e?.message || "上传失败");
+    ElMessage.error(e?.message || t("ai_chat.space_uploadFailed"));
   }
 }
 
@@ -885,7 +938,7 @@ const folderName = ref("");
 
 function openFolderCreate(parentId: number | null) {
   folderMode.value = "create";
-  folderDialogTitle.value = "新建文件夹";
+  folderDialogTitle.value = t("ai_chat.space_createFolder");
   folderParentForCreate.value = parentId;
   folderName.value = "";
   folderDialogVisible.value = true;
@@ -893,7 +946,7 @@ function openFolderCreate(parentId: number | null) {
 
 function openFolderRename(row: any) {
   folderMode.value = "rename";
-  folderDialogTitle.value = "重命名文件夹";
+  folderDialogTitle.value = t("ai_chat.space_renameFolder");
   folderIdForRename.value = row.id;
   folderName.value = row.name;
   folderDialogVisible.value = true;
@@ -908,20 +961,24 @@ async function onFolderCmd(row: any, cmd: string) {
     const count = await countFilesInTree(row);
     try {
       await ElMessageBox.confirm(
-        `将删除文件夹「${row.name}」及其全部子文件夹，共 ${count} 个文件，且不可恢复。`,
-        "删除文件夹",
-        { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+        t("ai_chat.space_deleteFolderConfirm", { name: row.name, count }),
+        t("ai_chat.space_deleteFolder"),
+        {
+          confirmButtonText: t("ai_chat.space_delete"),
+          cancelButtonText: t("ai_chat.space_cancel"),
+          type: "warning",
+        }
       );
     } catch {
       return;
     }
     try {
       await deleteSpaceFolder(row.id);
-      ElMessage.success("已删除");
+      ElMessage.success(t("ai_chat.space_deleted"));
       if (currentFolderId.value === row.id) onFolderClick(null);
       await refreshAll();
     } catch (e: any) {
-      ElMessage.error(e?.message || "删除失败");
+      ElMessage.error(e?.message || t("ai_chat.space_deleteFailed"));
     }
   }
 }
@@ -935,21 +992,21 @@ async function countFilesInTree(row: any): Promise<number> {
 async function submitFolder() {
   const name = folderName.value.trim();
   if (!name) {
-    ElMessage.warning("请输入文件夹名称");
+    ElMessage.warning(t("ai_chat.space_inputFolderName"));
     return;
   }
   try {
     if (folderMode.value === "create") {
       await createSpaceFolder({ name, parent_id: folderParentForCreate.value });
-      ElMessage.success("创建成功");
+      ElMessage.success(t("ai_chat.space_createSuccess"));
     } else if (folderIdForRename.value != null) {
       await updateSpaceFolder(folderIdForRename.value, { name });
-      ElMessage.success("修改成功");
+      ElMessage.success(t("ai_chat.space_updateSuccess"));
     }
     folderDialogVisible.value = false;
     await refreshAll();
   } catch (e: any) {
-    ElMessage.error(e?.message || "操作失败");
+    ElMessage.error(e?.message || t("ai_chat.space_operationFailed"));
   }
 }
 
@@ -960,10 +1017,10 @@ const hiddenUploadInput = ref<HTMLInputElement | null>(null);
 async function performUploadFile(file: File, folderId: number | null) {
   try {
     await uploadSpaceFile(file, folderId);
-    ElMessage.success(`已上传 ${file.name}`);
+    ElMessage.success(t("ai_chat.space_uploadedName", { name: file.name }));
     await Promise.all([loadTree(), loadFiles(1), loadQuota()]);
   } catch (e: any) {
-    ElMessage.error(e?.message || "上传失败");
+    ElMessage.error(e?.message || t("ai_chat.space_uploadFailed"));
   }
 }
 
@@ -1000,7 +1057,7 @@ async function downloadFile(row: any) {
     a.click();
     URL.revokeObjectURL(url);
   } catch (e: any) {
-    ElMessage.error(e?.message || "下载失败");
+    ElMessage.error(e?.message || t("ai_chat.space_downloadFailed"));
   }
 }
 
@@ -1017,16 +1074,16 @@ function openRename(row: any) {
 async function submitRename() {
   const name = renameName.value.trim();
   if (!name || renameId.value == null) {
-    ElMessage.warning("请输入文件名");
+    ElMessage.warning(t("ai_chat.space_inputFileName"));
     return;
   }
   try {
     await renameSpaceFile({ file_id: renameId.value, name });
-    ElMessage.success("修改成功");
+    ElMessage.success(t("ai_chat.space_updateSuccess"));
     renameVisible.value = false;
     await Promise.all([loadTree(), loadFiles(pageNo.value)]);
   } catch (e: any) {
-    ElMessage.error(e?.message || "操作失败");
+    ElMessage.error(e?.message || t("ai_chat.space_operationFailed"));
   }
 }
 
@@ -1044,31 +1101,37 @@ async function submitMove() {
   if (moveFileId.value == null || moveTarget.value == null) return;
   try {
     await moveSpaceFile({ file_id: moveFileId.value, folder_id: moveTarget.value });
-    ElMessage.success("移动成功");
+    ElMessage.success(t("ai_chat.space_moveSuccess"));
     moveVisible.value = false;
     await Promise.all([loadTree(), loadFiles(pageNo.value)]);
   } catch (e: any) {
-    ElMessage.error(e?.message || "移动失败");
+    ElMessage.error(e?.message || t("ai_chat.space_moveFailed"));
   }
 }
 
 async function deleteFiles(ids: number[], label: string) {
   try {
-    await ElMessageBox.confirm(`将删除 ${label}（共 ${ids.length} 个），且不可恢复。`, "删除文件", {
-      confirmButtonText: "删除",
-      cancelButtonText: "取消",
-      type: "warning",
-    });
+    await ElMessageBox.confirm(
+      t("ai_chat.space_deleteFilesConfirm", { label, count: ids.length }),
+      t("ai_chat.space_deleteFile"),
+      {
+        confirmButtonText: t("ai_chat.space_delete"),
+        cancelButtonText: t("ai_chat.space_cancel"),
+        type: "warning",
+      }
+    );
   } catch {
     return;
   }
   try {
     const r = await deleteSpaceFiles(ids);
-    ElMessage.success(`已删除 ${r.data?.data?.deleted ?? ids.length} 个文件`);
+    ElMessage.success(
+      t("ai_chat.space_deletedCount", { count: r.data?.data?.deleted ?? ids.length })
+    );
     selectedIds.value = [];
     await Promise.all([loadTree(), loadFiles(1), loadQuota()]);
   } catch (e: any) {
-    ElMessage.error(e?.message || "删除失败");
+    ElMessage.error(e?.message || t("ai_chat.space_deleteFailed"));
   }
 }
 
@@ -1275,7 +1338,7 @@ async function openPreview(row: any) {
   } catch (e: any) {
     previewKind.value = "text";
     previewContent.value = "";
-    ElMessage.error(e?.message || "预览失败");
+    ElMessage.error(e?.message || t("ai_chat.space_previewFailed"));
   } finally {
     previewLoading.value = false;
   }
@@ -1294,9 +1357,9 @@ const quotaTargetMinGb = computed(() =>
 );
 
 function quotaStatusLabel(s: string): string {
-  if (s === "approved") return "已通过";
-  if (s === "rejected") return "已驳回";
-  return "待审核";
+  if (s === "approved") return t("ai_chat.space_quotaApproved");
+  if (s === "rejected") return t("ai_chat.space_quotaRejected");
+  return t("ai_chat.space_quotaPending");
 }
 
 function quotaStatusType(s: string): "success" | "danger" | "info" {
@@ -1311,7 +1374,7 @@ async function loadQuotaMine() {
     const r = await getMySpaceQuotaRequests();
     quotaMine.value = r.data?.data || [];
   } catch (e: any) {
-    ElMessage.error(e?.message || "加载申请记录失败");
+    ElMessage.error(e?.message || t("ai_chat.space_loadRequestsFailed"));
   } finally {
     quotaMineLoading.value = false;
   }
@@ -1329,11 +1392,13 @@ async function submitQuotaRequest() {
   const targetMb = Math.round(quotaTargetGb.value * 1024);
   const currentMb = quotaTotal.value / 1024 / 1024;
   if (targetMb <= currentMb) {
-    ElMessage.warning(`目标配额需大于当前 ${formatQuotaSize(quotaTotal.value)}`);
+    ElMessage.warning(
+      t("ai_chat.space_quotaTargetMustExceed", { size: formatQuotaSize(quotaTotal.value) })
+    );
     return;
   }
   if (!quotaReason.value.trim()) {
-    ElMessage.warning("请填写申请理由");
+    ElMessage.warning(t("ai_chat.space_inputReason"));
     return;
   }
   quotaSubmitting.value = true;
@@ -1342,12 +1407,12 @@ async function submitQuotaRequest() {
       target_mb: targetMb,
       reason: quotaReason.value.trim(),
     });
-    ElMessage.success(r.data?.data?.msg || "申请已提交");
+    ElMessage.success(r.data?.data?.msg || t("ai_chat.space_quotaSubmitted"));
     await loadQuotaMine();
     await loadQuota();
     quotaHasPending.value = true;
   } catch (e: any) {
-    ElMessage.error(e?.message || "提交失败");
+    ElMessage.error(e?.message || t("ai_chat.space_submitFailed"));
   } finally {
     quotaSubmitting.value = false;
   }

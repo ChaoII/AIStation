@@ -1,7 +1,7 @@
 <template>
   <div class="node-config-panel">
     <div class="panel-header">
-      <span>节点配置</span>
+      <span>{{ t("task.nodeConfig") }}</span>
       <ElButton type="text" class="close-btn" @click="handleClose">
         <ElIcon><Close /></ElIcon>
       </ElButton>
@@ -9,8 +9,12 @@
 
     <div class="panel-content">
       <ElForm :model="formData" label-width="80px" size="small">
-        <ElFormItem label="节点类型">
-          <ElSelect v-model="formData.type" placeholder="请选择节点类型" @change="handleTypeChange">
+        <ElFormItem :label="t('task.nodeTypeLabel')">
+          <ElSelect
+            v-model="formData.type"
+            :placeholder="t('task.selectNodeType')"
+            @change="handleTypeChange"
+          >
             <ElOption
               v-for="type in nodeTypes"
               :key="type.id"
@@ -20,22 +24,26 @@
           </ElSelect>
         </ElFormItem>
 
-        <ElFormItem label="节点名称">
-          <ElInput v-model="formData.label" placeholder="请输入节点名称" />
+        <ElFormItem :label="t('task.nodeNameLabel')">
+          <ElInput v-model="formData.label" :placeholder="t('task.inputNodeNameShort')" />
         </ElFormItem>
 
-        <ElFormItem label="位置参数">
-          <ElInput v-model="formData.args" placeholder="多个参数用逗号分隔，如: arg1, arg2, arg3" />
-          <div class="field-hint">多个参数用逗号分隔</div>
+        <ElFormItem :label="t('task.positionalArgsLabel')">
+          <ElInput v-model="formData.args" :placeholder="t('task.argsPlaceholderMulti')" />
+          <div class="field-hint">{{ t("task.argsHint") }}</div>
         </ElFormItem>
 
-        <ElFormItem label="关键字参数">
+        <ElFormItem :label="t('task.kwArgsLabel')">
           <div class="kv-editor">
             <div v-for="(row, i) in formData.kvRows" :key="i" class="kv-row">
-              <ElInput v-model="row.key" placeholder="键" class="kv-row__key" />
+              <ElInput
+                v-model="row.key"
+                :placeholder="t('task.kvKeyPlaceholder')"
+                class="kv-row__key"
+              />
               <ElInput
                 v-model="row.value"
-                :placeholder="'值（支持 {{变量}} 插值）'"
+                :placeholder="t('task.kvValuePlaceholder')"
                 class="kv-row__val"
               />
               <ElButton text type="danger" :icon="Delete" @click="formData.kvRows.splice(i, 1)" />
@@ -46,25 +54,27 @@
               :icon="Plus"
               @click="formData.kvRows.push({ key: '', value: '' })"
             >
-              添加参数
+              {{ t("task.addParam") }}
             </ElButton>
           </div>
-          <div class="field-hint">键值对形式的关键字参数，可变值可引用其他变量</div>
+          <div class="field-hint">{{ t("task.kvHint") }}</div>
         </ElFormItem>
 
-        <ElFormItem label="描述">
+        <ElFormItem :label="t('task.descLabel')">
           <ElInput
             v-model="formData.description"
             type="textarea"
             :rows="2"
-            placeholder="请输入描述信息"
+            :placeholder="t('task.inputDesc')"
           />
         </ElFormItem>
       </ElForm>
 
       <div class="panel-actions">
-        <ElButton type="primary" size="small" @click="handleSave">保存</ElButton>
-        <ElButton type="danger" size="small" @click="handleDelete">删除节点</ElButton>
+        <ElButton type="primary" size="small" @click="handleSave">{{ t("task.save") }}</ElButton>
+        <ElButton type="danger" size="small" @click="handleDelete">
+          {{ t("task.deleteNode") }}
+        </ElButton>
       </div>
     </div>
   </div>
@@ -72,6 +82,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import {
   ElButton,
   ElForm,
@@ -95,6 +106,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["close", "save", "delete"]);
+
+const { t } = useI18n();
 
 const nodeTypes = ref<WorkflowNodeTypeOption[]>([]);
 
@@ -127,7 +140,7 @@ const loadNodeTypes = async () => {
       nodeTypes.value = res.data.data || [];
     }
   } catch {
-    ElMessage.error("加载节点类型失败");
+    ElMessage.error(t("task.loadNodeTypeOptFailed"));
   }
 };
 
@@ -167,7 +180,7 @@ function handleSave() {
     kwargs: rowsToObj(formData.value.kvRows),
     description: formData.value.description,
   });
-  ElMessage.success("保存成功");
+  ElMessage.success(t("task.saveSuccess"));
 }
 
 function handleDelete() {

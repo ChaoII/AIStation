@@ -17,7 +17,10 @@
       <div class="curd-dialog-header">
         <span :id="titleId" :class="titleClass">{{ title }}</span>
         <div class="curd-dialog-header__actions">
-          <el-tooltip :content="fullscreen ? t('common.restore') : t('common.fullscreen')" placement="top">
+          <el-tooltip
+            :content="fullscreen ? t('common.restore') : t('common.fullscreen')"
+            placement="top"
+          >
             <el-button text circle type="primary" @click="fullscreen = !fullscreen">
               <el-icon>
                 <Fold v-if="fullscreen" />
