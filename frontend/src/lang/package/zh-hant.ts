@@ -20,6 +20,7 @@ import aiWorkflowIntegrationAdd from "./zh-hant/ai_workflow_integration_add";
 import aiWorkflowWorkflowAdd from "./zh-hant/ai_workflow_workflow_add";
 import annotation from "./zh-hant/annotation";
 import application from "./zh-hant/application";
+import dashboard from "./zh-hant/dashboard";
 import example from "./zh-hant/example";
 import generator from "./zh-hant/generator";
 import monitor from "./zh-hant/monitor";
@@ -47,6 +48,7 @@ export default {
   ai_workflow: { ...aiWorkflow, ...aiWorkflowEvalAdd, ...aiWorkflowDevelopAdd, ...aiWorkflowIntegrationAdd, ...aiWorkflowWorkflowAdd },
   annotation,
   application,
+  dashboard,
   example,
   generator,
   monitor,

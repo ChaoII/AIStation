@@ -20,6 +20,7 @@ import aiWorkflowIntegrationAdd from "./ko/ai_workflow_integration_add";
 import aiWorkflowWorkflowAdd from "./ko/ai_workflow_workflow_add";
 import annotation from "./ko/annotation";
 import application from "./ko/application";
+import dashboard from "./ko/dashboard";
 import example from "./ko/example";
 import generator from "./ko/generator";
 import monitor from "./ko/monitor";
@@ -47,6 +48,7 @@ export default {
   ai_workflow: { ...aiWorkflow, ...aiWorkflowEvalAdd, ...aiWorkflowDevelopAdd, ...aiWorkflowIntegrationAdd, ...aiWorkflowWorkflowAdd },
   annotation,
   application,
+  dashboard,
   example,
   generator,
   monitor,

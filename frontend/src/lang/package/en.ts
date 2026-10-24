@@ -20,6 +20,7 @@ import aiWorkflowIntegrationAdd from "./en/ai_workflow_integration_add";
 import aiWorkflowWorkflowAdd from "./en/ai_workflow_workflow_add";
 import annotation from "./en/annotation";
 import application from "./en/application";
+import dashboard from "./en/dashboard";
 import example from "./en/example";
 import generator from "./en/generator";
 import monitor from "./en/monitor";
@@ -53,6 +54,7 @@ export default {
   },
   annotation,
   application,
+  dashboard,
   example,
   generator,
   monitor,

@@ -20,6 +20,7 @@ import aiWorkflowIntegrationAdd from "./ja/ai_workflow_integration_add";
 import aiWorkflowWorkflowAdd from "./ja/ai_workflow_workflow_add";
 import annotation from "./ja/annotation";
 import application from "./ja/application";
+import dashboard from "./ja/dashboard";
 import example from "./ja/example";
 import generator from "./ja/generator";
 import monitor from "./ja/monitor";
@@ -47,6 +48,7 @@ export default {
   ai_workflow: { ...aiWorkflow, ...aiWorkflowEvalAdd, ...aiWorkflowDevelopAdd, ...aiWorkflowIntegrationAdd, ...aiWorkflowWorkflowAdd },
   annotation,
   application,
+  dashboard,
   example,
   generator,
   monitor,

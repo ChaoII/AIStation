@@ -20,6 +20,7 @@ import aiWorkflowIntegrationAdd from "./ar/ai_workflow_integration_add";
 import aiWorkflowWorkflowAdd from "./ar/ai_workflow_workflow_add";
 import annotation from "./ar/annotation";
 import application from "./ar/application";
+import dashboard from "./ar/dashboard";
 import example from "./ar/example";
 import generator from "./ar/generator";
 import monitor from "./ar/monitor";
@@ -46,6 +47,7 @@ export default {
   ai_ontology: aiOntology,
   annotation,
   application,
+  dashboard,
   example,
   generator,
   monitor,

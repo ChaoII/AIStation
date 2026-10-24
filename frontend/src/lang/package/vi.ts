@@ -20,6 +20,7 @@ import aiWorkflowIntegrationAdd from "./vi/ai_workflow_integration_add";
 import aiWorkflowWorkflowAdd from "./vi/ai_workflow_workflow_add";
 import annotation from "./vi/annotation";
 import application from "./vi/application";
+import dashboard from "./vi/dashboard";
 import example from "./vi/example";
 import generator from "./vi/generator";
 import monitor from "./vi/monitor";
@@ -46,6 +47,7 @@ export default {
   ai_ontology: aiOntology,
   annotation,
   application,
+  dashboard,
   example,
   generator,
   monitor,
