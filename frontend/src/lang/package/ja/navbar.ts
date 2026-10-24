@@ -1,0 +1,18 @@
+export default {
+  dashboard: "ダッシュボード",
+  logout: "ログアウト",
+  document: "ドキュメント",
+  gitee: "Gitee",
+  lock: "ロック",
+  unlock: "ロック解除",
+  profile: "ユーザープロフィール",
+  config: "設定センター",
+  tour: "プロジェクトツアー",
+  refresh: "更新",
+  close: "閉じる",
+  closeLeft: "左側を閉じる",
+  closeRight: "右側を閉じる",
+  closeOther: "他のタブを閉じる",
+  closeAll: "すべて閉じる",
+  refreshCache: "キャッシュを更新",
+};

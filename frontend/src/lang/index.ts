@@ -4,6 +4,9 @@ import { useAppStoreHook } from "@/store/modules/app.store";
 // 本地语言包
 import enLocale from "./package/en";
 import zhCnLocale from "./package/zh-cn";
+import zhHantLocale from "./package/zh-hant";
+import jaLocale from "./package/ja";
+import koLocale from "./package/ko";
 
 const appStore = useAppStoreHook();
 
@@ -14,11 +17,21 @@ const messages = {
   en: {
     ...enLocale,
   },
+  "zh-hant": {
+    ...zhHantLocale,
+  },
+  ja: {
+    ...jaLocale,
+  },
+  ko: {
+    ...koLocale,
+  },
 };
 
 const i18n = createI18n({
   legacy: false,
   locale: appStore.language,
+  fallbackLocale: "en",
   messages,
   globalInjection: true,
 });

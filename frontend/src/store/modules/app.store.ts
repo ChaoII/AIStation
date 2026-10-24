@@ -3,6 +3,9 @@ import { defaultSettings } from "@/settings";
 // 导入 Element Plus 中英文语言包
 import zhCn from "element-plus/es/locale/lang/zh-cn";
 import en from "element-plus/es/locale/lang/en";
+import zhTw from "element-plus/es/locale/lang/zh-tw";
+import ja from "element-plus/es/locale/lang/ja";
+import ko from "element-plus/es/locale/lang/ko";
 import { store } from "@/store";
 import { DeviceEnum } from "@/enums/settings/device.enum";
 import { SidebarStatus } from "@/enums/settings/layout.enum";
@@ -30,10 +33,17 @@ export const useAppStore = defineStore("app", () => {
    * 根据语言标识读取对应的语言包
    */
   const locale = computed(() => {
-    if (language?.value == "en") {
-      return en;
-    } else {
-      return zhCn;
+    switch (language?.value) {
+      case "en":
+        return en;
+      case "zh-hant":
+        return zhTw;
+      case "ja":
+        return ja;
+      case "ko":
+        return ko;
+      default:
+        return zhCn;
     }
   });
 

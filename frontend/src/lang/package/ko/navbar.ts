@@ -1,0 +1,18 @@
+export default {
+  dashboard: "대시보드",
+  logout: "로그아웃",
+  document: "문서",
+  gitee: "Gitee",
+  lock: "잠금",
+  unlock: "잠금 해제",
+  profile: "사용자 프로필",
+  config: "설정 센터",
+  tour: "프로젝트 둘러보기",
+  refresh: "새로고침",
+  close: "닫기",
+  closeLeft: "왼쪽 닫기",
+  closeRight: "오른쪽 닫기",
+  closeOther: "다른 탭 닫기",
+  closeAll: "모두 닫기",
+  refreshCache: "캐시 새로고침",
+};

@@ -1,0 +1,18 @@
+export default {
+  dashboard: "首頁",
+  logout: "登出",
+  document: "專案文件",
+  gitee: "專案網址",
+  lock: "鎖定螢幕",
+  unlock: "解鎖螢幕",
+  profile: "個人中心",
+  config: "設定中心",
+  tour: "專案導覽",
+  refresh: "重新整理",
+  close: "關閉",
+  closeLeft: "關閉左側",
+  closeRight: "關閉右側",
+  closeOther: "關閉其他",
+  closeAll: "關閉所有",
+  refreshCache: "重新整理快取",
+};
