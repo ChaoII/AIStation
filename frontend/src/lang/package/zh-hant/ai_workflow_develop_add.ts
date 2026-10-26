@@ -1,0 +1,387 @@
+export default {
+  // ===== develop (開放平台) =====
+  develop_tabApps: "應用管理",
+  develop_tabLogs: "呼叫日誌",
+  develop_tabMcp: "MCP 會話",
+  develop_tabUsage: "用量報告",
+  develop_tabApprovals: "呼叫審批",
+  develop_tabDocs: "接入文件",
+  develop_keyword: "關鍵字",
+  develop_keywordPlaceholder: "名稱 / AppID",
+  develop_query: "查詢",
+  develop_alertExpiringTitle: "有 {count} 個應用即將過期",
+  develop_expiringItem: "{name} 將於 {expire} 過期",
+  develop_etc: "等",
+  develop_hintCreateApp: "為外部呼叫方授權能力，管理金鑰、配額與審批。",
+  develop_appTotal: "共 {total} 個應用",
+  develop_newApp: "新建應用",
+  develop_name: "名稱",
+  develop_namePlaceholder: "應用唯一名稱",
+  develop_nameRequired: "請填寫名稱",
+  develop_copyAppid: "複製 AppID",
+  develop_status: "狀態",
+  develop_enabled: "啟用",
+  develop_enabledMsg: "已啟用",
+  develop_disabledMsg: "已停用",
+  develop_expireTime: "過期時間",
+  develop_expirePlaceholder: "留空表示永不過期",
+  develop_forever: "永久",
+  develop_capabilities: "能力",
+  develop_callCount: "呼叫數",
+  develop_noData: "暫無應用，點擊「新建應用」建立",
+  develop_action: "操作",
+  develop_detail: "詳情",
+  develop_edit: "編輯",
+  develop_editAppTitle: "編輯應用 · {name}",
+  develop_delete: "刪除",
+  develop_deleteConfirm: "將刪除應用「{name}」，其 AppKey 將立即失效且不可復原，是否繼續？",
+  develop_deleteConfirmTitle: "刪除確認",
+  develop_deleteSuccess: "應用已刪除",
+  develop_deleteFail: "刪除失敗",
+  develop_embed: "嵌入",
+  develop_try: "試調",
+  develop_tryTitle: "能力試調",
+  develop_tryAlert: "使用該應用的憑證傳送一次測試呼叫，檢視原始回應。",
+  develop_selectCapability: "選擇能力",
+  develop_selectCapabilityRequired: "請選擇能力",
+  develop_payloadJson: "Payload（JSON）",
+  develop_payloadPlaceholder: '請求載荷，如 {"agent_name": "..."}',
+  develop_invalidJson: "JSON 格式錯誤",
+  develop_result: "結果",
+  develop_rawResponse: "原始回應",
+  develop_response: "回應",
+  develop_send: "傳送",
+  develop_close: "關閉",
+  develop_trySuccess: "呼叫成功",
+  develop_tryError: "[{code}] {msg}",
+  develop_tryFailMsg: "請求失敗",
+  develop_resultTaskId: "任務ID",
+  develop_resultDeletedId: "刪除的ID",
+  develop_resultName: "名稱",
+  develop_resultReply: "回覆",
+  develop_resultSid: "SID",
+  develop_resultSessionId: "會話ID",
+  develop_resultTotal: "總數",
+  develop_resultStatus: "狀態",
+  develop_resultEnabled: "啟用",
+  develop_resultSourceApp: "來源應用",
+  develop_resultItemsCount: "條目數",
+  develop_itemsUnit: "項",
+  develop_yes: "是",
+  develop_no: "否",
+  develop_opFail: "操作失敗",
+  develop_save: "儲存",
+  develop_saveSuccess: "儲存成功",
+  develop_saveFail: "儲存失敗",
+  develop_loadFail: "載入失敗",
+  develop_cancel: "取消",
+  develop_copied: "已複製",
+  develop_copyFailManual: "複製失敗，請手動複製",
+  develop_desc: "描述",
+  develop_descPlaceholder: "該應用的用途說明",
+  develop_authCaps: "授權能力",
+  develop_requiresApproval: "需審批",
+  develop_requiresApprovalTip: "敏感能力需先審批通過後再執行。",
+  develop_dailyQuota: "每日配額",
+  develop_quotaTip: "0 = 不限；依自然日統計。",
+  develop_unlimited: "不限",
+  develop_todayUsage: "今日 {usage}",
+  develop_catTrain: "訓練",
+  develop_catAgent: "智慧體",
+  develop_catChat: "對話",
+  develop_catBot: "機器人",
+  develop_catEmbed: "嵌入",
+  develop_keyTitle: "{name} · AppKey",
+  develop_keyEncrypted: "已加密",
+  develop_resetKey: "重設 AppKey",
+  develop_resetKeyTitle: "重設 AppKey",
+  develop_resetKeyConfirm:
+    "重設後「{name}」目前 AppKey 將立即失效，新金鑰即刻生效且不可復原，是否繼續？",
+  develop_reset: "重設",
+  develop_keyResetSuccess: "AppKey 已重設",
+  develop_keyResetFail: "重設失敗",
+  develop_createSuccessTitle: "建立成功",
+  develop_saveKeyAlert: "請立即儲存 AppKey",
+  develop_saveKeyDesc: "AppKey 僅展示一次，關閉後將無法再次檢視，請妥善保管。",
+  develop_iSaved: "我已儲存",
+  develop_statTodayCalls: "今日呼叫",
+  develop_statSuccessRate: "成功率",
+  develop_statAvgLatency: "平均耗時",
+  develop_statPending: "待審批",
+  develop_suffixCount: "次",
+  develop_suffixRecords: "則",
+  develop_suffixItems: "個",
+  develop_appLabel: "應用",
+  develop_all: "全部",
+  develop_category: "分類",
+  develop_method: "方式",
+  develop_success: "成功",
+  develop_failed: "失敗",
+  develop_denied: "拒絕",
+  develop_timeRange: "時間範圍",
+  develop_to: "至",
+  develop_startTime: "開始時間",
+  develop_endTime: "結束時間",
+  develop_capability: "能力",
+  develop_exportCsv: "匯出CSV",
+  develop_time: "時間",
+  develop_latency: "耗時",
+  develop_latencyTokens: "耗時 / Token",
+  develop_requestPath: "請求路徑",
+  develop_resultSummary: "結果摘要",
+  develop_noLogs: "暫無呼叫日誌",
+  develop_recent7: "近7天",
+  develop_recent30: "近30天",
+  develop_today: "今天",
+  develop_sparkTitle: "{date}：{calls} 次呼叫",
+  develop_topCapabilities: "Top 能力",
+  develop_topCapabilitiesShort: "高頻能力",
+  develop_filterCapabilityTitle: "依 {capability} 篩選",
+  develop_logDetailTitle: "呼叫日誌詳情",
+  develop_methodStatus: "方式 / 狀態",
+  develop_requestBody: "請求體",
+  develop_requestBodyShort: "請求載荷",
+  develop_errorStatus: "錯誤",
+  develop_error: "錯誤",
+  develop_successRate: "成功率",
+  develop_quotaHits: "配額命中",
+  develop_rateLimited: "限流",
+  develop_noUsage: "暫無用量資料",
+  develop_usageRange: "時間範圍",
+  develop_recentDays: "近 {days} 天",
+  develop_recentDaysValue: "{days}天",
+  develop_calls: "呼叫數",
+  develop_usageLoadFail: "用量載入失敗",
+  develop_sessionId: "會話ID",
+  develop_transport: "傳輸",
+  develop_transportStreamable: "Streamable HTTP",
+  develop_transportStdio: "stdio",
+  develop_client: "用戶端",
+  develop_duration: "時長(秒)",
+  develop_toolCalls: "工具呼叫",
+  develop_closeReason: "關閉原因",
+  develop_noMcp: "暫無 MCP 會話",
+  develop_mcpStatSessions: "會話數",
+  develop_mcpStatToolCalls: "工具呼叫",
+  develop_mcpStatAvgDuration: "平均時長(秒)",
+  develop_mcpSparkTitle: "{date}：{sessions} 個會話 · {toolCalls} 次工具呼叫",
+  develop_approvalHint: "敏感能力「先審批後執行」，請審批下方待處理請求。",
+  develop_approvalPending: "待審批 {count}",
+  develop_approvalPendingStatus: "待審批",
+  develop_approve: "通過",
+  develop_approveExecute: "通過並執行",
+  develop_reject: "駁回",
+  develop_approvedStatus: "已通過",
+  develop_pendingStatus: "待審批",
+  develop_rejectedStatus: "已駁回",
+  develop_expiredStatus: "已過期",
+  develop_execFailStatus: "執行失敗",
+  develop_batchApprove: "批次通過（{count}）",
+  develop_batchApproveTitle: "批次通過 {count} 項",
+  develop_batchApproveConfirm: "將批次通過並執行 {count} 則待審批的能力呼叫，是否繼續？",
+  develop_batchApproveSuccess: "已通過 {count} 則請求",
+  develop_batchApprovePartial: "通過 {ok} 則，失敗 {failed} 則。{msg}",
+  develop_batchApproveFail: "批次通過失敗",
+  develop_applyTime: "申請時間",
+  develop_reviewTime: "審批時間",
+  develop_reviewNote: "審批備註",
+  develop_noApprovals: "暫無審批",
+  develop_approvalLoadFail: "審批列表載入失敗",
+  develop_approvalDetailTitle: "審批詳情",
+  develop_reviewApproveAction: "通過",
+  develop_reviewConfirmTitle: "{action}？",
+  develop_reviewApproveConfirm: "通過應用 {appid} 的能力「{capability}」呼叫並執行嗎？",
+  develop_reviewRejectConfirm: "駁回能力「{capability}」的呼叫嗎？",
+  develop_processed: "已處理",
+  develop_processFail: "處理失敗",
+  develop_execResult: "執行結果",
+  develop_execFailTitle: "執行失敗：{error}",
+  develop_notifyCfg: "通知配置",
+  develop_notifyCfgTitle: "審批通知",
+  develop_notifyAlert: "選擇哪些管道傳送審批通知，並填寫對應的 JSON 配置。",
+  develop_enableChannels: "啟用管道",
+  develop_channelConfig: "{name} 配置",
+  develop_notifyInvalidJson: "{name} 的 JSON 配置格式錯誤",
+  develop_notifyLoadFail: "通知配置載入失敗",
+  develop_notifyBroken: "以下管道配置異常：{broken}",
+  develop_saved: "已儲存",
+  develop_docsCredTitle: "憑證",
+  develop_docsCredDesc:
+    "每個應用含 AppID + AppKey，呼叫方以「Bearer {appid}:{appkey}」鑑權；切勿在瀏覽器側暴露 AppKey。",
+  develop_docsApprovalTitle: "需要審批嗎？",
+  develop_docsApprovalDesc:
+    "敏感能力首次呼叫需應用級審批，請在應用的「授權能力」與「每日配額」中開啟。",
+  develop_restCard: "REST",
+  develop_restDesc: "統一能力入口：以能力 code 呼叫任意能力。",
+  develop_capListCard: "能力清單",
+  develop_capDesc: "平台開放的全部能力，含所需權限與 MCP 工具名。",
+  develop_capCount: "{count} 項能力",
+  develop_capabilityName: "名稱",
+  develop_capabilityCode: "編碼",
+  develop_requiredPerm: "所需權限",
+  develop_mcpToolName: "MCP 工具",
+  develop_noCapabilities: "暫無能力",
+  develop_capLoadFail: "能力載入失敗",
+  develop_mcpCard: "MCP",
+  develop_mcpDesc: "同一套能力經 MCP（Streamable HTTP）暴露，每次呼叫都寫稽核。",
+  develop_embedCard: "網頁嵌入",
+  develop_embedDesc: "透過 iframe 或 Script SDK 把對話嵌入到你的頁面，令牌由宿主服務端換票。",
+  develop_postMessageEvents: "postMessage 事件",
+  develop_embedFoot: "事件名與 setToken / sendMessage / resize / destroy 命令詳見「嵌入」彈窗。",
+  develop_eventReady: "嵌入頁初始化完成（含目標名與過期時間）",
+  develop_eventUserMessage: "使用者發出訊息",
+  develop_eventReplyStart: "開始串流回覆",
+  develop_eventReplyDelta: "串流增量文字（高頻）",
+  develop_eventReplyDone: "回覆完成（全量文字）",
+  develop_eventError: "業務/網路/限流錯誤",
+  develop_eventTokenExpired: "憑證過期，宿主需換票後 setToken",
+  develop_exportFail: "匯出失敗",
+  develop_downloadStarted: "已開始下載",
+  develop_restExample: `# 1. 憑證校驗：確認應用狀態與已授權能力
+curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
+  -H "Authorization: Bearer {appid}:{appkey}"
+
+# 2. 能力清單：只返回本應用**已授權**的能力
+curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
+  -H "Authorization: Bearer {appid}:{appkey}"
+
+# 3. 呼叫能力（統一入口）：code 取自能力清單，body 固定為 {"payload": {...}}
+curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"payload": {"agent_name": "外部建立助手"}}'
+
+# 4. 對話（聚合回覆，非串流）
+curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "你好"}}'
+
+# 5. 網頁嵌入換票（瀏覽器面不接觸 appkey）
+curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
+  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"kind": "agent", "target_id": 123}'`,
+  develop_mcpExample: `// 端點（Streamable HTTP）：https://<host>/api/v1/ai/develop-api/mcp
+// 鑑權：請求標頭 Authorization: Bearer {appid}:{appkey}（與 REST 同一套憑證）
+
+// 方式一：用戶端原生支援自訂請求標頭（推薦）
+{
+  "mcpServers": {
+    "aistation": {
+      "type": "http",
+      "url": "https://<host>/api/v1/ai/develop-api/mcp",
+      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
+    }
+  }
+}
+
+// 方式二：用戶端只支援 stdio（用 mcp-remote 代理轉發請求標頭）
+{
+  "mcpServers": {
+    "aistation": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote",
+        "https://<host>/api/v1/ai/develop-api/mcp",
+        "--header", "Authorization: Bearer {appid}:{appkey}"
+      ]
+    }
+  }
+}
+
+// 工具 = 能力：tools/list 只返回該應用已授權的能力；每次呼叫都寫稽核。`,
+  develop_embedExample:
+    `<!-- 方式一：iframe 直嵌（token 由服務端換票注入） -->
+<iframe src="https://<host>/web/#/embed?token={access_token}"
+        width="420" height="620" style="border:0;border-radius:12px"></iframe>
+
+<!-- 方式二：Script SDK（推薦：事件回呼 + 續期） -->
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
+    `ipt>
+<div id="ai-assistant" style="width:420px;height:620px"></div>
+<script>
+  const ai = AiAssistant.init({
+    container: "#ai-assistant",
+    token: "{access_token}",
+    apiBase: "https://<host>/api/v1/ai",
+    webBase: "https://<host>/web",
+    theme: { primary: "#409eff" }
+  });
+  ai.on("token_expired", async () => {
+    ai.setToken(await fetchTokenFromYourBackend());  // 服務端重新換票
+  });
+</scr` +
+    `ipt>`,
+
+  // ===== develop_embed (嵌入彈窗) =====
+  develop_embedTitle: "嵌入對話 · {name}",
+  develop_embedKind: "嵌入形態",
+  develop_embedApp: "AI 應用",
+  develop_embedWorkflow: "工作流",
+  develop_embedTarget: "嵌入目標",
+  develop_embedTargetPlaceholder: "選擇要嵌入的目標",
+  develop_embedCode: "嵌入程式碼",
+  develop_embedTabIframe: "iframe 直嵌",
+  develop_embedCopyCode: "複製程式碼",
+  develop_embedMintToken: "產生體驗 Token（2 小時）",
+  develop_embedCredTitle: "憑證說明",
+  develop_embedCredDesc:
+    "{access_token} 為短期憑證佔位符：請由宿主服務端用 appid/appkey 呼叫 POST {apiBase}/develop-api/auth/token 換票取得；切勿把 appkey 寫入網頁。過期後宿主重新換票並呼叫 setToken() 續期。",
+  develop_embedIssuedTokens: "已簽發令牌",
+  develop_embedNoTokens: "暫無令牌（換票與體驗票都會出現在這裡）",
+  develop_embedKindShort: "形態",
+  develop_embedTrialTicket: "體驗票",
+  develop_embedIssuedTicket: "換票",
+  develop_embedTargetShort: "目標",
+  develop_embedExpireTime: "過期時間",
+  develop_embedUsage: "使用",
+  develop_embedStatus: "狀態",
+  develop_embedRevoked: "已吊銷",
+  develop_embedValid: "有效",
+  develop_embedAction: "操作",
+  develop_embedRevoke: "吊銷",
+  develop_embedRevokeFail: "吊銷失敗",
+  develop_embedRevokeTitle: "吊銷令牌",
+  develop_embedRevokeConfirm:
+    "吊銷後該令牌立即失效，使用它的嵌入頁面將無法繼續對話，且不可復原。是否繼續？",
+  develop_embedEvents: "事件契約",
+  develop_embedEventsNote:
+    "上行信封 source = ai-embed / version = 1；完整載荷與下行命令見「接入文件」頁籤。",
+  develop_embedRevealTitle: "體驗 Token",
+  develop_embedRevealAlertTitle: "請複製後立即填入程式碼",
+  develop_embedRevealAlertDesc: "令牌明文僅在這裡顯示一次；過期後重新簽發即可。",
+  develop_embedApplyCode: "填入程式碼",
+  develop_embedApplySuccess: "已填入程式碼，可直接複製使用",
+  develop_embedIframeTitle: "AI 對話",
+  develop_embedTargetsLoadFail: "載入目標列表失敗",
+  develop_embedMintFail: "簽發失敗",
+
+  // ===== embed (公開嵌入頁) =====
+  embed_brand: "AI 助手",
+  embed_missingTitle: "缺少存取憑證",
+  embed_missingDesc: "本頁需要一次性存取憑證，請在你的服務端產生並以 ?token=... 開啟連結。",
+  embed_conversation: "對話",
+  embed_aiAssistant: "AI 助手",
+  embed_you: "我",
+  embed_welcome: "你好，有什麼可以幫你的嗎？",
+  embed_hint: "在下方輸入你的問題開始對話",
+  embed_inputPlaceholder: "輸入你的問題…",
+  embed_send: "傳送",
+  embed_stopGenerate: "停止產生",
+  embed_sourcesCount: "{count} 個引用",
+  embed_knowledgePiece: "知識",
+  embed_retry: "重試",
+  embed_metaLoadFail: "對話載入失敗",
+  embed_noPermMsg: "無權存取該對話",
+  embed_rateLimitedMsg: "請求過於頻繁，請稍後再試",
+  embed_rateLimitedNotice: "請求過於頻繁，請稍後再試",
+  embed_notFoundMsg: "目標不存在",
+  embed_notFoundNotice: "目標不存在",
+  embed_networkMsg: "網路異常，請稍後重試",
+  embed_networkNotice: "網路異常，請稍後重試",
+  embed_expiredTitle: "存取憑證已過期",
+  embed_expiredDesc: "存取憑證已過期，請宿主重新換票並呼叫 setToken()。",
+  embed_forbiddenTitle: "無權限",
+  embed_forbiddenDesc: "你無權存取該對話。",
+};

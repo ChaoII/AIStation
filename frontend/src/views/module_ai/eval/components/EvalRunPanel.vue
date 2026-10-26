@@ -3,9 +3,11 @@
     <el-card shadow="never">
       <template #header>
         <div class="ev-head">
-          <span>运行评测</span>
+          <span>{{ $t("ai_workflow.eval_runTitle") }}</span>
           <div class="ev-head__ops">
-            <el-button size="small" @click="loadRuns">刷新历史</el-button>
+            <el-button size="small" @click="loadRuns">
+              {{ $t("ai_workflow.eval_refreshHistory") }}
+            </el-button>
             <el-button
               size="small"
               type="primary"
@@ -13,22 +15,22 @@
               :disabled="running"
               @click="start"
             >
-              开始评测
+              {{ $t("ai_workflow.eval_startEval") }}
             </el-button>
           </div>
         </div>
       </template>
 
       <el-form :model="form" inline>
-        <el-form-item label="数据源">
+        <el-form-item :label="$t('ai_workflow.eval_datasource')">
           <el-select
             v-model="form.datasource"
             size="small"
             clearable
-            placeholder="全部"
+            :placeholder="$t('ai_workflow.eval_all')"
             style="width: 170px"
           >
-            <el-option label="系统库（本体支撑表）" value="system" />
+            <el-option :label="$t('ai_workflow.eval_systemDs')" value="system" />
             <el-option
               v-for="d in datasources"
               :key="d.code || d.id"
@@ -37,32 +39,42 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="难度">
+        <el-form-item :label="$t('ai_workflow.eval_difficulty')">
           <el-select
             v-model="form.difficulty"
             size="small"
             clearable
-            placeholder="全部"
+            :placeholder="$t('ai_workflow.eval_all')"
             style="width: 110px"
           >
-            <el-option v-for="d in DIFFICULTIES" :key="d" :label="d" :value="d" />
+            <el-option
+              v-for="d in DIFFICULTIES"
+              :key="d"
+              :label="$t('ai_workflow.' + diffKey(d))"
+              :value="d"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="形式">
+        <el-form-item :label="$t('ai_workflow.eval_form')">
           <el-select
             v-model="form.form"
             size="small"
             clearable
-            placeholder="全部"
+            :placeholder="$t('ai_workflow.eval_all')"
             style="width: 140px"
           >
-            <el-option v-for="f in FORMS" :key="f" :label="f" :value="f" />
+            <el-option
+              v-for="f in FORMS"
+              :key="f"
+              :label="$t('ai_workflow.' + formKey(f))"
+              :value="f"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="数量上限">
+        <el-form-item :label="$t('ai_workflow.eval_limit')">
           <el-input-number v-model="form.limit" size="small" :min="1" :max="200" />
         </el-form-item>
-        <el-form-item label="强制慢路径">
+        <el-form-item :label="$t('ai_workflow.eval_forceSlow')">
           <el-switch v-model="form.force_slow" size="small" />
         </el-form-item>
       </el-form>
@@ -82,11 +94,15 @@
         :stroke-width="14"
       />
       <el-descriptions v-if="progress" :column="3" size="small" border class="ev-desc">
-        <el-descriptions-item label="状态">{{ progress.status }}</el-descriptions-item>
-        <el-descriptions-item label="已完成">
+        <el-descriptions-item :label="$t('ai_workflow.eval_status')">
+          {{ progress.status }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('ai_workflow.eval_done')">
           {{ progress.done }} / {{ progress.total }}
         </el-descriptions-item>
-        <el-descriptions-item label="当前题">{{ progress.current || "-" }}</el-descriptions-item>
+        <el-descriptions-item :label="$t('ai_workflow.eval_currentQ')">
+          {{ progress.current || "-" }}
+        </el-descriptions-item>
       </el-descriptions>
       <el-alert
         v-if="progress?.error"
@@ -99,7 +115,7 @@
 
       <el-divider />
 
-      <div class="ev-sub">历史运行</div>
+      <div class="ev-sub">{{ $t("ai_workflow.eval_historyRuns") }}</div>
       <el-table
         v-loading="loadingRuns"
         :data="runs"
@@ -110,8 +126,8 @@
         @row-click="onRowClick"
       >
         <el-table-column prop="run_id" label="run_id" width="180" show-overflow-tooltip />
-        <el-table-column prop="mode" label="模式" width="90" />
-        <el-table-column prop="status" label="状态" width="90">
+        <el-table-column prop="mode" :label="$t('ai_workflow.eval_mode')" width="90" />
+        <el-table-column prop="status" :label="$t('ai_workflow.eval_status')" width="90">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -123,14 +139,19 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="进度" width="110">
+        <el-table-column :label="$t('ai_workflow.eval_progress')" width="110">
           <template #default="{ row }">{{ row.done }} / {{ row.total }}</template>
         </el-table-column>
-        <el-table-column label="数据准确率" width="120">
+        <el-table-column :label="$t('ai_workflow.eval_dataAccuracy')" width="120">
           <template #default="{ row }">{{ pct(row.summary?.data_accuracy) }}</template>
         </el-table-column>
-        <el-table-column prop="started_at" label="开始时间" min-width="160" show-overflow-tooltip />
-        <el-table-column label="操作" width="110" fixed="right">
+        <el-table-column
+          prop="started_at"
+          :label="$t('ai_workflow.eval_startTime')"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="$t('ai_workflow.eval_action')" width="110" fixed="right">
           <template #default="{ row }">
             <el-button
               icon="DataAnalysis"
@@ -139,7 +160,7 @@
               size="small"
               @click.stop="emit('select', row.run_id)"
             >
-              查看报表
+              {{ $t("ai_workflow.eval_viewReport") }}
             </el-button>
           </template>
         </el-table-column>
@@ -151,15 +172,26 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import {
   getEvalRuns,
   getEvalStatus,
   getQueryDatasources,
   startEvalRun,
 } from "@/api/module_ai/query";
-import { DIFFICULTIES, FORMS, pct, type EvalRunItem, type EvalRunProgress } from "../types";
+import {
+  DIFFICULTIES,
+  FORMS,
+  pct,
+  diffKey,
+  formKey,
+  type EvalRunItem,
+  type EvalRunProgress,
+} from "../types";
 
 defineOptions({ name: "AiEvalRunPanel" });
+
+const { t } = useI18n();
 
 const emit = defineEmits<{
   (e: "started", id: string): void;
@@ -187,9 +219,9 @@ const percentage = computed(() => {
 const statusTitle = computed(() => {
   const p = progress.value;
   if (!p) return "";
-  if (p.status === "done") return `评测完成：共 ${p.total} 题`;
-  if (p.status === "error") return "评测失败";
-  return `评测进行中：${p.done}/${p.total}`;
+  if (p.status === "done") return t("ai_workflow.eval_statusDone", { total: p.total });
+  if (p.status === "error") return t("ai_workflow.eval_evalFail");
+  return t("ai_workflow.eval_statusRunning", { done: p.done, total: p.total });
 });
 
 function stopPolling() {
@@ -208,10 +240,10 @@ async function poll(runId: string) {
       stopPolling();
       await loadRuns();
       if (d && d.status === "done") {
-        ElMessage.success("评测完成");
+        ElMessage.success(t("ai_workflow.eval_evalDone"));
         emit("finished", runId);
       } else if (d && d.status === "error") {
-        ElMessage.error(d.error || "评测失败");
+        ElMessage.error(d.error || t("ai_workflow.eval_evalFail"));
       }
     }
   } catch {
@@ -230,7 +262,7 @@ async function start() {
     const r = await startEvalRun({ filter, mode: "full" });
     const runId: string = r.data?.data?.run_id;
     if (!runId) {
-      ElMessage.error("启动失败：未返回 run_id");
+      ElMessage.error(t("ai_workflow.eval_startFailNoRun"));
       return;
     }
     progress.value = { run_id: runId, status: "running", total: 0, done: 0, current: "" };
@@ -239,7 +271,7 @@ async function start() {
     timer = setInterval(() => poll(runId), 1500);
     await poll(runId);
   } catch (e: any) {
-    ElMessage.error(e?.msg || "启动失败");
+    ElMessage.error(e?.msg || t("ai_workflow.eval_startFail"));
   } finally {
     starting.value = false;
   }

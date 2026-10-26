@@ -336,6 +336,10 @@ async def run_agno_tool_stream(
     instructions: list[str] = []
     if system_prompt:
         instructions.append(system_prompt)
+    # 公共工具纪律：平台统计走 platform_stats、工具直调不寒暄（agent/app 与 assistant 一致）
+    from app.plugin.module_ai.agno_tools.agent_factory import PUBLIC_TOOL_RULES
+
+    instructions.extend(PUBLIC_TOOL_RULES)
     if instructions_extra:
         instructions.extend(instructions_extra)
 
@@ -363,6 +367,21 @@ async def run_agno_tool_stream(
                     _payload = _json.loads(_data)
                     if isinstance(_payload.get("content"), str):
                         state["assistant_text"] = state.get("assistant_text", "") + _payload["content"]
+                except Exception:  # noqa: BLE001 解析失败不影响透传
+                    pass
+            # A1: 从 RunCompleted 帧提取 token/cost 用量并写入 state["usage"]，
+            #      供调用方 add_log 统计调用日志成本（此前恒为 0）。
+            if state is not None and "event: RunCompleted" in sse:
+                try:
+                    _data = sse.split("\ndata:", 1)[1].strip()
+                    _payload = _json.loads(_data)
+                    _metrics = _payload.get("metrics") or {}
+                    state["usage"] = {
+                        "prompt_tokens": int(_metrics.get("input_tokens") or 0),
+                        "completion_tokens": int(_metrics.get("output_tokens") or 0),
+                        "total_tokens": int(_metrics.get("total_tokens") or 0),
+                        "cost": float(_metrics.get("cost") or 0.0),
+                    }
                 except Exception:  # noqa: BLE001 解析失败不影响透传
                     pass
             yield sse

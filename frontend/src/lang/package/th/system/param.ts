@@ -1,0 +1,90 @@
+export default {
+  // 工具栏 / 操作
+  export: "ส่งออก",
+  noData: "ไม่มีข้อมูล",
+  detail: "รายละเอียด",
+  edit: "แก้ไข",
+  delete: "ลบ",
+  action: "การดำเนินการ",
+  cancel: "ยกเลิก",
+  confirm: "ยืนยัน",
+  save: "บันทึก",
+  operationSuccess: "ดำเนินการสำเร็จ",
+
+  // 表格列
+  selection: "เลือก",
+  serial: "ลำดับ",
+  configName: "ชื่อการตั้งค่า",
+  configKey: "คีย์การตั้งค่า",
+  configKeyName: "ชื่อคีย์การตั้งค่า",
+  configValue: "ค่าการตั้งค่า",
+  configType: "ในตัวระบบ",
+  description: "คำอธิบาย",
+  createdTime: "เวลาสร้าง",
+  updatedTime: "เวลาอัปเดต",
+  yes: "ใช่",
+  no: "ไม่",
+
+  // 搜索 / 筛选
+  inputConfigName: "กรุณากรอกชื่อการตั้งค่า",
+  inputConfigKey: "กรุณากรอกคีย์การตั้งค่า",
+  inputConfigValue: "กรุณากรอกค่าการตั้งค่า",
+  inputDescription: "กรุณากรอกคำอธิบาย",
+  inputConfigKeyName: "กรุณากรอกชื่อคีย์การตั้งค่า",
+  selectConfigType: "กรุณาเลือกในตัวระบบ",
+  to: "ถึง",
+  startDate: "วันที่เริ่มต้น",
+  endDate: "วันที่สิ้นสุด",
+
+  // 弹窗标题
+  configDetail: "รายละเอียดการตั้งค่าระบบ",
+  updateConfig: "แก้ไขการตั้งค่าระบบ",
+  createConfig: "สร้างการตั้งค่าระบบ",
+
+  // 提示 / 确认
+  warnTitle: "คำเตือน",
+  deleteConfirmMessage: "คุณต้องการลบข้อมูลที่เลือกหรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้",
+  requiredConfigName: "กรุณากรอกชื่อการตั้งค่าระบบ",
+  requiredConfigKey: "กรุณากรอกคีย์การตั้งค่าระบบ",
+  requiredConfigValue: "กรุณากรอกค่าการตั้งค่าระบบ",
+  requiredConfigType: "กรุณาเลือกประเภทการตั้งค่าระบบ",
+
+  // 配置中心抽屉
+  configCenter: "ศูนย์การตั้งค่า",
+  websiteConfig: "การตั้งค่าเว็บไซต์",
+  websiteIcon: "ไอคอนเว็บไซต์",
+  securityPrivacy: "ความปลอดภัยและความเป็นส่วนตัว",
+  userAgreement: "ข้อตกลงผู้ใช้",
+  apiWhitelist: "รายการอนุญาต API",
+  ipBlacklist: "รายการบล็อก IP",
+  notification: "การตั้งค่าการแจ้งเตือน",
+  demoConfig: "การตั้งค่าโหมดสาธิต",
+  wsPush: "การส่งผ่าน WebSocket",
+  smtpEmail: "อีเมล SMTP",
+  smsGateway: "เกตเวย์ SMS",
+  webhookRest: "Webhook / REST API",
+  defaultRecipient: "ผู้รับเริ่มต้น",
+  enable: "เปิดใช้งาน",
+  disable: "ปิดใช้งาน",
+  testWsPush: "ทดสอบการส่งผ่าน WS",
+  testEmailPush: "ทดสอบการส่งอีเมล",
+  testSmsPush: "ทดสอบการส่ง SMS",
+  testWebhookPush: "ทดสอบการส่ง Webhook",
+  addApiPath: "เพิ่มเส้นทาง API",
+  addIp: "เพิ่มที่อยู่ IP",
+  apiWhitelistTip:
+    "หมายเหตุการตั้งค่า: เส้นทาง API ในรายการอนุญาตสามารถเข้าถึงได้โดยไม่ต้องเข้าสู่ระบบ และรองรับการกำหนดค่าเส้นทางแบบเต็ม",
+  ipBlacklistTip:
+    "หมายเหตุการตั้งค่า: ที่อยู่ IP ในรายการบล็อกไม่สามารถเข้าถึงระบบได้ รองรับการกำหนดค่า IP เดี่ยว",
+  demoIpWhitelistTip:
+    "หมายเหตุการตั้งค่า: ในโหมดสาธิต เฉพาะที่อยู่ IP ในรายการอนุญาตเท่านั้นที่สามารถเข้าถึงระบบได้ รองรับการกำหนดค่า IP เดี่ยว",
+  demoEnableTip:
+    "หมายเหตุการตั้งค่า: เมื่อเปิดใช้งาน ระบบจะเข้าสู่โหมดสาธิตและฟังก์ชันบางอย่างอาจถูกจำกัด",
+  invalidApiPath: "กรุณากรอกรูปแบบเส้นทาง API ที่ถูกต้อง (ขึ้นต้นด้วย /)",
+  invalidIp: "กรุณากรอกรูปแบบที่อยู่ IP ที่ถูกต้อง",
+  keepApiWhitelist: "ต้องมีการตั้งค่ารายการอนุญาต API อย่างน้อยหนึ่งรายการ",
+  keepIpBlacklist: "ต้องมีการตั้งค่ารายการบล็อก IP อย่างน้อยหนึ่งรายการ",
+  keepIpWhitelist: "ต้องมีการตั้งค่ารายการอนุญาต IP อย่างน้อยหนึ่งรายการ",
+  uploadFailedPrefix: "อัปโหลดไม่สำเร็จ: ",
+  uploadRetry: "กรุณาลองใหม่ภายหลัง",
+};

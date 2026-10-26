@@ -35,7 +35,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('video.common.noData')" />
             </template>
             <el-table-column
               v-if="algoCols.find((col) => col.prop === 'selection')?.show"
@@ -47,14 +47,14 @@
               v-if="algoCols.find((col) => col.prop === 'index')?.show"
               type="index"
               fixed
-              label="序号"
+              :label="t('video.common.sequence')"
               min-width="60"
               align="center"
             />
             <el-table-column
               v-if="algoCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="算法名称"
+              :label="t('video.algo.algorithmName')"
               prop="name"
               min-width="160"
               show-overflow-tooltip
@@ -62,14 +62,14 @@
             <el-table-column
               v-if="algoCols.find((col) => col.prop === 'code')?.show"
               key="code"
-              label="编码"
+              :label="t('video.algo.code')"
               prop="code"
               width="140"
             />
             <el-table-column
               v-if="algoCols.find((col) => col.prop === 'version')?.show"
               key="version"
-              label="版本"
+              :label="t('video.algo.version')"
               prop="version"
               width="90"
               align="center"
@@ -77,28 +77,28 @@
             <el-table-column
               v-if="algoCols.find((col) => col.prop === 'algorithm_type')?.show"
               key="algorithm_type"
-              label="算法类型"
+              :label="t('video.algo.algorithmType')"
               prop="algorithm_type"
               width="120"
             />
             <el-table-column
               v-if="algoCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('video.common.status')"
               prop="status"
               width="80"
               align="center"
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status ? 'success' : 'info'" size="small">
-                  {{ scope.row.status ? "启用" : "停用" }}
+                  {{ scope.row.status ? t("video.common.enabled") : t("video.common.disabled") }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="algoCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('video.common.operation')"
               align="center"
               min-width="300"
             >
@@ -111,7 +111,7 @@
                   icon="edit"
                   @click="handleOpenAlgoDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("video.common.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:algorithm:update']"
@@ -121,12 +121,12 @@
                   :icon="RefreshRight"
                   @click="handleHotUpdate(scope.row)"
                 >
-                  热更新
+                  {{ t("video.algo.hotUpdate") }}
                 </el-button>
                 <span v-hasPerm="['module_video:algorithm:update']" class="rollback-trigger">
                   <el-tooltip
                     :disabled="canRollback(scope.row)"
-                    content="暂无上一版本模型，无法回滚"
+                    :content="t('video.algo.noRollback')"
                     placement="top"
                   >
                     <span>
@@ -138,7 +138,7 @@
                         :disabled="!canRollback(scope.row)"
                         @click="handleRollback(scope.row)"
                       >
-                        回滚
+                        {{ t("video.algo.rollback") }}
                       </el-button>
                     </span>
                   </el-tooltip>
@@ -151,7 +151,7 @@
                   icon="delete"
                   @click="handleAlgoDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("video.common.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -169,18 +169,18 @@
     >
       <el-form ref="algoFormRef" :model="algoForm" label-width="110px" size="default">
         <div class="form-section">
-          <div class="form-section-title">基础信息</div>
-          <el-form-item label="算法名称" prop="name">
-            <el-input v-model="algoForm.name" placeholder="请输入算法名称" />
+          <div class="form-section-title">{{ t("video.algo.basicInfo") }}</div>
+          <el-form-item :label="t('video.algo.algorithmName')" prop="name">
+            <el-input v-model="algoForm.name" :placeholder="t('video.algo.enterName')" />
           </el-form-item>
           <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="编码" prop="code">
-                <el-input v-model="algoForm.code" placeholder="唯一编码" />
+              <el-form-item :label="t('video.algo.code')" prop="code">
+                <el-input v-model="algoForm.code" :placeholder="t('video.algo.uniqueCode')" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="算法类型" prop="algorithm_type">
+              <el-form-item :label="t('video.algo.algorithmType')" prop="algorithm_type">
                 <el-select
                   v-model="algoForm.algorithm_type"
                   style="width: 100%"
@@ -196,18 +196,18 @@
               </el-form-item>
             </el-col>
           </el-row>
-          <el-form-item label="版本" prop="version">
+          <el-form-item :label="t('video.algo.version')" prop="version">
             <el-input v-model="algoForm.version" placeholder="1.0.0" style="width: 200px" />
           </el-form-item>
         </div>
 
         <div class="form-section">
-          <div class="form-section-title">模型文件与配置</div>
-          <el-form-item label="模型文件" prop="model_path">
+          <div class="form-section-title">{{ t("video.algo.modelFiles") }}</div>
+          <el-form-item :label="t('video.algo.modelFile')" prop="model_path">
             <div class="file-upload-row">
               <el-input
                 v-model="algoForm.model_path"
-                placeholder="模型文件路径或上传"
+                :placeholder="t('video.algo.modelPathOrUpload')"
                 class="file-path-input"
               />
               <el-upload
@@ -218,15 +218,18 @@
               >
                 <el-button size="default">
                   <el-icon><Upload /></el-icon>
-                  上传
+                  {{ t("video.algo.upload") }}
                 </el-button>
               </el-upload>
             </div>
           </el-form-item>
-          <el-form-item label="插件路径" prop="plugin_path">
-            <el-input v-model="algoForm.plugin_path" placeholder="C++ SDK 插件路径（可选）" />
+          <el-form-item :label="t('video.algo.pluginPath')" prop="plugin_path">
+            <el-input
+              v-model="algoForm.plugin_path"
+              :placeholder="t('video.algo.pluginPathHint')"
+            />
           </el-form-item>
-          <el-form-item label="配置文件">
+          <el-form-item :label="t('video.algo.configFile')">
             <div class="config-toolbar">
               <el-upload
                 accept=".json,.yaml,.yml"
@@ -236,24 +239,24 @@
               >
                 <el-button size="small" type="primary">
                   <el-icon><Upload /></el-icon>
-                  上传配置
+                  {{ t("video.algo.uploadConfig") }}
                 </el-button>
               </el-upload>
               <el-button size="small" @click="loadConfigTemplate">
                 <el-icon><Document /></el-icon>
-                加载模板
+                {{ t("video.algo.loadTemplate") }}
               </el-button>
               <el-button size="small" @click="formatConfigJson">
                 <el-icon><Checked /></el-icon>
-                格式化
+                {{ t("video.algo.format") }}
               </el-button>
             </div>
           </el-form-item>
-          <el-form-item label="配置内容">
-            <div class="form-section-title">运行环境</div>
+          <el-form-item :label="t('video.algo.configContent')">
+            <div class="form-section-title">{{ t("video.algo.runtimeEnv") }}</div>
             <el-row :gutter="12">
               <el-col :span="12">
-                <el-form-item label="推理引擎">
+                <el-form-item :label="t('video.algo.inferenceEngine')">
                   <el-select v-model="algoForm.runtimeEngine" style="width: 100%">
                     <el-option label="PyTorch" value="pytorch" />
                     <el-option label="TensorRT" value="tensorrt" />
@@ -263,7 +266,7 @@
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="运行设备">
+                <el-form-item :label="t('video.algo.runtimeDevice')">
                   <el-select v-model="algoForm.runtimeDevice" style="width: 100%">
                     <el-option label="CPU" value="cpu" />
                     <el-option label="GPU 0" value="0" />
@@ -272,7 +275,7 @@
                 </el-form-item>
               </el-col>
             </el-row>
-            <div class="form-section-title">参数配置（动态表单）</div>
+            <div class="form-section-title">{{ t("video.algo.paramConfig") }}</div>
             <el-form-item v-for="(meta, key) in paramsMeta" :key="key" :label="meta.label || key">
               <template v-if="meta.type === 'bool'">
                 <el-switch v-model="algoForm.params[key]" />
@@ -327,24 +330,24 @@
         </div>
 
         <div class="form-section">
-          <div class="form-section-title">其他</div>
-          <el-form-item label="状态" prop="status">
+          <div class="form-section-title">{{ t("video.algo.other") }}</div>
+          <el-form-item :label="t('video.common.status')" prop="status">
             <el-switch v-model="algoForm.status" />
           </el-form-item>
-          <el-form-item label="描述" prop="description">
+          <el-form-item :label="t('video.common.description')" prop="description">
             <el-input
               v-model="algoForm.description"
               type="textarea"
               :rows="2"
-              placeholder="可选描述"
+              :placeholder="t('video.common.optionalRemark')"
             />
           </el-form-item>
         </div>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseAlgoDialog">取消</el-button>
+        <el-button @click="handleCloseAlgoDialog">{{ t("video.common.cancel") }}</el-button>
         <el-button type="primary" :loading="algoSubmitLoading" @click="handleSubmitAlgo">
-          保存
+          {{ t("video.common.save") }}
         </el-button>
       </template>
     </EnhancedDialog>
@@ -355,6 +358,7 @@
 import { ref, reactive, computed, onBeforeMount } from "vue";
 import { Upload, Document, Checked, RefreshLeft, RefreshRight } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { useI18n } from "vue-i18n";
 import request from "@/utils/request";
 import {
   getAlgorithmList,
@@ -373,6 +377,7 @@ import { useSettingsStore } from "@/store";
 import { ThemeMode } from "@/enums/settings/theme.enum";
 
 const settingsStore = useSettingsStore();
+const { t } = useI18n();
 
 const algoSubmitLoading = ref(false);
 const algoFormRef = ref();
@@ -396,38 +401,42 @@ const algoSearchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "算法名称",
+      label: t("video.algo.algorithmName"),
       type: "input",
-      attrs: { placeholder: "请输入算法名称", clearable: true },
+      attrs: { placeholder: t("video.algo.enterName"), clearable: true },
     },
     {
       prop: "algorithm_type",
-      label: "算法类型",
+      label: t("video.algo.algorithmType"),
       type: "select",
       options: [
-        { label: "入侵检测", value: "INTRUSION" },
-        { label: "越界检测", value: "LINE_CROSSING" },
-        { label: "人脸识别", value: "FACE_DETECT" },
-        { label: "人数统计", value: "CROWD_COUNT" },
-        { label: "烟火检测", value: "FIRE_SMOKE" },
-        { label: "车辆识别", value: "VEHICLE_DETECT" },
-        { label: "行为分析", value: "BEHAVIOR_ANALYSIS" },
-        { label: "物品遗留", value: "OBJECT_LEFT" },
+        { label: t("video.algo.invasion"), value: "INTRUSION" },
+        { label: t("video.algo.lineCrossing"), value: "LINE_CROSSING" },
+        { label: t("video.algo.faceDetect"), value: "FACE_DETECT" },
+        { label: t("video.algo.crowdCount"), value: "CROWD_COUNT" },
+        { label: t("video.algo.fireSmoke"), value: "FIRE_SMOKE" },
+        { label: t("video.algo.vehicleDetect"), value: "VEHICLE_DETECT" },
+        { label: t("video.algo.behaviorAnalysis"), value: "BEHAVIOR_ANALYSIS" },
+        { label: t("video.algo.objectLeft"), value: "OBJECT_LEFT" },
       ],
-      attrs: { placeholder: "请选择算法类型", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("video.algo.selectAlgorithmType"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
 
 const algoCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "算法名称", show: true },
-  { prop: "code", label: "编码", show: true },
-  { prop: "version", label: "版本", show: true },
-  { prop: "algorithm_type", label: "算法类型", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "name", label: t("video.algo.algorithmName"), show: true },
+  { prop: "code", label: t("video.algo.code"), show: true },
+  { prop: "version", label: t("video.algo.version"), show: true },
+  { prop: "algorithm_type", label: t("video.algo.algorithmType"), show: true },
+  { prop: "status", label: t("video.common.status"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 interface TablePageQuery extends Record<string, any> {
@@ -457,8 +466,8 @@ const algoContentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("video.common.warning"),
+    message: t("video.common.deleteConfirmMsg"),
     type: "warning",
   },
 });
@@ -499,25 +508,25 @@ async function showDispatchResult(
   const succeeded = result?.succeeded?.length ?? 0;
   const failed = result?.failed ?? [];
   if (failed.length === 0) {
-    ElMessage.success(`${action}完成：成功 ${succeeded} 个任务 / 失败 0 个任务`);
+    ElMessage.success(t("video.algo.dispatchDone", { action, succeeded }));
     return;
   }
   const items = failed
     .map(
       (f) =>
-        `<li style="margin-bottom:4px"><span style="color:var(--el-color-danger)">任务 #${f.task_id}</span>：${escapeHtml(f.error)}</li>`
+        `<li style="margin-bottom:4px"><span style="color:var(--el-color-danger)">${t("video.algo.taskPrefix", { id: f.task_id })}</span>：${escapeHtml(f.error)}</li>`
     )
     .join("");
   try {
     await ElMessageBox.confirm(
       `<div style="max-height:300px;overflow:auto">
-        <p style="margin:0 0 6px">成功 ${succeeded} 个任务 / 失败 ${failed.length} 个任务</p>
+        <p style="margin:0 0 6px">${t("video.algo.dispatchSummary", { succeeded, failed: failed.length })}</p>
         <ul style="padding-left:18px;margin:0">${items}</ul>
       </div>`,
-      `${action}结果`,
+      t("video.algo.result", { action }),
       {
-        confirmButtonText: "重试失败任务",
-        cancelButtonText: "关闭",
+        confirmButtonText: t("video.algo.retryFailed"),
+        cancelButtonText: t("video.algo.close"),
         type: "warning",
         dangerouslyUseHTMLString: true,
       }
@@ -532,28 +541,44 @@ async function showDispatchResult(
       failed.map((f) => f.task_id)
     );
     refreshAlgoList();
-    await showDispatchResult(`${action}重试`, retryRes.data.data as AlgorithmDispatchResult, row);
+    await showDispatchResult(
+      `${action}${t("video.algo.retrySuffix")}`,
+      retryRes.data.data as AlgorithmDispatchResult,
+      row
+    );
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || e?.msg || "重试下发失败");
+    ElMessage.error(
+      e?.response?.data?.msg || e?.message || e?.msg || t("video.algo.retryDispatchFail")
+    );
   }
 }
 
 async function handleHotUpdate(row: any) {
   try {
     await ElMessageBox.confirm(
-      `确定将算法「${row.name}」的当前模型热更新下发到所有引用该算法的任务？`,
-      "热更新确认",
-      { type: "warning", confirmButtonText: "确定下发", cancelButtonText: "取消" }
+      t("video.algo.hotUpdateConfirm", { name: row.name }),
+      t("video.algo.hotUpdateConfirmTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("video.algo.confirmDispatch"),
+        cancelButtonText: t("video.common.cancel"),
+      }
     );
   } catch {
     return;
   }
   try {
     const res = await hotUpdateAlgorithm(row.id);
-    await showDispatchResult("热更新", res.data.data as AlgorithmDispatchResult, row);
+    await showDispatchResult(
+      t("video.algo.hotUpdate"),
+      res.data.data as AlgorithmDispatchResult,
+      row
+    );
     refreshAlgoList();
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || e?.msg || "热更新失败");
+    ElMessage.error(
+      e?.response?.data?.msg || e?.message || e?.msg || t("video.algo.hotUpdateFail")
+    );
   }
 }
 
@@ -561,19 +586,30 @@ async function handleRollback(row: any) {
   if (!canRollback(row)) return;
   try {
     await ElMessageBox.confirm(
-      `确定回滚算法「${row.name}」到上一版本（${row.previous_version || "未知版本"}）并下发到所有引用任务？`,
-      "回滚确认",
-      { type: "warning", confirmButtonText: "确定回滚", cancelButtonText: "取消" }
+      t("video.algo.rollbackConfirm", {
+        name: row.name,
+        version: row.previous_version || t("video.algo.unknownVersion"),
+      }),
+      t("video.algo.rollbackConfirmTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("video.algo.confirmRollback"),
+        cancelButtonText: t("video.common.cancel"),
+      }
     );
   } catch {
     return;
   }
   try {
     const res = await rollbackAlgorithm(row.id);
-    await showDispatchResult("回滚", res.data.data as AlgorithmDispatchResult, row);
+    await showDispatchResult(
+      t("video.algo.rollback"),
+      res.data.data as AlgorithmDispatchResult,
+      row
+    );
     refreshAlgoList();
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || e?.msg || "回滚失败");
+    ElMessage.error(e?.response?.data?.msg || e?.message || e?.msg || t("video.algo.rollbackFail"));
   }
 }
 
@@ -670,12 +706,12 @@ async function handleModelUpload(uploadFile: any) {
     const mp = res?.data?.data?.model_path;
     if (mp) {
       algoForm.model_path = mp;
-      ElMessage.success(`模型已上传: ${file.name}`);
+      ElMessage.success(t("video.algo.modelUploaded", { name: file.name }));
     } else {
-      ElMessage.error("上传失败");
+      ElMessage.error(t("video.algo.uploadFail"));
     }
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.msg || "上传失败");
+    ElMessage.error(e?.response?.data?.msg || e?.msg || t("video.algo.uploadFail"));
   }
 }
 
@@ -713,7 +749,7 @@ async function handleCloseAlgoDialog() {
 async function handleOpenAlgoDialog(type: "create" | "update", id?: number) {
   algoDialogVisible.type = type;
   if (id && type === "update") {
-    algoDialogVisible.title = "编辑算法";
+    algoDialogVisible.title = t("video.algo.editAlgorithm");
     const res = await getAlgorithmList({ page_no: 1, page_size: 100 });
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
@@ -739,7 +775,7 @@ async function handleOpenAlgoDialog(type: "create" | "update", id?: number) {
       syncParamsFromConfig();
     }
   } else {
-    algoDialogVisible.title = "新增算法";
+    algoDialogVisible.title = t("video.algo.addAlgorithm");
     algoForm.id = undefined;
     loadConfigTemplate();
   }
@@ -783,6 +819,7 @@ async function handleSubmitAlgo() {
     } else {
       await createAlgorithm(payload);
     }
+    ElMessage.success(t("video.common.saveSuccess"));
     algoDialogVisible.visible = false;
     await resetAlgoForm();
     refreshAlgoList();

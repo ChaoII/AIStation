@@ -1548,7 +1548,7 @@ export function createOffice(opts) {
 
     /* 三行事实 */
     const rows = [
-      ['分类', d.category || '未分类'],
+      ['角色', d.role || '未分类'],
       ['模型', d.model || '默认模型'],
       ['最近活跃', d.last || '暂无记录']
     ];

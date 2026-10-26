@@ -17,6 +17,7 @@ from app.config.setting import settings
 from app.core.exceptions import CustomException
 from app.core.logger import log
 from app.core.redis_crud import RedisCURD
+from app.core.rsa_util import resolve_password
 from app.core.security import (
     CustomOAuth2PasswordRequestForm,
     create_access_token,
@@ -29,8 +30,6 @@ from app.utils.ip_local_util import IpLocalUtil
 
 from .schema import (
     AuthSchema,
-    AutoLoginTokenSchema,
-    AutoLoginUserSchema,
     CaptchaOutSchema,
     JWTOutSchema,
     JWTPayloadSchema,
@@ -93,7 +92,8 @@ class LoginService:
             raise CustomException(msg="用户不存在")
 
         if not PwdUtil.verify_password(
-            plain_password=login_form.password, password_hash=user.password
+            plain_password=resolve_password(login_form.password),
+            password_hash=user.password,
         ):
             raise CustomException(msg="账号或密码错误")
         log.info(f"[登录耗时] Bcrypt密码校验: {round((time.time() - _t3) * 1000, 1)}ms"); _t4 = time.time()
@@ -413,162 +413,3 @@ class CaptchaService:
         await RedisCURD(redis).delete(redis_key)
         log.info(f"验证码校验成功,key:{key}")
         return True
-
-
-class AutoLoginService:
-    """免登录服务"""
-
-    # 免登录Token前缀
-    AUTO_LOGIN_PREFIX = "aistation:auto_login:"
-    # Token有效期(秒) - 5分钟
-    TOKEN_EXPIRE = 300
-
-    @classmethod
-    async def get_auto_login_users_service(cls, db: AsyncSession) -> list[AutoLoginUserSchema]:
-        """
-        获取免登录用户列表
-
-        参数:
-        - db (AsyncSession): 数据库会话对象
-
-        返回:
-        - list[AutoLoginUserSchema]: 用户列表
-        """
-        from sqlalchemy import select
-
-        from app.api.v1.module_system.user.model import UserModel
-
-        # 查询所有启用的用户
-        stmt = select(UserModel).where(UserModel.status == "0").order_by(UserModel.id)
-        result = await db.execute(stmt)
-        users = result.scalars().all()
-
-        return [
-            AutoLoginUserSchema(
-                id=user.id,
-                username=user.username,
-                name=user.name,
-                avatar=user.avatar,
-            )
-            for user in users
-        ]
-
-    @classmethod
-    async def create_auto_login_token_service(
-        cls, redis: Redis, db: AsyncSession, user_id: int
-    ) -> AutoLoginTokenSchema:
-        """
-        创建免登录Token
-
-        参数:
-        - request (Request): FastAPI请求对象
-        - redis (Redis): Redis客户端对象
-        - db (AsyncSession): 数据库会话对象
-        - user_id (int): 用户ID
-
-        返回:
-        - AutoLoginTokenSchema: 免登录Token和用户信息
-
-        异常:
-        - CustomException: 用户不存在或已停用时抛出异常
-        """
-        from sqlalchemy import select
-
-        from app.api.v1.module_system.user.model import UserModel
-
-        # 查询用户
-        stmt = select(UserModel).where(UserModel.id == user_id)
-        result = await db.execute(stmt)
-        user = result.scalar_one_or_none()
-
-        if not user:
-            raise CustomException(msg="用户不存在")
-
-        if user.status == "1":
-            raise CustomException(msg="用户已被停用")
-
-        # 生成免登录Token
-        import uuid
-
-        token = str(uuid.uuid4())
-        token_key = f"{cls.AUTO_LOGIN_PREFIX}{token}"
-
-        # 存储到Redis，设置5分钟过期
-        token_data = {
-            "user_id": user.id,
-            "username": user.username,
-            "created_at": datetime.now().isoformat(),
-        }
-        await RedisCURD(redis).set(
-            key=token_key,
-            value=json.dumps(token_data),
-            expire=cls.TOKEN_EXPIRE,
-        )
-
-        log.info(f"创建免登录Token成功,用户:{user.username}")
-
-        return AutoLoginTokenSchema(
-            token=token,
-            user=AutoLoginUserSchema(
-                id=user.id,
-                username=user.username,
-                name=user.name,
-                avatar=user.avatar,
-            ),
-        )
-
-    @classmethod
-    async def auto_login_service(
-        cls, request: Request, redis: Redis, db: AsyncSession, token: str
-    ) -> JWTOutSchema:
-        """
-        免登录
-
-        参数:
-        - request (Request): FastAPI请求对象
-        - redis (Redis): Redis客户端对象
-        - db (AsyncSession): 数据库会话对象
-        - token (str): 免登录Token
-
-        返回:
-        - JWTOutSchema: JWT令牌信息
-
-        异常:
-        - CustomException: Token无效或过期时抛出异常
-        """
-        from sqlalchemy import select
-
-        from app.api.v1.module_system.user.model import UserModel
-
-        # 验证Token
-        token_key = f"{cls.AUTO_LOGIN_PREFIX}{token}"
-        token_data_str = await RedisCURD(redis).get(token_key)
-
-        if not token_data_str:
-            raise CustomException(msg="免登录Token已过期或无效")
-
-        token_data = json.loads(token_data_str)
-        user_id = token_data.get("user_id")
-
-        # 查询用户
-        stmt = select(UserModel).where(UserModel.id == user_id)
-        result = await db.execute(stmt)
-        user = result.scalar_one_or_none()
-
-        if not user:
-            raise CustomException(msg="用户不存在")
-
-        if user.status == "1":
-            raise CustomException(msg="用户已被停用")
-
-        # 删除已使用的Token
-        await RedisCURD(redis).delete(token_key)
-
-        # 使用LoginService创建token
-        jwt_token = await LoginService.create_token_service(
-            request=request, redis=redis, user=user, login_type="PC端"
-        )
-
-        log.info(f"用户{user.username}免登录成功")
-
-        return jwt_token

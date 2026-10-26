@@ -419,7 +419,7 @@ async def _notify_reviewers(names: list[str], p: dict) -> int:
             await _svc._exec_write(
                 "INSERT INTO sys_user_notification(user_id,title,content,type,module,"
                 "module_id,is_read,created_time) "
-                "VALUES (:u,:t,:c,'info','ontology',0,false,now())",
+                "VALUES (:u,:t,:c,'ontology_proposal_pending','ontology',0,false,now())",
                 {"u": row[0], "t": f"本体提案待审查：{p['title']}",
                  "c": f"提案 {p['code']} 有 {len(p['tasks'])} 个任务待审查。"})
             n += 1

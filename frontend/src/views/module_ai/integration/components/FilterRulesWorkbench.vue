@@ -6,16 +6,16 @@
     <!-- 顶栏：命中摘要 + 操作 -->
     <div class="frwb-bar">
       <el-descriptions :column="4" size="small" border class="frwb-summary">
-        <el-descriptions-item label="系统表">
+        <el-descriptions-item :label="t('ai_workflow.ig_systemTable')">
           {{ preview?.summary?.system_tables ?? "-" }}
         </el-descriptions-item>
-        <el-descriptions-item label="业务表">
+        <el-descriptions-item :label="t('ai_workflow.ig_businessTable')">
           {{ preview?.summary?.business_tables ?? "-" }}
         </el-descriptions-item>
-        <el-descriptions-item label="审计字段">
+        <el-descriptions-item :label="t('ai_workflow.ig_auditField')">
           {{ preview?.summary?.audit_fields ?? "-" }}
         </el-descriptions-item>
-        <el-descriptions-item label="业务字段">
+        <el-descriptions-item :label="t('ai_workflow.ig_businessField')">
           {{ preview?.summary?.business_fields ?? "-" }}
         </el-descriptions-item>
       </el-descriptions>
@@ -27,7 +27,7 @@
           :disabled="!dsDetail"
           @click="confirmSave(false)"
         >
-          保存规则
+          {{ t("ai_workflow.ig_saveRules") }}
         </el-button>
         <el-button
           v-hasPerm="['module_ai:query:ask']"
@@ -37,7 +37,7 @@
           :disabled="!dsDetail"
           @click="confirmSave(true)"
         >
-          保存并应用
+          {{ t("ai_workflow.ig_saveApplyRules") }}
         </el-button>
       </div>
     </div>
@@ -46,21 +46,23 @@
       type="info"
       :closable="false"
       class="frwb-note"
-      title="规则一改即自动刷新下方预览（只读，不影响已保存规则）；确认无误后再点「保存规则 / 保存并应用」。"
+      :title="t('ai_workflow.ig_frwbHint')"
     />
 
     <!-- 内部子 tab -->
     <el-tabs v-model="innerTab" class="frwb-tabs">
       <!-- 1) 规则配置 -->
-      <el-tab-pane label="规则配置" name="config">
+      <el-tab-pane :label="t('ai_workflow.ig_tabRuleConfig')" name="config">
         <div v-loading="loading" class="frwb-pane">
           <ElForm :model="rules" label-width="110px" size="small" class="frwb-form">
-            <ElFormItem label="启用规则">
+            <ElFormItem :label="t('ai_workflow.ig_enableRule')">
               <el-switch v-model="rules.enabled" @change="scheduleRefresh" />
-              <span class="frwb-hint">关闭后不按规则自动打标系统表 / 审计字段</span>
+              <span class="frwb-hint">{{ t("ai_workflow.ig_enableRuleHint") }}</span>
             </ElFormItem>
-            <el-divider content-position="left" class="frwb-divider">系统表识别</el-divider>
-            <ElFormItem label="表名前缀">
+            <el-divider content-position="left" class="frwb-divider">
+              {{ t("ai_workflow.ig_sysTableDetect") }}
+            </el-divider>
+            <ElFormItem :label="t('ai_workflow.ig_sysTablePrefix')">
               <el-select
                 v-model="rules.system_table.prefixes"
                 multiple
@@ -68,7 +70,7 @@
                 allow-create
                 default-first-option
                 :multiple-limit="0"
-                placeholder="回车新增，如 SYS_ / FUEL_"
+                :placeholder="t('ai_workflow.ig_enterAddPrefix')"
                 style="width: 100%"
                 @change="scheduleRefresh"
               >
@@ -80,7 +82,7 @@
                 />
               </el-select>
             </ElFormItem>
-            <ElFormItem label="表名关键词">
+            <ElFormItem :label="t('ai_workflow.ig_sysTableKeyword')">
               <el-select
                 v-model="rules.system_table.keywords"
                 multiple
@@ -88,7 +90,7 @@
                 allow-create
                 default-first-option
                 :multiple-limit="0"
-                placeholder="回车新增，如 _BAK / log"
+                :placeholder="t('ai_workflow.ig_enterAddKeyword')"
                 style="width: 100%"
                 @change="scheduleRefresh"
               >
@@ -100,7 +102,7 @@
                 />
               </el-select>
             </ElFormItem>
-            <ElFormItem label="精确表名">
+            <ElFormItem :label="t('ai_workflow.ig_exactTable')">
               <el-select
                 v-model="rules.system_table.exact"
                 multiple
@@ -108,22 +110,24 @@
                 allow-create
                 default-first-option
                 :multiple-limit="0"
-                placeholder="回车新增，如 alembic_version"
+                :placeholder="t('ai_workflow.ig_enterAddExact')"
                 style="width: 100%"
                 @change="scheduleRefresh"
               >
                 <el-option v-for="e in rules.system_table.exact" :key="e" :label="e" :value="e" />
               </el-select>
             </ElFormItem>
-            <ElFormItem label="表名正则">
+            <ElFormItem :label="t('ai_workflow.ig_tableRegex')">
               <el-input
                 v-model="rules.system_table.regex"
-                placeholder="可空，如 ^TMP_"
+                :placeholder="t('ai_workflow.ig_tableRegexPlaceholder')"
                 @change="scheduleRefresh"
               />
             </ElFormItem>
-            <el-divider content-position="left" class="frwb-divider">审计字段识别</el-divider>
-            <ElFormItem label="审计字段">
+            <el-divider content-position="left" class="frwb-divider">
+              {{ t("ai_workflow.ig_auditFieldDetect") }}
+            </el-divider>
+            <ElFormItem :label="t('ai_workflow.ig_auditField')">
               <el-select
                 v-model="rules.audit_fields"
                 multiple
@@ -131,7 +135,7 @@
                 allow-create
                 default-first-option
                 :multiple-limit="0"
-                placeholder="回车新增，如 created_time / is_deleted"
+                :placeholder="t('ai_workflow.ig_enterAddAudit')"
                 style="width: 100%"
                 @change="scheduleRefresh"
               >
@@ -141,42 +145,56 @@
           </ElForm>
           <div class="frwb-foot">
             <el-tag size="small" type="info" effect="plain">
-              当前草稿：{{ enabledText }}；保存后可作为「前后对比」基准
+              {{ t("ai_workflow.ig_draftStatus", { status: enabledText }) }}
             </el-tag>
           </div>
         </div>
       </el-tab-pane>
 
       <!-- 2) 实时预览 -->
-      <el-tab-pane label="实时预览" name="preview">
+      <el-tab-pane :label="t('ai_workflow.ig_tabPreview')" name="preview">
         <div v-loading="loading" class="frwb-pane frwb-preview">
           <el-alert
             type="success"
             :closable="false"
             class="frwb-note"
-            title="以下为当前草稿规则命中的结果（只读），不会影响已保存规则。"
+            :title="t('ai_workflow.ig_frwbPreviewHint')"
           />
           <el-card shadow="never" class="frwb-card">
             <template #header>
-              <span class="frwb-card__title">表清单（{{ preview?.tables?.length ?? 0 }}）</span>
+              <span class="frwb-card__title">
+                {{ t("ai_workflow.ig_tableList", { count: preview?.tables?.length ?? 0 }) }}
+              </span>
             </template>
             <el-table :data="preview?.tables || []" size="small" border height="300" stripe>
               <template #empty>
-                <el-empty description="暂无表数据，请先同步表结构" :image-size="50" />
+                <el-empty :description="t('ai_workflow.ig_noTableData')" :image-size="50" />
               </template>
-              <el-table-column label="表名" min-width="200" show-overflow-tooltip>
+              <el-table-column
+                :label="t('ai_workflow.ig_tableName')"
+                min-width="200"
+                show-overflow-tooltip
+              >
                 <template #default="{ row }">
                   <span class="frwb-mono">{{ row.name }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="系统·业务" width="110" align="center">
+              <el-table-column :label="t('ai_workflow.ig_sysBiz')" width="110" align="center">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.is_system ? 'info' : 'success'" effect="plain">
-                    {{ row.is_system ? "系统" : "业务" }}
+                    {{
+                      row.is_system
+                        ? t("ai_workflow.ig_systemTagShort")
+                        : t("ai_workflow.ig_businessTagShort")
+                    }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="命中规则" min-width="220" show-overflow-tooltip>
+              <el-table-column
+                :label="t('ai_workflow.ig_hitRule')"
+                min-width="220"
+                show-overflow-tooltip
+              >
                 <template #default="{ row }">
                   {{ row.reason || "—" }}
                 </template>
@@ -185,25 +203,39 @@
           </el-card>
           <el-card shadow="never" class="frwb-card">
             <template #header>
-              <span class="frwb-card__title">字段清单（{{ preview?.fields?.length ?? 0 }}）</span>
+              <span class="frwb-card__title">
+                {{ t("ai_workflow.ig_fieldList", { count: preview?.fields?.length ?? 0 }) }}
+              </span>
             </template>
             <el-table :data="preview?.fields || []" size="small" border height="300" stripe>
               <template #empty>
-                <el-empty description="暂无字段数据，请先同步表结构" :image-size="50" />
+                <el-empty :description="t('ai_workflow.ig_noFieldData')" :image-size="50" />
               </template>
-              <el-table-column label="字段名" min-width="200" show-overflow-tooltip>
+              <el-table-column
+                :label="t('ai_workflow.ig_fieldName')"
+                min-width="200"
+                show-overflow-tooltip
+              >
                 <template #default="{ row }">
                   <span class="frwb-mono">{{ row.name }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="审计·业务" width="110" align="center">
+              <el-table-column :label="t('ai_workflow.ig_auditBiz')" width="110" align="center">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.is_audit ? 'info' : 'success'" effect="plain">
-                    {{ row.is_audit ? "审计" : "业务" }}
+                    {{
+                      row.is_audit
+                        ? t("ai_workflow.ig_auditTagShort")
+                        : t("ai_workflow.ig_businessTagShort")
+                    }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="命中规则" min-width="220" show-overflow-tooltip>
+              <el-table-column
+                :label="t('ai_workflow.ig_hitRule')"
+                min-width="220"
+                show-overflow-tooltip
+              >
                 <template #default="{ row }">
                   {{ row.reason || "—" }}
                 </template>
@@ -214,7 +246,7 @@
       </el-tab-pane>
 
       <!-- 3) 前后对比 -->
-      <el-tab-pane label="前后对比" name="compare">
+      <el-tab-pane :label="t('ai_workflow.ig_tabCompare')" name="compare">
         <div v-loading="compareLoading" class="frwb-pane">
           <div class="frwb-bar frwb-bar--left">
             <el-button
@@ -223,26 +255,46 @@
               :loading="compareLoading"
               @click="loadSavedPreview"
             >
-              刷新对比
+              {{ t("ai_workflow.ig_refreshCompare") }}
             </el-button>
             <el-tag size="small" type="info" effect="plain">
-              已保存规则 vs 当前草稿（命中标记发生变化的表 / 字段）
+              {{ t("ai_workflow.ig_compareHint") }}
             </el-tag>
           </div>
 
           <!-- 基础计数对比 -->
           <el-descriptions :column="4" size="small" border class="frwb-summary frwb-summary--cmp">
-            <el-descriptions-item label="系统表">
-              已保存 {{ baseCounts.saved.sys }} / 草稿 {{ baseCounts.draft.sys }}
+            <el-descriptions-item :label="t('ai_workflow.ig_systemTable')">
+              {{
+                t("ai_workflow.ig_savedDraftCount", {
+                  saved: baseCounts.saved.sys,
+                  draft: baseCounts.draft.sys,
+                })
+              }}
             </el-descriptions-item>
-            <el-descriptions-item label="业务表">
-              已保存 {{ baseCounts.saved.biz }} / 草稿 {{ baseCounts.draft.biz }}
+            <el-descriptions-item :label="t('ai_workflow.ig_businessTable')">
+              {{
+                t("ai_workflow.ig_savedDraftCount", {
+                  saved: baseCounts.saved.biz,
+                  draft: baseCounts.draft.biz,
+                })
+              }}
             </el-descriptions-item>
-            <el-descriptions-item label="审计字段">
-              已保存 {{ baseCounts.saved.audit }} / 草稿 {{ baseCounts.draft.audit }}
+            <el-descriptions-item :label="t('ai_workflow.ig_auditField')">
+              {{
+                t("ai_workflow.ig_savedDraftCount", {
+                  saved: baseCounts.saved.audit,
+                  draft: baseCounts.draft.audit,
+                })
+              }}
             </el-descriptions-item>
-            <el-descriptions-item label="业务字段">
-              已保存 {{ baseCounts.saved.bizf }} / 草稿 {{ baseCounts.draft.bizf }}
+            <el-descriptions-item :label="t('ai_workflow.ig_businessField')">
+              {{
+                t("ai_workflow.ig_savedDraftCount", {
+                  saved: baseCounts.saved.bizf,
+                  draft: baseCounts.draft.bizf,
+                })
+              }}
             </el-descriptions-item>
           </el-descriptions>
 
@@ -251,36 +303,40 @@
             type="info"
             :closable="false"
             class="frwb-note"
-            title="尚未对比：点「刷新对比」后，再查看已保存规则与当前草稿的命中差异。"
+            :title="t('ai_workflow.ig_compareEmpty')"
           />
           <el-alert
             v-else-if="!compareItems.length"
             type="success"
             :closable="false"
             class="frwb-note"
-            title="已保存规则与当前草稿一致，无命中变化。"
+            :title="t('ai_workflow.ig_compareSame')"
           />
           <el-table v-else :data="compareItems" size="small" border height="320" stripe>
             <template #empty>
-              <el-empty description="暂无差异（先点「刷新对比」或修改草稿规则）" :image-size="50" />
+              <el-empty :description="t('ai_workflow.ig_noDiff')" :image-size="50" />
             </template>
-            <el-table-column label="类型" width="80" align="center">
+            <el-table-column :label="t('ai_workflow.ig_type')" width="80" align="center">
               <template #default="{ row }">
                 <el-tag
                   size="small"
-                  :type="row.kind === '表' ? 'warning' : 'primary'"
+                  :type="row.kind === t('ai_workflow.ig_kgTypeTable') ? 'warning' : 'primary'"
                   effect="plain"
                 >
                   {{ row.kind }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="名称" min-width="220" show-overflow-tooltip>
+            <el-table-column
+              :label="t('ai_workflow.ig_name')"
+              min-width="220"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">
                 <span class="frwb-mono">{{ row.name }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="命中变化" width="160" align="center">
+            <el-table-column :label="t('ai_workflow.ig_hitChange')" width="160" align="center">
               <template #default="{ row }">
                 <span class="frwb-change">{{ row.from }}</span>
                 <el-icon class="frwb-arrow"><Right /></el-icon>
@@ -288,7 +344,7 @@
               </template>
             </el-table-column>
             <el-table-column
-              label="命中规则（已保存 → 草稿）"
+              :label="t('ai_workflow.ig_hitRuleCompare')"
               min-width="300"
               show-overflow-tooltip
             >
@@ -301,13 +357,13 @@
       </el-tab-pane>
 
       <!-- 4) 概览 -->
-      <el-tab-pane label="概览" name="overview">
+      <el-tab-pane :label="t('ai_workflow.ig_tabOverview')" name="overview">
         <div v-loading="loading" class="frwb-pane">
           <el-row :gutter="12">
             <el-col :xs="24" :sm="12">
               <el-card shadow="never" class="frwb-card">
                 <template #header>
-                  <span class="frwb-card__title">系统 vs 业务表</span>
+                  <span class="frwb-card__title">{{ t("ai_workflow.ig_sysVsBiz") }}</span>
                 </template>
                 <VChart
                   v-if="tablePieOption"
@@ -315,13 +371,13 @@
                   style="height: 260px"
                   autoresize
                 />
-                <el-empty v-else description="暂无数据" :image-size="60" />
+                <el-empty v-else :description="t('ai_workflow.ig_noData')" :image-size="60" />
               </el-card>
             </el-col>
             <el-col :xs="24" :sm="12">
               <el-card shadow="never" class="frwb-card">
                 <template #header>
-                  <span class="frwb-card__title">审计 vs 业务字段</span>
+                  <span class="frwb-card__title">{{ t("ai_workflow.ig_auditVsBiz") }}</span>
                 </template>
                 <VChart
                   v-if="fieldPieOption"
@@ -329,7 +385,7 @@
                   style="height: 260px"
                   autoresize
                 />
-                <el-empty v-else description="暂无数据" :image-size="60" />
+                <el-empty v-else :description="t('ai_workflow.ig_noData')" :image-size="60" />
               </el-card>
             </el-col>
           </el-row>
@@ -337,22 +393,22 @@
       </el-tab-pane>
 
       <!-- 5) 大模型辅助：生成候选 / 自然语言配置 / 逐表逐字段建议 -->
-      <el-tab-pane label="大模型辅助" name="llm">
+      <el-tab-pane :label="t('ai_workflow.ig_tabLlm')" name="llm">
         <div v-loading="llmLoading" class="frwb-pane frwb-llm">
           <el-alert
             type="info"
             :closable="false"
             class="frwb-note"
-            title="以下三区均由大模型辅助生成候选规则 / 建议；「应用到草稿」仅写入前端草稿（未落库），确认后可回「规则配置」微调再保存。"
+            :title="t('ai_workflow.ig_llmHint')"
           />
 
           <!-- 5.1) 生成候选规则 -->
           <el-card shadow="never" class="frwb-card frwb-llm__card">
             <template #header>
               <div class="frwb-llm__head">
-                <span class="frwb-card__title">生成候选规则</span>
+                <span class="frwb-card__title">{{ t("ai_workflow.ig_genCandidateRules") }}</span>
                 <el-button size="small" :loading="llmLoading" @click="doSuggest">
-                  生成候选规则
+                  {{ t("ai_workflow.ig_genCandidateRules") }}
                 </el-button>
               </div>
             </template>
@@ -365,13 +421,13 @@
                   type="primary"
                   @click="applyRules(suggestResult)"
                 >
-                  应用到草稿
+                  {{ t("ai_workflow.ig_applyDraft") }}
                 </el-button>
               </div>
             </template>
             <el-empty
               v-else
-              description="点「生成候选规则」让大模型给出候选规则"
+              :description="t('ai_workflow.ig_genCandidateEmpty')"
               :image-size="60"
             />
           </el-card>
@@ -379,13 +435,13 @@
           <!-- 5.2) 自然语言配置 -->
           <el-card shadow="never" class="frwb-card frwb-llm__card">
             <template #header>
-              <span class="frwb-card__title">自然语言配置</span>
+              <span class="frwb-card__title">{{ t("ai_workflow.ig_nlConfig") }}</span>
             </template>
             <el-input
               v-model="llmText"
               type="textarea"
               :rows="3"
-              placeholder="用自然语言描述规则，例如：把 SYS_ 前缀的表当系统表，created_time / is_deleted 当审计字段"
+              :placeholder="t('ai_workflow.ig_nlPlaceholder')"
             />
             <div class="frwb-llm__foot">
               <el-button
@@ -395,7 +451,7 @@
                 :disabled="!llmText.trim()"
                 @click="doParse"
               >
-                解析
+                {{ t("ai_workflow.ig_parse") }}
               </el-button>
             </div>
             <template v-if="parseResult">
@@ -407,47 +463,61 @@
                   type="primary"
                   @click="applyRules(parseResult)"
                 >
-                  应用到草稿
+                  {{ t("ai_workflow.ig_applyDraft") }}
                 </el-button>
               </div>
             </template>
-            <el-empty
-              v-else
-              description="输入自然语言后点「解析」转换为筛选规则"
-              :image-size="60"
-            />
+            <el-empty v-else :description="t('ai_workflow.ig_parseEmpty')" :image-size="60" />
           </el-card>
 
           <!-- 5.3) 逐表逐字段建议 -->
           <el-card shadow="never" class="frwb-card frwb-llm__card">
             <template #header>
               <div class="frwb-llm__head">
-                <span class="frwb-card__title">逐表逐字段建议</span>
+                <span class="frwb-card__title">{{ t("ai_workflow.ig_perTableSuggest") }}</span>
                 <el-button size="small" :loading="llmLoading" @click="doClassify">
-                  获取分类建议
+                  {{ t("ai_workflow.ig_getClassify") }}
                 </el-button>
               </div>
             </template>
             <template v-if="classifyResult">
               <div class="frwb-llm__subtitle">
-                系统表建议（{{ classifyResult.system_suggest?.length || 0 }}）
+                {{
+                  t("ai_workflow.ig_sysSuggest", {
+                    count: classifyResult.system_suggest?.length || 0,
+                  })
+                }}
               </div>
               <el-table :data="classifyResult.system_suggest || []" size="small" border stripe>
-                <el-table-column label="表名" prop="name" min-width="200" show-overflow-tooltip />
                 <el-table-column
-                  label="建议原因"
+                  :label="t('ai_workflow.ig_tableName')"
+                  prop="name"
+                  min-width="200"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  :label="t('ai_workflow.ig_suggestReason')"
                   prop="reason"
                   min-width="260"
                   show-overflow-tooltip
                 />
               </el-table>
               <div class="frwb-llm__subtitle">
-                审计字段建议（{{ classifyResult.audit_suggest?.length || 0 }}）
+                {{
+                  t("ai_workflow.ig_auditSuggest", {
+                    count: classifyResult.audit_suggest?.length || 0,
+                  })
+                }}
               </div>
               <el-table :data="classifyResult.audit_suggest || []" size="small" border stripe>
-                <el-table-column label="字段名" prop="name" min-width="200" show-overflow-tooltip />
                 <el-table-column
-                  label="建议原因"
+                  :label="t('ai_workflow.ig_fieldName')"
+                  prop="name"
+                  min-width="200"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  :label="t('ai_workflow.ig_suggestReason')"
                   prop="reason"
                   min-width="260"
                   show-overflow-tooltip
@@ -457,10 +527,10 @@
                 type="warning"
                 :closable="false"
                 class="frwb-note"
-                title="此处为逐项分类建议，非完整规则，仅作参考，不回填草稿。"
+                :title="t('ai_workflow.ig_classifyHint')"
               />
             </template>
-            <el-empty v-else description="点「获取分类建议」查看逐表逐字段建议" :image-size="60" />
+            <el-empty v-else :description="t('ai_workflow.ig_classifyEmpty')" :image-size="60" />
           </el-card>
         </div>
       </el-tab-pane>
@@ -472,6 +542,7 @@
 import { ref, computed, watch, onBeforeUnmount, defineComponent, h } from "vue";
 import { ElMessage, ElMessageBox, ElForm, ElFormItem } from "element-plus";
 import { Refresh, Right } from "@element-plus/icons-vue";
+import { useI18n } from "vue-i18n";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
 import { PieChart } from "echarts/charts";
@@ -490,6 +561,7 @@ import {
 use([PieChart, CanvasRenderer, TooltipComponent, LegendComponent]);
 
 const props = defineProps<{ datasource: any }>();
+const { t } = useI18n();
 
 // 规则默认结构：与后端 filter_rules 一致
 function defaultRules() {
@@ -531,22 +603,29 @@ const RulePreview = defineComponent({
     const fmt = (arr: any) => (Array.isArray(arr) && arr.length ? arr.join("、") : "—");
     return () =>
       h(ElForm, { labelWidth: "110px", size: "small", class: "frwb-llm__preview" }, () => [
-        h(ElFormItem, { label: "启用" }, () => [
-          h("span", props.rules?.enabled === false ? "停用" : "启用"),
+        h(ElFormItem, { label: t("ai_workflow.ig_enableRule") }, () => [
+          h(
+            "span",
+            props.rules?.enabled === false
+              ? t("ai_workflow.ig_enabledOff")
+              : t("ai_workflow.ig_enabledOn")
+          ),
         ]),
-        h(ElFormItem, { label: "表名前缀" }, () => [
+        h(ElFormItem, { label: t("ai_workflow.ig_sysTablePrefix") }, () => [
           h("span", fmt(props.rules?.system_table?.prefixes)),
         ]),
-        h(ElFormItem, { label: "表名关键词" }, () => [
+        h(ElFormItem, { label: t("ai_workflow.ig_sysTableKeyword") }, () => [
           h("span", fmt(props.rules?.system_table?.keywords)),
         ]),
-        h(ElFormItem, { label: "精确表名" }, () => [
+        h(ElFormItem, { label: t("ai_workflow.ig_exactTable") }, () => [
           h("span", fmt(props.rules?.system_table?.exact)),
         ]),
-        h(ElFormItem, { label: "表名正则" }, () => [
+        h(ElFormItem, { label: t("ai_workflow.ig_tableRegex") }, () => [
           h("span", props.rules?.system_table?.regex || "—"),
         ]),
-        h(ElFormItem, { label: "审计字段" }, () => [h("span", fmt(props.rules?.audit_fields))]),
+        h(ElFormItem, { label: t("ai_workflow.ig_auditField") }, () => [
+          h("span", fmt(props.rules?.audit_fields)),
+        ]),
       ]);
   },
 });
@@ -574,7 +653,9 @@ const classifyResult = ref<any>(null);
 // 数据源切换代际守卫：仅接受当前代际的异步响应，避免旧数据源晚回覆盖新数据源
 let gen = 0;
 
-const enabledText = computed(() => (rules.value?.enabled ? "已启用" : "已停用"));
+const enabledText = computed(() =>
+  rules.value?.enabled ? t("ai_workflow.ig_enabledOn") : t("ai_workflow.ig_enabledOff")
+);
 
 const baseCounts = computed(() => {
   const loaded = !!savedPreview.value;
@@ -607,13 +688,18 @@ const compareItems = computed(() => {
     const s = savedByName.get(t.name);
     if (s && !!s.is_system !== !!t.is_system) {
       out.push({
-        kind: "表",
+        kind: t("ai_workflow.ig_kgTypeTable"),
         name: t.name,
-        from: s.is_system ? "系统" : "业务",
-        to: t.is_system ? "系统" : "业务",
+        from: s.is_system
+          ? t("ai_workflow.ig_systemTagShort")
+          : t("ai_workflow.ig_businessTagShort"),
+        to: t.is_system ? t("ai_workflow.ig_systemTagShort") : t("ai_workflow.ig_businessTagShort"),
         // 同时展示已保存侧与草稿侧命中原因：翻转方向（如系统→业务 / 审计→业务）时，
         // 草稿侧为空，用户仍能看到「它之前为何被判为系统/审计」（已保存侧原因）。
-        reason: `已保存 ${s.reason || "—"} → 草稿 ${t.reason || "—"}`,
+        reason: t("ai_workflow.ig_reasonCompare", {
+          saved: s.reason || "—",
+          draft: t.reason || "—",
+        }),
       });
     }
   }
@@ -624,12 +710,15 @@ const compareItems = computed(() => {
     const s = savedFieldByName.get(f.name);
     if (s && !!s.is_audit !== !!f.is_audit) {
       out.push({
-        kind: "字段",
+        kind: t("ai_workflow.ig_kgTypeField"),
         name: f.name,
-        from: s.is_audit ? "审计" : "业务",
-        to: f.is_audit ? "审计" : "业务",
+        from: s.is_audit ? t("ai_workflow.ig_auditTagShort") : t("ai_workflow.ig_businessTagShort"),
+        to: f.is_audit ? t("ai_workflow.ig_auditTagShort") : t("ai_workflow.ig_businessTagShort"),
         // 同表：叠加展示已保存侧与草稿侧命中原因，翻转方向时也不丢失历史依据
-        reason: `已保存 ${s.reason || "—"} → 草稿 ${f.reason || "—"}`,
+        reason: t("ai_workflow.ig_reasonCompare", {
+          saved: s.reason || "—",
+          draft: f.reason || "—",
+        }),
       });
     }
   }
@@ -650,8 +739,8 @@ const tablePieOption = computed(() => {
         center: ["50%", "45%"],
         label: { show: true, formatter: "{b}\n{d}%" },
         data: [
-          { name: "系统表", value: s.system_tables || 0 },
-          { name: "业务表", value: s.business_tables || 0 },
+          { name: t("ai_workflow.ig_systemTable"), value: s.system_tables || 0 },
+          { name: t("ai_workflow.ig_businessTable"), value: s.business_tables || 0 },
         ],
       },
     ],
@@ -670,8 +759,8 @@ const fieldPieOption = computed(() => {
         center: ["50%", "45%"],
         label: { show: true, formatter: "{b}\n{d}%" },
         data: [
-          { name: "审计字段", value: s.audit_fields || 0 },
-          { name: "业务字段", value: s.business_fields || 0 },
+          { name: t("ai_workflow.ig_auditField"), value: s.audit_fields || 0 },
+          { name: t("ai_workflow.ig_businessField"), value: s.business_fields || 0 },
         ],
       },
     ],
@@ -690,7 +779,7 @@ async function doRefreshPreview() {
     preview.value = r.data?.data || null;
   } catch (e: any) {
     if (myGen !== gen) return;
-    ElMessage.error(e?.msg || "预览失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_previewFail"));
   } finally {
     if (myGen === gen) loading.value = false;
   }
@@ -711,12 +800,12 @@ function applyRules(r: any) {
     typeof r === "object" &&
     Object.values(r).some((v) => v !== undefined && v !== null && v !== "");
   if (!hasRules) {
-    ElMessage.warning("未返回有效规则，已取消应用");
+    ElMessage.warning(t("ai_workflow.ig_noValidRules"));
     return;
   }
   rules.value = normalizeRules(r);
   doRefreshPreview();
-  ElMessage.success("已应用到草稿（未落库），可回「规则配置」微调后再保存");
+  ElMessage.success(t("ai_workflow.ig_appliedDraft"));
   innerTab.value = "config";
 }
 
@@ -731,7 +820,7 @@ async function doSuggest() {
     suggestResult.value = r.data?.data?.rules || null;
   } catch (e: any) {
     if (myGen !== gen) return;
-    ElMessage.error(e?.msg || "生成候选规则失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_genCandidateFail"));
   } finally {
     if (myGen === gen) llmLoading.value = false;
   }
@@ -748,7 +837,7 @@ async function doParse() {
     parseResult.value = r.data?.data?.rules || null;
   } catch (e: any) {
     if (myGen !== gen) return;
-    ElMessage.error(e?.msg || "解析失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_parseFail"));
   } finally {
     if (myGen === gen) llmLoading.value = false;
   }
@@ -765,7 +854,7 @@ async function doClassify() {
     classifyResult.value = r.data?.data || null;
   } catch (e: any) {
     if (myGen !== gen) return;
-    ElMessage.error(e?.msg || "获取分类建议失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_getClassifyFail"));
   } finally {
     if (myGen === gen) llmLoading.value = false;
   }
@@ -794,7 +883,7 @@ function loadAll() {
     })
     .catch((e: any) => {
       if (myGen !== gen) return;
-      ElMessage.error(e?.msg || "加载数据源详情失败");
+      ElMessage.error(e?.msg || t("ai_workflow.ig_loadDsFail"));
     });
 }
 
@@ -810,7 +899,7 @@ async function loadSavedPreview() {
     compareLoaded.value = true;
   } catch (e: any) {
     if (myGen !== gen) return;
-    ElMessage.error(e?.msg || "对比加载失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_compareLoadFail"));
   } finally {
     if (myGen === gen) compareLoading.value = false;
   }
@@ -820,12 +909,12 @@ async function loadSavedPreview() {
 async function confirmSave(apply: boolean) {
   try {
     await ElMessageBox.confirm(
-      "将用当前草稿覆盖该数据源已保存的筛选规则，保存后原规则将被替换且不可恢复，是否继续？",
-      apply ? "保存并应用" : "保存规则",
+      t("ai_workflow.ig_confirmSave"),
+      apply ? t("ai_workflow.ig_saveApplyRules") : t("ai_workflow.ig_saveRules"),
       {
         type: "warning",
-        confirmButtonText: apply ? "保存并应用" : "保存",
-        cancelButtonText: "取消",
+        confirmButtonText: apply ? t("ai_workflow.ig_saveApplyRules") : t("ai_workflow.ig_save"),
+        cancelButtonText: t("ai_workflow.ig_cancel"),
       }
     );
   } catch {
@@ -846,9 +935,9 @@ async function confirmSave(apply: boolean) {
     savedRules.value = deepClone(snapshot);
     savedPreview.value = null;
     compareLoaded.value = false;
-    ElMessage.success(apply ? "规则已保存并应用" : "规则已保存");
+    ElMessage.success(apply ? t("ai_workflow.ig_savedApplied") : t("ai_workflow.ig_savedRules"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     saving.value = false;
   }

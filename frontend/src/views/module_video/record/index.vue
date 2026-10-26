@@ -2,7 +2,7 @@
   <div class="app-container record-page">
     <div class="record-tabs">
       <button class="rtab" :class="{ active: activeTab === 'plan' }" @click="activeTab = 'plan'">
-        录像计划
+        {{ t("video.record.plan") }}
       </button>
       <button
         class="rtab"
@@ -12,7 +12,7 @@
           fetchLogs();
         "
       >
-        执行日志
+        {{ t("video.record.log") }}
       </button>
     </div>
 
@@ -51,7 +51,9 @@
               stripe
               @selection-change="onSelectionChange"
             >
-              <template #empty><el-empty :image-size="80" description="暂无数据" /></template>
+              <template #empty>
+                <el-empty :image-size="80" :description="t('video.common.noData')" />
+              </template>
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'selection')?.show"
                 type="selection"
@@ -62,14 +64,14 @@
                 v-if="contentCols.find((col) => col.prop === 'index')?.show"
                 type="index"
                 fixed
-                label="序号"
+                :label="t('video.common.sequence')"
                 min-width="60"
                 align="center"
               />
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'camera')?.show"
                 key="camera"
-                label="摄像机"
+                :label="t('video.record.camera')"
                 min-width="160"
               >
                 <template #default="scope">
@@ -79,7 +81,7 @@
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'plan_type')?.show"
                 key="plan_type"
-                label="计划类型"
+                :label="t('video.record.planType')"
                 width="110"
                 align="center"
               >
@@ -96,12 +98,12 @@
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'schedule')?.show"
                 key="schedule"
-                label="录制时段"
+                :label="t('video.record.recordPeriod')"
                 min-width="200"
               >
                 <template #default="scope">
                   <span v-if="scope.row.plan_type === 'CONTINUOUS'" class="schedule-summary">
-                    全天
+                    {{ t("video.record.allDay") }}
                   </span>
                   <span
                     v-else-if="scope.row.plan_type === 'SCHEDULE' && scope.row.schedule_json"
@@ -110,17 +112,17 @@
                     {{ scheduleSummary(scope.row.schedule_json) }}
                   </span>
                   <span v-else-if="scope.row.plan_type === 'EVENT'" class="schedule-summary">
-                    事件触发
+                    {{ t("video.record.eventTrigger") }}
                   </span>
                   <span v-else-if="scope.row.plan_type === 'ALARM'" class="schedule-summary">
-                    告警触发
+                    {{ t("video.record.alarmTrigger") }}
                   </span>
                 </template>
               </el-table-column>
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'pre_record_sec')?.show"
                 key="pre_record_sec"
-                label="预录"
+                :label="t('video.record.preRecord')"
                 width="70"
                 align="center"
               >
@@ -129,7 +131,7 @@
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'post_record_sec')?.show"
                 key="post_record_sec"
-                label="延录"
+                :label="t('video.record.postRecord')"
                 width="70"
                 align="center"
               >
@@ -138,27 +140,35 @@
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'storage_days')?.show"
                 key="storage_days"
-                label="存储"
-                width="70"
-                align="center"
-              >
-                <template #default="scope">{{ scope.row.storage_days }}天</template>
-              </el-table-column>
-              <el-table-column
-                v-if="contentCols.find((col) => col.prop === 'stream_type')?.show"
-                key="stream_type"
-                label="码流"
+                :label="t('video.record.storage')"
                 width="70"
                 align="center"
               >
                 <template #default="scope">
-                  <el-tag size="small">{{ scope.row.stream_type === "MAIN" ? "主" : "子" }}</el-tag>
+                  {{ scope.row.storage_days }}{{ t("video.record.days") }}
+                </template>
+              </el-table-column>
+              <el-table-column
+                v-if="contentCols.find((col) => col.prop === 'stream_type')?.show"
+                key="stream_type"
+                :label="t('video.record.streamType')"
+                width="70"
+                align="center"
+              >
+                <template #default="scope">
+                  <el-tag size="small">
+                    {{
+                      scope.row.stream_type === "MAIN"
+                        ? t("video.record.main")
+                        : t("video.record.sub")
+                    }}
+                  </el-tag>
                 </template>
               </el-table-column>
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'status')?.show"
                 key="status"
-                label="状态"
+                :label="t('video.common.status')"
                 width="100"
                 align="center"
               >
@@ -171,7 +181,11 @@
                       :class="scope.row.is_running ? 'running' : 'stopped'"
                     />
                     <span class="record-status-text">
-                      {{ scope.row.is_running ? "录制中" : "已停止" }}
+                      {{
+                        scope.row.is_running
+                          ? t("video.record.recording")
+                          : t("video.common.stopped")
+                      }}
                     </span>
                   </div>
                 </template>
@@ -179,7 +193,7 @@
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'enabled')?.show"
                 key="enabled"
-                label="启用"
+                :label="t('video.common.enabled')"
                 width="60"
                 align="center"
               >
@@ -196,7 +210,7 @@
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
                 key="created_time"
-                label="创建时间"
+                :label="t('video.common.createdTime')"
                 prop="created_time"
                 min-width="170"
                 sortable
@@ -204,7 +218,7 @@
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'operation')?.show"
                 fixed="right"
-                label="操作"
+                :label="t('video.common.operation')"
                 align="center"
                 min-width="220"
               >
@@ -220,7 +234,7 @@
                       :loading="scope.row._executing"
                       @click="executePlan(scope.row)"
                     >
-                      执行
+                      {{ t("video.record.execute") }}
                     </el-button>
                     <el-button
                       v-if="scope.row.is_running"
@@ -232,7 +246,7 @@
                       :loading="scope.row._stopping"
                       @click="stopPlan(scope.row)"
                     >
-                      停止
+                      {{ t("video.camera.stop") }}
                     </el-button>
                     <el-button
                       v-hasPerm="['module_video:record:update']"
@@ -242,7 +256,7 @@
                       icon="edit"
                       @click="handleOpenDialog('update', scope.row.id)"
                     >
-                      编辑
+                      {{ t("video.common.edit") }}
                     </el-button>
                     <el-button
                       v-hasPerm="['module_video:record:delete']"
@@ -252,7 +266,7 @@
                       icon="delete"
                       @click="handleRowDelete(scope.row.id)"
                     >
-                      删除
+                      {{ t("video.common.delete") }}
                     </el-button>
                   </div>
                 </template>
@@ -271,35 +285,35 @@
       >
         <el-form ref="dataFormRef" :model="formData" label-width="110px" size="default">
           <div class="form-section">
-            <div class="form-section-title">基础信息</div>
-            <el-form-item label="摄像机" prop="camera_id">
+            <div class="form-section-title">{{ t("video.record.basicInfo") }}</div>
+            <el-form-item :label="t('video.record.camera')" prop="camera_id">
               <el-select
                 v-model="formData.camera_id"
                 filterable
-                placeholder="请选择摄像机"
+                :placeholder="t('video.record.selectCamera')"
                 style="width: 300px"
                 @visible-change="(v: boolean) => v && ensureCameraOptions()"
               >
                 <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="计划类型" prop="plan_type">
+            <el-form-item :label="t('video.record.planType')" prop="plan_type">
               <el-select
                 v-model="formData.plan_type"
                 style="width: 300px"
                 @change="onPlanTypeChange"
               >
-                <el-option label="全天录制" value="CONTINUOUS" />
-                <el-option label="定时录制" value="SCHEDULE" />
-                <el-option label="事件录制" value="EVENT" />
-                <el-option label="告警录制" value="ALARM" />
+                <el-option :label="t('video.record.allDayRecord')" value="CONTINUOUS" />
+                <el-option :label="t('video.record.scheduledRecord')" value="SCHEDULE" />
+                <el-option :label="t('video.record.eventRecord')" value="EVENT" />
+                <el-option :label="t('video.record.alarmRecord')" value="ALARM" />
               </el-select>
             </el-form-item>
           </div>
           <div v-if="formData.plan_type === 'SCHEDULE'" class="form-section">
             <div class="form-section-title">
-              录制时段
-              <span class="form-section-desc">点击或拖拽选择需要录像的时间段</span>
+              {{ t("video.record.recordPeriod") }}
+              <span class="form-section-desc">{{ t("video.record.recordPeriodHint") }}</span>
             </div>
             <div class="schedule-grid-wrapper">
               <div class="schedule-header-row">
@@ -321,15 +335,21 @@
               </div>
             </div>
             <div class="schedule-actions">
-              <el-button size="small" @click="fillSchedule(true)">全选</el-button>
-              <el-button size="small" @click="fillSchedule(false)">清空</el-button>
-              <el-button size="small" @click="fillWorkHours">工作日 08-18</el-button>
+              <el-button size="small" @click="fillSchedule(true)">
+                {{ t("video.record.selectAll") }}
+              </el-button>
+              <el-button size="small" @click="fillSchedule(false)">
+                {{ t("video.record.clear") }}
+              </el-button>
+              <el-button size="small" @click="fillWorkHours">
+                {{ t("video.record.workday0818") }}
+              </el-button>
             </div>
           </div>
           <div class="form-section">
-            <div class="form-section-title">录制参数</div>
+            <div class="form-section-title">{{ t("video.record.recordParams") }}</div>
             <template v-if="formData.plan_type === 'EVENT' || formData.plan_type === 'ALARM'">
-              <el-form-item label="事件前录制" prop="pre_record_sec">
+              <el-form-item :label="t('video.record.preEventRecord')" prop="pre_record_sec">
                 <div class="config-field">
                   <el-input-number
                     v-model="formData.pre_record_sec"
@@ -339,11 +359,11 @@
                     controls-position="right"
                     style="width: 130px"
                   />
-                  <span class="config-unit">秒</span>
-                  <span class="config-hint">事件触发前开始录制</span>
+                  <span class="config-unit">{{ t("video.record.seconds") }}</span>
+                  <span class="config-hint">{{ t("video.record.preEventHint") }}</span>
                 </div>
               </el-form-item>
-              <el-form-item label="事件后录制" prop="post_record_sec">
+              <el-form-item :label="t('video.record.postEventRecord')" prop="post_record_sec">
                 <div class="config-field">
                   <el-input-number
                     v-model="formData.post_record_sec"
@@ -353,12 +373,12 @@
                     controls-position="right"
                     style="width: 130px"
                   />
-                  <span class="config-unit">秒</span>
-                  <span class="config-hint">事件结束后继续录制</span>
+                  <span class="config-unit">{{ t("video.record.seconds") }}</span>
+                  <span class="config-hint">{{ t("video.record.postEventHint") }}</span>
                 </div>
               </el-form-item>
             </template>
-            <el-form-item label="录像保存" prop="storage_days">
+            <el-form-item :label="t('video.record.retention')" prop="storage_days">
               <div class="config-field">
                 <el-input-number
                   v-model="formData.storage_days"
@@ -368,35 +388,37 @@
                   controls-position="right"
                   style="width: 130px"
                 />
-                <span class="config-unit">天</span>
-                <span class="config-hint">硬盘保留期限</span>
+                <span class="config-unit">{{ t("video.record.days") }}</span>
+                <span class="config-hint">{{ t("video.record.diskHint") }}</span>
               </div>
             </el-form-item>
           </div>
           <div class="form-section">
-            <div class="form-section-title">其他设置</div>
-            <el-form-item label="录制码流" prop="stream_type">
+            <div class="form-section-title">{{ t("video.record.otherSettings") }}</div>
+            <el-form-item :label="t('video.record.streamType')" prop="stream_type">
               <el-radio-group v-model="formData.stream_type">
-                <el-radio value="MAIN">主码流（高清）</el-radio>
-                <el-radio value="SUB">子码流（流畅）</el-radio>
+                <el-radio value="MAIN">{{ t("video.record.mainStreamHd") }}</el-radio>
+                <el-radio value="SUB">{{ t("video.record.subStreamSmooth") }}</el-radio>
               </el-radio-group>
             </el-form-item>
-            <el-form-item label="状态" prop="status">
+            <el-form-item :label="t('video.common.status')" prop="status">
               <el-switch v-model="formData.status" />
             </el-form-item>
-            <el-form-item label="备注" prop="description">
+            <el-form-item :label="t('video.cameraGroup.remark')" prop="description">
               <el-input
                 v-model="formData.description"
                 type="textarea"
                 :rows="2"
-                placeholder="可选备注"
+                :placeholder="t('video.common.optionalRemark')"
               />
             </el-form-item>
           </div>
         </el-form>
         <template #footer>
-          <el-button @click="handleCloseDialog">取消</el-button>
-          <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+          <el-button @click="handleCloseDialog">{{ t("video.common.cancel") }}</el-button>
+          <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+            {{ t("video.common.save") }}
+          </el-button>
         </template>
       </EnhancedDialog>
     </template>
@@ -420,48 +442,65 @@
               border
               stripe
             >
-              <template #empty><el-empty :image-size="80" description="暂无日志" /></template>
-              <el-table-column type="index" label="序号" width="60" align="center" />
-              <el-table-column label="摄像机" min-width="140">
+              <template #empty>
+                <el-empty :image-size="80" :description="t('video.record.noLog')" />
+              </template>
+              <el-table-column
+                type="index"
+                :label="t('video.common.sequence')"
+                width="60"
+                align="center"
+              />
+              <el-table-column :label="t('video.record.camera')" min-width="140">
                 <template #default="{ row }">
                   {{ row.camera?.name || `#${row.camera_id}` }}
                 </template>
               </el-table-column>
-              <el-table-column prop="stream_id" label="流ID" min-width="160">
+              <el-table-column prop="stream_id" :label="t('video.record.streamId')" min-width="160">
                 <template #default="{ row }">
                   <span class="mono">{{ row.stream_id }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="触发方式" width="90" align="center">
+              <el-table-column :label="t('video.record.triggerType')" width="90" align="center">
                 <template #default="{ row }">
                   <el-tag :type="triggerTagType(row.trigger_type)" size="small" effect="plain">
                     {{ triggerLabel(row.trigger_type) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="90" align="center">
+              <el-table-column :label="t('video.common.status')" width="90" align="center">
                 <template #default="{ row }">
                   <el-tag :type="statusTagType(row.status)" size="small">
                     {{ statusLabel(row.status) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="开始时间" prop="start_time" width="170" sortable>
+              <el-table-column
+                :label="t('video.record.startTime')"
+                prop="start_time"
+                width="170"
+                sortable
+              >
                 <template #default="{ row }">
                   <span class="mono">{{ row.start_time }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="结束时间" prop="end_time" width="170" sortable>
+              <el-table-column
+                :label="t('video.record.endTime')"
+                prop="end_time"
+                width="170"
+                sortable
+              >
                 <template #default="{ row }">
                   <span class="mono">{{ row.end_time || "-" }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="时长" width="90" align="center">
+              <el-table-column :label="t('video.record.duration')" width="90" align="center">
                 <template #default="{ row }">
                   {{ row.duration ? `${row.duration}s` : "-" }}
                 </template>
               </el-table-column>
-              <el-table-column label="文件数" width="80" align="center">
+              <el-table-column :label="t('video.record.fileCount')" width="80" align="center">
                 <template #default="{ row }">
                   <el-button
                     v-if="row.file_count > 0"
@@ -470,12 +509,12 @@
                     link
                     @click="showLogFiles(row)"
                   >
-                    {{ row.file_count }}个
+                    {{ row.file_count }}{{ t("video.record.files") }}
                   </el-button>
                   <span v-else class="log-none">-</span>
                 </template>
               </el-table-column>
-              <el-table-column label="错误信息" min-width="160">
+              <el-table-column :label="t('video.record.errorInfo')" min-width="160">
                 <template #default="{ row }">
                   <span v-if="row.error_msg" class="log-error">{{ row.error_msg }}</span>
                   <span v-else class="log-none">-</span>
@@ -503,7 +542,7 @@
     <!-- 录制文件预览对话框 -->
     <el-dialog
       v-model="filePreviewVisible"
-      title="录制文件"
+      :title="t('video.record.recordFiles')"
       width="660px"
       append-to-body
       destroy-on-close
@@ -515,16 +554,23 @@
         stripe
         max-height="400"
       >
-        <template #empty><el-empty :image-size="60" description="暂无文件" /></template>
-        <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column label="文件大小" width="100" align="center">
+        <template #empty>
+          <el-empty :image-size="60" :description="t('video.record.noFiles')" />
+        </template>
+        <el-table-column
+          type="index"
+          :label="t('video.common.sequence')"
+          width="60"
+          align="center"
+        />
+        <el-table-column :label="t('video.record.fileSize')" width="100" align="center">
           <template #default="{ row }">{{ (row.file_size / 1048576).toFixed(1) }}MB</template>
         </el-table-column>
-        <el-table-column label="开始时间" prop="start_time" width="170" />
-        <el-table-column label="时长" width="80" align="center">
+        <el-table-column :label="t('video.record.startTime')" prop="start_time" width="170" />
+        <el-table-column :label="t('video.record.duration')" width="80" align="center">
           <template #default="{ row }">{{ row.duration ? `${row.duration}s` : "-" }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="120" align="center">
+        <el-table-column :label="t('video.common.operation')" width="120" align="center">
           <template #default="{ row }">
             <el-button
               icon="VideoPlay"
@@ -533,7 +579,7 @@
               link
               @click="playRecordFile(row)"
             >
-              播放
+              {{ t("video.record.play") }}
             </el-button>
           </template>
         </el-table-column>
@@ -544,7 +590,9 @@
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, onBeforeUnmount } from "vue";
+import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import {
   getRecordPlanList,
   createRecordPlan,
@@ -563,8 +611,18 @@ import { cachedOptions } from "@/composables/useOptions";
 
 const activeTab = ref("plan");
 
+const { t } = useI18n();
+
 // ===== Plan CRUD =====
-const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const weekDays = [
+  t("video.common.monday"),
+  t("video.common.tuesday"),
+  t("video.common.wednesday"),
+  t("video.common.thursday"),
+  t("video.common.friday"),
+  t("video.common.saturday"),
+  t("video.common.sunday"),
+];
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const router = useRouter();
 
@@ -583,11 +641,11 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "camera_id",
-      label: "摄像机",
+      label: t("video.record.camera"),
       type: "select",
       options: [],
       attrs: {
-        placeholder: "请选择摄像机",
+        placeholder: t("video.record.selectCamera"),
         clearable: true,
         filterable: true,
         style: { width: "200px" },
@@ -598,33 +656,37 @@ const searchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "plan_type",
-      label: "计划类型",
+      label: t("video.record.planType"),
       type: "select",
       options: [
-        { label: "全天录制", value: "CONTINUOUS" },
-        { label: "定时录制", value: "SCHEDULE" },
-        { label: "事件录制", value: "EVENT" },
-        { label: "告警录制", value: "ALARM" },
+        { label: t("video.record.allDayRecord"), value: "CONTINUOUS" },
+        { label: t("video.record.scheduledRecord"), value: "SCHEDULE" },
+        { label: t("video.record.eventRecord"), value: "EVENT" },
+        { label: t("video.record.alarmRecord"), value: "ALARM" },
       ],
-      attrs: { placeholder: "请选择", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("video.record.select"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
 
 const contentCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "camera", label: "摄像机", show: true },
-  { prop: "plan_type", label: "计划类型", show: true },
-  { prop: "schedule", label: "录制时段", show: true },
-  { prop: "pre_record_sec", label: "预录", show: true },
-  { prop: "post_record_sec", label: "延录", show: true },
-  { prop: "storage_days", label: "存储", show: true },
-  { prop: "stream_type", label: "码流", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "enabled", label: "启用", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "camera", label: t("video.record.camera"), show: true },
+  { prop: "plan_type", label: t("video.record.planType"), show: true },
+  { prop: "schedule", label: t("video.record.recordPeriod"), show: true },
+  { prop: "pre_record_sec", label: t("video.record.preRecord"), show: true },
+  { prop: "post_record_sec", label: t("video.record.postRecord"), show: true },
+  { prop: "storage_days", label: t("video.record.storage"), show: true },
+  { prop: "stream_type", label: t("video.record.streamType"), show: true },
+  { prop: "status", label: t("video.common.status"), show: true },
+  { prop: "enabled", label: t("video.common.enabled"), show: true },
+  { prop: "created_time", label: t("video.common.createdTime"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<any>>({
@@ -649,8 +711,8 @@ const contentConfig = reactive<IContentConfig<any>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("video.common.warning"),
+    message: t("video.common.deleteConfirmMsg"),
     type: "warning",
   },
 });
@@ -681,6 +743,7 @@ async function stopPlan(row: any) {
   row._stopping = true;
   try {
     await stopRecordPlan(row.id);
+    ElMessage.success(t("video.common.stopped"));
     row.is_running = false;
   } catch {}
   row._stopping = false;
@@ -766,9 +829,9 @@ function onPlanTypeChange() {
 }
 
 function scheduleSummary(json: any): string {
-  if (!json?.slots?.length) return "未配置";
+  if (!json?.slots?.length) return t("video.common.notConfigured");
   const total = json.slots.reduce((s: number, x: any) => s + (x.end - x.start), 0);
-  return `每周 ${total} 小时`;
+  return t("video.record.weeklyHours", { total });
 }
 
 async function resetForm() {
@@ -789,7 +852,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   ensureCameraOptions();
   if (id && type === "update") {
-    dialogVisible.title = "编辑计划";
+    dialogVisible.title = t("video.record.editPlan");
     const res = await getRecordPlanList({ page_no: 1, page_size: 100 });
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
@@ -807,7 +870,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       if (item.schedule_json) jsonToScheduleGrid(item.schedule_json);
     }
   } else {
-    dialogVisible.title = "新增计划";
+    dialogVisible.title = t("video.record.addPlan");
     await resetForm();
   }
   dialogVisible.visible = true;
@@ -823,6 +886,7 @@ async function handleSubmit() {
     try {
       if (id) await updateRecordPlan(id, payload);
       else await createPlan(payload);
+      ElMessage.success(t("video.common.saveSuccess"));
       dialogVisible.visible = false;
       await resetForm();
       refreshList();
@@ -841,10 +905,10 @@ function planTypeLabel(type: string) {
   return (
     (
       {
-        CONTINUOUS: "全天录制",
-        SCHEDULE: "定时录制",
-        EVENT: "事件录制",
-        ALARM: "告警录制",
+        CONTINUOUS: t("video.record.allDayRecord"),
+        SCHEDULE: t("video.record.scheduledRecord"),
+        EVENT: t("video.record.eventRecord"),
+        ALARM: t("video.record.alarmRecord"),
       } as Record<string, string>
     )[type] || type
   );
@@ -875,11 +939,11 @@ const logSearchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "camera_id",
-      label: "摄像机",
+      label: t("video.record.camera"),
       type: "select",
       options: [],
       attrs: {
-        placeholder: "请选择摄像机",
+        placeholder: t("video.record.selectCamera"),
         clearable: true,
         filterable: true,
         style: { width: "180px" },
@@ -890,35 +954,43 @@ const logSearchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("video.common.status"),
       type: "select",
       options: [
-        { label: "录制中", value: "RECORDING" },
-        { label: "已完成", value: "COMPLETED" },
-        { label: "失败", value: "FAILED" },
-        { label: "已停止", value: "STOPPED" },
+        { label: t("video.record.recording"), value: "RECORDING" },
+        { label: t("video.record.completed"), value: "COMPLETED" },
+        { label: t("video.record.failed"), value: "FAILED" },
+        { label: t("video.common.stopped"), value: "STOPPED" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "140px" } },
+      attrs: {
+        placeholder: t("video.record.selectStatus"),
+        clearable: true,
+        style: { width: "140px" },
+      },
     },
     {
       prop: "trigger_type",
-      label: "触发方式",
+      label: t("video.record.triggerType"),
       type: "select",
       options: [
-        { label: "定时", value: "SCHEDULED" },
-        { label: "手动", value: "MANUAL" },
-        { label: "告警", value: "ALARM" },
+        { label: t("video.record.scheduled"), value: "SCHEDULED" },
+        { label: t("video.record.manual"), value: "MANUAL" },
+        { label: t("video.record.alarm"), value: "ALARM" },
       ],
-      attrs: { placeholder: "请选择触发方式", clearable: true, style: { width: "140px" } },
+      attrs: {
+        placeholder: t("video.record.selectTriggerType"),
+        clearable: true,
+        style: { width: "140px" },
+      },
     },
     {
       prop: "start_time",
-      label: "时间范围",
+      label: t("video.record.timeRange"),
       type: "daterange",
       attrs: {
-        rangeSeparator: "至",
-        startPlaceholder: "开始日期",
-        endPlaceholder: "结束日期",
+        rangeSeparator: t("video.record.to"),
+        startPlaceholder: t("video.record.startDate"),
+        endPlaceholder: t("video.record.endDate"),
         valueFormat: "YYYY-MM-DD HH:mm:ss",
         style: { width: "260px" },
       },
@@ -958,8 +1030,16 @@ function resetLogFilter() {
   logContentRef.value?.handleRefresh();
 }
 
-function triggerLabel(t: string) {
-  return ({ SCHEDULED: "定时", MANUAL: "手动", ALARM: "告警" } as Record<string, string>)[t] || t;
+function triggerLabel(tt: string) {
+  return (
+    (
+      {
+        SCHEDULED: t("video.record.scheduled"),
+        MANUAL: t("video.record.manual"),
+        ALARM: t("video.record.alarm"),
+      } as Record<string, string>
+    )[tt] || tt
+  );
 }
 function triggerTagType(t: string): any {
   return (
@@ -970,10 +1050,12 @@ function triggerTagType(t: string): any {
 function statusLabel(s: string) {
   return (
     (
-      { RECORDING: "录制中", COMPLETED: "已完成", FAILED: "失败", STOPPED: "已停止" } as Record<
-        string,
-        string
-      >
+      {
+        RECORDING: t("video.record.recording"),
+        COMPLETED: t("video.record.completed"),
+        FAILED: t("video.record.failed"),
+        STOPPED: t("video.common.stopped"),
+      } as Record<string, string>
     )[s] || s
   );
 }

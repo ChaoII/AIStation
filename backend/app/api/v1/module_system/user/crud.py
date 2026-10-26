@@ -10,7 +10,6 @@ from app.core.base_crud import CRUDBase
 from .model import UserModel
 from .schema import (
     UserCreateSchema,
-    UserForgetPasswordSchema,
     UserUpdateSchema,
 )
 
@@ -193,28 +192,3 @@ class UserCRUD(CRUDBase[UserModel, UserCreateSchema, UserUpdateSchema]):
         - UserModel: 更新后的用户信息
         """
         return await self.update(id=id, data=UserUpdateSchema(password=password_hash))
-
-    async def forget_password_crud(self, id: int, password_hash: str) -> UserModel:
-        """
-        重置密码
-
-        参数:
-        - id (int): 用户ID
-        - password_hash (str): 密码哈希值
-
-        返回:
-        - UserModel: 更新后的用户信息
-        """
-        return await self.update(id=id, data=UserUpdateSchema(password=password_hash))
-
-    async def register_user_crud(self, data: UserForgetPasswordSchema) -> UserModel:
-        """
-        用户注册
-
-        参数:
-        - data (UserForgetPasswordSchema): 用户注册信息
-
-        返回:
-        - UserModel: 注册成功的用户信息
-        """
-        return await self.create(data=UserCreateSchema(**data.model_dump()))

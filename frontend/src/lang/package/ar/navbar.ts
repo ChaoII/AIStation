@@ -1,0 +1,18 @@
+export default {
+  dashboard: "لوحة التحكم",
+  logout: "تسجيل الخروج",
+  document: "المستند",
+  gitee: "جي تي",
+  lock: "قفل",
+  unlock: "فتح القفل",
+  profile: "الملف الشخصي",
+  config: "مركز الإعدادات",
+  tour: "جولة المشروع",
+  refresh: "تحديث",
+  close: "إغلاق",
+  closeLeft: "إغلاق إلى اليسار",
+  closeRight: "إغلاق إلى اليمين",
+  closeOther: "إغلاق الأخرى",
+  closeAll: "إغلاق الكل",
+  refreshCache: "تحديث الذاكرة المؤقتة",
+};

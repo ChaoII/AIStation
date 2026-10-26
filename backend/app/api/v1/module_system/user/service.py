@@ -13,6 +13,7 @@ from app.api.v1.module_system.role.crud import RoleCRUD
 from app.core.base_schema import BatchSetAvailable, UploadResponseSchema
 from app.core.exceptions import CustomException
 from app.core.logger import log
+from app.core.rsa_util import resolve_password
 from app.utils.common_util import traversal_to_tree
 from app.utils.excel_util import ExcelUtil
 from app.utils.hash_bcrpy_util import PwdUtil
@@ -24,7 +25,6 @@ from .schema import (
     ResetPasswordSchema,
     UserChangePasswordSchema,
     UserCreateSchema,
-    UserForgetPasswordSchema,
     UserOutSchema,
     UserQueryParam,
     UserRegisterSchema,
@@ -146,7 +146,7 @@ class UserService:
                 raise CustomException(msg="部门不存在")
         # 创建用户
         if data.password:
-            data.password = PwdUtil.set_password_hash(password=data.password)
+            data.password = PwdUtil.set_password_hash(password=resolve_password(data.password))
         user_dict = data.model_dump(exclude_unset=True, exclude={"role_ids", "position_ids"})
         # 创建用户
         new_user = await UserCRUD(auth).create(data=user_dict)
@@ -216,27 +216,29 @@ class UserService:
         )
         new_user = await UserCRUD(auth).update(id=id, data=user_dict)
 
-        # 更新角色和岗位
-        if data.role_ids and len(data.role_ids) > 0:
-            # 检查角色是否都存在且可用
-            roles = await RoleCRUD(auth).get_list_crud(search={"id": ("in", data.role_ids)})
-            if len(roles) != len(data.role_ids):
-                raise CustomException(msg="部分角色不存在")
-            if not all(role.status for role in roles):
-                raise CustomException(msg="部分角色已被禁用")
-            await UserCRUD(auth).set_user_roles_crud(user_ids=[id], role_ids=data.role_ids)
+        # 更新角色和岗位：用 model_fields_set 区分「未传」（不处理）与「显式传空数组」（清空）
+        if "role_ids" in data.model_fields_set:
+            if data.role_ids:
+                # 检查角色是否都存在且可用
+                roles = await RoleCRUD(auth).get_list_crud(search={"id": ("in", data.role_ids)})
+                if len(roles) != len(data.role_ids):
+                    raise CustomException(msg="部分角色不存在")
+                if not all(role.status for role in roles):
+                    raise CustomException(msg="部分角色已被禁用")
+            await UserCRUD(auth).set_user_roles_crud(user_ids=[id], role_ids=data.role_ids or [])
 
-        if data.position_ids and len(data.position_ids) > 0:
-            # 检查岗位是否都存在且可用
-            positions = await PositionCRUD(auth).get_list_crud(
-                search={"id": ("in", data.position_ids)}
-            )
-            if len(positions) != len(data.position_ids):
-                raise CustomException(msg="部分岗位不存在")
-            if not all(position.status for position in positions):
-                raise CustomException(msg="部分岗位已被禁用")
+        if "position_ids" in data.model_fields_set:
+            if data.position_ids:
+                # 检查岗位是否都存在且可用
+                positions = await PositionCRUD(auth).get_list_crud(
+                    search={"id": ("in", data.position_ids)}
+                )
+                if len(positions) != len(data.position_ids):
+                    raise CustomException(msg="部分岗位不存在")
+                if not all(position.status for position in positions):
+                    raise CustomException(msg="部分岗位已被禁用")
             await UserCRUD(auth).set_user_positions_crud(
-                user_ids=[id], position_ids=data.position_ids
+                user_ids=[id], position_ids=data.position_ids or []
             )
 
         user_dict = UserOutSchema.model_validate(new_user).model_dump()
@@ -431,12 +433,12 @@ class UserService:
         if not user:
             raise CustomException(msg="用户不存在")
         if not PwdUtil.verify_password(
-            plain_password=data.old_password, password_hash=user.password
+            plain_password=resolve_password(data.old_password), password_hash=user.password
         ):
             raise CustomException(msg="原密码输入错误")
 
         # 更新密码
-        new_password_hash = PwdUtil.set_password_hash(password=data.new_password)
+        new_password_hash = PwdUtil.set_password_hash(password=resolve_password(data.new_password))
         new_user = await UserCRUD(auth).change_password_crud(
             id=user.id, password_hash=new_password_hash
         )
@@ -467,7 +469,7 @@ class UserService:
             raise CustomException(msg="超级管理员密码不能重置")
 
         # 更新密码
-        new_password_hash = PwdUtil.set_password_hash(password=data.password)
+        new_password_hash = PwdUtil.set_password_hash(password=resolve_password(data.password))
         new_user = await UserCRUD(auth).change_password_crud(
             id=data.id, password_hash=new_password_hash
         )
@@ -490,7 +492,7 @@ class UserService:
         if username_ok:
             raise CustomException(msg="账号已存在")
 
-        data.password = PwdUtil.set_password_hash(password=data.password)
+        data.password = PwdUtil.set_password_hash(password=resolve_password(data.password))
         data.name = data.username
         create_dict = data.model_dump(exclude_unset=True, exclude={"role_ids", "position_ids"})
 
@@ -499,39 +501,10 @@ class UserService:
             create_dict["created_id"] = auth.user.id
 
         result = await UserCRUD(auth).create(data=create_dict)
-        if data.role_ids:
-            await UserCRUD(auth).set_user_roles_crud(user_ids=[result.id], role_ids=data.role_ids)
+
+        # 安全：注册不授予任何角色（尤其管理员 ADMIN），防止匿名注册提权。
+        # 新用户权限由管理员在「用户管理」中统一分配。
         return UserOutSchema.model_validate(result).model_dump()
-
-    @classmethod
-    async def forget_password_service(
-        cls, auth: AuthSchema, data: UserForgetPasswordSchema
-    ) -> dict:
-        """
-        用户忘记密码
-
-        参数:
-        - auth (AuthSchema): 认证信息模型
-        - data (UserForgetPasswordSchema): 用户忘记密码数据
-
-        返回:
-        - Dict: 更新后的当前用户详情字典
-        """
-        user = await UserCRUD(auth).get_by_username_crud(username=data.username)
-        if not user:
-            raise CustomException(msg="用户不存在")
-        if user.status == "1":
-            raise CustomException(msg="用户已停用")
-
-        # 检查是否是超级管理员
-        if user.is_superuser:
-            raise CustomException(msg="超级管理员密码不能重置")
-
-        new_password_hash = PwdUtil.set_password_hash(password=data.new_password)
-        new_user = await UserCRUD(auth).forget_password_crud(
-            id=user.id, password_hash=new_password_hash
-        )
-        return UserOutSchema.model_validate(new_user).model_dump()
 
     @classmethod
     async def batch_import_user_service(

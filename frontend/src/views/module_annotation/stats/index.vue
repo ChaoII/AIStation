@@ -16,10 +16,10 @@
       <el-col :span="24" style="margin-bottom: 16px">
         <el-card shadow="never">
           <template #header>
-            <span class="dataset-detail-title">数据集详情</span>
+            <span class="dataset-detail-title">{{ $t("annotation.datasetDetail") }}</span>
             <el-select
               v-model="selectedDatasetId"
-              placeholder="选择数据集"
+              :placeholder="$t('annotation.selectDataset')"
               style="width: 240px; margin-left: 12px"
               clearable
               @change="loadDatasetStats"
@@ -37,59 +37,61 @@
             v-if="!selectedDatasetId"
             style="text-align: center; padding: 40px 0; color: #c0c4cc"
           >
-            请选择数据集查看详情
+            {{ $t("annotation.selectDatasetHint") }}
           </div>
-          <div v-else-if="dsLoading" style="text-align: center; padding: 40px 0">加载中...</div>
+          <div v-else-if="dsLoading" style="text-align: center; padding: 40px 0">
+            {{ $t("annotation.loading") }}
+          </div>
           <template v-else>
             <el-row :gutter="16">
               <el-col :xs="24" :sm="8">
                 <div class="chart-box">
-                  <div class="chart-title">类别分布</div>
+                  <div class="chart-title">{{ $t("annotation.classDistribution") }}</div>
                   <VChart
                     v-if="classChartOption"
                     :option="classChartOption"
                     style="height: 260px"
                     autoresize
                   />
-                  <div v-else class="chart-empty">暂无数据</div>
+                  <div v-else class="chart-empty">{{ $t("annotation.noData") }}</div>
                 </div>
               </el-col>
               <el-col :xs="24" :sm="8">
                 <div class="chart-box">
-                  <div class="chart-title">图片标注状态</div>
+                  <div class="chart-title">{{ $t("annotation.imageStatus") }}</div>
                   <VChart
                     v-if="statusChartOption"
                     :option="statusChartOption"
                     style="height: 260px"
                     autoresize
                   />
-                  <div v-else class="chart-empty">暂无数据</div>
+                  <div v-else class="chart-empty">{{ $t("annotation.noData") }}</div>
                 </div>
               </el-col>
               <el-col :xs="24" :sm="8">
                 <div class="chart-box">
-                  <div class="chart-title">分辨率分布</div>
+                  <div class="chart-title">{{ $t("annotation.resolutionDistribution") }}</div>
                   <VChart
                     v-if="resChartOption"
                     :option="resChartOption"
                     style="height: 260px"
                     autoresize
                   />
-                  <div v-else class="chart-empty">暂无数据</div>
+                  <div v-else class="chart-empty">{{ $t("annotation.noData") }}</div>
                 </div>
               </el-col>
             </el-row>
             <el-row :gutter="16" style="margin-top: 16px">
               <el-col :span="24">
                 <div class="chart-box">
-                  <div class="chart-title">每日标注趋势（近30天）</div>
+                  <div class="chart-title">{{ $t("annotation.dailyTrend") }}</div>
                   <VChart
                     v-if="trendChartOption"
                     :option="trendChartOption"
                     style="height: 240px"
                     autoresize
                   />
-                  <div v-else class="chart-empty">暂无数据</div>
+                  <div v-else class="chart-empty">{{ $t("annotation.noData") }}</div>
                 </div>
               </el-col>
             </el-row>
@@ -104,6 +106,7 @@
 defineOptions({ name: "AnnotationStats", inheritAttrs: false });
 
 import { ref, reactive, computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { AnnotationAPI } from "@/api/module_annotation";
 import { cachedOptions } from "@/composables/useOptions";
 import VChart from "vue-echarts";
@@ -127,34 +130,35 @@ const selectedDatasetId = ref<number | undefined>();
 const dsStats = ref<any>(null);
 const dsLoading = ref(false);
 const datasetOptions = ref<any[]>([]);
+const { t } = useI18n();
 
 const metricCards = computed(() => [
   {
     key: "ds",
-    label: "数据集",
+    label: t("annotation.metricDataset"),
     value: overview.dataset_count || 0,
-    hint: "已注册数据集",
+    hint: t("annotation.metricDatasetHint"),
     color: "primary",
   },
   {
     key: "task",
-    label: "标注任务",
+    label: t("annotation.metricTask"),
     value: overview.task_count || 0,
-    hint: "全部标注任务",
+    hint: t("annotation.metricTaskHint"),
     color: "success",
   },
   {
     key: "img",
-    label: "图片总数",
+    label: t("annotation.metricImages"),
     value: overview.image_count || 0,
-    hint: "所有数据集图片",
+    hint: t("annotation.metricImagesHint"),
     color: "warning",
   },
   {
     key: "ann",
-    label: "已标注图片",
+    label: t("annotation.metricAnnotated"),
     value: overview.annotated_image_count || 0,
-    hint: "已完成标注",
+    hint: t("annotation.metricAnnotatedHint"),
     color: "danger",
   },
 ]);
@@ -197,9 +201,9 @@ const statusChartOption = computed(() => {
   const s = dsStats.value;
   if (!s) return null;
   const data = [
-    { name: "未标注", value: s.unannotated_count || 0 },
-    { name: "标注中", value: s.in_progress_count || 0 },
-    { name: "已标注", value: s.annotated_count || 0 },
+    { name: t("annotation.statUnannotated"), value: s.unannotated_count || 0 },
+    { name: t("annotation.statInProgress"), value: s.in_progress_count || 0 },
+    { name: t("annotation.statAnnotated"), value: s.annotated_count || 0 },
   ];
   if (!data.some((d) => d.value > 0)) return null;
   return {

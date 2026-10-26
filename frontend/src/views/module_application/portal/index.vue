@@ -11,14 +11,14 @@
     <PageContent ref="contentRef" class="flex-1 min-h-0" :content-config="contentConfig">
       <template #header>
         <div class="card-header">
-          <span class="market-title">应用市场</span>
+          <span class="market-title">{{ t("application.marketTitle") }}</span>
           <el-button
             v-hasPerm="['module_application:portal:create']"
             type="primary"
             icon="plus"
             @click="handleCreateApp"
           >
-            创建应用
+            {{ t("application.createApp") }}
           </el-button>
         </div>
       </template>
@@ -26,7 +26,7 @@
       <template #table="{ data, loading }">
         <div v-loading="loading" class="app-grid-container">
           <div v-if="!loading && data.length === 0" class="app-grid-empty">
-            <el-empty :image-size="88" description="暂无应用" />
+            <el-empty :image-size="88" :description="t('application.noApps')" />
           </div>
           <div v-else class="grid-wrapper">
             <div
@@ -48,7 +48,7 @@
                       effect="plain"
                       class="app-status"
                     >
-                      {{ app.status ? "启用" : "停用" }}
+                      {{ app.status ? t("application.enabled") : t("application.disabled") }}
                     </el-tag>
                   </div>
                 </template>
@@ -102,31 +102,31 @@
         label-width="100px"
         label-position="right"
       >
-        <el-form-item label="应用名称" prop="name">
-          <el-input v-model="formData.name" placeholder="请输入应用名称" />
+        <el-form-item :label="t('application.appName')" prop="name">
+          <el-input v-model="formData.name" :placeholder="t('application.inputAppName')" />
         </el-form-item>
 
-        <el-form-item label="访问地址" prop="access_url">
-          <el-input v-model="formData.access_url" placeholder="请输入访问地址" />
+        <el-form-item :label="t('application.accessUrl')" prop="access_url">
+          <el-input v-model="formData.access_url" :placeholder="t('application.inputAccessUrl')" />
         </el-form-item>
 
-        <el-form-item label="图标地址" prop="icon_url">
-          <el-input v-model="formData.icon_url" placeholder="请输入图标地址" />
+        <el-form-item :label="t('application.iconUrl')" prop="icon_url">
+          <el-input v-model="formData.icon_url" :placeholder="t('application.inputIconUrl')" />
         </el-form-item>
 
-        <el-form-item label="应用状态" prop="status">
+        <el-form-item :label="t('application.appStatus')" prop="status">
           <el-radio-group v-model="formData.status">
-            <el-radio value="0">启用</el-radio>
-            <el-radio value="1">停用</el-radio>
+            <el-radio value="0">{{ t("application.enabled") }}</el-radio>
+            <el-radio value="1">{{ t("application.disabled") }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="应用描述" prop="description">
+        <el-form-item :label="t('application.description')" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="4"
-            placeholder="请输入应用描述"
+            :placeholder="t('application.inputDescription')"
             maxlength="200"
             show-word-limit
           />
@@ -135,8 +135,8 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
-          <el-button type="primary" @click="handleSubmit">确定</el-button>
+          <el-button @click="handleCloseDialog">{{ t("application.cancel") }}</el-button>
+          <el-button type="primary" @click="handleSubmit">{{ t("application.confirm") }}</el-button>
         </div>
       </template>
     </EnhancedDrawer>
@@ -165,6 +165,9 @@ import UserTableSelect from "@/views/module_system/user/components/UserTableSele
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { computed, markRaw, nextTick, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 const appStore = useAppStore();
 
@@ -187,23 +190,27 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "应用名称",
+      label: t("application.appName"),
       type: "input",
-      attrs: { placeholder: "请输入应用名称", clearable: true },
+      attrs: { placeholder: t("application.inputAppName"), clearable: true },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("application.status"),
       type: "select",
       options: [
-        { label: "启用", value: true },
-        { label: "停用", value: false },
+        { label: t("application.enabled"), value: true },
+        { label: t("application.disabled"), value: false },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "170px" } },
+      attrs: {
+        placeholder: t("application.selectStatus"),
+        clearable: true,
+        style: { width: "170px" },
+      },
     },
     {
       prop: "created_id",
-      label: "创建人",
+      label: t("application.creator"),
       type: "user-table-select",
       initialValue: null,
       events: {
@@ -213,7 +220,7 @@ const searchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "updated_id",
-      label: "更新人",
+      label: t("application.updater"),
       type: "user-table-select",
       initialValue: null,
       events: {
@@ -261,23 +268,25 @@ const formData = reactive<ApplicationForm>({
 // 表单验证规则
 const formRules = reactive({
   name: [
-    { required: true, message: "请输入应用名称", trigger: "blur" },
-    { min: 2, max: 30, message: "长度在 2 到 30 个字符", trigger: "blur" },
+    { required: true, message: t("application.inputAppName"), trigger: "blur" },
+    { min: 2, max: 30, message: t("application.appNameLength"), trigger: "blur" },
   ],
   access_url: [
-    { required: true, message: "请输入访问地址", trigger: "blur" },
-    { type: "url" as const, message: "请输入正确的URL格式", trigger: "blur" },
+    { required: true, message: t("application.inputAccessUrl"), trigger: "blur" },
+    { type: "url" as const, message: t("application.urlFormat"), trigger: "blur" },
   ],
   icon_url: [
-    { required: true, message: "请输入图标地址", trigger: "blur" },
-    { type: "url" as const, message: "请输入正确的URL格式", trigger: "blur" },
+    { required: true, message: t("application.inputIconUrl"), trigger: "blur" },
+    { type: "url" as const, message: t("application.urlFormat"), trigger: "blur" },
   ],
-  status: [{ required: true, message: "请选择应用状态", trigger: "change" }],
+  status: [{ required: true, message: t("application.selectAppStatus"), trigger: "change" }],
 });
 
 // 计算属性
 const drawerSize = computed(() => (appStore.device === DeviceEnum.DESKTOP ? "500px" : "90%"));
-const dialogTitle = computed(() => (dialogType.value === "create" ? "创建应用" : "编辑应用"));
+const dialogTitle = computed(() =>
+  dialogType.value === "create" ? t("application.createApp") : t("application.editApp")
+);
 
 // 格式化时间
 const formatTime = (time: string | undefined) => {
@@ -303,9 +312,9 @@ function handleEditApp(app: ApplicationInfo) {
 // 删除应用
 async function handleDeleteApp(app: ApplicationInfo) {
   try {
-    await ElMessageBox.confirm("确认删除该应用？", "警告", {
-      confirmButtonText: "确定",
-      cancelButtonText: "取消",
+    await ElMessageBox.confirm(t("application.deleteConfirm"), t("application.warnTitle"), {
+      confirmButtonText: t("application.confirm"),
+      cancelButtonText: t("application.cancel"),
       type: "warning",
     });
 
@@ -313,7 +322,7 @@ async function handleDeleteApp(app: ApplicationInfo) {
     await refreshList();
   } catch (error) {
     if (error !== "cancel") {
-      console.error("删除应用失败:", error);
+      console.error(t("application.deleteAppError"), error);
     }
   }
 }
@@ -332,7 +341,7 @@ async function handleAppAction(command: string, app: ApplicationInfo) {
 
 // 内部打开应用
 function openAppInternal() {
-  ElMessage.warning("插件应用点击，业务场景暂时开放中。。。");
+  ElMessage.warning(t("application.pluginClickTip"));
   return;
 }
 
@@ -369,7 +378,7 @@ async function handleSubmit() {
     resetForm();
     await refreshList();
   } catch (error) {
-    console.error("提交失败:", error);
+    console.error(t("application.submitError"), error);
   }
 }
 </script>

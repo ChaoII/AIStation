@@ -205,7 +205,7 @@ async def _notify_admins(row: AiIntegrationApprovalModel) -> None:
                     f"应用 {row.appid} 申请调用敏感能力 {row.capability}，请到「AI 集成 → 调用审批」"
                     f"处理（批准后立即执行）。"
                 ),
-                type="system",
+                type="ai_approval_pending",
                 module="ai",
                 module_id=row.id,
             )
@@ -465,6 +465,33 @@ async def save_notify_config(
     return await get_notify_config()
 
 
+# 审批「批准即执行」并发防护锁（分布式）：同一审批同一时刻只允许一个请求执行，
+# 防止「双击 / 批量+单条并发」把敏感能力（agent.delete、train.start 等）执行两次。
+_APPROVAL_EXEC_LOCK_TTL = 60  # 秒；执行完成由调用方立即释放，TTL 仅作异常兜底
+
+
+async def _try_acquire_exec_lock(redis, approval_id: int) -> bool:
+    """尝试获取审批执行锁。拿不到 = 已有请求正在执行，返回 False。"""
+    if redis is None:
+        return True  # 无 redis（测试/降级路径）放弃并发防护；绝不因锁故障阻断审批
+    try:
+        ok = await redis.set(
+            f"ai:approval:exec:{approval_id}", "1", nx=True, ex=_APPROVAL_EXEC_LOCK_TTL
+        )
+        return bool(ok)
+    except Exception:  # noqa: BLE001 - 锁不可用 → 降级为不阻塞，交给 mark_executed 兜底校验
+        return True
+
+
+async def _release_exec_lock(redis, approval_id: int) -> None:
+    if redis is None:
+        return
+    try:
+        await redis.delete(f"ai:approval:exec:{approval_id}")
+    except Exception:  # noqa: BLE001 - 释放失败无需处理，TTL 会自动过期
+        pass
+
+
 async def review_one(
     row: AiIntegrationApprovalModel,
     *,
@@ -505,37 +532,49 @@ async def review_one(
         )
         return result, "已拒绝"
 
-    ctx = await ApprovalService.app_context(row.app_id)
-    error: str | None = None
-    executed: object = None
+    # 并发防护：先抢审批执行锁，避免「批准即执行」被双击/并发重复执行
+    if not await _try_acquire_exec_lock(redis, approval_id):
+        raise CustomException(msg="该审批正在处理中，请稍后刷新", code=10409, status_code=409)
     try:
-        executed = await invoke_capability(
-            ctx,
-            row.capability,
-            row.payload or {},
-            method="REST",
-            redis=redis,
-            request_path=f"/approvals/{approval_id}",
-            bypass_approval=True,
-        )
-    except CustomException as e:  # noqa: PERF203 - 执行失败也要回写状态
-        error = e.msg
-    except Exception as e:  # noqa: BLE001 - 兜底：审批动作不能 500
-        error = str(e)
+        # 拿到锁后重读最新状态：等待期间可能已被其它并发处理
+        locked = await ApprovalService.get(approval_id)
+        if locked is None:
+            raise CustomException(msg="审批记录不存在", code=10404, status_code=404)
+        if locked.status != "pending":
+            raise CustomException(msg="该审批已处理", code=10400, status_code=400)
+        ctx = await ApprovalService.app_context(row.app_id)
+        error: str | None = None
+        executed: object = None
+        try:
+            executed = await invoke_capability(
+                ctx,
+                row.capability,
+                row.payload or {},
+                method="REST",
+                redis=redis,
+                request_path=f"/approvals/{approval_id}",
+                bypass_approval=True,
+            )
+        except CustomException as e:  # noqa: PERF203 - 执行失败也要回写状态
+            error = e.msg
+        except Exception as e:  # noqa: BLE001 - 兜底：审批动作不能 500
+            error = str(e)
 
-    result = await ApprovalService.mark_executed(
-        approval_id, reviewer_id=reviewer_id, note=note, result=executed, error=error
-    )
-    await audit_call(
-        ctx,
-        category=row.category,
-        capability=row.capability,
-        method="REST",
-        status="failed" if error else "approved",
-        error=error,
-        request_path=f"/approvals/{approval_id}",
-    )
-    return result, (f"已批准，执行失败：{error}" if error else "已批准并执行完成")
+        result = await ApprovalService.mark_executed(
+            approval_id, reviewer_id=reviewer_id, note=note, result=executed, error=error
+        )
+        await audit_call(
+            ctx,
+            category=row.category,
+            capability=row.capability,
+            method="REST",
+            status="failed" if error else "approved",
+            error=error,
+            request_path=f"/approvals/{approval_id}",
+        )
+        return result, (f"已批准，执行失败：{error}" if error else "已批准并执行完成")
+    finally:
+        await _release_exec_lock(redis, approval_id)
 
 
 async def review_batch(

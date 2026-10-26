@@ -257,7 +257,13 @@ export function getQuerySettings() {
   return request({ url: `${API_PATH}/settings`, method: "get" });
 }
 export function saveQuerySetting(data: { key: string; value: string; remark: string }) {
-  return request({ url: `${API_PATH}/settings/save`, method: "post", data });
+  return request({
+    url: `${API_PATH}/settings/save`,
+    method: "post",
+    data,
+    // 页面循环逐项保存并自行汇总提示「已保存 N 项设置」，关闭全局「保存成功」避免重复弹窗
+    headers: { _silent: "true" },
+  });
 }
 
 // 数据资产目录
@@ -588,20 +594,28 @@ export function inferQueryAssetRelations() {
 export function suggestQueryAssets() {
   return request({ url: `${API_PATH}/assets/suggest`, method: "post", timeout: 120000 });
 }
-export function saveQueryAsset(data: {
-  table_name: string;
-  alias?: string;
-  domain?: string;
-  description: string;
-  business_scenarios?: string;
-  included: boolean;
-  remark?: string;
-  object_enabled?: boolean;
-  object_key_col?: string;
-  object_name_col?: string;
-  object_icon?: string;
-}) {
-  return request({ url: `${API_PATH}/assets/save`, method: "post", data });
+export function saveQueryAsset(
+  data: {
+    table_name: string;
+    alias?: string;
+    domain?: string;
+    description: string;
+    business_scenarios?: string;
+    included: boolean;
+    remark?: string;
+    object_enabled?: boolean;
+    object_key_col?: string;
+    object_name_col?: string;
+    object_icon?: string;
+  },
+  opts?: { silent?: boolean }
+) {
+  return request({
+    url: `${API_PATH}/assets/save`,
+    method: "post",
+    data,
+    headers: opts?.silent ? { _silent: "true" } : undefined,
+  });
 }
 export function saveQueryAssetColumn(data: {
   table_name: string;

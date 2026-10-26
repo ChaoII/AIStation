@@ -1,0 +1,90 @@
+export default {
+  // 工具栏 / 操作
+  export: "エクスポート",
+  noData: "データなし",
+  detail: "詳細",
+  edit: "編集",
+  delete: "削除",
+  action: "操作",
+  cancel: "キャンセル",
+  confirm: "確認",
+  save: "保存",
+  operationSuccess: "操作が成功しました",
+
+  // 表格列
+  selection: "選択",
+  serial: "No.",
+  configName: "設定名",
+  configKey: "設定キー",
+  configKeyName: "設定キー名",
+  configValue: "設定値",
+  configType: "システム内蔵",
+  description: "説明",
+  createdTime: "作成時刻",
+  updatedTime: "更新時刻",
+  yes: "はい",
+  no: "いいえ",
+
+  // 搜索 / 筛选
+  inputConfigName: "設定名を入力してください",
+  inputConfigKey: "設定キーを入力してください",
+  inputConfigValue: "設定値を入力してください",
+  inputDescription: "説明を入力してください",
+  inputConfigKeyName: "設定キー名を入力してください",
+  selectConfigType: "システム内蔵かどうかを選択してください",
+  to: "〜",
+  startDate: "開始日",
+  endDate: "終了日",
+
+  // 弹窗标题
+  configDetail: "システム設定詳細",
+  updateConfig: "システム設定を編集",
+  createConfig: "システム設定を作成",
+
+  // 提示 / 确认
+  warnTitle: "警告",
+  deleteConfirmMessage: "選択したデータを削除してもよろしいですか？この操作は取り消せません。",
+  requiredConfigName: "システム設定名を入力してください",
+  requiredConfigKey: "システム設定キーを入力してください",
+  requiredConfigValue: "システム設定値を入力してください",
+  requiredConfigType: "システム設定種別を選択してください",
+
+  // 配置中心抽屉
+  configCenter: "設定センター",
+  websiteConfig: "サイト設定",
+  websiteIcon: "サイトアイコン",
+  securityPrivacy: "セキュリティとプライバシー",
+  userAgreement: "利用規約",
+  apiWhitelist: "APIホワイトリスト",
+  ipBlacklist: "IPブラックリスト",
+  notification: "通知設定",
+  demoConfig: "デモ設定",
+  wsPush: "WebSocketプッシュ",
+  smtpEmail: "SMTPメール",
+  smsGateway: "SMSゲートウェイ",
+  webhookRest: "Webhook / REST API",
+  defaultRecipient: "既定の受信者",
+  enable: "有効",
+  disable: "無効",
+  testWsPush: "WSプッシュをテスト",
+  testEmailPush: "メールプッシュをテスト",
+  testSmsPush: "SMSプッシュをテスト",
+  testWebhookPush: "Webhookプッシュをテスト",
+  addApiPath: "APIパスを追加",
+  addIp: "IPアドレスを追加",
+  apiWhitelistTip:
+    "設定メモ：ホワイトリスト内のAPIパスはログインなしでアクセスでき、完全なパス設定に対応しています。",
+  ipBlacklistTip:
+    "設定メモ：ブラックリスト上のIPアドレスはシステムにアクセスできず、単一IP設定に対応しています。",
+  demoIpWhitelistTip:
+    "設定メモ：デモモードでは、ホワイトリスト上のIPアドレスのみがシステムにアクセスでき、単一IP設定に対応しています。",
+  demoEnableTip:
+    "設定メモ：有効にするとシステムはデモモードに入り、一部機能が制限される場合があります。",
+  invalidApiPath: "有効なAPIパス形式（/ で始まる）を入力してください",
+  invalidIp: "有効なIPアドレス形式を入力してください",
+  keepApiWhitelist: "少なくとも1つのAPIホワイトリスト設定が必要です",
+  keepIpBlacklist: "少なくとも1つのIPブラックリスト設定が必要です",
+  keepIpWhitelist: "少なくとも1つのIPホワイトリスト設定が必要です",
+  uploadFailedPrefix: "アップロードに失敗しました：",
+  uploadRetry: "しばらくしてから再試行してください",
+};

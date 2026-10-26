@@ -4,7 +4,7 @@
 
     <el-tabs v-model="activeTab" class="login-tabs">
       <!-- 账号登录 -->
-      <el-tab-pane label="账号登录" name="password">
+      <el-tab-pane :label="t('login.accountLogin')" name="password">
         <el-form
           ref="loginFormRef"
           :model="loginForm"
@@ -71,16 +71,13 @@
                   class="w-full h-full"
                   @click="getCaptcha"
                 />
-                <el-text v-else type="info" size="small">点击获取验证码</el-text>
+                <el-text v-else type="info" size="small">{{ t("login.clickCaptcha") }}</el-text>
               </div>
             </div>
           </el-form-item>
 
           <div class="flex-x-between w-full">
             <el-checkbox v-model="loginForm.remember">{{ t("login.rememberMe") }}</el-checkbox>
-            <el-link type="primary" underline="never" @click="toOtherForm('resetPwd')">
-              {{ t("login.forgetPassword") }}
-            </el-link>
           </div>
 
           <!-- 登录按钮 -->
@@ -98,48 +95,6 @@
           </el-link>
         </div>
       </el-tab-pane>
-
-      <!-- 快速登录 -->
-      <el-tab-pane v-if="autoLoginUsers.length > 0" label="快速登录" name="quick">
-        <div class="quick-login-section">
-          <div class="quick-login-tip">
-            <el-text type="info">{{ t("login.quickLoginTip") }}</el-text>
-          </div>
-          <!-- 当用户数量大于4个时使用下拉选择，否则使用网格展示 -->
-          <template v-if="autoLoginUsers.length > 3">
-            <el-select
-              v-model="selectedUserId"
-              class="w-full"
-              :placeholder="t('login.selectUser')"
-              size="large"
-              @change="handleAutoLogin"
-            >
-              <el-option
-                v-for="user in autoLoginUsers"
-                :key="user.id"
-                :label="`${user.username}@${user.name}`"
-                :value="user.id"
-              />
-            </el-select>
-          </template>
-          <template v-else>
-            <div class="auto-login-users">
-              <div
-                v-for="user in autoLoginUsers"
-                :key="user.id"
-                class="auto-login-user-item"
-                @click="handleAutoLogin(user.id)"
-              >
-                <el-avatar :size="60" :src="user.avatar || ''" class="user-avatar">
-                  <el-icon size="24"><User /></el-icon>
-                </el-avatar>
-                <span class="user-name">{{ user.name }}</span>
-                <span class="user-username">{{ user.username }}</span>
-              </div>
-            </div>
-          </template>
-        </div>
-      </el-tab-pane>
     </el-tabs>
 
     <!-- 第三方登录 -->
@@ -150,11 +105,7 @@ import type { FormInstance } from "element-plus";
 import { LocationQuery, RouteLocationRaw, useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { onActivated, onMounted, watch } from "vue";
-import AuthAPI, {
-  type AutoLoginUser,
-  type LoginFormData,
-  type CaptchaInfo,
-} from "@/api/module_system/auth";
+import AuthAPI, { type LoginFormData, type CaptchaInfo } from "@/api/module_system/auth";
 import { useAppStore, useUserStore, useSettingsStore } from "@/store";
 import { User, Loading, Lock } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
@@ -168,9 +119,6 @@ const settingsStore = useSettingsStore();
 // 激活的标签页
 const activeTab = ref("password");
 
-// 选择的用户ID（用于下拉选择）
-const selectedUserId = ref<number | null>(null);
-
 // 来自父容器的预填用户名和密码
 const props = defineProps<{ presetUsername?: string; presetPassword?: string }>();
 
@@ -180,7 +128,6 @@ const router = useRouter();
 // 组件挂载时获取验证码和免登录用户列表
 onMounted(() => {
   getCaptcha();
-  getAutoLoginUsers();
 });
 
 // 组件激活时获取验证码（适用于KeepAlive缓存的情况）
@@ -232,61 +179,6 @@ const captchaState = reactive<CaptchaInfo>({
   key: "",
   img_base: "",
 });
-
-// 免登录用户列表
-const autoLoginUsers = ref<AutoLoginUser[]>([]);
-const autoLoginLoading = ref(false);
-
-// 获取免登录用户列表
-async function getAutoLoginUsers() {
-  try {
-    const response = await AuthAPI.getAutoLoginUsers();
-    autoLoginUsers.value = response.data.data || [];
-  } catch (error) {
-    console.error("获取免登录用户列表失败:", error);
-  }
-}
-
-// 免登录
-async function handleAutoLogin(userId: number) {
-  if (autoLoginLoading.value) return;
-
-  try {
-    autoLoginLoading.value = true;
-
-    // 1. 获取免登录Token
-    const tokenResponse = await AuthAPI.getAutoLoginToken(userId);
-    const { token } = tokenResponse.data.data;
-
-    // 2. 使用Token登录
-    const loginResponse = await AuthAPI.autoLogin(token);
-    const loginData = loginResponse.data.data;
-
-    // 3. 设置登录状态
-    userStore.rememberMe = true;
-    Auth.setTokens(loginData.access_token, loginData.refresh_token, true);
-
-    // 4. 获取用户信息
-    await userStore.getUserInfo();
-
-    // 5. 跳转
-    const redirect = resolveRedirectTarget(route.query);
-    await router.replace(redirect);
-
-    // 6. 显示引导（仅首次自动弹出，避免每次登录都弹；用户仍可在设置里手动关闭/开启）
-    if (settingsStore.showGuide && !localStorage.getItem(GUIDE_AUTO_SHOWN_KEY)) {
-      localStorage.setItem(GUIDE_AUTO_SHOWN_KEY, "1");
-      appStore.showGuide(true);
-    }
-
-    ElMessage.success("登录成功");
-  } catch (error: any) {
-    console.error("免登录失败:", error);
-    ElMessage.error(error?.response?.data?.msg || "登录失败");
-  } finally {
-    autoLoginLoading.value = false;
-  }
-}
 
 const loginRules = computed(() => {
   const rules: any = {
@@ -420,7 +312,7 @@ function checkCapsLock(event: KeyboardEvent) {
 }
 
 const emit = defineEmits(["update:modelValue"]);
-function toOtherForm(type: "register" | "resetPwd") {
+function toOtherForm(type: "register") {
   emit("update:modelValue", type);
 }
 </script>
@@ -437,147 +329,6 @@ function toOtherForm(type: "register" | "resetPwd") {
   :deep(.el-tab-pane) {
     position: relative;
     overflow: visible;
-  }
-}
-
-.quick-login-section {
-  position: relative;
-  min-height: 200px;
-  padding: 20px 0;
-
-  .quick-login-tip {
-    margin-bottom: 20px;
-    font-size: 14px;
-    text-align: center;
-  }
-
-  // 下拉菜单样式
-  .user-dropdown {
-    .user-dropdown-btn {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      width: 100%;
-      height: 48px;
-      padding: 0 16px;
-
-      .btn-text {
-        font-size: 14px;
-        color: var(--el-text-color-regular);
-      }
-    }
-  }
-
-  :deep(.user-dropdown-menu) {
-    max-height: 320px;
-    overflow-y: auto;
-
-    .el-dropdown-menu__item {
-      display: flex !important;
-      gap: 20px !important;
-      align-items: center !important;
-      padding: 14px 24px !important;
-    }
-  }
-
-  .user-option {
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    padding: 10px 0;
-
-    .user-info {
-      display: flex;
-      flex: 1;
-      flex-direction: column;
-      gap: 4px;
-      min-width: 0;
-
-      .user-option-name {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-size: 14px;
-        font-weight: 600;
-        white-space: nowrap;
-      }
-
-      .user-option-username {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-size: 12px;
-        font-weight: 500;
-        white-space: nowrap;
-      }
-    }
-  }
-
-  .user-option-avatar {
-    flex-shrink: 0;
-    border: 2px solid var(--el-border-color-light);
-    transition: all 0.3s ease;
-
-    &:hover {
-      border-color: var(--el-color-primary);
-    }
-  }
-
-  .auto-login-users {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20px;
-    justify-content: center;
-    padding: 10px 0;
-
-    .auto-login-user-item {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      align-items: center;
-      justify-content: center;
-      width: 120px;
-      padding: 12px;
-      cursor: pointer;
-      background-color: var(--el-fill-color-lighter);
-      border: 2px solid var(--el-border-color-light);
-      border-radius: 12px;
-      box-shadow: var(--el-box-shadow-light);
-      transition: all 0.3s ease;
-
-      &:hover {
-        background-color: var(--el-color-primary-light-9);
-        border-color: var(--el-color-primary);
-        box-shadow: var(--el-box-shadow);
-        transform: translateY(-2px);
-      }
-
-      .user-avatar {
-        border: 2px solid var(--el-border-color);
-        transition: all 0.3s ease;
-
-        &:hover {
-          border-color: var(--el-color-primary);
-        }
-      }
-
-      .user-name {
-        max-width: 80px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-size: 14px;
-        font-weight: 500;
-        text-align: center;
-        white-space: nowrap;
-      }
-
-      .user-username {
-        max-width: 80px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-size: 12px;
-        text-align: center;
-        white-space: nowrap;
-      }
-    }
   }
 }
 </style>

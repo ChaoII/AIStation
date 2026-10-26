@@ -6,21 +6,40 @@
   <div class="ont-linkgraph">
     <div class="ont-linkgraph__bar">
       <el-button-group size="small">
-        <el-button :icon="ZoomIn" title="放大" @click="graphRef?.zoom(1.25)" />
-        <el-button :icon="ZoomOut" title="缩小" @click="graphRef?.zoom(0.8)" />
-        <el-button :icon="FullScreen" title="适配画布" @click="graphRef?.fit()" />
+        <el-button
+          :icon="ZoomIn"
+          :title="i18nT('ai_ontology.zoomIn')"
+          @click="graphRef?.zoom(1.25)"
+        />
+        <el-button
+          :icon="ZoomOut"
+          :title="i18nT('ai_ontology.zoomOut')"
+          @click="graphRef?.zoom(0.8)"
+        />
+        <el-button
+          :icon="FullScreen"
+          :title="i18nT('ai_ontology.fitCanvas')"
+          @click="graphRef?.fit()"
+        />
       </el-button-group>
       <el-select v-model="layout" size="small" class="ont-linkgraph__layout">
-        <el-option label="同心布局" value="concentric" />
-        <el-option label="力导向" value="cose" />
-        <el-option label="环形布局" value="circle" />
-        <el-option label="树形布局" value="breadthfirst" />
-        <el-option label="网格布局" value="grid" />
+        <el-option :label="i18nT('ai_ontology.concentricLayout')" value="concentric" />
+        <el-option :label="i18nT('ai_ontology.forceDirected')" value="cose" />
+        <el-option :label="i18nT('ai_ontology.ringLayout')" value="circle" />
+        <el-option :label="i18nT('ai_ontology.treeLayout')" value="breadthfirst" />
+        <el-option :label="i18nT('ai_ontology.gridLayout')" value="grid" />
       </el-select>
       <el-tag size="small" type="info" effect="plain">
-        {{ graph.nodes.length }} 类型 / {{ graph.edges.length }} 关系
+        {{
+          i18nT("ai_ontology.typeRelationCount", {
+            typeCount: graph.nodes.length,
+            relationCount: graph.edges.length,
+          })
+        }}
       </el-tag>
-      <el-button size="small" type="primary" plain @click="emit('create')">新建关系类型</el-button>
+      <el-button size="small" type="primary" plain @click="emit('create')">
+        {{ i18nT("ai_ontology.newRelationType") }}
+      </el-button>
     </div>
     <GraphCanvas
       v-if="graph.edges.length || graph.nodes.length > 1"
@@ -45,16 +64,21 @@
     <el-empty
       v-else
       :image-size="60"
-      description="该对象类型暂未参与任何关系（关系来自数据库真实外键）"
+      :description="
+        i18nT('ai_ontology.thisObjectTypeIsNotInAnyRelationRelationsComeFromDBForeignKeys')
+      "
     />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { computed, ref } from "vue";
 import { FullScreen, ZoomIn, ZoomOut } from "@element-plus/icons-vue";
 import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 import { useOntologyData } from "../composables/useOntologyData";
+
+const { t: i18nT } = useI18n();
 
 const props = defineProps<{ code: string }>();
 const emit = defineEmits<{
@@ -89,7 +113,7 @@ const graph = computed(() => {
       name: centerLabel,
       etype: "center",
       weight: 3,
-      category: (center?.domain_code || "")?.trim() || "未分组",
+      category: (center?.domain_code || "")?.trim() || i18nT("ai_ontology.uncategorized"),
     },
     ...Array.from(neighborCodes).map((c: string) => {
       let label = objectByCode(c)?.name || c;
@@ -102,7 +126,7 @@ const graph = computed(() => {
         name: label,
         etype: "neighbor",
         weight: 1,
-        category: (o?.domain_code || "")?.trim() || "未分组",
+        category: (o?.domain_code || "")?.trim() || i18nT("ai_ontology.uncategorized"),
       };
     }),
   ];

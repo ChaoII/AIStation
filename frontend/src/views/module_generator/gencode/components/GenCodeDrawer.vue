@@ -1,16 +1,16 @@
 <template>
   <EnhancedDrawer
     v-model="drawerVisible"
-    :title="'【代码生成】' + (info.table_name || '')"
+    :title="t('generator.drawerTitle', { name: info.table_name || '' })"
     size="90%"
     drawer-class="gencode-drawer"
     append-to-body
     @close="emit('close')"
   >
     <el-steps :active="activeStep" finish-status="success" simple>
-      <el-step title="基础配置" />
-      <el-step title="字段配置" />
-      <el-step title="预览代码" />
+      <el-step :title="t('generator.stepBasic')" />
+      <el-step :title="t('generator.stepColumns')" />
+      <el-step :title="t('generator.stepPreview')" />
     </el-steps>
 
     <div class="gencode-drawer-step-wrap mt-4">
@@ -49,7 +49,7 @@
     </div>
 
     <template #footer>
-      <el-button :icon="Close" @click="emit('close')">关闭</el-button>
+      <el-button :icon="Close" @click="emit('close')">{{ t("generator.close") }}</el-button>
       <el-button
         v-if="activeStep < 2"
         type="info"
@@ -57,10 +57,10 @@
         :loading="loading"
         @click="emit('save')"
       >
-        保存
+        {{ t("generator.save") }}
       </el-button>
       <el-button v-if="activeStep !== 0" type="success" :icon="Back" @click="emit('prev-step')">
-        上一步
+        {{ t("generator.prevStep") }}
       </el-button>
       <el-button
         v-if="activeStep !== 2"
@@ -71,27 +71,19 @@
         {{ nextStepButtonLabel }}
         <el-icon class="el-icon--right"><Right /></el-icon>
       </el-button>
-      <el-tooltip
-        v-if="activeStep === 2"
-        content="打包为 ZIP 下载到本机，不会在服务器创建菜单或文件"
-        placement="top"
-      >
+      <el-tooltip v-if="activeStep === 2" :content="t('generator.downloadTip')" placement="top">
         <el-button type="warning" :icon="Download" :loading="loading" @click="emit('gen-download')">
-          下载代码
+          {{ t("generator.downloadCode") }}
         </el-button>
       </el-tooltip>
-      <el-tooltip
-        v-if="activeStep === 2"
-        content="在服务端项目目录生成源码，并自动创建目录/菜单/按钮（若名称未冲突）"
-        placement="top"
-      >
+      <el-tooltip v-if="activeStep === 2" :content="t('generator.writeTip')" placement="top">
         <el-button
           type="primary"
           :icon="FolderOpened"
           :loading="loading"
           @click="emit('gen-write')"
         >
-          写入本地
+          {{ t("generator.writeLocal") }}
         </el-button>
       </el-tooltip>
     </template>
@@ -100,6 +92,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import type { FormRules } from "element-plus";
 import { Close, Right, FolderOpened, Back, Download, Finished } from "@element-plus/icons-vue";
 import type { GenTableSchema } from "@/api/module_generator/gencode";
@@ -111,6 +104,8 @@ import GenColumnsStep from "./GenColumnsStep.vue";
 import GenPreviewStep from "./GenPreviewStep.vue";
 
 defineOptions({ name: "GenCodeDrawer" });
+
+const { t } = useI18n();
 
 const props = defineProps<{
   info: GenTableSchema;
@@ -129,7 +124,7 @@ const props = defineProps<{
 }>();
 
 const nextStepButtonLabel = computed(() =>
-  props.activeStep === 0 ? "下一步：字段配置" : "下一步：预览代码"
+  props.activeStep === 0 ? t("generator.nextStepColumns") : t("generator.nextStepPreview")
 );
 
 const drawerVisible = defineModel<boolean>({ required: true });

@@ -41,7 +41,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('example.demo.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -52,7 +52,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('example.demo.serial')"
               min-width="60"
             >
               <template #default="scope">
@@ -61,7 +61,7 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
-              label="名称"
+              :label="t('example.demo.name')"
               prop="name"
               min-width="140"
               show-overflow-tooltip
@@ -75,103 +75,103 @@
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
-              label="状态"
+              :label="t('example.demo.status')"
               prop="status"
               min-width="120"
               show-overflow-tooltip
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status ? 'success' : 'info'">
-                  {{ scope.row.status ? "启用" : "停用" }}
+                  {{ scope.row.status ? t("example.demo.enabled") : t("example.demo.disabled") }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'a')?.show"
-              label="整数"
+              :label="t('example.demo.integer')"
               prop="a"
               min-width="100"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'b')?.show"
-              label="大整数"
+              :label="t('example.demo.bigInteger')"
               prop="b"
               min-width="120"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'c')?.show"
-              label="浮点数"
+              :label="t('example.demo.float')"
               prop="c"
               min-width="100"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'd')?.show"
-              label="布尔值"
+              :label="t('example.demo.boolean')"
               prop="d"
               min-width="100"
               show-overflow-tooltip
             >
               <template #default="scope">
                 <el-tag :type="scope.row.d ? 'success' : 'danger'">
-                  {{ scope.row.d ? "是" : "否" }}
+                  {{ scope.row.d ? t("example.demo.yes") : t("example.demo.no") }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'e')?.show"
-              label="日期"
+              :label="t('example.demo.date')"
               prop="e"
               min-width="120"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'f')?.show"
-              label="时间"
+              :label="t('example.demo.time')"
               prop="f"
               min-width="120"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'g')?.show"
-              label="日期时间"
+              :label="t('example.demo.datetime')"
               prop="g"
               min-width="180"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'h')?.show"
-              label="长文本"
+              :label="t('example.demo.longText')"
               prop="h"
               min-width="140"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'description')?.show"
-              label="描述"
+              :label="t('example.demo.description')"
               prop="description"
               min-width="140"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
-              label="创建时间"
+              :label="t('example.demo.createdTime')"
               prop="created_time"
               min-width="180"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_time')?.show"
-              label="更新时间"
+              :label="t('example.demo.updatedTime')"
               prop="updated_time"
               min-width="180"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_id')?.show"
-              label="创建人"
+              :label="t('example.demo.createdBy')"
               prop="created_id"
               min-width="120"
               show-overflow-tooltip
@@ -182,7 +182,7 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_id')?.show"
-              label="更新人"
+              :label="t('example.demo.updatedBy')"
               prop="updated_id"
               min-width="120"
               show-overflow-tooltip
@@ -194,7 +194,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('example.demo.action')"
               align="center"
               min-width="200"
             >
@@ -207,7 +207,7 @@
                   icon="View"
                   @click="handleOpenDialog('detail', scope.row.id)"
                 >
-                  详情
+                  {{ t("example.demo.detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_example:demo:update']"
@@ -217,7 +217,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("example.demo.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_example:demo:delete']"
@@ -227,7 +227,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("example.demo.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -244,59 +244,63 @@
     >
       <template v-if="dialogVisible.type === 'detail'">
         <el-descriptions :column="4" border>
-          <el-descriptions-item label="名称" :span="2">
+          <el-descriptions-item :label="t('example.demo.name')" :span="2">
             {{ detailFormData.name }}
           </el-descriptions-item>
           <el-descriptions-item label="UUID" :span="2">
             {{ detailFormData.uuid }}
           </el-descriptions-item>
-          <el-descriptions-item label="状态" :span="2">
+          <el-descriptions-item :label="t('example.demo.status')" :span="2">
             <el-tag :type="detailFormData.status == '0' ? 'success' : 'danger'">
-              {{ detailFormData.status == "0" ? "启用" : "停用" }}
+              {{
+                detailFormData.status == "0"
+                  ? t("example.demo.enabled")
+                  : t("example.demo.disabled")
+              }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="整数" :span="2">
+          <el-descriptions-item :label="t('example.demo.integer')" :span="2">
             {{ detailFormData.a }}
           </el-descriptions-item>
-          <el-descriptions-item label="大整数" :span="2">
+          <el-descriptions-item :label="t('example.demo.bigInteger')" :span="2">
             {{ detailFormData.b }}
           </el-descriptions-item>
-          <el-descriptions-item label="浮点数" :span="2">
+          <el-descriptions-item :label="t('example.demo.float')" :span="2">
             {{ detailFormData.c }}
           </el-descriptions-item>
-          <el-descriptions-item label="布尔值" :span="2">
+          <el-descriptions-item :label="t('example.demo.boolean')" :span="2">
             <el-tag :type="detailFormData.d ? 'success' : 'danger'">
-              {{ detailFormData.d ? "是" : "否" }}
+              {{ detailFormData.d ? t("example.demo.yes") : t("example.demo.no") }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="日期" :span="2">
+          <el-descriptions-item :label="t('example.demo.date')" :span="2">
             {{ detailFormData.e }}
           </el-descriptions-item>
-          <el-descriptions-item label="时间" :span="2">
+          <el-descriptions-item :label="t('example.demo.time')" :span="2">
             {{ detailFormData.f }}
           </el-descriptions-item>
-          <el-descriptions-item label="日期时间" :span="2">
+          <el-descriptions-item :label="t('example.demo.datetime')" :span="2">
             {{ detailFormData.g }}
           </el-descriptions-item>
-          <el-descriptions-item label="长文本" :span="2">
+          <el-descriptions-item :label="t('example.demo.longText')" :span="2">
             {{ detailFormData.h }}
           </el-descriptions-item>
-          <el-descriptions-item label="元数据" :span="2">
+          <el-descriptions-item :label="t('example.demo.metadata')" :span="2">
             <JsonPretty :value="detailFormData.i" height="140px" />
           </el-descriptions-item>
-          <el-descriptions-item label="描述" :span="2">
+          <el-descriptions-item :label="t('example.demo.description')" :span="2">
             {{ detailFormData.description }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建人" :span="2">
+          <el-descriptions-item :label="t('example.demo.createdBy')" :span="2">
             {{ detailFormData.created_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新人" :span="2">
+          <el-descriptions-item :label="t('example.demo.updatedBy')" :span="2">
             {{ detailFormData.updated_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间" :span="2">
+          <el-descriptions-item :label="t('example.demo.createdTime')" :span="2">
             {{ detailFormData.created_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新时间" :span="2">
+          <el-descriptions-item :label="t('example.demo.updatedTime')" :span="2">
             {{ detailFormData.updated_time }}
           </el-descriptions-item>
         </el-descriptions>
@@ -311,80 +315,92 @@
           label-position="right"
           inline
         >
-          <el-form-item label="名称" prop="name">
-            <el-input v-model="formData.name" placeholder="请输入名称" :maxlength="50" />
+          <el-form-item :label="t('example.demo.name')" prop="name">
+            <el-input
+              v-model="formData.name"
+              :placeholder="t('example.demo.inputName')"
+              :maxlength="50"
+            />
           </el-form-item>
-          <el-form-item label="状态" prop="status">
+          <el-form-item :label="t('example.demo.status')" prop="status">
             <el-radio-group v-model="formData.status">
-              <el-radio value="0">启用</el-radio>
-              <el-radio value="1">停用</el-radio>
+              <el-radio value="0">{{ t("example.demo.enabled") }}</el-radio>
+              <el-radio value="1">{{ t("example.demo.disabled") }}</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="整数" prop="a">
-            <el-input-number v-model="formData.a" placeholder="请输入整数" />
+          <el-form-item :label="t('example.demo.integer')" prop="a">
+            <el-input-number v-model="formData.a" :placeholder="t('example.demo.inputInteger')" />
           </el-form-item>
-          <el-form-item label="大整数" prop="b">
-            <el-input-number v-model="formData.b" placeholder="请输入大整数" />
+          <el-form-item :label="t('example.demo.bigInteger')" prop="b">
+            <el-input-number
+              v-model="formData.b"
+              :placeholder="t('example.demo.inputBigInteger')"
+            />
           </el-form-item>
-          <el-form-item label="浮点数" prop="c">
+          <el-form-item :label="t('example.demo.float')" prop="c">
             <el-input-number
               v-model="formData.c"
-              placeholder="请输入浮点数"
+              :placeholder="t('example.demo.inputFloat')"
               :step="0.01"
               :precision="2"
             />
           </el-form-item>
-          <el-form-item label="布尔值" prop="d">
+          <el-form-item :label="t('example.demo.boolean')" prop="d">
             <el-switch v-model="formData.d" />
           </el-form-item>
-          <el-form-item label="日期" prop="e">
+          <el-form-item :label="t('example.demo.date')" prop="e">
             <el-date-picker
               v-model="formData.e"
               type="date"
-              placeholder="请选择日期"
+              :placeholder="t('example.demo.selectDate')"
               style="width: 100%"
               value-format="YYYY-MM-DD"
             />
           </el-form-item>
-          <el-form-item label="时间" prop="f">
+          <el-form-item :label="t('example.demo.time')" prop="f">
             <el-time-picker
               v-model="formData.f"
-              placeholder="请选择时间"
+              :placeholder="t('example.demo.selectTime')"
               style="width: 100%"
               value-format="HH:mm:ss"
             />
           </el-form-item>
-          <el-form-item label="日期时间" prop="g">
+          <el-form-item :label="t('example.demo.datetime')" prop="g">
             <el-date-picker
               v-model="formData.g"
               type="datetime"
-              placeholder="请选择日期时间"
+              :placeholder="t('example.demo.selectDatetime')"
               style="width: 100%"
               value-format="YYYY-MM-DD HH:mm:ss"
             />
           </el-form-item>
-          <el-form-item label="长文本" prop="h">
-            <el-input v-model="formData.h" :rows="4" type="textarea" placeholder="请输入长文本" />
+          <el-form-item :label="t('example.demo.longText')" prop="h">
+            <el-input
+              v-model="formData.h"
+              :rows="4"
+              type="textarea"
+              :placeholder="t('example.demo.inputLongText')"
+            />
           </el-form-item>
-          <el-form-item label="描述" prop="description">
+          <el-form-item :label="t('example.demo.description')" prop="description">
             <el-input
               v-model="formData.description"
               :rows="4"
               :maxlength="100"
               show-word-limit
               type="textarea"
-              placeholder="请输入描述"
+              :placeholder="t('example.demo.inputDescription')"
             />
           </el-form-item>
-          <el-form-item label="元数据" prop="i">
+          <el-form-item :label="t('example.demo.metadata')" prop="i">
             <div class="flex flex-col gap-2">
               <div
                 v-for="(item, index) in metadataList"
                 :key="index"
                 class="flex items-center gap-2"
               >
-                <el-input v-model="item.key" placeholder="键" />
-                <el-input v-model="item.value" placeholder="值" />
+                <el-input v-model="item.key" :placeholder="t('example.demo.key')" />
+                <el-input v-model="item.value" :placeholder="t('example.demo.value')" />
                 <el-button
                   type="primary"
                   icon="Plus"
@@ -404,7 +420,7 @@
                 icon="Plus"
                 @click="metadataList.push({ key: '', value: '' })"
               >
-                添加元数据
+                {{ t("example.demo.addMetadata") }}
               </el-button>
             </div>
           </el-form-item>
@@ -413,11 +429,13 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
+          <el-button @click="handleCloseDialog">{{ t("example.demo.cancel") }}</el-button>
           <el-button v-if="dialogVisible.type !== 'detail'" type="primary" @click="handleSubmit">
-            确定
+            {{ t("example.demo.confirm") }}
           </el-button>
-          <el-button v-else type="primary" @click="handleCloseDialog">确定</el-button>
+          <el-button v-else type="primary" @click="handleCloseDialog">
+            {{ t("example.demo.confirm") }}
+          </el-button>
         </div>
       </template>
     </EnhancedDialog>
@@ -431,6 +449,7 @@ defineOptions({
 });
 
 import { ref, reactive, onMounted, markRaw, nextTick } from "vue";
+import { useI18n } from "vue-i18n";
 import { fetchAllPages } from "@/utils/fetchAllPages";
 import { ElMessageBox } from "element-plus";
 import { ResultEnum } from "@/enums/api/result.enum";
@@ -444,6 +463,8 @@ import { useCrudList } from "@/components/CURD/useCrudList";
 import UserTableSelect from "@/views/module_system/user/components/UserTableSelect.vue";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 import JsonPretty from "@/components/JsonPretty/index.vue";
+
+const { t } = useI18n();
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
@@ -460,23 +481,27 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "名称",
+      label: t("example.demo.name"),
       type: "input",
-      attrs: { placeholder: "请输入名称", clearable: true },
+      attrs: { placeholder: t("example.demo.inputName"), clearable: true },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("example.demo.status"),
       type: "select",
       options: [
-        { label: "启用", value: "0" },
-        { label: "停用", value: "1" },
+        { label: t("example.demo.enabled"), value: "0" },
+        { label: t("example.demo.disabled"), value: "1" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "170px" } },
+      attrs: {
+        placeholder: t("example.demo.selectStatus"),
+        clearable: true,
+        style: { width: "170px" },
+      },
     },
     {
       prop: "created_id",
-      label: "创建人",
+      label: t("example.demo.createdBy"),
       type: "user-table-select",
       initialValue: null,
       events: {
@@ -486,7 +511,7 @@ const searchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "updated_id",
-      label: "更新人",
+      label: t("example.demo.updatedBy"),
       type: "user-table-select",
       initialValue: null,
       events: {
@@ -496,28 +521,28 @@ const searchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "created_time",
-      label: "创建时间",
+      label: t("example.demo.createdTime"),
       type: "date-picker",
       initialValue: [],
       attrs: {
         type: "datetimerange",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
-        rangeSeparator: "至",
-        startPlaceholder: "开始",
-        endPlaceholder: "结束",
+        rangeSeparator: t("example.demo.to"),
+        startPlaceholder: t("example.demo.start"),
+        endPlaceholder: t("example.demo.end"),
       },
     },
     {
       prop: "updated_time",
-      label: "更新时间",
+      label: t("example.demo.updatedTime"),
       type: "date-picker",
       initialValue: [],
       attrs: {
         type: "datetimerange",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
-        rangeSeparator: "至",
-        startPlaceholder: "开始",
-        endPlaceholder: "结束",
+        rangeSeparator: t("example.demo.to"),
+        startPlaceholder: t("example.demo.start"),
+        endPlaceholder: t("example.demo.end"),
       },
     },
   ],
@@ -533,26 +558,26 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "名称", show: true },
+  { prop: "selection", label: t("example.demo.selection"), show: true },
+  { prop: "index", label: t("example.demo.serial"), show: true },
+  { prop: "name", label: t("example.demo.name"), show: true },
   { prop: "uuid", label: "UUID", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "a", label: "整数", show: true },
-  { prop: "b", label: "大整数", show: true },
-  { prop: "c", label: "浮点数", show: true },
-  { prop: "d", label: "布尔值", show: true },
-  { prop: "e", label: "日期", show: true },
-  { prop: "f", label: "时间", show: true },
-  { prop: "g", label: "日期时间", show: true },
-  { prop: "h", label: "长文本", show: true },
-  { prop: "i", label: "元数据", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "updated_time", label: "更新时间", show: true },
-  { prop: "created_id", label: "创建人", show: true },
-  { prop: "updated_id", label: "更新人", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "status", label: t("example.demo.status"), show: true },
+  { prop: "a", label: t("example.demo.integer"), show: true },
+  { prop: "b", label: t("example.demo.bigInteger"), show: true },
+  { prop: "c", label: t("example.demo.float"), show: true },
+  { prop: "d", label: t("example.demo.boolean"), show: true },
+  { prop: "e", label: t("example.demo.date"), show: true },
+  { prop: "f", label: t("example.demo.time"), show: true },
+  { prop: "g", label: t("example.demo.datetime"), show: true },
+  { prop: "h", label: t("example.demo.longText"), show: true },
+  { prop: "i", label: t("example.demo.metadata"), show: true },
+  { prop: "description", label: t("example.demo.description"), show: true },
+  { prop: "created_time", label: t("example.demo.createdTime"), show: true },
+  { prop: "updated_time", label: t("example.demo.updatedTime"), show: true },
+  { prop: "created_id", label: t("example.demo.createdBy"), show: true },
+  { prop: "updated_id", label: t("example.demo.updatedBy"), show: true },
+  { prop: "operation", label: t("example.demo.action"), show: true },
 ]);
 
 function normalizeDemoQuery(params: Record<string, unknown>) {
@@ -646,8 +671,8 @@ const dialogVisible = reactive({
 });
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入名称", trigger: "blur" }],
-  status: [{ required: true, message: "请选择状态", trigger: "blur" }],
+  name: [{ required: true, message: t("example.demo.requiredName"), trigger: "blur" }],
+  status: [{ required: true, message: t("example.demo.requiredStatus"), trigger: "blur" }],
 });
 
 const dataFormRef = ref();
@@ -693,10 +718,10 @@ async function handleOpenDialog(type: "create" | "update" | "detail", id?: numbe
   if (id) {
     const response = await DemoAPI.getDemoDetail(id);
     if (type === "detail") {
-      dialogVisible.title = "详情";
+      dialogVisible.title = t("example.demo.detailTitle");
       Object.assign(detailFormData.value, response.data.data);
     } else if (type === "update") {
-      dialogVisible.title = "修改";
+      dialogVisible.title = t("example.demo.updateTitle");
       Object.assign(formData, response.data.data);
       if (formData.i && typeof formData.i === "object") {
         metadataList.value = Object.entries(formData.i).map(([key, value]) => ({
@@ -708,7 +733,7 @@ async function handleOpenDialog(type: "create" | "update" | "detail", id?: numbe
       }
     }
   } else {
-    dialogVisible.title = "新增示例";
+    dialogVisible.title = t("example.demo.createTitle");
     formData.id = undefined;
     metadataList.value = [];
   }
@@ -751,11 +776,17 @@ async function handleMoreClick(status: string) {
   const rows = contentRef.value?.getSelectionData() ?? [];
   const ids = rows.map((r: { id?: number }) => r.id).filter(Boolean) as number[];
   if (!ids.length) return;
-  ElMessageBox.confirm(`确认${status === "0" ? "启用" : "停用"}该项数据?`, "警告", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
+  ElMessageBox.confirm(
+    t("example.demo.confirmBatch", {
+      action: status === "0" ? t("example.demo.enabled") : t("example.demo.disabled"),
+    }),
+    t("example.demo.warning"),
+    {
+      confirmButtonText: t("example.demo.confirm"),
+      cancelButtonText: t("example.demo.cancel"),
+      type: "warning",
+    }
+  )
     .then(async () => {
       try {
         await DemoAPI.batchDemo({ ids, status });

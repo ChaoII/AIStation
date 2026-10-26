@@ -6,7 +6,7 @@
       <el-card shadow="never" class="ws-side">
         <template #header>
           <div class="ws-side-head">
-            <span>分类</span>
+            <span>{{ t("ai_chat.workspace_category") }}</span>
             <el-button link type="primary" :icon="Plus" @click="openCatCreate(null)" />
           </div>
         </template>
@@ -15,7 +15,7 @@
           :data="treeData"
           node-key="id"
           :props="{ label: 'name', children: 'children' }"
-          :current-node-key="currentCategoryId ?? undefined"
+          :current-node-key="currentNodeId"
           highlight-current
           default-expand-all
           :expand-on-click-node="false"
@@ -23,26 +23,42 @@
         >
           <template #default="{ data }">
             <span class="ai-tree-node">
-              <el-icon class="ai-tree-node__icon"><Folder /></el-icon>
+              <el-icon class="ai-tree-node__icon">
+                <component :is="data.id === 0 ? Files : Folder" />
+              </el-icon>
               <span class="ai-tree-node__label" :title="data.name">{{ data.name }}</span>
               <span class="ai-tree-node__count">{{ catCount(data.id) }}</span>
-              <el-dropdown trigger="click" @command="(c: string) => onCatCmd(data, c)">
-                <el-icon class="ws-tree-more" @click.stop><MoreFilled /></el-icon>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="addchild" icon="plus">新建子分类</el-dropdown-item>
-                    <el-dropdown-item icon="EditPen" command="rename">重命名</el-dropdown-item>
-                    <el-dropdown-item
-                      icon="delete"
-                      command="delete"
-                      style="color: var(--el-color-danger)"
-                      divided
-                    >
-                      删除
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
+              <span v-if="data.id !== 0" class="ws-tree-actions">
+                <el-button
+                  link
+                  type="primary"
+                  class="ws-tree-add"
+                  :title="t('ai_chat.workspace_addChildCategory')"
+                  :icon="Plus"
+                  @click.stop="openCatCreate(data)"
+                />
+                <el-dropdown trigger="click" @command="(c: string) => onCatCmd(data, c)">
+                  <el-icon class="ws-tree-more" @click.stop><MoreFilled /></el-icon>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="addchild" icon="plus">
+                        {{ t("ai_chat.workspace_addChildCategory") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item icon="EditPen" command="rename">
+                        {{ t("ai_chat.workspace_rename") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        icon="delete"
+                        command="delete"
+                        style="color: var(--el-color-danger)"
+                        divided
+                      >
+                        {{ t("ai_chat.workspace_delete") }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </span>
             </span>
           </template>
         </el-tree>
@@ -57,7 +73,7 @@
           <div class="ws-toolbar-right">
             <el-input
               v-model="keyword"
-              placeholder="搜索条目"
+              :placeholder="t('ai_chat.workspace_search')"
               clearable
               :prefix-icon="Search"
               style="width: 200px"
@@ -65,16 +81,29 @@
             />
             <!-- 全部类别：下拉二选一；已选具体类别：直接新建该类（语境收敛） -->
             <el-dropdown v-if="typeFilter === 'all'" trigger="click" @command="onCreate">
-              <el-button type="primary" :icon="Plus">新建</el-button>
+              <el-button type="primary" :icon="Plus">
+                {{ t("ai_chat.workspace_create") }}
+              </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="agent">传统智能体</el-dropdown-item>
-                  <el-dropdown-item command="workflow">工作流</el-dropdown-item>
+                  <el-dropdown-item command="agent">
+                    {{ t("ai_chat.workspace_agent") }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="workflow">
+                    {{ t("ai_chat.workspace_workflow") }}
+                  </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
             <el-button v-else type="primary" :icon="Plus" @click="onCreate(typeFilter)">
-              新建{{ typeFilter === "agent" ? "智能体" : "工作流" }}
+              {{
+                t("ai_chat.workspace_createWithType", {
+                  type:
+                    typeFilter === "agent"
+                      ? t("ai_chat.workspace_agent")
+                      : t("ai_chat.workspace_workflow"),
+                })
+              }}
             </el-button>
           </div>
         </div>
@@ -119,7 +148,7 @@
                 </div>
                 <!-- 描述：固定两行高度（无描述显示占位符），与能力市场卡片一致 -->
                 <div class="ws-card__desc" :class="{ 'is-empty': !it.description }">
-                  {{ it.description || "暂无描述" }}
+                  {{ it.description || t("ai_chat.workspace_noDesc") }}
                 </div>
                 <!-- 能力标签：模型/工具/技能/知识库/MCP/节点（固定占位，保证卡片大小统一） -->
                 <div class="ws-card__tags">
@@ -145,20 +174,22 @@
                       :icon="ChatDotRound"
                       @click.stop="openChat(it)"
                     >
-                      对话
+                      {{ t("ai_chat.workspace_chat") }}
                     </el-button>
                     <el-dropdown trigger="click" @command="(cmd: string) => onCardMore(it, cmd)">
                       <el-button link :icon="MoreFilled" class="ws-card__more" @click.stop />
                       <template #dropdown>
                         <el-dropdown-menu>
-                          <el-dropdown-item command="edit" :icon="Edit">编辑</el-dropdown-item>
+                          <el-dropdown-item command="edit" :icon="Edit">
+                            {{ t("ai_chat.workspace_edit") }}
+                          </el-dropdown-item>
                           <el-dropdown-item
                             command="delete"
                             :icon="Delete"
                             divided
                             style="color: var(--el-color-danger)"
                           >
-                            删除
+                            {{ t("ai_chat.workspace_delete") }}
                           </el-dropdown-item>
                         </el-dropdown-menu>
                       </template>
@@ -168,7 +199,7 @@
               </div>
             </el-col>
             <el-col v-if="!loading && !pagedItems.length" :span="24">
-              <el-empty description="当前分类暂无条目" />
+              <el-empty :description="t('ai_chat.workspace_empty')" />
             </el-col>
           </el-row>
         </div>
@@ -177,7 +208,7 @@
             v-model:current-page="page"
             :page-size="pageSize"
             :total="filteredItems.length"
-            layout="total, prev, pager, next"
+            layout="total, sizes, prev, pager, next"
             background
           />
         </div>
@@ -187,16 +218,20 @@
     <!-- 新建/重命名分类弹窗 -->
     <el-dialog v-model="catDialogVisible" :title="catDialogTitle" width="520px">
       <el-form label-width="80px">
-        <el-form-item label="名称">
-          <el-input v-model="catForm.name" placeholder="分类名称" />
+        <el-form-item :label="t('ai_chat.workspace_name')">
+          <el-input v-model="catForm.name" :placeholder="t('ai_chat.workspace_categoryName')" />
         </el-form-item>
-        <el-form-item v-if="!catForm.parent_id" label="主题色">
+        <el-form-item v-if="!catForm.parent_id" :label="t('ai_chat.workspace_themeColor')">
           <el-color-picker v-model="catForm.color" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="catDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveCategory">保存</el-button>
+        <el-button @click="catDialogVisible = false">
+          {{ t("ai_chat.workspace_cancel") }}
+        </el-button>
+        <el-button type="primary" @click="saveCategory">
+          {{ t("ai_chat.workspace_save") }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -218,6 +253,7 @@ import {
   Clock,
   Delete,
   Edit,
+  Files,
   Folder,
   MoreFilled,
   Plus,
@@ -225,6 +261,7 @@ import {
 } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 
 import {
@@ -245,12 +282,16 @@ import AgentFormDialog from "@/views/module_ai/workspace/components/AgentFormDia
 
 defineOptions({ name: "AiWorkbench" });
 
+const { t } = useI18n();
+
 const router = useRouter();
 
 const loading = ref(false);
 const treeData = ref<WorkspaceCategory[]>([]);
 const allItems = ref<WorkspaceItem[]>([]);
 const currentCategoryId = ref<number | null>(null);
+/** 树当前高亮节点（「全部」根节点 id=0；currentCategoryId=null 表示查看全部） */
+const currentNodeId = ref<number>(0);
 const keyword = ref("");
 /** 类别筛选：`all` 为「全部」（el-select 对空串按无值处理，会误显 placeholder） */
 const typeFilter = ref("all");
@@ -259,9 +300,9 @@ const pageSize = 12;
 
 /** 类别筛选（替代原顶部类型 tab）：工作台只服务智能体家族（传统智能体 + 工作流编排） */
 const typeOptions = [
-  { label: "全部", value: "all" },
-  { label: "传统智能体", value: "agent" },
-  { label: "工作流", value: "workflow" },
+  { label: t("ai_chat.workspace_all"), value: "all" },
+  { label: t("ai_chat.workspace_agent"), value: "agent" },
+  { label: t("ai_chat.workspace_workflow"), value: "workflow" },
 ];
 
 /** el-tag 的主题类型（Element Plus 原生枚举） */
@@ -298,13 +339,23 @@ function capTags(it: WorkspaceItem): { text: string; type: TagType }[] {
   const tags: { text: string; type: TagType }[] = [];
   if (it.type === "agent") {
     const mn = modelName(m.model_id);
-    tags.push({ text: `模型 ${mn || "默认"}`, type: "primary" });
-    if (m.tools) tags.push({ text: `工具 ${m.tools}`, type: "warning" });
-    if (m.skills) tags.push({ text: `技能 ${m.skills}`, type: "success" });
-    if (m.knowledge) tags.push({ text: `知识库 ${m.knowledge}`, type: "success" });
-    if (m.mcp) tags.push({ text: `MCP ${m.mcp}`, type: "danger" });
+    tags.push({
+      text: t("ai_chat.workspace_capModel", { name: mn || t("ai_chat.workspace_default") }),
+      type: "primary",
+    });
+    if (m.tools)
+      tags.push({ text: t("ai_chat.workspace_capTools", { count: m.tools }), type: "warning" });
+    if (m.skills)
+      tags.push({ text: t("ai_chat.workspace_capSkills", { count: m.skills }), type: "success" });
+    if (m.knowledge)
+      tags.push({
+        text: t("ai_chat.workspace_capKnowledge", { count: m.knowledge }),
+        type: "success",
+      });
+    if (m.mcp) tags.push({ text: t("ai_chat.workspace_capMcp", { count: m.mcp }), type: "danger" });
   } else if (it.type === "workflow") {
-    if (m.nodes) tags.push({ text: `节点 ${m.nodes}`, type: "success" });
+    if (m.nodes)
+      tags.push({ text: t("ai_chat.workspace_capNodes", { count: m.nodes }), type: "success" });
   }
   return tags;
 }
@@ -321,6 +372,10 @@ function fmtTime(t?: string | null): string {
 const filteredItems = computed(() => {
   // 工作台只服务智能体家族：应用在「AI应用」菜单、定时任务在「定时任务」菜单，均不再聚合展示
   let list = allItems.value.filter((i) => i.type === "agent" || i.type === "workflow");
+  // 分类过滤：只显示该分类「直系」条目（不含子分类）。本地过滤，避免每点一次重新调后端转圈
+  if (currentCategoryId.value != null) {
+    list = list.filter((i) => i.category_id === currentCategoryId.value);
+  }
   if (typeFilter.value !== "all") list = list.filter((i) => i.type === typeFilter.value);
   if (keyword.value) list = list.filter((i) => (i.name || "").includes(keyword.value));
   return list;
@@ -329,20 +384,16 @@ const pagedItems = computed(() =>
   filteredItems.value.slice((page.value - 1) * pageSize, page.value * pageSize)
 );
 
-/** 分类计数（含子分类）：该分类及子孙分类下的智能体/工作流数量（与树形计数徽章对应） */
+/**
+ * 分类计数（agent + 工作流）：只数该分类「直系」条目，不含子分类。
+ * 「全部」根节点（id=0）统计所有智能体/工作流（含未分类）。
+ */
 function catCount(id: number): number {
-  const ids = new Set<number>([id]);
-  const walk = (list: WorkspaceCategory[]) => {
-    for (const n of list || []) {
-      if (ids.has(n.id) && n.children?.length) walk(n.children);
-    }
-  };
-  walk(treeData.value);
+  if (id === 0) {
+    return allItems.value.filter((i) => i.type === "agent" || i.type === "workflow").length;
+  }
   return allItems.value.filter(
-    (i) =>
-      (i.type === "agent" || i.type === "workflow") &&
-      i.category_id != null &&
-      ids.has(i.category_id)
+    (i) => (i.type === "agent" || i.type === "workflow") && i.category_id === id
   ).length;
 }
 
@@ -366,13 +417,18 @@ function findNode(node: WorkspaceCategory, id: number): WorkspaceCategory | null
 
 async function loadTree() {
   const res: any = await getWorkspaceCategoryTree();
-  treeData.value = res.data?.data || [];
+  const cats: WorkspaceCategory[] = res.data?.data || [];
+  // 树顶加虚拟「全部」根节点（id=0），其下挂全部分类；点它=查看全部条目
+  treeData.value = [
+    { id: 0, name: t("ai_chat.workspace_all"), children: cats } as WorkspaceCategory,
+  ];
 }
 
 async function loadItems() {
   loading.value = true;
   try {
-    const res: any = await getWorkspaceItems({ category_id: currentCategoryId.value ?? undefined });
+    // 始终拉全量条目；分类筛选在前端本地做（避免每点一次/增删后触发后端慢查询转圈）
+    const res: any = await getWorkspaceItems({});
     allItems.value = res.data?.data?.items || [];
   } finally {
     loading.value = false;
@@ -386,9 +442,10 @@ onMounted(() => {
 });
 
 function onCatClick(data: WorkspaceCategory) {
-  currentCategoryId.value = data.id;
+  currentCategoryId.value = data.id === 0 ? null : data.id;
+  currentNodeId.value = data.id;
   page.value = 1;
-  loadItems();
+  // 本地过滤已加载的 allItems，不再重新调后端（避免每次点击都触发慢查询、转圈卡顿）
 }
 
 function openChat(it: WorkspaceItem) {
@@ -403,16 +460,20 @@ async function onCardMore(it: WorkspaceItem, cmd: string) {
     return;
   }
   if (cmd === "delete") {
-    await ElMessageBox.confirm(`将删除「${it.name}」，是否继续？`, "删除确认", {
-      confirmButtonText: "删除",
-      cancelButtonText: "取消",
-      type: "warning",
-    });
+    await ElMessageBox.confirm(
+      t("ai_chat.workspace_deleteConfirm", { name: it.name }),
+      t("ai_chat.workspace_deleteTitle"),
+      {
+        confirmButtonText: t("ai_chat.workspace_delete"),
+        cancelButtonText: t("ai_chat.workspace_cancel"),
+        type: "warning",
+      }
+    );
     // 先收窄类型再取删除函数（WorkspaceItem.type 声明仍含历史的 app/cron）
     if (it.type === "agent" || it.type === "workflow") {
       const del = { agent: deleteAiAgent, workflow: deleteAiWorkflow }[it.type];
       await del([it.id]);
-      ElMessage.success("已删除");
+      ElMessage.success(t("ai_chat.workspace_deleted"));
       loadItems();
     }
   }
@@ -433,7 +494,7 @@ function openAgentCreate() {
 async function openAgentEdit(it: WorkspaceItem) {
   const res: any = await getAiAgentDetail(it.id);
   const d = res.data?.data;
-  if (!d) return ElMessage.error("智能体不存在");
+  if (!d) return ElMessage.error(t("ai_chat.workspace_agentNotFound"));
   agentEditItem.value = d;
   agentDialogVisible.value = true;
 }
@@ -445,7 +506,7 @@ async function toggleEnable(it: WorkspaceItem, val: boolean) {
   try {
     if (it.type === "agent") await batchAgentStatus([it.id], val);
     else if (it.type === "workflow") await updateAiWorkflow(it.id, { enabled: val });
-    ElMessage.success(val ? "已启用" : "已停用");
+    ElMessage.success(val ? t("ai_chat.workspace_enabled") : t("ai_chat.workspace_disabled"));
   } catch {
     it.enabled = prev;
   }
@@ -457,7 +518,7 @@ const workflowEditItem = ref<any>(null);
 async function openWorkflowEdit(it: WorkspaceItem) {
   const res: any = await getAiWorkflowDetail(it.id);
   const d = res.data?.data;
-  if (!d) return ElMessage.error("工作流不存在");
+  if (!d) return ElMessage.error(t("ai_chat.workspace_workflowNotFound"));
   workflowEditItem.value = d;
   workflowEditVisible.value = true;
 }
@@ -468,7 +529,7 @@ function openWorkflowCreate() {
 
 // ---- 分类弹窗 ----
 const catDialogVisible = ref(false);
-const catDialogTitle = ref("新建分类");
+const catDialogTitle = ref(t("ai_chat.workspace_createCategory"));
 const catForm = ref<{ id: number | null; name: string; parent_id: number | null; color: string }>({
   id: null,
   name: "",
@@ -477,13 +538,14 @@ const catForm = ref<{ id: number | null; name: string; parent_id: number | null;
 });
 
 function openCatCreate(parent: WorkspaceCategory | null) {
-  catDialogTitle.value = "新建分类";
+  catDialogTitle.value = t("ai_chat.workspace_createCategory");
   catForm.value = { id: null, name: "", parent_id: parent?.id ?? null, color: "" };
   catDialogVisible.value = true;
 }
 
 async function saveCategory() {
-  if (!catForm.value.name.trim()) return ElMessage.warning("请输入分类名称");
+  if (!catForm.value.name.trim())
+    return ElMessage.warning(t("ai_chat.workspace_inputCategoryName"));
   if (catForm.value.id) {
     await updateWorkspaceCategory(catForm.value.id, {
       name: catForm.value.name,
@@ -497,13 +559,14 @@ async function saveCategory() {
     });
   }
   catDialogVisible.value = false;
+  ElMessage.success(t("ai_chat.workspace_saveSuccess"));
   loadTree();
 }
 
 async function onCatCmd(data: WorkspaceCategory, cmd: string) {
   if (cmd === "addchild") openCatCreate(data);
   else if (cmd === "rename") {
-    catDialogTitle.value = "重命名分类";
+    catDialogTitle.value = t("ai_chat.workspace_renameCategory");
     catForm.value = {
       id: data.id,
       name: data.name,
@@ -513,12 +576,20 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
     catDialogVisible.value = true;
   } else if (cmd === "delete") {
     await ElMessageBox.confirm(
-      `将删除分类「${data.name}」（子分类与条目会被移出分类），是否继续？`,
-      "删除分类",
-      { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+      t("ai_chat.workspace_deleteCategoryConfirm", { name: data.name }),
+      t("ai_chat.workspace_deleteCategory"),
+      {
+        confirmButtonText: t("ai_chat.workspace_delete"),
+        cancelButtonText: t("ai_chat.workspace_cancel"),
+        type: "warning",
+      }
     );
     await deleteWorkspaceCategory(data.id);
-    if (currentCategoryId.value === data.id) currentCategoryId.value = null;
+    ElMessage.success(t("ai_chat.workspace_deleteSuccess"));
+    if (currentCategoryId.value === data.id) {
+      currentCategoryId.value = null;
+      currentNodeId.value = 0;
+    }
     loadTree();
     loadItems();
   }
@@ -618,11 +689,28 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
   padding-right: 4px;
 }
 
+.ai-workspace-page .ws-tree-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+}
+
+/* 「＋」新建子分类：默认轻微可见，悬停变醒目（保证总能发现建子目录入口） */
+.ai-workspace-page .ws-tree-add {
+  opacity: 0.55;
+}
+
+/* 「⋮」更多（重命名/删除）：悬停显示。注意选择器必须匹配模板的 ai-tree-node，
+   此前误写 .ws-tree-node 导致悬停永不触发、按钮一直 opacity:0 看不见 */
 .ai-workspace-page .ws-tree-more {
   cursor: pointer;
   opacity: 0;
 }
-.ai-workspace-page .ws-tree-node:hover .ws-tree-more {
+.ai-workspace-page .ai-tree-node:hover .ws-tree-more {
+  opacity: 1;
+}
+.ai-workspace-page .ai-tree-node:hover .ws-tree-add {
   opacity: 1;
 }
 
@@ -633,7 +721,7 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
   padding: 16px 18px;
   cursor: pointer;
   background: var(--el-color-white);
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--el-border-color-light);
   border-radius: 10px;
   transition:
     box-shadow 0.2s,

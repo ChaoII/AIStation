@@ -24,19 +24,24 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('task.noData')" />
             </template>
             <el-table-column type="selection" align="center" min-width="55" />
-            <el-table-column type="index" fixed label="序号" min-width="60">
+            <el-table-column type="index" fixed :label="t('task.serial')" min-width="60">
               <template #default="scope">
                 {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column label="节点名称" prop="name" min-width="140" />
-            <el-table-column label="节点编码" prop="code" min-width="120" />
-            <el-table-column label="存储器" prop="jobstore" min-width="80" />
-            <el-table-column label="执行器" prop="executor" min-width="80" />
-            <el-table-column label="创建时间" prop="created_time" min-width="180" sortable />
+            <el-table-column :label="t('task.nodeName')" prop="name" min-width="140" />
+            <el-table-column :label="t('task.nodeCode')" prop="code" min-width="120" />
+            <el-table-column :label="t('task.jobstore')" prop="jobstore" min-width="80" />
+            <el-table-column :label="t('task.executor')" prop="executor" min-width="80" />
+            <el-table-column
+              :label="t('task.createdTime')"
+              prop="created_time"
+              min-width="180"
+              sortable
+            />
 
             <OperationColumn :list-data-length="data.length">
               <template #default="scope">
@@ -49,7 +54,7 @@
                     icon="VideoPlay"
                     @click="handleOpenExecuteDialog(scope.row as NodeTable)"
                   >
-                    调试
+                    {{ t("task.debug") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_task:cronjob:node:update']"
@@ -59,7 +64,7 @@
                     icon="edit"
                     @click="handleOpenDialog('update', scope.row.id)"
                   >
-                    编辑
+                    {{ t("task.edit") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_task:cronjob:node:delete']"
@@ -69,7 +74,7 @@
                     icon="delete"
                     @click="handleRowDelete(scope.row.id)"
                   >
-                    删除
+                    {{ t("task.delete") }}
                   </el-button>
                 </el-space>
               </template>
@@ -96,14 +101,22 @@
               label-width="auto"
               style="padding: 0 10px"
             >
-              <el-form-item label="节点名称" prop="name">
-                <el-input v-model="formData.name" placeholder="请输入节点名称" :maxlength="50" />
+              <el-form-item :label="t('task.nodeName')" prop="name">
+                <el-input
+                  v-model="formData.name"
+                  :placeholder="t('task.inputNodeName')"
+                  :maxlength="50"
+                />
               </el-form-item>
-              <el-form-item label="节点编码" prop="code">
-                <el-input v-model="formData.code" placeholder="请输入节点编码" :maxlength="32" />
+              <el-form-item :label="t('task.nodeCode')" prop="code">
+                <el-input
+                  v-model="formData.code"
+                  :placeholder="t('task.inputNodeCode')"
+                  :maxlength="32"
+                />
               </el-form-item>
-              <el-form-item label="存储器" prop="jobstore">
-                <el-select v-model="formData.jobstore" placeholder="请选择存储器">
+              <el-form-item :label="t('task.jobstore')" prop="jobstore">
+                <el-select v-model="formData.jobstore" :placeholder="t('task.selectJobstore')">
                   <el-option
                     v-for="item in dictStore.getDictArray('sys_job_store')"
                     :key="item.dict_value"
@@ -112,8 +125,8 @@
                   />
                 </el-select>
               </el-form-item>
-              <el-form-item label="执行器" prop="executor">
-                <el-select v-model="formData.executor" placeholder="请选择执行器">
+              <el-form-item :label="t('task.executor')" prop="executor">
+                <el-select v-model="formData.executor" :placeholder="t('task.selectExecutor')">
                   <el-option
                     v-for="item in dictStore.getDictArray('sys_job_executor')"
                     :key="item.dict_value"
@@ -122,10 +135,10 @@
                   />
                 </el-select>
               </el-form-item>
-              <el-form-item label="位置参数" prop="args">
+              <el-form-item :label="t('task.positionalArgs')" prop="args">
                 <div class="dynamic-params">
                   <div v-for="(_item, index) in argsList" :key="index" class="param-item">
-                    <el-input v-model="argsList[index]" placeholder="参数值" />
+                    <el-input v-model="argsList[index]" :placeholder="t('task.paramValue')" />
                     <el-button
                       type="danger"
                       icon="Delete"
@@ -134,15 +147,15 @@
                     />
                   </div>
                   <el-button type="primary" icon="Plus" @click="argsList.push('')">
-                    添加位置参数
+                    {{ t("task.addPositionalArg") }}
                   </el-button>
                 </div>
               </el-form-item>
-              <el-form-item label="关键字参数" prop="kwargs">
+              <el-form-item :label="t('task.kwArgs')" prop="kwargs">
                 <div class="dynamic-params">
                   <div v-for="(item, index) in kwargsList" :key="index" class="param-item">
-                    <el-input v-model="item.key" placeholder="键" />
-                    <el-input v-model="item.value" placeholder="值" />
+                    <el-input v-model="item.key" :placeholder="t('task.key')" />
+                    <el-input v-model="item.value" :placeholder="t('task.value')" />
                     <el-button
                       type="danger"
                       icon="Delete"
@@ -155,17 +168,17 @@
                     icon="Plus"
                     @click="kwargsList.push({ key: '', value: '' })"
                   >
-                    添加关键词参数
+                    {{ t("task.addKeywordArg") }}
                   </el-button>
                 </div>
               </el-form-item>
-              <el-form-item label="合并运行" prop="coalesce">
+              <el-form-item :label="t('task.coalesce')" prop="coalesce">
                 <el-radio-group v-model="formData.coalesce">
-                  <el-radio :value="true">是</el-radio>
-                  <el-radio :value="false">否</el-radio>
+                  <el-radio :value="true">{{ t("task.yes") }}</el-radio>
+                  <el-radio :value="false">{{ t("task.no") }}</el-radio>
                 </el-radio-group>
               </el-form-item>
-              <el-form-item label="最大实例数" prop="max_instances">
+              <el-form-item :label="t('task.maxInstances')" prop="max_instances">
                 <el-input-number
                   v-model="formData.max_instances"
                   controls-position="right"
@@ -180,8 +193,8 @@
         <el-splitter-panel>
           <div class="code-editor-container">
             <div class="code-editor-header">
-              <span class="code-editor-title">处理器</span>
-              <span class="code-editor-tip">定义 handler(*args, **kwargs) 函数</span>
+              <span class="code-editor-title">{{ t("task.processor") }}</span>
+              <span class="code-editor-tip">{{ t("task.processorTip") }}</span>
             </div>
             <CodeEditor
               ref="codeEditorRef"
@@ -197,15 +210,17 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
-          <el-button type="primary" :loading="submitLoading" @click="handleSubmit">确定</el-button>
+          <el-button @click="handleCloseDialog">{{ t("task.cancel") }}</el-button>
+          <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+            {{ t("task.confirm") }}
+          </el-button>
         </div>
       </template>
     </EnhancedDialog>
 
     <EnhancedDialog
       v-model="executeDialogVisible"
-      title="调试节点"
+      :title="t('task.executeNodeTitle')"
       width="700px"
       @close="handleCloseExecuteDialog"
     >
@@ -216,11 +231,11 @@
         label-suffix=":"
         label-width="auto"
       >
-        <el-form-item label="节点名称">
+        <el-form-item :label="t('task.nodeNameValue')">
           <el-input :value="currentExecuteNode?.name" disabled />
         </el-form-item>
         <!-- 触发配置统一走 TriggerEditor（四类型 + 预览 + 非法拦截），不再各自维护输入控件 -->
-        <el-form-item label="触发方式" prop="trigger">
+        <el-form-item :label="t('task.trigger')" prop="trigger">
           <TriggerEditor
             v-model:trigger="executeFormData.trigger"
             v-model:trigger-args="executeFormData.trigger_args"
@@ -232,23 +247,23 @@
         <template
           v-if="executeFormData.trigger === 'cron' || executeFormData.trigger === 'interval'"
         >
-          <el-form-item label="开始时间" prop="start_date">
+          <el-form-item :label="t('task.startDate')" prop="start_date">
             <el-date-picker
               v-model="executeFormData.start_date"
               type="datetime"
               format="YYYY-MM-DD HH:mm:ss"
               value-format="YYYY-MM-DD HH:mm:ss"
-              placeholder="请选择开始时间（可选）"
+              :placeholder="t('task.selectStartDate')"
               style="width: 100%"
             />
           </el-form-item>
-          <el-form-item label="结束时间" prop="end_date">
+          <el-form-item :label="t('task.endDate')" prop="end_date">
             <el-date-picker
               v-model="executeFormData.end_date"
               type="datetime"
               format="YYYY-MM-DD HH:mm:ss"
               value-format="YYYY-MM-DD HH:mm:ss"
-              placeholder="请选择结束时间（可选）"
+              :placeholder="t('task.selectEndDate')"
               style="width: 100%"
             />
           </el-form-item>
@@ -256,9 +271,9 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="handleCloseExecuteDialog">取消</el-button>
+        <el-button @click="handleCloseExecuteDialog">{{ t("task.cancel") }}</el-button>
         <el-button type="primary" :loading="submitLoading" @click="handleExecuteNode">
-          确认
+          {{ t("task.confirm") }}
         </el-button>
       </template>
     </EnhancedDialog>
@@ -270,6 +285,8 @@ defineOptions({
   name: "Node",
   inheritAttrs: false,
 });
+
+const { t } = useI18n();
 
 import NodeAPI, {
   NodeTable,
@@ -285,6 +302,7 @@ import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import OperationColumn from "@/components/OperationColumn/index.vue";
 import TriggerEditor from "@/components/TriggerEditor/index.vue";
@@ -309,15 +327,15 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "节点名称",
+      label: t("task.nodeName"),
       type: "input",
-      attrs: { placeholder: "请输入节点名称", clearable: true },
+      attrs: { placeholder: t("task.inputNodeName"), clearable: true },
     },
     {
       prop: "code",
-      label: "节点编码",
+      label: t("task.nodeCode"),
       type: "input",
-      attrs: { placeholder: "请输入节点编码", clearable: true },
+      attrs: { placeholder: t("task.inputNodeCode"), clearable: true },
     },
   ],
 });
@@ -348,55 +366,52 @@ const contentConfig = reactive<IContentConfig<NodePageQuery>>({
         .filter((n) => !Number.isNaN(n) && n > 0)
     ),
   deleteConfirm: {
-    title: "警告",
-    message:
-      "确认删除选中的节点吗？\n" +
-      "此操作将同时删除节点定义并移除调度器中的相关任务。\n" +
-      "正在运行的任务会被立即移除，待执行任务的日志将被标记为已取消。",
+    title: t("task.warn"),
+    message: t("task.deleteNodeConfirm"),
     type: "warning",
   },
 });
 
 const defaultCodeBlock = `def handler(*args, **kwargs):
     """
-    Demo: 调用工程中的方法处理数据
+    Demo: ${t("task.demoCallEngineMethod")}
     
-    演示如何:
-    1. 从工程中导入方法
-    2. 调用处理器处理数据
-    3. 返回处理结果
+    ${t("task.demoShowHow")}:
+    1. ${t("task.demoImportMethod")}
+    2. ${t("task.demoCallProcessor")}
+    3. ${t("task.demoReturnResult")}
     """
     
-    # 从工程中导入方法
+    # ${t("task.demoImportMethod")}
     from app.plugin.module_task.cronjob.node.handlers.demo_handler import (
         demo_handler,
         process_data
     )
     
     print("=" * 50)
-    print("Demo 任务开始执行")
+    print("Demo ${t("task.demoTaskStart")}")
     print("=" * 50)
     
-    # 1. 调用 demo_handler
-    print("1. 调用 demo_handler:")
-    result1 = demo_handler("参数1", "参数2", key="value")
-    print(f"   返回: {result1}")
+    # 1. ${t("task.demoCall")} demo_handler
+    print("1. ${t("task.demoCall")} demo_handler:")
+    result1 = demo_handler("${t("task.demoParam")}1", "${t("task.demoParam")}2", key="value")
+    print(f"   ${t("task.demoReturn")}: {result1}")
     
-    # 2. 调用 process_data 计算平均值
-    print("2. 数据处理 - 计算平均值:")
+    # 2. ${t("task.demoCall")} process_data ${t("task.demoCalcAvg")}
+    print("2. ${t("task.demoDataProcess")} - ${t("task.demoCalcAvg")}:")
     numbers = [10, 20, 30, 40, 50]
     result2 = process_data(numbers, operation="avg")
-    print(f"   输入: {numbers}")
-    print(f"   结果: {result2}")
+    print(f"   ${t("task.demoInput")}: {numbers}")
+    print(f"   ${t("task.demoResult")}: {result2}")
     
-    # 3. 调用 process_data 计算总和
-    print("3. 数据处理 - 计算总和:")
+    # 3. ${t("task.demoCall")} process_data ${t("task.demoCalcSum")}
+    print("3. ${t("task.demoDataProcess")} - ${t("task.demoCalcSum")}:")
     result3 = process_data(numbers, operation="sum")
-    print(f"   输入: {numbers}")
-    print(f"   结果: {result3}")
+    print(f"   ${t("task.demoInput")}: {numbers}")
+    print(f"   ${t("task.demoResult")}: {result3}")
     
     print("=" * 50)
-    print("Demo 任务执行完成")
+    print("Demo ${t("task.demoTaskComplete")}")
     print("=" * 50)
     
     return {
@@ -447,12 +462,12 @@ const dialogVisible = reactive({
 });
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入节点名称", trigger: "blur" }],
-  code: [{ required: true, message: "请输入节点编码", trigger: "blur" }],
+  name: [{ required: true, message: t("task.inputNodeName"), trigger: "blur" }],
+  code: [{ required: true, message: t("task.inputNodeCode"), trigger: "blur" }],
 });
 
 const executeRules = reactive({
-  trigger: [{ required: true, message: "请选择触发方式", trigger: "change" }],
+  trigger: [{ required: true, message: t("task.selectTrigger"), trigger: "change" }],
 });
 
 function handleRowDelete(id: number) {
@@ -493,7 +508,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   if (id) {
     const response = await NodeAPI.detailNode(id);
-    dialogVisible.title = "修改节点";
+    dialogVisible.title = t("task.editNode");
     Object.assign(formData, response.data.data);
     const data = response.data.data;
     argsList.value = data.args ? data.args.split(",").map((v: string) => v.trim()) : [];
@@ -504,7 +519,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
         }))
       : [];
   } else {
-    dialogVisible.title = "新增节点";
+    dialogVisible.title = t("task.createNode");
     formData.id = undefined;
     argsList.value = [];
     kwargsList.value = [];
@@ -595,7 +610,7 @@ async function handleExecuteNode() {
   // 单次触发：未选时间时 serializeTriggerArgs 返回 undefined，后端 422 的 detail 不是 msg，
   // 兜底只会显示笼统的「调试失败」；这里本地判空拦截并给出准确提示。
   if (executeFormData.trigger === "date" && !executeFormData.trigger_args) {
-    ElMessage.error({ message: "请选择执行时间", type: "error", duration: 3000 });
+    ElMessage.error({ message: t("task.selectExecTime"), type: "error", duration: 3000 });
     return;
   }
 
@@ -626,7 +641,7 @@ async function handleExecuteNode() {
     refreshList();
   } catch (error: any) {
     ElMessage.error({
-      message: error.response?.data?.msg || "调试失败",
+      message: error.response?.data?.msg || t("task.debugFailed"),
       type: "error",
       duration: 3000,
     });

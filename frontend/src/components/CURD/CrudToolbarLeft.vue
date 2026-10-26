@@ -21,7 +21,7 @@
         icon="plus"
         @click="$emit('add')"
       >
-        新增
+        {{ t("common.add") }}
       </el-button>
       <el-button
         v-if="permDelete"
@@ -32,7 +32,7 @@
         :disabled="removeIds.length === 0"
         @click="$emit('delete')"
       >
-        批量删除
+        {{ t("common.batchDelete") }}
       </el-button>
       <el-dropdown v-if="permPatch" v-hasPerm="permPatch" trigger="click">
         <el-button
@@ -40,13 +40,15 @@
           :disabled="removeIds.length === 0 || moreDisabled"
           icon="ArrowDown"
         >
-          更多
+          {{ t("common.more") }}
         </el-button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item icon="Check" @click="$emit('more', '0')">批量启用</el-dropdown-item>
+            <el-dropdown-item icon="Check" @click="$emit('more', '0')">
+              {{ t("common.batchEnable") }}
+            </el-dropdown-item>
             <el-dropdown-item icon="CircleClose" @click="$emit('more', '1')">
-              批量停用
+              {{ t("common.batchDisable") }}
             </el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -57,7 +59,10 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import type { CrudToolbarConfigButton } from "./types";
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{

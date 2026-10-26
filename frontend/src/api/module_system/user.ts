@@ -1,4 +1,5 @@
 import request from "@/utils/request";
+import { rsaEncryptPassword } from "@/utils/rsaEncrypt";
 import { MenuTable, MenuForm } from "@/api/module_system/menu";
 
 const API_PATH = "/system/user";
@@ -28,35 +29,43 @@ export const UserAPI = {
     });
   },
 
-  changeCurrentUserPassword(body: PasswordFormState) {
+  async changeCurrentUserPassword(body: PasswordFormState) {
+    // 前后密码均用 RSA 公钥加密后再提交，避免请求体明文
+    const [oldPwd, newPwd] = await Promise.all([
+      rsaEncryptPassword(body.old_password),
+      rsaEncryptPassword(body.new_password),
+    ]);
     return request<ApiResponse>({
       url: `${API_PATH}/current/password/change`,
       method: "put",
-      data: body,
+      data: { ...body, old_password: oldPwd, new_password: newPwd },
     });
   },
 
-  resetUserPassword(body: ResetPasswordForm) {
+  async resetUserPassword(body: ResetPasswordForm) {
+    const password = await rsaEncryptPassword(body.password);
     return request<ApiResponse>({
       url: `${API_PATH}/reset/password`,
       method: "put",
-      data: body,
+      data: { ...body, password },
     });
   },
 
-  registerUser(body: RegisterForm) {
+  async registerUser(body: RegisterForm) {
+    const password = await rsaEncryptPassword(body.password);
     return request<ApiResponse>({
       url: `${API_PATH}/register`,
       method: "post",
-      data: body,
+      data: { ...body, password },
     });
   },
 
-  forgetPassword(body: ForgetPasswordForm) {
+  async forgetPassword(body: ForgetPasswordForm) {
+    const new_password = await rsaEncryptPassword(body.new_password);
     return request<ApiResponse>({
       url: `${API_PATH}/forget/password`,
       method: "post",
-      data: body,
+      data: { ...body, new_password },
     });
   },
 

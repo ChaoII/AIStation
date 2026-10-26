@@ -47,8 +47,11 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { computed, ref } from "vue";
 import { Handle } from "@vue-flow/core";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 const props = defineProps({
   id: String,
@@ -61,7 +64,7 @@ const showHandles = ref(false);
 const nodeType = computed(() => {
   return {
     code: props.data?.type || "custom",
-    name: props.data?.label || "自定义节点",
+    name: props.data?.label || t("task.customNode"),
     color: getCategoryColor(props.data?.category),
   };
 });

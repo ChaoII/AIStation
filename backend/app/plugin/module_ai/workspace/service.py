@@ -319,6 +319,23 @@ async def _run_cron_once(cron_id: int) -> None:
                 detail=last_msg, ok=False, ms=last_ms,
             )
     finally:
+        # 执行历史也落 ai_call_logs（usage=cron + app_id=cron_id）：
+        # 卡片上的「执行历史」列表读这里；办公室的执行过程读 ai_run_steps，两者互补。
+        try:
+            from app.plugin.module_ai.overview.service import AiOverviewService
+
+            await AiOverviewService.add_log(
+                cron_name,
+                "cron",
+                last_ms,
+                last_status,
+                None if last_status == "success" else last_msg,
+                app_id=cron_id,
+                user_id=None,
+                reply_preview=(last_msg or None) if last_status == "success" else None,
+            )
+        except Exception as log_exc:  # noqa: BLE001 历史写入失败不应影响作业
+            log.warning(f"定时任务执行历史写入失败：{str(log_exc)[:120]}")
         # 只有真正执行过的这一轮才回写 `last_run_time`（被跳过的行不记「刚跑过」）；
         # 结果也一起落库，卡片上直接看得到，不用再翻调用日志。
         await WorkspaceService.write_back_cron_state(
@@ -546,6 +563,43 @@ class WorkspaceService:
             rows = (await db.execute(stmt.order_by(AiWorkspaceCronModel.id.desc()))).scalars().all()
             items = [cls._cron_dict(r) for r in rows]
             return {"total": len(items), "items": items}
+
+    @classmethod
+    async def list_cron_runs(cls, cron_id: int, limit: int = 50) -> list[dict]:
+        """定时任务执行历史。
+
+        数据源：`ai_call_logs` 中 `usage="cron"` 且 `app_id=cron_id` 的记录（每次调度
+        /「立即执行」由 `run_scheduled_workspace_cron` 写入），含成败、耗时、错误与
+        输出摘要——解决「只知道在干、不知道干成什么样」。
+        """
+        from app.plugin.module_ai.overview.model import AiCallLogModel
+
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AiCallLogModel)
+                    .where(
+                        AiCallLogModel.usage == "cron",
+                        AiCallLogModel.app_id == cron_id,
+                        AiCallLogModel.is_deleted.is_(False),
+                    )
+                    .order_by(AiCallLogModel.id.desc())
+                    .limit(limit)
+                )
+            ).scalars().all()
+            return [
+                {
+                    "id": r.id,
+                    "created_time": r.created_time.strftime("%Y-%m-%d %H:%M:%S")
+                    if r.created_time
+                    else "",
+                    "result": r.result or "success",
+                    "latency_ms": int(r.latency_ms or 0),
+                    "error": r.error or "",
+                    "reply_preview": r.reply_preview or "",
+                }
+                for r in rows
+            ]
 
     @staticmethod
     def _cron_dict(r: AiWorkspaceCronModel) -> dict:

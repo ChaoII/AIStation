@@ -10,10 +10,12 @@
   <div class="ont-ix">
     <el-card shadow="never">
       <div class="ont-sec__head">
-        <span class="ont-sec__title">索引</span>
-        <el-tag size="small" effect="plain">{{ summary?.total || 0 }} 个</el-tag>
+        <span class="ont-sec__title">{{ i18nT("ai_ontology.index") }}</span>
+        <el-tag size="small" effect="plain">
+          {{ i18nT("ai_ontology.countUnit", { count: summary?.total || 0 }) }}
+        </el-tag>
         <el-button class="ont-sec__op" size="small" type="primary" :icon="Plus" @click="openForm()">
-          新建索引
+          {{ i18nT("ai_ontology.newIndex") }}
         </el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:manage'"
@@ -21,7 +23,7 @@
           :icon="MagicStick"
           @click="openSuggest"
         >
-          索引建议
+          {{ i18nT("ai_ontology.indexSuggestions") }}
         </el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:manage'"
@@ -29,18 +31,20 @@
           :loading="busy"
           @click="doBuildAll"
         >
-          构建全部待建
+          {{ i18nT("ai_ontology.buildAllPending") }}
         </el-button>
         <el-button v-hasPerm="'module_ai:ontology:manage'" size="small" @click="doRetry">
-          执行到期重试
+          {{ i18nT("ai_ontology.retryExpired") }}
         </el-button>
-        <el-button size="small" :icon="Refresh" @click="load">刷新</el-button>
+        <el-button size="small" :icon="Refresh" @click="load">
+          {{ i18nT("ai_ontology.refresh") }}
+        </el-button>
       </div>
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
-        title="构建索引会在对象类型的支撑表上真的执行 CREATE INDEX。状态「就绪」表示可以走了（相当于官方的绿勾）。"
+        :title="i18nT('ai_ontology.indexBuildAlert')"
       />
 
       <el-row :gutter="10" class="ont-ix__stats">
@@ -53,54 +57,88 @@
         <el-col :xs="12" :sm="8" :md="4">
           <el-card shadow="never" class="ont-ix__stat">
             <div class="ont-ix__statv">{{ summary?.total_size_human || "0 B" }}</div>
-            <div class="ont-ix__statl">占用</div>
+            <div class="ont-ix__statl">{{ i18nT("ai_ontology.size") }}</div>
           </el-card>
         </el-col>
       </el-row>
 
       <el-tabs v-model="tab">
-        <el-tab-pane label="索引明细" name="list">
+        <el-tab-pane :label="i18nT('ai_ontology.indexDetails')" name="list">
           <el-table v-loading="loading" :data="rows" size="small" border max-height="520" stripe>
-            <template #empty><el-empty :image-size="60" description="还没有索引" /></template>
-            <el-table-column label="对象类型" min-width="150" show-overflow-tooltip>
+            <template #empty>
+              <el-empty :image-size="60" :description="i18nT('ai_ontology.noIndexesYet')" />
+            </template>
+            <el-table-column
+              :label="i18nT('ai_ontology.objectType')"
+              min-width="150"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">{{ objectLabel(row.object_code) }}</template>
             </el-table-column>
-            <el-table-column prop="index_kind_label" label="种类" width="100" />
-            <el-table-column label="字段" min-width="130" show-overflow-tooltip>
+            <el-table-column
+              prop="index_kind_label"
+              :label="i18nT('ai_ontology.kind')"
+              width="100"
+            />
+            <el-table-column
+              :label="i18nT('ai_ontology.field')"
+              min-width="130"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">
-                <span class="ont-mono">{{ row.prop_code || "（主键）" }}</span>
+                <span class="ont-mono">
+                  {{ row.prop_code || i18nT("ai_ontology.primaryKeyParen") }}
+                </span>
               </template>
             </el-table-column>
-            <el-table-column label="状态" width="100">
+            <el-table-column :label="i18nT('ai_ontology.status')" width="100">
               <template #default="{ row }">
                 <el-tag size="small" effect="plain" :type="statusTag(row.status)">
                   {{ row.status_label }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="pipeline_label" label="流水线" width="110" />
-            <el-table-column label="行数 / 占用" width="140" align="right">
+            <el-table-column
+              prop="pipeline_label"
+              :label="i18nT('ai_ontology.pipeline')"
+              width="110"
+            />
+            <el-table-column :label="i18nT('ai_ontology.rowsAndSize')" width="140" align="right">
               <template #default="{ row }">
                 <span class="ont-mono">{{ row.row_count }} / {{ row.size_human }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="build_count" label="构建次数" width="90" align="center" />
+            <el-table-column
+              prop="build_count"
+              :label="i18nT('ai_ontology.buildCount')"
+              width="90"
+              align="center"
+            />
             <el-table-column
               prop="last_built_at"
-              label="最近构建"
+              :label="i18nT('ai_ontology.lastBuild')"
               width="150"
               show-overflow-tooltip
             />
-            <el-table-column label="失败原因" min-width="180" show-overflow-tooltip>
+            <el-table-column
+              :label="i18nT('ai_ontology.failureReason')"
+              min-width="180"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">
                 <span v-if="row.last_error" class="ont-ix__err">{{ row.last_error }}</span>
                 <span v-else class="ont-none">—</span>
                 <div v-if="row.auto_retry_at" class="ont-hint">
-                  将于 {{ row.auto_retry_at }} 自动重试
+                  {{ i18nT("ai_ontology.autoRetryAt", { time: row.auto_retry_at }) }}
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" align="center" fixed="right">
+            <el-table-column
+              :label="i18nT('ai_ontology.operations')"
+              width="150"
+              align="center"
+              fixed="right"
+            >
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="'module_ai:ontology:manage'"
@@ -111,7 +149,7 @@
                   :loading="busy"
                   @click="doBuild(row)"
                 >
-                  构建
+                  {{ i18nT("ai_ontology.build") }}
                 </el-button>
                 <el-button
                   v-hasPerm="'module_ai:ontology:manage'"
@@ -121,35 +159,51 @@
                   size="small"
                   @click="doRemove(row)"
                 >
-                  删除
+                  {{ i18nT("ai_ontology.delete2") }}
                 </el-button>
               </template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane label="按对象类型" name="objects">
+        <el-tab-pane :label="i18nT('ai_ontology.byObjectType')" name="objects">
           <el-table :data="summary?.objects || []" size="small" border stripe>
-            <template #empty><el-empty :image-size="50" description="暂无" /></template>
+            <template #empty>
+              <el-empty :image-size="50" :description="i18nT('ai_ontology.none2')" />
+            </template>
             <el-table-column
               prop="object_name"
-              label="对象类型"
+              :label="i18nT('ai_ontology.objectType')"
               min-width="170"
               show-overflow-tooltip
             />
-            <el-table-column label="就绪/总数" width="120" align="center">
+            <el-table-column :label="i18nT('ai_ontology.readyTotal')" width="120" align="center">
               <template #default="{ row }">{{ row.ready }} / {{ row.total }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="110">
+            <el-table-column :label="i18nT('ai_ontology.status')" width="110">
               <template #default="{ row }">
                 <el-tag size="small" effect="plain" :type="row.all_ready ? 'success' : 'warning'">
-                  {{ row.all_ready ? "全部就绪" : "部分未就绪" }}
+                  {{
+                    row.all_ready
+                      ? i18nT("ai_ontology.allReady")
+                      : i18nT("ai_ontology.partNotReady")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="rows" label="行数" width="110" align="right" />
-            <el-table-column prop="size_human" label="占用" width="110" align="right" />
-            <el-table-column label="操作" width="180" align="center">
+            <el-table-column
+              prop="rows"
+              :label="i18nT('ai_ontology.rows')"
+              width="110"
+              align="right"
+            />
+            <el-table-column
+              prop="size_human"
+              :label="i18nT('ai_ontology.size')"
+              width="110"
+              align="right"
+            />
+            <el-table-column :label="i18nT('ai_ontology.operations')" width="180" align="center">
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="'module_ai:ontology:manage'"
@@ -159,7 +213,7 @@
                   size="small"
                   @click="doBuildObject(row)"
                 >
-                  全部构建
+                  {{ i18nT("ai_ontology.buildAll") }}
                 </el-button>
                 <el-button
                   v-hasPerm="'module_ai:ontology:manage'"
@@ -169,7 +223,7 @@
                   size="small"
                   @click="doStale(row)"
                 >
-                  标记过期
+                  {{ i18nT("ai_ontology.markExpired") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -179,14 +233,19 @@
     </el-card>
 
     <!-- 新建索引 -->
-    <el-dialog v-model="formVisible" title="索引" width="600px" append-to-body>
+    <el-dialog
+      v-model="formVisible"
+      :title="i18nT('ai_ontology.index')"
+      width="600px"
+      append-to-body
+    >
       <el-form label-width="110px">
-        <el-form-item label="对象类型" required>
+        <el-form-item :label="i18nT('ai_ontology.objectType')" required>
           <el-select v-model="form.object_code" filterable style="width: 100%">
             <el-option v-for="o in objects" :key="o.code" :label="o.name" :value="o.code" />
           </el-select>
         </el-form-item>
-        <el-form-item label="索引种类">
+        <el-form-item :label="i18nT('ai_ontology.indexKind')">
           <el-select v-model="form.index_kind" style="width: 100%">
             <el-option
               v-for="k in summary?.kind_meta || []"
@@ -196,7 +255,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.index_kind !== 'primary'" label="字段">
+        <el-form-item v-if="form.index_kind !== 'primary'" :label="i18nT('ai_ontology.field')">
           <el-select v-model="form.prop_code" filterable clearable style="width: 100%">
             <el-option
               v-for="p in formProps"
@@ -206,7 +265,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="流水线">
+        <el-form-item :label="i18nT('ai_ontology.pipeline')">
           <el-select v-model="form.pipeline_kind" style="width: 100%">
             <el-option
               v-for="p in summary?.pipeline_meta || []"
@@ -215,58 +274,74 @@
               :value="p.value"
             />
           </el-select>
-          <div class="ont-hint">官方：批量流水线 vs 流式流水线，按数据源与延迟要求选</div>
+          <div class="ont-hint">{{ i18nT("ai_ontology.pipelineHint") }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">取消</el-button>
+        <el-button @click="formVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:manage'"
           type="primary"
           :loading="busy"
           @click="doSave"
         >
-          保存并构建
+          {{ i18nT("ai_ontology.saveAndBuild") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 索引建议 -->
-    <el-dialog v-model="sugVisible" title="索引建议" width="600px" append-to-body>
+    <el-dialog
+      v-model="sugVisible"
+      :title="i18nT('ai_ontology.indexSuggestions')"
+      width="600px"
+      append-to-body
+    >
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
-        title="依据：主键/显示名、被行级策略引用的字段、关系关联字段、唯一约束字段"
+        :title="i18nT('ai_ontology.indexSuggestAlert')"
       />
       <el-table :data="suggestions" size="small" border max-height="360" stripe>
-        <template #empty><el-empty :image-size="50" description="暂无建议" /></template>
-        <el-table-column label="字段" min-width="140">
+        <template #empty>
+          <el-empty :image-size="50" :description="i18nT('ai_ontology.noSuggestions')" />
+        </template>
+        <el-table-column :label="i18nT('ai_ontology.field')" min-width="140">
           <template #default="{ row }">
             <span class="ont-mono">{{ row.prop_code }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="reason" label="理由" min-width="240" show-overflow-tooltip />
-        <el-table-column label="优先级" width="90" align="center">
+        <el-table-column
+          prop="reason"
+          :label="i18nT('ai_ontology.reason')"
+          min-width="240"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.priority')" width="90" align="center">
           <template #default="{ row }">
             <el-tag
               size="small"
               effect="plain"
               :type="row.priority === 'high' ? 'danger' : 'warning'"
             >
-              {{ row.priority === "high" ? "高" : "中" }}
+              {{
+                row.priority === "high"
+                  ? i18nT("ai_ontology.highPriority")
+                  : i18nT("ai_ontology.mediumPriority")
+              }}
             </el-tag>
           </template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="sugVisible = false">取消</el-button>
+        <el-button @click="sugVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:manage'"
           :loading="busy"
           @click="doApplySuggestions(false)"
         >
-          全部创建
+          {{ i18nT("ai_ontology.createAll") }}
         </el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:manage'"
@@ -274,7 +349,7 @@
           :loading="busy"
           @click="doApplySuggestions(true)"
         >
-          只创建高优先级
+          {{ i18nT("ai_ontology.createHighPriorityOnly") }}
         </el-button>
       </template>
     </el-dialog>
@@ -282,6 +357,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { MagicStick, Plus, Refresh } from "@element-plus/icons-vue";
@@ -300,6 +376,8 @@ import {
 } from "@/api/module_ai/ontology";
 import { useOntologyData } from "../composables/useOntologyData";
 
+const { t: i18nT } = useI18n();
+
 const { objects, objectLabel } = useOntologyData();
 
 const loading = ref(false);
@@ -309,11 +387,11 @@ const summary = ref<any>(null);
 const tab = ref("list");
 
 const STATUS_LABEL: Record<string, string> = {
-  not_started: "未开始",
-  building: "构建中",
-  ready: "就绪",
-  failed: "失败",
-  stale: "已过期",
+  not_started: i18nT("ai_ontology.notStarted"),
+  building: i18nT("ai_ontology.building"),
+  ready: i18nT("ai_ontology.ready"),
+  failed: i18nT("ai_ontology.failed"),
+  stale: i18nT("ai_ontology.expired2"),
 };
 function statusLabel(s: string) {
   return STATUS_LABEL[s] || s;
@@ -335,7 +413,7 @@ async function load() {
     rows.value = r.data?.data || [];
     summary.value = s.data?.data || null;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "加载索引失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.loadIndexFailed"));
   } finally {
     loading.value = false;
   }
@@ -367,20 +445,20 @@ async function loadProps(code: string) {
 }
 
 async function doSave() {
-  if (!form.object_code) return ElMessage.warning("请选择对象类型");
+  if (!form.object_code) return ElMessage.warning(i18nT("ai_ontology.pleaseSelectObjectType"));
   busy.value = true;
   try {
     const r = await saveOntIndex({ ...form });
-    ElMessage.success(r.data?.msg || "已保存");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.saved"));
     const id = r.data?.data?.id;
     formVisible.value = false;
     if (id) {
       const b = await buildOntIndex(id);
-      ElMessage.success(b.data?.msg || "已构建");
+      ElMessage.success(b.data?.msg || i18nT("ai_ontology.built"));
     }
     await load();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.saveFailed"));
   } finally {
     busy.value = false;
   }
@@ -392,10 +470,10 @@ async function doBuild(row: any) {
   try {
     const r = await buildOntIndex(row.id);
     if (r.data?.data?.ok) ElMessage.success(r.data.msg);
-    else ElMessage.warning(r.data?.msg || "构建失败");
+    else ElMessage.warning(r.data?.msg || i18nT("ai_ontology.buildFailed"));
     await load();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "构建失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.buildFailed"));
   } finally {
     busy.value = false;
   }
@@ -405,7 +483,7 @@ async function doBuildAll() {
   busy.value = true;
   try {
     const r = await buildAllOntIndexes("");
-    ElMessage.success(r.data?.msg || "已处理");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.processed"));
     await load();
   } finally {
     busy.value = false;
@@ -416,7 +494,7 @@ async function doBuildObject(row: any) {
   busy.value = true;
   try {
     const r = await buildAllOntIndexes(row.object_code);
-    ElMessage.success(r.data?.msg || "已处理");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.processed"));
     await load();
   } finally {
     busy.value = false;
@@ -427,7 +505,7 @@ async function doRetry() {
   busy.value = true;
   try {
     const r = await retryOntIndexes();
-    ElMessage.success(r.data?.msg || "已处理");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.processed"));
     await load();
   } finally {
     busy.value = false;
@@ -436,24 +514,33 @@ async function doRetry() {
 
 async function doStale(row: any) {
   await ElMessageBox.confirm(
-    `将把「${row.object_name}」的 ${row.ready} 个就绪索引标记为过期，需要重新构建。确认？`,
-    "标记过期",
-    { type: "warning", confirmButtonText: "标记", cancelButtonText: "取消" }
+    i18nT("ai_ontology.markExpiredConfirm", { name: row.object_name, count: row.ready }),
+    i18nT("ai_ontology.markExpired"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.mark"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   const r = await markOntIndexStale(row.object_code);
-  ElMessage.success(r.data?.msg || "已标记");
+  ElMessage.success(r.data?.msg || i18nT("ai_ontology.marked"));
   await load();
 }
 
 async function doRemove(row: any) {
   await ElMessageBox.confirm(
-    `将删除索引「${row.index_kind_label} · ${row.prop_code || "主键"}」` +
-      "，并**真的在数据库里 DROP 掉**该索引，且不可恢复。确认删除？",
-    "删除索引",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    i18nT("ai_ontology.deleteIndexConfirm", {
+      index: `${row.index_kind_label} · ${row.prop_code || i18nT("ai_ontology.primaryKey")}`,
+    }),
+    i18nT("ai_ontology.deleteIndex"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   const r = await removeOntIndex(row.id);
-  ElMessage.success(r.data?.msg || "已删除");
+  ElMessage.success(r.data?.msg || i18nT("ai_ontology.deleted"));
   await load();
 }
 
@@ -476,11 +563,11 @@ async function doApplySuggestions(onlyHigh: boolean) {
   busy.value = true;
   try {
     const r = await applyOntIndexSuggestions(sugObject.value, onlyHigh);
-    ElMessage.success(r.data?.msg || "已处理");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.processed"));
     sugVisible.value = false;
     await load();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "处理失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.processFailed"));
   } finally {
     busy.value = false;
   }

@@ -1,16 +1,19 @@
 import request from "@/utils/request";
+import { rsaEncryptPassword } from "@/utils/rsaEncrypt";
 
 const API_PATH = "/system/auth";
 
 const AuthAPI = {
-  login(body: LoginFormData) {
+  async login(body: LoginFormData) {
+    // 登录前用服务端 RSA 公钥加密密码，避免请求体明文传输密码
+    const encryptedPassword = await rsaEncryptPassword(body.password);
     return request<ApiResponse<LoginResult>>({
       url: `${API_PATH}/login`,
       method: "post",
       headers: {
         "Content-Type": "multipart/form-data",
       },
-      data: body,
+      data: { ...body, password: encryptedPassword },
     });
   },
 
@@ -34,32 +37,6 @@ const AuthAPI = {
       url: `${API_PATH}/logout`,
       method: "post",
       data: body,
-    });
-  },
-
-  /** 获取免登录用户列表 */
-  getAutoLoginUsers() {
-    return request<ApiResponse<AutoLoginUser[]>>({
-      url: `${API_PATH}/auto-login/users`,
-      method: "get",
-    });
-  },
-
-  /** 获取免登录Token */
-  getAutoLoginToken(userId: number) {
-    return request<ApiResponse<AutoLoginToken>>({
-      url: `${API_PATH}/auto-login/token`,
-      method: "post",
-      params: { user_id: userId },
-    });
-  },
-
-  /** 免登录 */
-  autoLogin(token: string) {
-    return request<ApiResponse<LoginResult>>({
-      url: `${API_PATH}/auto-login`,
-      method: "post",
-      params: { token },
     });
   },
 };
@@ -99,18 +76,4 @@ export interface CaptchaInfo {
 /** 退出登录操作 */
 export interface LogoutBody {
   token: string;
-}
-
-/** 免登录用户信息 */
-export interface AutoLoginUser {
-  id: number;
-  username: string;
-  name: string;
-  avatar: string | null;
-}
-
-/** 免登录Token响应 */
-export interface AutoLoginToken {
-  token: string;
-  user: AutoLoginUser;
 }

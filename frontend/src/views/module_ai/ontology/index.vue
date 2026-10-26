@@ -14,7 +14,7 @@
         <el-card shadow="never" class="ont-side">
           <template #header>
             <div class="ont-side__head">
-              <span class="ont-side__title">本体域</span>
+              <span class="ont-side__title">{{ i18nT("ai_ontology.ontologyDomain") }}</span>
               <div class="ont-side__head-ops">
                 <el-button
                   v-hasPerm="'module_ai:ontology:edit'"
@@ -26,14 +26,18 @@
                   :loading="domainSaving"
                   @click="openDomainForm()"
                 >
-                  新建本体域
+                  {{ i18nT("ai_ontology.newOntologyDomain") }}
                 </el-button>
                 <el-button
                   class="ont-side__collapse"
                   size="small"
                   text
                   :icon="domainPanelCollapsed ? Expand : Fold"
-                  :title="domainPanelCollapsed ? '展开本体域' : '折叠本体域'"
+                  :title="
+                    domainPanelCollapsed
+                      ? i18nT('ai_ontology.expandDomain')
+                      : i18nT('ai_ontology.collapseDomain')
+                  "
                   @click="domainPanelCollapsed = !domainPanelCollapsed"
                 />
               </div>
@@ -59,21 +63,26 @@
                 <el-icon class="ont-dom-item__more" @click.stop><MoreFilled /></el-icon>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item icon="EditPen" command="rename">重命名</el-dropdown-item>
+                    <el-dropdown-item icon="EditPen" command="rename">
+                      {{ i18nT("ai_ontology.rename") }}
+                    </el-dropdown-item>
                     <el-dropdown-item
                       v-hasPerm="'module_ai:ontology:edit'"
                       icon="delete"
                       command="remove"
                       divided
                     >
-                      删除
+                      {{ i18nT("ai_ontology.delete2") }}
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
             </div>
             <div v-if="!domains.length" class="ont-domains__empty">
-              <el-empty :image-size="50" description="还没有本体域，点「新建本体域」创建" />
+              <el-empty
+                :image-size="50"
+                :description="i18nT('ai_ontology.noOntologyDomainsYetClickNewDomainToCreate')"
+              />
             </div>
           </div>
         </el-card>
@@ -85,7 +94,9 @@
           <template #header>
             <div class="ont-main__head">
               <div class="ont-main__crumb">
-                <span class="ont-crumb">本体 / 图谱</span>
+                <span class="ont-crumb">
+                  {{ i18nT("ai_ontology.ontology") }} / {{ i18nT("ai_ontology.graph2") }}
+                </span>
                 <el-tag size="small" type="info" effect="plain">
                   {{ currentDomainName }}
                 </el-tag>
@@ -93,7 +104,7 @@
               <div class="ont-main__ops">
                 <el-tooltip
                   v-if="wipCount"
-                  :content="`有 ${wipCount} 处改动尚未落库，点「保存」后生效`"
+                  :content="i18nT('ai_ontology.wipNotSaved', { count: wipCount })"
                   placement="bottom"
                 >
                   <el-badge :value="wipCount" :max="99" type="warning" class="ont-wip-badge">
@@ -105,7 +116,7 @@
                       :loading="wipSaving"
                       @click="openReview"
                     >
-                      保存
+                      {{ i18nT("ai_ontology.save") }}
                     </el-button>
                   </el-badge>
                 </el-tooltip>
@@ -116,36 +127,46 @@
                   :disabled="wipSaving"
                   @click="discardWip"
                 >
-                  丢弃
+                  {{ i18nT("ai_ontology.discard") }}
                 </el-button>
-                <el-button size="small" :icon="Promotion" @click="goQuery">去问数验证</el-button>
+                <el-button size="small" :icon="Promotion" @click="goQuery">
+                  {{ i18nT("ai_ontology.verifyWithAskData") }}
+                </el-button>
                 <el-button size="small" :icon="DataAnalysis" @click="overviewDrawer = true">
-                  概览
+                  {{ i18nT("ai_ontology.overview") }}
                 </el-button>
                 <el-dropdown trigger="click" @command="onMaint">
                   <el-button v-hasPerm="'module_ai:ontology:edit'" size="small" :icon="Tools">
-                    维护
+                    {{ i18nT("ai_ontology.maintain") }}
                     <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                   </el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item command="enrich" :disabled="enrichLoading">
-                        业务语义回填（注释→名称/枚举、外键→关系）
+                        {{ i18nT("ai_ontology.enrichBusinessSemantic") }}
                       </el-dropdown-item>
                       <el-dropdown-item command="seed" :disabled="seedLoading">
-                        写入示例能力（10 函数 + 7 动作）
+                        {{ i18nT("ai_ontology.writeSampleCapabilities") }}
                       </el-dropdown-item>
                       <el-dropdown-item command="assign" divided>
-                        批量归属本体域（已选 {{ selected.length }}）
+                        {{ i18nT("ai_ontology.batchAssignDomain", { count: selected.length }) }}
                       </el-dropdown-item>
                       <el-dropdown-item command="pending">
-                        待审批的版本发布（{{ pendingVersions.length }}）
+                        {{
+                          i18nT("ai_ontology.pendingVersionPublishCount", {
+                            count: pendingVersions.length,
+                          })
+                        }}
                       </el-dropdown-item>
                       <el-dropdown-item command="analyze" divided>
-                        建模分析（结构诊断与建议）
+                        {{ i18nT("ai_ontology.modelingAnalysisStructureDiagnosisSuggestions") }}
                       </el-dropdown-item>
-                      <el-dropdown-item command="derived">派生属性问题扫描</el-dropdown-item>
-                      <el-dropdown-item command="syncviews">补齐默认对象视图</el-dropdown-item>
+                      <el-dropdown-item command="derived">
+                        {{ i18nT("ai_ontology.derivedPropertyProblemScan") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item command="syncviews">
+                        {{ i18nT("ai_ontology.backfillDefaultObjectViews") }}
+                      </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -187,7 +208,7 @@
       v-model="objectDrawer"
       :size="'50%'"
       :with-header="true"
-      title="对象类型详情"
+      :title="i18nT('ai_ontology.objectTypeDetails')"
       destroy-on-close
       class="ont-obj-drawer"
     >
@@ -215,13 +236,13 @@
       v-model="linkDrawer"
       :size="'48%'"
       :with-header="true"
-      title="关系类型详情"
+      :title="i18nT('ai_ontology.relationTypeDetails')"
       destroy-on-close
     >
       <el-tabs v-model="linkPage" class="ont-detail-tabs">
-        <el-tab-pane label="概览" name="overview" />
-        <el-tab-pane label="安全" name="security" />
-        <el-tab-pane label="数据源" name="datasources" />
+        <el-tab-pane :label="i18nT('ai_ontology.overview')" name="overview" />
+        <el-tab-pane :label="i18nT('ai_ontology.security')" name="security" />
+        <el-tab-pane :label="i18nT('ai_ontology.dataSource')" name="datasources" />
       </el-tabs>
       <OntLinkTypeView
         v-if="linkDrawer && selLinkId"
@@ -238,13 +259,13 @@
       v-model="actionDrawer"
       :size="'48%'"
       :with-header="true"
-      title="动作类型详情"
+      :title="i18nT('ai_ontology.actionTypeDetails')"
       destroy-on-close
     >
       <el-tabs v-model="actionPage" class="ont-detail-tabs">
-        <el-tab-pane label="概览" name="overview" />
-        <el-tab-pane label="规则" name="rules" />
-        <el-tab-pane label="参数" name="parameters" />
+        <el-tab-pane :label="i18nT('ai_ontology.overview')" name="overview" />
+        <el-tab-pane :label="i18nT('ai_ontology.rule')" name="rules" />
+        <el-tab-pane :label="i18nT('ai_ontology.parameter')" name="parameters" />
       </el-tabs>
       <OntActionTypeView
         v-if="actionDrawer && selActionCode"
@@ -257,7 +278,11 @@
     </el-drawer>
 
     <!-- ================= 概览弹窗 ================= -->
-    <EnhancedDialog v-model="overviewDrawer" title="本体概览" width="600px">
+    <EnhancedDialog
+      v-model="overviewDrawer"
+      :title="i18nT('ai_ontology.ontologyOverview')"
+      width="600px"
+    >
       <OntOverviewDrawer />
     </EnhancedDialog>
 
@@ -268,45 +293,93 @@
 
     <!-- ================= 弹窗 ================= -->
     <!-- 建模分析：结构诊断（对象/属性/关系统计 + 中心度 + 建议） -->
-    <el-dialog v-model="analyzeDialog" title="本体建模分析" width="900px" append-to-body>
-      <el-alert v-if="analyzeLoading" type="info" :closable="false" show-icon title="正在分析……" />
+    <el-dialog
+      v-model="analyzeDialog"
+      :title="i18nT('ai_ontology.ontologyModelingAnalysis')"
+      width="900px"
+      append-to-body
+    >
+      <el-alert
+        v-if="analyzeLoading"
+        type="info"
+        :closable="false"
+        show-icon
+        :title="i18nT('ai_ontology.analyzing')"
+      />
       <template v-else-if="analyze">
         <el-descriptions :column="4" size="small" border>
-          <el-descriptions-item label="对象类型">{{ analyze.objects }}</el-descriptions-item>
-          <el-descriptions-item label="属性">{{ analyze.properties }}</el-descriptions-item>
-          <el-descriptions-item label="关系">{{ analyze.links }}</el-descriptions-item>
-          <el-descriptions-item label="动作">{{ analyze.actions }}</el-descriptions-item>
-          <el-descriptions-item label="孤立对象">{{ analyze.isolated }}</el-descriptions-item>
-          <el-descriptions-item label="缺主键">{{ analyze.no_pk }}</el-descriptions-item>
-          <el-descriptions-item label="连通分量">{{ analyze.components }}</el-descriptions-item>
-          <el-descriptions-item label="关系密度">{{ analyze.density }}</el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.objectType')">
+            {{ analyze.objects }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.property')">
+            {{ analyze.properties }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.relation')">
+            {{ analyze.links }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.action')">
+            {{ analyze.actions }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.orphanObjects')">
+            {{ analyze.isolated }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.missingPK')">
+            {{ analyze.no_pk }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.connectedComponents')">
+            {{ analyze.components }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="i18nT('ai_ontology.relationDensity')">
+            {{ analyze.density }}
+          </el-descriptions-item>
         </el-descriptions>
 
-        <el-alert type="warning" :closable="false" show-icon class="ont-note" title="建模建议">
+        <el-alert
+          type="warning"
+          :closable="false"
+          show-icon
+          class="ont-note"
+          :title="i18nT('ai_ontology.modelingSuggestions')"
+        >
           <ul class="ont-analyze__recs">
             <li v-for="(r, i) in analyze.recommendations || []" :key="i">{{ r }}</li>
           </ul>
         </el-alert>
 
         <div class="ont-sec__head ont-sec__head--mt">
-          <span class="ont-sec__title">中心度最高的对象</span>
-          <span class="ont-hint">度数越高，越值得优先定义动作与治理规则</span>
+          <span class="ont-sec__title">{{ i18nT("ai_ontology.highestCentralityObjects") }}</span>
+          <span class="ont-hint">
+            {{ i18nT("ai_ontology.higherDegreeMeansMoreWorthDefiningActionsAndGovernance") }}
+          </span>
         </div>
         <el-table :data="analyze.top_central || []" size="small" border max-height="240" stripe>
-          <template #empty><el-empty :image-size="50" description="还没有对象类型" /></template>
-          <el-table-column label="对象" min-width="200" show-overflow-tooltip>
+          <template #empty>
+            <el-empty :image-size="50" :description="i18nT('ai_ontology.noObjectTypesYet')" />
+          </template>
+          <el-table-column
+            :label="i18nT('ai_ontology.object')"
+            min-width="200"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">
               {{ row.name }}
               <span class="ont-mono">（{{ row.code }}）</span>
             </template>
           </el-table-column>
-          <el-table-column prop="degree" label="度数" width="80" align="center" />
-          <el-table-column prop="in" label="入" width="70" align="center" />
-          <el-table-column prop="out" label="出" width="70" align="center" />
+          <el-table-column
+            prop="degree"
+            :label="i18nT('ai_ontology.degree')"
+            width="80"
+            align="center"
+          />
+          <el-table-column prop="in" :label="i18nT('ai_ontology.in')" width="70" align="center" />
+          <el-table-column prop="out" :label="i18nT('ai_ontology.out')" width="70" align="center" />
         </el-table>
 
         <div class="ont-sec__head ont-sec__head--mt">
-          <span class="ont-sec__title">关系基数分布</span>
+          <span class="ont-sec__title">
+            {{ i18nT("ai_ontology.relationCardinalityDistribution") }}
+          </span>
         </div>
         <el-tag
           v-for="(n, k) in analyze.card_dist || {}"
@@ -319,62 +392,83 @@
         </el-tag>
       </template>
       <template #footer>
-        <el-button @click="analyzeDialog = false">关闭</el-button>
+        <el-button @click="analyzeDialog = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 派生属性问题扫描 -->
-    <el-dialog v-model="derivedDialog" title="派生属性问题扫描" width="600px" append-to-body>
+    <el-dialog
+      v-model="derivedDialog"
+      :title="i18nT('ai_ontology.derivedPropertyProblemScan')"
+      width="600px"
+      append-to-body
+    >
       <el-alert
         type="info"
         :closable="false"
         class="ont-note"
-        title="扫描全量派生属性的配置问题（引用缺失、表达式非法等），修完再发布版本更稳。"
+        :title="
+          i18nT('ai_ontology.scanAllDerivedPropertiesForConfigIssuesMissingRefsInvalidExpressions')
+        "
       />
       <el-table :data="derivedIssues" size="small" border max-height="380" stripe>
         <template #empty>
-          <el-empty :image-size="50" description="没有发现配置问题" />
+          <el-empty :image-size="50" :description="i18nT('ai_ontology.noConfigIssuesFound')" />
         </template>
-        <el-table-column label="对象类型" min-width="170" show-overflow-tooltip>
+        <el-table-column
+          :label="i18nT('ai_ontology.objectType')"
+          min-width="170"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ objectLabel(row.object_code) }}</template>
         </el-table-column>
-        <el-table-column prop="name" label="属性" min-width="140" show-overflow-tooltip />
-        <el-table-column label="问题" min-width="260">
+        <el-table-column
+          prop="name"
+          :label="i18nT('ai_ontology.property')"
+          min-width="140"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.questions')" min-width="260">
           <template #default="{ row }">
             <div v-for="(e, i) in row.errors || []" :key="i">{{ e }}</div>
           </template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="derivedDialog = false">关闭</el-button>
+        <el-button @click="derivedDialog = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 对象类型 -->
-    <el-dialog v-model="objDialog" title="对象类型" width="600px" append-to-body>
+    <el-dialog
+      v-model="objDialog"
+      :title="i18nT('ai_ontology.objectType')"
+      width="600px"
+      append-to-body
+    >
       <el-form :model="objForm" label-width="130px">
-        <el-form-item label="显示名" required>
-          <el-input v-model="objForm.name" placeholder="如 摄像机表" />
+        <el-form-item :label="i18nT('ai_ontology.displayName')" required>
+          <el-input v-model="objForm.name" :placeholder="i18nT('ai_ontology.eGCameraTable')" />
         </el-form-item>
-        <el-form-item label="编码（ID）" required>
+        <el-form-item :label="i18nT('ai_ontology.codeId')" required>
           <el-input
             v-model="objForm.code"
             :disabled="!!objForm.id"
-            placeholder="如 video_cameras（小写字母/数字/连字符，唯一）"
+            :placeholder="i18nT('ai_ontology.codePlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="复数显示名" required>
+        <el-form-item :label="i18nT('ai_ontology.pluralDisplayName')" required>
           <el-input v-model="objForm.plural_name" :placeholder="pluralHint" />
         </el-form-item>
-        <el-form-item label="API 名" required>
+        <el-form-item :label="i18nT('ai_ontology.apiName')" required>
           <el-input v-model="objForm.api_name" :placeholder="apiHint" />
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item :label="i18nT('ai_ontology.status')">
           <el-select v-model="objForm.status" style="width: 100%">
             <el-option v-for="s in ONT_STATUS" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="可见性">
+        <el-form-item :label="i18nT('ai_ontology.visibility')">
           <el-select v-model="objForm.visibility" style="width: 100%">
             <el-option
               v-for="v in ONT_VISIBILITY"
@@ -384,96 +478,117 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="别名">
+        <el-form-item :label="i18nT('ai_ontology.alias')">
           <el-select
             v-model="objForm.aliases"
             multiple
             filterable
             allow-create
             default-first-option
-            placeholder="搜索时会命中这些词，回车新增"
+            :placeholder="i18nT('ai_ontology.searchHitsTheseWordsPressEnterToAdd')"
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="所属本体">
+        <el-form-item :label="i18nT('ai_ontology.owningOntology')">
           <el-select
             v-model="objForm.domain_code"
             clearable
-            placeholder="不选 = 未分组"
+            :placeholder="i18nT('ai_ontology.selectNoneUnassigned')"
             style="width: 100%"
           >
             <el-option v-for="d in domains" :key="d.code" :label="d.name" :value="d.code" />
           </el-select>
         </el-form-item>
-        <el-form-item label="主键属性" required>
+        <el-form-item :label="i18nT('ai_ontology.primaryKeyProperty')" required>
           <el-input v-model="objForm.key_prop" placeholder="id" />
         </el-form-item>
-        <el-form-item label="标题属性" required>
+        <el-form-item :label="i18nT('ai_ontology.titleProperty')" required>
           <el-input v-model="objForm.name_prop" placeholder="name" />
         </el-form-item>
-        <el-form-item label="联系人">
-          <el-input v-model="objForm.point_of_contact" placeholder="负责人（可选）" />
+        <el-form-item :label="i18nT('ai_ontology.contact')">
+          <el-input
+            v-model="objForm.point_of_contact"
+            :placeholder="i18nT('ai_ontology.ownerOptional')"
+          />
         </el-form-item>
-        <el-form-item label="支撑表">
-          <el-input v-model="objForm.backing_table" placeholder="留空则同编码" />
+        <el-form-item :label="i18nT('ai_ontology.backingTable')">
+          <el-input
+            v-model="objForm.backing_table"
+            :placeholder="i18nT('ai_ontology.leaveEmptyToReuseCode')"
+          />
         </el-form-item>
-        <el-form-item label="可编辑">
+        <el-form-item :label="i18nT('ai_ontology.editable')">
           <el-switch v-model="objForm.edits_enabled" />
-          <span class="ont-hint">开启后允许终端用户编辑该类型对象（写回）</span>
+          <span class="ont-hint">
+            {{ i18nT("ai_ontology.allowEndUsersToEditThisObjectTypeWritebackWhenEnabled") }}
+          </span>
         </el-form-item>
-        <el-form-item label="图标">
+        <el-form-item :label="i18nT('ai_ontology.icon')">
           <el-input v-model="objForm.icon" placeholder="Box" />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="i18nT('ai_ontology.description')">
           <el-input v-model="objForm.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="objDialog = false">取消</el-button>
+        <el-button @click="objDialog = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           type="primary"
           :loading="savingObj"
           @click="saveObj"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 关系类型 -->
-    <el-dialog v-model="linkDialog" title="关系类型" width="600px" append-to-body>
+    <el-dialog
+      v-model="linkDialog"
+      :title="i18nT('ai_ontology.relationType')"
+      width="600px"
+      append-to-body
+    >
       <el-form :model="linkForm" label-width="130px">
-        <el-form-item label="源对象类型" required>
+        <el-form-item :label="i18nT('ai_ontology.sourceObjectType')" required>
           <el-select v-model="linkForm.source_object" filterable style="width: 100%">
             <el-option v-for="o in objects" :key="o.code" :label="o.name" :value="o.code" />
           </el-select>
         </el-form-item>
-        <el-form-item label="目标对象类型" required>
+        <el-form-item :label="i18nT('ai_ontology.targetObjectType2')" required>
           <el-select v-model="linkForm.target_object" filterable style="width: 100%">
             <el-option v-for="o in objects" :key="o.code" :label="o.name" :value="o.code" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关系名"><el-input v-model="linkForm.name" /></el-form-item>
-        <el-form-item label="API 名">
-          <el-input v-model="linkForm.api_name" placeholder="留空则按关系名自动推导" />
+        <el-form-item :label="i18nT('ai_ontology.relationName')">
+          <el-input v-model="linkForm.name" />
         </el-form-item>
-        <el-form-item label="源侧显示名">
-          <el-input v-model="linkForm.source_name" placeholder="从源看过去的叫法，如「所属分组」" />
-        </el-form-item>
-        <el-form-item label="源侧复数名">
-          <el-input v-model="linkForm.source_plural_name" />
-        </el-form-item>
-        <el-form-item label="目标侧显示名">
+        <el-form-item :label="i18nT('ai_ontology.apiName')">
           <el-input
-            v-model="linkForm.target_name"
-            placeholder="从目标看回来的叫法，如「包含设备」"
+            v-model="linkForm.api_name"
+            :placeholder="i18nT('ai_ontology.leaveEmptyToAutoDeriveByRelationName')"
           />
         </el-form-item>
-        <el-form-item label="目标侧复数名">
+        <el-form-item :label="i18nT('ai_ontology.sourceDisplayName')">
+          <el-input
+            v-model="linkForm.source_name"
+            :placeholder="i18nT('ai_ontology.nameFromSourceSideEGOwningGroup')"
+          />
+        </el-form-item>
+        <el-form-item :label="i18nT('ai_ontology.sourcePluralName')">
+          <el-input v-model="linkForm.source_plural_name" />
+        </el-form-item>
+        <el-form-item :label="i18nT('ai_ontology.targetDisplayName')">
+          <el-input
+            v-model="linkForm.target_name"
+            :placeholder="i18nT('ai_ontology.nameFromTargetSideEGContainsDevices')"
+          />
+        </el-form-item>
+        <el-form-item :label="i18nT('ai_ontology.targetPluralName')">
           <el-input v-model="linkForm.target_plural_name" />
         </el-form-item>
-        <el-form-item label="连接方式">
+        <el-form-item :label="i18nT('ai_ontology.joinMode')">
           <el-select v-model="linkForm.join_method" style="width: 100%">
             <el-option
               v-for="j in ONT_JOIN_METHOD"
@@ -484,10 +599,10 @@
             />
           </el-select>
           <span v-if="linkForm.card === 'many_to_many'" class="ont-hint">
-            多对多必须使用「连接表 Dataset」（官方约束）
+            {{ i18nT("ai_ontology.manyToManyJoinDatasetHint") }}
           </span>
         </el-form-item>
-        <el-form-item label="基数">
+        <el-form-item :label="i18nT('ai_ontology.cardinality')">
           <el-select v-model="linkForm.card" style="width: 100%">
             <el-option
               v-for="c in ONT_CARDINALITY"
@@ -497,14 +612,18 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="源字段"><el-input v-model="linkForm.source_field" /></el-form-item>
-        <el-form-item label="目标字段"><el-input v-model="linkForm.target_field" /></el-form-item>
-        <el-form-item label="状态">
+        <el-form-item :label="i18nT('ai_ontology.sourceField')">
+          <el-input v-model="linkForm.source_field" />
+        </el-form-item>
+        <el-form-item :label="i18nT('ai_ontology.targetField')">
+          <el-input v-model="linkForm.target_field" />
+        </el-form-item>
+        <el-form-item :label="i18nT('ai_ontology.status')">
           <el-select v-model="linkForm.status" style="width: 100%">
             <el-option v-for="s in ONT_STATUS" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="可见性">
+        <el-form-item :label="i18nT('ai_ontology.visibility')">
           <el-select v-model="linkForm.visibility" style="width: 100%">
             <el-option
               v-for="v in ONT_VISIBILITY"
@@ -514,62 +633,73 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="i18nT('ai_ontology.description')">
           <el-input v-model="linkForm.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="linkDialog = false">取消</el-button>
+        <el-button @click="linkDialog = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           type="primary"
           :loading="savingObj"
           @click="saveLink"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 动作类型 -->
-    <el-dialog v-model="actionDialog" title="动作类型" width="600px" append-to-body>
+    <el-dialog
+      v-model="actionDialog"
+      :title="i18nT('ai_ontology.actionType')"
+      width="600px"
+      append-to-body
+    >
       <el-form :model="actionForm" label-width="140px">
-        <el-form-item label="动作名" required><el-input v-model="actionForm.name" /></el-form-item>
-        <el-form-item label="编码" required><el-input v-model="actionForm.code" /></el-form-item>
-        <el-form-item label="作用对象类型" required>
+        <el-form-item :label="i18nT('ai_ontology.actionName')" required>
+          <el-input v-model="actionForm.name" />
+        </el-form-item>
+        <el-form-item :label="i18nT('ai_ontology.code')" required>
+          <el-input v-model="actionForm.code" />
+        </el-form-item>
+        <el-form-item :label="i18nT('ai_ontology.targetObjectType')" required>
           <el-select v-model="actionForm.object_code" filterable style="width: 100%">
             <el-option v-for="o in objects" :key="o.code" :label="o.name" :value="o.code" />
           </el-select>
         </el-form-item>
-        <el-form-item label="写回目标">
+        <el-form-item :label="i18nT('ai_ontology.writebackTarget')">
           <el-input v-model="actionForm.target_table" placeholder="video_cameras" />
         </el-form-item>
-        <el-form-item label="方式">
+        <el-form-item :label="i18nT('ai_ontology.mode')">
           <el-select v-model="actionForm.method" style="width: 100%">
-            <el-option label="update（修改对象）" value="update" />
-            <el-option label="insert（暂不支持，会被拒绝）" value="insert" :disabled="true" />
-            <el-option label="delete（暂不支持，会被拒绝）" value="delete" :disabled="true" />
+            <el-option :label="i18nT('ai_ontology.actionUpdate')" value="update" />
+            <el-option :label="i18nT('ai_ontology.actionInsert')" value="insert" :disabled="true" />
+            <el-option :label="i18nT('ai_ontology.actionDelete')" value="delete" :disabled="true" />
           </el-select>
         </el-form-item>
-        <el-form-item label="审批门禁"><el-switch v-model="actionForm.approval" /></el-form-item>
-        <el-form-item label="可写字段">
+        <el-form-item :label="i18nT('ai_ontology.approvalGate')">
+          <el-switch v-model="actionForm.approval" />
+        </el-form-item>
+        <el-form-item :label="i18nT('ai_ontology.writableFields')">
           <el-select
             v-model="actionForm.white_fields"
             multiple
             allow-create
             filterable
-            placeholder="字段白名单"
+            :placeholder="i18nT('ai_ontology.fieldWhitelist')"
             style="width: 100%"
           >
             <el-option v-for="p in propsForForm" :key="p.code" :label="p.name" :value="p.code" />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item :label="i18nT('ai_ontology.status')">
           <el-select v-model="actionForm.status" style="width: 100%">
             <el-option v-for="s in ONT_STATUS" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="i18nT('ai_ontology.description')">
           <el-input v-model="actionForm.description" type="textarea" :rows="2" />
         </el-form-item>
         <el-form-item label="Tool description">
@@ -577,68 +707,73 @@
             v-model="actionForm.tool_description"
             type="textarea"
             :rows="2"
-            placeholder="给 AI 看的工具描述：这个动作做什么、什么时候该调用。留空则 Agent 退回使用上面的「描述」"
+            :placeholder="i18nT('ai_ontology.toolDescriptionPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="参数（JSON）">
+        <el-form-item :label="i18nT('ai_ontology.paramsJson')">
           <el-input
             v-model="actionForm.parametersText"
             type="textarea"
             :rows="3"
-            placeholder='[{"key":"name","label":"新名称","type":"string","required":true}]'
+            :placeholder="i18nT('ai_ontology.paramsPlaceholder')"
           />
-          <span class="ont-hint">参数会直接生成 Agent 工具的 JSON Schema</span>
+          <span class="ont-hint">{{ i18nT("ai_ontology.paramsJsonSchemaHint") }}</span>
         </el-form-item>
-        <el-form-item label="副作用（JSON）">
+        <el-form-item :label="i18nT('ai_ontology.sideEffectsJson')">
           <el-input
             v-model="actionForm.sideEffectsText"
             type="textarea"
             :rows="2"
-            placeholder='[{"type":"notification","detail":"通知值班人"}]'
+            :placeholder="i18nT('ai_ontology.sideEffectsPlaceholder')"
           />
           <span class="ont-hint">
-            支持 notification（写系统通知）与 webhook（发 HTTP 请求）；「触发调度构建」暂未接入
+            {{ i18nT("ai_ontology.sideEffectsHint") }}
           </span>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="actionDialog = false">取消</el-button>
+        <el-button @click="actionDialog = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           type="primary"
           :loading="savingObj"
           @click="saveAction"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 保存前的改动审核（对齐官方 Review changes） -->
-    <el-dialog v-model="reviewDialog" title="审核改动" width="600px" append-to-body>
+    <el-dialog
+      v-model="reviewDialog"
+      :title="i18nT('ai_ontology.reviewChanges')"
+      width="600px"
+      append-to-body
+    >
       <div class="ont-review">
         <div class="ont-review__sum">
-          共
+          {{ i18nT("ai_ontology.total") }}
           <b>{{ review.count }}</b>
-          处改动待保存
+          {{ i18nT("ai_ontology.changesPendingSave") }}
           <el-tag v-if="review.errors.length" size="small" type="danger" effect="plain">
-            错误 {{ review.errors.length }}
+            {{ i18nT("ai_ontology.errorsCount", { count: review.errors.length }) }}
           </el-tag>
           <el-tag v-if="review.warnings.length" size="small" type="warning" effect="plain">
-            警告 {{ review.warnings.length }}
+            {{ i18nT("ai_ontology.warningsCount", { count: review.warnings.length }) }}
           </el-tag>
         </div>
 
         <el-table :data="review.changes" size="small" border max-height="200" stripe>
-          <el-table-column prop="label" label="类型" width="100" />
-          <el-table-column label="改动" width="90">
+          <el-table-column prop="label" :label="i18nT('ai_ontology.type')" width="100" />
+          <el-table-column :label="i18nT('ai_ontology.changes2')" width="90">
             <template #default="{ row }">
               <el-tag size="small" :type="actionTagType(row.action)" effect="plain">
                 {{ actionLabel(row.action) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="实体" show-overflow-tooltip />
+          <el-table-column prop="name" :label="i18nT('ai_ontology.entity')" show-overflow-tooltip />
         </el-table>
 
         <el-alert
@@ -646,7 +781,7 @@
           type="error"
           :closable="false"
           class="ont-review__box"
-          title="以下错误会阻止保存"
+          :title="i18nT('ai_ontology.theFollowingErrorsWillBlockSaving')"
         >
           <ul class="ont-review__list">
             <li v-for="(e, i) in review.errors" :key="i">{{ e }}</li>
@@ -658,7 +793,7 @@
           type="warning"
           :closable="false"
           class="ont-review__box"
-          title="以下警告不会阻止保存"
+          :title="i18nT('ai_ontology.theFollowingWarningsWonTBlockSaving')"
         >
           <ul class="ont-review__list">
             <li v-for="(w, i) in review.warnings" :key="i">{{ w }}</li>
@@ -666,7 +801,11 @@
         </el-alert>
 
         <div v-if="review.destructive.length" class="ont-review__danger">
-          <el-alert type="error" :closable="false" title="存在破坏性改动，需输入实体名称确认">
+          <el-alert
+            type="error"
+            :closable="false"
+            :title="i18nT('ai_ontology.destructiveChangesExistEnterEntityNameToConfirm')"
+          >
             <ul class="ont-review__list">
               <li v-for="(d, i) in review.destructive" :key="i">{{ d.name }}：{{ d.reason }}</li>
             </ul>
@@ -674,12 +813,16 @@
           <el-input
             v-model="confirmName"
             class="ont-review__confirm"
-            :placeholder="`请输入实体名称以确认：${review.destructive[0]?.name || ''}`"
+            :placeholder="
+              i18nT('ai_ontology.enterEntityNameConfirm', {
+                name: review.destructive[0]?.name || '',
+              })
+            "
           />
         </div>
       </div>
       <template #footer>
-        <el-button @click="reviewDialog = false">取消</el-button>
+        <el-button @click="reviewDialog = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           type="danger"
@@ -687,7 +830,7 @@
           :disabled="wipSaving"
           @click="discardWip"
         >
-          丢弃全部改动
+          {{ i18nT("ai_ontology.discardAllChanges") }}
         </el-button>
         <el-button
           type="primary"
@@ -695,7 +838,7 @@
           :disabled="review.errors.length > 0"
           @click="doSaveWip"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
@@ -703,51 +846,59 @@
     <!-- 本体（domain）新建 / 重命名 -->
     <el-dialog
       v-model="domainDialog"
-      :title="domainForm.id ? '重命名本体域' : '新建本体域'"
+      :title="domainForm.id ? i18nT('ai_ontology.renameDomain') : i18nT('ai_ontology.newDomain')"
       width="520px"
       append-to-body
     >
       <el-form label-width="80px">
-        <el-form-item label="名称" required>
-          <el-input v-model="domainForm.name" placeholder="本体域名称" maxlength="60" />
+        <el-form-item :label="i18nT('ai_ontology.name')" required>
+          <el-input
+            v-model="domainForm.name"
+            :placeholder="i18nT('ai_ontology.domainName')"
+            maxlength="60"
+          />
         </el-form-item>
-        <el-form-item v-if="!domainForm.id" label="编码" required>
+        <el-form-item v-if="!domainForm.id" :label="i18nT('ai_ontology.code')" required>
           <el-input
             v-model="domainForm.code"
-            placeholder="唯一编码，如 sales / hr"
+            :placeholder="i18nT('ai_ontology.uniqueCodePlaceholder')"
             maxlength="40"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="domainDialog = false">取消</el-button>
+        <el-button @click="domainDialog = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button
           v-hasPerm="'module_ai:ontology:edit'"
           type="primary"
           :loading="domainSaving"
           @click="saveDomain"
         >
-          保存
+          {{ i18nT("ai_ontology.save") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 批量归属 -->
-    <el-dialog v-model="assignDialog" title="批量归属本体" width="520px" append-to-body>
+    <el-dialog
+      v-model="assignDialog"
+      :title="i18nT('ai_ontology.batchAssignOntology')"
+      width="520px"
+      append-to-body
+    >
       <div class="ont-hint">
-        已选 {{ selected.length }} 个对象类型：{{
-          selected
-            .map((o: any) => o.name)
-            .slice(0, 6)
-            .join("、")
-        }}{{ selected.length > 6 ? " 等" : "" }}
+        {{ i18nT("ai_ontology.selectedObjectTypesHint", { count: selected.length }) }}
+        <template v-for="(o, i) in selected.slice(0, 6)" :key="o.code">
+          {{ i ? "、" : "" }}{{ o.name }}
+        </template>
+        {{ selected.length > 6 ? i18nT("ai_ontology.etc") : "" }}
       </div>
       <el-form label-width="90px" class="ont-home__mt">
-        <el-form-item label="目标本体">
+        <el-form-item :label="i18nT('ai_ontology.targetOntology')">
           <el-select
             v-model="assignTarget"
             clearable
-            placeholder="不选 = 退回未分组"
+            :placeholder="i18nT('ai_ontology.selectNoneUnassigned')"
             style="width: 100%"
           >
             <el-option v-for="d in domains" :key="d.code" :label="d.name" :value="d.code" />
@@ -755,22 +906,37 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="assignDialog = false">取消</el-button>
-        <el-button type="primary" :loading="assignLoading" @click="doAssign">确认归属</el-button>
+        <el-button @click="assignDialog = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
+        <el-button type="primary" :loading="assignLoading" @click="doAssign">
+          {{ i18nT("ai_ontology.confirmAssign") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 待审批版本 -->
-    <el-dialog v-model="pendingDialog" title="待审批的版本发布" width="600px" append-to-body>
+    <el-dialog
+      v-model="pendingDialog"
+      :title="i18nT('ai_ontology.pendingVersionPublishing')"
+      width="600px"
+      append-to-body
+    >
       <el-table :data="pendingVersions" size="small" border stripe>
         <template #empty>
-          <el-empty description="没有待审批的发布申请" :image-size="50" />
+          <el-empty :description="i18nT('ai_ontology.noPendingPublishRequests')" :image-size="50" />
         </template>
-        <el-table-column label="对象类型" min-width="170" show-overflow-tooltip>
+        <el-table-column
+          :label="i18nT('ai_ontology.objectType')"
+          min-width="170"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ objectLabel(row.object_code) }}</template>
         </el-table-column>
-        <el-table-column prop="created_time" label="申请时间" min-width="170" />
-        <el-table-column label="操作" width="100" align="center">
+        <el-table-column
+          prop="created_time"
+          :label="i18nT('ai_ontology.appliedTime')"
+          min-width="170"
+        />
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="100" align="center">
           <template #default="{ row }">
             <el-button
               icon="Check"
@@ -780,19 +946,20 @@
               :loading="approveLoading"
               @click="doApprove(row)"
             >
-              批准发布
+              {{ i18nT("ai_ontology.approvePublish") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="pendingDialog = false">关闭</el-button>
+        <el-button @click="pendingDialog = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElLoading, ElMessage, ElMessageBox } from "element-plus";
@@ -831,6 +998,8 @@ import OntGraphWorkspace from "./components/OntGraphWorkspace.vue";
 import OntOverviewDrawer from "./components/OntOverviewDrawer.vue";
 import OntMaintenanceDrawer from "./components/OntMaintenanceDrawer.vue";
 import OntObjectTypeView from "./components/OntObjectTypeView.vue";
+const { t: i18nT } = useI18n();
+
 // 关系类型 / 动作类型详情：这两个组件此前**全仓无人引用**（孤儿），
 // 导致关系与动作只能新建、看不了详情、也删不掉。
 import OntLinkTypeView from "./components/OntLinkTypeView.vue";
@@ -871,15 +1040,15 @@ const {
 /* ---------------- 导航状态 ---------------- */
 /** 维护抽屉各面板标签 */
 const MAINT_PANELS: Record<string, { label: string }> = {
-  index: { label: "索引" },
-  proposals: { label: "提案" },
-  scenarios: { label: "场景" },
-  decisions: { label: "决策" },
-  explore: { label: "对象探索" },
-  groups: { label: "对象类型组" },
-  valueTypes: { label: "值类型" },
-  shared: { label: "共享属性" },
-  interfaces: { label: "接口" },
+  index: { label: i18nT("ai_ontology.index") },
+  proposals: { label: i18nT("ai_ontology.proposal") },
+  scenarios: { label: i18nT("ai_ontology.scenario") },
+  decisions: { label: i18nT("ai_ontology.decision") },
+  explore: { label: i18nT("ai_ontology.objectExplorer") },
+  groups: { label: i18nT("ai_ontology.objectTypeGroup") },
+  valueTypes: { label: i18nT("ai_ontology.valueType") },
+  shared: { label: i18nT("ai_ontology.sharedProperty") },
+  interfaces: { label: i18nT("ai_ontology.interface") },
 };
 // 深链里带过来的对象主键（?objectview=<code>&objectkey=<key>）
 const objectViewKey = ref("");
@@ -891,7 +1060,9 @@ const objectDrawer = ref(false); // 图谱点节点 → 对象详情抽屉
 const overviewDrawer = ref(false); // 概览抽屉
 const maintenanceDrawer = ref(false); // 维护抽屉
 const maintPanel = ref("index"); // 维护抽屉当前面板
-const maintPanelLabel = computed(() => MAINT_PANELS[maintPanel.value]?.label || "维护");
+const maintPanelLabel = computed(
+  () => MAINT_PANELS[maintPanel.value]?.label || i18nT("ai_ontology.maintain")
+);
 
 /** 本体选择器：'__all__' 代表全部本体 */
 
@@ -910,7 +1081,7 @@ function onGraphNodeTap(objectCode: string) {
   // 点图谱节点 → 打开对象详情抽屉；对象不存在（数据过期）则提示并关闭
   if (!objectByCode(objectCode)) {
     objectDrawer.value = false;
-    return ElMessage.warning("该对象类型已不存在或不在当前作用域");
+    return ElMessage.warning(i18nT("ai_ontology.thisObjectTypeNoLongerExistsOrIsOutOfScope"));
   }
   selKey.value = objectCode;
   objPage.value = "overview";
@@ -934,18 +1105,18 @@ function onGraphEdgeCtx(sourceCode: string, targetCode: string) {
   if (link) {
     openLinkEdit(link);
   } else {
-    ElMessage.warning("未找到对应关系类型");
+    ElMessage.warning(i18nT("ai_ontology.correspondingRelationTypeNotFound"));
   }
 }
 function onGraphEditObject(objectCode: string) {
   const obj = objectByCode(objectCode);
   if (obj) openObjectEdit(obj);
-  else ElMessage.warning("该对象类型已不存在");
+  else ElMessage.warning(i18nT("ai_ontology.thisObjectTypeNoLongerExists"));
 }
 function onGraphDeleteObject(objectCode: string) {
   const obj = objectByCode(objectCode);
   if (obj) removeObj(obj);
-  else ElMessage.warning("该对象类型已不存在");
+  else ElMessage.warning(i18nT("ai_ontology.thisObjectTypeNoLongerExists"));
 }
 function onGraphMaterializeObject(objectCode: string) {
   materialize(objectByCode(objectCode) || { code: objectCode });
@@ -966,10 +1137,16 @@ async function batchDeleteObjects(codes: string[]) {
     .join("、");
   try {
     await ElMessageBox.confirm(
-      `将删除 ${codes.length} 个对象类型（${names}${codes.length > 6 ? " 等" : ""}）` +
-        "及其属性/关系/动作定义（不影响真实数据表）。改动会先进入待保存列表，确认删除？",
-      "批量删除对象类型",
-      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+      i18nT("ai_ontology.batchDeleteObjectTypesConfirm", {
+        count: codes.length,
+        names: `${names}${codes.length > 6 ? i18nT("ai_ontology.etc") : ""}`,
+      }),
+      i18nT("ai_ontology.batchDeleteObjectTypes"),
+      {
+        type: "warning",
+        confirmButtonText: i18nT("ai_ontology.delete2"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+      }
     );
   } catch {
     return;
@@ -1001,8 +1178,9 @@ function openDomainForm() {
 async function saveDomain() {
   const name = (domainForm.name || "").trim();
   const code = (domainForm.code || "").trim();
-  if (!name) return ElMessage.warning("请填写本体名称");
-  if (!code && !domainForm.id) return ElMessage.warning("请填写本体编码");
+  if (!name) return ElMessage.warning(i18nT("ai_ontology.pleaseEnterOntologyName"));
+  if (!code && !domainForm.id)
+    return ElMessage.warning(i18nT("ai_ontology.pleaseEnterOntologyCode"));
   domainSaving.value = true;
   try {
     const payload: any = { name };
@@ -1013,14 +1191,14 @@ async function saveDomain() {
       payload.code = code;
     }
     const r = await saveOntDomain(payload);
-    ElMessage.success(r.data?.msg || "已保存");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.saved"));
     domainDialog.value = false;
     await reloadAll();
     if (!domainForm.id && code) {
       currentDomain.value = code;
     }
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.saveFailed"));
   } finally {
     domainSaving.value = false;
   }
@@ -1030,15 +1208,19 @@ async function removeDomain(d: any) {
   const cnt = objects.value.filter((o: any) => (o.domain_code || "") === d.code).length;
   try {
     await ElMessageBox.confirm(
-      `将删除本体「${d.name}」及其下 ${cnt} 个对象类型（对象类型会变为未分组，本体本身不可恢复），是否继续？`,
-      "删除本体",
-      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+      i18nT("ai_ontology.deleteDomainConfirm", { name: d.name, count: cnt }),
+      i18nT("ai_ontology.deleteOntology"),
+      {
+        type: "warning",
+        confirmButtonText: i18nT("ai_ontology.delete2"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+      }
     );
   } catch {
     return;
   }
   const r = await removeOntDomain(d.id);
-  ElMessage.success(r.data?.msg || "已删除");
+  ElMessage.success(r.data?.msg || i18nT("ai_ontology.deleted"));
   await reloadAll();
   // 删除当前本体后，自动选中剩余的第一个本体（左侧没有「全部」入口）
   if (currentDomain.value === d.code && domains.value.length) {
@@ -1070,7 +1252,9 @@ async function onMaint(cmd: string) {
   if (cmd === "syncviews") return doSyncViews();
   if (cmd === "assign") {
     if (!selected.value.length) {
-      return ElMessage.warning("请先在「对象类型」清单里勾选对象，再执行批量归属");
+      return ElMessage.warning(
+        i18nT("ai_ontology.selectObjectsInTheObjectTypeListBeforeBatchAssigning")
+      );
     }
     assignDialog.value = true;
     return;
@@ -1098,7 +1282,7 @@ async function openAnalyze() {
     const r = await getOntAnalyze();
     analyze.value = r.data?.data || null;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "分析失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.analyzeFailed"));
   } finally {
     analyzeLoading.value = false;
   }
@@ -1114,25 +1298,32 @@ async function openDerived() {
     const r = await getOntDerivedIssues();
     derivedIssues.value = r.data?.data || [];
   } catch (e: any) {
-    ElMessage.error(e?.msg || "扫描失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.scanFailed"));
   }
 }
 
 async function doSyncViews() {
   await ElMessageBox.confirm(
-    "将给**所有还没有默认视图**的对象类型补齐默认视图（已有视图不会被覆盖）。" +
-      "对象类型多时可能要跑十几秒，期间请不要关闭页面。确认执行？",
-    "补齐默认对象视图",
-    { type: "warning", confirmButtonText: "补齐", cancelButtonText: "取消" }
+    i18nT("ai_ontology.backfillViewsConfirm") +
+      i18nT("ai_ontology.withManyObjectTypesThisMayTakeTensOfSecondsDonTCloseThePageExecute"),
+    i18nT("ai_ontology.backfillDefaultObjectViews"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.backfill"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
   // 这是全量批处理（421 个对象 × 2 种形态），必须给出加载态，否则用户以为"点了没反应"
-  const loading = ElLoading.service({ fullscreen: true, text: "正在补齐默认对象视图……" });
+  const loading = ElLoading.service({
+    fullscreen: true,
+    text: i18nT("ai_ontology.backfillingViews"),
+  });
   try {
     const r = await syncDefaultOntObjectViews();
-    ElMessage.success(r.data?.msg || "已补齐默认视图");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.defaultViewsBackfilled"));
     await reloadAll();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "补齐失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.backfillFailed2"));
   } finally {
     loading.close();
   }
@@ -1143,10 +1334,10 @@ async function doEnrich() {
   maintMsg.value = "";
   try {
     const r = await enrichOntology();
-    maintMsg.value = r.data?.msg || "回填完成";
+    maintMsg.value = r.data?.msg || i18nT("ai_ontology.backfillComplete");
     await reloadAll();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "回填失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.backfillFailed"));
   } finally {
     enrichLoading.value = false;
   }
@@ -1156,28 +1347,29 @@ async function doSeed() {
   maintMsg.value = "";
   try {
     const r = await seedOntologyExamples();
-    maintMsg.value = r.data?.msg || "示例能力已写入";
+    maintMsg.value = r.data?.msg || i18nT("ai_ontology.sampleCapabilitiesWritten");
     await reloadAll();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "写入失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.writeFailed"));
   } finally {
     seedLoading.value = false;
   }
 }
 async function doAssign() {
-  if (!selected.value.length) return ElMessage.warning("请先勾选对象类型");
+  if (!selected.value.length)
+    return ElMessage.warning(i18nT("ai_ontology.pleaseSelectObjectTypesFirst"));
   assignLoading.value = true;
   try {
     const r = await assignOntDomain(
       assignTarget.value || "",
       selected.value.map((o: any) => o.code)
     );
-    ElMessage.success(r.data?.msg || "已归属");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.assigned"));
     assignDialog.value = false;
     selected.value = [];
     await reloadAll();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "归属失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.assignFailed"));
   } finally {
     assignLoading.value = false;
   }
@@ -1186,9 +1378,13 @@ async function doApprove(row: any) {
   // 发布是**不可逆**动作：先二次确认（原先点了就直接发，无确认、无 loading、无失败处理）
   try {
     await ElMessageBox.confirm(
-      `将把「${row.object_code}」的 v${row.version} 批准发布为正式版本，发布后所有消费方按新定义生效，是否继续？`,
-      "批准发布",
-      { type: "warning", confirmButtonText: "批准发布", cancelButtonText: "取消" }
+      i18nT("ai_ontology.publishVersionConfirm", { code: row.object_code, version: row.version }),
+      i18nT("ai_ontology.approvePublish"),
+      {
+        type: "warning",
+        confirmButtonText: i18nT("ai_ontology.approvePublish"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+      }
     );
   } catch {
     return;
@@ -1196,12 +1392,12 @@ async function doApprove(row: any) {
   approveLoading.value = true;
   try {
     const r = await approveOntVersion(row.id);
-    ElMessage.success(r.data?.msg || "已批准");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.approved"));
     const p = await getOntVersionPending();
     pendingVersions.value = p.data?.data || [];
     await reloadAll();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "批准失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.approveFailed"));
   } finally {
     approveLoading.value = false;
   }
@@ -1234,8 +1430,10 @@ const objBlank = () => ({
 });
 const objForm = reactive<any>(objBlank());
 // 官方必填项的实时推导提示
-const pluralHint = computed(() => derivePluralName(objForm.name) || "如 摄像机表s");
-const apiHint = computed(() => deriveApiName(objForm.code) || "如 VideoCameras");
+const pluralHint = computed(
+  () => derivePluralName(objForm.name) || i18nT("ai_ontology.pluralExampleHint")
+);
+const apiHint = computed(() => deriveApiName(objForm.code) || i18nT("ai_ontology.apiExampleHint"));
 
 function openObjectEdit(o?: any) {
   Object.assign(objForm, objBlank(), o ? { ...o } : { domain_code: currentDomain.value || "" });
@@ -1243,7 +1441,8 @@ function openObjectEdit(o?: any) {
 }
 async function saveObj() {
   // 官方必填：ID(code) / 显示名 / 复数显示名 / API 名
-  if (!objForm.code?.trim() || !objForm.name?.trim()) return ElMessage.warning("请填显示名与编码");
+  if (!objForm.code?.trim() || !objForm.name?.trim())
+    return ElMessage.warning(i18nT("ai_ontology.pleaseEnterDisplayNameAndCode"));
   const payload = {
     ...objForm,
     plural_name: objForm.plural_name?.trim() || derivePluralName(objForm.name),
@@ -1259,16 +1458,25 @@ async function saveObj() {
 }
 async function removeObj(o: any) {
   await ElMessageBox.confirm(
-    `将删除对象类型「${o.name}」及其属性/关系/动作定义（不影响真实数据表）。改动会先进入待保存列表，确认删除？`,
-    "删除对象类型",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    i18nT("ai_ontology.deleteObjectTypeConfirm", { name: o.name }),
+    i18nT("ai_ontology.deleteObjectType"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   );
-  await stage("object", "delete", { id: o.id, code: o.code, name: o.name }, "已暂存删除");
+  await stage(
+    "object",
+    "delete",
+    { id: o.id, code: o.code, name: o.name },
+    i18nT("ai_ontology.deleteStaged")
+  );
 }
 async function materialize(o: any) {
   const r = await materializeOntObject(o.code);
   const d = r.data?.data || {};
-  ElMessage[d.ok ? "success" : "error"](r.data?.msg || d.msg || "已物化");
+  ElMessage[d.ok ? "success" : "error"](r.data?.msg || d.msg || i18nT("ai_ontology.materialized"));
 }
 
 /* ---------------- 关系类型 CRUD ---------------- */
@@ -1329,10 +1537,10 @@ function openLinkEdit(l?: any) {
 }
 async function saveLink() {
   if (!linkForm.source_object || !linkForm.target_object)
-    return ElMessage.warning("请选择源/目标对象类型");
+    return ElMessage.warning(i18nT("ai_ontology.selectSourceTargetObjectType"));
   // 官方约束：多对多必须由连接表数据集支撑
   if (linkForm.card === "many_to_many" && linkForm.join_method !== "dataset")
-    return ElMessage.warning("多对多关系必须使用「连接表 Dataset」连接方式");
+    return ElMessage.warning(i18nT("ai_ontology.manyToManyJoinDatasetWarning"));
   savingObj.value = true;
   try {
     const payload = {
@@ -1374,9 +1582,9 @@ function parseJsonList(text: string, label: string): any[] {
   try {
     v = JSON.parse(s);
   } catch {
-    throw new Error(`${label}不是合法 JSON`);
+    throw new Error(i18nT("ai_ontology.notValidJson", { label }));
   }
-  if (!Array.isArray(v)) throw new Error(`${label}必须是 JSON 数组`);
+  if (!Array.isArray(v)) throw new Error(i18nT("ai_ontology.mustBeJsonArray", { label }));
   return v;
 }
 
@@ -1397,12 +1605,12 @@ async function openActionEdit(a?: any) {
 }
 async function saveAction() {
   if (!actionForm.code?.trim() || !actionForm.name?.trim() || !actionForm.object_code)
-    return ElMessage.warning("请填动作名、编码与作用对象类型");
+    return ElMessage.warning(i18nT("ai_ontology.pleaseEnterActionNameCodeAndTargetObjectType"));
   let parameters: any[] = [];
   let side_effects: any[] = [];
   try {
-    parameters = parseJsonList(actionForm.parametersText, "参数");
-    side_effects = parseJsonList(actionForm.sideEffectsText, "副作用");
+    parameters = parseJsonList(actionForm.parametersText, i18nT("ai_ontology.parameter"));
+    side_effects = parseJsonList(actionForm.sideEffectsText, i18nT("ai_ontology.sideEffects"));
   } catch (e: any) {
     return ElMessage.error(e.message);
   }
@@ -1432,7 +1640,14 @@ const review = wip; // 直接复用共享状态
 const wipCount = computed(() => review.value.count);
 
 function actionLabel(a: string) {
-  return { create: "新建", update: "修改", delete: "删除", restore: "恢复" }[a] || a;
+  return (
+    {
+      create: i18nT("ai_ontology.new"),
+      update: i18nT("ai_ontology.modify"),
+      delete: i18nT("ai_ontology.delete2"),
+      restore: i18nT("ai_ontology.restore"),
+    }[a] || a
+  );
 }
 function actionTagType(a: string) {
   return { create: "success", update: "primary", delete: "danger", restore: "warning" }[a] as any;
@@ -1450,7 +1665,7 @@ async function doSaveWip() {
     const r = await saveOntWip(confirmName.value);
     const d = r.data?.data || {};
     if (d.ok) {
-      ElMessage.success(d.msg || "已保存");
+      ElMessage.success(d.msg || i18nT("ai_ontology.saved"));
       reviewDialog.value = false;
       await reloadAll();
       await refreshWip();
@@ -1459,10 +1674,10 @@ async function doSaveWip() {
       review.value.errors = d.errors || review.value.errors;
       review.value.destructive = d.destructive || review.value.destructive;
       await refreshWip();
-      ElMessage.error(d.msg || "保存失败");
+      ElMessage.error(d.msg || i18nT("ai_ontology.saveFailed"));
     }
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.saveFailed"));
   } finally {
     wipSaving.value = false;
   }
@@ -1471,15 +1686,19 @@ async function doSaveWip() {
 async function discardWip() {
   try {
     await ElMessageBox.confirm(
-      `将丢弃 ${review.value.count} 处未保存的改动，且不可恢复（库中数据不受影响）。确认丢弃？`,
-      "丢弃改动",
-      { type: "warning", confirmButtonText: "丢弃", cancelButtonText: "取消" }
+      i18nT("ai_ontology.discardWipConfirm", { count: review.value.count }),
+      i18nT("ai_ontology.discardChanges"),
+      {
+        type: "warning",
+        confirmButtonText: i18nT("ai_ontology.discard"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+      }
     );
   } catch {
     return;
   }
   const r = await discardOntWip();
-  ElMessage.success(r.data?.msg || "已丢弃");
+  ElMessage.success(r.data?.msg || i18nT("ai_ontology.discarded"));
   reviewDialog.value = false;
   await reloadAll();
   await refreshWip();
@@ -1503,7 +1722,7 @@ async function openDeepLink() {
     objectDrawer.value = true;
     objectViewCode.value = viewCode;
     if (q.get("objectkey")) objectViewKey.value = q.get("objectkey") as string;
-    ElMessage.success(`已打开视图「${v.name}」`);
+    ElMessage.success(i18nT("ai_ontology.openedViewMsg", { name: v.name }));
     return true;
   } catch {
     return false;

@@ -43,11 +43,16 @@
       :objects="scopedObjects"
       :object-label="objectLabel"
     />
-    <el-empty v-else :image-size="60" description="该面板暂未接入" />
+    <el-empty
+      v-else
+      :image-size="60"
+      :description="i18nT('ai_ontology.thisPanelIsNotConnectedYet')"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { useOntologyData } from "../composables/useOntologyData";
 import OntIndexView from "./OntIndexView.vue";
 import OntProposalView from "./OntProposalView.vue";
@@ -55,6 +60,8 @@ import OntScenarioView from "./OntScenarioView.vue";
 import OntDecisionView from "./OntDecisionView.vue";
 import OntInstanceExplorer from "./OntInstanceExplorer.vue";
 import OntAdvancedTypes from "./OntAdvancedTypes.vue";
+
+const { t: i18nT } = useI18n();
 
 const props = defineProps<{ panel: string }>();
 

@@ -1,7 +1,7 @@
 <template>
   <div class="edge-config-panel">
     <div class="panel-header">
-      <span>连线配置</span>
+      <span>{{ t("task.edgeConfig") }}</span>
       <ElButton type="text" class="close-btn" @click="handleClose">
         <ElIcon><Close /></ElIcon>
       </ElButton>
@@ -9,52 +9,54 @@
 
     <div class="panel-content">
       <ElForm :model="formData" label-width="80px" size="small">
-        <ElFormItem label="连线名称">
-          <ElInput v-model="formData.label" placeholder="请输入连线名称" />
+        <ElFormItem :label="t('task.edgeName')">
+          <ElInput v-model="formData.label" :placeholder="t('task.inputEdgeName')" />
         </ElFormItem>
 
-        <ElFormItem label="连线类型">
-          <ElSelect v-model="formData.type" placeholder="请选择连线类型">
-            <ElOption label="折线" value="smoothstep" />
-            <ElOption label="曲线" value="default" />
-            <ElOption label="直线" value="straight" />
+        <ElFormItem :label="t('task.edgeType')">
+          <ElSelect v-model="formData.type" :placeholder="t('task.selectEdgeType')">
+            <ElOption :label="t('task.polyline')" value="smoothstep" />
+            <ElOption :label="t('task.curve')" value="default" />
+            <ElOption :label="t('task.line')" value="straight" />
           </ElSelect>
         </ElFormItem>
 
-        <ElFormItem label="连线颜色">
+        <ElFormItem :label="t('task.edgeColor')">
           <ElColorPicker v-model="formData.color" />
         </ElFormItem>
 
-        <ElFormItem label="线条宽度">
+        <ElFormItem :label="t('task.lineWidth')">
           <ElInputNumber v-model="formData.strokeWidth" :min="1" :max="10" />
         </ElFormItem>
 
-        <ElFormItem label="启用动画">
+        <ElFormItem :label="t('task.enableAnimation')">
           <ElSwitch v-model="formData.animated" />
         </ElFormItem>
 
-        <ElFormItem label="条件表达式">
+        <ElFormItem :label="t('task.conditionExpr')">
           <ElInput
             v-model="formData.condition"
             type="textarea"
             :rows="3"
-            placeholder="请输入条件表达式"
+            :placeholder="t('task.inputConditionExpr')"
           />
         </ElFormItem>
 
-        <ElFormItem label="描述">
+        <ElFormItem :label="t('task.descLabel')">
           <ElInput
             v-model="formData.description"
             type="textarea"
             :rows="2"
-            placeholder="请输入描述信息"
+            :placeholder="t('task.inputDesc')"
           />
         </ElFormItem>
       </ElForm>
 
       <div class="panel-actions">
-        <ElButton type="primary" size="small" @click="handleSave">保存</ElButton>
-        <ElButton type="danger" size="small" @click="handleDelete">删除连线</ElButton>
+        <ElButton type="primary" size="small" @click="handleSave">{{ t("task.save") }}</ElButton>
+        <ElButton type="danger" size="small" @click="handleDelete">
+          {{ t("task.deleteEdge") }}
+        </ElButton>
       </div>
     </div>
   </div>
@@ -62,6 +64,7 @@
 
 <script setup>
 import { ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import {
   ElButton,
   ElForm,
@@ -85,6 +88,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["close", "save", "delete"]);
+
+const { t } = useI18n();
 
 const formData = ref({
   label: props.edge?.label || "",
@@ -120,7 +125,7 @@ function handleClose() {
 
 function handleSave() {
   emit("save", formData.value);
-  ElMessage.success("保存成功");
+  ElMessage.success(t("task.saveSuccess"));
 }
 
 function handleDelete() {

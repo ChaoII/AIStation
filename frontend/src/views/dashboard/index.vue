@@ -31,8 +31,8 @@
         <el-card shadow="hover">
           <template #header>
             <div class="dash-chart-header">
-              <span class="dash-chart-title">标注任务状态</span>
-              <span class="dash-chart-note">{{ stats.taskTotal }} 个任务</span>
+              <span class="dash-chart-title">{{ t("dashboard.chartAnnoStatus") }}</span>
+              <span class="dash-chart-note">{{ t("dashboard.noteTaskCount", { n: stats.taskTotal }) }}</span>
             </div>
           </template>
           <div class="dash-chart-wrapper">
@@ -45,8 +45,8 @@
         <el-card shadow="hover">
           <template #header>
             <div class="dash-chart-header">
-              <span class="dash-chart-title">训练任务状态</span>
-              <span class="dash-chart-note">{{ stats.trainTotal }} 个任务</span>
+              <span class="dash-chart-title">{{ t("dashboard.chartTrainStatus") }}</span>
+              <span class="dash-chart-note">{{ t("dashboard.noteTaskCount", { n: stats.trainTotal }) }}</span>
             </div>
           </template>
           <div class="dash-chart-wrapper">
@@ -62,8 +62,8 @@
         <el-card shadow="hover">
           <template #header>
             <div class="dash-chart-header">
-              <span class="dash-chart-title">各数据集图片数</span>
-              <span class="dash-chart-note">{{ stats.datasetCount }} 个数据集</span>
+              <span class="dash-chart-title">{{ t("dashboard.chartDatasetImages") }}</span>
+              <span class="dash-chart-note">{{ t("dashboard.noteDatasetCount", { n: stats.datasetCount }) }}</span>
             </div>
           </template>
           <div class="dash-chart-wrapper">
@@ -76,8 +76,8 @@
         <el-card shadow="hover">
           <template #header>
             <div class="dash-chart-header">
-              <span class="dash-chart-title">标注任务类型分布</span>
-              <span class="dash-chart-note">{{ stats.taskTypeTotal }} 种类型</span>
+              <span class="dash-chart-title">{{ t("dashboard.chartTaskType") }}</span>
+              <span class="dash-chart-note">{{ t("dashboard.noteTypeCount", { n: stats.taskTypeTotal }) }}</span>
             </div>
           </template>
           <div class="dash-chart-wrapper">
@@ -95,7 +95,7 @@
           <template #header>
             <div class="dash-footer-head">
               <el-icon size="16"><Edit /></el-icon>
-              最近标注任务
+              {{ t("dashboard.recentAnno") }}
             </div>
           </template>
           <div class="dash-list">
@@ -105,7 +105,7 @@
                 {{ sLbl(t.status) }}
               </el-tag>
             </div>
-            <div v-if="!recentAnno.length" class="dash-empty">暂无数据</div>
+            <div v-if="!recentAnno.length" class="dash-empty">{{ t("dashboard.empty") }}</div>
           </div>
         </el-card>
       </el-col>
@@ -114,7 +114,7 @@
           <template #header>
             <div class="dash-footer-head">
               <el-icon size="16"><Aim /></el-icon>
-              最近训练任务
+              {{ t("dashboard.recentTrain") }}
             </div>
           </template>
           <div class="dash-list">
@@ -129,7 +129,7 @@
                 {{ trainLbl(t.status) }}
               </el-tag>
             </div>
-            <div v-if="!recentTrain.length" class="dash-empty">暂无数据</div>
+            <div v-if="!recentTrain.length" class="dash-empty">{{ t("dashboard.empty") }}</div>
           </div>
         </el-card>
       </el-col>
@@ -138,15 +138,15 @@
           <template #header>
             <div class="dash-footer-head">
               <el-icon size="16"><WarningFilled /></el-icon>
-              最近告警
+              {{ t("dashboard.recentAlarm") }}
             </div>
           </template>
           <div class="dash-list">
             <div v-for="a in recentAlarm" :key="a.id" class="dash-list-item">
-              <span class="dash-list-name">{{ a.alarm_type || "告警" }}</span>
+              <span class="dash-list-name">{{ a.alarm_type || t("dashboard.alarmDefault") }}</span>
               <span class="dash-list-meta">{{ fmt(a.created_time) }}</span>
             </div>
-            <div v-if="!recentAlarm.length" class="dash-empty">暂无告警</div>
+            <div v-if="!recentAlarm.length" class="dash-empty">{{ t("dashboard.emptyAlarm") }}</div>
           </div>
         </el-card>
       </el-col>
@@ -157,6 +157,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { UserFilled, Folder, Edit, Aim, Camera, WarningFilled } from "@element-plus/icons-vue";
 import ECharts from "@/components/ECharts/index.vue";
 import { AnnotationAPI } from "@/api/module_annotation";
@@ -168,6 +169,7 @@ import OnlineAPI from "@/api/module_monitor/online";
 import ServerAPI from "@/api/module_monitor/server";
 
 const router = useRouter();
+const { t } = useI18n();
 const serverInfo = ref<any>({});
 const dataLoaded = ref(false);
 
@@ -201,80 +203,86 @@ const recentAlarm = ref<any[]>([]);
 
 const cards = computed(() => [
   {
-    label: "数据集",
+    label: t("dashboard.cardDataset"),
     val: stats.datasetCount,
     icon: Folder,
     color: "#0984e3",
     bg: "#e8f4fd",
-    extra: `${stats.annotatedCount} 张已标注`,
+    extra: t("dashboard.extraAnnotated", { n: stats.annotatedCount }),
     route: "/annotation/dataset",
   },
   {
-    label: "标注任务",
+    label: t("dashboard.cardAnnoTask"),
     val: stats.taskTotal,
     icon: Edit,
     color: "#00b894",
     bg: "#e6faf5",
-    extra: `${stats.taskCompleted} 已完成`,
+    extra: t("dashboard.extraCompleted", { n: stats.taskCompleted }),
     route: "/annotation/task",
   },
   {
-    label: "训练任务",
+    label: t("dashboard.cardTrainTask"),
     val: stats.trainTotal,
     icon: Aim,
     color: "#6c5ce7",
     bg: "#efeaff",
-    extra: `${stats.trainRunning} 训练中`,
+    extra: t("dashboard.extraTraining", { n: stats.trainRunning }),
     route: "/train/task",
   },
   {
-    label: "摄像头",
+    label: t("dashboard.cardCamera"),
     val: stats.cameraTotal,
     icon: Camera,
     color: "#fdcb6e",
     bg: "#fef9e7",
-    extra: `${stats.cameraOnline} 在线`,
+    extra: t("dashboard.extraOnline", { n: stats.cameraOnline }),
     route: "/video/camera",
   },
   {
-    label: "告警记录",
+    label: t("dashboard.cardAlarm"),
     val: stats.alarmCount,
     icon: WarningFilled,
     color: "#ff7675",
     bg: "#ffeeed",
-    extra: "最近 7 天",
+    extra: t("dashboard.extraLast7Days"),
     route: "/video/alarm",
   },
   {
-    label: "在线用户",
+    label: t("dashboard.cardOnline"),
     val: stats.onlineUsers,
     icon: UserFilled,
     color: "#74b9ff",
     bg: "#eef6ff",
-    extra: `共 ${stats.totalUsers} 用户`,
+    extra: t("dashboard.extraTotalUsers", { n: stats.totalUsers }),
     route: "/system/user",
   },
 ]);
 
-function typeLbl(t: string) {
+function typeLbl(type: string) {
   return (
     (
       {
-        detection: "检测",
-        rotated_detection: "旋转框",
-        segmentation: "分割",
-        keypoint: "关键点",
-        ocr: "OCR",
-        classification: "分类",
+        detection: t("dashboard.typeDetection"),
+        rotated_detection: t("dashboard.typeRotated"),
+        segmentation: t("dashboard.typeSegmentation"),
+        keypoint: t("dashboard.typeKeypoint"),
+        ocr: t("dashboard.typeOCR"),
+        classification: t("dashboard.typeClassification"),
       } as any
-    )[t] || t
+    )[type] || type
   );
 }
 function sTag(s: string) {
   return ({ pending: "info", in_progress: "primary", completed: "success" } as any)[s] || "info";
 }
 function sLbl(s: string) {
-  return ({ pending: "待开始", in_progress: "进行中", completed: "已完成" } as any)[s] || s;
+  return (
+    ({
+      pending: t("dashboard.statusPending"),
+      in_progress: t("dashboard.statusInProgress"),
+      completed: t("dashboard.statusCompleted"),
+    } as any)[s] || s
+  );
 }
 function trainTag(s: string) {
   return (
@@ -293,11 +301,11 @@ function trainLbl(s: string) {
   return (
     (
       {
-        pending: "待开始",
-        running: "训练中",
-        success: "已完成",
-        failed: "失败",
-        cancelled: "已取消",
+        pending: t("dashboard.statusPending"),
+        running: t("dashboard.statusTraining"),
+        success: t("dashboard.statusCompleted"),
+        failed: t("dashboard.statusFailed"),
+        cancelled: t("dashboard.statusCancelled"),
       } as any
     )[s] || s
   );
@@ -317,9 +325,9 @@ const taskStatusPie = computed(() => ({
       center: ["50%", "50%"],
       label: { show: true, formatter: "{b}\n{d}%", fontSize: 11 },
       data: [
-        { value: stats.taskPending || 1, name: "待开始", itemStyle: { color: "#cbd5e1" } },
-        { value: stats.taskInProgress || 1, name: "进行中", itemStyle: { color: "#0984e3" } },
-        { value: stats.taskCompleted || 1, name: "已完成", itemStyle: { color: "#00b894" } },
+        { value: stats.taskPending || 1, name: t("dashboard.statusPending"), itemStyle: { color: "#cbd5e1" } },
+        { value: stats.taskInProgress || 1, name: t("dashboard.statusInProgress"), itemStyle: { color: "#0984e3" } },
+        { value: stats.taskCompleted || 1, name: t("dashboard.statusCompleted"), itemStyle: { color: "#00b894" } },
       ],
     },
   ],
@@ -334,10 +342,10 @@ const trainStatusPie = computed(() => ({
       center: ["50%", "50%"],
       label: { show: true, formatter: "{b}\n{d}%", fontSize: 11 },
       data: [
-        { value: stats.trainPending || 1, name: "待开始", itemStyle: { color: "#cbd5e1" } },
-        { value: stats.trainRunning || 1, name: "训练中", itemStyle: { color: "#0984e3" } },
-        { value: stats.trainSuccess || 1, name: "已完成", itemStyle: { color: "#00b894" } },
-        { value: stats.trainFailed || 1, name: "失败", itemStyle: { color: "#ff7675" } },
+        { value: stats.trainPending || 1, name: t("dashboard.statusPending"), itemStyle: { color: "#cbd5e1" } },
+        { value: stats.trainRunning || 1, name: t("dashboard.statusTraining"), itemStyle: { color: "#0984e3" } },
+        { value: stats.trainSuccess || 1, name: t("dashboard.statusCompleted"), itemStyle: { color: "#00b894" } },
+        { value: stats.trainFailed || 1, name: t("dashboard.statusFailed"), itemStyle: { color: "#ff7675" } },
       ],
     },
   ],
@@ -351,7 +359,7 @@ const datasetBar = computed(() => ({
     data: datasetImageCounts.value.map((d) => d.name),
     axisLabel: { rotate: 25, fontSize: 10, interval: 0 },
   },
-  yAxis: { type: "value" as const, name: "图片数" },
+  yAxis: { type: "value" as const, name: t("dashboard.axisImageCount") },
   series: [
     {
       type: "bar" as const,
@@ -369,10 +377,10 @@ const taskTypeBar = computed(() => ({
     type: "category" as const,
     data: Object.keys(taskTypeCount).length
       ? Object.keys(taskTypeCount).map((k) => typeLbl(k))
-      : ["暂无"],
+      : [t("dashboard.noData")],
     axisLabel: { rotate: 20, fontSize: 10 },
   },
-  yAxis: { type: "value" as const, name: "任务数" },
+  yAxis: { type: "value" as const, name: t("dashboard.axisTaskCount") },
   series: [
     {
       type: "bar" as const,

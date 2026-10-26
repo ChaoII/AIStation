@@ -107,7 +107,9 @@ class UserRegisterSchema(BaseModel):
     mobile: str | None = Field(default=None, description="手机号")
     username: str = Field(..., description="账号")
     password: str = Field(..., description="密码哈希值")
-    role_ids: list[int] | None = Field(default=[1], description="角色ID")
+    role_ids: list[int] | None = Field(
+        default=None, description="角色ID(注册不授予角色,权限由管理员统一分配)"
+    )
     created_id: int | None = Field(default=1, description="创建人ID")
     description: str | None = Field(default=None, max_length=255, description="备注")
 
@@ -175,31 +177,6 @@ class UserRegisterSchema(BaseModel):
         return self
 
 
-class UserForgetPasswordSchema(BaseModel):
-    """忘记密码"""
-
-    username: str = Field(..., max_length=32, description="用户名")
-    new_password: str = Field(..., max_length=128, description="新密码")
-    mobile: str | None = Field(default=None, description="手机号")
-
-    @field_validator("mobile")
-    @classmethod
-    def validate_mobile(cls, value: str | None):
-        """
-        校验手机号格式（委托到 `mobile_validator`）。
-
-        参数:
-        - value (str | None): 手机号。
-
-        返回:
-        - str | None: 校验后的手机号。
-
-        异常:
-        - CustomException: 手机号格式非法时抛出。
-        """
-        return mobile_validator(value)
-
-
 class UserChangePasswordSchema(BaseModel):
     """修改密码"""
 
@@ -243,6 +220,7 @@ class UserOutSchema(UserUpdateSchema, BaseSchema, UserBySchema, TenantBySchema):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
+    password: str | None = Field(default=None, exclude=True, description="（不回显，仅内部）")
     tenant_id: int | None = Field(
         default=None,
         exclude=True,

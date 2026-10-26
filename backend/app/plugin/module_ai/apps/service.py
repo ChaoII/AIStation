@@ -427,6 +427,8 @@ async def run_app_ui_stream(
             state["error"] = "未配置大模型，请在 AI 管理→模型配置 中添加并启用"
             yield agno_error_frame(state["error"])
             return
+        # A4: 应用级 timeout 落库但此前未生效，运行时注入给 build_model 透传
+        runtime["timeout"] = app.get("timeout") or 60
         model_name = runtime.get("model") or "app"
 
         tool_schemas, http_tools = await _build_app_tools(app.get("tools"))
@@ -464,6 +466,7 @@ async def run_app_ui_stream(
             user_id=uid,
             prompt_tokens=u.get("prompt_tokens", 0),
             completion_tokens=u.get("completion_tokens", 0),
+            cost=u.get("cost", 0.0),
         )
         # 委托工作流时会话已由引擎落库：跳过，防重复 user 消息
         if not delegated:

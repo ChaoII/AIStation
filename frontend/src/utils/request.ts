@@ -71,16 +71,8 @@ httpRequest.interceptors.response.use(
       return Promise.reject(response);
     }
 
-    // 如果请求不是 GET 请求，且不是登录或退出登录接口，请求成功时显示成功提示
-    if (
-      response.config.method?.toUpperCase() !== "GET" &&
-      !response.config.url?.includes("login") &&
-      !response.config.url?.includes("logout") &&
-      !silent
-    ) {
-      ElMessage.success(data.msg);
-    }
-
+    // 成功提示已改为「页面显式弹一次」，此处不再根据服务器 msg 自动弹，避免一次操作触发
+    // 多个写接口时弹出多个一模一样的「保存成功」。错误处理仍集中在本拦截器。
     return response;
   },
   async (error: AxiosError<ApiResponse>) => {

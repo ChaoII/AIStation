@@ -3,10 +3,10 @@
     <el-card shadow="never">
       <template #header>
         <div class="ev-head">
-          <span>基准测试</span>
+          <span>{{ $t("ai_workflow.eval_benchmark") }}</span>
           <div class="ev-head__ops">
             <el-button size="small" type="primary" :loading="running" @click="run">
-              运行基准
+              {{ $t("ai_workflow.eval_runBenchmark") }}
             </el-button>
             <el-tag v-if="status" size="small" type="info" effect="plain">
               {{ statusText }}
@@ -19,7 +19,7 @@
         :closable="false"
         show-icon
         class="ev-alert"
-        title="跑内置黄金题集（指标快路径 + NL2SQL），给出准确率与耗时基线，用于回归对比。"
+        :title="$t('ai_workflow.eval_benchAlert')"
       />
       <el-progress
         v-if="status"
@@ -35,16 +35,16 @@
         <span>{{ status.done }} / {{ status.total }}</span>
       </div>
       <el-descriptions v-if="report" :column="2" border size="small" style="margin-top: 12px">
-        <el-descriptions-item label="指标快路径题数">
+        <el-descriptions-item :label="$t('ai_workflow.eval_fastCount')">
           {{ report.fast?.total ?? 0 }}
         </el-descriptions-item>
-        <el-descriptions-item label="指标快路径准确率">
+        <el-descriptions-item :label="$t('ai_workflow.eval_fastAccuracy')">
           {{ fmt(report.fast?.semantic_accuracy) }}
         </el-descriptions-item>
-        <el-descriptions-item label="NL2SQL 题数">
+        <el-descriptions-item :label="$t('ai_workflow.eval_nl2sqlCount')">
           {{ report.nl2sql?.total ?? 0 }}
         </el-descriptions-item>
-        <el-descriptions-item label="NL2SQL 准确率">
+        <el-descriptions-item :label="$t('ai_workflow.eval_nl2sqlAccuracy')">
           {{ fmt(report.nl2sql?.accuracy) }}
         </el-descriptions-item>
       </el-descriptions>
@@ -57,17 +57,26 @@
         max-height="360"
         stripe
       >
-        <el-table-column prop="q" label="问题" min-width="220" show-overflow-tooltip />
-        <el-table-column label="结果" width="80" align="center">
+        <el-table-column
+          prop="q"
+          :label="$t('ai_workflow.eval_question')"
+          min-width="220"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="$t('ai_workflow.eval_result')" width="80" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.correct ? 'success' : 'danger'" effect="plain">
-              {{ row.correct ? "对" : "错" }}
+              {{
+                row.correct
+                  ? $t("ai_workflow.eval_correctShort")
+                  : $t("ai_workflow.eval_wrongShort")
+              }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="ms" label="耗时(ms)" width="100" align="center" />
+        <el-table-column prop="ms" :label="$t('ai_workflow.eval_ms')" width="100" align="center" />
       </el-table>
-      <el-empty v-if="!status" description="点击「运行基准」开始" :image-size="60" />
+      <el-empty v-if="!status" :description="$t('ai_workflow.eval_clickRun')" :image-size="60" />
     </el-card>
   </div>
 </template>
@@ -75,9 +84,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import { getQueryBenchmarkStatus, runQueryBenchmark } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiEvalBenchmark" });
+
+const { t } = useI18n();
 
 const running = ref(false);
 const status = ref<any>(null);
@@ -92,9 +104,9 @@ const pct = computed(() => {
 const statusText = computed(() => {
   const s = status.value;
   if (!s) return "";
-  if (s.status === "done") return "已完成";
-  if (s.status === "error") return "失败";
-  return "运行中";
+  if (s.status === "done") return t("ai_workflow.eval_done");
+  if (s.status === "error") return t("ai_workflow.eval_failed");
+  return t("ai_workflow.eval_running");
 });
 
 function fmt(v: any) {
@@ -119,11 +131,11 @@ async function poll(runId: string) {
       report.value = d.report || null;
       running.value = false;
       stop();
-      ElMessage.success("基准测试完成");
+      ElMessage.success(t("ai_workflow.eval_benchDone"));
     } else if (d.status === "error") {
       running.value = false;
       stop();
-      ElMessage.error(d.error || "基准测试失败");
+      ElMessage.error(d.error || t("ai_workflow.eval_benchFail"));
     }
   } catch {
     /* 轮询失败忽略，下一轮重试 */
@@ -144,7 +156,7 @@ async function run() {
     await poll(runId);
   } catch (e: any) {
     running.value = false;
-    ElMessage.error(e?.msg || "启动失败");
+    ElMessage.error(e?.msg || t("ai_workflow.eval_startFail"));
   }
 }
 

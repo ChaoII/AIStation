@@ -12,40 +12,61 @@
       <el-input
         v-model="search"
         size="small"
-        placeholder="搜索对象类型"
+        :placeholder="i18nT('ai_ontology.searchObjectTypes')"
         clearable
         :prefix-icon="Search"
         class="ont-gw__search"
         @input="doSearch"
       />
       <el-select v-model="layout" size="small" class="ont-gw__layout">
-        <el-option label="力导向" value="cose" />
-        <el-option label="同心布局" value="concentric" />
-        <el-option label="树形布局" value="breadthfirst" />
-        <el-option label="网格布局" value="grid" />
-        <el-option label="环形布局" value="circle" />
+        <el-option :label="i18nT('ai_ontology.forceDirected')" value="cose" />
+        <el-option :label="i18nT('ai_ontology.concentricLayout')" value="concentric" />
+        <el-option :label="i18nT('ai_ontology.treeLayout')" value="breadthfirst" />
+        <el-option :label="i18nT('ai_ontology.gridLayout')" value="grid" />
+        <el-option :label="i18nT('ai_ontology.ringLayout')" value="circle" />
       </el-select>
       <el-select v-model="theme" size="small" class="ont-gw__theme">
         <el-option v-for="t in THEME_OPTIONS" :key="t.value" :label="t.label" :value="t.value" />
       </el-select>
       <el-checkbox v-model="onlyConnected" size="small" class="ont-gw__connected">
-        只显示有关联
+        {{ i18nT("ai_ontology.showRelatedOnly") }}
       </el-checkbox>
-      <el-switch v-model="physicsMode" size="small" active-text="物理" />
+      <el-switch v-model="physicsMode" size="small" :active-text="i18nT('ai_ontology.physics')" />
       <el-switch
         v-model="shortestMode"
         size="small"
-        active-text="最短路径"
+        :active-text="i18nT('ai_ontology.shortestPath')"
         @change="onModeChange"
       />
-      <el-switch v-model="multiSelect" size="small" active-text="多选" @change="onModeChange" />
+      <el-switch
+        v-model="multiSelect"
+        size="small"
+        :active-text="i18nT('ai_ontology.multiSelect')"
+        @change="onModeChange"
+      />
       <el-button-group size="small">
-        <el-button :icon="Refresh" title="重新布局" @click="relayout" />
-        <el-button :icon="FullScreen" title="适合页面" @click="graphRef?.fit()" />
-        <el-button :icon="Aim" title="居中" @click="graphRef?.center?.()" />
-        <el-button :icon="ZoomIn" title="放大" @click="graphRef?.zoom(1.25)" />
-        <el-button :icon="ZoomOut" title="缩小" @click="graphRef?.zoom(0.8)" />
-        <el-button :icon="Download" title="导出图片" @click="exportImage" />
+        <el-button :icon="Refresh" :title="i18nT('ai_ontology.reLayout')" @click="relayout" />
+        <el-button
+          :icon="FullScreen"
+          :title="i18nT('ai_ontology.fitPage')"
+          @click="graphRef?.fit()"
+        />
+        <el-button :icon="Aim" :title="i18nT('ai_ontology.center')" @click="graphRef?.center?.()" />
+        <el-button
+          :icon="ZoomIn"
+          :title="i18nT('ai_ontology.zoomIn')"
+          @click="graphRef?.zoom(1.25)"
+        />
+        <el-button
+          :icon="ZoomOut"
+          :title="i18nT('ai_ontology.zoomOut')"
+          @click="graphRef?.zoom(0.8)"
+        />
+        <el-button
+          :icon="Download"
+          :title="i18nT('ai_ontology.exportImage')"
+          @click="exportImage"
+        />
       </el-button-group>
       <el-button
         v-if="multiSelect && selectedNames.length"
@@ -55,13 +76,18 @@
         plain
         @click="batchDelete"
       >
-        批量删除{{ selectedNames.length ? ` (${selectedNames.length})` : "" }}
+        {{ i18nT("ai_ontology.batchDeleteSelected", { count: selectedNames.length }) }}
       </el-button>
       <el-button v-if="multiSelect && selectedNames.length" size="small" @click="clearSelection">
-        清空选择
+        {{ i18nT("ai_ontology.clearSelection") }}
       </el-button>
       <el-tag size="small" type="info" effect="plain">
-        {{ nodes.length }} 类型 / {{ edges.length }} 关系
+        {{
+          i18nT("ai_ontology.typeRelationCount", {
+            typeCount: nodes.length,
+            relationCount: edges.length,
+          })
+        }}
       </el-tag>
 
       <!-- 维护面板图标按钮 -->
@@ -78,12 +104,18 @@
 
       <!-- 保存视图 / 图模板 -->
       <el-dropdown size="small" trigger="click" @command="onViewCmd">
-        <el-button size="small" :icon="View">视图</el-button>
+        <el-button size="small" :icon="View">{{ i18nT("ai_ontology.view") }}</el-button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="save">保存当前视图</el-dropdown-item>
-            <el-dropdown-item command="manage:active">管理已加载视图…</el-dropdown-item>
-            <el-dropdown-item command="refresh" divided>刷新列表</el-dropdown-item>
+            <el-dropdown-item command="save">
+              {{ i18nT("ai_ontology.saveCurrentView") }}
+            </el-dropdown-item>
+            <el-dropdown-item command="manage:active">
+              {{ i18nT("ai_ontology.manageLoadedViews") }}
+            </el-dropdown-item>
+            <el-dropdown-item command="refresh" divided>
+              {{ i18nT("ai_ontology.refreshList") }}
+            </el-dropdown-item>
             <el-dropdown-item
               v-for="v in mySavedViews"
               :key="v.code"
@@ -91,17 +123,23 @@
               divided
             >
               <span>{{ v.name || v.code }}</span>
-              <el-tag v-if="v.is_default" size="small" type="success">默认</el-tag>
+              <el-tag v-if="v.is_default" size="small" type="success">
+                {{ i18nT("ai_ontology.default") }}
+              </el-tag>
             </el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
       <el-dropdown size="small" trigger="click" @command="onTemplateCmd">
-        <el-button size="small" :icon="Brush">模板</el-button>
+        <el-button size="small" :icon="Brush">{{ i18nT("ai_ontology.template") }}</el-button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="save">存为图模板</el-dropdown-item>
-            <el-dropdown-item command="refresh" divided>刷新列表</el-dropdown-item>
+            <el-dropdown-item command="save">
+              {{ i18nT("ai_ontology.saveAsGraphTemplate") }}
+            </el-dropdown-item>
+            <el-dropdown-item command="refresh" divided>
+              {{ i18nT("ai_ontology.refreshList") }}
+            </el-dropdown-item>
             <el-dropdown-item
               v-for="t in templates"
               :key="t.code"
@@ -152,7 +190,11 @@
         @blank-ctx="onBlankCtx"
         @path-found="onPathFound"
       />
-      <el-empty v-else :image-size="70" description="该本体暂无对象类型，右键点空白处新建" />
+      <el-empty
+        v-else
+        :image-size="70"
+        :description="i18nT('ai_ontology.thisOntologyHasNoObjectTypesRightClickBlankAreaToCreate')"
+      />
 
       <!-- 右键菜单（**全部是写操作**：编辑/物化/删除/新建 ⇒ 需 edit 权限；
            只读用户看不到这个菜单，也不会点到会 403 的入口） -->
@@ -165,90 +207,122 @@
         @contextmenu.prevent
       >
         <template v-if="ctxMenu.kind === 'node'">
-          <div class="ont-gw__ctx-item" @click="ctxEdit">编辑元数据</div>
-          <div class="ont-gw__ctx-item" @click="ctxMaterialize">物化为表</div>
-          <div class="ont-gw__ctx-item ont-gw__ctx-danger" @click="ctxDelete">删除对象类型</div>
+          <div class="ont-gw__ctx-item" @click="ctxEdit">
+            {{ i18nT("ai_ontology.editMetadata") }}
+          </div>
+          <div class="ont-gw__ctx-item" @click="ctxMaterialize">
+            {{ i18nT("ai_ontology.materialize") }}
+          </div>
+          <div class="ont-gw__ctx-item ont-gw__ctx-danger" @click="ctxDelete">
+            {{ i18nT("ai_ontology.deleteObjectType") }}
+          </div>
         </template>
         <template v-else>
-          <div class="ont-gw__ctx-item" @click="ctxCreate">新建对象类型</div>
+          <div class="ont-gw__ctx-item" @click="ctxCreate">
+            {{ i18nT("ai_ontology.newObjectType") }}
+          </div>
         </template>
       </div>
     </div>
 
     <!-- 多选提示条 -->
     <div v-if="multiSelect && selectedNames.length" class="ont-gw__selbar">
-      已选 {{ selectedNames.length }} 个对象类型（可批量删除 / 清空）
+      {{ i18nT("ai_ontology.selectedCountHint", { count: selectedNames.length }) }}
     </div>
 
     <!-- 保存视图 / 存模板命名弹窗 -->
     <el-dialog
       v-model="viewDialog.visible"
-      :title="viewDialog.kind === 'template' ? '存为图模板' : '保存视图'"
+      :title="
+        viewDialog.kind === 'template'
+          ? i18nT('ai_ontology.saveAsGraphTemplate')
+          : i18nT('ai_ontology.saveView')
+      "
       width="520px"
       append-to-body
     >
       <el-form label-width="70px">
-        <el-form-item label="名称">
-          <el-input v-model="viewDialog.name" placeholder="给这个视图起个名字" />
+        <el-form-item :label="i18nT('ai_ontology.name')">
+          <el-input v-model="viewDialog.name" :placeholder="i18nT('ai_ontology.nameThisView')" />
         </el-form-item>
-        <el-form-item label="说明">
+        <el-form-item :label="i18nT('ai_ontology.note')">
           <el-input v-model="viewDialog.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="viewDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="confirmSaveView">保存</el-button>
+        <el-button @click="viewDialog.visible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
+        <el-button type="primary" @click="confirmSaveView">
+          {{ i18nT("ai_ontology.save") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 管理已加载视图：分享 / 版本 / 设默认 / 删除 -->
-    <el-dialog v-model="manageDialog.visible" title="管理视图" width="520px" append-to-body>
+    <el-dialog
+      v-model="manageDialog.visible"
+      :title="i18nT('ai_ontology.manageViews')"
+      width="520px"
+      append-to-body
+    >
       <el-descriptions v-if="manageDialog.view" :column="1" size="small" border>
-        <el-descriptions-item label="名称">
+        <el-descriptions-item :label="i18nT('ai_ontology.name')">
           {{ manageDialog.view.name || manageDialog.view.code }}
         </el-descriptions-item>
-        <el-descriptions-item label="类型">
-          {{ manageDialog.view.graph_kind === "template" ? "图模板" : "保存视图" }}
+        <el-descriptions-item :label="i18nT('ai_ontology.type')">
+          {{
+            manageDialog.view.graph_kind === "template"
+              ? i18nT("ai_ontology.graphTemplate")
+              : i18nT("ai_ontology.saveView")
+          }}
         </el-descriptions-item>
       </el-descriptions>
-      <el-divider content-position="left">共享给角色</el-divider>
+      <el-divider content-position="left">{{ i18nT("ai_ontology.shareToRoles") }}</el-divider>
       <el-select
         v-model="manageDialog.roles"
         multiple
         filterable
         allow-create
         default-first-option
-        placeholder="输入/选择角色编码"
+        :placeholder="i18nT('ai_ontology.enterOrSelectRoleCode')"
         style="width: 100%"
       />
       <el-button size="small" type="primary" style="margin-top: 8px" @click="confirmShare">
-        保存共享设置
+        {{ i18nT("ai_ontology.saveShareSettings") }}
       </el-button>
-      <el-divider content-position="left">版本历史</el-divider>
+      <el-divider content-position="left">{{ i18nT("ai_ontology.versionHistory") }}</el-divider>
       <el-scrollbar max-height="160px">
         <div v-for="ver in manageDialog.versions" :key="ver.version" class="ont-gw__ver">
           <span>v{{ ver.version }} · {{ ver.created_time }}</span>
-          <el-button size="small" @click="doRestoreVersion(ver.version)">回滚</el-button>
+          <el-button size="small" @click="doRestoreVersion(ver.version)">
+            {{ i18nT("ai_ontology.rollback") }}
+          </el-button>
         </div>
-        <el-empty v-if="!manageDialog.versions.length" :image-size="40" description="暂无版本" />
+        <el-empty
+          v-if="!manageDialog.versions.length"
+          :image-size="40"
+          :description="i18nT('ai_ontology.noVersions')"
+        />
       </el-scrollbar>
       <template #footer>
         <el-button
           v-if="manageDialog.view && manageDialog.view.graph_kind === 'saved'"
           @click="confirmDefault"
         >
-          设为默认
+          {{ i18nT("ai_ontology.setAsDefault") }}
         </el-button>
         <el-button type="danger" plain @click="confirmRemoveView(manageDialog.view)">
-          删除
+          {{ i18nT("ai_ontology.delete2") }}
         </el-button>
-        <el-button @click="manageDialog.visible = false">关闭</el-button>
+        <el-button @click="manageDialog.visible = false">
+          {{ i18nT("ai_ontology.close") }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { computed, reactive, ref, watch } from "vue";
 import {
   Aim,
@@ -285,6 +359,8 @@ import {
 import { useOntologyData } from "../composables/useOntologyData";
 import { buildOntGraph } from "../graph";
 
+const { t: i18nT } = useI18n();
+
 const emit = defineEmits<{
   (e: "node-tap", objectCode: string): void;
   (e: "link-draw", sourceCode: string, targetCode: string): void;
@@ -309,24 +385,24 @@ const multiSelect = ref(false);
 const search = ref("");
 
 const THEME_OPTIONS = [
-  { label: "默认", value: "default" },
-  { label: "海洋", value: "ocean" },
-  { label: "森林", value: "forest" },
-  { label: "落日", value: "sunset" },
-  { label: "单色", value: "mono" },
+  { label: i18nT("ai_ontology.default"), value: "default" },
+  { label: i18nT("ai_ontology.ocean"), value: "ocean" },
+  { label: i18nT("ai_ontology.forest"), value: "forest" },
+  { label: i18nT("ai_ontology.sunset"), value: "sunset" },
+  { label: i18nT("ai_ontology.mono"), value: "mono" },
 ];
 
 /** 维护面板入口：图标 + 面板键 + 标签 */
 const MAINT_ITEMS = [
-  { label: "索引", panel: "index", icon: Collection },
-  { label: "提案", panel: "proposals", icon: Files },
-  { label: "场景", panel: "scenarios", icon: Tickets },
-  { label: "决策", panel: "decisions", icon: Operation },
-  { label: "对象探索", panel: "explore", icon: Guide },
-  { label: "对象类型组", panel: "groups", icon: FolderOpened },
-  { label: "值类型", panel: "valueTypes", icon: DataLine },
-  { label: "共享属性", panel: "shared", icon: Share },
-  { label: "接口", panel: "interfaces", icon: Link },
+  { label: i18nT("ai_ontology.index"), panel: "index", icon: Collection },
+  { label: i18nT("ai_ontology.proposal"), panel: "proposals", icon: Files },
+  { label: i18nT("ai_ontology.scenario"), panel: "scenarios", icon: Tickets },
+  { label: i18nT("ai_ontology.decision"), panel: "decisions", icon: Operation },
+  { label: i18nT("ai_ontology.objectExplorer"), panel: "explore", icon: Guide },
+  { label: i18nT("ai_ontology.objectTypeGroup"), panel: "groups", icon: FolderOpened },
+  { label: i18nT("ai_ontology.valueType"), panel: "valueTypes", icon: DataLine },
+  { label: i18nT("ai_ontology.sharedProperty"), panel: "shared", icon: Share },
+  { label: i18nT("ai_ontology.interface"), panel: "interfaces", icon: Link },
 ];
 
 const graph = computed(() =>
@@ -372,8 +448,8 @@ function onNodeTap(name: string) {
   if (code) emit("node-tap", code);
 }
 function onPathFound(a: string, b: string, length: number) {
-  if (length < 0) ElMessage.info(`「${a}」与「${b}」之间未找到路径`);
-  else ElMessage.success(`最短路径：${a} → ${b}，${length} 跳`);
+  if (length < 0) ElMessage.info(i18nT("ai_ontology.noPathFound", { a, b }));
+  else ElMessage.success(i18nT("ai_ontology.shortestPathMsg", { a, b, length }));
 }
 function onLinkDraw(sourceName: string, targetName: string) {
   const s = codeByName.value[sourceName];
@@ -443,9 +519,9 @@ function exportImage() {
   if (!url) return;
   const a = document.createElement("a");
   a.href = url;
-  a.download = `本体图谱.png`;
+  a.download = `${i18nT("ai_ontology.graphFileName")}.png`;
   a.click();
-  ElMessage.success("已导出图片");
+  ElMessage.success(i18nT("ai_ontology.imageExported"));
 }
 
 let searchTimer: any = null;
@@ -513,22 +589,24 @@ function openViewDialog(kind: "saved" | "template") {
 async function confirmSaveView() {
   const domain_code = viewDialog.kind === "saved" ? currentDomain.value || "" : "";
   if (viewDialog.kind === "saved" && !domain_code) {
-    ElMessage.warning("请先选择左侧的本体域再保存视图");
+    ElMessage.warning(i18nT("ai_ontology.pleaseSelectAnOntologyDomainOnTheLeftFirst"));
     return;
   }
   try {
     const r = await saveGraphView({
-      name: viewDialog.name || `视图 ${new Date().toLocaleString()}`,
+      name:
+        viewDialog.name ||
+        i18nT("ai_ontology.viewNameDefault", { time: new Date().toLocaleString() }),
       description: viewDialog.description,
       graph_kind: viewDialog.kind,
       domain_code,
       state: collectState(),
     });
     viewDialog.visible = false;
-    ElMessage.success(r?.data?.msg || "已保存");
+    ElMessage.success(r?.data?.msg || i18nT("ai_ontology.saved"));
     loadGraphViews();
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || "保存失败");
+    ElMessage.error(e?.response?.data?.msg || e?.message || i18nT("ai_ontology.saveFailed"));
   }
 }
 
@@ -547,14 +625,14 @@ async function loadViewState(code: string) {
     if (typeof s.search === "string") search.value = s.search;
     if (Array.isArray(s.selected)) selectedNames.value = [...s.selected];
     activeViewCode.value = code;
-    ElMessage.success(`已加载「${v.name || v.code}」`);
+    ElMessage.success(i18nT("ai_ontology.loadedView", { name: v.name || v.code }));
     // 布局是异步的，等渲染完成后再应用视口
     setTimeout(() => {
       graphRef.value?.setLayout?.(layout.value);
       graphRef.value?.setViewport?.({ zoom: s.zoom, pan: s.pan });
     }, 350);
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || "加载失败");
+    ElMessage.error(e?.response?.data?.msg || e?.message || i18nT("ai_ontology.loadFailed"));
   }
 }
 
@@ -569,7 +647,7 @@ async function openManage(code: string) {
     manageDialog.versions = versions?.data?.data || [];
     manageDialog.visible = true;
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || "加载失败");
+    ElMessage.error(e?.response?.data?.msg || e?.message || i18nT("ai_ontology.loadFailed"));
   }
 }
 
@@ -578,10 +656,10 @@ async function confirmShare() {
   if (!view) return;
   try {
     const r = await shareGraphView(view.code, "roles", manageDialog.roles);
-    ElMessage.success(r?.data?.msg || "已设置共享");
+    ElMessage.success(r?.data?.msg || i18nT("ai_ontology.shareSet"));
     openManage(view.code);
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || "设置失败");
+    ElMessage.error(e?.response?.data?.msg || e?.message || i18nT("ai_ontology.setFailed"));
   }
 }
 
@@ -590,11 +668,11 @@ async function confirmDefault() {
   if (!view) return;
   try {
     await setDefaultGraphView(view.code, view.domain_code || currentDomain.value || "");
-    ElMessage.success("已设为默认");
+    ElMessage.success(i18nT("ai_ontology.setAsDefault2"));
     manageDialog.visible = false;
     loadGraphViews();
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || "设置失败");
+    ElMessage.error(e?.response?.data?.msg || e?.message || i18nT("ai_ontology.setFailed"));
   }
 }
 
@@ -603,28 +681,32 @@ async function doRestoreVersion(version: number) {
   if (!view) return;
   try {
     await restoreGraphView(view.code, version);
-    ElMessage.success("已回滚");
+    ElMessage.success(i18nT("ai_ontology.rolledBack"));
     openManage(view.code);
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || "回滚失败");
+    ElMessage.error(e?.response?.data?.msg || e?.message || i18nT("ai_ontology.rollbackFailed"));
   }
 }
 
 function confirmRemoveView(view: any) {
   if (!view) return;
   ElMessageBox.confirm(
-    `将删除图视图「${view.name || view.code}」及其全部版本记录，且不可恢复。`,
-    "删除视图",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    i18nT("ai_ontology.deleteViewConfirm", { name: view.name || view.code }),
+    i18nT("ai_ontology.deleteView"),
+    {
+      type: "warning",
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+    }
   )
     .then(async () => {
       try {
         await removeGraphView(view.code);
-        ElMessage.success("已删除");
+        ElMessage.success(i18nT("ai_ontology.deleted"));
         manageDialog.visible = false;
         loadGraphViews();
       } catch (e: any) {
-        ElMessage.error(e?.response?.data?.msg || e?.message || "删除失败");
+        ElMessage.error(e?.response?.data?.msg || e?.message || i18nT("ai_ontology.deleteFailed"));
       }
     })
     .catch(() => {});

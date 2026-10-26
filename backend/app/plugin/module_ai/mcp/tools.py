@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import asyncio
+
 from app.core.logger import log
 
 
@@ -73,7 +75,8 @@ async def connect_mcp_tools(tools: list) -> list:
     connected: list = []
     for t in tools or []:
         try:
-            await t.connect()
+            # A3: 连接加超时兜底，避免不可达 MCP 服务器挂起整个对话
+            await asyncio.wait_for(t.connect(), timeout=10)
             connected.append(t)
         except Exception as e:  # noqa: BLE001  连不上就降级，不阻断对话
             log.warning(f"MCP 连接失败（{getattr(t, 'name', '')}）：{e}")

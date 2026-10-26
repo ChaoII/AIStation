@@ -11,9 +11,9 @@
       <div class="embed-state__icon">
         <el-icon><Warning /></el-icon>
       </div>
-      <div class="embed-state__title">缺少访问凭证</div>
+      <div class="embed-state__title">{{ t("ai_workflow.embed_missingTitle") }}</div>
       <p class="embed-state__desc">
-        该对话需要宿主页面提供有效的访问令牌，请联系站点管理员重新获取嵌入代码。
+        {{ t("ai_workflow.embed_missingDesc") }}
       </p>
     </div>
 
@@ -28,7 +28,7 @@
             </div>
           </template>
         </el-skeleton>
-        <span class="embed-header__brand">AIStation 驱动</span>
+        <span class="embed-header__brand">{{ t("ai_workflow.embed_brand") }}</span>
       </header>
       <div class="embed-messages embed-messages--loading">
         <el-skeleton animated>
@@ -53,13 +53,17 @@
         </el-icon>
       </div>
       <div class="embed-state__title">
-        {{ fatal === "expired" ? "访问凭证已过期" : "当前应用无嵌入权限" }}
+        {{
+          fatal === "expired"
+            ? t("ai_workflow.embed_expiredTitle")
+            : t("ai_workflow.embed_forbiddenTitle")
+        }}
       </div>
       <p class="embed-state__desc">
         {{
           fatal === "expired"
-            ? "宿主页面将自动获取新令牌并恢复对话；若长时间停留在此页，请联系站点管理员。"
-            : "请联系平台管理员，为接入应用勾选「网页嵌入（integration:embed:use）」权限后重试。"
+            ? t("ai_workflow.embed_expiredDesc")
+            : t("ai_workflow.embed_forbiddenDesc")
         }}
       </p>
     </div>
@@ -69,16 +73,18 @@
       <header class="embed-header">
         <div class="embed-header__main">
           <span class="embed-header__dot" :class="isStreaming ? 'is-busy' : 'is-ready'" />
-          <span class="embed-header__name" :title="meta?.name">{{ meta?.name || "对话" }}</span>
+          <span class="embed-header__name" :title="meta?.name">
+            {{ meta?.name || t("ai_workflow.embed_conversation") }}
+          </span>
         </div>
-        <span class="embed-header__brand">AIStation 驱动</span>
+        <span class="embed-header__brand">{{ t("ai_workflow.embed_brand") }}</span>
       </header>
 
       <div ref="scrollRef" class="embed-messages" @scroll="onScroll">
         <div v-if="!messages.length && !isStreaming" class="embed-welcome">
           <div class="embed-welcome__badge">{{ initialChar }}</div>
           <p class="embed-welcome__text">{{ welcomeText }}</p>
-          <p class="embed-welcome__hint">Enter 发送 · Shift + Enter 换行</p>
+          <p class="embed-welcome__hint">{{ t("ai_workflow.embed_hint") }}</p>
         </div>
 
         <template v-for="(m, i) in messages" :key="m.id || `m-${i}`">
@@ -88,11 +94,15 @@
             :class="m.role === 'user' ? 'is-user' : 'is-assistant'"
           >
             <div class="embed-msg__avatar" :class="m.role === 'user' ? 'is-user' : 'is-ai'">
-              {{ m.role === "user" ? "你" : initialChar }}
+              {{ m.role === "user" ? t("ai_workflow.embed_you") : initialChar }}
             </div>
             <div class="embed-msg__content">
               <div class="embed-msg__sender">
-                {{ m.role === "user" ? "你" : meta?.name || "AI 助手" }}
+                {{
+                  m.role === "user"
+                    ? t("ai_workflow.embed_you")
+                    : meta?.name || t("ai_workflow.embed_aiAssistant")
+                }}
               </div>
               <div class="embed-msg__body">
                 <div v-if="m.role === 'user'" class="embed-msg__text">{{ textOf(m) }}</div>
@@ -103,7 +113,9 @@
               </div>
               <div v-if="m.role !== 'user' && sourcesOf(i).length" class="embed-sources">
                 <button type="button" class="embed-sources__toggle" @click="toggleSources(i)">
-                  <span>引用 {{ sourcesOf(i).length }} 条</span>
+                  <span>
+                    {{ t("ai_workflow.embed_sourcesCount", { count: sourcesOf(i).length }) }}
+                  </span>
                   <el-icon>
                     <ArrowDown v-if="!openSources[i]" />
                     <ArrowUp v-else />
@@ -125,7 +137,9 @@
         <div v-if="showTyping" class="embed-msg is-assistant">
           <div class="embed-msg__avatar is-ai">{{ initialChar }}</div>
           <div class="embed-msg__content">
-            <div class="embed-msg__sender">{{ meta?.name || "AI 助手" }}</div>
+            <div class="embed-msg__sender">
+              {{ meta?.name || t("ai_workflow.embed_aiAssistant") }}
+            </div>
             <div class="embed-typing">
               <i />
               <i />
@@ -137,7 +151,7 @@
         <div v-if="notice" class="embed-notice">
           <span>{{ notice }}</span>
           <button v-if="noticeRetry" type="button" class="embed-notice__retry" @click="retryMeta">
-            重新连接
+            {{ t("ai_workflow.embed_retry") }}
           </button>
         </div>
       </div>
@@ -149,7 +163,7 @@
           :autosize="{ minRows: 1, maxRows: 5 }"
           resize="none"
           :disabled="isStreaming"
-          placeholder="输入消息…"
+          :placeholder="t('ai_workflow.embed_inputPlaceholder')"
           class="embed-input__field"
           @keydown.enter.exact.prevent="onSend"
         />
@@ -158,7 +172,7 @@
           class="embed-input__btn"
           circle
           type="primary"
-          aria-label="停止生成"
+          :aria-label="t('ai_workflow.embed_stopGenerate')"
           @click="stop"
         >
           <el-icon><VideoPause /></el-icon>
@@ -168,7 +182,7 @@
           class="embed-input__btn"
           circle
           type="primary"
-          aria-label="发送"
+          :aria-label="t('ai_workflow.embed_send')"
           :disabled="!draft.trim()"
           @click="onSend"
         >
@@ -182,6 +196,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
+import { useI18n } from "vue-i18n";
 import {
   ArrowDown,
   ArrowUp,
@@ -195,6 +210,8 @@ import RichContent from "@/views/module_ai/chat/components/RichContent.vue";
 import { useEmbedChat } from "@/composables/ai/useEmbedChat";
 
 defineOptions({ name: "AiEmbedChat" });
+
+const { t } = useI18n();
 
 type Fatal = "" | "missing" | "expired" | "forbidden";
 
@@ -289,11 +306,11 @@ function toggleSources(index: number) {
   openSources[k] = !openSources[k];
 }
 function sourceTitle(s: any): string {
-  return String(s?.title || s?.file_name || s?.source || "知识片段");
+  return String(s?.title || s?.file_name || s?.source || t("ai_workflow.embed_knowledgePiece"));
 }
 
 const initialChar = computed(() => (meta.value?.name || "AI").trim().charAt(0) || "AI");
-const welcomeText = computed(() => meta.value?.welcome || "你好，有什么可以帮你？");
+const welcomeText = computed(() => meta.value?.welcome || t("ai_workflow.embed_welcome"));
 
 /* ---------- 失败处理 ---------- */
 function handleHttpError(status: number) {
@@ -304,24 +321,24 @@ function handleHttpError(status: number) {
   }
   if (status === 403) {
     fatal.value = "forbidden";
-    emit("error", { reason: "no_permission", message: "应用无网页嵌入权限" });
+    emit("error", { reason: "no_permission", message: t("ai_workflow.embed_noPermMsg") });
     return;
   }
   if (status === 429) {
-    notice.value = "访问过于频繁或今日配额已用完，请稍后再试。";
+    notice.value = t("ai_workflow.embed_rateLimitedNotice");
     noticeRetry.value = false;
-    emit("error", { reason: "rate_limited", message: "请求过于频繁" });
+    emit("error", { reason: "rate_limited", message: t("ai_workflow.embed_rateLimitedMsg") });
     return;
   }
   if (status === 404) {
-    notice.value = "对话目标不存在或已停用。";
+    notice.value = t("ai_workflow.embed_notFoundNotice");
     noticeRetry.value = false;
-    emit("error", { reason: "not_found", message: "对话目标不存在" });
+    emit("error", { reason: "not_found", message: t("ai_workflow.embed_notFoundMsg") });
     return;
   }
-  notice.value = "网络连接异常，请检查网络后重试。";
+  notice.value = t("ai_workflow.embed_networkNotice");
   noticeRetry.value = true;
-  emit("error", { reason: "network", message: "网络连接异常" });
+  emit("error", { reason: "network", message: t("ai_workflow.embed_networkMsg") });
 }
 
 /* ---------- 对话 ---------- */
@@ -468,7 +485,7 @@ async function fetchMeta(): Promise<void> {
     scrollToBottom();
   } catch (e: any) {
     if (!fatal.value) {
-      notice.value = "加载对话信息失败，请重试。";
+      notice.value = t("ai_workflow.embed_metaLoadFail");
       noticeRetry.value = true;
       emit("error", { reason: "network", message: String(e?.message || e) });
     }

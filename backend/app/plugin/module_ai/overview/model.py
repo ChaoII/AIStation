@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.base_model import ModelMixin
@@ -19,4 +19,9 @@ class AiCallLogModel(ModelMixin):
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True, comment="调用用户ID")
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, comment="输入token")
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0, comment="输出token")
-    cost: Mapped[float] = mapped_column(Integer, default=0, comment="费用(元)")
+    cost: Mapped[float | None] = mapped_column(
+        Numeric(12, 4), default=0, comment="费用(元)"
+    )
+    reply_preview: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="输出摘要（定时任务执行等场景回看结果用）"
+    )

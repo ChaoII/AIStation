@@ -17,6 +17,28 @@ from app.utils.ip_local_util import IpLocalUtil
 这对于日志记录、权限验证、性能监控等场景非常有用。
 """
 
+# 操作日志脱敏：请求/响应中疑似密钥的键名片段（命中即掩码），防止明文口令/密钥落日志表
+_SENSITIVE_KEY_HINTS = (
+    "password", "passwd", "secret", "token", "api_key", "apikey",
+    "appkey", "authorization", "access_key", "private_key", "credential",
+)
+
+
+def _mask_sensitive(data: Any) -> Any:
+    """递归掩码疑似密钥字段，防止操作日志明文记录口令/密钥。"""
+    if isinstance(data, dict):
+        return {
+            k: (
+                "****"
+                if any(h in str(k).lower() for h in _SENSITIVE_KEY_HINTS)
+                else _mask_sensitive(v)
+            )
+            for k, v in data.items()
+        }
+    if isinstance(data, list):
+        return [_mask_sensitive(v) for v in data]
+    return data
+
 
 class OperationLogRoute(APIRoute):
     """操作日志路由装饰器"""
@@ -74,7 +96,12 @@ class OperationLogRoute(APIRoute):
                 ))
             ):
                 form_data = await request.form()
-                oper_param = "\n".join([f"{k}: {v}" for k, v in form_data.items()])
+                oper_param = "\n".join(
+                    [
+                        f"{k}: {'****' if any(h in str(k).lower() for h in _SENSITIVE_KEY_HINTS) else v}"
+                        for k, v in form_data.items()
+                    ]
+                )
                 payload = oper_param  # 直接使用字符串格式的参数
             else:
                 payload = await request.body()
@@ -84,7 +111,7 @@ class OperationLogRoute(APIRoute):
                 # 处理请求体数据
                 if payload:
                     try:
-                        oper_param["body"] = json.loads(payload.decode())
+                        oper_param["body"] = _mask_sensitive(json.loads(payload.decode()))
                     except (json.JSONDecodeError, UnicodeDecodeError):
                         oper_param["body"] = payload.decode("utf-8", errors="ignore")
 

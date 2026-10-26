@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from pydantic import BaseModel
-from sqlalchemy import Select, asc, delete, desc, false, func, select, update
+from sqlalchemy import Select, String, asc, cast, delete, desc, false, func, select, update
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
@@ -12,6 +12,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.core.base_model import MappedBase
 from app.core.exceptions import CustomException
+from app.core.logger import log
 from app.core.permission import Permission
 
 if TYPE_CHECKING:
@@ -21,6 +22,9 @@ ModelType = TypeVar("ModelType", bound=MappedBase)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 OutSchemaType = TypeVar("OutSchemaType", bound=BaseModel)
+
+#: 分页 size 服务端上限(F11)：避免大 page_size 触发全表扫/深分页
+_MAX_PAGE_SIZE = 500
 
 
 class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
@@ -67,7 +71,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             obj = result.scalars().first()
             return obj
         except Exception as e:
-            raise CustomException(msg=f"获取查询失败: {e!s}")
+            log.error(f"获取查询失败: {e!s}")
+            raise CustomException(msg="获取查询失败")
 
     async def list(
         self,
@@ -100,7 +105,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             result: Result = await self.auth.db.execute(sql)
             return result.scalars().all()
         except Exception as e:
-            raise CustomException(msg=f"列表查询失败: {e!s}")
+            log.error(f"列表查询失败: {e!s}")
+            raise CustomException(msg="列表查询失败")
 
     async def tree_list(
         self,
@@ -144,9 +150,12 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
             sql = await self.__filter_permissions(sql)
             result: Result = await self.auth.db.execute(sql)
-            return result.scalars().all()
+            nodes = result.scalars().all()
+            # 子节点权限剪枝：children 经 selectinload 加载，本身未参与权限过滤(F5)
+            return await self.__prune_tree_by_permission(nodes, children_attr)
         except Exception as e:
-            raise CustomException(msg=f"树形列表查询失败: {e!s}")
+            log.error(f"树形列表查询失败: {e!s}")
+            raise CustomException(msg="树形列表查询失败")
 
     async def page(
         self,
@@ -175,6 +184,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         - CustomException: 查询失败时抛出异常
         """
         try:
+            # F11: 服务端约束分页大小上限，避免大 page_size 全表扫/深分页
+            if limit <= 0:
+                limit = 10
+            elif limit > _MAX_PAGE_SIZE:
+                limit = _MAX_PAGE_SIZE
             conditions = await self.__build_conditions(**(search or {}))
             order = order_by or [{"id": "asc"}]
             sql = select(self.model).where(*conditions).order_by(*self.__order_by(order))
@@ -211,7 +225,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 "items": [out_schema.model_validate(obj).model_dump() for obj in objs],
             }
         except Exception as e:
-            raise CustomException(msg=f"分页查询失败: {e!s}")
+            log.error(f"分页查询失败: {e!s}")
+            raise CustomException(msg="分页查询失败")
 
     async def create(self, data: CreateSchemaType | dict) -> ModelType:
         """
@@ -242,7 +257,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             await self.auth.db.refresh(obj)
             return obj
         except Exception as e:
-            raise CustomException(msg=f"创建失败: {e!s}")
+            log.error(f"创建失败: {e!s}")
+            raise CustomException(msg="创建失败")
 
     async def update(self, id: int, data: UpdateSchemaType | dict) -> ModelType:
         """
@@ -291,7 +307,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
             return obj
         except Exception as e:
-            raise CustomException(msg=f"更新失败: {e!s}")
+            log.error(f"更新失败: {e!s}")
+            raise CustomException(msg="更新失败")
 
     async def delete(self, ids: builtins.list[int]) -> None:
         """
@@ -314,6 +331,12 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             if len(pk_cols) > 1:
                 raise CustomException(msg="暂不支持复合主键的批量删除")
 
+            # 数据权限过滤：写路径同样应用与读路径一致的数据范围约束，防越权删除
+            perm_cond = await self.__permission_condition()
+            where = [pk_cols[0].in_(ids)]
+            if perm_cond is not None:
+                where.append(perm_cond)
+
             # 检查模型是否支持软删除
             if hasattr(self.model, "is_deleted") and hasattr(self.model, "deleted_time") and hasattr(self.model, "deleted_id"):
                 # 执行软删除
@@ -326,16 +349,17 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                     update_data["deleted_id"] = self.auth.user.id
 
                 # 只更新有权限的数据
-                sql = update(self.model).where(pk_cols[0].in_(ids)).values(**update_data)
+                sql = update(self.model).where(*where).values(**update_data)
                 await self.auth.db.execute(sql)
                 await self.auth.db.flush()
             else:
                 # 不支持软删除的模型，执行物理删除
-                sql = delete(self.model).where(pk_cols[0].in_(ids))
+                sql = delete(self.model).where(*where)
                 await self.auth.db.execute(sql)
                 await self.auth.db.flush()
         except Exception as e:
-            raise CustomException(msg=f"删除失败: {e!s}")
+            log.error(f"删除失败: {e!s}")
+            raise CustomException(msg="删除失败")
 
     async def clear(self) -> None:
         """
@@ -348,6 +372,10 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         - CustomException: 清空失败时抛出异常
         """
         try:
+            # 数据权限过滤：清空时同样只作用于当前用户数据范围内的数据
+            perm_cond = await self.__permission_condition()
+            where = [perm_cond] if perm_cond is not None else []
+
             # 检查模型是否支持软删除
             if hasattr(self.model, "is_deleted") and hasattr(self.model, "deleted_time") and hasattr(self.model, "deleted_id"):
                 # 执行软删除
@@ -360,16 +388,17 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                     update_data["deleted_id"] = self.auth.user.id
 
                 # 更新所有数据为软删除状态
-                sql = update(self.model).values(**update_data)
+                sql = update(self.model).where(*where).values(**update_data)
                 await self.auth.db.execute(sql)
                 await self.auth.db.flush()
             else:
                 # 不支持软删除的模型，执行物理删除
-                sql = delete(self.model)
+                sql = delete(self.model).where(*where)
                 await self.auth.db.execute(sql)
                 await self.auth.db.flush()
         except Exception as e:
-            raise CustomException(msg=f"清空失败: {e!s}")
+            log.error(f"清空失败: {e!s}")
+            raise CustomException(msg="清空失败")
 
     async def set(self, ids: builtins.list[int], **kwargs) -> None:
         """
@@ -393,14 +422,19 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             if len(pk_cols) > 1:
                 raise CustomException(msg="暂不支持复合主键的批量更新")
 
-            # 只更新有权限的数据
-            sql = update(self.model).where(pk_cols[0].in_(ids)).values(**kwargs)
+            # 只更新有权限的数据（并入数据权限过滤，防越权批量修改）
+            perm_cond = await self.__permission_condition()
+            where = [pk_cols[0].in_(ids)]
+            if perm_cond is not None:
+                where.append(perm_cond)
+            sql = update(self.model).where(*where).values(**kwargs)
             await self.auth.db.execute(sql)
             await self.auth.db.flush()
         except CustomException:
             raise
         except Exception as e:
-            raise CustomException(msg=f"批量更新失败: {e!s}")
+            log.error(f"批量更新失败: {e!s}")
+            raise CustomException(msg="批量更新失败")
 
     async def restore(self, ids: builtins.list[int]) -> None:
         """
@@ -432,8 +466,12 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                     "deleted_id": None
                 }
 
-                # 只更新有权限的数据
-                sql = update(self.model).where(pk_cols[0].in_(ids)).values(**update_data)
+                # 只更新有权限的数据（并入数据权限过滤，防越权恢复他人数据）
+                perm_cond = await self.__permission_condition()
+                where = [pk_cols[0].in_(ids)]
+                if perm_cond is not None:
+                    where.append(perm_cond)
+                sql = update(self.model).where(*where).values(**update_data)
                 await self.auth.db.execute(sql)
                 await self.auth.db.flush()
             else:
@@ -441,7 +479,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         except CustomException:
             raise
         except Exception as e:
-            raise CustomException(msg=f"恢复失败: {e!s}")
+            log.error(f"恢复失败: {e!s}")
+            raise CustomException(msg="恢复失败")
 
     async def __filter_permissions(self, sql: Select) -> Select:
         """
@@ -449,6 +488,74 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         filter = Permission(model=self.model, auth=self.auth)
         return await filter.filter_query(sql)
+
+    async def __permission_condition(self) -> ColumnElement | None:
+        """
+        获取当前用户对该模型的数据权限过滤条件（供写路径复用）。
+
+        返回:
+        - Optional[ColumnElement]: 数据权限过滤条件；无限制时返回 None。
+        """
+        return await Permission(model=self.model, auth=self.auth).build_condition()
+
+    async def __permission_allowed_ids(self) -> builtins.set[int] | None:
+        """
+        计算当前用户对该模型有权限的 id 集合；无权限限制时返回 None。
+
+        用于树形结构的子节点权限剪枝(F5)。
+        """
+        cond = await self.__permission_condition()
+        if cond is None:
+            return None
+        sql = select(self.model.id).where(cond)
+        result = await self.auth.db.execute(sql)
+        return {row[0] for row in result.all()}
+
+    async def __prune_tree_by_permission(
+        self, nodes: builtins.list[ModelType], children_attr: str
+    ) -> builtins.list[ModelType]:
+        """
+        对树形结果做子节点权限剪枝(F5)。
+
+        tree_list 通过 selectinload 预加载 children 子树，子节点本身**不参与**
+        数据权限过滤，会导致越权看到他人子节点。这里用与读路径一致的权限条件
+        求出「有权限的节点 id 集合」，从根向下剪掉无权限子节点。
+        无权限限制时原样返回（不改变树结构）。
+        """
+        allowed_ids = await self.__permission_allowed_ids()
+        if allowed_ids is None:
+            return nodes
+
+        def prune(items: builtins.list[ModelType]) -> builtins.list[ModelType]:
+            kept: builtins.list[ModelType] = []
+            for node in items:
+                node_id = getattr(node, "id", None)
+                if node_id is not None and node_id in allowed_ids:
+                    children = getattr(node, children_attr, None)
+                    if children:
+                        setattr(node, children_attr, prune(list(children)))
+                    kept.append(node)
+            return kept
+
+        return prune(list(nodes))
+
+    def _date_expr(self, attr: Any, kind: str) -> ColumnElement:
+        """跨方言的日期/月份格式化表达式（F6）。
+
+        MySQL 用 ``date_format``，PG 用 ``to_char``，SQLite 用 ``strftime``；
+        未知方言回退为「转文本 + substr 截断」，避免在 PG/SQLite 上报函数未定义。
+        """
+        try:
+            dialect = (self.auth.db.get_bind().dialect.name or "").lower()
+        except Exception:  # noqa: BLE001  取不到方言时用通用写法
+            dialect = ""
+        if dialect == "postgresql":
+            return func.to_char(attr, "YYYY-MM-DD" if kind == "date" else "YYYY-MM")
+        if dialect == "mysql":
+            return func.date_format(attr, "%Y-%m-%d" if kind == "date" else "%Y-%m")
+        if dialect == "sqlite":
+            return func.strftime("%Y-%m-%d" if kind == "date" else "%Y-%m", attr)
+        return func.substr(cast(attr, String), 1, 10 if kind == "date" else 7)
 
     async def __build_conditions(self, **kwargs) -> builtins.list[ColumnElement]:
         """
@@ -480,9 +587,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 elif seq == "not None":
                     conditions.append(attr.isnot(None))
                 elif seq == "date" and val:
-                    conditions.append(func.date_format(attr, "%Y-%m-%d") == val)
+                    conditions.append(self._date_expr(attr, "date") == val)
                 elif seq == "month" and val:
-                    conditions.append(func.date_format(attr, "%Y-%m") == val)
+                    conditions.append(self._date_expr(attr, "month") == val)
                 elif seq == "like" and val:
                     conditions.append(attr.like(f"%{val}%"))
                 elif seq == "in":

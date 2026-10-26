@@ -3,70 +3,77 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="props.realId ? '编辑技能' : '新建技能'"
+    :title="props.realId ? t('ai_market.editSkill') : t('ai_market.createSkill')"
     width="600px"
     append-to-body
     destroy-on-close
     @closed="resetForm"
   >
     <el-tabs v-if="!props.realId" v-model="importTab" class="skill-tabs">
-      <el-tab-pane label="表单新建" name="form" />
-      <el-tab-pane label="粘贴 SKILL.md" name="paste" />
-      <el-tab-pane label="上传 Zip 包" name="zip" />
+      <el-tab-pane :label="t('ai_market.formCreate')" name="form" />
+      <el-tab-pane :label="t('ai_market.pasteSkill')" name="paste" />
+      <el-tab-pane :label="t('ai_market.uploadZip')" name="zip" />
     </el-tabs>
 
     <!-- 表单新建 / 编辑 -->
     <el-form v-if="importTab === 'form'" :model="skillForm" label-width="90px" size="default">
-      <el-form-item label="名称" required>
-        <el-input v-model="skillForm.name" placeholder="技能名称" />
+      <el-form-item :label="t('ai_market.nameLabel')" required>
+        <el-input v-model="skillForm.name" :placeholder="t('ai_market.skillNamePlaceholder')" />
       </el-form-item>
-      <el-form-item label="类型">
+      <el-form-item :label="t('ai_market.typeLabel')">
         <el-select v-model="skillForm.skill_type" style="width: 100%">
-          <el-option label="指令 (instruction)" value="instruction" />
-          <el-option label="工具 (tool)" value="tool" />
-          <el-option label="自定义 (custom)" value="custom" />
+          <el-option :label="t('ai_market.instructionOption')" value="instruction" />
+          <el-option :label="t('ai_market.toolOption')" value="tool" />
+          <el-option :label="t('ai_market.customOption')" value="custom" />
         </el-select>
       </el-form-item>
-      <el-form-item label="分类">
-        <el-input v-model="skillForm.category" placeholder="分类标签（可选）" />
+      <el-form-item :label="t('ai_market.category')">
+        <el-input
+          v-model="skillForm.category"
+          :placeholder="t('ai_market.categoryTagPlaceholder')"
+        />
       </el-form-item>
-      <el-form-item label="作者">
-        <el-input v-model="skillForm.author" placeholder="作者（可选）" />
+      <el-form-item :label="t('ai_market.author')">
+        <el-input v-model="skillForm.author" :placeholder="t('ai_market.authorPlaceholder')" />
       </el-form-item>
-      <el-form-item label="版本">
-        <el-input v-model="skillForm.version" placeholder="1.0" style="width: 160px" />
+      <el-form-item :label="t('ai_market.version')">
+        <el-input
+          v-model="skillForm.version"
+          :placeholder="t('ai_market.versionPlaceholder')"
+          style="width: 160px"
+        />
       </el-form-item>
-      <el-form-item label="图标">
-        <el-input v-model="skillForm.icon" placeholder="emoji 或图片URL" />
+      <el-form-item :label="t('ai_market.iconLabel')">
+        <el-input v-model="skillForm.icon" :placeholder="t('ai_market.iconPlaceholder')" />
       </el-form-item>
-      <el-form-item label="描述">
+      <el-form-item :label="t('ai_market.description')">
         <el-input
           v-model="skillForm.description"
           type="textarea"
           :rows="2"
-          placeholder="简要描述这个技能"
+          :placeholder="t('ai_market.skillDescPlaceholder')"
         />
       </el-form-item>
-      <el-form-item label="技能内容">
+      <el-form-item :label="t('ai_market.skillContentLabel')">
         <div class="skill-md-editor">
           <el-radio-group v-model="skillContentMode" size="small" class="skill-md-editor__tabs">
-            <el-radio-button value="edit">编辑</el-radio-button>
-            <el-radio-button value="preview">预览</el-radio-button>
+            <el-radio-button value="edit">{{ t("ai_market.editLabel") }}</el-radio-button>
+            <el-radio-button value="preview">{{ t("ai_market.preview") }}</el-radio-button>
           </el-radio-group>
           <el-input
             v-if="skillContentMode === 'edit'"
             v-model="skillForm.content"
             type="textarea"
             :rows="8"
-            placeholder="Markdown 指令/使用说明，支持 {{变量}}，绑定到智能体后并入系统提示词"
+            :placeholder="t('ai_market.skillContentPlaceholder')"
           />
           <div v-else class="skill-md-editor__preview" v-html="renderMd(skillForm.content)"></div>
         </div>
       </el-form-item>
-      <el-form-item label="排序">
+      <el-form-item :label="t('ai_market.sortLabel')">
         <el-input-number v-model="skillForm.sort_order" :min="0" />
       </el-form-item>
-      <el-form-item label="启用">
+      <el-form-item :label="t('ai_market.enableLabel')">
         <el-switch v-model="skillForm.enabled" />
       </el-form-item>
     </el-form>
@@ -77,20 +84,24 @@
         v-model="importForm.content"
         type="textarea"
         :rows="12"
-        placeholder="粘贴技能文档全文（可含 --- YAML frontmatter ---），例如 SkillHub 技能详情页的 SKILL.md 内容"
+        :placeholder="t('ai_market.pastePlaceholder')"
       />
       <el-form label-width="80px" class="import-meta">
-        <el-form-item label="技能名">
-          <el-input v-model="importForm.name" placeholder="留空则用文档中的 name" maxlength="128" />
+        <el-form-item :label="t('ai_market.skillName')">
+          <el-input
+            v-model="importForm.name"
+            :placeholder="t('ai_market.nameIfBlankPlaceholder')"
+            maxlength="128"
+          />
         </el-form-item>
-        <el-form-item label="分类">
+        <el-form-item :label="t('ai_market.category')">
           <el-input
             v-model="importForm.category"
-            placeholder="如：办公效率（留空归入「导入技能」）"
+            :placeholder="t('ai_market.skillCategoryPlaceholder')"
             maxlength="64"
           />
         </el-form-item>
-        <el-form-item label="来源">
+        <el-form-item :label="t('ai_market.sourceLabel')">
           <el-input v-model="importForm.source" placeholder="SkillHub" maxlength="64" />
         </el-form-item>
       </el-form>
@@ -109,22 +120,22 @@
       >
         <el-icon class="upload-icon"><Upload /></el-icon>
         <div class="el-upload__text">
-          把技能 Zip 拖到此处，或
-          <em>点击选择</em>
+          {{ t("ai_market.uploadDragText") }}
+          <em>{{ t("ai_market.uploadClickText") }}</em>
         </div>
         <template #tip>
-          <div class="el-upload__tip">平台只读取其中的 SKILL.md 与文本文件，不落盘、不执行脚本</div>
+          <div class="el-upload__tip">{{ t("ai_market.uploadTip") }}</div>
         </template>
       </el-upload>
       <el-form label-width="80px" class="import-meta">
-        <el-form-item label="分类">
+        <el-form-item :label="t('ai_market.category')">
           <el-input
             v-model="importForm.category"
-            placeholder="如：办公效率（留空归入「导入技能」）"
+            :placeholder="t('ai_market.skillCategoryPlaceholder')"
             maxlength="64"
           />
         </el-form-item>
-        <el-form-item label="来源">
+        <el-form-item :label="t('ai_market.sourceLabel')">
           <el-input v-model="importForm.source" placeholder="SkillHub" maxlength="64" />
         </el-form-item>
       </el-form>
@@ -135,18 +146,21 @@
       type="info"
       :closable="false"
       show-icon
-      title="导入后技能默认停用：请先检查内容与附带脚本，确认无误再启用（平台不会执行导入的脚本）。"
+      :title="t('ai_market.importDisabledAlert')"
     />
 
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+      <el-button @click="visible = false">{{ t("ai_market.cancel") }}</el-button>
+      <el-button type="primary" :loading="saving" @click="handleSave">
+        {{ t("ai_market.save") }}
+      </el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import { Upload } from "@element-plus/icons-vue";
 import MarkdownIt from "markdown-it";
@@ -161,6 +175,8 @@ import {
 
 const props = defineProps<{ modelValue: boolean; realId?: number | null }>();
 const emit = defineEmits<{ "update:modelValue": [v: boolean]; saved: [] }>();
+
+const { t } = useI18n();
 
 const visible = computed({
   get: () => props.modelValue,
@@ -232,7 +248,7 @@ async function handleSave() {
     let res: any;
     if (props.realId) {
       if (!skillForm.name) {
-        ElMessage.warning("请填写技能名称");
+        ElMessage.warning(t("ai_market.requireSkillName"));
         return;
       }
       await updateAiSkill(props.realId, {
@@ -247,7 +263,7 @@ async function handleSave() {
         sort_order: skillForm.sort_order || 0,
         enabled: skillForm.enabled,
       });
-      ElMessage.success("保存成功");
+      ElMessage.success(t("ai_market.saveSuccess"));
       visible.value = false;
       emit("saved");
       return;
@@ -255,7 +271,7 @@ async function handleSave() {
 
     if (importTab.value === "form") {
       if (!skillForm.name) {
-        ElMessage.warning("请填写技能名称");
+        ElMessage.warning(t("ai_market.requireSkillName"));
         return;
       }
       await createAiSkill({
@@ -270,19 +286,19 @@ async function handleSave() {
         sort_order: skillForm.sort_order || 0,
         enabled: skillForm.enabled,
       });
-      ElMessage.success("创建成功");
+      ElMessage.success(t("ai_market.createSuccess"));
     } else if (importTab.value === "zip") {
       const raw = zipFiles.value[0]?.raw;
       if (!raw) {
-        ElMessage.warning("请先选择 Zip 包");
+        ElMessage.warning(t("ai_market.selectZipFirst"));
         return;
       }
       res = await importAiSkillZip(raw, importForm.category || undefined, importForm.source);
-      const name = res.data?.data?.name || "技能";
-      ElMessage.success(`已导入「${name}」（默认停用，请检查后启用）`);
+      const name = res.data?.data?.name || t("ai_market.skillFallbackName");
+      ElMessage.success(t("ai_market.importedSkill", { name }));
     } else {
       if (!importForm.content.trim()) {
-        ElMessage.warning("请粘贴技能文档内容");
+        ElMessage.warning(t("ai_market.pasteContentRequired"));
         return;
       }
       res = await importAiSkill({
@@ -291,13 +307,13 @@ async function handleSave() {
         category: importForm.category || undefined,
         source: importForm.source || undefined,
       });
-      const name = res.data?.data?.name || "技能";
-      ElMessage.success(`已导入「${name}」（默认停用，请检查后启用）`);
+      const name = res.data?.data?.name || t("ai_market.skillFallbackName");
+      ElMessage.success(t("ai_market.importedSkill", { name }));
     }
     visible.value = false;
     emit("saved");
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "保存失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_market.saveFailed"));
   } finally {
     saving.value = false;
   }

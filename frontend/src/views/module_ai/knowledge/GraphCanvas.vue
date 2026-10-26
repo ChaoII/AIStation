@@ -11,7 +11,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
+const { t: i18nT } = useI18n();
+
 // @ts-ignore 无类型声明
 import cytoscapeD3Force from "cytoscape-d3-force";
 import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
@@ -90,7 +93,7 @@ const dragEdgeId = "tmp_edge";
 
 const THEMES: Record<string, any> = {
   default: {
-    label: "默认",
+    label: i18nT("ai_ontology.default"),
     node: { keyword: "#4a86f7", annotation: "#f7a733", custom: "#5ac66b", other: "#a0a6ad" },
     edge: {
       属于: "#5ac66b",
@@ -107,7 +110,7 @@ const THEMES: Record<string, any> = {
     grid: "#e3e7ec",
   },
   ocean: {
-    label: "海洋",
+    label: i18nT("ai_ontology.ocean"),
     node: { keyword: "#2f7bc4", annotation: "#30a6c9", custom: "#4dbf9c", other: "#7d9bb3" },
     edge: {
       属于: "#4dbf9c",
@@ -124,7 +127,7 @@ const THEMES: Record<string, any> = {
     grid: "#dbe9f3",
   },
   forest: {
-    label: "森林",
+    label: i18nT("ai_ontology.forest"),
     node: { keyword: "#3f9d63", annotation: "#8fbf4d", custom: "#5f9e8f", other: "#8aa88f" },
     edge: {
       属于: "#5f9e8f",
@@ -141,7 +144,7 @@ const THEMES: Record<string, any> = {
     grid: "#ddeae0",
   },
   sunset: {
-    label: "落日",
+    label: i18nT("ai_ontology.sunset"),
     node: { keyword: "#e07a4f", annotation: "#f4b14e", custom: "#c86a8a", other: "#b98e8e" },
     edge: {
       属于: "#c86a8a",
@@ -158,7 +161,7 @@ const THEMES: Record<string, any> = {
     grid: "#f0e2d6",
   },
   mono: {
-    label: "单色",
+    label: i18nT("ai_ontology.mono"),
     node: { keyword: "#6b7480", annotation: "#9aa3ad", custom: "#4d5560", other: "#b6bdc5" },
     edge: {
       属于: "#7d8791",
@@ -256,7 +259,7 @@ function buildElements(): ElementDefinition[] {
       etype: n.etype || "keyword",
       weight: n.weight || 1,
       chunk_count: n.chunk_count || 0,
-      category: n.category || n.etype || "未分组",
+      category: n.category || n.etype || i18nT("ai_ontology.uncategorized"),
     },
     position: n.x != null && n.y != null ? { x: n.x, y: n.y } : undefined,
   }));
@@ -535,7 +538,7 @@ function bind() {
     edges.addClass("dim");
     const pos = node.renderedPosition();
     showTooltip(
-      `<b>${node.data("name")}</b><br/>类型：${node.data("etype") || "keyword"}<br/>权重：${node.data("weight")}<br/>绑定分块：${node.data("chunk_count") || 0}`,
+      `<b>${node.data("name")}</b><br/>${i18nT("ai_ontology.tooltipType", { type: node.data("etype") || "keyword" })}<br/>${i18nT("ai_ontology.tooltipWeight", { weight: node.data("weight") })}<br/>${i18nT("ai_ontology.tooltipBoundChunks", { count: node.data("chunk_count") || 0 })}`,
       pos.x + 10,
       pos.y - 12
     );
@@ -550,7 +553,7 @@ function bind() {
     e.target.addClass("hovered");
     const pos = e.target.midpoint();
     showTooltip(
-      `${e.target.data("source")} → ${e.target.data("target")}<br/>关系：${e.target.data("rtype") || "related"}<br/>权重：${e.target.data("weight")}`,
+      `${e.target.data("source")} → ${e.target.data("target")}<br/>${i18nT("ai_ontology.tooltipRel", { rtype: e.target.data("rtype") || "related" })}<br/>${i18nT("ai_ontology.tooltipWeight", { weight: e.target.data("weight") })}`,
       pos.x + 10,
       pos.y - 12
     );

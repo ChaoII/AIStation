@@ -18,7 +18,9 @@
           :status="t.progressStatus"
           :indeterminate="t.indeterminate"
         />
-        <span class="task-banner-meta">已用 {{ t.elapsed }}</span>
+        <span class="task-banner-meta">
+          {{ $t("annotation.elapsedLabel", { time: t.elapsed }) }}
+        </span>
         <el-button
           v-if="t.kind !== 'purge'"
           icon="View"
@@ -27,7 +29,7 @@
           type="primary"
           @click="openTaskBanner(t.id, t.name)"
         >
-          查看
+          {{ $t("annotation.view") }}
         </el-button>
       </div>
     </div>
@@ -61,7 +63,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="$t('annotation.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -72,7 +74,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="$t('annotation.serial')"
               min-width="60"
             >
               <template #default="scope">
@@ -82,7 +84,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="数据集名称"
+              :label="$t('annotation.datasetName')"
               prop="name"
               min-width="160"
               show-overflow-tooltip
@@ -90,7 +92,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'description')?.show"
               key="description"
-              label="描述"
+              :label="$t('annotation.description')"
               prop="description"
               min-width="180"
               show-overflow-tooltip
@@ -98,7 +100,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'image_count')?.show"
               key="image_count"
-              label="图片数"
+              :label="$t('annotation.imageCount')"
               prop="image_count"
               width="90"
               align="center"
@@ -112,7 +114,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'tasks')?.show"
               key="tasks"
-              label="关联标注任务"
+              :label="$t('annotation.relatedTasks')"
               min-width="320"
             >
               <template #default="scope">
@@ -147,7 +149,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'import_status')?.show"
               key="import_status"
-              label="导入状态"
+              :label="$t('annotation.importStatus')"
               width="130"
               align="center"
             >
@@ -171,13 +173,17 @@
                       :indeterminate="rowImportIndeterminate(scope.row)"
                     />
                     <div class="import-pop-row">
-                      已用 {{ fmtDuration(elapsedSec(rowImport(scope.row))) }}
+                      {{
+                        $t("annotation.elapsedLabel", {
+                          time: fmtDuration(elapsedSec(rowImport(scope.row))),
+                        })
+                      }}
                       <span v-if="rowImport(scope.row)?.total">
                         · {{ rowImport(scope.row)?.processed }}/{{ rowImport(scope.row)?.total }}
                       </span>
                     </div>
                     <div v-if="rowImport(scope.row)?.taskName" class="import-pop-row">
-                      任务：{{ rowImport(scope.row)?.taskName }}
+                      {{ $t("annotation.taskLabel", { name: rowImport(scope.row)?.taskName }) }}
                     </div>
                     <div v-if="rowImport(scope.row)?.error" class="import-pop-row import-pop-err">
                       {{ rowImport(scope.row)?.error }}
@@ -191,7 +197,7 @@
                         type="primary"
                         @click="openImportFor(scope.row)"
                       >
-                        查看进度
+                        {{ $t("annotation.viewProgress") }}
                       </el-button>
                       <el-button
                         v-if="rowImport(scope.row)?.taskId"
@@ -203,7 +209,7 @@
                           router.push(`/annotation/workbench/${rowImport(scope.row)?.taskId}`)
                         "
                       >
-                        打开任务
+                        {{ $t("annotation.openTask") }}
                       </el-button>
                       <el-button
                         v-if="['failed', 'cancelled'].includes(rowImport(scope.row)?.phase || '')"
@@ -213,7 +219,7 @@
                         type="warning"
                         @click="retryRow(scope.row)"
                       >
-                        重试
+                        {{ $t("annotation.retry") }}
                       </el-button>
                     </div>
                   </div>
@@ -223,7 +229,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="$t('annotation.createdTime')"
               prop="created_time"
               min-width="170"
               show-overflow-tooltip
@@ -231,7 +237,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="$t('annotation.operation')"
               align="center"
               min-width="240"
             >
@@ -243,7 +249,7 @@
                   icon="Picture"
                   @click="handleOpenImages(scope.row)"
                 >
-                  图片
+                  {{ $t("annotation.images") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_annotation:dataset:update']"
@@ -253,7 +259,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ $t("annotation.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_annotation:dataset:delete']"
@@ -263,13 +269,15 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ $t("annotation.delete") }}
                 </el-button>
                 <el-dropdown
                   trigger="click"
                   @command="(cmd: string) => handleMoreCommand(cmd, scope.row)"
                 >
-                  <el-button size="small" type="info" link icon="MoreFilled">更多</el-button>
+                  <el-button size="small" type="info" link icon="MoreFilled">
+                    {{ $t("annotation.more") }}
+                  </el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item
@@ -277,29 +285,37 @@
                         command="upload"
                         icon="Upload"
                       >
-                        上传图片
+                        {{ $t("annotation.uploadImages") }}
                       </el-dropdown-item>
                       <el-dropdown-item
                         v-hasPerm="['module_annotation:dataset:upload']"
                         command="import"
                         icon="Upload"
                       >
-                        导入标注
+                        {{ $t("annotation.importAnnotations") }}
                       </el-dropdown-item>
-                      <el-dropdown-item command="export" icon="Download">导出</el-dropdown-item>
+                      <el-dropdown-item command="export" icon="Download">
+                        {{ $t("annotation.export") }}
+                      </el-dropdown-item>
                       <el-dropdown-item command="exportHistory" icon="Clock">
-                        导出历史
+                        {{ $t("annotation.exportHistory") }}
                       </el-dropdown-item>
-                      <el-dropdown-item command="clean" icon="Brush">数据清洗</el-dropdown-item>
-                      <el-dropdown-item command="preprocess" icon="Crop">数据落地</el-dropdown-item>
-                      <el-dropdown-item command="train" icon="Aim">去训练</el-dropdown-item>
+                      <el-dropdown-item command="clean" icon="Brush">
+                        {{ $t("annotation.dataClean") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item command="preprocess" icon="Crop">
+                        {{ $t("annotation.dataPreprocess") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item command="train" icon="Aim">
+                        {{ $t("annotation.toTrain") }}
+                      </el-dropdown-item>
                       <el-dropdown-item
                         v-hasPerm="['module_annotation:dataset:purge']"
                         command="purge"
                         icon="Delete"
                         divided
                       >
-                        彻底删除
+                        {{ $t("annotation.purge") }}
                       </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
@@ -325,35 +341,41 @@
         label-width="100px"
         size="default"
       >
-        <el-form-item label="数据集名称" prop="name">
-          <el-input v-model="formData.name" placeholder="请输入数据集名称" :maxlength="100" />
+        <el-form-item :label="$t('annotation.datasetName')" prop="name">
+          <el-input
+            v-model="formData.name"
+            :placeholder="$t('annotation.datasetNamePlaceholder')"
+            :maxlength="100"
+          />
         </el-form-item>
-        <el-form-item label="描述" prop="description">
+        <el-form-item :label="$t('annotation.description')" prop="description">
           <el-input
             v-model="formData.description"
             type="textarea"
             :rows="3"
             :maxlength="500"
             show-word-limit
-            placeholder="请输入描述"
+            :placeholder="$t('annotation.descriptionPlaceholder')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ $t("annotation.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ $t("annotation.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
     <EnhancedDialog
       v-model="uploadVisible"
-      title="上传图片"
+      :title="$t('annotation.uploadImages')"
       append-to-body
       width="500px"
       @close="handleCloseUpload"
     >
       <el-alert
-        title="支持 JPG / PNG / BMP 格式，可多选文件"
+        :title="$t('annotation.uploadFormatHint')"
         type="info"
         :closable="false"
         show-icon
@@ -372,14 +394,14 @@
       >
         <el-icon size="32"><Plus /></el-icon>
         <div class="el-upload__text">
-          拖拽文件到此处，或
-          <em>点击选择</em>
+          {{ $t("annotation.dragOr") }}
+          <em>{{ $t("annotation.clickSelect") }}</em>
         </div>
       </el-upload>
       <template #footer>
-        <el-button @click="handleCloseUpload">取消</el-button>
+        <el-button @click="handleCloseUpload">{{ $t("annotation.cancel") }}</el-button>
         <el-button type="primary" :loading="uploadLoading" @click="handleUploadSubmit">
-          开始上传
+          {{ $t("annotation.startUpload") }}
         </el-button>
       </template>
     </EnhancedDialog>
@@ -387,16 +409,16 @@
     <!-- X-AnyLabeling 导入（三段进度 + 可关闭后台继续） -->
     <el-dialog
       v-model="importDialogVisible"
-      :title="`导入标注到「${importDatasetName}」`"
+      :title="$t('annotation.importTo', { name: importDatasetName })"
       width="520px"
       :close-on-click-modal="false"
       :before-close="handleImportDialogClose"
       @closed="onImportDialogClosed"
     >
       <el-steps :active="importStep" align-center class="import-steps">
-        <el-step title="上传 ZIP" />
-        <el-step title="解析标注" />
-        <el-step title="写入图片" />
+        <el-step :title="$t('annotation.stepUploadZip')" />
+        <el-step :title="$t('annotation.stepParseAnnotations')" />
+        <el-step :title="$t('annotation.stepWriteImages')" />
       </el-steps>
 
       <div v-if="!dialogImport" class="import-picker">
@@ -407,18 +429,18 @@
           :limit="1"
           :on-change="onImportFileChange"
         >
-          <el-button type="primary" icon="Upload">选择 ZIP 文件</el-button>
+          <el-button type="primary" icon="Upload">{{ $t("annotation.selectZipFile") }}</el-button>
         </el-upload>
         <p class="import-hint">
-          压缩包需包含图片与同名 .json 标注文件，大小不超过 {{ importMaxMb }}MB。
+          {{ $t("annotation.importHint", { max: importMaxMb }) }}
         </p>
         <p v-if="importFile" class="import-file">
-          已选：
+          {{ $t("annotation.selected") }}:
           <span class="import-file-name">{{ importFile.name }}</span>
           <span class="import-file-size">{{ importFileMb }} MB</span>
         </p>
         <el-checkbox v-model="importClearExisting" class="import-clear">
-          导入前清空该数据集现有图片与标注（避免重复叠加）
+          {{ $t("annotation.clearBeforeImport") }}
         </el-checkbox>
       </div>
 
@@ -432,7 +454,7 @@
         <div class="import-line import-line--primary">{{ dialogPhaseText }}</div>
         <div v-if="dialogDetailText" class="import-line">{{ dialogDetailText }}</div>
         <div class="import-line import-line--muted">
-          <span>已用 {{ fmtDuration(dialogElapsed) }}</span>
+          <span>{{ $t("annotation.elapsedLabel", { time: fmtDuration(dialogElapsed) }) }}</span>
           <span>{{ dialogEtaText }}</span>
         </div>
         <el-alert
@@ -451,9 +473,14 @@
           class="import-alert"
         >
           <template #title>
-            导入完成：{{ dialogImport.imported }} 张图片，{{ dialogImport.totalAnnotations }} 个标注
+            {{
+              $t("annotation.importDoneSummary", {
+                imported: dialogImport.imported,
+                annotations: dialogImport.totalAnnotations,
+              })
+            }}
             <template v-if="dialogImport.skippedDuplicate">
-              ，跳过 {{ dialogImport.skippedDuplicate }} 张重复
+              {{ $t("annotation.importSkipped", { skipped: dialogImport.skippedDuplicate }) }}
             </template>
           </template>
         </el-alert>
@@ -462,22 +489,26 @@
       <template #footer>
         <div class="import-footer">
           <template v-if="['uploading', 'scanning'].includes(dialogImport?.phase || '')">
-            <el-button @click="requestCloseImport">继续导入</el-button>
-            <el-button type="danger" plain @click="cancelImportAndClose">取消导入</el-button>
+            <el-button @click="requestCloseImport">{{ $t("annotation.continueImport") }}</el-button>
+            <el-button type="danger" plain @click="cancelImportAndClose">
+              {{ $t("annotation.cancelImport") }}
+            </el-button>
           </template>
           <template v-else-if="dialogImport?.phase === 'importing'">
-            <el-button type="primary" @click="requestCloseImport">后台继续</el-button>
+            <el-button type="primary" @click="requestCloseImport">
+              {{ $t("annotation.backgroundContinue") }}
+            </el-button>
           </template>
           <template v-else-if="dialogImport?.phase === 'done'">
-            <el-button @click="requestCloseImport">关闭</el-button>
+            <el-button @click="requestCloseImport">{{ $t("annotation.close") }}</el-button>
             <el-button v-if="dialogImport.taskId" type="primary" @click="goImportTask">
-              打开标注任务
+              {{ $t("annotation.openAnnotationTask") }}
             </el-button>
           </template>
           <template v-else>
-            <el-button @click="requestCloseImport">关闭</el-button>
+            <el-button @click="requestCloseImport">{{ $t("annotation.close") }}</el-button>
             <el-button type="warning" :disabled="!importFile" @click="handleImportSubmit">
-              {{ dialogImport ? "重试" : "开始导入" }}
+              {{ dialogImport ? $t("annotation.retry") : $t("annotation.startImport") }}
             </el-button>
           </template>
         </div>
@@ -487,20 +518,20 @@
     <!-- Export Dialog -->
     <el-dialog
       v-model="exportDialogVisible"
-      title="导出数据集"
+      :title="$t('annotation.exportDataset')"
       width="500px"
       :close-on-click-modal="!exporting"
       :close-on-press-escape="!exporting"
       :show-close="!exporting"
     >
       <el-form label-width="120px">
-        <el-form-item label="数据集">
+        <el-form-item :label="$t('annotation.dataset')">
           <span>{{ exportDatasetName }}</span>
         </el-form-item>
-        <el-form-item label="标注任务" required>
+        <el-form-item :label="$t('annotation.annotationTask')" required>
           <el-select
             v-model="exportTaskId"
-            placeholder="请选择标注任务"
+            :placeholder="$t('annotation.selectAnnotationTask')"
             filterable
             style="width: 100%"
             @change="onTaskChange"
@@ -509,11 +540,13 @@
               v-for="t in exportRowTasks"
               :key="t.id"
               :value="t.id"
-              :label="`${t.name}（${taskTypeLabel(t.task_type)}）`"
+              :label="
+                $t('annotation.taskOptionLabel', { name: t.name, type: taskTypeLabel(t.task_type) })
+              "
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="导出格式" required>
+        <el-form-item :label="$t('annotation.exportFormat')" required>
           <el-select v-model="exportFormat" style="width: 100%">
             <el-option
               v-for="opt in filteredExportFormats"
@@ -528,15 +561,20 @@
           >
             <el-checkbox
               v-model="ocrExportDet"
-              label="导出检测数据集 (det)"
+              :label="$t('annotation.exportDet')"
               border
               size="small"
               style="margin-right: 8px"
             />
-            <el-checkbox v-model="ocrExportRec" label="导出识别数据集 (rec)" border size="small" />
+            <el-checkbox
+              v-model="ocrExportRec"
+              :label="$t('annotation.exportRec')"
+              border
+              size="small"
+            />
           </div>
         </el-form-item>
-        <el-form-item v-if="isYoloOrPaddleFormat" label="训练集比例">
+        <el-form-item v-if="isYoloOrPaddleFormat" :label="$t('annotation.trainRatio')">
           <el-slider
             v-model="trainRatio"
             :min="50"
@@ -545,16 +583,20 @@
             show-input
             style="width: 200px"
           />
-          <span class="form-hint">剩余 {{ 100 - trainRatio }}% 为验证集</span>
+          <span class="form-hint">
+            {{ $t("annotation.trainRatioHint", { ratio: 100 - trainRatio }) }}
+          </span>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
-          <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
+          <template #title>{{ $t("annotation.exportAlert") }}</template>
         </el-alert>
       </el-form>
       <template #footer>
-        <el-button :disabled="exporting" @click="exportDialogVisible = false">取消</el-button>
+        <el-button :disabled="exporting" @click="exportDialogVisible = false">
+          {{ $t("annotation.cancel") }}
+        </el-button>
         <el-button type="warning" :loading="exporting" @click="handleExportSubmit">
-          {{ exporting ? "导出中..." : "导出并下载" }}
+          {{ exporting ? $t("annotation.exporting") : $t("annotation.exportAndDownload") }}
         </el-button>
       </template>
     </el-dialog>
@@ -588,8 +630,10 @@ import DatasetImageGrid from "@/components/Annotation/DatasetImageGrid.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled } from "@element-plus/icons-vue";
+import { useI18n } from "vue-i18n";
 
 const router = useRouter();
+const { t } = useI18n();
 
 function taskTagType(t: string) {
   return (
@@ -621,22 +665,22 @@ function taskTagColor(t: string) {
     )[t] || "#909399"
   );
 }
-function taskTypeLabel(t: string) {
+function taskTypeLabel(type: string) {
   return (
     (
       {
-        detection: "检测",
-        rotated_detection: "旋转框",
-        segmentation: "分割",
-        keypoint: "关键点",
-        ocr: "OCR",
-        classification: "分类",
-        cuboid: "3D 目标检测",
-        time_series_event: "时间序列",
-        video_event: "视频事件",
-        video_detection: "视频检测",
+        detection: t("annotation.typeDetectionShort"),
+        rotated_detection: t("annotation.typeRotatedDetectionShort"),
+        segmentation: t("annotation.typeSegmentationShort"),
+        keypoint: t("annotation.typeKeypoint"),
+        ocr: t("annotation.typeOcrShort"),
+        classification: t("annotation.typeClassificationShort"),
+        cuboid: t("annotation.typeCuboid"),
+        time_series_event: t("annotation.typeTimeSeriesEvent"),
+        video_event: t("annotation.typeVideoEvent"),
+        video_detection: t("annotation.typeVideoDetection"),
       } as any
-    )[t] || t
+    )[type] || type
   );
 }
 
@@ -665,9 +709,9 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "数据集名称",
+      label: t("annotation.datasetName"),
       type: "input",
-      attrs: { placeholder: "请输入数据集名称", clearable: true },
+      attrs: { placeholder: t("annotation.datasetNamePlaceholder"), clearable: true },
     },
   ],
 });
@@ -679,15 +723,15 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "数据集名称", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "image_count", label: "图片数", show: true },
-  { prop: "tasks", label: "关联标注任务", show: true },
-  { prop: "import_status", label: "导入状态", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("annotation.selectionCol"), show: true },
+  { prop: "index", label: t("annotation.serial"), show: true },
+  { prop: "name", label: t("annotation.datasetName"), show: true },
+  { prop: "description", label: t("annotation.description"), show: true },
+  { prop: "image_count", label: t("annotation.imageCount"), show: true },
+  { prop: "tasks", label: t("annotation.relatedTasks"), show: true },
+  { prop: "import_status", label: t("annotation.importStatus"), show: true },
+  { prop: "created_time", label: t("annotation.createdTime"), show: true },
+  { prop: "operation", label: t("annotation.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -722,8 +766,8 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "提示",
-    message: "确认删除所选数据集？可在保留期内恢复。",
+    title: t("annotation.tip"),
+    message: t("annotation.deleteDatasetConfirm"),
     type: "warning",
   },
 });
@@ -746,7 +790,7 @@ function handleOpenImages(row: any) {
 function handleOpenWorkbench() {
   const task = gridRowTasks.value?.[0];
   if (!task) {
-    ElMessage.warning("该数据集还没有标注任务，请先创建任务");
+    ElMessage.warning(t("annotation.noTaskYet"));
     return;
   }
   router.push(`/annotation/workbench/${task.id}`);
@@ -755,9 +799,13 @@ function handleOpenWorkbench() {
 async function handlePurge(row: any) {
   try {
     await ElMessageBox.confirm(
-      `确认彻底删除数据集「${row.name}」？将删除全部图片、标注与导出产物，且不可恢复。`,
-      "危险操作",
-      { type: "error", confirmButtonText: "彻底删除", cancelButtonText: "取消" }
+      t("annotation.purgeDatasetConfirm", { name: row.name }),
+      t("annotation.dangerOperation"),
+      {
+        type: "error",
+        confirmButtonText: t("annotation.purge"),
+        cancelButtonText: t("annotation.cancel"),
+      }
     );
   } catch {
     return;
@@ -766,7 +814,7 @@ async function handlePurge(row: any) {
     const r = await AnnotationAPI.purgeDataset([row.id]);
     const jobId = r.data?.data?.job_id;
     if (!jobId) {
-      ElMessage.warning("没有需要删除的数据集");
+      ElMessage.warning(t("annotation.noDatasetToPurge"));
       return;
     }
     activeImports[row.id] = {
@@ -791,9 +839,9 @@ async function handlePurge(row: any) {
     rebuildActiveJobs();
     startTicker();
     ensurePolling();
-    ElMessage.info("已开始删除，可在「导入状态」查看进度");
+    ElMessage.info(t("annotation.purgeStarted"));
   } catch (e: any) {
-    ElMessage.error(e?.message || "彻底删除失败");
+    ElMessage.error(e?.message || t("annotation.purgeFailed"));
   }
 }
 
@@ -827,7 +875,7 @@ const initialFormData = {
 };
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入数据集名称", trigger: "blur" }],
+  name: [{ required: true, message: t("annotation.datasetNamePlaceholder"), trigger: "blur" }],
 });
 
 async function resetForm() {
@@ -846,7 +894,7 @@ async function handleCloseDialog() {
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   if (id && type === "update") {
-    dialogVisible.title = "编辑数据集";
+    dialogVisible.title = t("annotation.editDataset");
     // 无独立「详情」接口，列表接口 /dataset/list 支持按 id 过滤，用 page_size=1 + id 取单条
     const res = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 1, id });
     const items = res.data.data.items;
@@ -858,7 +906,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.description = item.description;
     }
   } else {
-    dialogVisible.title = "新增数据集";
+    dialogVisible.title = t("annotation.newDataset");
     Object.assign(formData, initialFormData);
   }
   dialogVisible.visible = true;
@@ -921,7 +969,7 @@ function handleFileRemove(_uploadFile: any, uploadFiles: any[]) {
 async function handleUploadSubmit() {
   if (!uploadDatasetId.value) return;
   if (fileList.value.length === 0) {
-    ElMessage.warning("请选择需要上传的图片");
+    ElMessage.warning(t("annotation.selectImages"));
     return;
   }
   uploadLoading.value = true;
@@ -1120,24 +1168,26 @@ function percentOf(a: ActiveImport | null): number {
 }
 function importTagText(row: any): string {
   const a = rowImport(row);
-  if (!a) return "已就绪";
+  if (!a) return t("annotation.importReady");
   const purge = a.kind === "purge";
   switch (a.phase) {
     case "uploading":
-      return `上传中 ${percentOf(a)}%`;
+      return t("annotation.importUploading", { percent: percentOf(a) });
     case "scanning":
-      return purge ? "准备删除…" : "初始化中";
+      return purge ? t("annotation.importPreparingDelete") : t("annotation.importInitializing");
     case "importing":
-      if (!a.total) return purge ? "删除中…" : "导入中…";
-      return purge ? `删除中 ${a.processed}/${a.total}` : `导入中 ${a.processed}/${a.total}`;
+      if (!a.total) return purge ? t("annotation.importDeleting") : t("annotation.importing");
+      return purge
+        ? t("annotation.importDeletingProgress", { processed: a.processed, total: a.total })
+        : t("annotation.importingProgress", { processed: a.processed, total: a.total });
     case "done":
-      return purge ? "已删除" : "已完成";
+      return purge ? t("annotation.importDeleted") : t("annotation.importDone");
     case "failed":
-      return purge ? "删除失败" : "失败";
+      return purge ? t("annotation.importDeleteFailed") : t("annotation.importFailed");
     case "cancelled":
-      return "已取消";
+      return t("annotation.importCancelled");
     default:
-      return "已就绪";
+      return t("annotation.importReady");
   }
 }
 function importTagType(row: any): any {
@@ -1219,12 +1269,12 @@ const dialogPhaseText = computed(() => {
   return (
     (
       {
-        uploading: "正在上传 ZIP…",
-        scanning: "服务端解析中…",
-        importing: "正在导入图片…",
-        done: "导入完成",
-        failed: "导入失败",
-        cancelled: "已取消",
+        uploading: t("annotation.phaseUploadingZip"),
+        scanning: t("annotation.phaseScanning"),
+        importing: t("annotation.phaseImportingImages"),
+        done: t("annotation.phaseDone"),
+        failed: t("annotation.phaseFailed"),
+        cancelled: t("annotation.phaseCancelled"),
       } as Record<string, string>
     )[p || ""] || ""
   );
@@ -1233,9 +1283,14 @@ const dialogDetailText = computed(() => {
   const a = dialogImport.value;
   if (!a) return "";
   if (a.phase === "uploading")
-    return `已发送 ${fmtMB(a.uploadLoaded)} / ${fmtMB(a.uploadTotal)} MB`;
-  if (a.phase === "importing") return `已导入 ${a.processed} / ${a.total}`;
-  if (a.phase === "done") return `共 ${a.imported} 张 · ${a.totalAnnotations} 个标注`;
+    return t("annotation.detailUploaded", {
+      loaded: fmtMB(a.uploadLoaded),
+      total: fmtMB(a.uploadTotal),
+    });
+  if (a.phase === "importing")
+    return t("annotation.detailImported", { processed: a.processed, total: a.total });
+  if (a.phase === "done")
+    return t("annotation.detailDone", { imported: a.imported, annotations: a.totalAnnotations });
   return "";
 });
 const dialogElapsed = computed(() => elapsedSec(dialogImport.value));
@@ -1246,11 +1301,11 @@ const dialogEtaText = computed(() => {
   if (el < 3) return "";
   if (a.phase === "uploading" && a.uploadTotal > 0 && a.uploadLoaded > 0) {
     const total = (el * a.uploadTotal) / a.uploadLoaded;
-    return `预计还需 ${fmtDuration(total - el)}`;
+    return t("annotation.eta", { time: fmtDuration(total - el) });
   }
   if (a.phase === "importing" && a.total > 0 && a.processed > 0) {
     const total = (el * a.total) / a.processed;
-    return `预计还需 ${fmtDuration(total - el)}`;
+    return t("annotation.eta", { time: fmtDuration(total - el) });
   }
   return "";
 });
@@ -1284,11 +1339,11 @@ function onImportFileChange(_file: any, fileList: any[]) {
 async function handleImportSubmit() {
   const dsId = importDatasetId.value;
   if (!dsId) {
-    ElMessage.warning("缺少目标数据集");
+    ElMessage.warning(t("annotation.missingDataset"));
     return;
   }
   if (!importFile.value) {
-    ElMessage.warning("请选择 ZIP 文件");
+    ElMessage.warning(t("annotation.selectZipFile"));
     return;
   }
   // 安全确认：清空（覆盖）为破坏性操作；取消勾选则可能重复
@@ -1296,9 +1351,13 @@ async function handleImportSubmit() {
     if (importClearExisting.value) {
       try {
         await ElMessageBox.confirm(
-          `将先删除现有 ${importExistingCount.value} 张图片及其标注，再导入本次 ZIP。是否继续？`,
-          "覆盖导入",
-          { type: "warning", confirmButtonText: "覆盖导入", cancelButtonText: "取消" }
+          t("annotation.overwriteImportConfirm", { count: importExistingCount.value }),
+          t("annotation.overwriteImport"),
+          {
+            type: "warning",
+            confirmButtonText: t("annotation.overwriteImport"),
+            cancelButtonText: t("annotation.cancel"),
+          }
         );
       } catch {
         return;
@@ -1306,9 +1365,13 @@ async function handleImportSubmit() {
     } else {
       try {
         await ElMessageBox.confirm(
-          `将追加到现有 ${importExistingCount.value} 张图片之后，可能与已有图片重复。是否继续？`,
-          "追加导入",
-          { type: "info", confirmButtonText: "继续追加", cancelButtonText: "取消" }
+          t("annotation.appendImportConfirm", { count: importExistingCount.value }),
+          t("annotation.appendImport"),
+          {
+            type: "info",
+            confirmButtonText: t("annotation.continueAppend"),
+            cancelButtonText: t("annotation.cancel"),
+          }
         );
       } catch {
         return;
@@ -1350,7 +1413,7 @@ async function handleImportSubmit() {
       },
     });
     const jobId = r.data?.data?.job_id;
-    if (!jobId) throw new Error("未获取到导入任务ID");
+    if (!jobId) throw new Error(t("annotation.importJobMissing"));
     const a = activeImports[dsId];
     if (a) {
       a.jobId = jobId;
@@ -1364,10 +1427,10 @@ async function handleImportSubmit() {
     if (a) {
       if (e?.name === "CanceledError" || e?.code === "ERR_CANCELED") {
         a.phase = "cancelled";
-        a.error = "已取消";
+        a.error = t("annotation.importCancelled");
       } else {
         a.phase = "failed";
-        a.error = e?.message || "导入失败";
+        a.error = e?.message || t("annotation.importFailed");
       }
     }
     rebuildActiveJobs();
@@ -1428,7 +1491,7 @@ function applyJob(dsId: number, job: any) {
   if (a.phase === "done" && !a.refreshed) {
     a.refreshed = true;
     if (a.kind === "purge") {
-      ElMessage.success("已彻底删除");
+      ElMessage.success(t("annotation.importDeleted"));
       delete activeImports[dsId];
     }
     refreshList();
@@ -1445,9 +1508,13 @@ async function handleImportDialogClose(done: () => void) {
     // 已在处理图片：关闭只是把进度挪到后台，任务不会中断
     try {
       await ElMessageBox.confirm(
-        "导入会在后台继续，关闭后进度显示在数据集列表顶部。",
-        "后台继续导入",
-        { type: "info", confirmButtonText: "后台继续", cancelButtonText: "留在此页" }
+        t("annotation.backgroundImportConfirm"),
+        t("annotation.backgroundImportTitle"),
+        {
+          type: "info",
+          confirmButtonText: t("annotation.backgroundContinue"),
+          cancelButtonText: t("annotation.stayOnPage"),
+        }
       );
     } catch {
       return;
@@ -1457,17 +1524,17 @@ async function handleImportDialogClose(done: () => void) {
   }
   // 尚未开始处理（上传/解析中）：关闭＝取消
   try {
-    await ElMessageBox.confirm("上传/解析尚未完成，关闭会取消本次导入。是否取消？", "取消导入", {
+    await ElMessageBox.confirm(t("annotation.cancelImportConfirm"), t("annotation.cancelImport"), {
       type: "warning",
-      confirmButtonText: "取消导入",
-      cancelButtonText: "继续导入",
+      confirmButtonText: t("annotation.cancelImport"),
+      cancelButtonText: t("annotation.continueImport"),
     });
   } catch {
     return;
   }
   cancelImport();
   a.phase = "cancelled";
-  a.error = "已取消";
+  a.error = t("annotation.importCancelled");
   rebuildActiveJobs();
   done();
 }
@@ -1481,7 +1548,7 @@ function cancelImportAndClose() {
   const a = dialogImport.value;
   if (a) {
     a.phase = "cancelled";
-    a.error = "已取消";
+    a.error = t("annotation.importCancelled");
     rebuildActiveJobs();
   }
   importDialogVisible.value = false;
@@ -1599,30 +1666,30 @@ function onTaskChange() {
 }
 
 const exportFormatOptions = [
-  { value: "yolo-detection", label: "YOLO HBB（水平矩形框）" },
-  { value: "yolo-rotated_detection", label: "YOLO OBB（旋转矩形框）" },
-  { value: "yolo-segmentation", label: "YOLO Seg（分割）" },
-  { value: "yolo-keypoint", label: "YOLO Pose（关键点）" },
-  { value: "yolo-cls", label: "YOLO CLS（单标签分类）" },
-  { value: "paddle-mlcls", label: "Paddle MLCLS（多标签分类）" },
-  { value: "paddle-ocr", label: "PaddleOCR" },
-  { value: "x-anylabeling", label: "X-AnyLabeling（通用 JSON 格式）" },
-  { value: "coco-panoptic", label: "COCO Panoptic（全景分割 PNG 掩码 + JSON）" },
-  { value: "torchkiln-detection", label: "TorchKiln 检测（YOLO 标签 + 训练清单）" },
-  { value: "torchkiln-rotated_detection", label: "TorchKiln 旋转框（YOLO OBB + 训练清单）" },
-  { value: "torchkiln-segmentation", label: "TorchKiln 分割（YOLO Seg + 训练清单）" },
-  { value: "torchkiln-semantic_segmentation", label: "TorchKiln 语义分割（掩码 PNG + 训练清单）" },
-  { value: "torchkiln-keypoint", label: "TorchKiln 关键点（YOLO Pose + 训练清单）" },
-  { value: "torchkiln-classification", label: "TorchKiln 分类（类目录 + 训练清单）" },
-  { value: "torchkiln-ocr", label: "TorchKiln OCR（四点标注 / 整图文本 + 训练清单）" },
-  { value: "torchkiln-video_detection", label: "TorchKiln 视频检测（抽帧 + 训练清单）" },
-  { value: "torchkiln-cuboid", label: "TorchKiln 3D 框（相机系 7-dof + 训练清单）" },
-  { value: "audio-event", label: "音频事件（JSONL 区间）" },
-  { value: "audio-csv", label: "音频事件（CSV 区间）" },
-  { value: "time-series-event", label: "时间序列事件（JSONL 区间）" },
-  { value: "time-series-csv", label: "时间序列事件（CSV 区间）" },
-  { value: "video-event", label: "视频事件（JSONL 区间）" },
-  { value: "video-event-csv", label: "视频事件（CSV 区间）" },
+  { value: "yolo-detection", label: t("annotation.fmtYoloDetection") },
+  { value: "yolo-rotated_detection", label: t("annotation.fmtYoloRotated") },
+  { value: "yolo-segmentation", label: t("annotation.fmtYoloSeg") },
+  { value: "yolo-keypoint", label: t("annotation.fmtYoloPose") },
+  { value: "yolo-cls", label: t("annotation.fmtYoloCls") },
+  { value: "paddle-mlcls", label: t("annotation.fmtPaddleMlcls") },
+  { value: "paddle-ocr", label: t("annotation.fmtPaddleOcr") },
+  { value: "x-anylabeling", label: t("annotation.fmtXAnyLabeling") },
+  { value: "coco-panoptic", label: t("annotation.fmtCocoPanoptic") },
+  { value: "torchkiln-detection", label: t("annotation.fmtTorchkilnDetection") },
+  { value: "torchkiln-rotated_detection", label: t("annotation.fmtTorchkilnRotated") },
+  { value: "torchkiln-segmentation", label: t("annotation.fmtTorchkilnSeg") },
+  { value: "torchkiln-semantic_segmentation", label: t("annotation.fmtTorchkilnSemanticSeg") },
+  { value: "torchkiln-keypoint", label: t("annotation.fmtTorchkilnKeypoint") },
+  { value: "torchkiln-classification", label: t("annotation.fmtTorchkilnClassification") },
+  { value: "torchkiln-ocr", label: t("annotation.fmtTorchkilnOcr") },
+  { value: "torchkiln-video_detection", label: t("annotation.fmtTorchkilnVideoDetection") },
+  { value: "torchkiln-cuboid", label: t("annotation.fmtTorchkilnCuboid") },
+  { value: "audio-event", label: t("annotation.fmtAudioEventJsonl") },
+  { value: "audio-csv", label: t("annotation.fmtAudioEventCsv") },
+  { value: "time-series-event", label: t("annotation.fmtTimeSeriesJsonl") },
+  { value: "time-series-csv", label: t("annotation.fmtTimeSeriesCsv") },
+  { value: "video-event", label: t("annotation.fmtVideoEventJsonl") },
+  { value: "video-event-csv", label: t("annotation.fmtVideoEventCsv") },
 ];
 
 function handleOpenExport(row: any) {
@@ -1641,7 +1708,7 @@ function handleOpenExport(row: any) {
 async function handleExportSubmit() {
   if (!exportDatasetId.value) return;
   if (!exportTaskId.value) {
-    ElMessage.warning("请选择标注任务");
+    ElMessage.warning(t("annotation.selectAnnotationTask"));
     return;
   }
   exporting.value = true;
@@ -1650,7 +1717,7 @@ async function handleExportSubmit() {
     let ocrRec: boolean | undefined;
     if (exportFormat.value === "paddle-ocr" || exportFormat.value === "torchkiln-ocr") {
       if (!ocrExportDet.value && !ocrExportRec.value) {
-        ElMessage.warning("请至少选择一种 OCR 导出（det/rec）");
+        ElMessage.warning(t("annotation.selectOcrExport"));
         return;
       }
       ocrRec = ocrExportRec.value; // det-only → false；rec 参与（rec-only 或 both）→ true
@@ -1671,7 +1738,7 @@ async function handleExportSubmit() {
       document.body.appendChild(iframe);
       setTimeout(() => document.body.removeChild(iframe), 120000);
     } else {
-      ElMessage.warning("导出完成但未获取到下载链接，请查看后端日志");
+      ElMessage.warning(t("annotation.noDownloadLink"));
     }
     exportDialogVisible.value = false;
   } catch {

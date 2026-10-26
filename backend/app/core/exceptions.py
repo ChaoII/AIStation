@@ -215,7 +215,11 @@ def handle_exception(app: FastAPI) -> None:
         - JSONResponse: 包含错误信息的 JSON 响应。
         """
         log.error(f"[值异常] {request.method} {request.url.path} | 错误信息: {exc!s}")
-        return ErrorResponse(msg=str(exc), status_code=status.HTTP_400_BAD_REQUEST)
+        return ErrorResponse(
+            msg="参数校验失败",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            data=_safe_error_data(str(exc)),
+        )
 
     @app.exception_handler(FieldValidationError)
     async def FieldValidationExceptionHandler(

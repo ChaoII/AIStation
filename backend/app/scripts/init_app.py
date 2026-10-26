@@ -1296,6 +1296,29 @@ async def _ensure_ai_tools() -> None:
                 log.info("✅ 内置 AI 工具已就绪")
 
 
+async def _ensure_ai_call_logs_columns() -> None:
+    """幂等补 ai_call_logs 新列（插件表自建模式，避免改写迁移链）。
+
+    ``reply_preview``：输出摘要——定时任务执行后可在「执行历史」回看结果（此前只有
+    last_run_time，用户无从得知执行成败与产出）。
+    """
+    from sqlalchemy import text
+
+    from app.core.database import async_engine
+
+    if not str(async_engine.url).startswith("postgresql"):
+        return  # SQLite（pytest）由 create_all 依据模型建列，无需 ALTER
+    try:
+        async with async_engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "ALTER TABLE ai_call_logs ADD COLUMN IF NOT EXISTS reply_preview TEXT"
+                )
+            )
+    except Exception as e:  # noqa: BLE001 补列失败不应阻断启动
+        log.warning(f"ai_call_logs.reply_preview 补列跳过: {str(e)[:120]}")
+
+
 async def _ensure_agno_tools() -> None:
     """幂等同步 Agno 精选工具到 ai_tools：仅补缺失行，默认停用，不覆盖已有配置。"""
     from sqlalchemy import select
@@ -1908,6 +1931,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_ai_menu_groups()
         await _ensure_ai_tools()
         await _ensure_agno_tools()
+        await _ensure_ai_call_logs_columns()
         # 问数侧历史影子表建表（幂等）：新环境部署必需，否则管道/数据域/权限/动作等报错
         try:
             from app.plugin.module_ai.query.service import _ensure_query_tables

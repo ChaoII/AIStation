@@ -3,62 +3,84 @@
   <div class="app-container ai-space-quota-page">
     <el-card shadow="never">
       <template #header>
-        <span>空间扩容审核</span>
+        <span>{{ t("ai_chat.quotaReview_title") }}</span>
       </template>
 
       <div class="quota-review-toolbar">
         <el-radio-group v-model="statusFilter" @change="loadList">
-          <el-radio-button label="">全部</el-radio-button>
-          <el-radio-button label="pending">待审核</el-radio-button>
-          <el-radio-button label="approved">已通过</el-radio-button>
-          <el-radio-button label="rejected">已驳回</el-radio-button>
+          <el-radio-button label="">{{ t("ai_chat.quotaReview_all") }}</el-radio-button>
+          <el-radio-button label="pending">{{ t("ai_chat.quotaReview_pending") }}</el-radio-button>
+          <el-radio-button label="approved">
+            {{ t("ai_chat.quotaReview_approved") }}
+          </el-radio-button>
+          <el-radio-button label="rejected">
+            {{ t("ai_chat.quotaReview_rejected") }}
+          </el-radio-button>
         </el-radio-group>
-        <el-button :icon="Refresh" @click="loadList">刷新</el-button>
+        <el-button :icon="Refresh" @click="loadList">
+          {{ t("ai_chat.quotaReview_refresh") }}
+        </el-button>
       </div>
 
-      <el-table v-loading="loading" :data="list" empty-text="暂无扩容申请" border stripe>
-        <el-table-column label="申请人" width="120">
+      <el-table
+        v-loading="loading"
+        :data="list"
+        :empty-text="t('ai_chat.quotaReview_noRequests')"
+        border
+        stripe
+      >
+        <el-table-column :label="t('ai_chat.quotaReview_applicant')" width="120">
           <template #default="{ row }">{{ row.username || row.user_id }}</template>
         </el-table-column>
-        <el-table-column label="目标配额" width="120">
+        <el-table-column :label="t('ai_chat.quotaReview_targetQuota')" width="120">
           <template #default="{ row }">{{ formatQuotaSize(row.target_mb * 1024 * 1024) }}</template>
         </el-table-column>
-        <el-table-column label="申请理由" min-width="200" show-overflow-tooltip>
+        <el-table-column
+          :label="t('ai_chat.quotaReview_reason')"
+          min-width="200"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ row.reason || "—" }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column :label="t('ai_chat.quotaReview_status')" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="statusType(row.status)" effect="plain">
               {{ statusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="申请时间" width="160">
+        <el-table-column :label="t('ai_chat.quotaReview_appliedTime')" width="160">
           <template #default="{ row }">{{ formatTime(row.created_time) }}</template>
         </el-table-column>
-        <el-table-column label="审核备注" min-width="160" show-overflow-tooltip>
+        <el-table-column
+          :label="t('ai_chat.quotaReview_reviewNote')"
+          min-width="160"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ row.review_note || "—" }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" align="center">
+        <el-table-column :label="t('ai_chat.quotaReview_action')" width="140" align="center">
           <template #default="{ row }">
             <template v-if="row.status === 'pending'">
               <el-button
+                v-hasPerm="'module_ai:space:quota_review'"
                 icon="Check"
                 size="small"
                 link
                 type="primary"
                 @click="openReview(row as SpaceQuotaRequest, true)"
               >
-                通过
+                {{ t("ai_chat.quotaReview_approve") }}
               </el-button>
               <el-button
+                v-hasPerm="'module_ai:space:quota_review'"
                 icon="Close"
                 size="small"
                 link
                 type="danger"
                 @click="openReview(row as SpaceQuotaRequest, false)"
               >
-                驳回
+                {{ t("ai_chat.quotaReview_reject") }}
               </el-button>
             </template>
             <span v-else>—</span>
@@ -69,42 +91,46 @@
 
     <el-dialog
       v-model="reviewVisible"
-      :title="reviewApprove ? '通过扩容申请' : '驳回扩容申请'"
+      :title="
+        reviewApprove ? t('ai_chat.quotaReview_approveTitle') : t('ai_chat.quotaReview_rejectTitle')
+      "
       width="520px"
     >
       <el-form label-width="90px" @submit.prevent>
-        <el-form-item label="申请人">
+        <el-form-item :label="t('ai_chat.quotaReview_applicant')">
           <span>{{ current?.username || current?.user_id }}</span>
         </el-form-item>
-        <el-form-item label="申请目标">
+        <el-form-item :label="t('ai_chat.quotaReview_target')">
           <span>{{ current ? formatQuotaSize(current.target_mb * 1024 * 1024) : "—" }}</span>
         </el-form-item>
-        <el-form-item label="申请理由">
+        <el-form-item :label="t('ai_chat.quotaReview_reason')">
           <span>{{ current?.reason || "—" }}</span>
         </el-form-item>
-        <el-form-item v-if="reviewApprove" label="生效配额">
+        <el-form-item v-if="reviewApprove" :label="t('ai_chat.quotaReview_effectiveQuota')">
           <el-input-number v-model="reviewQuotaGb" :min="1" :step="1" :precision="1" />
           <span class="quota-unit">GB</span>
         </el-form-item>
-        <el-form-item label="审核备注">
+        <el-form-item :label="t('ai_chat.quotaReview_reviewNote')">
           <el-input
             v-model="reviewNote"
             type="textarea"
             :rows="3"
             maxlength="500"
             show-word-limit
-            placeholder="选填，将展示给申请人。"
+            :placeholder="t('ai_chat.quotaReview_notePlaceholder')"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="reviewVisible = false">取消</el-button>
+        <el-button @click="reviewVisible = false">
+          {{ t("ai_chat.quotaReview_cancel") }}
+        </el-button>
         <el-button
           :type="reviewApprove ? 'primary' : 'danger'"
           :loading="submitting"
           @click="submitReview"
         >
-          {{ reviewApprove ? "通过" : "驳回" }}
+          {{ reviewApprove ? t("ai_chat.quotaReview_approve") : t("ai_chat.quotaReview_reject") }}
         </el-button>
       </template>
     </el-dialog>
@@ -113,6 +139,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Refresh } from "@element-plus/icons-vue";
 
@@ -123,6 +150,8 @@ import {
 } from "@/api/module_ai/space";
 
 // ---------------------------------------------------------------- 状态
+const { t } = useI18n();
+
 const loading = ref(false);
 const list = ref<SpaceQuotaRequest[]>([]);
 const statusFilter = ref("");
@@ -153,9 +182,9 @@ function formatTime(t?: string): string {
 }
 
 function statusLabel(s: string): string {
-  if (s === "approved") return "已通过";
-  if (s === "rejected") return "已驳回";
-  return "待审核";
+  if (s === "approved") return t("ai_chat.quotaReview_approved");
+  if (s === "rejected") return t("ai_chat.quotaReview_rejected");
+  return t("ai_chat.quotaReview_pending");
 }
 
 function statusType(s: string): "success" | "danger" | "info" {
@@ -173,7 +202,7 @@ async function loadList() {
     });
     list.value = r.data?.data || [];
   } catch (e: any) {
-    ElMessage.error(e?.message || "加载申请失败");
+    ElMessage.error(e?.message || t("ai_chat.quotaReview_loadFailed"));
   } finally {
     loading.value = false;
   }
@@ -193,17 +222,28 @@ async function submitReview() {
   if (!current.value) return;
   const isApprove = reviewApprove.value;
   const targetLabel = formatQuotaSize(current.value.target_mb * 1024 * 1024);
-  const userName = current.value.username || `用户 ${current.value.user_id}`;
+  const userName =
+    current.value.username || t("ai_chat.quotaReview_user", { id: current.value.user_id });
   const msg = isApprove
-    ? `将通过「${userName}」的扩容申请，赋予其 ${reviewQuotaGb.value} GB 配额（原目标 ${targetLabel}），且不可撤销。`
-    : `将驳回「${userName}」的扩容申请（目标 ${targetLabel}），其配额保持不变。`;
+    ? t("ai_chat.quotaReview_approveConfirm", {
+        user: userName,
+        quota: reviewQuotaGb.value,
+        target: targetLabel,
+      })
+    : t("ai_chat.quotaReview_rejectConfirm", { user: userName, target: targetLabel });
 
   try {
-    await ElMessageBox.confirm(msg, isApprove ? "通过扩容申请" : "驳回扩容申请", {
-      confirmButtonText: isApprove ? "确认通过" : "确认驳回",
-      cancelButtonText: "取消",
-      type: "warning",
-    });
+    await ElMessageBox.confirm(
+      msg,
+      isApprove ? t("ai_chat.quotaReview_approveTitle") : t("ai_chat.quotaReview_rejectTitle"),
+      {
+        confirmButtonText: isApprove
+          ? t("ai_chat.quotaReview_confirmApprove")
+          : t("ai_chat.quotaReview_confirmReject"),
+        cancelButtonText: t("ai_chat.quotaReview_cancel"),
+        type: "warning",
+      }
+    );
   } catch {
     return;
   }
@@ -215,11 +255,11 @@ async function submitReview() {
       quota_mb: isApprove ? Math.round(reviewQuotaGb.value * 1024) : null,
       note: reviewNote.value.trim(),
     });
-    ElMessage.success(r.data?.data?.msg || "已处理");
+    ElMessage.success(r.data?.data?.msg || t("ai_chat.quotaReview_processed"));
     reviewVisible.value = false;
     await loadList();
   } catch (e: any) {
-    ElMessage.error(e?.message || "处理失败");
+    ElMessage.error(e?.message || t("ai_chat.quotaReview_processFailed"));
   } finally {
     submitting.value = false;
   }

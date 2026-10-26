@@ -122,6 +122,7 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { User, Timer, ArrowRight } from "@element-plus/icons-vue";
 import { NotificationAPI } from "@/api/module_system/notification";
+import { ElMessage } from "element-plus";
 import NoticeAPI, { NoticeTable } from "@/api/module_system/notice";
 import { useNoticeStore } from "@/store";
 
@@ -178,6 +179,18 @@ async function handleClick(item: any) {
   }
   if (item.module === "train" && item.module_id) {
     router.push(`/train/task/${item.module_id}`);
+  } else if (item.module === "space") {
+    // space_quota_pending：管理员待审核 → 空间扩容审核页；其余（审核结果）→ 个人工作空间
+    router.push(item.type === "space_quota_pending" ? "/ai/space/quota" : "/ai/space");
+  } else if (item.module === "ai") {
+    // ai_approval_pending：AI 集成调用审批 → 开放平台「调用审批」页签
+    router.push("/ai/develop?tab=approvals");
+  } else if (item.module === "ontology") {
+    // ontology_proposal_pending：本体提案待审查 → 本体页
+    router.push("/ai/ontology");
+  } else {
+    // 未知 module 类型：无对应直达页，给明确反馈而非静默（已读已在上方标记）
+    ElMessage.info("该通知暂无对应跳转，仅标记为已读");
   }
 }
 

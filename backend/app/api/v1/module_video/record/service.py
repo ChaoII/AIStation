@@ -144,6 +144,10 @@ class RecordService:
     @classmethod
     async def _start_ffmpeg_recording(cls, camera_id: int, stream_id: str, trigger: str = "MANUAL",
                                        known_segments: set[str] | None = None):
+        # 已在录制：拒绝重复启动（手动与告警联动都会走这里），避免拉起第二个 ffmpeg 进程
+        # 覆盖 _running_recordings 导致先前进程失去引用泄漏。
+        if stream_id in _running_recordings:
+            raise CustomException(msg="该流已在录制中，请勿重复开启")
         # 录像前验证流确实在线，避免对死流启动 ffmpeg（静默无产物）
         from app.core.media_server import media_server
         try:

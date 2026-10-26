@@ -1,7 +1,7 @@
 <template>
   <EnhancedDialog
     v-model="visible"
-    title="创建数据表"
+    :title="t('generator.createDataTable')"
     width="min(800px, 94vw)"
     append-to-body
     dialog-class="create-table-dialog"
@@ -11,18 +11,20 @@
       <template #title>
         <span class="text-sm leading-relaxed">
           <template v-if="editMode === 'visual'">
-            选好数据库与单表/主子表，填好表名后点右下角「创建表」即可。
+            {{ t("generator.visualHint") }}
           </template>
-          <template v-else>自带示例一键插入；会写 DDL 的可直接粘贴，支持多条语句。</template>
+          <template v-else>{{ t("generator.sqlHint") }}</template>
         </span>
       </template>
     </el-alert>
 
     <div class="create-table-toolbar mb-3 flex flex-wrap items-center gap-2">
-      <span class="text-sm text-[var(--el-text-color-regular)] shrink-0">方式</span>
+      <span class="text-sm text-[var(--el-text-color-regular)] shrink-0">
+        {{ t("generator.modeLabel") }}
+      </span>
       <el-radio-group v-model="editMode" size="small">
-        <el-radio-button value="visual">表结构（推荐）</el-radio-button>
-        <el-radio-button value="sql">写 SQL</el-radio-button>
+        <el-radio-button value="visual">{{ t("generator.tableStructure") }}</el-radio-button>
+        <el-radio-button value="sql">{{ t("generator.writeSql") }}</el-radio-button>
       </el-radio-group>
     </div>
 
@@ -30,25 +32,35 @@
       <div class="mb-2 flex flex-wrap items-center gap-2">
         <el-dropdown trigger="click" @command="onSqlPresetCommand">
           <el-button type="primary" size="small">
-            插入示例模板
+            {{ t("generator.insertExample") }}
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="single-mysql">单表 · MySQL</el-dropdown-item>
-              <el-dropdown-item command="single-postgres">单表 · PostgreSQL</el-dropdown-item>
-              <el-dropdown-item command="master-mysql" divided>主子表 · MySQL</el-dropdown-item>
-              <el-dropdown-item command="master-postgres">主子表 · PostgreSQL</el-dropdown-item>
+              <el-dropdown-item command="single-mysql">
+                {{ t("generator.singleMysql") }}
+              </el-dropdown-item>
+              <el-dropdown-item command="single-postgres">
+                {{ t("generator.singlePostgres") }}
+              </el-dropdown-item>
+              <el-dropdown-item command="master-mysql" divided>
+                {{ t("generator.masterMysql") }}
+              </el-dropdown-item>
+              <el-dropdown-item command="master-postgres">
+                {{ t("generator.masterPostgres") }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <span class="text-xs text-[var(--el-text-color-secondary)]">从模板开始比自己写更省事</span>
+        <span class="text-xs text-[var(--el-text-color-secondary)]">
+          {{ t("generator.fromTemplateTip") }}
+        </span>
       </div>
       <el-scrollbar max-height="min(52vh, 420px)" class="sql-editor-scroll">
         <div class="absolute z-36 right-5 top-2">
           <el-link type="primary" @click="copySql">
             <el-icon><CopyDocument /></el-icon>
-            复制
+            {{ t("generator.copy") }}
           </el-link>
         </div>
         <CodeEditor
@@ -67,39 +79,58 @@
         <div class="visual-structure max-w-3xl">
           <el-descriptions :column="1" border size="small" class="visual-desc">
             <template #title>
-              <span class="text-sm font-medium text-[var(--el-text-color-primary)]">选项</span>
+              <span class="text-sm font-medium text-[var(--el-text-color-primary)]">
+                {{ t("generator.options") }}
+              </span>
             </template>
-            <el-descriptions-item label="数据库" label-class-name="visual-desc-label">
+            <el-descriptions-item
+              :label="t('generator.database')"
+              label-class-name="visual-desc-label"
+            >
               <el-radio-group v-model="visual.dialect" size="small">
                 <el-radio-button value="mysql">MySQL</el-radio-button>
                 <el-radio-button value="postgres">PostgreSQL</el-radio-button>
               </el-radio-group>
             </el-descriptions-item>
-            <el-descriptions-item label="表类型" label-class-name="visual-desc-label">
+            <el-descriptions-item
+              :label="t('generator.tableKind')"
+              label-class-name="visual-desc-label"
+            >
               <el-radio-group v-model="templateKind" size="small">
-                <el-radio-button value="single">只要一张表</el-radio-button>
-                <el-radio-button value="masterSub">主表 + 子表明细</el-radio-button>
+                <el-radio-button value="single">{{ t("generator.singleOnly") }}</el-radio-button>
+                <el-radio-button value="masterSub">
+                  {{ t("generator.masterSubDetail") }}
+                </el-radio-button>
               </el-radio-group>
             </el-descriptions-item>
           </el-descriptions>
 
           <el-descriptions :column="1" border size="small" class="visual-desc mt-3">
             <template #title>
-              <span class="text-sm font-medium text-[var(--el-text-color-primary)]">主表</span>
+              <span class="text-sm font-medium text-[var(--el-text-color-primary)]">
+                {{ t("generator.masterTable") }}
+              </span>
             </template>
             <el-descriptions-item label-class-name="visual-desc-label">
               <template #label>
                 <span class="text-[var(--el-color-danger)]">*</span>
-                表名
+                {{ t("generator.tableName") }}
               </template>
               <el-input
                 v-model="visual.mainTableName"
-                placeholder="英文表名，如 gen_demo_order"
+                :placeholder="t('generator.mainTableNamePlaceholder')"
                 clearable
               />
             </el-descriptions-item>
-            <el-descriptions-item label="说明" label-class-name="visual-desc-label">
-              <el-input v-model="visual.mainComment" placeholder="中文说明，可选" clearable />
+            <el-descriptions-item
+              :label="t('generator.comment')"
+              label-class-name="visual-desc-label"
+            >
+              <el-input
+                v-model="visual.mainComment"
+                :placeholder="t('generator.commentPlaceholder')"
+                clearable
+              />
             </el-descriptions-item>
           </el-descriptions>
 
@@ -111,42 +142,61 @@
             class="visual-desc mt-3"
           >
             <template #title>
-              <span class="text-sm font-medium text-[var(--el-text-color-primary)]">子表</span>
+              <span class="text-sm font-medium text-[var(--el-text-color-primary)]">
+                {{ t("generator.subTable") }}
+              </span>
             </template>
             <el-descriptions-item label-class-name="visual-desc-label">
               <template #label>
                 <span class="text-[var(--el-color-danger)]">*</span>
-                表名
+                {{ t("generator.tableName") }}
               </template>
               <el-input
                 v-model="visual.subTableName"
-                placeholder="如 gen_demo_order_item"
+                :placeholder="t('generator.subTableNamePlaceholder')"
                 clearable
               />
             </el-descriptions-item>
-            <el-descriptions-item label="说明" label-class-name="visual-desc-label">
-              <el-input v-model="visual.subComment" placeholder="中文说明，可选" clearable />
+            <el-descriptions-item
+              :label="t('generator.comment')"
+              label-class-name="visual-desc-label"
+            >
+              <el-input
+                v-model="visual.subComment"
+                :placeholder="t('generator.commentPlaceholder')"
+                clearable
+              />
             </el-descriptions-item>
-            <el-descriptions-item label="外键列" label-class-name="visual-desc-label">
+            <el-descriptions-item
+              :label="t('generator.fkColumn')"
+              label-class-name="visual-desc-label"
+            >
               <el-input
                 v-model="visual.fkColumn"
-                placeholder="子表里指向主表的那列，如 order_id"
+                :placeholder="t('generator.fkColumnPlaceholder')"
                 clearable
               />
             </el-descriptions-item>
-            <el-descriptions-item label="对应主表列" label-class-name="visual-desc-label">
-              <el-input v-model="visual.fkRefColumn" placeholder="一般是 id" clearable />
+            <el-descriptions-item
+              :label="t('generator.fkRefColumn')"
+              label-class-name="visual-desc-label"
+            >
+              <el-input
+                v-model="visual.fkRefColumn"
+                :placeholder="t('generator.fkRefColumnPlaceholder')"
+                clearable
+              />
             </el-descriptions-item>
           </el-descriptions>
 
           <div class="mt-3">
             <el-link type="primary" :underline="false" @click="syncVisualToSql">
-              需要手写调整？生成 SQL 并切到「写 SQL」
+              {{ t("generator.needManualAdjust") }}
             </el-link>
           </div>
         </div>
         <p class="mb-1 mt-2 text-xs text-[var(--el-text-color-secondary)]">
-          将要执行的 SQL（随上面表格自动更新）
+          {{ t("generator.execSql") }}
         </p>
         <el-input
           v-model="visualPreviewSql"
@@ -154,15 +204,17 @@
           :rows="6"
           readonly
           class="font-mono text-xs visual-sql-preview"
-          placeholder="填写表名后会自动生成"
+          :placeholder="t('generator.autoGenPlaceholder')"
         />
       </el-scrollbar>
     </div>
 
     <template #footer>
       <div class="dialog-footer">
-        <el-button type="primary" :loading="loading" @click="handleConfirm">创建表</el-button>
-        <el-button @click="handleCancel">取消</el-button>
+        <el-button type="primary" :loading="loading" @click="handleConfirm">
+          {{ t("generator.createTableBtn") }}
+        </el-button>
+        <el-button @click="handleCancel">{{ t("generator.cancel") }}</el-button>
       </div>
     </template>
   </EnhancedDialog>
@@ -170,6 +222,7 @@
 
 <script setup lang="ts">
 import { ref, watch, nextTick, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import CodeEditor from "@/components/CodeEditor/index.vue";
 import { ElMessage } from "element-plus";
 import { ArrowDown, CopyDocument } from "@element-plus/icons-vue";
@@ -192,6 +245,8 @@ import {
 } from "../utils/createTableSqlExamples";
 
 defineOptions({ name: "CreateTableDialog" });
+
+const { t } = useI18n();
 
 const visible = defineModel<boolean>({ default: false });
 
@@ -256,7 +311,7 @@ function applyLinkFromGenIfAny() {
   editMode.value = "visual";
   visualPreviewSql.value = buildSqlFromVisual(applySubColumns(visual.value));
   ElMessage.info({
-    message: "已带入代码生成里的表名，检查无误后点「创建表」即可",
+    message: t("generator.linkedFromGen"),
     duration: 2800,
   });
 }
@@ -302,7 +357,7 @@ function syncVisualToSql() {
   sqlText.value = buildSqlFromVisual(applySubColumns(visual.value));
   editMode.value = "sql";
   void nextTick(() => {
-    ElMessage.success("已切换到「写 SQL」，可继续改");
+    ElMessage.success(t("generator.switchedToSql"));
   });
 }
 
@@ -329,20 +384,20 @@ function onSqlPresetCommand(cmd: string) {
 function validateVisual(): boolean {
   const v = applySubColumns(visual.value);
   if (!(v.mainTableName || "").trim()) {
-    ElMessage.warning("请填写主表表名");
+    ElMessage.warning(t("generator.fillMainTableName"));
     return false;
   }
   if (v.subEnabled) {
     if (!(v.subTableName || "").trim()) {
-      ElMessage.warning("请填写子表表名");
+      ElMessage.warning(t("generator.fillSubTableName"));
       return false;
     }
     if (!(v.fkColumn || "").trim()) {
-      ElMessage.warning("请填写子表上的外键列名");
+      ElMessage.warning(t("generator.fillFkColumn"));
       return false;
     }
     if (!(v.fkRefColumn || "").trim()) {
-      ElMessage.warning("请填写主表上被引用的列名（一般为 id）");
+      ElMessage.warning(t("generator.fillFkRefColumn"));
       return false;
     }
   }
@@ -358,11 +413,11 @@ function loadPresetSql(kind: "single" | "masterSub", dialect: SqlDialect) {
 
 function copySql() {
   if (!sqlText.value) {
-    ElMessage.warning("没有可复制的内容");
+    ElMessage.warning(t("generator.noCopyContent"));
     return;
   }
   copy(sqlText.value);
-  ElMessage.success("已复制");
+  ElMessage.success(t("generator.copied"));
 }
 
 function handleConfirm() {
@@ -372,7 +427,7 @@ function handleConfirm() {
       ? sqlText.value.trim()
       : buildSqlFromVisual(applySubColumns(visual.value)).trim();
   if (!sql) {
-    ElMessage.error("请填写表名或 SQL");
+    ElMessage.error(t("generator.fillTableOrSql"));
     return;
   }
   if (editMode.value === "visual") {

@@ -19,7 +19,7 @@
         />
         <el-dropdown v-if="templates.length" style="margin-left: 8px" @command="createFromTemplate">
           <el-button size="small">
-            从模板创建
+            {{ t("ai_workflow.prompt_createFromTemplate") }}
             <el-icon style="margin-left: 4px"><ArrowDown /></el-icon>
           </el-button>
           <template #dropdown>
@@ -32,15 +32,20 @@
         </el-dropdown>
         <span class="batch-ac">
           <el-button size="small" :disabled="!promptSelIds.length" @click="batchPrompt(true)">
-            批量启用
+            {{ t("ai_workflow.prompt_batchEnable") }}
           </el-button>
           <el-button size="small" :disabled="!promptSelIds.length" @click="batchPrompt(false)">
-            批量停用
+            {{ t("ai_workflow.prompt_batchDisable") }}
           </el-button>
         </span>
         <el-tag size="small" type="info" effect="plain" class="summary-tag">
-          共 {{ promptSummary.total }} 个提示词 · 启用 {{ promptSummary.enabled }} · 停用
-          {{ promptSummary.disabled }}
+          {{
+            t("ai_workflow.prompt_summary", {
+              total: promptSummary.total,
+              enabled: promptSummary.enabled,
+              disabled: promptSummary.disabled,
+            })
+          }}
         </el-tag>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
@@ -60,24 +65,48 @@
             @selection-change="onPromptSel"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无提示词，点击「新建」创建" />
+              <el-empty :image-size="80" :description="t('ai_workflow.prompt_noData')" />
             </template>
             <el-table-column type="selection" width="55" align="center" />
-            <el-table-column label="名称" prop="name" min-width="160" show-overflow-tooltip />
-            <el-table-column label="分类" prop="category" min-width="120" show-overflow-tooltip>
+            <el-table-column
+              :label="t('ai_workflow.prompt_name')"
+              prop="name"
+              min-width="160"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              :label="t('ai_workflow.prompt_category')"
+              prop="category"
+              min-width="120"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">{{ row.category || "—" }}</template>
             </el-table-column>
-            <el-table-column label="版本" prop="version" width="80" align="center">
+            <el-table-column
+              :label="t('ai_workflow.prompt_version')"
+              prop="version"
+              width="80"
+              align="center"
+            >
               <template #default="{ row }">v{{ row.version ?? 1 }}</template>
             </el-table-column>
-            <el-table-column label="启用" width="90" align="center">
+            <el-table-column :label="t('ai_workflow.prompt_enabled')" width="90" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-                  {{ row.enabled ? "启用" : "停用" }}
+                  {{
+                    row.enabled
+                      ? t("ai_workflow.prompt_enabledText")
+                      : t("ai_workflow.prompt_disabledText")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" fixed="right" width="230" align="center">
+            <el-table-column
+              :label="t('ai_workflow.prompt_action')"
+              fixed="right"
+              width="230"
+              align="center"
+            >
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="['module_ai:prompt:query']"
@@ -87,7 +116,7 @@
                   type="primary"
                   @click="openDetail(row)"
                 >
-                  详情
+                  {{ t("ai_workflow.prompt_detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:prompt:update']"
@@ -97,7 +126,7 @@
                   type="primary"
                   @click="handleOpenDialog('update', row.id)"
                 >
-                  编辑
+                  {{ t("ai_workflow.prompt_edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:prompt:create']"
@@ -106,7 +135,7 @@
                   link
                   @click="doCopy(row)"
                 >
-                  复制
+                  {{ t("ai_workflow.prompt_copy") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:prompt:delete']"
@@ -116,7 +145,7 @@
                   type="danger"
                   @click="handleRowDelete(row.id)"
                 >
-                  删除
+                  {{ t("ai_workflow.prompt_delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -138,18 +167,18 @@
         <div class="prompt-editor__meta">
           <el-input
             v-model="form.name"
-            placeholder="提示词名称（唯一）"
+            :placeholder="t('ai_workflow.prompt_namePlaceholder')"
             clearable
             class="prompt-editor__name"
           />
           <el-input
             v-model="form.category"
-            placeholder="分类，如：qa / 摘要 / 报表"
+            :placeholder="t('ai_workflow.prompt_categoryPlaceholder')"
             clearable
             class="prompt-editor__category"
           />
           <div class="prompt-editor__enabled">
-            <span>启用</span>
+            <span>{{ t("ai_workflow.prompt_enabled") }}</span>
             <el-switch v-model="form.enabled" />
           </div>
         </div>
@@ -158,7 +187,7 @@
           <!-- 左：块导航（排序 / 增删 / 选中） -->
           <div class="prompt-editor__nav">
             <div class="prompt-editor__nav-head">
-              <span>提示词块</span>
+              <span>{{ t("ai_workflow.prompt_blocksLabel") }}</span>
               <el-tag size="small" effect="plain">{{ form.blocks.length }}</el-tag>
             </div>
             <div class="prompt-editor__nav-list">
@@ -179,7 +208,9 @@
                     <el-tag size="small" effect="plain" class="nav-item__tag">
                       {{ typeLabel(element.type) }}
                     </el-tag>
-                    <span class="nav-item__preview">{{ element.content || "（空）" }}</span>
+                    <span class="nav-item__preview">
+                      {{ element.content || t("ai_workflow.prompt_emptyBlock") }}
+                    </span>
                     <el-button
                       v-hasPerm="['module_ai:prompt:update']"
                       link
@@ -188,12 +219,16 @@
                       class="nav-item__del"
                       @click.stop="removeBlock(index)"
                     >
-                      删
+                      {{ t("ai_workflow.prompt_del") }}
                     </el-button>
                   </div>
                 </template>
               </draggable>
-              <el-empty v-if="!form.blocks.length" :image-size="40" description="暂无块" />
+              <el-empty
+                v-if="!form.blocks.length"
+                :image-size="40"
+                :description="t('ai_workflow.prompt_noBlocks')"
+              />
             </div>
             <div class="prompt-editor__add">
               <el-select v-model="newBlockType" class="prompt-editor__add-select">
@@ -210,7 +245,7 @@
                 plain
                 @click="addBlock"
               >
-                添加块
+                {{ t("ai_workflow.prompt_addBlock") }}
               </el-button>
             </div>
           </div>
@@ -222,7 +257,12 @@
                 <div class="prompt-editor__main-title">
                   <el-tag size="small">{{ typeLabel(currentBlock.type) }}</el-tag>
                   <span class="prompt-editor__index">
-                    第 {{ activeIndex + 1 }} / {{ form.blocks.length }} 块
+                    {{
+                      t("ai_workflow.prompt_blockIndex", {
+                        index: activeIndex + 1,
+                        total: form.blocks.length,
+                      })
+                    }}
                   </span>
                 </div>
                 <el-select
@@ -242,47 +282,49 @@
                 v-model="currentBlock.content"
                 type="textarea"
                 :autosize="{ minRows: 8, maxRows: 24 }"
-                :placeholder="`${typeLabel(currentBlock.type)}内容，支持 {{变量名}} 插值`"
+                :placeholder="
+                  t('ai_workflow.prompt_contentPlaceholder', { type: typeLabel(currentBlock.type) })
+                "
                 class="prompt-editor__textarea"
               />
               <div class="prompt-editor__hint">
                 <el-text size="small" type="info">
-                  支持
+                  {{ t("ai_workflow.prompt_hintPrefix") }}
                   <code>&#123;&#123;变量名&#125;&#125;</code>
-                  插值；左侧拖拽调整块顺序，右侧可填写示例值并实时预览
+                  {{ t("ai_workflow.prompt_hintSuffix") }}
                 </el-text>
               </div>
             </template>
-            <el-empty v-else :image-size="60" description="暂无块，请从左侧添加" />
+            <el-empty v-else :image-size="60" :description="t('ai_workflow.prompt_noBlocksMain')" />
           </div>
 
           <!-- 右：助手面板（变量 / 预览） -->
           <div class="prompt-editor__aside">
             <el-tabs v-model="asideTab">
-              <el-tab-pane label="变量" name="vars">
+              <el-tab-pane :label="t('ai_workflow.prompt_varsTab')" name="vars">
                 <el-empty
                   v-if="!detectedVariables.length"
                   :image-size="50"
-                  description="未检测到变量"
+                  :description="t('ai_workflow.prompt_noVars')"
                 />
                 <div v-for="name in detectedVariables" :key="name" class="var-row">
                   <el-tag size="small">{{ name }}</el-tag>
                   <el-input
                     v-model="variableValues[name]"
                     size="small"
-                    placeholder="示例值"
+                    :placeholder="t('ai_workflow.prompt_exampleValue')"
                     class="var-row__input"
                   />
                 </div>
                 <el-text v-if="!detectedVariables.length" size="small" type="info" class="var-tip">
-                  在块内容中写入
+                  {{ t("ai_workflow.prompt_varTipPrefix") }}
                   <code>&#123;&#123;变量名&#125;&#125;</code>
-                  后会自动识别
+                  {{ t("ai_workflow.prompt_varTipSuffix") }}
                 </el-text>
               </el-tab-pane>
-              <el-tab-pane label="预览" name="preview">
+              <el-tab-pane :label="t('ai_workflow.prompt_previewTab')" name="preview">
                 <div v-if="preview" class="preview" v-html="renderMd(preview)"></div>
-                <div v-else class="preview muted">（暂无内容）</div>
+                <div v-else class="preview muted">{{ t("ai_workflow.prompt_noContent") }}</div>
               </el-tab-pane>
             </el-tabs>
           </div>
@@ -290,28 +332,40 @@
       </div>
 
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("ai_workflow.prompt_cancel") }}</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">
+          {{ t("ai_workflow.prompt_save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
     <!-- 提示词详情预览抽屉 -->
     <el-drawer
       v-model="detailVisible"
-      :title="detail?.name || '提示词详情'"
+      :title="detail?.name || t('ai_workflow.prompt_detailTitle')"
       size="480px"
       append-to-body
     >
       <el-descriptions v-if="detail" :column="1" border size="small">
-        <el-descriptions-item label="名称">{{ detail.name }}</el-descriptions-item>
-        <el-descriptions-item label="分类">{{ detail.category || "—" }}</el-descriptions-item>
-        <el-descriptions-item label="版本">v{{ detail.version ?? 1 }}</el-descriptions-item>
-        <el-descriptions-item label="启用">
+        <el-descriptions-item :label="t('ai_workflow.prompt_name')">
+          {{ detail.name }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_workflow.prompt_category')">
+          {{ detail.category || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_workflow.prompt_version')">
+          v{{ detail.version ?? 1 }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_workflow.prompt_enabled')">
           <el-tag :type="detail.enabled ? 'success' : 'info'" size="small">
-            {{ detail.enabled ? "启用" : "停用" }}
+            {{
+              detail.enabled
+                ? t("ai_workflow.prompt_enabledText")
+                : t("ai_workflow.prompt_disabledText")
+            }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="变量">
+        <el-descriptions-item :label="t('ai_workflow.prompt_variables')">
           <template v-if="(detail.variables || []).length">
             <el-tag
               v-for="v in detail.variables"
@@ -325,7 +379,7 @@
           </template>
           <span v-else class="muted">—</span>
         </el-descriptions-item>
-        <el-descriptions-item label="提示词内容" :span="1">
+        <el-descriptions-item :label="t('ai_workflow.prompt_content')" :span="1">
           <div v-if="(detail.blocks || []).length" class="prompt-block-list">
             <div v-for="(b, i) in detail.blocks" :key="i" class="prompt-block">
               <div class="prompt-block__head">
@@ -343,6 +397,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { ArrowDown } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import draggable from "vuedraggable";
@@ -367,6 +422,8 @@ import {
 
 defineOptions({ name: "AiPrompt" });
 
+const { t } = useI18n();
+
 interface PromptBlock {
   key: string;
   type: string;
@@ -374,19 +431,19 @@ interface PromptBlock {
 }
 
 const blockTypeOptions = [
-  { label: "系统 (system)", value: "system" },
-  { label: "上下文 (context)", value: "context" },
-  { label: "指令 (instruction)", value: "instruction" },
-  { label: "示例 (example)", value: "example" },
-  { label: "输出 (output)", value: "output" },
+  { label: t("ai_workflow.prompt_systemOption"), value: "system" },
+  { label: t("ai_workflow.prompt_contextOption"), value: "context" },
+  { label: t("ai_workflow.prompt_instructionOption"), value: "instruction" },
+  { label: t("ai_workflow.prompt_exampleOption"), value: "example" },
+  { label: t("ai_workflow.prompt_outputOption"), value: "output" },
 ];
 
 const blockTypeLabels: Record<string, string> = {
-  system: "系统",
-  context: "上下文",
-  instruction: "指令",
-  example: "示例",
-  output: "输出",
+  system: t("ai_workflow.prompt_system"),
+  context: t("ai_workflow.prompt_context"),
+  instruction: t("ai_workflow.prompt_instruction"),
+  example: t("ai_workflow.prompt_example"),
+  output: t("ai_workflow.prompt_output"),
 };
 
 function typeLabel(type: string): string {
@@ -409,15 +466,23 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "名称",
+      label: t("ai_workflow.prompt_name"),
       type: "input",
-      attrs: { placeholder: "提示词名称", clearable: true, style: { width: "200px" } },
+      attrs: {
+        placeholder: t("ai_workflow.prompt_searchNamePlaceholder"),
+        clearable: true,
+        style: { width: "200px" },
+      },
     },
     {
       prop: "category",
-      label: "分类",
+      label: t("ai_workflow.prompt_category"),
       type: "input",
-      attrs: { placeholder: "分类", clearable: true, style: { width: "200px" } },
+      attrs: {
+        placeholder: t("ai_workflow.prompt_category"),
+        clearable: true,
+        style: { width: "200px" },
+      },
     },
   ],
 });
@@ -450,11 +515,11 @@ const contentConfig = reactive<IContentConfig>({
         .filter((n: number) => !Number.isNaN(n))
     );
   },
-  deleteConfirm: { title: "警告", message: "确认删除所选提示词?", type: "warning" },
+  deleteConfirm: { type: "warning" },
 });
 
 const dialogVisible = ref(false);
-const dialogTitle = ref("新增提示词");
+const dialogTitle = ref(t("ai_workflow.prompt_createTitle"));
 const currentId = ref<number | undefined>(undefined);
 const activeIndex = ref(0);
 const newBlockType = ref("instruction");
@@ -549,10 +614,12 @@ async function loadTemplates() {
 async function createFromTemplate(tpl: any) {
   try {
     const r = await createAiPromptFromTemplate(tpl.key, tpl.name);
-    ElMessage.success(`已从模板创建「${r.data?.data?.name || tpl.name}」`);
+    ElMessage.success(
+      t("ai_workflow.prompt_fromTemplateSuccess", { name: r.data?.data?.name || tpl.name })
+    );
     loadPromptSummary();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "创建失败");
+    ElMessage.error(e?.msg || t("ai_workflow.prompt_createFail"));
   }
 }
 async function loadPromptSummary() {
@@ -572,11 +639,18 @@ async function batchPrompt(enabled: boolean) {
   if (!promptSelIds.value.length) return;
   try {
     const r = await batchPromptStatus(promptSelIds.value, enabled);
-    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个提示词`);
+    ElMessage.success(
+      t("ai_workflow.prompt_batchResult", {
+        action: enabled
+          ? t("ai_workflow.prompt_enabledText")
+          : t("ai_workflow.prompt_disabledText"),
+        count: r.data?.data?.count || 0,
+      })
+    );
     refreshList();
     loadPromptSummary();
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "操作失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_workflow.prompt_opFail"));
   }
 }
 
@@ -597,17 +671,17 @@ async function openDetail(row: any) {
 async function doCopy(row: any) {
   try {
     await createAiPrompt({
-      name: `${row.name}（副本）`,
+      name: t("ai_workflow.prompt_copyName", { name: row.name }),
       category: row.category || "",
       enabled: row.enabled !== false,
       blocks: (row.blocks || []).map((b: any) => ({ type: b.type, content: b.content })),
       variables: row.variables || [],
     });
-    ElMessage.success("已复制提示词");
+    ElMessage.success(t("ai_workflow.prompt_copySuccess"));
     refreshList();
     loadPromptSummary();
   } catch {
-    ElMessage.error("复制失败");
+    ElMessage.error(t("ai_workflow.prompt_copyFail"));
   }
 }
 
@@ -619,7 +693,7 @@ onMounted(() => {
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   resetForm();
   if (type === "update" && id) {
-    dialogTitle.value = "编辑提示词";
+    dialogTitle.value = t("ai_workflow.prompt_editTitle");
     try {
       const res = await getAiPromptDetail(id);
       const data = res.data?.data || {};
@@ -635,11 +709,11 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       activeIndex.value = 0;
       resetVariables();
     } catch (e: any) {
-      ElMessage.error(e?.msg || "加载失败");
+      ElMessage.error(e?.msg || t("ai_workflow.prompt_loadFail"));
       return;
     }
   } else {
-    dialogTitle.value = "新增提示词";
+    dialogTitle.value = t("ai_workflow.prompt_createTitle");
   }
   dialogVisible.value = true;
 }
@@ -651,7 +725,7 @@ function handleCloseDialog() {
 
 async function handleSave() {
   if (!form.name.trim()) {
-    ElMessage.warning("请填写提示词名称");
+    ElMessage.warning(t("ai_workflow.prompt_nameRequired"));
     return;
   }
   const payload = {
@@ -667,9 +741,9 @@ async function handleSave() {
     else await createAiPrompt(payload);
     dialogVisible.value = false;
     refreshList();
-    ElMessage.success("保存成功");
+    ElMessage.success(t("ai_workflow.prompt_saveSuccess"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.prompt_saveFail"));
   } finally {
     saving.value = false;
   }

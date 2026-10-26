@@ -1,0 +1,90 @@
+export default {
+  // 工具栏 / 操作
+  export: "Экспорт",
+  noData: "Нет данных",
+  detail: "Детали",
+  edit: "Изменить",
+  delete: "Удалить",
+  action: "Действия",
+  cancel: "Отмена",
+  confirm: "Подтвердить",
+  save: "Сохранить",
+  operationSuccess: "Операция выполнена успешно",
+
+  // 表格列
+  selection: "Выбор",
+  serial: "№",
+  configName: "Название конфигурации",
+  configKey: "Ключ конфигурации",
+  configKeyName: "Название ключа конфигурации",
+  configValue: "Значение конфигурации",
+  configType: "Встроенная в систему",
+  description: "Описание",
+  createdTime: "Время создания",
+  updatedTime: "Время обновления",
+  yes: "Да",
+  no: "Нет",
+
+  // 搜索 / 筛选
+  inputConfigName: "Введите название конфигурации",
+  inputConfigKey: "Введите ключ конфигурации",
+  inputConfigValue: "Введите значение конфигурации",
+  inputDescription: "Введите описание",
+  inputConfigKeyName: "Введите название ключа конфигурации",
+  selectConfigType: "Выберите встроенную в систему",
+  to: "до",
+  startDate: "Дата начала",
+  endDate: "Дата окончания",
+
+  // 弹窗标题
+  configDetail: "Детали системной конфигурации",
+  updateConfig: "Изменить системную конфигурацию",
+  createConfig: "Создать системную конфигурацию",
+
+  // 提示 / 确认
+  warnTitle: "Предупреждение",
+  deleteConfirmMessage: "Удалить выбранные данные? Это действие нельзя отменить.",
+  requiredConfigName: "Введите название системной конфигурации",
+  requiredConfigKey: "Введите ключ системной конфигурации",
+  requiredConfigValue: "Введите значение системной конфигурации",
+  requiredConfigType: "Выберите тип системной конфигурации",
+
+  // 配置中心抽屉
+  configCenter: "Центр конфигурации",
+  websiteConfig: "Конфигурация сайта",
+  websiteIcon: "Иконка сайта",
+  securityPrivacy: "Безопасность и конфиденциальность",
+  userAgreement: "Пользовательское соглашение",
+  apiWhitelist: "Белый список API",
+  ipBlacklist: "Чёрный список IP",
+  notification: "Конфигурация уведомлений",
+  demoConfig: "Демо-конфигурация",
+  wsPush: "WebSocket Push",
+  smtpEmail: "SMTP-почта",
+  smsGateway: "SMS-шлюз",
+  webhookRest: "Webhook / REST API",
+  defaultRecipient: "Получатель по умолчанию",
+  enable: "Включить",
+  disable: "Отключить",
+  testWsPush: "Проверить WS Push",
+  testEmailPush: "Проверить отправку письма",
+  testSmsPush: "Проверить отправку SMS",
+  testWebhookPush: "Проверить Webhook",
+  addApiPath: "Добавить путь API",
+  addIp: "Добавить IP-адрес",
+  apiWhitelistTip:
+    "Примечание к конфигурации: пути API в белом списке доступны без входа в систему и поддерживают настройку полного пути.",
+  ipBlacklistTip:
+    "Примечание к конфигурации: IP-адреса из чёрного списка не могут получить доступ к системе, поддерживается настройка отдельных IP.",
+  demoIpWhitelistTip:
+    "Примечание к конфигурации: в демо-режиме доступ к системе имеют только IP-адреса из белого списка, поддерживается настройка отдельных IP.",
+  demoEnableTip:
+    "Примечание к конфигурации: после включения система перейдёт в демо-режим, и некоторые функции могут быть ограничены.",
+  invalidApiPath: "Введите корректный формат пути API (начинающийся с /)",
+  invalidIp: "Введите корректный формат IP-адреса",
+  keepApiWhitelist: "Требуется хотя бы одна конфигурация белого списка API",
+  keepIpBlacklist: "Требуется хотя бы одна конфигурация чёрного списка IP",
+  keepIpWhitelist: "Требуется хотя бы одна конфигурация белого списка IP",
+  uploadFailedPrefix: "Ошибка загрузки: ",
+  uploadRetry: "Пожалуйста, попробуйте позже",
+};

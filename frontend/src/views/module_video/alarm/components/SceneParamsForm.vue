@@ -1,6 +1,6 @@
 <template>
   <div class="scene-params-form">
-    <el-empty v-if="!schema.length" :image-size="60" description="该场景暂无参数配置" />
+    <el-empty v-if="!schema.length" :image-size="60" :description="t('video.scene.noParams')" />
 
     <template v-else>
       <el-form-item v-for="item in schema" :key="item.key" :label="labelOf(item)">
@@ -43,7 +43,7 @@
           allow-create
           default-first-option
           :disabled="disabled"
-          placeholder="请选择或输入后回车"
+          :placeholder="t('video.scene.selectOrEnter')"
           style="width: 100%"
           @update:model-value="(v: unknown[]) => setParam(item.key, v)"
         >
@@ -69,6 +69,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import type { SceneParamSchema } from "@/api/module_video/scene";
 import RoiCanvas from "./RoiCanvas.vue";
 
@@ -90,6 +91,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{ "update:modelValue": [value: Record<string, unknown>] }>();
+const { t } = useI18n();
 
 /** 参数原值（只读视图；写回通过 setParam 以新对象 emit） */
 const params = computed(() => props.modelValue ?? {});

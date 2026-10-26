@@ -1,10 +1,13 @@
 <template>
   <VChart v-if="points.length" :option="option" :style="{ height: height + 'px' }" autoresize />
-  <div v-else class="mini-empty" :style="{ height: height + 'px' }">暂无数据</div>
+  <div v-else class="mini-empty" :style="{ height: height + 'px' }">
+    {{ t("train.chartNoData") }}
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
@@ -12,6 +15,8 @@ import { LineChart } from "echarts/charts";
 import { GridComponent, TooltipComponent } from "echarts/components";
 
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent]);
+
+const { t } = useI18n();
 
 /**
  * 单指标趋势小图（训练详情 / 评估详情共用）。
@@ -78,7 +83,7 @@ const option = computed(() => {
     },
     series: [
       {
-        name: "值",
+        name: t("train.chartValue"),
         type: "line",
         showSymbol: false,
         connectNulls: true,

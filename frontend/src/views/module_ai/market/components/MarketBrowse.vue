@@ -3,40 +3,42 @@
   <div class="market-browse">
     <!-- 顶部工具条：类型筛选 + 搜索 + 个人筛选 + 提交入口 -->
     <div class="browse-toolbar">
-      <div class="type-tabs">
-        <span
-          v-for="t in typeOptions"
-          :key="t.value"
-          class="type-tab"
-          :class="{ 'is-active': typeFilter === t.value }"
-          @click="switchType(t.value)"
+      <!-- 类型筛选：带「类型」标签的过滤按钮组（非 tab），含「全部」 -->
+      <div class="type-filter">
+        <span class="type-filter-label">{{ t("ai_market.typeLabel") }}</span>
+        <el-check-tag :checked="!typeFilter" @change="switchType('')">
+          {{ t("ai_market.allType") }}
+        </el-check-tag>
+        <el-check-tag
+          v-for="tp in typeOptions"
+          :key="tp.value"
+          :checked="typeFilter === tp.value"
+          @change="switchType(tp.value)"
         >
-          {{ t.label }}
-        </span>
+          {{ tp.label }}
+        </el-check-tag>
       </div>
       <div class="toolbar-right">
         <el-input
           v-model="keyword"
           class="search-input"
           :prefix-icon="Search"
-          placeholder="搜索能力名称或描述"
+          :placeholder="searchPlaceholder"
           clearable
-          @keyup.enter="reload"
-          @clear="reload"
         />
         <el-button
           :icon="Star"
           :type="onlyFavorite ? 'primary' : 'default'"
           @click="toggleFavoriteFilter"
         >
-          只看收藏
+          {{ t("ai_market.browseOnlyFavorite") }}
         </el-button>
         <el-button
           :icon="Download"
           :type="onlyInstalled ? 'primary' : 'default'"
           @click="toggleInstalledFilter"
         >
-          已安装
+          {{ t("ai_market.browseInstalled") }}
         </el-button>
         <el-button
           :icon="OfficeBuilding"
@@ -46,7 +48,7 @@
             reload();
           "
         >
-          官方
+          {{ t("ai_market.browseOfficial") }}
         </el-button>
         <el-button
           :icon="Aim"
@@ -56,12 +58,17 @@
             reload();
           "
         >
-          我提交的
+          {{ t("ai_market.browseMine") }}
         </el-button>
-        <el-select v-model="sortBy" class="sort-select" placeholder="排序" @change="reload">
-          <el-option label="最新" value="newest" />
-          <el-option label="安装最多" value="install" />
-          <el-option label="收藏最多" value="favorite" />
+        <el-select
+          v-model="sortBy"
+          class="sort-select"
+          :placeholder="t('ai_market.browseSortPlaceholder')"
+          @change="reload"
+        >
+          <el-option :label="t('ai_market.browseSortNewest')" value="newest" />
+          <el-option :label="t('ai_market.browseSortInstall')" value="install" />
+          <el-option :label="t('ai_market.browseSortFavorite')" value="favorite" />
         </el-select>
       </div>
     </div>
@@ -69,10 +76,10 @@
     <!-- 精选推荐 -->
     <template v-if="featured.length && !hasFilter">
       <div class="section-head">
-        <span class="section-title">推荐能力</span>
-        <span class="section-sub">平台精选，一键安装为你的资产</span>
+        <span class="section-title">{{ t("ai_market.browseFeatured") }}</span>
+        <span class="section-sub">{{ t("ai_market.browseFeaturedSub") }}</span>
         <el-button size="small" :icon="RefreshRight" text @click="refreshFeatured">
-          换一换
+          {{ t("ai_market.browseRefresh") }}
         </el-button>
       </div>
       <el-row :gutter="16" class="card-grid">
@@ -89,7 +96,9 @@
 
     <!-- 分类筛选：随类型联动（无「全部」项，点已选项可取消） -->
     <div v-if="categories.length" class="category-bar">
-      <span class="section-title">{{ currentTypeLabel }}能力</span>
+      <span class="section-title">
+        {{ t("ai_market.browseCategoryTitle", { type: currentTypeLabel }) }}
+      </span>
       <div class="category-tabs">
         <span
           v-for="c in categories"
@@ -118,11 +127,13 @@
         </el-col>
       </el-row>
       <div v-if="!items.length" class="empty-state">
-        <el-empty description="暂无符合条件的商品">
-          <el-button type="primary" plain @click="clearFilters">清空筛选</el-button>
+        <el-empty :description="t('ai_market.noMatching')">
+          <el-button type="primary" plain @click="clearFilters">
+            {{ t("ai_market.clearFilters") }}
+          </el-button>
         </el-empty>
         <div v-if="categories.length" class="empty-suggest">
-          <span class="empty-suggest-label">试试热门分类：</span>
+          <span class="empty-suggest-label">{{ t("ai_market.tryCategories") }}</span>
           <el-tag
             v-for="c in categories.slice(0, 5)"
             :key="c.name"
@@ -148,7 +159,7 @@
     />
 
     <!-- 详情抽屉 -->
-    <el-drawer v-model="detailVisible" title="商品详情" size="480px">
+    <el-drawer v-model="detailVisible" :title="t('ai_market.detailTitle')" size="480px">
       <div v-if="detail" class="detail-body">
         <div class="detail-head">
           <IconTile :item="detail" size="lg" />
@@ -160,23 +171,25 @@
                 {{ detail.category }}
               </el-tag>
               <el-tag v-if="detail.is_official" size="small" type="success" effect="plain">
-                官方
+                {{ t("ai_market.official") }}
               </el-tag>
               <el-tag v-if="detail.featured" size="small" type="warning" effect="plain">
-                精选
+                {{ t("ai_market.featuredTag") }}
               </el-tag>
             </div>
           </div>
         </div>
         <el-descriptions :column="1" border class="detail-desc">
-          <el-descriptions-item label="版本">{{ detail.version }}</el-descriptions-item>
-          <el-descriptions-item label="作者">
-            {{ detail.owner_name || (detail.is_official ? "官方" : "—") }}
+          <el-descriptions-item :label="t('ai_market.detailVersion')">
+            {{ detail.version }}
           </el-descriptions-item>
-          <el-descriptions-item label="分类">
-            {{ detail.category || "未分类" }}
+          <el-descriptions-item :label="t('ai_market.detailAuthor')">
+            {{ detail.owner_name || (detail.is_official ? t("ai_market.official") : "—") }}
           </el-descriptions-item>
-          <el-descriptions-item label="标签">
+          <el-descriptions-item :label="t('ai_market.category')">
+            {{ detail.category || t("ai_market.uncategorized") }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('ai_market.detailTag')">
             <template v-if="detail.tags?.length">
               <el-tag v-for="t in detail.tags" :key="t" size="small" class="tag-gap">
                 {{ t }}
@@ -184,15 +197,15 @@
             </template>
             <span v-else>—</span>
           </el-descriptions-item>
-          <el-descriptions-item label="安装/收藏">
+          <el-descriptions-item :label="t('ai_market.detailInstallFavorite')">
             {{ detail.install_count }} / {{ detail.favorite_count }}
           </el-descriptions-item>
-          <el-descriptions-item label="描述">
-            {{ detail.description || "暂无描述" }}
+          <el-descriptions-item :label="t('ai_market.description')">
+            {{ detail.description || t("ai_market.noDescription") }}
           </el-descriptions-item>
-          <el-descriptions-item v-if="detail.payload?.docs" label="文档">
+          <el-descriptions-item v-if="detail.payload?.docs" :label="t('ai_market.detailDoc')">
             <el-link :href="detail.payload.docs" target="_blank" :icon="Link" type="primary">
-              查看配置说明 / 官方文档
+              {{ t("ai_market.detailDocsLink") }}
             </el-link>
           </el-descriptions-item>
         </el-descriptions>
@@ -204,10 +217,10 @@
             :disabled="detail.installed"
             @click="installItem(detail)"
           >
-            {{ detail.installed ? "已安装" : "安装" }}
+            {{ detail.installed ? t("ai_market.installedBtn") : t("ai_market.installBtn") }}
           </el-button>
           <el-button :icon="Star" @click="toggleFavorite(detail)">
-            {{ detail.favorited ? "取消收藏" : "收藏" }}
+            {{ detail.favorited ? t("ai_market.unfavorite") : t("ai_market.favorite") }}
           </el-button>
         </div>
       </div>
@@ -226,7 +239,8 @@ import {
   Star,
 } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import {
   favoriteMarketItem,
@@ -245,6 +259,8 @@ defineOptions({ name: "MarketBrowse" });
 
 const emit = defineEmits<{ goConfigure: [target: { asset_type: string; name: string }] }>();
 
+const { t } = useI18n();
+
 const loading = ref(false);
 const featured = ref<MarketItem[]>([]);
 const categories = ref<{ name: string; count: number }[]>([]);
@@ -252,7 +268,7 @@ const items = ref<MarketItem[]>([]);
 const total = ref(0);
 const pageNo = ref(1);
 const pageSize = 12;
-const typeFilter = ref("");
+const typeFilter = ref("skill");
 const categoryFilter = ref("");
 const keyword = ref("");
 const onlyFavorite = ref(false);
@@ -265,10 +281,10 @@ const detailVisible = ref(false);
 const detail = ref<MarketItem | null>(null);
 
 const typeOptions = [
-  { label: "工具", value: "tool" },
-  { label: "技能", value: "skill" },
-  { label: "MCP", value: "mcp" },
-  { label: "插件", value: "plugin" },
+  { label: t("ai_market.assetTool"), value: "tool" },
+  { label: t("ai_market.assetSkill"), value: "skill" },
+  { label: t("ai_market.assetMcp"), value: "mcp" },
+  { label: t("ai_market.assetPlugin"), value: "plugin" },
 ];
 
 const hasFilter = computed(
@@ -284,11 +300,23 @@ const hasFilter = computed(
 
 /** 当前类型的中文名（用于分类栏标题） */
 const currentTypeLabel = computed(
-  () => typeOptions.find((t) => t.value === typeFilter.value)?.label || "全部"
+  () => typeOptions.find((t) => t.value === typeFilter.value)?.label || t("ai_market.allType")
+);
+
+/** 搜索占位符：提示当前搜索范围（当前类型） */
+const searchPlaceholder = computed(() =>
+  t("ai_market.browseSearchScope", { type: currentTypeLabel.value })
 );
 
 function assetLabel(type: string) {
-  return { tool: "工具", skill: "技能", mcp: "MCP", plugin: "插件" }[type] || type;
+  return (
+    {
+      tool: t("ai_market.assetTool"),
+      skill: t("ai_market.assetSkill"),
+      mcp: t("ai_market.assetMcp"),
+      plugin: t("ai_market.assetPlugin"),
+    }[type] || type
+  );
 }
 
 /** 判定商品是否需配置密钥（MCP 且 auth_type 非 none，或 env/args 含占位符）。 */
@@ -331,6 +359,13 @@ function reload() {
   loadItems();
 }
 
+// 输入即实时搜索（防抖 400ms），不再需要按回车；清空同样触发
+let keywordTimer: ReturnType<typeof setTimeout> | undefined;
+watch(keyword, () => {
+  if (keywordTimer) clearTimeout(keywordTimer);
+  keywordTimer = setTimeout(() => reload(), 400);
+});
+
 async function refreshFeatured() {
   await loadHome(true);
 }
@@ -349,9 +384,8 @@ function clearFilters() {
 }
 
 function switchType(value: string) {
-  // 再点同一类型 = 取消筛选（回到全部，无「全部」页签）
-  typeFilter.value = typeFilter.value === value ? "" : value;
-  // 分类集合随类型变化 → 清空已选分类并重新加载分类计数
+  // 直设类型（「全部」传 ''）；分类集合随类型变化 → 清空已选分类并重新加载分类计数
+  typeFilter.value = value;
   categoryFilter.value = "";
   loadHome();
   reload();
@@ -381,25 +415,32 @@ async function openDetail(item: MarketItem) {
 
 async function installItem(item: MarketItem) {
   await ElMessageBox.confirm(
-    `将把「${item.name}」复制为你自己的${assetLabel(item.asset_type)}资产，可在对应管理页维护。是否继续？`,
-    "安装确认",
-    { confirmButtonText: "安装", cancelButtonText: "取消", type: "info" }
+    t("ai_market.browseInstallConfirm", {
+      name: item.name,
+      asset: assetLabel(item.asset_type),
+    }),
+    t("ai_market.installConfirmTitle"),
+    {
+      confirmButtonText: t("ai_market.installBtn"),
+      cancelButtonText: t("ai_market.cancel"),
+      type: "info",
+    }
   );
   const res: any = await installMarketItem(item.id);
   const firstInstall = !!res.data?.data?.installed;
   if (firstInstall) {
-    ElMessage.success(`已安装「${item.name}」`);
+    ElMessage.success(t("ai_market.installSuccess", { name: item.name }));
   } else {
-    ElMessage.info("该商品已安装过");
+    ElMessage.info(t("ai_market.alreadyInstalled"));
   }
   item.installed = true;
   if (detail.value && detail.value.id === item.id) detail.value.installed = true;
   loadItems();
   if (firstInstall && needsKey(item)) {
     await ElMessageBox.alert(
-      `「${item.name}」需要到「我的资产」填写密钥并启用后，才能在智能体中选用。`,
-      "需要配置密钥",
-      { confirmButtonText: "去配置", type: "warning" }
+      t("ai_market.needsKeyMessage", { name: item.name }),
+      t("ai_market.needsKeyTitle"),
+      { confirmButtonText: t("ai_market.goConfigure"), type: "warning" }
     );
     emit("goConfigure", { asset_type: item.asset_type, name: item.name });
   }
@@ -438,31 +479,17 @@ onMounted(() => {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
-.type-tabs {
+.type-filter {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.type-tab {
+.type-filter-label {
   font-size: var(--el-font-size-base);
   color: var(--el-text-color-regular);
-  cursor: pointer;
-  height: 30px;
-  line-height: 30px;
-  padding: 0 2px;
-  border-bottom: 2px solid transparent;
-  transition: color 0.2s;
-
-  &:hover {
-    color: var(--el-color-primary);
-  }
-
-  &.is-active {
-    color: var(--el-color-primary);
-    font-weight: 600;
-    border-bottom-color: var(--el-color-primary);
-  }
+  margin-right: 2px;
 }
 
 .toolbar-right {
@@ -531,13 +558,23 @@ onMounted(() => {
   overflow: hidden;
 }
 
+/* 分类标题（如「技能能力」）不换行、不被压缩，固定的宽度 */
+.category-bar .section-title {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .category-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: 4px;
   white-space: nowrap;
+  /* 横向滚动条：细一点、不占地方，但分类能滚出来，不再挤成一团 */
+  scrollbar-width: thin;
 }
 
 .category-tab {

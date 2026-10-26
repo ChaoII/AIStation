@@ -1,0 +1,18 @@
+export default {
+  dashboard: "Tableau de bord",
+  logout: "Déconnexion",
+  document: "Document",
+  gitee: "Gitee",
+  lock: "Verrouiller",
+  unlock: "Déverrouiller",
+  profile: "Profil utilisateur",
+  config: "Centre de configuration",
+  tour: "Visite du projet",
+  refresh: "Actualiser",
+  close: "Fermer",
+  closeLeft: "Fermer à gauche",
+  closeRight: "Fermer à droite",
+  closeOther: "Fermer les autres",
+  closeAll: "Tout fermer",
+  refreshCache: "Actualiser le cache",
+};

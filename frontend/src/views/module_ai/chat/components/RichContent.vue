@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import MarkdownIt from "markdown-it";
 import markdownItHighlightjs from "markdown-it-highlightjs";
@@ -16,6 +17,8 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+
+const { t } = useI18n();
 
 const md: MarkdownIt = new MarkdownIt({
   html: true,
@@ -149,7 +152,7 @@ function decorateCode(): void {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "code-copy";
-    btn.textContent = "复制";
+    btn.textContent = t("ai_chat.richContent_copy");
     header.appendChild(langTag);
     header.appendChild(btn);
 
@@ -177,7 +180,7 @@ const handleClick = async (e: MouseEvent) => {
   if (!code) return;
   try {
     await navigator.clipboard.writeText(code.textContent || "");
-    ElMessage.success("已复制代码");
+    ElMessage.success(t("ai_chat.richContent_codeCopied"));
   } catch {
     const textArea = document.createElement("textarea");
     textArea.value = code.textContent || "";
@@ -185,7 +188,7 @@ const handleClick = async (e: MouseEvent) => {
     textArea.select();
     document.execCommand("copy");
     document.body.removeChild(textArea);
-    ElMessage.success("已复制代码");
+    ElMessage.success(t("ai_chat.richContent_codeCopied"));
   }
 };
 </script>

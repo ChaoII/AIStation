@@ -1,0 +1,90 @@
+export default {
+  // 工具栏 / 操作
+  export: "Xuất",
+  noData: "Không có dữ liệu",
+  detail: "Chi tiết",
+  edit: "Sửa",
+  delete: "Xóa",
+  action: "Thao tác",
+  cancel: "Hủy",
+  confirm: "Xác nhận",
+  save: "Lưu",
+  operationSuccess: "Thao tác thành công",
+
+  // 表格列
+  selection: "Chọn",
+  serial: "STT",
+  configName: "Tên cấu hình",
+  configKey: "Khóa cấu hình",
+  configKeyName: "Tên khóa cấu hình",
+  configValue: "Giá trị cấu hình",
+  configType: "Hệ thống tích hợp sẵn",
+  description: "Mô tả",
+  createdTime: "Thời gian tạo",
+  updatedTime: "Thời gian cập nhật",
+  yes: "Có",
+  no: "Không",
+
+  // 搜索 / 筛选
+  inputConfigName: "Vui lòng nhập tên cấu hình",
+  inputConfigKey: "Vui lòng nhập khóa cấu hình",
+  inputConfigValue: "Vui lòng nhập giá trị cấu hình",
+  inputDescription: "Vui lòng nhập mô tả",
+  inputConfigKeyName: "Vui lòng nhập tên khóa cấu hình",
+  selectConfigType: "Vui lòng chọn hệ thống tích hợp sẵn",
+  to: "đến",
+  startDate: "Ngày bắt đầu",
+  endDate: "Ngày kết thúc",
+
+  // 弹窗标题
+  configDetail: "Chi tiết cấu hình hệ thống",
+  updateConfig: "Sửa cấu hình hệ thống",
+  createConfig: "Tạo cấu hình hệ thống",
+
+  // 提示 / 确认
+  warnTitle: "Cảnh báo",
+  deleteConfirmMessage: "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
+  requiredConfigName: "Vui lòng nhập tên cấu hình hệ thống",
+  requiredConfigKey: "Vui lòng nhập khóa cấu hình hệ thống",
+  requiredConfigValue: "Vui lòng nhập giá trị cấu hình hệ thống",
+  requiredConfigType: "Vui lòng chọn loại cấu hình hệ thống",
+
+  // 配置中心抽屉
+  configCenter: "Trung tâm cấu hình",
+  websiteConfig: "Cấu hình website",
+  websiteIcon: "Biểu tượng website",
+  securityPrivacy: "Bảo mật & Quyền riêng tư",
+  userAgreement: "Thỏa thuận người dùng",
+  apiWhitelist: "Danh sách API được phép",
+  ipBlacklist: "Danh sách IP bị chặn",
+  notification: "Cấu hình thông báo",
+  demoConfig: "Cấu hình demo",
+  wsPush: "Đẩy WebSocket",
+  smtpEmail: "Email SMTP",
+  smsGateway: "Cổng SMS",
+  webhookRest: "Webhook / REST API",
+  defaultRecipient: "Người nhận mặc định",
+  enable: "Kích hoạt",
+  disable: "Vô hiệu hóa",
+  testWsPush: "Kiểm tra đẩy WS",
+  testEmailPush: "Kiểm tra đẩy email",
+  testSmsPush: "Kiểm tra đẩy SMS",
+  testWebhookPush: "Kiểm tra đẩy Webhook",
+  addApiPath: "Thêm đường dẫn API",
+  addIp: "Thêm địa chỉ IP",
+  apiWhitelistTip:
+    "Ghi chú cấu hình: Các đường dẫn API trong danh sách cho phép có thể truy cập mà không cần đăng nhập và hỗ trợ cấu hình đường dẫn đầy đủ.",
+  ipBlacklistTip:
+    "Ghi chú cấu hình: Các địa chỉ IP trong danh sách chặn không thể truy cập hệ thống, hỗ trợ cấu hình IP đơn.",
+  demoIpWhitelistTip:
+    "Ghi chú cấu hình: Trong chế độ demo, chỉ các địa chỉ IP được phép mới có thể truy cập hệ thống, hỗ trợ cấu hình IP đơn.",
+  demoEnableTip:
+    "Ghi chú cấu hình: Khi bật, hệ thống sẽ vào chế độ demo và một số chức năng có thể bị hạn chế.",
+  invalidApiPath: "Vui lòng nhập định dạng đường dẫn API hợp lệ (bắt đầu bằng /)",
+  invalidIp: "Vui lòng nhập định dạng địa chỉ IP hợp lệ",
+  keepApiWhitelist: "Cần ít nhất một cấu hình danh sách API cho phép",
+  keepIpBlacklist: "Cần ít nhất một cấu hình danh sách IP chặn",
+  keepIpWhitelist: "Cần ít nhất một cấu hình danh sách IP cho phép",
+  uploadFailedPrefix: "Tải lên thất bại: ",
+  uploadRetry: "Vui lòng thử lại sau",
+};

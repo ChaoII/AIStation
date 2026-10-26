@@ -533,3 +533,72 @@ def test_batch_approve_rejects_bad_input(test_client, auth_headers):
         assert "50" in too_many.json()["msg"]
     finally:
         _cleanup(test_client, auth_headers, app["id"])
+
+
+class _FakeRedis:
+    """最小伪 redis：仅实现审批执行锁所需的 set(nx)/delete。"""
+
+    def __init__(self):
+        self.store = {}
+
+    async def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.store:
+            return False
+        self.store[key] = value
+        return True
+
+    async def delete(self, key):
+        self.store.pop(key, None)
+
+
+def test_exec_lock_helpers_nx_semantics():
+    """锁辅助：NX 下同一审批只能抢到一次，释放后可再抢；无 redis 时降级放行。"""
+    import asyncio
+
+    from app.plugin.module_ai.develop.approvals import (
+        _release_exec_lock,
+        _try_acquire_exec_lock,
+    )
+
+    # 无 redis（测试/降级路径）→ 放行，绝不阻断审批
+    assert asyncio.run(_try_acquire_exec_lock(None, 1)) is True
+
+    r = _FakeRedis()
+    # 同一审批：第一次抢到，第二次（未释放）抢不到
+    assert asyncio.run(_try_acquire_exec_lock(r, 1)) is True
+    assert asyncio.run(_try_acquire_exec_lock(r, 1)) is False
+    # 不同审批不受影响
+    assert asyncio.run(_try_acquire_exec_lock(r, 2)) is True
+    # 释放后可再抢
+    asyncio.run(_release_exec_lock(r, 1))
+    assert asyncio.run(_try_acquire_exec_lock(r, 1)) is True
+    # 释放不存在 key 不报错
+    asyncio.run(_release_exec_lock(r, 999))
+
+
+def test_review_one_aborts_409_when_lock_held(monkeypatch):
+    """并发防护：锁已被占（另一请求正在执行）→ 抛 409「处理中」，且不执行能力。"""
+    import asyncio
+
+    from app.core.exceptions import CustomException
+    from app.plugin.module_ai.develop import approvals as appr
+
+    async def _locked(_redis, _approval_id):
+        return False
+
+    monkeypatch.setattr(appr, "_try_acquire_exec_lock", _locked)
+
+    class _Row:
+        id = 123
+        app_id = 7
+        capability = "agent.delete"
+        category = "agent"
+        payload = {"agent_id": 1}
+
+    try:
+        asyncio.run(appr.review_one(_Row(), approve=True, note=None, reviewer_id=1, redis=None))
+        raise AssertionError("锁被占用时应抛 CustomException")
+    except CustomException as e:  # noqa: PERF203
+        assert e.status_code == 409, e.status_code
+        assert "处理中" in e.msg
+        assert e.code == 10409, e.code

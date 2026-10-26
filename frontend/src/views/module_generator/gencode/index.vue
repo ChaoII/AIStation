@@ -18,7 +18,7 @@
                 icon="Plus"
                 @click="createTableVisible = true"
               >
-                创建
+                {{ t("generator.create") }}
               </el-button>
             </el-col>
             <el-col :span="1.5">
@@ -28,7 +28,7 @@
                 icon="Upload"
                 @click="handleImportClick"
               >
-                导入
+                {{ t("generator.importTableBtn") }}
               </el-button>
             </el-col>
             <el-col :span="1.5">
@@ -39,7 +39,7 @@
                 :disabled="removeIds.length === 0"
                 @click="handleDelete()"
               >
-                批量删除
+                {{ t("generator.batchDelete") }}
               </el-button>
             </el-col>
             <el-col :span="1.5">
@@ -50,7 +50,7 @@
                 :disabled="removeIds.length === 0"
                 @click="handleGenTable('0')"
               >
-                批量生成
+                {{ t("generator.batchGenerate") }}
               </el-button>
             </el-col>
           </el-row>
@@ -78,7 +78,7 @@
             "
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('generator.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -88,7 +88,7 @@
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
-              label="序号"
+              :label="t('generator.serial')"
               type="index"
               min-width="30"
               align="center"
@@ -102,35 +102,35 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'table_name')?.show"
-              label="表名称"
+              :label="t('generator.tableName')"
               prop="table_name"
               :show-overflow-tooltip="true"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'table_comment')?.show"
-              label="表描述"
+              :label="t('generator.tableComment')"
               prop="table_comment"
               :show-overflow-tooltip="true"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'class_name')?.show"
-              label="实体"
+              :label="t('generator.entity')"
               prop="class_name"
               :show-overflow-tooltip="true"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
-              label="创建时间"
+              :label="t('generator.createdTime')"
               prop="created_time"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_time')?.show"
-              label="更新时间"
+              :label="t('generator.updatedTime')"
               prop="updated_time"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
-              label="操作"
+              :label="t('generator.action')"
               align="center"
               min-width="120"
               class-name="small-padding fixed-width"
@@ -143,7 +143,7 @@
                   :icon="MagicStick"
                   @click="handlePreviewTable(scope.row as GenTableSchema)"
                 >
-                  代码生成
+                  {{ t("generator.codeGen") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_generator:gencode:delete']"
@@ -152,7 +152,7 @@
                   icon="Delete"
                   @click="handleDelete(scope.row as GenTableSchema)"
                 >
-                  删除
+                  {{ t("generator.delete") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_generator:db:sync']"
@@ -161,7 +161,7 @@
                   icon="Refresh"
                   @click="handleSynchDb(scope.row as GenTableSchema)"
                 >
-                  同步
+                  {{ t("generator.sync") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -230,6 +230,7 @@ defineOptions({
 });
 
 import { ref, reactive, computed, onActivated, nextTick, unref, provide } from "vue";
+import { useI18n } from "vue-i18n";
 import { useClipboard } from "@vueuse/core";
 import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
@@ -274,6 +275,8 @@ interface FileData {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+
+const { t } = useI18n();
 
 // 组件引用（与子组件 inject 同步，供校验）
 const basicInfo = ref<FormInstance>();
@@ -327,7 +330,7 @@ async function handleImportClick() {
 // 预览相关数据
 const preview = reactive({
   open: false,
-  title: "代码预览",
+  title: t("generator.previewTitle"),
   data: {},
   active_name: "controller.py",
 });
@@ -352,28 +355,36 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "table_name",
-      label: "表名称",
+      label: t("generator.tableName"),
       type: "input",
-      attrs: { placeholder: "请输入表名称", clearable: true, style: { width: "200px" } },
+      attrs: {
+        placeholder: t("generator.inputTableName"),
+        clearable: true,
+        style: { width: "200px" },
+      },
     },
     {
       prop: "table_comment",
-      label: "表描述",
+      label: t("generator.tableComment"),
       type: "input",
-      attrs: { placeholder: "请输入表描述", clearable: true, style: { width: "200px" } },
+      attrs: {
+        placeholder: t("generator.inputTableComment"),
+        clearable: true,
+        style: { width: "200px" },
+      },
     },
   ],
 });
 
 const contentCols = reactive<TableColumn[]>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "table_name", label: "表名称", show: true },
-  { prop: "table_comment", label: "表描述", show: true },
-  { prop: "class_name", label: "实体", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "updated_time", label: "更新时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("generator.selection"), show: true },
+  { prop: "index", label: t("generator.serial"), show: true },
+  { prop: "table_name", label: t("generator.tableName"), show: true },
+  { prop: "table_comment", label: t("generator.tableComment"), show: true },
+  { prop: "class_name", label: t("generator.entity"), show: true },
+  { prop: "created_time", label: t("generator.createdTime"), show: true },
+  { prop: "updated_time", label: t("generator.updatedTime"), show: true },
+  { prop: "operation", label: t("generator.action"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<GenTablePageQuery>>({
@@ -458,9 +469,9 @@ const handleCopyCode = () => {
 
   if (content) {
     copy(content);
-    ElMessage.success("代码复制成功");
+    ElMessage.success(t("generator.copyCodeSuccess"));
   } else {
-    ElMessage.warning("没有可复制的代码");
+    ElMessage.warning(t("generator.noCopiedCode"));
   }
 };
 
@@ -475,7 +486,7 @@ function handleFileTreeNodeClick(data: TreeNode): void {
 /** 递归构建树形结构 */
 function buildTree(data: FileData[]): TreeNode {
   // 创建根节点
-  const root: TreeNode = { label: "前后端代码", children: [] };
+  const root: TreeNode = { label: t("generator.frontBackCode"), children: [] };
 
   data.forEach((item) => {
     // 将路径分成数组（确保使用正斜杠）
@@ -528,7 +539,7 @@ function applyPreviewEditorMode(fileLabel: string) {
 /** 获取生成预览 */
 async function handlePreview(row: GenTableSchema): Promise<void> {
   if (!row.id) {
-    ElMessage.warning("无效的表ID");
+    ElMessage.warning(t("generator.invalidTableId"));
     return;
   }
 
@@ -537,7 +548,7 @@ async function handlePreview(row: GenTableSchema): Promise<void> {
     const response = await GencodeAPI.previewTable(row.id!);
     const raw = response.data?.data;
     if (!raw || typeof raw !== "object" || Object.keys(raw).length === 0) {
-      ElMessage.warning("预览内容为空，请先保存配置并检查字段与主子表设置");
+      ElMessage.warning(t("generator.previewEmpty"));
       treeData.value = [];
       code.value = "";
       preview.data = {};
@@ -604,7 +615,7 @@ async function handleGenTable(targetGenType: string, row?: GenTableSchema): Prom
   } else if (tableNames.value.length > 0) {
     tbNames = tableNames.value;
   } else {
-    ElMessage.error("请选择要生成的数据");
+    ElMessage.error(t("generator.selectDataToGen"));
     return;
   }
 
@@ -612,13 +623,13 @@ async function handleGenTable(targetGenType: string, row?: GenTableSchema): Prom
   try {
     if (targetGenType === "1") {
       if (!Array.isArray(tbNames) || tbNames.length !== 1 || !tbNames[0]) {
-        ElMessage.error("自定义路径只能生成单表代码");
+        ElMessage.error(t("generator.customPathSingleOnly"));
         loading.value = false;
         return;
       }
       if (row?.id) await confirmWritePaths(row.id);
       await GencodeAPI.genCodeToPath(tbNames[0]);
-      ElMessage.success("已写入项目目录并创建菜单（若尚未存在）");
+      ElMessage.success(t("generator.writtenToProject"));
     } else {
       // ZIP压缩包下载
       const tableNamesArray = Array.isArray(tbNames) ? tbNames : [tbNames];
@@ -628,7 +639,7 @@ async function handleGenTable(targetGenType: string, row?: GenTableSchema): Prom
         const text = await raw.text();
         try {
           const json = JSON.parse(text) as { msg?: string };
-          ElMessage.error(json.msg || "批量生成失败");
+          ElMessage.error(json.msg || t("generator.batchGenFailed"));
           return;
         } catch {
           /* 非 JSON 小文件仍尝试下载 */
@@ -641,7 +652,7 @@ async function handleGenTable(targetGenType: string, row?: GenTableSchema): Prom
       link.download = "code.zip";
       link.click();
       URL.revokeObjectURL(url);
-      ElMessage.success("已开始下载 code.zip");
+      ElMessage.success(t("generator.downloadStarted"));
     }
   } catch (error) {
     console.error("生成代码失败:", error);
@@ -668,7 +679,7 @@ async function confirmWritePaths(tableId: number) {
   const shown = keys.slice(0, 80);
   const more =
     keys.length > shown.length
-      ? `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--el-fill-color-light);font-size:12px;color:var(--el-text-color-secondary);text-align:center">还有 <b style="color:var(--el-text-color-primary)">${keys.length - shown.length}</b> 个文件未列出</div>`
+      ? `<div style="margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--el-fill-color-light);font-size:12px;color:var(--el-text-color-secondary);text-align:center">${t("generator.writeMoreFiles", { count: keys.length - shown.length })}</div>`
       : "";
   const listRows = shown
     .map((p, i) => {
@@ -678,21 +689,21 @@ async function confirmWritePaths(tableId: number) {
     .join("");
   const listHtml = shown.length
     ? `<div class="gencode-write-path-list-wrap">${listRows}</div>${more}`
-    : `<div style="padding:16px;border-radius:8px;background:var(--el-fill-color-light);color:var(--el-text-color-secondary);font-size: var(--el-font-size-small);text-align:center">未获取到预览路径，仍将继续写入。</div>`;
-  const tipHtml = `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--el-border-color-lighter);font-size:12px;line-height:1.5;color:var(--el-text-color-secondary)">与「代码预览」同源；路径为相对项目根的落盘位置。</div>`;
+    : `<div style="padding:16px;border-radius:8px;background:var(--el-fill-color-light);color:var(--el-text-color-secondary);font-size: var(--el-font-size-small);text-align:center">${t("generator.writeNoPath")}</div>`;
+  const tipHtml = `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--el-border-color-lighter);font-size:12px;line-height:1.5;color:var(--el-text-color-secondary)">${t("generator.writeConfirmTip")}</div>`;
   await ElMessageBox.confirm(
     `<div class="gencode-write-confirm-body" style="font-family:var(--el-font-family);line-height:1.5;color:var(--el-text-color-primary)">
       <div style="margin-bottom:12px">
-        <div style="font-size: var(--el-font-size-base);font-weight:600;letter-spacing:0.02em">将写入以下文件</div>
-        <div style="margin-top:4px;font-size:12px;color:var(--el-text-color-secondary)">共 ${keys.length} 项 · 相对项目根目录</div>
+        <div style="font-size: var(--el-font-size-base);font-weight:600;letter-spacing:0.02em">${t("generator.writeHeader")}</div>
+        <div style="margin-top:4px;font-size:12px;color:var(--el-text-color-secondary)">${t("generator.writeCount", { count: keys.length })}</div>
       </div>
       ${listHtml}
       ${shown.length ? tipHtml : ""}
     </div>`,
-    "写入本地确认",
+    `${t("generator.writeConfirmTitle")}`,
     {
-      confirmButtonText: "确认写入",
-      cancelButtonText: "取消",
+      confirmButtonText: `${t("generator.writeConfirmBtn")}`,
+      cancelButtonText: `${t("generator.cancel")}`,
       type: "warning",
       dangerouslyUseHTMLString: true,
       customClass: "gencode-write-confirm-box",
@@ -705,7 +716,7 @@ async function handleSynchDb(row: GenTableSchema): Promise<void> {
   const tableName = row.table_name || "";
 
   if (!tableName) {
-    ElMessage.error("表名不能为空");
+    ElMessage.error(t("generator.tableNameEmpty"));
     return;
   }
 
@@ -719,15 +730,15 @@ async function handleSynchDb(row: GenTableSchema): Promise<void> {
 
   const renderHtml = (title: string, p: any) => {
     const s = renderSummary(p);
-    const list = (xs: string[]) => (xs?.length ? xs.slice(0, 20).join(", ") : "无");
+    const list = (xs: string[]) => (xs?.length ? xs.slice(0, 20).join(", ") : t("generator.none"));
     return `
       <div style="line-height:1.6">
         <div style="font-weight:600;margin-bottom:6px">${title}</div>
-        <div>新增：<b>${s.added}</b>；删除：<b>${s.removed}</b>；变更：<b>${s.changed}</b>；未变：${s.unchanged}</div>
-        <div style="margin-top:6px">新增列：${list(p.added || [])}</div>
-        <div>删除列：${list(p.removed || [])}</div>
-        <div>变更列：${list((p.changed || []).map((c: any) => c.column_name))}</div>
-        <div style="margin-top:8px;color:var(--el-text-color-secondary)">提示：同步会尽量保留你已配置的 dict/html/query 等生成项，仅以数据库结构为准更新元信息。</div>
+        <div>${t("generator.syncAdded")}：<b>${s.added}</b>；${t("generator.syncRemoved")}：<b>${s.removed}</b>；${t("generator.syncChanged")}：<b>${s.changed}</b>；${t("generator.syncUnchanged")}：${s.unchanged}</div>
+        <div style="margin-top:6px">${t("generator.syncAddedCols")}：${list(p.added || [])}</div>
+        <div>${t("generator.syncRemovedCols")}：${list(p.removed || [])}</div>
+        <div>${t("generator.syncChangedCols")}：${list((p.changed || []).map((c: any) => c.column_name))}</div>
+        <div style="margin-top:8px;color:var(--el-text-color-secondary)">${t("generator.syncTip")}</div>
       </div>
     `;
   };
@@ -736,21 +747,21 @@ async function handleSynchDb(row: GenTableSchema): Promise<void> {
     loading.value = true;
     const previewRes = await GencodeAPI.syncDbPreview(tableName);
     const preview = previewRes.data?.data as any;
-    const mainHtml = renderHtml(`主表：${tableName}`, preview);
+    const mainHtml = renderHtml(t("generator.syncMainTitle", { name: tableName }), preview);
     const subHtml =
       preview?.sub_table_name && preview?.sub
-        ? renderHtml(`子表：${preview.sub_table_name}`, preview.sub)
+        ? renderHtml(t("generator.syncSubTitle", { name: preview.sub_table_name }), preview.sub)
         : "";
 
-    await ElMessageBox.confirm(`${mainHtml}${subHtml}`, "同步差异预览", {
-      confirmButtonText: "确认同步",
-      cancelButtonText: "取消",
+    await ElMessageBox.confirm(`${mainHtml}${subHtml}`, `${t("generator.syncDiffTitle")}`, {
+      confirmButtonText: `${t("generator.syncConfirmBtn")}`,
+      cancelButtonText: `${t("generator.cancel")}`,
       type: "warning",
       dangerouslyUseHTMLString: true,
     });
 
     await GencodeAPI.syncDb(tableName);
-    ElMessage.success("表结构已同步到代码生成配置");
+    ElMessage.success(t("generator.syncSuccess"));
     refreshList();
   } catch (error) {
     if (error !== "cancel") console.error("同步表结构失败:", error);
@@ -802,7 +813,7 @@ function formatMenuTreeWithMeta(nodes: any[]): any[] {
 async function handlePreviewTable(row?: GenTableSchema): Promise<void> {
   const selectedTableId = row?.id ?? ids.value[0];
   if (selectedTableId === undefined || selectedTableId === null) {
-    ElMessage.error("请选择要修改的数据");
+    ElMessage.error(t("generator.selectDataToModify"));
     return;
   }
 
@@ -830,7 +841,7 @@ async function handlePreviewTable(row?: GenTableSchema): Promise<void> {
     await loadTableDetail(selectedTableId);
   } catch (e) {
     console.error("获取表详情失败:", e);
-    ElMessage.error("获取表详情失败，请稍后重试");
+    ElMessage.error(t("generator.loadDetailFailed"));
     // 保持抽屉打开，便于重试或关闭；勿因接口失败整抽屉被关掉像「点不动」
     return;
   }
@@ -845,7 +856,7 @@ async function handlePreviewTable(row?: GenTableSchema): Promise<void> {
     dictOptions.value = dict_response.data.data.items;
   } catch (e) {
     console.error("菜单或字典加载失败:", e);
-    ElMessage.warning("菜单或字典选项加载失败，部分下拉可能为空");
+    ElMessage.warning(t("generator.menuDictLoadFailed"));
   }
 }
 
@@ -854,18 +865,23 @@ async function handleDelete(row?: GenTableSchema): Promise<void> {
   const tableIds = row?.id ? [row.id] : ids.value;
 
   if (tableIds.length === 0) {
-    ElMessage.error("请选择要删除的数据");
+    ElMessage.error(t("generator.selectDataToDelete"));
     return;
   }
 
   try {
-    await ElMessageBox.confirm(`是否确认删除选中的${tableIds.length}条数据？`, "删除确认", {
-      confirmButtonText: "确定",
-      cancelButtonText: "取消",
-      type: "warning",
-    });
+    await ElMessageBox.confirm(
+      `${t("generator.deleteConfirmMsg", { count: tableIds.length })}`,
+      `${t("generator.deleteConfirmTitle")}`,
+      {
+        confirmButtonText: `${t("generator.confirmOk")}`,
+        cancelButtonText: `${t("generator.cancel")}`,
+        type: "warning",
+      }
+    );
 
     await GencodeAPI.deleteTable(tableIds);
+    ElMessage.success(t("generator.deleteSuccess"));
     refreshList();
   } catch (error) {
     if (error !== "cancel") {
@@ -877,13 +893,14 @@ async function handleDelete(row?: GenTableSchema): Promise<void> {
 /** 创建表（由 CreateTableDialog 提交 SQL；表结构模式成功后可回写第三步主子表配置） */
 async function handleCreateTableSubmit(sql: string, meta?: CreateTableSubmitMeta): Promise<void> {
   if (!sql || sql.trim() === "") {
-    ElMessage.error("请输入创建表SQL语句");
+    ElMessage.error(t("generator.inputCreateTableSql"));
     return;
   }
 
   loading.value = true;
   try {
     await GencodeAPI.createTable(sql);
+    ElMessage.success(t("generator.createSuccess"));
     createTableVisible.value = false;
     if (editVisible.value && activeStep.value === 2 && meta?.fromVisual && meta.visualSnapshot) {
       const v = meta.visualSnapshot;
@@ -915,7 +932,7 @@ async function handleCreateTableSubmit(sql: string, meta?: CreateTableSubmitMeta
 /** 导入表操作 */
 async function handleImportTable(): Promise<void> {
   if (tables.value.length === 0) {
-    ElMessage.error("请选择要导入的表");
+    ElMessage.error(t("generator.selectTableToImport"));
     return;
   }
 
@@ -928,6 +945,7 @@ async function handleImportTable(): Promise<void> {
     refreshList();
     // 导入成功后自动打开代码生成抽屉
     if (tables.value.length === 1) {
+      ElMessage.success(t("generator.importSuccess"));
       await nextTick();
       const list = (unref(contentRef.value?.pageData) ?? []) as GenTableSchema[];
       const importedTable = list.find((t) => t.table_name === tables.value[0].table_name);
@@ -936,7 +954,7 @@ async function handleImportTable(): Promise<void> {
       }
     } else {
       // 导入了多个表，刷新列表
-      ElMessage.success(`成功导入 ${tables.value.length} 个表`);
+      ElMessage.success(t("generator.importSuccessCount", { count: tables.value.length }));
     }
   } catch (error) {
     console.error("导入表失败:", error);
@@ -1036,11 +1054,11 @@ function validateMasterSubPair(_rule: unknown, _value: unknown, callback: (e?: E
   const sn = (info.sub_table_name || "").trim();
   const fk = (info.sub_table_fk_name || "").trim();
   if (Boolean(sn) !== Boolean(fk)) {
-    callback(new Error("子表表名与外键列须同时填写或同时留空"));
+    callback(new Error(t("generator.masterSubPairError")));
     return;
   }
   if (sn && fk && sn === (info.table_name || "").trim()) {
-    callback(new Error("子表表名不能与主表表名相同"));
+    callback(new Error(t("generator.masterSubSameError")));
     return;
   }
   callback();
@@ -1074,7 +1092,7 @@ function validateBusinessName(_rule: unknown, value: unknown, callback: (e?: Err
     return;
   }
   if (value == null || !String(value).trim()) {
-    callback(new Error("业务名不能为空"));
+    callback(new Error(t("generator.businessNameEmpty")));
     return;
   }
   callback();
@@ -1082,12 +1100,12 @@ function validateBusinessName(_rule: unknown, value: unknown, callback: (e?: Err
 
 // 校验规则
 const rules = {
-  table_name: [{ required: true, message: "表名称不能为空", trigger: "blur" }],
-  class_name: [{ required: true, message: "实体名称不能为空", trigger: "blur" }],
-  package_name: [{ required: true, message: "生成包路径不能为空", trigger: "blur" }],
-  module_name: [{ required: true, message: "生成模块名不能为空", trigger: "blur" }],
+  table_name: [{ required: true, message: t("generator.requiredTableName"), trigger: "blur" }],
+  class_name: [{ required: true, message: t("generator.requiredEntity"), trigger: "blur" }],
+  package_name: [{ required: true, message: t("generator.requiredPackage"), trigger: "blur" }],
+  module_name: [{ required: true, message: t("generator.requiredModule"), trigger: "blur" }],
   business_name: [{ validator: validateBusinessName, trigger: "blur" }],
-  function_name: [{ required: true, message: "生成功能名不能为空", trigger: "blur" }],
+  function_name: [{ required: true, message: t("generator.requiredFunction"), trigger: "blur" }],
   /** 与后端一致：可选；不选时写入本地会按包名自动建目录菜单 */
   sub_table_name: [{ validator: validateMasterSubPair, trigger: "blur" }],
   sub_table_fk_name: [{ validator: validateMasterSubPair, trigger: "blur" }],
@@ -1100,7 +1118,7 @@ async function submitForm(options?: { requireColumns?: boolean }) {
 
   // 检查是否有表ID
   if (!info.id) {
-    ElMessage.error("无效的表ID");
+    ElMessage.error(t("generator.invalidTableId"));
     return;
   }
 
@@ -1108,7 +1126,7 @@ async function submitForm(options?: { requireColumns?: boolean }) {
     loading.value = true;
 
     if (requireColumns && (!info.columns || info.columns.length === 0)) {
-      ElMessage.error("请配置字段信息");
+      ElMessage.error(t("generator.configFields"));
       return;
     }
 
@@ -1152,7 +1170,7 @@ async function nextStep(): Promise<void> {
       } else if (activeStep.value === 1) {
         // 第二步：字段配置
         if (!info.columns || info.columns.length === 0) {
-          ElMessage.error("请配置字段信息");
+          ElMessage.error(t("generator.configFields"));
           return;
         }
       }
@@ -1187,7 +1205,7 @@ async function handleSave(): Promise<void> {
     } else if (activeStep.value === 1) {
       // 第二步：字段配置
       if (!info.columns || info.columns.length === 0) {
-        ElMessage.error("请配置字段信息");
+        ElMessage.error(t("generator.configFields"));
         return;
       }
     }

@@ -32,15 +32,19 @@
       <span v-if="def.type !== 'note' && def.type !== 'group'" class="wf-node__label">
         {{ def.label }}
       </span>
-      <span v-if="def.type === 'condition'" class="wf-node__branch-tag">分支</span>
-      <span v-if="data.enabled === false" class="wf-node__disable-tag">禁用</span>
+      <span v-if="def.type === 'condition'" class="wf-node__branch-tag">
+        {{ t("ai_workflow.node_branch_tag") }}
+      </span>
+      <span v-if="data.enabled === false" class="wf-node__disable-tag">
+        {{ t("ai_workflow.node_disabled_tag") }}
+      </span>
       <span v-if="data.__runError" class="wf-node__err-badge" :title="data.__runError">!</span>
       <span v-if="data.__runOrder != null" class="wf-node__order">{{ data.__runOrder }}</span>
     </div>
     <div class="wf-node__body">
       <template v-if="def.type === 'group'">
-        <div class="wf-group__title">{{ data.title || "分组" }}</div>
-        <div class="wf-group__hint">双击收缩/展开；右键节点可「加入/移出分组」</div>
+        <div class="wf-group__title">{{ data.title || t("ai_workflow.node_group_default") }}</div>
+        <div class="wf-group__hint">{{ t("ai_workflow.group_hint") }}</div>
       </template>
       <div v-if="data.output_variable" class="wf-node__outvar">→ {{ data.output_variable }}</div>
       <template v-if="def.type === 'note'">
@@ -51,7 +55,9 @@
         {{ data.note }}
       </div>
       <template v-if="def.type === 'start'">
-        <div v-if="(data.variables || []).length === 0" class="wf-node__empty">定义输入变量</div>
+        <div v-if="(data.variables || []).length === 0" class="wf-node__empty">
+          {{ t("ai_workflow.node_start_empty") }}
+        </div>
         <div v-else class="wf-node__chips">
           <el-tag v-for="v in data.variables || []" :key="v.name" size="small" effect="plain">
             {{ v.name }}
@@ -59,94 +65,176 @@
         </div>
       </template>
       <template v-else-if="def.type === 'llm'">
-        <div class="wf-node__text">{{ data.prompt ? "提示词已配置" : "未配置提示词" }}</div>
+        <div class="wf-node__text">
+          {{
+            data.prompt ? t("ai_workflow.node_llm_prompt_set") : t("ai_workflow.node_llm_no_prompt")
+          }}
+        </div>
         <div v-if="(data.tools || []).length" class="wf-node__chips">
           <el-tag size="small" effect="plain" type="primary">
-            {{ (data.tools || []).length }} 个工具
+            {{ t("ai_workflow.node_tools_count", { count: (data.tools || []).length }) }}
           </el-tag>
         </div>
       </template>
       <template v-else-if="def.type === 'knowledge'">
-        <div class="wf-node__text">{{ data.query ? data.query : "检索知识库" }}</div>
+        <div class="wf-node__text">
+          {{ data.query ? data.query : t("ai_workflow.node_knowledge_default") }}
+        </div>
       </template>
       <template v-else-if="def.type === 'tool'">
-        <div class="wf-node__text">{{ data.tool_name || "选择工具" }}</div>
+        <div class="wf-node__text">{{ data.tool_name || t("ai_workflow.node_tool_select") }}</div>
       </template>
       <template v-else-if="def.type === 'code'">
         <div class="wf-node__text">
-          {{ data.output_variable ? `输出：${data.output_variable}` : "Python 转换" }}
+          {{
+            data.output_variable
+              ? t("ai_workflow.node_code_output", { name: data.output_variable })
+              : t("ai_workflow.node_code_default")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'condition'">
-        <div class="wf-node__text">{{ data.expression || "设置条件" }}</div>
+        <div class="wf-node__text">
+          {{ data.expression || t("ai_workflow.node_condition_default") }}
+        </div>
       </template>
       <template v-else-if="def.type === 'variable'">
-        <div class="wf-node__text">{{ data.name ? `${data.name} = 值` : "变量赋值" }}</div>
+        <div class="wf-node__text">
+          {{
+            data.name
+              ? t("ai_workflow.node_var_eq", { name: data.name })
+              : t("ai_workflow.node_var_default")
+          }}
+        </div>
       </template>
       <template v-else-if="def.type === 'http'">
         <div class="wf-node__text">
-          {{ data.url ? `${data.method || "GET"} ${data.url}` : "HTTP 请求" }}
+          {{ data.url ? `${data.method || "GET"} ${data.url}` : t("ai_workflow.node_http") }}
         </div>
       </template>
       <template v-else-if="def.type === 'iteration'">
         <div class="wf-node__text">
-          {{ data.tool_name ? `遍历调用 ${data.tool_name}` : "遍历列表" }}
+          {{
+            data.tool_name
+              ? t("ai_workflow.node_iter_call", { tool: data.tool_name })
+              : t("ai_workflow.node_iter_default")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'classifier'">
         <div class="wf-node__text">
-          {{ (data.categories || []).length ? `${data.categories.length} 类路由` : "问题分类" }}
+          {{
+            (data.categories || []).length
+              ? t("ai_workflow.node_classifier_count", { count: (data.categories || []).length })
+              : t("ai_workflow.node_classifier_default")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'extractor'">
         <div class="wf-node__text">
-          {{ (data.schema || []).length ? `抽取 ${data.schema.length} 字段` : "抽取 JSON" }}
+          {{
+            (data.schema || []).length
+              ? t("ai_workflow.node_extractor_count", { count: (data.schema || []).length })
+              : t("ai_workflow.node_extractor_default")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'template'">
-        <div class="wf-node__text">{{ data.template ? "模板已配置" : "配置模板" }}</div>
+        <div class="wf-node__text">
+          {{
+            data.template
+              ? t("ai_workflow.node_template_set")
+              : t("ai_workflow.node_template_default")
+          }}
+        </div>
       </template>
       <template v-else-if="def.type === 'variable_aggregator'">
         <div class="wf-node__text">
-          {{ (data.fields || []).length ? `聚合 ${data.fields.length} 字段` : "变量聚合" }}
+          {{
+            (data.fields || []).length
+              ? t("ai_workflow.node_agg_count", { count: (data.fields || []).length })
+              : t("ai_workflow.node_agg_default")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'answer'">
-        <div class="wf-node__text">{{ data.output_template ? "文本输出" : "回答节点" }}</div>
+        <div class="wf-node__text">
+          {{
+            data.output_template
+              ? t("ai_workflow.node_answer_output")
+              : t("ai_workflow.node_answer_default")
+          }}
+        </div>
       </template>
       <template v-else-if="def.type === 'sub_workflow'">
         <div class="wf-node__text">
-          {{ data.workflow_id ? `调用工作流 #${data.workflow_id}` : "选择子工作流" }}
+          {{
+            data.workflow_id
+              ? t("ai_workflow.node_sub_wf_call", { id: data.workflow_id })
+              : t("ai_workflow.node_sub_wf_select")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'agent'">
         <div class="wf-node__text">
-          {{ data.agent_id ? `调用智能体 #${data.agent_id}` : "选择子智能体" }}
+          {{
+            data.agent_id
+              ? t("ai_workflow.node_agent_call", { id: data.agent_id })
+              : t("ai_workflow.node_agent_select")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'loop'">
         <div class="wf-node__text">
-          {{ data.body_workflow_id ? `循环工作流 #${data.body_workflow_id}` : "选择循环体工作流" }}
+          {{
+            data.body_workflow_id
+              ? t("ai_workflow.node_loop_call", { id: data.body_workflow_id })
+              : t("ai_workflow.node_loop_select")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'parallel'">
         <div class="wf-node__text">
-          {{ (data.branches || []).length ? `并行 ${data.branches.length} 分支` : "选择并行分支" }}
+          {{
+            (data.branches || []).length
+              ? t("ai_workflow.node_parallel_count", { count: (data.branches || []).length })
+              : t("ai_workflow.node_parallel_select")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'doc_extractor'">
         <div class="wf-node__text">
-          {{ data.url ? "抓取页面文本" : data.source ? "内联文本提取" : "未配置内容源" }}
+          {{
+            data.url
+              ? t("ai_workflow.node_doc_url")
+              : data.source
+                ? t("ai_workflow.node_doc_inline")
+                : t("ai_workflow.node_doc_none")
+          }}
         </div>
       </template>
       <template v-else-if="def.type === 'web_search'">
-        <div class="wf-node__text">{{ data.query ? `搜索：${data.query}` : "未配置搜索词" }}</div>
+        <div class="wf-node__text">
+          {{
+            data.query
+              ? t("ai_workflow.node_web_query", { query: data.query })
+              : t("ai_workflow.node_web_none")
+          }}
+        </div>
       </template>
       <template v-else-if="def.type === 'database'">
-        <div class="wf-node__text">{{ data.sql ? "SQL 已配置" : "未配置 SQL" }}</div>
+        <div class="wf-node__text">
+          {{ data.sql ? t("ai_workflow.node_sql_set") : t("ai_workflow.node_sql_none") }}
+        </div>
       </template>
       <template v-else-if="def.type === 'end'">
-        <div class="wf-node__text">{{ data.output_template ? "模板已配置" : "输出最终回复" }}</div>
+        <div class="wf-node__text">
+          {{
+            data.output_template
+              ? t("ai_workflow.node_template_set")
+              : t("ai_workflow.node_end_default")
+          }}
+        </div>
       </template>
       <!-- 运行后：节点卡片直接展示输出 / 报错（Dify 式） -->
       <div v-if="data.__runError" class="wf-node__out is-err" :title="data.__runError">
@@ -183,6 +271,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { Handle, Position } from "@vue-flow/core";
 import {
   Promotion,
@@ -217,6 +306,8 @@ const props = defineProps<{
   selected?: boolean;
 }>();
 
+const { t } = useI18n();
+
 const def = computed(() => {
   const d = nodeDefOf(props.type);
   const iconMap: Record<WorkflowNodeType, any> = {
@@ -245,7 +336,12 @@ const def = computed(() => {
     group: Collection,
     end: CircleCheckFilled,
   };
-  return { ...d, icon: iconMap[d.type] || Cpu };
+  return {
+    ...d,
+    label: t(`ai_workflow.node_${d.labelKey}`),
+    desc: t(`ai_workflow.node_${d.descKey}`),
+    icon: iconMap[d.type] || Cpu,
+  };
 });
 
 function shortText(v: any, limit = 160): string {

@@ -22,6 +22,12 @@ AGENT_INSTRUCTIONS: list[str] = [
     "变更类操作只能提议（propose_* / confirm 动作），由用户确认后执行",
     "用简洁中文回答，取数结果可用 Markdown 表格汇总",
 ]
+
+#: 公共工具调用纪律（assistant/agent/app 共用；追加在各系统提示词之后）
+PUBLIC_TOOL_RULES: list[str] = [
+    "需要工具时直接调用，不要在调用前寒暄或复述计划（如「我来帮你查一下」）；拿到工具结果后再一次性给出结论与必要细节。",
+    "平台自身资源统计（智能体/知识库/模型/工作流/应用/工具/定时任务数量、今日调用量）用 platform_stats；业务明细数据才用 ai_query。",
+]
 AGENT_TEMPERATURE = 0.7
 
 #: 会话上下文保留轮数（用于读取历史）
@@ -41,6 +47,10 @@ def build_model(model_config: dict | None = None) -> OpenAILike:
         "base_url": base_url,
         "temperature": AGENT_TEMPERATURE,
     }
+    # A4: 透传运行时超时（app.timeout 此前落库但不生效），否则由 OpenAIChat 默认
+    timeout = mc.get("timeout")
+    if timeout is not None:
+        kwargs["timeout"] = float(timeout)
     headers = build_headers(base_url, mc.get("extra_headers"))
     try:
         return OpenAILike(**kwargs, default_headers=headers or None)

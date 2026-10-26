@@ -7,27 +7,38 @@
     @input.capture="onVarInput"
   >
     <!-- 启用 / 禁用 -->
-    <el-form-item label="启用此节点">
-      <el-switch v-model="nodeEnabled" inline-prompt active-text="启用" inactive-text="禁用" />
-      <span v-if="!nodeEnabled" class="node-disabled-tip">（运行将跳过该节点）</span>
+    <el-form-item :label="t('ai_workflow.p_enable_node')">
+      <el-switch
+        v-model="nodeEnabled"
+        inline-prompt
+        :active-text="t('ai_workflow.p_active_text')"
+        :inactive-text="t('ai_workflow.p_inactive_text')"
+      />
+      <span v-if="!nodeEnabled" class="node-disabled-tip">{{ t("ai_workflow.p_skip_tip") }}</span>
     </el-form-item>
     <!-- 节点备注 -->
-    <el-form-item label="节点备注">
-      <el-input v-model="d.note" placeholder="给该节点加一条备注（可选）" size="small" />
+    <el-form-item :label="t('ai_workflow.p_node_note')">
+      <el-input v-model="d.note" :placeholder="t('ai_workflow.p_node_note_ph')" size="small" />
     </el-form-item>
     <!-- 失败重试次数 -->
-    <el-form-item label="失败重试次数">
+    <el-form-item :label="t('ai_workflow.p_retry_count')">
       <el-input-number v-model="d.retry" :min="0" :max="5" size="small" />
-      <span class="node-disabled-tip">节点执行失败时自动重跑该节点并续跑下游</span>
+      <span class="node-disabled-tip">{{ t("ai_workflow.p_retry_tip") }}</span>
     </el-form-item>
     <!-- 上游调用链 -->
-    <el-form-item v-if="props.nodeChain && props.nodeChain.length > 1" label="上游调用链">
+    <el-form-item
+      v-if="props.nodeChain && props.nodeChain.length > 1"
+      :label="t('ai_workflow.p_upstream_chain')"
+    >
       <div class="chain-text">{{ props.nodeChain.join(" → ") }}</div>
     </el-form-item>
     <!-- 插入变量 -->
-    <el-form-item v-if="availableVars && availableVars.length" label="插入变量">
+    <el-form-item
+      v-if="availableVars && availableVars.length"
+      :label="t('ai_workflow.p_insert_var')"
+    >
       <el-dropdown trigger="click" @command="insertVar">
-        <el-button size="small" :icon="MagicStick">插入变量</el-button>
+        <el-button size="small" :icon="MagicStick">{{ t("ai_workflow.p_insert_var") }}</el-button>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item v-for="v in availableVars" :key="v.name" :command="v.name">
@@ -37,15 +48,17 @@
         </template>
       </el-dropdown>
       <div class="var-tip">
-        点击输入框后，在此选择变量以插入
+        {{ t("ai_workflow.p_insert_var_tip") }}
         <code v-pre>{{ 变量 }}</code>
       </div>
     </el-form-item>
 
     <!-- 输入 / 输出 静态信息 -->
-    <el-form-item label="输入变量">
+    <el-form-item :label="t('ai_workflow.p_input_vars')">
       <div class="io-var-list">
-        <el-tag v-if="!refVars.length" size="small" type="info">无引用</el-tag>
+        <el-tag v-if="!refVars.length" size="small" type="info">
+          {{ t("ai_workflow.p_no_ref") }}
+        </el-tag>
         <el-tag
           v-for="v in refVars"
           :key="v"
@@ -54,10 +67,10 @@
           :type="unknownVars.includes(v) ? 'warning' : props.varSources?.[v] ? undefined : 'info'"
           :title="
             unknownVars.includes(v)
-              ? '未定义的变量（请检查来源）'
+              ? t('ai_workflow.p_undefined_var')
               : props.varSources?.[v]
-                ? `来源：${props.varSources[v]}`
-                : '无来源'
+                ? t('ai_workflow.p_from_source', { src: props.varSources[v] })
+                : t('ai_workflow.p_no_source')
           "
         >
           {{ v }}
@@ -71,12 +84,12 @@
         show-icon
         class="io-var-warn"
       >
-        以下变量未定义/无来源：{{ unknownVars.join(", ") }}
+        {{ t("ai_workflow.p_undefined_warn", { vars: unknownVars.join(", ") }) }}
       </el-alert>
     </el-form-item>
-    <el-form-item label="输出变量">
+    <el-form-item :label="t('ai_workflow.p_output_var')">
       <el-tag v-if="d.output_variable" size="small" type="success">{{ d.output_variable }}</el-tag>
-      <el-tag v-else size="small" type="info">未设置</el-tag>
+      <el-tag v-else size="small" type="info">{{ t("ai_workflow.p_not_set") }}</el-tag>
       <el-button
         v-if="d.output_variable"
         icon="CopyDocument"
@@ -85,38 +98,47 @@
         type="primary"
         @click="copyVarRef(d.output_variable)"
       >
-        复制引用
+        {{ t("ai_workflow.p_copy_ref") }}
       </el-button>
     </el-form-item>
 
     <!-- start：输入变量 -->
     <template v-if="type === 'start'">
-      <el-form-item label="输入变量">
-        <el-button size="small" :icon="Plus" @click="addVar">添加变量</el-button>
+      <el-form-item :label="t('ai_workflow.p_input_vars')">
+        <el-button size="small" :icon="Plus" @click="addVar">
+          {{ t("ai_workflow.p_add_var") }}
+        </el-button>
       </el-form-item>
       <div v-for="(v, i) in vars" :key="i" class="start-var">
         <div class="start-var__row">
-          <el-input v-model="v.name" placeholder="变量名" size="small" class="start-var__name" />
+          <el-input
+            v-model="v.name"
+            :placeholder="t('ai_workflow.p_var_name')"
+            size="small"
+            class="start-var__name"
+          />
           <el-select v-model="v.type" size="small" class="start-var__type">
-            <el-option label="文本" value="string" />
-            <el-option label="数字" value="number" />
-            <el-option label="布尔" value="boolean" />
-            <el-option label="对象" value="object" />
-            <el-option label="数组" value="array" />
+            <el-option :label="t('ai_workflow.p_type_text')" value="string" />
+            <el-option :label="t('ai_workflow.p_type_number')" value="number" />
+            <el-option :label="t('ai_workflow.p_type_boolean')" value="boolean" />
+            <el-option :label="t('ai_workflow.p_type_object')" value="object" />
+            <el-option :label="t('ai_workflow.p_type_array')" value="array" />
           </el-select>
-          <el-checkbox v-model="v.required" size="small">必填</el-checkbox>
+          <el-checkbox v-model="v.required" size="small">
+            {{ t("ai_workflow.p_required") }}
+          </el-checkbox>
           <el-button link type="danger" :icon="Delete" @click="vars.splice(i, 1)" />
         </div>
         <div class="start-var__row">
           <el-input
             v-model="v.default"
-            placeholder="默认值（可空）"
+            :placeholder="t('ai_workflow.p_default_ph')"
             size="small"
             class="start-var__default"
           />
           <el-input
             v-model="v.desc"
-            placeholder="说明（可空）"
+            :placeholder="t('ai_workflow.p_desc_ph')"
             size="small"
             class="start-var__desc"
           />
@@ -126,127 +148,147 @@
 
     <!-- llm：模型 + 提示词 + 温度 + 工具 -->
     <template v-else-if="type === 'llm'">
-      <el-form-item label="模型">
-        <el-select v-model="d.model_id" filterable placeholder="选择模型" style="width: 100%">
+      <el-form-item :label="t('ai_workflow.p_model')">
+        <el-select
+          v-model="d.model_id"
+          filterable
+          :placeholder="t('ai_workflow.p_select_model')"
+          style="width: 100%"
+        >
           <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="提示词（支持 {{变量}} 插值）">
+      <el-form-item :label="t('ai_workflow.p_prompt_with_var')">
         <el-input
           v-model="d.prompt"
           type="textarea"
           :rows="4"
-          placeholder="如：你是助手，回答：{{query}}"
+          :placeholder="t('ai_workflow.p_prompt_ph')"
         />
       </el-form-item>
-      <el-form-item label="温度">
+      <el-form-item :label="t('ai_workflow.p_temperature')">
         <el-slider v-model="d.temperature" :min="0" :max="2" :step="0.1" />
       </el-form-item>
-      <el-form-item label="绑定工具">
-        <el-select v-model="d.tools" multiple filterable placeholder="选择工具" style="width: 100%">
+      <el-form-item :label="t('ai_workflow.p_bind_tools')">
+        <el-select
+          v-model="d.tools"
+          multiple
+          filterable
+          :placeholder="t('ai_workflow.p_select_tool')"
+          style="width: 100%"
+        >
           <el-option v-for="t in toolOptions" :key="t.name" :label="t.name" :value="t.name" />
         </el-select>
       </el-form-item>
-      <el-form-item label="工具调用需人工审批（HITL）">
+      <el-form-item :label="t('ai_workflow.p_hitl')">
         <el-switch v-model="d.require_approval" />
       </el-form-item>
-      <el-form-item label="输出变量名（可选）">
-        <el-input v-model="d.output_variable" placeholder="供下游引用" />
+      <el-form-item :label="t('ai_workflow.p_output_var_opt')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_for_downstream')" />
       </el-form-item>
     </template>
 
     <!-- knowledge：知识检索（阶段 3 落地） -->
     <template v-else-if="type === 'knowledge'">
-      <el-form-item label="关联知识库">
+      <el-form-item :label="t('ai_workflow.p_bind_kb')">
         <el-select
           v-model="d.knowledge_ids"
           multiple
           filterable
-          placeholder="选择知识库"
+          :placeholder="t('ai_workflow.p_select_kb')"
           style="width: 100%"
         >
           <el-option v-for="kb in kbOptions" :key="kb.id" :label="kb.name" :value="kb.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="检索查询模板">
-        <el-input v-model="d.query" placeholder="如：{{query}}" />
+      <el-form-item :label="t('ai_workflow.p_kb_query_tpl')">
+        <el-input v-model="d.query" :placeholder="t('ai_workflow.p_kb_query_ph')" />
       </el-form-item>
-      <el-form-item label="返回条数">
+      <el-form-item :label="t('ai_workflow.p_top_k')">
         <el-input-number v-model="d.top_k" :min="1" :max="10" />
       </el-form-item>
-      <el-form-item label="输出变量名（可选）">
-        <el-input v-model="d.output_variable" placeholder="供下游 LLM 用 {{变量}} 引用" />
+      <el-form-item :label="t('ai_workflow.p_output_var_opt')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_output_var_kb_ph')" />
       </el-form-item>
     </template>
 
     <!-- tool：工具调用 -->
     <template v-else-if="type === 'tool'">
-      <el-form-item label="工具名">
-        <el-select v-model="d.tool_name" filterable placeholder="选择工具" style="width: 100%">
+      <el-form-item :label="t('ai_workflow.p_tool_name')">
+        <el-select
+          v-model="d.tool_name"
+          filterable
+          :placeholder="t('ai_workflow.p_select_tool')"
+          style="width: 100%"
+        >
           <el-option v-for="t in toolOptions" :key="t.name" :label="t.name" :value="t.name" />
         </el-select>
       </el-form-item>
-      <el-form-item label="参数（JSON）">
+      <el-form-item :label="t('ai_workflow.p_args_json')">
         <el-input v-model="argsText" type="textarea" :rows="3" placeholder='{"path":"/x"}' />
       </el-form-item>
-      <el-form-item label="输出变量名">
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
         <el-input v-model="d.output_variable" />
       </el-form-item>
     </template>
 
     <!-- code：代码转换 -->
     <template v-else-if="type === 'code'">
-      <el-form-item label="Python 代码">
+      <el-form-item :label="t('ai_workflow.p_python_code')">
         <CodeEditor v-model="d.code" language="python" />
       </el-form-item>
-      <el-form-item label="输入变量映射（JSON）">
+      <el-form-item :label="t('ai_workflow.p_input_map_json')">
         <CodeEditor v-model="codeInputsText" language="json" />
       </el-form-item>
-      <el-form-item label="输出变量名">
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
         <el-input v-model="d.output_variable" />
       </el-form-item>
-      <el-alert
-        title="在受限命名空间执行，末行表达式结果写入输出变量"
-        type="info"
-        :closable="false"
-        show-icon
-      />
+      <el-alert :title="t('ai_workflow.p_code_ns_alert')" type="info" :closable="false" show-icon />
     </template>
 
     <!-- condition：条件分支 -->
     <template v-else-if="type === 'condition'">
-      <el-form-item label="条件构建（参数化，多条件）">
+      <el-form-item :label="t('ai_workflow.p_cond_build')">
         <div class="cond-logic">
           <el-radio-group v-model="condLogic" size="small">
-            <el-radio-button label="and">同时满足（AND）</el-radio-button>
-            <el-radio-button label="or">任一满足（OR）</el-radio-button>
+            <el-radio-button label="and">{{ t("ai_workflow.p_cond_and") }}</el-radio-button>
+            <el-radio-button label="or">{{ t("ai_workflow.p_cond_or") }}</el-radio-button>
           </el-radio-group>
         </div>
         <div v-for="(c, i) in conditions" :key="i" class="cond-row">
-          <el-select v-model="c.var" placeholder="变量" filterable class="cond-var">
+          <el-select
+            v-model="c.var"
+            :placeholder="t('ai_workflow.p_cond_var')"
+            filterable
+            class="cond-var"
+          >
             <el-option v-for="v in availableVars" :key="v.name" :label="v.name" :value="v.name" />
           </el-select>
-          <el-select v-model="c.op" class="cond-op" placeholder="算子">
+          <el-select v-model="c.op" class="cond-op" :placeholder="t('ai_workflow.p_cond_op')">
             <el-option v-for="o in COND_OPS" :key="o.v" :label="o.label" :value="o.v" />
           </el-select>
-          <el-input v-model="c.val" class="cond-val" placeholder="值" />
+          <el-input v-model="c.val" class="cond-val" :placeholder="t('ai_workflow.p_cond_val')" />
           <el-button link type="danger" :icon="Delete" @click="conditions.splice(i, 1)" />
         </div>
         <div class="cond-actions">
-          <el-button size="small" :icon="Plus" @click="addCond">添加条件</el-button>
-          <el-button size="small" type="primary" @click="applyCond">生成表达式</el-button>
+          <el-button size="small" :icon="Plus" @click="addCond">
+            {{ t("ai_workflow.p_add_cond") }}
+          </el-button>
+          <el-button size="small" type="primary" @click="applyCond">
+            {{ t("ai_workflow.p_gen_expr") }}
+          </el-button>
         </div>
         <div class="cond-hint">
-          支持英文/数字/布尔/数组，或
+          {{ t("ai_workflow.p_cond_hint_1") }}
           <code v-pre>{{ 变量 }}</code>
-          ；点「生成表达式」写入下方表达式，可手工微调。
+          {{ t("ai_workflow.p_cond_hint_2") }}
         </div>
       </el-form-item>
-      <el-form-item label="条件表达式">
-        <el-input v-model="d.expression" placeholder="如：{{a}} == 1 and {{b}} > 2" />
+      <el-form-item :label="t('ai_workflow.p_cond_expr')">
+        <el-input v-model="d.expression" :placeholder="t('ai_workflow.p_cond_expr_ph')" />
       </el-form-item>
       <el-alert
-        title="连接时从上（绿=真）/下（红=假）句柄拖出即可区分分支"
+        :title="t('ai_workflow.p_cond_handle_alert')"
         type="info"
         :closable="false"
         show-icon
@@ -255,17 +297,17 @@
 
     <!-- variable：变量赋值 -->
     <template v-else-if="type === 'variable'">
-      <el-form-item label="变量名">
+      <el-form-item :label="t('ai_workflow.p_var_name')">
         <el-input v-model="d.name" />
       </el-form-item>
-      <el-form-item label="值">
-        <el-input v-model="d.value" placeholder="可引用 {{其他变量}}" />
+      <el-form-item :label="t('ai_workflow.p_var_value')">
+        <el-input v-model="d.value" :placeholder="t('ai_workflow.p_var_value_ph')" />
       </el-form-item>
     </template>
 
     <!-- http：外部请求 -->
     <template v-else-if="type === 'http'">
-      <el-form-item label="方法">
+      <el-form-item :label="t('ai_workflow.p_method')">
         <el-select v-model="d.method" style="width: 120px">
           <el-option
             v-for="m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']"
@@ -275,32 +317,37 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="URL（支持 {{变量}}）">
-        <el-input v-model="d.url" placeholder="https://api.example.com/{{id}}" />
+      <el-form-item :label="t('ai_workflow.p_url_with_var')">
+        <el-input v-model="d.url" :placeholder="t('ai_workflow.p_url_ph')" />
       </el-form-item>
-      <el-form-item label="请求头（键值对）">
+      <el-form-item :label="t('ai_workflow.p_headers_kv')">
         <div v-for="(h, i) in headerRows" :key="i" class="http-kv">
-          <el-input v-model="h.key" placeholder="Header 名" size="small" class="http-kv__k" />
+          <el-input
+            v-model="h.key"
+            :placeholder="t('ai_workflow.p_header_name')"
+            size="small"
+            class="http-kv__k"
+          />
           <el-input
             v-model="h.value"
-            placeholder="值（支持 {{变量}}）"
+            :placeholder="t('ai_workflow.p_header_val')"
             size="small"
             class="http-kv__v"
           />
           <el-button link type="danger" :icon="Delete" @click="headerRows.splice(i, 1)" />
         </div>
         <el-button size="small" :icon="Plus" @click="headerRows.push({ key: '', value: '' })">
-          添加请求头
+          {{ t("ai_workflow.p_add_header") }}
         </el-button>
       </el-form-item>
-      <el-form-item label="请求体（JSON，GET 可留空）">
+      <el-form-item :label="t('ai_workflow.p_body_json')">
         <CodeEditor v-model="bodyText" language="json" />
       </el-form-item>
-      <el-form-item label="输出变量名">
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
         <el-input v-model="d.output_variable" />
       </el-form-item>
       <el-alert
-        title="响应 {status, body, text} 写入输出变量"
+        :title="t('ai_workflow.p_http_resp_alert')"
         type="info"
         :closable="false"
         show-icon
@@ -309,20 +356,25 @@
 
     <!-- iteration：迭代/批量 -->
     <template v-else-if="type === 'iteration'">
-      <el-form-item label="遍历列表（JSON 数组）">
+      <el-form-item :label="t('ai_workflow.p_iterate_list')">
         <el-input
           v-model="itemsText"
           type="textarea"
           :rows="2"
-          placeholder="[1, 2, 3] 或 {{变量}}"
+          :placeholder="t('ai_workflow.p_iterate_ph')"
         />
       </el-form-item>
-      <el-form-item label="工具">
-        <el-select v-model="d.tool_name" filterable placeholder="选择工具" style="width: 100%">
+      <el-form-item :label="t('ai_workflow.p_tool')">
+        <el-select
+          v-model="d.tool_name"
+          filterable
+          :placeholder="t('ai_workflow.p_select_tool')"
+          style="width: 100%"
+        >
           <el-option v-for="t in toolOptions" :key="t.name" :label="t.name" :value="t.name" />
         </el-select>
       </el-form-item>
-      <el-form-item label="工具参数（JSON，支持 {{item}}）">
+      <el-form-item :label="t('ai_workflow.p_tool_args_item')">
         <el-input
           v-model="iterArgsText"
           type="textarea"
@@ -330,61 +382,84 @@
           placeholder='{"id":"{{item}}"}'
         />
       </el-form-item>
-      <el-form-item label="最大迭代次数">
+      <el-form-item :label="t('ai_workflow.p_max_iterations')">
         <el-input-number v-model="d.max_iterations" :min="1" :max="100" />
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="结果数组" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_result_array')" />
       </el-form-item>
     </template>
 
     <!-- classifier：问题分类器 -->
     <template v-else-if="type === 'classifier'">
-      <el-form-item label="类别（逗号或换行分隔）">
-        <el-input v-model="categoriesText" type="textarea" :rows="2" placeholder="查询, 操作" />
+      <el-form-item :label="t('ai_workflow.p_categories_label')">
+        <el-input
+          v-model="categoriesText"
+          type="textarea"
+          :rows="2"
+          :placeholder="t('ai_workflow.p_categories_ph')"
+        />
       </el-form-item>
-      <el-form-item label="输入（支持 {{变量}}）">
-        <el-input v-model="d.query" placeholder="如：{{query}}" />
+      <el-form-item :label="t('ai_workflow.p_input_with_var')">
+        <el-input v-model="d.query" :placeholder="t('ai_workflow.p_input_ph')" />
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="命中的类别" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_hit_category')" />
       </el-form-item>
     </template>
 
     <!-- extractor：参数提取 -->
     <template v-else-if="type === 'extractor'">
-      <el-form-item label="提取字段（JSON 数组）">
-        <el-input v-model="schemaText" type="textarea" :rows="2" placeholder='["城市", "日期"]' />
+      <el-form-item :label="t('ai_workflow.p_extract_fields')">
+        <el-input
+          v-model="schemaText"
+          type="textarea"
+          :rows="2"
+          :placeholder="t('ai_workflow.p_extract_ph')"
+        />
       </el-form-item>
-      <el-form-item label="输入（支持 {{变量}}）">
-        <el-input v-model="d.query" type="textarea" :rows="2" placeholder="如：{{query}}" />
+      <el-form-item :label="t('ai_workflow.p_input_with_var')">
+        <el-input
+          v-model="d.query"
+          type="textarea"
+          :rows="2"
+          :placeholder="t('ai_workflow.p_input_ph')"
+        />
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="JSON 对象" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_json_object')" />
       </el-form-item>
     </template>
 
     <!-- template：模板转换 -->
     <template v-else-if="type === 'template'">
-      <el-form-item label="模板（支持 {{变量}}）">
+      <el-form-item :label="t('ai_workflow.p_template_with_var')">
         <el-input
           v-model="d.template"
           type="textarea"
           :rows="3"
-          placeholder="如：今天是 {{date}}，城市是 {{city}}"
+          :placeholder="t('ai_workflow.p_template_ph')"
         />
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="转换结果" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_convert_result')" />
       </el-form-item>
     </template>
 
     <!-- variable_aggregator：变量聚合 -->
     <template v-else-if="type === 'variable_aggregator'">
-      <el-form-item label="聚合字段">
+      <el-form-item :label="t('ai_workflow.p_agg_fields')">
         <el-space v-for="(f, i) in aggFields" :key="i" fill>
-          <el-input v-model="f.name" placeholder="字段名" style="width: 120px" />
-          <el-input v-model="f.value" placeholder="变量名或字面量（如 {{city}}）" style="flex: 1" />
+          <el-input
+            v-model="f.name"
+            :placeholder="t('ai_workflow.p_field_name')"
+            style="width: 120px"
+          />
+          <el-input
+            v-model="f.value"
+            :placeholder="t('ai_workflow.p_field_val_ph')"
+            style="flex: 1"
+          />
           <el-button link type="danger" :icon="Delete" @click="aggFields.splice(i, 1)" />
         </el-space>
         <el-button
@@ -393,96 +468,116 @@
           style="margin-top: 4px"
           @click="aggFields.push({ name: '', value: '' })"
         >
-          添加字段
+          {{ t("ai_workflow.p_add_field") }}
         </el-button>
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="聚合结果对象" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_agg_result_obj')" />
       </el-form-item>
     </template>
 
     <!-- answer：回答 -->
     <template v-else-if="type === 'answer'">
-      <el-form-item label="输出文本（支持 {{变量}}）">
+      <el-form-item :label="t('ai_workflow.p_answer_output_with_var')">
         <el-input
           v-model="d.output_template"
           type="textarea"
           :rows="3"
-          placeholder="如：最终结果是 {{result}}"
+          :placeholder="t('ai_workflow.p_answer_ph')"
         />
       </el-form-item>
     </template>
 
     <!-- sub_workflow：子工作流 -->
     <template v-else-if="type === 'sub_workflow'">
-      <el-form-item label="选择子工作流">
-        <el-select v-model="d.workflow_id" filterable placeholder="选择工作流" style="width: 100%">
-          <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="子工作流回复" />
-      </el-form-item>
-    </template>
-
-    <!-- agent：子智能体 -->
-    <template v-else-if="type === 'agent'">
-      <el-form-item label="选择子智能体">
-        <el-select v-model="d.agent_id" filterable placeholder="选择智能体" style="width: 100%">
-          <el-option v-for="a in agentOptions" :key="a.id" :label="a.agent_name" :value="a.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="输入（支持 {{变量}}）">
-        <el-input v-model="d.query" type="textarea" :rows="2" placeholder="如：{{query}}" />
-      </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="智能体回复" />
-      </el-form-item>
-    </template>
-
-    <!-- loop：循环 -->
-    <template v-else-if="type === 'loop'">
-      <el-form-item label="循环体工作流">
+      <el-form-item :label="t('ai_workflow.p_select_sub_wf')">
         <el-select
-          v-model="d.body_workflow_id"
+          v-model="d.workflow_id"
           filterable
-          placeholder="选择循环体工作流"
+          :placeholder="t('ai_workflow.p_select_workflow')"
           style="width: 100%"
         >
           <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="列表项（支持 {{变量}}）">
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_sub_wf_reply')" />
+      </el-form-item>
+    </template>
+
+    <!-- agent：子智能体 -->
+    <template v-else-if="type === 'agent'">
+      <el-form-item :label="t('ai_workflow.p_select_sub_agent')">
+        <el-select
+          v-model="d.agent_id"
+          filterable
+          :placeholder="t('ai_workflow.p_select_agent')"
+          style="width: 100%"
+        >
+          <el-option v-for="a in agentOptions" :key="a.id" :label="a.agent_name" :value="a.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.p_input_with_var')">
+        <el-input
+          v-model="d.query"
+          type="textarea"
+          :rows="2"
+          :placeholder="t('ai_workflow.p_input_ph')"
+        />
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_agent_reply')" />
+      </el-form-item>
+    </template>
+
+    <!-- loop：循环 -->
+    <template v-else-if="type === 'loop'">
+      <el-form-item :label="t('ai_workflow.p_loop_body_wf')">
+        <el-select
+          v-model="d.body_workflow_id"
+          filterable
+          :placeholder="t('ai_workflow.p_select_loop_body')"
+          style="width: 100%"
+        >
+          <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.p_loop_items')">
         <el-input
           v-model="d.items"
           type="textarea"
           :rows="3"
-          placeholder="JSON 数组或列表变量，如 {{items}} 或 [1,2,3]"
+          :placeholder="t('ai_workflow.p_loop_items_ph')"
         />
       </el-form-item>
-      <el-form-item label="最大循环次数">
+      <el-form-item :label="t('ai_workflow.p_max_loop')">
         <el-input-number v-model="d.max_iterations" :min="1" :max="100" style="width: 100%" />
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="聚合后的列表结果" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_agg_list_result')" />
       </el-form-item>
       <el-alert type="info" :closable="false" show-icon>
-        每一项以变量
+        {{ t("ai_workflow.p_loop_alert_1") }}
         <code v-pre>{{ item }}</code>
-        注入循环体工作流，结果为每项输出组成的列表。
+        {{ t("ai_workflow.p_loop_alert_2") }}
       </el-alert>
     </template>
 
     <!-- parallel：并行 -->
     <template v-else-if="type === 'parallel'">
-      <el-form-item label="并行分支">
+      <el-form-item :label="t('ai_workflow.p_parallel_branches')">
         <div v-for="(b, i) in d.branches" :key="i" class="parallel-branch">
-          <el-input v-model="b.name" size="small" placeholder="分支名" style="width: 100px" />
+          <el-input
+            v-model="b.name"
+            size="small"
+            :placeholder="t('ai_workflow.p_branch_name')"
+            style="width: 100px"
+          />
           <el-select
             v-model="b.workflow_id"
             size="small"
             filterable
-            placeholder="选择工作流"
+            :placeholder="t('ai_workflow.p_select_workflow')"
             style="flex: 1"
           >
             <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
@@ -495,107 +590,110 @@
           style="margin-top: 4px"
           @click="d.branches.push({ name: '', workflow_id: null })"
         >
-          添加分支
+          {{ t("ai_workflow.p_add_branch") }}
         </el-button>
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="{分支名: 输出}" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input
+          v-model="d.output_variable"
+          :placeholder="t('ai_workflow.p_parallel_output_ph')"
+        />
       </el-form-item>
       <el-alert type="info" :closable="false" show-icon>
-        各分支并发运行，输出为
+        {{ t("ai_workflow.p_parallel_alert_1") }}
         <code>{分支名: 结果}</code>
-        的对象。
+        {{ t("ai_workflow.p_parallel_alert_2") }}
       </el-alert>
     </template>
 
     <!-- doc_extractor：文档提取 -->
     <template v-else-if="type === 'doc_extractor'">
-      <el-form-item label="URL（支持 {{变量}}）">
-        <el-input v-model="d.url" placeholder="http://...，二选一，优先 URL" />
+      <el-form-item :label="t('ai_workflow.p_url_with_var')">
+        <el-input v-model="d.url" :placeholder="t('ai_workflow.p_doc_url_ph')" />
       </el-form-item>
-      <el-form-item label="内联文本（支持 {{变量}}）">
+      <el-form-item :label="t('ai_workflow.p_inline_text')">
         <el-input
           v-model="d.source"
           type="textarea"
           :rows="3"
-          placeholder="粘贴 HTML 或文本，将剥离标签"
+          :placeholder="t('ai_workflow.p_inline_ph')"
         />
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="提取出的纯文本" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_pure_text')" />
       </el-form-item>
     </template>
 
     <!-- web_search：网页搜索 -->
     <template v-else-if="type === 'web_search'">
-      <el-form-item label="搜索词（支持 {{变量}}）">
-        <el-input v-model="d.query" placeholder="如 {{query}}" />
+      <el-form-item :label="t('ai_workflow.p_search_query')">
+        <el-input v-model="d.query" :placeholder="t('ai_workflow.p_search_query_ph')" />
       </el-form-item>
-      <el-form-item label="接口地址">
+      <el-form-item :label="t('ai_workflow.p_endpoint')">
         <el-input v-model="d.endpoint" placeholder="https://api.example.com/search?q={{query}}" />
       </el-form-item>
-      <el-form-item label="API Key（可选）">
+      <el-form-item :label="t('ai_workflow.p_api_key')">
         <el-input
           v-model="d.api_key"
           type="password"
           show-password
-          placeholder="以 Bearer 形式注入 Authorization 头"
+          :placeholder="t('ai_workflow.p_api_key_ph')"
         />
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="格式化后的搜索结果" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input
+          v-model="d.output_variable"
+          :placeholder="t('ai_workflow.p_search_result_format')"
+        />
       </el-form-item>
     </template>
 
     <!-- database：数据库查询 -->
     <template v-else-if="type === 'database'">
-      <el-form-item label="连接 DSN">
-        <el-input
-          v-model="d.dsn"
-          placeholder="postgresql+asyncpg://user:pass@host/db 或 sqlite+aiosqlite:///a.db"
-        />
+      <el-form-item :label="t('ai_workflow.p_conn_dsn')">
+        <el-input v-model="d.dsn" :placeholder="t('ai_workflow.p_dsn_ph')" />
       </el-form-item>
-      <el-form-item label="SQL（支持 {{变量}}）">
+      <el-form-item :label="t('ai_workflow.p_sql_with_var')">
         <CodeEditor v-model="d.sql" language="sql" />
       </el-form-item>
-      <el-form-item label="输出变量名">
-        <el-input v-model="d.output_variable" placeholder="查询得到的行数组" />
+      <el-form-item :label="t('ai_workflow.p_output_var_name')">
+        <el-input v-model="d.output_variable" :placeholder="t('ai_workflow.p_row_array')" />
       </el-form-item>
     </template>
 
     <!-- end：结束输出 -->
     <template v-else-if="type === 'end'">
-      <el-form-item label="输出模板">
+      <el-form-item :label="t('ai_workflow.p_output_template')">
         <el-input
           v-model="d.output_template"
           type="textarea"
           :rows="3"
-          placeholder="留空则取最近一步输出；可写 {{变量}}"
+          :placeholder="t('ai_workflow.p_output_template_ph')"
         />
       </el-form-item>
     </template>
 
     <!-- note：注释框 -->
     <template v-else-if="type === 'note'">
-      <el-form-item label="标题">
-        <el-input v-model="d.title" placeholder="注释标题" />
+      <el-form-item :label="t('ai_workflow.p_note_title')">
+        <el-input v-model="d.title" :placeholder="t('ai_workflow.p_note_title_ph')" />
       </el-form-item>
-      <el-form-item label="内容">
+      <el-form-item :label="t('ai_workflow.p_note_content')">
         <el-input
           v-model="d.content"
           type="textarea"
           :rows="3"
-          placeholder="说明文字（纯注释，不参与运行）"
+          :placeholder="t('ai_workflow.p_note_content_ph')"
         />
       </el-form-item>
     </template>
 
     <!-- group：分组容器 -->
     <template v-else-if="type === 'group'">
-      <el-form-item label="分组标题">
-        <el-input v-model="d.title" placeholder="分组标题" />
+      <el-form-item :label="t('ai_workflow.p_group_title')">
+        <el-input v-model="d.title" :placeholder="t('ai_workflow.p_group_title_ph')" />
       </el-form-item>
-      <el-form-item label="尺寸">
+      <el-form-item :label="t('ai_workflow.p_group_size')">
         <el-space>
           <el-input-number
             v-model="d.width"
@@ -616,7 +714,7 @@
         </el-space>
       </el-form-item>
       <el-alert type="info" :closable="false" show-icon>
-        右键其它节点可「加入分组」；拖动分组框可整体移动组内节点。
+        {{ t("ai_workflow.p_group_alert") }}
       </el-alert>
     </template>
 
@@ -644,6 +742,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { Plus, Delete, MagicStick } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import type { Node } from "@vue-flow/core";
@@ -661,6 +760,7 @@ const props = defineProps<{
   nodeChain?: string[];
 }>();
 const emit = defineEmits(["change"]);
+const { t } = useI18n();
 
 // ---------- 插入变量 ----------
 const focusedEl = ref<HTMLTextAreaElement | HTMLInputElement | null>(null);
@@ -674,7 +774,7 @@ function insertVar(name: string) {
   const el = focusedEl.value;
   const token = `{{${name}}}`;
   if (!el) {
-    ElMessage.info("请先点击一个输入框，再插入变量");
+    ElMessage.info(t("ai_workflow.p_select_input_first"));
     return;
   }
   const start = el.selectionStart ?? el.value.length;
@@ -747,8 +847,8 @@ function varToken(name: string) {
 
 function copyVarRef(name: string) {
   navigator.clipboard.writeText(`{{${name}}}`).then(
-    () => ElMessage.success("已复制变量引用"),
-    () => ElMessage.error("复制失败")
+    () => ElMessage.success(t("ai_workflow.p_copied_ref")),
+    () => ElMessage.error(t("ai_workflow.p_copy_fail"))
   );
 }
 
@@ -830,17 +930,17 @@ const nodeEnabled = computed({
 });
 
 // 条件节点：参数化构建（多条件 AND/OR）
-const COND_OPS = [
-  { v: "==", label: "等于 ==" },
-  { v: "!=", label: "不等于 !=" },
-  { v: ">", label: "大于 >" },
-  { v: "<", label: "小于 <" },
-  { v: ">=", label: "大于等于 >=" },
-  { v: "<=", label: "小于等于 <=" },
-  { v: "in", label: "属于 in" },
-  { v: "not in", label: "不属于 not in" },
-  { v: "contains", label: "包含 contains" },
-];
+const COND_OPS = computed(() => [
+  { v: "==", label: t("ai_workflow.p_cond_op_eq") },
+  { v: "!=", label: t("ai_workflow.p_cond_op_neq") },
+  { v: ">", label: t("ai_workflow.p_cond_op_gt") },
+  { v: "<", label: t("ai_workflow.p_cond_op_lt") },
+  { v: ">=", label: t("ai_workflow.p_cond_op_gte") },
+  { v: "<=", label: t("ai_workflow.p_cond_op_lte") },
+  { v: "in", label: t("ai_workflow.p_cond_op_in") },
+  { v: "not in", label: t("ai_workflow.p_cond_op_nin") },
+  { v: "contains", label: t("ai_workflow.p_cond_op_contains") },
+]);
 const condLogic = ref<"and" | "or">("and");
 const conditions = ref<{ var: string; op: string; val: string }[]>([]);
 function addCond() {
@@ -873,7 +973,7 @@ function _buildOne(c: { var: string; op: string; val: string }): string {
 function applyCond() {
   const parts = conditions.value.filter((c) => c.var.trim()).map((c) => _buildOne(c));
   if (!parts.length) {
-    ElMessage.warning("请添加并填写至少一个条件");
+    ElMessage.warning(t("ai_workflow.p_no_condition"));
     return;
   }
   d.expression = parts.join(condLogic.value === "and" ? " and " : " or ");

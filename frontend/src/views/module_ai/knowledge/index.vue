@@ -6,7 +6,7 @@
       <el-card shadow="never" class="kb-side">
         <template #header>
           <div class="kb-side-head">
-            <span>分类</span>
+            <span>{{ i18nT("ai_ontology.category") }}</span>
             <el-button
               v-hasPerm="'module_ai:knowledge:create'"
               link
@@ -41,7 +41,7 @@
 
       <el-card shadow="never" class="kb-tabs-card">
         <el-tabs v-model="activeTab">
-          <el-tab-pane label="知识库" name="kb">
+          <el-tab-pane :label="i18nT('ai_ontology.knowledgeBase')" name="kb">
             <div class="kb-toolbar">
               <el-button
                 v-hasPerm="['module_ai:knowledge:create']"
@@ -49,7 +49,7 @@
                 icon="plus"
                 @click="openKbDialog()"
               >
-                新建知识库
+                {{ i18nT("ai_ontology.newKnowledgeBase") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_ai:knowledge:update']"
@@ -57,7 +57,7 @@
                 :disabled="!selectedKb"
                 @click="selectedKb && openIngestDialog(selectedKb)"
               >
-                文本入库
+                {{ i18nT("ai_ontology.textIngest") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_ai:knowledge:query']"
@@ -65,7 +65,7 @@
                 :disabled="!selectedKb"
                 @click="selectedKb && openSearchDialog(selectedKb)"
               >
-                检索测试
+                {{ i18nT("ai_ontology.searchTest") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_ai:knowledge:query']"
@@ -73,7 +73,7 @@
                 :disabled="!selectedKb"
                 @click="selectedKb && openChunks(selectedKb)"
               >
-                分块查看
+                {{ i18nT("ai_ontology.viewChunks") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_ai:knowledge:query']"
@@ -81,17 +81,23 @@
                 :disabled="!selectedKb"
                 @click="selectedKb && openGraph(selectedKb)"
               >
-                图谱
+                {{ i18nT("ai_ontology.graph2") }}
               </el-button>
               <div class="kb-toolbar__right">
                 <el-input
                   v-model="kbKeyword"
-                  placeholder="搜索知识库"
+                  :placeholder="i18nT('ai_ontology.searchKnowledgeBases')"
                   clearable
                   :prefix-icon="Search"
                   style="width: 200px"
                 />
-                <el-button circle type="success" :icon="Refresh" title="刷新" @click="loadData" />
+                <el-button
+                  circle
+                  type="success"
+                  :icon="Refresh"
+                  :title="i18nT('ai_ontology.refresh')"
+                  @click="loadData"
+                />
               </div>
             </div>
 
@@ -103,25 +109,41 @@
               highlight-current-row
               @current-change="(row: any) => (selectedKb = row)"
             >
-              <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
+              <el-table-column
+                prop="name"
+                :label="i18nT('ai_ontology.name')"
+                min-width="140"
+                show-overflow-tooltip
+              />
               <el-table-column
                 prop="description"
-                label="描述"
+                :label="i18nT('ai_ontology.description')"
                 min-width="180"
                 show-overflow-tooltip
               >
                 <template #default="{ row }">{{ row.description || "—" }}</template>
               </el-table-column>
-              <el-table-column prop="chunk_count" label="分块数" width="90" align="center" />
-              <el-table-column label="嵌入模型" width="150" show-overflow-tooltip>
+              <el-table-column
+                prop="chunk_count"
+                :label="i18nT('ai_ontology.chunks')"
+                width="90"
+                align="center"
+              />
+              <el-table-column
+                :label="i18nT('ai_ontology.embeddingModel')"
+                width="150"
+                show-overflow-tooltip
+              >
                 <template #default="{ row }">
                   <el-tag v-if="row.model_id" size="small" type="info" effect="plain">
                     {{ modelNameMap[row.model_id] || `#${row.model_id}` }}
                   </el-tag>
-                  <span v-else class="kb-opt-hint">确定性向量</span>
+                  <span v-else class="kb-opt-hint">
+                    {{ i18nT("ai_ontology.deterministicVector") }}
+                  </span>
                 </template>
               </el-table-column>
-              <el-table-column label="图谱" width="150" align="center">
+              <el-table-column :label="i18nT('ai_ontology.graph2')" width="150" align="center">
                 <template #default="{ row }">
                   <el-tag
                     v-if="row.graph_nodes"
@@ -129,25 +151,37 @@
                     type="success"
                     effect="plain"
                     class="kb-graph-cell"
-                    title="点击查看图谱"
+                    :title="i18nT('ai_ontology.clickToViewGraph')"
                     @click.stop="openGraph(row)"
                   >
-                    {{ row.graph_nodes }} 节点 / {{ row.graph_edges }} 边
+                    {{
+                      i18nT("ai_ontology.graphNodesEdges", {
+                        nodes: row.graph_nodes,
+                        edges: row.graph_edges,
+                      })
+                    }}
                   </el-tag>
                   <span v-else class="kb-opt-hint">—</span>
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="90" align="center">
+              <el-table-column :label="i18nT('ai_ontology.status')" width="90" align="center">
                 <template #default="{ row }">
                   <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
-                    {{ row.enabled ? "启用" : "停用" }}
+                    {{
+                      row.enabled ? i18nT("ai_ontology.enabled2") : i18nT("ai_ontology.disabled")
+                    }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="280" align="center" fixed="right">
+              <el-table-column
+                :label="i18nT('ai_ontology.operations')"
+                width="280"
+                align="center"
+                fixed="right"
+              >
                 <template #default="{ row }">
                   <el-button size="small" link type="info" icon="View" @click="openDetail(row)">
-                    详情
+                    {{ i18nT("ai_ontology.details") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_ai:knowledge:create']"
@@ -157,7 +191,7 @@
                     :icon="CopyDocument"
                     @click="copyBase(row)"
                   >
-                    复制
+                    {{ i18nT("ai_ontology.copy") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_ai:knowledge:update']"
@@ -167,7 +201,7 @@
                     :icon="Edit"
                     @click="openKbDialog(row)"
                   >
-                    编辑
+                    {{ i18nT("ai_ontology.edit") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_ai:knowledge:delete']"
@@ -177,14 +211,14 @@
                     :icon="Delete"
                     @click="deleteBases(row)"
                   >
-                    删除
+                    {{ i18nT("ai_ontology.delete2") }}
                   </el-button>
                 </template>
               </el-table-column>
             </el-table>
           </el-tab-pane>
 
-          <el-tab-pane label="数据源" name="ds">
+          <el-tab-pane :label="i18nT('ai_ontology.dataSource')" name="ds">
             <div class="kb-toolbar">
               <el-button
                 v-hasPerm="['module_ai:knowledge:create']"
@@ -192,7 +226,7 @@
                 icon="plus"
                 @click="openDsDialog()"
               >
-                新增数据源
+                {{ i18nT("ai_ontology.newDataSource") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_ai:knowledge:query']"
@@ -200,7 +234,7 @@
                 :disabled="!selectedDs"
                 @click="selectedDs && testDs(selectedDs)"
               >
-                测试
+                {{ i18nT("ai_ontology.test") }}
               </el-button>
               <el-button
                 v-hasPerm="['module_ai:knowledge:update']"
@@ -209,17 +243,23 @@
                 :disabled="!selectedDs"
                 @click="selectedDs && syncDs(selectedDs)"
               >
-                同步入库
+                {{ i18nT("ai_ontology.syncIngest") }}
               </el-button>
               <div class="kb-toolbar__right">
                 <el-input
                   v-model="dsKeyword"
-                  placeholder="搜索数据源"
+                  :placeholder="i18nT('ai_ontology.searchDataSources')"
                   clearable
                   :prefix-icon="Search"
                   style="width: 200px"
                 />
-                <el-button circle type="success" :icon="Refresh" title="刷新" @click="loadData" />
+                <el-button
+                  circle
+                  type="success"
+                  :icon="Refresh"
+                  :title="i18nT('ai_ontology.refresh')"
+                  @click="loadData"
+                />
               </div>
             </div>
 
@@ -231,15 +271,24 @@
               highlight-current-row
               @current-change="(row: any) => (selectedDs = row)"
             >
-              <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
-              <el-table-column label="类型" width="80" align="center">
+              <el-table-column
+                prop="name"
+                :label="i18nT('ai_ontology.name')"
+                min-width="140"
+                show-overflow-tooltip
+              />
+              <el-table-column :label="i18nT('ai_ontology.type')" width="80" align="center">
                 <template #default="{ row }">
                   <el-tag size="small" effect="plain">
-                    {{ row.ds_type === "db" ? "数据库" : "API" }}
+                    {{ row.ds_type === "db" ? i18nT("ai_ontology.database") : "API" }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="连接" min-width="200" show-overflow-tooltip>
+              <el-table-column
+                :label="i18nT('ai_ontology.join')"
+                min-width="200"
+                show-overflow-tooltip
+              >
                 <template #default="{ row }">
                   {{
                     row.ds_type === "db"
@@ -248,19 +297,30 @@
                   }}
                 </template>
               </el-table-column>
-              <el-table-column label="目标知识库" min-width="120" show-overflow-tooltip>
+              <el-table-column
+                :label="i18nT('ai_ontology.targetKnowledgeBase')"
+                min-width="120"
+                show-overflow-tooltip
+              >
                 <template #default="{ row }">
                   {{ kbName(row.knowledge_base_id) }}
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="90" align="center">
+              <el-table-column :label="i18nT('ai_ontology.status')" width="90" align="center">
                 <template #default="{ row }">
                   <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
-                    {{ row.enabled ? "启用" : "停用" }}
+                    {{
+                      row.enabled ? i18nT("ai_ontology.enabled2") : i18nT("ai_ontology.disabled")
+                    }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="200" align="center" fixed="right">
+              <el-table-column
+                :label="i18nT('ai_ontology.operations')"
+                width="200"
+                align="center"
+                fixed="right"
+              >
                 <template #default="{ row }">
                   <el-button
                     v-hasPerm="['module_ai:knowledge:update']"
@@ -270,7 +330,7 @@
                     :icon="Edit"
                     @click="openDsDialog(row)"
                   >
-                    编辑
+                    {{ i18nT("ai_ontology.edit") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_ai:knowledge:delete']"
@@ -280,7 +340,7 @@
                     :icon="Delete"
                     @click="deleteDatasources(row)"
                   >
-                    删除
+                    {{ i18nT("ai_ontology.delete2") }}
                   </el-button>
                 </template>
               </el-table-column>
@@ -291,163 +351,215 @@
     </div>
 
     <!-- 新建知识库分类 -->
-    <el-dialog v-model="catDialogVisible" title="新建分类" width="420px" append-to-body>
+    <el-dialog
+      v-model="catDialogVisible"
+      :title="i18nT('ai_ontology.newCategory')"
+      width="420px"
+      append-to-body
+    >
       <el-form :model="catForm" label-width="80px">
-        <el-form-item label="名称" required>
-          <el-input v-model="catForm.name" placeholder="分类名称" />
+        <el-form-item :label="i18nT('ai_ontology.name')" required>
+          <el-input v-model="catForm.name" :placeholder="i18nT('ai_ontology.categoryName')" />
         </el-form-item>
-        <el-form-item label="父分类">
+        <el-form-item :label="i18nT('ai_ontology.parentCategory')">
           <el-select
             v-model="catForm.parent_id"
             clearable
-            placeholder="顶级分类"
+            :placeholder="i18nT('ai_ontology.topLevelCategory')"
             style="width: 100%"
           >
             <el-option v-for="c in flatCatOptions" :key="c.id" :label="c.label" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="负责人">
-          <el-input v-model="catForm.owner" placeholder="选填，如：张三" />
+        <el-form-item :label="i18nT('ai_ontology.owner')">
+          <el-input
+            v-model="catForm.owner"
+            :placeholder="i18nT('ai_ontology.optionalEGZhangSan')"
+          />
         </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="catForm.remark" type="textarea" :rows="2" placeholder="选填" />
+        <el-form-item :label="i18nT('ai_ontology.remark')">
+          <el-input
+            v-model="catForm.remark"
+            type="textarea"
+            :rows="2"
+            :placeholder="i18nT('ai_ontology.optional')"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="catDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="catSaving" @click="saveCat">保存</el-button>
+        <el-button @click="catDialogVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
+        <el-button type="primary" :loading="catSaving" @click="saveCat">
+          {{ i18nT("ai_ontology.save") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 数据源测试结果 -->
-    <el-dialog v-model="dsTestVisible" title="数据源测试结果" width="600px" append-to-body>
+    <el-dialog
+      v-model="dsTestVisible"
+      :title="i18nT('ai_ontology.dataSourceTestResult')"
+      width="600px"
+      append-to-body
+    >
       <el-result
         :icon="dsTestResult.ok ? 'success' : 'error'"
-        :title="dsTestResult.ok ? '连接成功' : '连接失败'"
-        :sub-title="dsTestResult.message || '（无详情）'"
+        :title="
+          dsTestResult.ok ? i18nT('ai_ontology.connectSuccess') : i18nT('ai_ontology.connectFailed')
+        "
+        :sub-title="dsTestResult.message || i18nT('ai_ontology.noDetails')"
       />
       <div v-if="dsTestResult.data" class="ds-test-data">
-        <div class="ds-test-data__title">返回数据（前 20 行）</div>
+        <div class="ds-test-data__title">{{ i18nT("ai_ontology.returnedDataFirst20Rows") }}</div>
         <pre class="ds-test-data__body">{{ JSON.stringify(dsTestResult.data, null, 2) }}</pre>
       </div>
       <template #footer>
-        <el-button type="primary" @click="dsTestVisible = false">知道了</el-button>
+        <el-button type="primary" @click="dsTestVisible = false">
+          {{ i18nT("ai_ontology.gotIt") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 新建/编辑知识库 -->
     <el-dialog
       v-model="kbDialogVisible"
-      :title="editingKb ? '编辑知识库' : '新建知识库'"
+      :title="
+        editingKb ? i18nT('ai_ontology.editKnowledgeBase') : i18nT('ai_ontology.newKnowledgeBase')
+      "
       width="520px"
       append-to-body
       destroy-on-close
     >
       <el-form :model="kbForm" label-width="90px" size="default">
-        <el-form-item label="名称" required>
-          <el-input v-model="kbForm.name" placeholder="知识库名称" />
+        <el-form-item :label="i18nT('ai_ontology.name')" required>
+          <el-input v-model="kbForm.name" :placeholder="i18nT('ai_ontology.kbName')" />
         </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="kbForm.description" type="textarea" :rows="3" placeholder="描述" />
+        <el-form-item :label="i18nT('ai_ontology.description')">
+          <el-input
+            v-model="kbForm.description"
+            type="textarea"
+            :rows="3"
+            :placeholder="i18nT('ai_ontology.description')"
+          />
         </el-form-item>
-        <el-form-item label="分类">
+        <el-form-item :label="i18nT('ai_ontology.category')">
           <el-select
             v-model="kbForm.category_id"
             clearable
-            placeholder="选择分类（留空为未分类）"
+            :placeholder="i18nT('ai_ontology.selectCategoryEmptyUncategorized')"
             style="width: 100%"
           >
             <el-option v-for="c in flatCatOptions" :key="c.id" :label="c.label" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="嵌入模型">
+        <el-form-item :label="i18nT('ai_ontology.embeddingModel')">
           <el-select
             v-model="kbForm.model_id"
             clearable
             filterable
-            placeholder="留空则用确定性向量"
+            :placeholder="i18nT('ai_ontology.leaveEmptyForDeterministicVector')"
             style="width: 100%"
           >
             <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="i18nT('ai_ontology.enabled')">
           <el-switch v-model="kbForm.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="kbDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingKb" @click="saveKb">保存</el-button>
+        <el-button @click="kbDialogVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
+        <el-button type="primary" :loading="savingKb" @click="saveKb">
+          {{ i18nT("ai_ontology.save") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 文本入库 -->
     <el-dialog
       v-model="ingestDialogVisible"
-      title="文本入库"
+      :title="i18nT('ai_ontology.textIngest')"
       width="600px"
       append-to-body
       destroy-on-close
     >
       <el-form :model="ingestForm" label-width="90px" size="default">
-        <el-form-item label="目标库">
+        <el-form-item :label="i18nT('ai_ontology.targetKB')">
           <el-input :model-value="ingestTarget?.name" disabled />
         </el-form-item>
-        <el-form-item label="文件名">
-          <el-input v-model="ingestForm.file_name" placeholder="来源文件名（可选）" />
+        <el-form-item :label="i18nT('ai_ontology.fileName')">
+          <el-input
+            v-model="ingestForm.file_name"
+            :placeholder="i18nT('ai_ontology.sourceFileNameOptional')"
+          />
         </el-form-item>
-        <el-form-item label="原文内容" required>
+        <el-form-item :label="i18nT('ai_ontology.originalContent')" required>
           <el-input
             v-model="ingestForm.content"
             type="textarea"
             :rows="8"
-            placeholder="粘贴待入库文本"
+            :placeholder="i18nT('ai_ontology.pasteTextToIngest')"
           />
         </el-form-item>
-        <el-form-item label="分块大小">
+        <el-form-item :label="i18nT('ai_ontology.chunkSize')">
           <el-input-number v-model="ingestForm.chunk_size" :min="100" :max="2000" :step="50" />
         </el-form-item>
-        <el-form-item label="重叠">
+        <el-form-item :label="i18nT('ai_ontology.overlap')">
           <el-input-number v-model="ingestForm.overlap" :min="0" :max="400" :step="10" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="ingestDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="ingesting" @click="doIngest">入库</el-button>
+        <el-button @click="ingestDialogVisible = false">
+          {{ i18nT("ai_ontology.cancel") }}
+        </el-button>
+        <el-button type="primary" :loading="ingesting" @click="doIngest">
+          {{ i18nT("ai_ontology.ingest") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 检索测试 -->
     <el-dialog
       v-model="searchDialogVisible"
-      title="检索测试"
+      :title="i18nT('ai_ontology.searchTest')"
       width="600px"
       append-to-body
       destroy-on-close
     >
       <el-form :model="searchForm" label-width="90px" size="default">
-        <el-form-item label="查询">
-          <el-input v-model="searchForm.query" placeholder="输入检索问题" @keyup.enter="doSearch" />
+        <el-form-item :label="i18nT('ai_ontology.query')">
+          <el-input
+            v-model="searchForm.query"
+            :placeholder="i18nT('ai_ontology.enterASearchQuestion')"
+            @keyup.enter="doSearch"
+          />
         </el-form-item>
         <el-form-item label="Top K">
           <el-input-number v-model="searchForm.top_k" :min="1" :max="20" />
         </el-form-item>
         <el-form-item label="GraphRAG">
           <el-switch v-model="searchForm.use_graph" />
-          <span class="kb-opt-hint">开启后按知识图谱扩展相关实体</span>
+          <span class="kb-opt-hint">
+            {{ i18nT("ai_ontology.expandRelatedEntitiesByKnowledgeGraphWhenEnabled") }}
+          </span>
         </el-form-item>
       </el-form>
       <div v-loading="searching">
-        <el-empty v-if="!searchResults.length" description="输入查询后检索" :image-size="60" />
+        <el-empty
+          v-if="!searchResults.length"
+          :description="i18nT('ai_ontology.enterQueryToSearch')"
+          :image-size="60"
+        />
         <div v-for="(h, i) in searchResults" :key="i" class="search-hit">
           <div class="search-hit__meta">
-            <span class="search-hit__file">{{ h.file_name || "未知" }}</span>
-            <span class="search-hit__score">相似度 {{ h.score }}</span>
+            <span class="search-hit__file">{{ h.file_name || i18nT("ai_ontology.unknown") }}</span>
+            <span class="search-hit__score">
+              {{ i18nT("ai_ontology.similarityScore", { score: h.score }) }}
+            </span>
             <el-tag v-if="h.engine" size="small" effect="plain" :type="engineType(h.engine)">
               {{ engineLabel(h.engine) }}
             </el-tag>
             <el-tag v-if="h.graph_entity" size="small" type="warning" effect="plain">
-              图谱：{{ h.graph_entity }}
+              {{ i18nT("ai_ontology.graphEntityLabel", { entity: h.graph_entity }) }}
             </el-tag>
           </div>
           <div class="search-hit__content">{{ h.content }}</div>
@@ -458,17 +570,21 @@
     <!-- 图谱可视化 -->
     <el-dialog
       v-model="graphVisible"
-      :title="`知识图谱 · ${selectedKb?.name || ''}`"
+      :title="i18nT('ai_ontology.knowledgeGraphTitle', { name: selectedKb?.name || '' })"
       width="900px"
       height="560px"
       append-to-body
     >
       <div class="graph-dialog">
         <div class="graph-stats">
-          <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
-          <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
+          <el-tag type="success" effect="plain">
+            {{ i18nT("ai_ontology.entityNodeCount", { count: graphStats.nodes }) }}
+          </el-tag>
+          <el-tag type="warning" effect="plain">
+            {{ i18nT("ai_ontology.relationEdgeCount", { count: graphStats.edges }) }}
+          </el-tag>
           <span class="kb-opt-hint">
-            右键节点可编辑属性/绑定分块/加关系/删除，右键空白新建节点。
+            {{ i18nT("ai_ontology.graphCtxHint") }}
           </span>
         </div>
         <GraphCanvas
@@ -491,24 +607,42 @@
           @click.stop
         >
           <template v-if="ctxMenu.kind === 'node'">
-            <div class="graph-ctx__item" @click="ctxEditNode">编辑节点属性</div>
-            <div class="graph-ctx__item" @click="ctxBindNode">绑定分块</div>
-            <div class="graph-ctx__item" @click="ctxAddRel">添加关系</div>
-            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelNode">删除节点</div>
+            <div class="graph-ctx__item" @click="ctxEditNode">
+              {{ i18nT("ai_ontology.editNodeProperties") }}
+            </div>
+            <div class="graph-ctx__item" @click="ctxBindNode">
+              {{ i18nT("ai_ontology.bindChunk") }}
+            </div>
+            <div class="graph-ctx__item" @click="ctxAddRel">
+              {{ i18nT("ai_ontology.addRelation") }}
+            </div>
+            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelNode">
+              {{ i18nT("ai_ontology.deleteNode") }}
+            </div>
           </template>
           <template v-else-if="ctxMenu.kind === 'edge'">
-            <div class="graph-ctx__item" @click="ctxEditRel">编辑关系</div>
-            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelRel">删除关系</div>
+            <div class="graph-ctx__item" @click="ctxEditRel">
+              {{ i18nT("ai_ontology.editRelation") }}
+            </div>
+            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelRel">
+              {{ i18nT("ai_ontology.deleteRelation") }}
+            </div>
           </template>
           <template v-else>
-            <div class="graph-ctx__item" @click="ctxNewNode">新建节点</div>
+            <div class="graph-ctx__item" @click="ctxNewNode">
+              {{ i18nT("ai_ontology.newNode") }}
+            </div>
           </template>
         </div>
       </div>
     </el-dialog>
 
     <!-- 分块抽屉 -->
-    <el-drawer v-model="chunksVisible" :title="`分块 · ${chunksTarget?.name || ''}`" size="480px">
+    <el-drawer
+      v-model="chunksVisible"
+      :title="i18nT('ai_ontology.chunksTitle', { name: chunksTarget?.name || '' })"
+      size="480px"
+    >
       <el-table
         v-loading="loadingChunks"
         :data="chunks"
@@ -517,14 +651,24 @@
         border
         stripe
       >
-        <el-table-column prop="chunk_index" label="序号" width="60" align="center" />
-        <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
-        <el-table-column label="内容" min-width="200">
+        <el-table-column
+          prop="chunk_index"
+          :label="i18nT('ai_ontology.no2')"
+          width="60"
+          align="center"
+        />
+        <el-table-column
+          prop="file_name"
+          :label="i18nT('ai_ontology.source2')"
+          width="120"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.content')" min-width="200">
           <template #default="{ row }">
             <div class="chunk-content">{{ row.content }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="80" align="center">
           <template #default="{ row }">
             <el-button
               v-hasPerm="['module_ai:knowledge:delete']"
@@ -541,30 +685,32 @@
     <!-- 知识库详情抽屉（多 tab） -->
     <el-drawer
       v-model="detailVisible"
-      :title="`知识库管理 · ${detailKb?.name || ''}`"
+      :title="i18nT('ai_ontology.kbManageTitle', { name: detailKb?.name || '' })"
       size="820px"
       append-to-body
     >
       <el-tabs v-model="detailTab" class="detail-tabs">
         <!-- 概览 -->
-        <el-tab-pane label="概览" name="overview">
+        <el-tab-pane :label="i18nT('ai_ontology.overview')" name="overview">
           <div class="ov-stats">
-            <el-statistic title="分块" :value="detailChunkCount" />
-            <el-statistic title="图谱节点" :value="detailGraphNodes" />
-            <el-statistic title="图谱边" :value="detailGraphEdges" />
-            <el-statistic title="数据源" :value="detailDsCount" />
+            <el-statistic :title="i18nT('ai_ontology.chunk')" :value="detailChunkCount" />
+            <el-statistic :title="i18nT('ai_ontology.graphNodes')" :value="detailGraphNodes" />
+            <el-statistic :title="i18nT('ai_ontology.graphEdges')" :value="detailGraphEdges" />
+            <el-statistic :title="i18nT('ai_ontology.dataSource')" :value="detailDsCount" />
           </div>
           <el-form label-width="80px" size="small" class="ov-form">
-            <el-form-item label="描述">
+            <el-form-item :label="i18nT('ai_ontology.description')">
               <el-input v-model="detailDesc" type="textarea" :rows="2" />
             </el-form-item>
-            <el-form-item label="启用">
+            <el-form-item :label="i18nT('ai_ontology.enabled')">
               <el-switch v-model="detailEnabled" />
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" @click="saveDetailOverview">保存</el-button>
+              <el-button type="primary" @click="saveDetailOverview">
+                {{ i18nT("ai_ontology.save") }}
+              </el-button>
               <el-button type="warning" :loading="rebuilding" @click="rebuildDetail">
-                重建索引
+                {{ i18nT("ai_ontology.rebuildIndex") }}
               </el-button>
             </el-form-item>
           </el-form>
@@ -572,32 +718,32 @@
             type="info"
             :closable="false"
             show-icon
-            title="重建索引会重新向量化所有分块并重建图谱（Age 同步）。"
+            :title="i18nT('ai_ontology.rebuildIndexHint')"
           />
         </el-tab-pane>
 
         <!-- 文本入库 -->
-        <el-tab-pane label="文本入库" name="ingest">
+        <el-tab-pane :label="i18nT('ai_ontology.textIngest')" name="ingest">
           <el-form label-width="90px" size="small">
-            <el-form-item label="文件名">
+            <el-form-item :label="i18nT('ai_ontology.fileName')">
               <el-input v-model="detailIngest.file_name" />
             </el-form-item>
-            <el-form-item label="内容">
+            <el-form-item :label="i18nT('ai_ontology.content')">
               <el-input
                 v-model="detailIngest.content"
                 type="textarea"
                 :rows="6"
-                placeholder="粘贴待入库文本"
+                :placeholder="i18nT('ai_ontology.pasteTextToIngest')"
               />
             </el-form-item>
-            <el-form-item label="分段策略">
+            <el-form-item :label="i18nT('ai_ontology.splitStrategy')">
               <el-select v-model="detailIngest.strategy" style="width: 200px">
-                <el-option label="定长+重叠" value="fixed" />
-                <el-option label="按段落" value="paragraph" />
-                <el-option label="按句子" value="sentence" />
+                <el-option :label="i18nT('ai_ontology.fixedOverlap')" value="fixed" />
+                <el-option :label="i18nT('ai_ontology.byParagraph')" value="paragraph" />
+                <el-option :label="i18nT('ai_ontology.bySentence')" value="sentence" />
               </el-select>
             </el-form-item>
-            <el-form-item label="块大小/重叠">
+            <el-form-item :label="i18nT('ai_ontology.chunkSizeOverlap')">
               <el-input-number
                 v-model="detailIngest.chunk_size"
                 :min="100"
@@ -614,14 +760,14 @@
             </el-form-item>
             <el-form-item>
               <el-button type="primary" :loading="detailIngesting" @click="doDetailIngest">
-                入库
+                {{ i18nT("ai_ontology.ingest") }}
               </el-button>
             </el-form-item>
           </el-form>
         </el-tab-pane>
 
         <!-- 文档管理（wikiLLM/ima 式） -->
-        <el-tab-pane label="文档" name="documents">
+        <el-tab-pane :label="i18nT('ai_ontology.document')" name="documents">
           <el-upload
             drag
             :auto-upload="false"
@@ -633,26 +779,29 @@
           >
             <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
             <div class="el-upload__text">
-              拖拽文件到此处，或
-              <em>点击上传</em>
-              （txt/md/docx/pdf）
+              {{ i18nT("ai_ontology.dragFilesHereOr") }}
+              <em>{{ i18nT("ai_ontology.clickToUpload") }}</em>
+              {{ i18nT("ai_ontology.docFileExtHint") }}
             </div>
           </el-upload>
           <div class="doc-searchbar">
             <el-select v-model="docChunkSize" size="small" style="width: 130px">
-              <el-option label="块大小 200" :value="200" />
-              <el-option label="块大小 500" :value="500" />
-              <el-option label="块大小 1000" :value="1000" />
+              <el-option :label="i18nT('ai_ontology.chunkSizeValue', { size: 200 })" :value="200" />
+              <el-option :label="i18nT('ai_ontology.chunkSizeValue', { size: 500 })" :value="500" />
+              <el-option
+                :label="i18nT('ai_ontology.chunkSizeValue', { size: 1000 })"
+                :value="1000"
+              />
             </el-select>
             <el-select v-model="docStrategy" size="small" style="width: 130px">
-              <el-option label="定长+重叠" value="fixed" />
-              <el-option label="按段落" value="paragraph" />
-              <el-option label="按句子" value="sentence" />
-              <el-option label="按标题树" value="heading" />
+              <el-option :label="i18nT('ai_ontology.fixedOverlap')" value="fixed" />
+              <el-option :label="i18nT('ai_ontology.byParagraph')" value="paragraph" />
+              <el-option :label="i18nT('ai_ontology.bySentence')" value="sentence" />
+              <el-option :label="i18nT('ai_ontology.byTitleTree')" value="heading" />
             </el-select>
             <el-select v-model="docUseOcr" size="small" style="width: 130px">
-              <el-option label="自动解析" :value="true" />
-              <el-option label="仅文本层" :value="false" />
+              <el-option :label="i18nT('ai_ontology.autoParse')" :value="true" />
+              <el-option :label="i18nT('ai_ontology.textLayerOnly')" :value="false" />
             </el-select>
             <el-button
               size="small"
@@ -661,7 +810,7 @@
               :disabled="!selectedDocIds.length"
               @click="batchDeleteDocs"
             >
-              批量删除（{{ selectedDocIds.length }}）
+              {{ i18nT("ai_ontology.batchDeleteWithCount", { count: selectedDocIds.length }) }}
             </el-button>
           </div>
           <el-table
@@ -674,17 +823,27 @@
             @selection-change="(sel: any[]) => (selectedDocIds = sel.map((s) => s.id))"
           >
             <el-table-column type="selection" width="42" />
-            <el-table-column prop="name" label="文档" min-width="180" show-overflow-tooltip />
-            <el-table-column label="类型" width="70" align="center">
+            <el-table-column
+              prop="name"
+              :label="i18nT('ai_ontology.document')"
+              min-width="180"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="i18nT('ai_ontology.type')" width="70" align="center">
               <template #default="{ row }">
                 <el-tag size="small" type="info" effect="plain">{{ row.file_type }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="大小" width="90" align="center">
+            <el-table-column :label="i18nT('ai_ontology.size2')" width="90" align="center">
               <template #default="{ row }">{{ fmtSize(row.size) }}</template>
             </el-table-column>
-            <el-table-column prop="chunk_count" label="分块" width="70" align="center" />
-            <el-table-column label="进度" width="150" align="center">
+            <el-table-column
+              prop="chunk_count"
+              :label="i18nT('ai_ontology.chunk')"
+              width="70"
+              align="center"
+            />
+            <el-table-column :label="i18nT('ai_ontology.progress')" width="150" align="center">
               <template #default="{ row }">
                 <template v-if="row.task">
                   <el-progress
@@ -693,66 +852,79 @@
                     :stroke-width="6"
                   />
                   <el-tooltip v-if="row.task.error" :content="row.task.error" placement="top">
-                    <el-tag size="small" type="danger" effect="plain">失败原因</el-tag>
+                    <el-tag size="small" type="danger" effect="plain">
+                      {{ i18nT("ai_ontology.failureReason") }}
+                    </el-tag>
                   </el-tooltip>
                 </template>
                 <el-tag v-else size="small" type="success" effect="plain">
-                  {{ row.doc_status === "ready" ? "就绪" : row.doc_status || "就绪" }}
+                  {{
+                    row.doc_status === "ready"
+                      ? i18nT("ai_ontology.ready")
+                      : row.doc_status || i18nT("ai_ontology.ready")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="时间" width="150">
+            <el-table-column :label="i18nT('ai_ontology.time')" width="150">
               <template #default="{ row }">{{ row.created_time }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="210" align="center">
+            <el-table-column :label="i18nT('ai_ontology.operations')" width="210" align="center">
               <template #default="{ row }">
                 <el-button icon="View" link type="primary" size="small" @click="previewDoc(row)">
-                  预览
+                  {{ i18nT("ai_ontology.preview") }}
                 </el-button>
                 <el-button icon="Refresh" link type="warning" size="small" @click="reparseDoc(row)">
-                  重建
+                  {{ i18nT("ai_ontology.rebuild") }}
                 </el-button>
                 <el-button icon="Download" link size="small" @click="downloadDoc(row)">
-                  下载
+                  {{ i18nT("ai_ontology.download") }}
                 </el-button>
                 <el-button icon="delete" link type="danger" size="small" @click="deleteDoc(row)">
-                  删除
+                  {{ i18nT("ai_ontology.delete2") }}
                 </el-button>
               </template>
             </el-table-column>
           </el-table>
           <el-empty
             v-if="!documents.length && !loadingDocs"
-            description="暂无文档"
+            :description="i18nT('ai_ontology.noDocuments')"
             :image-size="60"
           />
 
           <div class="faq-bar">
             <el-button size="small" type="primary" plain :loading="faqLoading" @click="exportFaq">
-              导出 FAQ 缓存
+              {{ i18nT("ai_ontology.exportFaqCache") }}
             </el-button>
           </div>
 
           <el-divider />
           <div class="qa-block">
-            <div class="qa-block__title">引用溯源问答</div>
+            <div class="qa-block__title">{{ i18nT("ai_ontology.citedSourceQA") }}</div>
             <div class="dt-search">
               <el-input
                 v-model="qaQuery"
-                placeholder="输入问题，AI 结合知识库回答并标注引用来源"
+                :placeholder="i18nT('ai_ontology.qaInputPlaceholder')"
                 @keyup.enter="doQaSearch"
               />
-              <el-button type="primary" :loading="qaSearching" @click="doQaSearch">问答</el-button>
+              <el-button type="primary" :loading="qaSearching" @click="doQaSearch">
+                {{ i18nT("ai_ontology.qA") }}
+              </el-button>
             </div>
             <div v-if="qaAnswer" class="qa-answer" @click="onQaClick" v-html="qaAnswerHtml"></div>
             <div v-if="qaRefs.length" class="qa-refs">
-              <div class="qa-refs__title">引用来源（点击回答中的角标查看位置）</div>
+              <div class="qa-refs__title">
+                {{ i18nT("ai_ontology.referenceSourceClickTheBadgeInTheAnswerToSeeLocation") }}
+              </div>
               <div v-for="ref in qaRefs" :key="ref.index" class="qa-ref">
                 <el-tag size="small" type="info" effect="plain">[{{ ref.index }}]</el-tag>
                 <span class="qa-ref__file">{{ ref.file }}</span>
                 <span v-if="ref.page || ref.start_line" class="qa-ref__loc">
-                  {{ ref.page ? `第${ref.page}页` : "" }}{{ ref.page && ref.start_line ? "，" : ""
-                  }}{{ ref.start_line ? `第${ref.start_line}行` : "" }}
+                  {{ ref.page ? i18nT("ai_ontology.pageLoc", { page: ref.page }) : ""
+                  }}{{ ref.page && ref.start_line ? "，" : ""
+                  }}{{
+                    ref.start_line ? i18nT("ai_ontology.lineLoc", { line: ref.start_line }) : ""
+                  }}
                 </span>
                 <el-button
                   v-if="ref.rustfs_url"
@@ -761,7 +933,7 @@
                   size="small"
                   @click="openRustfs(ref.rustfs_url)"
                 >
-                  原文档
+                  {{ i18nT("ai_ontology.originalDocument") }}
                 </el-button>
               </div>
             </div>
@@ -769,10 +941,10 @@
         </el-tab-pane>
 
         <!-- 分块 -->
-        <el-tab-pane label="分块" name="chunks">
+        <el-tab-pane :label="i18nT('ai_ontology.chunk')" name="chunks">
           <div class="chunk-toolbar">
             <el-button size="small" :disabled="!detailChunks.length" @click="exportChunksCsv">
-              导出 CSV
+              {{ i18nT("ai_ontology.exportCsv") }}
             </el-button>
           </div>
           <el-table
@@ -784,16 +956,25 @@
             stripe
           >
             <el-table-column prop="chunk_index" label="#" width="60" align="center" />
-            <el-table-column label="类型" width="70" align="center">
+            <el-table-column :label="i18nT('ai_ontology.type')" width="70" align="center">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.is_parent ? 'info' : 'primary'" effect="plain">
-                  {{ row.is_parent ? "父块" : "子块" }}
+                  {{
+                    row.is_parent
+                      ? i18nT("ai_ontology.parentChunk")
+                      : i18nT("ai_ontology.childChunk")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="token_count" label="Token" width="76" align="center" />
-            <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
-            <el-table-column label="内容" min-width="200">
+            <el-table-column
+              prop="file_name"
+              :label="i18nT('ai_ontology.source2')"
+              width="120"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="i18nT('ai_ontology.content')" min-width="200">
               <template #default="{ row }">
                 <div>{{ row.content }}</div>
                 <div v-if="(row.annotations || []).length" class="chunk-ann-tags">
@@ -809,10 +990,10 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" align="center">
+            <el-table-column :label="i18nT('ai_ontology.operations')" width="150" align="center">
               <template #default="{ row }">
                 <el-button icon="edit" link type="primary" size="small" @click="openChunkEdit(row)">
-                  编辑
+                  {{ i18nT("ai_ontology.edit") }}
                 </el-button>
                 <el-button
                   icon="EditPen"
@@ -821,7 +1002,7 @@
                   size="small"
                   @click="openAnnotation(row)"
                 >
-                  标注
+                  {{ i18nT("ai_ontology.annotate") }}
                 </el-button>
                 <el-button
                   link
@@ -836,28 +1017,28 @@
         </el-tab-pane>
 
         <!-- 检索测试 -->
-        <el-tab-pane label="检索测试" name="search">
+        <el-tab-pane :label="i18nT('ai_ontology.searchTest')" name="search">
           <div class="dt-search">
             <el-select v-model="detailSearchMode" style="width: 130px">
-              <el-option label="混合" value="hybrid" />
-              <el-option label="向量" value="vector" />
-              <el-option label="中文全文" value="fulltext" />
-              <el-option label="图谱" value="graph" />
-              <el-option label="子串全文" value="grep" />
+              <el-option :label="i18nT('ai_ontology.hybrid')" value="hybrid" />
+              <el-option :label="i18nT('ai_ontology.vector')" value="vector" />
+              <el-option :label="i18nT('ai_ontology.chineseFullText')" value="fulltext" />
+              <el-option :label="i18nT('ai_ontology.graph2')" value="graph" />
+              <el-option :label="i18nT('ai_ontology.substringFullText')" value="grep" />
             </el-select>
             <el-input
               v-model="detailQuery"
-              placeholder="输入检索"
+              :placeholder="i18nT('ai_ontology.inputToSearch')"
               style="flex: 1"
               @keyup.enter="doDetailSearch"
             />
             <el-button type="primary" :loading="detailSearching" @click="doDetailSearch">
-              检索
+              {{ i18nT("ai_ontology.search2") }}
             </el-button>
-            <el-button @click="openGraph(detailKb)">图谱</el-button>
+            <el-button @click="openGraph(detailKb)">{{ i18nT("ai_ontology.graph2") }}</el-button>
           </div>
           <div v-if="detailSearchMode === 'hybrid'" class="dt-weights">
-            <span class="dt-weight-label">混合权重</span>
+            <span class="dt-weight-label">{{ i18nT("ai_ontology.hybridWeight") }}</span>
             <el-input-number
               v-model="detailVectorWeight"
               :min="0"
@@ -866,7 +1047,7 @@
               size="small"
               controls-position="right"
             />
-            <span class="dt-weight-label">向量</span>
+            <span class="dt-weight-label">{{ i18nT("ai_ontology.vector") }}</span>
             <el-input-number
               v-model="detailFulltextWeight"
               :min="0"
@@ -875,10 +1056,10 @@
               size="small"
               controls-position="right"
             />
-            <span class="dt-weight-label">全文</span>
+            <span class="dt-weight-label">{{ i18nT("ai_ontology.fullText") }}</span>
           </div>
           <div class="dt-weights">
-            <span class="dt-weight-label">相似度下限</span>
+            <span class="dt-weight-label">{{ i18nT("ai_ontology.similarityThreshold") }}</span>
             <el-input-number
               v-model="detailMinScore"
               :min="0"
@@ -887,40 +1068,49 @@
               size="small"
               controls-position="right"
             />
-            <span class="dt-weight-label">文件过滤</span>
+            <span class="dt-weight-label">{{ i18nT("ai_ontology.fileFilter") }}</span>
             <el-input
               v-model="detailFileFilter"
               size="small"
-              placeholder="文件名（可空）"
+              :placeholder="i18nT('ai_ontology.fileNameOptional')"
               style="width: 180px"
             />
             <span class="dt-weight-label">Rerank</span>
             <el-switch v-model="detailUseRerank" size="small" />
-            <span class="dt-weight-label">查询改写</span>
+            <span class="dt-weight-label">{{ i18nT("ai_ontology.queryRewrite") }}</span>
             <el-select v-model="detailRewrite" size="small" style="width: 130px">
-              <el-option label="关闭" value="off" />
+              <el-option :label="i18nT('ai_ontology.close')" value="off" />
               <el-option label="multi-query" value="multi_query" />
               <el-option label="HyDE" value="hyde" />
             </el-select>
           </div>
           <el-empty
             v-if="!detailSearchResults.length"
-            description="输入查询后检索"
+            :description="i18nT('ai_ontology.enterQueryToSearch')"
             :image-size="60"
           />
           <div v-for="(h, i) in detailSearchResults" :key="i" class="search-hit">
             <div class="search-hit__meta">
-              <span class="search-hit__file">{{ h.file_name || "未知" }}</span>
-              <span class="search-hit__score">得分 {{ h.score }}</span>
+              <span class="search-hit__file">
+                {{ h.file_name || i18nT("ai_ontology.unknown") }}
+              </span>
+              <span class="search-hit__score">
+                {{ i18nT("ai_ontology.scoreValue", { score: h.score }) }}
+              </span>
               <span v-if="h.timings" class="search-hit__score">
-                耗时 {{ h.timings.total_ms }}ms · 嵌入 {{ h.timings.embed_ms }}ms · 重排
-                {{ rerankLabel(h.timings.rerank) }}
+                {{
+                  i18nT("ai_ontology.searchTimings", {
+                    total: h.timings.total_ms,
+                    embed: h.timings.embed_ms,
+                    rerank: rerankLabel(h.timings.rerank),
+                  })
+                }}
               </span>
               <el-tag size="small" effect="plain" :type="engineType(h.engine)">
                 {{ engineLabel(h.engine) }}
               </el-tag>
               <el-tag v-if="h.graph_entity" size="small" type="warning" effect="plain">
-                图谱：{{ h.graph_entity }}
+                {{ i18nT("ai_ontology.graphEntityLabel", { entity: h.graph_entity }) }}
               </el-tag>
               <el-button
                 icon="EditPen"
@@ -932,10 +1122,10 @@
                   openAnnotation({ id: h.chunk_id, content: h.content, file_name: h.file_name })
                 "
               >
-                + 标注此分块
+                {{ i18nT("ai_ontology.annotateThisChunk") }}
               </el-button>
               <el-button icon="Aim" link type="primary" size="small" @click="locateInGraph(h)">
-                图谱定位
+                {{ i18nT("ai_ontology.graphLocate") }}
               </el-button>
             </div>
             <div class="search-hit__content" v-html="highlight(h.content, detailQuery)"></div>
@@ -943,7 +1133,9 @@
           <el-divider />
           <div class="dt-suggest">
             <div class="dt-suggest__head">
-              <span class="dt-suggest__title">检索失败？推测相关分块并标注</span>
+              <span class="dt-suggest__title">
+                {{ i18nT("ai_ontology.searchFailedSuggestRelatedChunksAndAnnotate") }}
+              </span>
               <el-button
                 size="small"
                 type="primary"
@@ -952,7 +1144,7 @@
                 :disabled="!detailQuery.trim()"
                 @click="loadSuggest"
               >
-                推测相关分块
+                {{ i18nT("ai_ontology.suggestRelatedChunks") }}
               </el-button>
             </div>
             <el-alert
@@ -964,10 +1156,18 @@
             />
             <div v-for="(s, si) in suggestList" :key="si" class="search-hit">
               <div class="search-hit__meta">
-                <span class="search-hit__file">{{ s.file_name || "未知" }}</span>
-                <span class="search-hit__score">相似 {{ s.similarity }}</span>
-                <el-tag v-if="s.hit" size="small" type="success" effect="plain">已命中</el-tag>
-                <el-tag v-else size="small" type="warning" effect="plain">未命中，建议标注</el-tag>
+                <span class="search-hit__file">
+                  {{ s.file_name || i18nT("ai_ontology.unknown") }}
+                </span>
+                <span class="search-hit__score">
+                  {{ i18nT("ai_ontology.similarValue", { score: s.similarity }) }}
+                </span>
+                <el-tag v-if="s.hit" size="small" type="success" effect="plain">
+                  {{ i18nT("ai_ontology.hit") }}
+                </el-tag>
+                <el-tag v-else size="small" type="warning" effect="plain">
+                  {{ i18nT("ai_ontology.notHitSuggestAnnotating") }}
+                </el-tag>
                 <el-button
                   icon="EditPen"
                   link
@@ -983,7 +1183,7 @@
                     })
                   "
                 >
-                  + 标注此分块
+                  {{ i18nT("ai_ontology.annotateThisChunk") }}
                 </el-button>
               </div>
               <div class="search-hit__content" v-html="highlight(s.content, detailQuery)"></div>
@@ -992,34 +1192,40 @@
         </el-tab-pane>
 
         <!-- 标注台账 -->
-        <el-tab-pane label="标注台账" name="logs">
+        <el-tab-pane :label="i18nT('ai_ontology.annotationLedger')" name="logs">
           <div class="log-toolbar">
             <el-select
               v-model="logSourceFilter"
               size="small"
-              placeholder="来源"
+              :placeholder="i18nT('ai_ontology.source2')"
               clearable
               style="width: 120px"
             >
-              <el-option label="手动" value="manual" />
-              <el-option label="检索" value="search" />
-              <el-option label="自动" value="auto" />
-              <el-option label="图谱" value="graph" />
+              <el-option :label="i18nT('ai_ontology.manual')" value="manual" />
+              <el-option :label="i18nT('ai_ontology.search2')" value="search" />
+              <el-option :label="i18nT('ai_ontology.auto')" value="auto" />
+              <el-option :label="i18nT('ai_ontology.graph2')" value="graph" />
             </el-select>
             <el-select
               v-model="logKindFilter"
               size="small"
-              placeholder="类型"
+              :placeholder="i18nT('ai_ontology.type')"
               clearable
               style="width: 120px"
             >
-              <el-option label="别名" value="alias" />
-              <el-option label="锚点" value="anchor" />
-              <el-option label="备注" value="note" />
+              <el-option :label="i18nT('ai_ontology.alias')" value="alias" />
+              <el-option :label="i18nT('ai_ontology.anchor')" value="anchor" />
+              <el-option :label="i18nT('ai_ontology.remark')" value="note" />
             </el-select>
-            <el-tag size="small" type="info" effect="plain">共 {{ filteredLogs.length }} 条</el-tag>
-            <el-tag size="small" type="success" effect="plain">添加 {{ statAdd }}</el-tag>
-            <el-tag size="small" type="danger" effect="plain">删除 {{ statRemove }}</el-tag>
+            <el-tag size="small" type="info" effect="plain">
+              {{ i18nT("ai_ontology.totalCount", { count: filteredLogs.length }) }}
+            </el-tag>
+            <el-tag size="small" type="success" effect="plain">
+              {{ i18nT("ai_ontology.addedCount", { count: statAdd }) }}
+            </el-tag>
+            <el-tag size="small" type="danger" effect="plain">
+              {{ i18nT("ai_ontology.deletedCount", { count: statRemove }) }}
+            </el-tag>
           </div>
           <el-table
             v-loading="loadingLogs"
@@ -1029,63 +1235,72 @@
             border
             stripe
           >
-            <el-table-column label="时间" width="160">
+            <el-table-column :label="i18nT('ai_ontology.time')" width="160">
               <template #default="{ row }">{{ row.created_time }}</template>
             </el-table-column>
-            <el-table-column label="分块" width="70" align="center">
+            <el-table-column :label="i18nT('ai_ontology.chunk')" width="70" align="center">
               <template #default="{ row }">#{{ row.chunk_id }}</template>
             </el-table-column>
-            <el-table-column label="动作" width="70" align="center">
+            <el-table-column :label="i18nT('ai_ontology.action')" width="70" align="center">
               <template #default="{ row }">
                 <el-tag
                   size="small"
                   :type="row.action === 'add' ? 'success' : 'danger'"
                   effect="plain"
                 >
-                  {{ row.action === "add" ? "添加" : "删除" }}
+                  {{
+                    row.action === "add" ? i18nT("ai_ontology.added") : i18nT("ai_ontology.deleted")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="标注" min-width="140">
+            <el-table-column :label="i18nT('ai_ontology.annotate')" min-width="140">
               <template #default="{ row }">{{ row.text }}</template>
             </el-table-column>
-            <el-table-column label="类型" width="70" align="center">
+            <el-table-column :label="i18nT('ai_ontology.type')" width="70" align="center">
               <template #default="{ row }">{{ annotKindLabel(row.kind) }}</template>
             </el-table-column>
-            <el-table-column label="来源" width="90" align="center">
+            <el-table-column :label="i18nT('ai_ontology.source2')" width="90" align="center">
               <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
             </el-table-column>
-            <el-table-column label="触发查询" min-width="140" show-overflow-tooltip>
+            <el-table-column
+              :label="i18nT('ai_ontology.triggerQuery')"
+              min-width="140"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">{{ row.query || "—" }}</template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
 
         <!-- 检索统计 -->
-        <el-tab-pane label="检索统计" name="stats">
+        <el-tab-pane :label="i18nT('ai_ontology.searchStats')" name="stats">
           <el-form inline size="small" class="stats-days">
-            <el-form-item label="近">
+            <el-form-item :label="i18nT('ai_ontology.recent')">
               <el-input-number v-model="statsDays" :min="7" :max="90" :step="1" size="small" />
             </el-form-item>
-            <el-form-item label="天">
+            <el-form-item :label="i18nT('ai_ontology.days')">
               <el-button type="primary" size="small" :loading="loadingStats" @click="loadStats">
-                刷新
+                {{ i18nT("ai_ontology.refresh") }}
               </el-button>
             </el-form-item>
           </el-form>
           <div v-loading="loadingStats" class="stats-cards">
-            <el-statistic title="检索次数" :value="searchStats.total" />
+            <el-statistic :title="i18nT('ai_ontology.searchCount')" :value="searchStats.total" />
             <el-statistic
-              title="命中率"
+              :title="i18nT('ai_ontology.hitRate')"
               :value="(searchStats.hit_rate || 0) * 100"
               :precision="0"
               suffix="%"
             />
-            <el-statistic title="平均命中" :value="searchStats.avg_hits" />
-            <el-statistic title="空命中" :value="searchStats.zero_hit_count" />
+            <el-statistic :title="i18nT('ai_ontology.averageHits')" :value="searchStats.avg_hits" />
+            <el-statistic
+              :title="i18nT('ai_ontology.emptyHit')"
+              :value="searchStats.zero_hit_count"
+            />
           </div>
           <div class="stats-engine">
-            <span class="stats-engine__label">引擎分布：</span>
+            <span class="stats-engine__label">{{ i18nT("ai_ontology.engineDistribution") }}</span>
             <el-tag
               v-for="(cnt, eng) in searchStats.engine_dist"
               :key="eng"
@@ -1096,36 +1311,51 @@
               {{ engineLabel(String(eng)) }} × {{ cnt }}
             </el-tag>
             <span v-if="!Object.keys(searchStats.engine_dist || {}).length" class="kb-opt-hint">
-              暂无数据
+              {{ i18nT("ai_ontology.noData") }}
             </span>
           </div>
           <el-table :data="searchStats.trend || []" size="small" max-height="40vh" border stripe>
-            <el-table-column prop="date" label="日期" width="150" />
-            <el-table-column prop="count" label="检索次数" width="100" align="center" />
-            <el-table-column prop="hits" label="命中总数" width="100" align="center" />
+            <el-table-column prop="date" :label="i18nT('ai_ontology.date')" width="150" />
+            <el-table-column
+              prop="count"
+              :label="i18nT('ai_ontology.searchCount')"
+              width="100"
+              align="center"
+            />
+            <el-table-column
+              prop="hits"
+              :label="i18nT('ai_ontology.totalHits')"
+              width="100"
+              align="center"
+            />
           </el-table>
           <el-empty
             v-if="!(searchStats.trend || []).length"
-            description="暂无检索记录"
+            :description="i18nT('ai_ontology.noSearchRecords')"
             :image-size="60"
           />
         </el-tab-pane>
 
         <!-- 评测（数据集 / 配置 / 运行记录） -->
-        <el-tab-pane label="评测" name="eval">
+        <el-tab-pane :label="i18nT('ai_ontology.eval')" name="eval">
           <el-form inline size="small" class="stats-days">
-            <el-form-item label="数据集">
+            <el-form-item :label="i18nT('ai_ontology.dataset')">
               <el-select
                 v-model="evalSetId"
                 size="small"
-                placeholder="选择评测集"
+                :placeholder="i18nT('ai_ontology.selectEvalSet')"
                 style="width: 220px"
                 @change="loadEvalRuns"
               >
                 <el-option
                   v-for="s in evalSets"
                   :key="s.id"
-                  :label="`${s.name}（${(s.kb_ids || []).length} 库）`"
+                  :label="
+                    i18nT('ai_ontology.evalSetKbCount', {
+                      name: s.name,
+                      count: (s.kb_ids || []).length,
+                    })
+                  "
                   :value="s.id"
                 />
               </el-select>
@@ -1142,11 +1372,13 @@
                 :loading="evalRunning"
                 @click="startEval"
               >
-                运行评测
+                {{ i18nT("ai_ontology.runEval") }}
               </el-button>
             </el-form-item>
             <el-form-item>
-              <el-button size="small" @click="loadEvalSets">刷新数据集</el-button>
+              <el-button size="small" @click="loadEvalSets">
+                {{ i18nT("ai_ontology.refreshDataset") }}
+              </el-button>
             </el-form-item>
           </el-form>
           <el-progress
@@ -1158,7 +1390,11 @@
           />
           <el-table :data="evalRuns" size="small" max-height="50vh" border stripe>
             <el-table-column prop="id" label="#" width="60" align="center" />
-            <el-table-column label="配置" min-width="180" show-overflow-tooltip>
+            <el-table-column
+              :label="i18nT('ai_ontology.config')"
+              min-width="180"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">
                 {{ evalConfigLabel(row.config) }}
               </template>
@@ -1172,45 +1408,59 @@
             <el-table-column label="NDCG@K" width="100" align="center">
               <template #default="{ row }">{{ metricPct(row.metrics?.ndcg) }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="110" align="center">
+            <el-table-column :label="i18nT('ai_ontology.status')" width="110" align="center">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.status === 'succeeded' ? 'success' : 'info'">
                   {{ row.status }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="时间" width="160">
+            <el-table-column :label="i18nT('ai_ontology.time')" width="160">
               <template #default="{ row }">{{ row.created_time }}</template>
             </el-table-column>
           </el-table>
           <el-empty
             v-if="!evalRuns.length"
-            description="选择数据集后运行评测，或用接口创建评测集与条目"
+            :description="
+              i18nT('ai_ontology.selectADatasetToRunEvalOrCreateEvalSetsAndItemsViaAPI')
+            "
             :image-size="60"
           />
         </el-tab-pane>
 
         <!-- 图谱（内嵌可视化 + 编辑） -->
-        <el-tab-pane label="图谱" name="graph">
+        <el-tab-pane :label="i18nT('ai_ontology.graph2')" name="graph">
           <div v-loading="graphLoading" class="graph-view">
             <div class="graph-stats">
-              <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
-              <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
+              <el-tag type="success" effect="plain">
+                {{ i18nT("ai_ontology.entityNodeCount", { count: graphStats.nodes }) }}
+              </el-tag>
+              <el-tag type="warning" effect="plain">
+                {{ i18nT("ai_ontology.relationEdgeCount", { count: graphStats.edges }) }}
+              </el-tag>
               <el-button size="small" type="primary" plain @click="ctxNewNode">
-                + 新建节点
+                {{ i18nT("ai_ontology.newNodeAdd") }}
               </el-button>
               <el-button size="small" type="success" plain @click="openAddRel">
-                + 新建关系
+                {{ i18nT("ai_ontology.newRelationAdd") }}
               </el-button>
               <el-button size="small" :loading="graphSavingLayout" @click="saveLayout">
-                保存布局
+                {{ i18nT("ai_ontology.saveLayout") }}
               </el-button>
-              <el-button size="small" @click="relayoutGraph">重新布局</el-button>
-              <el-button size="small" @click="() => reloadGraph()">刷新</el-button>
-              <el-button size="small" @click="openRelationTypeDialog">关系模板</el-button>
-              <el-button size="small" @click="exportGraphImage">导出图片</el-button>
+              <el-button size="small" @click="relayoutGraph">
+                {{ i18nT("ai_ontology.reLayout") }}
+              </el-button>
+              <el-button size="small" @click="() => reloadGraph()">
+                {{ i18nT("ai_ontology.refresh") }}
+              </el-button>
+              <el-button size="small" @click="openRelationTypeDialog">
+                {{ i18nT("ai_ontology.relationTemplate") }}
+              </el-button>
+              <el-button size="small" @click="exportGraphImage">
+                {{ i18nT("ai_ontology.exportImage") }}
+              </el-button>
               <el-button size="small" type="primary" plain @click="graphFullscreenVisible = true">
-                全屏
+                {{ i18nT("ai_ontology.fullscreen") }}
               </el-button>
               <el-button
                 size="small"
@@ -1219,7 +1469,7 @@
                 :disabled="!selectedNames.size"
                 @click="batchDeleteNodes"
               >
-                批量删除{{ selectedNames.size ? ` (${selectedNames.size})` : "" }}
+                {{ i18nT("ai_ontology.batchDeleteNodes", { count: selectedNames.size }) }}
               </el-button>
               <el-button
                 v-if="selectedNames.size"
@@ -1229,12 +1479,12 @@
                   reloadGraph();
                 "
               >
-                清空选择
+                {{ i18nT("ai_ontology.clearSelection") }}
               </el-button>
               <el-switch
                 v-model="multiSelect"
                 size="small"
-                active-text="多选模式"
+                :active-text="i18nT('ai_ontology.multiSelectMode')"
                 @change="
                   selectedNames = new Set();
                   reloadGraph();
@@ -1243,7 +1493,7 @@
               <el-switch
                 v-model="linkMode"
                 size="small"
-                active-text="连线模式"
+                :active-text="i18nT('ai_ontology.edgeMode')"
                 @change="linkSource = null"
               />
               <el-select
@@ -1252,26 +1502,34 @@
                 style="width: 110px"
                 @change="onGraphLayoutChange"
               >
-                <el-option label="力导向" value="cose" />
-                <el-option label="同心圆" value="concentric" />
-                <el-option label="网格" value="grid" />
-                <el-option label="环形" value="circle" />
-                <el-option label="层级" value="breadthfirst" />
+                <el-option :label="i18nT('ai_ontology.forceDirected')" value="cose" />
+                <el-option :label="i18nT('ai_ontology.concentric')" value="concentric" />
+                <el-option :label="i18nT('ai_ontology.grid')" value="grid" />
+                <el-option :label="i18nT('ai_ontology.ring')" value="circle" />
+                <el-option :label="i18nT('ai_ontology.level')" value="breadthfirst" />
               </el-select>
               <el-switch
                 v-model="physicsMode"
                 size="small"
-                active-text="物理模式"
+                :active-text="i18nT('ai_ontology.physicsMode')"
                 @change="() => onGraphLayoutChange(graphLayout)"
               />
-              <el-button size="small" @click="() => graphCanvasRef?.fit?.()">适配</el-button>
-              <el-button size="small" @click="() => graphCanvasRef?.zoom?.(1.25)">放大</el-button>
-              <el-button size="small" @click="() => graphCanvasRef?.zoom?.(0.8)">缩小</el-button>
-              <el-button size="small" @click="() => graphCanvasRef?.center?.()">居中</el-button>
+              <el-button size="small" @click="() => graphCanvasRef?.fit?.()">
+                {{ i18nT("ai_ontology.fit") }}
+              </el-button>
+              <el-button size="small" @click="() => graphCanvasRef?.zoom?.(1.25)">
+                {{ i18nT("ai_ontology.zoomIn") }}
+              </el-button>
+              <el-button size="small" @click="() => graphCanvasRef?.zoom?.(0.8)">
+                {{ i18nT("ai_ontology.zoomOut") }}
+              </el-button>
+              <el-button size="small" @click="() => graphCanvasRef?.center?.()">
+                {{ i18nT("ai_ontology.center") }}
+              </el-button>
               <el-input
                 v-model="graphSearch"
                 size="small"
-                placeholder="搜索节点"
+                :placeholder="i18nT('ai_ontology.searchNodes')"
                 style="width: 130px"
                 clearable
                 @keyup.enter="onGraphSearch"
@@ -1283,12 +1541,18 @@
               <el-switch
                 v-model="shortestMode"
                 size="small"
-                active-text="最短路径"
+                :active-text="i18nT('ai_ontology.shortestPath')"
                 @change="graphCanvasRef?.fit?.()"
               />
-              <el-button size="small" @click="graphStatsVisible = true">统计</el-button>
-              <el-button size="small" @click="edgeStyleVisible = true">连线样式</el-button>
-              <el-button size="small" @click="nodeStyleVisible = true">节点样式</el-button>
+              <el-button size="small" @click="graphStatsVisible = true">
+                {{ i18nT("ai_ontology.stats") }}
+              </el-button>
+              <el-button size="small" @click="edgeStyleVisible = true">
+                {{ i18nT("ai_ontology.edgeStyle") }}
+              </el-button>
+              <el-button size="small" @click="nodeStyleVisible = true">
+                {{ i18nT("ai_ontology.nodeStyle") }}
+              </el-button>
               <el-select v-model="graphTheme" size="small" style="width: 90px">
                 <el-option
                   v-for="t in THEME_OPTIONS"
@@ -1305,11 +1569,11 @@
               </span>
             </div>
             <div class="kb-opt-hint">
-              右键节点编辑属性/绑定分块/加关系/删除，右键空白新建节点；「新建关系」选两个节点+关系类型自动连线；拖动后可「保存布局」记住位置；多选模式下点击节点可多选批量删除。
+              {{ i18nT("ai_ontology.graphHint") }}
             </div>
             <el-empty
               v-if="!graphNodes.length"
-              description="暂无节点，右键画布或点「新建节点」创建"
+              :description="i18nT('ai_ontology.noNodesRightClickCanvasOrClickNewNode')"
               :image-size="60"
             />
             <GraphCanvas
@@ -1344,17 +1608,31 @@
               @click.stop
             >
               <template v-if="ctxMenu.kind === 'node'">
-                <div class="graph-ctx__item" @click="ctxEditNode">编辑节点属性</div>
-                <div class="graph-ctx__item" @click="ctxBindNode">绑定分块</div>
-                <div class="graph-ctx__item" @click="ctxAddRel">添加关系</div>
-                <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelNode">删除节点</div>
+                <div class="graph-ctx__item" @click="ctxEditNode">
+                  {{ i18nT("ai_ontology.editNodeProperties") }}
+                </div>
+                <div class="graph-ctx__item" @click="ctxBindNode">
+                  {{ i18nT("ai_ontology.bindChunk") }}
+                </div>
+                <div class="graph-ctx__item" @click="ctxAddRel">
+                  {{ i18nT("ai_ontology.addRelation") }}
+                </div>
+                <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelNode">
+                  {{ i18nT("ai_ontology.deleteNode") }}
+                </div>
               </template>
               <template v-else-if="ctxMenu.kind === 'edge'">
-                <div class="graph-ctx__item" @click="ctxEditRel">编辑关系</div>
-                <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelRel">删除关系</div>
+                <div class="graph-ctx__item" @click="ctxEditRel">
+                  {{ i18nT("ai_ontology.editRelation") }}
+                </div>
+                <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelRel">
+                  {{ i18nT("ai_ontology.deleteRelation") }}
+                </div>
               </template>
               <template v-else>
-                <div class="graph-ctx__item" @click="ctxNewNode">新建节点</div>
+                <div class="graph-ctx__item" @click="ctxNewNode">
+                  {{ i18nT("ai_ontology.newNode") }}
+                </div>
               </template>
             </div>
           </div>
@@ -1363,48 +1641,58 @@
     </el-drawer>
 
     <!-- 编辑分块 -->
-    <el-dialog v-model="chunkEditVisible" title="编辑分块" width="600px" append-to-body>
+    <el-dialog
+      v-model="chunkEditVisible"
+      :title="i18nT('ai_ontology.editChunk')"
+      width="600px"
+      append-to-body
+    >
       <el-input
         v-model="chunkEditContent"
         type="textarea"
         :rows="8"
-        placeholder="编辑分块内容，保存后将重新向量化该分块"
+        :placeholder="i18nT('ai_ontology.editChunkContentSavingWillReVectorizeThisChunk')"
       />
       <template #footer>
-        <el-button @click="chunkEditVisible = false">取消</el-button>
+        <el-button @click="chunkEditVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button type="primary" :loading="chunkEditing" @click="saveChunkEdit">
-          保存并重向量化
+          {{ i18nT("ai_ontology.saveAndReVectorize") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 图谱实体重命名 -->
-    <el-dialog v-model="renameEntityVisible" title="节点属性" width="520px" append-to-body>
+    <el-dialog
+      v-model="renameEntityVisible"
+      :title="i18nT('ai_ontology.nodeProperties')"
+      width="520px"
+      append-to-body
+    >
       <el-form label-width="90px" size="default">
-        <el-form-item label="节点名" required>
-          <el-input v-model="renameForm.name" placeholder="节点名称" />
+        <el-form-item :label="i18nT('ai_ontology.nodeName')" required>
+          <el-input v-model="renameForm.name" :placeholder="i18nT('ai_ontology.nodeName2')" />
         </el-form-item>
-        <el-form-item label="类型">
+        <el-form-item :label="i18nT('ai_ontology.type')">
           <el-input v-model="renameForm.etype" placeholder="keyword" />
         </el-form-item>
-        <el-form-item label="权重">
+        <el-form-item :label="i18nT('ai_ontology.weight')">
           <el-input-number v-model="renameForm.weight" :min="1" :max="9999" />
         </el-form-item>
-        <el-form-item label="备注/描述">
+        <el-form-item :label="i18nT('ai_ontology.nodeRemarkDesc')">
           <el-input v-model="renameForm.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="关联分块">
+        <el-form-item :label="i18nT('ai_ontology.relatedChunk')">
           <div class="bind-chunks">
             <div v-for="c in entityBoundChunks" :key="c.id" class="bind-item">
               <span class="bind-item__label">#{{ c.chunk_index }}</span>
               <span class="bind-item__text">{{ c.content }}</span>
               <el-button icon="Close" link type="danger" size="small" @click="unbindChunk(c)">
-                解绑
+                {{ i18nT("ai_ontology.unbind") }}
               </el-button>
             </div>
             <el-empty
               v-if="!entityBoundChunks.length"
-              description="尚未绑定分块"
+              :description="i18nT('ai_ontology.notBoundToChunks')"
               :image-size="50"
             />
             <el-select
@@ -1412,7 +1700,7 @@
               multiple
               filterable
               collapse-tags
-              placeholder="选择要绑定的分块"
+              :placeholder="i18nT('ai_ontology.selectChunksToBind')"
               size="small"
               style="width: 100%"
             >
@@ -1424,15 +1712,17 @@
               />
             </el-select>
             <el-button size="small" type="primary" :loading="bindingChunks" @click="bindChunks">
-              绑定
+              {{ i18nT("ai_ontology.bind") }}
             </el-button>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="renameEntityVisible = false">取消</el-button>
+        <el-button @click="renameEntityVisible = false">
+          {{ i18nT("ai_ontology.cancel") }}
+        </el-button>
         <el-button type="primary" :loading="renamingEntity" @click="saveRenameEntity">
-          保存（同步 AGE）
+          {{ i18nT("ai_ontology.saveSyncAge") }}
         </el-button>
       </template>
     </el-dialog>
@@ -1440,7 +1730,7 @@
     <!-- 分块标注（换说法召回命中） -->
     <el-dialog
       v-model="annotationVisible"
-      :title="`分块标注 · #${annotChunk?.chunk_index || ''}`"
+      :title="i18nT('ai_ontology.chunkAnnotTitle', { index: annotChunk?.chunk_index || '' })"
       width="600px"
       append-to-body
     >
@@ -1448,7 +1738,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="给分块加额外标注（别名/锚点/备注），标注会进入向量、中文全文、子串检索索引，用户换种说法提问也能命中该分块。"
+        :title="i18nT('ai_ontology.chunkAnnotHint')"
       />
       <div class="ann-preview">{{ annotChunk?.content }}</div>
       <div class="ann-list">
@@ -1456,145 +1746,191 @@
           <el-tag size="small" type="warning" effect="plain">{{ a.text }}</el-tag>
           <el-tag size="small" type="info" effect="plain">{{ annotKindLabel(a.kind) }}</el-tag>
           <el-button icon="delete" link type="danger" size="small" @click="removeAnnotation(ai)">
-            删除
+            {{ i18nT("ai_ontology.delete2") }}
           </el-button>
         </div>
-        <el-empty v-if="!annotList.length" description="暂无标注" :image-size="50" />
+        <el-empty
+          v-if="!annotList.length"
+          :description="i18nT('ai_ontology.noAnnotations')"
+          :image-size="50"
+        />
       </div>
       <div class="ann-add">
         <el-input
           v-model="annotText"
-          placeholder="输入标注，如「XX 的别名」"
+          :placeholder="i18nT('ai_ontology.annotPlaceholder')"
           size="small"
           @keyup.enter="addAnnotation"
         />
         <el-select v-model="annotKind" size="small" style="width: 110px">
-          <el-option label="别名" value="alias" />
-          <el-option label="锚点" value="anchor" />
-          <el-option label="备注" value="note" />
+          <el-option :label="i18nT('ai_ontology.alias')" value="alias" />
+          <el-option :label="i18nT('ai_ontology.anchor')" value="anchor" />
+          <el-option :label="i18nT('ai_ontology.remark')" value="note" />
         </el-select>
         <el-button type="primary" size="small" :loading="annotating" @click="addAnnotation">
-          添加
+          {{ i18nT("ai_ontology.add") }}
         </el-button>
       </div>
     </el-dialog>
 
     <!-- 图谱关系编辑 -->
-    <el-dialog v-model="relEditVisible" title="编辑图谱关系" width="520px" append-to-body>
+    <el-dialog
+      v-model="relEditVisible"
+      :title="i18nT('ai_ontology.editGraphRelation')"
+      width="520px"
+      append-to-body
+    >
       <el-form label-width="90px" size="default">
-        <el-form-item label="源实体">
-          <el-select v-model="relEditForm.source" filterable placeholder="源" style="width: 100%">
+        <el-form-item :label="i18nT('ai_ontology.sourceEntity')">
+          <el-select
+            v-model="relEditForm.source"
+            filterable
+            :placeholder="i18nT('ai_ontology.source')"
+            style="width: 100%"
+          >
             <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="目标实体">
-          <el-select v-model="relEditForm.target" filterable placeholder="目标" style="width: 100%">
+        <el-form-item :label="i18nT('ai_ontology.targetEntity')">
+          <el-select
+            v-model="relEditForm.target"
+            filterable
+            :placeholder="i18nT('ai_ontology.target')"
+            style="width: 100%"
+          >
             <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关系类型">
+        <el-form-item :label="i18nT('ai_ontology.relationType')">
           <el-select
             v-model="relEditForm.rtype"
             filterable
             allow-create
             default-first-option
-            placeholder="选择或输入关系类型"
+            :placeholder="i18nT('ai_ontology.selectOrEnterRelationType')"
             style="width: 100%"
           >
             <el-option v-for="r in rtypeOptions" :key="r" :label="r" :value="r" />
           </el-select>
         </el-form-item>
-        <el-form-item label="权重">
+        <el-form-item :label="i18nT('ai_ontology.weight')">
           <el-input-number v-model="relEditForm.weight" :min="1" :max="9999" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="relEditVisible = false">取消</el-button>
+        <el-button @click="relEditVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
         <el-button type="primary" :loading="savingRel" @click="saveRelEdit">
-          保存（同步 AGE）
+          {{ i18nT("ai_ontology.saveSyncAge") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 新建节点（图上右键空白） -->
-    <el-dialog v-model="nodeNewVisible" title="新建节点" width="520px" append-to-body>
+    <el-dialog
+      v-model="nodeNewVisible"
+      :title="i18nT('ai_ontology.newNode')"
+      width="520px"
+      append-to-body
+    >
       <el-form label-width="80px" size="default">
-        <el-form-item label="节点名" required>
-          <el-input v-model="nodeNewForm.name" placeholder="实体名称" />
+        <el-form-item :label="i18nT('ai_ontology.nodeName')" required>
+          <el-input v-model="nodeNewForm.name" :placeholder="i18nT('ai_ontology.entityName')" />
         </el-form-item>
-        <el-form-item label="类型">
+        <el-form-item :label="i18nT('ai_ontology.type')">
           <el-input v-model="nodeNewForm.etype" placeholder="keyword" />
         </el-form-item>
-        <el-form-item label="权重">
+        <el-form-item :label="i18nT('ai_ontology.weight')">
           <el-input-number v-model="nodeNewForm.weight" :min="1" :max="9999" />
         </el-form-item>
-        <el-form-item label="备注/描述">
+        <el-form-item :label="i18nT('ai_ontology.nodeRemarkDesc')">
           <el-input v-model="nodeNewForm.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="nodeNewVisible = false">取消</el-button>
-        <el-button type="primary" :loading="addingNode" @click="saveNewNode">创建</el-button>
+        <el-button @click="nodeNewVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
+        <el-button type="primary" :loading="addingNode" @click="saveNewNode">
+          {{ i18nT("ai_ontology.create") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 新建关系（选两个节点 + 关系类型，自动连线） -->
-    <el-dialog v-model="relAddVisible" title="新建关系" width="520px" append-to-body>
+    <el-dialog
+      v-model="relAddVisible"
+      :title="i18nT('ai_ontology.newRelation')"
+      width="520px"
+      append-to-body
+    >
       <el-form label-width="90px" size="default">
-        <el-form-item label="源节点">
+        <el-form-item :label="i18nT('ai_ontology.sourceNode')">
           <el-select
             v-model="relAddForm.source"
             filterable
-            placeholder="选择源节点"
+            :placeholder="i18nT('ai_ontology.selectSourceNode')"
             style="width: 100%"
           >
             <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="目标节点">
+        <el-form-item :label="i18nT('ai_ontology.targetNode')">
           <el-select
             v-model="relAddForm.target"
             filterable
-            placeholder="选择目标节点"
+            :placeholder="i18nT('ai_ontology.selectTargetNode')"
             style="width: 100%"
           >
             <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关系类型">
+        <el-form-item :label="i18nT('ai_ontology.relationType')">
           <el-select
             v-model="relAddForm.rtype"
             filterable
             allow-create
             default-first-option
-            placeholder="选择或输入关系类型"
+            :placeholder="i18nT('ai_ontology.selectOrEnterRelationType')"
             style="width: 100%"
           >
             <el-option v-for="r in rtypeOptions" :key="r" :label="r" :value="r" />
           </el-select>
         </el-form-item>
-        <el-form-item label="权重">
+        <el-form-item :label="i18nT('ai_ontology.weight')">
           <el-input-number v-model="relAddForm.weight" :min="1" :max="9999" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="relAddVisible = false">取消</el-button>
-        <el-button type="primary" :loading="addingRel" @click="saveAddRel">添加</el-button>
+        <el-button @click="relAddVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
+        <el-button type="primary" :loading="addingRel" @click="saveAddRel">
+          {{ i18nT("ai_ontology.add") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 图谱全屏查看 -->
-    <el-dialog v-model="graphFullscreenVisible" title="知识图谱 · 全屏" fullscreen append-to-body>
+    <el-dialog
+      v-model="graphFullscreenVisible"
+      :title="i18nT('ai_ontology.knowledgeGraphFullscreen')"
+      fullscreen
+      append-to-body
+    >
       <div v-loading="graphLoading" class="graph-fullscreen">
         <div class="graph-stats">
-          <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
-          <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
-          <el-button size="small" @click="relayoutGraph">重新布局</el-button>
-          <el-button size="small" @click="() => reloadGraph()">刷新</el-button>
+          <el-tag type="success" effect="plain">
+            {{ i18nT("ai_ontology.entityNodeCount", { count: graphStats.nodes }) }}
+          </el-tag>
+          <el-tag type="warning" effect="plain">
+            {{ i18nT("ai_ontology.relationEdgeCount", { count: graphStats.edges }) }}
+          </el-tag>
+          <el-button size="small" @click="relayoutGraph">
+            {{ i18nT("ai_ontology.reLayout") }}
+          </el-button>
+          <el-button size="small" @click="() => reloadGraph()">
+            {{ i18nT("ai_ontology.refresh") }}
+          </el-button>
           <el-switch
             v-model="linkMode"
             size="small"
-            active-text="连线模式"
+            :active-text="i18nT('ai_ontology.edgeMode')"
             @change="linkSource = null"
           />
         </div>
@@ -1629,17 +1965,31 @@
           @click.stop
         >
           <template v-if="ctxMenu.kind === 'node'">
-            <div class="graph-ctx__item" @click="ctxEditNode">编辑节点属性</div>
-            <div class="graph-ctx__item" @click="ctxBindNode">绑定分块</div>
-            <div class="graph-ctx__item" @click="ctxAddRel">添加关系</div>
-            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelNode">删除节点</div>
+            <div class="graph-ctx__item" @click="ctxEditNode">
+              {{ i18nT("ai_ontology.editNodeProperties") }}
+            </div>
+            <div class="graph-ctx__item" @click="ctxBindNode">
+              {{ i18nT("ai_ontology.bindChunk") }}
+            </div>
+            <div class="graph-ctx__item" @click="ctxAddRel">
+              {{ i18nT("ai_ontology.addRelation") }}
+            </div>
+            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelNode">
+              {{ i18nT("ai_ontology.deleteNode") }}
+            </div>
           </template>
           <template v-else-if="ctxMenu.kind === 'edge'">
-            <div class="graph-ctx__item" @click="ctxEditRel">编辑关系</div>
-            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelRel">删除关系</div>
+            <div class="graph-ctx__item" @click="ctxEditRel">
+              {{ i18nT("ai_ontology.editRelation") }}
+            </div>
+            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelRel">
+              {{ i18nT("ai_ontology.deleteRelation") }}
+            </div>
           </template>
           <template v-else>
-            <div class="graph-ctx__item" @click="ctxNewNode">新建节点</div>
+            <div class="graph-ctx__item" @click="ctxNewNode">
+              {{ i18nT("ai_ontology.newNode") }}
+            </div>
           </template>
         </div>
       </div>
@@ -1648,46 +1998,55 @@
     <!-- 关系类型模板管理 -->
     <el-dialog
       v-model="relationTypeDialogVisible"
-      title="关系类型模板"
+      :title="i18nT('ai_ontology.relationTypeTemplate')"
       width="520px"
       append-to-body
     >
       <div class="rt-add">
         <el-input
           v-model="rtNewName"
-          placeholder="关系类型名，如：依赖"
+          :placeholder="i18nT('ai_ontology.relationTypeNameEGDepends')"
           size="small"
           @keyup.enter="addRt"
         />
-        <el-button size="small" type="primary" @click="addRt">添加</el-button>
+        <el-button size="small" type="primary" @click="addRt">
+          {{ i18nT("ai_ontology.add") }}
+        </el-button>
       </div>
       <el-table :data="relationTypes" size="small" max-height="50vh" border stripe>
-        <el-table-column prop="name" label="类型" min-width="140" />
-        <el-table-column label="颜色" width="80" align="center">
+        <el-table-column prop="name" :label="i18nT('ai_ontology.type')" min-width="140" />
+        <el-table-column :label="i18nT('ai_ontology.color')" width="80" align="center">
           <template #default="{ row }">
             <i class="graph-legend__dot" :style="{ background: row.color || '#a0a6ad' }" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="80" align="center">
           <template #default="{ row }">
             <el-button icon="delete" link type="danger" size="small" @click="delRt(row)">
-              删除
+              {{ i18nT("ai_ontology.delete2") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="relationTypeDialogVisible = false">关闭</el-button>
+        <el-button @click="relationTypeDialogVisible = false">
+          {{ i18nT("ai_ontology.close") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 节点样式设置 -->
-    <el-dialog v-model="nodeStyleVisible" title="节点样式设置" width="600px" append-to-body>
+    <el-dialog
+      v-model="nodeStyleVisible"
+      :title="i18nT('ai_ontology.nodeStyleSettings')"
+      width="600px"
+      append-to-body
+    >
       <el-form label-width="90px" size="default">
-        <el-form-item label="节点大小">
+        <el-form-item :label="i18nT('ai_ontology.nodeSize')">
           <el-radio-group v-model="nodeStyle.sizeMode">
-            <el-radio-button label="weight">按权重</el-radio-button>
-            <el-radio-button label="fixed">固定</el-radio-button>
+            <el-radio-button label="weight">{{ i18nT("ai_ontology.byWeight") }}</el-radio-button>
+            <el-radio-button label="fixed">{{ i18nT("ai_ontology.fixed") }}</el-radio-button>
           </el-radio-group>
           <el-input-number
             v-if="nodeStyle.sizeMode === 'fixed'"
@@ -1698,10 +2057,10 @@
             style="margin-left: 8px"
           />
         </el-form-item>
-        <el-form-item label="节点形状">
+        <el-form-item :label="i18nT('ai_ontology.nodeShape')">
           <el-radio-group v-model="nodeStyle.shapeMode">
-            <el-radio-button label="type">按类型</el-radio-button>
-            <el-radio-button label="uniform">统一</el-radio-button>
+            <el-radio-button label="type">{{ i18nT("ai_ontology.byType") }}</el-radio-button>
+            <el-radio-button label="uniform">{{ i18nT("ai_ontology.unified") }}</el-radio-button>
           </el-radio-group>
           <el-select
             v-if="nodeStyle.shapeMode === 'uniform'"
@@ -1709,16 +2068,16 @@
             size="small"
             style="width: 140px; margin-left: 8px"
           >
-            <el-option label="椭圆" value="ellipse" />
-            <el-option label="圆" value="circle" />
-            <el-option label="圆角方" value="round-rectangle" />
-            <el-option label="菱形" value="diamond" />
+            <el-option :label="i18nT('ai_ontology.ellipse')" value="ellipse" />
+            <el-option :label="i18nT('ai_ontology.circle')" value="circle" />
+            <el-option :label="i18nT('ai_ontology.roundedSquare')" value="round-rectangle" />
+            <el-option :label="i18nT('ai_ontology.diamond')" value="diamond" />
           </el-select>
         </el-form-item>
-        <el-form-item label="节点颜色">
+        <el-form-item :label="i18nT('ai_ontology.nodeColor')">
           <el-radio-group v-model="nodeStyle.colorMode">
-            <el-radio-button label="type">按类型</el-radio-button>
-            <el-radio-button label="single">统一</el-radio-button>
+            <el-radio-button label="type">{{ i18nT("ai_ontology.byType") }}</el-radio-button>
+            <el-radio-button label="single">{{ i18nT("ai_ontology.unified") }}</el-radio-button>
           </el-radio-group>
           <el-color-picker
             v-if="nodeStyle.colorMode === 'single'"
@@ -1727,12 +2086,12 @@
             style="margin-left: 8px"
           />
         </el-form-item>
-        <el-form-item label="标签字号">
+        <el-form-item :label="i18nT('ai_ontology.labelSize')">
           <el-input-number v-model="nodeStyle.labelSize" :min="9" :max="20" size="small" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="nodeStyleVisible = false">关闭</el-button>
+        <el-button @click="nodeStyleVisible = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
 
@@ -1744,61 +2103,77 @@
           :source="docPreviewPdfUrl"
         />
         <div v-else-if="docPreviewKind === 'docx'" class="doc-html" v-html="docPreviewHtml" />
-        <div v-else class="doc-text">{{ docPreviewContent || "（空文档）" }}</div>
+        <div v-else class="doc-text">{{ docPreviewContent || i18nT("ai_ontology.emptyDoc") }}</div>
       </div>
       <template #footer>
-        <el-button @click="docPreviewVisible = false">关闭</el-button>
+        <el-button @click="docPreviewVisible = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 引用来源弹窗 -->
-    <el-dialog v-model="qaCiteVisible" title="引用来源" width="600px" append-to-body>
+    <el-dialog
+      v-model="qaCiteVisible"
+      :title="i18nT('ai_ontology.referenceSource')"
+      width="600px"
+      append-to-body
+    >
       <el-descriptions v-if="qaCite" :column="1" size="small" border>
-        <el-descriptions-item label="来源文档">{{ qaCite.file }}</el-descriptions-item>
-        <el-descriptions-item label="位置">
-          {{ qaCite.page ? `第${qaCite.page}页` : ""
+        <el-descriptions-item :label="i18nT('ai_ontology.sourceDocument')">
+          {{ qaCite.file }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="i18nT('ai_ontology.location')">
+          {{ qaCite.page ? i18nT("ai_ontology.pageLoc", { page: qaCite.page }) : ""
           }}{{ qaCite.page && qaCite.start_line ? "，" : ""
-          }}{{ qaCite.start_line ? `第${qaCite.start_line}行` : "（无法定位行/页）" }}
+          }}{{
+            qaCite.start_line
+              ? i18nT("ai_ontology.lineLoc", { line: qaCite.start_line })
+              : i18nT("ai_ontology.cantLocateLinePage")
+          }}
         </el-descriptions-item>
       </el-descriptions>
       <div class="qa-cite-content">{{ qaCite?.content }}</div>
       <template #footer>
         <el-button v-if="qaCite?.rustfs_url" type="primary" @click="openRustfs(qaCite.rustfs_url)">
-          打开原文档(RustFS)
+          {{ i18nT("ai_ontology.openOriginalDocRustfs") }}
         </el-button>
-        <el-button @click="qaCiteVisible = false">关闭</el-button>
+        <el-button @click="qaCiteVisible = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 连线样式设置 -->
-    <el-dialog v-model="edgeStyleVisible" title="连线样式设置" width="600px" append-to-body>
+    <el-dialog
+      v-model="edgeStyleVisible"
+      :title="i18nT('ai_ontology.edgeStyleSettings')"
+      width="600px"
+      append-to-body
+    >
       <el-form label-width="90px" size="default">
-        <el-form-item label="线型">
+        <el-form-item :label="i18nT('ai_ontology.lineStyle')">
           <el-radio-group v-model="edgeStyle.lineStyle">
-            <el-radio-button label="solid">实线</el-radio-button>
-            <el-radio-button label="dashed">虚线</el-radio-button>
-            <el-radio-button label="dotted">点线</el-radio-button>
+            <el-radio-button label="solid">{{ i18nT("ai_ontology.solid") }}</el-radio-button>
+            <el-radio-button label="dashed">{{ i18nT("ai_ontology.dashed") }}</el-radio-button>
+            <el-radio-button label="dotted">{{ i18nT("ai_ontology.dotted") }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="曲线">
+        <el-form-item :label="i18nT('ai_ontology.curve')">
           <el-radio-group v-model="edgeStyle.curve">
-            <el-radio-button label="bezier">贝塞尔</el-radio-button>
-            <el-radio-button label="straight">直线</el-radio-button>
-            <el-radio-button label="taxi">折线</el-radio-button>
+            <el-radio-button label="bezier">{{ i18nT("ai_ontology.bezier") }}</el-radio-button>
+            <el-radio-button label="straight">{{ i18nT("ai_ontology.line") }}</el-radio-button>
+            <el-radio-button label="taxi">{{ i18nT("ai_ontology.polyline") }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="箭头">
+        <el-form-item :label="i18nT('ai_ontology.arrow')">
           <el-select v-model="edgeStyle.arrow" style="width: 140px">
-            <el-option label="三角" value="triangle" />
-            <el-option label="V形" value="vee" />
-            <el-option label="圆点" value="circle" />
-            <el-option label="无" value="none" />
+            <el-option :label="i18nT('ai_ontology.triangle')" value="triangle" />
+            <el-option :label="i18nT('ai_ontology.vShape')" value="vee" />
+            <el-option :label="i18nT('ai_ontology.dot')" value="circle" />
+            <el-option :label="i18nT('ai_ontology.none')" value="none" />
           </el-select>
         </el-form-item>
-        <el-form-item label="线宽">
+        <el-form-item :label="i18nT('ai_ontology.lineWidth')">
           <el-radio-group v-model="edgeStyle.widthMode">
-            <el-radio-button label="weight">按权重</el-radio-button>
-            <el-radio-button label="fixed">固定</el-radio-button>
+            <el-radio-button label="weight">{{ i18nT("ai_ontology.byWeight") }}</el-radio-button>
+            <el-radio-button label="fixed">{{ i18nT("ai_ontology.fixed") }}</el-radio-button>
           </el-radio-group>
           <el-input-number
             v-if="edgeStyle.widthMode === 'fixed'"
@@ -1809,10 +2184,12 @@
             style="margin-left: 8px"
           />
         </el-form-item>
-        <el-form-item label="颜色">
+        <el-form-item :label="i18nT('ai_ontology.color')">
           <el-radio-group v-model="edgeStyle.colorMode">
-            <el-radio-button label="type">按关系类型</el-radio-button>
-            <el-radio-button label="single">统一</el-radio-button>
+            <el-radio-button label="type">
+              {{ i18nT("ai_ontology.byRelationType") }}
+            </el-radio-button>
+            <el-radio-button label="single">{{ i18nT("ai_ontology.unified") }}</el-radio-button>
           </el-radio-group>
           <el-color-picker
             v-if="edgeStyle.colorMode === 'single'"
@@ -1821,15 +2198,15 @@
             style="margin-left: 8px"
           />
         </el-form-item>
-        <el-form-item label="关系标签">
+        <el-form-item :label="i18nT('ai_ontology.relationLabel')">
           <el-select v-model="edgeStyle.label" style="width: 180px">
-            <el-option label="始终显示" value="show" />
-            <el-option label="仅非默认关系" value="nondefault" />
-            <el-option label="悬停显示" value="hover" />
-            <el-option label="不显示" value="none" />
+            <el-option :label="i18nT('ai_ontology.alwaysShow')" value="show" />
+            <el-option :label="i18nT('ai_ontology.nonDefaultRelationsOnly')" value="nondefault" />
+            <el-option :label="i18nT('ai_ontology.showOnHover')" value="hover" />
+            <el-option :label="i18nT('ai_ontology.hide')" value="none" />
           </el-select>
         </el-form-item>
-        <el-form-item label="透明度">
+        <el-form-item :label="i18nT('ai_ontology.opacity')">
           <el-slider
             v-model="edgeStyle.opacity"
             :min="0.1"
@@ -1840,20 +2217,31 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="edgeStyleVisible = false">关闭</el-button>
+        <el-button @click="edgeStyleVisible = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 图谱统计 -->
-    <el-dialog v-model="graphStatsVisible" title="图谱统计" width="600px" append-to-body>
+    <el-dialog
+      v-model="graphStatsVisible"
+      :title="i18nT('ai_ontology.graphStats')"
+      width="600px"
+      append-to-body
+    >
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="实体节点">{{ graphStatsDetail.nodes }}</el-descriptions-item>
-        <el-descriptions-item label="关系边">{{ graphStatsDetail.edges }}</el-descriptions-item>
-        <el-descriptions-item label="平均度">{{ graphStatsDetail.avgDegree }}</el-descriptions-item>
-        <el-descriptions-item label="连接组件">—</el-descriptions-item>
+        <el-descriptions-item :label="i18nT('ai_ontology.entityNodes')">
+          {{ graphStatsDetail.nodes }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="i18nT('ai_ontology.relationEdges')">
+          {{ graphStatsDetail.edges }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="i18nT('ai_ontology.averageDegree')">
+          {{ graphStatsDetail.avgDegree }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="i18nT('ai_ontology.joinComponent')">—</el-descriptions-item>
       </el-descriptions>
       <div class="stat-block">
-        <div class="stat-block__title">实体类型分布</div>
+        <div class="stat-block__title">{{ i18nT("ai_ontology.entityTypeDistribution") }}</div>
         <el-tag
           v-for="(c, t) in graphStatsDetail.typeCount"
           :key="t"
@@ -1865,7 +2253,7 @@
         </el-tag>
       </div>
       <div class="stat-block">
-        <div class="stat-block__title">关系类型分布</div>
+        <div class="stat-block__title">{{ i18nT("ai_ontology.relationTypeDistribution") }}</div>
         <el-tag
           v-for="(c, r) in graphStatsDetail.relCount"
           :key="r"
@@ -1877,14 +2265,14 @@
         </el-tag>
       </div>
       <template #footer>
-        <el-button @click="graphStatsVisible = false">关闭</el-button>
+        <el-button @click="graphStatsVisible = false">{{ i18nT("ai_ontology.close") }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 实体关联分块（图谱节点点击直达） -->
     <el-dialog
       v-model="entityChunksVisible"
-      :title="`实体关联分块 · ${entityChunksName}`"
+      :title="i18nT('ai_ontology.entityChunksTitle', { name: entityChunksName })"
       width="600px"
       append-to-body
     >
@@ -1897,11 +2285,16 @@
         stripe
       >
         <el-table-column prop="chunk_index" label="#" width="60" align="center" />
-        <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
-        <el-table-column label="内容" min-width="200">
+        <el-table-column
+          prop="file_name"
+          :label="i18nT('ai_ontology.source2')"
+          width="120"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.content')" min-width="200">
           <template #default="{ row }">{{ row.content }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="90" align="center">
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="90" align="center">
           <template #default="{ row }">
             <el-button
               icon="EditPen"
@@ -1912,39 +2305,47 @@
                 openAnnotation({ id: row.id, content: row.content, file_name: row.file_name })
               "
             >
-              标注
+              {{ i18nT("ai_ontology.annotate") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!entityChunksList.length" description="该实体尚未绑定分块" :image-size="50" />
+      <el-empty
+        v-if="!entityChunksList.length"
+        :description="i18nT('ai_ontology.thisEntityHasNoBoundChunks')"
+        :image-size="50"
+      />
     </el-dialog>
 
     <el-dialog
       v-model="dsDialogVisible"
-      :title="editingDs ? '编辑数据源' : '新增数据源'"
+      :title="editingDs ? i18nT('ai_ontology.editDataSource') : i18nT('ai_ontology.newDataSource')"
       width="600px"
       append-to-body
       destroy-on-close
     >
       <el-form :model="dsForm" label-width="100px" size="default">
-        <el-form-item label="名称" required>
-          <el-input v-model="dsForm.name" placeholder="数据源名称" />
+        <el-form-item :label="i18nT('ai_ontology.name')" required>
+          <el-input v-model="dsForm.name" :placeholder="i18nT('ai_ontology.dataSourceName')" />
         </el-form-item>
-        <el-form-item label="类型">
+        <el-form-item :label="i18nT('ai_ontology.type')">
           <el-radio-group v-model="dsForm.ds_type">
-            <el-radio-button value="db">数据库</el-radio-button>
+            <el-radio-button value="db">{{ i18nT("ai_ontology.database") }}</el-radio-button>
             <el-radio-button value="api">API</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="dsForm.ds_type === 'db'" label="方言">
+        <el-form-item v-if="dsForm.ds_type === 'db'" :label="i18nT('ai_ontology.dialect')">
           <el-select v-model="dsForm.dialect" style="width: 100%">
             <el-option label="postgresql" value="postgresql" />
             <el-option label="mysql" value="mysql" />
             <el-option label="sqlite" value="sqlite" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="dsForm.ds_type === 'db' ? '连接URI' : 'API地址'">
+        <el-form-item
+          :label="
+            dsForm.ds_type === 'db' ? i18nT('ai_ontology.connUri') : i18nT('ai_ontology.apiUrl')
+          "
+        >
           <el-input
             v-model="dsForm.uri"
             :placeholder="
@@ -1960,37 +2361,45 @@
             <el-option label="POST" value="POST" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="dsForm.ds_type === 'api'" label="数据路径">
-          <el-input v-model="dsForm.api_config.data_path" placeholder="如 data 或 data.list" />
+        <el-form-item v-if="dsForm.ds_type === 'api'" :label="i18nT('ai_ontology.dataPath')">
+          <el-input
+            v-model="dsForm.api_config.data_path"
+            :placeholder="i18nT('ai_ontology.dataPathPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="目标知识库">
+        <el-form-item :label="i18nT('ai_ontology.targetKnowledgeBase')">
           <el-select
             v-model="dsForm.knowledge_base_id"
             clearable
             filterable
-            placeholder="选择同步目标"
+            :placeholder="i18nT('ai_ontology.selectSyncTarget')"
             style="width: 100%"
           >
             <el-option v-for="b in bases" :key="b.id" :label="b.name" :value="b.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="i18nT('ai_ontology.enabled')">
           <el-switch v-model="dsForm.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dsDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingDs" @click="saveDs">保存</el-button>
+        <el-button @click="dsDialogVisible = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
+        <el-button type="primary" :loading="savingDs" @click="saveDs">
+          {{ i18nT("ai_ontology.save") }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import GraphCanvas from "./GraphCanvas.vue";
 import VuePdfEmbed from "vue-pdf-embed";
 import mammoth from "mammoth";
+
+const { t: i18nT } = useI18n();
 
 const graphCanvasRef = ref<any>();
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -2149,7 +2558,7 @@ const loadData = async () => {
     modelUsageMap.value = Object.fromEntries(models.map((m: any) => [m.id, m.usage]));
     await loadRelationTypes();
   } catch (e: any) {
-    ElMessage.error(e?.message || "加载失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.loadFailed"));
   } finally {
     loading.value = false;
     loadingDs.value = false;
@@ -2168,10 +2577,17 @@ async function loadCategories() {
   try {
     const res: any = await getAiKnowledgeCategoryTree();
     catTree.value = [
-      { id: 0, name: "全部", count: bases.value.length, children: res.data?.data || [] },
+      {
+        id: 0,
+        name: i18nT("ai_ontology.all"),
+        count: bases.value.length,
+        children: res.data?.data || [],
+      },
     ];
   } catch {
-    catTree.value = [{ id: 0, name: "全部", count: bases.value.length, children: [] }];
+    catTree.value = [
+      { id: 0, name: i18nT("ai_ontology.all"), count: bases.value.length, children: [] },
+    ];
   }
 }
 
@@ -2217,7 +2633,7 @@ const flatCatOptions = computed(() => {
 
 async function saveCat() {
   if (!catForm.name?.trim()) {
-    ElMessage.warning("请填写分类名称");
+    ElMessage.warning(i18nT("ai_ontology.pleaseEnterCategoryName"));
     return;
   }
   catSaving.value = true;
@@ -2228,7 +2644,7 @@ async function saveCat() {
       owner: catForm.owner || null,
       remark: catForm.remark || "",
     });
-    ElMessage.success("分类已创建");
+    ElMessage.success(i18nT("ai_ontology.categoryCreated"));
     catDialogVisible.value = false;
     await loadCategories();
   } finally {
@@ -2253,7 +2669,7 @@ function openKbDialog(b?: any) {
 
 async function saveKb() {
   if (!kbForm.name) {
-    ElMessage.warning("请填写知识库名称");
+    ElMessage.warning(i18nT("ai_ontology.pleaseEnterKBName"));
     return;
   }
   savingKb.value = true;
@@ -2270,11 +2686,11 @@ async function saveKb() {
     } else {
       await createAiKnowledge(payload);
     }
-    ElMessage.success("保存成功");
+    ElMessage.success(i18nT("ai_ontology.saved2"));
     kbDialogVisible.value = false;
     loadData();
   } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.saveFailed"));
   } finally {
     savingKb.value = false;
   }
@@ -2282,13 +2698,17 @@ async function saveKb() {
 
 function deleteBases(row: any) {
   ElMessageBox.confirm(
-    `确定删除知识库「${row.name}」吗？将删除其中 ${row.chunk_count || 0} 个分块，且不可恢复。`,
-    "删除确认",
-    { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+    i18nT("ai_ontology.deleteKbConfirm", { name: row.name, count: row.chunk_count || 0 }),
+    i18nT("ai_ontology.deleteConfirm"),
+    {
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+      type: "warning",
+    }
   )
     .then(async () => {
       await deleteAiKnowledge([row.id]);
-      ElMessage.success("删除成功");
+      ElMessage.success(i18nT("ai_ontology.deleted2"));
       if (selectedKb.value?.id === row.id) selectedKb.value = undefined;
       loadData();
     })
@@ -2301,10 +2721,10 @@ async function copyBase(row: any) {
   try {
     const r = await copyAiKnowledge(row.id);
     const d = r.data?.data || {};
-    ElMessage.success(`已复制为「${d.name}」（${d.chunks} 个分块）`);
+    ElMessage.success(i18nT("ai_ontology.kbCopiedMsg", { name: d.name, count: d.chunks }));
     loadData();
   } catch (e: any) {
-    ElMessage.error(e?.message || "复制失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.copyFailed"));
   }
 }
 
@@ -2322,17 +2742,17 @@ function openIngestDialog(kb: any) {
 
 async function doIngest() {
   if (!ingestForm.content.trim()) {
-    ElMessage.warning("请粘贴待入库文本");
+    ElMessage.warning(i18nT("ai_ontology.pleasePasteTextToIngest"));
     return;
   }
   ingesting.value = true;
   try {
     const r = await ingestAiKnowledge(ingestTarget.value.id, { ...ingestForm });
-    ElMessage.success(`入库成功，写入 ${r.data?.data?.chunks || 0} 个分块`);
+    ElMessage.success(i18nT("ai_ontology.ingestSuccessMsg", { count: r.data?.data?.chunks || 0 }));
     ingestDialogVisible.value = false;
     loadData();
   } catch (e: any) {
-    ElMessage.error(e?.message || "入库失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.ingestFailed"));
   } finally {
     ingesting.value = false;
   }
@@ -2353,7 +2773,7 @@ function openSearchDialog(kb: any) {
 
 async function doSearch() {
   if (!searchForm.query.trim()) {
-    ElMessage.warning("请输入查询");
+    ElMessage.warning(i18nT("ai_ontology.pleaseEnterAQuery"));
     return;
   }
   searching.value = true;
@@ -2366,7 +2786,7 @@ async function doSearch() {
     );
     searchResults.value = r.data?.data || [];
   } catch (e: any) {
-    ElMessage.error(e?.message || "检索失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.searchFailed"));
   } finally {
     searching.value = false;
   }
@@ -2374,11 +2794,11 @@ async function doSearch() {
 
 // 检索引擎标签
 function engineLabel(e: string): string {
-  if (e === "jieba_fulltext") return "中文全文";
-  if (e === "pgvector") return "向量";
-  if (e === "graphrag") return "图谱";
-  if (e === "hybrid") return "混合";
-  if (e === "grep") return "子串全文";
+  if (e === "jieba_fulltext") return i18nT("ai_ontology.chineseFullText");
+  if (e === "pgvector") return i18nT("ai_ontology.vector");
+  if (e === "graphrag") return i18nT("ai_ontology.graph2");
+  if (e === "hybrid") return i18nT("ai_ontology.hybrid");
+  if (e === "grep") return i18nT("ai_ontology.substringFullText");
   return e;
 }
 function engineType(e: string): "primary" | "success" | "warning" | "info" | "danger" {
@@ -2406,11 +2826,11 @@ const edgeStyleVisible = ref(false);
 const graphTheme = ref("default");
 const nodeStyleVisible = ref(false);
 const THEME_OPTIONS = [
-  { value: "default", label: "默认" },
-  { value: "ocean", label: "海洋" },
-  { value: "forest", label: "森林" },
-  { value: "sunset", label: "落日" },
-  { value: "mono", label: "单色" },
+  { value: "default", label: i18nT("ai_ontology.default") },
+  { value: "ocean", label: i18nT("ai_ontology.ocean") },
+  { value: "forest", label: i18nT("ai_ontology.forest") },
+  { value: "sunset", label: i18nT("ai_ontology.sunset") },
+  { value: "mono", label: i18nT("ai_ontology.mono") },
 ];
 const nodeStyle = reactive({
   sizeMode: "weight" as "weight" | "fixed",
@@ -2458,15 +2878,15 @@ function onGraphSearch() {
 }
 function onGraphPathFound(a: string, b: string, length: number) {
   if (length < 0) {
-    ElMessage.info(`${a} → ${b} 无连通路径`);
+    ElMessage.info(i18nT("ai_ontology.noPathMsg", { a, b }));
   } else {
-    ElMessage.success(`最短路径：${a} → ${b}，${length} 跳`);
+    ElMessage.success(i18nT("ai_ontology.shortestPathMsg", { a, b, length }));
   }
 }
 function typeLabel(t: string) {
-  if (t === "annotation") return "标注/关联分块";
-  if (t === "custom") return "自定义";
-  if (t === "keyword") return "关键词";
+  if (t === "annotation") return i18nT("ai_ontology.graphLegendAnnotLabel");
+  if (t === "custom") return i18nT("ai_ontology.custom");
+  if (t === "keyword") return i18nT("ai_ontology.keyword");
   return t;
 }
 // 连线模式：第一次点击记源节点，第二次点击记目标节点建边
@@ -2492,14 +2912,14 @@ async function exportGraphImage() {
     url = "";
   }
   if (!url) {
-    ElMessage.warning("图表未就绪");
+    ElMessage.warning(i18nT("ai_ontology.chartNotReady"));
     return;
   }
   const a = document.createElement("a");
   a.href = url;
-  a.download = `知识图谱_${graphKbId.value || ""}.png`;
+  a.download = `${i18nT("ai_ontology.graphFilePrefix")}${graphKbId.value || ""}.png`;
   a.click();
-  ElMessage.success("已导出图片");
+  ElMessage.success(i18nT("ai_ontology.imageExported"));
 }
 async function batchDeleteNodes() {
   if (!graphKbId.value || !selectedNames.value.size) return;
@@ -2507,9 +2927,13 @@ async function batchDeleteNodes() {
   if (!ids.length) return;
   try {
     await ElMessageBox.confirm(
-      `确定删除选中的 ${ids.length} 个节点吗？其关联关系与绑定将一并移除，不可恢复。`,
-      "批量删除",
-      { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+      i18nT("ai_ontology.deleteNodesConfirm", { count: ids.length }),
+      i18nT("ai_ontology.batchDelete"),
+      {
+        confirmButtonText: i18nT("ai_ontology.delete2"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+        type: "warning",
+      }
     );
   } catch {
     return;
@@ -2517,23 +2941,34 @@ async function batchDeleteNodes() {
   try {
     await deleteAiKnowledgeGraphEntities(graphKbId.value, ids);
     selectedNames.value = new Set();
-    ElMessage.success("已批量删除");
+    ElMessage.success(i18nT("ai_ontology.batchDeleted"));
     await reloadGraph();
     await loadDetailStats(graphKbId.value);
   } catch (e: any) {
-    ElMessage.error(e?.message || "删除失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.deleteFailed"));
   }
 }
 const graphLegend = [
-  { color: "#409eff", label: "关键词" },
-  { color: "#e6a23c", label: "标注/关联分块" },
-  { color: "#67c23a", label: "自定义" },
-  { color: "#909399", label: "其他" },
+  { color: "#409eff", label: i18nT("ai_ontology.keyword") },
+  { color: "#e6a23c", label: i18nT("ai_ontology.graphLegendAnnotLabel") },
+  { color: "#67c23a", label: i18nT("ai_ontology.custom") },
+  { color: "#909399", label: i18nT("ai_ontology.other") },
 ];
 const relationTypes = ref<any[]>([]);
 const rtypeOptions = computed(() => {
   const names = relationTypes.value.map((r: any) => r.name);
-  return names.length ? names : ["属于", "包含", "依赖", "相关", "引用", "位于", "用于", "关联"];
+  return names.length
+    ? names
+    : [
+        i18nT("ai_ontology.belongsTo"),
+        i18nT("ai_ontology.contains"),
+        i18nT("ai_ontology.dependencies"),
+        i18nT("ai_ontology.related2"),
+        i18nT("ai_ontology.reference"),
+        i18nT("ai_ontology.locatedAt"),
+        i18nT("ai_ontology.usedFor"),
+        i18nT("ai_ontology.related"),
+      ];
 });
 async function loadRelationTypes() {
   try {
@@ -2555,20 +2990,20 @@ async function addRt() {
   try {
     await createAiRelationType({ name: rtNewName.value.trim() });
     rtNewName.value = "";
-    ElMessage.success("已添加关系类型");
+    ElMessage.success(i18nT("ai_ontology.relationTypeAdded"));
     await loadRelationTypes();
     await reloadGraph();
   } catch (e: any) {
-    ElMessage.error(e?.message || "添加失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.addFailed"));
   }
 }
 async function delRt(row: any) {
   try {
     await deleteAiRelationType(row.id);
-    ElMessage.success("已删除");
+    ElMessage.success(i18nT("ai_ontology.deleted"));
     await loadRelationTypes();
   } catch (e: any) {
-    ElMessage.error(e?.message || "删除失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.deleteFailed"));
   }
 }
 // 图谱全屏
@@ -2590,7 +3025,7 @@ function locateInGraph(h: any) {
     }
   }
   if (!names.size) {
-    ElMessage.info("未匹配到图谱节点");
+    ElMessage.info(i18nT("ai_ontology.noGraphNodeMatched"));
     return;
   }
   highlightNames.value = names;
@@ -2621,7 +3056,7 @@ async function openGraph(kb: any) {
     const r = await getAiKnowledgeGraph(kbId);
     await loadGraph(r.data?.data || { nodes: [], edges: [] });
   } catch (e: any) {
-    ElMessage.error(e?.message || "加载图谱失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.loadGraphFailed"));
   } finally {
     graphLoading.value = false;
   }
@@ -2633,16 +3068,16 @@ async function reloadGraph(hint?: string) {
     await loadGraph(r.data?.data || { nodes: [], edges: [] });
     if (hint) ElMessage.success(hint);
   } catch (e: any) {
-    ElMessage.error(e?.message || "刷新图谱失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.refreshGraphFailed"));
   }
 }
 async function delGraphEntity(n: any) {
   if (!graphKbId.value) return;
   try {
     await deleteAiKnowledgeGraphEntities(graphKbId.value, [n.id]);
-    await reloadGraph("已删除实体");
+    await reloadGraph(i18nT("ai_ontology.entityDeleted"));
   } catch (e: any) {
-    ElMessage.error(e?.message || "删除失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.deleteFailed"));
   }
 }
 // 图谱实体重命名
@@ -2674,10 +3109,10 @@ async function bindChunks() {
   try {
     await bindAiKnowledgeEntityChunks(graphKbId.value, renameForm.id, entityBindSel.value);
     entityBindSel.value = [];
-    ElMessage.success("已绑定分块");
+    ElMessage.success(i18nT("ai_ontology.chunkBound"));
     await loadEntityChunks();
   } catch (e: any) {
-    ElMessage.error(e?.message || "绑定失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.bindFailed"));
   } finally {
     bindingChunks.value = false;
   }
@@ -2686,10 +3121,10 @@ async function unbindChunk(c: any) {
   if (!graphKbId.value || !renameForm.id) return;
   try {
     await unbindAiKnowledgeEntityChunks(graphKbId.value, renameForm.id, [c.id]);
-    ElMessage.success("已解绑");
+    ElMessage.success(i18nT("ai_ontology.unbound"));
     await loadEntityChunks();
   } catch (e: any) {
-    ElMessage.error(e?.message || "解绑失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.unbindFailed"));
   }
 }
 function openRenameEntity(n: any) {
@@ -2714,7 +3149,7 @@ const savingRel = ref(false);
 async function saveRelEdit() {
   if (!graphKbId.value || !relEditForm.id) return;
   if (!relEditForm.source || !relEditForm.target) {
-    ElMessage.warning("源/目标不能为空");
+    ElMessage.warning(i18nT("ai_ontology.sourceTargetNotEmpty"));
     return;
   }
   savingRel.value = true;
@@ -2726,9 +3161,9 @@ async function saveRelEdit() {
       rtype: relEditForm.rtype,
     });
     relEditVisible.value = false;
-    await reloadGraph("已更新关系");
+    await reloadGraph(i18nT("ai_ontology.relationUpdated"));
   } catch (e: any) {
-    ElMessage.error(e?.message || "更新失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.updateFailed"));
   } finally {
     savingRel.value = false;
   }
@@ -2736,7 +3171,7 @@ async function saveRelEdit() {
 async function saveRenameEntity() {
   if (!graphKbId.value || !renameForm.id) return;
   if (!renameForm.name.trim()) {
-    ElMessage.warning("实体名不能为空");
+    ElMessage.warning(i18nT("ai_ontology.entityNameCannotBeEmpty"));
     return;
   }
   renamingEntity.value = true;
@@ -2748,10 +3183,10 @@ async function saveRenameEntity() {
       description: renameForm.description,
     });
     renameEntityVisible.value = false;
-    await reloadGraph("已更新实体（含关系联动）");
+    await reloadGraph(i18nT("ai_ontology.entityUpdatedWithRelationCascade"));
     await loadDetailStats(graphKbId.value);
   } catch (e: any) {
-    ElMessage.error(e?.message || "更新失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.updateFailed"));
   } finally {
     renamingEntity.value = false;
   }
@@ -2760,9 +3195,9 @@ async function delGraphRelation(e: any) {
   if (!graphKbId.value) return;
   try {
     await deleteAiKnowledgeGraphRelations(graphKbId.value, [e.id]);
-    await reloadGraph("已删除关系");
+    await reloadGraph(i18nT("ai_ontology.relationDeleted"));
   } catch (err: any) {
-    ElMessage.error(err?.message || "删除关系失败");
+    ElMessage.error(err?.message || i18nT("ai_ontology.deleteRelationFailed"));
   }
 }
 
@@ -2802,10 +3237,10 @@ function exportChunksCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `知识库分块_${detailKb.value?.name || ""}.csv`;
+  a.download = `${i18nT("ai_ontology.kbChunksFilePrefix")}${detailKb.value?.name || ""}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-  ElMessage.success(`已导出 ${rows.length} 个分块`);
+  ElMessage.success(i18nT("ai_ontology.exportChunksMsg", { count: rows.length }));
 }
 const detailSearchMode = ref("hybrid");
 const detailQuery = ref("");
@@ -2818,9 +3253,9 @@ const detailFileFilter = ref("");
 const detailUseRerank = ref(true);
 const detailRewrite = ref("off");
 function rerankLabel(status?: string) {
-  if (status === "applied") return "已精排";
-  if (status === "skipped") return "已跳过";
-  return "未启用";
+  if (status === "applied") return i18nT("ai_ontology.reranked");
+  if (status === "skipped") return i18nT("ai_ontology.skipped");
+  return i18nT("ai_ontology.disabled");
 }
 
 async function loadDetailStats(kbId: number) {
@@ -2850,7 +3285,7 @@ async function openDetail(row: any) {
     const r = await getAiKnowledgeGraph(row.id);
     await loadGraph(r.data?.data || { nodes: [], edges: [] });
   } catch (e: any) {
-    ElMessage.error(e?.message || "加载图谱失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.loadGraphFailed"));
   } finally {
     graphLoading.value = false;
   }
@@ -2871,10 +3306,10 @@ async function saveDetailOverview() {
       description: detailDesc.value,
       enabled: detailEnabled.value,
     });
-    ElMessage.success("已保存");
+    ElMessage.success(i18nT("ai_ontology.saved"));
     await loadData();
   } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.saveFailed"));
   }
 }
 
@@ -2882,9 +3317,13 @@ async function rebuildDetail() {
   if (!detailKb.value) return;
   try {
     await ElMessageBox.confirm(
-      `将在知识库「${detailKb.value.name}」重新向量化所有分块并重建图谱，耗时较长，且可能影响检索结果。确认重建？`,
-      "重建索引确认",
-      { confirmButtonText: "重建", cancelButtonText: "取消", type: "warning" }
+      i18nT("ai_ontology.rebuildKbConfirm", { name: detailKb.value.name }),
+      i18nT("ai_ontology.rebuildIndexConfirm"),
+      {
+        confirmButtonText: i18nT("ai_ontology.rebuild"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+        type: "warning",
+      }
     );
   } catch {
     return;
@@ -2892,10 +3331,10 @@ async function rebuildDetail() {
   rebuilding.value = true;
   try {
     const r = await rebuildAiKnowledge(detailKb.value.id);
-    ElMessage.success(`重建完成（${r.data?.data?.chunks || 0} 分块）`);
+    ElMessage.success(i18nT("ai_ontology.rebuildDoneMsg", { count: r.data?.data?.chunks || 0 }));
     await loadDetailStats(detailKb.value.id);
   } catch (e: any) {
-    ElMessage.error(e?.message || "重建失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.rebuildFailed"));
   } finally {
     rebuilding.value = false;
   }
@@ -2903,18 +3342,18 @@ async function rebuildDetail() {
 
 async function doDetailIngest() {
   if (!detailKb.value || !detailIngest.content.trim()) {
-    ElMessage.warning("请粘贴待入库文本");
+    ElMessage.warning(i18nT("ai_ontology.pleasePasteTextToIngest"));
     return;
   }
   detailIngesting.value = true;
   try {
     const r = await ingestAiKnowledge(detailKb.value.id, { ...detailIngest });
-    ElMessage.success(`入库成功，写入 ${r.data?.data?.chunks || 0} 个分块`);
+    ElMessage.success(i18nT("ai_ontology.ingestSuccessMsg", { count: r.data?.data?.chunks || 0 }));
     detailIngest.content = "";
     await loadDetailStats(detailKb.value.id);
     await loadData();
   } catch (e: any) {
-    ElMessage.error(e?.message || "入库失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.ingestFailed"));
   } finally {
     detailIngesting.value = false;
   }
@@ -2923,16 +3362,20 @@ async function doDetailIngest() {
 async function deleteChunkFromDetail(row: any) {
   if (!detailKb.value) return;
   try {
-    await ElMessageBox.confirm("确定删除该分块吗？其向量与绑定将一并移除，不可恢复。", "删除分块", {
-      confirmButtonText: "删除",
-      cancelButtonText: "取消",
-      type: "warning",
-    });
+    await ElMessageBox.confirm(
+      i18nT("ai_ontology.deleteThisChunkItsVectorAndBindingsAreRemovedAndCannotBeRecovered"),
+      i18nT("ai_ontology.deleteChunk"),
+      {
+        confirmButtonText: i18nT("ai_ontology.delete2"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+        type: "warning",
+      }
+    );
   } catch {
     return;
   }
   await deleteAiKnowledgeChunk(detailKb.value.id, row.id);
-  ElMessage.success("已删除分块");
+  ElMessage.success(i18nT("ai_ontology.chunkDeleted"));
   await loadDetailStats(detailKb.value.id);
 }
 
@@ -2949,17 +3392,17 @@ function openChunkEdit(row: any) {
 async function saveChunkEdit() {
   if (!detailKb.value || !chunkEditId.value) return;
   if (!chunkEditContent.value.trim()) {
-    ElMessage.warning("内容不能为空");
+    ElMessage.warning(i18nT("ai_ontology.contentCannotBeEmpty"));
     return;
   }
   chunkEditing.value = true;
   try {
     await updateAiKnowledgeChunk(detailKb.value.id, chunkEditId.value, chunkEditContent.value);
-    ElMessage.success("已保存并重向量化");
+    ElMessage.success(i18nT("ai_ontology.savedAndReVectorized"));
     chunkEditVisible.value = false;
     await loadDetailStats(detailKb.value.id);
   } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.saveFailed"));
   } finally {
     chunkEditing.value = false;
   }
@@ -2973,16 +3416,16 @@ const annotText = ref("");
 const annotKind = ref("alias");
 const annotating = ref(false);
 function annotKindLabel(k: string) {
-  if (k === "alias") return "别名";
-  if (k === "anchor") return "锚点";
-  if (k === "note") return "备注";
+  if (k === "alias") return i18nT("ai_ontology.alias");
+  if (k === "anchor") return i18nT("ai_ontology.anchor");
+  if (k === "note") return i18nT("ai_ontology.remark");
   return k;
 }
 function sourceLabel(k: string) {
-  if (k === "manual") return "手动";
-  if (k === "search") return "检索";
-  if (k === "auto") return "自动";
-  if (k === "graph") return "图谱";
+  if (k === "manual") return i18nT("ai_ontology.manual");
+  if (k === "search") return i18nT("ai_ontology.search2");
+  if (k === "auto") return i18nT("ai_ontology.auto");
+  if (k === "graph") return i18nT("ai_ontology.graph2");
   return k;
 }
 function openAnnotation(row: any) {
@@ -2994,7 +3437,7 @@ function openAnnotation(row: any) {
 }
 async function addAnnotation() {
   if (!detailKb.value || !annotChunk.value || !annotText.value.trim()) {
-    ElMessage.warning("请输入标注文本");
+    ElMessage.warning(i18nT("ai_ontology.pleaseEnterAnnotationText"));
     return;
   }
   annotating.value = true;
@@ -3009,11 +3452,11 @@ async function addAnnotation() {
     );
     annotList.value = r.data?.data?.annotations || annotList.value;
     annotText.value = "";
-    ElMessage.success("已添加标注并更新索引");
+    ElMessage.success(i18nT("ai_ontology.annotationAddedAndIndexUpdated"));
     await loadDetailStats(detailKb.value.id);
     await loadLogs();
   } catch (e: any) {
-    ElMessage.error(e?.message || "添加失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.addFailed"));
   } finally {
     annotating.value = false;
   }
@@ -3023,11 +3466,11 @@ async function removeAnnotation(index: number) {
   try {
     const r = await removeAiKnowledgeChunkAnnotation(detailKb.value.id, annotChunk.value.id, index);
     annotList.value = r.data?.data?.annotations || annotList.value;
-    ElMessage.success("已删除标注并更新索引");
+    ElMessage.success(i18nT("ai_ontology.annotationDeletedAndIndexUpdated"));
     await loadDetailStats(detailKb.value.id);
     await loadLogs();
   } catch (e: any) {
-    ElMessage.error(e?.message || "删除失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.deleteFailed"));
   }
 }
 
@@ -3044,11 +3487,14 @@ async function loadSuggest() {
     suggestList.value = r.data?.data || [];
     const un = suggestList.value.filter((s) => !s.hit);
     suggestHint.value = un.length
-      ? `推测到 ${suggestList.value.length} 个相关分块，其中 ${un.length} 个未被当前检索命中，可对其标注以提升下次召回。`
-      : `推测的相关分块均已被命中。`;
+      ? i18nT("ai_ontology.suggestRelatedMsg", {
+          count: suggestList.value.length,
+          unhit: un.length,
+        })
+      : i18nT("ai_ontology.suggestRelatedHitMsg");
   } catch (e: any) {
     suggestList.value = [];
-    ElMessage.error(e?.message || "推测失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.suggestFailed"));
   } finally {
     suggestLoading.value = false;
   }
@@ -3154,11 +3600,11 @@ async function onUploadFile(file: any) {
       docUseOcr.value
     );
     const data = r.data?.data || {};
-    ElMessage.success(`已上传「${file.name}」，正在后台解析`);
+    ElMessage.success(i18nT("ai_ontology.fileUploadedMsg", { name: file.name }));
     await loadDocs();
     attachDocTask(data.id, data.task_id);
   } catch (e: any) {
-    ElMessage.error(e?.message || "上传失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.uploadFailed"));
   } finally {
     uploadingDoc.value = false;
   }
@@ -3167,20 +3613,24 @@ async function deleteDoc(row: any) {
   if (!detailKb.value) return;
   try {
     await ElMessageBox.confirm(
-      `确定删除文档「${row.name}」吗？其索引分块将一并移除，不可恢复。`,
-      "删除文档",
-      { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+      i18nT("ai_ontology.deleteDocConfirm", { name: row.name }),
+      i18nT("ai_ontology.deleteDocument"),
+      {
+        confirmButtonText: i18nT("ai_ontology.delete2"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+        type: "warning",
+      }
     );
   } catch {
     return;
   }
   try {
     await deleteAiKnowledgeDocument(detailKb.value.id, row.id);
-    ElMessage.success("已删除");
+    ElMessage.success(i18nT("ai_ontology.deleted"));
     await loadDocs();
     await loadDetailStats(detailKb.value.id);
   } catch (e: any) {
-    ElMessage.error(e?.message || "删除失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.deleteFailed"));
   }
 }
 const selectedDocIds = ref<number[]>([]);
@@ -3188,9 +3638,13 @@ async function batchDeleteDocs() {
   if (!detailKb.value || !selectedDocIds.value.length) return;
   try {
     await ElMessageBox.confirm(
-      `将删除 ${selectedDocIds.value.length} 个文档及其全部索引/分块，不可恢复。`,
-      "批量删除文档",
-      { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+      i18nT("ai_ontology.batchDeleteDocsConfirm", { count: selectedDocIds.value.length }),
+      i18nT("ai_ontology.batchDeleteDocuments"),
+      {
+        confirmButtonText: i18nT("ai_ontology.delete2"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+        type: "warning",
+      }
     );
   } catch {
     return;
@@ -3199,12 +3653,12 @@ async function batchDeleteDocs() {
     for (const id of selectedDocIds.value) {
       await deleteAiKnowledgeDocument(detailKb.value.id, id);
     }
-    ElMessage.success(`已删除 ${selectedDocIds.value.length} 个文档`);
+    ElMessage.success(i18nT("ai_ontology.deleteDocsMsg", { count: selectedDocIds.value.length }));
     selectedDocIds.value = [];
     await loadDocs();
     await loadDetailStats(detailKb.value.id);
   } catch (e: any) {
-    ElMessage.error(e?.message || "删除失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.deleteFailed"));
   }
 }
 // 预览 / 重建
@@ -3244,7 +3698,7 @@ async function previewDoc(row: any) {
   } catch (e: any) {
     docPreviewKind.value = "text";
     docPreviewContent.value = "";
-    ElMessage.error(e?.message || "预览失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.previewFailed"));
   } finally {
     docPreviewLoading.value = false;
   }
@@ -3254,11 +3708,11 @@ async function reparseDoc(row: any) {
   try {
     const r = await reparseAiKnowledgeDocument(detailKb.value.id, row.id);
     const data = r.data?.data || {};
-    ElMessage.success("已开始重新解析");
+    ElMessage.success(i18nT("ai_ontology.reparseStarted"));
     await loadDocs();
     attachDocTask(row.id, data.task_id);
   } catch (e: any) {
-    ElMessage.error(e?.message || "重建失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.rebuildFailed"));
   }
 }
 async function downloadDoc(row: any) {
@@ -3278,7 +3732,7 @@ async function downloadDoc(row: any) {
     a.click();
     URL.revokeObjectURL(url);
   } catch (e: any) {
-    ElMessage.error(e?.message || "下载失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.downloadFailed"));
   }
 }
 const faqLoading = ref(false);
@@ -3295,12 +3749,12 @@ async function exportFaq() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `知识库FAQ_${detailKb.value.name || ""}.md`;
+    a.download = `${i18nT("ai_ontology.kbFaqFilePrefix")}${detailKb.value.name || ""}.md`;
     a.click();
     URL.revokeObjectURL(url);
-    ElMessage.success(`已导出 FAQ（${r.data?.data?.count || 0} 条）`);
+    ElMessage.success(i18nT("ai_ontology.exportFaqMsg", { count: r.data?.data?.count || 0 }));
   } catch (e: any) {
-    ElMessage.error(e?.message || "导出失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.exportFailed"));
   } finally {
     faqLoading.value = false;
   }
@@ -3335,10 +3789,10 @@ async function doQaSearch() {
     qaAnswer.value = d.answer || "";
     qaRefs.value = d.references || [];
     if (!qaRefs.value.length) {
-      ElMessage.info("未检索到相关内容，可换个问法或给分块加标注");
+      ElMessage.info(i18nT("ai_ontology.noResultsTryAnotherPhrasingOrAnnotateChunks"));
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || "问答失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.qAFailed"));
   } finally {
     qaSearching.value = false;
   }
@@ -3378,7 +3832,7 @@ async function loadStats() {
     const r = await getAiKnowledgeSearchStats(detailKb.value.id, statsDays.value);
     searchStats.value = r.data?.data || searchStats.value;
   } catch (e: any) {
-    ElMessage.error(e?.message || "加载统计失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.loadStatsFailed"));
   } finally {
     loadingStats.value = false;
   }
@@ -3412,11 +3866,11 @@ function onGraphLinkDraw(source: string, target: string) {
       rtype: "related",
       weight: 1,
     }).then(() => {
-      ElMessage.success("已连线");
+      ElMessage.success(i18nT("ai_ontology.linked"));
       reloadGraph();
     });
   } catch (e: any) {
-    ElMessage.error(e?.message || "连线失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.linkFailed"));
   }
 }
 function onGraphNodeTap(name: string) {
@@ -3429,7 +3883,7 @@ function onGraphNodeTap(name: string) {
   if (linkMode.value) {
     if (!linkSource.value) {
       linkSource.value = name;
-      ElMessage.info(`已选起点「${name}」，再点击目标节点完成连线`);
+      ElMessage.info(i18nT("ai_ontology.linkModeNodeHint", { name }));
     } else if (linkSource.value !== name) {
       const src = linkSource.value;
       linkSource.value = null;
@@ -3494,8 +3948,8 @@ function findNodeByName(name: string) {
 function onGraphLayout(items: { id: number; x: number; y: number }[]) {
   if (!graphKbId.value || !items.length) return;
   saveAiKnowledgeGraphLayout(graphKbId.value, items)
-    .then(() => ElMessage.success(`已保存 ${items.length} 个节点位置`))
-    .catch(() => ElMessage.error("保存布局失败"));
+    .then(() => ElMessage.success(i18nT("ai_ontology.saveLayoutMsg", { count: items.length })))
+    .catch(() => ElMessage.error(i18nT("ai_ontology.saveLayoutFailed")));
 }
 async function saveLayout() {
   if (!graphKbId.value) return;
@@ -3512,9 +3966,9 @@ async function relayoutGraph() {
   if (!graphKbId.value) return;
   try {
     await clearAiKnowledgeGraphLayout(graphKbId.value);
-    await reloadGraph("已清除布局记忆，重新自动排版");
+    await reloadGraph(i18nT("ai_ontology.layoutMemoryClearedReLayoutAutomatically"));
   } catch (e: any) {
-    ElMessage.error(e?.message || "重新布局失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.reLayoutFailed"));
   }
 }
 // 右键：新建节点
@@ -3537,11 +3991,11 @@ async function saveNewNode() {
       description: nodeNewForm.description,
     });
     nodeNewVisible.value = false;
-    ElMessage.success("已新建节点");
+    ElMessage.success(i18nT("ai_ontology.nodeCreated"));
     await reloadGraph();
     await loadDetailStats(graphKbId.value);
   } catch (e: any) {
-    ElMessage.error(e?.message || "新建失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.newFailed"));
   } finally {
     addingNode.value = false;
   }
@@ -3592,10 +4046,10 @@ async function saveAddRel() {
       weight: relAddForm.weight,
     });
     relAddVisible.value = false;
-    ElMessage.success("已添加关系");
+    ElMessage.success(i18nT("ai_ontology.relationAdded"));
     await reloadGraph();
   } catch (e: any) {
-    ElMessage.error(e?.message || "添加失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.addFailed"));
   } finally {
     addingRel.value = false;
   }
@@ -3650,7 +4104,7 @@ async function doDetailSearch() {
       await loadSuggest().catch(() => {});
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || "检索失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.searchFailed"));
   } finally {
     detailSearching.value = false;
   }
@@ -3708,7 +4162,7 @@ async function loadEvalRuns() {
 async function startEval() {
   if (!detailKb.value) return;
   if (!evalSetId.value) {
-    ElMessage.warning("请先创建并选择评测集");
+    ElMessage.warning(i18nT("ai_ontology.pleaseCreateAndSelectAnEvalSetFirst"));
     return;
   }
   evalRunning.value = true;
@@ -3730,8 +4184,8 @@ async function startEval() {
           if (evalTimer) clearInterval(evalTimer);
           evalTimer = null;
           await loadEvalRuns();
-          if (task.status === "succeeded") ElMessage.success("评测完成");
-          else ElMessage.error(task.error || "评测失败");
+          if (task.status === "succeeded") ElMessage.success(i18nT("ai_ontology.evalComplete"));
+          else ElMessage.error(task.error || i18nT("ai_ontology.evalFailed"));
         }
       } catch {
         if (evalTimer) clearInterval(evalTimer);
@@ -3739,7 +4193,7 @@ async function startEval() {
       }
     }, 1500);
   } catch (e: any) {
-    ElMessage.error(e?.message || "运行评测失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.runEvalFailed"));
   } finally {
     evalRunning.value = false;
   }
@@ -3765,21 +4219,25 @@ async function openChunks(kb: any) {
     const r = await getAiKnowledgeChunks(kb.id);
     chunks.value = r.data?.data || [];
   } catch (e: any) {
-    ElMessage.error(e?.message || "加载分块失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.loadChunkFailed"));
   } finally {
     loadingChunks.value = false;
   }
 }
 
 function deleteChunk(row: any) {
-  ElMessageBox.confirm("确定删除该分块吗？删除后不可恢复。", "删除确认", {
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
+  ElMessageBox.confirm(
+    i18nT("ai_ontology.deleteThisChunkThisCannotBeUndone"),
+    i18nT("ai_ontology.deleteConfirm"),
+    {
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+      type: "warning",
+    }
+  )
     .then(async () => {
       await deleteAiKnowledgeChunk(chunksTarget.value.id, row.id);
-      ElMessage.success("删除成功");
+      ElMessage.success(i18nT("ai_ontology.deleted2"));
       openChunks(chunksTarget.value);
     })
     .catch(() => {
@@ -3816,7 +4274,7 @@ function openDsDialog(d?: any) {
 
 async function saveDs() {
   if (!dsForm.name) {
-    ElMessage.warning("请填写数据源名称");
+    ElMessage.warning(i18nT("ai_ontology.pleaseEnterDataSourceName"));
     return;
   }
   savingDs.value = true;
@@ -3835,25 +4293,29 @@ async function saveDs() {
     } else {
       await createAiDatasource(payload);
     }
-    ElMessage.success("保存成功");
+    ElMessage.success(i18nT("ai_ontology.saved2"));
     dsDialogVisible.value = false;
     loadData();
   } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.saveFailed"));
   } finally {
     savingDs.value = false;
   }
 }
 
 function deleteDatasources(row: any) {
-  ElMessageBox.confirm(`确定删除数据源「${row.name}」吗？删除后不可恢复。`, "删除确认", {
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
+  ElMessageBox.confirm(
+    i18nT("ai_ontology.deleteDsConfirm", { name: row.name }),
+    i18nT("ai_ontology.deleteConfirm"),
+    {
+      confirmButtonText: i18nT("ai_ontology.delete2"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+      type: "warning",
+    }
+  )
     .then(async () => {
       await deleteAiDatasource([row.id]);
-      ElMessage.success("删除成功");
+      ElMessage.success(i18nT("ai_ontology.deleted2"));
       if (selectedDs.value?.id === row.id) selectedDs.value = undefined;
       loadData();
     })
@@ -3870,17 +4332,17 @@ async function testDs(row: any) {
     const r = await testAiDatasource(row.id);
     dsTestResult.value = r.data?.data || {};
   } catch (e: any) {
-    dsTestResult.value = { ok: false, message: e?.message || "测试失败" };
+    dsTestResult.value = { ok: false, message: e?.message || i18nT("ai_ontology.testFailed") };
   }
   dsTestVisible.value = true;
 }
 
 function syncDs(row: any) {
   if (row.ds_type === "db") {
-    ElMessageBox.prompt("请输入要同步的表名/查询（如 users）", "同步入库", {
-      confirmButtonText: "同步",
-      cancelButtonText: "取消",
-      inputPlaceholder: "表名",
+    ElMessageBox.prompt(i18nT("ai_ontology.syncPromptLabel"), i18nT("ai_ontology.syncIngest"), {
+      confirmButtonText: i18nT("ai_ontology.sync"),
+      cancelButtonText: i18nT("ai_ontology.cancel"),
+      inputPlaceholder: i18nT("ai_ontology.table"),
     })
       .then(async ({ value }: { value: string }) => {
         if (!value?.trim()) return;
@@ -3890,11 +4352,15 @@ function syncDs(row: any) {
         /* 取消 */
       });
   } else {
-    ElMessageBox.confirm(`确定从「${row.name}」同步数据到目标知识库吗？`, "同步确认", {
-      confirmButtonText: "同步",
-      cancelButtonText: "取消",
-      type: "warning",
-    })
+    ElMessageBox.confirm(
+      i18nT("ai_ontology.syncDsConfirm", { name: row.name }),
+      i18nT("ai_ontology.syncConfirm"),
+      {
+        confirmButtonText: i18nT("ai_ontology.sync"),
+        cancelButtonText: i18nT("ai_ontology.cancel"),
+        type: "warning",
+      }
+    )
       .then(async () => {
         await doSync(row, {});
       })
@@ -3908,10 +4374,12 @@ async function doSync(row: any, extra: any) {
   try {
     const r = await syncAiDatasource(row.id, { limit: 50, ...extra });
     const d = r.data?.data || {};
-    ElMessage.success(`同步完成：读取 ${d.rows || 0} 行，写入 ${d.chunks || 0} 个分块`);
+    ElMessage.success(
+      i18nT("ai_ontology.syncDoneMsg", { rows: d.rows || 0, chunks: d.chunks || 0 })
+    );
     loadData();
   } catch (e: any) {
-    ElMessage.error(e?.message || "同步失败");
+    ElMessage.error(e?.message || i18nT("ai_ontology.syncFailed"));
   }
 }
 

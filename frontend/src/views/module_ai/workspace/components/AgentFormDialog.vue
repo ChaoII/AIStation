@@ -2,133 +2,141 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="editingAgent ? '编辑智能体' : '新建智能体'"
+    :title="editingAgent ? t('ai_chat.agentForm_editTitle') : t('ai_chat.agentForm_createTitle')"
     width="600px"
     append-to-body
     destroy-on-close
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
     <el-form v-loading="loadingOptions" :model="form" label-width="90px" size="default">
-      <el-form-item label="名称" required>
-        <el-input v-model="form.agent_name" placeholder="智能体名称" />
+      <el-form-item :label="t('ai_chat.agentForm_name')" required>
+        <el-input v-model="form.agent_name" :placeholder="t('ai_chat.agentForm_agentName')" />
       </el-form-item>
-      <el-form-item label="角色描述">
+      <el-form-item :label="t('ai_chat.agentForm_role')">
         <el-input
           v-model="form.agent_role"
           type="textarea"
           :rows="2"
-          placeholder="这个智能体是做什么的"
+          :placeholder="t('ai_chat.agentForm_rolePlaceholder')"
         />
       </el-form-item>
-      <el-form-item label="分类">
-        <el-select v-model="form.category_id" clearable placeholder="选择分类" style="width: 100%">
+      <el-form-item :label="t('ai_chat.agentForm_category')">
+        <el-select
+          v-model="form.category_id"
+          clearable
+          :placeholder="t('ai_chat.agentForm_selectCategory')"
+          style="width: 100%"
+        >
           <el-option v-for="c in categories" :key="c.id" :label="indentLabel(c)" :value="c.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="运行方式">
+      <el-form-item :label="t('ai_chat.agentForm_runMode')">
         <el-radio-group v-model="form.runMode" @change="onRunModeChange">
-          <el-radio value="workflow">绑定工作流</el-radio>
-          <el-radio value="model">模型+提示词</el-radio>
+          <el-radio value="workflow">{{ t("ai_chat.agentForm_bindWorkflow") }}</el-radio>
+          <el-radio value="model">{{ t("ai_chat.agentForm_modelPrompt") }}</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item v-if="form.runMode === 'workflow'" label="工作流">
+      <el-form-item v-if="form.runMode === 'workflow'" :label="t('ai_chat.agentForm_workflow')">
         <el-select
           v-model="form.workflow_id"
           clearable
-          placeholder="选择工作流"
+          :placeholder="t('ai_chat.agentForm_selectWorkflow')"
           style="width: 100%"
         >
           <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
         </el-select>
       </el-form-item>
       <template v-else>
-        <el-form-item label="模型">
-          <el-select v-model="form.model_id" clearable placeholder="选择模型" style="width: 100%">
+        <el-form-item :label="t('ai_chat.agentForm_model')">
+          <el-select
+            v-model="form.model_id"
+            clearable
+            :placeholder="t('ai_chat.agentForm_selectModel')"
+            style="width: 100%"
+          >
             <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="提示词">
+        <el-form-item :label="t('ai_chat.agentForm_prompt')">
           <el-select
             v-model="form.prompt_id"
             clearable
-            placeholder="选择提示词"
+            :placeholder="t('ai_chat.agentForm_selectPrompt')"
             style="width: 100%"
           >
             <el-option v-for="p in promptOptions" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="工具">
+        <el-form-item :label="t('ai_chat.agentForm_tools')">
           <el-select
             v-model="form.tool_ids"
             multiple
             filterable
-            placeholder="选择工具"
+            :placeholder="t('ai_chat.agentForm_selectTools')"
             style="width: 100%"
           >
-            <el-option v-for="t in toolOptions" :key="t.name" :label="t.name" :value="t.name" />
+            <el-option
+              v-for="tool in toolOptions"
+              :key="tool.name"
+              :label="tool.name"
+              :value="tool.name"
+            />
           </el-select>
         </el-form-item>
-        <el-form-item label="本体工具">
+        <el-form-item :label="t('ai_chat.agentForm_ontologyTools')">
           <el-select
             v-model="form.capabilities"
             multiple
             filterable
-            placeholder="绑定本体函数/动作（Agent 装配工具时按此生成）"
+            :placeholder="t('ai_chat.agentForm_ontologyPlaceholder')"
             style="width: 100%"
           >
             <el-option v-for="c in ontToolOptions" :key="c.code" :label="c.label" :value="c.code" />
           </el-select>
-          <div class="ws-form-hint">
-            勾选后 Agent 会得到对应的本体函数/动作工具；执行时仍按调用者本人的本体权限校验
-          </div>
+          <div class="ws-form-hint">{{ t("ai_chat.agentForm_ontologyHint") }}</div>
         </el-form-item>
-        <el-form-item label="技能">
+        <el-form-item :label="t('ai_chat.agentForm_skills')">
           <el-select
             v-model="form.skill_ids"
             multiple
             filterable
-            placeholder="绑定技能广场技能"
+            :placeholder="t('ai_chat.agentForm_selectSkills')"
             style="width: 100%"
           >
             <el-option v-for="s in skillOptions" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="知识库">
+        <el-form-item :label="t('ai_chat.agentForm_knowledge')">
           <el-select
             v-model="form.knowledge_ids"
             multiple
             filterable
-            placeholder="绑定知识库（RAG）"
+            :placeholder="t('ai_chat.agentForm_selectKnowledge')"
             style="width: 100%"
           >
             <el-option v-for="k in knowledgeOptions" :key="k.id" :label="k.name" :value="k.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="MCP">
+        <el-form-item :label="t('ai_chat.agentForm_mcp')">
           <el-select
             v-model="form.mcp_ids"
             multiple
             filterable
-            placeholder="绑定 MCP 服务器"
+            :placeholder="t('ai_chat.agentForm_selectMcp')"
             style="width: 100%"
           >
-            <el-option
-              v-for="m in mcpOptions"
-              :key="m.id"
-              :label="`${m.name}（${m.transport}${m.enabled ? '' : ' · 未启用'}）`"
-              :value="m.id"
-            />
+            <el-option v-for="m in mcpOptions" :key="m.id" :label="mcpLabel(m)" :value="m.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="智能问数">
+        <el-form-item :label="t('ai_chat.agentForm_query')">
           <el-switch v-model="form.query_enabled" />
           <span style="margin-left: 8px; color: var(--el-text-color-secondary); font-size: 12px">
-            启用后可回答基于系统数据的业务问题
+            {{ t("ai_chat.agentForm_queryHint") }}
           </span>
         </el-form-item>
-        <el-form-item v-if="form.query_enabled" label="问数数据源">
+        <el-form-item v-if="form.query_enabled" :label="t('ai_chat.agentForm_queryDatasource')">
           <el-select v-model="form.query_datasource" style="width: 100%">
-            <el-option label="系统数据" value="system" />
+            <el-option :label="t('ai_chat.agentForm_systemData')" value="system" />
             <el-option
               v-for="d in queryDatasources"
               :key="d.id"
@@ -137,29 +145,34 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="温度">
+        <el-form-item :label="t('ai_chat.agentForm_temperature')">
           <el-slider v-model="form.temperature" :min="0" :max="2" :step="0.1" style="width: 100%" />
         </el-form-item>
       </template>
-      <el-form-item label="主题色">
+      <el-form-item :label="t('ai_chat.agentForm_themeColor')">
         <el-color-picker v-model="form.color" />
       </el-form-item>
-      <el-form-item label="Markdown">
+      <el-form-item :label="t('ai_chat.agentForm_markdown')">
         <el-switch v-model="form.markdown" />
       </el-form-item>
-      <el-form-item label="启用">
+      <el-form-item :label="t('ai_chat.agentForm_enabled')">
         <el-switch v-model="form.enabled" />
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <el-button @click="emit('update:modelValue', false)">
+        {{ t("ai_chat.agentForm_cancel") }}
+      </el-button>
+      <el-button type="primary" :loading="saving" @click="save">
+        {{ t("ai_chat.agentForm_save") }}
+      </el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { reactive, watch, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 
 import { createAiAgent, updateAiAgent } from "@/api/module_ai/agent";
@@ -178,6 +191,8 @@ defineOptions({ name: "AgentFormDialog" });
 
 const props = defineProps<{ modelValue: boolean; agent?: any }>();
 const emit = defineEmits<{ (e: "update:modelValue", v: boolean): void; (e: "refresh"): void }>();
+
+const { t } = useI18n();
 
 const loadingOptions = ref(false);
 const saving = ref(false);
@@ -209,6 +224,12 @@ const mcpOptions = ref<{ id: number; name: string; transport: string; enabled: b
 // 本体工具：本体函数/动作的编码（Agent 按此装配 ont_fn__* / ont_action__* 工具）
 const ontToolOptions = ref<{ code: string; label: string }[]>([]);
 const queryDatasources = ref<any[]>([]);
+
+/** MCP 选项显示名：名称 + 传输方式（未启用时追加提示）。 */
+function mcpLabel(m: { name: string; transport: string; enabled: boolean }): string {
+  const suffix = m.enabled ? "" : ` · ${t("ai_chat.agentForm_notEnabled")}`;
+  return `${m.name}（${m.transport}${suffix}）`;
+}
 
 const form = reactive<any>({});
 
@@ -271,18 +292,18 @@ async function loadOptions() {
       const [fnr, actr] = await Promise.all([getOntFunctions(), getOntActions()]);
       const fns = ((fnr.data?.data || []) as any[]).map((f: any) => ({
         code: f.code,
-        label: `函数：${f.name || f.code}`,
+        label: t("ai_chat.agentForm_fnLabel", { name: f.name || f.code }),
       }));
       const acts = ((actr.data?.data || []) as any[]).map((a: any) => ({
         code: a.code,
-        label: `动作：${a.name || a.code}`,
+        label: t("ai_chat.agentForm_actionLabel", { name: a.name || a.code }),
       }));
       ontToolOptions.value = [...fns, ...acts];
     } catch {
       ontToolOptions.value = [];
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || "加载选项失败");
+    ElMessage.error(e?.message || t("ai_chat.agentForm_loadOptionsFailed"));
   } finally {
     loadingOptions.value = false;
   }
@@ -321,7 +342,7 @@ function onRunModeChange(mode: any) {
 
 async function save() {
   if (!form.agent_name) {
-    ElMessage.warning("请填写智能体名称");
+    ElMessage.warning(t("ai_chat.agentForm_inputAgentName"));
     return;
   }
   saving.value = true;
@@ -352,11 +373,11 @@ async function save() {
     } else {
       await createAiAgent(payload);
     }
-    ElMessage.success("保存成功");
+    ElMessage.success(t("ai_chat.agentForm_saveSuccess"));
     emit("update:modelValue", false);
     emit("refresh");
   } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败");
+    ElMessage.error(e?.message || t("ai_chat.agentForm_saveFailed"));
   } finally {
     saving.value = false;
   }

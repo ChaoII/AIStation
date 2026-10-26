@@ -1,8 +1,8 @@
 <template>
   <div class="app-container">
     <el-tabs v-model="activeKind" class="gallery-kind-tabs" @tab-change="handleKindChange">
-      <el-tab-pane label="人脸底库" name="face" />
-      <el-tab-pane label="跨镜底库" name="reid" />
+      <el-tab-pane :label="t('video.face.faceLib')" name="face" />
+      <el-tab-pane :label="t('video.face.reidLib')" name="reid" />
     </el-tabs>
 
     <PageSearch
@@ -13,9 +13,11 @@
     />
 
     <div class="gallery-summary">
-      <el-tag type="info" size="small">{{ kindMeta.label }}总数：{{ gallerySummary.total }}</el-tag>
+      <el-tag type="info" size="small">
+        {{ t("video.face.total", { total: gallerySummary.total }) }}
+      </el-tag>
       <el-tag v-if="gallerySummary.dimensions.length" type="info" size="small" effect="plain">
-        当前页特征维度：{{ gallerySummary.dimensions.join(" / ") }}
+        {{ t("video.face.featureDim", { dims: gallerySummary.dimensions.join(" / ") }) }}
       </el-tag>
       <el-tag v-if="gallerySummary.total === 0" type="warning" size="small">
         {{ kindMeta.emptyTip }}
@@ -61,39 +63,49 @@
               v-if="galleryCols.find((c) => c.prop === 'index')?.show"
               type="index"
               fixed
-              label="序号"
+              :label="t('video.common.sequence')"
               width="60"
               align="center"
             />
-            <el-table-column label="姓名/标签" prop="name" min-width="130" show-overflow-tooltip />
-            <el-table-column label="类型" prop="kind" width="100" align="center">
+            <el-table-column
+              :label="t('video.face.nameLabel')"
+              prop="name"
+              min-width="130"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('video.common.type')" prop="kind" width="100" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.kind === 'reid' ? 'warning' : 'success'" size="small">
-                  {{ row.kind === "reid" ? "跨镜" : "人脸" }}
+                  {{ row.kind === "reid" ? t("video.face.reid") : t("video.face.face") }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
-              label="工号/编号"
+              :label="t('video.face.personNo')"
               prop="person_no"
               min-width="120"
               show-overflow-tooltip
             />
             <el-table-column
-              label="特征模型"
+              :label="t('video.face.featureModel')"
               prop="model_key"
               min-width="130"
               show-overflow-tooltip
             />
-            <el-table-column label="维度" prop="dimension" width="90" align="center" />
             <el-table-column
-              label="底图引用"
+              :label="t('video.face.dimension')"
+              prop="dimension"
+              width="90"
+              align="center"
+            />
+            <el-table-column
+              :label="t('video.face.baseImage')"
               prop="face_image_url"
               min-width="160"
               show-overflow-tooltip
             />
             <el-table-column
-              label="更新时间"
+              :label="t('video.face.updatedTime')"
               prop="updated_time"
               width="170"
               show-overflow-tooltip
@@ -101,7 +113,7 @@
             <el-table-column
               v-if="galleryCols.find((c) => c.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('video.common.operation')"
               align="center"
               min-width="150"
             >
@@ -114,7 +126,7 @@
                   link
                   @click="handleOpenDialog('update', scope.row)"
                 >
-                  编辑
+                  {{ t("video.common.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_video:face_gallery:delete']"
@@ -124,7 +136,7 @@
                   link
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("video.common.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -146,7 +158,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="粘贴特征向量（支持 JSON 数组 / 逗号分隔 / f16b64 base64），或从文件导入"
+        :title="t('video.face.pasteVectorTip')"
       />
       <el-alert
         v-else
@@ -154,57 +166,59 @@
         type="info"
         :closable="false"
         show-icon
-        title="特征向量留空表示不修改，仅更新姓名/工号/底图引用"
+        :title="t('video.face.updateTip')"
       />
 
       <el-form ref="dataFormRef" :model="formData" label-width="100px" size="default">
-        <el-form-item label="底库类型" prop="kind">
+        <el-form-item :label="t('video.face.libType')" prop="kind">
           <el-select
             v-model="formData.kind"
             :disabled="dialogVisible.type === 'update'"
-            placeholder="请选择底库类型"
+            :placeholder="t('video.face.selectLibType')"
             style="width: 100%"
           >
-            <el-option label="人脸底库（FACE_REC / STRANGER）" value="face" />
-            <el-option label="跨镜底库（REID_TRACK）" value="reid" />
+            <el-option :label="t('video.face.faceLibOption')" value="face" />
+            <el-option :label="t('video.face.reidLibOption')" value="reid" />
           </el-select>
         </el-form-item>
         <el-form-item
-          label="姓名/标签"
+          :label="t('video.face.nameLabel')"
           prop="name"
-          :rules="[{ required: true, message: '请输入姓名或标签', trigger: 'blur' }]"
+          :rules="[{ required: true, message: t('video.face.enterNameOrLabel'), trigger: 'blur' }]"
         >
-          <el-input v-model="formData.name" placeholder="如：张三" />
+          <el-input v-model="formData.name" :placeholder="t('video.face.nameExample')" />
         </el-form-item>
-        <el-form-item label="工号/编号" prop="person_no">
-          <el-input v-model="formData.person_no" placeholder="可选，如：E1001" />
+        <el-form-item :label="t('video.face.personNo')" prop="person_no">
+          <el-input v-model="formData.person_no" :placeholder="t('video.face.personNoExample')" />
         </el-form-item>
-        <el-form-item label="特征模型" prop="model_key">
+        <el-form-item :label="t('video.face.featureModel')" prop="model_key">
+          <el-input v-model="formData.model_key" :placeholder="t('video.face.modelExample')" />
+        </el-form-item>
+        <el-form-item :label="t('video.face.baseImage')" prop="face_image_url">
           <el-input
-            v-model="formData.model_key"
-            placeholder="如：w600k_r50（需与边缘人脸模型一致）"
+            v-model="formData.face_image_url"
+            :placeholder="t('video.face.baseImagePlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="底图引用" prop="face_image_url">
-          <el-input v-model="formData.face_image_url" placeholder="可选：底图 URL 或对象存储路径" />
-        </el-form-item>
-        <el-form-item label="特征向量" prop="embeddingText">
+        <el-form-item :label="t('video.face.vector')" prop="embeddingText">
           <el-input
             v-model="formData.embeddingText"
             type="textarea"
             :rows="4"
-            placeholder="[0.0123, -0.0456, ...] 或 0.0123,-0.0456,... 或 f16b64 字符串"
+            :placeholder="t('video.face.vectorPlaceholder')"
           />
           <div class="gallery-dialog__embedding-actions">
-            <el-button size="small" @click="triggerFilePick">从文件导入</el-button>
+            <el-button size="small" @click="triggerFilePick">
+              {{ t("video.face.importFromFile") }}
+            </el-button>
             <span v-if="parsedDimension" class="gallery-dialog__dim">
-              解析维度：{{ parsedDimension }}
+              {{ t("video.face.parsedDim", { dim: parsedDimension }) }}
             </span>
             <span
               v-else-if="formData.embeddingText"
               class="gallery-dialog__dim gallery-dialog__dim--bad"
             >
-              无法解析特征向量
+              {{ t("video.face.parseFail") }}
             </span>
           </div>
           <input
@@ -215,13 +229,15 @@
             @change="handleFileChange"
           />
         </el-form-item>
-        <el-form-item label="备注" prop="description">
+        <el-form-item :label="t('video.common.description')" prop="description">
           <el-input v-model="formData.description" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="handleCloseDialog">{{ t("video.common.cancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("video.common.save") }}
+        </el-button>
       </template>
     </EnhancedDialog>
   </div>
@@ -230,6 +246,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import { useI18n } from "vue-i18n";
 import {
   deleteFaceGallery,
   enrollFaceGallery,
@@ -246,6 +263,7 @@ interface TablePageQuery {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const { t } = useI18n();
 
 /** 当前管理的底库类型：face=人脸 / reid=跨镜重识别（后端同一张表按 kind 隔离） */
 const activeKind = ref("face");
@@ -254,14 +272,14 @@ const activeKind = ref("face");
 const kindMeta = computed(() =>
   activeKind.value === "reid"
     ? {
-        label: "跨镜底库",
-        emptyTip: "跨镜底库为空：REID_TRACK 规则不会命中，请先录入跨镜特征",
-        emptyListTip: "跨镜底库为空：启用 REID_TRACK 规则前请先录入跨镜特征",
+        label: t("video.face.reidLib"),
+        emptyTip: t("video.face.reidEmptyTip"),
+        emptyListTip: t("video.face.reidEmptyListTip"),
       }
     : {
-        label: "人脸底库",
-        emptyTip: "人脸底库为空：FACE_REC / STRANGER 规则不会命中，请先录入人脸特征",
-        emptyListTip: "人脸底库为空：启用 FACE_REC / STRANGER 规则前请先录入人脸特征",
+        label: t("video.face.faceLib"),
+        emptyTip: t("video.face.faceEmptyTip"),
+        emptyListTip: t("video.face.faceEmptyListTip"),
       }
 );
 
@@ -278,29 +296,33 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "姓名/标签",
+      label: t("video.face.nameLabel"),
       type: "input",
-      attrs: { placeholder: "姓名/标签", clearable: true, style: { width: "180px" } },
+      attrs: { placeholder: t("video.face.nameLabel"), clearable: true, style: { width: "180px" } },
     },
     {
       prop: "person_no",
-      label: "工号/编号",
+      label: t("video.face.personNo"),
       type: "input",
-      attrs: { placeholder: "工号/编号", clearable: true, style: { width: "180px" } },
+      attrs: { placeholder: t("video.face.personNo"), clearable: true, style: { width: "180px" } },
     },
     {
       prop: "model_key",
-      label: "特征模型",
+      label: t("video.face.featureModel"),
       type: "input",
-      attrs: { placeholder: "特征模型", clearable: true, style: { width: "180px" } },
+      attrs: {
+        placeholder: t("video.face.featureModel"),
+        clearable: true,
+        style: { width: "180px" },
+      },
     },
   ],
 });
 
 const galleryCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("video.common.selection"), show: true },
+  { prop: "index", label: t("video.common.sequence"), show: true },
+  { prop: "operation", label: t("video.common.operation"), show: true },
 ]);
 
 /** 底库概要：总条数 + 当前页出现的维度集合（列表/概览用） */
@@ -338,7 +360,7 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
         .filter((n: number) => !Number.isNaN(n))
     );
   },
-  deleteConfirm: { title: "警告", message: "确认删除所选人脸底库条目?", type: "warning" },
+  deleteConfirm: { type: "warning" },
 });
 
 const dialogVisible = reactive({
@@ -447,7 +469,7 @@ async function handleFileChange(e: Event) {
   try {
     formData.embeddingText = (await file.text()).trim();
   } catch {
-    ElMessage.error("读取文件失败");
+    ElMessage.error(t("video.face.readFileFail"));
   }
 }
 
@@ -467,7 +489,7 @@ async function handleCloseDialog() {
 function handleOpenDialog(type: "create" | "update", row?: any) {
   dialogVisible.type = type;
   if (type === "update" && row) {
-    dialogVisible.title = "编辑底库条目";
+    dialogVisible.title = t("video.face.editEntry");
     formData.id = row.id;
     formData.kind = row.kind === "reid" ? "reid" : "face";
     formData.name = row.name;
@@ -477,7 +499,7 @@ function handleOpenDialog(type: "create" | "update", row?: any) {
     formData.face_image_url = row.face_image_url ?? "";
     formData.embeddingText = "";
   } else {
-    dialogVisible.title = "录入底库条目";
+    dialogVisible.title = t("video.face.addEntry");
     resetForm();
     formData.kind = activeKind.value === "reid" ? "reid" : "face";
   }
@@ -489,11 +511,11 @@ async function handleSubmit() {
     if (!valid) return;
     const embedding = parsedEmbedding.value;
     if (dialogVisible.type === "create" && !embedding) {
-      ElMessage.warning("请粘贴或导入有效的特征向量");
+      ElMessage.warning(t("video.face.pasteValidVector"));
       return;
     }
     if (formData.embeddingText && !embedding) {
-      ElMessage.warning("特征向量无法解析，请检查格式");
+      ElMessage.warning(t("video.face.vectorInvalid"));
       return;
     }
     submitLoading.value = true;
@@ -510,7 +532,9 @@ async function handleSubmit() {
         embedding,
         dimension: embedding ? embedding.length : null,
       });
-      ElMessage.success(formData.id ? "更新成功" : "录入成功");
+      ElMessage.success(
+        formData.id ? t("video.face.updateSuccess") : t("video.face.enrollSuccess")
+      );
       dialogVisible.visible = false;
       await resetForm();
       refreshList();

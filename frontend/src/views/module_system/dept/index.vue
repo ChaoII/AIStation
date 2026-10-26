@@ -38,7 +38,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('system.dept.empty')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -50,40 +50,40 @@
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               type="index"
               fixed
-              label="序号"
+              :label="t('system.dept.index')"
               min-width="60"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="部门名称"
+              :label="t('system.dept.name')"
               prop="name"
               min-width="120"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'code')?.show"
               key="code"
-              label="部门编码"
+              :label="t('system.dept.code')"
               prop="code"
               min-width="120"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('system.dept.status')"
               prop="status"
               min-width="60"
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status === '0' ? 'success' : 'danger'">
-                  {{ scope.row.status ? "启用" : "停用" }}
+                  {{ scope.row.status ? t("system.dept.enabled") : t("system.dept.disabled") }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'order')?.show"
               key="order"
-              label="排序"
+              :label="t('system.dept.order')"
               prop="order"
               min-width="60"
               show-overflow-tooltip
@@ -91,14 +91,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'description')?.show"
               key="description"
-              label="描述"
+              :label="t('system.dept.description')"
               prop="description"
               min-width="100"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="t('system.dept.createdTime')"
               prop="created_time"
               min-width="120"
               sortable
@@ -106,7 +106,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_time')?.show"
               key="updated_time"
-              label="更新时间"
+              :label="t('system.dept.updatedTime')"
               prop="updated_time"
               min-width="120"
               sortable
@@ -115,7 +115,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('system.dept.operation')"
               align="center"
               min-width="200"
             >
@@ -128,7 +128,7 @@
                   icon="plus"
                   @click="handleOpenDialog('create', undefined, scope.row.id)"
                 >
-                  新增
+                  {{ t("system.dept.add") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:dept:detail']"
@@ -138,7 +138,7 @@
                   icon="View"
                   @click="handleOpenDialog('detail', scope.row.id)"
                 >
-                  详情
+                  {{ t("system.dept.detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:dept:update']"
@@ -148,7 +148,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("system.dept.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:dept:delete']"
@@ -158,7 +158,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("system.dept.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -174,30 +174,30 @@
     >
       <template v-if="dialogVisible.type === 'detail'">
         <el-descriptions :column="4" border>
-          <el-descriptions-item label="部门名称" :span="2">
+          <el-descriptions-item :label="t('system.dept.name')" :span="2">
             {{ detailFormData.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="部门编码" :span="2">
+          <el-descriptions-item :label="t('system.dept.code')" :span="2">
             {{ detailFormData.code }}
           </el-descriptions-item>
-          <el-descriptions-item label="上级部门" :span="2">
+          <el-descriptions-item :label="t('system.dept.parentDept')" :span="2">
             {{ detailFormData.parent_name }}
           </el-descriptions-item>
-          <el-descriptions-item label="状态" :span="2">
+          <el-descriptions-item :label="t('system.dept.status')" :span="2">
             <el-tag :type="detailFormData.status ? 'success' : 'danger'">
-              {{ detailFormData.status ? "启用" : "停用" }}
+              {{ detailFormData.status ? t("system.dept.enabled") : t("system.dept.disabled") }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="排序" :span="2">
+          <el-descriptions-item :label="t('system.dept.order')" :span="2">
             {{ detailFormData.order }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间" :span="2">
+          <el-descriptions-item :label="t('system.dept.createdTime')" :span="2">
             {{ detailFormData.created_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新时间" :span="2">
+          <el-descriptions-item :label="t('system.dept.updatedTime')" :span="2">
             {{ detailFormData.updated_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="描述" :span="4">
+          <el-descriptions-item :label="t('system.dept.description')" :span="4">
             {{ detailFormData.description }}
           </el-descriptions-item>
         </el-descriptions>
@@ -211,28 +211,32 @@
           label-width="auto"
           label-position="right"
         >
-          <el-form-item label="部门名称" prop="name">
-            <el-input v-model="formData.name" placeholder="请输入部门名称" :maxlength="50" />
+          <el-form-item :label="t('system.dept.name')" prop="name">
+            <el-input
+              v-model="formData.name"
+              :placeholder="t('system.dept.placeholderName')"
+              :maxlength="50"
+            />
           </el-form-item>
-          <el-form-item label="部门编码" prop="code">
+          <el-form-item :label="t('system.dept.code')" prop="code">
             <el-input
               v-model="formData.code"
-              placeholder="字母开头，2-16位字母/数字/下划线"
+              :placeholder="t('system.dept.codeFormat')"
               :maxlength="16"
               show-word-limit
             />
           </el-form-item>
-          <el-form-item label="上级部门" prop="parent_id">
+          <el-form-item :label="t('system.dept.parentDept')" prop="parent_id">
             <el-tree-select
               v-model="formData.parent_id"
-              placeholder="请选择上级部门"
+              :placeholder="t('system.dept.placeholderParent')"
               :data="deptOptions"
               filterable
               check-strictly
               :render-after-expand="false"
             />
           </el-form-item>
-          <el-form-item label="排序" prop="order">
+          <el-form-item :label="t('system.dept.order')" prop="order">
             <el-input-number
               v-model="formData.order"
               controls-position="right"
@@ -240,20 +244,20 @@
               :max="999"
             />
           </el-form-item>
-          <el-form-item label="状态" prop="status">
+          <el-form-item :label="t('system.dept.status')" prop="status">
             <el-radio-group v-model="formData.status">
-              <el-radio value="0">启用</el-radio>
-              <el-radio value="1">停用</el-radio>
+              <el-radio value="0">{{ t("system.dept.enabled") }}</el-radio>
+              <el-radio value="1">{{ t("system.dept.disabled") }}</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="描述" prop="description">
+          <el-form-item :label="t('system.dept.description')" prop="description">
             <el-input
               v-model="formData.description"
               :rows="4"
               :maxlength="100"
               show-word-limit
               type="textarea"
-              placeholder="请输入描述"
+              :placeholder="t('system.dept.placeholderDescription')"
             />
           </el-form-item>
         </el-form>
@@ -262,10 +266,12 @@
       <template #footer>
         <div class="dialog-footer">
           <el-button v-if="dialogVisible.type !== 'detail'" type="primary" @click="handleSubmit">
-            确定
+            {{ t("system.dept.confirm") }}
           </el-button>
-          <el-button v-else type="primary" @click="handleCloseDialog">确定</el-button>
-          <el-button @click="handleCloseDialog">取消</el-button>
+          <el-button v-else type="primary" @click="handleCloseDialog">
+            {{ t("system.dept.confirm") }}
+          </el-button>
+          <el-button @click="handleCloseDialog">{{ t("system.dept.cancel") }}</el-button>
         </div>
       </template>
     </EnhancedDialog>
@@ -286,10 +292,13 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import { ElMessage } from "element-plus";
 import { useUserStore } from "@/store";
 import { formatTree } from "@/utils/common";
 import { ref, reactive } from "vue";
+import { useI18n } from "vue-i18n";
 
+const { t } = useI18n();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const dataFormRef = ref();
 
@@ -302,29 +311,33 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "部门名称",
+      label: t("system.dept.name"),
       type: "input",
-      attrs: { placeholder: "请输入部门名称", clearable: true },
+      attrs: { placeholder: t("system.dept.placeholderName"), clearable: true },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("system.dept.status"),
       type: "select",
       options: [
-        { label: "启用", value: "0" },
-        { label: "停用", value: "1" },
+        { label: t("system.dept.enabled"), value: "0" },
+        { label: t("system.dept.disabled"), value: "1" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("system.dept.placeholderStatus"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "created_time",
-      label: "创建时间",
+      label: t("system.dept.createdTime"),
       type: "date-picker",
       attrs: {
         type: "datetimerange",
-        rangeSeparator: "至",
-        startPlaceholder: "开始日期",
-        endPlaceholder: "结束日期",
+        rangeSeparator: t("system.dept.separator"),
+        startPlaceholder: t("system.dept.startDate"),
+        endPlaceholder: t("system.dept.endDate"),
         format: "YYYY-MM-DD HH:mm:ss",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
         style: { width: "340px" },
@@ -340,16 +353,16 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "部门名称", show: true },
-  { prop: "code", label: "部门编码", show: true },
-  { prop: "order", label: "排序", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "updated_time", label: "更新时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("system.dept.selection"), show: true },
+  { prop: "index", label: t("system.dept.index"), show: true },
+  { prop: "name", label: t("system.dept.name"), show: true },
+  { prop: "code", label: t("system.dept.code"), show: true },
+  { prop: "order", label: t("system.dept.order"), show: true },
+  { prop: "status", label: t("system.dept.status"), show: true },
+  { prop: "description", label: t("system.dept.description"), show: true },
+  { prop: "created_time", label: t("system.dept.createdTime"), show: true },
+  { prop: "updated_time", label: t("system.dept.updatedTime"), show: true },
+  { prop: "operation", label: t("system.dept.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<DeptPageQuery>>({
@@ -377,8 +390,8 @@ const contentConfig = reactive<IContentConfig<DeptPageQuery>>({
     await userStore.getUserInfo();
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("system.dept.warning"),
+    message: t("system.dept.deleteConfirm"),
     type: "warning",
   },
 });
@@ -406,17 +419,17 @@ const dialogVisible = reactive({
 const CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_]{1,15}$/;
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入部门名称", trigger: "blur" }],
+  name: [{ required: true, message: t("system.dept.placeholderName"), trigger: "blur" }],
   code: [
-    { required: true, message: "请输入部门编码", trigger: "blur" },
+    { required: true, message: t("system.dept.codeRequired"), trigger: "blur" },
     {
       pattern: CODE_PATTERN,
-      message: "字母开头，2-16位字母/数字/下划线",
+      message: t("system.dept.codeFormat"),
       trigger: "blur",
     },
   ],
-  order: [{ required: true, message: "请输入排序", trigger: "blur" }],
-  status: [{ required: true, message: "请选择状态", trigger: "blur" }],
+  order: [{ required: true, message: t("system.dept.orderRequired"), trigger: "blur" }],
+  status: [{ required: true, message: t("system.dept.placeholderStatus"), trigger: "blur" }],
 });
 
 const initialFormData: DeptForm = {
@@ -455,14 +468,14 @@ async function handleOpenDialog(
   if (id) {
     const response = await DeptAPI.detailDept(id);
     if (type === "detail") {
-      dialogVisible.title = "部门详情";
+      dialogVisible.title = t("system.dept.deptDetail");
       Object.assign(detailFormData.value, response.data.data);
     } else if (type === "update") {
-      dialogVisible.title = "修改部门";
+      dialogVisible.title = t("system.dept.updateDept");
       Object.assign(formData, response.data.data);
     }
   } else {
-    dialogVisible.title = "新增部门";
+    dialogVisible.title = t("system.dept.addDept");
     formData.id = undefined;
     if (parentId) {
       formData.parent_id = parentId;
@@ -481,6 +494,7 @@ async function handleSubmit() {
         } else {
           await DeptAPI.createDept(formData);
         }
+        ElMessage.success(t("system.dept.operationSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -497,17 +511,24 @@ async function handleMoreClick(status: string) {
   const rows = contentRef.value?.getSelectionData() as DeptTable[] | undefined;
   const ids = (rows ?? []).map((r) => r.id).filter((id): id is number => id != null);
   if (!ids.length) {
-    ElMessage.warning("请先选择要操作的数据");
+    ElMessage.warning(t("system.dept.selectFirst"));
     return;
   }
-  ElMessageBox.confirm(`确认${status === "0" ? "启用" : "停用"}该项数据?`, "警告", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
+  ElMessageBox.confirm(
+    t("system.dept.confirmToggle", {
+      action: status === "0" ? t("system.dept.enabled") : t("system.dept.disabled"),
+    }),
+    t("system.dept.warning"),
+    {
+      confirmButtonText: t("system.dept.confirm"),
+      cancelButtonText: t("system.dept.cancel"),
+      type: "warning",
+    }
+  )
     .then(async () => {
       try {
         await DeptAPI.batchDept({ ids, status });
+        ElMessage.success(t("system.dept.operationSuccess"));
         refreshList();
         const userStore = useUserStore();
         await userStore.getUserInfo();

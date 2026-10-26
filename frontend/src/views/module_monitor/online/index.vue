@@ -18,7 +18,7 @@
             icon="delete"
             @click="handleClear"
           >
-            强退所有
+            {{ t("monitor.onlineForceAll") }}
           </el-button>
         </CrudToolbarLeft>
         <div class="data-table__toolbar--right">
@@ -38,7 +38,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('monitor.noData')" />
             </template>
 
             <el-table-column
@@ -51,7 +51,7 @@
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               type="index"
               fixed
-              label="序号"
+              :label="t('monitor.serial')"
               min-width="60"
             >
               <template #default="scope">
@@ -61,7 +61,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'session_id')?.show"
               key="session_id"
-              label="会话编号"
+              :label="t('monitor.onlineSessionId')"
               prop="session_id"
               min-width="250"
               show-overflow-tooltip
@@ -69,14 +69,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'login_type')?.show"
               key="login_type"
-              label="登录类型"
+              :label="t('monitor.onlineLoginType')"
               prop="login_type"
               min-width="100"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'ipaddr')?.show"
               key="ipaddr"
-              label="IP地址"
+              :label="t('monitor.onlineIp')"
               prop="ipaddr"
               min-width="150"
               show-overflow-tooltip
@@ -93,7 +93,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="用户名"
+              :label="t('monitor.onlineUser')"
               prop="name"
               min-width="80"
               show-overflow-tooltip
@@ -101,14 +101,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'user_name')?.show"
               key="user_name"
-              label="账号"
+              :label="t('monitor.onlineAccount')"
               prop="user_name"
               min-width="80"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'login_location')?.show"
               key="login_location"
-              label="登录位置"
+              :label="t('monitor.onlineLoginLocation')"
               prop="login_location"
               min-width="280"
               show-overflow-tooltip
@@ -116,7 +116,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'os')?.show"
               key="os"
-              label="操作系统"
+              :label="t('monitor.os')"
               prop="os"
               min-width="120"
               show-overflow-tooltip
@@ -124,7 +124,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'login_time')?.show"
               key="login_time"
-              label="登录时间"
+              :label="t('monitor.onlineLoginTime')"
               prop="login_time"
               min-width="180"
             />
@@ -132,7 +132,7 @@
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               key="operation"
               fixed="right"
-              label="操作"
+              :label="t('monitor.operation')"
               min-width="100"
             >
               <template #default="scope">
@@ -144,7 +144,7 @@
                   icon="delete"
                   @click="handleSubmit(scope.row.session_id)"
                 >
-                  强退
+                  {{ t("monitor.onlineForceLogout") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -163,12 +163,15 @@ defineOptions({
 
 import OnlineAPI, { type OnlineUserPageQuery } from "@/api/module_monitor/online";
 import { reactive } from "vue";
+import { useI18n } from "vue-i18n";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
+
+const { t } = useI18n();
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
@@ -181,21 +184,21 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "ipaddr",
-      label: "IP地址",
+      label: t("monitor.onlineIp"),
       type: "input",
-      attrs: { placeholder: "请输入IP地址", clearable: true },
+      attrs: { placeholder: t("monitor.onlineInputIp"), clearable: true },
     },
     {
       prop: "name",
-      label: "用户名",
+      label: t("monitor.onlineUser"),
       type: "input",
-      attrs: { placeholder: "请输入用户名", clearable: true },
+      attrs: { placeholder: t("monitor.onlineInputUser"), clearable: true },
     },
     {
       prop: "login_location",
-      label: "登录位置",
+      label: t("monitor.onlineLoginLocation"),
       type: "input",
-      attrs: { placeholder: "请输入登录位置", clearable: true },
+      attrs: { placeholder: t("monitor.onlineInputLocation"), clearable: true },
     },
   ],
 });
@@ -207,17 +210,17 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "session_id", label: "会话编号", show: true },
-  { prop: "login_type", label: "登录类型", show: true },
-  { prop: "name", label: "登录名称", show: true },
-  { prop: "user_name", label: "用户账号", show: true },
-  { prop: "ipaddr", label: "主机", show: true },
-  { prop: "login_location", label: "登录地点", show: true },
-  { prop: "os", label: "操作系统", show: true },
-  { prop: "login_time", label: "登录时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("monitor.onlineSelection"), show: true },
+  { prop: "index", label: t("monitor.serial"), show: true },
+  { prop: "session_id", label: t("monitor.onlineSessionId"), show: true },
+  { prop: "login_type", label: t("monitor.onlineLoginType"), show: true },
+  { prop: "name", label: t("monitor.onlineLoginName"), show: true },
+  { prop: "user_name", label: t("monitor.onlineUserAccount"), show: true },
+  { prop: "ipaddr", label: t("monitor.onlineHost"), show: true },
+  { prop: "login_location", label: t("monitor.onlineLoginPlace"), show: true },
+  { prop: "os", label: t("monitor.os"), show: true },
+  { prop: "login_time", label: t("monitor.onlineLoginTime"), show: true },
+  { prop: "operation", label: t("monitor.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<OnlineUserPageQuery>>({
@@ -241,11 +244,15 @@ const contentConfig = reactive<IContentConfig<OnlineUserPageQuery>>({
 });
 
 async function handleSubmit(session_id: string) {
-  ElMessageBox.confirm(`确认强制退出会话 ${session_id}?`, "警告", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
+  ElMessageBox.confirm(
+    t("monitor.onlineForceSessionConfirm", { id: session_id }),
+    t("monitor.warn"),
+    {
+      confirmButtonText: t("monitor.confirm"),
+      cancelButtonText: t("monitor.cancel"),
+      type: "warning",
+    }
+  )
     .then(async () => {
       try {
         await OnlineAPI.deleteOnline(session_id);
@@ -260,9 +267,9 @@ async function handleSubmit(session_id: string) {
 }
 
 async function handleClear() {
-  ElMessageBox.confirm("确认强制退出所有用户?", "警告", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
+  ElMessageBox.confirm(t("monitor.onlineForceAllConfirm"), t("monitor.warn"), {
+    confirmButtonText: t("monitor.confirm"),
+    cancelButtonText: t("monitor.cancel"),
     type: "warning",
   })
     .then(async () => {

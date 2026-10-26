@@ -3,19 +3,19 @@
     <header class="pb-topbar">
       <div class="topbar-brand">
         <span class="brand-dot" />
-        <span class="brand-text">录像回放</span>
+        <span class="brand-text">{{ t("video.playback.title") }}</span>
       </div>
 
       <span class="topbar-sep" />
 
       <div class="panel-toggles">
-        <el-tooltip content="设备面板" placement="bottom">
+        <el-tooltip :content="t('video.playback.devicePanel')" placement="bottom">
           <span class="panel-switch-item">
             <el-icon><Icon icon="mdi:file-tree" /></el-icon>
             <el-switch v-model="devicePanelOpen" size="small" />
           </span>
         </el-tooltip>
-        <el-tooltip content="片段面板" placement="bottom">
+        <el-tooltip :content="t('video.playback.segmentsPanel')" placement="bottom">
           <span class="panel-switch-item">
             <el-icon><Icon icon="mdi:view-list" /></el-icon>
             <el-switch v-model="segmentsPanelOpen" size="small" />
@@ -31,14 +31,14 @@
             <el-date-picker
               v-model="searchDate"
               type="date"
-              placeholder="选择日期"
+              :placeholder="t('video.playback.selectDate')"
               size="small"
               value-format="YYYY-MM-DD"
               class="field-date"
             />
             <el-time-picker
               v-model="searchStartTime"
-              placeholder="开始"
+              :placeholder="t('video.playback.start')"
               size="small"
               value-format="HH:mm:ss"
               format="HH:mm"
@@ -47,7 +47,7 @@
             <span class="time-sep">—</span>
             <el-time-picker
               v-model="searchEndTime"
-              placeholder="结束"
+              :placeholder="t('video.playback.end')"
               size="small"
               value-format="HH:mm:ss"
               format="HH:mm"
@@ -60,7 +60,7 @@
               @click="handleSearch"
             >
               <el-icon><Search /></el-icon>
-              搜索
+              {{ t("video.playback.search") }}
             </el-button>
           </div>
         </div>
@@ -71,13 +71,13 @@
       <aside v-show="devicePanelOpen" class="live-device-panel">
         <div class="panel-header">
           <el-icon :size="14"><FolderOpened /></el-icon>
-          <span>设备列表</span>
+          <span>{{ t("video.playback.deviceList") }}</span>
         </div>
         <div class="tree-filter">
           <el-input
             v-model="deviceSearch"
             size="small"
-            placeholder="搜索设备..."
+            :placeholder="t('video.playback.searchDevice')"
             clearable
             :prefix-icon="Search"
           />
@@ -149,7 +149,7 @@
                   <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                 </svg>
               </div>
-              <p class="empty-text">选择摄像机与时间后搜索录像</p>
+              <p class="empty-text">{{ t("video.playback.emptyHint") }}</p>
             </div>
             <div v-if="loading" class="player-loading"><div class="spinner" /></div>
           </div>
@@ -157,7 +157,11 @@
           <div class="pb-timeline">
             <div class="tl-toolbar">
               <div class="tl-zoom-group">
-                <button class="tl-nav-btn" title="向前移动" @click="shiftView(-0.5)">
+                <button
+                  class="tl-nav-btn"
+                  :title="t('video.playback.shiftForward')"
+                  @click="shiftView(-0.5)"
+                >
                   <svg
                     width="12"
                     height="12"
@@ -178,7 +182,11 @@
                 >
                   {{ z.label }}
                 </button>
-                <button class="tl-nav-btn" title="向后移动" @click="shiftView(0.5)">
+                <button
+                  class="tl-nav-btn"
+                  :title="t('video.playback.shiftBackward')"
+                  @click="shiftView(0.5)"
+                >
                   <svg
                     width="12"
                     height="12"
@@ -226,9 +234,11 @@
                 </div>
                 <div v-else-if="hasSearched" class="tl-empty-track">
                   <el-icon :size="14"><InfoFilled /></el-icon>
-                  该时段无录像
+                  {{ t("video.playback.noRecordInPeriod") }}
                 </div>
-                <div v-else class="tl-empty-track">选择摄像机后搜索</div>
+                <div v-else class="tl-empty-track">
+                  {{ t("video.playback.selectCameraThenSearch") }}
+                </div>
               </div>
               <div
                 v-if="playheadPct >= 0 && playheadPct <= 100"
@@ -243,7 +253,9 @@
         </div>
 
         <div v-show="segmentsPanelOpen" class="pb-segments">
-          <div class="seg-list-header">录像片段 ({{ recordings.length }})</div>
+          <div class="seg-list-header">
+            {{ t("video.playback.segmentList", { count: recordings.length }) }}
+          </div>
           <div class="seg-list-body">
             <div
               v-for="(r, idx) in recordings"
@@ -296,6 +308,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue"
 import { useRoute } from "vue-router";
 import { Search, FolderOpened, InfoFilled } from "@element-plus/icons-vue";
 import { Icon } from "@iconify/vue";
+import { useI18n } from "vue-i18n";
 import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
 import {
   getRecordFileList,
@@ -306,6 +319,7 @@ import {
 const cameras = ref<any[]>([]);
 const groupList = ref<any[]>([]);
 const route = useRoute();
+const { t } = useI18n();
 const selectedCamera = ref<number | null>(null);
 const devicePanelOpen = ref(true);
 const segmentsPanelOpen = ref(true);
@@ -415,9 +429,10 @@ function formatDuration(sec: number): string {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.floor(sec % 60);
-  if (h > 0) return `${h}时${m}分${s}秒`;
-  if (m > 0) return `${m}分${s}秒`;
-  return `${s}秒`;
+  if (h > 0)
+    return `${h}${t("video.playback.hour")}${m}${t("video.playback.minute")}${s}${t("video.playback.second")}`;
+  if (m > 0) return `${m}${t("video.playback.minute")}${s}${t("video.playback.second")}`;
+  return `${s}${t("video.playback.second")}`;
 }
 
 function getSegmentStyle(r: any) {
@@ -504,7 +519,7 @@ const deviceTreeData = computed(() => {
   if (ungrouped.length) {
     treeChildren.push({
       id: "ungrouped",
-      label: "未分组",
+      label: t("video.live.ungrouped"),
       type: "group",
       cameraCount: ungrouped.length,
       children: ungrouped,
@@ -513,7 +528,7 @@ const deviceTreeData = computed(() => {
   return [
     {
       id: "root",
-      label: "所有设备",
+      label: t("video.live.allDevices"),
       type: "root",
       cameraCount: cameras.value.length,
       children: treeChildren,

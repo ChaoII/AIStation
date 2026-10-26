@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
     <el-tabs v-model="activeTab" type="border-card" class="train-task-tabs">
-      <el-tab-pane label="训练任务" name="task">
+      <el-tab-pane :label="t('train.tabTrain')" name="task">
         <PageSearch
           ref="searchRef"
           :search-config="searchConfig"
@@ -34,7 +34,7 @@
                 @selection-change="onSelectionChange"
               >
                 <template #empty>
-                  <el-empty :image-size="80" description="暂无数据" />
+                  <el-empty :image-size="80" :description="t('train.noData')" />
                 </template>
                 <el-table-column
                   v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -45,7 +45,7 @@
                 <el-table-column
                   v-if="contentCols.find((col) => col.prop === 'index')?.show"
                   fixed
-                  label="序号"
+                  :label="t('train.serial')"
                   width="60"
                 >
                   <template #default="scope">
@@ -55,7 +55,7 @@
                 <el-table-column
                   v-if="contentCols.find((col) => col.prop === 'name')?.show"
                   key="name"
-                  label="任务名称"
+                  :label="t('train.taskName')"
                   prop="name"
                   min-width="160"
                   show-overflow-tooltip
@@ -63,7 +63,7 @@
                 <el-table-column
                   v-if="contentCols.find((col) => col.prop === 'framework')?.show"
                   key="framework"
-                  label="框架"
+                  :label="t('train.framework')"
                   prop="framework"
                   width="100"
                 >
@@ -85,7 +85,7 @@
                 <el-table-column
                   v-if="contentCols.find((col) => col.prop === 'dataset_id')?.show"
                   key="dataset_id"
-                  label="数据集"
+                  :label="t('train.dataset')"
                   min-width="140"
                   show-overflow-tooltip
                 >
@@ -96,7 +96,7 @@
                 <el-table-column
                   v-if="contentCols.find((col) => col.prop === 'status')?.show"
                   key="status"
-                  label="状态"
+                  :label="t('train.status')"
                   prop="status"
                   width="110"
                   align="center"
@@ -110,7 +110,7 @@
                 <el-table-column
                   v-if="contentCols.find((col) => col.prop === 'progress')?.show"
                   key="progress"
-                  label="进度"
+                  :label="t('train.progress')"
                   prop="progress"
                   width="180"
                 >
@@ -132,14 +132,14 @@
                 <el-table-column
                   v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
                   key="created_time"
-                  label="创建时间"
+                  :label="t('train.createdTime')"
                   prop="created_time"
                   min-width="170"
                 />
                 <el-table-column
                   v-if="contentCols.find((col) => col.prop === 'operation')?.show"
                   fixed="right"
-                  label="操作"
+                  :label="t('train.action')"
                   align="center"
                   min-width="220"
                 >
@@ -153,7 +153,7 @@
                       icon="VideoPlay"
                       @click="handleStart(scope.row)"
                     >
-                      开始训练
+                      {{ t("train.startTrain") }}
                     </el-button>
                     <el-button
                       v-if="scope.row.status === 'running'"
@@ -164,7 +164,7 @@
                       icon="VideoPause"
                       @click="handleStop(scope.row.id)"
                     >
-                      停止
+                      {{ t("train.stop") }}
                     </el-button>
                     <el-button
                       v-hasPerm="['module_train:task:query']"
@@ -173,12 +173,12 @@
                       icon="Search"
                       @click="router.push('/train/task/' + scope.row.id)"
                     >
-                      详情
+                      {{ t("train.detail") }}
                     </el-button>
                     <el-popconfirm
-                      title="确定删除该任务？"
-                      confirm-button-text="删除"
-                      cancel-button-text="取消"
+                      :title="t('train.taskDeleteConfirm')"
+                      :confirm-button-text="t('train.delete')"
+                      :cancel-button-text="t('train.cancel')"
                       width="180"
                       @confirm="handleDelete(scope.row.id)"
                     >
@@ -190,7 +190,7 @@
                           link
                           icon="Delete"
                         >
-                          删除
+                          {{ t("train.delete") }}
                         </el-button>
                       </template>
                     </el-popconfirm>
@@ -201,7 +201,7 @@
           </template>
         </PageContent>
       </el-tab-pane>
-      <el-tab-pane label="定时训练" name="schedule" lazy>
+      <el-tab-pane :label="t('train.tabSchedule')" name="schedule" lazy>
         <SchedulePanel />
       </el-tab-pane>
     </el-tabs>
@@ -222,39 +222,39 @@
       >
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="任务名称" prop="name">
-              <el-input v-model="formData.name" placeholder="如: 缺陷检测v3" />
+            <el-form-item :label="t('train.taskName')" prop="name">
+              <el-input v-model="formData.name" :placeholder="t('train.taskNamePlaceholder')" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="框架" prop="framework">
+            <el-form-item :label="t('train.framework')" prop="framework">
               <el-radio-group
                 v-model="formData.framework"
                 @change="(v: any) => onFrameworkChange(String(v))"
               >
-                <el-radio value="torchkiln">TorchKiln（自研）</el-radio>
+                <el-radio value="torchkiln">{{ t("train.torchKilnSelf") }}</el-radio>
               </el-radio-group>
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="选择数据集" prop="dataset_id">
+        <el-form-item :label="t('train.selectDataset')" prop="dataset_id">
           <el-select
             v-model="formData.dataset_id"
             filterable
             style="width: 100%"
-            placeholder="请选择标注数据集"
+            :placeholder="t('train.selectAnnoDataset')"
             @change="onDatasetChange"
             @visible-change="(v: boolean) => v && loadDatasets()"
           >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="标注任务" prop="annotation_task_id">
+        <el-form-item :label="t('train.annoTask')" prop="annotation_task_id">
           <el-select
             v-model="formData.annotation_task_id"
             filterable
             style="width: 100%"
-            placeholder="选择标注任务（可选）"
+            :placeholder="t('train.selectAnnoTask')"
             @change="onAnnoTaskChange"
           >
             <el-option
@@ -270,17 +270,18 @@
             "
             class="form-tip"
           >
-            已隐藏 {{ annoTasks.length - annoTasksForFramework.length }} 个 TorchKiln
-            暂不支持的任务类型（全景分割 / 音视频事件 / 时序事件 / 文本 NER / 折线）
+            {{
+              t("train.hiddenTaskTip", { count: annoTasks.length - annoTasksForFramework.length })
+            }}
           </div>
         </el-form-item>
-        <el-form-item label="基础模型">
+        <el-form-item :label="t('train.baseModel')">
           <el-select
             v-model="formData.base_model_id"
             :loading="modelVersionsLoading"
             clearable
             filterable
-            placeholder="留空表示从零训练；或从模型仓库选择版本"
+            :placeholder="t('train.baseModelPlaceholder')"
             style="width: 100%"
           >
             <el-option
@@ -291,7 +292,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-divider>超参数配置</el-divider>
+        <el-divider>{{ t("train.hyperParams") }}</el-divider>
 
         <!-- ================================================================ -->
         <!-- TorchKiln（自研平台）：模型与超参**全部由服务端动态下发**            -->
@@ -304,7 +305,9 @@
             :closable="false"
             show-icon
             style="margin-bottom: 12px"
-            :title="`训练服务不可用：${tkStatus.reason || '未知原因'}`"
+            :title="
+              t('train.tkUnavailable', { reason: tkStatus.reason || t('train.unknownReason') })
+            "
           />
           <el-alert
             v-else-if="tkStatus?.framework_version"
@@ -314,14 +317,15 @@
             style="margin-bottom: 12px"
             :title="`TorchKiln ${tkStatus.framework_version} · ${tkStatus.config_root || ''}`"
           />
+          />
 
-          <el-form-item label="模型" required>
+          <el-form-item :label="t('train.model')" required>
             <el-select
               v-model="tkModel"
               filterable
               style="width: 100%"
               :loading="tkLoading"
-              placeholder="请选择 TorchKiln 模型"
+              :placeholder="t('train.selectTkModel')"
               @change="onTkModelChange"
             >
               <el-option-group v-for="g in tkModelGroups" :key="g.label" :label="g.label">
@@ -338,7 +342,7 @@
             </el-select>
           </el-form-item>
 
-          <el-form-item v-if="tkModel" label="任务类型">
+          <el-form-item v-if="tkModel" :label="t('train.taskType')">
             <el-tag effect="plain">{{ tkModelInfo?.task || "—" }}</el-tag>
             <el-tag
               v-if="tkModelInfo?.main_indicator"
@@ -346,17 +350,21 @@
               type="success"
               style="margin-left: 8px"
             >
-              主指标 {{ tkModelInfo.main_indicator }}
-              {{ tkModelInfo.main_indicator_mode === "min" ? "（越小越好）" : "（越大越好）" }}
+              {{ t("train.mainIndicator") }} {{ tkModelInfo.main_indicator }}
+              {{
+                tkModelInfo.main_indicator_mode === "min"
+                  ? t("train.mainIndicatorMin")
+                  : t("train.mainIndicatorMax")
+              }}
             </el-tag>
           </el-form-item>
 
           <!-- 超参表单：由 schema 动态渲染，加参数不用改前端 -->
-          <el-divider>超参数配置</el-divider>
+          <el-divider>{{ t("train.hyperParams") }}</el-divider>
           <div v-loading="tkSchemaLoading" style="min-height: 60px">
             <el-empty
               v-if="!tkSchema && !tkSchemaLoading"
-              description="请先选择模型"
+              :description="t('train.selectModelFirst')"
               :image-size="60"
             />
             <el-collapse v-else-if="tkSchema" v-model="tkGroupsOpen">
@@ -364,7 +372,7 @@
                 v-for="g in tkSchemaGroups"
                 :key="g.name"
                 :name="g.name"
-                :title="`${g.name}（${g.items.length}）`"
+                :title="t('train.collapseGroupTitle', { name: g.name, count: g.items.length })"
               >
                 <el-row :gutter="16">
                   <el-col
@@ -410,7 +418,7 @@
                       <el-input
                         v-else
                         v-model="tkParams[p.key]"
-                        :placeholder="p.nullable ? '留空表示未设置' : ''"
+                        :placeholder="p.nullable ? t('train.leaveEmpty') : ''"
                         clearable
                       />
                     </el-form-item>
@@ -420,10 +428,10 @@
             </el-collapse>
           </div>
 
-          <el-divider>训练配置</el-divider>
+          <el-divider>{{ t("train.trainConfig") }}</el-divider>
           <el-row :gutter="20">
             <el-col :span="12">
-              <el-form-item label="训练集占比">
+              <el-form-item :label="t('train.trainRatio')">
                 <el-slider
                   v-model="hpForm.trainRatio"
                   :min="50"
@@ -433,12 +441,12 @@
                   style="width: 300px"
                 />
                 <span style="margin-left: 12px; color: var(--el-text-color-secondary)">
-                  验证集 {{ 100 - (hpForm.trainRatio || 80) }}%
+                  {{ t("train.valSet") }} {{ 100 - (hpForm.trainRatio || 80) }}%
                 </span>
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="随机种子">
+              <el-form-item :label="t('train.randomSeed')">
                 <el-input-number
                   v-model="hpForm.seed"
                   :min="0"
@@ -451,7 +459,7 @@
           </el-row>
           <el-row :gutter="20">
             <el-col :span="12">
-              <el-form-item label="显存上限(GB)">
+              <el-form-item :label="t('train.gpuMemoryLimit')">
                 <el-input-number
                   v-model="hpForm.gpuMemory"
                   :min="1"
@@ -463,7 +471,7 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="Docker 镜像">
+              <el-form-item :label="t('train.dockerImage')">
                 <el-input v-model="hpForm.dockerImage" placeholder="torchkiln:0.1.0" />
               </el-form-item>
             </el-col>
@@ -471,13 +479,13 @@
         </template>
       </el-form>
       <div v-if="dialogVisible.type === 'create'" class="docker-preview">
-        <el-divider>Docker 命令预览</el-divider>
-        <pre class="docker-cmd">{{ dockerCmdPreview || "请选择框架和参数" }}</pre>
+        <el-divider>{{ t("train.dockerPreview") }}</el-divider>
+        <pre class="docker-cmd">{{ dockerCmdPreview || t("train.selectFrameworkAndParams") }}</pre>
       </div>
       <template #footer>
-        <el-button @click="handleCloseDialog">取消</el-button>
+        <el-button @click="handleCloseDialog">{{ t("train.cancel") }}</el-button>
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
-          创建任务
+          {{ t("train.createTask") }}
         </el-button>
       </template>
     </EnhancedDialog>
@@ -487,6 +495,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -511,6 +520,7 @@ interface TablePageQuery {
 
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const activeTab = ref("task");
 
@@ -526,23 +536,23 @@ const MODEL_FAMILIES = [
   { label: "YOLO26", prefix: "yolo26", sizes: ["n", "s", "m", "l", "x"] },
 ];
 
-function annoTaskTypeLabel(t: string) {
+function annoTaskTypeLabel(type: string) {
   return (
     (
       {
-        detection: "检测",
-        rotated_detection: "旋转框",
-        segmentation: "分割",
-        semantic_segmentation: "语义分割",
-        keypoint: "关键点",
+        detection: t("train.taskTypeDetection"),
+        rotated_detection: t("train.taskTypeRotated"),
+        segmentation: t("train.taskTypeSegmentation"),
+        semantic_segmentation: t("train.taskTypeSemSeg"),
+        keypoint: t("train.taskTypeKeypoint"),
         ocr: "OCR",
-        classification: "分类",
-        cuboid: "3D 目标检测",
-        time_series_event: "时间序列",
-        video_event: "视频事件",
-        video_detection: "视频检测",
+        classification: t("train.taskTypeClassification"),
+        cuboid: t("train.taskTypeCuboid"),
+        time_series_event: t("train.taskTypeTimeSeries"),
+        video_event: t("train.taskTypeVideoEvent"),
+        video_detection: t("train.taskTypeVideoDetect"),
       } as any
-    )[t] || t
+    )[type] || type
   );
 }
 
@@ -661,31 +671,39 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "任务名称",
+      label: t("train.taskName"),
       type: "input",
-      attrs: { placeholder: "请输入任务名称", clearable: true },
+      attrs: { placeholder: t("train.taskNamePlaceholder"), clearable: true },
     },
     {
       prop: "framework",
-      label: "框架",
+      label: t("train.framework"),
       type: "select",
       // 筛选只给 TorchKiln：退场框架的历史数据已随 6c6eb60 一并删除，
       // 库里不再有任何 ultralytics / paddlex 的任务行，留选项只会是噪音。
-      options: [{ label: "TorchKiln（自研）", value: "torchkiln" }],
-      attrs: { placeholder: "请选择框架", clearable: true, style: { width: "167.5px" } },
+      options: [{ label: t("train.torchKilnSelf"), value: "torchkiln" }],
+      attrs: {
+        placeholder: t("train.frameworkPlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("train.status"),
       type: "select",
       options: [
-        { label: "待开始", value: "pending" },
-        { label: "训练中", value: "running" },
-        { label: "已完成", value: "success" },
-        { label: "失败", value: "failed" },
-        { label: "已取消", value: "cancelled" },
+        { label: t("train.statusPending"), value: "pending" },
+        { label: t("train.trainStatusRunning"), value: "running" },
+        { label: t("train.statusSuccess"), value: "success" },
+        { label: t("train.statusFailed"), value: "failed" },
+        { label: t("train.statusCancelled"), value: "cancelled" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("train.statusPlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
@@ -697,15 +715,15 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "任务名称", show: true },
-  { prop: "framework", label: "框架", show: true },
-  { prop: "dataset_id", label: "数据集ID", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "progress", label: "进度", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("train.selection"), show: true },
+  { prop: "index", label: t("train.serial"), show: true },
+  { prop: "name", label: t("train.taskName"), show: true },
+  { prop: "framework", label: t("train.framework"), show: true },
+  { prop: "dataset_id", label: t("train.datasetId"), show: true },
+  { prop: "status", label: t("train.status"), show: true },
+  { prop: "progress", label: t("train.progress"), show: true },
+  { prop: "created_time", label: t("train.createdTime"), show: true },
+  { prop: "operation", label: t("train.action"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -784,7 +802,7 @@ const tkModelInfo = computed(
 const tkModelGroups = computed(() => {
   const map = new Map<string, TorchKilnModel[]>();
   for (const m of tkModels.value) {
-    const key = [m.task, m.algorithm].filter(Boolean).join(" · ") || "其它";
+    const key = [m.task, m.algorithm].filter(Boolean).join(" · ") || t("train.others");
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(m);
   }
@@ -817,7 +835,7 @@ async function loadTorchKiln() {
     tkStatus.value = st?.data?.data || null;
     tkModels.value = ms?.data?.data?.items || [];
   } catch {
-    tkStatus.value = { available: false, reason: "无法连接后端或训练服务" };
+    tkStatus.value = { available: false, reason: t("train.tkUnavailableReason") };
   } finally {
     tkLoading.value = false;
   }
@@ -871,8 +889,8 @@ const initialFormData = {
 };
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入任务名称", trigger: "blur" }],
-  dataset_id: [{ required: true, message: "请选择数据集", trigger: "change" }],
+  name: [{ required: true, message: t("train.taskNamePlaceholder"), trigger: "blur" }],
+  dataset_id: [{ required: true, message: t("train.warnSelectDataset"), trigger: "change" }],
 });
 
 function statusTag(s: string): "primary" | "success" | "warning" | "info" | "danger" | undefined {
@@ -892,11 +910,11 @@ function statusTag(s: string): "primary" | "success" | "warning" | "info" | "dan
 function statusLabel(s: string) {
   return (
     {
-      pending: "待开始",
-      running: "训练中",
-      success: "已完成",
-      failed: "失败",
-      cancelled: "已取消",
+      pending: t("train.statusPending"),
+      running: t("train.trainStatusRunning"),
+      success: t("train.statusSuccess"),
+      failed: t("train.statusFailed"),
+      cancelled: t("train.statusCancelled"),
     }[s] || s
   );
 }
@@ -934,7 +952,7 @@ function onFrameworkChange(fw: string) {
   if (fw === "torchkiln" && sel && !TK_SUPPORTED_TASK_TYPES.includes(String(sel.task_type))) {
     formData.annotation_task_id = undefined;
     ElMessage.warning(
-      `已选标注任务「${sel.name}」的类型（${annoTaskTypeLabel(sel.task_type)}）TorchKiln 暂不支持，已取消选择`
+      t("train.annoTaskUnsupported", { name: sel.name, type: annoTaskTypeLabel(sel.task_type) })
     );
   }
 }
@@ -981,7 +999,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   loadDatasets();
   if (id && type === "update") {
-    dialogVisible.title = "编辑训练任务";
+    dialogVisible.title = t("train.taskEditTitle");
     const res = await TrainAPI.getTaskDetail(id);
     const data = res.data.data;
     Object.assign(formData, {
@@ -997,7 +1015,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       Object.assign(hpForm, data.hyperparams);
     }
   } else {
-    dialogVisible.title = "新建训练任务";
+    dialogVisible.title = t("train.taskCreateTitle");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -1008,7 +1026,7 @@ async function handleSubmit() {
     if (valid) {
       // TorchKiln 必须选模型，否则后端提交时会因缺 model 直接失败
       if (formData.framework === "torchkiln" && !tkModel.value) {
-        ElMessage.warning("请选择 TorchKiln 模型");
+        ElMessage.warning(t("train.warnSelectTkModel"));
         return;
       }
       submitLoading.value = true;
@@ -1032,6 +1050,7 @@ async function handleSubmit() {
               : {}),
           });
         }
+        ElMessage.success(t("train.saveSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -1046,8 +1065,13 @@ async function handleSubmit() {
 
 async function handleStart(row: any) {
   try {
-    await ElMessageBox.confirm(`确定开始训练任务「${row.name}」？`, "提示", { type: "info" });
+    await ElMessageBox.confirm(
+      t("train.startTrainConfirm", { name: row.name }),
+      t("train.tipTitle"),
+      { type: "info" }
+    );
     await TrainAPI.startTask(row.id);
+    ElMessage.success(t("train.started"));
     refreshList();
   } catch {
     /* 提示由请求拦截器统一处理 */
@@ -1056,8 +1080,11 @@ async function handleStart(row: any) {
 
 async function handleStop(id: number) {
   try {
-    await ElMessageBox.confirm("确定停止该训练任务？", "提示", { type: "warning" });
+    await ElMessageBox.confirm(t("train.stopTrainConfirm"), t("train.tipTitle"), {
+      type: "warning",
+    });
     await TrainAPI.stopTask(id);
+    ElMessage.success(t("train.stopped"));
     refreshList();
   } catch {
     //
@@ -1066,6 +1093,7 @@ async function handleStop(id: number) {
 
 async function handleDelete(id: number) {
   await TrainAPI.deleteTask([id]);
+  ElMessage.success(t("train.deleteSuccess"));
   refreshList();
 }
 
@@ -1118,7 +1146,7 @@ onMounted(() => {
   const dsId = Number(route.query.dataset_id || 0);
   if (dsId) {
     formData.dataset_id = dsId;
-    dialogVisible.title = "新建训练任务";
+    dialogVisible.title = t("train.taskCreateTitle");
     dialogVisible.visible = true;
     router.replace({ query: {} });
     return;
@@ -1130,7 +1158,7 @@ onMounted(() => {
     onFrameworkChange(fw);
     formData.framework = fw;
     if (modelId) formData.base_model_id = Number(modelId);
-    dialogVisible.title = "新建训练任务";
+    dialogVisible.title = t("train.taskCreateTitle");
     dialogVisible.visible = true;
     router.replace({ query: {} });
   }

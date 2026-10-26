@@ -173,6 +173,7 @@ class SpaceService:
             db.add(row)
             await db.flush()
             rid = row.id
+        await cls._notify_quota_admins(user_id, target_mb, rid)
         return {"request_id": rid, "target_mb": target_mb, "status": "pending", "msg": "申请已提交，等待管理员审核"}
 
     @classmethod
@@ -221,7 +222,13 @@ class SpaceService:
         from datetime import datetime
 
         async with async_db_session.begin() as db:
-            row = await db.get(AiSpaceQuotaRequestModel, request_id)
+            row = (
+                await db.execute(
+                    select(AiSpaceQuotaRequestModel)
+                    .where(AiSpaceQuotaRequestModel.id == request_id)
+                    .with_for_update()
+                )
+            ).scalars().first()
             if not row or row.is_deleted:
                 raise CustomException(msg="申请不存在", code=404, status_code=404)
             if row.status != "pending":
@@ -245,7 +252,63 @@ class SpaceService:
             else:
                 row.status = "rejected"
             status = row.status
+            applicant_id = row.user_id
+        await cls._notify_quota_applicant(applicant_id, status, request_id, note)
         return {"request_id": request_id, "status": status, "msg": "已通过并生效" if approve else "已驳回"}
+
+    # ---------------- 扩容通知联动 ----------------
+
+    @staticmethod
+    async def _notify_quota_admins(applicant_id: int, target_mb: int, request_id: int) -> None:
+        """扩容申请提交后给超级管理员（role_id=1）发站内通知（best-effort，绝不阻断调用）。
+
+        复用 ``NotificationService.create_notification``（写 ``sys_user_notification`` + 推 WS），
+        与 ``develop/approvals._notify_admins`` 保持同一套站内通知实现。
+        """
+        try:
+            from app.api.v1.module_system.notification.service import NotificationService
+            from app.api.v1.module_system.user.model import UserModel, UserRolesModel
+
+            async with async_db_session() as db:
+                applicant = await db.get(UserModel, applicant_id)
+                uname = applicant.username if applicant else str(applicant_id)
+                user_ids = (
+                    await db.execute(
+                        select(UserRolesModel.user_id).where(UserRolesModel.role_id == 1).distinct()
+                    )
+                ).scalars().all()
+            for uid in user_ids:
+                await NotificationService.create_notification(
+                    int(uid),
+                    title="个人空间扩容申请待审核",
+                    content=f"用户 {uname} 申请将个人空间配额提升到 {target_mb}MB，请到「空间扩容审核」处理。",
+                    type="space_quota_pending",
+                    module="space",
+                    module_id=request_id,
+                )
+        except Exception as e:  # noqa: BLE001 - 通知失败不影响主流程
+            log.warning(f"[space] 扩容申请站内通知发送失败（忽略）: {e}")
+
+    @staticmethod
+    async def _notify_quota_applicant(user_id: int, status: str, request_id: int, note: str) -> None:
+        """审核完成后给申请人发站内通知（best-effort，绝不阻断调用）。"""
+        try:
+            from app.api.v1.module_system.notification.service import NotificationService
+
+            if status == "approved":
+                title = "空间扩容申请已通过"
+                content = "恭喜，你的个人空间扩容申请已通过，配额已生效。"
+            else:
+                title = "空间扩容申请已驳回"
+                content = "很遗憾，你的个人空间扩容申请被驳回。"
+            if note:
+                content = f"{content} 审核意见：{note}"
+            await NotificationService.create_notification(
+                user_id, title=title, content=content, type="space_quota_reviewed",
+                module="space", module_id=request_id,
+            )
+        except Exception as e:  # noqa: BLE001 - 通知失败不影响主流程
+            log.warning(f"[space] 扩容审核站内通知发送失败（忽略）: {e}")
 
     # ---------------- 文件夹 ----------------
 

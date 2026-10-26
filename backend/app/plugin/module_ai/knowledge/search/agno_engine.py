@@ -63,14 +63,16 @@ async def _vectordb():
             embedder=embedder,
             search_type=SearchType.vector,
             create_schema=True,
-            # 2560 维超 pgvector hnsw 上限（2000），且 agno 的 SET 参数化在 PG 报语法错：
-            # 显式禁用自动建索引，agno 路径走服务端顺序扫描（当前语料量级 <10ms 级）。
-            # 语料上万后需评估：halfvec 索引（需改 agno 查询列）或换 ≤2000 维 embedding 模型。
+            # agno 的自动建索引在 PG 会因 SET 参数化语法报错，且有 2000 维 HNSW 上限：
+            # 显式禁用( vector_index=None )，改由下方 _create_vector_index 手动补建(幂等)。
+            # 若维度>2000 或建索引失败，则退化为顺序扫描(当前语料量级 <10ms 级可接受)。
+            # 语料上万后需评估：halfvec 索引(需改 agno 查询列)或换 ≤2000 维 embedding 模型。
             vector_index=None,
         )
         # agno 构造只存配置：建表需显式调用（IF NOT EXISTS，幂等）
         await _DB.async_create()
-        # agno 不在 create() 里建向量索引：显式建 HNSW（幂等，已存在即跳过）
+        # agno 不在 create() 里建向量索引：此处显式补建 HNSW（幂等，已存在即跳过；
+        # 维度>2000 超出 HNSW 上限或建索引失败时，由下方 except 兜底退化为顺序扫描）。
         try:
             await asyncio.to_thread(_DB._create_vector_index)
         except Exception as e:  # noqa: BLE001

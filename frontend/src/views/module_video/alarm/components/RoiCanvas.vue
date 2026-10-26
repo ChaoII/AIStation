@@ -1,8 +1,12 @@
 <template>
   <div ref="rootRef" class="roi-canvas">
     <div class="roi-canvas__toolbar">
-      <el-button size="small" :disabled="disabled || !points.length" @click="undo">撤销</el-button>
-      <el-button size="small" :disabled="disabled || !points.length" @click="clear">清空</el-button>
+      <el-button size="small" :disabled="disabled || !points.length" @click="undo">
+        {{ t("video.roi.undo") }}
+      </el-button>
+      <el-button size="small" :disabled="disabled || !points.length" @click="clear">
+        {{ t("video.roi.clear") }}
+      </el-button>
       <span class="roi-canvas__tip">{{ tip }}</span>
     </div>
 
@@ -80,6 +84,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { Circle, Image as KonvaImage, Layer, Line, Rect, Stage } from "vue-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 
@@ -96,6 +101,8 @@ const props = withDefaults(
 
 /** v-model：归一化坐标点列 [[x,y],...]，0~1 */
 const model = defineModel<number[][]>({ default: () => [] });
+
+const { t } = useI18n();
 
 const rootRef = ref<HTMLElement | null>(null);
 const stageW = ref(640);
@@ -126,9 +133,9 @@ const pixelVertices = computed(() =>
 const pixelPoints = computed(() => pixelVertices.value.flatMap(([x, y]) => [x, y]));
 
 const tip = computed(() => {
-  if (props.disabled) return "画布已禁用";
-  const shape = props.mode === "polygon" ? "闭合多边形（ROI）" : "折线（绊线）";
-  return `点击画面按序加点，生成${shape}；拖动顶点可调整位置`;
+  if (props.disabled) return t("video.roi.disabled");
+  const shape = props.mode === "polygon" ? t("video.roi.polygon") : t("video.roi.polyline");
+  return t("video.roi.tip", { shape });
 });
 
 const round6 = (v: number) => Number(v.toFixed(6));

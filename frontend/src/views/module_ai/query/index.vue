@@ -6,11 +6,17 @@
         <el-card shadow="never" class="q-side">
           <template #header>
             <div class="q-side__head">
-              <span>会话</span>
-              <el-button link type="primary" size="small" @click="newSession">新对话</el-button>
+              <span>{{ t("ai_logs.sessions") }}</span>
+              <el-button link type="primary" size="small" @click="newSession">
+                {{ t("ai_logs.newChat") }}
+              </el-button>
             </div>
           </template>
-          <el-empty v-if="!sessions.length" description="还没有会话" :image-size="60" />
+          <el-empty
+            v-if="!sessions.length"
+            :description="t('ai_logs.noSessions')"
+            :image-size="60"
+          />
           <div
             v-for="s in sessions"
             :key="s.id"
@@ -18,7 +24,7 @@
             :class="{ 'is-active': s.id === sessionId }"
             @click="openSession(s.id)"
           >
-            <div class="q-sess__title">{{ s.title || "未命名" }}</div>
+            <div class="q-sess__title">{{ s.title || t("ai_logs.unnamed") }}</div>
             <div class="q-sess__meta">
               <span>{{ s.created_time || "" }}</span>
               <el-button
@@ -28,7 +34,7 @@
                 size="small"
                 @click.stop="removeSession(s)"
               >
-                删除
+                {{ t("ai_logs.delete") }}
               </el-button>
             </div>
           </div>
@@ -40,15 +46,15 @@
         <el-card shadow="never">
           <template #header>
             <div class="q-head">
-              <span>智能问数</span>
+              <span>{{ t("ai_logs.smartQuery") }}</span>
               <div class="q-head__ops">
                 <el-select
                   v-model="datasource"
                   size="small"
-                  placeholder="数据源"
+                  :placeholder="t('ai_logs.datasource')"
                   style="width: 190px"
                 >
-                  <el-option label="系统库（本体支撑表）" value="system" />
+                  <el-option :label="t('ai_logs.systemDsLabel')" value="system" />
                   <el-option
                     v-for="d in datasources"
                     :key="d.code || d.id"
@@ -57,24 +63,30 @@
                   />
                 </el-select>
                 <el-button icon="Collection" link type="primary" size="small" @click="goOntology">
-                  查看本体
+                  {{ t("ai_logs.viewOntology") }}
                 </el-button>
                 <el-button icon="Setting" link type="primary" size="small" @click="openSettings">
-                  问数设置
+                  {{ t("ai_logs.querySettings") }}
                 </el-button>
                 <el-button icon="DataLine" link type="primary" size="small" @click="openStats">
-                  使用统计
+                  {{ t("ai_logs.usageStats") }}
                 </el-button>
                 <el-dropdown @command="goSub">
                   <el-button link type="primary" size="small">
                     <el-icon style="margin-right: 4px"><Grid /></el-icon>
-                    数据管理
+                    {{ t("ai_logs.dataManagement") }}
                   </el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item command="/ai/integration">数据与集成</el-dropdown-item>
-                      <el-dropdown-item command="/ai/eval">问数评测</el-dropdown-item>
-                      <el-dropdown-item command="/ai/query/reports">报表模板</el-dropdown-item>
+                      <el-dropdown-item command="/ai/integration">
+                        {{ t("ai_logs.dataIntegration") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item command="/ai/eval">
+                        {{ t("ai_logs.queryEval") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item command="/ai/query/reports">
+                        {{ t("ai_logs.reportTemplates") }}
+                      </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -88,7 +100,12 @@
             type="success"
             :closable="true"
             show-icon
-            :title="`当前对象上下文：${objectCode}${objectKey ? ' #' + objectKey : ''}（提问会自动带上它，无需重复说明）`"
+            :title="
+              t('ai_logs.objectContext', {
+                code: objectCode,
+                key: objectKey ? ' #' + objectKey : '',
+              })
+            "
             @close="clearObjectContext"
           />
 
@@ -98,7 +115,7 @@
             :closable="true"
             show-icon
             class="q-tip"
-            title="问数会复用本体的语义与权限：业务对象名、字段中文名、表间关系都来自本体；行级/列级策略会在生成 SQL 时下推到子查询。"
+            :title="t('ai_logs.queryReuseTip')"
             @close="hideTip"
           />
 
@@ -108,14 +125,16 @@
               type="textarea"
               :rows="2"
               resize="none"
-              placeholder="用业务语言提问，例如：各部门的销售额是多少"
+              :placeholder="t('ai_logs.questionPlaceholder')"
               @keydown.enter.exact.prevent="ask"
             />
-            <el-button type="primary" :loading="asking" @click="ask">提问</el-button>
+            <el-button type="primary" :loading="asking" @click="ask">
+              {{ t("ai_logs.ask") }}
+            </el-button>
           </div>
 
           <div class="q-examples">
-            <span class="q-examples__label">示例：</span>
+            <span class="q-examples__label">{{ t("ai_logs.examples") }}</span>
             <el-tag
               v-for="e in examples"
               :key="e"
@@ -129,24 +148,28 @@
 
           <el-divider />
 
-          <el-empty v-if="!messages.length" description="还没有提问记录" :image-size="70" />
+          <el-empty
+            v-if="!messages.length"
+            :description="t('ai_logs.noQueries')"
+            :image-size="70"
+          />
 
           <div v-for="(m, i) in messages" :key="m.id || i" class="q-msg">
             <div class="q-msg__q">
-              <el-tag size="small" effect="dark">问</el-tag>
+              <el-tag size="small" effect="dark">{{ t("ai_logs.ask") }}</el-tag>
               <span>{{ m.question }}</span>
             </div>
             <el-alert
               v-if="m.is_error"
               type="error"
               :closable="false"
-              :title="m.summary || '查询失败'"
+              :title="m.summary || t('ai_logs.queryFailed')"
               class="q-msg__err"
             />
             <template v-else>
               <div v-if="m.reasoning" class="q-msg__reason">
                 <el-collapse v-model="reasonOpen">
-                  <el-collapse-item title="思考过程" name="r">
+                  <el-collapse-item :title="t('ai_logs.thinkingProcess')" name="r">
                     <pre class="q-sql">{{ m.reasoning }}</pre>
                   </el-collapse-item>
                 </el-collapse>
@@ -170,25 +193,27 @@
                   {{ pathLabel(m) }}
                 </el-tag>
                 <el-tag v-if="m.metric?.name" size="small" type="success" effect="plain">
-                  指标：{{ m.metric.name }}
+                  {{ t("ai_logs.metric", { name: m.metric.name }) }}
                 </el-tag>
                 <span v-if="m.evidence?.source" class="q-msg__src">
                   {{ m.evidence.source }}
                 </span>
-                <span v-if="m.result_rows">共 {{ m.result_rows }} 行</span>
+                <span v-if="m.result_rows">
+                  {{ t("ai_logs.totalRows", { count: m.result_rows }) }}
+                </span>
                 <span v-if="m.took_ms">{{ m.took_ms }} ms</span>
-                <span v-if="m.cached">命中缓存</span>
+                <span v-if="m.cached">{{ t("ai_logs.cacheHit") }}</span>
               </div>
               <el-collapse v-if="m.sql" class="q-msg__sql">
-                <el-collapse-item title="查看生成的 SQL" name="sql">
+                <el-collapse-item :title="t('ai_logs.viewSql')" name="sql">
                   <pre class="q-sql">{{ m.sql }}</pre>
                 </el-collapse-item>
               </el-collapse>
               <el-collapse v-if="irOf(m)" class="q-msg__sql">
-                <el-collapse-item title="查看对象查询（语义执行）" name="ir">
+                <el-collapse-item :title="t('ai_logs.viewObjectQuery')" name="ir">
                   <pre class="q-sql">{{ JSON.stringify(irOf(m), null, 2) }}</pre>
                   <div class="q-msg__ir-note">
-                    由本体实例层确定性执行（不生成 SQL）；对象/字段均来自授权且检索命中的范围。
+                    {{ t("ai_logs.objectQueryNote") }}
                     <span v-if="m.object_query?.note">· {{ m.object_query.note }}</span>
                   </div>
                 </el-collapse-item>
@@ -213,9 +238,11 @@
               </el-table>
               <div v-if="m.id" class="q-msg__fb">
                 <el-button icon="Select" link size="small" @click="feedback(m, 'up')">
-                  有用
+                  {{ t("ai_logs.useful") }}
                 </el-button>
-                <el-button icon="Close" link size="small" @click="openCorrect(m)">没用</el-button>
+                <el-button icon="Close" link size="small" @click="openCorrect(m)">
+                  {{ t("ai_logs.useless") }}
+                </el-button>
                 <el-button
                   v-if="m.sql && !m.is_error"
                   icon="Document"
@@ -224,7 +251,7 @@
                   size="small"
                   @click="openSaveReport(m)"
                 >
-                  存为报表
+                  {{ t("ai_logs.saveAsReport") }}
                 </el-button>
                 <el-button
                   v-if="m.sql && !m.is_error"
@@ -234,12 +261,12 @@
                   size="small"
                   @click="openPromote(m)"
                 >
-                  沉淀为指标
+                  {{ t("ai_logs.promoteMetric") }}
                 </el-button>
               </div>
               <div v-if="recalledOf(m).length || ontologyOf(m).length" class="q-msg__ont">
                 <template v-if="ontologyOf(m).length">
-                  <span class="q-msg__ont-label">本体对象：</span>
+                  <span class="q-msg__ont-label">{{ t("ai_logs.ontologyObjects") }}</span>
                   <el-tag
                     v-for="t in ontologyOf(m)"
                     :key="`o-${t}`"
@@ -251,7 +278,7 @@
                   </el-tag>
                 </template>
                 <template v-if="recalledOf(m).length">
-                  <span class="q-msg__ont-label">召回的表：</span>
+                  <span class="q-msg__ont-label">{{ t("ai_logs.recalledTables") }}</span>
                   <el-tag
                     v-for="t in recalledOf(m).slice(0, 8)"
                     :key="`t-${t}`"
@@ -261,7 +288,7 @@
                     {{ t }}
                   </el-tag>
                   <span v-if="recalledOf(m).length > 8" class="q-msg__ont-more">
-                    等 {{ recalledOf(m).length }} 张
+                    {{ t("ai_logs.andMoreTables", { count: recalledOf(m).length }) }}
                   </span>
                 </template>
               </div>
@@ -271,12 +298,17 @@
       </el-col>
     </el-row>
 
-    <el-dialog v-model="clarifyVisible" title="需要确认一下" width="520px" append-to-body>
+    <el-dialog
+      v-model="clarifyVisible"
+      :title="t('ai_logs.confirmNeeded')"
+      width="520px"
+      append-to-body
+    >
       <el-alert
         type="warning"
         :closable="false"
         show-icon
-        title="这个问题有歧义，选一个更准的口径（选完会按你的选择重新查询）。"
+        :title="t('ai_logs.clarifyTip')"
         class="q-fb-tip"
       />
       <div class="q-fb-q">{{ clarify?.question }}</div>
@@ -286,20 +318,25 @@
         </el-radio>
       </el-radio-group>
       <template #footer>
-        <el-button @click="clarifyVisible = false">取消</el-button>
+        <el-button @click="clarifyVisible = false">{{ t("ai_logs.cancel") }}</el-button>
         <el-button type="primary" :disabled="!clarifyPick" @click="answerClarify">
-          按这个口径查
+          {{ t("ai_logs.queryByChoice") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 报表建议：未命中时，推荐已沉淀的报表供用户选择执行 -->
-    <el-dialog v-model="reportSuggestVisible" title="帮你找到相关报表" width="600px" append-to-body>
+    <el-dialog
+      v-model="reportSuggestVisible"
+      :title="t('ai_logs.foundReports')"
+      width="600px"
+      append-to-body
+    >
       <el-alert
         type="info"
         :closable="false"
         show-icon
-        title="系统没有直接命中指标，但有已沉淀的报表可能正好覆盖你的问题，选一个即可直接出结果。"
+        :title="t('ai_logs.reportSuggestTip')"
         class="q-fb-tip"
       />
       <div class="q-report-suggest">
@@ -312,101 +349,111 @@
           <div class="q-report-item__head">
             <span class="q-report-item__name">{{ r.name }}</span>
             <el-tag v-if="r.params" size="small" type="warning" effect="plain">
-              {{ r.params }} 参数
+              {{ r.params }} {{ t("ai_logs.params") }}
             </el-tag>
-            <el-tag v-else size="small" type="success" effect="plain">直接出结果</el-tag>
+            <el-tag v-else size="small" type="success" effect="plain">
+              {{ t("ai_logs.directResult") }}
+            </el-tag>
           </div>
           <div v-if="r.description" class="q-report-item__desc">{{ r.description }}</div>
-          <div v-if="r.question" class="q-report-item__q">对应问题：{{ r.question }}</div>
+          <div v-if="r.question" class="q-report-item__q">
+            {{ t("ai_logs.correspondingQuestion", { q: r.question }) }}
+          </div>
         </div>
       </div>
       <template #footer>
-        <el-button @click="reportSuggestVisible = false">算了，继续用问答</el-button>
+        <el-button @click="reportSuggestVisible = false">{{ t("ai_logs.skipQa") }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="srVisible" title="存为报表" width="520px" append-to-body>
+    <el-dialog v-model="srVisible" :title="t('ai_logs.saveAsReport')" width="520px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
         show-icon
-        title="存下来后同类问题可长期复用（一次沉淀、长期复用）。确认后才进入正式报表列表。"
+        :title="t('ai_logs.saveReportTip')"
         class="q-fb-tip"
       />
       <el-form label-width="80px">
-        <el-form-item label="报表名">
-          <el-input v-model="srName" placeholder="例如：各煤种月度化验汇总" />
+        <el-form-item :label="t('ai_logs.reportName')">
+          <el-input v-model="srName" :placeholder="t('ai_logs.reportNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="来源问题">
+        <el-form-item :label="t('ai_logs.sourceQuestion')">
           <el-input :model-value="srMsg?.question || ''" readonly />
         </el-form-item>
-        <el-form-item v-if="srParams.length" label="参数">
+        <el-form-item v-if="srParams.length" :label="t('ai_logs.params')">
           <el-tag v-for="k in srParams" :key="k" size="small" effect="plain" class="q-sr__p">
             {{ k }}
           </el-tag>
           <div class="q-sr__hint">
-            模板里检测到
-            {{ srParams.length }} 个参数；保存后可在「报表模板」页调整中文名/类型/必填
+            {{ t("ai_logs.srParamHint", { count: srParams.length }) }}
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="srVisible = false">取消</el-button>
+        <el-button @click="srVisible = false">{{ t("ai_logs.cancel") }}</el-button>
         <el-button type="primary" :loading="srLoading" @click="submitSaveReport">
-          保存草稿
+          {{ t("ai_logs.saveDraft") }}
         </el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="pmVisible" title="沉淀为指标" width="520px" append-to-body>
+    <el-dialog v-model="pmVisible" :title="t('ai_logs.promoteMetric')" width="520px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
         show-icon
-        title="把这条已验证问答沉淀为「可复用指标」：同类问题下次直接走确定性快路径（秒级、口径统一），不再依赖模型生成。"
+        :title="t('ai_logs.promoteTip')"
         class="q-fb-tip"
       />
       <el-form label-width="80px">
-        <el-form-item label="指标显示名">
-          <el-input v-model="pmName" placeholder="例如：各煤种月度化验汇总" />
+        <el-form-item :label="t('ai_logs.metricDisplayName')">
+          <el-input v-model="pmName" :placeholder="t('ai_logs.reportNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="指标编码">
-          <el-input v-model="pmKey" placeholder="仅字母/数字/下划线，如 assay_by_coal_type" />
+        <el-form-item :label="t('ai_logs.metricCode')">
+          <el-input v-model="pmKey" :placeholder="t('ai_logs.metricCodePlaceholder')" />
         </el-form-item>
-        <el-form-item label="来源问题">
+        <el-form-item :label="t('ai_logs.sourceQuestion')">
           <el-input :model-value="pmMsg?.question || ''" readonly />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="pmVisible = false">取消</el-button>
-        <el-button type="primary" :loading="pmLoading" @click="submitPromote">沉淀</el-button>
+        <el-button @click="pmVisible = false">{{ t("ai_logs.cancel") }}</el-button>
+        <el-button type="primary" :loading="pmLoading" @click="submitPromote">
+          {{ t("ai_logs.promote") }}
+        </el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="statsVisible" title="问数使用统计" width="520px" append-to-body>
+    <el-dialog
+      v-model="statsVisible"
+      :title="t('ai_logs.queryUsageStats')"
+      width="520px"
+      append-to-body
+    >
       <el-row :gutter="12">
         <el-col :span="12">
-          <el-statistic title="总问答" :value="stats.total" />
+          <el-statistic :title="t('ai_logs.totalQa')" :value="stats.total" />
         </el-col>
         <el-col :span="12">
-          <el-statistic title="快路径（确定性）" :value="stats.fast" />
+          <el-statistic :title="t('ai_logs.fastPath')" :value="stats.fast" />
         </el-col>
         <el-col :span="12" style="margin-top: 12px">
-          <el-statistic title="慢路径（NL2SQL）" :value="stats.slow" />
+          <el-statistic :title="t('ai_logs.slowPath')" :value="stats.slow" />
         </el-col>
         <el-col :span="12" style="margin-top: 12px">
-          <el-statistic title="失败" :value="stats.errors" />
+          <el-statistic :title="t('ai_logs.failed')" :value="stats.errors" />
         </el-col>
       </el-row>
-      <div class="q-stats__hint">快路径占比 {{ fastPct }}%（越高说明语义层沉淀越充分）</div>
+      <div class="q-stats__hint">{{ t("ai_logs.fastPathHint", { pct: fastPct }) }}</div>
     </el-dialog>
 
-    <el-dialog v-model="fbVisible" title="纠正这次查询" width="600px" append-to-body>
+    <el-dialog v-model="fbVisible" :title="t('ai_logs.correctQuery')" width="600px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
         show-icon
-        title="填上正确的 SQL 会存进示例库，同类问题以后能复用（不填也可以只标记「没用」）。"
+        :title="t('ai_logs.correctQueryTip')"
         class="q-fb-tip"
       />
       <div class="q-fb-q">{{ fbMsg?.question }}</div>
@@ -414,22 +461,27 @@
         v-model="fbSql"
         type="textarea"
         :rows="6"
-        placeholder='正确的 SQL，例如：SELECT COUNT(*) FROM "FUEL_CMCS_ASSAY"'
+        :placeholder="t('ai_logs.correctSqlPlaceholder')"
       />
       <template #footer>
-        <el-button @click="fbVisible = false">取消</el-button>
-        <el-button @click="submitFeedback(false)">仅标记没用</el-button>
+        <el-button @click="fbVisible = false">{{ t("ai_logs.cancel") }}</el-button>
+        <el-button @click="submitFeedback(false)">{{ t("ai_logs.markUselessOnly") }}</el-button>
         <el-button type="primary" :loading="fbLoading" @click="submitFeedback(true)">
-          提交纠正
+          {{ t("ai_logs.submitCorrect") }}
         </el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="setVisible" title="问数设置" width="600px" append-to-body>
+    <el-dialog
+      v-model="setVisible"
+      :title="t('ai_logs.querySettings')"
+      width="600px"
+      append-to-body
+    >
       <el-alert
         type="info"
         :closable="false"
         show-icon
-        title="这些是问数的工程开关，保存后即时生效。标「实验」的默认关闭，需先做对比验证再开启。"
+        :title="t('ai_logs.settingTip')"
         class="q-fb-tip"
       />
       <div v-loading="setLoading">
@@ -449,7 +501,7 @@
             v-model="setForm[d.key]"
             size="small"
             clearable
-            placeholder="留空=默认"
+            :placeholder="t('ai_logs.leaveEmptyDefault')"
             style="width: 200px"
           />
           <el-input-number
@@ -464,8 +516,10 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="setVisible = false">取消</el-button>
-        <el-button type="primary" :loading="setSaving" @click="saveSettings">保存</el-button>
+        <el-button @click="setVisible = false">{{ t("ai_logs.cancel") }}</el-button>
+        <el-button type="primary" :loading="setSaving" @click="saveSettings">
+          {{ t("ai_logs.save") }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -473,6 +527,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -493,6 +548,8 @@ import {
 
 defineOptions({ name: "AiQuery" });
 
+const { t } = useI18n();
+
 const router = useRouter();
 const route = useRoute();
 
@@ -509,9 +566,9 @@ const objectCode = ref("");
 const objectKey = ref("");
 
 const examples = ref<string[]>([
-  "销售订单总共有多少笔",
-  "各部门的销售额是多少",
-  "统计摄像机的状态分布",
+  t("ai_logs.example1"),
+  t("ai_logs.example2"),
+  t("ai_logs.example3"),
 ]);
 
 /** 把「列 + 二维数组」转成 el-table 需要的对象数组。 */
@@ -528,12 +585,12 @@ function rowsOf(m: any) {
 
 /** 生成路径标签：指标模板 / 对象查询 / NL2SQL / 报表。 */
 function pathLabel(m: any): string {
-  if (m?.path === "fast") return "指标";
-  if (m?.path === "object") return "对象查询";
+  if (m?.path === "fast") return t("ai_logs.pathMetric");
+  if (m?.path === "object") return t("ai_logs.pathObjectQuery");
   if (m?.path === "slow") return "NL2SQL";
-  if (m?.path === "report") return "报表";
-  if (m?.path === "report_suggest") return "报表建议";
-  return m?.path || "查询";
+  if (m?.path === "report") return t("ai_logs.pathReport");
+  if (m?.path === "report_suggest") return t("ai_logs.pathReportSuggest");
+  return m?.path || t("ai_logs.pathQuery");
 }
 
 /** 对象查询 IR —— 优先读落库的 grounding（历史消息也有），其次兼容即时响应。 */
@@ -568,12 +625,16 @@ function newSession() {
 
 async function removeSession(s: any) {
   await ElMessageBox.confirm(
-    `将删除会话「${s.title || "未命名"}」及其全部问答记录，且不可恢复。`,
-    "删除会话",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    t("ai_logs.removeSessionMsg", { title: s.title || t("ai_logs.unnamed") }),
+    t("ai_logs.removeSession"),
+    {
+      type: "warning",
+      confirmButtonText: t("ai_logs.delete"),
+      cancelButtonText: t("ai_logs.cancel"),
+    }
   );
   await deleteQuerySession(s.id);
-  ElMessage.success("已删除");
+  ElMessage.success(t("ai_logs.deleted"));
   if (sessionId.value === s.id) newSession();
   await loadSessions();
 }
@@ -581,7 +642,7 @@ async function removeSession(s: any) {
 async function ask() {
   const q = question.value.trim();
   if (!q) {
-    ElMessage.warning("请先输入问题");
+    ElMessage.warning(t("ai_logs.pleaseInputQuestion"));
     return;
   }
   asking.value = true;
@@ -611,31 +672,31 @@ async function ask() {
       object_code: objectCode.value || null,
       object_key: objectKey.value || null,
     })) {
-      const t = ev?.type;
+      const evt = ev?.type;
       const d = ev?.data || {};
-      if (t === "meta") {
+      if (evt === "meta") {
         if (d.session_id && !sessionId.value) sessionId.value = d.session_id;
         cur.datasource = d.datasource || cur.datasource;
-      } else if (t === "reasoning") {
+      } else if (evt === "reasoning") {
         cur.reasoning += d.delta || "";
-      } else if (t === "reasoning_done") {
+      } else if (evt === "reasoning_done") {
         flush();
-      } else if (t === "sql_delta") {
+      } else if (evt === "sql_delta") {
         cur.sql += d.delta || "";
-      } else if (t === "sql_final") {
+      } else if (evt === "sql_final") {
         cur.sql = d.sql || cur.sql;
         cur.path = "slow";
-      } else if (t === "tool_start") {
-        cur.tools.push({ name: d.name || "工具", status: "running" });
-      } else if (t === "tool_result" || t === "tool_error") {
+      } else if (evt === "tool_start") {
+        cur.tools.push({ name: d.name || t("ai_logs.tool"), status: "running" });
+      } else if (evt === "tool_result" || evt === "tool_error") {
         const last = cur.tools[cur.tools.length - 1];
-        if (last) last.status = t === "tool_result" ? "done" : "error";
-      } else if (t === "ir") {
+        if (last) last.status = evt === "tool_result" ? "done" : "error";
+      } else if (evt === "ir") {
         cur.ir = d.ir || {};
         cur.path = "object";
         if (d.pending_clarify) cur.pending_clarify = d.pending_clarify;
         flush();
-      } else if (t === "result") {
+      } else if (evt === "result") {
         cur.columns = d.columns || [];
         cur.rows = d.rows || [];
         cur.result_rows = d.result_rows ?? (d.rows || []).length;
@@ -656,18 +717,18 @@ async function ask() {
         if (d.message_id) cur.id = d.message_id;
         hasResult = true;
         flush();
-      } else if (t === "clarify") {
+      } else if (evt === "clarify") {
         cur.path = "clarify";
         cur.clarify = d.clarify || {};
-      } else if (t === "report_suggest") {
+      } else if (evt === "report_suggest") {
         cur.path = "report_suggest";
         cur.reports = d.reports || [];
-      } else if (t === "answer") {
+      } else if (evt === "answer") {
         cur.summary = d.summary || "";
         flush();
-      } else if (t === "error") {
+      } else if (evt === "error") {
         cur.is_error = true;
-        cur.summary = d.message || d || "查询失败";
+        cur.summary = d.message || d || t("ai_logs.queryFailed");
       }
     }
     cur.streaming = false;
@@ -684,15 +745,15 @@ async function ask() {
       reportSuggestVisible.value = true;
       return;
     }
-    if (cur.is_error) ElMessage.error(cur.summary || "查询失败");
-    else ElMessage.success(hasResult ? "查询完成" : "已完成");
+    if (cur.is_error) ElMessage.error(cur.summary || t("ai_logs.queryFailed"));
+    else ElMessage.success(hasResult ? t("ai_logs.queryDone") : t("ai_logs.done"));
     await loadSessions();
   } catch (e: any) {
     cur.streaming = false;
     cur.is_error = true;
-    cur.summary = e?.data?.msg || e?.msg || e?.message || "提问失败";
+    cur.summary = e?.data?.msg || e?.msg || e?.message || t("ai_logs.askFailed");
     flush();
-    ElMessage.error(e?.data?.msg || e?.msg || "提问失败");
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_logs.askFailed"));
   } finally {
     asking.value = false;
   }
@@ -705,7 +766,7 @@ async function answerClarify() {
   const label =
     (c.options || []).find((o: any) => o.value === clarifyPick.value)?.label || clarifyPick.value;
   clarifyVisible.value = false;
-  question.value = `${c._q}\n【澄清】分组口径使用 ${label}`;
+  question.value = `${c._q}\n${t("ai_logs.clarifyGroup", { label })}`;
   await ask();
 }
 
@@ -719,7 +780,7 @@ function openSaveReport(m: any) {
 async function submitSaveReport() {
   const m = srMsg.value;
   if (!m?.sql) {
-    ElMessage.warning("这次没有可保存的 SQL");
+    ElMessage.warning(t("ai_logs.noSaveableSql"));
     return;
   }
   srLoading.value = true;
@@ -734,10 +795,10 @@ async function submitSaveReport() {
       columns: (m.columns || []).map((c: string) => ({ name: c, label: c })),
       verified: false,
     });
-    ElMessage.success("已存为报表草稿，可在报表列表确认");
+    ElMessage.success(t("ai_logs.savedReportDraft"));
     srVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "保存失败");
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_logs.saveFailed"));
   } finally {
     srLoading.value = false;
   }
@@ -790,57 +851,57 @@ async function loadExamples() {
 const SETTING_DEFS = [
   {
     key: "object_query_enabled",
-    label: "对象查询（语义执行）",
+    label: t("ai_logs.settingObjectQuery"),
     type: "bool",
-    tip: "LLM 只输出结构化对象查询 IR，由本体实例层确定性执行（不生成 SQL）；失败自动回退 SQL 生成。默认关闭，需对比验证后再开启。",
+    tip: t("ai_logs.settingObjectQueryTip"),
   },
   {
     key: "query_cost_enabled",
-    label: "查询代价护栏",
+    label: t("ai_logs.settingQueryCost"),
     type: "bool",
-    tip: "执行前用 EXPLAIN 预估行数，超过上限则拒绝并重新生成。",
+    tip: t("ai_logs.settingQueryCostTip"),
   },
   {
     key: "object_query_auto_index_enabled",
-    label: "对象查询 · 自动建索引",
+    label: t("ai_logs.settingAutoIndex"),
     type: "bool",
-    tip: "对象查询命中次数达阈值后，后台按建议为高频对象自动补索引（复用本体索引模块）。默认关闭。",
+    tip: t("ai_logs.settingAutoIndexTip"),
   },
   {
     key: "object_query_model",
-    label: "对象查询 · IR 模型",
+    label: t("ai_logs.settingIrModel"),
     type: "text",
-    tip: "生成对象查询 IR 用哪个模型：留空=与 NL2SQL 同源。可填更快的模型名（如 LLM-27B-FP8）或模型 id。实测同一提示词：284B≈29s、27B≈9s、deepseek-flash≈4.4s。",
+    tip: t("ai_logs.settingIrModelTip"),
   },
   {
     key: "empty_self_correct",
-    label: "空结果自纠错",
+    label: t("ai_logs.settingEmptySelfCorrect"),
     type: "bool",
-    tip: "查询结果为空时，带提示重新生成一次。",
+    tip: t("ai_logs.settingEmptySelfCorrectTip"),
   },
   {
     key: "recall_enabled",
-    label: "多路召回（RRF 融合）",
+    label: t("ai_logs.settingRecall"),
     type: "bool",
-    tip: "向量 / 关键词 / 本体 / 实体四路召回融合后再选表。",
+    tip: t("ai_logs.settingRecallTip"),
   },
   {
     key: "two_stage_planning",
-    label: "两段式规划（真分解）",
+    label: t("ai_logs.settingTwoStage"),
     type: "bool",
-    tip: "先出执行计划再写 SQL。实测负收益（留出法 −7.55 分），默认关闭。",
+    tip: t("ai_logs.settingTwoStageTip"),
   },
   {
     key: "agno_tool_agent",
-    label: "工具化 Agent",
+    label: t("ai_logs.settingToolAgent"),
     type: "bool",
-    tip: "让模型自主调用检索工具；多轮往返较慢，默认关闭。",
+    tip: t("ai_logs.settingToolAgentTip"),
   },
   {
     key: "self_consistency_n",
-    label: "自一致性候选数",
+    label: t("ai_logs.settingSelfConsistency"),
     type: "int",
-    tip: "大于 1 时多次采样投票，提升稳定性但更慢。",
+    tip: t("ai_logs.settingSelfConsistencyTip"),
   },
 ] as const;
 
@@ -871,7 +932,7 @@ async function openSettings() {
     setLoaded.value = { ...merged };
     setForm.value = { ...merged };
   } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "读取问数设置失败");
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_logs.readSettingsFailed"));
   } finally {
     setLoading.value = false;
   }
@@ -884,7 +945,7 @@ async function saveSettings() {
       (d) => (setForm.value[d.key] ?? "") !== (setLoaded.value[d.key] ?? "")
     );
     if (!changed.length) {
-      ElMessage.info("没有需要保存的改动");
+      ElMessage.info(t("ai_logs.noSettingsChanged"));
       setVisible.value = false;
       return;
     }
@@ -895,10 +956,10 @@ async function saveSettings() {
         remark: d.label,
       });
     }
-    ElMessage.success(`已保存 ${changed.length} 项设置`);
+    ElMessage.success(t("ai_logs.savedSettingsCount", { count: changed.length }));
     setVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "保存设置失败");
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_logs.saveSettingsFailed"));
   } finally {
     setSaving.value = false;
   }
@@ -936,11 +997,11 @@ function openPromote(m: any) {
 
 async function submitPromote() {
   if (!pmName.value.trim() || !pmKey.value.trim()) {
-    ElMessage.warning("请填写指标显示名与编码");
+    ElMessage.warning(t("ai_logs.promoteNameKeyRequired"));
     return;
   }
   if (!/^[A-Za-z0-9_]+$/.test(pmKey.value.trim())) {
-    ElMessage.warning("指标编码仅允许字母/数字/下划线");
+    ElMessage.warning(t("ai_logs.metricCodeInvalid"));
     return;
   }
   pmLoading.value = true;
@@ -950,10 +1011,10 @@ async function submitPromote() {
       name: pmName.value.trim(),
       key: pmKey.value.trim(),
     });
-    ElMessage.success("已沉淀为指标，同类问题将走确定性快路径");
+    ElMessage.success(t("ai_logs.promoted"));
     pmVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "沉淀失败");
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_logs.promoteFailed"));
   } finally {
     pmLoading.value = false;
   }
@@ -968,9 +1029,9 @@ const srParams = computed<string[]>(() => {
 async function feedback(m: any, kind: string) {
   try {
     await queryFeedback({ message_id: m.id, feedback: kind });
-    ElMessage.success("已记录反馈");
+    ElMessage.success(t("ai_logs.feedbackRecorded"));
   } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "反馈失败");
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_logs.feedbackFailed"));
   }
 }
 
@@ -987,7 +1048,7 @@ const reportSuggestList = ref<any[]>([]);
 
 async function pickReport(r: any) {
   if (r.params) {
-    ElMessage.info("该报表带参数，请到「报表模板」页运行并填写参数");
+    ElMessage.info(t("ai_logs.reportHasParams"));
     return;
   }
   try {
@@ -997,18 +1058,19 @@ async function pickReport(r: any) {
     messages.value = [
       ...messages.value,
       {
-        question: `[报表] ${r.name}`,
+        question: `${t("ai_logs.reportTag")} ${r.name}`,
         path: "report",
         columns: d?.columns || [],
         rows: d?.rows || [],
-        summary: d?.summary || (d?.ok === false ? d?.msg : `已执行报表「${r.name}」`),
+        summary:
+          d?.summary || (d?.ok === false ? d?.msg : t("ai_logs.executedReport", { name: r.name })),
         sql: d?.sql || "",
         is_error: d?.ok === false,
       },
     ];
     await loadSessions();
   } catch (e: any) {
-    ElMessage.error(e?.message || "报表执行失败");
+    ElMessage.error(e?.message || t("ai_logs.reportRunFailed"));
   }
 }
 const clarifyPick = ref("");
@@ -1036,12 +1098,12 @@ async function submitFeedback(withSql: boolean) {
       ...(withSql && fbSql.value.trim() ? { correct_sql: fbSql.value.trim() } : {}),
     });
     const d = r.data?.data || {};
-    if (d.sunk) ElMessage.success("已记录，并沉淀进示例库");
+    if (d.sunk) ElMessage.success(t("ai_logs.feedbackSunk"));
     else if (d.reason) ElMessage.warning(d.reason);
-    else ElMessage.success("已记录反馈");
+    else ElMessage.success(t("ai_logs.feedbackRecorded"));
     fbVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "反馈失败");
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_logs.feedbackFailed"));
   } finally {
     fbLoading.value = false;
   }

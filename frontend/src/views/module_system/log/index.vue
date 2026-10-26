@@ -18,7 +18,7 @@
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar">
             <template #prepend>
-              <el-tooltip content="导出">
+              <el-tooltip :content="t('system.log.export')">
                 <el-button
                   v-hasPerm="['module_system:log:export']"
                   type="warning"
@@ -45,7 +45,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('system.log.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -56,7 +56,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('system.log.serialNumber')"
               min-width="60"
             >
               <template #default="scope">
@@ -65,26 +65,28 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'type')?.show"
-              label="日志类型"
+              :label="t('system.log.logType')"
               prop="type"
               min-width="100"
             >
               <template #default="scope">
                 <el-tag :type="scope.row.type === 1 ? 'success' : 'primary'">
-                  {{ scope.row.type === 1 ? "登录日志" : "操作日志" }}
+                  {{
+                    scope.row.type === 1 ? t("system.log.loginLog") : t("system.log.operationLog")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'request_path')?.show"
-              label="请求路径"
+              :label="t('system.log.requestPath')"
               prop="request_path"
               min-width="200"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'request_method')?.show"
-              label="请求方法"
+              :label="t('system.log.requestMethod')"
               prop="request_method"
               min-width="100"
             >
@@ -96,7 +98,7 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'response_code')?.show"
-              label="状态码"
+              :label="t('system.log.statusCode')"
               prop="response_code"
               min-width="100"
             >
@@ -108,7 +110,7 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'request_ip')?.show"
-              label="请求IP"
+              :label="t('system.log.requestIp')"
               prop="request_ip"
               min-width="180"
               show-overflow-tooltip
@@ -124,33 +126,33 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'process_time')?.show"
-              label="处理时间"
+              :label="t('system.log.processTime')"
               prop="process_time"
               min-width="120"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'request_browser')?.show"
-              label="浏览器"
+              :label="t('system.log.browser')"
               prop="request_browser"
               min-width="220"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'request_os')?.show"
-              label="系统"
+              :label="t('system.log.requestOs')"
               prop="request_os"
               min-width="100"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'description')?.show"
-              label="描述"
+              :label="t('system.log.description')"
               prop="description"
               min-width="120"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
-              label="创建时间"
+              :label="t('system.log.createdTime')"
               prop="created_time"
               min-width="200"
               sortable
@@ -158,7 +160,7 @@
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_id')?.show"
-              label="创建人"
+              :label="t('system.log.createdBy')"
               prop="created_id"
               min-width="120"
             >
@@ -168,7 +170,7 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_id')?.show"
-              label="更新人"
+              :label="t('system.log.updatedBy')"
               prop="updated_id"
               min-width="120"
             >
@@ -179,7 +181,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('system.log.operation')"
               align="center"
               min-width="150"
             >
@@ -192,7 +194,7 @@
                   icon="View"
                   @click="handleOpenDialog('detail', scope.row.id)"
                 >
-                  详情
+                  {{ t("system.log.detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:log:delete']"
@@ -202,7 +204,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("system.log.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -218,58 +220,58 @@
     >
       <template v-if="dialogVisible.type === 'detail'">
         <el-descriptions :column="8" border label-width="200px">
-          <el-descriptions-item label="日志类型" :span="2">
+          <el-descriptions-item :label="t('system.log.logType')" :span="2">
             <el-tag :type="formData.type === 1 ? 'success' : 'primary'">
-              {{ formData.type === 1 ? "登录日志" : "操作日志" }}
+              {{ formData.type === 1 ? t("system.log.loginLog") : t("system.log.operationLog") }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="请求路径" :span="2">
+          <el-descriptions-item :label="t('system.log.requestPath')" :span="2">
             {{ formData.request_path }}
           </el-descriptions-item>
-          <el-descriptions-item label="请求方法" :span="2">
+          <el-descriptions-item :label="t('system.log.requestMethod')" :span="2">
             <el-tag :type="getMethodType(formData.request_method)">
               {{ formData.request_method }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="响应状态码" :span="2">
+          <el-descriptions-item :label="t('system.log.responseStatusCode')" :span="2">
             <el-tag :type="getStatusCodeType(formData.response_code)">
               {{ formData.response_code }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="请求IP" :span="2">
+          <el-descriptions-item :label="t('system.log.requestIp')" :span="2">
             {{ formData.request_ip }}
           </el-descriptions-item>
-          <el-descriptions-item label="处理时间" :span="2">
+          <el-descriptions-item :label="t('system.log.processTime')" :span="2">
             {{ formData.process_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="浏览器" :span="2">
+          <el-descriptions-item :label="t('system.log.browser')" :span="2">
             {{ formData.request_browser }}
           </el-descriptions-item>
-          <el-descriptions-item label="操作系统" :span="2">
+          <el-descriptions-item :label="t('system.log.operatingSystem')" :span="2">
             {{ formData.request_os }}
           </el-descriptions-item>
-          <el-descriptions-item label="请求参数" :span="8">
+          <el-descriptions-item :label="t('system.log.requestParams')" :span="8">
             <JsonPretty :value="formData.request_payload" height="80px" />
           </el-descriptions-item>
-          <el-descriptions-item label="响应数据" :span="8">
+          <el-descriptions-item :label="t('system.log.responseData')" :span="8">
             <JsonPretty :value="formData.response_json" height="140px" />
           </el-descriptions-item>
-          <el-descriptions-item label="登录地点" :span="4">
+          <el-descriptions-item :label="t('system.log.loginLocation')" :span="4">
             {{ formData.login_location }}
           </el-descriptions-item>
-          <el-descriptions-item label="描述" :span="8">
+          <el-descriptions-item :label="t('system.log.description')" :span="8">
             {{ formData.description }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建人" :span="4">
+          <el-descriptions-item :label="t('system.log.createdBy')" :span="4">
             {{ formData.created_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新人" :span="4">
+          <el-descriptions-item :label="t('system.log.updatedBy')" :span="4">
             {{ formData.updated_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间" :span="4">
+          <el-descriptions-item :label="t('system.log.createdTime')" :span="4">
             {{ formData.created_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新时间" :span="4">
+          <el-descriptions-item :label="t('system.log.updatedTime')" :span="4">
             {{ formData.updated_time }}
           </el-descriptions-item>
         </el-descriptions>
@@ -277,13 +279,13 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
+          <el-button @click="handleCloseDialog">{{ t("system.log.cancel") }}</el-button>
           <el-button
             v-hasPerm="['module_system:log:detail']"
             type="primary"
             @click="handleCloseDialog"
           >
-            确定
+            {{ t("system.log.confirm") }}
           </el-button>
         </div>
       </template>
@@ -306,6 +308,7 @@ defineOptions({
 });
 
 import { ref, reactive, computed, unref, markRaw, nextTick } from "vue";
+import { useI18n } from "vue-i18n";
 import { fetchAllPages } from "@/utils/fetchAllPages";
 import LogAPI, { LogTable, LogPageQuery } from "@/api/module_system/log";
 import UserTableSelect from "@/views/module_system/user/components/UserTableSelect.vue";
@@ -319,6 +322,7 @@ import JsonPretty from "@/components/JsonPretty/index.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 
+const { t } = useI18n();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
 function triggerUserSearch() {
@@ -334,23 +338,27 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "request_path",
-      label: "请求路径",
+      label: t("system.log.requestPath"),
       type: "input",
-      attrs: { placeholder: "请输入请求路径", clearable: true },
+      attrs: { placeholder: t("system.log.requestPathPlaceholder"), clearable: true },
     },
     {
       prop: "type",
-      label: "日志类型",
+      label: t("system.log.logType"),
       type: "select",
       options: [
-        { label: "登录日志", value: 1 },
-        { label: "操作日志", value: 2 },
+        { label: t("system.log.loginLog"), value: 1 },
+        { label: t("system.log.operationLog"), value: 2 },
       ],
-      attrs: { placeholder: "请选择日志类型", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("system.log.logTypePlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "created_id",
-      label: "创建人",
+      label: t("system.log.createdBy"),
       type: "user-table-select",
       initialValue: null,
       events: {
@@ -360,15 +368,15 @@ const searchConfig = reactive<ISearchConfig>({
     },
     {
       prop: "created_time",
-      label: "创建时间",
+      label: t("system.log.createdTime"),
       type: "date-picker",
       initialValue: [],
       attrs: {
         type: "datetimerange",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
-        rangeSeparator: "至",
-        startPlaceholder: "开始日期",
-        endPlaceholder: "结束日期",
+        rangeSeparator: t("system.log.rangeSeparator"),
+        startPlaceholder: t("system.log.startDate"),
+        endPlaceholder: t("system.log.endDate"),
         style: { width: "340px" },
       },
     },
@@ -385,21 +393,21 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "type", label: "日志类型", show: true },
-  { prop: "request_path", label: "请求路径", show: true },
-  { prop: "request_method", label: "请求方法", show: true },
-  { prop: "response_code", label: "状态码", show: true },
-  { prop: "request_ip", label: "请求IP", show: true },
-  { prop: "process_time", label: "处理时间", show: true },
-  { prop: "request_browser", label: "浏览器", show: true },
-  { prop: "request_os", label: "系统", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "created_id", label: "创建人", show: true },
-  { prop: "updated_id", label: "更新人", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("system.log.selection"), show: true },
+  { prop: "index", label: t("system.log.serialNumber"), show: true },
+  { prop: "type", label: t("system.log.logType"), show: true },
+  { prop: "request_path", label: t("system.log.requestPath"), show: true },
+  { prop: "request_method", label: t("system.log.requestMethod"), show: true },
+  { prop: "response_code", label: t("system.log.statusCode"), show: true },
+  { prop: "request_ip", label: t("system.log.requestIp"), show: true },
+  { prop: "process_time", label: t("system.log.processTime"), show: true },
+  { prop: "request_browser", label: t("system.log.browser"), show: true },
+  { prop: "request_os", label: t("system.log.requestOs"), show: true },
+  { prop: "description", label: t("system.log.description"), show: true },
+  { prop: "created_time", label: t("system.log.createdTime"), show: true },
+  { prop: "created_id", label: t("system.log.createdBy"), show: true },
+  { prop: "updated_id", label: t("system.log.updatedBy"), show: true },
+  { prop: "operation", label: t("system.log.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<LogPageQuery>>({
@@ -430,8 +438,8 @@ const contentConfig = reactive<IContentConfig<LogPageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("system.log.warning"),
+    message: t("system.log.deleteConfirmMessage"),
     type: "warning",
   },
 });
@@ -490,7 +498,7 @@ async function handleOpenDialog(type: "create" | "update" | "detail", id: number
   if (id) {
     const response = await LogAPI.detailLog(id);
     if (type === "detail") {
-      dialogVisible.title = "日志详情";
+      dialogVisible.title = t("system.log.logDetail");
       Object.assign(formData.value, response.data.data);
     }
   }
@@ -515,18 +523,18 @@ const exportSelectionData = computed(
 );
 
 const exportColumns = [
-  { prop: "type", label: "日志类型" },
-  { prop: "request_path", label: "请求路径" },
-  { prop: "request_method", label: "请求方法" },
-  { prop: "response_code", label: "状态码" },
-  { prop: "request_ip", label: "请求IP" },
-  { prop: "login_location", label: "登录地点" },
-  { prop: "process_time", label: "处理时间" },
-  { prop: "request_browser", label: "浏览器" },
-  { prop: "request_os", label: "系统" },
-  { prop: "description", label: "描述" },
-  { prop: "created_time", label: "创建时间" },
-  { prop: "updated_time", label: "更新时间" },
+  { prop: "type", label: t("system.log.logType") },
+  { prop: "request_path", label: t("system.log.requestPath") },
+  { prop: "request_method", label: t("system.log.requestMethod") },
+  { prop: "response_code", label: t("system.log.statusCode") },
+  { prop: "request_ip", label: t("system.log.requestIp") },
+  { prop: "login_location", label: t("system.log.loginLocation") },
+  { prop: "process_time", label: t("system.log.processTime") },
+  { prop: "request_browser", label: t("system.log.browser") },
+  { prop: "request_os", label: t("system.log.requestOs") },
+  { prop: "description", label: t("system.log.description") },
+  { prop: "created_time", label: t("system.log.createdTime") },
+  { prop: "updated_time", label: t("system.log.updatedTime") },
 ];
 
 const curdContentConfig = {

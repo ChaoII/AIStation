@@ -6,28 +6,30 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="`嵌入对话 · ${app?.name || ''}`"
+    :title="t('ai_workflow.develop_embedTitle', { name: app?.name || '' })"
     width="640px"
     top="6vh"
     append-to-body
     @closed="resetState"
   >
     <el-form label-width="94px" class="embed-dialog">
-      <el-form-item label="嵌入形态">
+      <el-form-item :label="t('ai_workflow.develop_embedKind')">
         <el-radio-group v-model="kind" @change="onKindChange">
           <el-radio-button value="agent">Agent</el-radio-button>
-          <el-radio-button value="app">AI 应用</el-radio-button>
-          <el-radio-button value="workflow">工作流</el-radio-button>
+          <el-radio-button value="app">{{ t("ai_workflow.develop_embedApp") }}</el-radio-button>
+          <el-radio-button value="workflow">
+            {{ t("ai_workflow.develop_embedWorkflow") }}
+          </el-radio-button>
         </el-radio-group>
       </el-form-item>
 
-      <el-form-item label="嵌入目标">
+      <el-form-item :label="t('ai_workflow.develop_embedTarget')">
         <el-select
           v-model="targetId"
           filterable
           clearable
           :loading="loadingTargets"
-          placeholder="选择要嵌入的目标"
+          :placeholder="t('ai_workflow.develop_embedTargetPlaceholder')"
           class="embed-dialog__select"
           @change="mintedToken = ''"
         >
@@ -35,10 +37,10 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="嵌入代码">
+      <el-form-item :label="t('ai_workflow.develop_embedCode')">
         <div class="embed-dialog__code">
           <el-tabs v-model="codeTab">
-            <el-tab-pane label="iframe 直嵌" name="iframe">
+            <el-tab-pane :label="t('ai_workflow.develop_embedTabIframe')" name="iframe">
               <pre class="embed-dialog__pre">{{ codeFor("iframe") }}</pre>
             </el-tab-pane>
             <el-tab-pane label="Script SDK" name="script">
@@ -48,7 +50,7 @@
           <div class="embed-dialog__actions">
             <el-button size="small" :disabled="!targetId" @click="copyCode">
               <el-icon><CopyDocument /></el-icon>
-              复制代码
+              {{ t("ai_workflow.develop_embedCopyCode") }}
             </el-button>
             <el-button
               v-hasPerm="'module_ai:develop:create'"
@@ -59,7 +61,7 @@
               :loading="minting"
               @click="onMint"
             >
-              生成体验 Token（2 小时）
+              {{ t("ai_workflow.develop_embedMintToken") }}
             </el-button>
           </div>
           <el-alert
@@ -67,44 +69,65 @@
             :closable="false"
             show-icon
             class="embed-dialog__alert"
-            title="凭证说明"
-            :description="`{access_token} 为短期凭证占位符：请由宿主服务端用 appid/appkey 调 POST ${apiBase}/develop-api/auth/token 换票获取；切勿把 appkey 写入网页。过期后宿主重新换票并调用 setToken() 续期。`"
+            :title="t('ai_workflow.develop_embedCredTitle')"
+            :description="t('ai_workflow.develop_embedCredDesc', { apiBase })"
           />
         </div>
       </el-form-item>
 
-      <el-form-item label="已签发令牌">
+      <el-form-item :label="t('ai_workflow.develop_embedIssuedTokens')">
         <el-table
           v-loading="loadingTokens"
           :data="tokens"
           size="small"
           border
+          stripe
           max-height="150"
-          empty-text="暂无令牌（换票与体验票都会出现在这里）"
         >
-          <el-table-column label="形态" width="74">
+          <template #empty>
+            <el-empty :image-size="80" :description="t('ai_workflow.develop_embedNoTokens')" />
+          </template>
+          <el-table-column :label="t('ai_workflow.develop_embedKindShort')" width="74">
             <template #default="{ row }">
               <div>{{ kindLabel(row.kind) }}</div>
               <div class="embed-dialog__sub">
-                {{ row.issued_by === "admin" ? "体验票" : "换票" }}
+                {{
+                  row.issued_by === "admin"
+                    ? t("ai_workflow.develop_embedTrialTicket")
+                    : t("ai_workflow.develop_embedIssuedTicket")
+                }}
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="target_name" label="目标" min-width="84" show-overflow-tooltip />
-          <el-table-column label="过期时间" width="110">
+          <el-table-column
+            prop="target_name"
+            :label="t('ai_workflow.develop_embedTargetShort')"
+            min-width="84"
+            show-overflow-tooltip
+          />
+          <el-table-column :label="t('ai_workflow.develop_embedExpireTime')" width="110">
             <template #default="{ row }">
               <span :title="row.expires_at">{{ fmtShort(row.expires_at) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="use_count" label="使用" width="50" align="right" />
-          <el-table-column label="状态" width="76">
+          <el-table-column
+            prop="use_count"
+            :label="t('ai_workflow.develop_embedUsage')"
+            width="50"
+            align="right"
+          />
+          <el-table-column :label="t('ai_workflow.develop_embedStatus')" width="76">
             <template #default="{ row }">
               <el-tag size="small" :type="row.revoked ? 'info' : 'success'" effect="plain">
-                {{ row.revoked ? "已吊销" : "有效" }}
+                {{
+                  row.revoked
+                    ? t("ai_workflow.develop_embedRevoked")
+                    : t("ai_workflow.develop_embedValid")
+                }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="56">
+          <el-table-column :label="t('ai_workflow.develop_embedAction')" width="56">
             <template #default="{ row }">
               <el-button
                 v-if="!row.revoked"
@@ -114,14 +137,14 @@
                 size="small"
                 @click="onRevoke(row)"
               >
-                吊销
+                {{ t("ai_workflow.develop_embedRevoke") }}
               </el-button>
             </template>
           </el-table-column>
         </el-table>
       </el-form-item>
 
-      <el-form-item label="事件契约">
+      <el-form-item :label="t('ai_workflow.develop_embedEvents')">
         <div class="embed-dialog__events">
           <el-tag
             v-for="e in EVENTS"
@@ -135,23 +158,28 @@
           </el-tag>
         </div>
         <div class="embed-dialog__note">
-          上行信封 source = ai-embed / version = 1；完整载荷与下行命令见「接入文档」页签。
+          {{ t("ai_workflow.develop_embedEventsNote") }}
         </div>
       </el-form-item>
     </el-form>
 
     <template #footer>
-      <el-button @click="visible = false">关闭</el-button>
+      <el-button @click="visible = false">{{ t("ai_workflow.develop_close") }}</el-button>
     </template>
 
     <!-- 体验票一次性展示 -->
-    <el-dialog v-model="reveal.visible" title="体验 Token" width="520px" append-to-body>
+    <el-dialog
+      v-model="reveal.visible"
+      :title="t('ai_workflow.develop_embedRevealTitle')"
+      width="520px"
+      append-to-body
+    >
       <el-alert
-        title="请复制后立即填入代码"
+        :title="t('ai_workflow.develop_embedRevealAlertTitle')"
         type="warning"
         :closable="false"
         show-icon
-        description="令牌明文仅在这里显示一次；过期后重新签发即可。"
+        :description="t('ai_workflow.develop_embedRevealAlertDesc')"
       />
       <el-descriptions :column="1" border size="small" class="embed-dialog__reveal">
         <el-descriptions-item label="Token">
@@ -162,11 +190,15 @@
             </el-button>
           </div>
         </el-descriptions-item>
-        <el-descriptions-item label="过期时间">{{ reveal.expiresAt }}</el-descriptions-item>
+        <el-descriptions-item :label="t('ai_workflow.develop_embedExpireTime')">
+          {{ reveal.expiresAt }}
+        </el-descriptions-item>
       </el-descriptions>
       <template #footer>
-        <el-button @click="reveal.visible = false">关闭</el-button>
-        <el-button type="primary" @click="applyRevealToken">填入代码</el-button>
+        <el-button @click="reveal.visible = false">{{ t("ai_workflow.develop_close") }}</el-button>
+        <el-button type="primary" @click="applyRevealToken">
+          {{ t("ai_workflow.develop_embedApplyCode") }}
+        </el-button>
       </template>
     </el-dialog>
   </el-dialog>
@@ -174,6 +206,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { CopyDocument } from "@element-plus/icons-vue";
 import { getAiAgentList } from "@/api/module_ai/agent";
@@ -182,6 +215,8 @@ import { getAiWorkflowList } from "@/api/module_ai/workflow";
 import { getEmbedTokens, mintEmbedToken, revokeEmbedToken } from "@/api/module_ai/develop";
 
 defineOptions({ name: "AiEmbedDialog" });
+
+const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -198,13 +233,13 @@ const apiBase = `${location.origin}/api/v1/ai`;
 const webBase = `${location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}`;
 
 const EVENTS = [
-  { name: "ready", desc: "嵌入页初始化完成（含目标名与过期时间）" },
-  { name: "user_message", desc: "用户发出消息" },
-  { name: "reply_start", desc: "开始流式回复" },
-  { name: "reply_delta", desc: "流式增量文本（高频）" },
-  { name: "reply_done", desc: "回复完成（全量文本）" },
-  { name: "error", desc: "业务/网络/限流错误" },
-  { name: "token_expired", desc: "凭证过期，宿主需换票后 setToken" },
+  { name: "ready", desc: t("ai_workflow.develop_eventReady") },
+  { name: "user_message", desc: t("ai_workflow.develop_eventUserMessage") },
+  { name: "reply_start", desc: t("ai_workflow.develop_eventReplyStart") },
+  { name: "reply_delta", desc: t("ai_workflow.develop_eventReplyDelta") },
+  { name: "reply_done", desc: t("ai_workflow.develop_eventReplyDone") },
+  { name: "error", desc: t("ai_workflow.develop_eventError") },
+  { name: "token_expired", desc: t("ai_workflow.develop_eventTokenExpired") },
 ];
 
 const kind = ref<"agent" | "app" | "workflow">("agent");
@@ -219,7 +254,13 @@ const loadingTokens = ref(false);
 const reveal = reactive({ visible: false, token: "", expiresAt: "" });
 
 function kindLabel(k: string): string {
-  return { agent: "Agent", app: "AI 应用", workflow: "工作流" }[k] || k;
+  return (
+    {
+      agent: "Agent",
+      app: t("ai_workflow.develop_embedApp"),
+      workflow: t("ai_workflow.develop_embedWorkflow"),
+    }[k] || k
+  );
 }
 
 /** 令牌过期时间：同一天内显示「MM-DD HH:mm」，表格窄列不折行。 */
@@ -250,7 +291,7 @@ async function loadTargets() {
       .map((t: any) => ({ id: t.id, name: t.name }));
   } catch {
     targets.value = [];
-    ElMessage.error("加载目标列表失败");
+    ElMessage.error(t("ai_workflow.develop_embedTargetsLoadFail"));
   } finally {
     loadingTargets.value = false;
   }
@@ -297,7 +338,7 @@ watch(
 function codeFor(tab: "iframe" | "script"): string {
   const token = mintedToken.value || "{access_token}";
   if (tab === "iframe") {
-    return `<iframe\n  src="${webBase}/#/embed?token=${token}"\n  width="420" height="620"\n  style="border:0;border-radius:12px"\n  title="AI 对话"\n></iframe>`;
+    return `<iframe\n  src="${webBase}/#/embed?token=${token}"\n  width="420" height="620"\n  style="border:0;border-radius:12px"\n  title="${t("ai_workflow.develop_embedIframeTitle")}"\n></iframe>`;
   }
   return (
     `<script src="${apiBase}/embed/sdk.js"></scr` +
@@ -309,8 +350,8 @@ function codeFor(tab: "iframe" | "script"): string {
 function copyText(text?: string) {
   if (!text) return;
   navigator.clipboard?.writeText(text).then(
-    () => ElMessage.success("已复制"),
-    () => ElMessage.error("复制失败，请手动复制")
+    () => ElMessage.success(t("ai_workflow.develop_copied")),
+    () => ElMessage.error(t("ai_workflow.develop_copyFailManual"))
   );
 }
 
@@ -334,7 +375,7 @@ async function onMint() {
     reveal.visible = true;
     void loadTokens();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "签发失败");
+    ElMessage.error(e?.msg || t("ai_workflow.develop_embedMintFail"));
   } finally {
     minting.value = false;
   }
@@ -343,26 +384,30 @@ async function onMint() {
 function applyRevealToken() {
   mintedToken.value = reveal.token;
   reveal.visible = false;
-  ElMessage.success("已填入代码，可直接复制使用");
+  ElMessage.success(t("ai_workflow.develop_embedApplySuccess"));
 }
 
 /* ---------- 吊销 ---------- */
 async function onRevoke(row: any) {
   try {
     await ElMessageBox.confirm(
-      `吊销后该令牌立即失效，使用它的嵌入页面将无法继续对话，且不可恢复。是否继续？`,
-      "吊销令牌",
-      { type: "warning", confirmButtonText: "吊销", cancelButtonText: "取消" }
+      t("ai_workflow.develop_embedRevokeConfirm"),
+      t("ai_workflow.develop_embedRevokeTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("ai_workflow.develop_embedRevoke"),
+        cancelButtonText: t("ai_workflow.develop_cancel"),
+      }
     );
   } catch {
     return;
   }
   try {
     await revokeEmbedToken(row.id);
-    ElMessage.success("已吊销");
+    ElMessage.success(t("ai_workflow.develop_embedRevoked"));
     await loadTokens();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "吊销失败");
+    ElMessage.error(e?.msg || t("ai_workflow.develop_embedRevokeFail"));
   }
 }
 </script>

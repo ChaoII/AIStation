@@ -2,7 +2,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="从个人空间选择文件"
+    :title="t('ai_chat.spaceFilePicker_title')"
     width="900px"
     append-to-body
     @update:model-value="(v: boolean) => emit('update:visible', v)"
@@ -10,9 +10,9 @@
     <div class="space-picker">
       <div class="space-picker-side">
         <div class="space-picker-side-head">
-          <span>文件夹</span>
+          <span>{{ t("ai_chat.spaceFilePicker_folders") }}</span>
           <el-button link type="primary" :icon="FolderOpened" @click="pickFolder(null)">
-            全部
+            {{ t("ai_chat.spaceFilePicker_all") }}
           </el-button>
         </div>
         <el-tree
@@ -28,7 +28,7 @@
       <div class="space-picker-main">
         <el-input
           v-model="keyword"
-          placeholder="搜索文件名"
+          :placeholder="t('ai_chat.spaceFilePicker_search')"
           clearable
           :prefix-icon="Search"
           style="width: 100%"
@@ -40,28 +40,30 @@
           stripe
           :data="files"
           height="320"
-          empty-text="该文件夹暂无文件"
+          :empty-text="t('ai_chat.spaceFilePicker_noFiles')"
           @selection-change="(rows: any[]) => (selected = rows)"
         >
           <el-table-column type="selection" width="40" :selectable="() => !!props.multiple" />
-          <el-table-column label="名称" min-width="220" show-overflow-tooltip>
+          <el-table-column :label="t('ai_chat.space_name')" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="space-picker-name">{{ row.name }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="90" align="center">
+          <el-table-column :label="t('ai_chat.space_type')" width="90" align="center">
             <template #default="{ row }">
               <el-tag size="small" effect="plain">{{ typeLabel(row.file_type) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="大小" width="90" align="right">
+          <el-table-column :label="t('ai_chat.space_size')" width="90" align="right">
             <template #default="{ row }">{{ formatSize(row.size) }}</template>
           </el-table-column>
         </el-table>
         <div class="space-picker-footer">
-          <span class="space-picker-count">已选 {{ selected.length }} 个</span>
+          <span class="space-picker-count">
+            {{ t("ai_chat.spaceFilePicker_selected", { count: selected.length }) }}
+          </span>
           <el-button type="primary" :disabled="!selected.length" @click="confirmPick">
-            确定引用
+            {{ t("ai_chat.spaceFilePicker_confirm") }}
           </el-button>
         </div>
       </div>
@@ -71,6 +73,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { FolderOpened, Search } from "@element-plus/icons-vue";
 
 import {
@@ -89,6 +92,8 @@ const emit = defineEmits<{
   (e: "confirm", files: { file_id: number; name: string; file_type: string }[]): void;
 }>();
 
+const { t } = useI18n();
+
 const treeData = ref<SpaceFolder[]>([]);
 const currentFolderId = ref<number | null>(null);
 const keyword = ref("");
@@ -97,16 +102,16 @@ const selected = ref<SpaceFileItem[]>([]);
 const loading = ref(false);
 
 const typeLabels: Record<string, string> = {
-  image: "图片",
+  image: t("ai_chat.space_typeImage"),
   pdf: "PDF",
-  docx: "文档",
-  txt: "文本",
+  docx: t("ai_chat.space_typeDoc"),
+  txt: t("ai_chat.space_typeText"),
   md: "MD",
   csv: "CSV",
   json: "JSON",
-  video: "视频",
-  audio: "音频",
-  other: "其他",
+  video: t("ai_chat.space_typeVideo"),
+  audio: t("ai_chat.space_typeAudio"),
+  other: t("ai_chat.space_typeOther"),
 };
 
 function formatSize(bytes: number): string {
@@ -122,7 +127,7 @@ function formatSize(bytes: number): string {
 }
 
 function typeLabel(ft: string): string {
-  return typeLabels[ft] || ft || "其他";
+  return typeLabels[ft] || ft || t("ai_chat.space_typeOther");
 }
 
 async function loadTree() {

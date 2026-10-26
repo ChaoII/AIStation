@@ -82,7 +82,7 @@
               type="primary"
               @click="handleQuery"
             >
-              搜索
+              {{ t("common.query") }}
             </el-button>
             <!-- 重置按钮 -->
             <el-button
@@ -92,14 +92,14 @@
               icon="refresh"
               @click="handleReset"
             >
-              重置
+              {{ t("common.resetQuery") }}
             </el-button>
           </template>
 
           <!-- 展开/收起 -->
           <template v-if="isExpandable && formItems.length > showNumber">
             <el-link class="ml-3" type="primary" underline="never" @click="isExpand = !isExpand">
-              {{ isExpand ? "收起" : "展开" }}
+              {{ isExpand ? t("common.shrink") : t("common.expand") }}
               <component :is="isExpand ? ArrowUp : ArrowDown" class="w-4 h-4 ml-2" />
             </el-link>
           </template>
@@ -114,6 +114,7 @@ import type { IObject, IForm, ISearchConfig, ISearchComponent } from "./types";
 import { ArrowUp, ArrowDown, QuestionFilled } from "@element-plus/icons-vue";
 import type { FormInstance } from "element-plus";
 import InputTag from "@/components/InputTag/index.vue";
+import { useI18n } from "vue-i18n";
 import { getCurrentInstance, nextTick, watch } from "vue";
 import {
   ElInput,
@@ -131,6 +132,8 @@ import {
   ElRate,
   ElSlider,
 } from "element-plus";
+
+const { t } = useI18n();
 
 // 定义接收的属性
 const props = defineProps<{ searchConfig: ISearchConfig }>();

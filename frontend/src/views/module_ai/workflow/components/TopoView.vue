@@ -15,7 +15,7 @@
       <MiniMap pannable zoomable />
       <Controls />
       <Panel position="top-right" class="topo-info">
-        {{ topoNodes.length }} 节点 · {{ topoEdges.length }} 连线
+        {{ t("ai_workflow.wf_topo_info", { nodes: topoNodes.length, edges: topoEdges.length }) }}
       </Panel>
     </VueFlow>
   </div>
@@ -23,6 +23,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { VueFlow, Panel, type Node, type Edge } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
 import { MiniMap } from "@vue-flow/minimap";
@@ -30,6 +31,7 @@ import { Controls } from "@vue-flow/controls";
 import { nodeDefOf } from "../nodes";
 
 const props = defineProps<{ nodes?: Node[]; edges?: Edge[] }>();
+const { t } = useI18n();
 
 const topoNodes = computed<any[]>(() =>
   (props.nodes || []).map((n) => ({
@@ -41,7 +43,11 @@ const topoNodes = computed<any[]>(() =>
           y: (n.position?.y ?? 0) + (topoNodeY(n.parentNode) ?? 0),
         }
       : { x: n.position?.x ?? 0, y: n.position?.y ?? 0 },
-    data: { label: nodeDefOf(n.type || "llm").label + (n.data?.title ? ` · ${n.data.title}` : "") },
+    data: {
+      label:
+        t(`ai_workflow.node_${nodeDefOf(n.type || "llm").labelKey}`) +
+        (n.data?.title ? ` · ${n.data.title}` : ""),
+    },
     ...(!n.parentNode ? {} : {}),
   }))
 );

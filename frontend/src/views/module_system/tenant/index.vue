@@ -35,7 +35,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('system.tenant.noData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -46,7 +46,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('system.tenant.index')"
               min-width="60"
             >
               <template #default="scope">
@@ -56,7 +56,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="租户名称"
+              :label="t('system.tenant.tenantName')"
               prop="name"
               min-width="140"
               show-overflow-tooltip
@@ -64,7 +64,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'code')?.show"
               key="code"
-              label="租户编码"
+              :label="t('system.tenant.tenantCode')"
               prop="code"
               min-width="120"
               show-overflow-tooltip
@@ -72,21 +72,25 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('system.tenant.status')"
               prop="status"
               min-width="80"
               align="center"
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status === '0' ? 'success' : 'danger'">
-                  {{ scope.row.status === "0" ? "正常" : "禁用" }}
+                  {{
+                    scope.row.status === "0"
+                      ? t("system.tenant.normal")
+                      : t("system.tenant.disabled")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'start_time')?.show"
               key="start_time"
-              label="开始时间"
+              :label="t('system.tenant.startTime')"
               prop="start_time"
               min-width="180"
               show-overflow-tooltip
@@ -94,7 +98,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'end_time')?.show"
               key="end_time"
-              label="结束时间"
+              :label="t('system.tenant.endTime')"
               prop="end_time"
               min-width="180"
               show-overflow-tooltip
@@ -102,7 +106,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'description')?.show"
               key="description"
-              label="描述"
+              :label="t('system.tenant.description')"
               prop="description"
               min-width="150"
               show-overflow-tooltip
@@ -110,7 +114,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="t('system.tenant.createTime')"
               prop="created_time"
               min-width="180"
               show-overflow-tooltip
@@ -118,7 +122,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('system.tenant.operation')"
               align="center"
               min-width="200"
             >
@@ -131,7 +135,7 @@
                   icon="View"
                   @click="handleOpenDialog('detail', scope.row.id)"
                 >
-                  详情
+                  {{ t("system.tenant.detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:tenant:update']"
@@ -141,7 +145,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("system.tenant.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:tenant:delete']"
@@ -151,7 +155,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("system.tenant.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -167,27 +171,31 @@
     >
       <template v-if="dialogVisible.type === 'detail'">
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="租户名称" :span="2">
+          <el-descriptions-item :label="t('system.tenant.tenantName')" :span="2">
             {{ detailFormData.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="租户编码" :span="2">
+          <el-descriptions-item :label="t('system.tenant.tenantCode')" :span="2">
             {{ detailFormData.code }}
           </el-descriptions-item>
-          <el-descriptions-item label="状态">
+          <el-descriptions-item :label="t('system.tenant.status')">
             <el-tag :type="detailFormData.status === '0' ? 'success' : 'danger'">
-              {{ detailFormData.status === "0" ? "正常" : "禁用" }}
+              {{
+                detailFormData.status === "0"
+                  ? t("system.tenant.normal")
+                  : t("system.tenant.disabled")
+              }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="开始时间">
+          <el-descriptions-item :label="t('system.tenant.startTime')">
             {{ detailFormData.start_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="结束时间">
+          <el-descriptions-item :label="t('system.tenant.endTime')">
             {{ detailFormData.end_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="描述" :span="2">
+          <el-descriptions-item :label="t('system.tenant.description')" :span="2">
             {{ detailFormData.description }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间" :span="2">
+          <el-descriptions-item :label="t('system.tenant.createTime')" :span="2">
             {{ detailFormData.created_time }}
           </el-descriptions-item>
         </el-descriptions>
@@ -201,47 +209,55 @@
           label-width="auto"
           label-position="right"
         >
-          <el-form-item label="租户名称" prop="name">
-            <el-input v-model="formData.name" placeholder="请输入租户名称" :maxlength="100" />
+          <el-form-item :label="t('system.tenant.tenantName')" prop="name">
+            <el-input
+              v-model="formData.name"
+              :placeholder="t('system.tenant.placeholderTenantName')"
+              :maxlength="100"
+            />
           </el-form-item>
-          <el-form-item label="租户编码" prop="code">
+          <el-form-item :label="t('system.tenant.tenantCode')" prop="code">
             <el-input
               v-model="formData.code"
-              placeholder="字母与数字，创建后不可改"
+              :placeholder="t('system.tenant.codeHelp')"
               :maxlength="100"
               :disabled="dialogVisible.type === 'update'"
             />
           </el-form-item>
-          <el-form-item label="状态" prop="status">
-            <el-select v-model="formData.status" placeholder="请选择状态" style="width: 100%">
-              <el-option label="正常" value="0" />
-              <el-option label="禁用" value="1" />
+          <el-form-item :label="t('system.tenant.status')" prop="status">
+            <el-select
+              v-model="formData.status"
+              :placeholder="t('system.tenant.placeholderSelectStatus')"
+              style="width: 100%"
+            >
+              <el-option :label="t('system.tenant.normal')" value="0" />
+              <el-option :label="t('system.tenant.disabled')" value="1" />
             </el-select>
           </el-form-item>
-          <el-form-item label="描述" prop="description">
+          <el-form-item :label="t('system.tenant.description')" prop="description">
             <el-input
               v-model="formData.description"
               type="textarea"
               :rows="3"
-              placeholder="请输入描述"
+              :placeholder="t('system.tenant.placeholderDescription')"
               :maxlength="255"
             />
           </el-form-item>
-          <el-form-item label="开始时间" prop="start_time">
+          <el-form-item :label="t('system.tenant.startTime')" prop="start_time">
             <el-date-picker
               v-model="formData.start_time"
               type="datetime"
               value-format="YYYY-MM-DD HH:mm:ss"
-              placeholder="可选"
+              :placeholder="t('system.tenant.optional')"
               style="width: 100%"
             />
           </el-form-item>
-          <el-form-item label="结束时间" prop="end_time">
+          <el-form-item :label="t('system.tenant.endTime')" prop="end_time">
             <el-date-picker
               v-model="formData.end_time"
               type="datetime"
               value-format="YYYY-MM-DD HH:mm:ss"
-              placeholder="可选"
+              :placeholder="t('system.tenant.optional')"
               style="width: 100%"
             />
           </el-form-item>
@@ -250,7 +266,7 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
+          <el-button @click="handleCloseDialog">{{ t("system.tenant.cancel") }}</el-button>
           <el-button
             v-if="dialogVisible.type === 'create'"
             v-hasPerm="['module_system:tenant:create']"
@@ -258,7 +274,7 @@
             :loading="submitLoading"
             @click="handleSubmit"
           >
-            确定
+            {{ t("system.tenant.confirm") }}
           </el-button>
           <el-button
             v-else-if="dialogVisible.type === 'update'"
@@ -267,9 +283,11 @@
             :loading="submitLoading"
             @click="handleSubmit"
           >
-            确定
+            {{ t("system.tenant.confirm") }}
           </el-button>
-          <el-button v-else type="primary" @click="handleCloseDialog">确定</el-button>
+          <el-button v-else type="primary" @click="handleCloseDialog">
+            {{ t("system.tenant.confirm") }}
+          </el-button>
         </div>
       </template>
     </EnhancedDialog>
@@ -277,7 +295,9 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage } from "element-plus";
 import { ref, reactive } from "vue";
+import { useI18n } from "vue-i18n";
 import TenantAPI, {
   TenantForm,
   TenantCreateForm,
@@ -299,6 +319,7 @@ defineOptions({
 });
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const { t } = useI18n();
 const dataFormRef = ref();
 const submitLoading = ref(false);
 
@@ -311,41 +332,41 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "租户名称",
+      label: t("system.tenant.tenantName"),
       type: "input",
-      attrs: { placeholder: "请输入租户名称", clearable: true },
+      attrs: { placeholder: t("system.tenant.placeholderTenantName"), clearable: true },
     },
     {
       prop: "code",
-      label: "租户编码",
+      label: t("system.tenant.tenantCode"),
       type: "input",
-      attrs: { placeholder: "请输入租户编码", clearable: true },
+      attrs: { placeholder: t("system.tenant.placeholderTenantCode"), clearable: true },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("system.tenant.status"),
       type: "select",
       attrs: {
-        placeholder: "请选择状态",
+        placeholder: t("system.tenant.placeholderSelectStatus"),
         clearable: true,
         options: [
-          { label: "正常", value: "0" },
-          { label: "禁用", value: "1" },
+          { label: t("system.tenant.normal"), value: "0" },
+          { label: t("system.tenant.disabled"), value: "1" },
         ],
         style: { width: "167.5px" },
       },
     },
     {
       prop: "created_time",
-      label: "创建时间",
+      label: t("system.tenant.createTime"),
       type: "date-picker",
       initialValue: [],
       attrs: {
         type: "datetimerange",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
-        rangeSeparator: "至",
-        startPlaceholder: "开始日期",
-        endPlaceholder: "结束日期",
+        rangeSeparator: t("system.tenant.to"),
+        startPlaceholder: t("system.tenant.startDatePlaceholder"),
+        endPlaceholder: t("system.tenant.endDatePlaceholder"),
         style: { width: "340px" },
       },
     },
@@ -359,14 +380,14 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "租户名称", show: true },
-  { prop: "code", label: "租户编码", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("system.tenant.selection"), show: true },
+  { prop: "index", label: t("system.tenant.index"), show: true },
+  { prop: "name", label: t("system.tenant.tenantName"), show: true },
+  { prop: "code", label: t("system.tenant.tenantCode"), show: true },
+  { prop: "status", label: t("system.tenant.status"), show: true },
+  { prop: "description", label: t("system.tenant.description"), show: true },
+  { prop: "created_time", label: t("system.tenant.createTime"), show: true },
+  { prop: "operation", label: t("system.tenant.operation"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TenantPageQuery>>({
@@ -396,8 +417,8 @@ const contentConfig = reactive<IContentConfig<TenantPageQuery>>({
     await TenantAPI.deleteTenant(idList);
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("system.tenant.deleteConfirmTitle"),
+    message: t("system.tenant.deleteConfirmMessage"),
     type: "warning",
   },
 });
@@ -425,19 +446,19 @@ const CODE_PATTERN = /^[A-Za-z0-9]+$/;
 
 const validateTimeRange = (rule: any, value: any, callback: any) => {
   if (formData.start_time && formData.end_time && formData.start_time > formData.end_time) {
-    callback(new Error("结束时间不能早于开始时间"));
+    callback(new Error(t("system.tenant.ruleTimeRange")));
   } else {
     callback();
   }
 };
 
 const rules = reactive({
-  name: [{ required: true, message: "请输入租户名称", trigger: "blur" }],
+  name: [{ required: true, message: t("system.tenant.ruleTenantNameRequired"), trigger: "blur" }],
   code: [
-    { required: true, message: "请输入租户编码", trigger: "blur" },
+    { required: true, message: t("system.tenant.ruleTenantCodeRequired"), trigger: "blur" },
     {
       pattern: CODE_PATTERN,
-      message: "编码仅允许字母与数字",
+      message: t("system.tenant.ruleCodePattern"),
       trigger: "blur",
     },
   ],
@@ -476,15 +497,15 @@ async function handleOpenDialog(type: "create" | "update" | "detail", id?: numbe
   if (id) {
     const response = await TenantAPI.detailTenant(id);
     if (type === "detail") {
-      dialogVisible.title = "租户详情";
+      dialogVisible.title = t("system.tenant.tenantDetail");
       Object.assign(detailFormData.value, response.data.data);
     } else if (type === "update") {
-      dialogVisible.title = "修改租户";
+      dialogVisible.title = t("system.tenant.updateTenant");
       Object.assign(formData, response.data.data);
       currentEditId.value = id;
     }
   } else {
-    dialogVisible.title = "新增租户";
+    dialogVisible.title = t("system.tenant.addTenant");
   }
   dialogVisible.visible = true;
 }
@@ -511,6 +532,7 @@ async function handleSubmit() {
           };
           await TenantAPI.createTenant(payload);
         }
+        ElMessage.success(t("system.tenant.operationSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();

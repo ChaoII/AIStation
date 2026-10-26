@@ -3,27 +3,25 @@
     <el-card shadow="never" class="config-card">
       <template #header>
         <div class="card-header">
-          <span>车牌数据合成</span>
-          <span class="card-sub">
-            生成国内各类车牌（蓝/新能源/黄/双层/黑/教练/警用），带透视、旋转、噪点、污渍、遮挡、模糊等扰动，并产出检测框标注
-          </span>
+          <span>{{ t("synthesis.title") }}</span>
+          <span class="card-sub">{{ t("synthesis.sub") }}</span>
         </div>
       </template>
 
       <el-form ref="formRef" :model="form" label-width="100px">
         <el-row :gutter="12">
           <el-col :xs="24" :md="8">
-            <el-form-item label="车牌类型">
+            <el-form-item :label="t('synthesis.plateType')">
               <el-select v-model="form.plate_type" style="width: 100%">
                 <el-option v-for="t in plateTypes" :key="t.key" :label="t.label" :value="t.key" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="8">
-            <el-form-item label="目标数据集">
+            <el-form-item :label="t('synthesis.dataset')">
               <el-select
                 v-model="form.dataset_id"
-                placeholder="写入的数据集"
+                :placeholder="t('synthesis.datasetPlaceholder')"
                 clearable
                 style="width: 100%"
               >
@@ -32,12 +30,12 @@
             </el-form-item>
           </el-col>
           <el-col :xs="12" :md="4">
-            <el-form-item label="生成数量">
+            <el-form-item :label="t('synthesis.count')">
               <el-input-number v-model="form.count" :min="1" :max="100" />
             </el-form-item>
           </el-col>
           <el-col :xs="12" :md="4">
-            <el-form-item label="随机种子">
+            <el-form-item :label="t('synthesis.seed')">
               <el-input-number
                 v-model="form.seed"
                 :min="0"
@@ -48,7 +46,7 @@
           </el-col>
         </el-row>
 
-        <el-form-item label="扰动">
+        <el-form-item :label="t('synthesis.disturbance')">
           <div style="width: 100%">
             <el-collapse v-model="activeDisturbs" class="disturb-collapse">
               <el-collapse-item v-for="d in disturbanceDefs" :key="d.key" :name="d.key">
@@ -64,7 +62,7 @@
                       type="info"
                       effect="plain"
                     >
-                      已关闭
+                      {{ t("synthesis.closed") }}
                     </el-tag>
                     <span class="disturb-sum">{{ disturbSummary(d) }}</span>
                   </span>
@@ -99,7 +97,7 @@
             </el-collapse>
             <div style="margin-top: 6px">
               <el-button icon="RefreshLeft" size="small" link type="primary" @click="resetParams">
-                恢复默认
+                {{ t("synthesis.restoreDefault") }}
               </el-button>
               <el-button
                 :icon="activeDisturbs.length ? 'ArrowUp' : 'ArrowDown'"
@@ -107,30 +105,32 @@
                 link
                 @click="toggleAll"
               >
-                {{ activeDisturbs.length ? "收起全部" : "展开全部" }}
+                {{ activeDisturbs.length ? t("synthesis.collapseAll") : t("synthesis.expandAll") }}
               </el-button>
-              <span class="disturb-hint">关闭的扰动不参与生成；参数为随机区间 [下限 ~ 上限]</span>
+              <span class="disturb-hint">{{ t("synthesis.disturbHint") }}</span>
             </div>
           </div>
         </el-form-item>
 
-        <el-form-item label="输出">
+        <el-form-item :label="t('synthesis.output')">
           <el-switch
             v-model="form.upload"
-            active-text="写入数据集"
-            inactive-text="仅预览"
+            :active-text="t('synthesis.writeDataset')"
+            :inactive-text="t('synthesis.previewOnly')"
             style="margin-right: 20px"
           />
-          <el-switch v-model="form.with_annotation" active-text="写标注" inactive-text="不写标注" />
+          <el-switch
+            v-model="form.with_annotation"
+            :active-text="t('synthesis.writeAnnotation')"
+            :inactive-text="t('synthesis.noAnnotation')"
+          />
         </el-form-item>
 
         <el-form-item>
           <el-button type="primary" :loading="loading" :icon="MagicStick" @click="onGenerate">
-            开始合成
+            {{ t("synthesis.start") }}
           </el-button>
-          <span class="config-tip">
-            提示：未选择数据集或关闭「写入数据集」时仅预览；选择数据集并开启写入后，合成图会入库并自动建立检测标注任务。
-          </span>
+          <span class="config-tip">{{ t("synthesis.tip") }}</span>
         </el-form-item>
       </el-form>
     </el-card>
@@ -138,16 +138,17 @@
     <el-card v-if="items.length" shadow="never" class="result-card">
       <template #header>
         <div class="card-header">
-          <span>合成结果（{{ items.length }} 张）</span>
+          <span>{{ t("synthesis.resultCount", { count: items.length }) }}</span>
           <span class="card-sub">
-            {{ uploaded ? "已写入数据集" : "未写入（仅预览）" }} · 任务 #{{ lastJobId }}
+            {{ uploaded ? t("synthesis.writeDataset") : t("synthesis.notUploaded") }} ·
+            {{ t("synthesis.taskNo", { id: lastJobId }) }}
           </span>
         </div>
       </template>
       <el-row :gutter="12">
         <el-col v-for="it in items" :key="it.filename" :xs="24" :sm="12" :md="8" :lg="6">
           <div class="result-item">
-            <img :src="it.preview_base64" alt="合成车牌" class="result-img" />
+            <img :src="it.preview_base64" :alt="t('synthesis.resultAlt')" class="result-img" />
             <div class="result-meta">
               <div class="result-text">
                 <el-tag size="small" effect="plain">{{ it.text || it.label }}</el-tag>
@@ -156,7 +157,9 @@
                 bbox ({{ fmt(it.bbox.x1) }}, {{ fmt(it.bbox.y1) }}, {{ fmt(it.bbox.x2) }},
                 {{ fmt(it.bbox.y2) }})
               </div>
-              <div v-if="it.image_id" class="result-sub">已入库 #{{ it.image_id }}</div>
+              <div v-if="it.image_id" class="result-sub">
+                {{ t("synthesis.savedStore", { id: it.image_id }) }}
+              </div>
             </div>
           </div>
         </el-col>
@@ -166,20 +169,25 @@
     <el-card shadow="never" class="history-card">
       <template #header>
         <div class="card-header">
-          <span>合成任务历史</span>
-          <el-button size="small" :icon="Refresh" @click="loadJobs">刷新</el-button>
+          <span>{{ t("synthesis.historyTitle") }}</span>
+          <el-button size="small" :icon="Refresh" @click="loadJobs">
+            {{ t("synthesis.refresh") }}
+          </el-button>
         </div>
       </template>
-      <el-table border stripe :data="jobs" size="default" empty-text="暂无合成任务">
-        <el-table-column prop="id" label="任务ID" width="80" />
-        <el-table-column prop="plate_type_label" label="车牌类型" width="150" />
-        <el-table-column prop="params" label="参数" min-width="180">
+      <el-table border stripe :data="jobs" size="default">
+        <template #empty>
+          <el-empty :image-size="80" :description="t('synthesis.noJobs')" />
+        </template>
+        <el-table-column prop="id" :label="t('synthesis.jobId')" width="80" />
+        <el-table-column prop="plate_type_label" :label="t('synthesis.plateType')" width="150" />
+        <el-table-column prop="params" :label="t('synthesis.params')" min-width="180">
           <template #default="{ row }">
             <span class="dim">{{ paramText(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="total" label="数量" width="70" />
-        <el-table-column prop="status" label="状态" width="90">
+        <el-table-column prop="total" :label="t('synthesis.total')" width="70" />
+        <el-table-column prop="status" :label="t('synthesis.status')" width="90">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -197,7 +205,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_time" label="创建时间" width="170" />
+        <el-table-column prop="created_time" :label="t('synthesis.createdTime')" width="170" />
       </el-table>
     </el-card>
   </div>
@@ -205,6 +213,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import { MagicStick, Refresh } from "@element-plus/icons-vue";
 import {
@@ -214,6 +223,8 @@ import {
   type SynthesisJob,
 } from "@/api/module_synthesis/synthesis";
 import { getDatasetOptions } from "@/api/module_synthesis/dataset";
+
+const { t } = useI18n();
 
 interface DisturbParam {
   key: string;
@@ -284,7 +295,7 @@ function precisionOf(step: number) {
 
 const formRef = ref();
 const datasetOptions = ref<any[]>([]);
-const plateTypes = ref<PlateTypeOption[]>([{ key: "blue", label: "蓝牌(小型汽车)" }]);
+const plateTypes = ref<PlateTypeOption[]>([{ key: "blue", label: t("synthesis.plateTypeBlue") }]);
 const items = ref<GeneratedPlateItem[]>([]);
 const jobs = ref<SynthesisJob[]>([]);
 const loading = ref(false);
@@ -295,21 +306,23 @@ function fmt(v?: number) {
   return v == null ? "-" : v.toFixed(2);
 }
 function statusText(s: string) {
-  return (
-    (
-      { completed: "已完成", running: "进行中", failed: "失败", pending: "待生成" } as Record<
-        string,
-        string
-      >
-    )[s] || s
-  );
+  const map: Record<string, string> = {
+    completed: t("synthesis.statusCompleted"),
+    running: t("synthesis.statusRunning"),
+    failed: t("synthesis.statusFailed"),
+    pending: t("synthesis.statusPending"),
+  };
+  return map[s] || s;
 }
 function plateTypeLabel(key: string) {
   return plateTypes.value.find((t) => t.key === key)?.label || key;
 }
 function paramText(row: any) {
   const p = row.params || {};
-  return `${plateTypeLabel(p.plate_type || "blue")} · 生成${p.count || row.total}张·${p.upload ? "入库" : "预览"}`;
+  return `${plateTypeLabel(p.plate_type || "blue")} · ${t("synthesis.jobParamText", {
+    count: p.count || row.total,
+    mode: p.upload ? t("synthesis.store") : t("synthesis.preview"),
+  })}`;
 }
 
 async function loadProviders() {
@@ -358,10 +371,10 @@ async function onGenerate() {
     items.value = res.data?.data?.items ?? [];
     uploaded.value = !!res.data?.data?.uploaded;
     lastJobId.value = res.data?.data?.job_id ?? null;
-    ElMessage.success(`合成完成，共 ${items.value.length} 张`);
+    ElMessage.success(t("synthesis.generateSuccess", { count: items.value.length }));
     loadJobs();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "合成失败");
+    ElMessage.error(e?.msg || t("synthesis.generateFailed"));
   } finally {
     loading.value = false;
   }

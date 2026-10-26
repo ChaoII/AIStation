@@ -19,6 +19,9 @@ os.environ["DATABASE_TYPE"] = "sqlite"
 os.environ["LOGGER_LEVEL"] = "WARNING"
 os.environ["DATABASE_ECHO"] = "0"
 os.environ["ECHO_POOL"] = "0"
+# 与开发环境一致，测试期关闭验证码：否则依赖 `auth_headers` 登录的用例
+# 在缺少 `.env.dev`（未设置 CAPTCHA_ENABLE=false）的机器上会因验证码必填而全部报错。
+os.environ["CAPTCHA_ENABLE"] = "false"
 # 测试环境允许嵌入了「无模型可用」时的确定性哈希回退：
 # 生产默认关闭（失败必须可见），但测试不希望依赖真实嵌入网关。
 os.environ.setdefault("RAG_ALLOW_HASH_FALLBACK", "true")

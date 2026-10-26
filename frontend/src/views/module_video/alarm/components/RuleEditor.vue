@@ -13,19 +13,19 @@
          处在 el-form 的 <form> 内点击时会触发原生表单提交并刷新页面（丢失对话框内容），
          故在最内层表单上拦截 submit 事件（事件在 form 上触发并向祖先冒泡）。 -->
     <el-form label-width="100px" size="default" @submit.prevent>
-      <el-form-item label="作用域" required>
+      <el-form-item :label="t('video.rule.scope')" required>
         <el-radio-group
           data-testid="rule-scope-select"
           :model-value="currentScope"
           :disabled="disabled"
           @update:model-value="handleScopeChange"
         >
-          <el-radio value="camera">相机</el-radio>
-          <el-radio value="group">相机组</el-radio>
+          <el-radio value="camera">{{ t("video.rule.camera") }}</el-radio>
+          <el-radio value="group">{{ t("video.rule.cameraGroup") }}</el-radio>
         </el-radio-group>
       </el-form-item>
 
-      <el-form-item v-if="currentScope === 'camera'" label="关联摄像机" required>
+      <el-form-item v-if="currentScope === 'camera'" :label="t('video.rule.linkCamera')" required>
         <el-select
           data-testid="rule-camera-select"
           :model-value="cameraId"
@@ -33,7 +33,7 @@
           clearable
           :disabled="disabled"
           :loading="cameraLoading"
-          placeholder="请选择摄像机"
+          :placeholder="t('video.rule.selectCamera')"
           style="width: 100%"
           @update:model-value="handleCameraChange"
         >
@@ -41,7 +41,7 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item v-else label="关联相机组" required>
+      <el-form-item v-else :label="t('video.rule.linkGroup')" required>
         <el-select
           data-testid="rule-group-select"
           :model-value="groupId"
@@ -49,7 +49,7 @@
           clearable
           :disabled="disabled"
           :loading="groupLoading"
-          placeholder="请选择相机组（组规则对该组内全部相机生效）"
+          :placeholder="t('video.rule.selectGroupHint')"
           style="width: 100%"
           @update:model-value="handleGroupChange"
         >
@@ -57,7 +57,7 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="业务场景" required>
+      <el-form-item :label="t('video.rule.businessScene')" required>
         <el-select
           data-testid="rule-scene-select"
           :model-value="sceneType || ''"
@@ -65,7 +65,7 @@
           clearable
           :loading="loadingScenes"
           :disabled="disabled"
-          placeholder="请选择业务场景"
+          :placeholder="t('video.rule.selectScene')"
           style="width: 100%"
           @update:model-value="(v: string) => handleSceneChange(v || '')"
         >
@@ -97,7 +97,7 @@
         </div>
       </el-form-item>
 
-      <el-form-item label="场景参数">
+      <el-form-item :label="t('video.rule.sceneParams')">
         <SceneParamsForm
           v-if="schema.length"
           :schema="schema"
@@ -106,10 +106,10 @@
           :model-value="params"
           @update:model-value="updateParams"
         />
-        <div v-else class="rule-editor__hint">请先选择业务场景</div>
+        <div v-else class="rule-editor__hint">{{ t("video.rule.selectSceneFirst") }}</div>
       </el-form-item>
 
-      <el-form-item label="触发条件">
+      <el-form-item :label="t('video.rule.triggerConditions')">
         <ConditionTree
           :model-value="conditions ?? {}"
           :scene-type="sceneType"
@@ -118,13 +118,13 @@
         />
       </el-form-item>
 
-      <el-form-item label="条件预览">
+      <el-form-item :label="t('video.rule.conditionPreview')">
         <pre class="rule-editor__preview">{{ preview }}</pre>
       </el-form-item>
 
-      <el-divider content-position="left">灰度</el-divider>
+      <el-divider content-position="left">{{ t("video.rule.rollout") }}</el-divider>
 
-      <el-form-item label="生效时间段">
+      <el-form-item :label="t('video.rule.activePeriod')">
         <div class="schedule-grid-wrapper">
           <div class="schedule-header-row">
             <div class="schedule-corner" />
@@ -145,16 +145,20 @@
           </div>
         </div>
         <div class="schedule-actions">
-          <el-button size="small" :disabled="disabled" @click="fillSchedule(true)">全选</el-button>
-          <el-button size="small" :disabled="disabled" @click="fillSchedule(false)">清空</el-button>
-          <el-button size="small" :disabled="disabled" @click="fillWorkHours">
-            工作日 08-18
+          <el-button size="small" :disabled="disabled" @click="fillSchedule(true)">
+            {{ t("video.record.selectAll") }}
           </el-button>
-          <span class="rule-editor__hint">不选择任何时段 = 全天生效</span>
+          <el-button size="small" :disabled="disabled" @click="fillSchedule(false)">
+            {{ t("video.record.clear") }}
+          </el-button>
+          <el-button size="small" :disabled="disabled" @click="fillWorkHours">
+            {{ t("video.record.workday0818") }}
+          </el-button>
+          <span class="rule-editor__hint">{{ t("video.rule.noPeriodAllDay") }}</span>
         </div>
       </el-form-item>
 
-      <el-form-item label="灰度比例">
+      <el-form-item :label="t('video.rule.rolloutPercent')">
         <div class="rollout-percent">
           <el-slider
             data-testid="rule-rollout-percent"
@@ -168,7 +172,7 @@
         </div>
       </el-form-item>
 
-      <el-form-item label="相机白名单">
+      <el-form-item :label="t('video.rule.whitelist')">
         <el-select
           data-testid="rule-rollout-whitelist"
           :model-value="rolloutWhitelist"
@@ -179,7 +183,7 @@
           collapse-tags-tooltip
           :disabled="disabled"
           :loading="cameraLoading"
-          placeholder="白名单相机始终生效（忽略比例）"
+          :placeholder="t('video.rule.whitelistHint')"
           style="width: 100%"
           @update:model-value="(v: number[]) => updateRolloutList('whitelist', v)"
         >
@@ -187,7 +191,7 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="相机黑名单">
+      <el-form-item :label="t('video.rule.blacklist')">
         <el-select
           data-testid="rule-rollout-blacklist"
           :model-value="rolloutBlacklist"
@@ -198,7 +202,7 @@
           collapse-tags-tooltip
           :disabled="disabled"
           :loading="cameraLoading"
-          placeholder="黑名单相机强制跳过"
+          :placeholder="t('video.rule.blacklistHint')"
           style="width: 100%"
           @update:model-value="(v: number[]) => updateRolloutList('blacklist', v)"
         >
@@ -212,6 +216,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import {
   getSceneCatalog,
   type SceneDefinition,
@@ -271,6 +276,8 @@ const emit = defineEmits<{
   "update:sceneType": [value: string];
 }>();
 
+const { t } = useI18n();
+
 const scenes = ref<SceneDefinition[]>([]);
 const loadingScenes = ref(false);
 /** 校验错误信息（validate() 填充，展示在顶部 alert） */
@@ -327,7 +334,15 @@ function emitPayload(patch: Partial<RuleEditorValue>) {
   emit("update:modelValue", { ...base, ...patch });
 }
 
-const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const weekDays = [
+  t("video.common.monday"),
+  t("video.common.tuesday"),
+  t("video.common.wednesday"),
+  t("video.common.thursday"),
+  t("video.common.friday"),
+  t("video.common.saturday"),
+  t("video.common.sunday"),
+];
 /** 拖选状态：mousedown 决定本次是「填充」还是「清除」 */
 const gridDragState = ref<{ active: boolean; mode: "set" | "clear" }>({
   active: false,
@@ -411,8 +426,8 @@ const rolloutPercent = computed(() => rollout.value.percent ?? 100);
 const rolloutWhitelist = computed<number[]>(() => rollout.value.whitelist ?? []);
 const rolloutBlacklist = computed<number[]>(() => rollout.value.blacklist ?? []);
 const rolloutPercentText = computed(() => {
-  if (rolloutPercent.value <= 0) return "0（不生效）";
-  if (rolloutPercent.value >= 100) return "100（全量）";
+  if (rolloutPercent.value <= 0) return t("video.rule.percent0");
+  if (rolloutPercent.value >= 100) return t("video.rule.percent100");
   return `${rolloutPercent.value}%`;
 });
 
@@ -425,7 +440,7 @@ const rolloutConflict = computed(() => {
 const rolloutError = computed(() => {
   if (!rolloutConflict.value.length) return "";
   const names = rolloutConflict.value.map((id) => cameraName(id));
-  return `白名单与黑名单冲突：${names.join("、")} 不能同时出现在两个名单中`;
+  return t("video.rule.whitelistConflict", { names: names.join("、") });
 });
 
 function cameraName(id: number): string {
@@ -506,16 +521,18 @@ const currentScene = computed(() => scenes.value.find((s) => s.code === props.sc
 function sceneOptionLabel(s: SceneDefinition): string {
   const base = `${s.name}（${s.code}）`;
   if (s.configurable === false) {
-    return `${base} · 不可配置：${s.unsupported_reason || "求值器/模型族未就绪"}`;
+    return `${base} · ${t("video.rule.notConfig", { reason: s.unsupported_reason || t("video.rule.notEnabled") })}`;
   }
-  if (s.edge_supported === false) return `${base} · 边缘未实现`;
+  if (s.edge_supported === false) return `${base} · ${t("video.rule.edgeNotImpl")}`;
   return base;
 }
 
 /** 当前场景不可配置的原因（编辑历史规则时可见；不可配置场景已在下拉中禁用） */
 const sceneUnsupportedReason = computed(() => {
   const s = currentScene.value;
-  return s && s.configurable === false ? s.unsupported_reason || "该场景暂不可配置" : "";
+  return s && s.configurable === false
+    ? s.unsupported_reason || t("video.rule.sceneNotConfig")
+    : "";
 });
 
 /** 当前场景的运行期提示（如「人脸底库为空」），仅可配置场景展示 */
@@ -600,15 +617,15 @@ function handleSceneChange(code: string) {
 function validate(): boolean {
   error.value = "";
   if (currentScope.value === "camera" && cameraId.value === undefined) {
-    error.value = "请选择关联摄像机";
+    error.value = t("video.rule.selectLinkCamera");
     return false;
   }
   if (currentScope.value === "group" && groupId.value === undefined) {
-    error.value = "请选择关联相机组";
+    error.value = t("video.rule.selectLinkGroup");
     return false;
   }
   if (!props.sceneType && hasSceneData()) {
-    error.value = "已配置场景参数或触发条件，请先选择业务场景";
+    error.value = t("video.rule.selectSceneFirst2");
     return false;
   }
   for (const item of schema.value) {
@@ -617,7 +634,7 @@ function validate(): boolean {
     if (pts === undefined) continue;
     const need = item.type === "polygon" ? 3 : 2;
     if (!Array.isArray(pts) || pts.length < need) {
-      error.value = `请完善「${item.label || item.key}」（至少 ${need} 个点）`;
+      error.value = t("video.rule.completePoints", { label: item.label || item.key, need });
       return false;
     }
   }

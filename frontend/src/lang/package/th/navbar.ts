@@ -1,0 +1,18 @@
+export default {
+  dashboard: "แดชบอร์ด",
+  logout: "ออกจากระบบ",
+  document: "เอกสาร",
+  gitee: "Gitee",
+  lock: "ล็อก",
+  unlock: "ปลดล็อก",
+  profile: "ข้อมูลส่วนตัวผู้ใช้",
+  config: "ศูนย์การตั้งค่า",
+  tour: "แนะนำโครงการ",
+  refresh: "รีเฟรช",
+  close: "ปิด",
+  closeLeft: "ปิดด้านซ้าย",
+  closeRight: "ปิดด้านขวา",
+  closeOther: "ปิดอื่นๆ",
+  closeAll: "ปิดทั้งหมด",
+  refreshCache: "รีเฟรชแคช",
+};

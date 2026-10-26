@@ -16,12 +16,15 @@ DEFAULT_BYTES = DEFAULT_MB * 1024 * 1024
 
 @pytest.fixture(autouse=True)
 def _clean_quota():
-    """用例间清空扩容申请 / 用户配额覆盖表。"""
+    """用例间清空扩容申请 / 用户配额覆盖表 / 站内通知表。"""
 
     async def _clean():
+        from app.api.v1.module_system.notification.model import UserNotificationModel
+
         async with async_db_session.begin() as db:
             await db.execute(delete(AiSpaceQuotaRequestModel))
             await db.execute(delete(AiSpaceUserQuotaModel))
+            await db.execute(delete(UserNotificationModel))
 
     asyncio.run(_clean())
     yield
@@ -118,6 +121,55 @@ def test_list_all_requests_with_username(test_client, auth_headers):
     # 按状态过滤
     pending = asyncio.run(service.SpaceService.list_all_requests("pending"))
     assert all(r["status"] == "pending" for r in pending)
+
+
+# ---------------------------------------------------------------- #
+# 通知联动：提交 → 通知超级管理员；审核 → 通知申请人
+# ---------------------------------------------------------------- #
+def _notifications(uid: int) -> list[dict]:
+    from app.api.v1.module_system.notification.model import UserNotificationModel
+
+    async def _run():
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(UserNotificationModel)
+                    .where(UserNotificationModel.user_id == uid)
+                    .order_by(UserNotificationModel.id)
+                )
+            ).scalars().all()
+            return [{"title": r.title, "module": r.module, "type": r.type, "content": r.content} for r in rows]
+
+    return asyncio.run(_run())
+
+
+def test_submit_notifies_super_admins(test_client, auth_headers):
+    uid = _admin_id(test_client, auth_headers)
+    asyncio.run(service.SpaceService.submit_request(uid, 4096, "请批"))
+    notes = [n for n in _notifications(uid) if n["module"] == "space"]
+    assert any(
+        n["type"] == "space_quota_pending" and "扩容申请" in n["title"] for n in notes
+    ), "提交申请应给超级管理员发「待审核」站内通知"
+
+
+def test_review_approve_notifies_applicant(test_client, auth_headers):
+    uid = _admin_id(test_client, auth_headers)
+    r = asyncio.run(service.SpaceService.submit_request(uid, 4096, "请批"))
+    asyncio.run(service.SpaceService.review_request(r["request_id"], True, 4096, "批准", uid))
+    notes = [n for n in _notifications(uid) if n["module"] == "space"]
+    assert any(
+        n["type"] == "space_quota_reviewed" and "已通过" in n["title"] for n in notes
+    ), "审核通过应给申请人发已通过通知"
+
+
+def test_review_reject_notifies_applicant(test_client, auth_headers):
+    uid = _admin_id(test_client, auth_headers)
+    r = asyncio.run(service.SpaceService.submit_request(uid, 4096, "请批"))
+    asyncio.run(service.SpaceService.review_request(r["request_id"], False, None, "不批", uid))
+    notes = [n for n in _notifications(uid) if n["module"] == "space"]
+    assert any(
+        n["type"] == "space_quota_reviewed" and "已驳回" in n["title"] for n in notes
+    ), "审核驳回应给申请人发已驳回通知"
 
 
 # ---------------------------------------------------------------- #

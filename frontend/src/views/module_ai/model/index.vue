@@ -16,19 +16,28 @@
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
-        <span class="batch-ac">
-          <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(true)">
-            批量启用
-          </el-button>
-          <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(false)">
-            批量停用
-          </el-button>
-        </span>
-        <el-tag size="small" type="info" effect="plain" class="summary-tag">
-          共 {{ modelSummary.total }} 个配置 · 启用 {{ modelSummary.enabled }} · 停用
-          {{ modelSummary.disabled }}
-        </el-tag>
         <div class="data-table__toolbar--right">
+          <span class="batch-ac">
+            <el-badge :value="modelSelIds.length" :hidden="!modelSelIds.length" class="batch-badge">
+              <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(true)">
+                {{ t("ai_model.modelBatchEnable") }}
+              </el-button>
+            </el-badge>
+            <el-badge :value="modelSelIds.length" :hidden="!modelSelIds.length" class="batch-badge">
+              <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(false)">
+                {{ t("ai_model.modelBatchDisable") }}
+              </el-button>
+            </el-badge>
+          </span>
+          <el-tag size="small" type="info" effect="plain" class="summary-tag">
+            {{
+              t("ai_model.modelSummary", {
+                total: modelSummary.total,
+                enabled: modelSummary.enabled,
+                disabled: modelSummary.disabled,
+              })
+            }}
+          </el-tag>
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
       </template>
@@ -45,44 +54,66 @@
             @selection-change="onModelSel"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无模型配置，点击「新增」创建" />
+              <el-empty :image-size="80" :description="t('ai_model.modelEmpty')" />
             </template>
             <el-table-column type="selection" width="55" align="center" />
-            <el-table-column label="配置名称" prop="name" min-width="140" show-overflow-tooltip />
-            <el-table-column label="模型" prop="model" min-width="140" show-overflow-tooltip />
-            <el-table-column label="用途" width="110" align="center">
+            <el-table-column
+              :label="t('ai_model.modelConfigName')"
+              prop="name"
+              min-width="140"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              :label="t('ai_model.modelModel')"
+              prop="model"
+              min-width="140"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('ai_model.modelUsage')" width="110" align="center">
               <template #default="{ row }">
                 <el-tag size="small" effect="plain">{{ usageLabel(row.usage) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="上下文窗口" width="120" align="center">
+            <el-table-column :label="t('ai_model.modelContextWindow')" width="120" align="center">
               <template #default="{ row }">
                 <span v-if="row.context_window">{{ row.context_window }}</span>
                 <span v-else class="muted">—</span>
               </template>
             </el-table-column>
             <el-table-column
-              label="API 基址"
+              :label="t('ai_model.modelBaseUrl')"
               prop="base_url"
               min-width="200"
               show-overflow-tooltip
             />
             <el-table-column label="Key" prop="api_key_masked" width="140" />
-            <el-table-column label="温度" prop="temperature" width="80" align="center" />
-            <el-table-column label="默认" width="80" align="center">
+            <el-table-column
+              :label="t('ai_model.modelTemperature')"
+              prop="temperature"
+              width="80"
+              align="center"
+            />
+            <el-table-column :label="t('ai_model.modelDefault')" width="80" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.is_default" type="success" size="small">默认</el-tag>
+                <el-tag v-if="row.is_default" type="success" size="small">
+                  {{ t("ai_model.modelDefault") }}
+                </el-tag>
                 <span v-else class="muted">—</span>
               </template>
             </el-table-column>
-            <el-table-column label="启用" width="80" align="center">
+            <el-table-column :label="t('ai_model.modelEnabled')" width="80" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
-                  {{ row.enabled ? "启用" : "停用" }}
+                  {{ row.enabled ? t("ai_model.modelEnabled") : t("ai_model.modelDisabled") }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" fixed="right" width="300" align="center">
+            <el-table-column
+              :label="t('ai_model.modelAction')"
+              fixed="right"
+              min-width="200"
+              align="center"
+            >
               <template #default="scope">
                 <el-button
                   icon="View"
@@ -91,7 +122,7 @@
                   type="primary"
                   @click="openDetail(scope.row)"
                 >
-                  详情
+                  {{ t("ai_model.modelDetail") }}
                 </el-button>
                 <el-button
                   icon="Connection"
@@ -100,17 +131,7 @@
                   type="primary"
                   @click="handleTest(scope.row)"
                 >
-                  测试
-                </el-button>
-                <el-button
-                  icon="Star"
-                  size="small"
-                  link
-                  type="success"
-                  :disabled="scope.row.is_default"
-                  @click="handleSetDefault(scope.row.id)"
-                >
-                  设为默认
+                  {{ t("ai_model.modelTest") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:model:update']"
@@ -120,18 +141,31 @@
                   type="primary"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("ai_model.modelEdit") }}
                 </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:model:delete']"
-                  icon="delete"
-                  size="small"
-                  link
-                  type="danger"
-                  @click="handleRowDelete(scope.row.id)"
-                >
-                  删除
-                </el-button>
+                <el-dropdown trigger="click" @command="(cmd: string) => onMoreCmd(scope.row, cmd)">
+                  <el-button size="small" link type="primary" icon="MoreFilled" @click.stop />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        command="default"
+                        icon="Star"
+                        :disabled="scope.row.is_default"
+                      >
+                        {{ t("ai_model.modelSetDefault") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="perm('module_ai:model:delete')"
+                        command="delete"
+                        icon="delete"
+                        divided
+                        style="color: var(--el-color-danger)"
+                      >
+                        {{ t("ai_model.modelDelete") }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -148,54 +182,65 @@
     >
       <el-form ref="dataFormRef" :model="formData" label-width="110px">
         <el-form-item
-          label="配置名称"
+          :label="t('ai_model.modelConfigName')"
           prop="name"
-          :rules="[{ required: true, message: '请输入配置名称', trigger: 'blur' }]"
+          :rules="[
+            { required: true, message: t('ai_model.modelConfigNameRequired'), trigger: 'blur' },
+          ]"
         >
-          <el-input v-model="formData.name" placeholder="如：DeepSeek 生产" />
+          <el-input
+            v-model="formData.name"
+            :placeholder="t('ai_model.modelConfigNamePlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="用途">
+        <el-form-item :label="t('ai_model.modelUsage')">
           <el-select v-model="formData.usage" style="width: 100%">
-            <el-option label="对话/通用" value="chat" />
-            <el-option label="助手/工具" value="assistant" />
-            <el-option label="问数（Text-to-SQL）" value="query" />
-            <el-option label="向量/Embedding" value="embedding" />
+            <el-option :label="t('ai_model.modelUsageChat')" value="chat" />
+            <el-option :label="t('ai_model.modelUsageAssistant')" value="assistant" />
+            <el-option :label="t('ai_model.modelUsageQuery')" value="query" />
+            <el-option :label="t('ai_model.modelUsageEmbedding')" value="embedding" />
+            <el-option :label="t('ai_model.modelUsageRerank')" value="rerank" />
+            <el-option :label="t('ai_model.modelUsageTts')" value="tts" />
+            <el-option :label="t('ai_model.modelUsageAsr')" value="asr" />
           </el-select>
           <!-- 后端 NL2SQL 运行时优先选 usage=='query' 的模型；没有它就永远落到 chat/通用模型 -->
-          <el-text type="info" size="small">不填则回退到对话/通用模型</el-text>
+          <el-text type="info" size="small">{{ t("ai_model.modelUsageFallback") }}</el-text>
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="上下文窗口">
+            <el-form-item :label="t('ai_model.modelContextWindow')">
               <el-input-number
                 v-model="formData.context_window"
                 :min="0"
                 :step="1024"
                 :controls="false"
                 style="width: 100%"
-                placeholder="如 128000"
+                :placeholder="t('ai_model.modelContextWindowPlaceholder')"
               />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="能力标签">
+            <el-form-item :label="t('ai_model.modelCapabilities')">
               <el-input v-model="formData.capabilities_text" placeholder="chat,tool,vision" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="所属供应商">
+        <el-form-item :label="t('ai_model.modelProvider')">
           <el-select
             v-model="formData.provider_id"
             clearable
-            placeholder="选择后自动带出 API 基址"
+            :placeholder="t('ai_model.modelProviderPlaceholder')"
             style="width: 100%"
             @change="onProviderChange"
           >
             <el-option v-for="p in providers" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="模型名" prop="model" required>
-          <el-input v-model="formData.model" placeholder="如：deepseek-chat" />
+        <el-form-item :label="t('ai_model.modelModelName')" prop="model" required>
+          <el-input
+            v-model="formData.model"
+            :placeholder="t('ai_model.modelModelNamePlaceholder')"
+          />
           <el-button
             text
             type="primary"
@@ -205,56 +250,61 @@
             :loading="pulling"
             @click="pullRemoteModels"
           >
-            从供应商导入
+            {{ t("ai_model.modelImportFromProvider") }}
           </el-button>
         </el-form-item>
-        <el-form-item v-if="remoteModels.length" label="选择模型">
+        <el-form-item v-if="remoteModels.length" :label="t('ai_model.modelSelectModel')">
           <el-select
             v-model="formData.model"
             filterable
-            placeholder="从远端模型列表选择"
+            :placeholder="t('ai_model.modelSelectModelPlaceholder')"
             style="width: 100%"
           >
             <el-option v-for="m in remoteModels" :key="m" :label="m" :value="m" />
           </el-select>
         </el-form-item>
-        <el-form-item label="API 基址" prop="base_url" required>
-          <el-input v-model="formData.base_url" placeholder="如：https://api.deepseek.com" />
+        <el-form-item :label="t('ai_model.modelBaseUrl')" prop="base_url" required>
+          <el-input
+            v-model="formData.base_url"
+            :placeholder="t('ai_model.modelBaseUrlPlaceholder')"
+          />
         </el-form-item>
         <el-form-item label="API Key">
           <el-input
             v-model="formData.api_key"
             type="password"
             show-password
-            :placeholder="dialogVisible.type === 'update' ? '留空表示不变更' : 'sk-...'"
+            :placeholder="
+              dialogVisible.type === 'update' ? t('ai_model.modelApiKeyPlaceholderEdit') : 'sk-...'
+            "
           />
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="温度">
+            <el-form-item :label="t('ai_model.modelTemperature')">
               <el-input-number v-model="formData.temperature" :min="0" :max="2" :step="0.1" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="最大 token">
+            <el-form-item :label="t('ai_model.modelMaxTokens')">
               <el-input-number v-model="formData.max_tokens" :min="64" :max="32768" :step="128" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="启用">
+        <el-form-item :label="t('ai_model.modelEnabled')">
           <el-switch v-model="formData.enabled" />
         </el-form-item>
-        <el-form-item label="设为默认">
+        <el-form-item :label="t('ai_model.modelSetDefault')">
           <el-switch v-model="formData.is_default" />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item :label="t('ai_model.modelDescription')">
           <el-input v-model="formData.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="自定义请求头">
+        <el-form-item :label="t('ai_model.modelCustomHeaders')">
           <div class="header-builder">
             <div v-for="(h, i) in formData.headerFields" :key="i" class="header-row">
-              <el-input v-model="h.key" placeholder="请求头名，如 x-opencode-session" />
-              <el-input v-model="h.value" placeholder="值" />
+              <el-input v-model="h.key" :placeholder="t('ai_model.modelHeaderNamePlaceholder')" />
+              <el-input v-model="h.value" :placeholder="t('ai_model.modelValuePlaceholder')" />
               <el-button
                 text
                 type="danger"
@@ -268,32 +318,40 @@
               :icon="Plus"
               @click="formData.headerFields.push({ key: '', value: '' })"
             >
-              添加请求头
+              {{ t("ai_model.modelAddHeader") }}
             </el-button>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button :loading="testing" @click="handleTestForm">测试连接</el-button>
-        <el-button @click="handleCloseDialog">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button :loading="testing" @click="handleTestForm">
+          {{ t("ai_model.modelTestConnection") }}
+        </el-button>
+        <el-button @click="handleCloseDialog">{{ t("ai_model.modelCancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("ai_model.modelSave") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
     <!-- 模型配置详情抽屉 -->
     <el-drawer
       v-model="detailVisible"
-      :title="detail?.name || '模型配置'"
+      :title="detail?.name || t('ai_model.modelModelConfigTitle')"
       size="480px"
       append-to-body
     >
       <el-descriptions v-if="detail" :column="1" border size="small">
-        <el-descriptions-item label="配置名称">{{ detail.name }}</el-descriptions-item>
-        <el-descriptions-item label="模型">{{ detail.model }}</el-descriptions-item>
-        <el-descriptions-item label="用途">
+        <el-descriptions-item :label="t('ai_model.modelConfigName')">
+          {{ detail.name }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.modelModel')">
+          {{ detail.model }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.modelUsage')">
           <el-tag size="small" effect="plain">{{ usageLabel(detail.usage) }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="能力标签">
+        <el-descriptions-item :label="t('ai_model.modelCapabilities')">
           <span v-if="(detail.capabilities || []).length">
             <el-tag
               v-for="c in detail.capabilities"
@@ -307,26 +365,38 @@
           </span>
           <span v-else class="muted">—</span>
         </el-descriptions-item>
-        <el-descriptions-item label="上下文窗口">
+        <el-descriptions-item :label="t('ai_model.modelContextWindow')">
           {{ detail.context_window || "—" }}
         </el-descriptions-item>
-        <el-descriptions-item label="API 基址">{{ detail.base_url }}</el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.modelBaseUrl')">
+          {{ detail.base_url }}
+        </el-descriptions-item>
         <el-descriptions-item label="API Key">
           {{ detail.api_key_masked || "—" }}
         </el-descriptions-item>
-        <el-descriptions-item label="温度">{{ detail.temperature }}</el-descriptions-item>
-        <el-descriptions-item label="最大 token">{{ detail.max_tokens }}</el-descriptions-item>
-        <el-descriptions-item label="设为默认">
-          <el-tag v-if="detail.is_default" type="success" size="small">默认</el-tag>
-          <span v-else class="muted">否</span>
+        <el-descriptions-item :label="t('ai_model.modelTemperature')">
+          {{ detail.temperature }}
         </el-descriptions-item>
-        <el-descriptions-item label="启用">
+        <el-descriptions-item :label="t('ai_model.modelMaxTokens')">
+          {{ detail.max_tokens }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.modelSetDefault')">
+          <el-tag v-if="detail.is_default" type="success" size="small">
+            {{ t("ai_model.modelDefault") }}
+          </el-tag>
+          <span v-else class="muted">{{ t("ai_model.modelNo") }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.modelEnabled')">
           <el-tag :type="detail.enabled ? 'success' : 'info'" size="small">
-            {{ detail.enabled ? "启用" : "停用" }}
+            {{ detail.enabled ? t("ai_model.modelEnabled") : t("ai_model.modelDisabled") }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="备注">{{ detail.description || "—" }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ detail.created_time }}</el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.modelDescription')">
+          {{ detail.description || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.modelCreatedTime')">
+          {{ detail.created_time }}
+        </el-descriptions-item>
       </el-descriptions>
     </el-drawer>
   </div>
@@ -349,6 +419,8 @@ import { getAiProviderList, getAiProviderRemoteModels } from "@/api/module_ai/pr
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import { usePerm } from "@/composables/usePerm";
+import { useI18n } from "vue-i18n";
 
 interface TablePageQuery {
   page_no: number;
@@ -357,6 +429,8 @@ interface TablePageQuery {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const { t } = useI18n();
+const perm = usePerm();
 const submitLoading = ref(false);
 const dataFormRef = ref();
 
@@ -368,15 +442,23 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "配置名称",
+      label: t("ai_model.modelConfigName"),
       type: "input",
-      attrs: { placeholder: "配置名称", clearable: true, style: { width: "200px" } },
+      attrs: {
+        placeholder: t("ai_model.modelConfigName"),
+        clearable: true,
+        style: { width: "200px" },
+      },
     },
     {
       prop: "model",
-      label: "模型名",
+      label: t("ai_model.modelModelName"),
       type: "input",
-      attrs: { placeholder: "模型名", clearable: true, style: { width: "200px" } },
+      attrs: {
+        placeholder: t("ai_model.modelModelName"),
+        clearable: true,
+        style: { width: "200px" },
+      },
     },
   ],
 });
@@ -410,7 +492,7 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
         .filter((n: number) => !Number.isNaN(n))
     );
   },
-  deleteConfirm: { title: "警告", message: "确认删除所选模型配置?", type: "warning" },
+  deleteConfirm: { type: "warning" },
 });
 
 const dialogVisible = reactive({
@@ -449,11 +531,16 @@ function openDetail(row: any) {
   detailVisible.value = true;
 }
 function usageLabel(u: string) {
-  return (
-    { chat: "对话", assistant: "助手", query: "问数", embedding: "嵌入", asr: "识别", tts: "合成" }[
-      u
-    ] || u
-  );
+  const map: Record<string, string> = {
+    chat: t("ai_model.modelUsageChat"),
+    assistant: t("ai_model.modelUsageAssistant"),
+    query: t("ai_model.modelUsageLabelQuery"),
+    embedding: t("ai_model.modelUsageLabelEmbedding"),
+    rerank: t("ai_model.modelUsageLabelRerank"),
+    asr: t("ai_model.modelUsageLabelAsr"),
+    tts: t("ai_model.modelUsageLabelTts"),
+  };
+  return map[u] || u;
 }
 
 async function loadProviders() {
@@ -475,7 +562,7 @@ function onProviderChange(id: number | undefined) {
 
 async function pullRemoteModels() {
   if (!formData.provider_id) {
-    ElMessage.warning("请先选择所属供应商");
+    ElMessage.warning(t("ai_model.modelProviderRequired"));
     return;
   }
   pulling.value = true;
@@ -483,12 +570,12 @@ async function pullRemoteModels() {
     const res = await getAiProviderRemoteModels(formData.provider_id);
     remoteModels.value = (res.data?.data || []) as string[];
     if (remoteModels.value.length) {
-      ElMessage.success(`已导入 ${remoteModels.value.length} 个远端模型`);
+      ElMessage.success(t("ai_model.modelImportedRemote", { count: remoteModels.value.length }));
     } else {
-      ElMessage.warning("该供应商未拉取到模型");
+      ElMessage.warning(t("ai_model.modelNoRemoteModels"));
     }
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "拉取失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.modelPullFailed"));
   } finally {
     pulling.value = false;
   }
@@ -502,7 +589,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   Object.assign(formData, emptyForm());
   if (id && type === "update") {
-    dialogVisible.title = "编辑模型配置";
+    dialogVisible.title = t("ai_model.modelEditTitle");
     const res = await getAiModelList();
     const item = (res.data?.data || []).find((x: any) => x.id === id);
     if (item) {
@@ -528,7 +615,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       });
     }
   } else {
-    dialogVisible.title = "新增模型配置";
+    dialogVisible.title = t("ai_model.modelCreateTitle");
   }
   remoteModels.value = [];
   dialogVisible.visible = true;
@@ -541,7 +628,7 @@ async function handleCloseDialog() {
 
 async function handleSubmit() {
   if (!formData.name || !formData.model || !formData.base_url) {
-    ElMessage.warning("请填写配置名称、模型名与 API 基址");
+    ElMessage.warning(t("ai_model.modelRequiredFields"));
     return;
   }
   submitLoading.value = true;
@@ -573,9 +660,9 @@ async function handleSubmit() {
     else await createAiModel(payload);
     dialogVisible.visible = false;
     refreshList();
-    ElMessage.success("已保存");
+    ElMessage.success(t("ai_model.modelSaveSuccess"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "保存失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.modelSaveFailed"));
   } finally {
     submitLoading.value = false;
   }
@@ -584,19 +671,29 @@ async function handleSubmit() {
 async function handleSetDefault(id: number) {
   try {
     await setDefaultAiModel(id);
-    ElMessage.success("已设为默认模型");
+    ElMessage.success(t("ai_model.modelSetDefaultSuccess"));
     refreshList();
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "设置失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.modelSetDefaultFailed"));
+  }
+}
+
+function onMoreCmd(row: any, cmd: string) {
+  if (cmd === "default") {
+    handleSetDefault(row.id);
+  } else if (cmd === "delete") {
+    handleRowDelete(row.id);
   }
 }
 
 async function handleTest(row: any) {
   try {
     const res = await testAiModel({ id: row.id });
-    ElMessage.success(`连接成功：${res.data?.data?.reply || "ok"}`);
+    ElMessage.success(
+      t("ai_model.modelConnectionSuccess", { reply: res.data?.data?.reply || "ok" })
+    );
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "连接失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.modelConnectionFailed"));
   }
 }
 
@@ -609,10 +706,15 @@ async function batchEnable(enabled: boolean) {
   if (!modelSelIds.value.length) return;
   try {
     const r = await batchModelStatus(modelSelIds.value, enabled);
-    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个配置`);
+    ElMessage.success(
+      t("ai_model.modelBatchResult", {
+        action: enabled ? t("ai_model.modelEnabledAction") : t("ai_model.modelDisabledAction"),
+        count: r.data?.data?.count || 0,
+      })
+    );
     refreshList();
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "操作失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.modelOperationFailed"));
   }
 }
 
@@ -633,20 +735,23 @@ async function handleTestForm() {
   const payload: any = {
     base_url: formData.base_url,
     model: formData.model,
+    usage: formData.usage,
     extra_headers: buildObjectFromRows(formData.headerFields),
   };
   if (formData.api_key) payload.api_key = formData.api_key;
   else if (formData.id) payload.id = formData.id;
   else {
-    ElMessage.warning("请先填写 API Key");
+    ElMessage.warning(t("ai_model.modelApiKeyRequired"));
     return;
   }
   testing.value = true;
   try {
     const res = await testAiModel(payload);
-    ElMessage.success(`连接成功：${res.data?.data?.reply || "ok"}`);
+    ElMessage.success(
+      t("ai_model.modelConnectionSuccess", { reply: res.data?.data?.reply || "ok" })
+    );
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "连接失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.modelConnectionFailed"));
   } finally {
     testing.value = false;
   }
@@ -693,9 +798,11 @@ async function loadModelSummary() {
   align-items: center;
 }
 .batch-ac {
-  margin-left: 8px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
 }
 .summary-tag {
-  margin-left: 8px;
+  flex-shrink: 0;
 }
 </style>

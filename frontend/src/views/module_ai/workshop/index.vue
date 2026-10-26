@@ -8,31 +8,41 @@
           <el-icon :size="22"><Grid /></el-icon>
         </div>
         <div class="ws-intro__text">
-          <div class="ws-intro__title">对象应用 · 无代码搞定</div>
-          <div class="ws-intro__desc">
-            挑一个业务对象（如设备、订单、摄像头），选几列字段，就能得到一个能看、能录数据的应用，不用写代码。
-          </div>
+          <div class="ws-intro__title">{{ t("ai_chat.workshop_introTitle") }}</div>
+          <div class="ws-intro__desc">{{ t("ai_chat.workshop_introDesc") }}</div>
           <div class="ws-intro__steps">
-            <el-tag size="small" effect="plain" type="primary">① 选对象</el-tag>
-            <el-tag size="small" effect="plain" type="success">② 选视图</el-tag>
-            <el-tag size="small" effect="plain" type="warning">③ 挑字段</el-tag>
-            <el-tag size="small" effect="plain" type="info">④ 保存使用</el-tag>
+            <el-tag size="small" effect="plain" type="primary">
+              {{ t("ai_chat.workshop_stepObject") }}
+            </el-tag>
+            <el-tag size="small" effect="plain" type="success">
+              {{ t("ai_chat.workshop_stepView") }}
+            </el-tag>
+            <el-tag size="small" effect="plain" type="warning">
+              {{ t("ai_chat.workshop_stepFields") }}
+            </el-tag>
+            <el-tag size="small" effect="plain" type="info">
+              {{ t("ai_chat.workshop_stepSave") }}
+            </el-tag>
           </div>
         </div>
       </div>
 
       <!-- 工具条：标题 + 搜索 + 新建 -->
       <div class="ws-toolbar">
-        <span class="ws-toolbar__count">共 {{ apps.length }} 个应用</span>
+        <span class="ws-toolbar__count">
+          {{ t("ai_chat.workshop_totalApps", { count: apps.length }) }}
+        </span>
         <div class="ws-toolbar__right">
           <el-input
             v-model="keyword"
-            placeholder="搜索应用名称"
+            :placeholder="t('ai_chat.workshop_searchApp')"
             clearable
             :prefix-icon="Search"
             style="width: 220px"
           />
-          <el-button type="primary" :icon="Plus" @click="openCreate">新建应用</el-button>
+          <el-button type="primary" :icon="Plus" @click="openCreate">
+            {{ t("ai_chat.workshop_createApp") }}
+          </el-button>
         </div>
       </div>
 
@@ -54,15 +64,19 @@
                 <el-button link :icon="MoreFilled" class="ws-app-card__more" @click.stop />
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="run" :icon="VideoPlay">打开</el-dropdown-item>
-                    <el-dropdown-item command="edit" :icon="Edit">编辑</el-dropdown-item>
+                    <el-dropdown-item command="run" :icon="VideoPlay">
+                      {{ t("ai_chat.workshop_open") }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="edit" :icon="Edit">
+                      {{ t("ai_chat.workshop_edit") }}
+                    </el-dropdown-item>
                     <el-dropdown-item
                       command="delete"
                       :icon="Delete"
                       divided
                       style="color: var(--el-color-danger)"
                     >
-                      删除
+                      {{ t("ai_chat.workshop_delete") }}
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -83,23 +97,25 @@
                 {{ c }}
               </el-tag>
               <span v-if="!a.columns?.length" class="ws-app-card__nocols">
-                未选字段（预览展示全部列）
+                {{ t("ai_chat.workshop_noFields") }}
               </span>
             </div>
             <div class="ws-app-card__foot">
               <el-button type="primary" size="small" :icon="View" @click.stop="openRun(a)">
-                打开
+                {{ t("ai_chat.workshop_open") }}
               </el-button>
-              <el-button size="small" :icon="Edit" @click.stop="openEdit(a)">编辑</el-button>
+              <el-button size="small" :icon="Edit" @click.stop="openEdit(a)">
+                {{ t("ai_chat.workshop_edit") }}
+              </el-button>
             </div>
           </div>
         </el-col>
       </el-row>
 
       <!-- 空状态引导 -->
-      <el-empty v-else v-loading="loading" description="还没有对象应用">
+      <el-empty v-else v-loading="loading" :description="t('ai_chat.workshop_empty')">
         <div class="ws-empty-suggest">
-          <p>用一点数据就能做成一个可用的应用，试试点右上角「新建应用」</p>
+          <p>{{ t("ai_chat.workshop_emptySuggest") }}</p>
         </div>
       </el-empty>
     </el-card>
@@ -107,18 +123,20 @@
     <!-- 新建/编辑抽屉 -->
     <el-drawer
       v-model="createVisible"
-      :title="editingId ? '编辑对象应用' : '新建对象应用'"
+      :title="
+        editingId ? t('ai_chat.workshop_editObjectApp') : t('ai_chat.workshop_createObjectApp')
+      "
       size="520px"
     >
       <el-form v-loading="loadingObjects" label-width="84px" class="ws-form">
-        <el-form-item label="应用名称" required>
-          <el-input v-model="form.name" placeholder="如：摄像头监控看板" />
+        <el-form-item :label="t('ai_chat.workshop_appName')" required>
+          <el-input v-model="form.name" :placeholder="t('ai_chat.workshop_appNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="业务对象" required>
+        <el-form-item :label="t('ai_chat.workshop_object')" required>
           <el-select
             v-model="form.object_table"
             filterable
-            placeholder="搜索并选择一个业务对象"
+            :placeholder="t('ai_chat.workshop_selectObject')"
             style="width: 100%"
             @change="onObjectChange"
           >
@@ -126,12 +144,12 @@
               v-for="o in objectOptions"
               :key="o.table"
               :value="o.table"
-              :label="`${o.label || o.table}（${o.table}）`"
+              :label="objectOptionLabel(o)"
             />
           </el-select>
-          <div class="ws-form-hint">选对象后自动带出它的字段</div>
+          <div class="ws-form-hint">{{ t("ai_chat.workshop_objectHint") }}</div>
         </el-form-item>
-        <el-form-item label="视图类型">
+        <el-form-item :label="t('ai_chat.workshop_viewType')">
           <div class="ws-view-opts">
             <div
               v-for="v in viewOptions"
@@ -145,20 +163,30 @@
             </div>
           </div>
         </el-form-item>
-        <el-form-item label="展示字段">
+        <el-form-item :label="t('ai_chat.workshop_displayFields')">
           <el-checkbox-group v-if="currentFields.length" v-model="form.columns" class="ws-fields">
             <el-checkbox v-for="f in currentFields" :key="f.name" :value="f.name" class="ws-field">
               <span class="ws-field__name">{{ f.name }}</span>
               <span v-if="f.label" class="ws-field__label">{{ f.label }}</span>
-              <el-tag v-if="f.sensitive" size="small" type="danger" effect="plain">敏感</el-tag>
+              <el-tag v-if="f.sensitive" size="small" type="danger" effect="plain">
+                {{ t("ai_chat.workshop_sensitive") }}
+              </el-tag>
             </el-checkbox>
           </el-checkbox-group>
-          <el-empty v-else :image-size="40" description="请先选择业务对象" />
+          <el-empty
+            v-else
+            :image-size="40"
+            :description="t('ai_chat.workshop_selectObjectFirst')"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        <el-button @click="createVisible = false">
+          {{ t("ai_chat.workshop_cancel") }}
+        </el-button>
+        <el-button type="primary" :loading="saving" @click="save">
+          {{ t("ai_chat.workshop_save") }}
+        </el-button>
       </template>
     </el-drawer>
 
@@ -178,7 +206,9 @@
               <el-icon><Collection /></el-icon>
               <b>{{ runApp?.object_table }}</b>
             </span>
-            <span class="ws-run__count">{{ runRows.length }} 条记录</span>
+            <span class="ws-run__count">
+              {{ t("ai_chat.workshop_recordCount", { count: runRows.length }) }}
+            </span>
           </div>
           <div class="ws-run__switch">
             <el-tag
@@ -199,7 +229,7 @@
             <el-input
               v-if="runView === 'table'"
               v-model="runKeyword"
-              placeholder="搜索表格"
+              :placeholder="t('ai_chat.workshop_searchTable')"
               clearable
               :prefix-icon="Search"
               style="width: 200px"
@@ -207,13 +237,13 @@
             <el-select
               v-else-if="runView === 'kanban'"
               v-model="runGroupBy"
-              placeholder="看板分组字段"
+              :placeholder="t('ai_chat.workshop_groupBy')"
               clearable
               style="width: 200px"
             >
               <el-option v-for="c in runCols" :key="c" :label="colLabel(c)" :value="c" />
             </el-select>
-            <el-tooltip content="刷新数据" placement="top">
+            <el-tooltip :content="t('ai_chat.workshop_refresh')" placement="top">
               <el-button circle :icon="Refresh" @click="reloadRun" />
             </el-tooltip>
           </div>
@@ -223,11 +253,13 @@
         <div v-if="runView === 'table'" class="ws-run__table">
           <div class="ws-table-stats">
             <span>
-              共
+              {{ t("ai_chat.workshop_tableTotalBefore") }}
               <b>{{ filteredRunRows.length }}</b>
-              条
+              {{ t("ai_chat.workshop_tableTotalAfter") }}
             </span>
-            <span v-if="runKeyword" class="ws-table-stats__filter">已筛选</span>
+            <span v-if="runKeyword" class="ws-table-stats__filter">
+              {{ t("ai_chat.workshop_filtered") }}
+            </span>
           </div>
           <el-table
             :data="pagedRunRows"
@@ -238,7 +270,7 @@
             class="ws-table"
           >
             <template #empty>
-              <el-empty :image-size="60" description="暂无数据" />
+              <el-empty :image-size="60" :description="t('ai_chat.workshop_noData')" />
             </template>
             <el-table-column
               v-for="c in filteredRunCols"
@@ -254,7 +286,7 @@
               v-model:current-page="runPage"
               :page-size="runPageSize"
               :total="filteredRunRows.length"
-              layout="total, prev, pager, next"
+              layout="total, sizes, prev, pager, next"
               background
               small
             />
@@ -273,7 +305,9 @@
               @drop="onDrop(g.key)"
             >
               <div class="ws-kb-head">
-                <span class="ws-kb-head__title">{{ g.key === "" ? "未分组" : String(g.key) }}</span>
+                <span class="ws-kb-head__title">
+                  {{ g.key === "" ? t("ai_chat.workshop_ungrouped") : String(g.key) }}
+                </span>
                 <span class="ws-kb-head__count">{{ g.items.length }}</span>
               </div>
               <div class="ws-kb-cards">
@@ -292,7 +326,9 @@
                       <el-icon class="ws-kb-card__more"><MoreFilled /></el-icon>
                       <template #dropdown>
                         <el-dropdown-menu>
-                          <el-dropdown-item command="move">移动到此列</el-dropdown-item>
+                          <el-dropdown-item command="move">
+                            {{ t("ai_chat.workshop_moveHere") }}
+                          </el-dropdown-item>
                         </el-dropdown-menu>
                       </template>
                     </el-dropdown>
@@ -315,18 +351,22 @@
                     <span class="ws-kb-foot-text">{{ runApp?.object_table }}</span>
                   </div>
                 </div>
-                <div v-if="!g.items.length" class="ws-kb-card ws-kb-card--empty">拖卡片到这里</div>
+                <div v-if="!g.items.length" class="ws-kb-card ws-kb-card--empty">
+                  {{ t("ai_chat.workshop_dropHere") }}
+                </div>
               </div>
             </div>
           </div>
-          <el-empty v-else description="该对象没有可用字段" />
+          <el-empty v-else :description="t('ai_chat.workshop_noFieldForObject')" />
         </div>
 
         <!-- 表单视图：分组 + 两列 + 必填，提交写入 -->
         <div v-else class="ws-run__form">
           <div v-if="runFields.length">
             <div class="ws-form-section">
-              <span class="ws-form-section__title">{{ runApp?.object_table }} · 新增记录</span>
+              <span class="ws-form-section__title">
+                {{ runApp?.object_table }} · {{ t("ai_chat.workshop_addRecord") }}
+              </span>
             </div>
             <el-form :model="formData" label-position="top" class="ws-run-form">
               <el-row :gutter="16">
@@ -355,14 +395,14 @@
               </el-row>
               <div class="ws-run-form-actions">
                 <el-button type="primary" :loading="formSubmitting" @click="submitForm">
-                  保存到对象表
+                  {{ t("ai_chat.workshop_saveToObject") }}
                 </el-button>
-                <el-button @click="formData = {}">清空</el-button>
-                <span class="ws-run-form-hint">演示：仅 ont_orders 支持写入</span>
+                <el-button @click="formData = {}">{{ t("ai_chat.workshop_clear") }}</el-button>
+                <span class="ws-run-form-hint">{{ t("ai_chat.workshop_demoHint") }}</span>
               </div>
             </el-form>
           </div>
-          <el-empty v-else :image-size="60" description="该应用未配置字段" />
+          <el-empty v-else :image-size="60" :description="t('ai_chat.workshop_noFieldForApp')" />
         </div>
       </div>
     </el-drawer>
@@ -371,6 +411,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Collection,
@@ -397,6 +438,8 @@ import {
 
 defineOptions({ name: "AiWorkshop" });
 
+const { t } = useI18n();
+
 const loading = ref(false);
 const apps = ref<any[]>([]);
 const keyword = ref("");
@@ -416,9 +459,9 @@ const form = ref<any>({
   columns: [],
 });
 const viewOptions = [
-  { value: "table", label: "表格", icon: Grid },
-  { value: "kanban", label: "看板", icon: Menu },
-  { value: "form", label: "表单", icon: Edit },
+  { value: "table", label: t("ai_chat.workshop_viewTable"), icon: Grid },
+  { value: "kanban", label: t("ai_chat.workshop_viewKanban"), icon: Menu },
+  { value: "form", label: t("ai_chat.workshop_viewForm"), icon: Edit },
 ];
 
 // 运行视图
@@ -451,7 +494,13 @@ const currentFields = computed(() => {
 
 // ---- 视图映射 ----
 function viewLabel(v: string) {
-  return { table: "表格", kanban: "看板", form: "表单" }[v] || v;
+  return (
+    {
+      table: t("ai_chat.workshop_viewTable"),
+      kanban: t("ai_chat.workshop_viewKanban"),
+      form: t("ai_chat.workshop_viewForm"),
+    }[v] || v
+  );
 }
 function viewTag(v: string) {
   const MAP: Record<string, "success" | "warning" | "primary" | "info"> = {
@@ -508,6 +557,11 @@ function colLabel(c: string) {
   const f = obj?.fields?.find((x: any) => x.name === c);
   return f?.label ? `${c} · ${f.label}` : c;
 }
+
+/** 业务对象下拉选项显示名：名称（表名）。 */
+function objectOptionLabel(o: { label?: string; table: string }): string {
+  return t("ai_chat.workshop_objectOption", { name: o.label || o.table, table: o.table });
+}
 function cardColor(k: any) {
   const palette = [
     "var(--el-color-primary)",
@@ -538,7 +592,7 @@ function onDrop(key: any) {
 function onCardRowCmd(_g: any, row: any, cmd: string) {
   if (cmd === "move") {
     // 演示：将卡片移动到「未分组」列（拖拽已支持跨列，这里仅提示）
-    ElMessage.info("拖动卡片列头即可移动（演示，刷新还原）");
+    ElMessage.info(t("ai_chat.workshop_dragHint"));
   }
 }
 
@@ -608,8 +662,8 @@ function onObjectChange(table: string) {
 }
 
 async function save() {
-  if (!form.value.name.trim()) return ElMessage.warning("请填写应用名称");
-  if (!form.value.object_table) return ElMessage.warning("请选择业务对象");
+  if (!form.value.name.trim()) return ElMessage.warning(t("ai_chat.workshop_inputAppName"));
+  if (!form.value.object_table) return ElMessage.warning(t("ai_chat.workshop_selectObject"));
   saving.value = true;
   try {
     await saveWorkshopApp({
@@ -620,11 +674,13 @@ async function save() {
       columns: form.value.columns,
       enabled: true,
     });
-    ElMessage.success(editingId.value ? "已更新" : "已创建");
+    ElMessage.success(
+      editingId.value ? t("ai_chat.workshop_updated") : t("ai_chat.workshop_created")
+    );
     createVisible.value = false;
     load();
   } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败");
+    ElMessage.error(e?.message || t("ai_chat.workshop_saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -674,10 +730,10 @@ async function reloadRun() {
     } else {
       runCols.value = [];
       runRows.value = [];
-      ElMessage.warning(d?.msg || "加载失败");
+      ElMessage.warning(d?.msg || t("ai_chat.workshop_loadFailed"));
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || "加载失败");
+    ElMessage.error(e?.message || t("ai_chat.workshop_loadFailed"));
   } finally {
     runLoading.value = false;
   }
@@ -688,10 +744,10 @@ async function submitForm() {
   formSubmitting.value = true;
   try {
     await submitWorkshopApp(runApp.value.id, formData.value);
-    ElMessage.success("已保存到对象表");
+    ElMessage.success(t("ai_chat.workshop_savedToObject"));
     await reloadRun();
   } catch (e: any) {
-    ElMessage.error(e?.message || "提交失败");
+    ElMessage.error(e?.message || t("ai_chat.workshop_submitFailed"));
   } finally {
     formSubmitting.value = false;
   }
@@ -701,13 +757,17 @@ async function onCardCmd(a: any, cmd: string) {
   if (cmd === "run") return openRun(a);
   if (cmd === "edit") return openEdit(a);
   if (cmd === "delete") {
-    await ElMessageBox.confirm(`将删除应用「${a.name}」，此操作不可恢复。是否继续？`, "删除确认", {
-      confirmButtonText: "删除",
-      cancelButtonText: "取消",
-      type: "warning",
-    });
+    await ElMessageBox.confirm(
+      t("ai_chat.workshop_deleteConfirm", { name: a.name }),
+      t("ai_chat.workshop_deleteTitle"),
+      {
+        confirmButtonText: t("ai_chat.workshop_delete"),
+        cancelButtonText: t("ai_chat.workshop_cancel"),
+        type: "warning",
+      }
+    );
     await deleteWorkshopApp(a.id);
-    ElMessage.success("已删除");
+    ElMessage.success(t("ai_chat.workshop_deleted"));
     load();
   }
 }
@@ -717,13 +777,16 @@ onMounted(() => {
 });
 </script>
 
-<style lang="scss" scoped>
-.ai-workshop-page {
+<style lang="scss">
+.app-container.ai-workshop-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
+</style>
+
+<style lang="scss" scoped>
 .ai-workshop-page .ws-shell {
   display: flex;
   flex: 1 1 auto;

@@ -1,0 +1,90 @@
+export default {
+  // 工具栏 / 操作
+  export: "Exportar",
+  noData: "Sin datos",
+  detail: "Detalle",
+  edit: "Editar",
+  delete: "Eliminar",
+  action: "Acciones",
+  cancel: "Cancelar",
+  confirm: "Confirmar",
+  save: "Guardar",
+  operationSuccess: "Operación exitosa",
+
+  // 表格列
+  selection: "Selección",
+  serial: "N.º",
+  configName: "Nombre de la configuración",
+  configKey: "Clave de configuración",
+  configKeyName: "Nombre de la clave de configuración",
+  configValue: "Valor de configuración",
+  configType: "Integrado en el sistema",
+  description: "Descripción",
+  createdTime: "Fecha de creación",
+  updatedTime: "Fecha de actualización",
+  yes: "Sí",
+  no: "No",
+
+  // 搜索 / 筛选
+  inputConfigName: "Ingrese el nombre de la configuración",
+  inputConfigKey: "Ingrese la clave de configuración",
+  inputConfigValue: "Ingrese el valor de configuración",
+  inputDescription: "Ingrese la descripción",
+  inputConfigKeyName: "Ingrese el nombre de la clave de configuración",
+  selectConfigType: "Seleccione si está integrado en el sistema",
+  to: "a",
+  startDate: "Fecha de inicio",
+  endDate: "Fecha de fin",
+
+  // 弹窗标题
+  configDetail: "Detalle de la configuración del sistema",
+  updateConfig: "Editar configuración del sistema",
+  createConfig: "Crear configuración del sistema",
+
+  // 提示 / 确认
+  warnTitle: "Advertencia",
+  deleteConfirmMessage: "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
+  requiredConfigName: "Ingrese el nombre de la configuración del sistema",
+  requiredConfigKey: "Ingrese la clave de configuración del sistema",
+  requiredConfigValue: "Ingrese el valor de configuración del sistema",
+  requiredConfigType: "Seleccione el tipo de configuración del sistema",
+
+  // 配置中心抽屉
+  configCenter: "Centro de configuración",
+  websiteConfig: "Configuración del sitio web",
+  websiteIcon: "Icono del sitio web",
+  securityPrivacy: "Seguridad y privacidad",
+  userAgreement: "Acuerdo de usuario",
+  apiWhitelist: "Lista blanca de API",
+  ipBlacklist: "Lista negra de IP",
+  notification: "Configuración de notificaciones",
+  demoConfig: "Configuración de demostración",
+  wsPush: "Push por WebSocket",
+  smtpEmail: "Correo SMTP",
+  smsGateway: "Pasarela SMS",
+  webhookRest: "Webhook / API REST",
+  defaultRecipient: "Destinatario predeterminado",
+  enable: "Habilitar",
+  disable: "Deshabilitar",
+  testWsPush: "Probar push WS",
+  testEmailPush: "Probar push de correo",
+  testSmsPush: "Probar push SMS",
+  testWebhookPush: "Probar push webhook",
+  addApiPath: "Agregar ruta de API",
+  addIp: "Agregar dirección IP",
+  apiWhitelistTip:
+    "Nota de configuración: las rutas de API en la lista blanca son accesibles sin inicio de sesión y admiten configuración de ruta completa.",
+  ipBlacklistTip:
+    "Nota de configuración: las direcciones IP en la lista negra no pueden acceder al sistema, admite configuración de IP individual.",
+  demoIpWhitelistTip:
+    "Nota de configuración: en modo de demostración, solo las direcciones IP en la lista blanca pueden acceder al sistema, admite configuración de IP individual.",
+  demoEnableTip:
+    "Nota de configuración: una vez habilitado, el sistema entrará en modo de demostración y algunas funciones pueden estar limitadas.",
+  invalidApiPath: "Ingrese un formato de ruta de API válido (que empiece con /)",
+  invalidIp: "Ingrese un formato de dirección IP válido",
+  keepApiWhitelist: "Se requiere al menos una configuración de lista blanca de API",
+  keepIpBlacklist: "Se requiere al menos una configuración de lista negra de IP",
+  keepIpWhitelist: "Se requiere al menos una configuración de lista blanca de IP",
+  uploadFailedPrefix: "Error de carga: ",
+  uploadRetry: "Inténtelo de nuevo más tarde",
+};

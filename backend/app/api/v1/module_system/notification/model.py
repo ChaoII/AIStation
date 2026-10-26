@@ -17,7 +17,11 @@ class UserNotificationModel(MappedBase):
     content: Mapped[str | None] = mapped_column(Text, nullable=True, comment="通知内容")
     type: Mapped[str] = mapped_column(
         String(32), default="system",
-        comment="类型: training_complete/training_failed/task_assigned/export_complete/system"
+        comment=(
+            "类型: training_complete/training_failed/task_assigned/export_complete/system；"
+            "个人空间扩容: space_quota_pending(管理员待审核)/space_quota_reviewed(审核结果)；"
+            "AI集成调用审批: ai_approval_pending(管理员待审批)；本体提案: ontology_proposal_pending(审查者待审查)"
+        )
     )
     module: Mapped[str] = mapped_column(
         String(32), default="system", comment="模块: train/annotation/system"

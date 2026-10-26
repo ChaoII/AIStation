@@ -17,7 +17,10 @@
       <div class="curd-dialog-header">
         <span :id="titleId" :class="titleClass">{{ title }}</span>
         <div class="curd-dialog-header__actions">
-          <el-tooltip :content="fullscreen ? '还原' : '全屏'" placement="top">
+          <el-tooltip
+            :content="fullscreen ? t('common.restore') : t('common.fullscreen')"
+            placement="top"
+          >
             <el-button text circle type="primary" @click="fullscreen = !fullscreen">
               <el-icon>
                 <Fold v-if="fullscreen" />
@@ -25,7 +28,7 @@
               </el-icon>
             </el-button>
           </el-tooltip>
-          <el-tooltip content="关闭" placement="top">
+          <el-tooltip :content="t('common.close')" placement="top">
             <el-button text circle @click="close">
               <el-icon><Close /></el-icon>
             </el-button>
@@ -44,8 +47,11 @@
 import { Close, Fold, FullScreen } from "@element-plus/icons-vue";
 import type { DialogProps } from "element-plus";
 import { computed, ref, useAttrs, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 defineOptions({ inheritAttrs: false });
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{

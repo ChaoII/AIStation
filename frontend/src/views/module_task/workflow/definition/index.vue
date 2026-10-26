@@ -20,18 +20,28 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
+              <el-empty :image-size="80" :description="t('task.noData')" />
             </template>
             <el-table-column type="selection" align="center" min-width="55" />
-            <el-table-column type="index" fixed label="序号" min-width="60">
+            <el-table-column type="index" fixed :label="t('task.serial')" min-width="60">
               <template #default="scope">
                 {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column label="ID" prop="id" min-width="80" />
-            <el-table-column label="名称" prop="name" min-width="160" show-overflow-tooltip />
-            <el-table-column label="编码" prop="code" min-width="120" show-overflow-tooltip />
-            <el-table-column label="状态" prop="status" min-width="100">
+            <el-table-column :label="t('task.id')" prop="id" min-width="80" />
+            <el-table-column
+              :label="t('task.name')"
+              prop="name"
+              min-width="160"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              :label="t('task.code')"
+              prop="code"
+              min-width="120"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('task.status')" prop="status" min-width="100">
               <template #default="scope">
                 <el-tag :type="getStatusType(scope.row.status) as any">
                   {{ getStatusText(scope.row.status) }}
@@ -39,12 +49,12 @@
               </template>
             </el-table-column>
             <el-table-column
-              label="描述"
+              :label="t('task.description')"
               prop="description"
               min-width="160"
               show-overflow-tooltip
             />
-            <el-table-column label="创建时间" prop="created_time" min-width="180" />
+            <el-table-column :label="t('task.createdTime')" prop="created_time" min-width="180" />
 
             <OperationColumn :list-data-length="data.length">
               <template #default="scope">
@@ -58,7 +68,7 @@
                     icon="upload"
                     @click="handlePublish(scope.row)"
                   >
-                    发布
+                    {{ t("task.publish") }}
                   </el-button>
                   <el-dropdown
                     v-if="scope.row.status === 'published'"
@@ -66,12 +76,14 @@
                     @command="(e: string) => handleExecute(e, scope.row)"
                   >
                     <el-button type="warning" size="small" link icon="video-play">
-                      执行
+                      {{ t("task.execute") }}
                       <el-icon><ArrowDown /></el-icon>
                     </el-button>
                     <template #dropdown>
                       <el-dropdown-menu>
-                        <el-dropdown-item command="execute">立即执行</el-dropdown-item>
+                        <el-dropdown-item command="execute">
+                          {{ t("task.executeNow") }}
+                        </el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
@@ -83,7 +95,7 @@
                     icon="edit"
                     @click="handleEdit(scope.row)"
                   >
-                    编辑
+                    {{ t("task.edit") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_task:workflow:definition:delete']"
@@ -93,7 +105,7 @@
                     icon="delete"
                     @click="handleRowDelete(scope.row.id)"
                   >
-                    删除
+                    {{ t("task.delete") }}
                   </el-button>
                 </el-space>
               </template>
@@ -117,7 +129,10 @@ defineOptions({
   inheritAttrs: false,
 });
 
+const { t } = useI18n();
+
 import { ElMessage, ElMessageBox } from "element-plus";
+import { useI18n } from "vue-i18n";
 import { ArrowDown } from "@element-plus/icons-vue";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
@@ -145,26 +160,26 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "流程名称",
+      label: t("task.flowName"),
       type: "input",
-      attrs: { placeholder: "请输入流程名称", clearable: true },
+      attrs: { placeholder: t("task.inputFlowName"), clearable: true },
     },
     {
       prop: "code",
-      label: "流程编码",
+      label: t("task.flowCode"),
       type: "input",
-      attrs: { placeholder: "请输入流程编码", clearable: true },
+      attrs: { placeholder: t("task.inputFlowCode"), clearable: true },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("task.status"),
       type: "select",
       options: [
-        { label: "草稿", value: "draft" },
-        { label: "已发布", value: "published" },
-        { label: "已归档", value: "archived" },
+        { label: t("task.draft"), value: "draft" },
+        { label: t("task.published"), value: "published" },
+        { label: t("task.archived"), value: "archived" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "170px" } },
+      attrs: { placeholder: t("task.selectStatus"), clearable: true, style: { width: "170px" } },
     },
   ],
 });
@@ -177,12 +192,12 @@ function normalizeWorkflowQuery(params: Record<string, unknown>): WorkflowPageQu
 
 const contentConfig = reactive<IContentConfig<WorkflowPageQuery>>({
   permPrefix: "module_task:workflow:definition",
-  title: "工作流管理",
-  tooltip: "流程编排列表，支持发布与执行",
+  title: t("task.workflowListTitle"),
+  tooltip: t("task.workflowListTip"),
   cols: [],
   hideColumnFilter: true,
   toolbar: [
-    { name: "add", text: "新增", attrs: { icon: "plus", type: "success" }, perm: "create" },
+    { name: "add", text: t("task.add"), attrs: { icon: "plus", type: "success" }, perm: "create" },
     "delete",
   ],
   defaultToolbar: ["refresh"],
@@ -209,8 +224,8 @@ const contentConfig = reactive<IContentConfig<WorkflowPageQuery>>({
         .filter((n) => !Number.isNaN(n) && n > 0)
     ),
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除选中的工作流吗？",
+    title: t("task.warn"),
+    message: t("task.deleteWorkflowConfirm"),
     type: "warning",
   },
 });
@@ -241,30 +256,30 @@ function getStatusType(status: string) {
 
 function getStatusText(status: string) {
   const textMap: Record<string, string> = {
-    draft: "草稿",
-    published: "已发布",
-    archived: "已归档",
+    draft: t("task.draft"),
+    published: t("task.published"),
+    archived: t("task.archived"),
   };
   return textMap[status] || status;
 }
 
 function handlePublish(record: WorkflowTable) {
-  ElMessageBox.confirm("确定要发布此工作流吗？发布后可执行。", "确认发布", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
+  ElMessageBox.confirm(t("task.publishConfirm"), t("task.publishConfirmTitle"), {
+    confirmButtonText: t("task.confirm"),
+    cancelButtonText: t("task.cancel"),
     type: "warning",
   })
     .then(async () => {
       try {
         if (!record.id) {
-          ElMessage.error("工作流ID不存在");
+          ElMessage.error(t("task.workflowIdMissing"));
           return;
         }
         await WorkflowDefinitionAPI.publishWorkflow(record.id, {});
-        ElMessage.success("发布成功");
+        ElMessage.success(t("task.publishSuccess"));
         refreshList();
       } catch {
-        ElMessage.error("发布失败");
+        ElMessage.error(t("task.publishFailed"));
       }
     })
     .catch(() => {});
@@ -272,15 +287,15 @@ function handlePublish(record: WorkflowTable) {
 
 function handleExecute(action: string, record: WorkflowTable) {
   if (action !== "execute") return;
-  ElMessageBox.confirm("确定要立即执行此工作流吗？", "确认执行", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
+  ElMessageBox.confirm(t("task.executeConfirm"), t("task.executeConfirmTitle"), {
+    confirmButtonText: t("task.confirm"),
+    cancelButtonText: t("task.cancel"),
     type: "warning",
   })
     .then(async () => {
       try {
         if (!record.id) {
-          ElMessage.error("工作流ID不存在");
+          ElMessage.error(t("task.workflowIdMissing"));
           return;
         }
         const res = await WorkflowDefinitionAPI.executeWorkflow({
@@ -289,11 +304,15 @@ function handleExecute(action: string, record: WorkflowTable) {
         });
         if (res.data?.data) {
           const result = res.data.data;
-          ElMessage.success(`工作流执行${result.status === "completed" ? "成功" : "失败"}`);
+          ElMessage.success(
+            t("task.executeSuccess", {
+              status: result.status === "completed" ? t("task.success") : t("task.failed"),
+            })
+          );
         }
         refreshList();
       } catch {
-        ElMessage.error("执行失败");
+        ElMessage.error(t("task.executeFailed"));
       }
     })
     .catch(() => {});

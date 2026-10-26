@@ -1,0 +1,90 @@
+export default {
+  // 工具栏 / 操作
+  export: "내보내기",
+  noData: "데이터 없음",
+  detail: "상세",
+  edit: "수정",
+  delete: "삭제",
+  action: "작업",
+  cancel: "취소",
+  confirm: "확인",
+  save: "저장",
+  operationSuccess: "작업이 성공했습니다",
+
+  // 表格列
+  selection: "선택",
+  serial: "번호",
+  configName: "설정 이름",
+  configKey: "설정 키",
+  configKeyName: "설정 키 이름",
+  configValue: "설정 값",
+  configType: "시스템 내장",
+  description: "설명",
+  createdTime: "생성 시간",
+  updatedTime: "수정 시간",
+  yes: "예",
+  no: "아니요",
+
+  // 搜索 / 筛选
+  inputConfigName: "설정 이름을 입력해 주세요",
+  inputConfigKey: "설정 키를 입력해 주세요",
+  inputConfigValue: "설정 값을 입력해 주세요",
+  inputDescription: "설명을 입력해 주세요",
+  inputConfigKeyName: "설정 키 이름을 입력해 주세요",
+  selectConfigType: "시스템 내장 여부를 선택해 주세요",
+  to: "~",
+  startDate: "시작 날짜",
+  endDate: "종료 날짜",
+
+  // 弹窗标题
+  configDetail: "시스템 설정 상세",
+  updateConfig: "시스템 설정 수정",
+  createConfig: "시스템 설정 생성",
+
+  // 提示 / 确认
+  warnTitle: "경고",
+  deleteConfirmMessage: "선택한 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+  requiredConfigName: "시스템 설정 이름을 입력해 주세요",
+  requiredConfigKey: "시스템 설정 키를 입력해 주세요",
+  requiredConfigValue: "시스템 설정 값을 입력해 주세요",
+  requiredConfigType: "시스템 설정 유형을 선택해 주세요",
+
+  // 配置中心抽屉
+  configCenter: "설정 센터",
+  websiteConfig: "웹사이트 설정",
+  websiteIcon: "웹사이트 아이콘",
+  securityPrivacy: "보안 및 개인정보",
+  userAgreement: "사용자 약관",
+  apiWhitelist: "API 화이트리스트",
+  ipBlacklist: "IP 블랙리스트",
+  notification: "알림 설정",
+  demoConfig: "데모 설정",
+  wsPush: "WebSocket 푸시",
+  smtpEmail: "SMTP 이메일",
+  smsGateway: "SMS 게이트웨이",
+  webhookRest: "Webhook / REST API",
+  defaultRecipient: "기본 수신자",
+  enable: "사용",
+  disable: "사용 안 함",
+  testWsPush: "WS 푸시 테스트",
+  testEmailPush: "이메일 푸시 테스트",
+  testSmsPush: "SMS 푸시 테스트",
+  testWebhookPush: "Webhook 푸시 테스트",
+  addApiPath: "API 경로 추가",
+  addIp: "IP 주소 추가",
+  apiWhitelistTip:
+    "구성 참고: 화이트리스트의 API 경로는 로그인 없이 접근할 수 있으며 전체 경로 구성을 지원합니다.",
+  ipBlacklistTip:
+    "구성 참고: 블랙리스트의 IP 주소는 시스템에 접근할 수 없으며 단일 IP 구성을 지원합니다.",
+  demoIpWhitelistTip:
+    "구성 참고: 데모 모드에서는 화이트리스트에 등록된 IP 주소만 시스템에 접근할 수 있으며 단일 IP 구성을 지원합니다.",
+  demoEnableTip:
+    "구성 참고: 활성화하면 시스템이 데모 모드로 전환되며 일부 기능이 제한될 수 있습니다.",
+  invalidApiPath: "올바른 API 경로 형식(/로 시작)을 입력해 주세요",
+  invalidIp: "올바른 IP 주소 형식을 입력해 주세요",
+  keepApiWhitelist: "API 화이트리스트 구성이 최소 1개 필요합니다",
+  keepIpBlacklist: "IP 블랙리스트 구성이 최소 1개 필요합니다",
+  keepIpWhitelist: "IP 화이트리스트 구성이 최소 1개 필요합니다",
+  uploadFailedPrefix: "업로드 실패: ",
+  uploadRetry: "나중에 다시 시도해 주세요",
+};

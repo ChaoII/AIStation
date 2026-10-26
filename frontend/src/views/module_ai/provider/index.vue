@@ -17,18 +17,44 @@
           @add="openCreate"
           @delete="onToolbar('delete')"
         />
-        <span class="batch-ac">
-          <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(true)">
-            批量启用
-          </el-button>
-          <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(false)">
-            批量停用
-          </el-button>
-        </span>
-        <el-tag size="small" type="info" effect="plain" class="summary-tag">
-          共 {{ summary.total }} 个供应商 · 启用 {{ summary.enabled }} · 停用 {{ summary.disabled }}
-        </el-tag>
         <div class="data-table__toolbar--right">
+          <span class="batch-ac">
+            <el-badge
+              :value="providerSelIds.length"
+              :hidden="!providerSelIds.length"
+              class="batch-badge"
+            >
+              <el-button
+                size="small"
+                :disabled="!providerSelIds.length"
+                @click="batchProvider(true)"
+              >
+                {{ t("ai_model.providerBatchEnable") }}
+              </el-button>
+            </el-badge>
+            <el-badge
+              :value="providerSelIds.length"
+              :hidden="!providerSelIds.length"
+              class="batch-badge"
+            >
+              <el-button
+                size="small"
+                :disabled="!providerSelIds.length"
+                @click="batchProvider(false)"
+              >
+                {{ t("ai_model.providerBatchDisable") }}
+              </el-button>
+            </el-badge>
+          </span>
+          <el-tag size="small" type="info" effect="plain" class="summary-tag">
+            {{
+              t("ai_model.providerSummary", {
+                total: summary.total,
+                enabled: summary.enabled,
+                disabled: summary.disabled,
+              })
+            }}
+          </el-tag>
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
       </template>
@@ -46,22 +72,27 @@
             @selection-change="(sel: any[]) => (providerSelIds = sel.map((s) => s.id))"
           >
             <el-table-column type="selection" width="45" />
-            <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
-            <el-table-column label="协议" width="160">
+            <el-table-column
+              prop="name"
+              :label="t('ai_model.providerName')"
+              min-width="160"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('ai_model.providerProtocol')" width="160">
               <template #default="{ row }">
                 <el-tag size="small">{{ row.protocol || "openai_compatible" }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column
               prop="base_url"
-              label="API 基址"
+              :label="t('ai_model.providerBaseUrl')"
               min-width="240"
               show-overflow-tooltip
             />
             <el-table-column label="API Key" width="150">
               <template #default="{ row }">{{ row.api_key_masked || "—" }}</template>
             </el-table-column>
-            <el-table-column label="启用" width="90">
+            <el-table-column :label="t('ai_model.providerEnabled')" width="90">
               <template #default="{ row }">
                 <el-switch
                   v-hasPerm="['module_ai:provider:update']"
@@ -70,59 +101,63 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="300" fixed="right">
+            <el-table-column :label="t('ai_model.providerAction')" min-width="200" fixed="right">
               <template #default="{ row }">
                 <el-button
                   v-hasPerm="['module_ai:provider:query']"
                   icon="View"
-                  text
+                  link
                   type="primary"
                   @click="openDetail(row)"
                 >
-                  详情
+                  {{ t("ai_model.providerDetail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:provider:query']"
                   icon="Connection"
-                  text
+                  link
                   type="primary"
                   :loading="testingId === row.id"
                   @click="onTest(row)"
                 >
-                  测试连通
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:provider:query']"
-                  icon="Download"
-                  text
-                  type="primary"
-                  :loading="pullingId === row.id"
-                  @click="onPullModels(row)"
-                >
-                  拉取模型
+                  {{ t("ai_model.providerTest") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:provider:update']"
                   icon="edit"
-                  text
+                  link
                   type="primary"
                   @click="openEdit(row)"
                 >
-                  编辑
+                  {{ t("ai_model.providerEdit") }}
                 </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:provider:delete']"
-                  icon="delete"
-                  text
-                  type="danger"
-                  @click="onDelete(row)"
-                >
-                  删除
-                </el-button>
+                <el-dropdown trigger="click" @command="(cmd: string) => onMoreCmd(row, cmd)">
+                  <el-button link type="primary" icon="MoreFilled" @click.stop />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-if="perm('module_ai:provider:query')"
+                        command="pull"
+                        icon="Download"
+                      >
+                        {{ t("ai_model.providerPullModels") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="perm('module_ai:provider:delete')"
+                        command="delete"
+                        icon="delete"
+                        divided
+                        style="color: var(--el-color-danger)"
+                      >
+                        {{ t("ai_model.providerDelete") }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
             <template #empty>
-              <el-empty :image-size="80" description="暂无供应商，点击「新增」创建" />
+              <el-empty :image-size="80" :description="t('ai_model.providerEmpty')" />
             </template>
           </el-table>
         </div>
@@ -138,13 +173,13 @@
       @close="dialog.visible = false"
     >
       <el-form :model="form" label-width="110px">
-        <el-form-item label="名称" required>
-          <el-input v-model="form.name" placeholder="如 OpenAI / DeepSeek 官方" />
+        <el-form-item :label="t('ai_model.providerName')" required>
+          <el-input v-model="form.name" :placeholder="t('ai_model.providerNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="协议">
+        <el-form-item :label="t('ai_model.providerProtocol')">
           <el-input v-model="form.protocol" placeholder="openai_compatible" />
         </el-form-item>
-        <el-form-item label="API 基址" required>
+        <el-form-item :label="t('ai_model.providerBaseUrl')" required>
           <el-input v-model="form.base_url" placeholder="https://api.openai.com/v1" />
         </el-form-item>
         <el-form-item label="API Key">
@@ -152,14 +187,17 @@
             v-model="form.api_key"
             type="password"
             show-password
-            :placeholder="isEdit ? '留空表示不修改' : 'sk-...'"
+            :placeholder="isEdit ? t('ai_model.providerApiKeyPlaceholderEdit') : 'sk-...'"
           />
         </el-form-item>
-        <el-form-item label="自定义请求头">
+        <el-form-item :label="t('ai_model.providerCustomHeaders')">
           <div class="header-builder">
             <div v-for="(h, i) in form.headerFields" :key="i" class="header-row">
-              <el-input v-model="h.key" placeholder="请求头名，如 x-api-key" />
-              <el-input v-model="h.value" placeholder="值" />
+              <el-input
+                v-model="h.key"
+                :placeholder="t('ai_model.providerHeaderNamePlaceholder')"
+              />
+              <el-input v-model="h.value" :placeholder="t('ai_model.providerValuePlaceholder')" />
               <el-button text type="danger" icon="delete" @click="form.headerFields.splice(i, 1)" />
             </div>
             <el-button
@@ -168,43 +206,47 @@
               icon="plus"
               @click="form.headerFields.push({ key: '', value: '' })"
             >
-              添加请求头
+              {{ t("ai_model.providerAddHeader") }}
             </el-button>
           </div>
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="t('ai_model.providerEnabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="form.description" placeholder="可选" />
+        <el-form-item :label="t('ai_model.providerDescription')">
+          <el-input v-model="form.description" :placeholder="t('ai_model.providerOptional')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
+        <el-button @click="dialog.visible = false">{{ t("ai_model.providerCancel") }}</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
+          {{ t("ai_model.providerSave") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
     <!-- 远端模型 -> 一键导入为模型配置 -->
     <el-dialog
       v-model="pullVisible"
-      :title="`远端模型列表 · ${pullProvider?.name || ''}`"
+      :title="t('ai_model.providerRemoteModelsTitle', { name: pullProvider?.name || '' })"
       width="600px"
       append-to-body
     >
       <p class="pull-intro">
-        共发现
-        <b>{{ pullModels.length }}</b>
-        个模型，导入时将作为「模型配置」创建（自动去重）。
+        {{
+          t("ai_model.providerRemoteIntro", {
+            count: pullModels.length,
+          })
+        }}
       </p>
       <el-form label-width="90px">
-        <el-form-item label="用途">
+        <el-form-item :label="t('ai_model.providerUsage')">
           <el-select v-model="pullUsage" style="width: 100%">
-            <el-option label="聊天 chat" value="chat" />
-            <el-option label="助手 assistant" value="assistant" />
-            <el-option label="嵌入 embedding" value="embedding" />
-            <el-option label="语音识别 asr" value="asr" />
-            <el-option label="语音合成 tts" value="tts" />
+            <el-option :label="t('ai_model.providerUsageChat')" value="chat" />
+            <el-option :label="t('ai_model.providerUsageAssistant')" value="assistant" />
+            <el-option :label="t('ai_model.providerUsageEmbedding')" value="embedding" />
+            <el-option :label="t('ai_model.providerUsageAsr')" value="asr" />
+            <el-option :label="t('ai_model.providerUsageTts')" value="tts" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -214,9 +256,9 @@
         </div>
       </el-scrollbar>
       <template #footer>
-        <el-button @click="pullVisible = false">取消</el-button>
+        <el-button @click="pullVisible = false">{{ t("ai_model.providerCancel") }}</el-button>
         <el-button type="primary" :loading="pullImporting" @click="onImportModels">
-          一键导入为模型配置
+          {{ t("ai_model.providerImportAsModels") }}
         </el-button>
       </template>
     </el-dialog>
@@ -224,20 +266,24 @@
     <!-- 供应商详情抽屉 -->
     <el-drawer
       v-model="detailVisible"
-      :title="detail?.name || '供应商详情'"
+      :title="detail?.name || t('ai_model.providerProviderDetail')"
       size="480px"
       append-to-body
     >
       <el-descriptions v-if="detail" :column="1" border size="small">
-        <el-descriptions-item label="名称">{{ detail.name }}</el-descriptions-item>
-        <el-descriptions-item label="协议">
+        <el-descriptions-item :label="t('ai_model.providerName')">
+          {{ detail.name }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.providerProtocol')">
           <el-tag size="small">{{ detail.protocol || "openai_compatible" }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="API 基址">{{ detail.base_url || "—" }}</el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.providerBaseUrl')">
+          {{ detail.base_url || "—" }}
+        </el-descriptions-item>
         <el-descriptions-item label="API Key">
           {{ detail.api_key_masked || "—" }}
         </el-descriptions-item>
-        <el-descriptions-item label="自定义请求头">
+        <el-descriptions-item :label="t('ai_model.providerCustomHeaders')">
           <template v-if="detail.extra_headers && Object.keys(detail.extra_headers).length">
             <el-tag
               v-for="(v, k) in detail.extra_headers"
@@ -252,13 +298,19 @@
           </template>
           <span v-else class="muted">—</span>
         </el-descriptions-item>
-        <el-descriptions-item label="启用">
+        <el-descriptions-item :label="t('ai_model.providerEnabled')">
           <el-tag :type="detail.enabled !== false ? 'success' : 'info'" size="small">
-            {{ detail.enabled !== false ? "启用" : "停用" }}
+            {{
+              detail.enabled !== false
+                ? t("ai_model.providerEnabled")
+                : t("ai_model.providerDisabled")
+            }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="备注">{{ detail.description || "—" }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">
+        <el-descriptions-item :label="t('ai_model.providerDescription')">
+          {{ detail.description || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_model.providerCreatedTime')">
           {{ detail.created_time || "—" }}
         </el-descriptions-item>
       </el-descriptions>
@@ -286,6 +338,8 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
+import { usePerm } from "@/composables/usePerm";
+import { useI18n } from "vue-i18n";
 
 defineOptions({ name: "AiProviderManage" });
 
@@ -302,6 +356,8 @@ interface ProviderRow {
 }
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const { t } = useI18n();
+const perm = usePerm();
 
 const loading = ref(false);
 const rows = ref<ProviderRow[]>([]);
@@ -321,7 +377,7 @@ async function loadProviders() {
     const res = await getAiProviderList();
     rows.value = (res.data?.data || []) as ProviderRow[];
   } catch (e: any) {
-    ElMessage.error(e?.msg || "加载失败");
+    ElMessage.error(e?.msg || t("ai_model.providerLoadFailed"));
   } finally {
     loading.value = false;
   }
@@ -335,31 +391,35 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "keyword",
-      label: "关键字",
+      label: t("ai_model.providerKeyword"),
       type: "input",
-      attrs: { placeholder: "名称 / API 基址", clearable: true, style: { width: "200px" } },
+      attrs: {
+        placeholder: t("ai_model.providerKeywordPlaceholder"),
+        clearable: true,
+        style: { width: "200px" },
+      },
     },
     {
       prop: "protocol",
-      label: "协议",
+      label: t("ai_model.providerProtocol"),
       type: "select",
       options: [
         { label: "openai", value: "openai" },
-        { label: "OpenAI 兼容", value: "openai_compatible" },
+        { label: t("ai_model.providerOpenaiCompatible"), value: "openai_compatible" },
         { label: "ollama", value: "ollama" },
         { label: "anthropic", value: "anthropic" },
       ],
-      attrs: { placeholder: "全部", clearable: true, style: { width: "160px" } },
+      attrs: { placeholder: t("ai_model.providerAll"), clearable: true, style: { width: "160px" } },
     },
     {
       prop: "enabled",
-      label: "状态",
+      label: t("ai_model.providerStatus"),
       type: "select",
       options: [
-        { label: "启用", value: "true" },
-        { label: "停用", value: "false" },
+        { label: t("ai_model.providerEnabled"), value: "true" },
+        { label: t("ai_model.providerDisabled"), value: "false" },
       ],
-      attrs: { placeholder: "全部", clearable: true, style: { width: "140px" } },
+      attrs: { placeholder: t("ai_model.providerAll"), clearable: true, style: { width: "140px" } },
     },
   ],
 });
@@ -406,8 +466,8 @@ const contentConfig = reactive<IContentConfig<any>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选供应商？删除后其下模型配置将不可用。",
+    title: t("ai_model.providerWarnTitle"),
+    message: t("ai_model.providerDeleteConfirm"),
     type: "warning",
   },
 });
@@ -416,10 +476,17 @@ async function batchProvider(enabled: boolean) {
   if (!providerSelIds.value.length) return;
   try {
     const r = await batchProviderStatus(providerSelIds.value, enabled);
-    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个供应商`);
+    ElMessage.success(
+      t("ai_model.providerBatchResult", {
+        action: enabled
+          ? t("ai_model.providerEnabledAction")
+          : t("ai_model.providerDisabledAction"),
+        count: r.data?.data?.count || 0,
+      })
+    );
     await refreshList();
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "操作失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.providerOperationFailed"));
   }
 }
 const testingId = ref<number | null>(null);
@@ -455,14 +522,14 @@ function resetForm() {
 function openCreate() {
   resetForm();
   isEdit.value = false;
-  dialog.title = "新增供应商";
+  dialog.title = t("ai_model.providerCreateTitle");
   dialog.visible = true;
 }
 
 function openEdit(row: any) {
   resetForm();
   isEdit.value = true;
-  dialog.title = `编辑供应商：${row.name}`;
+  dialog.title = t("ai_model.providerEditTitle", { name: row.name });
   Object.assign(form, {
     id: row.id,
     name: row.name,
@@ -491,11 +558,11 @@ function buildHeaders(): Record<string, string> | undefined {
 
 async function handleSubmit() {
   if (!form.name.trim()) {
-    ElMessage.warning("请填写供应商名称");
+    ElMessage.warning(t("ai_model.providerNameRequired"));
     return;
   }
   if (!form.base_url.trim()) {
-    ElMessage.warning("请填写 API 基址");
+    ElMessage.warning(t("ai_model.providerBaseUrlRequired"));
     return;
   }
   const headers = buildHeaders();
@@ -514,9 +581,9 @@ async function handleSubmit() {
     else await createAiProvider(payload);
     dialog.visible = false;
     await refreshList();
-    ElMessage.success("保存成功");
+    ElMessage.success(t("ai_model.providerSaveSuccess"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_model.providerSaveFailed"));
   } finally {
     submitLoading.value = false;
   }
@@ -527,10 +594,10 @@ async function onTest(row: any) {
   try {
     const res = await testAiProvider(row.id);
     const result = res.data?.data || {};
-    if (result.ok) ElMessage.success(result.message || "连接成功");
-    else ElMessage.error(result.message || "连接失败");
+    if (result.ok) ElMessage.success(result.message || t("ai_model.providerTestSuccess"));
+    else ElMessage.error(result.message || t("ai_model.providerConnectionFailed"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "测试失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.providerTestFailed"));
   } finally {
     testingId.value = null;
   }
@@ -542,7 +609,7 @@ async function onPullModels(row: any) {
     const res = await getAiProviderRemoteModels(row.id);
     const models = (res.data?.data || []) as string[];
     if (!models.length) {
-      ElMessage.warning("未拉取到模型，请检查供应商连通与鉴权");
+      ElMessage.warning(t("ai_model.providerNoModels"));
     } else {
       pullProvider.value = row;
       pullModels.value = models;
@@ -550,7 +617,7 @@ async function onPullModels(row: any) {
       pullVisible.value = true;
     }
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "拉取失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.providerPullFailed"));
   } finally {
     pullingId.value = null;
   }
@@ -568,11 +635,12 @@ async function onImportModels() {
     const r = await importAiProviderRemoteModels(pullProvider.value.id, pullUsage.value);
     const d = r.data?.data || {};
     ElMessage.success(
-      `已导入 ${d.imported} 个模型${d.skipped ? `，跳过 ${d.skipped} 个已存在` : ""}`
+      t("ai_model.providerImportResult", { imported: d.imported }) +
+        (d.skipped ? t("ai_model.providerImportSkipped", { skipped: d.skipped }) : "")
     );
     pullVisible.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "导入失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_model.providerImportFailed"));
   } finally {
     pullImporting.value = false;
   }
@@ -582,18 +650,24 @@ async function onToggle(row: any, enabled: boolean) {
   try {
     await updateAiProvider(row.id, { enabled });
     row.enabled = enabled;
-    ElMessage.success(enabled ? "已启用" : "已停用");
+    ElMessage.success(
+      enabled ? t("ai_model.providerEnabledAction") : t("ai_model.providerDisabledAction")
+    );
   } catch (e: any) {
-    ElMessage.error(e?.msg || "操作失败");
+    ElMessage.error(e?.msg || t("ai_model.providerOperationFailed"));
   }
 }
 
 async function onDelete(row: any) {
   try {
     await ElMessageBox.confirm(
-      `确认删除供应商「${row.name}」？删除后关联此供应商的模型配置将无法自动取用其 base_url/Key，且不可恢复。`,
-      "删除确认",
-      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+      t("ai_model.providerDeleteConfirmRow", { name: row.name }),
+      t("ai_model.providerDeleteTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("ai_model.providerDelete"),
+        cancelButtonText: t("ai_model.providerCancel"),
+      }
     );
   } catch {
     return;
@@ -601,9 +675,17 @@ async function onDelete(row: any) {
   try {
     await deleteAiProvider([row.id]);
     await refreshList();
-    ElMessage.success("删除成功");
+    ElMessage.success(t("ai_model.providerDeleteSuccess"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "删除失败");
+    ElMessage.error(e?.msg || t("ai_model.providerDeleteFailed"));
+  }
+}
+
+function onMoreCmd(row: any, cmd: string) {
+  if (cmd === "pull") {
+    onPullModels(row);
+  } else if (cmd === "delete") {
+    onDelete(row);
   }
 }
 

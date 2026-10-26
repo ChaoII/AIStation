@@ -4,16 +4,16 @@
     <!-- 白色面板：铺满可用区域，四周为蓝灰色边框；四个页签在其之上 -->
     <el-card shadow="never" class="market-shell" :body-style="{ padding: '0 16px 12px' }">
       <el-tabs v-model="activeTab" class="market-main-tabs">
-        <el-tab-pane label="能力市场" name="browse">
+        <el-tab-pane :label="t('ai_market.tabBrowse')" name="browse">
           <MarketBrowse @go-configure="goConfigure" />
         </el-tab-pane>
-        <el-tab-pane label="我的资产" name="mine">
+        <el-tab-pane :label="t('ai_market.tabMine')" name="mine">
           <MarketMine :target="mineTarget" @target-handled="mineTarget = null" />
         </el-tab-pane>
-        <el-tab-pane label="分享给我" name="shared">
+        <el-tab-pane :label="t('ai_market.tabShared')" name="shared">
           <MarketShared />
         </el-tab-pane>
-        <el-tab-pane v-if="canReview" label="审核中心" name="review">
+        <el-tab-pane v-if="canReview" :label="t('ai_market.tabReview')" name="review">
           <MarketReview />
         </el-tab-pane>
       </el-tabs>
@@ -23,6 +23,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 
 import { ROLE_ROOT } from "@/constants";
 import { useUserStore } from "@/store";
@@ -34,6 +35,7 @@ import MarketShared from "./components/MarketShared.vue";
 
 defineOptions({ name: "AiMarket" });
 
+const { t } = useI18n();
 const activeTab = ref("browse");
 const userStore = useUserStore();
 

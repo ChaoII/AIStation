@@ -2,7 +2,7 @@
 <template>
   <EnhancedDrawer
     v-model="drawerVisible"
-    :title="'【' + dictLabel + '】字典数据'"
+    :title="t('system.dict.drawerTitle', { label: dictLabel })"
     direction="rtl"
     :size="drawerSize"
   >
@@ -28,7 +28,7 @@
           <div class="data-table__toolbar--right">
             <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar">
               <template #prepend>
-                <el-tooltip content="导出">
+                <el-tooltip :content="t('system.dict.export')">
                   <el-button
                     v-hasPerm="['module_system:dict_data:export']"
                     type="warning"
@@ -55,7 +55,7 @@
               @selection-change="onSelectionChange"
             >
               <template #empty>
-                <el-empty :image-size="80" description="暂无数据" />
+                <el-empty :image-size="80" :description="t('system.dict.noData')" />
               </template>
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -66,7 +66,7 @@
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'index')?.show"
                 fixed
-                label="序号"
+                :label="t('system.dict.index')"
                 min-width="60"
               >
                 <template #default="scope">
@@ -75,27 +75,31 @@
               </el-table-column>
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'dict_label')?.show"
-                label="标签"
+                :label="t('system.dict.dictLabel')"
                 prop="dict_label"
                 min-width="150"
                 show-overflow-tooltip
               />
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'status')?.show"
-                label="状态"
+                :label="t('system.dict.status')"
                 prop="status"
                 min-width="100"
                 show-overflow-tooltip
               >
                 <template #default="scope">
                   <el-tag :type="scope.row.status === '0' ? 'success' : 'danger'">
-                    {{ scope.row.status === "0" ? "启用" : "停用" }}
+                    {{
+                      scope.row.status === "0"
+                        ? t("system.dict.enabled")
+                        : t("system.dict.disabled")
+                    }}
                   </el-tag>
                 </template>
               </el-table-column>
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'dict_type')?.show"
-                label="类型"
+                :label="t('system.dict.type')"
                 prop="dict_type"
                 min-width="180"
                 show-overflow-tooltip
@@ -106,59 +110,61 @@
               </el-table-column>
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'dict_value')?.show"
-                label="值"
+                :label="t('system.dict.value')"
                 prop="dict_value"
                 min-width="100"
                 show-overflow-tooltip
               />
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'css_class')?.show"
-                label="样式属性"
+                :label="t('system.dict.cssClass')"
                 prop="css_class"
                 min-width="100"
                 show-overflow-tooltip
               />
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'list_class')?.show"
-                label="列表类样式"
+                :label="t('system.dict.listClass')"
                 prop="list_class"
                 min-width="100"
                 show-overflow-tooltip
               />
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'dict_sort')?.show"
-                label="排序"
+                :label="t('system.dict.sort')"
                 prop="dict_sort"
                 min-width="60"
               />
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'is_default')?.show"
-                label="是否默认"
+                :label="t('system.dict.isDefault')"
                 prop="is_default"
                 min-width="100"
               >
                 <template #default="scope">
-                  <el-tag v-if="scope.row.is_default" type="success">是</el-tag>
-                  <el-tag v-else type="danger">否</el-tag>
+                  <el-tag v-if="scope.row.is_default" type="success">
+                    {{ t("system.dict.yes") }}
+                  </el-tag>
+                  <el-tag v-else type="danger">{{ t("system.dict.no") }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'description')?.show"
-                label="描述"
+                :label="t('system.dict.description')"
                 prop="description"
                 min-width="100"
                 show-overflow-tooltip
               />
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
-                label="创建时间"
+                :label="t('system.dict.createdTime')"
                 prop="created_time"
                 min-width="200"
                 sortable
               />
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'updated_time')?.show"
-                label="更新时间"
+                :label="t('system.dict.updatedTime')"
                 prop="updated_time"
                 min-width="200"
                 sortable
@@ -166,7 +172,7 @@
               <el-table-column
                 v-if="contentCols.find((col) => col.prop === 'operation')?.show"
                 fixed="right"
-                label="操作"
+                :label="t('system.dict.operation')"
                 align="center"
                 min-width="200"
               >
@@ -179,7 +185,7 @@
                     icon="View"
                     @click="handleOpenDialog('detail', scope.row.id)"
                   >
-                    详情
+                    {{ t("system.dict.detail") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_system:dict_data:update']"
@@ -189,7 +195,7 @@
                     icon="edit"
                     @click="handleOpenDialog('update', scope.row.id)"
                   >
-                    编辑
+                    {{ t("system.dict.edit") }}
                   </el-button>
                   <el-button
                     v-hasPerm="['module_system:dict_data:delete']"
@@ -199,7 +205,7 @@
                     icon="delete"
                     @click="handleRowDelete(scope.row.id)"
                   >
-                    删除
+                    {{ t("system.dict.delete") }}
                   </el-button>
                 </template>
               </el-table-column>
@@ -215,39 +221,43 @@
       >
         <template v-if="dialogVisible.type === 'detail'">
           <el-descriptions :column="4" border>
-            <el-descriptions-item label="数据标签" :span="2">
+            <el-descriptions-item :label="t('system.dict.dictDataLabel')" :span="2">
               {{ detailFormData.dict_label }}
             </el-descriptions-item>
-            <el-descriptions-item label="数据类型" :span="2">
+            <el-descriptions-item :label="t('system.dict.dictDataType')" :span="2">
               {{ detailFormData.dict_type }}
             </el-descriptions-item>
-            <el-descriptions-item label="数据值" :span="2">
+            <el-descriptions-item :label="t('system.dict.dictDataValue')" :span="2">
               {{ detailFormData.dict_value }}
             </el-descriptions-item>
-            <el-descriptions-item label="样式属性" :span="2">
+            <el-descriptions-item :label="t('system.dict.cssClass')" :span="2">
               {{ detailFormData.css_class }}
             </el-descriptions-item>
-            <el-descriptions-item label="列表样式属性" :span="2">
+            <el-descriptions-item :label="t('system.dict.listClassProperty')" :span="2">
               {{ detailFormData.list_class }}
             </el-descriptions-item>
-            <el-descriptions-item label="是否默认" :span="2">
-              <el-tag v-if="detailFormData.is_default" type="success">是</el-tag>
-              <el-tag v-else type="danger">否</el-tag>
+            <el-descriptions-item :label="t('system.dict.isDefault')" :span="2">
+              <el-tag v-if="detailFormData.is_default" type="success">
+                {{ t("system.dict.yes") }}
+              </el-tag>
+              <el-tag v-else type="danger">{{ t("system.dict.no") }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="状态" :span="2">
-              <el-tag v-if="detailFormData.status === '0'" type="success">启用</el-tag>
-              <el-tag v-else type="danger">停用</el-tag>
+            <el-descriptions-item :label="t('system.dict.status')" :span="2">
+              <el-tag v-if="detailFormData.status === '0'" type="success">
+                {{ t("system.dict.enabled") }}
+              </el-tag>
+              <el-tag v-else type="danger">{{ t("system.dict.disabled") }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="排序" :span="2">
+            <el-descriptions-item :label="t('system.dict.sort')" :span="2">
               {{ detailFormData.dict_sort }}
             </el-descriptions-item>
-            <el-descriptions-item label="描述" :span="2">
+            <el-descriptions-item :label="t('system.dict.description')" :span="2">
               {{ detailFormData.description }}
             </el-descriptions-item>
-            <el-descriptions-item label="创建时间" :span="2">
+            <el-descriptions-item :label="t('system.dict.createdTime')" :span="2">
               {{ detailFormData.created_time }}
             </el-descriptions-item>
-            <el-descriptions-item label="更新时间" :span="2">
+            <el-descriptions-item :label="t('system.dict.updatedTime')" :span="2">
               {{ detailFormData.updated_time }}
             </el-descriptions-item>
           </el-descriptions>
@@ -261,102 +271,112 @@
             label-width="auto"
             label-position="right"
           >
-            <el-form-item label="数据类型" prop="dict_type">
+            <el-form-item :label="t('system.dict.dictDataType')" prop="dict_type">
               <el-input
                 v-model="formData.dict_type"
-                placeholder="请输入数据类型"
+                :placeholder="t('system.dict.inputDataType')"
                 :maxlength="50"
                 :disabled="true"
               />
             </el-form-item>
-            <el-form-item label="数据标签" prop="dict_label">
+            <el-form-item :label="t('system.dict.dictDataLabel')" prop="dict_label">
               <el-input
                 v-model="formData.dict_label"
-                placeholder="请输入数据标签"
+                :placeholder="t('system.dict.inputDataLabel')"
                 :maxlength="255"
               />
             </el-form-item>
-            <el-form-item label="数据值" prop="dict_value">
-              <el-input v-model="formData.dict_value" placeholder="请输入数据值" :maxlength="255" />
+            <el-form-item :label="t('system.dict.dictDataValue')" prop="dict_value">
+              <el-input
+                v-model="formData.dict_value"
+                :placeholder="t('system.dict.inputDataValue')"
+                :maxlength="255"
+              />
             </el-form-item>
-            <el-form-item label="样式属性" prop="css_class">
+            <el-form-item :label="t('system.dict.cssClass')" prop="css_class">
               <el-select
                 v-model="formData.css_class"
-                placeholder="请选择常用颜色或输入自定义"
+                :placeholder="t('system.dict.selectColorOrCustom')"
                 clearable
                 filterable
                 allow-create
                 default-first-option
               >
-                <el-option value="primary" label="主要(primary)">
+                <el-option value="primary" :label="t('system.dict.tagPrimary')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('primary')">
-                    主要(primary)
+                    {{ t("system.dict.tagPrimary") }}
                   </span>
                 </el-option>
-                <el-option value="success" label="成功(success)">
+                <el-option value="success" :label="t('system.dict.tagSuccess')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('success')">
-                    成功(success)
+                    {{ t("system.dict.tagSuccess") }}
                   </span>
                 </el-option>
-                <el-option value="warning" label="警告(warning)">
+                <el-option value="warning" :label="t('system.dict.tagWarning')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('warning')">
-                    警告(warning)
+                    {{ t("system.dict.tagWarning") }}
                   </span>
                 </el-option>
-                <el-option value="danger" label="危险(danger)">
+                <el-option value="danger" :label="t('system.dict.tagDanger')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('danger')">
-                    危险(danger)
+                    {{ t("system.dict.tagDanger") }}
                   </span>
                 </el-option>
-                <el-option value="info" label="信息(info)">
+                <el-option value="info" :label="t('system.dict.tagInfo')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('info')">
-                    信息(info)
+                    {{ t("system.dict.tagInfo") }}
                   </span>
                 </el-option>
               </el-select>
             </el-form-item>
-            <el-form-item label="列表类样式" prop="list_class">
-              <el-select v-model="formData.list_class" placeholder="请选择列表类样式" clearable>
-                <el-option value="default" label="默认(default)">
-                  <span class="tag-option-preview tag-option-preview--default">默认(default)</span>
+            <el-form-item :label="t('system.dict.listClass')" prop="list_class">
+              <el-select
+                v-model="formData.list_class"
+                :placeholder="t('system.dict.selectListClass')"
+                clearable
+              >
+                <el-option value="default" :label="t('system.dict.tagDefault')">
+                  <span class="tag-option-preview tag-option-preview--default">
+                    {{ t("system.dict.tagDefault") }}
+                  </span>
                 </el-option>
-                <el-option value="primary" label="主要(primary)">
+                <el-option value="primary" :label="t('system.dict.tagPrimary')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('primary')">
-                    主要(primary)
+                    {{ t("system.dict.tagPrimary") }}
                   </span>
                 </el-option>
-                <el-option value="success" label="成功(success)">
+                <el-option value="success" :label="t('system.dict.tagSuccess')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('success')">
-                    成功(success)
+                    {{ t("system.dict.tagSuccess") }}
                   </span>
                 </el-option>
-                <el-option value="warning" label="警告(warning)">
+                <el-option value="warning" :label="t('system.dict.tagWarning')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('warning')">
-                    警告(warning)
+                    {{ t("system.dict.tagWarning") }}
                   </span>
                 </el-option>
-                <el-option value="danger" label="危险(danger)">
+                <el-option value="danger" :label="t('system.dict.tagDanger')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('danger')">
-                    危险(danger)
+                    {{ t("system.dict.tagDanger") }}
                   </span>
                 </el-option>
-                <el-option value="info" label="信息(info)">
+                <el-option value="info" :label="t('system.dict.tagInfo')">
                   <span class="tag-option-preview" :style="getTagPreviewStyle('info')">
-                    信息(info)
+                    {{ t("system.dict.tagInfo") }}
                   </span>
                 </el-option>
               </el-select>
             </el-form-item>
-            <el-form-item label="是否默认" prop="is_default">
+            <el-form-item :label="t('system.dict.isDefault')" prop="is_default">
               <el-radio-group v-model="formData.is_default">
-                <el-radio :value="true">是</el-radio>
-                <el-radio :value="false">否</el-radio>
+                <el-radio :value="true">{{ t("system.dict.yes") }}</el-radio>
+                <el-radio :value="false">{{ t("system.dict.no") }}</el-radio>
               </el-radio-group>
             </el-form-item>
-            <el-form-item label="排序" prop="dict_sort">
+            <el-form-item :label="t('system.dict.sort')" prop="dict_sort">
               <el-input-number v-model="formData.dict_sort" controls-position="right" :min="1" />
             </el-form-item>
-            <el-form-item label="状态" prop="status">
+            <el-form-item :label="t('system.dict.status')" prop="status">
               <el-switch
                 v-model="formData.status"
                 inline-prompt
@@ -365,14 +385,14 @@
               />
             </el-form-item>
 
-            <el-form-item label="描述" prop="description">
+            <el-form-item :label="t('system.dict.description')" prop="description">
               <el-input
                 v-model="formData.description"
                 :rows="4"
                 :maxlength="100"
                 show-word-limit
                 type="textarea"
-                placeholder="请输入描述"
+                :placeholder="t('system.dict.inputDescription')"
               />
             </el-form-item>
           </el-form>
@@ -380,11 +400,13 @@
 
         <template #footer>
           <div class="dialog-footer">
-            <el-button @click="handleCloseDialog">取消</el-button>
+            <el-button @click="handleCloseDialog">{{ t("system.dict.cancel") }}</el-button>
             <el-button v-if="dialogVisible.type !== 'detail'" type="primary" @click="handleSubmit">
-              确定
+              {{ t("system.dict.confirm") }}
             </el-button>
-            <el-button v-else type="primary" @click="handleCloseDialog">确定</el-button>
+            <el-button v-else type="primary" @click="handleCloseDialog">
+              {{ t("system.dict.confirm") }}
+            </el-button>
           </div>
         </template>
       </EnhancedDialog>
@@ -401,7 +423,9 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import DictAPI, { DictDataTable, DictDataForm, DictDataPageQuery } from "@/api/module_system/dict";
+import { ElMessage } from "element-plus";
 import { useDictStore } from "@/store";
 import { useAppStore } from "@/store/modules/app.store";
 import { DeviceEnum } from "@/enums/settings/device.enum";
@@ -416,6 +440,8 @@ import type { ISearchConfig, IContentConfig, IObject } from "@/components/CURD/t
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { computed, ref, reactive, unref } from "vue";
 import { fetchAllPages } from "@/utils/fetchAllPages";
+
+const { t } = useI18n();
 
 const props = defineProps({
   dictType: {
@@ -478,29 +504,33 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "dict_label",
-      label: "字典数据标签",
+      label: t("system.dict.dictDataLabelSearch"),
       type: "input",
-      attrs: { placeholder: "请输入字典标签", clearable: true },
+      attrs: { placeholder: t("system.dict.inputDictLabel"), clearable: true },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("system.dict.status"),
       type: "select",
       options: [
-        { label: "启用", value: "0" },
-        { label: "停用", value: "1" },
+        { label: t("system.dict.enabled"), value: "0" },
+        { label: t("system.dict.disabled"), value: "1" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("system.dict.selectStatus"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "created_time",
-      label: "创建时间",
+      label: t("system.dict.createdTime"),
       type: "date-picker",
       attrs: {
         type: "datetimerange",
-        rangeSeparator: "至",
-        startPlaceholder: "开始日期",
-        endPlaceholder: "结束日期",
+        rangeSeparator: t("system.dict.to"),
+        startPlaceholder: t("system.dict.startDate"),
+        endPlaceholder: t("system.dict.endDate"),
         format: "YYYY-MM-DD HH:mm:ss",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
         style: { width: "340px" },
@@ -516,20 +546,20 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "dict_label", label: "标签", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "dict_type", label: "类型", show: true },
-  { prop: "dict_value", label: "值", show: true },
-  { prop: "css_class", label: "样式属性", show: true },
-  { prop: "list_class", label: "列表类样式", show: true },
-  { prop: "dict_sort", label: "排序", show: true },
-  { prop: "is_default", label: "是否默认", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "updated_time", label: "更新时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("system.dict.checkbox"), show: true },
+  { prop: "index", label: t("system.dict.index"), show: true },
+  { prop: "dict_label", label: t("system.dict.dictLabel"), show: true },
+  { prop: "status", label: t("system.dict.status"), show: true },
+  { prop: "dict_type", label: t("system.dict.type"), show: true },
+  { prop: "dict_value", label: t("system.dict.value"), show: true },
+  { prop: "css_class", label: t("system.dict.cssClass"), show: true },
+  { prop: "list_class", label: t("system.dict.listClass"), show: true },
+  { prop: "dict_sort", label: t("system.dict.sort"), show: true },
+  { prop: "is_default", label: t("system.dict.isDefault"), show: true },
+  { prop: "description", label: t("system.dict.description"), show: true },
+  { prop: "created_time", label: t("system.dict.createdTime"), show: true },
+  { prop: "updated_time", label: t("system.dict.updatedTime"), show: true },
+  { prop: "operation", label: t("system.dict.operation"), show: true },
 ]);
 
 function getTagPreviewStyle(value?: string) {
@@ -589,8 +619,8 @@ const contentConfig = reactive<IContentConfig<DictDataPageQuery>>({
     }
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("system.dict.warning"),
+    message: t("system.dict.confirmDeleteMessage"),
     type: "warning",
   },
 });
@@ -618,12 +648,20 @@ const dialogVisible = reactive({
 });
 
 const rules = reactive({
-  dict_label: [{ required: true, message: "请输入字典标签", trigger: "blur" }],
-  dict_type: [{ required: true, message: "请输入字典类型", trigger: "blur" }],
-  dict_value: [{ required: true, message: "请输入字典键值", trigger: "blur" }],
-  status: [{ required: true, message: "请选择状态", trigger: "blur" }],
-  dict_sort: [{ required: true, message: "请输入排序", trigger: "blur" }],
-  is_default: [{ required: true, message: "请选择是否默认", trigger: "blur" }],
+  dict_label: [
+    { required: true, message: t("system.dict.messageDictLabelRequired"), trigger: "blur" },
+  ],
+  dict_type: [
+    { required: true, message: t("system.dict.messageDataTypeRequired"), trigger: "blur" },
+  ],
+  dict_value: [
+    { required: true, message: t("system.dict.messageDictValueRequired"), trigger: "blur" },
+  ],
+  status: [{ required: true, message: t("system.dict.messageStatusRequired"), trigger: "blur" }],
+  dict_sort: [{ required: true, message: t("system.dict.messageSortRequired"), trigger: "blur" }],
+  is_default: [
+    { required: true, message: t("system.dict.messageIsDefaultRequired"), trigger: "blur" },
+  ],
 });
 
 const initialFormData: DictDataForm = {
@@ -654,17 +692,17 @@ const exportSelectionData = computed(
 );
 
 const exportColumns = [
-  { prop: "dict_label", label: "数据标签" },
-  { prop: "dict_type", label: "数据类型" },
-  { prop: "dict_value", label: "数据值" },
-  { prop: "css_class", label: "样式属性" },
-  { prop: "list_class", label: "列表类样式" },
-  { prop: "dict_sort", label: "排序" },
-  { prop: "is_default", label: "是否默认" },
-  { prop: "status", label: "状态" },
-  { prop: "description", label: "描述" },
-  { prop: "created_time", label: "创建时间" },
-  { prop: "updated_time", label: "更新时间" },
+  { prop: "dict_label", label: t("system.dict.dictDataLabel") },
+  { prop: "dict_type", label: t("system.dict.dictDataType") },
+  { prop: "dict_value", label: t("system.dict.dictDataValue") },
+  { prop: "css_class", label: t("system.dict.cssClass") },
+  { prop: "list_class", label: t("system.dict.listClass") },
+  { prop: "dict_sort", label: t("system.dict.sort") },
+  { prop: "is_default", label: t("system.dict.isDefault") },
+  { prop: "status", label: t("system.dict.status") },
+  { prop: "description", label: t("system.dict.description") },
+  { prop: "created_time", label: t("system.dict.createdTime") },
+  { prop: "updated_time", label: t("system.dict.updatedTime") },
 ];
 
 const curdContentConfig = {
@@ -711,14 +749,14 @@ async function handleOpenDialog(type: "create" | "update" | "detail", id?: numbe
   if (id) {
     const response = await DictAPI.detailDictData(id);
     if (type === "detail") {
-      dialogVisible.title = "字典数据详情";
+      dialogVisible.title = t("system.dict.dialogDataDetailTitle");
       Object.assign(detailFormData.value, response.data.data);
     } else if (type === "update") {
-      dialogVisible.title = "修改字典数据";
+      dialogVisible.title = t("system.dict.dialogDataUpdateTitle");
       Object.assign(formData, response.data.data);
     }
   } else {
-    dialogVisible.title = "新增字典数据";
+    dialogVisible.title = t("system.dict.dialogDataCreateTitle");
     Object.assign(formData, initialFormData);
     formData.dict_type = props.dictType;
     formData.status = "0";
@@ -738,6 +776,7 @@ async function handleSubmit() {
         } else {
           await DictAPI.createDictData(formData);
         }
+        ElMessage.success(t("system.dict.actionSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -756,17 +795,24 @@ async function handleMoreClick(status: string) {
   const rows = contentRef.value?.getSelectionData() as DictDataTable[] | undefined;
   const ids = (rows ?? []).map((r) => r.id).filter((id): id is number => id != null);
   if (!ids.length) {
-    ElMessage.warning("请先选择要操作的数据");
+    ElMessage.warning(t("system.dict.selectDataFirst"));
     return;
   }
-  ElMessageBox.confirm(`确认${status === "0" ? "启用" : "停用"}该项数据?`, "警告", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
+  ElMessageBox.confirm(
+    t("system.dict.confirmToggle", {
+      status: status === "0" ? t("system.dict.enabled") : t("system.dict.disabled"),
+    }),
+    t("system.dict.warning"),
+    {
+      confirmButtonText: t("system.dict.confirm"),
+      cancelButtonText: t("system.dict.cancel"),
+      type: "warning",
+    }
+  )
     .then(async () => {
       try {
         await DictAPI.batchDictData({ ids, status });
+        ElMessage.success(t("system.dict.actionSuccess"));
         refreshList();
         dictStore.clearDictData();
         if (props.dictType) {

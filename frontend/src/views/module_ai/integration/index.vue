@@ -7,8 +7,10 @@
         <el-card shadow="never" class="ig-card">
           <template #header>
             <div class="ig-head">
-              <span class="ig-side-title">数据源</span>
-              <el-button type="primary" size="small" :icon="Plus" @click="openDs()">新建</el-button>
+              <span class="ig-side-title">{{ t("ai_workflow.ig_datasource") }}</span>
+              <el-button type="primary" size="small" :icon="Plus" @click="openDs()">
+                {{ t("ai_workflow.ig_new") }}
+              </el-button>
             </div>
           </template>
           <div class="ig-ds-list">
@@ -25,18 +27,18 @@
                 <div class="ig-ds-item__sub">
                   <el-tag size="small" type="info" effect="plain">{{ d.type }}</el-tag>
                   <span v-if="d.table_count != null" class="ig-ds-item__count">
-                    {{ d.table_count }} 表
+                    {{ t("ai_workflow.ig_tableCount", { count: d.table_count }) }}
                   </span>
                 </div>
               </div>
               <div class="ig-ds-item__ops" @click.stop>
-                <el-tooltip content="测试连接" placement="left">
+                <el-tooltip :content="t('ai_workflow.ig_testConnection')" placement="left">
                   <el-button link type="primary" size="small" :icon="Refresh" @click="testDs(d)" />
                 </el-tooltip>
-                <el-tooltip content="编辑" placement="left">
+                <el-tooltip :content="t('ai_workflow.ig_edit')" placement="left">
                   <el-button link type="primary" size="small" :icon="EditPen" @click="openDs(d)" />
                 </el-tooltip>
-                <el-tooltip content="删除" placement="left">
+                <el-tooltip :content="t('ai_workflow.ig_delete')" placement="left">
                   <el-button
                     v-hasPerm="['module_ai:query:ask']"
                     link
@@ -51,7 +53,7 @@
             <el-empty
               v-if="!datasources.length"
               :image-size="60"
-              description="暂无数据源，点「新建」创建"
+              :description="t('ai_workflow.ig_dsEmpty')"
             />
           </div>
         </el-card>
@@ -68,14 +70,14 @@
         <el-card shadow="never" class="ig-card">
           <el-tabs v-model="tab" class="ig-tabs">
             <!-- 表与字段：核心——选表后就地维护 -->
-            <el-tab-pane label="表与字段" name="table">
+            <el-tab-pane :label="t('ai_workflow.ig_tabTable')" name="table">
               <!-- 表清单：铺满 tab 高度，超出滚动 -->
               <div class="ig-tables">
                 <div class="ig-bar">
                   <el-input
                     v-model="tableKw"
                     size="small"
-                    placeholder="搜索表名/中文名"
+                    :placeholder="t('ai_workflow.ig_searchTablePlaceholder')"
                     :prefix-icon="Search"
                     clearable
                     class="ig-bar__search"
@@ -87,27 +89,32 @@
                     :loading="syncing"
                     @click="syncSchema"
                   >
-                    同步
+                    {{ t("ai_workflow.ig_sync") }}
                   </el-button>
-                  <el-button size="small" :icon="EditPen" @click="openBatch">批量维护</el-button>
+                  <el-button size="small" :icon="EditPen" @click="openBatch">
+                    {{ t("ai_workflow.ig_batchMaintain") }}
+                  </el-button>
                   <el-button
                     v-hasPerm="'module_ai:query:ask'"
                     size="small"
                     :icon="MagicStick"
                     :loading="generatingDesc"
-                    title="用 AI 为缺中文描述的表/字段生成描述（只补缺的，人工校对后生效）"
+                    :title="t('ai_workflow.ig_genDescTitle')"
                     @click="runGenerateDesc"
                   >
-                    AI 生成描述
+                    {{ t("ai_workflow.ig_genDesc") }}
                   </el-button>
-                  <el-switch v-model="hideSys" active-text="只看业务表" />
-                  <el-switch v-model="hideUnmaintained" active-text="只看已维护" />
+                  <el-switch v-model="hideSys" :active-text="t('ai_workflow.ig_onlyBizTable')" />
+                  <el-switch
+                    v-model="hideUnmaintained"
+                    :active-text="t('ai_workflow.ig_onlyMaintained')"
+                  />
                   <span class="ig-bar__gap" />
                   <el-select
                     v-model="importDomain"
                     size="small"
                     clearable
-                    placeholder="目标本体域"
+                    :placeholder="t('ai_workflow.ig_targetOntDomain')"
                     class="ig-bar__domain"
                   >
                     <el-option
@@ -125,7 +132,7 @@
                     :loading="importingBatch"
                     @click="doBatchImport"
                   >
-                    批量导入
+                    {{ t("ai_workflow.ig_batchImport") }}
                   </el-button>
                 </div>
                 <el-table
@@ -139,51 +146,86 @@
                   <template #empty>
                     <el-empty :description="tableEmptyText" :image-size="50" />
                   </template>
-                  <el-table-column label="表名" min-width="200" show-overflow-tooltip>
+                  <el-table-column
+                    :label="t('ai_workflow.ig_tableName')"
+                    min-width="200"
+                    show-overflow-tooltip
+                  >
                     <template #default="{ row }">
                       <div class="ig-tname">{{ row.table }}</div>
                       <div v-if="row.comment" class="ig-tcmt">{{ row.comment }}</div>
                     </template>
                   </el-table-column>
-                  <el-table-column label="中文名" min-width="140" show-overflow-tooltip>
+                  <el-table-column
+                    :label="t('ai_workflow.ig_chineseName')"
+                    min-width="140"
+                    show-overflow-tooltip
+                  >
                     <template #default="{ row }">{{ row.alias || "-" }}</template>
                   </el-table-column>
-                  <el-table-column label="业务域" min-width="120" show-overflow-tooltip>
+                  <el-table-column
+                    :label="t('ai_workflow.ig_businessDomain')"
+                    min-width="120"
+                    show-overflow-tooltip
+                  >
                     <template #default="{ row }">{{ row.domain || "-" }}</template>
                   </el-table-column>
-                  <el-table-column label="业务描述" min-width="180" show-overflow-tooltip>
+                  <el-table-column
+                    :label="t('ai_workflow.ig_businessDesc')"
+                    min-width="180"
+                    show-overflow-tooltip
+                  >
                     <template #default="{ row }">{{ row.description || "-" }}</template>
                   </el-table-column>
-                  <el-table-column label="业务场景" min-width="140" show-overflow-tooltip>
+                  <el-table-column
+                    :label="t('ai_workflow.ig_businessScenario')"
+                    min-width="140"
+                    show-overflow-tooltip
+                  >
                     <template #default="{ row }">{{ row.business_scenarios || "-" }}</template>
                   </el-table-column>
-                  <el-table-column label="字段数" width="70" align="center">
+                  <el-table-column
+                    :label="t('ai_workflow.ig_columnCount')"
+                    width="70"
+                    align="center"
+                  >
                     <template #default="{ row }">{{ row.column_count ?? "-" }}</template>
                   </el-table-column>
-                  <el-table-column label="纳入" width="96" align="center">
+                  <el-table-column :label="t('ai_workflow.ig_included')" width="96" align="center">
                     <template #default="{ row }">
                       <!-- 三态：显式排除 / 同步过但未治理（默认纳入）/ 已纳入 -->
                       <el-tag v-if="row.included === false" size="small" type="info" effect="plain">
-                        否
+                        {{ t("ai_workflow.ig_no") }}
                       </el-tag>
                       <el-tag v-else-if="!row.governed" size="small" type="warning" effect="plain">
-                        是·未治理
+                        {{ t("ai_workflow.ig_yesUngov") }}
                       </el-tag>
-                      <el-tag v-else size="small" type="success" effect="plain">是</el-tag>
+                      <el-tag v-else size="small" type="success" effect="plain">
+                        {{ t("ai_workflow.ig_yes") }}
+                      </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="系统/业务" width="92" align="center">
+                  <el-table-column :label="t('ai_workflow.ig_sysBiz')" width="92" align="center">
                     <template #default="{ row }">
                       <el-tag
                         size="small"
                         :type="row.is_system ? 'warning' : 'success'"
                         effect="plain"
                       >
-                        {{ row.is_system ? "系统表" : "业务表" }}
+                        {{
+                          row.is_system
+                            ? t("ai_workflow.ig_systemTable")
+                            : t("ai_workflow.ig_businessTable")
+                        }}
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="224" align="center" fixed="right">
+                  <el-table-column
+                    :label="t('ai_workflow.ig_action')"
+                    width="224"
+                    align="center"
+                    fixed="right"
+                  >
                     <template #default="{ row }">
                       <el-button
                         icon="Grid"
@@ -192,13 +234,13 @@
                         size="small"
                         @click="openFieldDrawer(row)"
                       >
-                        字段
+                        {{ t("ai_workflow.ig_fields") }}
                       </el-button>
                       <el-button link type="primary" size="small" @click="openVersions(row)">
-                        版本
+                        {{ t("ai_workflow.ig_version") }}
                       </el-button>
                       <el-button icon="Star" link type="primary" size="small" @click="addFav(row)">
-                        收藏
+                        {{ t("ai_workflow.ig_favorite") }}
                       </el-button>
                       <!-- 「分享」入口暂时下线：后端 share/create 会生成 /web#/ai/query?share=<token>，
                            但全前端**没有一处读这个参数**，点开就是普通问数页——
@@ -211,7 +253,7 @@
               <!-- 选中表：抽屉里做元数据 + 字段维护 -->
               <el-drawer
                 v-model="fieldDrawer"
-                :title="`字段维护：${curTable || ''}`"
+                :title="t('ai_workflow.ig_fieldMaintainTitle', { table: curTable || '' })"
                 size="600px"
                 append-to-body
                 class="ig-field-drawer"
@@ -225,7 +267,11 @@
                       :type="curTableSys ? 'warning' : 'success'"
                       effect="plain"
                     >
-                      {{ curTableSys ? "系统表" : "业务表" }}
+                      {{
+                        curTableSys
+                          ? t("ai_workflow.ig_systemTable")
+                          : t("ai_workflow.ig_businessTable")
+                      }}
                     </el-tag>
                     <el-button
                       size="small"
@@ -233,13 +279,13 @@
                       :loading="savingTable"
                       @click="saveTable"
                     >
-                      保存表信息
+                      {{ t("ai_workflow.ig_saveTableInfo") }}
                     </el-button>
                     <el-select
                       v-model="importDomain"
                       size="small"
                       clearable
-                      placeholder="目标本体域"
+                      :placeholder="t('ai_workflow.ig_targetOntDomain')"
                       class="ig-bar__domain"
                     >
                       <el-option
@@ -256,65 +302,76 @@
                       :loading="importing"
                       @click="doImport"
                     >
-                      导入为本体对象
+                      {{ t("ai_workflow.ig_importAsObject") }}
                     </el-button>
                   </div>
                   <el-form :model="tmeta" label-width="100px" size="small" class="ig-form">
-                    <el-form-item label="中文名">
-                      <el-input v-model="tmeta.alias" placeholder="如：燃煤采购结算主表" />
+                    <el-form-item :label="t('ai_workflow.ig_chineseName')">
+                      <el-input
+                        v-model="tmeta.alias"
+                        :placeholder="t('ai_workflow.ig_aliasPlaceholder')"
+                      />
                     </el-form-item>
-                    <el-form-item label="业务域">
-                      <el-input v-model="tmeta.domain" placeholder="如：燃煤/设备/人员" />
+                    <el-form-item :label="t('ai_workflow.ig_businessDomain')">
+                      <el-input
+                        v-model="tmeta.domain"
+                        :placeholder="t('ai_workflow.ig_domainPlaceholder')"
+                      />
                     </el-form-item>
-                    <el-form-item label="业务描述">
+                    <el-form-item :label="t('ai_workflow.ig_businessDesc')">
                       <el-input
                         v-model="tmeta.description"
                         type="textarea"
                         :rows="2"
-                        placeholder="这张表存什么、怎么用——问数会读它来理解表"
+                        :placeholder="t('ai_workflow.ig_descPlaceholder')"
                       />
                     </el-form-item>
-                    <el-form-item label="业务场景">
+                    <el-form-item :label="t('ai_workflow.ig_businessScenario')">
                       <el-input
                         v-model="tmeta.business_scenarios"
-                        placeholder="哪些报表/业务用到"
+                        :placeholder="t('ai_workflow.ig_bizScenarioPlaceholder')"
                       />
                     </el-form-item>
-                    <el-form-item label="纳入问数">
+                    <el-form-item :label="t('ai_workflow.ig_includeQuery')">
                       <el-switch v-model="tmeta.included" />
                     </el-form-item>
                     <el-divider content-position="left" class="ig-form__divider">
-                      本体对象建模
+                      {{ t("ai_workflow.ig_objectModeling") }}
                     </el-divider>
-                    <el-form-item label="纳入本体对象">
+                    <el-form-item :label="t('ai_workflow.ig_includeObject')">
                       <el-switch v-model="tmeta.object_enabled" />
                       <el-text size="small" type="info" style="margin-left: 8px">
-                        生成 ObjectType，供本体/权限/动作消费
+                        {{ t("ai_workflow.ig_objectTypeHint") }}
                       </el-text>
                     </el-form-item>
-                    <el-form-item label="主键列">
+                    <el-form-item :label="t('ai_workflow.ig_keyCol')">
                       <el-input v-model="tmeta.object_key_col" :disabled="!tmeta.object_enabled" />
                     </el-form-item>
-                    <el-form-item label="显示名列">
+                    <el-form-item :label="t('ai_workflow.ig_nameCol')">
                       <el-input v-model="tmeta.object_name_col" :disabled="!tmeta.object_enabled" />
                     </el-form-item>
                   </el-form>
 
                   <div class="ig-bar">
-                    <span class="ig-sub">字段（{{ filteredColumns.length }}）</span>
-                    <el-switch v-model="hideAudit" active-text="只看业务字段" />
+                    <span class="ig-sub">
+                      {{ t("ai_workflow.ig_fieldCount", { count: filteredColumns.length }) }}
+                    </span>
+                    <el-switch
+                      v-model="hideAudit"
+                      :active-text="t('ai_workflow.ig_onlyBizField')"
+                    />
                     <el-tag size="small" type="info" effect="plain">
-                      上游注释可作参考，中文名/枚举可人工维护
+                      {{ t("ai_workflow.ig_auditHint") }}
                     </el-tag>
                   </div>
                   <div class="ig-fields-wrap">
                     <el-table :data="filteredColumns" size="small" border height="100%" stripe>
                       <template #empty>
-                        <el-empty description="该表暂无字段信息，请先同步表结构" :image-size="50" />
+                        <el-empty :description="t('ai_workflow.ig_noColEmpty')" :image-size="50" />
                       </template>
                       <el-table-column
                         prop="column_name"
-                        label="字段"
+                        :label="t('ai_workflow.ig_field')"
                         width="150"
                         show-overflow-tooltip
                       >
@@ -326,19 +383,39 @@
                           </div>
                         </template>
                       </el-table-column>
-                      <el-table-column label="中文名" min-width="110" show-overflow-tooltip>
+                      <el-table-column
+                        :label="t('ai_workflow.ig_chineseName')"
+                        min-width="110"
+                        show-overflow-tooltip
+                      >
                         <template #default="{ row }">{{ row.description || "-" }}</template>
                       </el-table-column>
-                      <el-table-column label="业务场景" min-width="120" show-overflow-tooltip>
+                      <el-table-column
+                        :label="t('ai_workflow.ig_businessScenario')"
+                        min-width="120"
+                        show-overflow-tooltip
+                      >
                         <template #default="{ row }">{{ row.business_scenarios || "-" }}</template>
                       </el-table-column>
-                      <el-table-column label="关联表" min-width="110" show-overflow-tooltip>
+                      <el-table-column
+                        :label="t('ai_workflow.ig_relatedTable')"
+                        min-width="110"
+                        show-overflow-tooltip
+                      >
                         <template #default="{ row }">{{ row.related_table || "-" }}</template>
                       </el-table-column>
-                      <el-table-column label="关联字段" min-width="100" show-overflow-tooltip>
+                      <el-table-column
+                        :label="t('ai_workflow.ig_relatedField')"
+                        min-width="100"
+                        show-overflow-tooltip
+                      >
                         <template #default="{ row }">{{ row.related_field || "-" }}</template>
                       </el-table-column>
-                      <el-table-column label="枚举" min-width="120" show-overflow-tooltip>
+                      <el-table-column
+                        :label="t('ai_workflow.ig_enum')"
+                        min-width="120"
+                        show-overflow-tooltip
+                      >
                         <template #default="{ row }">
                           <template v-if="row.enum && row.enum.length">
                             <el-tag
@@ -354,7 +431,11 @@
                           <template v-else>-</template>
                         </template>
                       </el-table-column>
-                      <el-table-column label="纳入" width="56" align="center">
+                      <el-table-column
+                        :label="t('ai_workflow.ig_included')"
+                        width="56"
+                        align="center"
+                      >
                         <template #default="{ row }">
                           <el-switch
                             v-model="row.included"
@@ -363,7 +444,11 @@
                           />
                         </template>
                       </el-table-column>
-                      <el-table-column label="敏感" width="56" align="center">
+                      <el-table-column
+                        :label="t('ai_workflow.ig_sensitive')"
+                        width="56"
+                        align="center"
+                      >
                         <template #default="{ row }">
                           <el-switch
                             v-model="row.sensitive"
@@ -372,7 +457,12 @@
                           />
                         </template>
                       </el-table-column>
-                      <el-table-column label="操作" width="96" align="center" fixed="right">
+                      <el-table-column
+                        :label="t('ai_workflow.ig_action')"
+                        width="96"
+                        align="center"
+                        fixed="right"
+                      >
                         <template #default="{ row }">
                           <el-button
                             icon="EditPen"
@@ -381,7 +471,7 @@
                             size="small"
                             @click="openColEdit(row)"
                           >
-                            编辑属性
+                            {{ t("ai_workflow.ig_editAttr") }}
                           </el-button>
                         </template>
                       </el-table-column>
@@ -392,27 +482,38 @@
             </el-tab-pane>
 
             <!-- 管道 -->
-            <el-tab-pane label="管道" name="pipe">
+            <el-tab-pane :label="t('ai_workflow.ig_pipeline')" name="pipe">
               <div class="ig-bar">
                 <el-button type="primary" size="small" :icon="Plus" @click="openPipe()">
-                  新建管道
+                  {{ t("ai_workflow.ig_newPipe") }}
                 </el-button>
-                <el-button size="small" @click="openPipeGraph">管道图</el-button>
+                <el-button size="small" @click="openPipeGraph">
+                  {{ t("ai_workflow.ig_pipeGraph") }}
+                </el-button>
                 <el-tag size="small" type="info" effect="plain">
-                  源表 → 目标对象，运行后落到管道物化表
+                  {{ t("ai_workflow.ig_pipeHint") }}
                 </el-tag>
               </div>
               <el-table :data="pipelines" size="small" border height="100%" stripe>
                 <template #empty>
-                  <el-empty description="暂无管道" :image-size="60" />
+                  <el-empty :description="t('ai_workflow.ig_noPipe')" :image-size="60" />
                 </template>
-                <el-table-column prop="name" label="管道" min-width="140" show-overflow-tooltip />
-                <el-table-column label="源→目标" min-width="180" show-overflow-tooltip>
+                <el-table-column
+                  prop="name"
+                  :label="t('ai_workflow.ig_pipeline')"
+                  min-width="140"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  :label="t('ai_workflow.ig_srcToTarget')"
+                  min-width="180"
+                  show-overflow-tooltip
+                >
                   <template #default="{ row }">
                     {{ row.source_table }} → {{ row.target_object }}
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="180" align="center">
+                <el-table-column :label="t('ai_workflow.ig_action')" width="180" align="center">
                   <template #default="{ row }">
                     <el-button
                       icon="VideoPlay"
@@ -421,10 +522,10 @@
                       size="small"
                       @click="runPipe(row)"
                     >
-                      运行
+                      {{ t("ai_workflow.ig_run") }}
                     </el-button>
                     <el-button icon="edit" link type="primary" size="small" @click="openPipe(row)">
-                      编辑
+                      {{ t("ai_workflow.ig_edit") }}
                     </el-button>
                     <el-button
                       icon="DataLine"
@@ -433,7 +534,7 @@
                       size="small"
                       @click="viewPipeData(row)"
                     >
-                      数据
+                      {{ t("ai_workflow.ig_data") }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -441,31 +542,41 @@
             </el-tab-pane>
 
             <!-- 指标 -->
-            <el-tab-pane label="指标" name="metric">
+            <el-tab-pane :label="t('ai_workflow.ig_metric')" name="metric">
               <div class="ig-bar">
                 <el-button type="primary" size="small" :icon="Plus" @click="openMetric()">
-                  新建指标
+                  {{ t("ai_workflow.ig_newMetric") }}
                 </el-button>
                 <el-tag size="small" type="info" effect="plain">
-                  语义指标（问数与 Agent 消费）
+                  {{ t("ai_workflow.ig_metricHint") }}
                 </el-tag>
                 <el-button size="small" :loading="suggestLoading" @click="openSuggest">
-                  AI 推荐指标/术语
+                  {{ t("ai_workflow.ig_suggestMetric") }}
                 </el-button>
               </div>
               <el-table :data="metrics" size="small" border height="100%" stripe>
                 <template #empty>
-                  <el-empty description="暂无指标" :image-size="60" />
+                  <el-empty :description="t('ai_workflow.ig_noMetric')" :image-size="60" />
                 </template>
-                <el-table-column prop="name" label="指标" min-width="150" show-overflow-tooltip />
-                <el-table-column prop="key" label="编码" min-width="130" show-overflow-tooltip />
+                <el-table-column
+                  prop="name"
+                  :label="t('ai_workflow.ig_metric')"
+                  min-width="150"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  prop="key"
+                  :label="t('ai_workflow.ig_code')"
+                  min-width="130"
+                  show-overflow-tooltip
+                />
                 <el-table-column
                   prop="sql_template"
-                  label="SQL 模板"
+                  :label="t('ai_workflow.ig_sqlTemplate')"
                   min-width="240"
                   show-overflow-tooltip
                 />
-                <el-table-column label="操作" width="110" align="center">
+                <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
                   <template #default="{ row }">
                     <el-button
                       icon="edit"
@@ -474,7 +585,7 @@
                       size="small"
                       @click="openMetric(row)"
                     >
-                      编辑
+                      {{ t("ai_workflow.ig_edit") }}
                     </el-button>
                     <el-button
                       icon="delete"
@@ -483,7 +594,7 @@
                       size="small"
                       @click="removeMetric(row)"
                     >
-                      删除
+                      {{ t("ai_workflow.ig_delete") }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -491,13 +602,13 @@
             </el-tab-pane>
 
             <!-- 术语 -->
-            <el-tab-pane label="术语" name="term">
+            <el-tab-pane :label="t('ai_workflow.ig_term')" name="term">
               <div class="ig-bar">
                 <el-button type="primary" size="small" :icon="Plus" @click="openTerm()">
-                  新建术语
+                  {{ t("ai_workflow.ig_newTerm") }}
                 </el-button>
                 <el-tag size="small" type="info" effect="plain">
-                  业务黑话 ↔ 指标/字段映射（进确定性快路径）
+                  {{ t("ai_workflow.ig_termHint") }}
                 </el-tag>
               </div>
               <el-alert
@@ -505,29 +616,34 @@
                 :closable="false"
                 show-icon
                 style="margin-bottom: 10px"
-                title="分工：术语 = 业务黑话 → 指标/字段的映射（优先级最高，命中即走快路径）；对象别名请到 本体 维护；概念同义词请在「业务概念」维护，不要在此重复录入。"
+                :title="t('ai_workflow.ig_termHintAlert')"
               />
               <el-table :data="terms" size="small" border height="100%" stripe>
                 <template #empty>
-                  <el-empty description="暂无术语" :image-size="60" />
+                  <el-empty :description="t('ai_workflow.ig_noTerm')" :image-size="60" />
                 </template>
-                <el-table-column prop="term" label="术语" min-width="150" show-overflow-tooltip />
+                <el-table-column
+                  prop="term"
+                  :label="t('ai_workflow.ig_term')"
+                  min-width="150"
+                  show-overflow-tooltip
+                />
                 <el-table-column
                   prop="metric_key"
-                  label="指标"
+                  :label="t('ai_workflow.ig_metric')"
                   min-width="130"
                   show-overflow-tooltip
                 />
                 <el-table-column
                   prop="field_path"
-                  label="字段路径"
+                  :label="t('ai_workflow.ig_fieldPath')"
                   min-width="220"
                   show-overflow-tooltip
                 />
-                <el-table-column label="操作" width="110" align="center">
+                <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
                   <template #default="{ row }">
                     <el-button icon="edit" link type="primary" size="small" @click="openTerm(row)">
-                      编辑
+                      {{ t("ai_workflow.ig_edit") }}
                     </el-button>
                     <el-button
                       icon="delete"
@@ -536,7 +652,7 @@
                       size="small"
                       @click="removeTerm(row)"
                     >
-                      删除
+                      {{ t("ai_workflow.ig_delete") }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -544,13 +660,13 @@
             </el-tab-pane>
 
             <!-- 概念 -->
-            <el-tab-pane label="业务概念" name="concept">
+            <el-tab-pane :label="t('ai_workflow.ig_concept')" name="concept">
               <div class="ig-bar">
                 <el-button type="primary" size="small" :icon="Plus" @click="openConcept()">
-                  新建概念
+                  {{ t("ai_workflow.ig_newConcept") }}
                 </el-button>
                 <el-tag size="small" type="info" effect="plain">
-                  业务概念（问数语义层；含本体对象别名）
+                  {{ t("ai_workflow.ig_conceptHint") }}
                 </el-tag>
               </div>
               <el-alert
@@ -558,27 +674,32 @@
                 :closable="false"
                 show-icon
                 style="margin-bottom: 10px"
-                title="分工：概念 = 有层级的业务概念 + 同义词；「关联指标」会参与快路径匹配。对象别名在本体维护（此处只读合并），黑话映射请用「术语」。"
+                :title="t('ai_workflow.ig_conceptHintAlert')"
               />
               <el-table :data="concepts" size="small" border height="100%" stripe>
                 <template #empty>
-                  <el-empty description="暂无概念" :image-size="60" />
+                  <el-empty :description="t('ai_workflow.ig_noConcept')" :image-size="60" />
                 </template>
-                <el-table-column prop="name" label="概念" min-width="150" show-overflow-tooltip />
-                <el-table-column label="涉及表" min-width="240">
+                <el-table-column
+                  prop="name"
+                  :label="t('ai_workflow.ig_conceptShort')"
+                  min-width="150"
+                  show-overflow-tooltip
+                />
+                <el-table-column :label="t('ai_workflow.ig_relatedTables')" min-width="240">
                   <template #default="{ row }">
                     <el-tag
-                      v-for="t in row.tables || []"
-                      :key="t"
+                      v-for="tbl in row.tables || []"
+                      :key="tbl"
                       size="small"
                       effect="plain"
                       class="ig-tag"
                     >
-                      {{ t }}
+                      {{ tbl }}
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="110" align="center">
+                <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
                   <template #default="{ row }">
                     <el-button
                       icon="edit"
@@ -587,7 +708,7 @@
                       size="small"
                       @click="openConcept(row)"
                     >
-                      编辑
+                      {{ t("ai_workflow.ig_edit") }}
                     </el-button>
                     <el-button
                       icon="delete"
@@ -596,7 +717,7 @@
                       size="small"
                       @click="removeConcept(row)"
                     >
-                      删除
+                      {{ t("ai_workflow.ig_delete") }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -604,49 +725,49 @@
             </el-tab-pane>
 
             <!-- 示例工程（few-shot） -->
-            <el-tab-pane label="示例工程" name="fewshot">
+            <el-tab-pane :label="t('ai_workflow.ig_fewshot')" name="fewshot">
               <div class="ig-bar">
                 <el-button type="primary" size="small" :icon="Plus" @click="openFewshot()">
-                  新建示例
+                  {{ t("ai_workflow.ig_newExample") }}
                 </el-button>
                 <el-tag size="small" type="info" effect="plain">
-                  NL2SQL 少样本示例：教模型这类问题怎么写 SQL（不是指标）
+                  {{ t("ai_workflow.ig_fewshotHint") }}
                 </el-tag>
               </div>
               <el-table :data="fewshots" size="small" border height="100%" stripe>
                 <template #empty>
-                  <el-empty description="暂无示例" :image-size="60" />
+                  <el-empty :description="t('ai_workflow.ig_noExample')" :image-size="60" />
                 </template>
                 <el-table-column
                   prop="question"
-                  label="问题"
+                  :label="t('ai_workflow.ig_question')"
                   min-width="200"
                   show-overflow-tooltip
                 />
                 <el-table-column
                   prop="sql"
-                  label="示例 SQL"
+                  :label="t('ai_workflow.ig_exampleSql')"
                   min-width="260"
                   show-overflow-tooltip
                 />
                 <el-table-column
                   prop="datasource"
-                  label="数据源"
+                  :label="t('ai_workflow.ig_datasource')"
                   width="110"
                   show-overflow-tooltip
                 />
-                <el-table-column label="启用" width="70" align="center">
+                <el-table-column :label="t('ai_workflow.ig_enabled')" width="70" align="center">
                   <template #default="{ row }">
                     <el-tag
                       size="small"
                       :type="row.enabled === false ? 'info' : 'success'"
                       effect="plain"
                     >
-                      {{ row.enabled === false ? "否" : "是" }}
+                      {{ row.enabled === false ? t("ai_workflow.ig_no") : t("ai_workflow.ig_yes") }}
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="110" align="center">
+                <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
                   <template #default="{ row }">
                     <el-button
                       icon="edit"
@@ -655,7 +776,7 @@
                       size="small"
                       @click="openFewshot(row)"
                     >
-                      编辑
+                      {{ t("ai_workflow.ig_edit") }}
                     </el-button>
                     <el-button
                       icon="delete"
@@ -664,7 +785,7 @@
                       size="small"
                       @click="removeFewshot(row)"
                     >
-                      删除
+                      {{ t("ai_workflow.ig_delete") }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -672,35 +793,45 @@
             </el-tab-pane>
 
             <!-- 血缘 -->
-            <el-tab-pane label="数据关系图" name="kg">
+            <el-tab-pane :label="t('ai_workflow.ig_dataGraph')" name="kg">
               <el-alert
                 type="info"
                 :closable="false"
                 class="ig-note"
-                title="数据侧血缘：表 / 字段 / 指标 / 术语 / 概念之间的关系。它不等同于「本体类型层图」——后者在 本体 → 关系类型 → 可视化 查看。"
+                :title="t('ai_workflow.ig_kgAlert')"
               />
               <div class="ig-bar">
-                <el-button size="small" :icon="Refresh" @click="syncKg">重建图谱</el-button>
-                <el-button size="small" @click="autoLinkKg">自动打边</el-button>
+                <el-button size="small" :icon="Refresh" @click="syncKg">
+                  {{ t("ai_workflow.ig_rebuildGraph") }}
+                </el-button>
+                <el-button size="small" @click="autoLinkKg">
+                  {{ t("ai_workflow.ig_autoLink") }}
+                </el-button>
                 <el-tag size="small" type="info" effect="plain">
-                  自动打边：知识库实体 ↔ schema 表/字段
+                  {{ t("ai_workflow.ig_autoLinkHint") }}
                 </el-tag>
               </div>
               <el-descriptions :column="3" size="small" border>
-                <el-descriptions-item label="表节点">{{ kg.nodes ?? "-" }}</el-descriptions-item>
-                <el-descriptions-item label="关系边">{{ kg.edges ?? "-" }}</el-descriptions-item>
-                <el-descriptions-item label="实体">{{ kg.entities ?? "-" }}</el-descriptions-item>
+                <el-descriptions-item :label="t('ai_workflow.ig_kgTableNode')">
+                  {{ kg.nodes ?? "-" }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('ai_workflow.ig_kgEdge')">
+                  {{ kg.edges ?? "-" }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('ai_workflow.ig_kgEntity')">
+                  {{ kg.entities ?? "-" }}
+                </el-descriptions-item>
               </el-descriptions>
               <div class="ig-kg-filter">
-                <span class="ig-kg-filter__label">类型：</span>
+                <span class="ig-kg-filter__label">{{ t("ai_workflow.ig_kgType") }}</span>
                 <el-checkbox-group v-model="kgTypeFilter" size="small">
                   <el-checkbox
-                    v-for="t in kgTypeOptions"
-                    :key="t.value"
-                    :value="t.value"
-                    :label="t.value"
+                    v-for="kt in kgTypeOptions"
+                    :key="kt.value"
+                    :value="kt.value"
+                    :label="kt.value"
                   >
-                    {{ t.label }}
+                    {{ kt.label }}
                   </el-checkbox>
                 </el-checkbox-group>
                 <el-select
@@ -708,12 +839,14 @@
                   clearable
                   filterable
                   size="small"
-                  placeholder="按表聚焦（只看该表血缘）"
+                  :placeholder="t('ai_workflow.ig_kgFocusPlaceholder')"
                   style="width: 210px"
                 >
                   <el-option v-for="tb in kgTableOptions" :key="tb" :label="tb" :value="tb" />
                 </el-select>
-                <span class="ig-kg-filter__hint">当前 {{ filteredKgNodes.length }} 节点</span>
+                <span class="ig-kg-filter__hint">
+                  {{ t("ai_workflow.ig_kgNodeCount", { count: filteredKgNodes.length }) }}
+                </span>
               </div>
               <GraphCanvas
                 v-if="filteredKgNodes.length"
@@ -724,62 +857,62 @@
                 :node-style="nodeStyle"
                 class="ig-kg-graph"
               />
-              <el-empty
-                v-else
-                :image-size="60"
-                description="暂无图谱，点击「重建图谱」或调整筛选"
-              />
+              <el-empty v-else :image-size="60" :description="t('ai_workflow.ig_kgEmpty')" />
             </el-tab-pane>
 
             <!-- 筛选规则工作台 -->
-            <el-tab-pane label="筛选规则" name="rules">
+            <el-tab-pane :label="t('ai_workflow.ig_filterRules')" name="rules">
               <FilterRulesWorkbench v-if="curDs" :datasource="curDs" />
-              <el-empty v-else description="请先选择左侧数据源" />
+              <el-empty :description="t('ai_workflow.ig_selectDsFirst')" />
             </el-tab-pane>
 
             <!-- 语义建模：大模型自动生成指标/标注（S4）——**两段式：先预览，再勾选落库** -->
-            <el-tab-pane label="AI 辅助建模" name="modeling">
+            <el-tab-pane :label="t('ai_workflow.ig_aiModeling')" name="modeling">
               <el-alert
                 type="info"
                 :closable="false"
                 show-icon
-                title="用大模型对所选数据源生成「绑定型指标」与「对象/属性标注」。流程是两段式：先「预览」出候选（不落库），你勾选后再精确落库——大模型不会重复跑，落库的就是你看到的那批。"
+                :title="t('ai_workflow.ig_modelingAlert')"
                 style="margin-bottom: 12px"
               />
               <el-form inline>
-                <el-form-item label="数据源">
+                <el-form-item :label="t('ai_workflow.ig_datasource')">
                   <el-tag v-if="curDs">{{ curDs.name }}（{{ modelingDsCode }}）</el-tag>
-                  <el-text v-else type="info">请先选择左侧数据源</el-text>
+                  <el-text v-else type="info">{{ t("ai_workflow.ig_selectDsFirst") }}</el-text>
                 </el-form-item>
-                <el-form-item label="处理对象数">
+                <el-form-item :label="t('ai_workflow.ig_processObjects')">
                   <el-input-number v-model="modelingMax" :min="1" :max="50" />
                 </el-form-item>
                 <el-form-item>
                   <el-button type="primary" :disabled="!curDs" @click="openAutoModel('metrics')">
-                    生成绑定型指标
+                    {{ t("ai_workflow.ig_genBoundMetric") }}
                   </el-button>
                   <el-button :disabled="!curDs" @click="openAutoModel('annotations')">
-                    生成对象/属性标注
+                    {{ t("ai_workflow.ig_genAnnotation") }}
                   </el-button>
                 </el-form-item>
                 <el-form-item>
                   <el-button :loading="semanticLoading" @click="handleExtractObjects">
-                    语义抽取对象
+                    {{ t("ai_workflow.ig_extractObjects") }}
                   </el-button>
                   <el-button :loading="semanticLoading" @click="handleInferRelations">
-                    推断表间关系
+                    {{ t("ai_workflow.ig_inferRelations") }}
                   </el-button>
                 </el-form-item>
               </el-form>
               <el-descriptions v-if="modelingResult" :column="3" border>
-                <el-descriptions-item label="本次落库">
+                <el-descriptions-item :label="t('ai_workflow.ig_savedThisTime')">
                   {{ modelingResult.saved ?? 0 }}
                 </el-descriptions-item>
-                <el-descriptions-item label="落库失败">
+                <el-descriptions-item :label="t('ai_workflow.ig_saveFailed')">
                   {{ modelingResult.reasons?.length ?? 0 }}
                 </el-descriptions-item>
-                <el-descriptions-item label="范围">
-                  {{ modelingResult.scope === "annotations" ? "对象/属性标注" : "绑定型指标" }}
+                <el-descriptions-item :label="t('ai_workflow.ig_scope')">
+                  {{
+                    modelingResult.scope === "annotations"
+                      ? t("ai_workflow.ig_annotationScope")
+                      : t("ai_workflow.ig_boundMetricScope")
+                  }}
                 </el-descriptions-item>
               </el-descriptions>
               <el-table
@@ -790,7 +923,7 @@
                 border
                 stripe
               >
-                <el-table-column label="失败原因" show-overflow-tooltip>
+                <el-table-column :label="t('ai_workflow.ig_failReason')" show-overflow-tooltip>
                   <template #default="{ row }">{{ row }}</template>
                 </el-table-column>
               </el-table>
@@ -806,7 +939,7 @@
             </el-tab-pane>
 
             <!-- 治理：驾驶舱/权限/数据质量/数据域/本体对象（原「治理」菜单并入） -->
-            <el-tab-pane label="治理" name="gov">
+            <el-tab-pane :label="t('ai_workflow.ig_governance')" name="gov">
               <GovernancePanel />
             </el-tab-pane>
           </el-tabs>
@@ -815,97 +948,127 @@
     </el-row>
 
     <!-- 批量维护：粘贴「表名 中文名」一次填一批 -->
-    <el-dialog v-model="batchDlg" title="批量维护表信息" width="600px">
+    <el-dialog v-model="batchDlg" :title="t('ai_workflow.ig_batchMaintainTitle')" width="600px">
       <el-alert
         type="info"
         :closable="false"
         show-icon
         class="ig-note"
-        title="每行一条，用「表名 中文名」或「表名,中文名,业务域」的格式。只填中文名时不会清空已填的描述。"
+        :title="t('ai_workflow.ig_batchMaintainHint')"
       />
       <el-input
         v-model="batchText"
         type="textarea"
         :rows="10"
-        placeholder="FUEL_CB_COALBALANCE 燃煤采购结算主表&#10;FUEL_CMCS_ASSAY,化验表,燃煤"
+        :placeholder="t('ai_workflow.ig_batchPlaceholder')"
       />
       <div class="ig-bar ig-batch-bar">
-        <el-tag size="small" type="info" effect="plain">解析出 {{ batchRows.length }} 条</el-tag>
+        <el-tag size="small" type="info" effect="plain">
+          {{ t("ai_workflow.ig_parsedCount", { count: batchRows.length }) }}
+        </el-tag>
         <el-tag v-if="batchUnknown.length" size="small" type="warning" effect="plain">
-          {{ batchUnknown.length }} 条不在当前数据源的表里
+          {{ t("ai_workflow.ig_unknownCount", { count: batchUnknown.length }) }}
         </el-tag>
       </div>
       <el-table :data="batchRows.slice(0, 8)" size="small" border max-height="220" stripe>
         <template #empty>
-          <el-empty description="粘贴内容后这里会显示预览" :image-size="50" />
+          <el-empty :description="t('ai_workflow.ig_batchPreviewEmpty')" :image-size="50" />
         </template>
-        <el-table-column prop="table_name" label="表名" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="alias" label="中文名" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="domain" label="业务域" width="100" show-overflow-tooltip />
-        <el-table-column label="匹配" width="70" align="center">
+        <el-table-column
+          prop="table_name"
+          :label="t('ai_workflow.ig_tableName')"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="alias"
+          :label="t('ai_workflow.ig_chineseName')"
+          min-width="150"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="domain"
+          :label="t('ai_workflow.ig_businessDomain')"
+          width="100"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="t('ai_workflow.ig_match')" width="70" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="row.known ? 'success' : 'danger'" effect="plain">
-              {{ row.known ? "是" : "否" }}
+              {{ row.known ? t("ai_workflow.ig_yes") : t("ai_workflow.ig_no") }}
             </el-tag>
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="batchRows.length > 8" class="ig-tcmt">仅预览前 8 条，保存时会写入全部。</div>
+      <div v-if="batchRows.length > 8" class="ig-tcmt">
+        {{ t("ai_workflow.ig_batchPreviewLimit") }}
+      </div>
       <template #footer>
-        <el-button @click="batchDlg = false">取消</el-button>
+        <el-button @click="batchDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
         <el-button
           type="primary"
           :disabled="!batchRows.length"
           :loading="batchSaving"
           @click="doBatchSave"
         >
-          保存 {{ batchRows.length }} 条
+          {{ t("ai_workflow.ig_saveCount", { count: batchRows.length }) }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 新建/编辑管道 -->
-    <el-dialog v-model="pipeDlg" :title="pipeForm.id ? '编辑管道' : '新建管道'" width="600px">
+    <el-dialog
+      v-model="pipeDlg"
+      :title="pipeForm.id ? t('ai_workflow.ig_editPipe') : t('ai_workflow.ig_newPipe')"
+      width="600px"
+    >
       <el-form :model="pipeForm" label-width="100px" size="small">
-        <el-form-item label="管道名称">
-          <el-input v-model="pipeForm.name" placeholder="如：燃煤台账入库" />
-        </el-form-item>
-        <el-form-item label="源连接">
+        <el-form-item :label="t('ai_workflow.ig_pipeName')">
           <el-input
-            v-model="pipeForm.source_connection"
-            placeholder="留空=本系统表；填数据源 ID/编码"
+            v-model="pipeForm.name"
+            :placeholder="t('ai_workflow.ig_pipeNamePlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="源表">
-          <el-input v-model="pipeForm.source_table" placeholder="如：FUEL_CB_COALBALANCE" />
+        <el-form-item :label="t('ai_workflow.ig_sourceConn')">
+          <el-input
+            v-model="pipeForm.source_connection"
+            :placeholder="t('ai_workflow.ig_sourceConnPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="目标对象">
-          <el-input v-model="pipeForm.target_object" placeholder="本体对象名 / 目标表名" />
+        <el-form-item :label="t('ai_workflow.ig_sourceTable')">
+          <el-input
+            v-model="pipeForm.source_table"
+            :placeholder="t('ai_workflow.ig_sourceTablePlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="字段映射">
+        <el-form-item :label="t('ai_workflow.ig_targetObject')">
+          <el-input
+            v-model="pipeForm.target_object"
+            :placeholder="t('ai_workflow.ig_targetObjectPlaceholder')"
+          />
+        </el-form-item>
+        <el-form-item :label="t('ai_workflow.ig_fieldMapping')">
           <el-input
             v-model="pipeForm.mappings_text"
             type="textarea"
             :rows="4"
-            placeholder='每行「源字段 目标字段」；也可直接粘贴 JSON 数组 [{"from":"a","to":"b"}]'
+            :placeholder="t('ai_workflow.ig_mappingPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="t('ai_workflow.ig_enabled')">
           <el-switch v-model="pipeForm.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="pipeDlg = false">取消</el-button>
-        <el-button type="primary" :loading="savingPipe" @click="savePipe">保存</el-button>
+        <el-button @click="pipeDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+        <el-button type="primary" :loading="savingPipe" @click="savePipe">
+          {{ t("ai_workflow.ig_save") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 管道编排图 -->
-    <el-dialog
-      v-model="pipeGraphVisible"
-      title="管道编排图（源表 → 管道 → 本体对象）"
-      width="900px"
-    >
+    <el-dialog v-model="pipeGraphVisible" :title="t('ai_workflow.ig_pipeGraphTitle')" width="900px">
       <GraphCanvas
         v-if="pipeGraphNodes.length"
         :nodes="pipeGraphNodes"
@@ -914,45 +1077,64 @@
         layout-name="breadthfirst"
         :node-style="nodeStyle"
       />
-      <el-empty v-else description="暂无管道，先新建管道" :image-size="60" />
+      <el-empty :description="t('ai_workflow.ig_pipeGraphEmpty')" :image-size="60" />
     </el-dialog>
 
     <!-- AI 推荐指标/术语 -->
-    <el-dialog v-model="suggestVisible" title="AI 推荐指标 / 术语" width="900px">
+    <el-dialog v-model="suggestVisible" :title="t('ai_workflow.ig_suggestTitle')" width="900px">
       <el-alert
         type="info"
         :closable="false"
         show-icon
         style="margin-bottom: 10px"
-        title="由大模型根据已纳入资产的中文词典推荐高频指标与业务术语；逐条「采纳」后写入指标/术语库。"
+        :title="t('ai_workflow.ig_suggestHint')"
       />
-      <div class="ig-sub">推荐指标（{{ suggestMetrics.length }}）</div>
+      <div class="ig-sub">
+        {{ t("ai_workflow.ig_suggestMetrics", { count: suggestMetrics.length }) }}
+      </div>
       <el-table :data="suggestMetrics" size="small" border max-height="220" stripe>
         <template #empty>
-          <el-empty description="无推荐" :image-size="40" />
+          <el-empty :description="t('ai_workflow.ig_noSuggest')" :image-size="40" />
         </template>
-        <el-table-column prop="name" label="指标名" min-width="160" show-overflow-tooltip />
+        <el-table-column
+          prop="name"
+          :label="t('ai_workflow.ig_metricName')"
+          min-width="160"
+          show-overflow-tooltip
+        />
         <el-table-column prop="sql" label="SQL" min-width="260" show-overflow-tooltip />
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column :label="t('ai_workflow.ig_action')" width="80" align="center">
           <template #default="{ row }">
             <el-button icon="Check" link type="primary" size="small" @click="adoptMetric(row)">
-              采纳
+              {{ t("ai_workflow.ig_adopt") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <div class="ig-sub">推荐术语（{{ suggestTerms.length }}）</div>
+      <div class="ig-sub">
+        {{ t("ai_workflow.ig_suggestTerms", { count: suggestTerms.length }) }}
+      </div>
       <el-table :data="suggestTerms" size="small" border max-height="220" stripe>
         <template #empty>
-          <el-empty description="无推荐" :image-size="40" />
+          <el-empty :description="t('ai_workflow.ig_noSuggest')" :image-size="40" />
         </template>
-        <el-table-column prop="term" label="术语" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="type" label="类型" width="100" />
-        <el-table-column prop="target" label="指向" min-width="160" show-overflow-tooltip />
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column
+          prop="term"
+          :label="t('ai_workflow.ig_term')"
+          min-width="140"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="type" :label="t('ai_workflow.ig_type')" width="100" />
+        <el-table-column
+          prop="target"
+          :label="t('ai_workflow.ig_target')"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="t('ai_workflow.ig_action')" width="80" align="center">
           <template #default="{ row }">
             <el-button icon="Check" link type="primary" size="small" @click="adoptTerm(row)">
-              采纳
+              {{ t("ai_workflow.ig_adopt") }}
             </el-button>
           </template>
         </el-table-column>
@@ -960,10 +1142,14 @@
     </el-dialog>
 
     <!-- 查看管道落库数据 -->
-    <el-dialog v-model="pipeDataDlg" :title="`管道数据：${pipeDataName}`" width="900px">
+    <el-dialog
+      v-model="pipeDataDlg"
+      :title="t('ai_workflow.ig_pipeDataTitle', { name: pipeDataName })"
+      width="900px"
+    >
       <el-table :data="pipeDataRows" size="small" border max-height="420" stripe>
         <template #empty>
-          <el-empty description="暂无数据，请先运行管道" :image-size="60" />
+          <el-empty :description="t('ai_workflow.ig_pipeDataEmpty')" :image-size="60" />
         </template>
         <el-table-column
           v-for="c in pipeDataCols"
@@ -977,51 +1163,67 @@
     </el-dialog>
 
     <!-- 新建/编辑指标 -->
-    <el-dialog v-model="metricDlg" :title="metricForm.id ? '编辑指标' : '新建指标'" width="600px">
+    <el-dialog
+      v-model="metricDlg"
+      :title="metricForm.id ? t('ai_workflow.ig_editMetric') : t('ai_workflow.ig_newMetric')"
+      width="600px"
+    >
       <el-form :model="metricForm" label-width="100px" size="small">
-        <el-form-item label="显示名">
-          <el-input v-model="metricForm.name" placeholder="如：销售额" />
+        <el-form-item :label="t('ai_workflow.ig_displayName')">
+          <el-input
+            v-model="metricForm.name"
+            :placeholder="t('ai_workflow.ig_displayNamePlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="编码 key">
+        <el-form-item :label="t('ai_workflow.ig_codeKey')">
           <el-input
             v-model="metricForm.key"
             :disabled="!!metricForm.id"
-            placeholder="仅字母/数字/下划线，如 sales_amount"
+            :placeholder="t('ai_workflow.ig_codeKeyPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="数据源">
-          <el-input v-model="metricForm.datasource" placeholder="system 或数据源编码" />
+        <el-form-item :label="t('ai_workflow.ig_datasource')">
+          <el-input
+            v-model="metricForm.datasource"
+            :placeholder="t('ai_workflow.ig_datasourcePlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="SQL 模板">
+        <el-form-item :label="t('ai_workflow.ig_sqlTemplate')">
           <el-input
             v-model="metricForm.sql_template"
             type="textarea"
             :rows="4"
-            placeholder="SELECT ... （可用 :参数）"
+            :placeholder="t('ai_workflow.ig_sqlPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="聚合">
-          <el-input v-model="metricForm.agg" placeholder="count / sum / avg" />
+        <el-form-item :label="t('ai_workflow.ig_agg')">
+          <el-input v-model="metricForm.agg" :placeholder="t('ai_workflow.ig_aggPlaceholder')" />
         </el-form-item>
-        <el-form-item label="单位">
-          <el-input v-model="metricForm.unit" placeholder="如：元 / 台" />
+        <el-form-item :label="t('ai_workflow.ig_unit')">
+          <el-input v-model="metricForm.unit" :placeholder="t('ai_workflow.ig_unitPlaceholder')" />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="t('ai_workflow.ig_enabled')">
           <el-switch v-model="metricForm.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="metricDlg = false">取消</el-button>
-        <el-button type="primary" :loading="savingMetric" @click="saveMetric">保存</el-button>
+        <el-button @click="metricDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+        <el-button type="primary" :loading="savingMetric" @click="saveMetric">
+          {{ t("ai_workflow.ig_save") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 新建/编辑示例工程 -->
-    <el-dialog v-model="fewshotDlg" :title="fewshotForm.id ? '编辑示例' : '新建示例'" width="600px">
+    <el-dialog
+      v-model="fewshotDlg"
+      :title="fewshotForm.id ? t('ai_workflow.ig_editExample') : t('ai_workflow.ig_newExample')"
+      width="600px"
+    >
       <el-form :model="fewshotForm" label-width="90px" size="small">
-        <el-form-item label="数据源">
+        <el-form-item :label="t('ai_workflow.ig_datasource')">
           <el-select v-model="fewshotForm.datasource" style="width: 100%">
-            <el-option label="系统库（本体支撑表）" value="system" />
+            <el-option :label="t('ai_workflow.ig_systemLibOption')" value="system" />
             <el-option
               v-for="d in datasources"
               :key="d.code || d.id"
@@ -1030,15 +1232,15 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="问题" required>
+        <el-form-item :label="t('ai_workflow.ig_question')" required>
           <el-input
             v-model="fewshotForm.question"
             type="textarea"
             :rows="2"
-            placeholder="自然语言问题，如：统计摄像机的状态分布"
+            :placeholder="t('ai_workflow.ig_questionPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="示例 SQL" required>
+        <el-form-item :label="t('ai_workflow.ig_exampleSql')" required>
           <el-input
             v-model="fewshotForm.sql"
             type="textarea"
@@ -1046,119 +1248,164 @@
             placeholder="SELECT status, count(*) FROM video_cameras GROUP BY status"
           />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="t('ai_workflow.ig_enabled')">
           <el-switch v-model="fewshotForm.enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="fewshotDlg = false">取消</el-button>
-        <el-button type="primary" :loading="savingFewshot" @click="saveFewshot">保存</el-button>
+        <el-button @click="fewshotDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+        <el-button type="primary" :loading="savingFewshot" @click="saveFewshot">
+          {{ t("ai_workflow.ig_save") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 新建/编辑术语 -->
-    <el-dialog v-model="termDlg" :title="termForm.id ? '编辑术语' : '新建术语'" width="520px">
+    <el-dialog
+      v-model="termDlg"
+      :title="termForm.id ? t('ai_workflow.ig_editTerm') : t('ai_workflow.ig_newTerm')"
+      width="520px"
+    >
       <el-form :model="termForm" label-width="100px" size="small">
-        <el-form-item label="术语">
+        <el-form-item :label="t('ai_workflow.ig_term')">
           <el-input
             v-model="termForm.term"
             :disabled="!!termForm.id"
-            placeholder="业务黑话，如：产量"
+            :placeholder="t('ai_workflow.ig_termPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="数据源">
-          <el-input v-model="termForm.datasource" placeholder="system 或数据源编码" />
+        <el-form-item :label="t('ai_workflow.ig_datasource')">
+          <el-input
+            v-model="termForm.datasource"
+            :placeholder="t('ai_workflow.ig_datasourcePlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="对应指标">
-          <el-input v-model="termForm.metric_key" placeholder="指标编码（可空）" />
+        <el-form-item :label="t('ai_workflow.ig_correspondingMetric')">
+          <el-input
+            v-model="termForm.metric_key"
+            :placeholder="t('ai_workflow.ig_metricCodeOptional')"
+          />
         </el-form-item>
-        <el-form-item label="字段路径">
-          <el-input v-model="termForm.field_path" placeholder="表.字段（可空）" />
+        <el-form-item :label="t('ai_workflow.ig_fieldPath')">
+          <el-input
+            v-model="termForm.field_path"
+            :placeholder="t('ai_workflow.ig_fieldPathOptional')"
+          />
         </el-form-item>
-        <el-form-item label="类型">
+        <el-form-item :label="t('ai_workflow.ig_type')">
           <el-select v-model="termForm.type">
-            <el-option label="指标别名" value="metric" />
-            <el-option label="普通术语" value="term" />
+            <el-option :label="t('ai_workflow.ig_metricAlias')" value="metric" />
+            <el-option :label="t('ai_workflow.ig_normalTerm')" value="term" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="termDlg = false">取消</el-button>
-        <el-button type="primary" :loading="savingTerm" @click="saveTerm">保存</el-button>
+        <el-button @click="termDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+        <el-button type="primary" :loading="savingTerm" @click="saveTerm">
+          {{ t("ai_workflow.ig_save") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 新建/编辑概念 -->
-    <el-dialog v-model="conceptDlg" :title="conceptForm.id ? '编辑概念' : '新建概念'" width="600px">
+    <el-dialog
+      v-model="conceptDlg"
+      :title="conceptForm.id ? t('ai_workflow.ig_editConcept') : t('ai_workflow.ig_newConcept')"
+      width="600px"
+    >
       <el-form :model="conceptForm" label-width="100px" size="small">
-        <el-form-item label="概念名称">
+        <el-form-item :label="t('ai_workflow.ig_conceptName')">
           <el-input
             v-model="conceptForm.name"
             :disabled="!!conceptForm.id"
-            placeholder="如：燃煤批次"
+            :placeholder="t('ai_workflow.ig_conceptNamePlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="描述">
+        <el-form-item :label="t('ai_workflow.ig_description')">
           <el-input v-model="conceptForm.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="同义词">
-          <el-input v-model="conceptForm.synonyms" placeholder="逗号分隔（可空）" />
+        <el-form-item :label="t('ai_workflow.ig_synonyms')">
+          <el-input
+            v-model="conceptForm.synonyms"
+            :placeholder="t('ai_workflow.ig_synonymsPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="父概念">
-          <el-input v-model="conceptForm.parent_name" placeholder="可空" />
+        <el-form-item :label="t('ai_workflow.ig_parentConcept')">
+          <el-input v-model="conceptForm.parent_name" :placeholder="t('ai_workflow.ig_optional')" />
         </el-form-item>
-        <el-form-item label="业务域">
-          <el-input v-model="conceptForm.domain" placeholder="如：燃煤" />
+        <el-form-item :label="t('ai_workflow.ig_businessDomain')">
+          <el-input
+            v-model="conceptForm.domain"
+            :placeholder="t('ai_workflow.ig_domainPlaceholder2')"
+          />
         </el-form-item>
-        <el-form-item label="关联指标">
-          <el-input v-model="conceptForm.metric_key" placeholder="指标编码（可空）" />
+        <el-form-item :label="t('ai_workflow.ig_relatedMetric')">
+          <el-input
+            v-model="conceptForm.metric_key"
+            :placeholder="t('ai_workflow.ig_metricCodeOptional')"
+          />
         </el-form-item>
-        <el-form-item label="涉及表">
-          <el-input v-model="conceptForm.tables_text" placeholder="逗号分隔，如：T_A,T_B" />
+        <el-form-item :label="t('ai_workflow.ig_relatedTables')">
+          <el-input
+            v-model="conceptForm.tables_text"
+            :placeholder="t('ai_workflow.ig_relatedTablesPlaceholder')"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="conceptDlg = false">取消</el-button>
-        <el-button type="primary" :loading="savingConcept" @click="saveConcept">保存</el-button>
+        <el-button @click="conceptDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+        <el-button type="primary" :loading="savingConcept" @click="saveConcept">
+          {{ t("ai_workflow.ig_save") }}
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- 编辑单字段属性 -->
-    <el-dialog v-model="colDlg" :title="`编辑字段属性：${colForm.column_name || ''}`" width="520px">
+    <el-dialog
+      v-model="colDlg"
+      :title="t('ai_workflow.ig_editFieldTitle', { name: colForm.column_name || '' })"
+      width="520px"
+    >
       <el-form :model="colForm" label-width="90px" size="small">
-        <el-form-item label="字段名">
+        <el-form-item :label="t('ai_workflow.ig_fieldName')">
           <span class="ig-tname">{{ colForm.column_name }}</span>
         </el-form-item>
-        <el-form-item label="中文名">
-          <el-input v-model="colForm.description" placeholder="如 结算数量" />
+        <el-form-item :label="t('ai_workflow.ig_chineseName')">
+          <el-input
+            v-model="colForm.description"
+            :placeholder="t('ai_workflow.ig_fieldDescPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="业务场景">
-          <el-input v-model="colForm.business_scenarios" placeholder="哪些报表/业务用到" />
+        <el-form-item :label="t('ai_workflow.ig_businessScenario')">
+          <el-input
+            v-model="colForm.business_scenarios"
+            :placeholder="t('ai_workflow.ig_bizScenarioPlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="关联表">
+        <el-form-item :label="t('ai_workflow.ig_relatedTable')">
           <el-select-v2
             v-model="colForm.related_table"
             :options="relTableOptions"
             size="small"
             filterable
             clearable
-            placeholder="选择关联表"
+            :placeholder="t('ai_workflow.ig_relatedTablePlaceholder')"
             style="width: 100%"
             @change="colForm.related_field = ''"
           />
         </el-form-item>
-        <el-form-item label="关联字段">
+        <el-form-item :label="t('ai_workflow.ig_relatedField')">
           <el-select-v2
             v-model="colForm.related_field"
             :options="relFieldOptions(colForm.related_table)"
             size="small"
             filterable
             clearable
-            placeholder="选择对应字段"
+            :placeholder="t('ai_workflow.ig_relatedFieldPlaceholder')"
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="枚举">
+        <el-form-item :label="t('ai_workflow.ig_enum')">
           <el-select
             v-model="colForm.enum"
             multiple
@@ -1166,68 +1413,76 @@
             allow-create
             default-first-option
             size="small"
-            placeholder="输入后回车新增"
+            :placeholder="t('ai_workflow.ig_enumPlaceholder')"
             style="width: 100%"
           >
             <el-option v-for="e in colForm.enum" :key="e" :label="e" :value="e" />
           </el-select>
         </el-form-item>
-        <el-form-item label="纳入问数">
+        <el-form-item :label="t('ai_workflow.ig_includeQuery')">
           <el-switch v-model="colForm.included" />
         </el-form-item>
-        <el-form-item label="敏感">
+        <el-form-item :label="t('ai_workflow.ig_sensitive')">
           <el-switch v-model="colForm.sensitive" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="colDlg = false">取消</el-button>
+        <el-button @click="colDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
         <el-button type="primary" :loading="savingCol === colForm.column_name" @click="saveColEdit">
-          保存
+          {{ t("ai_workflow.ig_save") }}
         </el-button>
       </template>
     </el-dialog>
 
     <!-- 新建/编辑数据源 -->
-    <el-dialog v-model="dsDlg" :title="dsForm.id ? '编辑数据源' : '新建数据源'" width="520px">
+    <el-dialog
+      v-model="dsDlg"
+      :title="dsForm.id ? t('ai_workflow.ig_editDs') : t('ai_workflow.ig_newDs')"
+      width="520px"
+    >
       <el-form :model="dsForm" label-width="90px" size="small">
-        <el-form-item label="数据源ID">
-          <el-input v-model="dsForm.code" :disabled="!!dsForm.id" placeholder="如 ezdcs_pg" />
+        <el-form-item :label="t('ai_workflow.ig_dsCode')">
+          <el-input
+            v-model="dsForm.code"
+            :disabled="!!dsForm.id"
+            :placeholder="t('ai_workflow.ig_dsCodePlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="显示名称">
-          <el-input v-model="dsForm.name" placeholder="如 燃煤业务库" />
+        <el-form-item :label="t('ai_workflow.ig_dsName')">
+          <el-input v-model="dsForm.name" :placeholder="t('ai_workflow.ig_dsNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="数据库类型">
+        <el-form-item :label="t('ai_workflow.ig_dbType')">
           <el-select v-model="dsForm.type">
             <el-option label="PostgreSQL" value="postgres" />
             <el-option label="MySQL" value="mysql" />
           </el-select>
         </el-form-item>
-        <el-form-item label="主机地址">
+        <el-form-item :label="t('ai_workflow.ig_host')">
           <el-input v-model="dsForm.host" />
         </el-form-item>
-        <el-form-item label="端口">
+        <el-form-item :label="t('ai_workflow.ig_port')">
           <el-input-number v-model="dsForm.port" :min="1" :max="65535" controls-position="right" />
         </el-form-item>
-        <el-form-item label="数据库名">
+        <el-form-item :label="t('ai_workflow.ig_database')">
           <el-input v-model="dsForm.database" />
         </el-form-item>
-        <el-form-item label="用户名">
+        <el-form-item :label="t('ai_workflow.ig_username')">
           <el-input v-model="dsForm.username" />
         </el-form-item>
-        <el-form-item label="密码">
+        <el-form-item :label="t('ai_workflow.ig_password')">
           <el-input v-model="dsForm.password" type="password" show-password />
         </el-form-item>
-        <el-form-item label="会话只读">
+        <el-form-item :label="t('ai_workflow.ig_readOnly')">
           <el-switch v-model="dsForm.read_only" />
         </el-form-item>
         <template v-if="dsForm.filter_rules">
           <el-divider content-position="left" class="ig-form__divider">
-            筛选规则（自动打标系统表/审计字段）
+            {{ t("ai_workflow.ig_filterRuleSection") }}
           </el-divider>
-          <el-form-item label="启用规则">
+          <el-form-item :label="t('ai_workflow.ig_enableRule')">
             <el-switch v-model="dsForm.filter_rules.enabled" />
           </el-form-item>
-          <el-form-item label="系统表前缀">
+          <el-form-item :label="t('ai_workflow.ig_sysTablePrefix')">
             <el-select
               v-model="dsForm.filter_rules.system_table.prefixes"
               multiple
@@ -1235,7 +1490,7 @@
               allow-create
               default-first-option
               size="small"
-              placeholder="回车新增，如 SYS_ / FUEL_"
+              :placeholder="t('ai_workflow.ig_enterAddPrefix')"
               style="width: 100%"
             >
               <el-option
@@ -1246,7 +1501,7 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="系统表关键词">
+          <el-form-item :label="t('ai_workflow.ig_sysTableKeyword')">
             <el-select
               v-model="dsForm.filter_rules.system_table.keywords"
               multiple
@@ -1254,7 +1509,7 @@
               allow-create
               default-first-option
               size="small"
-              placeholder="回车新增，如 _BAK / log"
+              :placeholder="t('ai_workflow.ig_enterAddKeyword')"
               style="width: 100%"
             >
               <el-option
@@ -1265,7 +1520,7 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="精确表名">
+          <el-form-item :label="t('ai_workflow.ig_exactTable')">
             <el-select
               v-model="dsForm.filter_rules.system_table.exact"
               multiple
@@ -1273,7 +1528,7 @@
               allow-create
               default-first-option
               size="small"
-              placeholder="回车新增，如 alembic_version"
+              :placeholder="t('ai_workflow.ig_enterAddExact')"
               style="width: 100%"
             >
               <el-option
@@ -1284,13 +1539,13 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="表名正则">
+          <el-form-item :label="t('ai_workflow.ig_tableRegex')">
             <el-input
               v-model="dsForm.filter_rules.system_table.regex"
-              placeholder="可空，如 ^TMP_"
+              :placeholder="t('ai_workflow.ig_tableRegexPlaceholder')"
             />
           </el-form-item>
-          <el-form-item label="审计字段">
+          <el-form-item :label="t('ai_workflow.ig_auditField')">
             <el-select
               v-model="dsForm.filter_rules.audit_fields"
               multiple
@@ -1298,7 +1553,7 @@
               allow-create
               default-first-option
               size="small"
-              placeholder="回车新增，如 created_time / is_deleted"
+              :placeholder="t('ai_workflow.ig_enterAddAudit')"
               style="width: 100%"
             >
               <el-option
@@ -1312,8 +1567,10 @@
         </template>
       </el-form>
       <template #footer>
-        <el-button @click="dsDlg = false">取消</el-button>
-        <el-button type="primary" :loading="savingDs" @click="saveDs">保存</el-button>
+        <el-button @click="dsDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+        <el-button type="primary" :loading="savingDs" @click="saveDs">
+          {{ t("ai_workflow.ig_save") }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -1325,6 +1582,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { useI18n } from "vue-i18n";
 import {
   Plus,
   Refresh,
@@ -1387,6 +1645,7 @@ import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 const tab = ref("table");
 const datasources = ref<any[]>([]);
 const curDs = ref<any>(null);
+const { t } = useI18n();
 const dsTables = ref<any[]>([]);
 const schemaRows = ref<any[]>([]);
 const tableKw = ref("");
@@ -1412,12 +1671,12 @@ const nodeStyle = {
 // 血缘图过滤：按节点类型 / 按表聚焦（性能优化，避免大图全渲染又密又慢）
 const kgTypeFilter = ref<string[]>([]);
 const kgTypeOptions = [
-  { value: "table", label: "表" },
-  { value: "field", label: "字段" },
-  { value: "metric", label: "指标" },
-  { value: "term", label: "术语" },
-  { value: "domain", label: "域" },
-  { value: "concept", label: "概念" },
+  { value: "table", label: t("ai_workflow.ig_kgTypeTable") },
+  { value: "field", label: t("ai_workflow.ig_kgTypeField") },
+  { value: "metric", label: t("ai_workflow.ig_kgTypeMetric") },
+  { value: "term", label: t("ai_workflow.ig_kgTypeTerm") },
+  { value: "domain", label: t("ai_workflow.ig_kgTypeDomain") },
+  { value: "concept", label: t("ai_workflow.ig_kgTypeConcept") },
 ];
 const kgTableFocus = ref("");
 const kgTableOptions = ref<any[]>([]);
@@ -1472,9 +1731,9 @@ function openVersions(row: any) {
 async function addFav(row: any) {
   try {
     const r = await addFavorite("table", row.table || row.table_name);
-    ElMessage.success(r?.data?.msg || "已收藏");
+    ElMessage.success(r?.data?.msg || t("ai_workflow.ig_favorited"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "收藏失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_favoriteFail"));
   }
 }
 const batchDlg = ref(false);
@@ -1597,11 +1856,13 @@ const curTableSys = computed(() => {
 
 // 表清单空态文案：区分「未选数据源 / 被过滤清空 / 需同步」
 const tableEmptyText = computed(() => {
-  if (!curDs.value) return "请先选择左侧数据源";
+  if (!curDs.value) return t("ai_workflow.ig_selectDsFirst");
   if (dsTables.value.length && !filteredTables.value.length) {
-    return hideSys.value ? "已隐藏系统表，当前没有业务表" : "没有匹配的表";
+    return hideSys.value
+      ? t("ai_workflow.ig_noBizTableAfterHide")
+      : t("ai_workflow.ig_noMatchTable");
   }
-  return "点「同步」拉取表结构";
+  return t("ai_workflow.ig_syncToLoad");
 });
 
 async function loadDs() {
@@ -1644,10 +1905,10 @@ async function syncSchema() {
   syncing.value = true;
   try {
     const r = await syncQueryDatasourceSchema(curDs.value.id);
-    ElMessage.success(`已同步 ${r.data?.data?.tables ?? 0} 张表`);
+    ElMessage.success(t("ai_workflow.ig_syncedCount", { count: r.data?.data?.tables ?? 0 }));
     await loadDsTables();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "同步失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_syncFail"));
   } finally {
     syncing.value = false;
   }
@@ -1695,28 +1956,31 @@ async function saveTable() {
   if (!curTable.value) return;
   savingTable.value = true;
   try {
-    await saveQueryAsset({ table_name: curTable.value, ...tmeta.value });
+    await saveQueryAsset({ table_name: curTable.value, ...tmeta.value }, { silent: true });
     // 收敛（Object Type 单一真相源）：勾选「纳入本体对象」时，同步在本体生成 ObjectType（按 code 幂等 upsert）
     if (tmeta.value.object_enabled) {
       try {
-        await saveOntObject({
-          code: curTable.value,
-          name: tmeta.value.alias || curTable.value,
-          key_prop: tmeta.value.object_key_col || "id",
-          name_prop: tmeta.value.object_name_col || "name",
-          icon: tmeta.value.object_icon || "el-icon-Box",
-          backing_table: curTable.value,
-          datasource_id: curDs.value?.id,
-          domain_code: tmeta.value.domain || "",
-        });
+        await saveOntObject(
+          {
+            code: curTable.value,
+            name: tmeta.value.alias || curTable.value,
+            key_prop: tmeta.value.object_key_col || "id",
+            name_prop: tmeta.value.object_name_col || "name",
+            icon: tmeta.value.object_icon || "el-icon-Box",
+            backing_table: curTable.value,
+            datasource_id: curDs.value?.id,
+            domain_code: tmeta.value.domain || "",
+          },
+          { silent: true }
+        );
       } catch {
         /* 本体对象创建失败不阻断表信息保存 */
       }
     }
-    ElMessage.success("表信息已保存");
+    ElMessage.success(t("ai_workflow.ig_tableSaved"));
     await loadAssets();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     savingTable.value = false;
   }
@@ -1736,9 +2000,9 @@ async function saveColumn(row: any, quiet = false) {
       sensitive: !!row.sensitive,
       enum: Array.isArray(row.enum) ? row.enum : [],
     });
-    if (!quiet) ElMessage.success(`字段「${row.column_name}」已保存`);
+    if (!quiet) ElMessage.success(t("ai_workflow.ig_fieldSaved", { name: row.column_name }));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     savingCol.value = "";
   }
@@ -1775,13 +2039,13 @@ async function saveColEdit() {
   savingCol.value = colForm.value.column_name;
   try {
     await saveQueryAssetColumn({ table_name: curTable.value, ...colForm.value });
-    ElMessage.success(`字段「${colForm.value.column_name}」已保存`);
+    ElMessage.success(t("ai_workflow.ig_fieldSaved", { name: colForm.value.column_name }));
     // 同步回字段清单行
     const row = columns.value.find((c) => c.column_name === colForm.value.column_name);
     if (row) Object.assign(row, colForm.value);
     colDlg.value = false;
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     savingCol.value = "";
   }
@@ -1794,10 +2058,10 @@ async function doImport() {
     const r = await importDsAsOntology(curDs.value.id, curTable.value, importDomain.value);
     const d = r.data?.data || {};
     ElMessage[d.ok ? "success" : "error"](
-      d.ok ? `已导入为本体对象「${d.object}」，${d.props} 个属性` : d.msg
+      d.ok ? t("ai_workflow.ig_importedObject", { object: d.object, count: d.props }) : d.msg
     );
   } catch (e: any) {
-    ElMessage.error(e?.msg || "导入失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_importFail"));
   } finally {
     importing.value = false;
   }
@@ -1851,12 +2115,12 @@ async function doBatchSave() {
   try {
     const res = await batchSaveQueryAssetMeta(items);
     const d = res.data?.data || {};
-    ElMessage.success(`已保存 ${d.saved ?? 0} 张表`);
+    ElMessage.success(t("ai_workflow.ig_savedTableCount", { count: d.saved ?? 0 }));
     batchDlg.value = false;
     await loadAssets();
     if (curTable.value) fillTmeta(curTable.value);
   } catch (e: any) {
-    ElMessage.error(e?.msg || "批量保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_batchSaveFail"));
   } finally {
     batchSaving.value = false;
   }
@@ -1912,11 +2176,11 @@ async function saveDs() {
   savingDs.value = true;
   try {
     await saveQueryDatasource(dsForm.value);
-    ElMessage.success("保存成功");
+    ElMessage.success(t("ai_workflow.ig_saveSuccess"));
     dsDlg.value = false;
     await loadDs();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     savingDs.value = false;
   }
@@ -1926,9 +2190,11 @@ async function testDs(row: any) {
   try {
     const r = await testQueryDatasource(row.id);
     const d = r.data?.data || {};
-    ElMessage[d.ok ? "success" : "error"](d.message || (d.ok ? "连接成功" : "连接失败"));
+    ElMessage[d.ok ? "success" : "error"](
+      d.message || (d.ok ? t("ai_workflow.ig_connSuccess") : t("ai_workflow.ig_connFail"))
+    );
   } catch (e: any) {
-    ElMessage.error(e?.msg || "测试失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_testFail"));
   }
 }
 
@@ -1936,16 +2202,20 @@ async function testDs(row: any) {
 async function removeDs(row: any) {
   try {
     await ElMessageBox.confirm(
-      `将删除数据源「${row.name || row.code}」及其已同步的表结构，且不可恢复。是否继续？`,
-      "删除数据源",
-      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+      t("ai_workflow.ig_delDsConfirm", { name: row.name || row.code }),
+      t("ai_workflow.ig_delDsTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("ai_workflow.ig_delete"),
+        cancelButtonText: t("ai_workflow.ig_cancel"),
+      }
     );
   } catch {
     return;
   }
   try {
     await deleteQueryDatasources([row.id]);
-    ElMessage.success("已删除");
+    ElMessage.success(t("ai_workflow.ig_deleted"));
     // 删除的是当前选中数据源时，清空选中态并回退到空表清单
     if (curDs.value && curDs.value.id === row.id) {
       curDs.value = null;
@@ -1955,7 +2225,7 @@ async function removeDs(row: any) {
     }
     await loadDs();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "删除失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_delFail"));
   }
 }
 
@@ -1966,7 +2236,7 @@ async function doBatchImport() {
   if (!curDs.value) return;
   const tables = dsTables.value.filter((t) => !t.is_system).map((t) => t.table);
   if (!tables.length) {
-    ElMessage.warning("当前没有可导入的业务表（已隐藏系统表）");
+    ElMessage.warning(t("ai_workflow.ig_noImportBizTable"));
     return;
   }
   importingBatch.value = true;
@@ -1974,10 +2244,12 @@ async function doBatchImport() {
     const r = await importDsAsOntologyBatch(curDs.value.id, tables, false, importDomain.value);
     const d = r.data?.data || {};
     ElMessage[r.data?.msg && !d.ok ? "error" : "success"](
-      d.ok ? `已导入 ${d.imported ?? 0} 个本体对象` : d.msg || "导入失败"
+      d.ok
+        ? t("ai_workflow.ig_importedCount", { count: d.imported ?? 0 })
+        : d.msg || t("ai_workflow.ig_importFail")
     );
   } catch (e: any) {
-    ElMessage.error(e?.msg || "批量导入失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_batchImportFail"));
   } finally {
     importingBatch.value = false;
   }
@@ -1995,18 +2267,18 @@ async function loadDomains() {
 
 /** 解析字段映射：支持「源 目标」多行文本，也支持直接粘贴 JSON 数组。 */
 function parseMappings(text: string): any[] {
-  const t = (text || "").trim();
-  if (!t) return [];
-  if (t.startsWith("[")) {
+  const raw = (text || "").trim();
+  if (!raw) return [];
+  if (raw.startsWith("[")) {
     try {
-      const arr = JSON.parse(t);
+      const arr = JSON.parse(raw);
       return Array.isArray(arr) ? arr : [];
     } catch {
-      ElMessage.warning("映射 JSON 解析失败，已忽略");
+      ElMessage.warning(t("ai_workflow.ig_mappingParseFail"));
       return [];
     }
   }
-  return t
+  return raw
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
@@ -2060,7 +2332,7 @@ function openPipe(row?: any) {
 
 async function savePipe() {
   if (!pipeForm.value.name) {
-    ElMessage.warning("请填写管道名称");
+    ElMessage.warning(t("ai_workflow.ig_pipeNameRequired"));
     return;
   }
   savingPipe.value = true;
@@ -2069,11 +2341,11 @@ async function savePipe() {
       ...pipeForm.value,
       mappings: parseMappings(pipeForm.value.mappings_text),
     });
-    ElMessage.success("管道已保存");
+    ElMessage.success(t("ai_workflow.ig_pipeSaved"));
     pipeDlg.value = false;
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     savingPipe.value = false;
   }
@@ -2088,7 +2360,7 @@ async function viewPipeData(row: any) {
     const r = await getPipelineData(row.id, 50);
     const d = r.data?.data || {};
     if (d.ok === false) {
-      ElMessage.warning(d.msg || "暂无落库结果");
+      ElMessage.warning(d.msg || t("ai_workflow.ig_noPipeData"));
       return;
     }
     const cols: string[] = d.columns || [];
@@ -2099,7 +2371,7 @@ async function viewPipeData(row: any) {
       return o;
     });
   } catch (e: any) {
-    ElMessage.error(e?.msg || "读取管道数据失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_pipeDataFail"));
   }
 }
 
@@ -2107,9 +2379,9 @@ async function runPipe(row: any) {
   try {
     const r = await runPipeline(row.id);
     const d = r.data?.data || {};
-    ElMessage[d.ok ? "success" : "error"](d.msg || "已运行");
+    ElMessage[d.ok ? "success" : "error"](d.msg || t("ai_workflow.ig_ran"));
   } catch (e: any) {
-    ElMessage.error(e?.msg || "运行失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_runFail"));
   }
 }
 
@@ -2141,10 +2413,10 @@ async function openSuggest() {
     suggestMetrics.value = d.metrics || [];
     suggestTerms.value = d.terms || [];
     if (!suggestMetrics.value.length && !suggestTerms.value.length) {
-      ElMessage.warning("未生成推荐，可先完善资产的业务描述后重试");
+      ElMessage.warning(t("ai_workflow.ig_noSuggestResult"));
     }
   } catch (e: any) {
-    ElMessage.error(e?.msg || "推荐失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_suggestFail"));
   } finally {
     suggestLoading.value = false;
   }
@@ -2182,21 +2454,21 @@ function adoptTerm(row: any) {
 async function saveMetric() {
   const f = metricForm.value;
   if (!f.name || !f.key) {
-    ElMessage.warning("请填写指标显示名与编码");
+    ElMessage.warning(t("ai_workflow.ig_metricRequired"));
     return;
   }
   if (!/^[A-Za-z0-9_]+$/.test(f.key)) {
-    ElMessage.warning("编码仅允许字母/数字/下划线");
+    ElMessage.warning(t("ai_workflow.ig_codeInvalid"));
     return;
   }
   savingMetric.value = true;
   try {
     await saveQueryMetric({ ...f, params: f.params || [], dimensions: f.dimensions || [] });
-    ElMessage.success("指标已保存");
+    ElMessage.success(t("ai_workflow.ig_metricSaved"));
     metricDlg.value = false;
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     savingMetric.value = false;
   }
@@ -2204,16 +2476,20 @@ async function saveMetric() {
 
 async function removeMetric(row: any) {
   await ElMessageBox.confirm(
-    `将删除指标「${row.name || row.key}」，问数将不再走该确定性快路径，且不可恢复。`,
-    "删除指标",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    t("ai_workflow.ig_delMetricConfirm", { name: row.name || row.key }),
+    t("ai_workflow.ig_delMetricTitle"),
+    {
+      type: "warning",
+      confirmButtonText: t("ai_workflow.ig_delete"),
+      cancelButtonText: t("ai_workflow.ig_cancel"),
+    }
   );
   try {
     await deleteQueryMetrics([row.id]);
-    ElMessage.success("已删除");
+    ElMessage.success(t("ai_workflow.ig_deleted"));
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "删除失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_delFail"));
   }
 }
 
@@ -2228,21 +2504,21 @@ function openFewshot(row?: any) {
 async function saveFewshot() {
   const f = fewshotForm.value;
   if (!f.question?.trim()) {
-    ElMessage.warning("请填写问题");
+    ElMessage.warning(t("ai_workflow.ig_questionRequired"));
     return;
   }
   if (!f.sql?.trim()) {
-    ElMessage.warning("请填写示例 SQL");
+    ElMessage.warning(t("ai_workflow.ig_sqlRequired"));
     return;
   }
   savingFewshot.value = true;
   try {
     await saveQueryFewshot({ ...f });
-    ElMessage.success("示例已保存");
+    ElMessage.success(t("ai_workflow.ig_exampleSaved"));
     fewshotDlg.value = false;
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     savingFewshot.value = false;
   }
@@ -2250,16 +2526,20 @@ async function saveFewshot() {
 
 async function removeFewshot(row: any) {
   await ElMessageBox.confirm(
-    `将删除示例「${(row.question || "").slice(0, 20)}」，问数将不再参考该样例，且不可恢复。`,
-    "删除示例",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    t("ai_workflow.ig_delExampleConfirm", { name: (row.question || "").slice(0, 20) }),
+    t("ai_workflow.ig_delExampleTitle"),
+    {
+      type: "warning",
+      confirmButtonText: t("ai_workflow.ig_delete"),
+      cancelButtonText: t("ai_workflow.ig_cancel"),
+    }
   );
   try {
     await deleteQueryFewshots([row.id]);
-    ElMessage.success("已删除");
+    ElMessage.success(t("ai_workflow.ig_deleted"));
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "删除失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_delFail"));
   }
 }
 
@@ -2274,17 +2554,17 @@ function openTerm(row?: any) {
 async function saveTerm() {
   const f = termForm.value;
   if (!f.term) {
-    ElMessage.warning("请填写术语");
+    ElMessage.warning(t("ai_workflow.ig_termRequired"));
     return;
   }
   savingTerm.value = true;
   try {
     await saveQueryTerm({ ...f });
-    ElMessage.success("术语已保存");
+    ElMessage.success(t("ai_workflow.ig_termSaved"));
     termDlg.value = false;
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     savingTerm.value = false;
   }
@@ -2292,16 +2572,20 @@ async function saveTerm() {
 
 async function removeTerm(row: any) {
   await ElMessageBox.confirm(
-    `将删除术语「${row.term}」，该业务说法与指标/字段的映射将失效，且不可恢复。`,
-    "删除术语",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    t("ai_workflow.ig_delTermConfirm", { name: row.term }),
+    t("ai_workflow.ig_delTermTitle"),
+    {
+      type: "warning",
+      confirmButtonText: t("ai_workflow.ig_delete"),
+      cancelButtonText: t("ai_workflow.ig_cancel"),
+    }
   );
   try {
     await deleteQueryTerms([row.id]);
-    ElMessage.success("已删除");
+    ElMessage.success(t("ai_workflow.ig_deleted"));
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "删除失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_delFail"));
   }
 }
 
@@ -2324,7 +2608,7 @@ function openConcept(row?: any) {
 async function saveConcept() {
   const f = conceptForm.value;
   if (!f.name) {
-    ElMessage.warning("请填写概念名称");
+    ElMessage.warning(t("ai_workflow.ig_conceptRequired"));
     return;
   }
   savingConcept.value = true;
@@ -2336,11 +2620,11 @@ async function saveConcept() {
         .map((s: string) => s.trim())
         .filter(Boolean),
     });
-    ElMessage.success("概念已保存");
+    ElMessage.success(t("ai_workflow.ig_conceptSaved"));
     conceptDlg.value = false;
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "保存失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
   } finally {
     savingConcept.value = false;
   }
@@ -2348,35 +2632,43 @@ async function saveConcept() {
 
 async function removeConcept(row: any) {
   await ElMessageBox.confirm(
-    `将删除概念「${row.name}」，其在语义层与图谱中的关联将失效，且不可恢复。`,
-    "删除概念",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    t("ai_workflow.ig_delConceptConfirm", { name: row.name }),
+    t("ai_workflow.ig_delConceptTitle"),
+    {
+      type: "warning",
+      confirmButtonText: t("ai_workflow.ig_delete"),
+      cancelButtonText: t("ai_workflow.ig_cancel"),
+    }
   );
   try {
     await deleteQueryConcepts([row.id]);
-    ElMessage.success("已删除");
+    ElMessage.success(t("ai_workflow.ig_deleted"));
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "删除失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_delFail"));
   }
 }
 
 async function syncKg() {
   try {
     await rebuildQueryKg();
-    ElMessage.success("图谱已重建");
+    ElMessage.success(t("ai_workflow.ig_graphRebuilt"));
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_fail"));
   }
 }
 
 async function autoLinkKg() {
   try {
     await ElMessageBox.confirm(
-      "将用大模型把知识库实体自动关联到 schema 表/字段（自动打边），可能耗时较长，是否继续？",
-      "自动打边",
-      { type: "warning", confirmButtonText: "开始", cancelButtonText: "取消" }
+      t("ai_workflow.ig_autoLinkConfirm"),
+      t("ai_workflow.ig_autoLinkTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("ai_workflow.ig_start"),
+        cancelButtonText: t("ai_workflow.ig_cancel"),
+      }
     );
   } catch {
     return;
@@ -2384,10 +2676,12 @@ async function autoLinkKg() {
   try {
     const r = await autoLinkQueryKg();
     const d = r.data?.data || {};
-    ElMessage.success(`已打边：${d.linked ?? d.saved ?? d.count ?? 0} 条`);
+    ElMessage.success(
+      t("ai_workflow.ig_linkedCount", { count: d.linked ?? d.saved ?? d.count ?? 0 })
+    );
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || "自动打边失败");
+    ElMessage.error(e?.msg || t("ai_workflow.ig_autoLinkFail"));
   }
 }
 
@@ -2401,12 +2695,12 @@ async function runGenerateDesc() {
     const d = r.data?.data || {};
     ElMessage.success(
       r.data?.msg ||
-        `已生成描述：表 ${d.tables ?? 0} 条、字段 ${d.columns ?? 0} 条（人工校对后生效）`
+        t("ai_workflow.ig_descGenerated", { tables: d.tables ?? 0, columns: d.columns ?? 0 })
     );
     await loadAssets();
   } catch (e: any) {
     // 拦截器 reject 的是 axios response，真实 msg 在 data.msg（e.msg 恒为 undefined）
-    ElMessage.error(e?.data?.msg || e?.msg || "AI 生成描述失败");
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_descGenFail"));
   } finally {
     generatingDesc.value = false;
   }
@@ -2498,9 +2792,13 @@ const semanticLoading = ref(false);
 async function handleExtractObjects() {
   try {
     await ElMessageBox.confirm(
-      "将对已纳入的资产表用大模型抽取「业务对象」并写入语义层，可能耗时较长，是否继续？",
-      "语义抽取对象",
-      { type: "warning", confirmButtonText: "开始", cancelButtonText: "取消" }
+      t("ai_workflow.ig_extractConfirm"),
+      t("ai_workflow.ig_extractTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("ai_workflow.ig_start"),
+        cancelButtonText: t("ai_workflow.ig_cancel"),
+      }
     );
   } catch {
     return;
@@ -2509,10 +2807,10 @@ async function handleExtractObjects() {
   try {
     const r: any = await extractQueryObjects();
     const d = r?.data?.data ?? r?.data ?? {};
-    ElMessage.success(`已抽取对象：${d.saved ?? d.count ?? 0} 个`);
+    ElMessage.success(t("ai_workflow.ig_extractedCount", { count: d.saved ?? d.count ?? 0 }));
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "抽取失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_workflow.ig_extractFail"));
   } finally {
     semanticLoading.value = false;
   }
@@ -2520,11 +2818,11 @@ async function handleExtractObjects() {
 
 async function handleInferRelations() {
   try {
-    await ElMessageBox.confirm(
-      "将用大模型推断资产表之间的关系并写入血缘/图谱，可能耗时较长，是否继续？",
-      "推断表间关系",
-      { type: "warning", confirmButtonText: "开始", cancelButtonText: "取消" }
-    );
+    await ElMessageBox.confirm(t("ai_workflow.ig_inferConfirm"), t("ai_workflow.ig_inferTitle"), {
+      type: "warning",
+      confirmButtonText: t("ai_workflow.ig_start"),
+      cancelButtonText: t("ai_workflow.ig_cancel"),
+    });
   } catch {
     return;
   }
@@ -2532,23 +2830,26 @@ async function handleInferRelations() {
   try {
     const r: any = await inferQueryAssetRelations();
     const d = r?.data?.data ?? r?.data ?? {};
-    ElMessage.success(`已推断关系：${d.saved ?? d.count ?? 0} 条`);
+    ElMessage.success(t("ai_workflow.ig_inferredCount", { count: d.saved ?? d.count ?? 0 }));
     await loadMisc();
   } catch (e: any) {
-    ElMessage.error(e?.msg || e?.message || "推断失败");
+    ElMessage.error(e?.msg || e?.message || t("ai_workflow.ig_inferFail"));
   } finally {
     semanticLoading.value = false;
   }
 }
 </script>
 
-<style scoped lang="scss">
-.ai-integration-page {
+<style lang="scss">
+.app-container.ai-integration-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   padding: 16px;
 }
+</style>
+
+<style scoped lang="scss">
 .ig-fill,
 .ig-card {
   height: 100%;

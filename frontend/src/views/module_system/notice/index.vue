@@ -22,7 +22,7 @@
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar">
             <template #prepend>
-              <el-tooltip content="导出">
+              <el-tooltip :content="t('system.notice.export')">
                 <el-button
                   v-hasPerm="['module_system:notice:export']"
                   type="warning"
@@ -49,7 +49,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="70" description="暂无数据" />
+              <el-empty :image-size="70" :description="t('system.notice.empty')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -60,7 +60,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('system.notice.index')"
               min-width="60"
             >
               <template #default="scope">
@@ -69,26 +69,30 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'notice_title')?.show"
-              label="通知标题"
+              :label="t('system.notice.noticeTitle')"
               prop="notice_title"
               min-width="140"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
-              label="状态"
+              :label="t('system.notice.status')"
               prop="status"
               min-width="80"
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status === '0' ? 'success' : 'danger'">
-                  {{ scope.row.status === "0" ? "启用" : "停用" }}
+                  {{
+                    scope.row.status === "0"
+                      ? t("system.notice.enable")
+                      : t("system.notice.disable")
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'notice_type')?.show"
-              label="类型"
+              :label="t('system.notice.type')"
               prop="notice_type"
               min-width="80"
             >
@@ -105,21 +109,21 @@
             </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'notice_content')?.show"
-              label="内容"
+              :label="t('system.notice.content')"
               prop="notice_content"
               min-width="200"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'description')?.show"
-              label="描述"
+              :label="t('system.notice.description')"
               prop="description"
               min-width="140"
               show-overflow-tooltip
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
-              label="创建时间"
+              :label="t('system.notice.createdTime')"
               prop="created_time"
               min-width="180"
               sortable
@@ -127,7 +131,7 @@
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_time')?.show"
-              label="更新时间"
+              :label="t('system.notice.updatedTime')"
               prop="updated_time"
               min-width="180"
               sortable
@@ -136,7 +140,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_id')?.show"
               key="created_id"
-              label="创建人"
+              :label="t('system.notice.creator')"
               min-width="100"
             >
               <template #default="scope">
@@ -146,7 +150,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'updated_id')?.show"
               key="updated_id"
-              label="更新人"
+              :label="t('system.notice.updater')"
               min-width="100"
             >
               <template #default="scope">
@@ -157,7 +161,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('system.notice.operation')"
               align="center"
               min-width="200"
             >
@@ -170,7 +174,7 @@
                   icon="View"
                   @click="handleOpenDialog('detail', scope.row.id)"
                 >
-                  详情
+                  {{ t("system.notice.detail") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:notice:update']"
@@ -180,7 +184,7 @@
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
-                  编辑
+                  {{ t("system.notice.edit") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_system:notice:delete']"
@@ -190,7 +194,7 @@
                   icon="delete"
                   @click="handleRowDelete(scope.row.id)"
                 >
-                  删除
+                  {{ t("system.notice.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -206,10 +210,10 @@
     >
       <template v-if="dialogVisible.type === 'detail'">
         <el-descriptions :column="4" border label-width="120px">
-          <el-descriptions-item label="标题" :span="2">
+          <el-descriptions-item :label="t('system.notice.title')" :span="2">
             {{ detailFormData.notice_title }}
           </el-descriptions-item>
-          <el-descriptions-item label="类型" :span="2">
+          <el-descriptions-item :label="t('system.notice.type')" :span="2">
             <el-tag :type="detailFormData.notice_type === '1' ? 'primary' : 'warning'">
               {{
                 (detailFormData.notice_type
@@ -219,27 +223,31 @@
               }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="状态" :span="2">
+          <el-descriptions-item :label="t('system.notice.status')" :span="2">
             <el-tag :type="detailFormData.status === '0' ? 'success' : 'danger'">
-              {{ detailFormData.status === "0" ? "启用" : "停用" }}
+              {{
+                detailFormData.status === "0"
+                  ? t("system.notice.enable")
+                  : t("system.notice.disable")
+              }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="描述" :span="2">
+          <el-descriptions-item :label="t('system.notice.description')" :span="2">
             {{ detailFormData.description }}
           </el-descriptions-item>
-          <el-descriptions-item label="内容" :span="4">
+          <el-descriptions-item :label="t('system.notice.content')" :span="4">
             <WangEditor v-model="detailFormData.notice_content" :readonly="true" />
           </el-descriptions-item>
-          <el-descriptions-item label="创建人" :span="2">
+          <el-descriptions-item :label="t('system.notice.creator')" :span="2">
             {{ detailFormData.created_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新人" :span="2">
+          <el-descriptions-item :label="t('system.notice.updater')" :span="2">
             {{ detailFormData.updated_by?.name }}
           </el-descriptions-item>
-          <el-descriptions-item label="创建时间" :span="2">
+          <el-descriptions-item :label="t('system.notice.createdTime')" :span="2">
             {{ detailFormData.created_time }}
           </el-descriptions-item>
-          <el-descriptions-item label="更新时间" :span="2">
+          <el-descriptions-item :label="t('system.notice.updatedTime')" :span="2">
             {{ detailFormData.updated_time }}
           </el-descriptions-item>
         </el-descriptions>
@@ -254,21 +262,29 @@
           label-position="right"
           :inline="true"
         >
-          <el-form-item label="标题" prop="notice_title">
-            <el-input v-model="formData.notice_title" placeholder="请输入标题" :maxlength="50" />
+          <el-form-item :label="t('system.notice.title')" prop="notice_title">
+            <el-input
+              v-model="formData.notice_title"
+              :placeholder="t('system.notice.inputTitlePlaceholder')"
+              :maxlength="50"
+            />
           </el-form-item>
-          <el-form-item label="描述" prop="description">
+          <el-form-item :label="t('system.notice.description')" prop="description">
             <el-input
               v-model="formData.description"
               :rows="1"
               :maxlength="100"
               show-word-limit
               type="textarea"
-              placeholder="请输入描述"
+              :placeholder="t('system.notice.inputDescPlaceholder')"
             />
           </el-form-item>
-          <el-form-item label="类型" prop="notice_type" class="w-50">
-            <el-select v-model="formData.notice_type" placeholder="请选择类型" clearable>
+          <el-form-item :label="t('system.notice.type')" prop="notice_type" class="w-50">
+            <el-select
+              v-model="formData.notice_type"
+              :placeholder="t('system.notice.selectTypePlaceholder')"
+              clearable
+            >
               <el-option
                 v-for="item in dictStore.getDictArray('sys_notice_type')"
                 :key="item.dict_value"
@@ -277,13 +293,13 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="状态" prop="status">
+          <el-form-item :label="t('system.notice.status')" prop="status">
             <el-radio-group v-model="formData.status">
-              <el-radio value="0">启用</el-radio>
-              <el-radio value="1">停用</el-radio>
+              <el-radio value="0">{{ t("system.notice.enable") }}</el-radio>
+              <el-radio value="1">{{ t("system.notice.disable") }}</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="内容" prop="notice_content">
+          <el-form-item :label="t('system.notice.content')" prop="notice_content">
             <WangEditor v-model="formData.notice_content" />
           </el-form-item>
         </el-form>
@@ -291,16 +307,18 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="handleCloseDialog">取消</el-button>
+          <el-button @click="handleCloseDialog">{{ t("system.notice.cancel") }}</el-button>
           <el-button
             v-if="dialogVisible.type !== 'detail'"
             type="primary"
             :loading="submitLoading"
             @click="handleSubmit"
           >
-            确定
+            {{ t("system.notice.confirm") }}
           </el-button>
-          <el-button v-else type="primary" @click="handleCloseDialog">确定</el-button>
+          <el-button v-else type="primary" @click="handleCloseDialog">
+            {{ t("system.notice.confirm") }}
+          </el-button>
         </div>
       </template>
     </EnhancedDialog>
@@ -316,7 +334,9 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage } from "element-plus";
 import { ref, reactive, computed, markRaw, nextTick, onMounted, unref } from "vue";
+import { useI18n } from "vue-i18n";
 import { fetchAllPages } from "@/utils/fetchAllPages";
 import { useDictStore, useNoticeStore } from "@/store/index";
 import UserTableSelect from "@/views/module_system/user/components/UserTableSelect.vue";
@@ -330,6 +350,7 @@ import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import NoticeAPI, { NoticeTable, NoticeForm, NoticePageQuery } from "@/api/module_system/notice";
 
+const { t } = useI18n();
 const dictStore = useDictStore();
 defineOptions({
   name: "Notice",
@@ -353,44 +374,55 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "notice_title",
-      label: "标题",
+      label: t("system.notice.title"),
       type: "input",
-      attrs: { placeholder: "请输入标题", clearable: true },
+      attrs: {
+        placeholder: t("system.notice.inputTitlePlaceholder"),
+        clearable: true,
+      },
     },
     {
       prop: "notice_type",
-      label: "类型",
+      label: t("system.notice.type"),
       type: "select",
       options: [] as { label: string; value: string }[],
-      attrs: { placeholder: "请选择类型", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("system.notice.selectTypePlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("system.notice.status"),
       type: "select",
       options: [
-        { label: "启用", value: "0" },
-        { label: "停用", value: "1" },
+        { label: t("system.notice.enable"), value: "0" },
+        { label: t("system.notice.disable"), value: "1" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("system.notice.selectStatusPlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
     {
       prop: "created_time",
-      label: "创建时间",
+      label: t("system.notice.createdTime"),
       type: "date-picker",
       initialValue: [],
       attrs: {
         type: "datetimerange",
         valueFormat: "YYYY-MM-DD HH:mm:ss",
-        rangeSeparator: "至",
-        startPlaceholder: "开始日期",
-        endPlaceholder: "结束日期",
+        rangeSeparator: t("system.notice.rangeSeparator"),
+        startPlaceholder: t("system.notice.startDate"),
+        endPlaceholder: t("system.notice.endDate"),
         style: { width: "340px" },
       },
     },
     {
       prop: "created_id",
-      label: "创建人",
+      label: t("system.notice.creator"),
       type: "user-table-select",
       initialValue: null,
       events: {
@@ -411,18 +443,18 @@ const contentCols = reactive<
     show?: boolean;
   }>
 >([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "notice_title", label: "标题", show: true },
-  { prop: "notice_type", label: "类型", show: true },
-  { prop: "notice_content", label: "内容", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "description", label: "描述", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "updated_id", label: "更新人", show: true },
-  { prop: "updated_time", label: "更新时间", show: true },
-  { prop: "created_id", label: "创建人", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "selection", label: t("system.notice.selection"), show: true },
+  { prop: "index", label: t("system.notice.index"), show: true },
+  { prop: "notice_title", label: t("system.notice.title"), show: true },
+  { prop: "notice_type", label: t("system.notice.type"), show: true },
+  { prop: "notice_content", label: t("system.notice.content"), show: true },
+  { prop: "status", label: t("system.notice.status"), show: true },
+  { prop: "description", label: t("system.notice.description"), show: true },
+  { prop: "created_time", label: t("system.notice.createdTime"), show: true },
+  { prop: "updated_id", label: t("system.notice.updater"), show: true },
+  { prop: "updated_time", label: t("system.notice.updatedTime"), show: true },
+  { prop: "created_id", label: t("system.notice.creator"), show: true },
+  { prop: "operation", label: t("system.notice.operation"), show: true },
 ]);
 
 const noticeStore = useNoticeStore();
@@ -456,8 +488,8 @@ const contentConfig = reactive<IContentConfig<NoticePageQuery>>({
     await noticeStore.getNotice();
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据吗？删除后不可恢复。",
+    title: t("system.notice.warning"),
+    message: t("system.notice.deleteConfirmMessage"),
     type: "warning",
   },
 });
@@ -477,13 +509,13 @@ const exportSelectionData = computed(
 );
 
 const exportColumns = [
-  { prop: "notice_title", label: "标题" },
-  { prop: "status", label: "状态" },
-  { prop: "notice_type", label: "类型" },
-  { prop: "notice_content", label: "内容" },
-  { prop: "description", label: "描述" },
-  { prop: "created_time", label: "创建时间" },
-  { prop: "updated_time", label: "更新时间" },
+  { prop: "notice_title", label: t("system.notice.title") },
+  { prop: "status", label: t("system.notice.status") },
+  { prop: "notice_type", label: t("system.notice.type") },
+  { prop: "notice_content", label: t("system.notice.content") },
+  { prop: "description", label: t("system.notice.description") },
+  { prop: "created_time", label: t("system.notice.createdTime") },
+  { prop: "updated_time", label: t("system.notice.updatedTime") },
 ];
 
 const curdContentConfig = {
@@ -527,10 +559,10 @@ const dialogVisible = reactive({
 });
 
 const rules = reactive({
-  notice_title: [{ required: true, message: "请输入公告通知标题", trigger: "blur" }],
-  notice_type: [{ required: true, message: "请选择公告通知类型", trigger: "blur" }],
-  notice_content: [{ required: true, message: "请输入公告通知内容", trigger: "blur" }],
-  status: [{ required: true, message: "请选择公告通知状态", trigger: "blur" }],
+  notice_title: [{ required: true, message: t("system.notice.ruleTitle"), trigger: "blur" }],
+  notice_type: [{ required: true, message: t("system.notice.ruleType"), trigger: "blur" }],
+  notice_content: [{ required: true, message: t("system.notice.ruleContent"), trigger: "blur" }],
+  status: [{ required: true, message: t("system.notice.ruleStatus"), trigger: "blur" }],
 });
 
 const initialFormData: NoticeForm = {
@@ -560,14 +592,14 @@ async function handleOpenDialog(type: "create" | "update" | "detail", id?: numbe
   if (id) {
     const response = await NoticeAPI.detailNotice(id);
     if (type === "detail") {
-      dialogVisible.title = "公告通知详情";
+      dialogVisible.title = t("system.notice.detailTitle");
       Object.assign(detailFormData.value, response.data.data);
     } else if (type === "update") {
-      dialogVisible.title = "修改公告通知";
+      dialogVisible.title = t("system.notice.updateTitle");
       Object.assign(formData, response.data.data);
     }
   } else {
-    dialogVisible.title = "新增公告通知";
+    dialogVisible.title = t("system.notice.createTitle");
     formData.id = undefined;
   }
   dialogVisible.visible = true;
@@ -584,6 +616,7 @@ async function handleSubmit() {
         } else {
           await NoticeAPI.createNotice(formData);
         }
+        ElMessage.success(t("system.notice.operationSuccess"));
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
@@ -601,17 +634,24 @@ async function handleMoreClick(status: string) {
   const rows = contentRef.value?.getSelectionData() as NoticeTable[] | undefined;
   const ids = (rows ?? []).map((r) => r.id).filter((id): id is number => id != null);
   if (!ids.length) {
-    ElMessage.warning("请先选择要操作的数据");
+    ElMessage.warning(t("system.notice.selectDataFirst"));
     return;
   }
-  ElMessageBox.confirm(`确认${status === "0" ? "启用" : "停用"}该项数据?`, "警告", {
-    confirmButtonText: "确定",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
+  ElMessageBox.confirm(
+    t("system.notice.toggleConfirm", {
+      action: status === "0" ? t("system.notice.enable") : t("system.notice.disable"),
+    }),
+    t("system.notice.warning"),
+    {
+      confirmButtonText: t("system.notice.confirm"),
+      cancelButtonText: t("system.notice.cancel"),
+      type: "warning",
+    }
+  )
     .then(async () => {
       try {
         await NoticeAPI.batchNotice({ ids, status });
+        ElMessage.success(t("system.notice.operationSuccess"));
         refreshList();
       } catch (error: any) {
         console.error(error);

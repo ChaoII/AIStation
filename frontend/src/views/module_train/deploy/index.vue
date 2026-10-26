@@ -11,7 +11,7 @@
       <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
         <CrudToolbarLeft
           :remove-ids="removeIds"
-          :perm-create="['module_train:model:query']"
+          :perm-create="['module_train:model:update']"
           @add="showCreateDialog = true"
         />
         <div class="data-table__toolbar--right">
@@ -32,7 +32,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无部署" />
+              <el-empty :image-size="80" :description="t('train.deployNoData')" />
             </template>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'selection')?.show"
@@ -43,7 +43,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'index')?.show"
               fixed
-              label="序号"
+              :label="t('train.serial')"
               width="60"
             >
               <template #default="scope">
@@ -53,7 +53,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="部署名称"
+              :label="t('train.deployName')"
               prop="name"
               min-width="160"
               show-overflow-tooltip
@@ -61,21 +61,21 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'model_name')?.show"
               key="model_name"
-              label="模型"
+              :label="t('train.model')"
               prop="model_name"
               min-width="120"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'model_version')?.show"
               key="model_version"
-              label="版本"
+              :label="t('train.version')"
               prop="model_version"
               width="80"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'framework')?.show"
               key="framework"
-              label="框架"
+              :label="t('train.framework')"
               prop="framework"
               width="100"
             >
@@ -112,14 +112,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'host_port')?.show"
               key="host_port"
-              label="端口"
+              :label="t('train.port')"
               prop="host_port"
               width="80"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
-              label="状态"
+              :label="t('train.status')"
               prop="status"
               width="110"
               align="center"
@@ -133,14 +133,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
-              label="创建时间"
+              :label="t('train.createdTime')"
               prop="created_time"
               min-width="170"
             />
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'operation')?.show"
               fixed="right"
-              label="操作"
+              :label="t('train.action')"
               align="center"
               min-width="240"
             >
@@ -154,7 +154,7 @@
                   icon="VideoPlay"
                   @click="handleDeploy(scope.row)"
                 >
-                  部署
+                  {{ t("train.deploy") }}
                 </el-button>
                 <el-button
                   v-if="scope.row.status === 'running'"
@@ -165,7 +165,7 @@
                   icon="VideoPause"
                   @click="handleStop(scope.row.id)"
                 >
-                  停止
+                  {{ t("train.stop") }}
                 </el-button>
                 <el-button
                   v-if="scope.row.status === 'running'"
@@ -175,7 +175,7 @@
                   icon="Key"
                   @click="handleRenewKey(scope.row.id)"
                 >
-                  更新Key
+                  {{ t("train.renewKey") }}
                 </el-button>
                 <el-button
                   v-if="scope.row.api_url"
@@ -185,7 +185,7 @@
                   icon="Link"
                   @click="copyApiUrl(scope.row)"
                 >
-                  复制URL
+                  {{ t("train.copyUrl") }}
                 </el-button>
                 <el-button
                   size="small"
@@ -194,7 +194,7 @@
                   icon="Document"
                   @click="deployLogRef.open(scope.row)"
                 >
-                  详情
+                  {{ t("train.detail") }}
                 </el-button>
                 <el-button
                   v-if="scope.row.status === 'failed' || scope.row.status === 'stopped'"
@@ -205,7 +205,7 @@
                   icon="VideoPlay"
                   @click="handleDeploy(scope.row)"
                 >
-                  重新部署
+                  {{ t("train.redeploy") }}
                 </el-button>
                 <el-button
                   v-hasPerm="['module_train:model:delete']"
@@ -215,7 +215,7 @@
                   icon="Delete"
                   @click="handleDelete([scope.row.id])"
                 >
-                  删除
+                  {{ t("train.delete") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -224,14 +224,19 @@
       </template>
     </PageContent>
 
-    <EnhancedDialog v-model="showCreateDialog" title="新建部署" append-to-body width="560px">
+    <EnhancedDialog
+      v-model="showCreateDialog"
+      :title="t('train.deployCreateTitle')"
+      append-to-body
+      width="560px"
+    >
       <el-form label-width="120px">
-        <el-form-item label="选择模型" required>
+        <el-form-item :label="t('train.selectModel')" required>
           <el-select
             v-model="createForm.modelId"
             filterable
             style="width: 100%"
-            placeholder="选择模型版本"
+            :placeholder="t('train.selectModelVersion')"
             @change="onDeployModelChange"
           >
             <el-option
@@ -242,12 +247,12 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="needsRecModel" label="识别模型" required>
+        <el-form-item v-if="needsRecModel" :label="t('train.recModel')" required>
           <el-select
             v-model="createForm.recModelId"
             filterable
             style="width: 100%"
-            placeholder="选择识别(rec)模型版本"
+            :placeholder="t('train.selectRecModel')"
           >
             <el-option
               v-for="m in recModels"
@@ -257,11 +262,15 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="部署名称">
-          <el-input v-model="createForm.name" placeholder="留空自动生成" />
+        <el-form-item :label="t('train.deployName')">
+          <el-input v-model="createForm.name" :placeholder="t('train.deployNamePlaceholder')" />
         </el-form-item>
-        <el-form-item label="GPU 设备">
-          <el-select v-model="createForm.device" placeholder="选择设备" style="width: 100%">
+        <el-form-item :label="t('train.gpuDevice')">
+          <el-select
+            v-model="createForm.device"
+            :placeholder="t('train.selectDevice')"
+            style="width: 100%"
+          >
             <el-option
               v-for="n in deviceOptions"
               :key="n"
@@ -270,15 +279,15 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="端口">
+        <el-form-item :label="t('train.port')">
           <el-input-number
             v-model="createForm.hostPort"
             :min="9001"
             :max="9999"
-            placeholder="留空自动分配"
+            :placeholder="t('train.portPlaceholder')"
           />
         </el-form-item>
-        <el-divider>推理参数</el-divider>
+        <el-divider>{{ t("train.inferenceParams") }}</el-divider>
         <el-form-item label="conf">
           <el-input-number
             v-model="createForm.hyperparams.conf"
@@ -295,33 +304,44 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="handleCreate">创建</el-button>
+        <el-button @click="showCreateDialog = false">{{ t("train.cancel") }}</el-button>
+        <el-button type="primary" :loading="creating" @click="handleCreate">
+          {{ t("train.create") }}
+        </el-button>
       </template>
     </EnhancedDialog>
 
-    <el-dialog v-model="showKeyDialog" title="部署成功" width="480px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="showKeyDialog"
+      :title="t('train.deploySuccess')"
+      width="480px"
+      :close-on-click-modal="false"
+    >
       <el-alert
         type="success"
-        title="API Key 已生成"
-        :description="'API URL: ' + (keyInfo.apiUrl || '待启动')"
+        :title="t('train.apiKeyGenerated')"
+        :description="
+          t('train.deployApiUrlDesc', { url: keyInfo.apiUrl || t('train.deployPending') })
+        "
         show-icon
         style="margin-bottom: 16px"
       />
       <div style="margin-bottom: 8px; font-weight: 600">
-        API Key（请立即复制，关闭后不再显示）：
+        {{ t("train.apiKeyHint") }}
       </div>
       <el-input v-model="keyInfo.apiKey" readonly style="font-family: monospace">
         <template #append>
-          <el-button @click="copyText(keyInfo.apiKey)">复制</el-button>
+          <el-button @click="copyText(keyInfo.apiKey)">{{ t("train.copy") }}</el-button>
         </template>
       </el-input>
       <div class="key-warning">
         <el-icon><WarningFilled /></el-icon>
-        密钥仅显示一次，关闭后可在管理页面重新生成。
+        {{ t("train.keyOnceWarning") }}
       </div>
       <template #footer>
-        <el-button type="primary" @click="onKeyDialogClose">我已保存，进入管理页</el-button>
+        <el-button type="primary" @click="onKeyDialogClose">
+          {{ t("train.savedGoManage") }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -331,6 +351,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, computed, onMounted, onBeforeUnmount } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled, Link } from "@element-plus/icons-vue";
@@ -350,6 +371,7 @@ interface TablePageQuery {
 }
 
 const router = useRouter();
+const { t } = useI18n();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const deployLogRef = ref();
 
@@ -396,11 +418,11 @@ function statusLabel(s: string) {
   return (
     (
       {
-        pending: "待部署",
-        deploying: "部署中",
-        running: "运行中",
-        stopped: "已停止",
-        failed: "失败",
+        pending: t("train.deployStatusPending"),
+        deploying: t("train.deployStatusDeploying"),
+        running: t("train.deployStatusRunning"),
+        stopped: t("train.deployStatusStopped"),
+        failed: t("train.deployStatusFailed"),
       } as any
     )[s] || s
   );
@@ -413,38 +435,42 @@ const searchConfig = reactive<ISearchConfig>({
   formItems: [
     {
       prop: "name",
-      label: "部署名称",
+      label: t("train.deployName"),
       type: "input",
-      attrs: { placeholder: "请输入部署名称", clearable: true },
+      attrs: { placeholder: t("train.deployNameSearchPlaceholder"), clearable: true },
     },
     {
       prop: "status",
-      label: "状态",
+      label: t("train.status"),
       type: "select",
       options: [
-        { label: "待部署", value: "pending" },
-        { label: "部署中", value: "deploying" },
-        { label: "运行中", value: "running" },
-        { label: "已停止", value: "stopped" },
-        { label: "失败", value: "failed" },
+        { label: t("train.deployStatusPending"), value: "pending" },
+        { label: t("train.deployStatusDeploying"), value: "deploying" },
+        { label: t("train.deployStatusRunning"), value: "running" },
+        { label: t("train.deployStatusStopped"), value: "stopped" },
+        { label: t("train.deployStatusFailed"), value: "failed" },
       ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+      attrs: {
+        placeholder: t("train.statusPlaceholder"),
+        clearable: true,
+        style: { width: "167.5px" },
+      },
     },
   ],
 });
 
 const contentCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
-  { prop: "selection", label: "选择框", show: true },
-  { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "部署名称", show: true },
-  { prop: "model_name", label: "模型", show: true },
-  { prop: "model_version", label: "版本", show: true },
-  { prop: "framework", label: "框架", show: true },
+  { prop: "selection", label: t("train.selection"), show: true },
+  { prop: "index", label: t("train.serial"), show: true },
+  { prop: "name", label: t("train.deployName"), show: true },
+  { prop: "model_name", label: t("train.model"), show: true },
+  { prop: "model_version", label: t("train.version"), show: true },
+  { prop: "framework", label: t("train.framework"), show: true },
   { prop: "api_url", label: "API URL", show: true },
-  { prop: "host_port", label: "端口", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-  { prop: "operation", label: "操作", show: true },
+  { prop: "host_port", label: t("train.port"), show: true },
+  { prop: "status", label: t("train.status"), show: true },
+  { prop: "created_time", label: t("train.createdTime"), show: true },
+  { prop: "operation", label: t("train.action"), show: true },
 ]);
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
@@ -483,11 +509,11 @@ watch(showCreateDialog, (v) => {
 
 async function handleCreate() {
   if (!createForm.modelId) {
-    ElMessage.warning("请选择模型");
+    ElMessage.warning(t("train.warnSelectModel"));
     return;
   }
   if (needsRecModel.value && !createForm.recModelId) {
-    ElMessage.warning("OCR 部署需要选择识别(rec)模型");
+    ElMessage.warning(t("train.warnOcrRec"));
     return;
   }
   creating.value = true;
@@ -504,6 +530,7 @@ async function handleCreate() {
       host_port: createForm.hostPort || undefined,
       hyperparams: hp,
     });
+    ElMessage.success(t("train.saveSuccess"));
     const d = r.data?.data;
     keyInfo.apiKey = d?.api_key || "";
     keyInfo.apiUrl = d?.api_url || "";
@@ -540,6 +567,7 @@ function onKeyDialogClose() {
 async function handleDeploy(row: any) {
   try {
     await TrainAPI.startDeploy(row.id);
+    ElMessage.success(t("train.started"));
     refreshList();
   } catch {
     /* 提示由请求拦截器统一处理 */
@@ -548,12 +576,13 @@ async function handleDeploy(row: any) {
 
 async function handleStop(id: number) {
   try {
-    await ElMessageBox.confirm(
-      "确定停止该部署？停止后正在运行的服务将中断，且不会自动恢复。",
-      "提示",
-      { type: "warning", confirmButtonText: "停止", cancelButtonText: "取消" }
-    );
+    await ElMessageBox.confirm(t("train.stopConfirmMsg"), t("train.tipTitle"), {
+      type: "warning",
+      confirmButtonText: t("train.stop"),
+      cancelButtonText: t("train.cancel"),
+    });
     await TrainAPI.stopDeploy(id);
+    ElMessage.success(t("train.stopped"));
     refreshList();
   } catch {
     /* */
@@ -578,21 +607,22 @@ function copyApiUrl(row: any) {
   if (row.api_url) copyText(row.api_url);
 }
 
-function copyText(t: string) {
+function copyText(text: string) {
   navigator.clipboard
-    .writeText(t)
-    .then(() => ElMessage.success("已复制"))
-    .catch(() => ElMessage.warning("复制失败，请手动复制"));
+    .writeText(text)
+    .then(() => ElMessage.success(t("train.copied")))
+    .catch(() => ElMessage.warning(t("train.copyFailed")));
 }
 
 async function handleDelete(ids: number[]) {
   try {
-    await ElMessageBox.confirm(
-      "确定删除所选部署？删除后部署实例与运行中的服务将被移除，且不可恢复。",
-      "提示",
-      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
-    );
+    await ElMessageBox.confirm(t("train.deleteConfirmMsg"), t("train.tipTitle"), {
+      type: "warning",
+      confirmButtonText: t("train.delete"),
+      cancelButtonText: t("train.cancel"),
+    });
     await TrainAPI.deleteDeploy(ids);
+    ElMessage.success(t("train.deleteSuccess"));
     refreshList();
   } catch {
     /* */

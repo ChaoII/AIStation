@@ -589,7 +589,6 @@ import {
   streamOfficeDispatch,
   dispatchOfficeAgent
 } from "@/api/module_ai/agent";
-import { getAgentCategoryList } from "@/api/module_ai/agent";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiLogRecent, getAiToolCalls } from "@/api/module_ai/logs";
 import { getApprovalCenter } from "@/api/module_ai/query";
@@ -1558,7 +1557,6 @@ const oneAbort = ref<AbortController | null>(null);
 
 /* 详情抽屉 */
 const detail = ref<any>(null);
-const categories = ref<any[]>([]);
 const models = ref<any[]>([]);
 
 let office: any = null;
@@ -1626,11 +1624,8 @@ const statusText = computed(() => {
 const statusTag = computed<"primary" | "warning" | "info">(() =>
   statusText.value === "工作中" ? "primary" : statusText.value === "等你确认" ? "warning" : "info"
 );
-const categoryName = computed(() => {
-  const cid = detail.value?.category_id;
-  if (!cid) return "未分类";
-  return categories.value.find((c) => c.id === cid)?.name || "未分类";
-});
+/* 分类功能已在 main 下线（后端 category 路由删除）：这里改用角色，别再依赖分类树 */
+const categoryName = computed(() => detail.value?.agent_role || "未分类");
 const modelName = computed(() => {
   const mid = detail.value?.model_id;
   if (!mid) return "默认模型";
@@ -1734,7 +1729,6 @@ async function showBadge() {
     name: d.name,
     role: d.agent_role || "",
     status: st,
-    category: categoryName.value,
     model: modelName.value,
     last: lastActive.value,
     caps: caps.value.map((c: any) => c.text)
@@ -1743,11 +1737,9 @@ async function showBadge() {
 
 async function loadMeta() {
   try {
-    const [c, m]: any[] = await Promise.all([getAgentCategoryList(), getAiModelList({})]);
-    categories.value = c?.data?.data || c?.data || [];
+    const m: any = await getAiModelList({});
     models.value = m?.data?.data || m?.data || [];
   } catch {
-    categories.value = [];
     models.value = [];
   }
 }

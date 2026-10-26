@@ -8,15 +8,20 @@
   >
     <template #status="scope">
       <el-tag :type="scope.row[scope.prop ?? ''] === '0' ? 'success' : 'danger'">
-        {{ scope.row[scope.prop ?? ""] === "0" ? "启用" : "停用" }}
+        {{
+          scope.row[scope.prop ?? ""] === "0" ? t("system.user.enabled") : t("system.user.disabled")
+        }}
       </el-tag>
     </template>
   </table-select>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import type { ISelectConfig } from "@/components/TableSelect/index.vue";
 import UserAPI from "@/api/module_system/user";
+
+const { t } = useI18n();
 
 // 父组件双向绑定的值（选中用户ID）
 const props = defineProps<{ modelValue?: number }>();
@@ -30,26 +35,26 @@ const emit = defineEmits<{
 const selectConfig: ISelectConfig = {
   pk: "id",
   width: "167.5px", // 与搜索表单其他输入宽度一致
-  placeholder: "请选择用户",
+  placeholder: t("system.user.selectUser"),
   popover: {
     width: 720, // 弹出层宽度，提升可用性（约 720px）
   },
   formItems: [
     {
       type: "select",
-      label: "状态",
+      label: t("system.user.status"),
       prop: "status",
       initialValue: "0",
       attrs: {
-        placeholder: "全部",
+        placeholder: t("system.user.all"),
         clearable: true,
         style: {
           width: "140px",
         },
       },
       options: [
-        { label: "启用", value: "0" },
-        { label: "停用", value: "1" },
+        { label: t("system.user.enabled"), value: "0" },
+        { label: t("system.user.disabled"), value: "1" },
       ],
     },
   ],
@@ -78,11 +83,11 @@ const selectConfig: ISelectConfig = {
   },
   tableColumns: [
     { type: "selection", width: 50, align: "center" },
-    { label: "编号", align: "center", prop: "id", width: 100 },
-    { label: "账号", align: "center", prop: "username" },
-    { label: "用户名", align: "center", prop: "name", width: 120 },
+    { label: t("system.user.id"), align: "center", prop: "id", width: 100 },
+    { label: t("system.user.username"), align: "center", prop: "username" },
+    { label: t("system.user.name"), align: "center", prop: "name", width: 120 },
     {
-      label: "状态",
+      label: t("system.user.status"),
       align: "center",
       prop: "status",
       templet: "custom",

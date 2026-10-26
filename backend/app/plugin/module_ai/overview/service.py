@@ -378,6 +378,7 @@ class AiOverviewService:
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         cost: float = 0.0,
+        reply_preview: str | None = None,
     ) -> None:
         try:
             from sqlalchemy import text as _t
@@ -388,6 +389,7 @@ class AiOverviewService:
                     ("prompt_tokens", "INTEGER DEFAULT 0"),
                     ("completion_tokens", "INTEGER DEFAULT 0"),
                     ("cost", "NUMERIC DEFAULT 0"),
+                    ("reply_preview", "TEXT"),
                 ):
                     try:
                         await db.execute(
@@ -407,6 +409,7 @@ class AiOverviewService:
                         prompt_tokens=int(prompt_tokens or 0),
                         completion_tokens=int(completion_tokens or 0),
                         cost=float(cost or 0.0),
+                        reply_preview=(reply_preview or "")[:1000] or None,
                     )
                 )
         except Exception as e:

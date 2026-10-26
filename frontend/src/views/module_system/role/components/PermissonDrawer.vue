@@ -2,7 +2,7 @@
 <template>
   <EnhancedDrawer
     v-model="drawerVisible"
-    :title="'【' + props.roleName + '】权限分配'"
+    :title="t('system.role.permissionAssignTitle', { role: props.roleName })"
     :size="drawerSize"
     destroy-on-close
     @close="handleCancel"
@@ -18,10 +18,10 @@
               <div style="display: flex; gap: 10px">
                 <div style="width: 10px; background-color: var(--el-color-primary)"></div>
                 <div>
-                  <span class="perm-section-title">数据授权</span>
+                  <span class="perm-section-title">{{ t("system.role.dataAuth") }}</span>
                   <el-tooltip placement="right">
                     <template #content>
-                      <span>授权用户可操作的数据范围</span>
+                      <span>{{ t("system.role.dataAuthTip") }}</span>
                     </template>
                     <el-icon class="ml-1 inline-block cursor-pointer">
                       <QuestionFilled />
@@ -34,11 +34,11 @@
               <el-form ref="dataFormRef" :model="permissionState">
                 <el-form-item prop="data_scope">
                   <el-select v-model="permissionState.data_scope">
-                    <el-option :key="1" label="仅本人数据权限" :value="1" />
-                    <el-option :key="2" label="本部门数据权限" :value="2" />
-                    <el-option :key="3" label="本部门及以下数据权限" :value="3" />
-                    <el-option :key="4" label="全部数据权限" :value="4" />
-                    <el-option :key="5" label="自定义数据权限" :value="5" />
+                    <el-option :key="1" :label="t('system.role.scopeOnlySelf')" :value="1" />
+                    <el-option :key="2" :label="t('system.role.scopeDept')" :value="2" />
+                    <el-option :key="3" :label="t('system.role.scopeDeptAndBelow')" :value="3" />
+                    <el-option :key="4" :label="t('system.role.scopeAll')" :value="4" />
+                    <el-option :key="5" :label="t('system.role.scopeCustom')" :value="5" />
                   </el-select>
                 </el-form-item>
               </el-form>
@@ -47,7 +47,7 @@
                 v-if="permissionState.data_scope === 5 && deptTreeData.length"
                 class="mt-5 max-h-[60vh] b-1 b-solid b-[var(--el-border-color-lighter)] p-10px overflow-auto box-border"
               >
-                <el-input v-model="deptFilterText" placeholder="部门名称" />
+                <el-input v-model="deptFilterText" :placeholder="t('system.role.deptName')" />
                 <el-tree
                   ref="deptTreeRef"
                   node-key="value"
@@ -61,7 +61,7 @@
                   @check="deptTreeCheck"
                 >
                   <template #empty>
-                    <el-empty :image-size="80" description="暂无数据" />
+                    <el-empty :image-size="80" :description="t('system.role.emptyData')" />
                   </template>
                 </el-tree>
               </div>
@@ -74,10 +74,10 @@
           <div style="display: flex; gap: 10px">
             <div style="width: 10px; background-color: var(--el-color-primary)"></div>
             <div>
-              <span class="perm-section-title">菜单授权</span>
+              <span class="perm-section-title">{{ t("system.role.menuAuth") }}</span>
               <el-tooltip placement="right">
                 <template #content>
-                  <span>授权用户可操作的菜单权限</span>
+                  <span>{{ t("system.role.menuAuthTip") }}</span>
                 </template>
                 <el-icon class="ml-1 inline-block cursor-pointer">
                   <QuestionFilled />
@@ -86,25 +86,25 @@
             </div>
           </div>
           <div class="mt-3 flex-x-between">
-            <el-input v-model="permFilterText" placeholder="菜单名称" />
+            <el-input v-model="permFilterText" :placeholder="t('system.role.menuName')" />
             <div class="flex-center ml-5">
               <el-button type="primary" size="small" plain @click="togglePermTree">
                 <template #icon>
                   <SwitchIcon />
                 </template>
-                {{ isExpanded ? "收缩" : "展开" }}
+                {{ isExpanded ? t("system.role.collapse") : t("system.role.expand") }}
               </el-button>
               <el-checkbox
                 v-model="parentChildLinked"
                 class="ml-5"
                 @change="handleParentChildLinkedChange"
               >
-                父子联动
+                {{ t("system.role.parentChildLink") }}
               </el-checkbox>
 
               <el-tooltip placement="bottom">
                 <template #content>
-                  如果只需勾选菜单权限，不需要勾选子菜单或者按钮权限，请关闭父子联动
+                  {{ t("system.role.parentChildLinkTip") }}
                 </template>
                 <el-icon class="ml-1 color-[--el-color-primary] inline-block cursor-pointer">
                   <QuestionFilled />
@@ -129,7 +129,7 @@
               @check="menuTreeCheck"
             >
               <template #empty>
-                <el-empty :image-size="80" description="暂无数据" />
+                <el-empty :image-size="80" :description="t('system.role.emptyData')" />
               </template>
             </el-tree>
           </div>
@@ -139,9 +139,9 @@
 
     <template #footer>
       <div class="dialog-footer">
-        <el-button @click="handleCancel">取 消</el-button>
+        <el-button @click="handleCancel">{{ t("system.role.takeCancel") }}</el-button>
         <el-button type="primary" :loading="loading" @click.stop="handleDrawerSave">
-          确 定
+          {{ t("system.role.takeConfirm") }}
         </el-button>
       </div>
     </template>
@@ -149,6 +149,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElMessage } from "element-plus";
 import { computed, ref, watch, onMounted } from "vue";
 import { QuestionFilled, Switch as SwitchIcon } from "@element-plus/icons-vue";
 import type { TreeInstance } from "element-plus";
@@ -164,6 +165,9 @@ import MenuAPI from "@/api/module_system/menu";
 import { useAppStore } from "@/store/modules/app.store";
 import { DeviceEnum } from "@/enums/settings/device.enum";
 import { useUserStore } from "@/store";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 /** formatTree 后的菜单节点带 value（同原 id），与接口里的 id 二选一存在 */
 type MenuTreeNode = permissionMenuType & { value?: number };
@@ -241,7 +245,7 @@ const init = async () => {
     }
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    ElMessage.error("获取权限数据失败: " + msg);
+    ElMessage.error(t("system.role.getPermDataFailed") + msg);
   } finally {
     loading.value = false;
   }
@@ -254,7 +258,7 @@ function handleCancel() {
 async function handleDrawerSave() {
   try {
     if (props.roleId === 1) {
-      ElMessage.warning("系统默认角色，不可操作");
+      ElMessage.warning(t("system.role.systemDefaultRole"));
       return;
     }
     loading.value = true;
@@ -270,6 +274,7 @@ async function handleDrawerSave() {
     };
 
     await RoleAPI.setPermission(submitData);
+    ElMessage.success(t("system.role.operationSuccess"));
 
     const userStore = useUserStore();
     await userStore.getUserInfo();

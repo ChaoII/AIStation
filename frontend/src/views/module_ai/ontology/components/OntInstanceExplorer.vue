@@ -13,14 +13,14 @@
         v-model="code"
         filterable
         size="small"
-        placeholder="选择对象类型"
+        :placeholder="i18nT('ai_ontology.selectObjectType')"
         class="ont-explore__pick"
         @change="onObjectChange"
       >
         <el-option
           v-for="o in materializedObjects"
           :key="o.code"
-          :label="`${o.name}（${o.code}）`"
+          :label="i18nT('ai_ontology.nameWithCode', { name: o.name, code: o.code })"
           :value="o.code"
         />
       </el-select>
@@ -28,34 +28,38 @@
         v-model="keyword"
         size="small"
         clearable
-        placeholder="搜索实例（标题属性模糊匹配）"
+        :placeholder="i18nT('ai_ontology.searchInstancesFuzzyMatchOnTitleProperty')"
         class="ont-explore__kw"
         @keyup.enter="doSearch(0)"
       />
       <el-button size="small" type="primary" :icon="Search" :loading="loading" @click="doSearch(0)">
-        搜索
+        {{ i18nT("ai_ontology.search") }}
       </el-button>
       <!-- 场景（P5）：选中后所有实例读/图谱/动作执行都读写该场景的差异 -->
       <el-select
         v-model="scen"
         size="small"
         clearable
-        placeholder="主本体"
+        :placeholder="i18nT('ai_ontology.primaryOntology')"
         class="ont-explore__scen"
         @visible-change="onScenOpen"
         @change="doSearch(0)"
       >
-        <el-option label="主本体（不叠加场景）" value="" />
+        <el-option :label="i18nT('ai_ontology.primaryOntologyNoScenarioOverlay')" value="" />
         <el-option v-for="s in scenOptions" :key="s.code" :label="s.name" :value="s.code" />
       </el-select>
-      <el-tag v-if="scen" size="small" type="warning" effect="plain">场景中</el-tag>
-      <el-tag v-if="total" size="small" type="info" effect="plain">共 {{ total }}</el-tag>
+      <el-tag v-if="scen" size="small" type="warning" effect="plain">
+        {{ i18nT("ai_ontology.inScenarios") }}
+      </el-tag>
+      <el-tag v-if="total" size="small" type="info" effect="plain">
+        {{ i18nT("ai_ontology.totalCountShort", { count: total }) }}
+      </el-tag>
       <span class="ont-hint">
-        这里是
-        <strong>实例层</strong>
-        （真实数据行），与「对象类型 / 关系类型」的
-        <strong>类型层</strong>
-        定义不同
+        {{ i18nT("ai_ontology.hereIs") }}
+        <strong>{{ i18nT("ai_ontology.instanceLevel") }}</strong>
+        {{ i18nT("ai_ontology.instanceVsTypeLevelHint") }}
+        <strong>{{ i18nT("ai_ontology.typeLevel") }}</strong>
+        {{ i18nT("ai_ontology.differentDefinition") }}
       </span>
     </div>
 
@@ -68,13 +72,13 @@
         :disabled="!selection.length"
         @click="openBulk"
       >
-        批量执行动作（已选 {{ selection.length }}）
+        {{ i18nT("ai_ontology.batchExecuteActionCount", { count: selection.length }) }}
       </el-button>
       <el-button size="small" :disabled="!selection.length" @click="openGraphOfSelected">
-        查看实例图
+        {{ i18nT("ai_ontology.viewInstanceGraph") }}
       </el-button>
       <el-tag v-if="notMaterialized" size="small" type="warning" effect="plain">
-        该对象类型尚未物化，无法浏览实例
+        {{ i18nT("ai_ontology.thisObjectTypeIsNotMaterializedYet") }}
       </el-tag>
     </div>
 
@@ -89,11 +93,16 @@
       @selection-change="onSelect"
     >
       <template #empty>
-        <el-empty :image-size="50" description="没有匹配的实例" />
+        <el-empty :image-size="50" :description="i18nT('ai_ontology.noMatchingInstances')" />
       </template>
       <el-table-column type="selection" width="44" />
-      <el-table-column prop="key" label="主键" width="90" />
-      <el-table-column prop="label" label="标题" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="key" :label="i18nT('ai_ontology.primaryKey')" width="90" />
+      <el-table-column
+        prop="label"
+        :label="i18nT('ai_ontology.title')"
+        min-width="180"
+        show-overflow-tooltip
+      />
       <el-table-column
         v-for="c in previewCols"
         :key="c"
@@ -107,14 +116,21 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="210" align="center" fixed="right">
+      <el-table-column
+        :label="i18nT('ai_ontology.operations')"
+        width="210"
+        align="center"
+        fixed="right"
+      >
         <template #default="{ row }">
           <el-button icon="View" link type="primary" size="small" @click="openView(row)">
-            视图
+            {{ i18nT("ai_ontology.view") }}
           </el-button>
-          <el-button link type="primary" size="small" @click="openGraph(row)">图</el-button>
+          <el-button link type="primary" size="small" @click="openGraph(row)">
+            {{ i18nT("ai_ontology.graph") }}
+          </el-button>
           <el-button icon="Search" link type="success" size="small" @click="goQuery(row)">
-            问数
+            {{ i18nT("ai_ontology.askData") }}
           </el-button>
         </template>
       </el-table-column>
@@ -141,24 +157,32 @@
             >
               {{ display(inst.props[pm.code], pm) }}
             </span>
-            <el-tag v-if="pm.edit_only" size="small" type="info" effect="plain">仅动作填充</el-tag>
-            <el-tag v-if="pm.sensitive" size="small" type="danger" effect="plain">敏感</el-tag>
+            <el-tag v-if="pm.edit_only" size="small" type="info" effect="plain">
+              {{ i18nT("ai_ontology.actionFilledOnly") }}
+            </el-tag>
+            <el-tag v-if="pm.sensitive" size="small" type="danger" effect="plain">
+              {{ i18nT("ai_ontology.sensitive") }}
+            </el-tag>
           </el-descriptions-item>
         </el-descriptions>
 
         <!-- Writeback -->
         <div class="ont-view__sec">
           <div class="ont-view__title">
-            编辑属性（写回）
+            {{ i18nT("ai_ontology.editPropertiesWriteback") }}
             <el-tag v-if="!inst.edits_enabled" size="small" type="info" effect="plain">
-              未开启
+              {{ i18nT("ai_ontology.notEnabled") }}
             </el-tag>
           </div>
           <el-alert
             v-if="!inst.edits_enabled"
             type="info"
             :closable="false"
-            title="该对象类型未开启可编辑。在对象类型详情里打开「可编辑（写回）」后，这里就能直接改属性值。"
+            :title="
+              i18nT(
+                'ai_ontology.thisObjectTypeIsNotEditableEnableEditableWritebackInItsDetailsToEditHere'
+              )
+            "
           />
           <template v-else>
             <el-form label-width="120px" size="small">
@@ -174,15 +198,19 @@
               :disabled="!editableProps.length"
               @click="doWriteback"
             >
-              保存修改
+              {{ i18nT("ai_ontology.saveChanges") }}
             </el-button>
-            <span class="ont-hint">只允许写非敏感、非「仅动作填充」的属性，且会留痕</span>
+            <span class="ont-hint">
+              {{
+                i18nT("ai_ontology.onlyNonSensitiveNonActionFilledPropertiesCanBeWrittenWithAudit")
+              }}
+            </span>
           </template>
         </div>
 
         <!-- 关系跳转（Pivot） -->
         <div class="ont-view__sec">
-          <div class="ont-view__title">关系跳转</div>
+          <div class="ont-view__title">{{ i18nT("ai_ontology.relationJump") }}</div>
           <div v-for="lk in inst.links" :key="lk.id" class="ont-view__link">
             <el-tag
               size="small"
@@ -194,14 +222,14 @@
             <span class="ont-view__linkname">{{ lk.name }}</span>
             <span class="ont-none">{{ lk.other_label }}</span>
             <el-button icon="Right" link type="primary" size="small" @click="doPivot(lk)">
-              跳转
+              {{ i18nT("ai_ontology.jump") }}
             </el-button>
           </div>
         </div>
 
         <!-- 可执行动作 -->
         <div class="ont-view__sec">
-          <div class="ont-view__title">可执行动作</div>
+          <div class="ont-view__title">{{ i18nT("ai_ontology.executableActions") }}</div>
           <el-button
             v-for="a in inst.actions"
             :key="a.code"
@@ -211,9 +239,13 @@
             @click="openAction(a, [inst.key])"
           >
             {{ a.name }}
-            <el-tag v-if="a.approval" size="small" type="warning" effect="plain">需审批</el-tag>
+            <el-tag v-if="a.approval" size="small" type="warning" effect="plain">
+              {{ i18nT("ai_ontology.requiresApproval") }}
+            </el-tag>
           </el-button>
-          <div v-if="!inst.actions.length" class="ont-none">该对象类型没有动作</div>
+          <div v-if="!inst.actions.length" class="ont-none">
+            {{ i18nT("ai_ontology.thisObjectTypeHasNoActions") }}
+          </div>
         </div>
       </div>
     </el-drawer>
@@ -221,13 +253,20 @@
     <!-- 跳转结果 -->
     <el-dialog v-model="pivotDialog" :title="pivotTitle" width="900px" append-to-body>
       <el-table :data="pivotItems" size="small" border max-height="420" stripe>
-        <template #empty><el-empty :image-size="50" description="没有关联实例" /></template>
-        <el-table-column prop="key" label="主键" width="90" />
-        <el-table-column prop="label" label="标题" min-width="200" show-overflow-tooltip />
-        <el-table-column label="操作" width="110" align="center">
+        <template #empty>
+          <el-empty :image-size="50" :description="i18nT('ai_ontology.noRelatedInstances')" />
+        </template>
+        <el-table-column prop="key" :label="i18nT('ai_ontology.primaryKey')" width="90" />
+        <el-table-column
+          prop="label"
+          :label="i18nT('ai_ontology.title')"
+          min-width="200"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="110" align="center">
           <template #default="{ row }">
             <el-button icon="VideoPlay" link type="primary" size="small" @click="drillInto(row)">
-              继续
+              {{ i18nT("ai_ontology.continue") }}
             </el-button>
           </template>
         </el-table-column>
@@ -235,7 +274,12 @@
     </el-dialog>
 
     <!-- 实例图 -->
-    <el-dialog v-model="graphDialog" title="实例层图（真实对象为节点）" width="86%" append-to-body>
+    <el-dialog
+      v-model="graphDialog"
+      :title="i18nT('ai_ontology.instanceLevelGraphRealObjectsAsNodes')"
+      width="86%"
+      append-to-body
+    >
       <div class="ont-bar">
         <el-select
           v-model="graphDepth"
@@ -243,9 +287,9 @@
           class="ont-explore__pick"
           @change="reloadGraph"
         >
-          <el-option :value="1" label="扩展 1 步" />
-          <el-option :value="2" label="扩展 2 步" />
-          <el-option :value="3" label="扩展 3 步" />
+          <el-option :value="1" :label="i18nT('ai_ontology.expandSteps', { count: 1 })" />
+          <el-option :value="2" :label="i18nT('ai_ontology.expandSteps', { count: 2 })" />
+          <el-option :value="3" :label="i18nT('ai_ontology.expandSteps', { count: 3 })" />
         </el-select>
         <el-select
           v-model="graphLinkIds"
@@ -253,18 +297,28 @@
           collapse-tags
           size="small"
           class="ont-explore__pick"
-          placeholder="全部关系"
+          :placeholder="i18nT('ai_ontology.allRelations')"
           @change="reloadGraph"
         >
           <el-option
             v-for="lk in graphLinks"
             :key="lk.id"
-            :label="`${lk.name}（${lk.direction_label}${lk.other_label}）`"
+            :label="
+              i18nT('ai_ontology.linkLabelFull', {
+                name: lk.name,
+                direction: lk.direction_label,
+                other: lk.other_label,
+              })
+            "
             :value="lk.id"
           />
         </el-select>
-        <el-button size="small" @click="() => graphRef?.fit?.()">适配</el-button>
-        <el-button size="small" @click="() => graphRef?.center?.()">居中</el-button>
+        <el-button size="small" @click="() => graphRef?.fit?.()">
+          {{ i18nT("ai_ontology.fit") }}
+        </el-button>
+        <el-button size="small" @click="() => graphRef?.center?.()">
+          {{ i18nT("ai_ontology.center") }}
+        </el-button>
         <el-tag size="small" type="info" effect="plain">{{ graphMsg }}</el-tag>
       </div>
       <div class="ont-explore__timeline">
@@ -272,7 +326,7 @@
           v-model="timelineProp"
           size="small"
           clearable
-          placeholder="选择时间属性"
+          :placeholder="i18nT('ai_ontology.selectTimeProperty')"
           class="ont-explore__pick"
           @change="onTimelinePropChange"
         >
@@ -298,7 +352,7 @@
         <el-empty
           v-else-if="timelineProp"
           :image-size="30"
-          description="所选时间属性无可用时间值"
+          :description="i18nT('ai_ontology.selectedTimePropertyHasNoTimeValues')"
         />
       </div>
       <GraphCanvas
@@ -311,34 +365,57 @@
         @node-tap="onNodeTap"
       />
       <div class="ont-hint">
-        节点是
-        <strong>真实数据行</strong>
-        （如某台摄像机、某条告警记录），边是按关系类型实际连出来的；
-        点节点可跳到该实例。类型层图请看「关系类型 → 可视化」。
+        {{ i18nT("ai_ontology.nodeIs") }}
+        <strong>{{ i18nT("ai_ontology.realDataRows") }}</strong>
+        {{ i18nT("ai_ontology.instanceGraphHint") }}
       </div>
     </el-dialog>
 
     <!-- 选择要执行的动作 -->
-    <el-dialog v-model="chooserDialog" title="选择要执行的动作" width="520px" append-to-body>
+    <el-dialog
+      v-model="chooserDialog"
+      :title="i18nT('ai_ontology.selectActionToExecute')"
+      width="520px"
+      append-to-body
+    >
       <el-table :data="chooserActs" size="small" border max-height="360" stripe>
-        <template #empty><el-empty :image-size="50" description="该对象类型没有动作" /></template>
-        <el-table-column prop="name" label="动作" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="code" label="编码" min-width="120" show-overflow-tooltip />
-        <el-table-column label="审批" width="80" align="center">
+        <template #empty>
+          <el-empty
+            :image-size="50"
+            :description="i18nT('ai_ontology.thisObjectTypeHasNoActions')"
+          />
+        </template>
+        <el-table-column
+          prop="name"
+          :label="i18nT('ai_ontology.action')"
+          min-width="150"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="code"
+          :label="i18nT('ai_ontology.code')"
+          min-width="120"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="i18nT('ai_ontology.approval')" width="80" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.approval" size="small" type="warning" effect="plain">需审批</el-tag>
+            <el-tag v-if="row.approval" size="small" type="warning" effect="plain">
+              {{ i18nT("ai_ontology.requiresApproval") }}
+            </el-tag>
             <span v-else class="ont-none">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="90" align="center">
+        <el-table-column :label="i18nT('ai_ontology.operations')" width="90" align="center">
           <template #default="{ row }">
             <el-button icon="Check" link type="primary" size="small" @click="pickAction(row)">
-              选它
+              {{ i18nT("ai_ontology.selectIt") }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <div class="ont-hint">将对已选的 {{ chooserKeys.length }} 个实例逐个执行</div>
+      <div class="ont-hint">
+        {{ i18nT("ai_ontology.willExecuteOnSelected", { count: chooserKeys.length }) }}
+      </div>
     </el-dialog>
 
     <!-- 执行动作 -->
@@ -348,7 +425,7 @@
         type="warning"
         :closable="false"
         class="ont-note"
-        title="该动作开启了审批门禁：需要勾选「已确认」才会真正写库"
+        :title="i18nT('ai_ontology.thisActionHasAnApprovalGateCheckConfirmedToWrite')"
       />
       <el-form label-width="120px" size="small">
         <el-form-item
@@ -364,24 +441,35 @@
           type="warning"
           :closable="false"
           show-icon
-          title="该动作需人工审批：提交后只会生成待审批单，由管理员批准后才会真正执行（执行人不能自我批准）。"
+          :title="
+            i18nT(
+              'ai_ontology.thisActionNeedsManualApprovalAdminsApproveBeforeExecutionExecutorCannotSelfApprove'
+            )
+          "
         />
-        <el-form-item label="作用实例">
+        <el-form-item :label="i18nT('ai_ontology.targetInstance')">
           <el-tag size="small" type="info" effect="plain">
-            {{ actKeys.length }} 个：{{ actKeys.slice(0, 6).join("、")
-            }}{{ actKeys.length > 6 ? "…" : "" }}
+            {{
+              i18nT("ai_ontology.targetInstanceCount", {
+                count: actKeys.length,
+                keys: actKeys.slice(0, 6).join("、") + (actKeys.length > 6 ? "…" : ""),
+              })
+            }}
           </el-tag>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="actDialog = false">取消</el-button>
-        <el-button type="primary" :loading="actRunning" @click="runAction">执行</el-button>
+        <el-button @click="actDialog = false">{{ i18nT("ai_ontology.cancel") }}</el-button>
+        <el-button type="primary" :loading="actRunning" @click="runAction">
+          {{ i18nT("ai_ontology.execute") }}
+        </el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
@@ -398,6 +486,8 @@ import {
   searchOntInstances,
   writebackOntInstance,
 } from "@/api/module_ai/ontology";
+
+const { t: i18nT } = useI18n();
 
 interface ObjItem {
   code: string;
@@ -456,7 +546,7 @@ function colLabel(c: string) {
 }
 
 async function doSearch(offset = 0) {
-  if (!code.value) return ElMessage.warning("请先选择对象类型");
+  if (!code.value) return ElMessage.warning(i18nT("ai_ontology.pleaseSelectObjectTypeFirst"));
   loading.value = true;
   try {
     const r = await searchOntInstances(code.value, {
@@ -495,7 +585,7 @@ const inst = ref<any>(null);
 const editForm = ref<Record<string, any>>({});
 const savingWb = ref(false);
 const viewTitle = computed(() =>
-  inst.value ? `${inst.value.object_name} · ${inst.value.label}` : "对象视图"
+  inst.value ? `${inst.value.object_name} · ${inst.value.label}` : i18nT("ai_ontology.objectView")
 );
 const visibleProps = computed(() =>
   (inst.value?.properties_meta || []).filter((p: any) => p.visibility !== "hidden")
@@ -513,7 +603,7 @@ function display(v: any, pm: any) {
 async function openView(row: any) {
   const r = await getOntInstance(code.value, row.key, scen.value);
   const d = r.data?.data || {};
-  if (!d.ok) return ElMessage.error(d.msg || "读取实例失败");
+  if (!d.ok) return ElMessage.error(d.msg || i18nT("ai_ontology.readInstanceFailed"));
   inst.value = d;
   const f: Record<string, any> = {};
   editableProps.value.forEach((p: any) => {
@@ -531,17 +621,18 @@ async function doWriteback() {
         changed[k] = editForm.value[k];
       }
     });
-    if (!Object.keys(changed).length) return ElMessage.info("没有修改任何属性");
+    if (!Object.keys(changed).length)
+      return ElMessage.info(i18nT("ai_ontology.noPropertiesModified"));
     const r = await writebackOntInstance({
       object_code: code.value,
       key: inst.value.key,
       props: changed,
     });
-    ElMessage.success(r.data?.msg || "已写回");
+    ElMessage.success(r.data?.msg || i18nT("ai_ontology.writtenBack"));
     await doSearch((pageNo.value - 1) * pageSize);
     await openView({ key: inst.value.key });
   } catch (e: any) {
-    ElMessage.error(e?.msg || "写回失败");
+    ElMessage.error(e?.msg || i18nT("ai_ontology.writebackFailed"));
   } finally {
     savingWb.value = false;
   }
@@ -555,11 +646,15 @@ const pivotCode = ref("");
 async function doPivot(lk: any) {
   const r = await pivotOntInstance(code.value, inst.value.key, lk.id, 100, scen.value);
   const d = r.data?.data || {};
-  if (!d.ok) return ElMessage.warning(d.msg || "跳转失败");
-  if (!d.items?.length) return ElMessage.info(d.msg || "没有关联实例");
+  if (!d.ok) return ElMessage.warning(d.msg || i18nT("ai_ontology.jumpFailed"));
+  if (!d.items?.length) return ElMessage.info(d.msg || i18nT("ai_ontology.noRelatedInstances"));
   pivotItems.value = d.items;
   pivotCode.value = d.other_object;
-  pivotTitle.value = `沿「${lk.name}」找到 ${d.items.length} 个${d.other_name || d.other_object}`;
+  pivotTitle.value = i18nT("ai_ontology.pivotFound", {
+    name: lk.name,
+    count: d.items.length,
+    other: d.other_name || d.other_object,
+  });
   pivotDialog.value = true;
 }
 function drillInto(row: any) {
@@ -584,7 +679,7 @@ async function openGraph(row: any) {
   // 关系列表来自该实例详情（这样就知道有哪些可扩展的关系）
   const r = await getOntInstance(code.value, row.key, scen.value);
   const d = r.data?.data || {};
-  if (!d.ok) return ElMessage.error(d.msg || "读取实例失败");
+  if (!d.ok) return ElMessage.error(d.msg || i18nT("ai_ontology.readInstanceFailed"));
   graphLinks.value = d.links || [];
   graphLinkIds.value = [];
   graphRoot.value = { code: code.value, key: String(row.key) };
@@ -609,13 +704,15 @@ async function reloadGraph() {
 }
 function openGraphOfSelected() {
   const row = selection.value[0];
-  if (!row) return ElMessage.warning("请先选择一行");
+  if (!row) return ElMessage.warning(i18nT("ai_ontology.pleaseSelectARowFirst"));
   openGraph(row);
 }
 function onNodeTap(name: string) {
   const n = graphNodes.value.find((x) => x.name === name);
   if (!n) return;
-  ElMessage.info(`实例：${n.name}（${n.object_code} #${n.key}）`);
+  ElMessage.info(
+    i18nT("ai_ontology.instanceInfo", { name: n.name, code: n.object_code, key: n.key })
+  );
 }
 
 /* ---------- 时间轴（按实例时间属性在图上淡化范围外节点） ---------- */
@@ -711,7 +808,10 @@ async function openAction(a: any, keys: string[]) {
   }
   actForm.value = f;
   actKeys.value = keys;
-  actTitle.value = `${detail.name || a.name}（${keys.length} 个实例）`;
+  actTitle.value = i18nT("ai_ontology.actionTitleWithCount", {
+    name: detail.name || a.name,
+    count: keys.length,
+  });
   actDialog.value = true;
 }
 function openBulk() {
@@ -751,15 +851,18 @@ async function runAction() {
       });
       const d = r.data?.data || {};
       if (d.ok) ok += 1;
-      else errs.push(`${k}: ${r.data?.msg || d.msg || "失败"}`);
+      else errs.push(`${k}: ${r.data?.msg || d.msg || i18nT("ai_ontology.failed")}`);
     } catch (e: any) {
-      errs.push(`${k}: ${e?.msg || "失败"}`);
+      errs.push(`${k}: ${e?.msg || i18nT("ai_ontology.failed")}`);
     }
   }
   actRunning.value = false;
   actDialog.value = false;
-  if (ok) ElMessage.success(`已执行 ${ok} 个实例的动作并留痕`);
-  if (errs.length) ElMessage.warning(`${errs.length} 个失败：${errs.slice(0, 2).join("；")}`);
+  if (ok) ElMessage.success(i18nT("ai_ontology.executedCount", { count: ok }));
+  if (errs.length)
+    ElMessage.warning(
+      i18nT("ai_ontology.failedCount", { count: errs.length, details: errs.slice(0, 2).join("；") })
+    );
   await doSearch((pageNo.value - 1) * pageSize);
 }
 </script>

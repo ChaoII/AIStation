@@ -293,6 +293,77 @@ async def list_alarm_records(limit: int = 50) -> dict:
 
 
 @tool(
+    "platform_stats",
+    "平台自身资源统计（直查平台管理库，秒级返回）：智能体/应用/工作流/知识库/模型配置/模型供应商/"
+    "技能/工具/定时任务的数量，以及累计调用与今日调用次数。"
+    "【凡「有多少智能体/几个知识库/几个模型/今天调用了多少次」等平台自身统计，一律用本工具；"
+    "不要用 ai_query——它只查业务数据、查不了平台管理表，会走 NL2SQL 失败并长时间重试】",
+    _obj({}, []),
+    kind="read",
+)
+async def platform_stats() -> dict:
+    """平台自身资源计数（管理库直查，避免元数据问题误投业务问数 NL2SQL）。"""
+    from datetime import date, datetime
+    from importlib import import_module
+
+    from sqlalchemy import func
+    from sqlalchemy import select as sel
+
+    from app.core.database import async_db_session
+
+    collectors = (
+        ("agents", "agent.model", "AiAgentModel", "智能体"),
+        ("apps", "apps.model", "AiAppModel", "AI 应用"),
+        ("workflows", "workflow.model", "AiWorkflowModel", "工作流"),
+        ("knowledge_bases", "knowledge.model", "AiKnowledgeBaseModel", "知识库"),
+        ("models", "models.model", "AiModelModel", "模型配置"),
+        ("providers", "providers.model", "AiProviderModel", "模型供应商"),
+        ("skills", "skill.model", "AiSkillModel", "技能"),
+        ("tools", "tools_catalog.model", "AiToolModel", "工具"),
+        ("cron_jobs", "workspace.model", "AiWorkspaceCronModel", "定时任务"),
+    )
+    labels: dict[str, str] = {}
+    counts: dict[str, int | None] = {}
+    async with async_db_session() as db:
+        for key, module, cls_name, label in collectors:
+            labels[key] = label
+            try:
+                mod = import_module(f"app.plugin.module_ai.{module}")
+                model = getattr(mod, cls_name)
+                stmt = sel(func.count()).select_from(model)
+                if hasattr(model, "is_deleted"):
+                    stmt = stmt.where(model.is_deleted.is_(False))  # type: ignore[attr-defined]
+                counts[key] = int((await db.execute(stmt)).scalar() or 0)
+            except Exception:  # noqa: BLE001 单表缺失不影响其它统计
+                counts[key] = None
+        try:
+            from app.plugin.module_ai.overview.model import AiCallLogModel
+
+            counts["calls_total"] = int(
+                (await db.execute(sel(func.count()).select_from(AiCallLogModel))).scalar() or 0
+            )
+            today_start = datetime.combine(date.today(), datetime.min.time())
+            counts["calls_today"] = int(
+                (
+                    await db.execute(
+                        sel(func.count())
+                        .select_from(AiCallLogModel)
+                        .where(AiCallLogModel.created_time >= today_start)
+                    )
+                ).scalar()
+                or 0
+            )
+            labels["calls_total"] = "累计调用"
+            labels["calls_today"] = "今日调用"
+        except Exception:  # noqa: BLE001
+            pass
+    summary = "；".join(
+        f"{labels.get(k, k)} {v}" for k, v in counts.items() if isinstance(v, int)
+    )
+    return {"summary": summary or "暂无统计数据", "counts": counts, "labels": labels}
+
+
+@tool(
     "ai_query",
     "智能问数：把自然语言业务问题转成 SQL 并返回数据结果（表格/汇总）。"
     "用于回答基于系统数据的统计、占比、趋势、排名等问题，例如「今天告警数」「各类型告警占比」。",

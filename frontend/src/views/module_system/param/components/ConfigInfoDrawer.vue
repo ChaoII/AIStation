@@ -1,17 +1,17 @@
 <template>
   <EnhancedDrawer
     v-model="drawerVisible"
-    title="配置中心"
+    :title="t('system.param.configCenter')"
     :size="drawerSize"
     destroy-on-close
     @close="onDrawerClosed"
   >
     <el-tabs v-model="activeTabRef" type="border-card">
       <!-- 网站配置 -->
-      <el-tab-pane label="网站配置" name="website">
+      <el-tab-pane :label="t('system.param.websiteConfig')" name="website">
         <el-form :model="configState" label-suffix=":" label-width="auto" label-position="right">
           <!-- 系统配置 -->
-          <el-divider>网站配置</el-divider>
+          <el-divider>{{ t("system.param.websiteConfig") }}</el-divider>
           <div v-for="(item, key) in systemConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <span class="flex items-center gap-2 w-full">
@@ -27,7 +27,7 @@
           </div>
 
           <!-- logo配置 -->
-          <el-divider>网站图标</el-divider>
+          <el-divider>{{ t("system.param.websiteIcon") }}</el-divider>
           <div v-for="(item, key) in logoConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <div class="flex items-center gap-2 w-full">
@@ -47,10 +47,10 @@
           </div>
         </el-form>
       </el-tab-pane>
-      <el-tab-pane label="安全隐私" name="securityPrivacy">
+      <el-tab-pane :label="t('system.param.securityPrivacy')" name="securityPrivacy">
         <el-form :model="configState" label-suffix=":" label-width="auto" label-position="right">
           <!-- 系统配置 -->
-          <el-divider>安全隐私</el-divider>
+          <el-divider>{{ t("system.param.securityPrivacy") }}</el-divider>
           <div v-for="(item, key) in securityPrivacyConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <span class="flex items-center gap-2 w-full">
@@ -66,10 +66,10 @@
           </div>
         </el-form>
       </el-tab-pane>
-      <el-tab-pane label="用户协议" name="userAgreement">
+      <el-tab-pane :label="t('system.param.userAgreement')" name="userAgreement">
         <!-- 系统配置 -->
         <el-form :model="configState" label-suffix=":" label-width="auto" label-position="right">
-          <el-divider>用户协议</el-divider>
+          <el-divider>{{ t("system.param.userAgreement") }}</el-divider>
           <div v-for="(item, key) in userAgreementConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <span class="flex items-center gap-2 w-full">
@@ -85,10 +85,10 @@
           </div>
         </el-form>
       </el-tab-pane>
-      <el-tab-pane label="接口白名单" name="apiWhitelist">
+      <el-tab-pane :label="t('system.param.apiWhitelist')" name="apiWhitelist">
         <el-form :model="configState" label-suffix=":" label-width="auto" label-position="right">
           <!-- 系统配置 -->
-          <el-divider>接口白名单</el-divider>
+          <el-divider>{{ t("system.param.apiWhitelist") }}</el-divider>
           <div v-for="(item, key) in apiWhitelistConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <div class="space-y-2">
@@ -105,7 +105,7 @@
                     @blur="
                       {
                         if (!isValidApiPath(listItem.value) && listItem.value.trim()) {
-                          ElMessage.warning('请输入有效的接口路径格式（以/开头）');
+                          ElMessage.warning(t('system.param.invalidApiPath'));
                         }
                       }
                     "
@@ -125,20 +125,20 @@
                   style="margin-top: 10px"
                   @click="addApiWhitelistItem"
                 >
-                  添加接口路径
+                  {{ t("system.param.addApiPath") }}
                 </el-button>
                 <div class="text-xs text-gray-500 mt-2">
-                  配置说明：添加到白名单的接口路径无需登录即可访问，支持完整路径配置。
+                  {{ t("system.param.apiWhitelistTip") }}
                 </div>
               </div>
             </el-form-item>
           </div>
         </el-form>
       </el-tab-pane>
-      <el-tab-pane label="IP黑名单" name="ipBlacklist">
+      <el-tab-pane :label="t('system.param.ipBlacklist')" name="ipBlacklist">
         <el-form :model="configState" label-suffix=":" label-width="auto" label-position="right">
           <!-- 系统配置 -->
-          <el-divider>IP黑名单</el-divider>
+          <el-divider>{{ t("system.param.ipBlacklist") }}</el-divider>
           <div v-for="(item, key) in ipBlacklistConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <div class="space-y-2">
@@ -156,7 +156,7 @@
                     @blur="
                       {
                         if (!isValidIp(listItem.value) && listItem.value.trim()) {
-                          ElMessage.warning('请输入有效的IP地址格式');
+                          ElMessage.warning(t('system.param.invalidIp'));
                         }
                       }
                     "
@@ -176,25 +176,25 @@
                   style="margin-top: 10px"
                   @click="addIpBlacklistItem"
                 >
-                  添加IP地址
+                  {{ t("system.param.addIp") }}
                 </el-button>
                 <div class="text-xs text-gray-500 mt-2">
-                  配置说明：添加到黑名单的IP地址将无法访问系统，支持单个IP配置。
+                  {{ t("system.param.ipBlacklistTip") }}
                 </div>
               </div>
             </el-form-item>
           </div>
         </el-form>
       </el-tab-pane>
-      <el-tab-pane label="通知配置" name="notification">
+      <el-tab-pane :label="t('system.param.notification')" name="notification">
         <el-form :model="configState" label-suffix=":" label-width="auto" label-position="right">
-          <el-divider>WebSocket 推送</el-divider>
+          <el-divider>{{ t("system.param.wsPush") }}</el-divider>
           <div v-for="(item, key) in wsNotifyConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <el-switch
                 inline-prompt
-                active-text="启用"
-                inactive-text="禁用"
+                :active-text="t('system.param.enable')"
+                :inactive-text="t('system.param.disable')"
                 :model-value="item.config_value === '1'"
                 @update:model-value="
                   (value) => {
@@ -207,11 +207,11 @@
           </div>
           <el-form-item label=" ">
             <el-button type="primary" size="small" @click="handleTestNotify('WS_PUSH')">
-              测试 WS 推送
+              {{ t("system.param.testWsPush") }}
             </el-button>
           </el-form-item>
 
-          <el-divider>SMTP 邮件</el-divider>
+          <el-divider>{{ t("system.param.smtpEmail") }}</el-divider>
           <div v-for="(item, key) in smtpConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <template v-if="key === 'notify_smtp_ssl'">
@@ -250,11 +250,11 @@
           </div>
           <el-form-item label=" ">
             <el-button type="primary" size="small" @click="handleTestNotify('EMAIL')">
-              测试邮件推送
+              {{ t("system.param.testEmailPush") }}
             </el-button>
           </el-form-item>
 
-          <el-divider>短信网关</el-divider>
+          <el-divider>{{ t("system.param.smsGateway") }}</el-divider>
           <div v-for="(item, key) in smsConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <template v-if="key === 'notify_sms_secret'">
@@ -279,11 +279,11 @@
           </div>
           <el-form-item label=" ">
             <el-button type="primary" size="small" @click="handleTestNotify('SMS')">
-              测试短信推送
+              {{ t("system.param.testSmsPush") }}
             </el-button>
           </el-form-item>
 
-          <el-divider>Webhook / REST API</el-divider>
+          <el-divider>{{ t("system.param.webhookRest") }}</el-divider>
           <div v-for="(item, key) in webhookConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <template v-if="key === 'notify_webhook_secret'">
@@ -308,11 +308,11 @@
           </div>
           <el-form-item label=" ">
             <el-button type="primary" size="small" @click="handleTestNotify('WEBHOOK')">
-              测试 Webhook 推送
+              {{ t("system.param.testWebhookPush") }}
             </el-button>
           </el-form-item>
 
-          <el-divider>默认接收人</el-divider>
+          <el-divider>{{ t("system.param.defaultRecipient") }}</el-divider>
           <div v-for="(item, key) in defaultRecipientConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <el-input
@@ -326,18 +326,18 @@
           </div>
         </el-form>
       </el-tab-pane>
-      <el-tab-pane label="演示环境配置" name="demo">
+      <el-tab-pane :label="t('system.param.demoConfig')" name="demo">
         <el-form :model="configState" label-suffix=":" label-width="auto" label-position="right">
           <!-- 系统配置 -->
-          <el-divider>演示环境配置</el-divider>
+          <el-divider>{{ t("system.param.demoConfig") }}</el-divider>
           <div v-for="(item, key) in demoConfigs" :key="key">
             <el-form-item :label="item.config_name">
               <!-- 演示模式开关 -->
               <template v-if="key === 'demo_enable'">
                 <el-switch
                   inline-prompt
-                  active-text="启用"
-                  inactive-text="禁用"
+                  :active-text="t('system.param.enable')"
+                  :inactive-text="t('system.param.disable')"
                   :model-value="item.config_value === 'true'"
                   @update:model-value="
                     (value) => {
@@ -347,7 +347,7 @@
                   "
                 />
                 <div class="text-xs text-gray-500 mt-1">
-                  配置说明：启用后系统将进入演示模式，部分功能可能受限。
+                  {{ t("system.param.demoEnableTip") }}
                 </div>
               </template>
               <!-- IP白名单 -->
@@ -367,7 +367,7 @@
                       @blur="
                         {
                           if (!isValidIp(listItem.value) && listItem.value.trim()) {
-                            ElMessage.warning('请输入有效的IP地址格式');
+                            ElMessage.warning(t('system.param.invalidIp'));
                           }
                         }
                       "
@@ -387,10 +387,10 @@
                     style="margin-top: 10px"
                     @click="addDemoIpWhitelistItem"
                   >
-                    添加IP地址
+                    {{ t("system.param.addIp") }}
                   </el-button>
                   <div class="text-xs text-gray-500 mt-2">
-                    配置说明：演示模式下，只有白名单中的IP地址可以访问系统，支持单个IP配置。
+                    {{ t("system.param.demoIpWhitelistTip") }}
                   </div>
                 </div>
               </template>
@@ -410,14 +410,14 @@
       </el-tab-pane>
     </el-tabs>
     <template #footer>
-      <el-button @click="handleCloseDialog">取消</el-button>
+      <el-button @click="handleCloseDialog">{{ t("system.param.cancel") }}</el-button>
       <el-button
         v-hasPerm="['module_system:config:update']"
         type="primary"
         :disabled="!hasChanges"
         @click="submitChanges"
       >
-        保存
+        {{ t("system.param.save") }}
       </el-button>
     </template>
   </EnhancedDrawer>
@@ -574,6 +574,7 @@ const submitChanges = async () => {
     configStore.isConfigLoaded = false;
     await configStore.getConfig();
     initializeLists();
+    ElMessage.success(t("system.param.operationSuccess"));
   } catch (error) {
     console.error("保存失败:", error);
   }
@@ -764,7 +765,7 @@ const addApiWhitelistItem = () => {
 // 移除接口白名单项
 const removeApiWhitelistItem = (id: string) => {
   if (apiWhitelistItems.value.length <= 1) {
-    ElMessage.warning("至少需要保留一个接口白名单配置");
+    ElMessage.warning(t("system.param.keepApiWhitelist"));
     return;
   }
   apiWhitelistItems.value = apiWhitelistItems.value.filter((item) => item.id !== id);
@@ -780,7 +781,7 @@ const addIpBlacklistItem = () => {
 // 移除IP黑名单项
 const removeIpBlacklistItem = (id: string) => {
   if (ipBlacklistItems.value.length <= 1) {
-    ElMessage.warning("至少需要保留一个IP黑名单配置");
+    ElMessage.warning(t("system.param.keepIpBlacklist"));
     return;
   }
   ipBlacklistItems.value = ipBlacklistItems.value.filter((item) => item.id !== id);
@@ -796,7 +797,7 @@ const addDemoIpWhitelistItem = () => {
 // 移除演示环境IP白名单项
 const removeDemoIpWhitelistItem = (id: string) => {
   if (demoIpWhitelistItems.value.length <= 1) {
-    ElMessage.warning("至少需要保留一个IP白名单配置");
+    ElMessage.warning(t("system.param.keepIpWhitelist"));
     return;
   }
   demoIpWhitelistItems.value = demoIpWhitelistItems.value.filter((item) => item.id !== id);
@@ -899,7 +900,9 @@ const handleUploadSuccess = (fileInfo: UploadFilePath, type: string) => {
 // 图片上传失败的回调处理
 const handleUploadError = (error: any) => {
   console.error("上传失败:", error.message || "未知错误");
-  ElMessage.error(`上传失败：${error.message || "请稍后重试"}`);
+  ElMessage.error(
+    `${t("system.param.uploadFailedPrefix")}${error.message || t("system.param.uploadRetry")}`
+  );
 };
 
 const handleTestNotify = async (channel: string) => {

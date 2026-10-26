@@ -159,41 +159,6 @@ def _delete_agents(test_client, auth_headers, ids) -> None:
         )
 
 
-def test_agent_category_crud(test_client, auth_headers):
-    r = test_client.post(
-        "/api/v1/ai/agents/categories/create",
-        json={"name": "客服", "parent_id": None, "sort": 1},
-        headers=auth_headers,
-    )
-    assert r.status_code == 200, r.text
-    cat_id = r.json()["data"]["id"]
-
-    lst = test_client.get("/api/v1/ai/agents/categories/list", headers=auth_headers)
-    assert lst.status_code == 200, lst.text
-    assert any(c["id"] == cat_id for c in lst.json()["data"])
-
-    cat_id2 = test_client.post(
-        "/api/v1/ai/agents/categories/create",
-        json={"name": "子分类", "parent_id": cat_id, "sort": 0},
-        headers=auth_headers,
-    ).json()["data"]["id"]
-
-    upd = test_client.put(
-        f"/api/v1/ai/agents/categories/update/{cat_id}",
-        json={"name": "智能客服"},
-        headers=auth_headers,
-    )
-    assert upd.status_code == 200, upd.text
-    assert upd.json()["data"]["name"] == "智能客服"
-
-    test_client.request(
-        "DELETE", "/api/v1/ai/agents/categories/delete", json=cat_id, headers=auth_headers
-    )
-    test_client.request(
-        "DELETE", "/api/v1/ai/agents/categories/delete", json=cat_id2, headers=auth_headers
-    )
-
-
 def test_agent_crud(test_client, auth_headers):
     agent_id = _create_agent(
         test_client, auth_headers, model_id=999, workflow_id=None, tool_ids=["navigate"]

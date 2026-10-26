@@ -27,6 +27,9 @@
 <script setup lang="ts">
 import type { ButtonProps } from "element-plus";
 import type { CSSProperties } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 /** 与 PageContent createToolbar 产出的右侧按钮结构一致 */
 export type CrudToolbarRightButton = {
@@ -42,14 +45,15 @@ defineProps<{
   onToolbar: (name: string) => void;
 }>();
 
-const TOOLTIPS: Record<string, string> = {
-  import: "导入",
-  export: "导出",
-  filter: "筛选",
-  refresh: "刷新",
+const TOOLTIP_KEYS: Record<string, string> = {
+  import: "common.import",
+  export: "common.export",
+  filter: "common.filter",
+  refresh: "common.refresh",
 };
 
 function tooltipContent(name: string): string | undefined {
-  return TOOLTIPS[name];
+  const k = TOOLTIP_KEYS[name];
+  return k ? t(k) : undefined;
 }
 </script>

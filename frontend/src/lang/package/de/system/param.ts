@@ -1,0 +1,90 @@
+export default {
+  // 工具栏 / 操作
+  export: "Exportieren",
+  noData: "Keine Daten",
+  detail: "Details",
+  edit: "Bearbeiten",
+  delete: "Löschen",
+  action: "Aktionen",
+  cancel: "Abbrechen",
+  confirm: "Bestätigen",
+  save: "Speichern",
+  operationSuccess: "Vorgang erfolgreich",
+
+  // 表格列
+  selection: "Auswahl",
+  serial: "Nr.",
+  configName: "Konfigurationsname",
+  configKey: "Konfigurationsschlüssel",
+  configKeyName: "Name des Konfigurationsschlüssels",
+  configValue: "Konfigurationswert",
+  configType: "Systemintegriert",
+  description: "Beschreibung",
+  createdTime: "Erstellt am",
+  updatedTime: "Aktualisiert am",
+  yes: "Ja",
+  no: "Nein",
+
+  // 搜索 / 筛选
+  inputConfigName: "Bitte Konfigurationsnamen eingeben",
+  inputConfigKey: "Bitte Konfigurationsschlüssel eingeben",
+  inputConfigValue: "Bitte Konfigurationswert eingeben",
+  inputDescription: "Bitte Beschreibung eingeben",
+  inputConfigKeyName: "Bitte Namen des Konfigurationsschlüssels eingeben",
+  selectConfigType: "Bitte systemintegriert auswählen",
+  to: "bis",
+  startDate: "Startdatum",
+  endDate: "Enddatum",
+
+  // 弹窗标题
+  configDetail: "Details zur Systemkonfiguration",
+  updateConfig: "Systemkonfiguration bearbeiten",
+  createConfig: "Systemkonfiguration erstellen",
+
+  // 提示 / 确认
+  warnTitle: "Warnung",
+  deleteConfirmMessage: "Möchten Sie die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
+  requiredConfigName: "Bitte Namen der Systemkonfiguration eingeben",
+  requiredConfigKey: "Bitte Schlüssel der Systemkonfiguration eingeben",
+  requiredConfigValue: "Bitte Wert der Systemkonfiguration eingeben",
+  requiredConfigType: "Bitte Typ der Systemkonfiguration auswählen",
+
+  // 配置中心抽屉
+  configCenter: "Konfigurationszentrum",
+  websiteConfig: "Website-Konfiguration",
+  websiteIcon: "Website-Symbol",
+  securityPrivacy: "Sicherheit & Datenschutz",
+  userAgreement: "Nutzungsvereinbarung",
+  apiWhitelist: "API-Whitelist",
+  ipBlacklist: "IP-Blacklist",
+  notification: "Benachrichtigungskonfiguration",
+  demoConfig: "Demo-Konfiguration",
+  wsPush: "WebSocket-Push",
+  smtpEmail: "SMTP-E-Mail",
+  smsGateway: "SMS-Gateway",
+  webhookRest: "Webhook / REST-API",
+  defaultRecipient: "Standardempfänger",
+  enable: "Aktivieren",
+  disable: "Deaktivieren",
+  testWsPush: "WS-Push testen",
+  testEmailPush: "E-Mail-Push testen",
+  testSmsPush: "SMS-Push testen",
+  testWebhookPush: "Webhook-Push testen",
+  addApiPath: "API-Pfad hinzufügen",
+  addIp: "IP-Adresse hinzufügen",
+  apiWhitelistTip:
+    "Konfigurationshinweis: API-Pfade in der Whitelist sind ohne Anmeldung erreichbar und unterstützen die Konfiguration vollständiger Pfade.",
+  ipBlacklistTip:
+    "Konfigurationshinweis: IP-Adressen auf der Blacklist können nicht auf das System zugreifen; einzelne IP-Adressen können konfiguriert werden.",
+  demoIpWhitelistTip:
+    "Konfigurationshinweis: Im Demo-Modus können nur IP-Adressen auf der Whitelist auf das System zugreifen; einzelne IP-Adressen können konfiguriert werden.",
+  demoEnableTip:
+    "Konfigurationshinweis: Einmal aktiviert, wechselt das System in den Demo-Modus und einige Funktionen können eingeschränkt sein.",
+  invalidApiPath: "Bitte ein gültiges API-Pfadformat eingeben (beginnt mit /)",
+  invalidIp: "Bitte ein gültiges IP-Adressformat eingeben",
+  keepApiWhitelist: "Mindestens eine API-Whitelist-Konfiguration ist erforderlich",
+  keepIpBlacklist: "Mindestens eine IP-Blacklist-Konfiguration ist erforderlich",
+  keepIpWhitelist: "Mindestens eine IP-Whitelist-Konfiguration ist erforderlich",
+  uploadFailedPrefix: "Upload fehlgeschlagen: ",
+  uploadRetry: "Bitte versuchen Sie es später erneut",
+};
