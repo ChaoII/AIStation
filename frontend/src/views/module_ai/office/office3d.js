@@ -1669,14 +1669,71 @@ export function createOffice(opts) {
     applyScreens();
   }
 
-  function focusFloor(n) {
+  function focusFloor(n, smooth = false) {
     setFloor(n);
+    const ty = currentFloor === 2 ? FLOOR_H + 0.15 : 0.15;
+    if (smooth) {
+      /* 平滑：交给渲染循环里的 camState.want 插值（硬切会"跳"一下） */
+      camState.home = null;
+      camState.want = { zoom: 1, tx: 0.42, ty, tz: 0.12 };
+      return;
+    }
     /* 楼层切换是"硬切"：取消任何进行中的聚焦，回到默认视角 */
     camState.home = null;
     camState.want = null;
-    controls.target.set(0.42, currentFloor === 2 ? FLOOR_H + 0.15 : 0.15, 0.12);
+    controls.target.set(0.42, ty, 0.12);
     camera.zoom = 1;
     camera.updateProjectionMatrix();
+  }
+
+  /**
+   * 镜头对准某个人（平滑推近）。点名单/名牌"定位"用。
+   * - 人在另一层：先通过 onFloorSwitch 切层（让页面上的 1F/2F 也同步），再对焦
+   * - 找不到这个人返回 false，调用方据此决定要不要提示
+   */
+  function focusAgent(name, zoom = 2.2) {
+    const rec = agents.find((r) => r.data.name === name);
+    if (!rec) return false;
+    const wantFloor = (rec.seat && rec.seat.floor) || 1;
+    if (wantFloor !== currentFloor) {
+      if (opts && opts.onFloorSwitch) {
+        try { opts.onFloorSwitch(wantFloor); } catch (err) { /* 回调别拖垮渲染 */ }
+      } else {
+        setFloor(wantFloor);
+      }
+    }
+    const p = rec.person.root.position;
+    const z = Math.max(0.9, Math.min(2.4, zoom));
+    focusCamera(p.x, p.y + 0.95, p.z, z);
+    return true;
+  }
+
+  /**
+   * 镜头预设：overview（全景）/ board（白板）/ screen（大屏）。
+   * 都走 camState.want，所以是平滑过渡；用户一拖动就被 OrbitControls 接管。
+   */
+  function cameraPreset(name) {
+    switch (name) {
+      case 'board': {
+        const b = boardMesh.position;
+        focusCamera(b.x + 1.15, 1.0, b.z + 2.3, 2.4);
+        return true;
+      }
+      case 'screen':
+        focusScreen(true);
+        return true;
+      case 'overview':
+      case 'floor':
+      default:
+        camState.home = null;
+        camState.want = {
+          zoom: 1,
+          tx: 0.42,
+          ty: currentFloor === 2 ? FLOOR_H + 0.15 : 0.15,
+          tz: 0.12
+        };
+        return true;
+    }
   }
 
   /** 视角切换：room = 室内（默认），terrace = 拉远看露台 */
@@ -4909,6 +4966,10 @@ export function createOffice(opts) {
     if (hoveredId != null) { hoveredId = null; refreshPlates(); }
   });
   stage.addEventListener('click', (ev) => {
+    /* 只有点在 canvas 上才算"点场景"。
+       面板、气泡、按钮这些 DOM 覆盖层都在 stage 里，事件会冒泡上来；
+       以前不判来源，点「执行过程」里的任意一行都会被当成点空地 → 取消选中 → 面板被清空。 */
+    if (ev.target && ev.target.tagName !== 'CANVAS') return;
     /* 看着大屏时，点一下场景就退回来（像游戏里退出看板） */
     if (scrState.mode !== 'idle') {
       closeScreen();
@@ -5705,6 +5766,8 @@ export function createOffice(opts) {
     setLook,
     focusZone,
     focusFloor,
+    focusAgent,
+    cameraPreset,
     scene,
     /* 验收用：把镜头推到某个人面前看细节（近景截图靠它，不改默认视角） */
     peek(name, zoom) {

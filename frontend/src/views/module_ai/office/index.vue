@@ -39,7 +39,12 @@
               :key="a.id"
               class="m-row"
               :class="{ on: selected === a.id }"
+              role="button"
+              tabindex="0"
+              :aria-pressed="selected === a.id"
+              :title="`${a.name} · 点一下选中，并把镜头对准他`"
               @click="pick(a.id)"
+              @keydown.enter.prevent="pick(a.id)"
             >
               <span class="m-av" :class="a.status">{{ (a.name || "?").slice(0, 1) }}</span>
               <div class="who">
@@ -103,6 +108,16 @@
             </div>
             <div v-if="!tasks.length && !taskLoading" class="of-empty">
               {{ taskFiltered ? "没有符合条件的派活" : taskDate ? "这一天没有派活" : "最近 30 天没有派活" }}
+              <div v-if="!taskFiltered" class="of-samples">
+                <span class="lbl">试试：</span>
+                <button
+                  v-for="(s, i) in SAMPLE_TASKS"
+                  :key="i"
+                  class="sample"
+                  :title="s"
+                  @click="usePrompt(s)"
+                >{{ s }}</button>
+              </div>
             </div>
           </div>
           <div class="of-pager" v-if="taskTotal > taskPageSize">
@@ -129,20 +144,48 @@
             <span v-if="detail" class="of-picked" @click="clearPick">
               <i class="dot" :class="detail.status" />{{ detail.name }}<b>×</b>
             </span>
-            <input
+            <textarea
               v-if="detail"
               v-model="oneText"
+              rows="1"
               class="of-input of-bar-input"
-              placeholder="单独派活，回车发送…"
-              @keyup.enter="dispatchOne"
+              placeholder="单独派活，回车发送，Shift+回车换行…"
+              aria-label="单独派活的任务内容"
+              @keydown.enter.exact.prevent="dispatchOne"
+              @input="autoGrow"
             />
-            <input
-              v-else
-              v-model="dispatchText"
-              class="of-input of-bar-input"
-              :placeholder="`把任务交给 ${leaderName}…`"
-              @keyup.enter="doDispatch"
-            />
+            <template v-else>
+              <div v-if="recentPrompts.length" class="of-recent">
+                <button
+                  class="of-btn"
+                  aria-label="最近派过的任务"
+                  aria-haspopup="listbox"
+                  :aria-expanded="recentOpen"
+                  @click="recentOpen = !recentOpen"
+                >最近 ▾</button>
+                <i v-if="recentOpen" class="of-pop-mask" @click="recentOpen = false" />
+                <div v-if="recentOpen" class="of-menu recent" role="listbox">
+                  <button
+                    v-for="(t, i) in recentPrompts"
+                    :key="i"
+                    role="option"
+                    :aria-selected="false"
+                    :title="t"
+                    @click="usePrompt(t)"
+                  >{{ t }}</button>
+                </div>
+              </div>
+              <textarea
+                ref="barInputRef"
+                v-model="dispatchText"
+                rows="1"
+                class="of-input of-bar-input"
+                :placeholder="`把任务交给 ${leaderName}（@某人 可单独派给他）…`"
+                aria-label="交给组长的任务内容"
+                @keydown.enter.exact.prevent="doDispatch"
+                @input="onBarInput"
+              />
+            </template>
             <button
               v-if="detail && oneLoading"
               class="of-btn stop"
@@ -152,6 +195,8 @@
               v-else-if="detail"
               v-hasPerm="'module_ai:office:dispatch'"
               class="of-btn primary"
+              :disabled="!oneText.trim()"
+              :title="oneText.trim() ? '只派给这个人（Enter）' : '先写一句要他做什么'"
               @click="dispatchOne"
             >派给他</button>
             <button
@@ -163,6 +208,8 @@
               v-else
               v-hasPerm="'module_ai:office:dispatch'"
               class="of-btn primary"
+              :disabled="!canSend"
+              :title="canSend ? '交给组长协调（Enter）' : '先写一句要做什么'"
               @click="doDispatch"
             >派活</button>
 
@@ -237,6 +284,7 @@
                 <button @click="doMenu('board')">清空白板</button>
                 <button @click="doMenu('memory')">清空办公室记忆</button>
                 <button @click="doMenu('refresh')">刷新在岗状态</button>
+                <button @click="doMenu('guide')">重看引导</button>
               </div>
             </div>
           </div>
@@ -270,6 +318,44 @@
 
         <div class="stage" ref="stageRef" :class="{ night: isNight }">
           <div class="plates" ref="platesRef" />
+
+          <!-- 镜头预设：全景 / 跟随执行者 / 白板 / 大屏 -->
+          <div class="cam-presets" role="group" aria-label="镜头预设">
+            <button
+              v-for="m in CAM_MODES"
+              :key="m.v"
+              :class="{ on: camMode === m.v }"
+              :aria-pressed="camMode === m.v"
+              :title="m.tip"
+              @click="setCamMode(m.v)"
+            >{{ m.label }}</button>
+          </div>
+
+          <!-- 首次引导：只出现一次，菜单里可重看 -->
+          <div v-if="guideOpen" class="guide-mask" role="dialog" aria-modal="true" aria-label="办公室上手指引">
+            <div class="guide-card">
+              <div class="g-head">
+                <span class="g-cap">第 {{ guideStep + 1 }} / {{ GUIDE_STEPS.length }} 步</span>
+                <span class="g-t">{{ GUIDE_STEPS[guideStep].t }}</span>
+              </div>
+              <div class="g-d">{{ GUIDE_STEPS[guideStep].d }}</div>
+              <div class="g-foot">
+                <span class="dots">
+                  <i
+                    v-for="(s, i) in GUIDE_STEPS"
+                    :key="i"
+                    :class="{ on: i === guideStep }"
+                    :title="s.t"
+                  />
+                </span>
+                <span class="spacer" />
+                <button class="of-btn" @click="closeGuide">跳过</button>
+                <button class="of-btn primary" @click="nextGuide">
+                  {{ guideStep >= GUIDE_STEPS.length - 1 ? "知道了" : "下一步" }}
+                </button>
+              </div>
+            </div>
+          </div>
           <div class="people-hint" v-if="peopleHint && !webglError">
             <i class="dot" />同事正在入座…
           </div>
@@ -310,9 +396,16 @@
               <span class="t">执行过程</span>
               <i v-if="oneLoading || dispatching" class="live" />
               <span v-if="hasMemory" class="mem">带上下文</span>
+              <span class="spacer" />
+              <button
+                v-if="steps.some((s) => s.kind === 'tool' || s.kind === 'summary')"
+                class="of-linkbtn"
+                :aria-label="allOpen ? '收起全部步骤' : '展开全部步骤'"
+                @click="toggleAllSteps"
+              >{{ allOpen ? "收起全部" : "展开全部" }}</button>
               <span class="c">{{ steps.length }} 步</span>
             </div>
-            <div class="of-tbody" ref="stepsBodyRef">
+            <div class="of-tbody" ref="stepsBodyRef" @scroll.passive="onStepsScroll">
               <div class="of-root" v-if="tree.plan">
                 <i class="bul" />
                 <div>
@@ -362,10 +455,27 @@
                   <i class="who-dot" :style="{ background: personColor(tree.summary.actor || '') }" />
                   {{ tree.summary.kind === "error" ? "失败" : "汇总" }} ·
                   {{ tree.summary.actor || "组长" }}
+                  <span class="spacer" />
+                  <button
+                    class="of-linkbtn"
+                    :aria-label="tree.summary.kind === 'error' ? '复制错误信息' : '复制结论'"
+                    @click.stop="
+                      copyText(
+                        tree.summary.detail || '',
+                        tree.summary.kind === 'error' ? '已复制错误信息' : '已复制结论'
+                      )
+                    "
+                  >{{ tree.summary.kind === "error" ? "复制错误" : "复制结论" }}</button>
                 </div>
                 <div class="x">{{ plainText(tree.summary.detail || "") }}</div>
               </div>
             </div>
+            <button
+              v-if="showJumpLatest"
+              class="of-jump"
+              aria-label="回到最新步骤"
+              @click="jumpLatest"
+            >回到最新 ↓</button>
             <div class="of-tfoot">
               <span class="lg"><i class="dot" />完成</span>
               <span class="lg"><i class="dot wait" />待确认</span>
@@ -392,10 +502,44 @@
           </div>
 
         </div>
+
+        <!-- 任务播报：一行滚动，展开看最近 30 条（只在前端内存，不额外请求） -->
+        <div class="cast-bar" :class="{ open: castOpen, bad: castBad }">
+          <span class="cap"><i class="live" />播报</span>
+          <span class="one" :class="{ bad: castLast?.bad }" :title="castLast?.text || ''">
+            <template v-if="castLast">
+              <i class="g">{{ castGlyph(castLast?.kind ?? "info") }}</i>
+              <em>{{ castLast.t }}</em>
+              {{ castLast.text }}
+            </template>
+            <template v-else>还没有动静 —— 派个活，这里会实时播报谁在做什么</template>
+          </span>
+          <span v-if="castBad" class="bad-dot" title="有失败或断线记录" />
+          <button
+            class="of-linkbtn"
+            :aria-expanded="castOpen"
+            aria-label="展开或收起任务播报"
+            @click="toggleCast"
+          >{{ castOpen ? "收起" : `展开（${casts.length}）` }}</button>
+          <div v-if="castOpen" class="cast-list" role="log" aria-live="polite">
+            <div v-for="c in castDesc" :key="c.id" class="c" :class="{ bad: c.bad }">
+              <em>{{ c.t }}</em>
+              <i class="g">{{ castGlyph(c.kind) }}</i>
+              <span class="x">{{ c.text }}</span>
+            </div>
+            <div v-if="!casts.length" class="empty">还没有播报</div>
+          </div>
+        </div>
+
         <div class="brief-bar" v-if="briefText">
           <span class="cap"><i class="dot" />组长结论</span>
           <span class="txt" :title="resultText">{{ briefText }}</span>
           <el-button link type="primary" size="small" @click="showResultOnScreen">看全文</el-button>
+          <el-button
+            link
+            size="small"
+            @click="copyText(resultText || briefText, '已复制结论')"
+          >复制</el-button>
           <el-button link size="small" @click="briefText = ''">收起</el-button>
         </div>
         <div class="run-strip">
@@ -451,6 +595,7 @@ import { getAiLogRecent, getAiToolCalls } from "@/api/module_ai/logs";
 import { getApprovalCenter } from "@/api/module_ai/query";
 // @ts-ignore 纯 JS 场景模块（three 无类型声明）
 import { createOffice } from "./office3d.js";
+import { castGlyph, castHandoff, hasBad, makeCast, pushCast, type CastItem } from "./broadcast";
 
 interface OfficeAgent {
   id: number;
@@ -478,6 +623,223 @@ let peopleHintTimer: number | null = null;
 const webglError = ref("");const keyword = ref("");
 const selected = ref<number | null>(null);
 const seated = ref(0);
+
+/* ================= 首次引导（只出现一次，菜单里可重看） ================= */
+const GUIDE_KEY = "office.guide.v1";
+const guideOpen = ref(false);
+const guideStep = ref(0);
+const GUIDE_STEPS = [
+  {
+    t: "选人 = 单独派活",
+    d: "点左上名单里的某位同事（或在 3D 里点他），派活框会切成「派给他」，任务只交给这一个人。"
+  },
+  {
+    t: "不选人 = 交给组长",
+    d: "直接在顶部输入框写任务，组长会自己拆活、分给合适的同事，并把结果汇总回来。"
+  },
+  {
+    t: "右侧看执行过程",
+    d: "接活、调了哪些工具、谁回了什么、最后结论，都在右侧「执行过程」里，点开每一步看参数和返回。"
+  }
+];
+function openGuide() {
+  guideStep.value = 0;
+  guideOpen.value = true;
+}
+function closeGuide() {
+  guideOpen.value = false;
+  try {
+    localStorage.setItem(GUIDE_KEY, "1");
+  } catch {
+    /* 隐私模式写不了，下次还会出现，可接受 */
+  }
+}
+function nextGuide() {
+  if (guideStep.value >= GUIDE_STEPS.length - 1) closeGuide();
+  else guideStep.value += 1;
+}
+
+/* ================= 任务播报（底部一条，可展开最近 30 条） ================= */
+const CAST_KEY = "office.cast.open";
+const casts = ref<CastItem[]>([]);
+const castOpen = ref(false);
+const castBad = computed(() => hasBad(casts.value));
+const castLast = computed<CastItem | null>(() => casts.value[casts.value.length - 1] || null);
+function addCast(kind: CastItem["kind"], text: string, bad = false) {
+  if (!text) return;
+  casts.value = pushCast(casts.value, makeCast(kind, text, { bad }));
+}
+function toggleCast() {
+  castOpen.value = !castOpen.value;
+  try {
+    localStorage.setItem(CAST_KEY, castOpen.value ? "1" : "0");
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/* ================= 镜头：全景 / 跟随执行者 / 白板 / 大屏 ================= */
+type CamMode = "overview" | "follow" | "board" | "screen";
+const camMode = ref<CamMode>("overview");
+/** 跟随模式限流：3 秒内不重复推镜头，否则多成员并行时画面乱跳 */
+const FOLLOW_GAP_MS = 3000;
+let lastFollowAt = 0;
+function setCamMode(m: CamMode) {
+  camMode.value = m;
+  if (m === "follow") {
+    const who = lastActor.value;
+    if (who) focusWho(who);
+    return;
+  }
+  office?.cameraPreset?.(m);
+}
+function focusWho(name?: string | null) {
+  if (!name) return false;
+  const ok = office?.focusAgent?.(name, 2.2);
+  if (!ok) ElMessage.info(`没在场景里找到「${name}」的座位`);
+  return !!ok;
+}
+/** 当前该跟随谁：最近一条带 actor 的步骤 */
+const lastActor = computed(() => {
+  for (let i = steps.value.length - 1; i >= 0; i--) {
+    const a = steps.value[i].actor;
+    if (a) return a;
+  }
+  return "";
+});
+function followIfNeeded(actor?: string) {
+  if (camMode.value !== "follow" || !actor) return;
+  const now = Date.now();
+  if (now - lastFollowAt < FOLLOW_GAP_MS) return;
+  lastFollowAt = now;
+  focusWho(actor);
+}
+
+/* ================= 最近任务：一键填回输入框（不自动发送） ================= */
+const RECENT_KEY = "office.recentPrompts";
+const recentPrompts = ref<string[]>([]);
+function rememberPrompt(t: string) {
+  const s = String(t || "").trim();
+  if (!s) return;
+  recentPrompts.value = [s, ...recentPrompts.value.filter((x) => x !== s)].slice(0, 5);
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recentPrompts.value));
+  } catch {
+    /* 忽略 */
+  }
+}
+function usePrompt(t: string) {
+  /* 示例/最近任务是「交给组长」的写法：如果当前选中了某个人，先退出单干模式，
+     否则填进 dispatchText 也看不见（工具栏显示的是单干输入框） */
+  if (detail.value) clearPick();
+  dispatchText.value = t;
+  recentOpen.value = false;
+  nextTick(() => {
+    const el = barInputRef.value;
+    if (el) {
+      el.focus();
+      autoGrow();
+    }
+  });
+}
+
+/* ================= 派活输入：自适应高度 + 空内容禁用 + @成员 ================= */
+const barInputRef = ref<HTMLTextAreaElement | null>(null);
+const recentOpen = ref(false);
+const canSend = computed(() => !!dispatchText.value.trim());
+function autoGrow() {
+  const el = barInputRef.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, 92)}px`;
+}
+/** 输入 @名字 + 空格：自动切到单干（匹配不到就保持原样） */
+function onBarInput() {
+  autoGrow();
+  const m = /^@(\S+)\s+([\s\S]*)$/.exec(dispatchText.value);
+  if (!m) return;
+  const who = agents.value.find((a) => a.name === m[1]);
+  if (!who) return;
+  /* 把剩下的内容挪到单干输入框里：切过去之后用户还能看见自己写的字 */
+  oneText.value = m[2];
+  dispatchText.value = "";
+  if (selected.value !== who.id) pick(who.id);
+  nextTick(autoGrow);
+}
+
+/* ================= 执行过程：粘底滚动 + 展开/收起全部 ================= */
+const stickBottom = ref(true);
+const showJumpLatest = ref(false);
+function onStepsScroll() {
+  const el = stepsBodyRef.value;
+  if (!el) return;
+  const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+  stickBottom.value = gap < 40;
+  showJumpLatest.value = !stickBottom.value && steps.value.length > 0;
+}
+function jumpLatest() {
+  const el = stepsBodyRef.value;
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+  stickBottom.value = true;
+  showJumpLatest.value = false;
+}
+/** 面板头「展开/收起全部」：工具步骤的参数与返回一起开合 */
+const allOpen = ref(false);
+function toggleAllSteps() {
+  allOpen.value = !allOpen.value;
+  steps.value = steps.value.map((s) =>
+    s.kind === "tool" || s.kind === "summary" ? { ...s, open: allOpen.value } : s
+  );
+  /* 展开后内容变长/变短，粘底状态要重算（否则「回到最新」要等下一次滚动才出现） */
+  nextTick(onStepsScroll);
+}
+
+/** 播报列表倒序（最新在上），模板里直接用 */
+const castDesc = computed(() => casts.value.slice().reverse());
+
+/** 镜头预设按钮 */
+const CAM_MODES: { v: CamMode; label: string; tip: string }[] = [
+  { v: "overview", label: "全景", tip: "回到默认全景视角" },
+  { v: "follow", label: "跟随", tip: "有新步骤时把镜头推给当前执行者（3 秒一次，避免乱跳）" },
+  { v: "board", label: "白板", tip: "看白板上的分工与打勾" },
+  { v: "screen", label: "大屏", tip: "看大屏上的结论" }
+];
+
+/** 空态示例任务：点一下只填入输入框，不自动发送 */
+const SAMPLE_TASKS = [
+  "让团队统计一下数据集总数和标注任务数，汇总成两行",
+  "查一下最近一周失败的任务，说明原因",
+  "帮我写一段本周数据治理工作的周报要点"
+];
+
+/* ================= 复制结论 / 错误 ================= */
+async function copyText(text: string, okMsg = "已复制") {
+  const s = String(text || "").trim();
+  if (!s) {
+    ElMessage.info("没有可复制的内容");
+    return;
+  }
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(s);
+    } else {
+      /* http 环境（内网 IP）没有 clipboard API：退回到隐藏 textarea */
+      const ta = document.createElement("textarea");
+      ta.value = s;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    ElMessage.success(okMsg);
+  } catch {
+    ElMessage.warning("复制失败，请手动选中文本");
+  }
+}
+
 /** 左栏页签：成员 / 任务 */
 /** 页签也记一下：上次看的是任务列表，回来还看任务列表 */
 function setRosterTab(v: "people" | "tasks") {
@@ -610,6 +972,7 @@ function doMenu(k: string) {
   else if (k === "refresh") refreshAll();
   else if (k === "board") void clearBoard();
   else if (k === "memory") void clearMemory();
+  else if (k === "guide") openGuide();
 }
 
 /** 清空白板（最近 5 条结论） */
@@ -799,13 +1162,20 @@ const steps = ref<Step[]>([]);
 const hasMemory = ref(false);
 const stepsBodyRef = ref<HTMLElement | null>(null);
 
-/* 新步骤进来时自动滚到底：看的是"最新发生了什么"，不是从头读 */
+/* 新步骤进来时自动滚到底：看的是"最新发生了什么"，不是从头读。
+   但用户手动上滑看历史时不能再把他拽回来（粘底），只提示「回到最新」。 */
 watch(
   () => steps.value.length,
   async () => {
     await nextTick();
     const el = stepsBodyRef.value;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (stickBottom.value) {
+      el.scrollTop = el.scrollHeight;
+      showJumpLatest.value = false;
+    } else {
+      showJumpLatest.value = true;
+    }
   }
 );
 
@@ -943,7 +1313,12 @@ async function openRun(runId?: string) {
     steps.value = foldRows(rows);
     // 看历史那一轮：从头读，不要自动滚到底（滚到底只用于"正在跑"）
     await nextTick();
+    stickBottom.value = false;
+    showJumpLatest.value = false;
     if (stepsBodyRef.value) stepsBodyRef.value.scrollTop = 0;
+    /* 内容比面板高时，立刻给「回到最新」（历史轮次默认不在底部） */
+    await nextTick();
+    onStepsScroll();
     office?.setScreen?.(
       "log",
       {
@@ -1009,6 +1384,17 @@ function reactCron(run: any) {
   const status = run.status || "running";
   cronBanner.value = { name, agent, status, ms: run.duration_ms || 0, runId: run.run_id };
   office?.cronRun?.({ name, agent, status, ms: run.duration_ms || 0 });
+  if (status === "running") {
+    addCast("cron", `定时任务「${name}」开始执行${agent ? ` · ${agent}` : ""}`);
+    if (camMode.value === "follow" && agent) followIfNeeded(agent);
+  } else if (status === "error") {
+    addCast("cron", `定时任务「${name}」失败${run.error ? `：${run.error}` : ""}`, true);
+  } else {
+    addCast(
+      "cron",
+      `定时任务「${name}」完成${run.duration_ms ? ` · ${Math.max(1, Math.round(run.duration_ms / 1000))} 秒` : ""}`
+    );
+  }
   if (status !== "running") {
     window.setTimeout(() => {
       if (cronBanner.value && cronBanner.value.runId === run.run_id) cronBanner.value = null;
@@ -1093,7 +1479,8 @@ function pushStep(kind: string, title: string, detail = "", actor = "") {
 const floor = ref<1 | 2>(1);
 function switchFloor(n: 1 | 2) {
   floor.value = n;
-  office?.focusFloor?.(n);
+  /* 平滑过渡：硬切会"跳"一下（人眼会以为页面闪了） */
+  office?.focusFloor?.(n, true);
   /* 记住上次看的楼层：刷新 / 从别的页面回来不用再手动切 */
   try {
     localStorage.setItem("ai_office_floor", String(n));
@@ -1217,8 +1604,18 @@ function pick(id: number) {
   const next = selected.value === id ? null : id;
   selected.value = next;
   office?.select(next);
-  if (next) openDetail(next);
-  else clearPick();
+  if (next) {
+    /* 先等工牌画完（showBadge 自己会把"人 + 大屏"框进画面），
+       再把人推近：否则两处 focusCamera 打架，最后停在远景。 */
+    void openDetail(next).then(() => {
+      const who = agents.value.find((a) => a.id === next)?.name;
+      if (who && selected.value === next && camMode.value !== "follow") {
+        office?.focusAgent?.(who, 2.2);
+      }
+    });
+  } else {
+    clearPick();
+  }
 }
 
 /* ---------- 详情抽屉 ---------- */
@@ -1274,6 +1671,8 @@ function clearPick() {
   office?.select?.(null);
   office?.hideBadge?.();
   office?.setScreen?.("idle", null, { focus: false });
+  /* 默认视角下取消选中 = 镜头也退回全景（选了白板/大屏预设时不动，免得抢用户的视角） */
+  if (camMode.value === "overview") office?.cameraPreset?.("overview");
   steps.value = [];
   detail.value = null;
 }
@@ -1456,6 +1855,10 @@ async function doDispatch() {
   connLost.value = null;
   office?.clearBubbles?.();
   steps.value = [];
+  stickBottom.value = true;
+  showJumpLatest.value = false;
+  rememberPrompt(text);
+  addCast("info", `派活：${text.slice(0, 60)}`);
   const ctrl = new AbortController();
   dispatchAbort.value = ctrl;
   const watchdog = window.setTimeout(() => ctrl.abort("timeout"), DISPATCH_TIMEOUT_MS);
@@ -1492,6 +1895,8 @@ async function doDispatch() {
           office?.ping?.(f.to);
           office?.engage?.(f.to);
           office?.lookAtLeader?.(f.to, 4);
+          addCast("delegate", castHandoff(f.from, f.to, f.task));
+          followIfNeeded(f.to);
           /* 协同可视化：组长 → 组员拉一条任务线，名牌上标"受命/等待" */
           office?.handoff?.(f.from, f.to);
           /* 组长本人走过去交代一句（只走第一次，后面并派不再折返） */
@@ -1509,6 +1914,8 @@ async function doDispatch() {
             office?.taskBoard?.(text, division);
           }
           pushStep("reply", `${f.from} 回话`, f.text || "", f.from || "");
+          addCast("reply", `${f.from || "成员"} 回话：${f.text || ""}`);
+          followIfNeeded(f.from);
         }
       } else if (f.type === "tool") {
         // 组长/组员真实调用工具：立刻落一行（工具名 + 参数 + 返回）
@@ -1522,6 +1929,8 @@ async function doDispatch() {
           refreshSoon(f.from);
           office?.ping?.(f.from);
           office?.toolScreen?.(f.from, f.tool);
+          addCast("tool", `${f.from} 调用 ${f.tool || "工具"}`);
+          followIfNeeded(f.from);
         }
       } else if (f.type === "start") {
         hasMemory.value = !!f.memory;
@@ -1544,6 +1953,7 @@ async function doDispatch() {
     if (d.ok === false) {
       const why = String(d.error || "组长处理失败");
       ElMessage.error(why);
+      addCast("conn", `派活失败：${why}`, true);
       office?.failBeam?.(roster[roster.length - 1] || "", 5);
       /* 白板也写清楚失败原因，别让看大屏的人只知道"失败了" */
       office?.writeBoard?.([
@@ -1576,6 +1986,7 @@ async function doDispatch() {
     resultText.value = d.content || "（组长没有返回内容）";
     resultSessionId.value = d.session_id || null;
     pushStep("summary", "组长汇总", resultText.value.slice(0, 300), d.leader || "");
+    addCast("summary", `结论：${summary || resultText.value.slice(0, 60)}`);
     briefText.value = summary || resultText.value.slice(0, 80);
     pushBoard(summary || resultText.value);
     saveRun({ at: new Date().toISOString(), leader: d.leader, members: roster, summary, frames });
@@ -1592,9 +2003,11 @@ async function doDispatch() {
         ctrl.signal.reason === "timeout" ? "超过 5 分钟，已自动停止" : "已停止这一轮"
       );
       pushStep("error", "已停止", "下面是停止之前跑完的步骤");
+      addCast("info", ctrl.signal.reason === "timeout" ? "超时自动停止" : "手动停止了这一轮");
     } else {
       const reason = describeErr(e);
       pushStep("error", "连接断开", reason);
+      addCast("conn", `连接断开：${reason}`, true);
       office?.writeBoard?.([
         "连接断开",
         reason.slice(0, 60),
@@ -1782,6 +2195,9 @@ async function dispatchOne() {
   connLost.value = null;
   const who = detail.value?.name || "";
   if (who) office?.engage?.(who);
+  rememberPrompt(text);
+  addCast("delegate", `派给 ${who || "成员"}：${text.slice(0, 50)}`);
+  followIfNeeded(who);
   /* 单干也走协同那套：组长 → 这个人 拉任务线、名牌标受命、白板写任务 */
   const leaderName = agents.value.find((a: any) => a.isLeader)?.name;
   if (leaderName && who) office?.handoff?.(leaderName, who);
@@ -1794,6 +2210,7 @@ async function dispatchOne() {
     const d = res?.data?.data || {};
     if (d.ok === false) {
       ElMessage.error(d.error || d.msg || "执行失败");
+      addCast("conn", `${who || "成员"} 执行失败：${d.error || d.msg || ""}`, true);
       office?.failBeam?.(who, 5);
       return;
     }
@@ -1809,6 +2226,7 @@ async function dispatchOne() {
         .map((l: string) => l.replace(/^[#>*\-\s]+/, "").replace(/\*\*/g, "").trim())
         .find((l: string) => l.length >= 6 && !/[：:]$/.test(l)) || "";
     if (oneLine) briefText.value = oneLine.slice(0, 80);
+    addCast("summary", `${who || "成员"} 完成：${oneLine || resultText.value.slice(0, 50)}`);
     oneText.value = "";
     await loadSteps(id);
     load(true);
@@ -1821,6 +2239,7 @@ async function dispatchOne() {
     } else {
       const reason = describeErr(e);
       pushStep("error", "连接断开", reason);
+      addCast("conn", `连接断开：${reason}`, true);
       connLost.value = {
         reason,
         retry: () => {
@@ -1946,6 +2365,62 @@ async function rebuildOffice() {
   }
 }
 
+/* ================= 快捷键（F） ================= */
+/** 输入框/下拉里按键不算快捷键：别把人打字打断 */
+function inEditable(el: EventTarget | null): boolean {
+  const t = el as HTMLElement | null;
+  if (!t) return false;
+  const tag = (t.tagName || "").toLowerCase();
+  return (
+    tag === "input" ||
+    tag === "textarea" ||
+    tag === "select" ||
+    t.isContentEditable === true
+  );
+}
+function onHotkey(e: KeyboardEvent) {
+  /* Esc：按「弹层 → 下拉 → 选中 → 视角」的顺序一层层退，一次只退一层 */
+  if (e.key === "Escape") {
+    if (guideOpen.value) {
+      closeGuide();
+      return;
+    }
+    if (lookOpen.value) {
+      lookOpen.value = false;
+      return;
+    }
+    if (menuOpen.value) {
+      menuOpen.value = false;
+      return;
+    }
+    if (recentOpen.value) {
+      recentOpen.value = false;
+      return;
+    }
+    if (castOpen.value) {
+      castOpen.value = false;
+      return;
+    }
+    if (selected.value != null) {
+      clearPick();
+      return;
+    }
+    if (camMode.value !== "overview") setCamMode("overview");
+    return;
+  }
+  if (inEditable(e.target)) return;
+  /* 1 / 2 切楼层 */
+  if (e.key === "1" || e.key === "2") {
+    const n = e.key === "2" ? 2 : 1;
+    if (floor.value !== n) switchFloor(n);
+    return;
+  }
+  /* f：跟随开关（省得每次都去点按钮） */
+  if (e.key === "f" || e.key === "F") {
+    setCamMode(camMode.value === "follow" ? "overview" : "follow");
+  }
+}
+
 onMounted(async () => {
   await load();
   loadMeta();
@@ -1958,6 +2433,20 @@ onMounted(async () => {
   loadRecent();
   pollCron();
   refreshPartyState();
+
+  /* 本地记住的东西：播报展开状态、最近任务、引导是否看过 */
+  try {
+    castOpen.value = localStorage.getItem(CAST_KEY) === "1";
+    const raw = localStorage.getItem(RECENT_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) recentPrompts.value = arr.slice(0, 5).map(String);
+    }
+    if (localStorage.getItem(GUIDE_KEY) !== "1") guideOpen.value = true;
+  } catch {
+    /* 隐私模式：都按默认值走 */
+  }
+  window.addEventListener("keydown", onHotkey);
 
   // 定时任务单独 8 秒轮询：到点要尽快看见，不能等 20 秒
   cronTimer = setInterval(() => {
@@ -1979,6 +2468,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onHotkey);
   if (glLostTimer) window.clearTimeout(glLostTimer);
   glLostTimer = null;
   if (peopleHintTimer) window.clearTimeout(peopleHintTimer);
@@ -4693,6 +5183,316 @@ onBeforeUnmount(() => {
   background: rgba(28, 38, 50, 0.88);
   border-color: rgba(120, 170, 220, 0.32);
   color: #b9d6f2;
+}
+
+/* ================= 派活输入（自适应高度 + 最近任务） ================= */
+.of-bar textarea.of-bar-input {
+  height: auto;
+  min-height: 28px;
+  max-height: 92px;
+  padding: 5px 8px;
+  line-height: 1.45;
+  font-family: inherit;
+  resize: none;
+  overflow-y: auto;
+}
+.of-recent {
+  position: relative;
+  flex: 0 0 auto;
+}
+.of-menu.recent {
+  left: 0;
+  right: auto;
+  min-width: 260px;
+  max-width: 360px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.of-menu.recent button {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ================= 镜头预设 ================= */
+.cam-presets {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 8;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--of-line);
+  border-radius: 7px;
+  background: rgba(252, 251, 248, 0.95);
+  box-shadow: 0 2px 8px rgba(90, 78, 58, 0.1);
+}
+.cam-presets button {
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-right: 1px solid var(--of-line2);
+  background: transparent;
+  color: var(--of-ink2);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.cam-presets button:last-child {
+  border-right: 0;
+}
+.cam-presets button:hover {
+  background: var(--of-paper2);
+  color: var(--of-oak);
+}
+.cam-presets button.on {
+  background: var(--of-oak);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ================= 首次引导 ================= */
+.guide-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(28, 32, 40, 0.34);
+}
+.guide-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 16px 18px 12px;
+  border: 1px solid var(--of-line);
+  border-radius: 12px;
+  background: var(--of-paper);
+  box-shadow: 0 16px 40px rgba(40, 34, 24, 0.28);
+}
+.guide-card .g-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.guide-card .g-cap {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: var(--of-paper2);
+  color: var(--of-ink3);
+  font-size: 10.5px;
+  line-height: 17px;
+}
+.guide-card .g-t {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--of-ink);
+}
+.guide-card .g-d {
+  margin-top: 8px;
+  color: var(--of-ink2);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.guide-card .g-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.guide-card .dots {
+  display: flex;
+  gap: 5px;
+}
+.guide-card .dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--of-line);
+}
+.guide-card .dots i.on {
+  background: var(--of-oak);
+}
+.guide-card .spacer {
+  flex: 1 1 auto;
+}
+
+/* ================= 任务播报 ================= */
+.cast-bar {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-top: 1px solid var(--of-line2);
+  background: var(--of-paper);
+  font-size: 11.5px;
+  color: var(--of-ink2);
+}
+.cast-bar .cap {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--of-ink3);
+  font-size: 10.5px;
+}
+.cast-bar .cap .live {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--of-busy);
+  animation: of-pulse 1.6s ease-in-out infinite;
+}
+.cast-bar .one {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cast-bar .one em {
+  margin-right: 5px;
+  color: var(--of-ink3);
+  font-family: var(--of-mono);
+  font-style: normal;
+  font-size: 10.5px;
+}
+.cast-bar .one .g,
+.cast-list .c .g {
+  margin-right: 5px;
+  color: var(--of-oak);
+  font-style: normal;
+}
+.cast-bar .one.bad,
+.cast-list .c.bad {
+  color: #b4543f;
+}
+.cast-bar .one.bad .g,
+.cast-list .c.bad .g {
+  color: #b4543f;
+}
+.cast-bar .bad-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d0674f;
+}
+.cast-list {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 32px;
+  z-index: 12;
+  max-height: 240px;
+  padding: 6px 8px;
+  overflow-y: auto;
+  border: 1px solid var(--of-line);
+  border-radius: 9px;
+  background: rgba(252, 251, 248, 0.99);
+  box-shadow: 0 10px 24px rgba(90, 78, 58, 0.16);
+}
+.cast-list .c {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 3px 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.cast-list .c + .c {
+  border-top: 1px dashed var(--of-line2);
+}
+.cast-list .c em {
+  flex: 0 0 auto;
+  margin-right: 4px;
+  color: var(--of-ink3);
+  font-family: var(--of-mono);
+  font-style: normal;
+  font-size: 10.5px;
+}
+.cast-list .c .x {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+.cast-list .empty {
+  padding: 10px;
+  color: var(--of-ink3);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+/* 小号文字按钮（复制结论 / 展开全部 / 播报展开） */
+.of-linkbtn {
+  flex: 0 0 auto;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--of-oak);
+  font-size: 11px;
+  cursor: pointer;
+}
+.of-linkbtn:hover {
+  text-decoration: underline;
+}
+
+/* 「回到最新」：粘底被用户打断时出现 */
+.of-jump {
+  position: absolute;
+  right: 14px;
+  bottom: 40px;
+  z-index: 8;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--of-line);
+  border-radius: 12px;
+  background: rgba(252, 251, 248, 0.97);
+  color: var(--of-oak);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(90, 78, 58, 0.14);
+}
+.of-jump:hover {
+  border-color: var(--of-oak);
+}
+.of-thead .spacer,
+.of-sum .h .spacer {
+  flex: 1 1 auto;
+}
+
+/* 空态示例任务 */
+.of-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+}
+.of-samples .lbl {
+  color: var(--of-ink3);
+  font-size: 11px;
+}
+.of-samples .sample {
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px dashed var(--of-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--of-ink2);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.of-samples .sample:hover {
+  border-color: var(--of-oak);
+  color: var(--of-oak);
 }
 
 </style>
