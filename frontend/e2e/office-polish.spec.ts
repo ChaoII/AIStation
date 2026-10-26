@@ -17,6 +17,9 @@ import { memberNames, mockDispatch, openOffice, readCam, spyFocus } from "./offi
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
+/* 办公室要加载 3D 模型 + 等场景就位，机器忙的时候 60 秒不够（实测偶发超时） */
+test.describe.configure({ timeout: 90_000 });
+
 test("引导：首次出现三步、关闭后不再自动出现、菜单可重看", async ({
   page,
   request,

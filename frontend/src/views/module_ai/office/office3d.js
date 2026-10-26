@@ -2793,6 +2793,9 @@ export function createOffice(opts) {
     };
     const hand = findBone('WristR', 'Wrist.R', 'HandR', 'Hand.R', 'hand.r', 'PalmR', 'Palm.R', 'DEF-handR');
     const headBone = findBone('Head');
+    /* 前臂：坐着打字时抖两下（骨骼旋转必须放在 mixer.update 之后，否则会被动画覆盖） */
+    const armL = findBone('LowerArmL', 'LowerArm.L', 'Forearm.L', 'lowerarm.l');
+    const armR = findBone('LowerArmR', 'LowerArm.R', 'Forearm.R', 'lowerarm.r');
     /* 自绘角色的 Head 骨头在脖子处（y≈1.49），名牌/气泡要挂在头顶上方：
        额外挂一个空物体当锚点，headWorldPos 优先用它 */
     let headAnchor = null;
@@ -2910,7 +2913,36 @@ export function createOffice(opts) {
       /* 模型角色的姿态/动作完全由 AnimationMixer 驱动（tickBody 里已经 update），
          这里必须留一个空实现：tickBody 会对每个 person 调 tick()，
          缺了它就会抛异常打断整帧（连 renderer.render 都跑不到 → 一个角色都看不见） */
-      tick() {}
+      tick() {},
+      /**
+       * mixer.update 之后再补"人味"：扭头、说话点头、坐着打字。
+       * 必须放在这里——主循环里改骨骼会被下一帧的 mixer.update 覆盖，
+       * 这也是之前"坐着的人一动不动、说话也不动"的根因。
+       */
+      postUpdate(dt, t, st) {
+        if (!st) return;
+        if (headBone) {
+          if (st.look) headBone.rotation.y += st.look;
+          if (st.talking) {
+            headBone.rotation.x += Math.sin(t * 6.2) * 0.05;
+            headBone.rotation.z += Math.sin(t * 3.9) * 0.03;
+          } else if (st.seated && !st.moving) {
+            /* 坐着也有呼吸感：轻微点头 */
+            headBone.rotation.x += Math.sin(t * 1.1 + (st.seed || 0)) * 0.018;
+          }
+        }
+        if (st.seated && !st.moving && armL && armR) {
+          if (st.desk) {
+            /* 打字：两只前臂小幅快抖 */
+            const k = Math.sin(t * 11.5) * 0.05 + Math.sin(t * 7.7 + 0.8) * 0.03;
+            armL.rotation.x += k;
+            armR.rotation.x += k * 0.85;
+          } else if (st.talking) {
+            /* 沙发/咖啡吧上说话：抬一下手当手势 */
+            armR.rotation.x += Math.sin(t * 5.2) * 0.06;
+          }
+        }
+      }
     };
   }
 
@@ -5281,16 +5313,22 @@ export function createOffice(opts) {
         /* 没人点名时，坐着的人也会偶尔自己扭头看看（发呆）；开会时更频繁 */
         if (!active && t > (rec.nextGlance || 0) &&
             (inMeeting || (rec.seat && rec.seat.pose && rec.seat.pose !== 'stand'))) {
-          rec.nextGlance = t + (inMeeting ? 1.6 + Math.random() * 1.8 : 14 + Math.random() * 16);
+          rec.nextGlance = t + (inMeeting ? 1.6 + Math.random() * 1.8 : 7 + Math.random() * 11);
           rec.lookHead = (Math.random() - 0.5) * (inMeeting ? 0.55 : 0.85);
           rec.lookUntil = nowT + (inMeeting ? 1.2 : 2.6);
         }
-        /* 开会时轻轻点头（在听人说话） */
-        if (inMeeting) {
-          rec.person.head.rotation.x = Math.sin(t * 4.2 + (rec.data.id % 7)) * 0.07;
-        }
         const wantY = active ? (rec.lookHead || 0) : 0;
-        rec.person.head.rotation.y += (wantY - rec.person.head.rotation.y) * Math.min(1, dt * 6);
+        if (rec.person.mixer) {
+          /* 模型角色：骨骼每帧被 mixer 覆盖，这里只维护"想要的角度"，
+             真正写骨骼在 postUpdate（mixer.update 之后） */
+          rec.lookYaw = (rec.lookYaw || 0) + (wantY - (rec.lookYaw || 0)) * Math.min(1, dt * 5);
+        } else {
+          /* 开会时轻轻点头（在听人说话） */
+          if (inMeeting) {
+            rec.person.head.rotation.x = Math.sin(t * 4.2 + (rec.data.id % 7)) * 0.07;
+          }
+          rec.person.head.rotation.y += (wantY - rec.person.head.rotation.y) * Math.min(1, dt * 6);
+        }
       }
 
       const dx = tx - p.x, dz = tz - p.z;
@@ -5314,7 +5352,7 @@ export function createOffice(opts) {
               if (t > (rec.nextIdleAt || 0)) {
                 const pool = ['sit_phone', 'sit_look'];
                 rec.idleAct = { kind: pool[(Math.random() * pool.length) | 0], until: t + 5 };
-                rec.nextIdleAt = t + 26 + Math.random() * 30;
+                rec.nextIdleAt = t + 10 + Math.random() * 16;
               }
             }
             rec.person.setPose(rec.idleAct && t < rec.idleAct.until ? rec.idleAct.kind : 'sit');
@@ -5328,7 +5366,7 @@ export function createOffice(opts) {
             if (t > (rec.nextIdleAt || 0)) {
               const pool = ['stretch', 'phone', 'look'];
               rec.idleAct = { kind: pool[(Math.random() * pool.length) | 0], until: t + 4.2 };
-              rec.nextIdleAt = t + 18 + Math.random() * 22;
+              rec.nextIdleAt = t + 10 + Math.random() * 14;
             }
           }
           rec.person.setPose(rec.idleAct && t < rec.idleAct.until ? rec.idleAct.kind : 'idle');
@@ -5383,6 +5421,18 @@ export function createOffice(opts) {
         }
       }
       rec.person.tick && rec.person.tick(dt, t, rec.moving);
+      /* mixer 之后再补人味（扭头 / 说话点头 / 坐着打字）：
+         模型角色的骨骼每帧被动画覆盖，只能放在这里写。 */
+      if (rec.person.postUpdate) {
+        rec.person.postUpdate(dt, t, {
+          seated: SEATED_POSES.has(rec.pose),
+          desk: !!(rec.seat && rec.seat.kind === 'desk'),
+          moving: !!rec.moving,
+          talking: !!(rec.talkUntil && nowT < rec.talkUntil),
+          look: rec.lookYaw || 0,
+          seed: (rec.data.id % 7) * 0.6
+        });
+      }
     });
 
     /* 空闲流动：坐太久的人起身去休息区（每秒检查一次） */
