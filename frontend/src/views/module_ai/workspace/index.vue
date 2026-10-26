@@ -15,7 +15,7 @@
           :data="treeData"
           node-key="id"
           :props="{ label: 'name', children: 'children' }"
-          :current-node-key="currentCategoryId ?? undefined"
+          :current-node-key="currentNodeId"
           highlight-current
           default-expand-all
           :expand-on-click-node="false"
@@ -23,30 +23,42 @@
         >
           <template #default="{ data }">
             <span class="ai-tree-node">
-              <el-icon class="ai-tree-node__icon"><Folder /></el-icon>
+              <el-icon class="ai-tree-node__icon">
+                <component :is="data.id === 0 ? Files : Folder" />
+              </el-icon>
               <span class="ai-tree-node__label" :title="data.name">{{ data.name }}</span>
               <span class="ai-tree-node__count">{{ catCount(data.id) }}</span>
-              <el-dropdown trigger="click" @command="(c: string) => onCatCmd(data, c)">
-                <el-icon class="ws-tree-more" @click.stop><MoreFilled /></el-icon>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="addchild" icon="plus">
-                      {{ t("ai_chat.workspace_addChildCategory") }}
-                    </el-dropdown-item>
-                    <el-dropdown-item icon="EditPen" command="rename">
-                      {{ t("ai_chat.workspace_rename") }}
-                    </el-dropdown-item>
-                    <el-dropdown-item
-                      icon="delete"
-                      command="delete"
-                      style="color: var(--el-color-danger)"
-                      divided
-                    >
-                      {{ t("ai_chat.workspace_delete") }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
+              <span v-if="data.id !== 0" class="ws-tree-actions">
+                <el-button
+                  link
+                  type="primary"
+                  class="ws-tree-add"
+                  :title="t('ai_chat.workspace_addChildCategory')"
+                  :icon="Plus"
+                  @click.stop="openCatCreate(data)"
+                />
+                <el-dropdown trigger="click" @command="(c: string) => onCatCmd(data, c)">
+                  <el-icon class="ws-tree-more" @click.stop><MoreFilled /></el-icon>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="addchild" icon="plus">
+                        {{ t("ai_chat.workspace_addChildCategory") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item icon="EditPen" command="rename">
+                        {{ t("ai_chat.workspace_rename") }}
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        icon="delete"
+                        command="delete"
+                        style="color: var(--el-color-danger)"
+                        divided
+                      >
+                        {{ t("ai_chat.workspace_delete") }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </span>
             </span>
           </template>
         </el-tree>
@@ -241,6 +253,7 @@ import {
   Clock,
   Delete,
   Edit,
+  Files,
   Folder,
   MoreFilled,
   Plus,
@@ -277,6 +290,8 @@ const loading = ref(false);
 const treeData = ref<WorkspaceCategory[]>([]);
 const allItems = ref<WorkspaceItem[]>([]);
 const currentCategoryId = ref<number | null>(null);
+/** 树当前高亮节点（「全部」根节点 id=0；currentCategoryId=null 表示查看全部） */
+const currentNodeId = ref<number>(0);
 const keyword = ref("");
 /** 类别筛选：`all` 为「全部」（el-select 对空串按无值处理，会误显 placeholder） */
 const typeFilter = ref("all");
@@ -357,6 +372,10 @@ function fmtTime(t?: string | null): string {
 const filteredItems = computed(() => {
   // 工作台只服务智能体家族：应用在「AI应用」菜单、定时任务在「定时任务」菜单，均不再聚合展示
   let list = allItems.value.filter((i) => i.type === "agent" || i.type === "workflow");
+  // 分类过滤：只显示该分类「直系」条目（不含子分类）。本地过滤，避免每点一次重新调后端转圈
+  if (currentCategoryId.value != null) {
+    list = list.filter((i) => i.category_id === currentCategoryId.value);
+  }
   if (typeFilter.value !== "all") list = list.filter((i) => i.type === typeFilter.value);
   if (keyword.value) list = list.filter((i) => (i.name || "").includes(keyword.value));
   return list;
@@ -365,20 +384,16 @@ const pagedItems = computed(() =>
   filteredItems.value.slice((page.value - 1) * pageSize, page.value * pageSize)
 );
 
-/** 分类计数（含子分类）：该分类及子孙分类下的智能体/工作流数量（与树形计数徽章对应） */
+/**
+ * 分类计数（agent + 工作流）：只数该分类「直系」条目，不含子分类。
+ * 「全部」根节点（id=0）统计所有智能体/工作流（含未分类）。
+ */
 function catCount(id: number): number {
-  const ids = new Set<number>([id]);
-  const walk = (list: WorkspaceCategory[]) => {
-    for (const n of list || []) {
-      if (ids.has(n.id) && n.children?.length) walk(n.children);
-    }
-  };
-  walk(treeData.value);
+  if (id === 0) {
+    return allItems.value.filter((i) => i.type === "agent" || i.type === "workflow").length;
+  }
   return allItems.value.filter(
-    (i) =>
-      (i.type === "agent" || i.type === "workflow") &&
-      i.category_id != null &&
-      ids.has(i.category_id)
+    (i) => (i.type === "agent" || i.type === "workflow") && i.category_id === id
   ).length;
 }
 
@@ -402,13 +417,18 @@ function findNode(node: WorkspaceCategory, id: number): WorkspaceCategory | null
 
 async function loadTree() {
   const res: any = await getWorkspaceCategoryTree();
-  treeData.value = res.data?.data || [];
+  const cats: WorkspaceCategory[] = res.data?.data || [];
+  // 树顶加虚拟「全部」根节点（id=0），其下挂全部分类；点它=查看全部条目
+  treeData.value = [
+    { id: 0, name: t("ai_chat.workspace_all"), children: cats } as WorkspaceCategory,
+  ];
 }
 
 async function loadItems() {
   loading.value = true;
   try {
-    const res: any = await getWorkspaceItems({ category_id: currentCategoryId.value ?? undefined });
+    // 始终拉全量条目；分类筛选在前端本地做（避免每点一次/增删后触发后端慢查询转圈）
+    const res: any = await getWorkspaceItems({});
     allItems.value = res.data?.data?.items || [];
   } finally {
     loading.value = false;
@@ -422,9 +442,10 @@ onMounted(() => {
 });
 
 function onCatClick(data: WorkspaceCategory) {
-  currentCategoryId.value = data.id;
+  currentCategoryId.value = data.id === 0 ? null : data.id;
+  currentNodeId.value = data.id;
   page.value = 1;
-  loadItems();
+  // 本地过滤已加载的 allItems，不再重新调后端（避免每次点击都触发慢查询、转圈卡顿）
 }
 
 function openChat(it: WorkspaceItem) {
@@ -565,7 +586,10 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
     );
     await deleteWorkspaceCategory(data.id);
     ElMessage.success(t("ai_chat.workspace_deleteSuccess"));
-    if (currentCategoryId.value === data.id) currentCategoryId.value = null;
+    if (currentCategoryId.value === data.id) {
+      currentCategoryId.value = null;
+      currentNodeId.value = 0;
+    }
     loadTree();
     loadItems();
   }
@@ -665,11 +689,28 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
   padding-right: 4px;
 }
 
+.ai-workspace-page .ws-tree-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+}
+
+/* 「＋」新建子分类：默认轻微可见，悬停变醒目（保证总能发现建子目录入口） */
+.ai-workspace-page .ws-tree-add {
+  opacity: 0.55;
+}
+
+/* 「⋮」更多（重命名/删除）：悬停显示。注意选择器必须匹配模板的 ai-tree-node，
+   此前误写 .ws-tree-node 导致悬停永不触发、按钮一直 opacity:0 看不见 */
 .ai-workspace-page .ws-tree-more {
   cursor: pointer;
   opacity: 0;
 }
-.ai-workspace-page .ws-tree-node:hover .ws-tree-more {
+.ai-workspace-page .ai-tree-node:hover .ws-tree-more {
+  opacity: 1;
+}
+.ai-workspace-page .ai-tree-node:hover .ws-tree-add {
   opacity: 1;
 }
 
