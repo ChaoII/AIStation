@@ -195,7 +195,7 @@
               v-else-if="detail"
               v-hasPerm="'module_ai:office:dispatch'"
               class="of-btn primary"
-              :disabled="!oneText.trim()"
+              :disabled="!oneText.trim() || oneLoading"
               :title="oneText.trim() ? '只派给这个人（Enter）' : '先写一句要他做什么'"
               @click="dispatchOne"
             >派给他</button>
@@ -748,7 +748,7 @@ function usePrompt(t: string) {
 /* ================= 派活输入：自适应高度 + 空内容禁用 + @成员 ================= */
 const barInputRef = ref<HTMLTextAreaElement | null>(null);
 const recentOpen = ref(false);
-const canSend = computed(() => !!dispatchText.value.trim());
+const canSend = computed(() => !!dispatchText.value.trim() && !dispatching.value);
 function autoGrow() {
   const el = barInputRef.value;
   if (!el) return;
@@ -1863,6 +1863,8 @@ async function doDispatch() {
     ElMessage.warning("先说一句要做什么");
     return;
   }
+  /* 双保险：按钮已经禁用，但回车/快捷键也可能触发第二次 */
+  if (dispatching.value) return;
   dispatching.value = true;
   connLost.value = null;
   office?.clearBubbles?.();
@@ -1956,6 +1958,14 @@ async function doDispatch() {
           addCast("tool", `${f.from} 调用 ${f.tool || "工具"}`);
           followIfNeeded(f.from);
         }
+      } else if (f.type === "queue") {
+        /* 目标在忙：后端排队执行（方案 A），先给个交代，别让人以为卡住了 */
+        const ahead = Number(f.ahead || 0);
+        addCast("conn", `前面还有 ${ahead} 个任务在跑，已排队，轮到会自动开始`);
+        office?.writeBoard?.([
+          `任务：${text.slice(0, 26)}`,
+          `排队中：前面还有 ${ahead} 个任务`
+        ]);
       } else if (f.type === "start") {
         hasMemory.value = !!f.memory;
         // 有成员的模型配置坏了（被跳过）：说清楚，别让人以为"他没干活"

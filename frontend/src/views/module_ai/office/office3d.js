@@ -260,7 +260,7 @@ export function createOffice(opts) {
     [0.48, 0.29, 0.18], [0.50, 0.25, 0.20], [0.52, 0.52, 0.53]
   ];
   /* 表情贴图（make_face.py 生成）：说话时在 normal/talk 之间切，就是 v1 那套"有表情" */
-  const FACE_MOODS = ['normal', 'talk', 'happy', 'think', 'busy', 'tired'];
+  const FACE_MOODS = ['normal', 'talk', 'happy', 'think', 'busy', 'tired', 'blink'];
   let faceTex = null;
   function loadFaces(base) {
     if (faceTex) return;
@@ -507,39 +507,66 @@ export function createOffice(opts) {
 
 
   /* ================= 显示器屏幕贴图（摸鱼 vs 干活） ================= */
-  function makeScreenTex(kind) {
-    const cv = document.createElement('canvas');
-    cv.width = 256; cv.height = 160;
-    const ctx = cv.getContext('2d');
+  /* 屏幕是"活的"：同一种 kind 共用一张 canvas 纹理，主循环每 200ms（省电 500ms）
+     重绘一次 —— 代码在滚、图表在跳、游戏画面在动、视频进度在走。
+     只重绘「当前有人用」的 kind，7 张里通常只有 2~3 张在动，开销很小。 */
+  const SCREEN_W = 256;
+  const SCREEN_H = 160;
+  const SCREEN_CV = {};
+  const SCREEN_TEX = {};
+  const SCREEN_IN_USE = new Set();
+
+  /** 把某种屏幕画到 ctx 上（t = 秒，用于算动态相位）。可重复调用。 */
+  function paintScreen(ctx, kind, t) {
+    ctx.clearRect(0, 0, SCREEN_W, SCREEN_H);
     if (kind === 'work') {
+      /* 干活：浅色编辑器（代码慢慢往上滚）+ 右侧柱状图跳动 + 光标闪 */
       ctx.fillStyle = '#f8fbfe'; ctx.fillRect(0, 0, 256, 160);
       ctx.fillStyle = '#e9f0f8'; ctx.fillRect(0, 0, 256, 18);
       ctx.fillStyle = '#409eff'; ctx.fillRect(8, 5, 64, 8);
+      const off = (t * 22) % 13;
       ctx.fillStyle = '#cfd8e3';
-      for (let i = 0; i < 9; i++) ctx.fillRect(12, 28 + i * 13, 120 - (i % 3) * 22, 5);
+      for (let i = 0; i < 11; i++) {
+        const y = 22 + i * 13 - off;
+        if (y < 22 || y > 146) continue;
+        ctx.fillRect(12, y, 120 - (i % 3) * 22, 5);
+      }
       ctx.fillStyle = '#eaf2fb'; ctx.fillRect(148, 28, 96, 64);
-      ctx.fillStyle = '#409eff';
-      [14, 28, 20, 36, 30].forEach((h, i) => ctx.fillRect(158 + i * 17, 88 - h, 10, h));
+      [14, 28, 20, 36, 30].forEach((h, i) => {
+        const hh = h + Math.sin(t * 1.6 + i * 1.1) * 6;
+        ctx.fillStyle = i === 3 ? '#409eff' : '#a9c8e8';
+        ctx.fillRect(158 + i * 17, 88 - hh, 10, hh);
+      });
       ctx.fillStyle = '#dbe7f5'; ctx.fillRect(0, 150, 256, 10);
       ctx.fillStyle = '#7fb3e8'; ctx.fillRect(148, 104, 96, 4);
       ctx.fillStyle = '#c9d6e4'; ctx.fillRect(148, 114, 70, 4);
+      if (Math.floor(t * 2) % 2 === 0) {
+        ctx.fillStyle = '#409eff'; ctx.fillRect(12, 24, 4, 9);
+      }
     } else if (kind === 'game') {
+      /* 摸鱼打游戏：小圆点左右走、血条掉、分数在涨 */
       ctx.fillStyle = '#1b2430'; ctx.fillRect(0, 0, 256, 160);
       ctx.fillStyle = '#2b3849'; ctx.fillRect(0, 92, 256, 68);
       ctx.fillStyle = '#3b4c63'; ctx.fillRect(34, 58, 76, 44);
       ctx.fillStyle = '#33445a'; ctx.fillRect(150, 50, 60, 52);
+      const px = 128 + Math.sin(t * 1.9) * 34;
       ctx.strokeStyle = '#7fd1ff'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(128, 82, 11, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(128, 66); ctx.lineTo(128, 98);
-      ctx.moveTo(112, 82); ctx.lineTo(144, 82); ctx.stroke();
-      ctx.fillStyle = '#e05c5c'; ctx.fillRect(12, 10, 86, 8);
+      ctx.beginPath(); ctx.arc(px, 82, 11, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(px, 66); ctx.lineTo(px, 98);
+      ctx.moveTo(px - 16, 82); ctx.lineTo(px + 16, 82);
+      ctx.stroke();
+      ctx.fillStyle = '#e05c5c';
+      ctx.fillRect(12, 10, 86 * (0.55 + Math.sin(t * 0.8) * 0.35), 8);
       ctx.fillStyle = '#5c8ae0'; ctx.fillRect(12, 24, 62, 6);
       ctx.fillStyle = '#243040'; ctx.fillRect(208, 8, 40, 40);
       ctx.fillStyle = '#5fd18b'; ctx.fillRect(222, 22, 8, 8);
-      ctx.fillStyle = '#f0c040'; ctx.fillRect(232, 34, 6, 6);
-      ctx.fillStyle = '#d8dee8'; ctx.font = '9px sans-serif'; ctx.fillText('ROUND 3', 108, 150);
+      ctx.fillStyle = '#f0c040';
+      ctx.fillRect(232 + Math.sin(t * 3) * 4, 34, 6, 6);
+      ctx.fillStyle = '#d8dee8'; ctx.font = '9px sans-serif';
+      ctx.fillText('ROUND 3  ' + String(1200 + (Math.floor(t * 7) % 900)), 100, 150);
     } else if (kind === 'sql') {
-      /* 跑 SQL：深色编辑器 + 结果表格 */
+      /* 跑 SQL：深色编辑器 + 结果表格逐行出现 + 状态灯闪 */
       ctx.fillStyle = '#11161f'; ctx.fillRect(0, 0, 256, 160);
       ctx.fillStyle = '#1b2431'; ctx.fillRect(0, 0, 256, 16);
       ctx.fillStyle = '#5fd18b'; ctx.fillRect(8, 5, 34, 6);
@@ -551,30 +578,39 @@ export function createOffice(opts) {
       });
       ctx.fillStyle = '#1e2836'; ctx.fillRect(120, 24, 126, 78);
       ctx.fillStyle = '#2b3a4d'; ctx.fillRect(120, 24, 126, 12);
+      const shown = 1 + Math.floor((t * 0.9) % 5);
       for (let r = 0; r < 5; r++) {
         for (let c = 0; c < 4; c++) {
-          ctx.fillStyle = r === 0 ? '#33506e' : (r % 2 ? '#22303f' : '#1b2634');
+          ctx.fillStyle = r <= shown
+            ? (r === 0 ? '#33506e' : (r % 2 ? '#22303f' : '#1b2634'))
+            : '#141c26';
           ctx.fillRect(124 + c * 30, 40 + r * 12, 27, 10);
         }
       }
-      ctx.fillStyle = '#5fd18b'; ctx.fillRect(10, 96, 60, 5);
+      ctx.fillStyle = Math.floor(t * 2) % 2 ? '#5fd18b' : '#2f6b4a';
+      ctx.fillRect(10, 96, 60, 5);
       ctx.fillStyle = '#3a4a5e'; ctx.fillRect(0, 150, 256, 10);
     } else if (kind === 'doc') {
-      /* 检索/写文档：白页 + 高亮段落 */
+      /* 写文档：白页 + 高亮段落在换 + 光标闪 */
       ctx.fillStyle = '#f6f4ef'; ctx.fillRect(0, 0, 256, 160);
       ctx.fillStyle = '#ffffff'; ctx.fillRect(20, 14, 216, 132);
       ctx.fillStyle = '#e8e3d8'; ctx.fillRect(20, 14, 216, 3);
       ctx.fillStyle = '#c9c2b4';
       for (let i = 0; i < 7; i++) ctx.fillRect(32, 28 + i * 11, 190 - (i % 4) * 26, 4);
-      ctx.fillStyle = '#f2e4c8'; ctx.fillRect(28, 76, 194, 16);
-      ctx.fillStyle = '#b08948'; ctx.fillRect(32, 81, 120, 5);
+      const hl = Math.floor(t / 2.5) % 4;
+      ctx.fillStyle = '#f2e4c8'; ctx.fillRect(28, 26 + hl * 11, 194, 16);
+      ctx.fillStyle = '#b08948'; ctx.fillRect(32, 31 + hl * 11, 120, 5);
       ctx.fillStyle = '#d7d1c4'; ctx.fillRect(32, 100, 150, 4);
       ctx.fillStyle = '#b07d3f'; ctx.fillRect(32, 118, 34, 10);
       ctx.fillStyle = '#f8fbfe'; ctx.fillRect(200, 20, 26, 26);
-      ctx.fillStyle = '#bcd8cd'; ctx.fillRect(206, 26, 14, 3);
+      ctx.fillStyle = '#bcd8cd';
+      ctx.fillRect(206, 26, 14, 3);
       ctx.fillRect(206, 32, 14, 3);
+      if (Math.floor(t * 2.4) % 2 === 0) {
+        ctx.fillStyle = '#7a6a52'; ctx.fillRect(190, 92, 2, 9);
+      }
     } else if (kind === 'list') {
-      /* 列表/统计：浅色表格 + 右侧条形 */
+      /* 看报表：表格 + 柱子此起彼伏 */
       ctx.fillStyle = '#fbfcfe'; ctx.fillRect(0, 0, 256, 160);
       ctx.fillStyle = '#eef3f9'; ctx.fillRect(0, 0, 256, 18);
       ctx.fillStyle = '#7fb3e8'; ctx.fillRect(10, 5, 46, 7);
@@ -588,36 +624,46 @@ export function createOffice(opts) {
       }
       const bars = [26, 44, 34, 58, 40];
       bars.forEach((h, i) => {
+        const hh = h + Math.sin(t * 2.2 + i * 1.4) * 8;
         ctx.fillStyle = i === 3 ? '#409eff' : '#bcd8ef';
-        ctx.fillRect(154 + i * 18, 132 - h, 11, h);
+        ctx.fillRect(154 + i * 18, 132 - hh, 11, hh);
       });
       ctx.fillStyle = '#dbe7f5'; ctx.fillRect(0, 150, 256, 10);
     } else if (kind === 'video') {
+      /* 看视频：画面在动 + 进度条往前走 + 字幕闪 */
       ctx.fillStyle = '#f4efe7'; ctx.fillRect(0, 0, 256, 160);
       ctx.fillStyle = '#d9cbb8'; ctx.fillRect(18, 18, 220, 104);
-      ctx.fillStyle = '#fbf7f1';
-      ctx.beginPath(); ctx.moveTo(116, 54); ctx.lineTo(116, 96); ctx.lineTo(152, 75); ctx.fill();
+      ctx.fillStyle = '#e8dccb';
+      ctx.fillRect(28 + Math.sin(t * 0.7) * 20, 30, 90, 60);
+      ctx.fillStyle = '#cbb99f';
+      ctx.beginPath();
+      ctx.arc(170 + Math.cos(t * 0.9) * 16, 70 + Math.sin(t * 1.1) * 12, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.fillRect(18, 18, 220, 6);
       ctx.fillStyle = '#cfc2ae'; ctx.fillRect(18, 130, 220, 5);
-      ctx.fillStyle = '#e05c5c'; ctx.fillRect(18, 130, 74, 5);
+      ctx.fillStyle = '#e05c5c';
+      ctx.fillRect(18, 130, 220 * ((t * 0.02) % 1), 5);
       ctx.fillStyle = '#b9ab97'; ctx.fillRect(96, 128, 18, 8);
+      if (Math.floor(t * 1.5) % 2 === 0) {
+        ctx.fillStyle = '#8d7f6c'; ctx.fillRect(70, 112, 116, 5);
+      }
     } else {
       ctx.fillStyle = '#1d232b'; ctx.fillRect(0, 0, 256, 160);
     }
-    const t = new THREE.CanvasTexture(cv);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    return t;
   }
 
-  const SCREEN_TEX = {
-    work: makeScreenTex('work'),
-    game: makeScreenTex('game'),
-    video: makeScreenTex('video'),
-    sql: makeScreenTex('sql'),
-    doc: makeScreenTex('doc'),
-    list: makeScreenTex('list'),
-    off: makeScreenTex('off')
-  };
+  ['work', 'game', 'video', 'sql', 'doc', 'list', 'off'].forEach((kind) => {
+    const cv = document.createElement('canvas');
+    cv.width = SCREEN_W;
+    cv.height = SCREEN_H;
+    SCREEN_CV[kind] = cv;
+    paintScreen(cv.getContext('2d'), kind, 0);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    SCREEN_TEX[kind] = tex;
+  });
   const DESK_SCREENS = [];   // 与 DESKS 顺序一致
   const DESK_GLOWS = [];     // 桌面光晕（按状态染色）
 
@@ -2796,6 +2842,8 @@ export function createOffice(opts) {
     };
     const hand = findBone('WristR', 'Wrist.R', 'HandR', 'Hand.R', 'hand.r', 'PalmR', 'Palm.R', 'DEF-handR');
     const headBone = findBone('Head');
+    /* 脊柱：坐着玩电脑时前倾/后仰（打游戏前倾、看视频后仰） */
+    const spineBone = findBone('Spine', 'Spine1', 'Chest');
     /* 前臂：坐着打字时抖两下（骨骼旋转必须放在 mixer.update 之后，否则会被动画覆盖） */
     const armL = findBone('LowerArmL', 'LowerArm.L', 'Forearm.L', 'lowerarm.l');
     const armR = findBone('LowerArmR', 'LowerArm.R', 'Forearm.R', 'lowerarm.r');
@@ -2845,6 +2893,18 @@ export function createOffice(opts) {
       [0.3, 0, 0]
     );
 
+    /* 表情状态：眨眼（blink）优先于表情/说话，避免两处抢同一张贴图 */
+    let faceMode = 'normal';
+    let blinking = false;
+    function applyFace() {
+      if (!faceMat || !faceTex) return;
+      const key = blinking ? 'blink' : (faceMode || 'normal');
+      const tex = faceTex[key] || faceTex.normal;
+      if (!tex || faceMat.map === tex) return;
+      faceMat.map = tex;
+      faceMat.needsUpdate = true;
+    }
+
     return {
       root,
       hip: clone,            // 占位：tick 里的姿态写入对模型不生效（动作由 mixer 驱动）
@@ -2864,21 +2924,26 @@ export function createOffice(opts) {
           if (sitByKind[k]) sitAction = sitByKind[k];
         }
       },
-      /** 表情：换 face_decal 的贴图（normal/talk/happy/think/busy/tired） */
+      /** 表情：换 face_decal 的贴图（normal/talk/happy/think/busy/tired/blink） */
       setMood(m) {
         const MAP = { idle: 'normal', busy: 'busy', wait: 'think', error: 'tired',
           happy: 'happy', talk: 'talk', think: 'think', tired: 'tired', normal: 'normal' };
-        const key = MAP[m] || 'normal';
-        if (!faceMat || !faceTex || !faceTex[key]) return;
-        if (faceMat.map === faceTex[key]) return;
-        faceMat.map = faceTex[key];
-        faceMat.needsUpdate = true;
+        faceMode = MAP[m] || 'normal';
+        if (blinking) return;      /* 眨眼那一帧别被表情覆盖 */
+        applyFace();
       },
       /** 说话时的嘴型：在 normal / talk 之间来回切 */
       setTalking(on) {
-        if (!faceMat || !faceTex) return;
-        faceMat.map = on ? faceTex.talk : faceTex.normal;
-        faceMat.needsUpdate = true;
+        faceMode = on ? 'talk' : 'normal';
+        if (blinking) return;
+        applyFace();
+      },
+      /** 眨眼：换成闭眼贴图（face_blink.png），约 0.14 秒后恢复 */
+      setBlink(on) {
+        if (!faceMat || !faceTex || !faceTex.blink) return;
+        if (on === blinking) return;
+        blinking = !!on;
+        applyFace();
       },
       setPose(p) {
         if (p === 'sit' || p === 'sit_phone' || p === 'sit_look') {
@@ -2913,6 +2978,8 @@ export function createOffice(opts) {
         micHead.visible = mic;
         cupMesh.visible = cup;
       },
+      /** 排查/验收用：当前脸贴图（眨眼时是 blink） */
+      faceKey: () => (blinking ? 'blink' : (faceMode || 'normal')),
       state: () => ({}),
       cupPos: () => [0, 0, 0],
       /** 排查用：当前播放的动画名（dance / sit / idle …） */
@@ -2928,22 +2995,48 @@ export function createOffice(opts) {
        */
       postUpdate(dt, t, st) {
         if (!st) return;
+        const seed = st.seed || 0;
+        /* 眨眼：每人周期错开（3.4~5.6 秒一次，闭 0.14 秒），换 face_blink 贴图 */
+        if (faceTex && faceTex.blink) {
+          const cyc = 3.4 + (seed % 3) * 1.1;
+          const closed = ((t + seed * 1.7) % cyc) < 0.14;
+          if (closed !== blinking) {
+            blinking = closed;
+            applyFace();
+          }
+        }
         if (headBone) {
           if (st.look) headBone.rotation.y += st.look;
           if (st.talking) {
             headBone.rotation.x += Math.sin(t * 6.2) * 0.05;
             headBone.rotation.z += Math.sin(t * 3.9) * 0.03;
           } else if (st.seated && !st.moving) {
-            /* 坐着也有呼吸感：轻微点头 */
-            headBone.rotation.x += Math.sin(t * 1.1 + (st.seed || 0)) * 0.018;
+            /* 坐着盯屏幕：呼吸点头 + 慢慢扫视 + 轻轻歪头（不是木头人） */
+            headBone.rotation.x += Math.sin(t * 1.1 + seed) * 0.018;
+            headBone.rotation.y += Math.sin(t * 0.31 + seed * 0.8) * 0.1;
+            headBone.rotation.z += Math.sin(t * 0.19 + seed * 1.3) * 0.03;
+            if (st.screen === 'video') headBone.rotation.x -= 0.05;
           }
         }
         if (st.seated && !st.moving && armL && armR) {
           if (st.desk) {
-            /* 打字：两只前臂小幅快抖 */
-            const k = Math.sin(t * 11.5) * 0.05 + Math.sin(t * 7.7 + 0.8) * 0.03;
-            armL.rotation.x += k;
-            armR.rotation.x += k * 0.85;
+            const k = st.screen || 'work';
+            if (k === 'game') {
+              /* 打游戏：双手快速点按 + 前倾 */
+              const g = Math.sin(t * 17) * 0.07 + Math.sin(t * 29 + 0.6) * 0.04;
+              armL.rotation.x += g;
+              armR.rotation.x += g * 1.15;
+              if (spineBone) spineBone.rotation.x += 0.07 + Math.sin(t * 0.8) * 0.02;
+            } else if (k === 'video') {
+              /* 看视频：后仰、偶尔抬手 */
+              if (spineBone) spineBone.rotation.x += -0.05 + Math.sin(t * 0.5) * 0.015;
+              armR.rotation.x += Math.max(0, Math.sin(t * 1.3)) * 0.05;
+            } else {
+              /* 打字：两只前臂小幅快抖 */
+              const kk = Math.sin(t * 11.5) * 0.05 + Math.sin(t * 7.7 + 0.8) * 0.03;
+              armL.rotation.x += kk;
+              armR.rotation.x += kk * 0.85;
+            }
           } else if (st.talking) {
             /* 沙发/咖啡吧上说话：抬一下手当手势 */
             armR.rotation.x += Math.sin(t * 5.2) * 0.06;
@@ -4912,6 +5005,7 @@ export function createOffice(opts) {
   const DESK_KEYS = ['dA', 'dB', 'dC', 'dD', 'eA', 'eB', 'eC', 'eD'];
   function applyScreens() {
     const occupied = new Set();
+    SCREEN_IN_USE.clear();
     agents.forEach(r => {
       const i = DESK_KEYS.indexOf(r.seat.key);
       if (i < 0) return;
@@ -4925,7 +5019,9 @@ export function createOffice(opts) {
         ? r.toolKind
         : (r.data.status === 'busy'
           ? 'work'
-          : ((r.data.id % 3 === 0) ? 'video' : 'game'));
+          : (r.data.id % 3 === 0 ? 'video' : (r.data.id % 3 === 1 ? 'game' : 'list')));
+      r.screenKind = kind;          // postUpdate 按屏幕内容做"玩电脑"的姿态
+      SCREEN_IN_USE.add(kind);      // 只重绘正在用的纹理
       m.map = SCREEN_TEX[kind];
       m.needsUpdate = true;
       const g = DESK_GLOWS[i];
@@ -5583,10 +5679,36 @@ export function createOffice(opts) {
           moving: !!rec.moving,
           talking: !!(rec.talkUntil && nowT < rec.talkUntil),
           look: rec.lookYaw || 0,
+          screen: rec.screenKind || '',
           seed: (rec.data.id % 7) * 0.6
         });
       }
     });
+
+    /* 屏幕动画：200ms 一帧（省电 500ms），只重绘「当前有人用」的 kind。
+       代码在滚、图表在跳、游戏画面在动、视频进度在走 —— 人盯着屏幕才不像木头。 */
+    if (nowT - (fx.screenAt || 0) > (lowPower ? 0.5 : 0.2)) {
+      fx.screenAt = nowT;
+      SCREEN_IN_USE.forEach((kind) => {
+        const cv = SCREEN_CV[kind];
+        const tex = SCREEN_TEX[kind];
+        if (!cv || !tex) return;
+        paintScreen(cv.getContext('2d'), kind, nowT);
+        tex.needsUpdate = true;
+      });
+      /* 屏幕前的光晕跟着画面轻微呼吸：远景看屏幕只有几十像素，
+         光一明一暗才看得出"屏幕在动"（打游戏偏蓝、看视频偏暖） */
+      agents.forEach((r) => {
+        if (!r.screenKind) return;
+        const i = DESK_KEYS.indexOf(r.seat.key);
+        const g = i >= 0 ? DESK_GLOWS[i] : null;
+        if (!g) return;
+        const base = r.screenKind === 'work'
+          ? (night ? 0.85 : 0.55)
+          : (night ? 0.18 : 0.7);
+        g.opacity = base * (0.86 + Math.sin(nowT * 2.1 + i * 1.7) * 0.14);
+      });
+    }
 
     /* 空闲流动：坐太久的人起身去休息区（每秒检查一次） */
     if (nowT - (fx.idleAt || 0) >= 1) {
@@ -6092,12 +6214,29 @@ export function createOffice(opts) {
         errandAt: r.errandAt || 0,
         nowT: +nowT.toFixed(0),
         action: r.person.currentAction ? r.person.currentAction() : null,
+        face: r.person.faceKey ? r.person.faceKey() : null,
+        screen: r.screenKind || '',
         y: +r.person.root.position.y.toFixed(2),
         floor: r.person.root.userData.floor || 1,
         meshes,
         byFloor,
         visible: visible.slice(0, 8)
       };
+    },
+    /**
+     * 排查用：列出某个人物的骨骼 / 网格 / 材质名。
+     * 找眼睛（眨眼）、脊柱（前倾）、头（扫视）用；模型换了也能一眼看出名字。
+     */
+    modelParts(name) {
+      const r = agents.find((x) => x.data && x.data.name === name);
+      if (!r) return null;
+      const bones = [];
+      const meshes = [];
+      r.person.root.traverse((o) => {
+        if (o.isBone) bones.push(o.name);
+        else if (o.isMesh) meshes.push(`${o.name || '-'}|${(o.material && o.material.name) || '-'}`);
+      });
+      return { bones: bones.slice(0, 60), meshes: meshes.slice(0, 60) };
     },
     /** 验收用：强制某人做一个待机动作（stretch / phone / look / idle） */
     idleAct(name, kind) {

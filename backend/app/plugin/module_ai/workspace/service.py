@@ -1060,11 +1060,23 @@ class WorkspaceService:
             await AiWorkflowService.run_schedule(target_id)
             return "", None, []
         if target_type == "agent":
+            # 并发闸门（方案 A）：定时任务**不排队** —— 目标在忙就跳过本轮，
+            # 避免「办公室正在用他」时又压一份调用上去（状态乱、额度翻倍）。
+            from app.plugin.module_ai.agent.concurrency import agent_key, try_acquire
             from app.plugin.module_ai.agent.service import AiAgentService
 
-            return await cls._drain_text(
-                AiAgentService.run_ui_stream(target_id, list(_SCHEDULE_MESSAGES), None)
-            )
+            lease = await try_acquire([agent_key(target_id)], who=f"定时任务 agent#{target_id}")
+            if lease.busy:
+                log.warning(f"[workspace] 定时任务目标 agent#{target_id} 正在忙，本轮跳过")
+                return "目标智能体正在处理别的任务，本轮跳过", "目标智能体正在忙", []
+            try:
+                return await cls._drain_text(
+                    AiAgentService._run_ui_stream_locked(
+                        target_id, list(_SCHEDULE_MESSAGES), None
+                    )
+                )
+            finally:
+                lease.release()
         if target_type == "app":
             from app.plugin.module_ai.apps.service import run_app_ui_stream
 

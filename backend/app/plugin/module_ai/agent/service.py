@@ -488,11 +488,43 @@ class AiAgentService:
 
     @classmethod
     async def office_dispatch(cls, text: str, user_id: int | None = None) -> dict:
+        """组长派活（并发薄壳）：排队拿锁 → 跑真正的派活 → 无论怎么结束都释放。
+
+        锁的键与流式版一致：``team:user:{uid}`` + 组长和全部组员的 ``agent:{id}``。
+        """
+        if not text or not text.strip():
+            return {"ok": False, "msg": "任务不能为空"}
+        view = await cls.office_view()
+        if not view:
+            return {"ok": False, "msg": "办公室里没有在岗智能体"}
+        leader = next((a for a in view if a.get("is_leader")), view[0])
+        members = [a for a in view if a["id"] != leader["id"]]
+
+        from .concurrency import acquire as _acq
+        from .concurrency import agent_key as _ak
+        from .concurrency import user_key as _uk
+
+        lease = await _acq(
+            [_uk(user_id), _ak(leader["id"]), *[_ak(m["id"]) for m in members]],
+            queue_limit=2,
+            who=f"办公室派活「{text.strip()[:16]}」",
+        )
+        if lease.busy:
+            return {"ok": False, "msg": lease.reason, "error": lease.reason}
+        try:
+            return await cls._office_dispatch_locked(text, user_id)
+        finally:
+            lease.release()
+
+    @classmethod
+    async def _office_dispatch_locked(cls, text: str, user_id: int | None = None) -> dict:
         """把一句话交给「组长」：用 agno ``Team(mode=coordinate)`` 派活并汇总口径。
 
         - 组长 = ``office_view`` 里 ``is_leader`` 的那个；组员 = 其余在岗智能体。
         - 走 agno 原生 Team：组长负责拆解/分派/汇总，成员只做自己那一段。
         - 调用日志记 ``usage="team"``、``app_id=组长 id``，办公室据此把组长点亮。
+
+        注意：本方法**不加锁**，锁由 ``office_dispatch`` 薄壳持有。
         """
         import time as _t
 
@@ -818,6 +850,44 @@ class AiAgentService:
 
     @classmethod
     async def office_dispatch_stream(cls, text: str, user_id: int | None = None):
+        """组长派活（并发薄壳）：排队拿锁 → 跑真正的流式派活 → 无论怎么结束都释放。
+
+        锁的键：``team:user:{uid}``（同一用户的 agno Team 会话共享，并发会串台）
+        + 组长和本轮全部组员的 ``agent:{id}``（别人聊天/定时任务撞上就排队）。
+        """
+        if not text or not text.strip():
+            yield {"type": "done", "ok": False, "error": "任务不能为空"}
+            return
+        view = await cls.office_view()
+        if not view:
+            yield {"type": "done", "ok": False, "error": "办公室里没有在岗智能体"}
+            return
+        leader = next((a for a in view if a.get("is_leader")), view[0])
+        members = [a for a in view if a["id"] != leader["id"]]
+
+        from .concurrency import acquire as _acq
+        from .concurrency import agent_key as _ak
+        from .concurrency import user_key as _uk
+
+        lease = await _acq(
+            [_uk(user_id), _ak(leader["id"]), *[_ak(m["id"]) for m in members]],
+            queue_limit=2,
+            who=f"办公室派活「{text.strip()[:16]}」",
+        )
+        if lease.busy:
+            yield {"type": "done", "ok": False, "error": lease.reason}
+            return
+        if lease.ahead:
+            # 排队中：前端先给个交代（「前面还有 1 个」），别让人干等
+            yield {"type": "queue", "ahead": lease.ahead}
+        try:
+            async for frame in cls._office_dispatch_stream_locked(text, user_id):
+                yield frame
+        finally:
+            lease.release()
+
+    @classmethod
+    async def _office_dispatch_stream_locked(cls, text: str, user_id: int | None = None):
         """组长派活的**流式版**：把 Team 运行中「谁派给谁、谁回了什么」实时吐出来。
 
         为什么单独一个流式入口：办公室要的是"看得到沟通"——组长点名、组员回话，
@@ -829,6 +899,8 @@ class AiAgentService:
         - ``{"type": "delegate", "from": 组长, "to": 组员, "task": "..."}``
         - ``{"type": "reply", "from": 组员, "text": "..."}``
         - ``{"type": "done", "ok": bool, "content": ..., "session_id": id}``
+
+        注意：本方法**不加锁**，锁由 ``office_dispatch_stream`` 薄壳持有。
         """
         import json as _json
         import time as _t
@@ -1334,10 +1406,33 @@ class AiAgentService:
 
     @classmethod
     async def office_dispatch_one(cls, agent_id: int, text: str, user_id: int | None = None) -> dict:
+        """点名派活（并发薄壳）：该 agent 忙就排队（上限 2 个），跑完自动开始。"""
+        if not text or not text.strip():
+            return {"ok": False, "msg": "任务不能为空"}
+
+        from .concurrency import acquire as _acq
+        from .concurrency import agent_key as _ak
+
+        lease = await _acq(
+            [_ak(agent_id)], queue_limit=2, who=f"点名派活「{text.strip()[:16]}」"
+        )
+        if lease.busy:
+            return {"ok": False, "msg": lease.reason, "error": lease.reason}
+        try:
+            return await cls._office_dispatch_one_locked(agent_id, text, user_id)
+        finally:
+            lease.release()
+
+    @classmethod
+    async def _office_dispatch_one_locked(
+        cls, agent_id: int, text: str, user_id: int | None = None
+    ) -> dict:
         """点名派活：只让指定的智能体干活（不走 Team），结果直接回给用户。
 
         与 ``office_dispatch`` 的区别：那是"交给组长协调"，这是"直接找某个人"。
         日志记 ``usage="agent"`` + ``app_id=该 agent``，办公室据此点亮他。
+
+        注意：本方法**不加锁**，锁由 ``office_dispatch_one`` 薄壳持有。
         """
         import time as _t
 
@@ -1645,7 +1740,43 @@ class AiAgentService:
         variables: dict | None = None,
         session_id: int | None = None,
     ) -> AsyncIterator[str]:
-        """运行智能体：绑定工作流则走编排引擎，否则回退模型+提示词+工具。"""
+        """运行智能体（并发薄壳）：同一 agent 串行，忙就排队（上限 2 个）。
+
+        用户实测场景：「一个智能体已经在干活，别人又问一个跟它相关的问题」。
+        不加锁会让同一个 agent 并行跑两份调用（模型额度翻倍、状态/活动表互相覆盖）。
+        这里排队而不是拒绝：第二个人等第一轮结束就自动开始，不用手动重试。
+        """
+        from app.plugin.module_ai.assistant.agno_service import agno_error_frame
+
+        from .concurrency import acquire as _acq
+        from .concurrency import agent_key as _ak
+
+        lease = await _acq([_ak(agent_id)], queue_limit=2, who=f"智能体运行 #{agent_id}")
+        if lease.busy:
+            yield agno_error_frame(lease.reason)
+            return
+        try:
+            async for frame in cls._run_ui_stream_locked(
+                agent_id, ui_messages, auth, variables, session_id
+            ):
+                yield frame
+        finally:
+            lease.release()
+
+    @classmethod
+    async def _run_ui_stream_locked(
+        cls,
+        agent_id: int,
+        ui_messages: list[dict],
+        auth,
+        variables: dict | None = None,
+        session_id: int | None = None,
+    ) -> AsyncIterator[str]:
+        """运行智能体：绑定工作流则走编排引擎，否则回退模型+提示词+工具。
+
+        注意：本方法**不加锁**，锁由 ``run_ui_stream`` 薄壳持有
+        （定时任务会先 ``try_acquire`` 再直接调本方法，忙则跳过而不是排队）。
+        """
         from app.plugin.module_ai.assistant.agno_service import (
             agno_error_frame,
             ui_stream_to_agno,

@@ -23,6 +23,15 @@ BW, BH = 63, 40            # 眼睛半径
 
 
 def eye(d, cx, cy, w, h, mode="normal", flip=1):
+    if mode == "blink":
+        # 闭眼：一条向下弯的弧（眨眼那一帧用），不加瞳孔
+        pts = []
+        for t in range(0, 15):
+            a = math.pi + t / 14 * math.pi
+            pts.append((cx + math.cos(a) * w * 0.98, cy + math.sin(a) * h * 0.32 + h * 0.16))
+        d.line(pts, fill=LINE, width=int(max(5, h * 0.16)), joint="curve")
+        return
+
     if mode == "happy":
         # 弯月眼（^ ^）：只画一条上弧 + 睫毛
         pts = []
@@ -59,7 +68,7 @@ def eye(d, cx, cy, w, h, mode="normal", flip=1):
 
 def brow(d, cx, mode="normal"):
     y = H * 0.205
-    tilt = {"normal": 0, "happy": -6, "think": -14, "busy": 10, "tired": 4, "talk": -2, "narrow": 6}[mode]
+    tilt = {"normal": 0, "happy": -6, "think": -14, "busy": 10, "tired": 4, "talk": -2, "narrow": 6, "blink": 2}[mode]
     pts = []
     for t in range(0, 15):
         a = math.pi + t / 14 * math.pi
@@ -87,7 +96,7 @@ def mouth(d, mode="normal"):
 def build(mood):
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    eye_mode = {"happy": "happy", "tired": "half", "busy": "narrow"}.get(mood, "normal")
+    eye_mode = {"happy": "happy", "tired": "half", "busy": "narrow", "blink": "blink"}.get(mood, "normal")
     eye(d, W * EX, H * EY, BW, BH, eye_mode, -1)
     eye(d, W * (1 - EX), H * EY, BW, BH, eye_mode, 1)
     brow(d, W * EX, mood)
@@ -104,7 +113,7 @@ def build(mood):
 
 
 os.makedirs(OUT_DIR, exist_ok=True)
-for m in ("normal", "talk", "happy", "think", "busy", "tired"):
+for m in ("normal", "talk", "happy", "think", "busy", "tired", "blink"):
     build(m)
 
 # 默认脸仍然叫 face.png（GLB 里内嵌的就是它，Blender 重新导出时用这张）
