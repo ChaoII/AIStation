@@ -285,6 +285,9 @@
                 <button @click="doMenu('memory')">清空办公室记忆</button>
                 <button @click="doMenu('refresh')">刷新在岗状态</button>
                 <button @click="doMenu('guide')">重看引导</button>
+                <button @click="doMenu('lowpower')">
+                  省电模式：{{ lowPower ? "开（30fps）" : "关" }}
+                </button>
               </div>
             </div>
           </div>
@@ -942,6 +945,22 @@ const lookOpen = ref(false);
 /** 「⋯」菜单 & 蹦迪状态 */
 const menuOpen = ref(false);
 const partyOn = ref(false);
+/* 省电模式：30fps + 关 SSAO（实测 chrome 进程 CPU 118% → 66%），默认关，记在本地 */
+const LOWPOWER_KEY = "office.lowPower";
+const lowPower = ref(false);
+function applyQuality() {
+  office?.setQuality?.(lowPower.value ? "low" : "high");
+}
+function toggleLowPower() {
+  lowPower.value = !lowPower.value;
+  try {
+    localStorage.setItem(LOWPOWER_KEY, lowPower.value ? "1" : "0");
+  } catch {
+    /* 隐私模式忽略 */
+  }
+  applyQuality();
+  ElMessage.success(lowPower.value ? "已开省电模式（30fps，画质略降）" : "已关省电模式（60fps）");
+}
 
 function refreshPartyState() {
   partyOn.value = (office?.partyCount?.() || 0) > 0;
@@ -972,6 +991,7 @@ function doMenu(k: string) {
   else if (k === "board") void clearBoard();
   else if (k === "memory") void clearMemory();
   else if (k === "guide") openGuide();
+  else if (k === "lowpower") toggleLowPower();
 }
 
 /** 清空白板（最近 5 条结论） */
@@ -2329,6 +2349,7 @@ async function mountOffice() {
     peopleHintTimer = null;
   }
   restoreLooks();
+  applyQuality();          // 恢复上次的省电模式选择（重建场景后也要重新应用）
   seated.value = office.count();
   loadRun();
   loadBoard();
@@ -2435,9 +2456,12 @@ onMounted(async () => {
       if (Array.isArray(arr)) recentPrompts.value = arr.slice(0, 5).map(String);
     }
     if (localStorage.getItem(GUIDE_KEY) !== "1") guideOpen.value = true;
+    lowPower.value = localStorage.getItem(LOWPOWER_KEY) === "1";
   } catch {
     /* 隐私模式：都按默认值走 */
   }
+  /* mountOffice 时还没读到本地设置，这里补一次（省电模式要在首屏就生效） */
+  applyQuality();
   window.addEventListener("keydown", onHotkey);
 
   // 定时任务单独 8 秒轮询：到点要尽快看见，不能等 20 秒

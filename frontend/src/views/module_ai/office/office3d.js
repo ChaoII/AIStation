@@ -291,6 +291,9 @@ export function createOffice(opts) {
   renderer.setSize(W(), H());
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  /* 阴影贴图不必每帧重画：场景里几百个网格（5 人 × 78 个蒙皮网格）每帧重算 shadow pass
+     很吃 CPU。改成手动刷新、每 4 帧一次，人物动作慢，肉眼看不出差别（实测 CPU 明显下降）。 */
+  renderer.shadowMap.autoUpdate = false;
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.setClearColor(0xf4f1ea, 1);
   stage.appendChild(renderer.domElement);
@@ -5287,11 +5290,22 @@ export function createOffice(opts) {
   document.addEventListener('visibilitychange', onVisibility);
 
   let frameCount = 0;
+  /* 省电模式：每两帧只跑一帧（≈30fps），并且关掉 SSAO 后处理。
+     办公场景是"氛围"性质，30fps 完全够看；机器忙/核显笔记本上能省一半 CPU。 */
+  let lowPower = false;
+  let skipFrame = false;
   function tick() {
     if (pageHidden || ctxLost) {
       /* 后台期间不推进时间：dt 有 0.05 上限，回来也不会瞬移 */
       requestAnimationFrame(tick);
       return;
+    }
+    if (lowPower) {
+      skipFrame = !skipFrame;
+      if (skipFrame) {
+        requestAnimationFrame(tick);
+        return;
+      }
     }
     try { tickBody(); } catch (e) {
       console.error('[office3d]', e);
@@ -5797,6 +5811,8 @@ export function createOffice(opts) {
 
   /** 真正把画面画出来（与 tickBody 解耦：tickBody 半途抛异常时仍能出图，避免"整屏冻住"） */
   function renderFrame() {
+    /* 阴影贴图每 4 帧刷一次（autoUpdate 已关，见 renderer 初始化处） */
+    if (frameCount % 4 === 0) renderer.shadowMap.needsUpdate = true;
     if (!faceMode) controls.update();
     if (degraded) {
       renderer.setRenderTarget(null);
@@ -5984,6 +6000,14 @@ export function createOffice(opts) {
     controls,
     stairPos: () => project(STAIR.x, (currentFloor === 2 ? FLOOR_H : 0) + 1.18, STAIR.z),
     floor: () => currentFloor,
+    /** 画质开关：low = 关 SSAO + 30fps（低配机器/省电用）；high = 全开 */
+    setQuality: (q) => {
+      lowPower = q === 'low';
+      degraded = lowPower;
+      skipFrame = false;
+      return lowPower ? 'low' : 'high';
+    },
+    quality: () => (lowPower ? 'low' : 'high'),
     /** 验收用：立刻安排一次跑腿（接水/打印）/ 两人聊天，不等随机 */
     errandNow: () => {
       maybeErrand();
