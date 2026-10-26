@@ -1,0 +1,222 @@
+import { test, expect } from "@playwright/test";
+import { memberNames, mockDispatch, openOffice, readCam, spyFocus } from "./office-helpers";
+
+/**
+ * AI 办公室「体验打磨」回归（快速、确定性）：
+ * 引导 / 输入增强 / 空态示例 / 镜头定位 / 快捷键 / 播报流 / 结论复制 / 粘底滚动 / 跟随限流。
+ *
+ * 派活用**假的 SSE 流**（见 office-helpers.mockDispatch），所以不调模型、不写库；
+ * 帧间隔由用例控制，能精确验证「跟随执行者」的 3 秒限流。
+ *
+ * 跑法（需要前端 dev server + 带办公室接口的后端）：
+ *   E2E_BASE_URL=http://127.0.0.1:5182/web E2E_API_URL=http://127.0.0.1:8011/api/v1 \
+ *     pnpm e2e office-polish --no-deps
+ *
+ * 真链路的派活见 office-dispatch-real.spec.ts（需 E2E_OFFICE_DISPATCH=1）。
+ */
+
+test.use({ storageState: { cookies: [], origins: [] } });
+
+test("引导：首次出现三步、关闭后不再自动出现、菜单可重看", async ({
+  page,
+  request,
+  baseURL
+}) => {
+  await openOffice(page, request, baseURL!, { freshGuide: true });
+  const card = page.locator(".guide-card");
+  await expect(card).toBeVisible();
+  const titles: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    titles.push((await page.locator(".guide-card .g-t").innerText()).trim());
+    await page.locator(".guide-card .g-foot button.primary").click();
+    await page.waitForTimeout(150);
+  }
+  expect(new Set(titles).size).toBe(3);
+  await expect(card).toBeHidden();
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator(".ai-office-page")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".guide-card")).toHaveCount(0);
+
+  await page.locator(".of-more button.of-ico").click();
+  await page.locator(".of-menu button", { hasText: "重看引导" }).click();
+  await expect(page.locator(".guide-card")).toBeVisible();
+  await page.locator(".guide-card .g-foot button", { hasText: "跳过" }).click();
+  await expect(page.locator(".guide-card")).toHaveCount(0);
+});
+
+test("输入：空内容禁用、Shift+Enter 换行、@成员 切单干", async ({ page, request, baseURL }) => {
+  await openOffice(page, request, baseURL!);
+  const send = page.locator("button.of-btn.primary", { hasText: "派活" });
+  await expect(send).toBeDisabled();
+
+  const box = page.locator(".of-bar-input");
+  await box.fill("查一下数据集总数");
+  await expect(send).toBeEnabled();
+
+  await box.click();
+  await box.press("Shift+Enter");
+  await page.waitForTimeout(150);
+  expect(await box.inputValue()).toContain("\n");
+  await expect(page.locator(".brief-bar")).toHaveCount(0);
+
+  const who = (await memberNames(page))[0];
+  await box.fill(`@${who} 查一下数据集总数`);
+  await page.waitForTimeout(300);
+  await expect(page.locator(".of-picked")).toContainText(who);
+  await expect(page.locator(".of-bar-input")).toHaveValue(/查一下数据集总数/);
+});
+
+test("空态：切到没有派活的那天，给 3 个示例任务且只填入不发送", async ({
+  page,
+  request,
+  baseURL
+}) => {
+  await openOffice(page, request, baseURL!);
+  await page.locator(".of-tab", { hasText: "任务" }).click();
+  await page.locator(".of-dstep button[title='后一天']").click();
+  await expect(page.locator(".of-samples .sample")).toHaveCount(3);
+  await page.locator(".of-samples .sample").first().click();
+  await page.waitForTimeout(200);
+  expect((await page.locator(".of-bar-input").inputValue()).length).toBeGreaterThan(6);
+  await expect(page.locator(".brief-bar")).toHaveCount(0);
+});
+
+test("镜头：预设切换 + 点名单推近（需要 DEV 的 __office 探针）", async ({
+  page,
+  request,
+  baseURL
+}) => {
+  await openOffice(page, request, baseURL!);
+  const hasOffice = await page.evaluate(() => Boolean((window as any).__office));
+  test.skip(!hasOffice, "当前构建没有 __office 探针（非 dev）");
+
+  const base = await readCam(page);
+  await page.locator(".cam-presets button", { hasText: "白板" }).click();
+  await page.waitForTimeout(1600);
+  const board = await readCam(page);
+  expect(Math.abs(board.x - base.x) + Math.abs(board.z - base.z)).toBeGreaterThan(0.3);
+
+  await page.locator(".cam-presets button", { hasText: "全景" }).click();
+  await page.waitForTimeout(1600);
+  const back = await readCam(page);
+  expect(Math.abs(back.x - 0.42) + Math.abs(back.z - 0.12)).toBeLessThan(0.3);
+
+  await page.locator(".m-row").first().click();
+  await page.waitForTimeout(2200);
+  const focused = await readCam(page);
+  expect(focused.zoom).toBeGreaterThan(1.6);
+});
+
+test("快捷键：1/2 切楼层、Esc 取消选中", async ({ page, request, baseURL }) => {
+  await openOffice(page, request, baseURL!);
+  const hasOffice = await page.evaluate(() => Boolean((window as any).__office));
+  test.skip(!hasOffice, "当前构建没有 __office 探针（非 dev）");
+
+  await page.keyboard.press("2");
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => (window as any).__office.floor())).toBe(2);
+  await page.keyboard.press("1");
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => (window as any).__office.floor())).toBe(1);
+
+  await page.locator(".m-row").first().click();
+  await expect(page.locator(".of-picked")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".of-picked")).toHaveCount(0);
+});
+
+test("派活（假流）：播报流、结论复制、展开全部、跟随 3 秒限流", async ({
+  page,
+  request,
+  baseURL
+}) => {
+  await openOffice(page, request, baseURL!);
+  /* 127.0.0.1 算安全上下文，代码会走 navigator.clipboard；不授权就会失败并弹 warning */
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: new URL(baseURL!).origin
+  });
+  await mockDispatch(page);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator(".m-row").first()).toBeVisible({ timeout: 30_000 });
+
+  const hasOffice = await page.evaluate(() => Boolean((window as any).__office));
+  if (hasOffice) {
+    await spyFocus(page);
+    await page.locator(".cam-presets button", { hasText: "跟随" }).click();
+  }
+
+  await page.locator(".of-bar-input").fill("让两位同事各查一件事，然后汇总");
+  await page.locator("button.of-btn.primary", { hasText: "派活" }).click();
+  await expect(page.locator(".brief-bar")).toBeVisible({ timeout: 40_000 });
+
+  // 播报流：展开后至少 4 条，含派活/回话/结论
+  await page.locator(".cast-bar .of-linkbtn").click();
+  const cast = await page.locator(".cast-list .c").allInnerTexts();
+  expect(cast.length).toBeGreaterThanOrEqual(4);
+  const joined = cast.join("\n");
+  expect(joined).toMatch(/派给/);
+  expect(joined).toMatch(/回话/);
+  expect(joined).toMatch(/结论/);
+  await page.locator(".cast-bar .of-linkbtn").click();
+
+  // 结论复制
+  await page.locator(".brief-bar button", { hasText: "复制" }).click();
+  await expect(page.locator(".el-message--success")).toBeVisible({ timeout: 5_000 });
+
+  // 面板：展开全部 / 收起全部
+  const toggle = page.locator(".of-thead .of-linkbtn");
+  await expect(toggle).toHaveText("展开全部");
+  await toggle.click();
+  await expect(toggle).toHaveText("收起全部");
+  await toggle.click();
+  await expect(toggle).toHaveText("展开全部");
+
+  // 跟随：两次推镜头间隔 ≥ 3 秒（脚本里两次派活间隔 3.5 秒）
+  if (hasOffice) {
+    const calls = await page.evaluate(
+      () => ((window as any).__focusCalls || []) as Array<{ t: number; name: string }>
+    );
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    const gaps = calls.slice(1).map((c, i) => c.t - calls[i].t);
+    for (const g of gaps) expect(g).toBeGreaterThanOrEqual(2800);
+  }
+});
+
+test("粘底：上滑后不再被拽回，出现「回到最新」并能回到底部", async ({
+  page,
+  request,
+  baseURL
+}) => {
+  await page.setViewportSize({ width: 1440, height: 620 });
+  await openOffice(page, request, baseURL!);
+  await page.locator(".of-tab", { hasText: "任务" }).click();
+  const first = page.locator(".tl-item").first();
+  test.skip((await first.count()) === 0, "还没有历史 run，跳过（先派一次活）");
+  await first.click();
+  await expect(page.locator(".of-trace")).toBeVisible({ timeout: 20_000 });
+
+  const toggle = page.locator(".of-thead .of-linkbtn");
+  if (await toggle.count()) {
+    await toggle.click();
+    await page.waitForTimeout(400);
+  }
+  const canScroll = await page.evaluate(() => {
+    const el = document.querySelector(".of-tbody") as HTMLElement | null;
+    return el ? el.scrollHeight - el.clientHeight : 0;
+  });
+  test.skip(canScroll <= 40, "面板内容不够长，跳过");
+
+  await page.evaluate(() => {
+    (document.querySelector(".of-tbody") as HTMLElement).scrollTop = 0;
+  });
+  const jump = page.locator(".of-jump");
+  await expect(jump).toBeVisible({ timeout: 5_000 });
+  await jump.click();
+  await page.waitForTimeout(400);
+  const gap = await page.evaluate(() => {
+    const el = document.querySelector(".of-tbody") as HTMLElement;
+    return Math.round(el.scrollHeight - el.scrollTop - el.clientHeight);
+  });
+  expect(gap).toBeLessThanOrEqual(4);
+});
