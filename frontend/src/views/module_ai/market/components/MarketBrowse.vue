@@ -3,26 +3,28 @@
   <div class="market-browse">
     <!-- 顶部工具条：类型筛选 + 搜索 + 个人筛选 + 提交入口 -->
     <div class="browse-toolbar">
-      <div class="type-tabs">
-        <span
-          v-for="t in typeOptions"
-          :key="t.value"
-          class="type-tab"
-          :class="{ 'is-active': typeFilter === t.value }"
-          @click="switchType(t.value)"
+      <!-- 类型筛选：带「类型」标签的过滤按钮组（非 tab），含「全部」 -->
+      <div class="type-filter">
+        <span class="type-filter-label">{{ t("ai_market.typeLabel") }}</span>
+        <el-check-tag :checked="!typeFilter" @change="switchType('')">
+          {{ t("ai_market.allType") }}
+        </el-check-tag>
+        <el-check-tag
+          v-for="tp in typeOptions"
+          :key="tp.value"
+          :checked="typeFilter === tp.value"
+          @change="switchType(tp.value)"
         >
-          {{ t.label }}
-        </span>
+          {{ tp.label }}
+        </el-check-tag>
       </div>
       <div class="toolbar-right">
         <el-input
           v-model="keyword"
           class="search-input"
           :prefix-icon="Search"
-          :placeholder="t('ai_market.browseSearchPlaceholder')"
+          :placeholder="searchPlaceholder"
           clearable
-          @keyup.enter="reload"
-          @clear="reload"
         />
         <el-button
           :icon="Star"
@@ -237,7 +239,7 @@ import {
   Star,
 } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import {
@@ -266,7 +268,7 @@ const items = ref<MarketItem[]>([]);
 const total = ref(0);
 const pageNo = ref(1);
 const pageSize = 12;
-const typeFilter = ref("");
+const typeFilter = ref("skill");
 const categoryFilter = ref("");
 const keyword = ref("");
 const onlyFavorite = ref(false);
@@ -299,6 +301,11 @@ const hasFilter = computed(
 /** 当前类型的中文名（用于分类栏标题） */
 const currentTypeLabel = computed(
   () => typeOptions.find((t) => t.value === typeFilter.value)?.label || t("ai_market.allType")
+);
+
+/** 搜索占位符：提示当前搜索范围（当前类型） */
+const searchPlaceholder = computed(() =>
+  t("ai_market.browseSearchScope", { type: currentTypeLabel.value })
 );
 
 function assetLabel(type: string) {
@@ -352,6 +359,13 @@ function reload() {
   loadItems();
 }
 
+// 输入即实时搜索（防抖 400ms），不再需要按回车；清空同样触发
+let keywordTimer: ReturnType<typeof setTimeout> | undefined;
+watch(keyword, () => {
+  if (keywordTimer) clearTimeout(keywordTimer);
+  keywordTimer = setTimeout(() => reload(), 400);
+});
+
 async function refreshFeatured() {
   await loadHome(true);
 }
@@ -370,9 +384,8 @@ function clearFilters() {
 }
 
 function switchType(value: string) {
-  // 再点同一类型 = 取消筛选（回到全部，无「全部」页签）
-  typeFilter.value = typeFilter.value === value ? "" : value;
-  // 分类集合随类型变化 → 清空已选分类并重新加载分类计数
+  // 直设类型（「全部」传 ''）；分类集合随类型变化 → 清空已选分类并重新加载分类计数
+  typeFilter.value = value;
   categoryFilter.value = "";
   loadHome();
   reload();
@@ -466,31 +479,17 @@ onMounted(() => {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
-.type-tabs {
+.type-filter {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.type-tab {
+.type-filter-label {
   font-size: var(--el-font-size-base);
   color: var(--el-text-color-regular);
-  cursor: pointer;
-  height: 30px;
-  line-height: 30px;
-  padding: 0 2px;
-  border-bottom: 2px solid transparent;
-  transition: color 0.2s;
-
-  &:hover {
-    color: var(--el-color-primary);
-  }
-
-  &.is-active {
-    color: var(--el-color-primary);
-    font-weight: 600;
-    border-bottom-color: var(--el-color-primary);
-  }
+  margin-right: 2px;
 }
 
 .toolbar-right {
@@ -559,13 +558,23 @@ onMounted(() => {
   overflow: hidden;
 }
 
+/* 分类标题（如「技能能力」）不换行、不被压缩，固定的宽度 */
+.category-bar .section-title {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .category-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: 4px;
   white-space: nowrap;
+  /* 横向滚动条：细一点、不占地方，但分类能滚出来，不再挤成一团 */
+  scrollbar-width: thin;
 }
 
 .category-tab {

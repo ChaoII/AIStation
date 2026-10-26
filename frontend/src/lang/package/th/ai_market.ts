@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "ค้นหาชื่อหรือคำอธิบายความสามารถ",
+  browseSearchScope: "ค้นหาความสามารถ {type} ตามชื่อหรือคำอธิบาย",
   browseOnlyFavorite: "เฉพาะรายการโปรด",
   browseInstalled: "ติดตั้งแล้ว",
   browseOfficial: "ทางการ",

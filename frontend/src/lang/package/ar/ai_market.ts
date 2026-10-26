@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "ابحث باسم القدرة أو وصفها",
+  browseSearchScope: "ابحث عن قدرة {type} بالاسم أو الوصف",
   browseOnlyFavorite: "المفضلات فقط",
   browseInstalled: "مُثبّت",
   browseOfficial: "رسمي",

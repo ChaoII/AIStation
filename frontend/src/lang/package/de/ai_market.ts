@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "Fähigkeitsnamen oder Beschreibung durchsuchen",
+  browseSearchScope: "Nach {type}-Fähigkeit nach Name oder Beschreibung suchen",
   browseOnlyFavorite: "Nur Favoriten",
   browseInstalled: "Installiert",
   browseOfficial: "Offiziell",

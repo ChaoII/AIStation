@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "機能名または説明を検索",
+  browseSearchScope: "現在の「{type}」の能力名または説明を検索",
   browseOnlyFavorite: "お気に入りのみ",
   browseInstalled: "インストール済み",
   browseOfficial: "公式",

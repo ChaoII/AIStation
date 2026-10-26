@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "Tìm tên hoặc mô tả năng lực",
+  browseSearchScope: "Tìm năng lực {type} theo tên hoặc mô tả",
   browseOnlyFavorite: "Chỉ yêu thích",
   browseInstalled: "Đã cài đặt",
   browseOfficial: "Chính thức",

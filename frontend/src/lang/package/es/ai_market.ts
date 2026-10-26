@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "Buscar nombre o descripción de la capacidad",
+  browseSearchScope: "Buscar capacidad {type} por nombre o descripción",
   browseOnlyFavorite: "Solo favoritos",
   browseInstalled: "Instalado",
   browseOfficial: "Oficial",

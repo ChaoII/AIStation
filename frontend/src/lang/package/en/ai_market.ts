@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "Search capability name or description",
+  browseSearchScope: "Search {type} capability by name or description",
   browseOnlyFavorite: "Favorites only",
   browseInstalled: "Installed",
   browseOfficial: "Official",

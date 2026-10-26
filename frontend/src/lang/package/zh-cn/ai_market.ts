@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "搜索能力名称或描述",
+  browseSearchScope: "搜索当前「{type}」的能力名称或描述",
   browseOnlyFavorite: "只看收藏",
   browseInstalled: "已安装",
   browseOfficial: "官方",

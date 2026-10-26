@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "역량 이름 또는 설명 검색",
+  browseSearchScope: "현재 '{type}' 역량 이름 또는 설명 검색",
   browseOnlyFavorite: "즐겨찾기만",
   browseInstalled: "설치됨",
   browseOfficial: "공식",

@@ -49,6 +49,7 @@ export default {
 
   // MarketBrowse
   browseSearchPlaceholder: "Поиск по названию или описанию возможности",
+  browseSearchScope: "Поиск по названию или описанию возможности {type}",
   browseOnlyFavorite: "Только избранное",
   browseInstalled: "Установлено",
   browseOfficial: "Официальные",
