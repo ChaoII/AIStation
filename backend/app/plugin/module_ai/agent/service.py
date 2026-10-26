@@ -220,11 +220,20 @@ async def _office_caps(
     # 知识库（RAG）
     try:
         if row.get("knowledge_ids") and (query_text or "").strip():
+            import asyncio as _aio
+
             from app.plugin.module_ai.knowledge.service import retrieve as kb_retrieve
 
-            out["kb"] = await kb_retrieve(row["knowledge_ids"], query_text, top_k=4) or ""
+            # 限时 8 秒：向量化服务不可用时（实测 DashScope 超时 30s），
+            # 每个成员都要白等半分钟才轮到下一件事，派活按钮点下去像没反应。
+            out["kb"] = (
+                await _aio.wait_for(
+                    kb_retrieve(row["knowledge_ids"], query_text, top_k=4), timeout=8
+                )
+                or ""
+            )
     except Exception:  # noqa: BLE001
-        pass
+        out["kb"] = ""
 
     if cleanups:
 
@@ -321,13 +330,17 @@ class AiAgentService:
 
     # ---------------------------------------------------------------- #
     @classmethod
-    async def office_view(cls, active_minutes: int = 10) -> list[dict]:
+    async def office_view(cls, active_minutes: int = 2) -> list[dict]:
         """AI 办公室：返回在岗智能体 + 运行状态 + 组长标记。
 
-        状态口径（没有独立运行时状态表，用调用日志推导）：
-        - 近 ``active_minutes`` 分钟内有 ``usage=agent`` 的调用 → ``busy``（工作中）
-        - 否则 → ``idle``（在岗待命）
+        状态口径：
+        - 有**未过期的运行时活动行**（`ai_office_activity`，派活时打点、跑完清掉）→ ``busy``
+        - 或近 ``active_minutes`` 分钟内有 ``usage=agent`` 调用（办公室之外的聊天/工作台也认）
+          → ``busy``；否则 ``idle``
         - 停用/删除的智能体不返回（不占工位）
+
+        为什么是 2 分钟而不是 10 分钟：10 分钟窗口会让「跑完一轮」的人在名单上继续显示
+        「工作中」十来分钟，而场景里他早就回座位摸鱼了——状态对不上（实测用户直接说"全是 bug"）。
 
         组长（leader）：角色名含 主控/调度/组长/leader 的第一个；没有就取 ``order`` 最小的。
         办公室里的任务流转、汇报口径都以组长为起点/终点。
@@ -369,7 +382,12 @@ class AiAgentService:
         for a in agents:
             t = last.get(a["id"])
             live = act.get(a["id"])
-            busy = bool(t and (now - t) < window) or bool(live)
+            live_status = (live or {}).get("status") or ""
+            # 活动行在就以它为准（idle 行是刚收工时写的，用来压住下面那条日志兜底）；
+            # 只有完全没有活动行的人，才用「近 N 分钟有调用日志」判断（办公室外的聊天也认）。
+            live_busy = bool(live) and live_status != "idle"
+            log_busy = live is None and bool(t and (now - t) < window)
+            busy = live_busy or log_busy
             out.append(
                 {
                     "id": a["id"],
@@ -493,6 +511,17 @@ class AiAgentService:
         rows = {a["id"]: a for a in await cls.list_agents()}
         cleanups: list = []
 
+        # 立刻打点「组长在忙」：下面装配 Team（成员建 agent、知识库检索）要 20 秒上下，
+        # 期间前端每 20 秒拉一次名单 —— 不打点就一直是「待命」，用户以为点了没反应。
+        try:
+            from . import office_activity as _oa_early
+
+            await _oa_early.mark(
+                leader["id"], task="正在拆解任务…", leader_id=leader["id"], ttl_seconds=900
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
         from agno.team import Team
         from agno.team.mode import TeamMode
 
@@ -553,9 +582,24 @@ class AiAgentService:
                 tool_call_limit=3,
             )
 
+        # 过滤掉「模型配置坏了」的成员：``_mk`` 取不到运行模型时返回 None，
+        # 直接塞进 Team 会让整轮崩在 ``'NoneType' object has no attribute 'name'``，
+        # 而外层只看到空内容 + ok=True（用户视角就是「点了没反应」，实测踩过）。
+        # 并行装配：每个成员的「工具/技能/知识库」都要走一遍（知识库检索最慢，实测超时 30s），
+        # 串行时 4 个成员就是 4 倍等待；并行只等最慢的那一个（再加知识库 8s 上限）。
+        import asyncio as _aio
+
+        built_list = await _aio.gather(*[_mk(m) for m in members], return_exceptions=True)
         member_agents = []
-        for m in members:
-            member_agents.append(await _mk(m))
+        usable: list[dict] = []
+        skipped: list[str] = []
+        for m, built in zip(members, built_list, strict=False):
+            if built is None or isinstance(built, BaseException):
+                skipped.append(m.get("name") or f"#{m.get('id')}")
+                continue
+            member_agents.append(built)
+            usable.append(m)
+        members = usable
 
         # Team 本身也要模型（组长用来拆解/汇总）；不传会空跑返回空内容
         leader_runtime = None
@@ -566,6 +610,30 @@ class AiAgentService:
                 leader_runtime = await AiModelService.get_runtime_model()
         except Exception:  # noqa: BLE001
             leader_runtime = None
+
+        # 组长没模型就别硬跑：Team 用空 model 会崩在 agno 内部（NoneType.name），
+        # 外层却只拿到空内容 —— 必须明确告诉调用方「是模型配置坏了」。
+        if leader_runtime is None:
+            return {
+                "ok": False,
+                "leader": leader["name"],
+                "members": [m["name"] for m in members],
+                "content": "",
+                "error": (
+                    f"组长「{leader['name']}」的模型配置不可用"
+                    f"（model_id={leader.get('model_id')}），请到「模型配置」里检查"
+                ),
+                "session_id": None,
+            }
+        if not members:
+            return {
+                "ok": False,
+                "leader": leader["name"],
+                "members": [],
+                "content": "",
+                "error": "组员都没有可用的模型配置" + (f"（跳过：{'、'.join(skipped)}）" if skipped else ""),
+                "session_id": None,
+            }
 
         from app.plugin.module_ai.agno_tools.agent_factory import build_model
 
@@ -642,7 +710,7 @@ class AiAgentService:
         from . import office_activity as _oa
 
         brief = text.strip().replace("\n", " ")[:60]
-        await _oa.mark(leader["id"], task=f"派单：{brief}", leader_id=leader["id"], ttl_seconds=300)
+        await _oa.mark(leader["id"], task=f"派单：{brief}", leader_id=leader["id"], ttl_seconds=900)
         name2id = {m["name"]: m["id"] for m in members if m.get("name")}
         chunks: list[str] = []
         # 平台业务工具（list_datasets 等）按 ContextVar 注入用户，工具内再做数据权限
@@ -695,6 +763,18 @@ class AiAgentService:
                     _fn()
                 except Exception:  # noqa: BLE001
                     pass
+            # 这一轮结束：把「忙」清掉，名单/名牌立刻回到待命
+            try:
+                from . import office_activity as _oa_clear
+
+                await _oa_clear.clear([leader["id"], *list(name2id.values())])
+            except Exception:  # noqa: BLE001
+                pass
+
+        # 组长一声不吭（没有内容也没有报错）不能算成功：调用方视角就是「点了没反应」
+        if ok and not content.strip():
+            ok = False
+            err = "组长没有返回内容（模型接口可能异常或超时）"
 
         await AiOverviewService.add_log(
             leader["name"],
@@ -730,6 +810,7 @@ class AiAgentService:
             "ok": ok,
             "leader": leader["name"],
             "members": [m["name"] for m in members],
+            "skipped": skipped,
             "content": content,
             "error": err,
             "session_id": session_id,
@@ -769,6 +850,17 @@ class AiAgentService:
         # 每个 agent 的绑定能力（工具/技能/知识库/MCP）在 list_agents 的完整行里
         rows = {a["id"]: a for a in await cls.list_agents()}
         cleanups: list = []
+
+        # 立刻打点「组长在忙」：下面装配 Team（成员建 agent、知识库检索）要 20 秒上下，
+        # 期间前端每 20 秒拉一次名单 —— 不打点就一直是「待命」，用户以为点了没反应。
+        try:
+            from . import office_activity as _oa_early
+
+            await _oa_early.mark(
+                leader["id"], task="正在拆解任务…", leader_id=leader["id"], ttl_seconds=900
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
         from agno.team import Team
         from agno.team.mode import TeamMode
@@ -831,17 +923,28 @@ class AiAgentService:
                 tool_call_limit=3,
             )
 
+        # 并行装配：每个成员的「工具/技能/知识库」都要走一遍（知识库检索最慢，实测超时 30s），
+        # 串行时 4 个成员就是 4 倍等待；并行只等最慢的那一个（再加知识库 8s 上限）。
+        import asyncio as _aio
+
+        built_list = await _aio.gather(*[_mk(m) for m in members], return_exceptions=True)
         member_agents = []
         usable: list[dict] = []
-        for m in members:
-            built = await _mk(m)
-            if built is None:
+        skipped: list[str] = []
+        for m, built in zip(members, built_list, strict=False):
+            if built is None or isinstance(built, BaseException):
+                skipped.append(m.get("name") or f"#{m.get('id')}")
                 continue
             member_agents.append(built)
             usable.append(m)
         members = usable
         if not members:
-            yield {"type": "done", "ok": False, "error": "组员都没有可用的模型配置"}
+            yield {
+                "type": "done",
+                "ok": False,
+                "error": "组员都没有可用的模型配置"
+                + (f"（跳过：{'、'.join(skipped)}，请到「模型配置」检查绑定）" if skipped else ""),
+            }
             return
         leader_runtime = None
         try:
@@ -852,7 +955,14 @@ class AiAgentService:
         except Exception:  # noqa: BLE001
             leader_runtime = None
         if leader_runtime is None:
-            yield {"type": "done", "ok": False, "error": "组长没有可用的模型配置"}
+            yield {
+                "type": "done",
+                "ok": False,
+                "error": (
+                    f"组长「{leader['name']}」的模型配置不可用"
+                    f"（model_id={leader.get('model_id')}），请到「模型配置」里检查"
+                ),
+            }
             return
 
         # agno 原生会话（能落盘就用；落不了也不影响下面的提示词记忆）
@@ -912,7 +1022,7 @@ class AiAgentService:
         )
 
         brief = text.strip().replace("\n", " ")[:60]
-        await _oa.mark(leader["id"], task=f"派单：{brief}", leader_id=leader["id"], ttl_seconds=300)
+        await _oa.mark(leader["id"], task=f"派单：{brief}", leader_id=leader["id"], ttl_seconds=900)
 
         # 执行步骤（对话式时间线）：一次派活 = 一个 run_id
         import uuid as _uuid
@@ -933,6 +1043,7 @@ class AiAgentService:
             "run_id": run_id,
             "leader": leader["name"],
             "members": [m["name"] for m in members],
+            "skipped": skipped,
             "memory": bool(_hist_text),
         }
 
@@ -1049,7 +1160,7 @@ class AiAgentService:
                     }
                     await _oa.mark(
                         name2id[agent_name], task=f"组长派单：{brief}",
-                        leader_id=leader["id"], ttl_seconds=300,
+                        leader_id=leader["id"], ttl_seconds=900,
                     )
 
                 # 1.5) 组员这一轮跑完/失败：补一条调用日志（usage=agent, app_id=组员）
@@ -1120,13 +1231,23 @@ class AiAgentService:
                     _fn()
                 except Exception:  # noqa: BLE001
                     pass
+            import asyncio as _aio
+
+            # 这一轮结束（含中途取消）：把「忙」清掉，名单/名牌立刻回到待命。
+            # 只靠 TTL 过期会「跑完了还显示工作中」，和场景里人已经回座位完全对不上。
+            try:
+                from . import office_activity as _oa_clear
+
+                _aio.create_task(
+                    _oa_clear.clear([leader["id"], *list(name2id.values())])
+                )
+            except Exception:  # noqa: BLE001
+                pass
             if not _completed and not _failed:
                 # 页面关掉 / 点了停止：生成器被取消，收尾代码跑不到，
                 # 任务列表里就会永远显示"进行中"。这里补一条收尾步骤兜底。
                 # 注意：生成器收尾阶段不能 await（会被 GeneratorExit 打断），
                 # 只能起一个后台任务去写。
-                import asyncio as _aio
-
                 try:
                     _aio.create_task(
                         _step(
@@ -1144,6 +1265,11 @@ class AiAgentService:
             yield {"type": "reply", "from": nm, "text": _reply_text(buf)}
 
         content_text = "".join(chunks).strip()
+        # 组长一声不吭（没有内容也没有报错）不能算成功：用户视角就是「点了没反应」。
+        # 常见原因是模型接口异常/超时被 agno 内部吞掉（日志里只有 "Error in Team run"）。
+        if ok and not content_text:
+            ok = False
+            err = "组长没有返回内容（模型接口可能异常或超时），可以再试一次；连续失败请检查模型配置"
         if not ok:
             try:
                 await _oa.mark(
@@ -1239,7 +1365,7 @@ class AiAgentService:
 
         name = agent.get("agent_name") or f"#{agent_id}"
         brief = text.strip().replace("\n", " ")[:60]
-        await _oa.mark(agent_id, task=f"派单：{brief}", ttl_seconds=240)
+        await _oa.mark(agent_id, task=f"派单：{brief}", ttl_seconds=900)
 
         # 点名派活同样带上该智能体绑定的真实能力（工具/技能/知识库/MCP）
         caps = await _office_caps(agent, user_id, text)
@@ -1325,6 +1451,13 @@ class AiAgentService:
                     caps["cleanup"]()
                 except Exception:  # noqa: BLE001
                     pass
+            # 这一轮结束：把「忙」清掉，名单/名牌立刻回到待命
+            try:
+                from . import office_activity as _oa_clear
+
+                await _oa_clear.clear([agent_id])
+            except Exception:  # noqa: BLE001
+                pass
 
         await _step(
             "summary" if ok else "error",

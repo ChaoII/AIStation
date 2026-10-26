@@ -1871,6 +1871,18 @@ async function doDispatch() {
   showJumpLatest.value = false;
   rememberPrompt(text);
   addCast("info", `派活：${text.slice(0, 60)}`);
+  /* 立刻让组长进入「工作中」：服务端装配 Team（成员建 agent + 知识库检索）要 20 秒上下，
+     这期间名单/名牌还是「待命」，用户点了以为没反应。后端也会在收到任务时立刻打点，
+     这里先本地亮起来，轮询回来再以后端为准。 */
+  {
+    const leader = agents.value.find((a: any) => a.isLeader) || agents.value[0];
+    if (leader) {
+      office?.engage?.(leader.name);
+      office?.writeBoard?.([`收到任务：${text.slice(0, 26)}`, "组长正在拆解任务…"]);
+      leader.status = "busy";
+      leader.task = "正在拆解任务…";
+    }
+  }
   const ctrl = new AbortController();
   dispatchAbort.value = ctrl;
   const watchdog = window.setTimeout(() => ctrl.abort("timeout"), DISPATCH_TIMEOUT_MS);
@@ -1946,12 +1958,26 @@ async function doDispatch() {
         }
       } else if (f.type === "start") {
         hasMemory.value = !!f.memory;
+        // 有成员的模型配置坏了（被跳过）：说清楚，别让人以为"他没干活"
+        const skipped = (f.skipped || []).filter(Boolean);
+        if (skipped.length) {
+          const msg = `${skipped.join("、")} 的模型配置不可用，本轮跳过（请到「模型配置」检查绑定）`;
+          ElMessage.warning(msg);
+          addCast("conn", msg, true);
+        }
         // 有活干了：正在摸鱼的人陆续回工位
         office?.backToDesks?.();
         /* 开工动员：全员先到白板前站一下，白板写"当前任务 + 分工" */
         const team = (f.members || []).filter((n: string) => n !== f.leader);
         if (team.length) office?.kickoff?.(team, 4500);
         office?.taskBoard?.(text, []);
+        if (skipped.length) {
+          office?.writeBoard?.([
+            `任务：${text.slice(0, 26)}`,
+            `⚠ ${skipped.join("、")} 模型配置不可用，本轮跳过`,
+            "点右侧「执行过程」看详情"
+          ]);
+        }
         pushStep("plan", `收到任务：${text.slice(0, 40)}`, text, f.leader || "");
       } else if (f.type === "done") {
         doneFrame = f;

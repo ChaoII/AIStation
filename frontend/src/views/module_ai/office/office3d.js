@@ -2902,6 +2902,10 @@ export function createOffice(opts) {
         else if (p === 'look' && ACT.look) play(ACT.look);
         else play(ACT.idle || ACT.walk);
       },
+      /** 步频跟速度走：走慢时动画也慢下来，不然脚在"打滑"（像平移） */
+      setSpeed(scale) {
+        if (cur && cur.getClip) cur.timeScale = Math.max(0.55, Math.min(1.6, scale));
+      },
       setProp(v) {
         const mic = v === 'mic';
         const cup = v === 'cup';
@@ -5290,19 +5294,27 @@ export function createOffice(opts) {
   document.addEventListener('visibilitychange', onVisibility);
 
   let frameCount = 0;
-  /* 省电模式：每两帧只跑一帧（≈30fps），并且关掉 SSAO 后处理。
-     办公场景是"氛围"性质，30fps 完全够看；机器忙/核显笔记本上能省一半 CPU。 */
+  /* 省电：手动开关（30fps + 关 SSAO）+ 窗口失焦自动降频（15fps）。
+     办公场景是"氛围"性质，降频完全够看；e2e/无头浏览器不降频（否则用例会变慢变飘）。 */
   let lowPower = false;
-  let skipFrame = false;
+  let skipCount = 0;
+  let blurred = false;
+  const AUTO_SLOW = !navigator.webdriver;
+  if (AUTO_SLOW) {
+    window.addEventListener('blur', () => { blurred = true; });
+    window.addEventListener('focus', () => { blurred = false; });
+  }
   function tick() {
     if (pageHidden || ctxLost) {
       /* 后台期间不推进时间：dt 有 0.05 上限，回来也不会瞬移 */
       requestAnimationFrame(tick);
       return;
     }
-    if (lowPower) {
-      skipFrame = !skipFrame;
-      if (skipFrame) {
+    if (lowPower || blurred) {
+      /* 省电 30fps；只是失焦则 15fps（不降画质） */
+      const every = lowPower ? 2 : 4;
+      skipCount = (skipCount + 1) % every;
+      if (skipCount) {
         requestAnimationFrame(tick);
         return;
       }
@@ -5488,6 +5500,7 @@ export function createOffice(opts) {
         }
       }
 
+      let stepped = false;
       if (dist > arriveR) {
         /* 坐着的人要走：先站起来（220ms），再迈步，避免腿"啪"一下从坐姿弹成走姿 */
         if (SEATED_POSES.has(rec.pose)) {
@@ -5502,21 +5515,46 @@ export function createOffice(opts) {
             return;
           }
         }
-        const step = Math.min(dist, dt * 1.15);
-        p.x += dx / dist * step;
-        p.z += dz / dist * step;
-        rec.person.root.rotation.y = lerpAng(rec.person.root.rotation.y, Math.atan2(dx, dz), Math.min(1, dt * 7));
-        if (rec.pose !== 'walk') { rec.pose = 'walk'; rec.person.setPose('walk'); }
+        /* 转身再走：背对着目标直接平移会"侧着滑过去"，很假。
+           先原地转身（最多 0.4 秒），转到差不多正对再迈步。 */
+        const wantRy = Math.atan2(dx, dz);
+        const dAng = Math.atan2(
+          Math.sin(wantRy - rec.person.root.rotation.y),
+          Math.cos(wantRy - rec.person.root.rotation.y)
+        );
+        rec.person.root.rotation.y = lerpAng(
+          rec.person.root.rotation.y, wantRy, Math.min(1, dt * 7)
+        );
+        if (Math.abs(dAng) > 0.85) {
+          rec.walkSpeed = 0;
+          if (rec.pose !== 'stand') { rec.pose = 'stand'; rec.person.setPose('stand'); }
+        } else {
+          /* 起步/收尾都缓一下（匀速平移像机器人）：每人速度略有差异，
+             一群人去白板时才不会像复制粘贴。 */
+          const base = 1.15 * (0.92 + ((rec.data.id || 0) % 5) * 0.04);
+          const want = dist < 0.9 ? base * Math.max(0.35, dist / 0.9) : base;
+          rec.walkSpeed = (rec.walkSpeed || 0) + (want - (rec.walkSpeed || 0)) * Math.min(1, dt * 6);
+          const step = Math.min(dist, dt * Math.max(0.35, rec.walkSpeed || 0));
+          p.x += dx / dist * step;
+          p.z += dz / dist * step;
+          stepped = true;
+          if (rec.pose !== 'walk') { rec.pose = 'walk'; rec.person.setPose('walk'); }
+          rec.person.setSpeed?.((rec.walkSpeed || 0) / 1.15);
+        }
       } else if (hasWp) {
         rec.wp++;
       } else if (rec.pose !== rec.targetPose) {
+        rec.walkSpeed = 0;
         rec.person.root.rotation.y = lerpAng(rec.person.root.rotation.y, rec.targetRy, Math.min(1, dt * 8));
         rec.pose = rec.targetPose;
         rec.standAt = 0;
         rec.person.setPose(rec.targetPose);
       }
-      rec.moving = dist > arriveR;
-      if (!rec.moving && rec.onArrive) {
+      rec.moving = stepped;
+      if (!rec.moving) rec.walkSpeed = 0;
+      /* 到达判定仍按「离目标多近」算，不能按 moving：
+         原地转身的那几帧 moving=false，但人还没到，提前触发 onArrive 会让人在半路坐下 */
+      if (!rec.moving && dist <= arriveR && rec.onArrive) {
         const cb = rec.onArrive;
         rec.onArrive = null;
         cb();
@@ -6004,7 +6042,7 @@ export function createOffice(opts) {
     setQuality: (q) => {
       lowPower = q === 'low';
       degraded = lowPower;
-      skipFrame = false;
+      skipCount = 0;
       return lowPower ? 'low' : 'high';
     },
     quality: () => (lowPower ? 'low' : 'high'),
