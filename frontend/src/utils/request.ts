@@ -10,6 +10,23 @@ import { Auth } from "@/utils/auth";
 import { redirectToLogin } from "@/utils/authRedirect";
 
 /**
+ * 同一条错误 3 秒内只弹一次。
+ *
+ * 首屏会并发好几个请求（办公室页一次 6 个），冷启动时后端/前端编译一忙就一起超时，
+ * 每个都弹一条「请求超时，请稍后重试」，叠成一面红墙盖住整个页面（实测 7 条）。
+ * 同文案去重既保留提示，又不糊屏。
+ */
+let lastErrorMsg = "";
+let lastErrorAt = 0;
+function showError(msg: string): void {
+  const now = Date.now();
+  if (msg === lastErrorMsg && now - lastErrorAt < 3000) return;
+  lastErrorMsg = msg;
+  lastErrorAt = now;
+  ElMessage.error(msg);
+}
+
+/**
  * 创建 HTTP 请求实例
  */
 const httpRequest: AxiosInstance = axios.create({
@@ -42,7 +59,7 @@ httpRequest.interceptors.request.use(
   },
   (error) => {
     const msg = error instanceof Error ? error.message : String(error);
-    ElMessage.error(msg);
+    showError(msg);
     return Promise.reject(error);
   }
 );
@@ -67,7 +84,7 @@ httpRequest.interceptors.response.use(
 
     // 检查请求是否失败
     if (data.code !== ResultEnum.SUCCESS) {
-      if (!silent) ElMessage.error(data.msg);
+      if (!silent) showError(data.msg);
       return Promise.reject(response);
     }
 
@@ -93,7 +110,7 @@ httpRequest.interceptors.response.use(
       }
 
       console.error("网络请求失败:", error);
-      if (!silent) ElMessage.error(errorMessage);
+      if (!silent) showError(errorMessage);
       return Promise.reject(new Error(errorMessage));
     }
 
@@ -107,16 +124,16 @@ httpRequest.interceptors.response.use(
         const jsonData: ApiResponse = JSON.parse(text);
 
         if (jsonData.code === ResultEnum.ERROR) {
-          if (!silent) ElMessage.error(jsonData.msg || "请求错误");
+          if (!silent) showError(jsonData.msg || "请求错误");
           return Promise.reject(new Error(jsonData.msg || "请求错误"));
         } else if (jsonData.code === ResultEnum.EXCEPTION) {
-          if (!silent) ElMessage.error(jsonData.msg || "服务异常");
+          if (!silent) showError(jsonData.msg || "服务异常");
           return Promise.reject(new Error(jsonData.msg || "服务异常"));
         }
       } catch (e) {
         console.error("请求异常:", e);
         // 如果无法解析为JSON，则使用默认错误处理
-        if (!silent) ElMessage.error("数据解析失败");
+        if (!silent) showError("数据解析失败");
         return Promise.reject(new Error("数据解析失败"));
       }
     }
@@ -141,20 +158,20 @@ httpRequest.interceptors.response.use(
       if (!silent) await redirectToLogin("登录已过期，请重新登录");
       return Promise.reject(new Error(data.msg));
     } else if (data?.code === ResultEnum.ERROR) {
-      if (!silent) ElMessage.error(data.msg || "请求错误");
+      if (!silent) showError(data.msg || "请求错误");
       return Promise.reject(new Error(data.msg || "请求错误"));
     } else if (data?.code === ResultEnum.UNAUTHORIZED) {
-      if (!silent) ElMessage.error(data.msg || "暂无权限");
+      if (!silent) showError(data.msg || "暂无权限");
       return Promise.reject(new Error(data.msg || "请求错误"));
     } else if (data?.code === ResultEnum.EXCEPTION) {
-      if (!silent) ElMessage.error(data.msg || "服务异常");
+      if (!silent) showError(data.msg || "服务异常");
       return Promise.reject(new Error(data.msg || "服务异常"));
     } else if (hasApiCode && (data as ApiResponse).msg) {
       // 其他业务码（如 409 图片锁定冲突）：展示后端具体原因，避免被通用兜底吞掉
-      if (!silent) ElMessage.error((data as ApiResponse).msg);
+      if (!silent) showError((data as ApiResponse).msg);
       return Promise.reject(new Error((data as ApiResponse).msg));
     } else {
-      if (!silent) ElMessage.error("请求处理失败，请稍后重试");
+      if (!silent) showError("请求处理失败，请稍后重试");
       return Promise.reject(new Error("请求处理失败"));
     }
   }

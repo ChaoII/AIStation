@@ -179,7 +179,11 @@ async def today_stats() -> dict:
             errors += 1
         t0, t1 = _as_dt(r[1]), _as_dt(r[2])
         if t0 and t1:
-            durs.append(int((t1 - t0).total_seconds() * 1000))
+            ms = int((t1 - t0).total_seconds() * 1000)
+            # 只统计 15 分钟内的：中断/卡死的 run 最后一条步骤可能隔很久才补上，
+            # 一条 10 分钟的异常值就能把「平均耗时」拉到几百秒（实测 588s）。
+            if 0 <= ms <= 15 * 60 * 1000:
+                durs.append(ms)
             if last is None or t1 > last:
                 last = t1
     return {
