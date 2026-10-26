@@ -183,6 +183,71 @@ test("派活（假流）：播报流、结论复制、展开全部、跟随 3 �
   }
 });
 
+test("蹦迪：上 2F 后 1F 看不到他们的名牌；清场后全部回座且不再自动开蹦", async ({
+  page,
+  request,
+  baseURL
+}) => {
+  test.setTimeout(180_000);
+  await openOffice(page, request, baseURL!);
+  const hasOffice = await page.evaluate(() => Boolean((window as any).__office));
+  test.skip(!hasOffice, "当前构建没有 __office 探针（非 dev）");
+
+  const snap = () =>
+    page.evaluate(() => {
+      const o = (window as any).__office;
+      const names = Array.from(document.querySelectorAll(".m-row .n")).map(
+        (e) => (e.textContent || "").trim().split("\n")[0]
+      );
+      const st = names.map((n) => o.debugPerson(n)).filter(Boolean) as Array<{
+        floor: number;
+        onDance: boolean;
+        seat: { key: string; kind: string } | null;
+      }>;
+      return {
+        up: st.filter((d) => d.floor === 2).length,
+        upNames: names.filter((n) => {
+          const d = o.debugPerson(n);
+          return d && d.floor === 2;
+        }),
+        dancing: st.filter((d) => d.onDance).length,
+        kinds: st.map((d) => (d.seat ? d.seat.kind : "")),
+        chips: Array.from(document.querySelectorAll(".ag-chip"))
+          .filter((e) => (e as HTMLElement).style.display !== "none")
+          .map((e) => (e.querySelector(".nm") || { textContent: "" }).textContent || ""),
+        leak: o.floorLeak().count,
+        leakSample: o.floorLeak().sample
+      };
+    });
+
+  // 开蹦（走 UI 按钮，和用户操作一致）
+  await page.locator(".of-ico[title='叫人来蹦 / 清场']").click();
+  /* 等"真有人上去了"而不是干等固定秒数（机器慢的时候 11 秒人还在爬楼梯） */
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__office.partyCount()), { timeout: 25_000 })
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => snap().then((s) => s.up), { timeout: 30_000 })
+    .toBeGreaterThan(0);
+  await page.waitForTimeout(1500); // 等过渡（缩放/换层）收尾再断言
+  const mid = await snap();
+  test.skip(mid.dancing === 0, "没有待命的人，叫不动（跳过）");
+  // 1F 视角下，2F 的人的名牌不能出现（曾经的 bug：名牌悬在半空，像"脚后跟"）
+  for (const n of mid.upNames) expect(mid.chips).not.toContain(n);
+  expect(mid.leak, JSON.stringify(mid.leakSample)).toBe(0);
+
+  // 清场：全部回座 + 不留在舞池
+  await page.locator(".of-ico[title='叫人来蹦 / 清场']").click();
+  await expect
+    .poll(() => snap().then((s) => s.dancing), { timeout: 30_000 })
+    .toBe(0);
+  await expect
+    .poll(() => snap().then((s) => s.up), { timeout: 40_000 })
+    .toBe(0);
+  const after = await snap();
+  expect(after.kinds.every((k) => k !== "dance")).toBe(true);
+});
+
 test("粘底：上滑后不再被拽回，出现「回到最新」并能回到底部", async ({
   page,
   request,

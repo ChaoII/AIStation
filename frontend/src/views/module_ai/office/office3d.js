@@ -2905,6 +2905,8 @@ export function createOffice(opts) {
       },
       state: () => ({}),
       cupPos: () => [0, 0, 0],
+      /** 排查用：当前播放的动画名（dance / sit / idle …） */
+      currentAction: () => (cur && cur.getClip ? cur.getClip().name : null),
       /* 模型角色的姿态/动作完全由 AnimationMixer 驱动（tickBody 里已经 update），
          这里必须留一个空实现：tickBody 会对每个 person 调 tick()，
          缺了它就会抛异常打断整帧（连 renderer.render 都跑不到 → 一个角色都看不见） */
@@ -4612,10 +4614,13 @@ export function createOffice(opts) {
   }
 
   let partyClock = 0;
+  /* 手动清场后的「静默期」（秒）：用户点了清场就是不想再蹦，别再自作主张叫人来跳 */
+  let partyMuteUntil = 0;
 
   /** 没人管的时候：偶尔自己凑一拨人去蹦（1~3 人） */
   function maybeParty() {
     if (!DANCE_SPOTS.length) return;
+    if (nowT < partyMuteUntil) return;
     const idle = agents.filter(r =>
       !r.temp && !r.data.isLeader && r.data.status === 'idle' && !r.onDance &&
       !(r.path && r.wp < r.path.length)
@@ -4645,7 +4650,19 @@ export function createOffice(opts) {
       const spot = DANCE_SPOTS.find(s2 => free.has(s2.key));
       if (!spot) break;
       free.delete(spot.key);
-      rec.homeSeat = rec.homeSeat || rec.seat;
+      /* 坐着被叫去蹦：先站起来。否则前几帧是「坐姿 + 蹦迪」的混合体，
+         看起来就像"坐在沙发上蹦"。 */
+      rec.idleAct = null;
+      rec.standAt = 0;
+      if (SEATED_POSES.has(rec.pose)) {
+        rec.pose = 'stand';
+        rec.person.setPose('stand');
+      }
+      /* homeSeat 只能是真正的座位：本来就在舞池的人，别把舞池当"家"，
+         否则清场时会被送回来原地不动。 */
+      rec.homeSeat = (rec.homeSeat && rec.homeSeat.kind !== 'dance')
+        ? rec.homeSeat
+        : (rec.seat && rec.seat.kind !== 'dance' ? rec.seat : null);
       rec.holdSeat = true;
       rec.onDance = true;
       rec.singing = n === 0;          // 第一个上来的拿话筒
@@ -4657,16 +4674,31 @@ export function createOffice(opts) {
     return n;
   }
 
+  /**
+   * 清场：所有人回座、放下话筒、并进入「静默期」——
+   * 用户点了清场就是不想再蹦，25 秒后自动又开一场算 bug（实测会发生）。
+   */
   function stopParty() {
+    let moved = 0;
     agents.forEach(r => {
       if (!r.onDance) return;
       r.onDance = false;
       r.dancing = false;
-      const back = r.homeSeat && OFF_DESK_KINDS.has(r.homeSeat.kind) === false ? r.homeSeat : null;
+      r.singing = false;
+      r.person.setProp('none');
+      /* 回自己的座位；没有（或在舞池/访客位）就找一个 1F 空工位，别把人扔在舞池里 */
+      let back = r.homeSeat && r.homeSeat.kind !== 'dance' ? r.homeSeat : null;
+      if (!back) back = freeDeskOnFloor(1) || freeSeatByKind(LOUNGE_KINDS);
       r.homeSeat = null;
       r.holdSeat = false;
-      if (back) moveTo(r, back);
+      if (back) {
+        moveTo(r, back);
+        moved++;
+      }
     });
+    partyMuteUntil = nowT + 600;   // 10 分钟内不再自动开蹦
+    refreshPlates();
+    return moved;
   }
 
   /** 某一刻把某人拎出来闪一下（派活 / 调工具时，场景里同步有反馈） */
@@ -4894,6 +4926,9 @@ export function createOffice(opts) {
           });
           moveTo(rec, seat);
           scaleTo(rec, 1, 240); // 在新楼层展开
+          /* 座位/楼层变了，名牌与脚下的小点要立刻跟着换层：
+             以前只在 20 秒轮询时刷，导致 1F 视角下能看见 2F 的人的名牌悬在半空 */
+          refreshPlates();
         }, 170);
       });
       return;
@@ -4913,6 +4948,8 @@ export function createOffice(opts) {
     rec.path = path || [];
     rec.wp = 0;
     rec.person.setProp(seat.cup ? 'cup' : (seat.phone ? 'phone' : 'none'));
+    /* 座位变了（含楼层），名牌/脚下点立刻刷新：不然 1F 视角会看到 2F 的人的名牌 */
+    refreshPlates();
   }
 
   /** 外部入口：整体刷新 agent 列表 */
@@ -5207,11 +5244,14 @@ export function createOffice(opts) {
       const hasWp = rec.path && rec.wp < rec.path.length;
       const tx = hasWp ? rec.path[rec.wp][0] : rec.goal.x;
       const tz = hasWp ? rec.path[rec.wp][1] : rec.goal.y;
-      /* 在舞池的人：晃起来（不走路时才跳） */
+      /* 在舞池的人：晃起来（只有"已经在舞池站好"才晃）。
+         以前只判断 onDance，人被叫去蹦的头几帧还在坐姿里就开始上下颠，
+         看起来就是"坐在沙发上蹦迪"。 */
       if (rec.onDance) {
         const moving2 = rec.path && rec.wp < rec.path.length;
         const baseY = (rec.person.root.userData.floor === 2 ? FLOOR_H : 0);
-        if (!moving2) {
+        const atDance = !!(rec.seat && rec.seat.kind === 'dance');
+        if (!moving2 && atDance && !SEATED_POSES.has(rec.pose)) {
           const ph = (rec.data.id % 9) * 0.7;
           const amp = rec.singing ? 0.13 : 0.09;
           rec.person.root.position.y = baseY + Math.abs(Math.sin(t * 5 + ph)) * amp;
@@ -5793,6 +5833,42 @@ export function createOffice(opts) {
     controls,
     stairPos: () => project(STAIR.x, (currentFloor === 2 ? FLOOR_H : 0) + 1.18, STAIR.z),
     floor: () => currentFloor,
+    /**
+     * 排查用：某个人的运行时状态（座位 / 姿态 / 当前动画 / 楼层标记统计）。
+     * 楼层相关的 bug（人在 2F、身上还有零件算 1F）靠它定位，别删。
+     */
+    debugPerson(name) {
+      const r = agents.find((x) => x.data && x.data.name === name);
+      if (!r) return null;
+      const byFloor = {};
+      const visible = [];
+      let meshes = 0;
+      r.person.root.traverse((o) => {
+        if (!(o.isMesh || o.isLine || o.isSprite)) return;
+        meshes++;
+        const f = o.userData.floor === undefined ? 'unset' : o.userData.floor;
+        byFloor[f] = (byFloor[f] || 0) + 1;
+        if (o.visible) visible.push(`${o.name || o.type}@${f}`);
+      });
+      return {
+        seat: r.seat && {
+          key: r.seat.key,
+          kind: r.seat.kind,
+          pose: r.seat.pose,
+          floor: r.seat.floor || 1
+        },
+        pose: r.pose,
+        targetPose: r.targetPose,
+        onDance: !!r.onDance,
+        singing: !!r.singing,
+        action: r.person.currentAction ? r.person.currentAction() : null,
+        y: +r.person.root.position.y.toFixed(2),
+        floor: r.person.root.userData.floor || 1,
+        meshes,
+        byFloor,
+        visible: visible.slice(0, 8)
+      };
+    },
     /** 验收用：强制某人做一个待机动作（stretch / phone / look / idle） */
     idleAct(name, kind) {
       const rec = agents.find((r) => r.data.name === name);
