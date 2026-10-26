@@ -91,7 +91,12 @@
               min-width="180"
               show-overflow-tooltip
             />
-            <el-table-column prop="model_name" label="模型" min-width="180" show-overflow-tooltip>
+            <el-table-column
+              prop="model_name"
+              label="智能体 / 模型"
+              min-width="180"
+              show-overflow-tooltip
+            >
               <template #default="{ row }">{{ row.model_name || "—" }}</template>
             </el-table-column>
             <el-table-column prop="usage" label="用途" min-width="100" align="center" />

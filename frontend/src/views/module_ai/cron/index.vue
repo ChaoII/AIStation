@@ -41,6 +41,7 @@
             clearable
             :prefix-icon="Search"
             style="width: 220px"
+            @input="page = 1"
             @clear="page = 1"
           />
           <el-button
@@ -78,6 +79,17 @@
                   {{ triggerMeta(row.trigger).text }}
                 </el-tag>
                 <el-tag v-if="row.needs_review" size="small" type="warning">需人工确认</el-tag>
+                <el-tag
+                  v-if="row.auto_disabled"
+                  size="small"
+                  type="danger"
+                  :title="`连续失败 ${row.fail_limit || 3} 次已自动停用；修好后打开开关会重新计数`"
+                >
+                  已自动停用
+                </el-tag>
+                <el-tag v-else-if="row.fail_streak" size="small" type="warning">
+                  连续失败 {{ row.fail_streak }} 次
+                </el-tag>
               </div>
 
               <!-- 描述：固定两行高度（无描述显示占位符），保证卡片大小统一 -->
@@ -102,7 +114,41 @@
                 <div class="cron-card__info-row">
                   <span class="cron-card__label">上次：</span>
                   <span class="cron-card__value" :class="{ 'is-empty': !row.last_run_time }">
-                    {{ row.last_run_time || "—" }}
+                    <span>{{ row.last_run_time || "—" }}</span>
+                    <el-tag v-if="isRunning(row.id)" size="small" type="warning" effect="plain">
+                      执行中…
+                    </el-tag>
+                    <el-tag
+                      v-else-if="row.last_status"
+                      size="small"
+                      effect="plain"
+                      :type="row.last_status === 'success' ? 'success' : 'danger'"
+                    >
+                      {{ row.last_status === "success" ? "成功" : "失败" }}
+                    </el-tag>
+                    <span v-if="row.last_duration_ms && !isRunning(row.id)" class="cron-card__cost">
+                      {{ fmtSecs(row.last_duration_ms) }}
+                    </span>
+                    <el-button
+                      v-if="row.last_run_id"
+                      link
+                      type="primary"
+                      size="small"
+                      @click="openTrace(row)"
+                    >
+                      过程
+                    </el-button>
+                  </span>
+                </div>
+                <!-- 上次执行结果：成功是正文摘要，失败是错误信息（单行，保持各卡等高） -->
+                <div class="cron-card__info-row cron-card__result">
+                  <span class="cron-card__label">结果：</span>
+                  <span
+                    class="cron-card__value"
+                    :class="{ 'is-empty': !row.last_message }"
+                    :title="row.last_message || ''"
+                  >
+                    {{ row.last_message || "—" }}
                   </span>
                 </div>
               </div>
@@ -122,7 +168,7 @@
                     size="small"
                     link
                     :icon="VideoPlay"
-                    :loading="runLoadingId === row.id"
+                    :loading="runLoadingId === row.id || isRunning(row.id)"
                     @click="handleRun(row)"
                   >
                     立即执行
@@ -233,13 +279,63 @@
         </div>
       </template>
     </EnhancedDialog>
+
+    <!-- 上次执行过程：直接读 ai_run_steps，与「AI 办公室」同一份数据 -->
+    <el-dialog
+      v-model="traceVisible"
+      :title="traceTitle"
+      width="640px"
+      append-to-body
+      class="cron-trace-dialog"
+    >
+      <div v-loading="traceLoading" class="cron-trace">
+        <el-timeline v-if="traceSteps.length">
+          <el-timeline-item
+            v-for="st in traceSteps"
+            :key="st.seq"
+            :timestamp="st.time || ''"
+            :type="st.ok === false ? 'danger' : 'primary'"
+            placement="top"
+          >
+            <div class="cron-trace__t">
+              <el-tag size="small" effect="plain" :type="kindMeta(st.kind).type">
+                {{ kindMeta(st.kind).text }}
+              </el-tag>
+              <span class="cron-trace__name">{{ st.title }}</span>
+              <el-tag v-if="st.duration_ms" size="small" effect="plain">
+                {{ fmtSecs(st.duration_ms) }}
+              </el-tag>
+              <el-button
+                v-if="st.detail && st.detail !== st.title"
+                link
+                type="primary"
+                size="small"
+                @click="toggleStep(st)"
+              >
+                {{ st.open ? "收起" : "明细" }}
+              </el-button>
+            </div>
+            <!-- 工具调用：参数 / 结果分开看，等宽字体保留换行 -->
+            <pre v-if="st.open && st.detail" class="cron-trace__pre">{{ st.detail }}</pre>
+          </el-timeline-item>
+        </el-timeline>
+        <el-empty
+          v-else-if="!traceLoading"
+          :description="traceError || '这一轮没有步骤记录'"
+          :image-size="70"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="traceVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { Delete, Edit, Plus, Search, Timer, VideoPlay } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 
 import {
   createWorkspaceCron,
@@ -249,10 +345,17 @@ import {
   updateWorkspaceCron,
   type WorkspaceCronRow,
 } from "@/api/module_ai/workspace";
+import { getOfficeSteps } from "@/api/module_ai/agent";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import TriggerEditor from "@/components/TriggerEditor/index.vue";
 
 defineOptions({ name: "AiCron" });
+
+/** 页面还活着吗：轮询是 fire-and-forget，离开后不该再弹提示 */
+let alive = true;
+onBeforeUnmount(() => {
+  alive = false;
+});
 
 const loading = ref(false);
 const submitLoading = ref(false);
@@ -344,21 +447,117 @@ async function onToggleEnabled(row: WorkspaceCronRow, val: boolean) {
   }
 }
 
+/** 正在跑的定时任务（本地状态：卡片上显示「执行中…」，按钮转圈） */
+const runningIds = ref<number[]>([]);
+function isRunning(id: number): boolean {
+  return runningIds.value.includes(id);
+}
+
 /** 立即执行：二次确认后入队（接口只入队，执行走后台，与调度器同一路径） */
 async function handleRun(row: WorkspaceCronRow) {
-  await ElMessageBox.confirm(
-    `将立即执行一次「${row.name}」，绑定目标会真实运行一次，是否继续？`,
-    "立即执行",
-    { confirmButtonText: "执行", cancelButtonText: "取消", type: "warning" }
-  );
+  try {
+    await ElMessageBox.confirm(
+      `将立即执行一次「${row.name}」，绑定目标会真实运行一次，是否继续？`,
+      "立即执行",
+      { confirmButtonText: "执行", cancelButtonText: "取消", type: "warning" }
+    );
+  } catch {
+    return;   // 点了取消：什么都不做（别把 confirm 的 reject 抛到控制台）
+  }
+  const before = row.last_run_time || "";
   runLoadingId.value = row.id;
   try {
     await runWorkspaceCron(row.id);
-    ElMessage.success("已触发执行");
-    // 状态跃迁后刷新一次（上次运行时间由执行回写，不周期轮询）
-    await loadRows();
+  } catch (e: any) {
+    ElMessage.warning(e?.message || "触发失败");
+    return;
   } finally {
     runLoadingId.value = null;
+  }
+  ElMessage.success("已触发执行，跑完会自动更新这张卡");
+  runningIds.value = [...runningIds.value, row.id];
+  pollCronResult(row.id, before);
+}
+
+/**
+ * 盯住刚触发的那一条：每 3 秒取一次列表，`last_run_time` 变了就**只替换这一张卡**，
+ * 不整表刷新（避免闪烁、丢滚动位置）。最多等 2 分钟，超时就放开按钮等用户手动刷。
+ */
+async function pollCronResult(id: number, before: string) {
+  try {
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      if (!alive) return;   // 用户已经离开这一页：别再打接口、也别弹提示
+      const res: any = await getWorkspaceCronList();
+      const fresh = (res?.data?.data?.items || []).find((x: any) => x.id === id);
+      if (!fresh) break;
+      if ((fresh.last_run_time || "") !== before) {
+        const idx = rows.value.findIndex((r) => r.id === id);
+        if (idx >= 0) rows.value[idx] = { ...rows.value[idx], ...fresh };
+        if (fresh.last_status === "error") {
+          ElMessage.warning(`「${fresh.name}」执行失败：${fresh.last_message || "详见过程"}`);
+        } else {
+          ElMessage.success(`「${fresh.name}」执行完成`);
+        }
+        break;
+      }
+    }
+  } catch {
+    /* 单次拉取失败不打断，继续等 */
+  } finally {
+    runningIds.value = runningIds.value.filter((x) => x !== id);
+  }
+}
+
+/** 步骤类型 → 中文 + 标签色（和后端 ai_run_steps.kind 对应） */
+const KIND_META: Record<string, { text: string; type: TagType }> = {
+  plan: { text: "接活", type: "primary" },
+  tool: { text: "工具", type: "info" },
+  retry: { text: "重试", type: "warning" },
+  summary: { text: "完成", type: "success" },
+  error: { text: "失败", type: "danger" },
+};
+function kindMeta(kind: string): { text: string; type: TagType } {
+  return KIND_META[kind] || { text: kind || "步骤", type: "info" };
+}
+
+/** 展开/收起某一步的明细（工具参数与结果可能很长） */
+function toggleStep(st: any) {
+  st.open = !st.open;
+}
+
+/** 毫秒 → 「12.7 秒」/「820 毫秒」 */
+function fmtSecs(ms: number): string {
+  const v = Number(ms || 0);
+  if (!v) return "";
+  return v < 1000 ? `${v} 毫秒` : `${(v / 1000).toFixed(1)} 秒`;
+}
+
+// ---- 上次执行过程（ai_run_steps，与 AI 办公室同源） ----
+const traceVisible = ref(false);
+const traceLoading = ref(false);
+const traceTitle = ref("");
+const traceSteps = ref<any[]>([]);
+const traceError = ref("");
+
+async function openTrace(row: WorkspaceCronRow) {
+  if (!row.last_run_id) return;
+  traceTitle.value = `执行过程 · ${row.name}`;
+  traceSteps.value = [];
+  traceError.value = "";
+  traceVisible.value = true;
+  traceLoading.value = true;
+  try {
+    const res: any = await getOfficeSteps({ run_id: row.last_run_id, limit: 60 });
+    traceSteps.value = (res?.data?.data || [])
+      .slice()
+      .sort((a: any, b: any) => a.seq - b.seq)
+      .map((x: any) => ({ ...x, open: false }));
+  } catch {
+    traceSteps.value = [];
+    traceError.value = "读取执行过程失败（可能没有 AI 办公室的查看权限）";
+  } finally {
+    traceLoading.value = false;
   }
 }
 
@@ -667,7 +866,54 @@ async function handleSubmit() {
   font-size: 12px;
 }
 
-.ai-cron-page .cron-card__target-id {
+.ai-cron-page /* 上次结果：单行省略，卡片高度保持一致 */
+.cron-card__result .cron-card__value {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cron-card__cost {
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cron-trace__t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--el-text-color-primary);
+}
+.cron-trace__name {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.cron-trace__pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  font-family: var(--el-font-family-mono, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cron-trace__d {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cron-card__target-id {
   color: var(--el-text-color-secondary);
 }
 

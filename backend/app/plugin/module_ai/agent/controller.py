@@ -1,7 +1,7 @@
 """智能体控制器：分类 + 实体 CRUD + 流式运行。"""
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -89,6 +89,114 @@ async def list_agents(
 ) -> JSONResponse:
     return SuccessResponse(
         data=await AiAgentService.list_agents(category_id), msg="查询成功"
+    )
+
+
+@AiAgentRouter.get("/office", summary="AI 办公室：在岗智能体与运行状态")
+async def office_agents(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:office:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiAgentService.office_view(), msg="查询成功")
+
+
+@AiAgentRouter.post("/office/dispatch", summary="AI 办公室：把任务交给组长（agno Team 协同）")
+async def office_dispatch(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:office:dispatch"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    return SuccessResponse(
+        data=await AiAgentService.office_dispatch(str(data.get("text") or ""), uid),
+        msg="已交给组长",
+    )
+
+
+@AiAgentRouter.get("/office/runs", summary="AI 办公室：任务列表（按天筛选 + 分页，可点开看步骤）")
+async def office_runs(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:office:query"]))],
+    page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
+    date: Annotated[str | None, Query(description="只看某一天 YYYY-MM-DD")] = None,
+    days: Annotated[int, Query(ge=1, le=365, description="不传 date 时看最近几天")] = 30,
+    agent_name: Annotated[str | None, Query(description="只看参与过该成员的派活")] = None,
+    status: Annotated[str | None, Query(description="ok / error / running")] = None,
+) -> JSONResponse:
+    from app.plugin.module_ai.logs_center.run_steps import list_runs
+
+    return SuccessResponse(
+        data=await list_runs(page_no, page_size, date, days, agent_name, status),
+        msg="查询成功",
+    )
+
+
+@AiAgentRouter.post("/office/memory/clear", summary="AI 办公室：清空上下文记忆（最近几轮问答）")
+async def office_memory_clear(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:office:dispatch"]))],
+) -> JSONResponse:
+    from app.plugin.module_ai.agent import office_memory
+
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    await office_memory.clear(uid)
+    return SuccessResponse(msg="已清空")
+
+
+@AiAgentRouter.get("/office/steps", summary="AI 办公室：执行步骤时间线（规划/工具/回话/汇总）")
+async def office_steps(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:office:query"]))],
+    run_id: Annotated[str | None, Query(description="一次派活的 run_id")] = None,
+    agent_id: Annotated[int | None, Query(description="只看某个人")] = None,
+    limit: Annotated[int, Query(ge=1, le=200, description="条数")] = 60,
+) -> JSONResponse:
+    from app.plugin.module_ai.logs_center.run_steps import list_steps
+
+    return SuccessResponse(data=await list_steps(run_id, agent_id, limit), msg="查询成功")
+
+
+@AiAgentRouter.get("/office/summary", summary="AI 办公室：今日简报（派活次数/参与人数/谁最忙）")
+async def office_summary(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:office:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiAgentService.office_summary(), msg="查询成功")
+
+
+@AiAgentRouter.post("/office/dispatch/stream", summary="AI 办公室：组长派活（流式：谁派给谁、谁回了什么）")
+async def office_dispatch_stream(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:office:dispatch"]))],
+    data: Annotated[dict, Body()],
+):
+    """SSE 帧：``data: {"type": "delegate" | "reply" | "start" | "done", ...}``。
+
+    办公室据此在运行过程中弹出「组长 → 组员」的对话气泡，而不是等结束后一次性亮。
+    """
+    import json
+
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    text = str(data.get("text") or "")
+
+    async def _gen():
+        try:
+            async for frame in AiAgentService.office_dispatch_stream(text, uid):
+                yield f"data: {json.dumps(frame, ensure_ascii=False, default=str)}\n\n"
+        except Exception as e:  # noqa: BLE001
+            yield "data: " + json.dumps(
+                {"type": "done", "ok": False, "error": str(e)[:200]}, ensure_ascii=False
+            ) + "\n\n"
+
+    from app.core.sse import sse_response
+
+    return sse_response(_gen(), extra_headers={"Connection": "keep-alive"})
+
+
+@AiAgentRouter.post("/office/dispatch/{agent_id}", summary="AI 办公室：点名给某个智能体派活")
+async def office_dispatch_one(
+    agent_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:office:dispatch"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    return SuccessResponse(
+        data=await AiAgentService.office_dispatch_one(agent_id, str(data.get("text") or ""), uid),
+        msg="已派给他",
     )
 
 

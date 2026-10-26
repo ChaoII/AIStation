@@ -61,6 +61,7 @@ def build_agent(
     name: str | None = None,
     db=None,
     skills=None,
+    tool_call_limit: int | None = None,
 ) -> Agent:
     """构建装配好统一业务工具的 Agno ``Agent``。
 
@@ -106,4 +107,7 @@ def build_agent(
         kwargs["db"] = db
     if skills is not None:
         kwargs["skills"] = skills
+    if tool_call_limit is not None:
+        # 工具调用上限：防止模型对着同一个失败的工具反复重试，把一轮拖到几分钟
+        kwargs["tool_call_limit"] = int(tool_call_limit)
     return Agent(**kwargs)

@@ -59,6 +59,51 @@ pnpm run lint                  # eslint + prettier + stylelint
   ⚠️ **别用 `-n 8`**（实测反而 256s：每个 worker 都要构造应用，CPU 争抢）。
   `pytest-xdist` 已加入 dev 依赖（`uv.lock` 仅新增 `pytest-xdist` + `execnet`，未升级其它包）。
 
+### 首次跑测试 / 新建 worktree 必看（2026-10 实测）
+
+worktree 里**没有 `backend/.venv`、没有 `backend/env/.env.dev`**（都被 gitignore），直接 `pytest` 会
+`ModuleNotFoundError: sqlalchemy`；拷了 env 但不禁验证码，又会挂在 `auth_headers` 夹具：
+
+```
+ERROR tests/test_office_dispatch.py ... AssertionError: {"msg":"验证码不能为空"}
+```
+
+三步走（缺一不可）：
+
+```powershell
+cd backend
+# 1) 建 venv + 装依赖（走清华源，实测可用）
+uv sync --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+# 2) 从主检出拷 env（主库在 D:\AIStation，PG 在 127.0.0.1:5432）
+Copy-Item D:\AIStation\backend\env\.env.dev .\env\.env.dev
+# 3) 关掉验证码再跑（.env.dev 里 CAPTCHA_ENABLE 已是 false，环境变量兜底）
+$env:CAPTCHA_ENABLE="false"; .\.venv\Scripts\python.exe -m pytest tests/test_xxx.py -q
+```
+
+**起后端做联调时不要用 `.env.dev` 里的 8002**（那是别人在跑的服务）：`$env:SERVER_PORT="8011"` +
+`--no-reload` 起第二个实例，用完按端口杀干净（`Get-NetTCPConnection -LocalPort 8011`）。
+
+### 在 worktree 里跑前端（2026-10 实测）
+
+worktree 同样没有 `frontend/node_modules` 和 `frontend/.env.development`。`pnpm install` 会因为
+`mpegts.js` 依赖一个 GitHub git 地址而失败（离线/代理不通时）。可行做法：
+
+```powershell
+# 1) 拷 env（主检出 D:\AIStation）
+Copy-Item D:\AIStation\frontend\.env.development .\frontend\.env.development
+# 2) node_modules 用 junction 指向主检出（robocopy 会破坏 pnpm 的符号链接，vite 起不来）
+cmd /c mklink /J .\frontend\node_modules D:\AIStation\frontend\node_modules
+# 3) 新依赖（如 three）手工放进目标目录，否则解析不到
+#    （package.json 里已声明，用户本地 pnpm install 后即可去掉这步）
+# 4) 起在别的端口，绝不占 5181
+cd frontend; node_modules\.bin\vite.cmd --port 5182 --strictPort
+```
+
+⚠️ junction 指向的是**主检出的 node_modules**，在 worktree 里 `pnpm install` 会写进主仓库；
+测试完记得 `cmd /c rmdir .\frontend\node_modules`（只删链接，不动目标）。
+
+
+
 ## 国内镜像源（**强制**，apt / pip / 任何拉取）
 
 ### 用户原话（要求原样记录，不得改写）

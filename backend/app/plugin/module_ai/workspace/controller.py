@@ -138,7 +138,10 @@ async def cron_run(
     目标（agent/workflow/app）执行可能耗时，故放后台任务执行、接口只负责入队，
     避免长运行占住 HTTP 请求直到超时。
     """
-    ok = await WorkspaceService.trigger_cron(cron_id, background_tasks)
-    if not ok:
+    state = await WorkspaceService.trigger_cron(cron_id, background_tasks)
+    if state == "missing":
         return ErrorResponse(msg="定时任务不存在")
+    if state == "running":
+        # 同一任务串行：连点两下不能真的跑两遍
+        return ErrorResponse(msg="上一轮还在执行，等它跑完再试")
     return SuccessResponse(msg="已触发执行")

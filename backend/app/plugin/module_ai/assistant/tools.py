@@ -8,7 +8,7 @@ from __future__ import annotations
 import contextvars
 from datetime import datetime
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from app.core.database import async_db_session
 
@@ -102,14 +102,27 @@ async def get_dataset_stats(dataset_id: int) -> dict:
     return data or {"error": f"数据集 {dataset_id} 不存在"}
 
 
-async def _rows(stmt, mapper, limit: int = 50) -> list[dict]:
+async def _rows(stmt, mapper, limit: int = 50) -> dict:
+    """列表明细 + **真实总数**。
+
+    为什么必须带 total：明细最多回 50 条（模型常传 limit=1000，整表回灌会撑爆上下文），
+    但只给明细的话模型会把"返回了 50 条"当成"一共 50 个"，
+    于是出现"数据集 50 个 / 273 个"这种自相矛盾的结论（实测踩过）。
+    """
     async with async_db_session() as db:
-        rows = (await db.execute(stmt.limit(max(1, min(limit, 100))))).scalars().all()
-    return [mapper(r) for r in rows]
+        total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+        rows = (await db.execute(stmt.limit(max(1, min(limit, 50))))).scalars().all()
+    items = [mapper(r) for r in rows]
+    return {
+        "total": int(total),
+        "returned": len(items),
+        "truncated": int(total) > len(items),
+        "items": items,
+    }
 
 
-@tool("list_datasets", "列出数据集（ID/名称/图片数/时间）", _obj({"limit": {"type": "integer"}}))
-async def list_datasets(limit: int = 50) -> list[dict]:
+@tool("list_datasets", "列出数据集（ID/名称/图片数/时间）（返回 total=真实总数，items 最多 50 条明细）", _obj({"limit": {"type": "integer"}}))
+async def list_datasets(limit: int = 50) -> dict:
     from app.api.v1.module_annotation.dataset.model import DatasetModel
 
     return await _rows(
@@ -124,8 +137,8 @@ async def list_datasets(limit: int = 50) -> list[dict]:
     )
 
 
-@tool("list_annotation_tasks", "列出标注任务", _obj({"limit": {"type": "integer"}}))
-async def list_annotation_tasks(limit: int = 50) -> list[dict]:
+@tool("list_annotation_tasks", "列出标注任务（返回 total=真实总数，items 最多 50 条明细）", _obj({"limit": {"type": "integer"}}))
+async def list_annotation_tasks(limit: int = 50) -> dict:
     from app.api.v1.module_annotation.task.model import AnnotationTaskModel
 
     return await _rows(
@@ -137,8 +150,8 @@ async def list_annotation_tasks(limit: int = 50) -> list[dict]:
     )
 
 
-@tool("list_train_tasks", "列出训练任务", _obj({"limit": {"type": "integer"}}))
-async def list_train_tasks(limit: int = 50) -> list[dict]:
+@tool("list_train_tasks", "列出训练任务（返回 total=真实总数，items 最多 50 条明细）", _obj({"limit": {"type": "integer"}}))
+async def list_train_tasks(limit: int = 50) -> dict:
     from app.plugin.module_train.model import TrainTask
 
     return await _rows(
@@ -154,8 +167,13 @@ async def list_train_tasks(limit: int = 50) -> list[dict]:
     )
 
 
-@tool("list_models", "列出模型仓库/版本", _obj({"limit": {"type": "integer"}}))
-async def list_models(limit: int = 50) -> list[dict]:
+@tool(
+    "list_models",
+    "列出**训练产出的模型**（模型仓库/版本，训练任务的结果文件）。"
+    "注意：问「平台配置了哪些大模型 / 模型供应商下的模型」请用 list_ai_models。",
+    _obj({"limit": {"type": "integer"}}),
+)
+async def list_models(limit: int = 50) -> dict:
     from app.plugin.module_train.model import TrainModel
 
     return await _rows(
@@ -171,8 +189,31 @@ async def list_models(limit: int = 50) -> list[dict]:
     )
 
 
-@tool("list_evals", "列出模型评估记录", _obj({"limit": {"type": "integer"}}))
-async def list_evals(limit: int = 50) -> list[dict]:
+@tool(
+    "list_ai_models",
+    "列出**平台已配置的大模型**（模型供应商下的模型配置，含用途/上下文长度）。"
+    "问「系统有多少个大模型 / 有哪些模型可用」用这个；训练产出的模型用 list_models。",
+    _obj({"limit": {"type": "integer"}}),
+)
+async def list_ai_models(limit: int = 50) -> dict:
+    from app.plugin.module_ai.models.model import AiModelModel
+
+    return await _rows(
+        select(AiModelModel)
+        .where(AiModelModel.is_deleted.is_(False))
+        .order_by(desc(AiModelModel.id)),
+        lambda r: {
+            "id": r.id,
+            "name": r.name,
+            "usage": r.usage,
+            "context_window": r.context_window,
+        },
+        limit,
+    )
+
+
+@tool("list_evals", "列出模型评估记录（返回 total=真实总数，items 最多 50 条明细）", _obj({"limit": {"type": "integer"}}))
+async def list_evals(limit: int = 50) -> dict:
     from app.plugin.module_train.model import TrainEval
 
     return await _rows(
@@ -187,8 +228,8 @@ async def list_evals(limit: int = 50) -> list[dict]:
     )
 
 
-@tool("list_predicts", "列出批量预测任务", _obj({"limit": {"type": "integer"}}))
-async def list_predicts(limit: int = 50) -> list[dict]:
+@tool("list_predicts", "列出批量预测任务（返回 total=真实总数，items 最多 50 条明细）", _obj({"limit": {"type": "integer"}}))
+async def list_predicts(limit: int = 50) -> dict:
     from app.plugin.module_train.model import TrainPredict
 
     return await _rows(
@@ -198,8 +239,8 @@ async def list_predicts(limit: int = 50) -> list[dict]:
     )
 
 
-@tool("list_deploys", "列出模型部署", _obj({"limit": {"type": "integer"}}))
-async def list_deploys(limit: int = 50) -> list[dict]:
+@tool("list_deploys", "列出模型部署（返回 total=真实总数，items 最多 50 条明细）", _obj({"limit": {"type": "integer"}}))
+async def list_deploys(limit: int = 50) -> dict:
     from app.plugin.module_train.model import TrainDeploy
 
     return await _rows(
@@ -209,8 +250,8 @@ async def list_deploys(limit: int = 50) -> list[dict]:
     )
 
 
-@tool("list_cameras", "列出摄像头", _obj({"limit": {"type": "integer"}}))
-async def list_cameras(limit: int = 50) -> list[dict]:
+@tool("list_cameras", "列出摄像头（返回 total=真实总数，items 最多 50 条明细）", _obj({"limit": {"type": "integer"}}))
+async def list_cameras(limit: int = 50) -> dict:
     from app.api.v1.module_video.camera.model import CameraModel
 
     return await _rows(
@@ -220,8 +261,8 @@ async def list_cameras(limit: int = 50) -> list[dict]:
     )
 
 
-@tool("list_algorithm_tasks", "列出视频布控任务", _obj({"limit": {"type": "integer"}}))
-async def list_algorithm_tasks(limit: int = 50) -> list[dict]:
+@tool("list_algorithm_tasks", "列出视频布控任务（返回 total=真实总数，items 最多 50 条明细）", _obj({"limit": {"type": "integer"}}))
+async def list_algorithm_tasks(limit: int = 50) -> dict:
     from app.api.v1.module_video.algorithm.model import AlgorithmTaskModel
 
     return await _rows(
@@ -233,8 +274,8 @@ async def list_algorithm_tasks(limit: int = 50) -> list[dict]:
     )
 
 
-@tool("list_alarm_records", "列出最近告警记录", _obj({"limit": {"type": "integer"}}))
-async def list_alarm_records(limit: int = 50) -> list[dict]:
+@tool("list_alarm_records", "列出最近告警记录（返回 total=真实总数，items 最多 50 条明细）", _obj({"limit": {"type": "integer"}}))
+async def list_alarm_records(limit: int = 50) -> dict:
     from app.api.v1.module_video.alarm.model import AlarmRecordModel
 
     return await _rows(

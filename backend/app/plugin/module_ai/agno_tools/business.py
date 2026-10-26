@@ -42,8 +42,13 @@ def _inject_user_id(fn):
 
     返回的 wrapper 保留原签名（除 user_id）与文档，Agno ``@tool`` 据此
     生成正确的参数 schema 与描述；模型不会看到 user_id 参数。
+
+    函数本身**没有** ``user_id`` 形参时原样返回——否则会平白多传一个关键字，
+    工具一调用就报 ``got an unexpected keyword argument 'user_id'``。
     """
     sig = inspect.signature(fn)
+    if "user_id" not in sig.parameters:
+        return fn
     params = [p for p in sig.parameters.values() if p.name != "user_id"]
     new_sig = sig.replace(parameters=params)
 

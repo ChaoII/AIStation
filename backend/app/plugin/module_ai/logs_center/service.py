@@ -247,7 +247,9 @@ class AiLogService:
         }
 
     @classmethod
-    async def stats_by_app(cls, usage: str = "agent") -> dict[int, dict]:
+    async def stats_by_app(
+        cls, usage: str = "agent", since: datetime | None = None
+    ) -> dict[int, dict]:
         """按 ``app_id`` 聚合调用量/错误数/平均延迟（跨模块取数入口）。
 
         职责边界：``ai_call_logs`` 的读取/统计**只在本模块实现**，其他模块（如 Agent
@@ -269,6 +271,7 @@ class AiLogService:
                             AiCallLogModel.usage == usage,
                             AiCallLogModel.app_id.isnot(None),
                             AiCallLogModel.is_deleted.is_(False),
+                            *([AiCallLogModel.created_time >= since] if since else []),
                         )
                         .group_by(AiCallLogModel.app_id)
                     )
@@ -282,6 +285,41 @@ class AiLogService:
                 "errors": int(r[2] or 0),
                 "avg_latency": int(r[3] or 0),
             }
+        return out
+
+    @classmethod
+    async def last_active_by_app(
+        cls, usage: str = "agent", since: datetime | None = None
+    ) -> dict[int, datetime]:
+        """每个 ``app_id`` 最后一次调用时间（AI 办公室判断“在忙”用）。
+
+        职责边界同 ``stats_by_app``：调用日志只在本模块读。按 ``usage`` 过滤，
+        避免 AI 应用（usage=app）与智能体（usage=agent）的 id 撞号后误判。
+        """
+        out: dict[int, datetime] = {}
+        try:
+            async with async_db_session() as db:
+                rows = (
+                    await db.execute(
+                        select(
+                            AiCallLogModel.app_id,
+                            func.max(AiCallLogModel.created_time).label("last"),
+                        )
+                        .where(
+                            AiCallLogModel.usage == usage,
+                            AiCallLogModel.app_id.isnot(None),
+                            AiCallLogModel.is_deleted.is_(False),
+                            *([AiCallLogModel.created_time >= since] if since else []),
+                        )
+                        .group_by(AiCallLogModel.app_id)
+                    )
+                ).fetchall()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[logs_center] 取最近调用时间失败: {str(e)[:120]}")
+            return out
+        for r in rows:
+            if r[0] is not None and r[1] is not None:
+                out[int(r[0])] = r[1]
         return out
 
     @staticmethod
@@ -371,6 +409,7 @@ class AiLogService:
         return [
             {
                 "id": r.id,
+                "app_id": r.app_id,
                 "model": r.model_name,
                 "usage": r.usage,
                 "latency_ms": r.latency_ms,

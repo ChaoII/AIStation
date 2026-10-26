@@ -110,6 +110,20 @@ export interface WorkspaceCronRow {
   enabled: boolean;
   last_run_time?: string | null;
   next_run_time?: string | null;
+  /** 上次执行结果：success / error（历史行可能为空） */
+  last_status?: string;
+  /** 上次耗时（毫秒） */
+  last_duration_ms?: number;
+  /** 上次执行摘要（成功是正文前 300 字，失败是错误信息） */
+  last_message?: string;
+  /** 上次执行的 run_id，可据此打开执行过程 */
+  last_run_id?: string;
+  /** 连续失败次数（成功清零） */
+  fail_streak?: number;
+  /** 是否因连续失败被自动停用 */
+  auto_disabled?: boolean;
+  /** 自动停用的失败次数阈值（后端下发，前端别写死） */
+  fail_limit?: number;
   /** 按新校验不通过（或迁移被跳过）：需人工确认，否则「有任务但调度不上」静默停摆 */
   needs_review?: boolean;
 }

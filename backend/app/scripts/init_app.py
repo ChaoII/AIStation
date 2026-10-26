@@ -672,6 +672,11 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:workspace:create", "新建工作台条目"),
     ("module_ai:workspace:update", "编辑工作台条目"),
     ("module_ai:workspace:delete", "删除工作台条目"),
+    # AI 办公室（3D 视图，只读展示在岗智能体）
+    ("module_ai:office:query", "访问 AI 办公室"),
+    ("module_ai:office:dispatch", "向办公室组长派活"),
+    # 审批中心（动作写回 + 本体发布）
+    ("module_ai:approval:query", "访问审批中心"),
     # 定时任务（独立菜单页；接口仍挂 /ai/workspace/cron/* 前缀，权限与工作台分离）
     ("module_ai:cron:query", "访问定时任务"),
     ("module_ai:cron:create", "新建定时任务"),
@@ -849,10 +854,12 @@ async def _ensure_ai_menus() -> None:
 
             pages = [
                 # 工作台 / 定时任务为独立模块，拉平在 AI 顶层（order 5/6，紧挨在一起）
+                ("AI 办公室", "AiOffice", "/ai/office", "module_ai/office/index", "module_ai:office:query", 4, "el-icon-School"),
                 ("工作台", "AiWorkbench", "/ai/workspace", "module_ai/workspace/index", "module_ai:workspace:query", 5, "el-icon-OfficeBuilding"),
                 ("定时任务", "AiCron", "/ai/cron", "module_ai/cron/index", "module_ai:cron:query", 6, "el-icon-Timer"),
                 ("个人工作空间", "AiPersonalSpace", "/ai/space", "module_ai/space/index", "module_ai:space:query", 8, "el-icon-FolderOpened"),
                 ("空间扩容审核", "AiSpaceQuota", "/ai/space/quota", "module_ai/space/quota-review", "module_ai:space:quota_review", 12, "el-icon-DataAnalysis"),
+                ("审批中心", "AiApproval", "/ai/approval", "module_ai/approval/index", "module_ai:approval:query", 13, "el-icon-Checked"),
                 ("AI 控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 7, "el-icon-Odometer"),
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10, "el-icon-Cpu"),
                 ("知识库", "AiKnowledge", "/ai/knowledge", "module_ai/knowledge/index", "module_ai:knowledge:query", 14, "el-icon-Collection"),

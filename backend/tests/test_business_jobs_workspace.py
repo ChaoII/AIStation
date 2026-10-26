@@ -402,8 +402,9 @@ def test_run_scheduled_workspace_cron_executes_now_row(monkeypatch, test_client,
 
     calls: list[tuple] = []
 
-    async def _fake_run_target(target_type: str, target_id: int) -> None:
+    async def _fake_run_target(target_type: str, target_id: int):
         calls.append((target_type, target_id))
+        return "", None, []   # 契约：返回 (正文摘要, 错误信息, 工具调用明细)
 
     monkeypatch.setattr(WorkspaceService, "_run_target", staticmethod(_fake_run_target))
     try:
@@ -449,8 +450,9 @@ def test_run_scheduled_workspace_cron_still_skips_row_without_trigger(
     cid = _insert_cron_row("cron", None, enabled=True)
     calls: list[tuple] = []
 
-    async def _fake_run_target(target_type: str, target_id: int) -> None:
+    async def _fake_run_target(target_type: str, target_id: int):
         calls.append((target_type, target_id))
+        return "", None, []   # 契约：返回 (正文摘要, 错误信息, 工具调用明细)
 
     monkeypatch.setattr(WorkspaceService, "_run_target", staticmethod(_fake_run_target))
     try:
