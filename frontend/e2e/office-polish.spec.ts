@@ -17,8 +17,9 @@ import { memberNames, mockDispatch, openOffice, readCam, spyFocus } from "./offi
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
-/* 办公室要加载 3D 模型 + 等场景就位，机器忙的时候 60 秒不够（实测偶发超时） */
-test.describe.configure({ timeout: 90_000 });
+/* 办公室要加载 3D 模型 + 等场景就位；引导那条还要 reload 一次（两次整页加载），
+   机器忙的时候 90 秒会不够（实测偶发超时），给到 150 秒 */
+test.describe.configure({ timeout: 150_000 });
 
 test("引导：首次出现三步、关闭后不再自动出现、菜单可重看", async ({
   page,
@@ -251,6 +252,48 @@ test("蹦迪：上 2F 后 1F 看不到他们的名牌；清场后全部回座且
   expect(after.kinds.every((k) => k !== "dance")).toBe(true);
 });
 
+test("生活感：接水/打印跑腿、两人站着聊天，都会自己回座", async ({
+  page,
+  request,
+  baseURL
+}) => {
+  test.setTimeout(120_000);
+  await openOffice(page, request, baseURL!);
+  const hasOffice = await page.evaluate(() => Boolean((window as any).__office));
+  test.skip(!hasOffice, "当前构建没有 __office 探针（非 dev）");
+
+  const snap = () =>
+    page.evaluate(() => {
+      const o = (window as any).__office;
+      const names = Array.from(document.querySelectorAll(".m-row .n")).map(
+        (e) => (e.textContent || "").trim().split("\n")[0]
+      );
+      const st = names.map((n) => o.debugPerson(n)).filter(Boolean) as Array<{
+        trip: { kind: string } | null;
+        chatting: boolean;
+        talking: boolean;
+      }>;
+      return {
+        trips: st.filter((d) => d.trip).map((d) => d.trip!.kind),
+        chatting: st.filter((d) => d.chatting).length,
+        talking: st.filter((d) => d.talking).length
+      };
+    });
+
+  // 跑腿（接水/打印）：安排一个 → 站一会儿 → 自己回座
+  expect(await page.evaluate(() => (window as any).__office.errandNow())).toBe(1);
+  await expect.poll(() => snap().then((s) => s.trips.length), { timeout: 15_000 }).toBe(1);
+  const kind = (await snap()).trips[0];
+  expect(["water", "printer"]).toContain(kind);
+  await expect.poll(() => snap().then((s) => s.trips.length), { timeout: 25_000 }).toBe(0);
+
+  // 两人聊天：安排两个人 → 有说话动作 → 自己回座
+  expect(await page.evaluate(() => (window as any).__office.chatNow())).toBe(2);
+  await expect.poll(() => snap().then((s) => s.chatting), { timeout: 15_000 }).toBe(2);
+  await expect.poll(() => snap().then((s) => s.talking), { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect.poll(() => snap().then((s) => s.chatting), { timeout: 25_000 }).toBe(0);
+});
+
 test("粘底：上滑后不再被拽回，出现「回到最新」并能回到底部", async ({
   page,
   request,
@@ -259,9 +302,16 @@ test("粘底：上滑后不再被拽回，出现「回到最新」并能回到�
   await page.setViewportSize({ width: 1440, height: 620 });
   await openOffice(page, request, baseURL!);
   await page.locator(".of-tab", { hasText: "任务" }).click();
-  const first = page.locator(".tl-item").first();
-  test.skip((await first.count()) === 0, "还没有历史 run，跳过（先派一次活）");
-  await first.click();
+  const items = page.locator(".tl-item");
+  test.skip((await items.count()) === 0, "还没有历史 run，跳过（先派一次活）");
+  /* 挑步数最多的那一轮：步骤太少面板撑不满，粘底测不出来（会误跳过） */
+  const counts = await items.evaluateAll((els) =>
+    els.map((el) => {
+      const m = (el.querySelector(".tl-m")?.textContent || "").match(/(\d+)\s*步/);
+      return m ? Number(m[1]) : 0;
+    })
+  );
+  await items.nth(counts.indexOf(Math.max(...counts))).click();
   await expect(page.locator(".of-trace")).toBeVisible({ timeout: 20_000 });
 
   const toggle = page.locator(".of-thead .of-linkbtn");

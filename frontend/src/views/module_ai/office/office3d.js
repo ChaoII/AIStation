@@ -4530,6 +4530,7 @@ export function createOffice(opts) {
       if (acted) break;
       if (!r.seat || r.temp) continue;
       if (r.data.isLeader) continue;              // 组长钉在自己的位置，不摸鱼
+      if (r.trip || r.chatting) continue;         // 正在跑腿/聊天：别被"去休息区"打断
       if (r.data.status !== 'idle') { r.roamSec = 0; continue; }
       if (r.path && r.wp < r.path.length) continue; // 正在走路，别打断
 
@@ -4554,6 +4555,97 @@ export function createOffice(opts) {
         acted = true;
       }
     }
+  }
+
+  /* ================= 生活感：接水/打印 跑腿 + 两人站着聊两句 ================= */
+  /** 跑腿点：都取 STAND 里的空位（保证可走），语义上靠近饮水机 / 打印机 */
+  const ERRANDS = [
+    { key: 'water', p: [3.0, 3.9], ry: Math.PI, ms: [5000, 9000] },       // 咖啡吧/饮水机
+    { key: 'printer', p: [5.8, 0.4], ry: -Math.PI / 2, ms: [5000, 9000] } // 打印区
+  ];
+  /** 聊天位：两两成对、面对面（STAND 里的空位，间距约 1.2） */
+  const CHAT_PAIRS = [
+    [[-3.5, 4.3], [-2.3, 4.3]],
+    [[0.4, 2.4], [1.6, 2.4]],
+    [[-0.4, -3.7], [0.7, -3.7]]
+  ];
+  let errandClock = 0;
+  let chatClock = 0;
+
+  /** 能安排"小动作"的人：待命、坐着、没在走路、没在跑腿/聊天 */
+  function idlePool() {
+    return agents.filter(r =>
+      !r.temp && r.seat && !r.onDance && !r.trip && !r.chatting &&
+      !r.homeSeat && r.data.status === 'idle' && !r.data.isLeader &&
+      !(r.path && r.wp < r.path.length)
+    );
+  }
+
+  /** 结束跑腿/聊天：清标记并回自己的座位 */
+  function cancelTrip(rec, goHome = true) {
+    const home = rec.trip && rec.trip.home;
+    rec.trip = null;
+    rec.chatting = false;
+    rec.holdSeat = false;
+    rec.homeSeat = null;
+    if (goHome && home) moveTo(rec, home);
+  }
+
+  /** 每隔一阵挑一个闲着的人去接水 / 打印，站几秒再回来 */
+  function maybeErrand() {
+    const pool = idlePool().filter(
+      (r) => r.seat.kind === 'desk' && !(r.errandAt && nowT - r.errandAt < 100)
+    );
+    if (!pool.length) return;
+    const rec = pool[Math.floor(Math.random() * pool.length)];
+    const job = ERRANDS[Math.floor(Math.random() * ERRANDS.length)];
+    rec.errandAt = nowT;
+    rec.trip = { home: rec.seat, kind: job.key };
+    rec.holdSeat = true;
+    moveTo(rec, {
+      key: 'errand-' + job.key,
+      kind: 'errand',
+      floor: 1,
+      p: job.p,
+      pose: 'stand',
+      ry: job.ry
+    });
+    const stay = job.ms[0] + Math.random() * (job.ms[1] - job.ms[0]);
+    window.setTimeout(() => { if (rec.trip) cancelTrip(rec); }, stay);
+  }
+
+  /** 偶尔两个人站到一起聊几句：只做说话动作（点头/手势），不编造气泡内容 */
+  function maybeChat() {
+    const pool = idlePool();
+    if (pool.length < 2) return;
+    const shuffled = pool.slice().sort(() => Math.random() - 0.5);
+    const r1 = shuffled[0];
+    const r2 = shuffled[1];
+    const pair = CHAT_PAIRS[Math.floor(Math.random() * CHAT_PAIRS.length)];
+    const [p1, p2] = pair;
+    const face = (from, to) => Math.atan2(to[0] - from[0], to[1] - from[1]);
+    [[r1, p1, p2], [r2, p2, p1]].forEach(([rec, mine, other]) => {
+      rec.chatting = true;
+      rec.trip = { home: rec.seat, kind: 'chat' };
+      rec.holdSeat = true;
+      moveTo(rec, {
+        key: 'chat',
+        kind: 'chat',
+        floor: 1,
+        p: mine,
+        pose: 'stand',
+        ry: face(mine, other)
+      });
+    });
+    /* 走过去站定（约 2.6 秒）再开始"说话"，聊 9 秒左右各自回座 */
+    const until = nowT + 12;
+    window.setTimeout(() => {
+      r1.talkUntil = until;
+      r2.talkUntil = until;
+    }, 2600);
+    window.setTimeout(() => {
+      [r1, r2].forEach(rec => { if (rec.trip) cancelTrip(rec); });
+    }, 12000);
   }
 
   /**
@@ -4655,6 +4747,7 @@ export function createOffice(opts) {
     if (nowT < partyMuteUntil) return;
     const idle = agents.filter(r =>
       !r.temp && !r.data.isLeader && r.data.status === 'idle' && !r.onDance &&
+      !r.trip && !r.chatting &&
       !(r.path && r.wp < r.path.length)
     );
     const dancing = agents.filter(r => r.onDance).length;
@@ -4674,6 +4767,7 @@ export function createOffice(opts) {
     agents.forEach(r => { if (r.onDance) free.delete(r.seat.key); });
     const pool = agents.filter(r =>
       !r.temp && !r.data.isLeader && r.data.status === 'idle' && !r.onDance &&
+      !r.trip && !r.chatting &&
       !(r.path && r.wp < r.path.length)
     );
     let n = 0;
@@ -5216,6 +5310,13 @@ export function createOffice(opts) {
     if (t - roamClock >= 1) {
       roamClock = t;
       maybeRoam();
+      /* 生活感：接水/打印（平均 ~45 秒一次）、两人站着聊两句（~70 秒一次） */
+      if (Math.random() < 1 / 45) maybeErrand();
+      if (Math.random() < 1 / 70) maybeChat();
+      /* 有活干了的人：把跑腿/聊天收掉，别让人在饮水机旁边干活 */
+      agents.forEach(r => {
+        if ((r.trip || r.chatting) && r.data.status !== 'idle') cancelTrip(r);
+      });
     }
     if (t - partyClock >= 25) {
       partyClock = t;
@@ -5883,6 +5984,15 @@ export function createOffice(opts) {
     controls,
     stairPos: () => project(STAIR.x, (currentFloor === 2 ? FLOOR_H : 0) + 1.18, STAIR.z),
     floor: () => currentFloor,
+    /** 验收用：立刻安排一次跑腿（接水/打印）/ 两人聊天，不等随机 */
+    errandNow: () => {
+      maybeErrand();
+      return agents.filter((r) => r.trip && r.trip.kind !== 'chat').length;
+    },
+    chatNow: () => {
+      maybeChat();
+      return agents.filter((r) => r.chatting).length;
+    },
     /**
      * 排查用：某个人的运行时状态（座位 / 姿态 / 当前动画 / 楼层标记统计）。
      * 楼层相关的 bug（人在 2F、身上还有零件算 1F）靠它定位，别删。
@@ -5911,6 +6021,14 @@ export function createOffice(opts) {
         targetPose: r.targetPose,
         onDance: !!r.onDance,
         singing: !!r.singing,
+        /* 生活感小动作：跑腿（接水/打印）、两人聊天 */
+        trip: r.trip ? { kind: r.trip.kind } : null,
+        chatting: !!r.chatting,
+        talking: !!(r.talkUntil && nowT < r.talkUntil),
+        homeSeat: r.homeSeat ? r.homeSeat.key : null,
+        hasPath: !!(r.path && r.wp < r.path.length),
+        errandAt: r.errandAt || 0,
+        nowT: +nowT.toFixed(0),
         action: r.person.currentAction ? r.person.currentAction() : null,
         y: +r.person.root.position.y.toFixed(2),
         floor: r.person.root.userData.floor || 1,

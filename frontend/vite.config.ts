@@ -42,6 +42,11 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
       host: true,
       port: Number(env.VITE_APP_PORT),
       open: true,
+      /* e2e 产物目录不参与监听：Playwright 跑用例时会往里写 trace/截图/报告，
+         被 vite 当成源码变更就会给正在被测的页面发 reload，用例随机超时（实测踩过） */
+      watch: {
+        ignored: ["**/test-results/**", "**/playwright-report/**"],
+      },
       proxy: {
         [env.VITE_APP_BASE_API]: {
           target: env.VITE_API_BASE_URL,
