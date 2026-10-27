@@ -4916,7 +4916,49 @@ export function createOffice(opts) {
     rec.chatting = false;
     rec.holdSeat = false;
     rec.homeSeat = null;
+    rec.visiting = false;
     if (goHome && home) moveTo(rec, home);
+  }
+
+  /** 工位间拜访：一个空闲同事走到另一个正在工位工作的同事旁边站一下（递文件/打招呼），再回座 */
+  function maybeVisit() {
+    /* 拜访者：空闲（idle）、坐工位、当前没在走路/跑腿/聊天的 desk 同事 */
+    const visitors = agents.filter(r =>
+      !r.temp && r.seat && r.seat.kind === 'desk' &&
+      r.data.status === 'idle' && !r.trip && !r.chatting && !r.onDance &&
+      !(r.path && r.wp < r.path.length));
+    if (!visitors.length) return;
+    /* 被访者：正在忙碌、坐工位的 desk 同事（别去打扰休息区/在走的人） */
+    const targets = agents.filter(r =>
+      !r.temp && r.seat && r.seat.kind === 'desk' && r.data.status === 'busy' && !r.trip && !r.chatting);
+    if (!targets.length) return;
+    const visitor = visitors[Math.floor(Math.random() * visitors.length)];
+    const target = targets[Math.floor(Math.random() * targets.length)];
+    /* 若拜访者与被访者是同一人不成立（visitors、targets 按 status 互斥：idle vs busy） */
+    const [tx, tz] = target.seat.p;
+    const [vx, vz] = visitor.seat.p;
+    /* 站在被访者工位的一侧，保持一点距离，面向工位 */
+    const ang = Math.atan2(vx - tx, vz - tz);
+    const px = tx + Math.sin(ang) * 0.9, pz = tz + Math.cos(ang) * 0.9;
+    const face = Math.atan2(tx - px, tz - pz);
+    visitor.trip = { home: visitor.seat, kind: 'visit' };
+    visitor.holdSeat = true;
+    visitor.visiting = true;
+    moveTo(visitor, {
+      key: 'visit',
+      kind: 'visit',
+      floor: (target.seat.floor || 1),
+      p: [px, pz],
+      pose: 'stand',
+      ry: face
+    });
+    /* 走到（约 2.6 秒）后站 6~9 秒"递文件/交流"，再回座 */
+    const stay = 6000 + Math.random() * 3000;
+    window.setTimeout(() => {
+      target.talkUntil = nowT + 3;
+      visitor.talkUntil = nowT + stay / 1000;
+    }, 2600);
+    window.setTimeout(() => { if (visitor.trip) cancelTrip(visitor); }, 2600 + stay);
   }
 
   /** 每隔一阵挑一个闲着的人去接水 / 打印，站几秒再回来 */
@@ -5672,9 +5714,10 @@ export function createOffice(opts) {
     if (t - roamClock >= 1) {
       roamClock = t;
       maybeRoam();
-      /* 生活感：接水/打印（平均 ~45 秒一次）、两人站着聊两句（~70 秒一次） */
+      /* 生活感：接水/打印（平均 ~45 秒一次）、两人站着聊两句（~70 秒一次）、工位间拜访（~55 秒一次） */
       if (Math.random() < 1 / 45) maybeErrand();
       if (Math.random() < 1 / 70) maybeChat();
+      if (Math.random() < 1 / 55) maybeVisit();
       /* 有活干了的人：把跑腿/聊天收掉，别让人在饮水机旁边干活 */
       agents.forEach(r => {
         if ((r.trip || r.chatting) && r.data.status !== 'idle') cancelTrip(r);
@@ -6437,6 +6480,10 @@ export function createOffice(opts) {
     chatNow: () => {
       maybeChat();
       return agents.filter((r) => r.chatting).length;
+    },
+    visitNow: () => {
+      maybeVisit();
+      return agents.filter((r) => r.visiting).length;
     },
     /**
      * 排查用：某个人的运行时状态（座位 / 姿态 / 当前动画 / 楼层标记统计）。
