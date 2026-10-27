@@ -17,7 +17,7 @@
                 />
               </el-form-item>
               <el-form-item>
-                <el-button :icon="Search" @click="loadApps()">
+                <el-button type="primary" :icon="Search" @click="loadApps()">
                   {{ t("ai_workflow.develop_query") }}
                 </el-button>
               </el-form-item>
@@ -315,7 +315,7 @@
               </el-select>
             </el-form-item>
             <el-form-item>
-              <el-button :icon="Search" @click="loadLogs()">
+              <el-button type="primary" :icon="Search" @click="loadLogs()">
                 {{ t("ai_workflow.develop_query") }}
               </el-button>
               <el-button :icon="Download" @click="onExportLogs">
@@ -422,7 +422,7 @@
               </el-select>
             </el-form-item>
             <el-form-item>
-              <el-button :icon="Search" @click="loadMcps()">
+              <el-button type="primary" :icon="Search" @click="loadMcps()">
                 {{ t("ai_workflow.develop_query") }}
               </el-button>
             </el-form-item>
@@ -547,7 +547,7 @@
               </el-button-group>
             </el-form-item>
             <el-form-item>
-              <el-button :icon="Search" @click="loadUsage()">
+              <el-button type="primary" :icon="Search" @click="loadUsage()">
                 {{ t("ai_workflow.develop_query") }}
               </el-button>
               <el-button :icon="Download" @click="onExportUsage">
@@ -631,7 +631,7 @@
               </el-select>
             </el-form-item>
             <el-form-item>
-              <el-button :icon="Search" @click="loadApprovals(true)">
+              <el-button type="primary" :icon="Search" @click="loadApprovals(true)">
                 {{ t("ai_workflow.develop_query") }}
               </el-button>
             </el-form-item>
@@ -777,14 +777,21 @@
               type="info"
               :closable="false"
               show-icon
+              size="small"
               class="docs-alert"
-              :description="t('ai_workflow.develop_docsCredDesc')"
+              :description="
+                t('ai_workflow.develop_docsCredDesc', {
+                  appid: '{appid}',
+                  appkey: '{appkey}',
+                })
+              "
             />
             <el-alert
               :title="t('ai_workflow.develop_docsApprovalTitle')"
               type="warning"
               :closable="false"
               show-icon
+              size="small"
               class="docs-alert"
               :description="t('ai_workflow.develop_docsApprovalDesc')"
             />
@@ -798,7 +805,7 @@
               <p class="doc-card__desc">
                 {{ t("ai_workflow.develop_restDesc") }}
               </p>
-              <pre class="doc-code">{{ t("ai_workflow.develop_restExample") }}</pre>
+              <pre class="doc-code">{{ REST_EXAMPLE }}</pre>
             </el-card>
             <el-card shadow="never" class="doc-card">
               <template #header>
@@ -810,7 +817,7 @@
               <p class="doc-card__desc">
                 {{ t("ai_workflow.develop_mcpDesc") }}
               </p>
-              <pre class="doc-code">{{ t("ai_workflow.develop_mcpExample") }}</pre>
+              <pre class="doc-code">{{ MCP_EXAMPLE }}</pre>
             </el-card>
             <el-card shadow="never" class="doc-card">
               <template #header>
@@ -880,7 +887,7 @@
               <p class="doc-card__desc">
                 {{ t("ai_workflow.develop_embedDesc") }}
               </p>
-              <pre class="doc-code">{{ t("ai_workflow.develop_embedExample") }}</pre>
+              <pre class="doc-code">{{ EMBED_EXAMPLE }}</pre>
               <div class="doc-events">
                 <span class="doc-events__label">
                   {{ t("ai_workflow.develop_postMessageEvents") }}
@@ -1352,6 +1359,7 @@ import {
 } from "@/api/module_ai/develop";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import EmbedDialog from "./components/EmbedDialog.vue";
+import { EMBED_EXAMPLE, MCP_EXAMPLE, REST_EXAMPLE } from "./examples";
 
 defineOptions({ name: "AiDevelopManage" });
 
@@ -2542,7 +2550,7 @@ onMounted(() => {
 }
 
 .develop-toolbar__hint {
-  font-size: var(--el-font-size-base);
+  font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 

@@ -70,7 +70,12 @@
             show-icon
             class="embed-dialog__alert"
             :title="t('ai_workflow.develop_embedCredTitle')"
-            :description="t('ai_workflow.develop_embedCredDesc', { apiBase })"
+            :description="
+              t('ai_workflow.develop_embedCredDesc', {
+                access_token: '{access_token}',
+                apiBase,
+              })
+            "
           />
         </div>
       </el-form-item>
