@@ -4,7 +4,7 @@
     <el-card shadow="never" class="develop-shell" :body-style="{ padding: '0 16px 12px' }">
       <el-tabs v-model="activeTab" class="develop-tabs" @tab-change="onTabChange">
         <!-- ============ 应用管理 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabApps')" name="apps">
+        <el-tab-pane :label="t('ai_workflow.develop_tabApps')" name="apps" class="develop-apps-pane">
           <div class="develop-head">
             <el-form :inline="true" :model="appSearch" class="develop-search">
               <el-form-item :label="t('ai_workflow.develop_keyword')">
@@ -2441,12 +2441,16 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 
-/* 应用卡片网格（替代表格） */
+/* 应用卡片网格（替代表格）：卡片保持自然高度、顶部对齐；网格区撑满剩余高度、超出内部滚动，分页固定底部 */
 .app-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 12px;
-  min-height: 120px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  align-content: start;
+  align-items: stretch;
 }
 
 .app-card {
@@ -2560,6 +2564,7 @@ onMounted(() => {
 
 .develop-pagination {
   display: flex;
+  flex: 0 0 auto;
   justify-content: flex-end;
   margin-top: 12px;
 }
@@ -2877,6 +2882,14 @@ onMounted(() => {
   padding-top: 4px;
   padding-right: 4px;
   overflow-y: auto;
+}
+
+/* 应用管理页签：纵向弹性布局——搜索在上、卡片网格区撑满剩余高度（内部滚动）、分页固定底部 */
+.ai-develop-page .develop-apps-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 </style>
 
