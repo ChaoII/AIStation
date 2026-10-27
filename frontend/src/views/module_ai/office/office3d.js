@@ -1674,11 +1674,28 @@ export function createOffice(opts) {
     bgCtx.lineTo(W - 28, 122);
     bgCtx.stroke();
 
-    /* 三行事实 */
+    /* 三行事实：角色 + 实时位置 + 当前活动（从场景运行时状态拿，反映"这人现在在干嘛"） */
+    const rec = badgeData.id != null ? byId.get(badgeData.id) : null;
+    let livePlace = '场景外';
+    let liveAct = '在岗';
+    if (rec) {
+      const f = (rec.seat && rec.seat.floor) || (rec.person && rec.person.root.userData.floor) || 1;
+      const kind = rec.seat && rec.seat.kind;
+      livePlace = (f === 2 ? '2F · ' : '1F · ')
+        + (kind === 'desk' ? '工位' : kind === 'sofa' ? '沙发' : kind === 'coffee' ? '咖啡吧'
+          : kind === 'gym' ? '健身角' : kind === 'terrace' ? '露台' : kind === 'stand' ? '站立位'
+            : kind === 'front' ? '前台' : (kind || '办公室'));
+      if (rec.onDance) liveAct = '蹦迪';
+      else if (rec.chatting) liveAct = '聊天';
+      else if (rec.visiting) liveAct = '拜访同事';
+      else if (rec.data.status === 'busy') liveAct = '工作中';
+      else if (kind === 'sofa' || kind === 'coffee') liveAct = '休息';
+      else liveAct = rec.data.status === 'wait' ? '等你确认' : '在岗';
+    }
     const rows = [
       ['角色', d.role || '未分类'],
-      ['模型', d.model || '默认模型'],
-      ['最近活跃', d.last || '暂无记录']
+      ['位置', livePlace],
+      ['当前', liveAct]
     ];
     rows.forEach(([k, v], i) => {
       const y = 158 + i * 44;
