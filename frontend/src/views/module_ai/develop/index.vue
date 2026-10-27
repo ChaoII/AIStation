@@ -186,30 +186,27 @@
 
         <!-- ============ 调用日志 ============ -->
         <el-tab-pane :label="t('ai_workflow.develop_tabLogs')" name="logs">
-          <el-row :gutter="12" class="stat-row">
-            <el-col v-for="card in statCards" :key="card.label" :xs="12" :sm="6">
-              <el-card shadow="never" class="stat-card">
-                <div class="stat-card__top">
-                  <el-icon class="stat-card__icon" :size="18">
-                    <component :is="card.icon" />
-                  </el-icon>
-                  <span class="stat-card__label">{{ card.label }}</span>
-                </div>
-                <div class="stat-card__value">
-                  {{ card.value }}
-                  <span class="stat-card__suffix">{{ card.suffix }}</span>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-          <el-card v-if="stats.series.length" shadow="never" class="trend-card">
+          <el-card shadow="never" class="trend-card">
             <template #header>
               <div class="trend-card__head">
                 <span class="trend-card__title">{{ t("ai_workflow.develop_trendTitle") }}</span>
                 <span class="trend-card__range">{{ t("ai_workflow.develop_recent7") }}</span>
               </div>
             </template>
-            <TrendLineChart :points="logTrendPoints" :height="96" />
+            <div class="overview-stats">
+              <div v-for="s in statCards" :key="s.label" class="overview-stat">
+                <el-icon class="overview-stat__icon" :size="16">
+                  <component :is="s.icon" />
+                </el-icon>
+                <div class="overview-stat__meta">
+                  <span class="overview-stat__label">{{ s.label }}</span>
+                  <span class="overview-stat__value">
+                    {{ s.value }}<span class="overview-stat__suffix">{{ s.suffix }}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <TrendLineChart :points="logTrendPoints" :height="140" />
           </el-card>
           <el-form :inline="true" :model="logFilter" class="develop-search">
             <el-form-item :label="t('ai_workflow.develop_appLabel')">
@@ -414,23 +411,7 @@
             </el-form-item>
           </el-form>
 
-          <el-row :gutter="12" class="stat-row">
-            <el-col v-for="card in mcpStatCards" :key="card.label" :xs="12" :sm="6">
-              <el-card shadow="never" class="stat-card">
-                <div class="stat-card__top">
-                  <el-icon class="stat-card__icon" :size="18">
-                    <component :is="card.icon" />
-                  </el-icon>
-                  <span class="stat-card__label">{{ card.label }}</span>
-                </div>
-                <div class="stat-card__value">
-                  {{ card.value }}
-                  <span class="stat-card__suffix">{{ card.suffix }}</span>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-          <el-card v-if="mcpStats.series.length" shadow="never" class="trend-card">
+          <el-card shadow="never" class="trend-card">
             <template #header>
               <div class="trend-card__head">
                 <span class="trend-card__title">{{ t("ai_workflow.develop_trendTitle") }}</span>
@@ -439,7 +420,20 @@
                 </span>
               </div>
             </template>
-            <TrendLineChart :points="mcpTrendPoints" :height="96" />
+            <div class="overview-stats">
+              <div v-for="s in mcpStatCards" :key="s.label" class="overview-stat">
+                <el-icon class="overview-stat__icon" :size="16">
+                  <component :is="s.icon" />
+                </el-icon>
+                <div class="overview-stat__meta">
+                  <span class="overview-stat__label">{{ s.label }}</span>
+                  <span class="overview-stat__value">
+                    {{ s.value }}<span class="overview-stat__suffix">{{ s.suffix }}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <TrendLineChart :points="mcpTrendPoints" :height="140" />
           </el-card>
 
           <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe>
@@ -2616,42 +2610,41 @@ onMounted(() => {
 }
 
 /* 调用概览：统计卡 + 7 天迷你柱 + Top 能力 */
-.stat-row {
-  margin-bottom: 8px;
+.overview-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px 16px;
+  margin-bottom: 4px;
 }
 
-.stat-card {
-  border: 1px solid var(--el-border-color-lighter);
-}
-
-.stat-card :deep(.el-card__body) {
-  padding: 10px 12px;
-}
-
-.stat-card__top {
+.overview-stat {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-.stat-card__icon {
+.overview-stat__icon {
   color: var(--el-color-primary);
 }
 
-.stat-card__label {
+.overview-stat__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.overview-stat__label {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 
-.stat-card__value {
-  margin-top: 2px;
-  font-size: 20px;
+.overview-stat__value {
+  font-size: 16px;
   font-weight: 600;
-  line-height: 1.3;
   color: var(--el-text-color-primary);
 }
 
-.stat-card__suffix {
+.overview-stat__suffix {
   margin-left: 2px;
   font-size: 12px;
   font-weight: 400;
