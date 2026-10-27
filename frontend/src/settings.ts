@@ -3,9 +3,7 @@ import { LayoutMode, ComponentSize, SidebarColor, ThemeMode, LanguageEnum } from
 const env = import.meta.env;
 const { pkg } = __APP_INFO__;
 
-// 检查用户的操作系统是否使用深色模式
-const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-
+// 默认使用亮色主题（调试/展示统一亮色，不再跟随操作系统深色偏好）
 export const defaultSettings: AppSettings = {
   name: pkg.name as string,
   // 系统Title
@@ -27,8 +25,8 @@ export const defaultSettings: AppSettings = {
   showAppLogo: true,
   // 布局方式，默认为左侧布局
   layout: LayoutMode.LEFT,
-  // 主题，根据操作系统的色彩方案自动选择
-  theme: prefersDark ? ThemeMode.DARK : ThemeMode.LIGHT,
+  // 主题，默认亮色模式
+  theme: ThemeMode.LIGHT,
   // 组件大小 default | medium | small | large
   size: ComponentSize.DEFAULT,
   // 语言
