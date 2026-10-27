@@ -189,7 +189,12 @@
           <el-row :gutter="12" class="stat-row">
             <el-col v-for="card in statCards" :key="card.label" :xs="12" :sm="6">
               <el-card shadow="never" class="stat-card">
-                <div class="stat-card__label">{{ card.label }}</div>
+                <div class="stat-card__top">
+                  <el-icon class="stat-card__icon" :size="18">
+                    <component :is="card.icon" />
+                  </el-icon>
+                  <span class="stat-card__label">{{ card.label }}</span>
+                </div>
                 <div class="stat-card__value">
                   {{ card.value }}
                   <span class="stat-card__suffix">{{ card.suffix }}</span>
@@ -431,7 +436,12 @@
           <el-row :gutter="12" class="stat-row">
             <el-col v-for="card in mcpStatCards" :key="card.label" :xs="12" :sm="6">
               <el-card shadow="never" class="stat-card">
-                <div class="stat-card__label">{{ card.label }}</div>
+                <div class="stat-card__top">
+                  <el-icon class="stat-card__icon" :size="18">
+                    <component :is="card.icon" />
+                  </el-icon>
+                  <span class="stat-card__label">{{ card.label }}</span>
+                </div>
                 <div class="stat-card__value">
                   {{ card.value }}
                   <span class="stat-card__suffix">{{ card.suffix }}</span>
@@ -1716,21 +1726,25 @@ const stats = reactive<{
 
 const statCards = computed(() => [
   {
+    icon: "Phone",
     label: t("ai_workflow.develop_statTodayCalls"),
     value: stats.today.calls ?? 0,
     suffix: t("ai_workflow.develop_suffixCount"),
   },
   {
+    icon: "CircleCheck",
     label: t("ai_workflow.develop_statSuccessRate"),
     value: ((stats.today.success_rate ?? 0) * 100).toFixed(1),
     suffix: "%",
   },
   {
+    icon: "Timer",
     label: t("ai_workflow.develop_statAvgLatency"),
     value: stats.today.avg_latency_ms ?? 0,
     suffix: " ms",
   },
   {
+    icon: "Warning",
     label: t("ai_workflow.develop_statPending"),
     value: stats.approvals.pending ?? 0,
     suffix: t("ai_workflow.develop_suffixRecords"),
@@ -2214,16 +2228,19 @@ const mcpStats = reactive<{ days: number; series: any[]; total: any }>({
 
 const mcpStatCards = computed(() => [
   {
+    icon: "ChatDotRound",
     label: t("ai_workflow.develop_mcpStatSessions"),
     value: mcpStats.total?.sessions ?? 0,
     suffix: t("ai_workflow.develop_suffixItems"),
   },
   {
+    icon: "Tools",
     label: t("ai_workflow.develop_mcpStatToolCalls"),
     value: mcpStats.total?.tool_calls ?? 0,
     suffix: t("ai_workflow.develop_suffixCount"),
   },
   {
+    icon: "Timer",
     label: t("ai_workflow.develop_mcpStatAvgDuration"),
     value: mcpStats.total?.avg_duration_s ?? 0,
     suffix: " s",
@@ -2642,6 +2659,16 @@ onMounted(() => {
 
 .stat-card :deep(.el-card__body) {
   padding: 10px 12px;
+}
+
+.stat-card__top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-card__icon {
+  color: var(--el-color-primary);
 }
 
 .stat-card__label {
