@@ -976,6 +976,50 @@ def act_drink(arm, F):
         key_legs(arm, f)
 
 
+def act_work_typing(arm, F):
+    """坐姿敲键盘：双手放在桌面打字位，左手小幅度快速敲击（敲键盘），头微低看屏幕。"""
+    # 腿固定：坐姿（与 act_sit 一致）
+    for f in (1, F // 2 + 1, F + 1):
+        key(arm, "Hips", f, loc=(0, -0.42, 0.02), rot=(math.radians(-7), 0, 0))
+        key(arm, "Spine", f, rot=(math.radians(6), 0, 0))
+        key(arm, "Chest", f, rot=(math.radians(4), 0, 0))
+        for s_, sgn in (("L", 1), ("R", -1)):
+            key(arm, "UpperLeg.%s" % s_, f, rot=(math.radians(-70), 0, math.radians(sgn * 4)))
+            key(arm, "LowerLeg.%s" % s_, f, rot=(math.radians(70), 0, 0))
+            key(arm, "Foot.%s" % s_, f, rot=(math.radians(4), 0, 0))
+            key(arm, "UpperArm.%s" % s_, f, rot=(math.radians(-16), 0, math.radians(-4 * sgn)))
+            key(arm, "LowerArm.%s" % s_, f, rot=(math.radians(-74), 0, 0))
+    # 双手打字：左手手指位小幅度上下敲（模拟敲键盘），右手稍稳
+    for i in range(0, 6):
+        f = 1 + int(round(F * i / 5.0))
+        ph = (i % 2) * 1.0
+        key(arm, "Hand.L", f, rot=(math.radians(-14 + ph * 6), 0, 0))
+        key(arm, "Hand.R", f, rot=(math.radians(-12), 0, 0))
+        key(arm, "Head", f, rot=(math.radians(16 + (0 if i % 2 else 1)), 0, 0))
+
+
+def act_work_think(arm, F):
+    """托腮思考：手肘撑桌、右手托腮，头微微偏侧，偶尔眨眼（表情另走）。"""
+    # 腿固定：坐姿
+    for f in (1, F // 2 + 1, F + 1):
+        key(arm, "Hips", f, loc=(0, -0.42, 0.02), rot=(math.radians(-7), 0, 0))
+        key(arm, "Spine", f, rot=(math.radians(6), 0, 0))
+        key(arm, "Chest", f, rot=(math.radians(4), 0, 0))
+        for s_, sgn in (("L", 1), ("R", -1)):
+            key(arm, "UpperLeg.%s" % s_, f, rot=(math.radians(-70), 0, math.radians(sgn * 4)))
+            key(arm, "LowerLeg.%s" % s_, f, rot=(math.radians(70), 0, 0))
+            key(arm, "Foot.%s" % s_, f, rot=(math.radians(4), 0, 0))
+    # 右手托腮、肘撑桌；头微偏
+    for k, s in ((0.0, 0), (0.3, 1), (0.7, 1), (1.0, 0)):
+        f = 1 + int(round(F * k))
+        key(arm, "UpperArm.R", f, rot=(math.radians(-52 if s else -16), 0,
+                                       math.radians(30 if s else 6)))
+        key(arm, "LowerArm.R", f, rot=(math.radians(-120 if s else -60), 0, 0))
+        key(arm, "Hand.R", f, rot=(math.radians(-40 if s else -10), 0, 0))
+        key(arm, "Head", f, rot=(math.radians(10 if s else 4), math.radians(12 * (1 if s else 0)), 0))
+        key(arm, "Chest", f, rot=(math.radians(5 if s else 3), 0, 0))
+
+
 def act_dance(arm, F):
     """四拍：左手前上 → 右手前上 → 双手举起 → 半蹲，再从头来。
 
@@ -1137,6 +1181,8 @@ def main():
     make_action(arm, "phone", 60, act_phone)
     make_action(arm, "look", 72, act_look)
     make_action(arm, "drink", 56, act_drink)
+    make_action(arm, "work_typing", 60, act_work_typing)
+    make_action(arm, "work_think", 72, act_work_think)
     arm.animation_data.action = None
 
     # 预览前把姿势清干净（否则会继承最后一条动作的 pose，看起来在半空劈叉）

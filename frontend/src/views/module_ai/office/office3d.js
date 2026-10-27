@@ -3006,6 +3006,8 @@ export function createOffice(opts) {
       phone: own ? resolve(['phone']) : null,
       look: own ? resolve(['look']) : null,
       drink: own ? resolve(['drink']) : null,
+      work_typing: own ? resolve(['work_typing']) : null,
+      work_think: own ? resolve(['work_think']) : null,
       /* 没有 Sing / Talk：用 Interact */
       sing: own ? resolve(['sing']) : resolve(['Interact', 'Female_Standing', 'Idle_Talking'])
     };
@@ -3166,8 +3168,15 @@ export function createOffice(opts) {
         applyFace();
       },
       setPose(p) {
-        if (p === 'sit' || p === 'sit_phone' || p === 'sit_look') {
-          const seatedAct = p === 'sit' ? sitAction : (ACT[p] || sitAction);
+        if (p === 'sit' || p === 'sit_phone' || p === 'sit_look' ||
+            p === 'work' || p === 'work_typing' || p === 'work_think') {
+          /* 忙碌的工位工作：随机在"敲键盘/托腮思考"间选，让繁忙的办公室更生动 */
+          let actName = p;
+          if (p === 'work') {
+            actName = this.workKind || (Math.random() < 0.7 ? 'work_typing' : 'work_think');
+            this.workKind = actName;
+          }
+          const seatedAct = actName === 'sit' ? sitAction : (ACT[actName] || sitAction);
           if (seatedAct) {
             clone.position.y = seatLift;
             play(seatedAct);
@@ -5855,14 +5864,28 @@ export function createOffice(opts) {
           const deskSeat = rec.seat.kind !== 'sofa' && rec.seat.kind !== 'coffee'
             && !/^w\d+$/.test(String(rec.seat.key || ''));
           if (deskSeat) {
-            if (!rec.idleAct || t > rec.idleAct.until) {
-              if (t > (rec.nextIdleAt || 0)) {
-                const pool = ['sit_phone', 'sit_look'];
-                rec.idleAct = { kind: pool[(Math.random() * pool.length) | 0], until: t + 5 };
-                rec.nextIdleAt = t + 10 + Math.random() * 16;
+            /* 忙碌（在干活）的人：持续做「敲键盘 / 托腮思考」工作动作，让工作状态更生动；
+               空闲（idle）的人：偶尔看手机/发呆张望 */
+            const working = rec.data.status === 'busy' || rec.data.status === 'wait' || rec.data.status === 'error';
+            if (working) {
+              if (!rec.idleAct || t > rec.idleAct.until) {
+                if (t > (rec.nextIdleAt || 0)) {
+                  const pool = ['work_typing', 'work_think'];
+                  rec.idleAct = { kind: pool[(Math.random() * pool.length) | 0], until: t + 8 };
+                  rec.nextIdleAt = t + 6 + Math.random() * 6;
+                }
               }
+              rec.person.setPose(rec.idleAct && t < rec.idleAct.until ? rec.idleAct.kind : 'work');
+            } else {
+              if (!rec.idleAct || t > rec.idleAct.until) {
+                if (t > (rec.nextIdleAt || 0)) {
+                  const pool = ['sit_phone', 'sit_look'];
+                  rec.idleAct = { kind: pool[(Math.random() * pool.length) | 0], until: t + 5 };
+                  rec.nextIdleAt = t + 10 + Math.random() * 16;
+                }
+              }
+              rec.person.setPose(rec.idleAct && t < rec.idleAct.until ? rec.idleAct.kind : 'sit');
             }
-            rec.person.setPose(rec.idleAct && t < rec.idleAct.until ? rec.idleAct.kind : 'sit');
           } else {
             rec.person.setPose('sit');
             rec.idleAct = null;
