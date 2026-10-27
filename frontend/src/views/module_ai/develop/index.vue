@@ -185,7 +185,7 @@
         </el-tab-pane>
 
         <!-- ============ 调用日志 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabLogs')" name="logs">
+        <el-tab-pane :label="t('ai_workflow.develop_tabLogs')" name="logs" class="develop-table-pane">
           <el-card shadow="never" class="trend-card">
             <template #header>
               <div class="trend-card__head">
@@ -307,15 +307,17 @@
             </el-form-item>
           </el-form>
 
-          <el-table
-            v-loading="logLoading"
-            :data="logs"
-            row-key="id"
-            border
-            stripe
-            class="log-table"
-            @row-click="openLogDetail"
-          >
+          <div class="table-flow">
+            <el-table
+              v-loading="logLoading"
+              :data="logs"
+              row-key="id"
+              border
+              stripe
+              height="100%"
+              class="log-table"
+              @row-click="openLogDetail"
+            >
             <el-table-column
               :label="t('ai_workflow.develop_time')"
               width="165"
@@ -370,6 +372,7 @@
               <el-empty :image-size="80" :description="t('ai_workflow.develop_noLogs')" />
             </template>
           </el-table>
+          </div>
 
           <div v-if="logTotal > 0" class="develop-pagination">
             <el-pagination
@@ -391,7 +394,7 @@
         </el-tab-pane>
 
         <!-- ============ MCP 会话 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabMcp')" name="mcp">
+        <el-tab-pane :label="t('ai_workflow.develop_tabMcp')" name="mcp" class="develop-table-pane">
           <el-form :inline="true" :model="mcpFilter" class="develop-search">
             <el-form-item :label="t('ai_workflow.develop_appLabel')">
               <el-select
@@ -436,7 +439,8 @@
             <TrendLineChart :points="mcpTrendPoints" :height="140" />
           </el-card>
 
-          <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe>
+          <div class="table-flow">
+          <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe height="100%">
             <el-table-column label="AppID" width="120" show-overflow-tooltip>
               <template #default="{ row }">{{ row.appid || "—" }}</template>
             </el-table-column>
@@ -486,6 +490,7 @@
               <el-empty :image-size="80" :description="t('ai_workflow.develop_noMcp')" />
             </template>
           </el-table>
+          </div>
 
           <div v-if="mcpTotal > 0" class="develop-pagination">
             <el-pagination
@@ -507,7 +512,7 @@
         </el-tab-pane>
 
         <!-- ============ 用量报告 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabUsage')" name="usage">
+        <el-tab-pane :label="t('ai_workflow.develop_tabUsage')" name="usage" class="develop-table-pane">
           <el-form :inline="true" class="develop-search">
             <el-form-item :label="t('ai_workflow.develop_usageRange')">
               <el-button-group>
@@ -532,7 +537,8 @@
             </el-form-item>
           </el-form>
 
-          <el-table v-loading="usageLoading" :data="usageItems" row-key="app_id" border stripe>
+          <div class="table-flow">
+          <el-table v-loading="usageLoading" :data="usageItems" row-key="app_id" border stripe height="100%">
             <el-table-column
               prop="name"
               :label="t('ai_workflow.develop_appLabel')"
@@ -585,10 +591,11 @@
               <el-empty :image-size="80" :description="t('ai_workflow.develop_noUsage')" />
             </template>
           </el-table>
+          </div>
         </el-tab-pane>
 
         <!-- ============ 调用审批 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabApprovals')" name="approvals">
+        <el-tab-pane :label="t('ai_workflow.develop_tabApprovals')" name="approvals" class="develop-table-pane">
           <el-form :inline="true" :model="approvalFilter" class="develop-search">
             <el-form-item :label="t('ai_workflow.develop_status')">
               <el-select
@@ -639,6 +646,7 @@
             </el-button>
           </div>
 
+          <div class="table-flow">
           <el-table
             ref="approvalTableRef"
             v-loading="approvalLoading"
@@ -646,6 +654,7 @@
             row-key="id"
             border
             stripe
+            height="100%"
             @selection-change="(rows: any[]) => (approvalSelection = rows)"
           >
             <el-table-column
@@ -725,6 +734,7 @@
               <el-empty :image-size="80" :description="t('ai_workflow.develop_noApprovals')" />
             </template>
           </el-table>
+          </div>
 
           <div v-if="approvalTotal > 0" class="develop-pagination">
             <el-pagination
@@ -2857,6 +2867,19 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+}
+
+/* 表格页签（调用日志/MCP/用量/审批）：内容纵向撑满——表格区 flex:1、分页固定底部 */
+.ai-develop-page .develop-table-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ai-develop-page .table-flow {
+  flex: 1 1 auto;
   min-height: 0;
 }
 </style>
