@@ -294,7 +294,10 @@ export function createOffice(opts) {
   /* 阴影贴图不必每帧重画：场景里几百个网格（5 人 × 78 个蒙皮网格）每帧重算 shadow pass
      很吃 CPU。改成手动刷新、每 4 帧一次，人物动作慢，肉眼看不出差别（实测 CPU 明显下降）。 */
   renderer.shadowMap.autoUpdate = false;
-  renderer.toneMapping = THREE.NoToneMapping;
+  /* ACES 色调映射：把 NoToneMapping 的"偏灰/高光溢出"压成柔和、有层次的电影感。
+     曝光略调低一点，避免 ACES 把本身偏亮的场景过曝；配合下面的环境/材质增强是"干净现代风"的关键。 */
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.04;
   renderer.setClearColor(0xf4f1ea, 1);
   stage.appendChild(renderer.domElement);
 
@@ -305,7 +308,7 @@ export function createOffice(opts) {
     const pmrem = new THREE.PMREMGenerator(renderer);
     const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = env;
-    scene.environmentIntensity = 0.12;
+    scene.environmentIntensity = 0.22;
     pmrem.dispose();
   }
 
@@ -365,21 +368,30 @@ export function createOffice(opts) {
   wash.position.set(-4, 3.2, 9);
   scene.add(wash);
 
-  /* ================= 昼夜（23:00 之后只留加班那盏灯） ================= */
+  /* ================= 氛围（白天 / 黄昏 / 深夜） ================= */
+  /* 干净现代办公风：白天冷白通透，黄昏微暖柔和，深夜只留加班灯。 */
   const DAY_LIGHT = {
     hemi: 0.78, sun: 2.55, bounce: 1.2, fill: 0.42, wash: 0.5,
     sunColor: 0xfff9f0, bg: 0xf1f1f1, stage: '#f1f1f1'
+  };
+  const DUSK_LIGHT = {
+    /* 黄昏：主光转暖、天光偏蓝紫，背景压成暖灰蓝，灯开始有存在感 */
+    hemi: 0.5, sun: 1.5, bounce: 0.7, fill: 0.3, wash: 0.36,
+    sunColor: 0xffc9a0, bg: 0xdfe3ec, stage: '#dfe3ec'
   };
   const NIGHT_LIGHT = {
     /* 不能压太黑：家具轮廓要还能看出来，只有"人不在的工位"是暗的 */
     hemi: 0.34, sun: 0.22, bounce: 0.34, fill: 0.12, wash: 0.22,
     sunColor: 0xa8bcff, bg: 0x121821, stage: '#121821'
   };
-  let night = false;
+  const MOOD_LIGHT = { day: DAY_LIGHT, dusk: DUSK_LIGHT, night: NIGHT_LIGHT };
+  let night = false;   // 是否为深夜（仅用于 DOM 名牌变暗等外部判断；黄昏不算夜）
+  let mood = 'day';    // 当前氛围
 
-  function applyNight(on) {
-    night = !!on;
-    const p = night ? NIGHT_LIGHT : DAY_LIGHT;
+  function applyMood(m) {
+    mood = m;
+    night = (m === 'night');
+    const p = MOOD_LIGHT[m] || DAY_LIGHT;
     hemi.intensity = p.hemi;
     sun.intensity = p.sun;
     sun.color.set(p.sunColor);
@@ -396,14 +408,25 @@ export function createOffice(opts) {
     if (opts && opts.onNight) opts.onNight(night);
   }
 
-  /** 22:00 ~ 06:00 自动进夜间；null = 交还给时钟 */
-  function setNight(v) {
+  /** 兼容旧接口：true=深夜 / false=白天（保留给外部调用） */
+  function applyNight(on) { applyMood(on ? 'night' : 'day'); }
+
+  /** 22:00~06:00 深夜、17:00~19:00 黄昏；null = 交还给时钟 */
+  function setMood(v) {
     if (v === null || v === undefined) {
       const h = new Date().getHours();
-      applyNight(h >= 22 || h < 6);
+      if (h >= 22 || h < 6) applyMood('night');
+      else if (h >= 17 && h < 19) applyMood('dusk');
+      else applyMood('day');
     } else {
-      applyNight(v);
+      applyMood(v);
     }
+  }
+
+  /** 旧接口 setNight：true=night / false=day / null=按时钟 */
+  function setNight(v) {
+    if (v === null || v === undefined) setMood(null);
+    else applyMood(v ? 'night' : 'day');
   }
 
   /* ================= 材质 ================= */
@@ -465,15 +488,16 @@ export function createOffice(opts) {
     base: std('#ddd8cf'),
     desk: std('#fdfcf9', { r: 0.7 }),
     deskEdge: std('#e8edf5'),
-    metal: std('#b3bfcd', { m: 0.22, r: 0.26 }),
-    darkMetal: std('#8e9aa9', { m: 0.3, r: 0.3 }),
+    metal: std('#b3bfcd', { m: 0.42, r: 0.22 }),
+    darkMetal: std('#8e9aa9', { m: 0.5, r: 0.26 }),
     chair: std('#e2e6ec', { r: 0.92 }),
     chairDark: std('#cbd2dc', { r: 0.9 }),
     screen: std('#42597a', { r: 0.3, e: 0x8fbfe8, ei: 0.55 }),
     screenSmall: std('#4b6183', { r: 0.3, e: 0x8fbfe8, ei: 0.4 }),
     glass: new THREE.MeshPhysicalMaterial({
       color: 0xd8e8f8, transparent: true, opacity: 0.16, roughness: 0.06,
-      metalness: 0, side: THREE.DoubleSide, clearcoat: 1, clearcoatRoughness: 0.1
+      metalness: 0, side: THREE.DoubleSide, clearcoat: 1, clearcoatRoughness: 0.1,
+      envMapIntensity: 1.6
     }),
     accent: std('#cfe3f7'),
     plant: std('#9db39d', { r: 0.95 }),
@@ -1792,6 +1816,11 @@ export function createOffice(opts) {
     controls.maxZoom = Math.max(controls.maxZoom, zoom + 0.5);
     /* 白板/大屏前的健身器材挡视线：聚焦时隐藏，聚焦结束恢复 */
     setFitnessHidden(true);
+    /* 聚焦走廊内的前景静态家具（桌腿/显示器等）同样挡视线，一并隐藏 */
+    setupFocusForeground(tx - 1.7, tx + 1.7, tz - 0.2, -2.1);
+    setFocusForegroundHidden(true);
+    /* 聚焦时增强 SSAO，让白板/大屏内容与墙的对比更立体 */
+    setFocusAO(true);
     /* 立即把相机移到目标正前方并正对（正交无透视，必须移动相机才能正对墙） */
     camera.position.set(cx, cy, cz);
     controls.target.set(tx, ty, tz);
@@ -1822,6 +1851,8 @@ export function createOffice(opts) {
         camLock = false;
         controls.enabled = true;
         setFitnessHidden(false);
+        setFocusForegroundHidden(false);
+        setFocusAO(false);
         camState.want = {
           zoom: 1,
           tx: 0.42,
@@ -1850,6 +1881,8 @@ export function createOffice(opts) {
     camLock = false;
     controls.enabled = true;
     setFitnessHidden(false);
+    setFocusForegroundHidden(false);
+    setFocusAO(false);
   }
 
   function focusScreen(on) {
@@ -1992,6 +2025,47 @@ export function createOffice(opts) {
   FITNESS.traverse(o => { if (o.isMesh) fitnessVis.push([o, o.visible]); });
   function setFitnessHidden(hide) {
     fitnessVis.forEach(([o, v]) => { o.visible = hide ? false : v; });
+  }
+
+  /* ================= 聚焦时隐藏"前景静态家具" ================= */
+  /* 大屏/白板聚焦时，相机贴着墙正对过去；紧贴它们的家具（如最前排工位的桌腿、显示器、
+     杯子、麦克风架）会整根杵在镜头前挡视线。它们不是健身器材，也没被 FITNESS 收纳。
+     这里把"聚焦走廊内、直接挂 scene 的小型静态家具"临时隐藏，结束恢复。 */
+  const fgVis = [];
+  let fgFocus = null;      // 当前聚焦目标的包围走廊 {x0,x1,z0,z1}
+  function collectForeground() {
+    fgVis.length = 0;
+    scene.traverse((m) => {
+      if (!m.isMesh || !m.geometry) return;
+      /* 只收集"直接挂在 scene 下"的独立静态小物件（桌腿/显示器/杯子等），
+         不碰智能体(group)、FITNESS、大屏、墙等已按各自机制处理的对象 */
+      if (!m.parent || m.parent.__isScene === undefined && m.parent.type !== 'Scene') return;
+      if (m.parent.type !== 'Scene') return;
+      if (m.geometry.boundingBox === null) m.geometry.computeBoundingBox();
+      const bb = m.geometry.boundingBox.clone();
+      bb.applyMatrix4(m.matrixWorld);
+      const sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
+      /* 只挑"家具尺度"的小物件，排除地板/天花板/墙这类大件 */
+      if (sx > 2.4 || sy > 2.4 || sz > 2.4) return;
+      if (m.name === 'scrMesh' || m.userData.skipFocusHide) return;
+      fgVis.push([m, m.visible]);
+    });
+  }
+  function setFocusForegroundHidden(hide) {
+    if (!fgFocus) return;
+    const { x0, x1, z0, z1 } = fgFocus;
+    fgVis.forEach(([m, v]) => {
+      const bb = m.geometry.boundingBox;
+      const box = bb.clone(); box.applyMatrix4(m.matrixWorld);
+      const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+      const inBox = cx > x0 && cx < x1 && cz > z0 && cz < z1;
+      m.visible = hide ? (inBox ? false : v) : v;
+    });
+  }
+  /* 设定聚焦走廊并预收集前景家具（在 focusWall 里调用） */
+  function setupFocusForeground(cx0, cx1, cz0, cz1) {
+    fgFocus = { x0: cx0, x1: cx1, z0: cz0, z1: cz1 };
+    collectForeground();
   }
 
   /* ================= 休息区 ================= */
@@ -4300,6 +4374,12 @@ export function createOffice(opts) {
   });
   postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat));
 
+  /* 聚焦白板/大屏时增强 SSAO，让视觉重点更立体；退回全景/原位时恢复默认。
+     只调 uStrength（着色器里 clamp 到 0.28~1），不改降采样分辨率，开销可忽略。 */
+  function setFocusAO(on) {
+    postMat.uniforms.uStrength.value = on ? 0.9 : 0.72;
+  }
+
   function resizeRT() {
     const pr = Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.max(2, Math.round(W() * pr * SS));
@@ -6350,6 +6430,7 @@ export function createOffice(opts) {
       return agents.length;
     },
     setNight,
+    setMood,
     clearBubbles,
     select(id) { selectedId = id; refreshPlates(); },
     count: () => agents.length,
