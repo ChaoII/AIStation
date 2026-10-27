@@ -403,6 +403,15 @@ export function createOffice(opts) {
     applyScreens();
     refreshPlates();
     if (M.glassEdge) M.glassEdge.emissiveIntensity = night ? 1.5 : 0.18;
+    /* 台灯：白天几乎看不见，黄昏微亮，深夜亮起（加班灯光） */
+    const lampOn = night ? 1 : (mood === 'dusk' ? 0.4 : 0.12);
+    NIGHT_LAMPS.forEach(({ core, glow }) => {
+      core.material.opacity = lampOn;
+      core.material.transparent = true;
+      glow.material.opacity = lampOn;
+      core.visible = lampOn > 0.05;
+      glow.visible = lampOn > 0.05;
+    });
     if (typeof drawScreen === 'function') drawScreen();
     if (badgeData.open) drawBadge();
     if (opts && opts.onNight) opts.onNight(night);
@@ -1062,6 +1071,9 @@ export function createOffice(opts) {
     return m;
   }
 
+  /* 夜里点亮的台灯（灯芯 + 暖光光晕）。白天/黄昏压暗，深夜抬亮，营造"加班灯光"氛围 */
+  const NIGHT_LAMPS = [];
+
   function desk(d) {
     const { x, z } = d;
     B(1.52, 0.05, 0.76, M.desk, x, 0.74, z, 0.02);
@@ -1137,6 +1149,31 @@ export function createOffice(opts) {
     C(0.014, 0.014, 0.3, M.metal, x - 0.6, 0.93, z - 0.22, 10);
     const shade = mesh(new THREE.ConeGeometry(0.09, 0.1, 16, 1, true), M.desk, x - 0.55, 1.07, z - 0.18, { rz: -0.5 });
     shade.castShadow = true;
+    /* 灯芯：灯罩下方一颗暖光小球（夜里亮起）+ 桌面一块暖光晕（开暖色发光，不做真实点光源，省性能） */
+    const lampCore = mesh(new THREE.SphereGeometry(0.024, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffe6b0 }), x - 0.53, 1.03, z - 0.17, { cast: false, receive: false });
+    const lampGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.5, 0.5),
+      new THREE.MeshBasicMaterial({
+        map: (() => {
+          const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+          const c2 = cv.getContext('2d');
+          const g = c2.createRadialGradient(64, 64, 2, 64, 64, 62);
+          g.addColorStop(0, 'rgba(255,214,150,0.9)');
+          g.addColorStop(0.4, 'rgba(255,190,110,0.35)');
+          g.addColorStop(1, 'rgba(255,180,90,0)');
+          c2.fillStyle = g; c2.fillRect(0, 0, 128, 128);
+          return new THREE.CanvasTexture(cv);
+        })(),
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+      })
+    );
+    lampGlow.rotation.x = -Math.PI / 2;
+    lampGlow.position.set(x - 0.55, 0.79, z - 0.18);
+    lampGlow.userData.floor = buildingFloor;
+    scene.add(lampGlow);
+    /* 记录，供 applyMood 按昼夜点亮/压暗 */
+    NIGHT_LAMPS.push({ core: lampCore, glow: lampGlow });
 
     /* 桌角小盆栽：小盆 + 三片叶子（不是一颗绿球） */
     C(0.05, 0.042, 0.07, M.pot, x - 0.62, 0.775, z + 0.3, 12);
