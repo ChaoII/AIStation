@@ -287,7 +287,7 @@ export function createOffice(opts) {
 
   /* ================= 渲染 ================= */
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(W(), H());
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -314,6 +314,8 @@ export function createOffice(opts) {
   const camera = new THREE.OrthographicCamera(-VIEW * aspect / 2, VIEW * aspect / 2, VIEW / 2, -VIEW / 2, 0.1, 300);
   camera.position.set(14, 13.4, 14);
   camera.lookAt(0, 0.3, 0);
+  /* 默认相机位（全景/恢复用；正对白板/大屏时相机要挪到墙前，结束后拉回这里） */
+  const CAM_HOME = { x: 14, y: 13.4, z: 14 };
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0.42, 0.15, 0.12);
@@ -803,12 +805,15 @@ export function createOffice(opts) {
   B(1.6, 0.98, 0.04, M.paper, -5.5, 1.12, -FD / 2 + 0.03, 0.01, { cast: false });
 
   /* 白板贴图：把最近几条结论写上去（组长汇总完会走到板前说话） */
+  const BOARD_DS = 2;
+  const BOARD_LW = 512, BOARD_LH = 320;
   const BOARD_CV = document.createElement('canvas');
-  BOARD_CV.width = 512;
-  BOARD_CV.height = 320;
+  BOARD_CV.width = BOARD_LW * BOARD_DS;
+  BOARD_CV.height = BOARD_LH * BOARD_DS;
   const BOARD_CTX = BOARD_CV.getContext('2d');
   const BOARD_TEX = new THREE.CanvasTexture(BOARD_CV);
   BOARD_TEX.colorSpace = THREE.SRGBColorSpace;
+  BOARD_TEX.anisotropy = 8;
 
   function wrapBoard(ctx, text, x, y, maxW, lh, maxLines) {
     let line = '';
@@ -835,8 +840,9 @@ export function createOffice(opts) {
   function drawBoard(lines) {
     lastBoardLines = (lines || []).slice(0, 5);
     const ctx = BOARD_CTX;
+    ctx.setTransform(BOARD_DS, 0, 0, BOARD_DS, 0, 0);
     ctx.fillStyle = '#f8f5ee';
-    ctx.fillRect(0, 0, 512, 320);
+    ctx.fillRect(0, 0, BOARD_LW, BOARD_LH);
     ctx.fillStyle = '#2e2a24';
     ctx.font = 'bold 26px "Microsoft YaHei", sans-serif';
     ctx.fillText('最近结论', 28, 46);
@@ -860,8 +866,9 @@ export function createOffice(opts) {
   /** 白板第二种版式：当前任务 + 分工（派活时用，结论时再切回 drawBoard） */
   function drawTaskBoard(task, rows) {
     const ctx = BOARD_CTX;
+    ctx.setTransform(BOARD_DS, 0, 0, BOARD_DS, 0, 0);
     ctx.fillStyle = '#f8f5ee';
-    ctx.fillRect(0, 0, 512, 320);
+    ctx.fillRect(0, 0, BOARD_LW, BOARD_LH);
     ctx.fillStyle = '#2e2a24';
     ctx.font = 'bold 26px "Microsoft YaHei", sans-serif';
     ctx.fillText('当前任务', 28, 46);
@@ -1217,15 +1224,19 @@ export function createOffice(opts) {
   chair(GX, GZ - 0.72, Math.PI);
 
   /* 门牌（可改写：接待访客时换成对方名字） */
+  const SIGN_DS = 2;
+  const SIGN_LW = 512, SIGN_LH = 128;
   const signCv = document.createElement('canvas');
-  signCv.width = 512; signCv.height = 128;
+  signCv.width = SIGN_LW * SIGN_DS; signCv.height = SIGN_LH * SIGN_DS;
   const signCtx = signCv.getContext('2d');
   const signTex = new THREE.CanvasTexture(signCv);
   signTex.colorSpace = THREE.SRGBColorSpace;
+  signTex.anisotropy = 8;
 
   function setRoomSign(title, sub) {
+    signCtx.setTransform(SIGN_DS, 0, 0, SIGN_DS, 0, 0);
     signCtx.fillStyle = '#ffffff';
-    signCtx.fillRect(0, 0, 512, 128);
+    signCtx.fillRect(0, 0, SIGN_LW, SIGN_LH);
     signCtx.fillStyle = '#2b3a4d';
     signCtx.font = 'bold 50px "Microsoft YaHei", sans-serif';
     signCtx.textAlign = 'center';
@@ -1250,13 +1261,16 @@ export function createOffice(opts) {
 
   /* ================= 办公室大屏（简报 / 结论，直接渲成 3D 贴图） ================= */
   const SCR_W = 2.4, SCR_H = 1.35;
+  /* 屏幕贴图：物理分辨率按 DPR 放大，绘制时用逻辑宽高（布局坐标不变），文字更清晰 */
+  const SCR_DS = 2;
+  const SCR_LW = 1024, SCR_LH = 576;
   const scrCv = document.createElement('canvas');
-  scrCv.width = 1024;
-  scrCv.height = 576;
+  scrCv.width = SCR_LW * SCR_DS;
+  scrCv.height = SCR_LH * SCR_DS;
   const scrCtx = scrCv.getContext('2d');
   const scrTex = new THREE.CanvasTexture(scrCv);
   scrTex.colorSpace = THREE.SRGBColorSpace;
-  scrTex.anisotropy = 4;
+  scrTex.anisotropy = 8;
 
   const scrGroup = new THREE.Group();
   scrGroup.position.set(-3.4, 0.98, -FD / 2 + 0.1);
@@ -1314,7 +1328,9 @@ export function createOffice(opts) {
 
   function drawScreen() {
     const p = scrPalette();
-    const W = scrCv.width, H = scrCv.height;
+    /* 物理画布是 SCR_DS 倍，绘制时统一放大到物理像素，布局坐标仍按逻辑宽高 */
+    scrCtx.setTransform(SCR_DS, 0, 0, SCR_DS, 0, 0);
+    const W = SCR_LW, H = SCR_LH;
     const g = scrCtx.createLinearGradient(0, 0, W, H);
     g.addColorStop(0, p.bg);
     g.addColorStop(1, p.bg2);
@@ -1505,14 +1521,15 @@ export function createOffice(opts) {
   }
 
   /* ================= 选中某人时的 3D 工牌（代替右侧抽屉） ================= */
+  const BG_DS = 2;
   const BG_W = 512, BG_H = 344;
   const bgCv = document.createElement('canvas');
-  bgCv.width = BG_W;
-  bgCv.height = BG_H;
+  bgCv.width = BG_W * BG_DS;
+  bgCv.height = BG_H * BG_DS;
   const bgCtx = bgCv.getContext('2d');
   const bgTex = new THREE.CanvasTexture(bgCv);
   bgTex.colorSpace = THREE.SRGBColorSpace;
-  bgTex.anisotropy = 4;
+  bgTex.anisotropy = 8;
 
   const badgeMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(1.72, 1.16),
@@ -1544,6 +1561,7 @@ export function createOffice(opts) {
   function drawBadge() {
     const d = badgeData.data || {};
     const p = scrPalette();
+    bgCtx.setTransform(BG_DS, 0, 0, BG_DS, 0, 0);
     const W = BG_W, H = BG_H;
     bgCtx.clearRect(0, 0, W, H);
 
@@ -1681,6 +1699,8 @@ export function createOffice(opts) {
 
   /* 聚焦：把镜头推到大屏上（关闭时退回原位） */
   const camState = { home: null, want: null };
+  /* 聚焦白板/大屏时锁住 OrbitControls：不响应 update() 的阻尼回拉，也不让用户拖动抢走视角 */
+  let camLock = false;
 
   /** 把镜头对准某点（第一次调用时记住原位） */
   function focusCamera(tx, ty, tz, zoom) {
@@ -1761,20 +1781,44 @@ export function createOffice(opts) {
    * 镜头预设：overview（全景）/ board（白板）/ screen（大屏）。
    * 都走 camState.want，所以是平滑过渡；用户一拖动就被 OrbitControls 接管。
    */
+  function focusWall(tx, ty, tz, cx, cy, cz, zoom) {
+    /* 记录一次 home（后续回全景用），避免重复覆盖 */
+    if (!camState.home) {
+      camState.home = { zoom: 1, tx: 0.42, ty: currentFloor === 2 ? FLOOR_H + 0.15 : 0.15, tz: 0.12 };
+    }
+    /* 聚焦期间锁住 controls：不被 update() 阻尼回拉，也不让拖拽抢走 */
+    camLock = true;
+    controls.enabled = false;
+    controls.maxZoom = Math.max(controls.maxZoom, zoom + 0.5);
+    /* 立即把相机移到目标正前方并正对（正交无透视，必须移动相机才能正对墙） */
+    camera.position.set(cx, cy, cz);
+    controls.target.set(tx, ty, tz);
+    camera.zoom = zoom;
+    camera.lookAt(tx, ty, tz);
+    camera.updateProjectionMatrix();
+    camState.want = null;
+  }
   function cameraPreset(name) {
     switch (name) {
       case 'board': {
+        /* 白板在北墙：相机移到白板正南墙前方、正对过去 */
         const b = boardMesh.position;
-        focusCamera(b.x + 1.15, 1.0, b.z + 2.3, 2.4);
+        focusWall(b.x, b.y, b.z, b.x, b.y, b.z + 2.5, 8.5);
         return true;
       }
-      case 'screen':
-        focusScreen(true);
+      case 'screen': {
+        /* 大屏在北墙：相机移到大屏正南墙前方、正对过去 */
+        const s = scrGroup.position;
+        focusWall(s.x, s.y, s.z, s.x, s.y, s.z + 2.5, 6.0);
         return true;
+      }
       case 'overview':
       case 'floor':
       default:
         camState.home = null;
+        controls.maxZoom = 2.4;
+        camLock = false;
+        controls.enabled = true;
         camState.want = {
           zoom: 1,
           tx: 0.42,
@@ -1799,11 +1843,15 @@ export function createOffice(opts) {
     if (!camState.home) return;
     camState.want = camState.home;
     camState.home = null;
+    controls.maxZoom = 2.4;
+    camLock = false;
+    controls.enabled = true;
   }
 
   function focusScreen(on) {
     if (on) {
-      focusCamera(scrGroup.position.x, 1.0, scrGroup.position.z + 0.35, 4.2);
+      const s = scrGroup.position;
+      focusWall(s.x, s.y, s.z, s.x, s.y, s.z + 2.5, 6.0);
       scrGlow.intensity = night ? 2.4 : 0;
     } else {
       restoreCamera();
@@ -4235,7 +4283,7 @@ export function createOffice(opts) {
   postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat));
 
   function resizeRT() {
-    const pr = Math.min(window.devicePixelRatio || 1, 1.75);
+    const pr = Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.max(2, Math.round(W() * pr * SS));
     const h = Math.max(2, Math.round(H() * pr * SS));
     if (rt) { rt.dispose(); rt.depthTexture.dispose(); }
@@ -5853,14 +5901,22 @@ export function createOffice(opts) {
       controls.target.x += (camState.want.tx - controls.target.x) * k;
       controls.target.y += (camState.want.ty - controls.target.y) * k;
       controls.target.z += (camState.want.tz - controls.target.z) * k;
+      /* want.cam 存在时也平滑移动相机（正对白板/大屏）；不存在则把相机缓缓拉回默认位 */
+      const wantCam = camState.want.cam || CAM_HOME;
+      camera.position.x += (wantCam.x - camera.position.x) * k;
+      camera.position.y += (wantCam.y - camera.position.y) * k;
+      camera.position.z += (wantCam.z - camera.position.z) * k;
       if (
         Math.abs(camera.zoom - camState.want.zoom) < 0.01 &&
         Math.abs(controls.target.x - camState.want.tx) < 0.01
       ) {
         camera.zoom = camState.want.zoom;
         controls.target.set(camState.want.tx, camState.want.ty, camState.want.tz);
+        const hc = camState.want.cam || CAM_HOME;
+        camera.position.set(hc.x, hc.y, hc.z);
         camera.updateProjectionMatrix();
         camState.want = null;
+        /* 聚焦完成后保持 camLock：不下发 controls.update()，否则它会把视角拽回默认 */
       }
     }
     const hp = new THREE.Vector3();
@@ -5973,7 +6029,7 @@ export function createOffice(opts) {
   function renderFrame() {
     /* 阴影贴图每 4 帧刷一次（autoUpdate 已关，见 renderer 初始化处） */
     if (frameCount % 4 === 0) renderer.shadowMap.needsUpdate = true;
-    if (!faceMode) controls.update();
+    if (!faceMode && !camLock) controls.update();
     if (degraded) {
       renderer.setRenderTarget(null);
       renderer.render(scene, camera);
@@ -6135,6 +6191,17 @@ export function createOffice(opts) {
     focusFloor,
     focusAgent,
     cameraPreset,
+    camDiag: () => {
+      const bb = boardMesh.position, sg = scrGroup.position;
+      const p = (vx, vy, vz) => { const v = new THREE.Vector3(vx, vy, vz); v.project(camera); return [+((v.x*0.5+0.5)).toFixed(3), +((-v.y*0.5+0.5)).toFixed(3)]; };
+      return {
+        board: { x: bb.x, y: bb.y, z: bb.z, px: p(bb.x, bb.y, bb.z) },
+        screen: { x: sg.x, y: sg.y, z: sg.z, px: p(sg.x, sg.y, sg.z) },
+        cam: { x: +camera.position.x.toFixed(2), y: +camera.position.y.toFixed(2), z: +camera.position.z.toFixed(2), zoom: +camera.zoom.toFixed(2) },
+        target: { x: +controls.target.x.toFixed(2), y: +controls.target.y.toFixed(2), z: +controls.target.z.toFixed(2) },
+        maxZoom: controls.maxZoom
+      };
+    },
     scene,
     /* 验收用：把镜头推到某个人面前看细节（近景截图靠它，不改默认视角） */
     peek(name, zoom) {
