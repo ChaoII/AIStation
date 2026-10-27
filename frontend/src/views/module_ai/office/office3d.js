@@ -4929,6 +4929,7 @@ export function createOffice(opts) {
     rec.homeSeat = null;
     rec.visiting = false;
     if (goHome && home) moveTo(rec, home);
+    refreshPlates();
   }
 
   /** 工位间拜访：一个空闲同事走到另一个正在工位工作的同事旁边站一下（递文件/打招呼），再回座 */
@@ -4954,6 +4955,7 @@ export function createOffice(opts) {
     visitor.trip = { home: visitor.seat, kind: 'visit' };
     visitor.holdSeat = true;
     visitor.visiting = true;
+    refreshPlates();
     moveTo(visitor, {
       key: 'visit',
       kind: 'visit',
@@ -5027,6 +5029,7 @@ export function createOffice(opts) {
         ry: face(mine, other)
       });
     });
+    refreshPlates();
     /* 走过去站定（约 2.6 秒）再开始"说话"，聊 9 秒左右各自回座 */
     const until = nowT + 12;
     window.setTimeout(() => {
@@ -5366,8 +5369,15 @@ export function createOffice(opts) {
       const waitN = (a.awaitingList || []).length;
       const wt = a.awaiting && nowT < (a.awaitingUntil || 0)
         ? `<em class="hb wt">${waitN > 1 ? `并行等 ${waitN} 人` : `等 ${a.awaiting}`}</em>` : '';
+      /* 实时生活状态：一眼看出每个人此刻在干嘛（聊天/拜访/跳舞/休息） */
+      let life = '';
+      if (a.onDance) life = '<em class="life dance">🪩 蹦迪</em>';
+      else if (a.chatting) life = '<em class="life chat">💬 聊天</em>';
+      else if (a.visiting) life = '<em class="life visit">📄 拜访</em>';
+      else if (st === 'busy') life = '<em class="life busy">⚙️ 工作中</em>';
+      else if (a.seat && (a.seat.kind === 'sofa' || a.seat.kind === 'coffee')) life = '<em class="life rest">☕ 休息</em>';
       a.el.innerHTML = `<i class="dot ${st}"></i>${lead}<span class="nm">${a.data.name}</span>`
-        + `${role}${vis}${cron}${hb}${wt}${late}${ot}${hot}${task}`;
+        + `${role}${vis}${cron}${hb}${wt}${late}${ot}${hot}${life}${task}`;
     });
   }
 
