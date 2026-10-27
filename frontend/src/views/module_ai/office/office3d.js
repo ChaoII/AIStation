@@ -3254,8 +3254,9 @@ export function createOffice(opts) {
       const ankle = new THREE.Group();
       ankle.position.set(0, -0.30, 0);
       knee.add(ankle);
-      /* 鞋子：单个圆角整体（不再分「鞋面+鞋底」两块，走路不会脱层/散架） */
-      B(0.12, 0.075, 0.23, look.shoe, 0, -0.033, 0.045, 0.032, { parent: ankle });
+      B(0.125, 0.07, 0.235, look.shoe, 0, -0.028, 0.045, 0.03, { parent: ankle });
+      /* 鞋底（浅一档，脚看着有层次） */
+      B(0.129, 0.022, 0.242, look.sole, 0, -0.058, 0.045, 0.01, { parent: ankle, cast: false });
       legs.push({ thigh, knee, ankle });
 
       const arm = new THREE.Group();
@@ -3268,8 +3269,18 @@ export function createOffice(opts) {
       elbow.position.set(0, -0.225, 0);
       arm.add(elbow);
       B(0.088, 0.22, 0.088, SKIN, 0, -0.11, 0, 0.04, { parent: elbow });
-      /* 手：哆啦A梦式圆球（不要手指，简单好看，也少点部件防穿模/散架） */
-      S(0.062, SKIN, 0, -0.255, 0.004, { parent: elbow, cast: false });
+      /* 手掌 + 三指 + 拇指 */
+      const palm = B(0.072, 0.085, 0.05, SKIN, 0, -0.238, 0.004, 0.022, { parent: elbow });
+      palm.scale.set(1, 1, 1);
+      for (let f = 0; f < (lite ? 0 : 3); f++) {
+        const fx = (f - 1) * 0.024;
+        const fin = mesh(new THREE.CapsuleGeometry(0.0145, 0.03, 4, 8), SKIN,
+          fx, -0.285, 0.004, { parent: elbow, cast: false });
+        fin.rotation.x = 0.12;
+      }
+      const thumb = lite ? null : mesh(new THREE.CapsuleGeometry(0.016, 0.026, 4, 8), SKIN,
+        -side * 0.038, -0.232, 0.016, { parent: elbow, cast: false });
+      if (thumb) { thumb.rotation.z = -side * 0.7; thumb.rotation.x = -0.4; }
       /* 右手：咖啡杯 / 手机（默认隐藏，按座位切换） */
       let cup = null, phone = null, mic = null;
       if (side === 1) {
