@@ -1817,7 +1817,9 @@ export function createOffice(opts) {
     /* 白板/大屏前的健身器材挡视线：聚焦时隐藏，聚焦结束恢复 */
     setFitnessHidden(true);
     /* 聚焦走廊内的前景静态家具（桌腿/显示器等）同样挡视线，一并隐藏 */
-    setupFocusForeground(tx - 1.7, tx + 1.7, tz - 0.2, -2.1);
+    /* 聚焦走廊：覆盖目标宽度及左右相邻工位（含大屏右侧贴着的显示器/人），
+       z 上界放宽到 -1.9 让紧贴镜头的桌角/杯子也纳入隐藏 */
+    setupFocusForeground(tx - 2.1, tx + 2.4, tz - 0.3, -1.9);
     setFocusForegroundHidden(true);
     /* 聚焦时增强 SSAO，让白板/大屏内容与墙的对比更立体 */
     setFocusAO(true);
@@ -2029,38 +2031,81 @@ export function createOffice(opts) {
 
   /* ================= 聚焦时隐藏"前景静态家具" ================= */
   /* 大屏/白板聚焦时，相机贴着墙正对过去；紧贴它们的家具（如最前排工位的桌腿、显示器、
-     杯子、麦克风架）会整根杵在镜头前挡视线。它们不是健身器材，也没被 FITNESS 收纳。
-     这里把"聚焦走廊内、直接挂 scene 的小型静态家具"临时隐藏，结束恢复。 */
+     椅子、杯子、麦克风架）会整根杵在镜头前挡视线。它们不是健身器材，也没被 FITNESS 收纳。
+     这里把"聚焦走廊内、scene 直接子级的小型静态家具/mesh"临时隐藏，结束恢复。
+     注意：显示器(mon)、椅子(g)等是挂在 scene 下的**小组件 Group**，子件在 Group 里，
+     所以这里要按"top-level 节点"收集——一个 Group 整体隐藏，它里面的 bezel/屏/座全跟着藏。 */
   const fgVis = [];
+  /* 聚焦时也要"整体"藏掉挡在走廊里的智能体（连同名牌/脚点），否则人杵在大屏前也挡视线。
+     注意：全程记录原始可见性，退出聚焦时逐一恢复（含被本次隐藏的智能体）。 */
+  const fgAgentVis = [];
   let fgFocus = null;      // 当前聚焦目标的包围走廊 {x0,x1,z0,z1}
   function collectForeground() {
     fgVis.length = 0;
-    scene.traverse((m) => {
-      if (!m.isMesh || !m.geometry) return;
-      /* 只收集"直接挂在 scene 下"的独立静态小物件（桌腿/显示器/杯子等），
-         不碰智能体(group)、FITNESS、大屏、墙等已按各自机制处理的对象 */
-      if (!m.parent || m.parent.__isScene === undefined && m.parent.type !== 'Scene') return;
-      if (m.parent.type !== 'Scene') return;
-      if (m.geometry.boundingBox === null) m.geometry.computeBoundingBox();
-      const bb = m.geometry.boundingBox.clone();
-      bb.applyMatrix4(m.matrixWorld);
+    /* 只看 scene 的直接子节点（一级对象），避免把组内子孙重复收集/误判 */
+    scene.children.forEach((top) => {
+      /* 排除：大屏、FITNESS、智能体根（它们按各自机制处理）、光源/辅助 */
+      if (top.userData && (top.userData.fitness || top.userData.skipFocusHide)) return;
+      if (top.name === 'scrGroup' || top.name === 'scrMesh') return;
+      if (top.isPointLight || top.isDirectionalLight || top.isHemisphereLight || top.isAmbientLight) return;
+      /* 智能体根：makeGltfPerson/makePerson 的 root 带 userData.floor，且是人的根；
+         已用 fgAgentVis 单独处理，这里跳过 */
+      if (top.userData && top.userData.personRoot) return;
+      /* 计算 top 的世界包围盒，只要它是"家具尺度"的小件就纳入 */
+      const rootObj = top;
+      let bb = null;
+      if (rootObj.isMesh && rootObj.geometry) {
+        if (rootObj.geometry.boundingBox === null) rootObj.geometry.computeBoundingBox();
+        bb = rootObj.geometry.boundingBox.clone();
+        bb.applyMatrix4(rootObj.matrixWorld);
+      } else if (rootObj.isGroup) {
+        /* 对 Group 用 Box3.setFromObject 得到整体包围盒 */
+        bb = new THREE.Box3().setFromObject(rootObj);
+      }
+      if (!bb) return;
       const sx = bb.max.x - bb.min.x, sy = bb.max.y - bb.min.y, sz = bb.max.z - bb.min.z;
-      /* 只挑"家具尺度"的小物件，排除地板/天花板/墙这类大件 */
+      /* 只挑"家具尺度"的小件，排除地板/天花板/墙/大件 */
       if (sx > 2.4 || sy > 2.4 || sz > 2.4) return;
-      if (m.name === 'scrMesh' || m.userData.skipFocusHide) return;
-      fgVis.push([m, m.visible]);
+      fgVis.push([top, top.visible]);
     });
   }
-  function setFocusForegroundHidden(hide) {
-    if (!fgFocus) return;
+  function inFocusBox(x, z) {
+    if (!fgFocus) return false;
     const { x0, x1, z0, z1 } = fgFocus;
-    fgVis.forEach(([m, v]) => {
-      const bb = m.geometry.boundingBox;
-      const box = bb.clone(); box.applyMatrix4(m.matrixWorld);
-      const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
-      const inBox = cx > x0 && cx < x1 && cz > z0 && cz < z1;
-      m.visible = hide ? (inBox ? false : v) : v;
+    return x > x0 && x < x1 && z > z0 && z < z1;
+  }
+  function setFocusForegroundHidden(hide) {
+    /* 静态家具（top 可能是 Group 或 Mesh，统一用整体包围盒判定中心是否在走廊内） */
+    fgVis.forEach(([top, v]) => {
+      if (hide) {
+        const box = new THREE.Box3().setFromObject(top);
+        const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+        top.visible = inFocusBox(cx, cz) ? false : v;
+      } else {
+        top.visible = v;
+      }
     });
+    /* 智能体（整体 root + 名牌 + 脚点）——聚焦时"整个模型"直接藏。 */
+    if (hide) {
+      fgAgentVis.length = 0;
+      agents.forEach(r => {
+        if (inFocusBox(r.person.root.position.x, r.person.root.position.z)) {
+          fgAgentVis.push(r);
+          r._focusHidden = true;
+          r.person.root.visible = false;
+          if (r.el) r.el.style.display = 'none';
+          if (r.dotEl) r.dotEl.style.display = 'none';
+        }
+      });
+    } else {
+      fgAgentVis.forEach(r => {
+        r._focusHidden = false;
+        r.person.root.visible = true;
+        /* 名牌/脚点交回 refreshPlates 统一管理（它会按状态/楼层重新决定显隐） */
+      });
+      fgAgentVis.length = 0;
+      refreshPlates();
+    }
   }
   /* 设定聚焦走廊并预收集前景家具（在 focusWall 里调用） */
   function setupFocusForeground(cx0, cx1, cz0, cz1) {
@@ -5195,8 +5240,9 @@ export function createOffice(opts) {
       const important = st === 'busy' || st === 'wait' || st === 'error';
       const focus = a.data.id === selectedId || a.data.id === hoveredId;
       const onFloor = ((a.seat && a.seat.floor) || 1) === currentFloor;
-      const show = onFloor && (focus || important || n <= PLATE_ALL);
-      if (a.dotEl) a.dotEl.style.display = onFloor ? '' : 'none';
+      /* 聚焦大屏/白板时被整体隐藏的智能体：名牌/脚点也跟着隐藏，避免"人没了标签还飘着" */
+      const show = onFloor && !a._focusHidden && (focus || important || n <= PLATE_ALL);
+      if (a.dotEl) a.dotEl.style.display = (onFloor && !a._focusHidden) ? '' : 'none';
       a.el.style.display = show ? 'flex' : 'none';
       a.el.className = 'ag-chip'
         + (st === 'wait' ? ' wait' : '')
@@ -5232,6 +5278,7 @@ export function createOffice(opts) {
     const seat = a.seat;
     person.root.position.set(seat.p[0], seat.floor === 2 ? FLOOR_H : 0, seat.p[1]);
     person.root.userData.floor = seat.floor || 1;
+    person.root.userData.personRoot = true;   // 供"聚焦隐藏前景家具"排除智能体根
     /* 零件也打上楼层标（否则切到 2F 时人被"拆散"藏起来）；
        人是在楼层切换之后才动态加的，所以这里要立刻按当前楼层决定显隐 */
     const pf = seat.floor || 1;
