@@ -34,7 +34,8 @@ def mat(name, rgb, rough=0.7):
         return m
     m = bpy.data.materials.new(name)
     m.use_nodes = True
-    b = m.node_tree.nodes["Principled BSDF"]
+    # 按节点类型查找，避免 Blender 界面语言（中文/英文）导致节点名不同
+    b = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
     b.inputs["Base Color"].default_value = (*rgb, 1)
     b.inputs["Roughness"].default_value = rough
     m.diffuse_color = (*rgb, 1)
@@ -282,7 +283,7 @@ def build_head(M):
     fm.use_nodes = True
     fm.blend_method = "BLEND"
     nt = fm.node_tree
-    bsdf = nt.nodes["Principled BSDF"]
+    bsdf = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
     tex = nt.nodes.new("ShaderNodeTexImage")
     tex.image = face_img
     tex.interpolation = "Linear"
@@ -343,7 +344,7 @@ def hair_mat():
     m.alpha_threshold = 0.32
     m.show_transparent_back = False
     nt = m.node_tree
-    bsdf = nt.nodes["Principled BSDF"]
+    bsdf = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
     tex = nt.nodes.new("ShaderNodeTexImage")
     tex.image = bpy.data.images.load(
         os.path.join(ROOT, "frontend", "public", "office", "hair_strand.png"), check_existing=True
@@ -364,7 +365,7 @@ def hair_cap_mat():
     m = bpy.data.materials.new("mat_haircap")
     m.use_nodes = True
     nt = m.node_tree
-    bsdf = nt.nodes["Principled BSDF"]
+    bsdf = next(n for n in nt.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
     tex = nt.nodes.new("ShaderNodeTexImage")
     tex.image = bpy.data.images.load(
         os.path.join(ROOT, "frontend", "public", "office", "hair_strand.png"), check_existing=True
@@ -672,17 +673,9 @@ def build_body(M):
         # 袖口要套在**前臂**上（1.126，袖子下沿 1.135 之上），否则会从袖子里顶出来一圈白锯齿
         ring("cuff_%s" % side, 0.0465, 0.0090, (X, 0, 1.126), M["white"])
 
-        # ---- 手掌（圆润）+ 拇指 ----
-        # 手掌 + 四指 + 拇指（原来是圆角方块，太糊）
-        parts["hand.%s" % side] = box("hand_%s" % side, (0.060, 0.040, 0.062),
-                                      (X, 0, 0.912), M["skin"], 0.018, 3)
-        for fi in range(4):
-            fx = X + (fi - 1.5) * 0.0155
-            box("finger%d_%s" % (fi, side), (0.0135, 0.019, 0.056),
-                (fx, -0.002, 0.856), M["skin"], 0.005, 2)
-        box("thumb_%s" % side, (0.019, 0.022, 0.044),
-            (X - sx * 0.034, -0.010, 0.898), M["skin"], 0.008, 2,
-            rot=(0, math.radians(sx * 24), 0))
+        # ---- 手：哆啦A梦式圆球手掌（不要手指/拇指，简洁好看也不散架） ----
+        parts["hand.%s" % side] = ball("hand_%s" % side, 0.052, (X, 0, 0.905),
+                                       M["skin"], (1.0, 1.0, 1.0), 20, 14)
 
         # ---- 腿：一整段（髋→鞋里）连续曲面，膝部靠权重过渡 ----
         leg = tube("leg_%s" % side, [
@@ -698,15 +691,9 @@ def build_body(M):
         bpy.ops.object.transform_apply(location=True)
         parts["leg.%s" % side] = leg
 
-        # ---- 鞋：鞋面（圆头）+ 薄鞋底（不外扩成"松糕底"） ----
-        box("shoe_upper_%s" % side, (0.112, 0.250, 0.098), (X_LEG, -0.046, 0.086),
-            M["shoe"], 0.040, 4)
-        # 鞋头压圆，正面/侧面看都不是方块
-        ball("shoe_toe_%s" % side, 0.059, (X_LEG, -0.148, 0.066),
-             M["shoe"], (0.95, 1.05, 0.86), 20, 14)
-        # 鞋底：比鞋面窄 4mm、只厚 22mm，贴着地面，不外扩
-        parts["foot.%s" % side] = box("shoes_%s" % side, (0.108, 0.258, 0.022),
-                                      (X_LEG, -0.048, 0.017), M["sole"], 0.009, 3)
+        # ---- 鞋：单个圆角整体鞋块（不再分鞋面/鞋头/鞋底三层，走路不脱层散架） ----
+        parts["foot.%s" % side] = box("shoes_%s" % side, (0.118, 0.250, 0.110),
+                                      (X_LEG, -0.046, 0.055), M["shoe"], 0.045, 4)
 
     return parts
 
@@ -748,11 +735,7 @@ for sx in (-1, 1):
 for s in ("L", "R"):
     BIND["cuff_%s" % s] = "LowerArm.%s" % s
     BIND["hand_%s" % s] = "Hand.%s" % s
-    for _fi in range(4):
-        BIND["finger%d_%s" % (_fi, s)] = "Hand.%s" % s
-    BIND["thumb_%s" % s] = "Hand.%s" % s
     BIND["skirt"] = "Hips"
-    BIND["shoe_upper_%s" % s] = "Foot.%s" % s
     BIND["shoes_%s" % s] = "Foot.%s" % s
 
 
