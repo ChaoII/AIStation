@@ -131,6 +131,7 @@ export default {
   develop_resultSummary: "结果摘要",
   develop_noLogs: "暂无调用日志",
   develop_recent7: "近7天",
+  develop_trendTitle: "调用趋势",
   develop_recent30: "近30天",
   develop_today: "今天",
   develop_sparkTitle: "{date}：{calls} 次调用",

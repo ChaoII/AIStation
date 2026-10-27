@@ -134,6 +134,7 @@ export default {
   develop_resultSummary: "Result Summary",
   develop_noLogs: "No call logs yet",
   develop_recent7: "Last 7 days",
+  develop_trendTitle: "Call Trend",
   develop_recent30: "Last 30 days",
   develop_today: "Today",
   develop_sparkTitle: "{date}: {calls} calls",

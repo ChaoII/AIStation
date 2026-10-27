@@ -202,6 +202,15 @@
               </el-card>
             </el-col>
           </el-row>
+          <el-card v-if="stats.series.length" shadow="never" class="trend-card">
+            <template #header>
+              <div class="trend-card__head">
+                <span class="trend-card__title">{{ t("ai_workflow.develop_trendTitle") }}</span>
+                <span class="trend-card__range">{{ t("ai_workflow.develop_recent7") }}</span>
+              </div>
+            </template>
+            <TrendLineChart :points="logTrendPoints" :height="96" />
+          </el-card>
           <el-form :inline="true" :model="logFilter" class="develop-search">
             <el-form-item :label="t('ai_workflow.develop_appLabel')">
               <el-select
@@ -421,26 +430,17 @@
               </el-card>
             </el-col>
           </el-row>
-          <div v-if="mcpStats.series.length" class="spark-row">
-            <span class="spark-row__label">
-              {{ t("ai_workflow.develop_recentDays", { days: mcpStats.days }) }}
-            </span>
-            <div
-              v-for="day in mcpStats.series"
-              :key="'mcp-' + day.date"
-              class="spark"
-              :title="
-                t('ai_workflow.develop_mcpSparkTitle', {
-                  date: day.date,
-                  sessions: day.sessions,
-                  toolCalls: day.tool_calls,
-                })
-              "
-            >
-              <div class="spark__bar" :style="{ height: barHeight(day.tool_calls, mcpSparkMax) }" />
-              <span class="spark__label">{{ day.date.slice(5) }}</span>
-            </div>
-          </div>
+          <el-card v-if="mcpStats.series.length" shadow="never" class="trend-card">
+            <template #header>
+              <div class="trend-card__head">
+                <span class="trend-card__title">{{ t("ai_workflow.develop_trendTitle") }}</span>
+                <span class="trend-card__range">
+                  {{ t("ai_workflow.develop_recentDays", { days: mcpStats.days }) }}
+                </span>
+              </div>
+            </template>
+            <TrendLineChart :points="mcpTrendPoints" :height="96" />
+          </el-card>
 
           <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe>
             <el-table-column label="AppID" width="120" show-overflow-tooltip>
@@ -1342,6 +1342,7 @@ import {
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import EmbedDialog from "./components/EmbedDialog.vue";
 import { EMBED_EXAMPLE, MCP_EXAMPLE, REST_EXAMPLE } from "./examples";
+import TrendLineChart from "./TrendLineChart.vue";
 
 defineOptions({ name: "AiDevelopManage" });
 
@@ -1723,11 +1724,13 @@ const statCards = computed(() => [
   },
 ]);
 
-/** 通用迷你柱高度：value/max → 2..36px（max 为 0/undefined 时取 1）。 */
-function barHeight(value: number, max: number) {
-  const safe = Math.max(1, Number(max) || 1);
-  return `${Math.max(2, Math.round(((Number(value) || 0) / safe) * 36))}px`;
-}
+// 近 7 天调用趋势（折线图数据源）
+const logTrendPoints = computed(() =>
+  (stats.series || []).map((d: any) => ({
+    label: String(d.date).slice(5),
+    value: Number(d.calls) || 0,
+  }))
+);
 
 function isExpiringSoon(row: any) {
   if (!row?.expire_at) return false;
@@ -2207,8 +2210,12 @@ const mcpStatCards = computed(() => [
   },
 ]);
 
-const mcpSparkMax = computed(() =>
-  Math.max(1, ...mcpStats.series.map((d: any) => Number(d.tool_calls) || 0))
+// 近 N 天工具调用趋势（折线图数据源）
+const mcpTrendPoints = computed(() =>
+  (mcpStats.series || []).map((d: any) => ({
+    label: String(d.date).slice(5),
+    value: Number(d.tool_calls) || 0,
+  }))
 );
 
 async function loadMcpStats() {
@@ -2651,57 +2658,38 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
 }
 
-.spark-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: flex-end;
-  margin-bottom: 10px;
+/* 折线趋势卡（调用日志 / MCP 会话共用） */
+.trend-card {
+  margin-bottom: 12px;
+  border: 1px solid var(--el-border-color-lighter);
 }
 
-.spark-row__label {
+.trend-card :deep(.el-card__header) {
+  padding: 10px 12px;
+}
+
+.trend-card :deep(.el-card__body) {
+  padding: 2px 12px 10px;
+}
+
+.trend-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.trend-card__title {
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+}
+
+.trend-card__range {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 
-.spark {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-  width: 34px;
-}
-
-.spark__bar {
-  width: 12px;
-  background: var(--el-color-primary-light-5);
-  border-radius: 2px;
-}
-
-.spark__label {
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
-}
-
-.spark-row__top {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-left: 8px;
-}
-
 .log-table :deep(.el-table__row) {
   cursor: pointer;
-}
-
-.cap-tag--drill {
-  cursor: pointer;
-}
-
-.cap-tag--drill:hover {
-  color: var(--el-color-primary);
-  border-color: var(--el-color-primary);
 }
 
 .try-result {
