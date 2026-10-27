@@ -802,10 +802,10 @@ const castDesc = computed(() => casts.value.slice().reverse());
 
 /** 镜头预设按钮 */
 const CAM_MODES: { v: CamMode; label: string; tip: string }[] = [
-  { v: "overview", label: "全景", tip: "回到默认全景视角" },
-  { v: "follow", label: "跟随", tip: "有新步骤时把镜头推给当前执行者（3 秒一次，避免乱跳）" },
-  { v: "board", label: "白板", tip: "看白板上的分工与打勾" },
-  { v: "screen", label: "大屏", tip: "看大屏上的结论" }
+  { v: "overview", label: "全景", tip: "回到默认全景视角（Esc）" },
+  { v: "follow", label: "跟随", tip: "有新步骤时把镜头推给当前执行者（3 秒一次，避免乱跳）；按 f 切换" },
+  { v: "board", label: "白板", tip: "看白板上的分工与打勾（按 b）" },
+  { v: "screen", label: "大屏", tip: "看大屏上的结论（按 s）" }
 ];
 
 /** 空态示例任务：点一下只填入输入框，不自动发送 */
@@ -2500,7 +2500,11 @@ function onHotkey(e: KeyboardEvent) {
   /* f：跟随开关（省得每次都去点按钮） */
   if (e.key === "f" || e.key === "F") {
     setCamMode(camMode.value === "follow" ? "overview" : "follow");
+    return;
   }
+  /* b / s：一键切到白板 / 大屏（镜头预设键盘直达） */
+  if (e.key === "b" || e.key === "B") { setCamMode("board"); return; }
+  if (e.key === "s" || e.key === "S") { setCamMode("screen"); return; }
 }
 
 /* ---------- 磁吸（magnet）：鼠标靠近按钮时轻轻被吸过去 ----------
