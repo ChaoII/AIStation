@@ -5,29 +5,39 @@
       <el-tabs v-model="activeTab" class="develop-tabs" @tab-change="onTabChange">
         <!-- ============ 应用管理 ============ -->
         <el-tab-pane :label="t('ai_workflow.develop_tabApps')" name="apps">
-          <el-form :inline="true" :model="appSearch" class="develop-search">
-            <el-form-item :label="t('ai_workflow.develop_keyword')">
-              <el-input
-                v-model="appSearch.keyword"
-                :placeholder="t('ai_workflow.develop_keywordPlaceholder')"
-                clearable
-                style="width: 220px"
-                @keyup.enter="loadApps()"
-              />
-            </el-form-item>
-            <el-form-item>
-              <el-button :icon="Search" @click="loadApps()">
-                {{ t("ai_workflow.develop_query") }}
-              </el-button>
-            </el-form-item>
-          </el-form>
+          <div class="develop-head">
+            <el-form :inline="true" :model="appSearch" class="develop-search">
+              <el-form-item :label="t('ai_workflow.develop_keyword')">
+                <el-input
+                  v-model="appSearch.keyword"
+                  :placeholder="t('ai_workflow.develop_keywordPlaceholder')"
+                  clearable
+                  style="width: 220px"
+                  @keyup.enter="loadApps()"
+                />
+              </el-form-item>
+              <el-form-item>
+                <el-button :icon="Search" @click="loadApps()">
+                  {{ t("ai_workflow.develop_query") }}
+                </el-button>
+              </el-form-item>
+            </el-form>
+            <el-button
+              v-hasPerm="['module_ai:develop:create']"
+              type="primary"
+              :icon="Plus"
+              @click="openCreate"
+            >
+              {{ t("ai_workflow.develop_newApp") }}
+            </el-button>
+          </div>
 
           <el-alert
             v-if="stats.apps.expiring?.length"
             type="warning"
             :closable="false"
             show-icon
-            class="docs-alert"
+            class="docs-alert develop-alert"
             :title="
               t('ai_workflow.develop_alertExpiringTitle', { count: stats.apps.expiring_soon })
             "
@@ -42,62 +52,45 @@
                 : '')
             "
           />
-          <div class="develop-toolbar">
-            <div class="develop-toolbar__left">
-              <span class="develop-toolbar__hint">
-                {{ t("ai_workflow.develop_hintCreateApp") }}
-              </span>
-              <el-tag size="small" type="info" effect="plain" class="summary-tag">
-                {{ t("ai_workflow.develop_appTotal", { total: appTotal }) }}
-              </el-tag>
-            </div>
-            <el-button
-              v-hasPerm="['module_ai:develop:create']"
-              type="primary"
-              :icon="Plus"
-              @click="openCreate"
-            >
-              {{ t("ai_workflow.develop_newApp") }}
-            </el-button>
-          </div>
 
-          <el-table v-loading="appLoading" :data="apps" row-key="id" border stripe>
-            <el-table-column
-              prop="name"
-              :label="t('ai_workflow.develop_name')"
-              min-width="140"
-              show-overflow-tooltip
-            />
-            <el-table-column label="AppID" min-width="170">
-              <template #default="{ row }">
-                <div class="appid-cell">
-                  <span class="appid-cell__value">{{ row.appid_masked || "—" }}</span>
-                  <el-tooltip :content="t('ai_workflow.develop_copyAppid')" placement="top">
-                    <el-button text type="primary" size="small" @click="copyText(row.appid)">
-                      <el-icon><CopyDocument /></el-icon>
-                    </el-button>
-                  </el-tooltip>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_status')" width="100">
-              <template #default="{ row }">
+          <!-- 应用卡片网格（替代表格） -->
+          <div v-loading="appLoading" class="app-grid">
+            <div v-for="row in apps" :key="row.id" class="app-card">
+              <div class="app-card__head">
+                <div class="app-card__title" :title="row.name">{{ row.name }}</div>
                 <el-switch
                   v-hasPerm="['module_ai:develop:update']"
                   :model-value="row.enabled !== false"
                   @change="(v) => onToggle(row, Boolean(v))"
                 />
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_expireTime')" width="150">
-              <template #default="{ row }">
-                <span :class="{ 'text-muted': !row.expire_at, 'text-warn': isExpiringSoon(row) }">
-                  {{ fmtDateTime(row.expire_at) }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_capabilities')" min-width="200">
-              <template #default="{ row }">
+              </div>
+              <div class="app-card__appid">
+                <span class="appid-cell__value">{{ row.appid_masked || "—" }}</span>
+                <el-tooltip :content="t('ai_workflow.develop_copyAppid')" placement="top">
+                  <el-button text type="primary" size="small" @click="copyText(row.appid)">
+                    <el-icon><CopyDocument /></el-icon>
+                  </el-button>
+                </el-tooltip>
+              </div>
+              <div class="app-card__meta">
+                <div class="app-card__meta-item">
+                  <span class="app-card__meta-label">
+                    {{ t("ai_workflow.develop_expireTime") }}
+                  </span>
+                  <span
+                    :class="{ 'text-muted': !row.expire_at, 'text-warn': isExpiringSoon(row) }"
+                  >
+                    {{ fmtDateTime(row.expire_at) }}
+                  </span>
+                </div>
+                <div class="app-card__meta-item">
+                  <span class="app-card__meta-label">
+                    {{ t("ai_workflow.develop_callCount") }}
+                  </span>
+                  <span>{{ row.call_count ?? 0 }}</span>
+                </div>
+              </div>
+              <div class="app-card__caps">
                 <template v-if="row.capabilities && row.capabilities.length">
                   <el-tooltip
                     v-for="perm in row.capabilities"
@@ -111,66 +104,66 @@
                   </el-tooltip>
                 </template>
                 <span v-else class="text-muted">—</span>
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="call_count"
-              :label="t('ai_workflow.develop_callCount')"
-              width="90"
-              align="center"
+              </div>
+              <div class="app-card__actions">
+                <el-tooltip :content="t('ai_workflow.develop_embed')" placement="top">
+                  <el-button
+                    v-hasPerm="['module_ai:develop:query']"
+                    text
+                    class="app-act"
+                    @click="openEmbed(row)"
+                  >
+                    <i class="ri-code-s-slash-line" />
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip :content="t('ai_workflow.develop_try')" placement="top">
+                  <el-button
+                    v-hasPerm="['module_ai:develop:query']"
+                    text
+                    class="app-act"
+                    @click="openTry(row)"
+                  >
+                    <i class="ri-play-circle-line" />
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip :content="t('ai_workflow.develop_edit')" placement="top">
+                  <el-button
+                    v-hasPerm="['module_ai:develop:update']"
+                    text
+                    class="app-act"
+                    @click="openEdit(row)"
+                  >
+                    <i class="ri-edit-line" />
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip content="AppKey" placement="top">
+                  <el-button
+                    v-hasPerm="['module_ai:develop:reset']"
+                    text
+                    class="app-act"
+                    @click="openKeyDialog(row)"
+                  >
+                    <i class="ri-key-2-line" />
+                  </el-button>
+                </el-tooltip>
+                <el-tooltip :content="t('ai_workflow.develop_delete')" placement="top">
+                  <el-button
+                    v-hasPerm="['module_ai:develop:delete']"
+                    text
+                    class="app-act app-act--danger"
+                    @click="onDelete(row)"
+                  >
+                    <i class="ri-delete-bin-line" />
+                  </el-button>
+                </el-tooltip>
+              </div>
+            </div>
+            <el-empty
+              v-if="!apps.length && !appLoading"
+              :image-size="80"
+              :description="t('ai_workflow.develop_noData')"
             />
-            <el-table-column
-              :label="t('ai_workflow.develop_action')"
-              width="300"
-              :fixed="fixedAction"
-            >
-              <template #default="{ row }">
-                <el-button
-                  v-hasPerm="['module_ai:develop:query']"
-                  link
-                  type="primary"
-                  @click="openEmbed(row)"
-                >
-                  {{ t("ai_workflow.develop_embed") }}
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:develop:query']"
-                  link
-                  type="primary"
-                  @click="openTry(row)"
-                >
-                  {{ t("ai_workflow.develop_try") }}
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:develop:update']"
-                  link
-                  type="primary"
-                  @click="openEdit(row)"
-                >
-                  {{ t("ai_workflow.develop_edit") }}
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:develop:reset']"
-                  link
-                  type="primary"
-                  @click="openKeyDialog(row)"
-                >
-                  AppKey
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_ai:develop:delete']"
-                  link
-                  type="danger"
-                  @click="onDelete(row)"
-                >
-                  {{ t("ai_workflow.develop_delete") }}
-                </el-button>
-              </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty :image-size="80" :description="t('ai_workflow.develop_noData')" />
-            </template>
-          </el-table>
+          </div>
 
           <div v-if="appTotal > 0" class="develop-pagination">
             <el-pagination
@@ -717,30 +710,38 @@
             />
             <el-table-column
               :label="t('ai_workflow.develop_action')"
-              width="190"
+              width="150"
               :fixed="fixedAction"
             >
               <template #default="{ row }">
-                <el-button link type="primary" @click="openApprovalDetail(row)">
-                  {{ t("ai_workflow.develop_detail") }}
-                </el-button>
+                <el-tooltip :content="t('ai_workflow.develop_detail')" placement="top">
+                  <el-button text type="primary" class="app-act" @click="openApprovalDetail(row)">
+                    <i class="ri-file-list-line" />
+                  </el-button>
+                </el-tooltip>
                 <template v-if="row.status === 'pending'">
-                  <el-button
-                    v-hasPerm="'module_ai:develop:approve'"
-                    link
-                    type="primary"
-                    @click="onReviewApproval(row, true)"
-                  >
-                    {{ t("ai_workflow.develop_approve") }}
-                  </el-button>
-                  <el-button
-                    v-hasPerm="'module_ai:develop:approve'"
-                    link
-                    type="danger"
-                    @click="onReviewApproval(row, false)"
-                  >
-                    {{ t("ai_workflow.develop_reject") }}
-                  </el-button>
+                  <el-tooltip :content="t('ai_workflow.develop_approve')" placement="top">
+                    <el-button
+                      v-hasPerm="'module_ai:develop:approve'"
+                      text
+                      type="primary"
+                      class="app-act"
+                      @click="onReviewApproval(row, true)"
+                    >
+                      <i class="ri-check-line" />
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip :content="t('ai_workflow.develop_reject')" placement="top">
+                    <el-button
+                      v-hasPerm="'module_ai:develop:approve'"
+                      text
+                      type="danger"
+                      class="app-act"
+                      @click="onReviewApproval(row, false)"
+                    >
+                      <i class="ri-close-line" />
+                    </el-button>
+                  </el-tooltip>
                 </template>
               </template>
             </el-table-column>
@@ -2413,6 +2414,116 @@ onMounted(() => {
 <style scoped>
 .develop-search {
   margin-bottom: 4px;
+}
+
+/* 应用管理头部：搜索在左、「新增应用」在右 */
+.develop-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.develop-head .develop-search {
+  margin-bottom: 0;
+}
+
+.develop-alert {
+  margin-bottom: 12px;
+}
+
+/* 应用卡片网格（替代表格） */
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  min-height: 120px;
+}
+
+.app-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-bg-color);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.app-card:hover {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.app-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.app-card__title {
+  overflow: hidden;
+  font-size: var(--el-font-size-base);
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-card__appid {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-card__meta {
+  display: flex;
+  gap: 24px;
+}
+
+.app-card__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-card__meta-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.app-card__caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 24px;
+}
+
+.app-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.app-act {
+  font-size: 16px;
+  padding: 4px;
+  color: var(--el-text-color-regular);
+}
+
+.app-act:hover {
+  color: var(--el-color-primary);
+}
+
+.app-act--danger,
+.app-act--danger:hover {
+  color: var(--el-color-danger);
 }
 
 .develop-toolbar {
