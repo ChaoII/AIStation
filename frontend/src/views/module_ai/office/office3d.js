@@ -4946,11 +4946,21 @@ export function createOffice(opts) {
   function maybeChat() {
     const pool = idlePool();
     if (pool.length < 2) return;
+    /* 选一个"当前没人占用的站立位"，让两人站它两侧面对面讨论。
+       这样讨论会出现在办公区各处（站着开个短会），而不是只在 3 个固定聊天位。 */
+    const used = new Set(agents.filter(r => r.seat && r.seat.kind === 'stand').map(r => r.seat.key));
+    const freeStands = SEAT_DEF.filter(s =>
+      s.kind === 'stand' && (s.floor || 1) === 1 && !used.has(s.key));
+    if (!freeStands.length) return;
+    const stand = freeStands[Math.floor(Math.random() * freeStands.length)];
+    const [bx, bz] = stand.p;
+    /* 沿随机方向把两人错开 1.2m 面对面；偏移点若落进障碍，moveTo/findPath 会自动修正到最近可通行格 */
+    const ang = Math.random() * Math.PI * 2;
+    const dx = Math.cos(ang) * 0.6, dz = Math.sin(ang) * 0.6;
+    const p1 = [bx - dx, bz - dz], p2 = [bx + dx, bz + dz];
     const shuffled = pool.slice().sort(() => Math.random() - 0.5);
     const r1 = shuffled[0];
     const r2 = shuffled[1];
-    const pair = CHAT_PAIRS[Math.floor(Math.random() * CHAT_PAIRS.length)];
-    const [p1, p2] = pair;
     const face = (from, to) => Math.atan2(to[0] - from[0], to[1] - from[1]);
     [[r1, p1, p2], [r2, p2, p1]].forEach(([rec, mine, other]) => {
       rec.chatting = true;
