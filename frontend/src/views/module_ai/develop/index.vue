@@ -198,12 +198,10 @@
                 <el-icon class="overview-stat__icon" :size="16">
                   <component :is="s.icon" />
                 </el-icon>
-                <div class="overview-stat__meta">
-                  <span class="overview-stat__label">{{ s.label }}</span>
-                  <span class="overview-stat__value">
-                    {{ s.value }}<span class="overview-stat__suffix">{{ s.suffix }}</span>
-                  </span>
-                </div>
+                <span class="overview-stat__value">
+                  {{ s.value }}<span class="overview-stat__suffix">{{ s.suffix }}</span>
+                </span>
+                <span class="overview-stat__label">{{ s.label }}</span>
               </div>
             </div>
             <TrendLineChart :points="logTrendPoints" :height="140" />
@@ -428,12 +426,10 @@
                 <el-icon class="overview-stat__icon" :size="16">
                   <component :is="s.icon" />
                 </el-icon>
-                <div class="overview-stat__meta">
-                  <span class="overview-stat__label">{{ s.label }}</span>
-                  <span class="overview-stat__value">
-                    {{ s.value }}<span class="overview-stat__suffix">{{ s.suffix }}</span>
-                  </span>
-                </div>
+                <span class="overview-stat__value">
+                  {{ s.value }}<span class="overview-stat__suffix">{{ s.suffix }}</span>
+                </span>
+                <span class="overview-stat__label">{{ s.label }}</span>
               </div>
             </div>
             <TrendLineChart :points="mcpTrendPoints" :height="140" />
@@ -2630,17 +2626,11 @@ onMounted(() => {
 .overview-stat {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .overview-stat__icon {
   color: var(--el-color-primary);
-}
-
-.overview-stat__meta {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
 }
 
 .overview-stat__label {
