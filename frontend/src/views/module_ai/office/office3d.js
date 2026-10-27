@@ -1790,6 +1790,8 @@ export function createOffice(opts) {
     camLock = true;
     controls.enabled = false;
     controls.maxZoom = Math.max(controls.maxZoom, zoom + 0.5);
+    /* 白板/大屏前的健身器材挡视线：聚焦时隐藏，聚焦结束恢复 */
+    setFitnessHidden(true);
     /* 立即把相机移到目标正前方并正对（正交无透视，必须移动相机才能正对墙） */
     camera.position.set(cx, cy, cz);
     controls.target.set(tx, ty, tz);
@@ -1819,6 +1821,7 @@ export function createOffice(opts) {
         controls.maxZoom = 2.4;
         camLock = false;
         controls.enabled = true;
+        setFitnessHidden(false);
         camState.want = {
           zoom: 1,
           tx: 0.42,
@@ -1846,6 +1849,7 @@ export function createOffice(opts) {
     controls.maxZoom = 2.4;
     camLock = false;
     controls.enabled = true;
+    setFitnessHidden(false);
   }
 
   function focusScreen(on) {
@@ -1960,24 +1964,35 @@ export function createOffice(opts) {
   [[3.5, 2.95], [4.7, 2.95], [5.85, 2.62]].forEach(([x, z]) => stool(x, z, 0.64));
 
   /* ================= 健身角 ================= */
-  B(0.92, 0.16, 1.86, M.desk, -5.5, 0.09, -3.35, 0.03);
-  B(0.62, 0.02, 1.42, M.dark, -5.5, 0.18, -3.3, 0.01, { cast: false });
-  B(0.07, 0.05, 1.7, M.metal, -5.95, 0.2, -3.3, 0.015);
-  B(0.07, 0.05, 1.7, M.metal, -5.05, 0.2, -3.3, 0.015);
-  C(0.03, 0.03, 0.95, M.metal, -5.85, 0.7, -4.14, 10);
-  C(0.03, 0.03, 0.95, M.metal, -5.15, 0.7, -4.14, 10);
-  B(0.78, 0.28, 0.07, M.darkMetal, -5.5, 1.14, -4.16, 0.02, { rx: 0.28 });
-  B(0.5, 0.16, 0.01, M.screen, -5.5, 1.15, -4.12, 0.008, { rx: 0.28, cast: false });
+  /* 这些器材摆在大屏/白板正前方，聚焦看大屏/白板时会被它们挡住。
+     用 group 记录，聚焦时隐藏，聚焦结束恢复。 */
+  const FITNESS = new THREE.Group();
+  FITNESS.userData.fitness = true;
+  scene.add(FITNESS);
+  { B(0.92, 0.16, 1.86, M.desk, -5.5, 0.09, -3.35, 0.03, { parent: FITNESS });
+  B(0.62, 0.02, 1.42, M.dark, -5.5, 0.18, -3.3, 0.01, { cast: false, parent: FITNESS });
+  B(0.07, 0.05, 1.7, M.metal, -5.95, 0.2, -3.3, 0.015, { parent: FITNESS });
+  B(0.07, 0.05, 1.7, M.metal, -5.05, 0.2, -3.3, 0.015, { parent: FITNESS });
+  C(0.03, 0.03, 0.95, M.metal, -5.85, 0.7, -4.14, 10, { parent: FITNESS });
+  C(0.03, 0.03, 0.95, M.metal, -5.15, 0.7, -4.14, 10, { parent: FITNESS });
+  B(0.78, 0.28, 0.07, M.darkMetal, -5.5, 1.14, -4.16, 0.02, { rx: 0.28, parent: FITNESS });
+  B(0.5, 0.16, 0.01, M.screen, -5.5, 1.15, -4.12, 0.008, { rx: 0.28, cast: false, parent: FITNESS });
   /* 哑铃架 */
-  B(1.24, 0.05, 0.3, M.desk, -3.55, 0.44, -4.1, 0.015);
-  B(1.24, 0.05, 0.3, M.desk, -3.55, 0.74, -4.1, 0.015);
-  [[-0.56], [0.56]].forEach(([dx]) => B(0.05, 0.78, 0.05, M.metal, -3.55 + dx, 0.39, -4.1, 0.012));
+  B(1.24, 0.05, 0.3, M.desk, -3.55, 0.44, -4.1, 0.015, { parent: FITNESS });
+  B(1.24, 0.05, 0.3, M.desk, -3.55, 0.74, -4.1, 0.015, { parent: FITNESS });
+  [[-0.56], [0.56]].forEach(([dx]) => B(0.05, 0.78, 0.05, M.metal, -3.55 + dx, 0.39, -4.1, 0.012, { parent: FITNESS }));
   [[-0.4, 0.5], [0, 0.5], [0.4, 0.5], [-0.2, 0.8], [0.2, 0.8]].forEach(([dx, y]) => {
-    C(0.055, 0.055, 0.16, M.darkMetal, -3.55 + dx, y, -4.1, 12, { rz: Math.PI / 2 });
-    C(0.075, 0.075, 0.03, M.dark, -3.55 + dx - 0.08, y, -4.1, 12, { rz: Math.PI / 2 });
-    C(0.075, 0.075, 0.03, M.dark, -3.55 + dx + 0.08, y, -4.1, 12, { rz: Math.PI / 2 });
+    C(0.055, 0.055, 0.16, M.darkMetal, -3.55 + dx, y, -4.1, 12, { rz: Math.PI / 2, parent: FITNESS });
+    C(0.075, 0.075, 0.03, M.dark, -3.55 + dx - 0.08, y, -4.1, 12, { rz: Math.PI / 2, parent: FITNESS });
+    C(0.075, 0.075, 0.03, M.dark, -3.55 + dx + 0.08, y, -4.1, 12, { rz: Math.PI / 2, parent: FITNESS });
   });
-  B(0.8, 0.02, 1.6, M.accent, -3.4, 0.09, -2.55, 0.01, { cast: false });
+  B(0.8, 0.02, 1.6, M.accent, -3.4, 0.09, -2.55, 0.01, { cast: false, parent: FITNESS }); }
+  /* 记录每条健身器材的原始可见性，聚焦时统一隐藏、结束恢复 */
+  const fitnessVis = [];
+  FITNESS.traverse(o => { if (o.isMesh) fitnessVis.push([o, o.visible]); });
+  function setFitnessHidden(hide) {
+    fitnessVis.forEach(([o, v]) => { o.visible = hide ? false : v; });
+  }
 
   /* ================= 休息区 ================= */
   B(2.3, 0.3, 0.92, M.chair, -0.4, 0.24, 3.55, 0.05);
@@ -3475,7 +3490,10 @@ export function createOffice(opts) {
     const at = (c, r) => r * COLS + c;
     const toCell = (x, z) => [Math.round((x - X0) / CELL), Math.round((z - Z0) / CELL)];
     const toWorld = (c, r) => [X0 + c * CELL, Z0 + r * CELL];
-    const RAD = 0.2;
+    /* 人体半宽约 0.16m，加上走路时腿脚前后摆动、起身时身体前后倾，
+       路径若贴家具边 0.2m，腿脚会视觉插进桌椅。加大到 0.28 让身体整体避开，
+       实测仍能连通所有工位/关键点（RAD=0.3 会堵死过道，故取 0.28）。 */
+    const RAD = 0.28;
 
     /* 按格子中心判定，避免 ceil 多占一圈 */
     OBST.forEach(([x1, z1, x2, z2]) => {
@@ -6202,6 +6220,8 @@ export function createOffice(opts) {
         maxZoom: controls.maxZoom
       };
     },
+    /* 调试/验收：无头环境 rAF 可能停摆，调用这个强制渲染一帧再截图 */
+    renderNow: () => { try { renderFrame(); return true; } catch (e) { return false; } },
     scene,
     /* 验收用：把镜头推到某个人面前看细节（近景截图靠它，不改默认视角） */
     peek(name, zoom) {
