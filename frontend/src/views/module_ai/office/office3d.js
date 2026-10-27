@@ -3005,6 +3005,7 @@ export function createOffice(opts) {
       sit_look: own ? resolve(['sit_look']) : null,
       phone: own ? resolve(['phone']) : null,
       look: own ? resolve(['look']) : null,
+      drink: own ? resolve(['drink']) : null,
       /* 没有 Sing / Talk：用 Interact */
       sing: own ? resolve(['sing']) : resolve(['Interact', 'Female_Standing', 'Idle_Talking'])
     };
@@ -3178,13 +3179,14 @@ export function createOffice(opts) {
           return;
         }
         clone.position.y = 0;
-        if (p === 'walk') play(ACT.walk || ACT.idle);
-        else if (p === 'dance') play(ACT.dance || ACT.idle);
-        else if (p === 'sing') play(ACT.sing || ACT.dance || ACT.idle);
-        else if (p === 'stretch' && ACT.stretch) play(ACT.stretch);
-        else if (p === 'phone' && ACT.phone) play(ACT.phone);
-        else if (p === 'look' && ACT.look) play(ACT.look);
-        else play(ACT.idle || ACT.walk);
+        if (p === 'walk') { this.setProp('none'); play(ACT.walk || ACT.idle); }
+        else if (p === 'dance') { this.setProp('none'); play(ACT.dance || ACT.idle); }
+        else if (p === 'sing') { this.setProp('mic'); play(ACT.sing || ACT.dance || ACT.idle); }
+        else if (p === 'stretch' && ACT.stretch) { this.setProp('none'); play(ACT.stretch); }
+        else if (p === 'phone' && ACT.phone) { this.setProp('phone'); play(ACT.phone); }
+        else if (p === 'look' && ACT.look) { this.setProp('none'); play(ACT.look); }
+        else if (p === 'drink' && ACT.drink) { this.setProp('cup'); play(ACT.drink); }
+        else { this.setProp('none'); play(ACT.idle || ACT.walk); }
       },
       /** 步频跟速度走：走慢时动画也慢下来，不然脚在"打滑"（像平移） */
       setSpeed(scale) {
@@ -5869,7 +5871,7 @@ export function createOffice(opts) {
           /* 站着发呆：每隔 18~40 秒来一次伸懒腰 / 看手机 / 左右张望 */
           if (!rec.idleAct || t > rec.idleAct.until) {
             if (t > (rec.nextIdleAt || 0)) {
-              const pool = ['stretch', 'phone', 'look'];
+              const pool = ['stretch', 'phone', 'look', 'drink'];
               rec.idleAct = { kind: pool[(Math.random() * pool.length) | 0], until: t + 4.2 };
               rec.nextIdleAt = t + 10 + Math.random() * 14;
             }

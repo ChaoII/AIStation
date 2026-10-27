@@ -961,6 +961,21 @@ def act_look(arm, F):
         key_legs(arm, f)
 
 
+def act_drink(arm, F):
+    """喝水：右手（拿杯）抬到嘴边抿一口，头微仰，再放下。"""
+    for k, s in ((0.0, 0), (0.3, 1), (0.55, 1), (1.0, 0)):
+        f = 1 + int(round(F * k))
+        key(arm, "UpperArm.R", f, rot=(math.radians(-52 if s else -10), 0,
+                                       math.radians(24 if s else 6)))
+        key(arm, "LowerArm.R", f, rot=(math.radians(-128 if s else -24), 0, 0))
+        key(arm, "Hand.R", f, rot=(math.radians(-30 if s else -6), 0,
+                                   math.radians(-10 if s else 0)))
+        key(arm, "Head", f, rot=(math.radians(-12 if s else 2), 0, 0))
+        key(arm, "Chest", f, rot=(math.radians(2), 0, 0))
+        key(arm, "Hips", f, loc=(0, 0.004 if s else 0, 0))
+        key_legs(arm, f)
+
+
 def act_dance(arm, F):
     """四拍：左手前上 → 右手前上 → 双手举起 → 半蹲，再从头来。
 
@@ -1121,6 +1136,7 @@ def main():
     make_action(arm, "stretch", 56, act_stretch)
     make_action(arm, "phone", 60, act_phone)
     make_action(arm, "look", 72, act_look)
+    make_action(arm, "drink", 56, act_drink)
     arm.animation_data.action = None
 
     # 预览前把姿势清干净（否则会继承最后一条动作的 pose，看起来在半空劈叉）
