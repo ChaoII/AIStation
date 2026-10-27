@@ -202,34 +202,6 @@
               </el-card>
             </el-col>
           </el-row>
-          <div v-if="stats.series.length" class="spark-row">
-            <span class="spark-row__label">{{ t("ai_workflow.develop_recent7") }}</span>
-            <div
-              v-for="day in stats.series"
-              :key="day.date"
-              class="spark"
-              :title="t('ai_workflow.develop_sparkTitle', { date: day.date, calls: day.calls })"
-            >
-              <div class="spark__bar" :style="{ height: sparkHeight(day.calls) }" />
-              <span class="spark__label">{{ day.date.slice(5) }}</span>
-            </div>
-            <div v-if="stats.top_capabilities.length" class="spark-row__top">
-              <span class="spark-row__label">{{ t("ai_workflow.develop_topCapabilities") }}</span>
-              <el-tag
-                v-for="item in stats.top_capabilities"
-                :key="item.capability + item.category"
-                size="small"
-                effect="plain"
-                class="cap-tag cap-tag--drill"
-                :title="
-                  t('ai_workflow.develop_filterCapabilityTitle', { capability: item.capability })
-                "
-                @click="drillDownCapability(item.capability)"
-              >
-                {{ item.capability }} · {{ item.calls }}
-              </el-tag>
-            </div>
-          </div>
           <el-form :inline="true" :model="logFilter" class="develop-search">
             <el-form-item :label="t('ai_workflow.develop_appLabel')">
               <el-select
@@ -1751,12 +1723,6 @@ const statCards = computed(() => [
   },
 ]);
 
-const sparkMax = computed(() => Math.max(1, ...stats.series.map((d: any) => Number(d.calls) || 0)));
-
-function sparkHeight(calls: number) {
-  return barHeight(calls, sparkMax.value);
-}
-
 /** 通用迷你柱高度：value/max → 2..36px（max 为 0/undefined 时取 1）。 */
 function barHeight(value: number, max: number) {
   const safe = Math.max(1, Number(max) || 1);
@@ -1866,12 +1832,6 @@ async function onExportUsage() {
   } catch (e: any) {
     ElMessage.error(e?.msg || t("ai_workflow.develop_exportFail"));
   }
-}
-
-//: Top 能力标签下钻：设能力筛选并立即查询。
-function drillDownCapability(code: string) {
-  logFilter.capability = code;
-  loadLogs();
 }
 
 // ---- 能力试调 ----
