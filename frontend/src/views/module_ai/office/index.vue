@@ -1476,6 +1476,37 @@ async function loadRecent() {
   }
 }
 
+/** 大屏全局实时任务流：任务进行中时，大屏滚动显示所有智能体最近的步骤。
+    仅在不在「专场」（brief/result）时才切到 log 实时模式，避免打断用户的专场视图。 */
+function updateBigScreenLive() {
+  if (!office) return;
+  const mode = office.screenMode?.();
+  if (mode === "brief" || mode === "result") return;   // 专场优先，不抢占
+  const rows = steps.value.slice(-4);
+  if (!rows.length) {
+    /* 步骤被清空（新一轮/停止）：大屏回到待命屏 */
+    office.setScreen?.("idle", null, { focus: false });
+    return;
+  }
+  office.setScreen?.(
+    "log",
+    {
+      title: "实时任务流",
+      sub: `${steps.value.length} 步 · ${rows[rows.length - 1]?.time || ""}`,
+      busy: true,
+      entries: rows.map((st) => ({
+        kind: st.kind,
+        actor: st.actor || "组长",
+        tool: st.kind === "tool" ? toolName(st) : "",
+        to: st.kind === "tool" ? toolTarget(st) : "",
+        text: stepView(st).text,
+        result: st.result || ""
+      }))
+    },
+    { focus: false }
+  );
+}
+
 function pushStep(kind: string, title: string, detail = "", actor = "") {
   if (kind === "reply" && actor) {
     const idx = steps.value.findIndex((x) => x.kind === "tool" && toolTarget(x) === actor);
@@ -1485,6 +1516,7 @@ function pushStep(kind: string, title: string, detail = "", actor = "") {
       const copy = steps.value.slice();
       copy[idx] = { ...copy[idx], result: detail };
       steps.value = copy;
+      updateBigScreenLive();
       return;
     }
   }
@@ -1492,6 +1524,7 @@ function pushStep(kind: string, title: string, detail = "", actor = "") {
     ...steps.value,
     { kind, title, actor, detail, time: new Date().toTimeString().slice(0, 8), open: false }
   ];
+  updateBigScreenLive();
 }
 
 /** 楼层：1F / 2F（二层是同一套布局叠上去，容量翻倍） */
