@@ -2470,6 +2470,52 @@ function onHotkey(e: KeyboardEvent) {
   }
 }
 
+/* ---------- 磁吸（magnet）：鼠标靠近按钮时轻轻被吸过去 ----------
+   参考 vue-bits 的 Magnet，自实现 30 行（不引依赖）：JS 只写 --mg-x/--mg-y，
+   位移和缓动交给 CSS（见 <style> 里的玻璃皮肤段）。40ms 节流，避免每次
+   pointermove 都量一遍 DOM。 */
+let stopMagnet: (() => void) | null = null;
+function initMagnet(root: Element | null): () => void {
+  if (!root) return () => {};
+  const SEL = ".of-btn, .of-ico, .of-seg button, .office-bar .el-button";
+  let last = 0;
+  const reset = (el: HTMLElement) => {
+    if (!el.style.transform) return;
+    el.style.transform = "";
+  };
+  const onMove = (e: Event) => {
+    const pe = e as PointerEvent;
+    const now = performance.now();
+    if (now - last < 40) return;
+    last = now;
+    const R = 80;
+    root.querySelectorAll<HTMLElement>(SEL).forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (!r.width) return;
+      const dx = pe.clientX - (r.left + r.width / 2);
+      const dy = pe.clientY - (r.top + r.height / 2);
+      const dist = Math.hypot(dx, dy);
+      if (dist > R) {
+        reset(el);
+        return;
+      }
+      const k = (1 - dist / R) * 10;
+      const mx = (dx / (dist || 1)) * k;
+      const my = (dy / (dist || 1)) * k;
+      el.style.transform = `translate(${mx.toFixed(2)}px, ${my.toFixed(2)}px)`;
+    });
+  };
+  const onLeave = () => {
+    root.querySelectorAll<HTMLElement>(SEL).forEach(reset);
+  };
+  root.addEventListener("pointermove", onMove, { passive: true });
+  root.addEventListener("pointerleave", onLeave);
+  return () => {
+    root.removeEventListener("pointermove", onMove);
+    root.removeEventListener("pointerleave", onLeave);
+  };
+}
+
 onMounted(async () => {
   await load();
   loadMeta();
@@ -2499,6 +2545,8 @@ onMounted(async () => {
   /* mountOffice 时还没读到本地设置，这里补一次（省电模式要在首屏就生效） */
   applyQuality();
   window.addEventListener("keydown", onHotkey);
+  /* 磁吸按钮：只在办公室页生效（位移交给 CSS 变量） */
+  stopMagnet = initMagnet(document.querySelector(".ai-office-page"));
 
   // 定时任务单独 8 秒轮询：到点要尽快看见，不能等 20 秒
   cronTimer = setInterval(() => {
@@ -2521,6 +2569,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onHotkey);
+  stopMagnet?.();
+  stopMagnet = null;
   if (glLostTimer) window.clearTimeout(glLostTimer);
   glLostTimer = null;
   if (peopleHintTimer) window.clearTimeout(peopleHintTimer);
@@ -5545,6 +5595,133 @@ onBeforeUnmount(() => {
 .of-samples .sample:hover {
   border-color: var(--of-oak);
   color: var(--of-oak);
+}
+
+/* ================= 玻璃皮肤（2026-10） =================
+   外层：与其他页面一致的蓝灰边框（菜单栏/标签栏之间那道线）。
+   内部：半透明毛玻璃底板 + 磁吸按钮（magnet，JS 只写 --mg-x/--mg-y）。
+   注意：浮在 3D canvas 上的条不加 backdrop-filter —— 每帧重算模糊太吃 CPU，
+   半透明 + 阴影就够。 */
+.ai-office-page {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--el-border-radius-base);
+  padding: 16px;
+  background:
+    radial-gradient(1100px 520px at 8% -12%, rgba(122, 158, 205, 0.18), transparent 62%),
+    radial-gradient(900px 460px at 102% -6%, rgba(176, 125, 63, 0.12), transparent 58%),
+    linear-gradient(180deg, #f7f9fc 0%, #edf1f7 100%);
+}
+
+/* 两块玻璃底板：左花名册 / 右舞台 */
+.ai-office-page .office-roster,
+.ai-office-page .office-stage-card {
+  background: rgba(255, 255, 255, 0.62);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 12px;
+  box-shadow:
+    0 10px 28px rgba(31, 45, 61, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* 工具条 / 今日统计：薄玻璃 */
+.ai-office-page .office-bar {
+  background: rgba(255, 255, 255, 0.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  backdrop-filter: blur(12px) saturate(1.1);
+  border-bottom: 1px solid rgba(214, 222, 234, 0.9);
+}
+.ai-office-page .of-stats {
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 10px;
+}
+
+/* 3D 舞台：圆角裁一下，和玻璃卡呼应（canvas 自己是方的） */
+.ai-office-page .stage {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* 浮在 3D 画面上的播报条 / 结论条：半透明 + 阴影，不 blur */
+.ai-office-page .cast-bar,
+.ai-office-page .brief-bar {
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(31, 45, 61, 0.1);
+}
+
+/* 磁吸（magnet）：位移由 JS 直接写 transform，这里只给缓动 */
+.ai-office-page .of-btn,
+.ai-office-page .of-ico,
+.ai-office-page .of-seg button,
+.ai-office-page .office-bar .el-button {
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+  will-change: transform;
+}
+
+/* 深色模式：同一套结构，换底色（并把暖纸配色翻成深底浅字，否则文字全看不见） */
+html.dark .ai-office-page {
+  --of-paper: #1a202a;
+  --of-paper2: #222a36;
+  --of-line: rgba(255, 255, 255, 0.1);
+  --of-line2: rgba(255, 255, 255, 0.07);
+  --of-ink: #e6ebf2;
+  --of-ink2: #a9b4c4;
+  --of-ink3: #7c8798;
+  --of-oak: #d3a367;
+  --of-oak-soft: #2a2419;
+  --of-busy: #63b39a;
+  --of-err: #e0806b;
+  --of-wait: #d9a95a;
+  background:
+    radial-gradient(1100px 520px at 8% -12%, rgba(80, 118, 170, 0.3), transparent 62%),
+    radial-gradient(900px 460px at 102% -6%, rgba(150, 104, 50, 0.18), transparent 58%),
+    linear-gradient(180deg, #161a21 0%, #10141a 100%);
+}
+html.dark .ai-office-page .office-roster,
+html.dark .ai-office-page .office-stage-card {
+  background: rgba(26, 32, 42, 0.62);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+html.dark .ai-office-page .office-bar {
+  background: rgba(22, 27, 35, 0.55);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+html.dark .ai-office-page .of-stats {
+  background: rgba(26, 32, 42, 0.5);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .ai-office-page .cast-bar,
+html.dark .ai-office-page .cast-list,
+html.dark .ai-office-page .brief-bar {
+  background: rgba(22, 27, 35, 0.94) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: var(--of-ink2);
+}
+/* 人物名牌写死了白底：深色下必须翻成深底，否则白底 + 浅字 = 看不见 */
+html.dark .ai-office-page .ag-chip {
+  background: rgba(24, 30, 39, 0.94) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  color: var(--of-ink) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+html.dark .ai-office-page .ag-chip.wait {
+  background: #2a2419 !important;
+  border-color: rgba(217, 169, 90, 0.5) !important;
+}
+html.dark .ai-office-page .ag-chip.err {
+  background: #2b1c1a !important;
+  border-color: rgba(224, 128, 107, 0.5) !important;
 }
 
 </style>
