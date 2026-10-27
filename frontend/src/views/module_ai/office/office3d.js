@@ -4922,10 +4922,9 @@ export function createOffice(opts) {
 
   /** 工位间拜访：一个空闲同事走到另一个正在工位工作的同事旁边站一下（递文件/打招呼），再回座 */
   function maybeVisit() {
-    /* 拜访者：空闲（idle）、坐工位、当前没在走路/跑腿/聊天的 desk 同事 */
+    /* 拜访者：空闲（idle）、当前没在走路/跑腿/聊天的同事（不管他此刻在工位还是休息区，都可以去串门） */
     const visitors = agents.filter(r =>
-      !r.temp && r.seat && r.seat.kind === 'desk' &&
-      r.data.status === 'idle' && !r.trip && !r.chatting && !r.onDance &&
+      !r.temp && !r.data.isLeader && r.data.status === 'idle' && !r.trip && !r.chatting && !r.onDance &&
       !(r.path && r.wp < r.path.length));
     if (!visitors.length) return;
     /* 被访者：正在忙碌、坐工位的 desk 同事（别去打扰休息区/在走的人） */
@@ -4936,7 +4935,7 @@ export function createOffice(opts) {
     const target = targets[Math.floor(Math.random() * targets.length)];
     /* 若拜访者与被访者是同一人不成立（visitors、targets 按 status 互斥：idle vs busy） */
     const [tx, tz] = target.seat.p;
-    const [vx, vz] = visitor.seat.p;
+    const [vx, vz] = visitor.person.root.position;
     /* 站在被访者工位的一侧，保持一点距离，面向工位 */
     const ang = Math.atan2(vx - tx, vz - tz);
     const px = tx + Math.sin(ang) * 0.9, pz = tz + Math.cos(ang) * 0.9;
