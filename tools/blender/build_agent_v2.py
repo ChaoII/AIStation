@@ -428,7 +428,7 @@ def hair_cards(root, tag, specs):
                 uvs.append((0.0 if sx < 0 else 1.0, v))
         faces.append((base + 0, base + 1, base + 3, base + 2))
         faces.append((base + 2, base + 3, base + 5, base + 4))
-    o = obj_mesh(tag + "_cards", verts, faces, hair_mat(), smooth=True)
+    o = obj_mesh(tag + "_cards", verts, faces, mat("mat_hair", (0.035, 0.03, 0.032)), smooth=True)
     uvl = o.data.uv_layers.new(name="UVMap")
     for poly in o.data.polygons:
         for li in poly.loop_indices:
@@ -450,7 +450,8 @@ def build_hair(M):
         cap = ball(name, HEAD_R + extra, (0, 0.012, HEAD_Z + dz), M["hair"], (sx, sy, sz), 32, 20)
         cut_tilted(cap, cut_z, tilt)
         wavy_rim(cap, cut_z, tilt, amp, waves)
-        texture_cap(cap, 3.0)
+        # 不再贴"黑白斑马纹"发丝贴图：那是头发显粗糙的根源（西瓜皮条纹）。
+        # 发帽直接用深色纯色材质，做成整块有形的发型。
         out.append(cap)
         return cap
 
@@ -478,13 +479,11 @@ def build_hair(M):
     bang = ball("hair_2_bang", 0.104, (0, -0.084, HEAD_Z + 0.116),
                 M["hair"], (1.34, 0.50, 0.28), 22, 14)
     attach(h2, bang)
-    texture_cap(bang, 1.4)
 
     # ---------- 3 女生长直发：后发垂到肩下 + 两侧长发片
     h3 = shell("hair_3", 0.024, 0.014, HEAD_Z - 0.005, 0.66, amp=0.010, waves=6)
     back = limb("hair_3_back", 0.112, 0.140, 0.34, (0, 0.165, HEAD_Z - 0.100), M["hair"], seg=24)
     attach(h3, back)
-    texture_cap(back, 1.6)
     back.scale = (1, 0.28, 1)
     bpy.context.view_layer.objects.active = back
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
@@ -492,13 +491,11 @@ def build_hair(M):
         lock = ball("hair_3_lock%d" % sx, 0.070, (sx * 0.132, 0.012, HEAD_Z - 0.110),
                     M["hair"], (0.52, 0.80, 1.95), 16, 12)
         attach(h3, lock)
-        texture_cap(lock, 1.2)
     # ---------- 4 女生马尾：短发 + 后脑一束
     h4 = shell("hair_4", 0.026, 0.012, HEAD_Z + 0.006, 0.55, amp=0.009, waves=9)
     tail = limb("hair_4_tail", 0.050, 0.026, 0.34, (0, 0.168, HEAD_Z - 0.095),
                 M["hair"], rot=(math.radians(-16), 0, 0), seg=18)
     attach(h4, tail)
-    texture_cap(tail, 1.2)
     attach(h4, ball("hair_4_tie", 0.040, (0, 0.140, HEAD_Z + 0.075), M["belt"], (1, 0.8, 0.62), 16, 10))
 
     # ---------- 5 女生丸子头：短发 + 顶后一个发髻
@@ -506,7 +503,6 @@ def build_hair(M):
     bun5 = ball("hair_5_bun", 0.090, (0, 0.058, HEAD_Z + 0.246), M["hair"], (1, 1, 0.94), 24, 18)
     attach(h5, bun5)
     attach(h5, ring("hair_5_tie", 0.052, 0.010, (0, 0.050, HEAD_Z + 0.180), M["belt"]))
-    texture_cap(bun5, 1.3)
     for sx in (-1, 1):
         attach(h5, ball("hair_5_burn%d" % sx, 0.052, (sx * 0.152, -0.004, HEAD_Z - 0.030),
                         M["hair"], (0.42, 0.88, 1.10), 14, 10))
@@ -518,7 +514,6 @@ def build_hair(M):
     tail6 = limb("hair_6_tail", 0.048, 0.026, 0.44, (0, 0.196, HEAD_Z - 0.110),
                  M["hair"], rot=(math.radians(-14), 0, 0), seg=18)
     attach(h6, tail6)
-    texture_cap(tail6, 1.2)
     tail6.scale = (1, 0.75, 1)
     bpy.context.view_layer.objects.active = tail6
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
@@ -532,7 +527,6 @@ def build_hair(M):
                  (sx * 0.178, 0.040, HEAD_Z - 0.180), M["hair"],
                  rot=(0, math.radians(sx * 7), 0), seg=16)
         attach(h7, t)
-        texture_cap(t, 1.0)
 
     # ---------- 8 女生短波波：到耳下的短发，没有刘海
     h8 = shell("hair_8", 0.022, 0.014, HEAD_Z - 0.030, 0.64, amp=0.010, waves=10)
@@ -676,9 +670,9 @@ def build_body(M):
         # 袖口要套在**前臂**上（1.126，袖子下沿 1.135 之上），否则会从袖子里顶出来一圈白锯齿
         ring("cuff_%s" % side, 0.0465, 0.0090, (X, 0, 1.126), M["white"])
 
-        # ---- 手：哆啦A梦式圆球手掌（不要手指/拇指，简洁好看也不散架） ----
-        parts["hand.%s" % side] = ball("hand_%s" % side, 0.052, (X, 0, 0.905),
-                                       M["skin"], (1.0, 1.0, 1.0), 20, 14)
+        # ---- 手：扁椭球掌（比纯圆球更像"手"，不带独立拇指骨以免动作散架） ----
+        parts["hand.%s" % side] = ball("hand_%s" % side, 0.050, (X, 0, 0.905),
+                                       M["skin"], (1.02, 0.78, 1.18), 22, 16)
 
         # ---- 腿：一整段（髋→鞋里）连续曲面，膝部靠权重过渡 ----
         leg = tube("leg_%s" % side, [
@@ -1087,8 +1081,10 @@ def setup_preview():
     sc.view_settings.look = "None"
     sc.world = bpy.data.worlds.new("W")
     sc.world.use_nodes = True
-    sc.world.node_tree.nodes["Background"].inputs[0].default_value = (0.62, 0.64, 0.68, 1)
-    sc.world.node_tree.nodes["Background"].inputs[1].default_value = 0.55
+    # 按节点类型找 Background，避免界面语言/版本导致节点名不同
+    bg = next(n for n in sc.world.node_tree.nodes if n.bl_idname == "ShaderNodeBackground")
+    bg.inputs[0].default_value = (0.62, 0.64, 0.68, 1)
+    bg.inputs[1].default_value = 0.55
     bpy.ops.object.light_add(type="AREA", location=(2.2, -2.6, 3.2))
     key_l = bpy.context.active_object
     key_l.data.energy = 110
