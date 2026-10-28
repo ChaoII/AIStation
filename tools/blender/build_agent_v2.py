@@ -19,6 +19,9 @@ import bpy
 ROOT = r"C:\Users\aichao\.local\share\opencode\worktree\ce637a15bb0a57b0b07a4b910025d9e2c851dcf4\lively-ferret"
 OUT_GLB = os.path.join(ROOT, "frontend", "public", "office", "agent-v2.glb")
 OUT_PV = os.path.join(ROOT, "docs", "mockups")
+# 可编辑源工程：导出 GLB 后顺手存一份 .blend，方便直接在 Blender 里打开手改
+# （网格/材质/骨骼/全部动作都在，改完可再回脚本重导 GLB）
+OUT_BLEND = os.path.join(ROOT, "tools", "blender", "agent-v2.blend")
 
 HEAD_Z = 1.60
 HEAD_R = 0.165
@@ -1207,6 +1210,13 @@ def main():
         export_cameras=False, export_lights=False,
     )
     print("[done]", OUT_GLB, os.path.getsize(OUT_GLB), "bytes")
+
+    # 1.5) 存一份 .blend 源工程（含三套发型、全部动作），供在 Blender 里直接打开手改。
+    #      必须在删掉多余发型之前保存，否则源工程只剩一套发、无法再切换。
+    #      导出 GLB 时已 use_selection，未选中的相机等不进 GLB，但 .blend 会保留全部场景对象。
+    os.makedirs(os.path.dirname(OUT_BLEND), exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=OUT_BLEND, compress=True)
+    print("[done]", OUT_BLEND, os.path.getsize(OUT_BLEND), "bytes")
 
     # 2) 预览只留短发（其余两套直接删掉，hide_render 对蒙皮对象不可靠）
     for o in list(bpy.data.objects):
