@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from .agents import register_agent_capabilities
+from .assets import register_assets_capabilities
 from .catalog import register_catalog_capabilities
 from .chat import register_chat_capabilities
 from .cron import register_cron_capabilities
@@ -30,6 +31,7 @@ def register_all() -> None:
     register_workflow_capabilities()
     register_catalog_capabilities()
     register_cron_capabilities()
+    register_assets_capabilities()
 
 
 # 导入本包即完成注册（开放端点与 MCP 工具都依赖注册表已填充）。

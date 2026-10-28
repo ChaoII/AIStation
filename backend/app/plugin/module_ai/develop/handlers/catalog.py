@@ -1,7 +1,7 @@
 """开放面能力 handler —— 标准 CRUD 资产（app / model / prompt / provider 品类）。
 
 复用既有 service 的 list/get/create/update/delete 方法。开放面创建/更新统一以
-``OPEN_AUTH``（无平台用户）身份调用；删除须 ``confirm``。
+``await open_auth()``（无平台用户）身份调用；删除须 ``confirm``。
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..registry import Capability, register
-from ._common import OPEN_AUTH, bad_request, need_int, not_found, require_confirm
+from ._common import bad_request, need_int, not_found, open_auth, require_confirm
 
 
 def _register(category: str, defs: list[tuple]) -> None:
@@ -63,7 +63,7 @@ async def _app_create(*, app_ctx: Any, payload: dict) -> dict:
         data = cls(**payload)
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    return await AiAppService.create(data, OPEN_AUTH)
+    return await AiAppService.create(data, await open_auth())
 
 
 async def _app_update(*, app_ctx: Any, payload: dict) -> dict:
@@ -77,7 +77,7 @@ async def _app_update(*, app_ctx: Any, payload: dict) -> dict:
         data = cls(**{k: v for k, v in payload.items() if k != "app_id"})
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    row = await AiAppService.update(app_id, data, OPEN_AUTH)
+    row = await AiAppService.update(app_id, data, await open_auth())
     if row is None:
         raise not_found("应用")
     return row
@@ -108,7 +108,7 @@ async def _model_create(*, app_ctx: Any, payload: dict) -> dict:
         data = cls(**payload)
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    return await AiModelService.create(data, OPEN_AUTH)
+    return await AiModelService.create(data, await open_auth())
 
 
 async def _model_update(*, app_ctx: Any, payload: dict) -> dict:
@@ -120,7 +120,7 @@ async def _model_update(*, app_ctx: Any, payload: dict) -> dict:
         data = cls(**{k: v for k, v in payload.items() if k != "model_id"})
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    row = await AiModelService.update(model_id, data, OPEN_AUTH)
+    row = await AiModelService.update(model_id, data, await open_auth())
     if row is None:
         raise not_found("模型")
     return row
@@ -160,7 +160,7 @@ async def _prompt_create(*, app_ctx: Any, payload: dict) -> dict:
         data = cls(**payload)
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    return await AiPromptService.create(data, OPEN_AUTH)
+    return await AiPromptService.create(data, await open_auth())
 
 
 async def _prompt_update(*, app_ctx: Any, payload: dict) -> dict:
@@ -174,7 +174,7 @@ async def _prompt_update(*, app_ctx: Any, payload: dict) -> dict:
         data = cls(**{k: v for k, v in payload.items() if k != "prompt_id"})
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    row = await AiPromptService.update(prompt_id, data, OPEN_AUTH)
+    row = await AiPromptService.update(prompt_id, data, await open_auth())
     if row is None:
         raise not_found("提示词")
     return row
@@ -205,7 +205,7 @@ async def _provider_create(*, app_ctx: Any, payload: dict) -> dict:
         data = cls(**payload)
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    return await AiProviderService.create(data, OPEN_AUTH)
+    return await AiProviderService.create(data, await open_auth())
 
 
 async def _provider_update(*, app_ctx: Any, payload: dict) -> dict:
@@ -217,7 +217,7 @@ async def _provider_update(*, app_ctx: Any, payload: dict) -> dict:
         data = cls(**{k: v for k, v in payload.items() if k != "provider_id"})
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    row = await AiProviderService.update(provider_id, data, OPEN_AUTH)
+    row = await AiProviderService.update(provider_id, data, await open_auth())
     if row is None:
         raise not_found("供应商")
     return row

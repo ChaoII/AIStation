@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..registry import Capability, register
-from ._common import OPEN_AUTH, bad_request, need_int, not_found, require_confirm
+from ._common import bad_request, need_int, not_found, open_auth, require_confirm
 
 
 async def _cron_list(*, app_ctx: Any, payload: dict) -> dict:
@@ -29,7 +29,7 @@ async def _cron_create(*, app_ctx: Any, payload: dict) -> dict:
         data = WorkspaceCronCreateSchema(**payload)
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    return await WorkspaceService.create_cron(data, OPEN_AUTH)
+    return await WorkspaceService.create_cron(data, await open_auth())
 
 
 async def _cron_update(*, app_ctx: Any, payload: dict) -> dict:
@@ -41,7 +41,7 @@ async def _cron_update(*, app_ctx: Any, payload: dict) -> dict:
         data = WorkspaceCronUpdateSchema(**{k: v for k, v in payload.items() if k != "cron_id"})
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    row = await WorkspaceService.update_cron(cron_id, data, OPEN_AUTH)
+    row = await WorkspaceService.update_cron(cron_id, data, await open_auth())
     if row is None:
         raise not_found("定时任务")
     return row
@@ -52,7 +52,7 @@ async def _cron_delete(*, app_ctx: Any, payload: dict) -> dict:
 
     cron_id = need_int(payload, "cron_id")
     require_confirm(payload, "删除定时任务")
-    await WorkspaceService.delete_cron(cron_id, OPEN_AUTH)
+    await WorkspaceService.delete_cron(cron_id, await open_auth())
     return {"deleted": cron_id}
 
 

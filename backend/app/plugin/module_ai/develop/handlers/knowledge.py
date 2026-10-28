@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from app.core.exceptions import CustomException
 
 from ..registry import Capability, register
-from ._common import OPEN_AUTH, bad_request, need_int, need_str, not_found, require_confirm
+from ._common import bad_request, need_int, need_str, not_found, open_auth, require_confirm
 
 
 async def _kb_list(*, app_ctx: Any, payload: dict) -> dict:
@@ -39,7 +39,7 @@ async def _kb_create(*, app_ctx: Any, payload: dict) -> dict:
         data = AiKnowledgeBaseCreateSchema(**payload)
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    return await AiKnowledgeService.create_base(data, OPEN_AUTH)
+    return await AiKnowledgeService.create_base(data, await open_auth())
 
 
 async def _kb_update(*, app_ctx: Any, payload: dict) -> dict:
@@ -53,7 +53,7 @@ async def _kb_update(*, app_ctx: Any, payload: dict) -> dict:
         data = AiKnowledgeBaseUpdateSchema(**{k: v for k, v in payload.items() if k != "kb_id"})
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    row = await AiKnowledgeService.update_base(kb_id, data, OPEN_AUTH)
+    row = await AiKnowledgeService.update_base(kb_id, data, await open_auth())
     if row is None:
         raise not_found("知识库")
     return row
@@ -119,7 +119,7 @@ async def _kb_category_create(*, app_ctx: Any, payload: dict) -> dict:
     name = need_str(payload, "name", max_len=128)
     parent_id = payload.get("parent_id")
     return await AiKnowledgeService.create_category(
-        type("C", (), {"name": name, "parent_id": parent_id})(), OPEN_AUTH
+        type("C", (), {"name": name, "parent_id": parent_id})(), await open_auth()
     )
 
 

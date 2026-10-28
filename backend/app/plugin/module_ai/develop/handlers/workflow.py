@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..registry import Capability, register
-from ._common import OPEN_AUTH, bad_request, need_int, not_found, require_confirm
+from ._common import bad_request, need_int, not_found, open_auth, require_confirm
 
 
 async def _wf_list(*, app_ctx: Any, payload: dict) -> dict:
@@ -37,7 +37,7 @@ async def _wf_create(*, app_ctx: Any, payload: dict) -> dict:
         data = AiWorkflowCreateSchema(**payload)
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    return await AiWorkflowService.create(data, OPEN_AUTH)
+    return await AiWorkflowService.create(data, await open_auth())
 
 
 async def _wf_update(*, app_ctx: Any, payload: dict) -> dict:
@@ -51,7 +51,7 @@ async def _wf_update(*, app_ctx: Any, payload: dict) -> dict:
         data = AiWorkflowUpdateSchema(**{k: v for k, v in payload.items() if k != "workflow_id"})
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    row = await AiWorkflowService.update(wf_id, data, OPEN_AUTH)
+    row = await AiWorkflowService.update(wf_id, data, await open_auth())
     if row is None:
         raise not_found("工作流")
     return row

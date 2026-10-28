@@ -25,6 +25,10 @@ CATEGORIES: dict[str, str] = {
     "prompt": "提示词",
     "app": "AI 应用",
     "provider": "模型供应商",
+    "skill": "技能",
+    "tool": "工具",
+    "plugin": "插件",
+    "mcp": "MCP 服务器",
 }
 
 #: 品类码 → 该品类下的合法权限点列表。
@@ -91,6 +95,30 @@ CATEGORY_PERMS: dict[str, list[str]] = {
         "integration:provider:create",
         "integration:provider:update",
         "integration:provider:delete",
+    ],
+    "skill": [
+        "integration:skill:query",
+        "integration:skill:create",
+        "integration:skill:update",
+        "integration:skill:delete",
+    ],
+    "tool": [
+        "integration:tool:query",
+        "integration:tool:create",
+        "integration:tool:update",
+        "integration:tool:delete",
+    ],
+    "plugin": [
+        "integration:plugin:query",
+        "integration:plugin:create",
+        "integration:plugin:update",
+        "integration:plugin:delete",
+    ],
+    "mcp": [
+        "integration:mcp:query",
+        "integration:mcp:create",
+        "integration:mcp:update",
+        "integration:mcp:delete",
     ],
 }
 
