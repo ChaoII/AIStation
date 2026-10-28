@@ -6409,6 +6409,14 @@ export function createOffice(opts) {
          +r.person.root.rotation.y.toFixed(2)]
       ])),
       beams: BEAMS.filter(b => b.line.visible).length,
+      badge: {
+        open: badgeData.open,
+        visible: badgeMesh.visible,
+        id: badgeData.id,
+        pos: badgeData.open && badgeMesh.visible
+          ? (() => { const v = badgeMesh.position; const [sx, sy] = project(v.x, v.y, v.z); return { x: +sx.toFixed(0), y: +sy.toFixed(0), z: +camera.zoom.toFixed(2) }; })()
+          : null
+      },
       fail: !!(failTarget && performance.now() < failUntil),
       partying: agents.filter(r => r.onDance).map(r => r.data.name),
       power: +discoPower.toFixed(2),
