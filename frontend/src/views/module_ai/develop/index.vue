@@ -472,9 +472,7 @@
               min-width="140"
               show-overflow-tooltip
             >
-              <template #default="{ row }">
-                <span class="mono-text">{{ row.session_id || "—" }}</span>
-              </template>
+              <template #default="{ row }">{{ row.session_id || "—" }}</template>
             </el-table-column>
             <el-table-column :label="t('ai_workflow.develop_transport')" width="90">
               <template #default="{ row }">{{ transportLabel(row.transport) }}</template>
