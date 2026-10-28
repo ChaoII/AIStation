@@ -46,7 +46,10 @@ class DevelopInsights:
                         func.count().label("n"),
                         func.avg(AiIntegrationCallLogModel.latency_ms).label("avg_ms"),
                     )
-                    .where(AiIntegrationCallLogModel.created_time >= datetime.combine(today, datetime.min.time()))
+                    .where(
+                        AiIntegrationCallLogModel.created_time >= datetime.combine(today, datetime.min.time()),
+                        AiIntegrationCallLogModel.method != "EMBED",
+                    )
                     .group_by(AiIntegrationCallLogModel.status)
                 )
             ).all()
@@ -58,6 +61,7 @@ class DevelopInsights:
                     select(func.avg(AiIntegrationCallLogModel.latency_ms)).where(
                         AiIntegrationCallLogModel.created_time >= datetime.combine(today, datetime.min.time()),
                         AiIntegrationCallLogModel.status == "success",
+                        AiIntegrationCallLogModel.method != "EMBED",
                     )
                 )
             ).scalar()
@@ -71,7 +75,10 @@ class DevelopInsights:
                         AiIntegrationCallLogModel.status,
                         func.count().label("n"),
                     )
-                    .where(AiIntegrationCallLogModel.created_time >= since)
+                    .where(
+                        AiIntegrationCallLogModel.created_time >= since,
+                        AiIntegrationCallLogModel.method != "EMBED",
+                    )
                     .group_by(day_col, AiIntegrationCallLogModel.status)
                     .order_by(day_col)
                 )
@@ -103,7 +110,10 @@ class DevelopInsights:
                         AiIntegrationCallLogModel.category,
                         func.count().label("n"),
                     )
-                    .where(AiIntegrationCallLogModel.created_time >= since)
+                    .where(
+                        AiIntegrationCallLogModel.created_time >= since,
+                        AiIntegrationCallLogModel.method != "EMBED",
+                    )
                     .group_by(
                         AiIntegrationCallLogModel.capability, AiIntegrationCallLogModel.category
                     )
@@ -214,6 +224,7 @@ class DevelopInsights:
                         AiIntegrationCallLogModel.app_id == app_id,
                         AiIntegrationCallLogModel.created_time >= start,
                         AiIntegrationCallLogModel.created_time < end,
+                        AiIntegrationCallLogModel.method != "EMBED",
                         # 审计之外的「待审批」也算一次调用意图
                         AiIntegrationCallLogModel.status != "rejected",
                     )
@@ -236,7 +247,8 @@ class DevelopInsights:
         limit: int = 5000,
     ) -> str:
         """按筛选条件导出调用日志 CSV（UTF-8 BOM，Excel 可直接打开）。"""
-        wheres = []
+        # 嵌入域已剥离（method=EMBED 写入独立 ai_asset_embed_logs），导出不再含 EMBED
+        wheres = [AiIntegrationCallLogModel.method != "EMBED"]
         if app_id is not None:
             wheres.append(AiIntegrationCallLogModel.app_id == app_id)
         if category:
@@ -338,7 +350,10 @@ async def usage_report(days: int = 7) -> dict:
                     AiIntegrationCallLogModel.error,
                     func.count().label("n"),
                 )
-                .where(AiIntegrationCallLogModel.created_time >= since)
+                .where(
+                    AiIntegrationCallLogModel.created_time >= since,
+                    AiIntegrationCallLogModel.method != "EMBED",
+                )
                 .group_by(
                     AiIntegrationCallLogModel.app_id,
                     AiIntegrationCallLogModel.appid,
@@ -354,7 +369,10 @@ async def usage_report(days: int = 7) -> dict:
                     AiIntegrationCallLogModel.capability,
                     func.count().label("n"),
                 )
-                .where(AiIntegrationCallLogModel.created_time >= since)
+                .where(
+                    AiIntegrationCallLogModel.created_time >= since,
+                    AiIntegrationCallLogModel.method != "EMBED",
+                )
                 .group_by(
                     AiIntegrationCallLogModel.app_id, AiIntegrationCallLogModel.capability
                 )

@@ -629,7 +629,8 @@ async def _query_call_logs(
     """按 app_id/category/method/status 过滤调用日志，分页返回。"""
     page_no = max(int(page_no or 1), 1)
     page_size = max(int(page_size or 20), 1)
-    wheres = []
+    # 嵌入域已剥离（method=EMBED 写入独立 ai_asset_embed_logs），开发平台审计不再展示旧 EMBED 记录
+    wheres = [AiIntegrationCallLogModel.method != "EMBED"]
     if app_id is not None:
         wheres.append(AiIntegrationCallLogModel.app_id == app_id)
     if category:
