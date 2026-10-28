@@ -393,25 +393,6 @@
 
         <!-- ============ MCP 会话 ============ -->
         <el-tab-pane :label="t('ai_workflow.develop_tabMcp')" name="mcp" class="develop-table-pane">
-          <el-form :inline="true" :model="mcpFilter" class="develop-search">
-            <el-form-item :label="t('ai_workflow.develop_appLabel')">
-              <el-select
-                v-model="mcpFilter.app_id"
-                :placeholder="t('ai_workflow.develop_all')"
-                clearable
-                filterable
-                style="width: 180px"
-              >
-                <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" :icon="Search" @click="loadMcps()">
-                {{ t("ai_workflow.develop_query") }}
-              </el-button>
-            </el-form-item>
-          </el-form>
-
           <el-card shadow="never" class="trend-card">
             <template #header>
               <div class="trend-card__head">
@@ -434,6 +415,24 @@
             </div>
             <TrendLineChart :points="mcpTrendPoints" :height="140" />
           </el-card>
+          <el-form :inline="true" :model="mcpFilter" class="develop-search">
+            <el-form-item :label="t('ai_workflow.develop_appLabel')">
+              <el-select
+                v-model="mcpFilter.app_id"
+                :placeholder="t('ai_workflow.develop_all')"
+                clearable
+                filterable
+                style="width: 180px"
+              >
+                <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :icon="Search" @click="loadMcps()">
+                {{ t("ai_workflow.develop_query") }}
+              </el-button>
+            </el-form-item>
+          </el-form>
 
           <div class="table-flow">
           <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe height="100%">
