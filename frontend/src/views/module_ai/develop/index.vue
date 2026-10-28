@@ -185,7 +185,16 @@
         </el-tab-pane>
 
         <!-- ============ 调用日志 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabLogs')" name="logs" class="develop-table-pane">
+        <el-tab-pane :label="t('ai_workflow.develop_tabAudit')" name="audit" class="develop-table-pane">
+          <div class="audit-switch">
+            <el-radio-group v-model="auditView" size="default">
+              <el-radio-button value="all">{{ t("ai_workflow.develop_all") }}</el-radio-button>
+              <el-radio-button value="rest">REST</el-radio-button>
+              <el-radio-button value="mcp">{{ t("ai_workflow.develop_tabMcp") }}</el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <template v-if="auditView !== 'mcp'">
           <el-card shadow="never" class="trend-card">
             <template #header>
               <div class="trend-card__head">
@@ -231,18 +240,6 @@
                   :label="label"
                   :value="code"
                 />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="t('ai_workflow.develop_method')">
-              <el-select
-                v-model="logFilter.method"
-                :placeholder="t('ai_workflow.develop_all')"
-                clearable
-                style="width: 140px"
-              >
-                <el-option label="REST" value="REST" />
-                <el-option label="MCP" value="MCP" />
-                <el-option label="EMBED" value="EMBED" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('ai_workflow.develop_status')">
@@ -389,10 +386,9 @@
               "
             />
           </div>
-        </el-tab-pane>
+          </template>
 
-        <!-- ============ MCP 会话 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabMcp')" name="mcp" class="develop-table-pane">
+          <template v-else>
           <el-card shadow="never" class="trend-card">
             <template #header>
               <div class="trend-card__head">
@@ -622,6 +618,7 @@
               </div>
             </template>
           </el-drawer>
+          </template>
         </el-tab-pane>
 
         <!-- ============ 用量报告 ============ -->
@@ -1366,7 +1363,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -1486,6 +1483,8 @@ interface McpRow {
 }
 
 const activeTab = ref("apps");
+//: 调用审计页签内的接入方式视角（全部调用 / REST 调用 / MCP 会话）。
+const auditView = ref<"all" | "rest" | "mcp">("all");
 const route = useRoute();
 
 // ============ 应用管理 ============
@@ -1868,7 +1867,7 @@ async function onExportLogs() {
     const params = {
       app_id: toNum(logFilter.app_id),
       category: logFilter.category || undefined,
-      method: logFilter.method || undefined,
+      method: auditView.value === "rest" ? "REST" : undefined,
       status: logFilter.status || undefined,
       start_time: logFilter.range?.[0] || undefined,
       end_time: logFilter.range?.[1] || undefined,
@@ -2026,7 +2025,7 @@ async function loadLogs(resetPage = true) {
     const res = await getCallLogs({
       app_id: toNum(logFilter.app_id),
       category: logFilter.category || undefined,
-      method: logFilter.method || undefined,
+      method: auditView.value === "rest" ? "REST" : undefined,
       status: logFilter.status || undefined,
       capability: logFilter.capability || undefined,
       start_time: logFilter.range?.[0] || undefined,
@@ -2413,17 +2412,25 @@ async function saveNotifyCfg() {
 
 function onTabChange(name: string | number) {
   const key = String(name);
-  if (key === "logs") {
-    if (!capabilities.value.length) loadCapabilities();
-    loadLogs(false);
-    loadStats();
-  } else if (key === "mcp") {
-    loadMcps(false);
-    loadMcpStats();
-  } else if (key === "approvals") loadApprovals(false);
+  if (key === "audit") loadAuditView();
+  else if (key === "approvals") loadApprovals(false);
   else if (key === "usage" && !usageItems.value.length) loadUsage();
   else if (key === "docs" && !capabilities.value.length) loadCapabilities();
 }
+
+/** 调用审计页签内、按当前「接入方式」加载对应视图（全部/REST→调用日志，MCP→会话）。 */
+function loadAuditView() {
+  if (auditView.value === "mcp") {
+    loadMcps(false);
+    loadMcpStats();
+  } else {
+    if (!capabilities.value.length) loadCapabilities();
+    loadLogs(false);
+    loadStats();
+  }
+}
+
+watch(auditView, () => loadAuditView());
 
 // ---- 开放能力清单（接入文档页签） ----
 const capabilities = ref<any[]>([]);
@@ -2518,6 +2525,11 @@ onMounted(() => {
 <style scoped>
 .develop-search {
   margin-bottom: 4px;
+}
+
+/* 调用审计：接入方式切换（全部 / REST / MCP 会话） */
+.audit-switch {
+  margin-bottom: 12px;
 }
 
 /* 应用管理头部：搜索在左、「新增应用」在右 */

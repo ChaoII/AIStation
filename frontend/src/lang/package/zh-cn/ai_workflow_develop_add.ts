@@ -2,6 +2,7 @@ export default {
   // ===== develop (开放平台) =====
   develop_tabApps: "应用管理",
   develop_tabLogs: "调用日志",
+  develop_tabAudit: "调用审计",
   develop_tabMcp: "MCP 会话",
   develop_tabUsage: "用量报告",
   develop_tabApprovals: "调用审批",

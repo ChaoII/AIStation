@@ -2,6 +2,7 @@ export default {
   // ===== develop (开放平台) =====
   develop_tabApps: "Apps",
   develop_tabLogs: "Call Logs",
+  develop_tabAudit: "Call Audit",
   develop_tabMcp: "MCP Sessions",
   develop_tabUsage: "Usage",
   develop_tabApprovals: "Approvals",
