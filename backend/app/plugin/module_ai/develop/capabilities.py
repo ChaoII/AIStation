@@ -3,7 +3,8 @@
 本模块是能力目录的**单一真源**：后续任务（应用 CRUD、鉴权、开放 API）
 都从这里读取品类码、中文名与合法权限点，避免多处硬编码导致漂移。
 
-- ``CATEGORIES``：品类码 → 中文名（训练 / 智能体 / 对话 / 机器人 / 向量嵌入）。
+- ``CATEGORIES``：品类码 → 中文名（训练 / 智能体 / 对话 / 机器人 / 知识库 /
+  工作流 / 定时任务 / 模型 / 提示词 / 应用 / 供应商）。
 - ``CATEGORY_PERMS``：品类码 → 该品类下的**合法权限点**列表（权限码均以
   ``integration:`` 开头，代表「开放平台集成」域）。
 - ``PERMISSION_CODES``：全部合法权限点的合集（由 ``CATEGORY_PERMS`` 展开）。
@@ -17,6 +18,13 @@ CATEGORIES: dict[str, str] = {
     "agent": "智能体",
     "chat": "对话",
     "bot": "机器人",
+    "knowledge": "知识库",
+    "workflow": "工作流",
+    "cron": "定时任务",
+    "model": "模型配置",
+    "prompt": "提示词",
+    "app": "AI 应用",
+    "provider": "模型供应商",
 }
 
 #: 品类码 → 该品类下的合法权限点列表。
@@ -39,6 +47,50 @@ CATEGORY_PERMS: dict[str, list[str]] = {
     ],
     "bot": [
         "integration:bot:use",
+    ],
+    "knowledge": [
+        "integration:knowledge:query",
+        "integration:knowledge:create",
+        "integration:knowledge:update",
+        "integration:knowledge:delete",
+    ],
+    "workflow": [
+        "integration:workflow:query",
+        "integration:workflow:create",
+        "integration:workflow:update",
+        "integration:workflow:delete",
+        "integration:workflow:run",
+    ],
+    "cron": [
+        "integration:cron:query",
+        "integration:cron:create",
+        "integration:cron:update",
+        "integration:cron:delete",
+        "integration:cron:run",
+    ],
+    "model": [
+        "integration:model:query",
+        "integration:model:create",
+        "integration:model:update",
+        "integration:model:delete",
+    ],
+    "prompt": [
+        "integration:prompt:query",
+        "integration:prompt:create",
+        "integration:prompt:update",
+        "integration:prompt:delete",
+    ],
+    "app": [
+        "integration:app:query",
+        "integration:app:create",
+        "integration:app:update",
+        "integration:app:delete",
+    ],
+    "provider": [
+        "integration:provider:query",
+        "integration:provider:create",
+        "integration:provider:update",
+        "integration:provider:delete",
     ],
 }
 

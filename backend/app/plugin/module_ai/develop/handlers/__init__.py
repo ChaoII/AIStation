@@ -1,14 +1,19 @@
 """开放面能力 handler 包。
 
 导入本包即注册全部已实现能力（模块导入时调用各 ``register_*``）。
+
 新增品类时：新建 ``handlers/<category>.py``，实现 ``register_<category>_capabilities()``，
 并在此处 import + 调用一次。
 """
 from __future__ import annotations
 
 from .agents import register_agent_capabilities
+from .catalog import register_catalog_capabilities
 from .chat import register_chat_capabilities
+from .cron import register_cron_capabilities
+from .knowledge import register_knowledge_capabilities
 from .train import register_train_capabilities
+from .workflow import register_workflow_capabilities
 
 
 def register_all() -> None:
@@ -21,6 +26,10 @@ def register_all() -> None:
     register_agent_capabilities()
     register_chat_capabilities()
     register_train_capabilities()
+    register_knowledge_capabilities()
+    register_workflow_capabilities()
+    register_catalog_capabilities()
+    register_cron_capabilities()
 
 
 # 导入本包即完成注册（开放端点与 MCP 工具都依赖注册表已填充）。

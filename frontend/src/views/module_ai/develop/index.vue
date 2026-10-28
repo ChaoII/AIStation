@@ -1469,6 +1469,13 @@ const CATEGORIES: Record<string, string> = {
   agent: t("ai_workflow.develop_catAgent"),
   chat: t("ai_workflow.develop_catChat"),
   bot: t("ai_workflow.develop_catBot"),
+  knowledge: t("ai_workflow.develop_catKnowledge"),
+  workflow: t("ai_workflow.develop_catWorkflow"),
+  cron: t("ai_workflow.develop_catCron"),
+  model: t("ai_workflow.develop_catModel"),
+  prompt: t("ai_workflow.develop_catPrompt"),
+  app: t("ai_workflow.develop_catApp"),
+  provider: t("ai_workflow.develop_catProvider"),
   embed: t("ai_workflow.develop_catEmbed"),
 };
 

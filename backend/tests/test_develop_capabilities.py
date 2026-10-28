@@ -10,9 +10,11 @@ from app.plugin.module_ai.develop.capabilities import (
 
 
 def test_categories_have_perms():
+    # 核心品类必须存在且各有中文名与权限点；目录会持续扩充，这里只断言核心子集
+    core = {"train", "agent", "chat", "bot", "knowledge", "workflow", "app", "cron"}
+    assert core <= set(CATEGORIES.keys())
     for cat, name in CATEGORIES.items():
         assert name  # 有中文名
-        assert CATEGORIES.keys() == {"train", "agent", "chat", "bot"}
         assert cat in CATEGORY_PERMS and CATEGORY_PERMS[cat]
 
 

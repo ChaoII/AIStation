@@ -32,6 +32,11 @@ def _clean_registry():
 
     codes = dict(reg._REGISTRY)
     tools = dict(reg._MCP_TOOLS)
+    # 先清空再跑：真实应用启动会注册全部生产能力（含 agent.* 等），
+    # 这些能力与测试用例共用权限点（如 integration:agent:query），
+    # 不先清空会被 resolve_capability_grants 一并展开导致断言失败。
+    reg._REGISTRY.clear()
+    reg._MCP_TOOLS.clear()
     yield
     reg._REGISTRY.clear()
     reg._REGISTRY.update(codes)
