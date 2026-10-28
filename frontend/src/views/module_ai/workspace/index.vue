@@ -1,8 +1,7 @@
 <!-- AI 工作台：左「分类」独立卡片 + 右「工具栏 + 卡片网格」独立卡片（区域隔离，参照个人工作空间） -->
 <template>
   <div class="app-container ai-workspace-page">
-    <div class="ws-layout">
-      <!-- 左：分类树（独立卡片） -->
+    <div class="ws-layout">      <!-- 左：分类树（独立卡片） -->
       <el-card shadow="never" class="ws-side">
         <template #header>
           <div class="ws-side-head">
@@ -184,6 +183,13 @@
                             {{ t("ai_chat.workspace_edit") }}
                           </el-dropdown-item>
                           <el-dropdown-item
+                            v-hasPerm="'module_ai:asset_embed:manage'"
+                            command="embed"
+                            :icon="Link"
+                          >
+                            {{ t("ai_workflow.asset_embed") }}
+                          </el-dropdown-item>
+                          <el-dropdown-item
                             command="delete"
                             :icon="Delete"
                             divided
@@ -244,6 +250,14 @@
       :workflow="workflowEditItem"
       @refresh="loadItems"
     />
+
+    <!-- 资产嵌入弹窗（卡片「更多 → 嵌入」） -->
+    <AssetEmbedDialog
+      v-model="embedVisible"
+      :kind="embedItem?.type ?? 'agent'"
+      :target-id="embedItem?.id ?? 0"
+      :name="embedItem?.name"
+    />
   </div>
 </template>
 
@@ -255,6 +269,7 @@ import {
   Edit,
   Files,
   Folder,
+  Link,
   MoreFilled,
   Plus,
   Search,
@@ -279,6 +294,7 @@ import { getAiModelList } from "@/api/module_ai/model";
 import IconTile from "@/views/module_ai/market/components/IconTile.vue";
 import WorkflowEditor from "@/views/module_ai/workflow/components/WorkflowEditor.vue";
 import AgentFormDialog from "@/views/module_ai/workspace/components/AgentFormDialog.vue";
+import AssetEmbedDialog from "@/views/module_ai/workspace/components/AssetEmbedDialog.vue";
 
 defineOptions({ name: "AiWorkbench" });
 
@@ -452,8 +468,21 @@ function openChat(it: WorkspaceItem) {
   router.push(`/ai/workspace/chat/${it.type}/${it.id}`);
 }
 
-// 卡片「更多」：编辑（内嵌对应编辑器） + 删除（确认后按类型删）
+// 资产嵌入：固定当前卡片为 agent/workflow，打开三形式嵌入弹窗
+const embedVisible = ref(false);
+const embedItem = ref<{ type: "agent" | "workflow"; id: number; name: string } | null>(null);
+function openEmbed(it: WorkspaceItem) {
+  if (it.type !== "agent" && it.type !== "workflow") return;
+  embedItem.value = { type: it.type, id: it.id, name: it.name };
+  embedVisible.value = true;
+}
+
+// 卡片「更多」：嵌入 / 编辑（内嵌对应编辑器） + 删除（确认后按类型删）
 async function onCardMore(it: WorkspaceItem, cmd: string) {
+  if (cmd === "embed") {
+    openEmbed(it);
+    return;
+  }
   if (cmd === "edit") {
     if (it.type === "agent") openAgentEdit(it);
     else if (it.type === "workflow") await openWorkflowEdit(it);
