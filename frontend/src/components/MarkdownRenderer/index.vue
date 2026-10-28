@@ -1,9 +1,9 @@
 <template>
-  <div class="markdown-content" v-html="renderedContent"></div>
+  <div ref="rootRef" class="markdown-content" v-html="renderedContent"></div>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import MarkdownIt from "markdown-it";
 import markdownItHighlightjs from "markdown-it-highlightjs";
 import hljs from "highlight.js";
@@ -61,6 +61,49 @@ const renderedContent = computed(() => {
       : props.content;
   return md.render(content);
 });
+
+// ---- 代码块复制按钮（对每个 <pre> 注入一个右上角「复制」按钮） ----
+const rootRef = ref<HTMLElement | null>(null);
+
+function attachCopyButtons() {
+  const root = rootRef.value;
+  if (!root) return;
+  root.querySelectorAll<HTMLElement>("pre").forEach((pre) => {
+    if (pre.querySelector(".md-copy-btn")) return;
+    const btn = document.createElement("button");
+    btn.className = "md-copy-btn";
+    btn.type = "button";
+    btn.textContent = "复制";
+    btn.addEventListener("click", () => {
+      const code =
+        (pre.querySelector("code") as HTMLElement | null)?.innerText || pre.innerText;
+      navigator.clipboard
+        ?.writeText(code)
+        .then(() => {
+          btn.textContent = "已复制";
+          setTimeout(() => {
+            btn.textContent = "复制";
+          }, 1500);
+        })
+        .catch(() => {
+          btn.textContent = "复制失败";
+          setTimeout(() => {
+            btn.textContent = "复制";
+          }, 1500);
+        });
+    });
+    pre.appendChild(btn);
+  });
+}
+
+watch(renderedContent, async () => {
+  await nextTick();
+  attachCopyButtons();
+});
+
+onMounted(() => {
+  void nextTick().then(attachCopyButtons);
+});
 </script>
 
 <style lang="scss" scoped>
@@ -71,6 +114,7 @@ const renderedContent = computed(() => {
   word-wrap: break-word;
 
   :deep(pre) {
+    position: relative;
     padding: 12px;
     margin: 12px 0;
     overflow-x: auto;
@@ -81,6 +125,32 @@ const renderedContent = computed(() => {
       font-family: "Courier New", Courier, monospace;
       font-size: 13px;
     }
+  }
+
+  :deep(.md-copy-btn) {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    padding: 2px 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-blank);
+    border: 1px solid var(--el-border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+
+    &:hover {
+      color: var(--el-color-primary);
+      border-color: var(--el-color-primary);
+      opacity: 1;
+    }
+  }
+
+  :deep(pre:hover .md-copy-btn) {
+    opacity: 1;
   }
 
   :deep(code) {

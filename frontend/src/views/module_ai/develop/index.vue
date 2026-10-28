@@ -874,7 +874,7 @@
                   <el-tag size="small">HTTP</el-tag>
                 </div>
               </template>
-              <pre class="doc-code">{{ REST_EXAMPLE }}</pre>
+              <MarkdownRenderer :content="REST_MD" />
             </el-card>
             <el-card shadow="never" class="doc-card">
               <template #header>
@@ -883,7 +883,7 @@
                   <el-tag size="small" type="success">Streamable HTTP</el-tag>
                 </div>
               </template>
-              <pre class="doc-code">{{ MCP_EXAMPLE }}</pre>
+              <MarkdownRenderer :content="MCP_MD" />
             </el-card>
             <el-card shadow="never" class="doc-card">
               <template #header>
@@ -947,7 +947,7 @@
                   <el-tag size="small">Embed</el-tag>
                 </div>
               </template>
-              <pre class="doc-code">{{ EMBED_EXAMPLE }}</pre>
+              <MarkdownRenderer :content="EMBED_MD" />
               <div class="doc-events">
                 <span class="doc-events__label">
                   {{ t("ai_workflow.develop_postMessageEvents") }}
@@ -1397,7 +1397,7 @@ import {
 } from "@/api/module_ai/develop";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import EmbedDialog from "./components/EmbedDialog.vue";
-import { EMBED_EXAMPLE, MCP_EXAMPLE, REST_EXAMPLE } from "./examples";
+import { EMBED_MD, MCP_MD, REST_MD } from "./examples";
 import TrendLineChart from "./TrendLineChart.vue";
 
 defineOptions({ name: "AiDevelopManage" });
