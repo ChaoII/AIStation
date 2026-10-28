@@ -802,7 +802,7 @@ const castDesc = computed(() => casts.value.slice().reverse());
 
 /** 镜头预设按钮 */
 const CAM_MODES: { v: CamMode; label: string; tip: string }[] = [
-  { v: "overview", label: "全景", tip: "回到默认全景视角（Esc）" },
+  { v: "overview", label: "全景", tip: "回到默认全景视角（g / Esc）" },
   { v: "follow", label: "跟随", tip: "有新步骤时把镜头推给当前执行者（3 秒一次，避免乱跳）；按 f 切换" },
   { v: "board", label: "白板", tip: "看白板上的分工与打勾（按 b）" },
   { v: "screen", label: "大屏", tip: "看大屏上的结论（按 s）" }
@@ -2505,6 +2505,8 @@ function onHotkey(e: KeyboardEvent) {
   /* b / s：一键切到白板 / 大屏（镜头预设键盘直达） */
   if (e.key === "b" || e.key === "B") { setCamMode("board"); return; }
   if (e.key === "s" || e.key === "S") { setCamMode("screen"); return; }
+  /* g：回到默认全景（比 Esc 更直白，且不干扰 Esc 的逐层退出） */
+  if (e.key === "g" || e.key === "G") { setCamMode("overview"); return; }
 }
 
 /* ---------- 磁吸（magnet）：鼠标靠近按钮时轻轻被吸过去 ----------
