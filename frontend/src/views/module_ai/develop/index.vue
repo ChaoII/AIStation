@@ -106,16 +106,6 @@
                 <span v-else class="text-muted">—</span>
               </div>
               <div class="app-card__actions">
-                <el-tooltip :content="t('ai_workflow.develop_embed')" placement="top">
-                  <el-button
-                    v-hasPerm="['module_ai:develop:query']"
-                    text
-                    class="app-act"
-                    @click="openEmbed(row)"
-                  >
-                    <i class="ri-code-s-slash-line" />
-                  </el-button>
-                </el-tooltip>
                 <el-tooltip :content="t('ai_workflow.develop_try')" placement="top">
                   <el-button
                     v-hasPerm="['module_ai:develop:query']"
@@ -937,30 +927,6 @@
                 </template>
               </el-table>
             </el-card>
-            <el-card shadow="never" class="doc-card">
-              <template #header>
-                <div class="doc-card__header">
-                  <span>{{ t("ai_workflow.develop_embedCard") }}</span>
-                  <el-tag size="small">Embed</el-tag>
-                </div>
-              </template>
-              <MarkdownRenderer :content="EMBED_MD" />
-              <div class="doc-events">
-                <span class="doc-events__label">
-                  {{ t("ai_workflow.develop_postMessageEvents") }}
-                </span>
-                <el-tag
-                  v-for="e in docEvents"
-                  :key="e.name"
-                  size="small"
-                  effect="plain"
-                  class="doc-events__tag"
-                  :title="e.desc"
-                >
-                  {{ e.name }}
-                </el-tag>
-              </div>
-            </el-card>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -1356,9 +1322,6 @@
         </el-button>
       </template>
     </el-dialog>
-
-    <!-- ============ 嵌入管理弹窗 ============ -->
-    <EmbedDialog v-model="embedVisible" :app="embedRow" />
   </div>
 </template>
 
@@ -1393,8 +1356,7 @@ import {
   updateApp,
 } from "@/api/module_ai/develop";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
-import EmbedDialog from "./components/EmbedDialog.vue";
-import { EMBED_MD, MCP_MD, REST_MD } from "./examples";
+import { MCP_MD, REST_MD } from "./examples";
 import TrendLineChart from "./TrendLineChart.vue";
 
 defineOptions({ name: "AiDevelopManage" });
@@ -2489,25 +2451,6 @@ async function copyText(text?: string) {
       document.body.removeChild(ta);
     }
   }
-}
-
-/** postMessage 事件契约（完整载荷见「嵌入」弹窗）。 */
-const docEvents = [
-  { name: "ready", desc: t("ai_workflow.develop_eventReady") },
-  { name: "user_message", desc: t("ai_workflow.develop_eventUserMessage") },
-  { name: "reply_start", desc: t("ai_workflow.develop_eventReplyStart") },
-  { name: "reply_delta", desc: t("ai_workflow.develop_eventReplyDelta") },
-  { name: "reply_done", desc: t("ai_workflow.develop_eventReplyDone") },
-  { name: "error", desc: t("ai_workflow.develop_eventError") },
-  { name: "token_expired", desc: t("ai_workflow.develop_eventTokenExpired") },
-];
-
-// ---- 嵌入管理弹窗 ----
-const embedVisible = ref(false);
-const embedRow = ref<any>(null);
-function openEmbed(row: any) {
-  embedRow.value = row;
-  embedVisible.value = true;
 }
 
 onMounted(() => {

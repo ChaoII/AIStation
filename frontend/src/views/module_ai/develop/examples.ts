@@ -1,4 +1,4 @@
-// 接入文档：REST / MCP / Embed 三种接入方式的 Markdown 内容。
+// 接入文档：REST / MCP 两种接入方式的 Markdown 内容。
 // 这些内容含大量字面 `{}` / `<host>` / `@` 等 vue-i18n 保留字符，
 // 若放进 i18n 消息会触发「Message compilation error」导致整体不渲染。
 // 故统一在此以常量给出（模板里经 MarkdownRenderer 渲染，代码块用带语言的围栏代码块走语法高亮）。
@@ -33,15 +33,6 @@ curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
   -H "Authorization: Bearer {appid}:{appkey}" \\
   -H "Content-Type: application/json" \\
   -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "你好"}}'
-\`\`\`
-
-**步骤 5｜网页嵌入换票**（浏览器面不接触 appkey）
-
-\`\`\`bash
-curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"kind": "agent", "target_id": 123}'
 \`\`\``;
 
 export const MCP_MD = `**端点**：\`https://<host>/api/v1/ai/develop-api/mcp\`（Streamable HTTP）
@@ -102,29 +93,3 @@ const caps = await client.readResource("aistation://capabilities");
 \`\`\`
 
 **审批与审计**：敏感能力若开启「需人工审批」，调用返回 \`pending_approval\`；所有调用都写平台审计（成功 / 拒绝 / 限流 / 配额命中），\`appid:appkey\` 只能放服务端请求头。`;
-
-export const EMBED_MD = `**方式一｜iframe 直嵌**（token 由服务端换票注入）
-
-\`\`\`html
-<iframe src="https://<host>/web/#/embed?token={access_token}"
-        width="420" height="620" style="border:0;border-radius:12px"></iframe>
-\`\`\`
-
-**方式二｜Script SDK**（推荐：事件回调 + 续期）
-
-\`\`\`html
-<script src="https://<host>/api/v1/ai/embed/sdk.js"><\/script>
-<div id="ai-assistant" style="width:420px;height:620px"></div>
-<script>
-  const ai = AiAssistant.init({
-    container: "#ai-assistant",
-    token: "{access_token}",
-    apiBase: "https://<host>/api/v1/ai",
-    webBase: "https://<host>/web",
-    theme: { primary: "#409eff" }
-  });
-  ai.on("token_expired", async () => {
-    ai.setToken(await fetchTokenFromYourBackend());  // 服务端重新换票
-  });
-<\/script>
-\`\`\``;

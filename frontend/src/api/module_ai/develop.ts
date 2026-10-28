@@ -130,18 +130,3 @@ export function verifyAuth(appid?: string, appkey?: string) {
     headers: appid && appkey ? { Authorization: `Bearer ${appid}:${appkey}` } : undefined,
   });
 }
-
-/** 某应用的嵌入令牌列表（只读元信息，绝不含明文）。 */
-export function getEmbedTokens(appId: number) {
-  return request({ url: `${API_PATH}/tokens`, method: "get", params: { app_id: appId } });
-}
-
-/** 管理端签发体验令牌（有效期 2 小时；明文仅返回一次）。 */
-export function mintEmbedToken(data: { app_id: number; kind: string; target_id: number }) {
-  return request({ url: `${API_PATH}/tokens`, method: "post", data });
-}
-
-/** 吊销嵌入令牌（立即生效，不可恢复）。 */
-export function revokeEmbedToken(id: number) {
-  return request({ url: `${API_PATH}/tokens/${id}/revoke`, method: "put" });
-}

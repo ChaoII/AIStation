@@ -154,7 +154,13 @@
                   >
                     {{ t("ai_workflow.wf_stats") }}
                   </el-button>
-                  <el-button size="small" :icon="Link" @click="showEmbedHint">
+                  <el-button
+                    v-hasPerm="'module_ai:asset_embed:manage'"
+                    size="small"
+                    :icon="Link"
+                    :disabled="!workflowId"
+                    @click="showEmbedHint"
+                  >
                     {{ t("ai_workflow.wf_embed_chat") }}
                   </el-button>
                   <el-button size="small" :icon="Share" @click="topoVisible = true">
@@ -923,6 +929,14 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 资产嵌入（固定当前工作流） -->
+    <AssetEmbedDialog
+      v-model="embedVisible"
+      kind="workflow"
+      :target-id="workflowId ?? 0"
+      :name="props.workflow?.name"
+    />
   </el-drawer>
 </template>
 
@@ -930,6 +944,7 @@
 import { ref, reactive, computed, markRaw, onMounted, onUnmounted, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox, ElNotification } from "element-plus";
+import AssetEmbedDialog from "@/views/module_ai/workspace/components/AssetEmbedDialog.vue";
 import { Panel, VueFlow, useVueFlow } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
 import { MiniMap } from "@vue-flow/minimap";
@@ -1548,9 +1563,10 @@ const histOption = computed(() => {
     ],
   };
 });
-/** 旧分享通道已下线：对话嵌入统一到「AI 集成 → 嵌入」生成代码。 */
+/** 对话嵌入：直接打开该工作流的资产嵌入弹窗（不再提示去「AI 集成」）。 */
+const embedVisible = ref(false);
 function showEmbedHint() {
-  ElMessage.info(t("ai_workflow.wf_embed_hint"));
+  embedVisible.value = true;
 }
 
 // ---------- 定时调度 ----------
