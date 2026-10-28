@@ -618,9 +618,6 @@
 
           <div class="develop-toolbar">
             <div class="develop-toolbar__left">
-              <span class="develop-toolbar__hint">
-                {{ t("ai_workflow.develop_approvalHint") }}
-              </span>
               <el-tag size="small" type="warning" effect="plain" class="summary-tag">
                 {{ t("ai_workflow.develop_approvalPending", { count: approvalPendingCount }) }}
               </el-tag>
@@ -754,29 +751,6 @@
         <!-- ============ 接入文档 ============ -->
         <el-tab-pane :label="t('ai_workflow.develop_tabDocs')" name="docs">
           <div class="docs-wrap">
-            <el-alert
-              :title="t('ai_workflow.develop_docsCredTitle')"
-              type="info"
-              :closable="false"
-              show-icon
-              size="small"
-              class="docs-alert"
-              :description="
-                t('ai_workflow.develop_docsCredDesc', {
-                  appid: '{appid}',
-                  appkey: '{appkey}',
-                })
-              "
-            />
-            <el-alert
-              :title="t('ai_workflow.develop_docsApprovalTitle')"
-              type="warning"
-              :closable="false"
-              show-icon
-              size="small"
-              class="docs-alert"
-              :description="t('ai_workflow.develop_docsApprovalDesc')"
-            />
             <el-card shadow="never" class="doc-card">
               <template #header>
                 <div class="doc-card__header">
@@ -784,9 +758,6 @@
                   <el-tag size="small">HTTP</el-tag>
                 </div>
               </template>
-              <p class="doc-card__desc">
-                {{ t("ai_workflow.develop_restDesc") }}
-              </p>
               <pre class="doc-code">{{ REST_EXAMPLE }}</pre>
             </el-card>
             <el-card shadow="never" class="doc-card">
@@ -796,9 +767,6 @@
                   <el-tag size="small" type="success">Streamable HTTP</el-tag>
                 </div>
               </template>
-              <p class="doc-card__desc">
-                {{ t("ai_workflow.develop_mcpDesc") }}
-              </p>
               <pre class="doc-code">{{ MCP_EXAMPLE }}</pre>
             </el-card>
             <el-card shadow="never" class="doc-card">
@@ -810,9 +778,6 @@
                   </el-tag>
                 </div>
               </template>
-              <p class="doc-card__desc">
-                {{ t("ai_workflow.develop_capDesc") }}
-              </p>
               <el-table v-loading="capLoading" :data="capabilities" border stripe>
                 <el-table-column
                   prop="name"
@@ -866,9 +831,6 @@
                   <el-tag size="small">Embed</el-tag>
                 </div>
               </template>
-              <p class="doc-card__desc">
-                {{ t("ai_workflow.develop_embedDesc") }}
-              </p>
               <pre class="doc-code">{{ EMBED_EXAMPLE }}</pre>
               <div class="doc-events">
                 <span class="doc-events__label">
@@ -885,9 +847,6 @@
                   {{ e.name }}
                 </el-tag>
               </div>
-              <p class="doc-card__desc doc-card__desc--foot">
-                {{ t("ai_workflow.develop_embedFoot") }}
-              </p>
             </el-card>
           </div>
         </el-tab-pane>
@@ -945,13 +904,6 @@
       width="640px"
       append-to-body
     >
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        class="docs-alert"
-        :title="t('ai_workflow.develop_tryAlert')"
-      />
       <el-form label-width="90px" class="try-form">
         <el-form-item :label="t('ai_workflow.develop_capability')">
           <el-select
@@ -1014,13 +966,6 @@
       width="580px"
       append-to-body
     >
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        class="docs-alert"
-        :title="t('ai_workflow.develop_notifyAlert')"
-      />
       <el-form label-width="90px">
         <el-form-item :label="t('ai_workflow.develop_enableChannels')">
           <el-checkbox-group v-model="notifyCfg.channels">
@@ -1180,9 +1125,6 @@
         </el-form-item>
         <el-form-item :label="t('ai_workflow.develop_requiresApproval')">
           <el-switch v-model="form.requires_approval" />
-          <span class="form-tip">
-            {{ t("ai_workflow.develop_requiresApprovalTip") }}
-          </span>
         </el-form-item>
         <el-form-item :label="t('ai_workflow.develop_dailyQuota')">
           <div class="quota-grid">
@@ -1202,7 +1144,6 @@
               </span>
             </div>
           </div>
-          <span class="form-tip">{{ t("ai_workflow.develop_quotaTip") }}</span>
         </el-form-item>
         <el-form-item :label="t('ai_workflow.develop_enabled')">
           <el-switch v-model="form.enabled" />
@@ -1277,7 +1218,6 @@
         :closable="false"
         show-icon
         class="docs-alert"
-        :description="t('ai_workflow.develop_saveKeyDesc')"
       />
       <el-descriptions :column="1" border size="small" class="reveal-desc">
         <el-descriptions-item label="AppID">
