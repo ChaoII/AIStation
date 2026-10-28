@@ -75,12 +75,12 @@
           <template #empty>
             <el-empty :image-size="80" :description="t('ai_workflow.asset_embed_noTokens')" />
           </template>
-          <el-table-column :label="t('ai_workflow.asset_embed_issuer')" width="90">
+          <el-table-column :label="t('ai_workflow.asset_embed_issuer')" width="78">
             <template #default="{ row }">
               <span class="asset-embed-dialog__sub">{{ row.issued_by || "admin" }}</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('ai_workflow.asset_embed_expireTime')" width="110">
+          <el-table-column :label="t('ai_workflow.asset_embed_expireTime')" width="100">
             <template #default="{ row }">
               <span :title="row.expires_at">{{ fmtShort(row.expires_at) }}</span>
             </template>
@@ -88,10 +88,10 @@
           <el-table-column
             prop="use_count"
             :label="t('ai_workflow.asset_embed_usage')"
-            width="56"
+            width="46"
             align="right"
           />
-          <el-table-column :label="t('ai_workflow.asset_embed_status')" width="76">
+          <el-table-column :label="t('ai_workflow.asset_embed_status')" width="66">
             <template #default="{ row }">
               <el-tag size="small" :type="row.revoked ? 'info' : 'success'" effect="plain">
                 {{
@@ -102,14 +102,14 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('ai_workflow.asset_embed_whitelist')" min-width="110">
+          <el-table-column :label="t('ai_workflow.asset_embed_whitelist')" min-width="84">
             <template #default="{ row }">
               <span class="asset-embed-dialog__sub" :title="whitelistText(row)">
                 {{ whitelistText(row) }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('ai_workflow.asset_embed_action')" width="150" fixed="right">
+          <el-table-column :label="t('ai_workflow.asset_embed_action')" width="212" fixed="right">
             <template #default="{ row }">
               <el-button
                 v-hasPerm="'module_ai:asset_embed:manage'"
