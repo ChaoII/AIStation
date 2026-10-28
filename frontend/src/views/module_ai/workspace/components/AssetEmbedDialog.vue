@@ -27,7 +27,7 @@
 
       <el-form-item :label="t('ai_workflow.asset_embed_code')">
         <div class="asset-embed-dialog__code">
-          <pre class="asset-embed-dialog__pre">{{ codeFor(formTab) }}</pre>
+          <pre class="asset-embed-dialog__pre hljs"><code v-html="highlightedCode"></code></pre>
           <div class="asset-embed-dialog__actions">
             <el-button size="small" :icon="CopyDocument" @click="copyCode">
               {{ t("ai_workflow.develop_embedCopyCode") }}
@@ -64,36 +64,36 @@
           max-height="150"
         >
           <template #empty>
-            <el-empty :image-size="80" :description="t('ai_workflow.develop_embedNoTokens')" />
+            <el-empty :image-size="80" :description="t('ai_workflow.asset_embed_noTokens')" />
           </template>
-          <el-table-column :label="t('ai_workflow.develop_embedIssuedTicket')" width="110">
+          <el-table-column :label="t('ai_workflow.asset_embed_issuer')" width="110">
             <template #default="{ row }">
               <span class="asset-embed-dialog__sub">{{ row.issued_by || "admin" }}</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('ai_workflow.develop_embedExpireTime')" width="110">
+          <el-table-column :label="t('ai_workflow.asset_embed_expireTime')" width="110">
             <template #default="{ row }">
               <span :title="row.expires_at">{{ fmtShort(row.expires_at) }}</span>
             </template>
           </el-table-column>
           <el-table-column
             prop="use_count"
-            :label="t('ai_workflow.develop_embedUsage')"
+            :label="t('ai_workflow.asset_embed_usage')"
             width="50"
             align="right"
           />
-          <el-table-column :label="t('ai_workflow.develop_embedStatus')" width="76">
+          <el-table-column :label="t('ai_workflow.asset_embed_status')" width="76">
             <template #default="{ row }">
               <el-tag size="small" :type="row.revoked ? 'info' : 'success'" effect="plain">
                 {{
                   row.revoked
-                    ? t("ai_workflow.develop_embedRevoked")
-                    : t("ai_workflow.develop_embedValid")
+                    ? t("ai_workflow.asset_embed_revoked")
+                    : t("ai_workflow.asset_embed_valid")
                 }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('ai_workflow.develop_embedAction')" width="72">
+          <el-table-column :label="t('ai_workflow.asset_embed_action')" width="72">
             <template #default="{ row }">
               <el-button
                 v-if="!row.revoked"
@@ -103,7 +103,7 @@
                 size="small"
                 @click="onRevoke(row)"
               >
-                {{ t("ai_workflow.develop_embedRevoke") }}
+                {{ t("ai_workflow.asset_embed_revoke") }}
               </el-button>
             </template>
           </el-table-column>
@@ -118,16 +118,16 @@
     <!-- 令牌一次性展示 -->
     <el-dialog
       v-model="reveal.visible"
-      :title="t('ai_workflow.develop_embedRevealTitle')"
+      :title="t('ai_workflow.asset_embed_revealTitle')"
       width="520px"
       append-to-body
     >
       <el-alert
-        :title="t('ai_workflow.develop_embedRevealAlertTitle')"
+        :title="t('ai_workflow.asset_embed_revealAlertTitle')"
         type="warning"
         :closable="false"
         show-icon
-        :description="t('ai_workflow.develop_embedRevealAlertDesc')"
+        :description="t('ai_workflow.asset_embed_revealAlertDesc')"
       />
       <el-descriptions :column="1" border size="small" class="asset-embed-dialog__reveal">
         <el-descriptions-item label="Token">
@@ -138,14 +138,14 @@
             </el-button>
           </div>
         </el-descriptions-item>
-        <el-descriptions-item :label="t('ai_workflow.develop_embedExpireTime')">
+        <el-descriptions-item :label="t('ai_workflow.asset_embed_expireTime')">
           {{ reveal.expiresAt }}
         </el-descriptions-item>
       </el-descriptions>
       <template #footer>
         <el-button @click="reveal.visible = false">{{ t("ai_workflow.develop_close") }}</el-button>
         <el-button type="primary" @click="applyRevealToken">
-          {{ t("ai_workflow.develop_embedApplyCode") }}
+          {{ t("ai_workflow.asset_embed_applyCode") }}
         </el-button>
       </template>
     </el-dialog>
@@ -157,6 +157,8 @@ import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { CopyDocument } from "@element-plus/icons-vue";
+import hljs from "highlight.js";
+import "highlight.js/styles/atom-one-light.css";
 import { issueAssetToken, listAssetTokens, revokeAssetToken } from "@/api/module_ai/assetEmbed";
 
 defineOptions({ name: "AssetEmbedDialog" });
@@ -245,6 +247,21 @@ const resp = await fetch("/api/v1/ai/embed/run", {
   );
 }
 
+/* ---------- 接入代码语法高亮（与「接入文档」一致的 hljs） ---------- */
+const codeLang = (tab: "bubble" | "iframe" | "run"): string => (tab === "run" ? "bash" : "xml");
+
+const highlightedCode = computed(() => {
+  const code = codeFor(formTab.value);
+  try {
+    return hljs.highlight(code, {
+      language: codeLang(formTab.value),
+      ignoreIllegals: true,
+    }).value;
+  } catch {
+    return code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+});
+
 function copyText(text?: string) {
   if (!text) return;
   navigator.clipboard?.writeText(text).then(
@@ -277,18 +294,18 @@ async function onMint() {
 function applyRevealToken() {
   mintedToken.value = reveal.token;
   reveal.visible = false;
-  ElMessage.success(t("ai_workflow.develop_embedApplySuccess"));
+  ElMessage.success(t("ai_workflow.asset_embed_applySuccess"));
 }
 
 /* ---------- 吊销 ---------- */
 async function onRevoke(row: any) {
   try {
     await ElMessageBox.confirm(
-      t("ai_workflow.develop_embedRevokeConfirm"),
-      t("ai_workflow.develop_embedRevokeTitle"),
+      t("ai_workflow.asset_embed_revokeConfirm"),
+      t("ai_workflow.asset_embed_revokeTitle"),
       {
         type: "warning",
-        confirmButtonText: t("ai_workflow.develop_embedRevoke"),
+        confirmButtonText: t("ai_workflow.asset_embed_revoke"),
         cancelButtonText: t("ai_workflow.develop_cancel"),
       }
     );
@@ -297,10 +314,10 @@ async function onRevoke(row: any) {
   }
   try {
     await revokeAssetToken(row.id);
-    ElMessage.success(t("ai_workflow.develop_embedRevoked"));
+    ElMessage.success(t("ai_workflow.asset_embed_revoked"));
     await loadTokens();
   } catch (e: any) {
-    ElMessage.error(e?.msg || t("ai_workflow.develop_embedRevokeFail"));
+    ElMessage.error(e?.msg || t("ai_workflow.asset_embed_revokeFail"));
   }
 }
 </script>
@@ -337,6 +354,15 @@ async function onRevoke(row: any) {
   background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
+
+  code {
+    padding: 0;
+    font-family: inherit;
+    font-size: inherit;
+    background: transparent;
+    white-space: pre;
+    color: inherit;
+  }
 }
 
 .asset-embed-dialog__actions {
