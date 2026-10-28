@@ -1,7 +1,7 @@
 <!--
   对话嵌入页（/#/embed）——独立公开路由，无平台登录。
-  鉴权：URL 上的一次性短期 access_token（由宿主服务端用 appid:appkey 换票获得）。
-  安全：页面不接触 appkey；401 时向宿主发 token_expired，由宿主换票后 setToken 热替换。
+  鉴权：URL 上的短期资产令牌（由工作台为某 agent/工作流签发，独立绑定 kind+target_id）。
+  安全：页面不接触服务端密钥；令牌过期 401 时向宿主发 token_expired，由宿主 setToken 热替换。
   交互契约：上行 7 类事件（信封 source=ai-embed/version=1），下行命令 setToken/sendMessage/resize/destroy。
 -->
 <template>
@@ -216,8 +216,7 @@ const { t } = useI18n();
 type Fatal = "" | "missing" | "expired" | "forbidden";
 
 interface MetaData {
-  appid: string;
-  kind: "agent" | "app" | "workflow";
+  kind: "agent" | "workflow";
   target_id: number;
   name: string;
   welcome: string;
@@ -248,10 +247,11 @@ const scrollRef = ref<HTMLElement | null>(null);
 const nearBottom = ref(true);
 let errorEmitted = false;
 
-/* ---------- 本地存储（sid + 转写，按 ticket/目标隔离） ---------- */
+/* ---------- 本地存储（sid + 转写，按令牌/目标隔离） ---------- */
 function storageKeys(m: MetaData) {
-  // 归属维度用 appid（换票后 token 变化但 app 不变 → 续期后仍可恢复转写；跨 app 隔离）
-  const scope = `ai-embed:${m.appid || token.value.slice(0, 6)}:${m.kind}:${m.target_id}`;
+  // 归属维度用令牌前缀（token 更新但目标不变 → 续期后仍可恢复转写；跨目标隔离）。
+  // 注意：token 为短期资产令牌，前缀仅作本地存储键，不用于任何鉴权。
+  const scope = `ai-embed:${token.value.slice(0, 6)}:${m.kind}:${m.target_id}`;
   return { sid: `${scope}:sid`, messages: `${scope}:messages` };
 }
 function readJson<T>(key: string, fallback: T): T {
@@ -504,7 +504,7 @@ async function applyToken(next: string) {
   token.value = next;
   fatal.value = "";
   loading.value = true;
-  // 换票后重新读取 meta：目标不变则延续会话；目标变化则重置本地状态
+  // 更替令牌后重新读取 meta：目标不变则延续会话；目标变化则重置本地状态
   await fetchMeta();
 }
 function onParentMessage(ev: MessageEvent) {

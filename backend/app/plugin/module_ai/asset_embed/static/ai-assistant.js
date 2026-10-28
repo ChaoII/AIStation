@@ -6,7 +6,7 @@
  *   <script>
  *     const ai = AiAssistant.init({
  *       container: "#chat",                 // 挂载点（选择器或元素）
- *       token: "<access_token>",            // 由宿主「服务端」换票获取
+ *       token: "<access_token>",            // 由工作台为某 agent/工作流签发的资产令牌
  *       apiBase: "https://<host>/api/v1/ai",// 可省：默认取本脚本 src 去掉 /embed/sdk.js
  *       webBase: "https://<host>/web",      // 可省：默认 apiBase 的 origin + /web
  *       theme: { primary: "#409eff" }       // 可省：品牌主色
@@ -15,8 +15,9 @@
  *   </script>
  *
  * 安全约定：
- * - **切勿把 appkey 写进网页**：token 必须由宿主服务端的 appid:appkey 换票后注入；
- * - 过期续期：收到 token_expired 后，宿主服务端重新换票，再调用 ai.setToken(新票)；
+ * - **切勿把任何服务端密钥写进网页**：token 是工作台为某 agent/工作流签发的短期资产令牌，
+ *   独立绑定目标，可直接放在网页里（过期即失效，风险可控）；
+ * - 过期续期：收到 token_expired 后，由工作台重新签发令牌，再调用 ai.setToken(新令牌)；
  * - 上行事件校验来源：仅接受来自嵌入页 iframe 且 origin 等于 webBase 来源的消息。
  */
 (function (global) {
@@ -75,7 +76,7 @@
    */
   function init(opts) {
     opts = opts || {};
-    if (!opts.token) throw new Error("AiAssistant.init: 缺少 token（请由服务端换票后注入）");
+    if (!opts.token) throw new Error("AiAssistant.init: 缺少 token（请由工作台为资产签发后注入）");
 
     var el = resolveContainer(opts.container);
     var apiBase = (opts.apiBase || defaultApiBase()).replace(/\/+$/, "");
