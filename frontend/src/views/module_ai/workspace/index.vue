@@ -182,11 +182,7 @@
                           <el-dropdown-item command="edit" :icon="Edit">
                             {{ t("ai_chat.workspace_edit") }}
                           </el-dropdown-item>
-                          <el-dropdown-item
-                            v-hasPerm="'module_ai:asset_embed:manage'"
-                            command="embed"
-                            :icon="Link"
-                          >
+                          <el-dropdown-item v-if="canEmbed" command="embed" :icon="Link">
                             {{ t("ai_workflow.asset_embed") }}
                           </el-dropdown-item>
                           <el-dropdown-item
@@ -295,10 +291,13 @@ import IconTile from "@/views/module_ai/market/components/IconTile.vue";
 import WorkflowEditor from "@/views/module_ai/workflow/components/WorkflowEditor.vue";
 import AgentFormDialog from "@/views/module_ai/workspace/components/AgentFormDialog.vue";
 import AssetEmbedDialog from "@/views/module_ai/workspace/components/AssetEmbedDialog.vue";
+import { usePerm } from "@/composables/usePerm";
 
 defineOptions({ name: "AiWorkbench" });
 
 const { t } = useI18n();
+// 资产嵌入权限（下拉项非元素根节点，用 usePerm + v-if 而非 v-hasPerm）
+const canEmbed = usePerm()("module_ai:asset_embed:manage");
 
 const router = useRouter();
 
