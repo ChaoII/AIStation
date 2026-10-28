@@ -102,6 +102,11 @@ export default {
   develop_catPrompt: "التلميح",
   develop_catApp: "تطبيق AI",
   develop_catProvider: "المزود",
+
+  develop_catSkill: "مهارة",
+  develop_catTool: "أداة",
+  develop_catPlugin: "إضافة",
+  develop_catMcp: "خادم MCP",
   develop_keyTitle: "{name} · مفتاح التطبيق",
   develop_keyEncrypted: "مشفّر",
   develop_resetKey: "إعادة تعيين مفتاح التطبيق",

@@ -104,6 +104,11 @@ export default {
   develop_catPrompt: "Prompt",
   develop_catApp: "KI-App",
   develop_catProvider: "Anbieter",
+
+  develop_catSkill: "Fähigkeit",
+  develop_catTool: "Werkzeug",
+  develop_catPlugin: "Plugin",
+  develop_catMcp: "MCP-Server",
   develop_keyTitle: "{name} · AppKey",
   develop_keyEncrypted: "Verschlüsselt",
   develop_resetKey: "AppKey zurücksetzen",

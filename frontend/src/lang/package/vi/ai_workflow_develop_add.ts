@@ -103,6 +103,11 @@ export default {
   develop_catPrompt: "Lời nhắc",
   develop_catApp: "Ứng dụng AI",
   develop_catProvider: "Nhà cung cấp",
+
+  develop_catSkill: "Kỹ năng",
+  develop_catTool: "Công cụ",
+  develop_catPlugin: "Plugin",
+  develop_catMcp: "Máy chủ MCP",
   develop_keyTitle: "{name} · AppKey",
   develop_keyEncrypted: "Đã mã hóa",
   develop_resetKey: "Đặt lại AppKey",

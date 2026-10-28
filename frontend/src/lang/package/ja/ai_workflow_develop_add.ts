@@ -102,6 +102,11 @@ export default {
   develop_catPrompt: "プロンプト",
   develop_catApp: "AIアプリ",
   develop_catProvider: "プロバイダー",
+
+  develop_catSkill: "スキル",
+  develop_catTool: "ツール",
+  develop_catPlugin: "プラグイン",
+  develop_catMcp: "MCPサーバー",
   develop_keyTitle: "{name} · AppKey",
   develop_keyEncrypted: "暗号化済み",
   develop_resetKey: "AppKey をリセット",

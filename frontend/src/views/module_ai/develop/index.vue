@@ -1476,6 +1476,10 @@ const CATEGORIES: Record<string, string> = {
   prompt: t("ai_workflow.develop_catPrompt"),
   app: t("ai_workflow.develop_catApp"),
   provider: t("ai_workflow.develop_catProvider"),
+  skill: t("ai_workflow.develop_catSkill"),
+  tool: t("ai_workflow.develop_catTool"),
+  plugin: t("ai_workflow.develop_catPlugin"),
+  mcp: t("ai_workflow.develop_catMcp"),
   embed: t("ai_workflow.develop_catEmbed"),
 };
 

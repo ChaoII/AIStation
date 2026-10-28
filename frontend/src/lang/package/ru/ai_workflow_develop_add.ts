@@ -104,6 +104,11 @@ export default {
   develop_catPrompt: "Промпт",
   develop_catApp: "ИИ-приложение",
   develop_catProvider: "Поставщик",
+
+  develop_catSkill: "Навык",
+  develop_catTool: "Инструмент",
+  develop_catPlugin: "Плагин",
+  develop_catMcp: "MCP-сервер",
   develop_keyTitle: "{name} · AppKey",
   develop_keyEncrypted: "Зашифрован",
   develop_resetKey: "Сбросить AppKey",

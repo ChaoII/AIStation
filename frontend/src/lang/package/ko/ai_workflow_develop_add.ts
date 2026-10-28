@@ -102,6 +102,11 @@ export default {
   develop_catPrompt: "프롬프트",
   develop_catApp: "AI 앱",
   develop_catProvider: "공급자",
+
+  develop_catSkill: "스킬",
+  develop_catTool: "도구",
+  develop_catPlugin: "플러그인",
+  develop_catMcp: "MCP 서버",
   develop_keyTitle: "{name} · AppKey",
   develop_keyEncrypted: "암호화됨",
   develop_resetKey: "AppKey 재설정",

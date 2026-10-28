@@ -102,6 +102,11 @@ export default {
   develop_catPrompt: "พรอมต์",
   develop_catApp: "แอป AI",
   develop_catProvider: "ผู้ให้บริการ",
+
+  develop_catSkill: "ทักษะ",
+  develop_catTool: "เครื่องมือ",
+  develop_catPlugin: "ปลั๊กอิน",
+  develop_catMcp: "เซิร์ฟเวอร์ MCP",
   develop_keyTitle: "{name} · AppKey",
   develop_keyEncrypted: "เข้ารหัสแล้ว",
   develop_resetKey: "รีเซ็ต AppKey",

@@ -156,6 +156,11 @@ export default {
   develop_catPrompt: "提示詞",
   develop_catApp: "AI 應用",
   develop_catProvider: "模型供應商",
+
+  develop_catSkill: "技能",
+  develop_catTool: "工具",
+  develop_catPlugin: "插件",
+  develop_catMcp: "MCP 伺服器",
   develop_keyTitle: "{name} · AppKey",
   develop_keyEncrypted: "已加密",
   develop_resetKey: "重設 AppKey",

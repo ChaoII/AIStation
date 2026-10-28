@@ -104,6 +104,11 @@ export default {
   develop_catPrompt: "Prompt",
   develop_catApp: "App IA",
   develop_catProvider: "Proveedor",
+
+  develop_catSkill: "Habilidad",
+  develop_catTool: "Herramienta",
+  develop_catPlugin: "Plugin",
+  develop_catMcp: "Servidor MCP",
   develop_keyTitle: "{name} · AppKey",
   develop_keyEncrypted: "Cifrada",
   develop_resetKey: "Restablecer AppKey",
