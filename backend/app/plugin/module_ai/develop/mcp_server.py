@@ -50,6 +50,8 @@ CURRENT_REDIS: ContextVar[Any] = ContextVar("mcp_redis", default=None)
 #: 当前请求内的工具调用计数（**可变对象**：MCP 传输层可能在自己的任务里执行工具，
 #: 整数型 ContextVar 的改动无法回传到中间件，故用 dict 承载计数）。
 _TOOL_CALLS: ContextVar[dict | None] = ContextVar("mcp_tool_calls", default=None)
+#: 当前请求的 MCP 会话 ID（由中间件从 ``mcp-session-id`` 请求头注入，供工具调用审计关联）。
+CURRENT_SESSION_ID: ContextVar[str | None] = ContextVar("mcp_session_id", default=None)
 
 #: JSON-RPC 方法 → 会话行的中文「关闭原因」（管理端可读，别直接暴露方法名）。
 _METHOD_LABELS: dict[str, str] = {
@@ -194,6 +196,7 @@ def _tool_function(cap: Capability):
                 redis=_current_redis(),
                 request_path=f"/mcp#{cap.mcp_tool}",
                 transport="streamable-http",
+                session_id=CURRENT_SESSION_ID.get(),
             )
         except CustomException as e:
             # 转成 MCP 工具错误（SDK 会原样透出消息）：客户端看到明确的中文原因，
@@ -379,6 +382,7 @@ class McpAuthMiddleware:
         counter = {"n": 0}
         calls_token = _TOOL_CALLS.set(counter)
         redis_token = CURRENT_REDIS.set(_scope_redis(scope))
+        sid_token = CURRENT_SESSION_ID.set(headers.get("mcp-session-id"))
 
         body = bytearray()
 
@@ -417,6 +421,7 @@ class McpAuthMiddleware:
             _TOOL_CALLS.reset(calls_token)
             CURRENT_REDIS.reset(redis_token)
             CURRENT_APP_CTX.reset(ctx_token)
+            CURRENT_SESSION_ID.reset(sid_token)
 
 
 def mcp_asgi_app() -> McpAuthMiddleware:

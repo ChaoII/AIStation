@@ -434,51 +434,99 @@
             </el-form-item>
           </el-form>
 
+          <transition name="el-fade-in">
+            <div v-if="mcpFilter.app_id" class="mcp-auth-panel">
+              <div class="mcp-auth-panel__head">
+                <span class="mcp-auth-panel__title">{{ t("ai_workflow.develop_authToolsTitle") }}</span>
+                <span class="mcp-auth-panel__count">
+                  {{ t("ai_workflow.develop_authToolCount", { count: selectedAppMcpTools.length }) }}
+                </span>
+              </div>
+              <div v-if="selectedAppMcpTools.length" class="mcp-auth-panel__tools">
+                <span v-for="cap in selectedAppMcpTools" :key="cap.code" class="mcp-auth-tool">
+                  {{ cap.name }}
+                  <el-tag
+                    v-if="cap.requires_approval"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                    class="mcp-auth-tool__approval"
+                  >
+                    {{ t("ai_workflow.develop_pendingStatus") }}
+                  </el-tag>
+                </span>
+              </div>
+              <div v-else class="mcp-auth-panel__empty">
+                {{ t("ai_workflow.develop_authToolsEmpty") }}
+              </div>
+            </div>
+          </transition>
+
           <div class="table-flow">
-          <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe height="100%">
-            <el-table-column label="AppID" width="120" show-overflow-tooltip>
+          <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe height="100%" @row-click="openMcpDetail">
+            <el-table-column label="AppID" width="110" show-overflow-tooltip>
               <template #default="{ row }">{{ row.appid || "—" }}</template>
             </el-table-column>
             <el-table-column
               :label="t('ai_workflow.develop_sessionId')"
-              min-width="150"
+              min-width="140"
               show-overflow-tooltip
             >
               <template #default="{ row }">
                 <span class="mono-text">{{ row.session_id || "—" }}</span>
               </template>
             </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_transport')" width="100">
+            <el-table-column :label="t('ai_workflow.develop_transport')" width="90">
               <template #default="{ row }">{{ transportLabel(row.transport) }}</template>
             </el-table-column>
             <el-table-column
               prop="client_info"
               :label="t('ai_workflow.develop_client')"
-              min-width="120"
+              min-width="105"
               show-overflow-tooltip
             />
-            <el-table-column :label="t('ai_workflow.develop_startTime')" width="165">
-              <template #default="{ row }">{{ fmtDateTime(row.started_at) }}</template>
+            <el-table-column :label="t('ai_workflow.develop_usedTools')" min-width="175">
+              <template #default="{ row }">
+                <template v-if="row.tools && row.tools.length">
+                  <el-tag
+                    v-for="t in row.tools"
+                    :key="t.capability"
+                    size="small"
+                    effect="plain"
+                    class="mcp-tool-tag"
+                  >
+                    {{ toolShortName(t) }} ×{{ t.calls }}
+                  </el-tag>
+                </template>
+                <span v-else class="mcp-cell-muted">{{ t("ai_workflow.develop_noCalls") }}</span>
+              </template>
             </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_endTime')" width="165">
-              <template #default="{ row }">{{ fmtDateTime(row.ended_at, "—") }}</template>
+            <el-table-column :label="t('ai_workflow.develop_startTime')" width="150">
+              <template #default="{ row }">{{ fmtDateTime(row.started_at) }}</template>
             </el-table-column>
             <el-table-column
               prop="duration_s"
               :label="t('ai_workflow.develop_duration')"
-              width="80"
+              width="70"
               align="right"
             />
             <el-table-column
               prop="tool_calls"
               :label="t('ai_workflow.develop_toolCalls')"
-              width="85"
+              width="75"
               align="right"
             />
+            <el-table-column :label="t('ai_workflow.develop_result')" width="104">
+              <template #default="{ row }">
+                <el-tag :type="mcpStatus(row).type" size="small" effect="light">
+                  {{ mcpStatus(row).label }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column
               prop="close_reason"
               :label="t('ai_workflow.develop_closeReason')"
-              min-width="120"
+              min-width="105"
               show-overflow-tooltip
             />
             <template #empty>
@@ -504,6 +552,78 @@
               "
             />
           </div>
+
+          <el-drawer
+            v-model="mcpDetail.visible"
+            :title="t('ai_workflow.develop_mcpDetail')"
+            size="620px"
+            append-to-body
+            class="mcp-detail-drawer"
+          >
+            <template v-if="mcpDetail.row">
+              <el-descriptions :column="2" border size="small" class="mcp-detail-desc">
+                <el-descriptions-item :label="t('ai_workflow.develop_appLabel')">
+                  <span class="mono-text">{{ mcpDetail.row.appid }}</span>
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('ai_workflow.develop_transport')">
+                  {{ transportLabel(mcpDetail.row.transport) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('ai_workflow.develop_client')">
+                  {{ mcpDetail.row.client_info || "—" }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('ai_workflow.develop_sessionDuration')">
+                  {{ mcpDetail.row.duration_s || 0 }} s
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('ai_workflow.develop_closeReason')" :span="2">
+                  {{ mcpDetail.row.close_reason || "—" }}
+                </el-descriptions-item>
+              </el-descriptions>
+
+              <div class="mcp-detail__tools">
+                <div class="mcp-detail__tools-title">
+                  {{ t("ai_workflow.develop_toolDetail") }}
+                </div>
+                <el-table :data="mcpDetail.row.tools || []" size="small" border stripe>
+                  <el-table-column :label="t('ai_workflow.develop_capability')" min-width="120">
+                    <template #default="{ row }">
+                      <span class="mono-text">{{ row.name || row.capability }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    :label="t('ai_workflow.develop_calls')"
+                    width="54"
+                    align="right"
+                    prop="calls"
+                  />
+                  <el-table-column :label="t('ai_workflow.develop_success')" width="54" align="right">
+                    <template #default="{ row }">{{ row.success || 0 }}</template>
+                  </el-table-column>
+                  <el-table-column
+                    :label="t('ai_workflow.develop_pendingStatus')"
+                    width="60"
+                    align="right"
+                  >
+                    <template #default="{ row }">{{ row.pending || 0 }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('ai_workflow.develop_denied')" width="54" align="right">
+                    <template #default="{ row }">{{ row.denied || 0 }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('ai_workflow.develop_rateLimited')" width="58" align="right">
+                    <template #default="{ row }">{{ row.rate_limited || 0 }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('ai_workflow.develop_quotaHit')" width="68" align="right">
+                    <template #default="{ row }">{{ row.quota_hit || 0 }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('ai_workflow.develop_failed')" width="54" align="right">
+                    <template #default="{ row }">{{ row.failed || 0 }}</template>
+                  </el-table-column>
+                  <template #empty>
+                    <el-empty :image-size="60" :description="t('ai_workflow.develop_noCalls')" />
+                  </template>
+                </el-table>
+              </div>
+            </template>
+          </el-drawer>
         </el-tab-pane>
 
         <!-- ============ 用量报告 ============ -->
@@ -1354,6 +1474,17 @@ interface McpRow {
   duration_s?: number;
   tool_calls?: number;
   close_reason?: string;
+  tools?: Array<{
+    capability: string;
+    name?: string;
+    calls: number;
+    success: number;
+    pending: number;
+    denied: number;
+    rate_limited: number;
+    quota_hit: number;
+    failed: number;
+  }>;
 }
 
 const activeTab = ref("apps");
@@ -1981,6 +2112,51 @@ async function loadMcps(resetPage = true) {
     mcpLoading.value = false;
   }
 }
+
+// ---- MCP 会话详情抽屉（逐工具明细） ----
+const mcpDetail = reactive<{ visible: boolean; row: McpRow | null }>({
+  visible: false,
+  row: null,
+});
+
+function openMcpDetail(row: any) {
+  mcpDetail.row = row;
+  mcpDetail.visible = true;
+}
+
+/** 工具名（中文名优先），超长省略。 */
+function toolShortName(t: any) {
+  const name = t?.name || t?.capability || "";
+  return name.length > 12 ? `${name.slice(0, 12)}…` : name;
+}
+
+/** 会话级结果标签：按最严重状态归类（失败 > 配额命中 > 限流 > 待审批 > 无权限 > 成功）。 */
+function mcpStatus(row: any) {
+  const tools = row.tools || [];
+  const agg = { failed: 0, quota_hit: 0, rate_limited: 0, pending: 0, denied: 0 };
+  for (const tl of tools) {
+    agg.failed += tl.failed || 0;
+    agg.quota_hit += tl.quota_hit || 0;
+    agg.rate_limited += tl.rate_limited || 0;
+    agg.pending += tl.pending || 0;
+    agg.denied += tl.denied || 0;
+  }
+  if (!tools.length) return { type: "info" as const, label: t("ai_workflow.develop_noCalls") };
+  if (agg.failed) return { type: "danger" as const, label: t("ai_workflow.develop_failed") };
+  if (agg.quota_hit) return { type: "danger" as const, label: t("ai_workflow.develop_quotaHit") };
+  if (agg.rate_limited) return { type: "warning" as const, label: t("ai_workflow.develop_rateLimited") };
+  if (agg.pending) return { type: "warning" as const, label: t("ai_workflow.develop_pendingStatus") };
+  if (agg.denied) return { type: "danger" as const, label: t("ai_workflow.develop_permDenied") };
+  return { type: "success" as const, label: t("ai_workflow.develop_success") };
+}
+
+/** 当前选中应用已授权的 MCP 工具（能力码含 mcp_tool 且被该应用的权限覆盖）。 */
+const selectedAppMcpTools = computed(() => {
+  const app = apps.value.find((a) => a.id === mcpFilter.app_id);
+  if (!app) return [];
+  const perms = new Set(app.capabilities || []);
+  return (capabilities.value as any[]).filter((c: any) => c.mcp_tool && perms.has(c.perm));
+});
 
 // ---- 调用审批（敏感能力「先审批后执行」） ----
 const APPROVAL_STATUS: Record<string, string> = {
@@ -2633,6 +2809,84 @@ onMounted(() => {
 
 .log-table :deep(.el-table__row) {
   cursor: pointer;
+}
+
+.mcp-table :deep(.el-table__row) {
+  cursor: pointer;
+}
+
+.mcp-tool-tag {
+  margin: 2px 4px 2px 0;
+}
+
+.mcp-cell-muted {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.mcp-auth-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-lighter);
+}
+
+.mcp-auth-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-auth-panel__title {
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+}
+
+.mcp-auth-panel__count {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.mcp-auth-panel__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mcp-auth-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--el-text-color-primary);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-blank);
+}
+
+.mcp-auth-tool__approval {
+  margin-left: 2px;
+}
+
+.mcp-auth-panel__empty {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.mcp-detail-desc {
+  margin-bottom: 16px;
+}
+
+.mcp-detail__tools-title {
+  margin-bottom: 8px;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 
 .try-result {

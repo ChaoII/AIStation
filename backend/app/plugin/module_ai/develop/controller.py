@@ -47,7 +47,7 @@ from .model import (
     AiIntegrationMcpSessionModel,
 )
 from .openapi import invoke_capability
-from .registry import all_capabilities, capabilities_for, to_public_dict
+from .registry import all_capabilities, capabilities_for, get_capability, to_public_dict
 from .schema import (
     ApprovalBatchReviewSchema,
     ApprovalReviewSchema,
@@ -737,8 +737,8 @@ def _call_log_to_dict(row: AiIntegrationCallLogModel) -> dict:
     }
 
 
-def _mcp_session_to_dict(row: AiIntegrationMcpSessionModel) -> dict:
-    """MCP 会话行 → 对外 dict（连接级监控，只读）。"""
+def _mcp_session_to_dict(row: AiIntegrationMcpSessionModel, tools: list | None = None) -> dict:
+    """MCP 会话行 → 对外 dict（连接级监控 + 会话内工具调用明细，只读）。"""
     return {
         "id": row.id,
         "created_time": row.created_time,
@@ -752,7 +752,72 @@ def _mcp_session_to_dict(row: AiIntegrationMcpSessionModel) -> dict:
         "duration_s": row.duration_s,
         "tool_calls": row.tool_calls,
         "close_reason": row.close_reason,
+        "tools": tools or [],
     }
+
+
+def _classify_status(status: str | None, error: str | None) -> str:
+    """把调用日志 ``status`` + ``error`` 归类为更细的结果类别。
+
+    供会话工具明细聚合使用：``denied`` 里再区分「限流 / 配额命中 / 无权限」，
+    让管理端一眼看清是哪个环节被拦。
+    """
+    if status == "success":
+        return "success"
+    if status == "pending":
+        return "pending"
+    if status == "denied":
+        err = error or ""
+        if "频繁" in err or "稍后再试" in err:
+            return "rate_limited"
+        if "配额" in err:
+            return "quota_hit"
+        return "denied"
+    return "failed"
+
+
+async def _session_tools_map(db, session_ids: list[str]) -> dict[str, list[dict]]:
+    """按 MCP 会话聚合调用日志，得到每个会话的「工具调用明细」。
+
+    只取本页会话涉及的工具调用（``method='MCP'`` 且 ``session_id`` 命中），
+    按能力聚合次数并分结果类别（成功/待审批/无权限/限流/配额命中/失败）。
+    """
+    result: dict[str, dict[str, dict]] = {}
+    if not session_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(
+                AiIntegrationCallLogModel.session_id,
+                AiIntegrationCallLogModel.capability,
+                AiIntegrationCallLogModel.status,
+                AiIntegrationCallLogModel.error,
+            ).where(
+                AiIntegrationCallLogModel.session_id.in_(session_ids),
+                AiIntegrationCallLogModel.method == "MCP",
+            )
+        )
+    ).all()
+    for sid, cap_code, status, error in rows:
+        entry = result.setdefault(sid, {})
+        tool = entry.setdefault(
+            cap_code,
+            {
+                "capability": cap_code,
+                "name": (get_capability(cap_code).name if get_capability(cap_code) else cap_code),
+                "calls": 0,
+                "success": 0,
+                "pending": 0,
+                "denied": 0,
+                "rate_limited": 0,
+                "quota_hit": 0,
+                "failed": 0,
+            },
+        )
+        tool["calls"] += 1
+        cat = _classify_status(status, error)
+        tool[cat] = tool.get(cat, 0) + 1
+    return {sid: list(tools.values()) for sid, tools in result.items()}
 
 
 async def _query_call_logs(
@@ -849,10 +914,11 @@ async def _query_mcp_sessions(
                 .limit(page_size)
             )
         ).scalars().all()
+        tools_map = await _session_tools_map(db, [r.session_id for r in rows])
         return {
             "page_no": page_no,
             "page_size": page_size,
             "total": total,
             "has_next": page_no * page_size < total,
-            "items": [_mcp_session_to_dict(r) for r in rows],
+            "items": [_mcp_session_to_dict(r, tools_map.get(r.session_id)) for r in rows],
         }

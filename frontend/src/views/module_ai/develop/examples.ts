@@ -32,7 +32,7 @@ curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
 export const MCP_EXAMPLE = `// 端点（Streamable HTTP）：https://<host>/api/v1/ai/develop-api/mcp
 // 鉴权：请求头 Authorization: Bearer {appid}:{appkey}（与 REST 同一套凭证）
 
-// 方式一：客户端原生支持自定义请求头（推荐）
+// —— ① 客户端配置（推荐：自定义请求头；只支持 stdio 的用方式二由 mcp-remote 转发）——
 {
   "mcpServers": {
     "aistation": {
@@ -43,7 +43,7 @@ export const MCP_EXAMPLE = `// 端点（Streamable HTTP）：https://<host>/api/
   }
 }
 
-// 方式二：客户端只支持 stdio（用 mcp-remote 代理转发请求头）
+// 只支持 stdio 的客户端，用 mcp-remote 代理转发请求头：
 {
   "mcpServers": {
     "aistation": {
@@ -57,7 +57,23 @@ export const MCP_EXAMPLE = `// 端点（Streamable HTTP）：https://<host>/api/
   }
 }
 
-// 工具 = 能力：tools/list 只返回该应用已授权的能力；每次调用都写审计。`;
+// —— ② 工具 = 能力：先 tools/list 确认本应用已授权哪些工具（未授权的不暴露）——
+//   返回 工具名 + inputSchema，参数与能力入参一一对应。
+
+// —— ③ 调工具：工具名与能力码一一对应（如 agent_list / chat_send / train_start）——
+const assistant = client.getTool("agent_list");           // 例：列出智能体
+const agents    = await assistant.call({});
+
+const chat      = client.getTool("chat_send");            // 例：对话（非流式聚合回复）
+const reply     = await chat.call({ kind: "workflow", target_id: 12, message: "你好" });
+
+// —— ④ 资源：aistation://capabilities（JSON）返回该应用已授权能力的完整清单 ——
+//   含 能力码 / 权限点 / MCP 工具名 / 是否需审批，供客户端一次性了解可用工具面。
+const caps = await client.readResource("aistation://capabilities");
+
+// —— ⑤ 审批与审计 ——
+//   - 敏感能力若应用开启「需人工审批」，调用返回 pending_approval，待管理员批准后执行；
+//   - 所有调用都写平台审计（成功 / 拒绝 / 限流 / 配额命中），appid:appkey 只能放服务端请求头。`;
 
 export const EMBED_EXAMPLE = `<!-- 方式一：iframe 直嵌（token 由服务端换票注入） -->
 <iframe src="https://<host>/web/#/embed?token={access_token}"

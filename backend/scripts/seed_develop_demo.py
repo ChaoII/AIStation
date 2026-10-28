@@ -64,6 +64,55 @@ async def main() -> None:
             )
             print(f"  [OK] MCP 会话 x{len(sessions)}")
 
+        # ---------------- MCP 会话内的工具调用日志（关联演示会话） ----------------
+        mcp_log_n = await conn.fetchval(
+            "SELECT count(*) FROM ai_integration_call_logs WHERE method='MCP' AND session_id LIKE 'mcp-demo-%'"
+        )
+        if mcp_log_n:
+            print(f"  [SKIP] MCP 调用日志（已有 {mcp_log_n}）")
+        else:
+            srows = await conn.fetch(
+                "SELECT id, app_id, appid, session_id, transport, client_info, started_at "
+                "FROM ai_integration_mcp_sessions WHERE session_id LIKE 'mcp-demo-%'"
+            )
+            # 每会话 2..5 条工具调用，覆盖成功/待审批/限流/配额命中/无权限/失败各态
+            tool_specs = [
+                ("agent.list", "agent", "success", None, "items=3"),
+                ("chat.send", "chat", "success", None, "id=210"),
+                ("agent.delete", "agent", "pending", "待管理员审批", None),
+                ("train.start", "train", "denied", "访问过于频繁，请稍后再试", None),
+                ("agent.list", "agent", "denied", "今日调用配额已用完", None),
+                ("chat.send", "chat", "failed", "能力执行失败：模型不可用", None),
+            ]
+            call_rows: list[tuple] = []
+            for s in srows:
+                n = 2 + (s["id"] % 4)
+                for k in range(n):
+                    cap, cat, status, error, summary = tool_specs[(s["id"] + k) % len(tool_specs)]
+                    body = (
+                        json.dumps({"id": 100 + (s["id"] + k)})
+                        if status == "success" and cap.startswith("agent")
+                        else None
+                    )
+                    call_rows.append(
+                        (
+                            s["app_id"], s["appid"], cat, cap, "request", "MCP",
+                            s["transport"], s["session_id"], s["client_info"],
+                            f"/mcp#{cap}", body, status, error,
+                            120 + (s["id"] * 7 + k * 13) % 900, 0,
+                            summary if status == "success" else None,
+                            s["started_at"] + timedelta(seconds=k * 3),
+                        )
+                    )
+            await conn.executemany(
+                "INSERT INTO ai_integration_call_logs "
+                "(app_id, appid, category, capability, log_type, method, transport, session_id, client_info, "
+                "request_path, request_body, status, error, latency_ms, cost_tokens, result_summary, created_time) "
+                "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)",
+                call_rows,
+            )
+            print(f"  [OK] MCP 调用日志 x{len(call_rows)}")
+
         # ---------------- 调用审批 ----------------
         appr_n = await conn.fetchval("SELECT count(*) FROM ai_integration_approvals")
         if appr_n:
