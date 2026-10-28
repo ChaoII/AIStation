@@ -2093,6 +2093,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
             log.warning(f"⚠️  知识库表补列跳过: {e}")
 
         try:
+            from app.core.database import async_engine as _embed_engine
+            from app.plugin.module_ai.asset_embed.schema_check import ensure_asset_embed_schema
+
+            await ensure_asset_embed_schema(_embed_engine)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"⚠️  资产嵌入表补建跳过: {e}")
+
+        try:
             # train_predicts 兜底建表：DDL 与 TrainPredictModel 对齐（逐条独立事务，失败留日志）
             await _exec_ddl(
                 """
