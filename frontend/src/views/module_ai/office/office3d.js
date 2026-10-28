@@ -5714,6 +5714,21 @@ export function createOffice(opts) {
   let lowPower = false;
   let skipCount = 0;
   let blurred = false;
+  /* 静止降帧：这个办公场景大多时候是静态的（人坐着、镜头不动），
+     若仍以全帧率渲染会很费 GPU/电量。检测到画面连续静止一段时间后自动降到 ~15fps，
+     一旦有人走动 / 镜头过渡 / 舞厅有人，立即恢复全帧率。 */
+  let idleSince = -1;      // 最近一次"画面活跃"的真实时间戳（performance.now），-1 表示从未静止
+  let idleSkip = 0;
+  const IDLE_AFTER_MS = 2000;   // 静止多久后开始降帧
+  const IDLE_EVERY = 4;         // 静止时每 N 帧才真正渲染一次（约 15fps）
+  function sceneActive() {
+    if (camState.want) return true;                                  // 镜头在过渡 / 聚焦
+    if (discoPower > 0.05 && agents.some(r => r.onDance)) return true; // 舞厅有人
+    for (const r of agents) {
+      if (r.path && r.wp < r.path.length) return true;               // 有人在走动
+    }
+    return false;
+  }
   const AUTO_SLOW = !navigator.webdriver;
   if (AUTO_SLOW) {
     window.addEventListener('blur', () => { blurred = true; });
@@ -5724,6 +5739,17 @@ export function createOffice(opts) {
       /* 后台期间不推进时间：dt 有 0.05 上限，回来也不会瞬移 */
       requestAnimationFrame(tick);
       return;
+    }
+    const nowRp = performance.now();
+    if (sceneActive()) { idleSince = nowRp; idleSkip = 0; }
+    else if (idleSince < 0) idleSince = nowRp;   // 第一次进入静止：记起点
+    /* 静止超过阈值 → 降帧渲染；有动静（sceneActive 已把 idleSince 重置）立即恢复 */
+    if (idleSince >= 0 && nowRp - idleSince > IDLE_AFTER_MS) {
+      idleSkip = (idleSkip + 1) % IDLE_EVERY;
+      if (idleSkip) {
+        requestAnimationFrame(tick);
+        return;
+      }
     }
     if (lowPower || blurred) {
       /* 省电 30fps；只是失焦则 15fps（不降画质） */
@@ -6372,6 +6398,11 @@ export function createOffice(opts) {
     }),
     debug: () => ({
       agents: agents.length,
+      throttle: {
+        idle: idleSince >= 0 && (performance.now() - idleSince) > IDLE_AFTER_MS,
+        idleSince: idleSince < 0 ? -1 : Math.round(performance.now() - idleSince),
+        skip: idleSkip
+      },
       where: Object.fromEntries(agents.map(r => [
         r.data.name,
         [+r.person.root.position.x.toFixed(2), +r.person.root.position.z.toFixed(2), r.seat.key,
