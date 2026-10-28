@@ -592,51 +592,50 @@
 
         <!-- ============ 调用审批 ============ -->
         <el-tab-pane :label="t('ai_workflow.develop_tabApprovals')" name="approvals" class="develop-table-pane">
-          <el-form :inline="true" :model="approvalFilter" class="develop-search">
-            <el-form-item :label="t('ai_workflow.develop_status')">
-              <el-select
-                v-model="approvalFilter.status"
-                :placeholder="t('ai_workflow.develop_all')"
-                clearable
-                style="width: 140px"
-                @change="loadApprovals(true)"
-              >
-                <el-option
-                  v-for="(label, code) in APPROVAL_STATUS"
-                  :key="code"
-                  :label="label"
-                  :value="code"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" :icon="Search" @click="loadApprovals(true)">
-                {{ t("ai_workflow.develop_query") }}
-              </el-button>
-            </el-form-item>
-          </el-form>
-
-          <div class="develop-toolbar">
-            <div class="develop-toolbar__left">
+          <div class="develop-head">
+            <el-form :inline="true" :model="approvalFilter" class="develop-search">
+              <el-form-item :label="t('ai_workflow.develop_status')">
+                <el-select
+                  v-model="approvalFilter.status"
+                  :placeholder="t('ai_workflow.develop_all')"
+                  clearable
+                  style="width: 140px"
+                  @change="loadApprovals(true)"
+                >
+                  <el-option
+                    v-for="(label, code) in APPROVAL_STATUS"
+                    :key="code"
+                    :label="label"
+                    :value="code"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" :icon="Search" @click="loadApprovals(true)">
+                  {{ t("ai_workflow.develop_query") }}
+                </el-button>
+              </el-form-item>
+            </el-form>
+            <div class="develop-head__actions">
               <el-tag size="small" type="warning" effect="plain" class="summary-tag">
                 {{ t("ai_workflow.develop_approvalPending", { count: approvalPendingCount }) }}
               </el-tag>
+              <el-button
+                v-hasPerm="['module_ai:develop:approve']"
+                type="primary"
+                :disabled="!approvalSelection.length"
+                @click="onBatchApprove"
+              >
+                {{ t("ai_workflow.develop_batchApprove", { count: approvalSelection.length }) }}
+              </el-button>
+              <el-button
+                v-hasPerm="['module_ai:develop:update']"
+                :icon="Setting"
+                @click="openNotifyCfg"
+              >
+                {{ t("ai_workflow.develop_notifyCfg") }}
+              </el-button>
             </div>
-            <el-button
-              v-hasPerm="['module_ai:develop:approve']"
-              type="primary"
-              :disabled="!approvalSelection.length"
-              @click="onBatchApprove"
-            >
-              {{ t("ai_workflow.develop_batchApprove", { count: approvalSelection.length }) }}
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:develop:update']"
-              :icon="Setting"
-              @click="openNotifyCfg"
-            >
-              {{ t("ai_workflow.develop_notifyCfg") }}
-            </el-button>
           </div>
 
           <div class="table-flow">
@@ -2359,6 +2358,18 @@ onMounted(() => {
 
 .develop-head .develop-search {
   margin-bottom: 0;
+}
+
+.develop-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.develop-head__actions .summary-tag {
+  margin-left: 0;
 }
 
 .develop-alert {
