@@ -18,11 +18,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Query, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -32,15 +31,12 @@ from app.core.database import async_db_session
 from app.core.dependencies import AuthPermission
 from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
-from app.plugin.module_ai.assistant.agno_service import agno_stream_response
-from app.plugin.module_ai.streaming import ui_stream_response
 
 # 导入 handler 包即注册全部开放能力（REST 与 MCP 共用注册表）。
 from . import handlers as _handlers  # noqa: F401
 from .approvals import ApprovalService, review_one
-from .auth import AppContext, EmbedContext, get_app_api_auth, get_embed_ctx, require_app_perm
+from .auth import AppContext, get_app_api_auth
 from .capabilities import permissions_by_category
-from .embed import EmbedService
 from .model import (
     AiIntegrationAppModel,
     AiIntegrationCallLogModel,
@@ -55,9 +51,6 @@ from .schema import (
     CapabilityTrySchema,
     DevelopCreateSchema,
     DevelopUpdateSchema,
-    EmbedMintSchema,
-    EmbedRunSchema,
-    EmbedTokenIssueSchema,
     NotifyConfigSchema,
 )
 from .service import DevelopService
@@ -80,104 +73,6 @@ DevelopRouter = APIRouter(
     prefix="/develop",
     tags=["AI-集成管理"],
 )
-
-EmbedRouter = APIRouter(
-    route_class=OperationLogRoute,
-    prefix="/embed",
-    tags=["AI-嵌入"],
-)
-
-
-@EmbedRouter.get("/meta", summary="嵌入目标元信息")
-async def embed_meta(
-    ctx: Annotated[EmbedContext, Depends(get_embed_ctx)],
-) -> SuccessResponse:
-    """返回嵌入目标名称与欢迎语（嵌入页初始化用）。
-
-    - 令牌缺/过期/吊销/app 停用 → 401（依赖层统一处理）；
-    - 应用缺 ``integration:embed:use`` → 403（权限每请求重读，收回即时生效）；
-    - 目标已删除 → 404。
-    """
-    if "integration:embed:use" not in ctx.perms:
-        raise CustomException(msg="无权限操作", code=10403, status_code=403)
-    target = await EmbedService.get_target(ctx.kind, ctx.target_id)
-    if target is None:
-        raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
-    return SuccessResponse(
-        data={
-            "appid": ctx.appid,
-            "kind": ctx.kind,
-            "target_id": ctx.target_id,
-            "name": target["name"],
-            "welcome": target["description"] or "",
-            "expire_at": ctx.expires_at.strftime("%Y-%m-%d %H:%M:%S"),
-        },
-        msg="查询成功",
-    )
-
-
-@EmbedRouter.post("/run", summary="嵌入对话（流式）")
-async def embed_run(
-    data: EmbedRunSchema,
-    request: Request,
-    ctx: Annotated[EmbedContext, Depends(get_embed_ctx)],
-) -> StreamingResponse:
-    """嵌入对话主通道：``Bearer <token>``，请求体仅 ``sid`` + ``message``。
-
-    校验顺序（全部在返回流之前完成，错误以 JSON 返回而非 SSE 帧）：
-    权限点 → 会话绑定（403）→ 生成流。审计在流结束时写入 ``method=EMBED``。
-    """
-    async with async_db_session() as db:
-        app_row = await db.get(AiIntegrationAppModel, ctx.app_id)
-    if app_row is None:
-        raise CustomException(msg="鉴权失败", code=10401, status_code=401)
-    if "integration:embed:use" not in ctx.perms:
-        await DevelopService.log_call(
-            app_row,
-            category="embed",
-            capability="run",
-            method="EMBED",
-            transport="sse",
-            request_path="/run",
-            request_body={"sid": data.sid, "kind": ctx.kind, "target_id": ctx.target_id},
-            status="denied",
-            error="无权限操作",
-        )
-        raise CustomException(msg="无权限操作", code=10403, status_code=403)
-    await EmbedService.check_limits(
-        getattr(request.app.state, "redis", None),
-        ctx,
-        request.client.host if request.client else "",
-    )
-    session_id, session_reset = await EmbedService.prepare_session(ctx, data.sid)
-    gen = EmbedService.run_stream(
-        ctx,
-        data.sid,
-        app_row,
-        session_id,
-        session_reset,
-        data.message,
-        redis=getattr(request.app.state, "redis", None),
-    )
-    # 与已登录端点保持同一协议包装：工作流走 UI Message Stream，agent/app 走 Agno 事件流
-    if ctx.kind == "workflow":
-        return ui_stream_response(gen)
-    return agno_stream_response(gen)
-
-
-@EmbedRouter.get("/sdk.js", summary="嵌入 SDK 脚本")
-async def embed_sdk() -> PlainTextResponse:
-    """返回嵌入 SDK 静态脚本。
-
-    本端点**无鉴权**：返回的是纯代码、不含任何凭证；实质鉴权发生在 ``/embed/run``
-    等业务端点（Bearer access_token）。请勿在此文件中放入任何密钥。
-    """
-    path = Path(__file__).parent / "static" / "ai-assistant.js"
-    return PlainTextResponse(
-        path.read_text(encoding="utf-8"),
-        media_type="application/javascript",
-        headers={"Cache-Control": "no-cache"},
-    )
 
 
 @OpenApiRouter.get("/auth/verify", summary="鉴权验证")
@@ -213,62 +108,6 @@ async def auth_verify(
             status="success",
         )
     return SuccessResponse(data=data, msg="校验成功")
-
-
-@OpenApiRouter.post("/auth/token", summary="换票签发嵌入短期令牌")
-async def auth_token(
-    data: EmbedTokenIssueSchema,
-    request: Request,
-    ctx: Annotated[AppContext, Depends(get_app_api_auth)],
-) -> SuccessResponse:
-    """服务端换票：``appid:appkey`` → 绑定 ``app+kind+target`` 的短期 access_token。
-
-    - 缺 ``integration:embed:use`` → 403 + denied 审计；
-    - 目标不存在 → 404 + denied 审计；
-    - 明文 token 仅本响应返回一次，库内只存 sha256（响应本身不写日志）。
-    """
-    async with async_db_session() as db:
-        row = await db.get(AiIntegrationAppModel, ctx.app_id)
-    if row is None:
-        raise CustomException(msg="鉴权失败", code=10401, status_code=401)
-
-    async def _audit(status: str, error: str | None = None, summary: str | None = None) -> None:
-        """写一条换票审计（request_body 仅 kind/target，绝不含明文 token）。"""
-        await DevelopService.log_call(
-            row,
-            category="embed",
-            capability="token.issue",
-            method="REST",
-            request_path="/auth/token",
-            request_body={"kind": data.kind, "target_id": data.target_id},
-            status=status,
-            error=error,
-            result_summary=summary,
-        )
-
-    try:
-        require_app_perm(ctx, "integration:embed:use")
-    except CustomException as e:
-        await _audit("denied", error=e.msg)
-        raise
-    # 换票限流（appid + IP 双键）：防无限铸票
-    await EmbedService.check_issue_limit(
-        getattr(request.app.state, "redis", None),
-        ctx.appid,
-        request.client.host if request.client else "",
-    )
-    target = await EmbedService.get_target(data.kind, data.target_id)
-    if target is None:
-        await _audit("denied", error="嵌入目标不存在")
-        raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
-    if not target["enabled"]:
-        await _audit("denied", error="嵌入目标未启用")
-        raise CustomException(msg="嵌入目标未启用", code=10400, status_code=400)
-    result = await EmbedService.issue_token(
-        row, kind=data.kind, target_id=data.target_id, ttl=data.ttl, issued_by="exchange"
-    )
-    await _audit("success", summary=f"{data.kind}:{data.target_id}")
-    return SuccessResponse(data=result, msg="令牌已签发")
 
 
 # ---------------------------------------------------------------------- #
@@ -471,50 +310,6 @@ async def develop_reset_key(
 ) -> JSONResponse:
     result = await DevelopService.reset_appkey(app_id, auth)
     return SuccessResponse(data=result, msg="重置成功")
-
-
-@DevelopRouter.get("/tokens", summary="嵌入令牌列表")
-async def develop_list_tokens(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
-    app_id: Annotated[int, Query(description="应用ID")],
-) -> JSONResponse:
-    """列出某应用的嵌入令牌元信息（不含明文/散列），供管理弹窗展示与吊销。"""
-    return SuccessResponse(
-        data={"items": await DevelopService.list_tokens(app_id)}, msg="查询成功"
-    )
-
-
-@DevelopRouter.post("/tokens", summary="签发体验令牌（2小时）")
-async def develop_mint_token(
-    data: EmbedMintSchema,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:create"]))],
-) -> JSONResponse:
-    """管理端签发体验票：issued_by=admin、有效期固定 2 小时，明文仅此响应一次。"""
-    async with async_db_session() as db:
-        app_row = await db.get(AiIntegrationAppModel, data.app_id)
-    if app_row is None or app_row.is_deleted:
-        return ErrorResponse(msg="应用不存在")
-    if await EmbedService.get_target(data.kind, data.target_id) is None:
-        raise CustomException(msg="嵌入目标不存在", code=10404, status_code=404)
-    result = await EmbedService.issue_token(
-        app_row,
-        kind=data.kind,
-        target_id=data.target_id,
-        ttl=7200,
-        issued_by="admin",
-    )
-    return SuccessResponse(data=result, msg="已签发（有效期 2 小时）")
-
-
-@DevelopRouter.put("/tokens/{token_id}/revoke", summary="吊销嵌入令牌")
-async def develop_revoke_token(
-    token_id: int,
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:update"]))],
-) -> JSONResponse:
-    """吊销后令牌立即失效（软语义：置 revoked，保留审计行）。"""
-    if not await DevelopService.revoke_token(token_id):
-        return ErrorResponse(msg="令牌不存在")
-    return SuccessResponse(msg="已吊销")
 
 
 @DevelopRouter.get("/call-logs", summary="分页查询调用日志")

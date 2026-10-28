@@ -683,6 +683,8 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:cron:update", "编辑定时任务"),
     ("module_ai:cron:delete", "删除定时任务"),
     ("module_ai:cron:run", "立即执行定时任务"),
+    # 资产嵌入（工作台卡片「嵌入」：签发/吊销独立绑定资产的令牌）
+    ("module_ai:asset_embed:manage", "管理资产嵌入（签发/吊销令牌）"),
     ("module_ai:skill:query", "查询技能"),
     ("module_ai:skill:create", "新增技能"),
     ("module_ai:skill:update", "编辑技能"),

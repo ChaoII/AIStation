@@ -17,7 +17,6 @@ CATEGORIES: dict[str, str] = {
     "agent": "智能体",
     "chat": "对话",
     "bot": "机器人",
-    "embed": "网页嵌入",
 }
 
 #: 品类码 → 该品类下的合法权限点列表。
@@ -40,9 +39,6 @@ CATEGORY_PERMS: dict[str, list[str]] = {
     ],
     "bot": [
         "integration:bot:use",
-    ],
-    "embed": [
-        "integration:embed:use",
     ],
 }
 
