@@ -15,6 +15,24 @@ class AssetTokenIssueSchema(BaseModel):
     kind: AssetKind = Field(..., description="嵌入形态: agent/workflow")
     target_id: int = Field(..., description="嵌入目标ID")
     ttl: int | None = Field(default=None, description="有效期秒数（缺省86400，下限60，上限2592000）")
+    permanent: bool = Field(default=False, description="是否永久（true 时忽略 ttl）")
+    allow_domains: str | None = Field(
+        default=None, max_length=1024, description="允许来源域名（逗号分隔，空=不限）"
+    )
+    allow_ips: str | None = Field(
+        default=None, max_length=1024, description="允许来源IP/网段（逗号分隔，空=不限）"
+    )
+
+
+class AssetTokenUpdateSchema(BaseModel):
+    """更新资产嵌入令牌白名单入参（未传字段 = 不改）。"""
+
+    allow_domains: str | None = Field(
+        default=None, max_length=1024, description="允许来源域名（传空串=清空为不限）"
+    )
+    allow_ips: str | None = Field(
+        default=None, max_length=1024, description="允许来源IP/网段（传空串=清空为不限）"
+    )
 
 
 class AssetRunSchema(BaseModel):

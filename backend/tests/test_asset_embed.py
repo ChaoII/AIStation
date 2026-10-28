@@ -10,6 +10,8 @@ from app.plugin.module_ai.asset_embed.service import (
     clamp_asset_ttl,
     generate_asset_token,
     hash_asset_token,
+    match_whitelist,
+    parse_origin_host,
 )
 
 
@@ -34,6 +36,43 @@ def test_asset_token_model_table():
     assert AiAssetAccessTokenModel.__tablename__ == "ai_asset_access_tokens"
     for col in ("kind", "target_id", "token_hash", "expires_at", "revoked", "use_count"):
         assert col in AiAssetAccessTokenModel.__table__.columns
+
+
+def test_asset_token_whitelist_columns():
+    from app.plugin.module_ai.asset_embed.model import (
+        AiAssetAccessTokenModel,
+        AiAssetEmbedLogModel,
+    )
+
+    assert "allow_domains" in AiAssetAccessTokenModel.__table__.columns
+    assert "allow_ips" in AiAssetAccessTokenModel.__table__.columns
+    assert "token_id" in AiAssetEmbedLogModel.__table__.columns
+    assert "client_ip" in AiAssetEmbedLogModel.__table__.columns
+
+
+def test_parse_origin_host():
+    assert parse_origin_host("https://a.com/x") == "a.com"
+    assert parse_origin_host("http://a.com:8080/p") == "a.com"
+    assert parse_origin_host("https://Sub.Example.COM/x") == "sub.example.com"
+    assert parse_origin_host(None) is None
+    assert parse_origin_host("") is None
+    assert parse_origin_host("not-a-url") is None
+
+
+def test_match_whitelist():
+    # 两者都空 = 不限（兼容旧令牌）
+    assert match_whitelist(None, None, None, "1.2.3.4") is True
+    assert match_whitelist("", "", None, "1.2.3.4") is True
+    # 域名命中（大小写/空白容忍）
+    assert match_whitelist("a.com, b.com", None, "B.COM", "9.9.9.9") is True
+    # 域名不命中且无 IP → False
+    assert match_whitelist("a.com", None, "c.com", "9.9.9.9") is False
+    # IP 命中
+    assert match_whitelist(None, "1.2.3.4, 5.6.7.8", None, "5.6.7.8") is True
+    # IP 不命中且无域名 → False
+    assert match_whitelist(None, "1.2.3.4", None, "9.9.9.9") is False
+    # 都配了也没有命中 → False
+    assert match_whitelist("a.com", "1.2.3.4", "b.com", "9.9.9.9") is False
 
 
 def test_asset_schema_kind_literal():

@@ -16,6 +16,7 @@ from app.core.database import async_db_session
 from app.plugin.module_ai.asset_embed.embed import AssetEmbedService
 from app.plugin.module_ai.asset_embed.model import (
     AiAssetAccessTokenModel,
+    AiAssetEmbedLogModel,
     AiAssetEmbedSessionModel,
 )
 from app.plugin.module_ai.asset_embed.service import AssetTokenService, hash_asset_token
@@ -54,9 +55,40 @@ def _create_workflow(test_client, auth_headers, template="结果"):
     return r.json()["data"]["id"]
 
 
-def _issue(kind: str, target_id: int, ttl: int | None = None) -> dict:
+def _issue(
+    kind: str,
+    target_id: int,
+    ttl: int | None = None,
+    permanent: bool = False,
+    allow_domains: str | None = None,
+    allow_ips: str | None = None,
+) -> dict:
     """直接走服务签发资产令牌（绕过管理端权限依赖，聚焦鉴权/运行链路）。"""
-    return asyncio.run(AssetTokenService.issue_token(kind, target_id, ttl=ttl))
+    return asyncio.run(
+        AssetTokenService.issue_token(
+            kind,
+            target_id,
+            ttl=ttl,
+            permanent=permanent,
+            allow_domains=allow_domains,
+            allow_ips=allow_ips,
+        )
+    )
+
+
+def _token_id(token: str) -> int:
+    async def _go():
+        async with async_db_session() as db:
+            row = (
+                await db.execute(
+                    select(AiAssetAccessTokenModel).where(
+                        AiAssetAccessTokenModel.token_hash == hash_asset_token(token)
+                    )
+                )
+            ).scalar_one()
+            return row.id
+
+    return asyncio.run(_go())
 
 
 def _revoke(token: str) -> None:
@@ -272,3 +304,206 @@ def test_run_dispatch_agent_with_anonymous_shim(monkeypatch):
     assert seen_uid == [None] and seen_target == [7]
     assert any("data-embed" in f.replace(" ", "") for f in frames)
     assert any("agent-未配置模型" in f for f in frames)
+
+
+def test_run_whitelist_domain_403(test_client, auth_headers):
+    """仅配域名白名单，但请求无来源头（也非来源域名）→ 403。"""
+    wf = _create_workflow(test_client, auth_headers)
+    token = _issue("workflow", wf, allow_domains="example.com")["token"]
+    try:
+        r = test_client.post(
+            f"{API}/ai/embed/run",
+            json={"sid": f"sid-{_uid()}xx", "message": "hi"},
+            headers=_token_auth(token),
+        )
+        assert r.status_code == 403, r.text
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/workflows/delete", json=[wf], headers=auth_headers
+        )
+
+
+def test_run_whitelist_domain_pass(test_client, auth_headers):
+    """仅配域名白名单，请求带命中来源域名 → 200。"""
+    wf = _create_workflow(test_client, auth_headers)
+    token = _issue("workflow", wf, allow_domains="example.com")["token"]
+    try:
+        h = _token_auth(token)
+        h["Origin"] = "https://example.com"
+        r = test_client.post(
+            f"{API}/ai/embed/run",
+            json={"sid": f"sid-{_uid()}xx", "message": "你好"},
+            headers=h,
+        )
+        assert r.status_code == 200, r.text
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/workflows/delete", json=[wf], headers=auth_headers
+        )
+
+
+def test_run_whitelist_ip_pass(test_client, auth_headers):
+    """仅配 IP 白名单，来源 IP 命中 → 200（X-Forwarded-For 127.0.0.1）。"""
+    wf = _create_workflow(test_client, auth_headers)
+    token = _issue("workflow", wf, allow_ips="127.0.0.1")["token"]
+    try:
+        r = test_client.post(
+            f"{API}/ai/embed/run",
+            json={"sid": f"sid-{_uid()}xx", "message": "你好"},
+            headers=_token_auth(token),
+        )
+        assert r.status_code == 200, r.text
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/workflows/delete", json=[wf], headers=auth_headers
+        )
+
+
+def test_run_whitelist_empty_unbounded(test_client, auth_headers):
+    """白名单为空（NULL）→ 不限（兼容旧令牌）。"""
+    wf = _create_workflow(test_client, auth_headers)
+    token = _issue("workflow", wf)["token"]
+    try:
+        r = test_client.post(
+            f"{API}/ai/embed/run",
+            json={"sid": f"sid-{_uid()}xx", "message": "你好"},
+            headers=_token_auth(token),
+        )
+        assert r.status_code == 200, r.text
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/workflows/delete", json=[wf], headers=auth_headers
+        )
+
+
+def test_audit_log_token_and_ip(test_client, auth_headers):
+    """成功调用后审计关联 token_id 与 client_ip。"""
+    wf = _create_workflow(test_client, auth_headers)
+    token = _issue("workflow", wf)["token"]
+    tid = _token_id(token)
+    try:
+        r = test_client.post(
+            f"{API}/ai/embed/run",
+            json={"sid": f"sid-{_uid()}xx", "message": "你好"},
+            headers=_token_auth(token),
+        )
+        assert r.status_code == 200, r.text
+
+        from app.plugin.module_ai.asset_embed.model import AiAssetEmbedLogModel
+
+        async def _fetch():
+            async with async_db_session() as db:
+                return (
+                    (
+                        await db.execute(
+                            select(AiAssetEmbedLogModel).where(
+                                AiAssetEmbedLogModel.token_id == tid
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+        rows = []
+        for _ in range(15):
+            rows = asyncio.run(_fetch())
+            if rows:
+                break
+            time.sleep(0.2)
+        assert rows, "后台审计未在 3 秒内落库"
+        row = rows[0]
+        assert row.token_id == tid
+        assert row.client_ip != ""
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/workflows/delete", json=[wf], headers=auth_headers
+        )
+
+
+def test_update_token_whitelist(test_client, auth_headers):
+    """更新令牌白名单（域名字段）→ 列表接口返回新值。"""
+    wf = _create_workflow(test_client, auth_headers)
+    token = _issue("workflow", wf)["token"]
+    tid = _token_id(token)
+    try:
+        r = test_client.put(
+            f"{API}/ai/asset-embed/tokens/{tid}",
+            json={"allow_domains": "a.com"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+
+        r2 = test_client.get(
+            f"{API}/ai/asset-embed/tokens",
+            params={"kind": "workflow", "target_id": wf},
+            headers=auth_headers,
+        )
+        items = r2.json()["data"]["items"]
+        row = next(i for i in items if i["id"] == tid)
+        assert row["allow_domains"] == "a.com"
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/workflows/delete", json=[wf], headers=auth_headers
+        )
+
+
+def test_update_token_whitelist_404(test_client, auth_headers):
+    r = test_client.put(
+        f"{API}/ai/asset-embed/tokens/99999999",
+        json={"allow_domains": "a.com"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 404, r.text
+
+
+def test_list_token_logs_pagination(test_client, auth_headers):
+    """令牌使用日志分页 & 按时间倒序 & 结构完整。"""
+    wf = _create_workflow(test_client, auth_headers)
+    token = _issue("workflow", wf)["token"]
+    tid = _token_id(token)
+    try:
+        for i in range(3):
+            r = test_client.post(
+                f"{API}/ai/embed/run",
+                json={"sid": f"sid-{_uid()}xx", "message": f"你好{i}"},
+                headers=_token_auth(token),
+            )
+            assert r.status_code == 200, r.text
+
+        # 等审计落库
+        async def _count():
+            async with async_db_session() as db:
+                from sqlalchemy import func
+
+                return (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(AiAssetEmbedLogModel)
+                        .where(AiAssetEmbedLogModel.token_id == tid)
+                    )
+                ).scalar_one()
+
+        for _ in range(15):
+            if asyncio.run(_count()) >= 3:
+                break
+            time.sleep(0.2)
+
+        r = test_client.get(
+            f"{API}/ai/asset-embed/tokens/{tid}/logs",
+            params={"page_no": 1, "page_size": 2},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["total"] >= 3
+        assert data["page_no"] == 1 and data["page_size"] == 2
+        assert len(data["items"]) == 2
+        assert data["has_next"] is True
+        times = [it["created_time"] for it in data["items"]]
+        assert times == sorted(times, reverse=True)  # 按时间倒序
+        assert all(it["client_ip"] != "" for it in data["items"])
+    finally:
+        test_client.request(
+            "DELETE", f"{API}/ai/workflows/delete", json=[wf], headers=auth_headers
+        )

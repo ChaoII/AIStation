@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from fastapi import Header
+from fastapi import Header, Request
 from sqlalchemy import select
 
 from app.core.database import async_db_session
@@ -16,7 +16,7 @@ from app.core.exceptions import CustomException
 
 from .embed import AssetEmbedService
 from .model import AiAssetAccessTokenModel
-from .service import hash_asset_token
+from .service import extract_client_ip, hash_asset_token, match_whitelist, parse_origin_host
 
 
 @dataclass
@@ -29,6 +29,7 @@ class EmbedContext:
         target_id: 嵌入目标主键（签发时绑定）。
         expires_at: 令牌过期时间。
         token_hash12: 令牌散列前 12 位（限流键/审计脱敏标识）。
+        client_ip: 归一化的调用来源 IP。
     """
 
     token_id: int
@@ -36,13 +37,14 @@ class EmbedContext:
     target_id: int
     expires_at: datetime
     token_hash12: str
+    client_ip: str
 
 
-async def get_embed_ctx(authorization: str | None = Header(None)) -> EmbedContext:
+async def get_embed_ctx(request: Request, authorization: str | None = Header(None)) -> EmbedContext:
     """FastAPI 依赖：解析并校验嵌入 ``Authorization: Bearer <asset_token>``。
 
-    校验链：散列查资产令牌 → 未吊销且未过期 → 目标（agent/workflow）存在且启用。
-    任一失败统一抛 401（不区分原因，避免令牌枚举）；
+    校验链：散列查资产令牌 → 未吊销且未过期 → 目标（agent/workflow）存在且启用 → 白名单放行。
+    鉴权失败统一抛 401（不区分原因，避免令牌枚举）；白名单不命中抛 403。
     成功后累加 ``use_count`` 并刷新 ``last_used_at``。
     """
     if not authorization or not authorization.startswith("Bearer "):
@@ -68,6 +70,13 @@ async def get_embed_ctx(authorization: str | None = Header(None)) -> EmbedContex
         target = await AssetEmbedService.get_target(row.kind, row.target_id)
         if target is None or not target.get("enabled"):
             raise CustomException(msg="鉴权失败", code=10401, status_code=401)
+        # 白名单放行：域名/IP 任一命中放行；两者都空 = 不限（兼容旧令牌）
+        origin_host = parse_origin_host(
+            request.headers.get("origin") or request.headers.get("referer")
+        )
+        client_ip = extract_client_ip(request)
+        if not match_whitelist(row.allow_domains, row.allow_ips, origin_host, client_ip):
+            raise CustomException(msg="来源不在白名单", code=10403, status_code=403)
         row.use_count = (row.use_count or 0) + 1
         row.last_used_at = now
         return EmbedContext(
@@ -76,4 +85,5 @@ async def get_embed_ctx(authorization: str | None = Header(None)) -> EmbedContex
             target_id=row.target_id,
             expires_at=row.expires_at,
             token_hash12=token_hash[:12],
+            client_ip=client_ip,
         )

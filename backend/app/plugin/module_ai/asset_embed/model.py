@@ -51,6 +51,12 @@ class AiAssetAccessTokenModel(ModelMixin):
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=None, nullable=True, comment="最后使用时间"
     )
+    allow_domains: Mapped[str | None] = mapped_column(
+        String(1024), default=None, nullable=True, comment="允许来源域名（逗号分隔，空=不限）"
+    )
+    allow_ips: Mapped[str | None] = mapped_column(
+        String(1024), default=None, nullable=True, comment="允许来源IP/网段（逗号分隔，空=不限）"
+    )
 
 
 class AiAssetEmbedSessionModel(ModelMixin):
@@ -98,3 +104,9 @@ class AiAssetEmbedLogModel(ModelMixin):
     error: Mapped[str | None] = mapped_column(String(250), default=None, nullable=True, comment="错误信息")
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, comment="耗时毫秒")
     token_hash12: Mapped[str] = mapped_column(String(12), default="", comment="令牌散列前12位（脱敏）")
+    token_id: Mapped[int | None] = mapped_column(
+        Integer, default=None, nullable=True, index=True, comment="关联 ai_asset_access_tokens.id"
+    )
+    client_ip: Mapped[str] = mapped_column(
+        String(64), default="", nullable=False, comment="调用来源IP"
+    )

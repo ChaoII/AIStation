@@ -206,6 +206,8 @@ class AssetEmbedService:
                     error=error,
                     latency_ms=latency_ms,
                     token_hash12=ctx.token_hash12,
+                    token_id=ctx.token_id,
+                    client_ip=ctx.client_ip,
                 )
             )
             await db.commit()

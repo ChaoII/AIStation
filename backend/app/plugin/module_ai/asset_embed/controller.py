@@ -26,7 +26,7 @@ from app.plugin.module_ai.streaming import ui_stream_response
 
 from .auth import EmbedContext, get_embed_ctx
 from .embed import AssetEmbedService
-from .schema import AssetRunSchema, AssetTokenIssueSchema
+from .schema import AssetRunSchema, AssetTokenIssueSchema, AssetTokenUpdateSchema
 from .service import AssetTokenService
 
 AssetEmbedRouter = APIRouter(
@@ -118,7 +118,13 @@ async def issue_asset_token(
 ) -> SuccessResponse:
     """工作台侧为某 agent/工作流签发独立绑定该资产的短期令牌。明文仅返回一次。"""
     result = await AssetTokenService.issue_token(
-        kind=data.kind, target_id=data.target_id, ttl=data.ttl, issued_by="admin"
+        kind=data.kind,
+        target_id=data.target_id,
+        ttl=data.ttl,
+        permanent=data.permanent,
+        allow_domains=data.allow_domains,
+        allow_ips=data.allow_ips,
+        issued_by="admin",
     )
     return SuccessResponse(data=result, msg="签发成功")
 
@@ -143,3 +149,30 @@ async def revoke_asset_token(
     if not await AssetTokenService.revoke_token(token_id):
         raise CustomException(msg="令牌不存在", code=10404, status_code=404)
     return SuccessResponse(data=None, msg="吊销成功")
+
+
+@AssetTokenRouter.put("/tokens/{token_id}", summary="更新令牌白名单")
+async def update_asset_token(
+    token_id: int,
+    data: AssetTokenUpdateSchema,
+    _auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:asset_embed:manage"]))],
+) -> SuccessResponse:
+    """更新令牌白名单（域名 / IP）。字段未传表示不改；传空串表示清空为不限。"""
+    fields = data.model_fields_set
+    allow_domains = data.allow_domains if "allow_domains" in fields else None
+    allow_ips = data.allow_ips if "allow_ips" in fields else None
+    if not await AssetTokenService.update_token(token_id, allow_domains, allow_ips):
+        raise CustomException(msg="令牌不存在", code=10404, status_code=404)
+    return SuccessResponse(data=None, msg="更新成功")
+
+
+@AssetTokenRouter.get("/tokens/{token_id}/logs", summary="令牌使用日志")
+async def list_token_logs(
+    token_id: int,
+    page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
+    _auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:asset_embed:manage"]))] = None,
+) -> SuccessResponse:
+    """分页查询某令牌的使用日志（按时间倒序）。"""
+    result = await AssetTokenService.list_token_logs(token_id, page_no=page_no, page_size=page_size)
+    return SuccessResponse(data=result, msg="查询成功")

@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS ai_asset_access_tokens (
     expires_at TIMESTAMP NOT NULL,
     revoked BOOLEAN DEFAULT FALSE,
     use_count INTEGER DEFAULT 0,
-    last_used_at TIMESTAMP
+    last_used_at TIMESTAMP,
+    allow_domains VARCHAR(1024),
+    allow_ips VARCHAR(1024)
 )
 """
 
@@ -65,7 +67,9 @@ CREATE TABLE IF NOT EXISTS ai_asset_embed_logs (
     result_status VARCHAR(16) DEFAULT 'success',
     error VARCHAR(250),
     latency_ms INTEGER DEFAULT 0,
-    token_hash12 VARCHAR(12) DEFAULT ''
+    token_hash12 VARCHAR(12) DEFAULT '',
+    token_id INTEGER,
+    client_ip VARCHAR(64) DEFAULT ''
 )
 """
 
@@ -80,6 +84,10 @@ async def ensure_asset_embed_schema(engine) -> None:
         CREATE_ASSET_TOKENS_DDL,
         CREATE_ASSET_SESSIONS_DDL,
         CREATE_ASSET_LOGS_DDL,
+        "ALTER TABLE ai_asset_access_tokens ADD COLUMN IF NOT EXISTS allow_domains VARCHAR(1024)",
+        "ALTER TABLE ai_asset_access_tokens ADD COLUMN IF NOT EXISTS allow_ips VARCHAR(1024)",
+        "ALTER TABLE ai_asset_embed_logs ADD COLUMN IF NOT EXISTS token_id INTEGER",
+        "ALTER TABLE ai_asset_embed_logs ADD COLUMN IF NOT EXISTS client_ip VARCHAR(64) DEFAULT ''",
     ]
     for ddl in ddl_statements:
         try:
