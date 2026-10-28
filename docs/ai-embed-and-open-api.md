@@ -126,7 +126,38 @@ curl -N "https://<host>/api/v1/ai/embed/run" \
 > 挂载说明：用 `Route` 而非 `app.mount()`——`Mount` 会对 `/mcp` 回 307 并丢自定义头，
 > 很多 MCP 客户端不跟随重定向会连不上。
 
-## 5. 边界与选型建议
+## 5. 按需授权与出口控制（能力码 + REST/MCP）
+
+授权单位是**能力码**（细到单个能力），并可对每个授权能力单独开放 **REST（API）** 与
+**MCP（工具）** 出口——精确控制「给这个应用开放哪些 API、开放哪些 MCP 工具」，
+为核心能力计量/收费提供按需授权基础。
+
+### 5.1 授权模型
+
+- 应用的 `capabilities` 存**授权能力码**（如 `agent.list`、`chat.send`），不再是 `integration:*` 权限点。
+- 新增 `channels` 字段，形如 `{"agent.list": ["rest", "mcp"]}`：
+  - `rest` = 该能力可通过开放 REST API 调用（`POST /develop-api/capabilities/{code}`）；
+  - `mcp` = 该能力可通过开放 MCP 工具调用（同名单)。
+- **缺省（兼容存量）**：旧应用无 `channels`，读取时按「该能力全部支持出口」解释；
+  旧 `integration:*` 权限点自动**展开为其下全部能力码**，行为不变。
+
+### 5.2 校验语义（REST 与 MCP 各自独立）
+
+| 出口 | 校验点 | 未通过 |
+|---|---|---|
+| REST | 能力已授权 **且** `channels[code]` 含 `rest` | 403（写 denied 审计） |
+| MCP | 能力已授权 **且** `channels[code]` 含 `mcp`；`list_tools` 只暴露已开放 MCP 工具 | 403 / 不出现在工具列表 |
+
+- 授权一个能力可只开 `rest` 不开 `mcp`（反之亦然）——对应「能调 API 但用不了这个 MCP 工具」。
+- MCP 客户端 `resources/list` 读取 `aistation://capabilities` 也只返回**开放了 mcp 出口**的能力。
+
+### 5.3 管理端配置
+
+- 管理面（`/develop` 页签）创建/编辑应用时，按品类**逐能力勾选**，每个能力下可分别勾选
+  「REST API / MCP 工具」出口。
+- 提交 `capabilities`（能力码数组）+ `channels`（`{能力码: [rest,mcp]}`）即可。
+
+## 6. 边界与选型建议
 
 | 场景 | 推荐入口 |
 |---|---|
@@ -135,7 +166,7 @@ curl -N "https://<host>/api/v1/ai/embed/run" \
 | AI 客户端（Cursor / Claude 等）接入 | 开放 MCP（工具即能力） |
 | 嵌入「AI 应用（app）」 | 当前资产嵌入仅支持 agent/workflow；app 对话走 `bot.use` |
 
-## 6. 安全要点
+## 7. 安全要点
 
 - **令牌即凭证**：资产令牌可直接放网页（短期、可吊销、绑定单目标）；但**切勿把 `appid:appkey` 等
   服务端密钥写进前端**，开放平台凭证只能放在服务端请求头。

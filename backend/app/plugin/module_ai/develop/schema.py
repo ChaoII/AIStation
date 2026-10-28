@@ -22,7 +22,8 @@ class DevelopCreateSchema(BaseModel):
 
     name: str = Field(..., description="应用名称（唯一）")
     description: str | None = Field(default=None, description="应用描述")
-    capabilities: list[str] | None = Field(default=None, description="授权能力列表（非法项会被丢弃）")
+    capabilities: list[str] | None = Field(default=None, description="授权能力码列表（兼容旧 integration:* 权限点；非法项丢弃）")
+    channels: dict | None = Field(default=None, description="出口控制 {能力码: [rest,mcp]}；缺省=该能力全部支持出口")
     expire_at: datetime | None = Field(default=None, description="凭证过期时间（空为永久）")
     quota: dict | None = Field(default=None, description="配额配置（JSON 对象）")
     requires_approval: bool | None = Field(default=True, description="调用是否需要人工审批")
@@ -34,7 +35,8 @@ class DevelopUpdateSchema(BaseModel):
 
     name: str | None = Field(default=None, description="应用名称（唯一）")
     description: str | None = Field(default=None, description="应用描述")
-    capabilities: list[str] | None = Field(default=None, description="授权能力列表（非法项会被丢弃）")
+    capabilities: list[str] | None = Field(default=None, description="授权能力码列表（兼容旧 integration:* 权限点；非法项丢弃）")
+    channels: dict | None = Field(default=None, description="出口控制 {能力码: [rest,mcp]}；缺省=该能力全部支持出口")
     expire_at: datetime | None = Field(default=None, description="凭证过期时间（空为永久）")
     quota: dict | None = Field(default=None, description="配额配置（JSON 对象）")
     requires_approval: bool | None = Field(default=None, description="调用是否需要人工审批")

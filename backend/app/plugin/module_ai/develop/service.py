@@ -21,8 +21,8 @@ from sqlalchemy import func, or_, select
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 
-from .capabilities import normalize_permissions
 from .model import AiIntegrationAppModel, AiIntegrationCallLogModel
+from .registry import normalize_channels, resolve_capability_grants
 
 #: appid 随机字符表：去掉易混淆的 0/O/1/l/I。
 _APPID_ALPHABET = "".join(c for c in string.ascii_letters + string.digits if c not in "0O1lI")
@@ -55,7 +55,11 @@ def _app_to_dict(app: AiIntegrationAppModel, *, appkey: str | None = None) -> di
 
     **绝不包含** ``appkey_hash``；仅当 ``appkey`` 参数（一次性明文）传入时
     才附带 ``appkey`` 字段。
+
+    ``capabilities`` 输出为**解析后的授权能力码**（旧 ``integration:*`` 权限点
+    已展开为能力码），``channels`` 输出为 ``{能力码: [rest,mcp]}``。
     """
+    grants = resolve_capability_grants(app.capabilities)
     data = {
         "id": app.id,
         "uuid": app.uuid,
@@ -65,7 +69,8 @@ def _app_to_dict(app: AiIntegrationAppModel, *, appkey: str | None = None) -> di
         "description": app.description or "",
         "enabled": bool(app.enabled),
         "expire_at": app.expire_at,
-        "capabilities": app.capabilities or [],
+        "capabilities": sorted(grants),
+        "channels": normalize_channels(app.channels, grants),
         "quota": app.quota,
         "requires_approval": bool(app.requires_approval),
         "source_type": app.source_type,
@@ -136,7 +141,8 @@ class DevelopService:
         """创建应用：校验 name 唯一、归一 capabilities，生成 appid/appkey，存哈希，返回一次性明文。"""
         appid = _generate_appid()
         appkey = _generate_appkey()
-        caps = sorted(normalize_permissions(data.capabilities))
+        caps = sorted(resolve_capability_grants(data.capabilities))
+        channels = normalize_channels(data.channels, set(caps)) if data.channels is not None else None
         async with async_db_session.begin() as db:
             dup = await db.scalar(
                 select(AiIntegrationAppModel).where(
@@ -153,7 +159,8 @@ class DevelopService:
                 description=data.description,
                 enabled=data.enabled if data.enabled is not None else True,
                 expire_at=data.expire_at,
-                capabilities=caps,
+                capabilities=caps or [],
+                channels=channels,
                 quota=data.quota,
                 requires_approval=True if data.requires_approval is None else bool(data.requires_approval),
                 source_type="admin",
@@ -184,7 +191,11 @@ class DevelopService:
                     raise CustomException(msg=f"应用名称已存在：{payload['name']}")
                 row.name = payload["name"]
             if "capabilities" in payload:
-                row.capabilities = sorted(normalize_permissions(payload["capabilities"]))
+                row.capabilities = sorted(resolve_capability_grants(payload["capabilities"])) or []
+            if "channels" in payload:
+                # 出口按「更新后的授权能力码」归一；只保留已授权能力的出口
+                grants = resolve_capability_grants(row.capabilities)
+                row.channels = normalize_channels(payload["channels"], grants) or None
             for key in ("description", "expire_at", "quota"):
                 if key in payload:
                     setattr(row, key, payload[key])

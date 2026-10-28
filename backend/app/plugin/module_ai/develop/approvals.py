@@ -22,10 +22,9 @@ from sqlalchemy import func, select
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 
-from .auth import AppContext
+from .auth import AppContext, _ctx_from_row
 from .model import AiIntegrationAppModel, AiIntegrationApprovalModel
 from .registry import Capability
-from .service import _app_to_dict
 
 log = logging.getLogger(__name__)
 
@@ -174,13 +173,7 @@ class ApprovalService:
             raise CustomException(msg="应用不存在", code=10404, status_code=404)
         if not row.enabled:
             raise CustomException(msg="应用已停用", code=10400, status_code=400)
-        return AppContext(
-            app_id=row.id,
-            appid=row.appid,
-            perms=set(row.capabilities or []),
-            quota=row.quota,
-            app=_app_to_dict(row),
-        )
+        return _ctx_from_row(row)
 
 
 async def _notify_admins(row: AiIntegrationApprovalModel) -> None:

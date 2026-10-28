@@ -37,11 +37,11 @@ from sqlalchemy import select
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 
-from .auth import AppContext, _parse_bearer
+from .auth import AppContext, _ctx_from_row, _parse_bearer
 from .model import AiIntegrationAppModel, AiIntegrationMcpSessionModel
 from .openapi import invoke_capability
-from .registry import Capability, capabilities_for, mcp_capabilities
-from .service import DevelopService, _app_to_dict
+from .registry import Capability, is_granted, mcp_capabilities
+from .service import DevelopService
 
 #: 当前请求的应用上下文（由 :class:`McpAuthMiddleware` 写入，工具执行时读取）。
 CURRENT_APP_CTX: ContextVar[AppContext | None] = ContextVar("mcp_app_ctx", default=None)
@@ -248,7 +248,12 @@ def build_mcp_server():
             ctx = CURRENT_APP_CTX.get()
             if ctx is None:
                 return []
-            allowed = {cap.mcp_tool for cap in capabilities_for(ctx.perms) if cap.mcp_tool}
+            # 只暴露「已授权 + 开放 mcp 出口」的工具（未开放出口不泄露给客户端）
+            allowed = {
+                cap.mcp_tool
+                for cap in mcp_capabilities()
+                if is_granted(ctx.grants, ctx.channels, cap.code, "mcp")
+            }
             return [tool for tool in tools if tool.name in allowed]
 
     server = _PermFilteredServer(
@@ -274,12 +279,16 @@ def build_mcp_server():
         mime_type="application/json",
     )
     def _capabilities_resource() -> str:
-        from .registry import capabilities_for, to_public_dict
+        from .registry import to_public_dict
 
         ctx = CURRENT_APP_CTX.get()
         if ctx is None:  # 正常不会发生（传输层已鉴权）
             raise ValueError("鉴权失败")
-        items = [to_public_dict(c) for c in capabilities_for(ctx.perms)]
+        items = [
+            to_public_dict(c)
+            for c in mcp_capabilities()
+            if is_granted(ctx.grants, ctx.channels, c.code, "mcp")
+        ]
         return json.dumps(
             {"appid": ctx.appid, "total": len(items), "capabilities": items},
             ensure_ascii=False,
@@ -371,13 +380,7 @@ class McpAuthMiddleware:
             await _deny(send)
             return
 
-        ctx = AppContext(
-            app_id=app_row.id,
-            appid=app_row.appid,
-            perms=set(app_row.capabilities or []),
-            quota=app_row.quota,
-            app=_app_to_dict(app_row),
-        )
+        ctx = _ctx_from_row(app_row)
         ctx_token = CURRENT_APP_CTX.set(ctx)
         counter = {"n": 0}
         calls_token = _TOOL_CALLS.set(counter)

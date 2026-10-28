@@ -93,13 +93,13 @@
               <div class="app-card__caps">
                 <template v-if="row.capabilities && row.capabilities.length">
                   <el-tooltip
-                    v-for="perm in row.capabilities"
-                    :key="perm"
-                    :content="perm"
+                    v-for="code in row.capabilities"
+                    :key="code"
+                    :content="code"
                     placement="top"
                   >
                     <el-tag size="small" effect="plain" class="cap-tag">
-                      {{ perm.replace("integration:", "") }}
+                      {{ capName(code) }}
                     </el-tag>
                   </el-tooltip>
                 </template>
@@ -1173,22 +1173,32 @@
         </el-form-item>
         <el-form-item :label="t('ai_workflow.develop_authCaps')">
           <div class="cap-groups">
-            <div v-for="(catLabel, catCode) in CATEGORIES" :key="catCode" class="cap-group">
+            <div v-for="(caps, catCode) in groupedCaps" :key="catCode" class="cap-group">
               <div class="cap-group__title">
-                {{ catLabel }}
+                {{ CATEGORIES[catCode] || catCode }}
                 <span class="cap-group__count">
-                  {{ selectedCount(CATEGORY_PERMS[catCode]) }}/{{ CATEGORY_PERMS[catCode].length }}
+                  {{ selectedCount(caps) }}/{{ caps.length }}
                 </span>
               </div>
               <el-checkbox-group v-model="form.capabilities">
-                <el-checkbox
-                  v-for="perm in CATEGORY_PERMS[catCode]"
-                  :key="perm"
-                  :value="perm"
-                  class="cap-check"
-                >
-                  {{ perm.replace("integration:", "") }}
-                </el-checkbox>
+                <div v-for="cap in caps" :key="cap.code" class="cap-row">
+                  <el-checkbox
+                    :value="cap.code"
+                    class="cap-check"
+                    @change="onCapChange(cap.code)"
+                  >
+                    {{ cap.name }}
+                    <span class="cap-code">{{ cap.code }}</span>
+                  </el-checkbox>
+                  <el-checkbox-group
+                    v-if="form.capabilities.includes(cap.code)"
+                    v-model="form.channels[cap.code]"
+                    class="cap-channels"
+                  >
+                    <el-checkbox v-if="cap.rest" :value="'rest'">REST API</el-checkbox>
+                    <el-checkbox v-if="cap.mcp_tool" :value="'mcp'">MCP 工具</el-checkbox>
+                  </el-checkbox-group>
+                </div>
               </el-checkbox-group>
             </div>
           </div>
@@ -1377,23 +1387,16 @@ const CATEGORIES: Record<string, string> = {
   bot: t("ai_workflow.develop_catBot"),
   embed: t("ai_workflow.develop_catEmbed"),
 };
-const CATEGORY_PERMS: Record<string, string[]> = {
-  train: [
-    "integration:train:create",
-    "integration:train:query",
-    "integration:train:start",
-    "integration:train:stop",
-  ],
-  agent: [
-    "integration:agent:create",
-    "integration:agent:query",
-    "integration:agent:update",
-    "integration:agent:delete",
-  ],
-  chat: ["integration:chat:send", "integration:chat:query"],
-  bot: ["integration:bot:use"],
-  embed: ["integration:embed:use"],
-};
+
+interface CapItem {
+  code: string;
+  category: string;
+  name: string;
+  description?: string;
+  rest?: boolean;
+  mcp_tool?: string | null;
+  requires_approval?: boolean;
+}
 
 interface AppRow {
   id: number;
@@ -1404,6 +1407,7 @@ interface AppRow {
   enabled: boolean;
   expire_at?: string | null;
   capabilities?: string[];
+  channels?: Record<string, string[]>;
   call_count?: number;
 }
 interface LogRow {
@@ -1498,6 +1502,7 @@ const form = reactive({
   name: "",
   description: "",
   capabilities: [] as string[],
+  channels: {} as Record<string, string[]>,
   expire_at: "" as string,
   enabled: true,
   requires_approval: true,
@@ -1520,6 +1525,7 @@ function resetForm() {
     name: "",
     description: "",
     capabilities: [],
+    channels: {},
     expire_at: "",
     enabled: true,
     requires_approval: true,
@@ -1528,8 +1534,65 @@ function resetForm() {
   });
 }
 
-function selectedCount(perms: string[]) {
-  return form.capabilities.filter((p) => perms.includes(p)).length;
+// 能力目录：按品类分组（授权表单用；复用 loadCapabilities 拉取的全量目录）
+const groupedCaps = computed(() => {
+  const out: Record<string, CapItem[]> = {};
+  for (const cap of capabilities.value as CapItem[]) {
+    if (!cap?.code) continue;
+    (out[cap.category] ||= []).push(cap);
+  }
+  return out;
+});
+
+const capMap = computed(() => {
+  const out: Record<string, CapItem> = {};
+  for (const cap of capabilities.value as CapItem[]) out[cap.code] = cap;
+  return out;
+});
+
+function selectedCount(caps: CapItem[]) {
+  const codes = caps.map((c) => c.code);
+  return form.capabilities.filter((c) => codes.includes(c)).length;
+}
+
+/** 能力中文名（目录未加载时回退到能力码本身）。 */
+function capName(code: string) {
+  return capMap.value[code]?.name || code;
+}
+
+/** 组装提交的出口配置：{能力码: [rest,mcp]}，仅含已勾选能力；未勾选清理。 */
+function buildChannelsPayload() {
+  const out: Record<string, string[]> = {};
+  for (const code of form.capabilities) {
+    const ch = form.channels[code];
+    if (ch && ch.length) out[code] = ch;
+  }
+  return out;
+}
+
+/** 勾选/取消某个能力：勾选时初始化该能力的默认出口，取消时清掉出口数据。 */
+function onCapChange(code: string) {
+  if (form.capabilities.includes(code)) {
+    const cap = capMap.value[code];
+    const ch: string[] = [];
+    if (cap?.rest) ch.push("rest");
+    if (cap?.mcp_tool) ch.push("mcp");
+    form.channels[code] = ch;
+  } else {
+    delete form.channels[code];
+  }
+}
+
+/** 编辑回填时，为旧数据（无 channels）的已授权能力补齐缺省出口。 */
+function ensureChannelsForRow() {
+  for (const code of form.capabilities) {
+    if (form.channels[code] && form.channels[code].length) continue;
+    const cap = capMap.value[code];
+    const ch: string[] = [];
+    if (cap?.rest) ch.push("rest");
+    if (cap?.mcp_tool) ch.push("mcp");
+    form.channels[code] = ch;
+  }
 }
 
 function openCreate() {
@@ -1537,9 +1600,11 @@ function openCreate() {
   isEdit.value = false;
   dialog.title = t("ai_workflow.develop_newApp");
   dialog.visible = true;
+  // 打开前确保能力目录已加载（否则授权区无候选可勾）
+  if (!capabilities.value.length) loadCapabilities();
 }
 
-function openEdit(row: any) {
+async function openEdit(row: any) {
   resetForm();
   isEdit.value = true;
   dialog.title = t("ai_workflow.develop_editAppTitle", { name: row.name });
@@ -1548,6 +1613,10 @@ function openEdit(row: any) {
     name: row.name,
     description: row.description || "",
     capabilities: row.capabilities || [],
+    channels:
+      row.channels && typeof row.channels === "object"
+        ? { ...row.channels }
+        : {},
     expire_at: row.expire_at ? fmtDateTime(row.expire_at) : "",
     enabled: row.enabled !== false,
     requires_approval: row.requires_approval !== false,
@@ -1555,6 +1624,9 @@ function openEdit(row: any) {
     usage: {},
   });
   dialog.visible = true;
+  // 打开前确保能力目录已加载，并补齐缺省出口（旧数据无 channels 时按能力默认出口回填）
+  if (!capabilities.value.length) await loadCapabilities();
+  await ensureChannelsForRow();
   // 今日用量（配额可视化，失败静默）
   getAppUsage(row.id)
     .then((res: any) => {
@@ -1577,6 +1649,7 @@ async function handleSubmit() {
     name: form.name.trim(),
     description: form.description?.trim() || null,
     capabilities: form.capabilities,
+    channels: buildChannelsPayload(),
     expire_at: form.expire_at || null,
     enabled: form.enabled,
     requires_approval: form.requires_approval,
@@ -2109,12 +2182,18 @@ function mcpStatus(row: any) {
   return { type: "success" as const, label: t("ai_workflow.develop_success") };
 }
 
-/** 当前选中应用已授权的 MCP 工具（能力码含 mcp_tool 且被该应用的权限覆盖）。 */
+/** 当前选中应用已授权的 MCP 工具（能力已授权且开放 mcp 出口）。 */
 const selectedAppMcpTools = computed(() => {
   const app = apps.value.find((a) => a.id === mcpFilter.app_id);
   if (!app) return [];
-  const perms = new Set(app.capabilities || []);
-  return (capabilities.value as any[]).filter((c: any) => c.mcp_tool && perms.has(c.perm));
+  const codes = new Set(app.capabilities || []);
+  const chans = app.channels || {};
+  return (capabilities.value as any[]).filter(
+    (c: any) =>
+      c.mcp_tool &&
+      codes.has(c.code) &&
+      (chans[c.code] ? chans[c.code].includes("mcp") : !!c.mcp_tool)
+  );
 });
 
 // ---- 调用审批（敏感能力「先审批后执行」） ----
@@ -2457,6 +2536,8 @@ onMounted(() => {
   loadApps();
   loadStats();
   loadAppOptions();
+  // 提前加载能力目录：授权表单与卡片标签展示能力中文名
+  loadCapabilities();
   // 支持从通知点击直达「调用审批」页签（?tab=approvals）
   if (route.query.tab === "approvals") {
     activeTab.value = "approvals";
@@ -2886,6 +2967,25 @@ onMounted(() => {
 
 .cap-check {
   margin-right: 12px;
+}
+
+.cap-row {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+.cap-row + .cap-row {
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+.cap-code {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-family: var(--el-font-family-mono, monospace);
+}
+.cap-channels {
+  margin-left: 24px;
+  margin-top: 2px;
 }
 
 .docs-wrap {

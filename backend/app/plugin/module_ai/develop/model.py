@@ -42,7 +42,11 @@ class AiIntegrationAppModel(ModelMixin, UserMixin):
         DateTime, default=None, nullable=True, comment="凭证过期时间（空为永久）",
     )
     capabilities: Mapped[list | None] = mapped_column(
-        JSONB, default=list, nullable=False, comment="授权能力列表",
+        JSONB, default=list, nullable=False, comment="授权能力码列表（旧数据为 integration:* 权限点，读取时自动展开）",
+    )
+    channels: Mapped[dict | None] = mapped_column(
+        JSONB, default=None, nullable=True,
+        comment="出口控制 {能力码: [rest,mcp]}，null=该能力全部支持出口",
     )
     quota: Mapped[dict | None] = mapped_column(
         JSONB, default=None, nullable=True, comment="配额配置（JSON 对象）",

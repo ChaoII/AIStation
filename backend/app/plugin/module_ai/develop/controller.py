@@ -4,7 +4,7 @@
 
 - :data:`OpenApiRouter`：**开放数据面**，前缀 ``/develop-api``，供外部平台
   直接调用。不带后台登录态，改用 ``Authorization: Bearer <appid>:<appkey>``
-  应用凭证鉴权；需要权限点的端点再叠加 :func:`require_app_perm`。
+  应用凭证鉴权；需要授权的端点再叠加 :func:`require_capability`（能力码 + 出口）。
   ``GET /auth/verify`` 成功时写入一条调用审计（``DevelopService.log_call``）。
 - :data:`DevelopRouter`：**内部管理面**，前缀 ``/develop``，供平台管理员管理
   AI 集成应用与审计查询。每个端点经 ``AuthPermission(["module_ai:develop:*"])``
@@ -36,14 +36,19 @@ from app.core.router_class import OperationLogRoute
 from . import handlers as _handlers  # noqa: F401
 from .approvals import ApprovalService, review_one
 from .auth import AppContext, get_app_api_auth
-from .capabilities import permissions_by_category
 from .model import (
     AiIntegrationAppModel,
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
 from .openapi import invoke_capability
-from .registry import all_capabilities, capabilities_for, get_capability, to_public_dict
+from .registry import (
+    all_capabilities,
+    capabilities_for_codes,
+    get_capability,
+    is_granted,
+    to_public_dict,
+)
 from .schema import (
     ApprovalBatchReviewSchema,
     ApprovalReviewSchema,
@@ -82,16 +87,18 @@ async def auth_verify(
     """校验应用凭证并返回应用信息。
 
     依赖 :func:`get_app_api_auth`：解析 ``Authorization: Bearer <appid>:<appkey>``，
-    校验失败统一抛 401（由全局异常处理器转换）。成功返回应用身份、授权能力
-    （``perms`` 排序列表）与按品类分组（``categories``）、过期时间、启停状态；
-    同时写入一条 ``auth/verify`` 调用审计（更新应用 ``last_call_at`` / ``call_count``）。
+    校验失败统一抛 401（由全局异常处理器转换）。成功返回应用身份、**授权能力码**
+    （``grants`` 排序列表）、按品类分组（``categories``）、各能力出口（``channels``）、
+    过期时间、启停状态；同时写入一条 ``auth/verify`` 调用审计。
     """
-    perms = sorted(ctx.perms)
+    grants = sorted(ctx.grants)
     data = {
         "appid": ctx.appid,
         "name": ctx.app["name"],
-        "perms": perms,
-        "categories": permissions_by_category(perms),
+        "grants": grants,
+        "perms": grants,  # 兼容旧字段名（现为能力码而非权限点）
+        "channels": {code: sorted(ch) for code, ch in ctx.channels.items()},
+        "categories": _group_categories(grants),
         "expire_at": ctx.app["expire_at"],
         "enabled": ctx.app["enabled"],
     }
@@ -119,8 +126,15 @@ async def auth_verify(
 async def open_capabilities(
     ctx: Annotated[AppContext, Depends(get_app_api_auth)],
 ) -> SuccessResponse:
-    """返回**当前应用已授权**的能力元数据（未授权能力不出现，避免暴露能力面）。"""
-    caps = capabilities_for(ctx.perms)
+    """返回**当前应用已授权且开放 REST 出口**的能力元数据（未授权/未开放不出现）。
+
+    该端点为开放数据面 REST 出口，故只返回 ``rest`` 通道已开放的授权能力。
+    """
+    caps = [
+        c
+        for c in capabilities_for_codes(ctx.grants)
+        if is_granted(ctx.grants, ctx.channels, c.code, "rest")
+    ]
     return SuccessResponse(
         data={"items": [to_public_dict(c) for c in caps], "total": len(caps)}, msg="查询成功"
     )
@@ -549,6 +563,18 @@ def _mcp_session_to_dict(row: AiIntegrationMcpSessionModel, tools: list | None =
         "close_reason": row.close_reason,
         "tools": tools or [],
     }
+
+
+def _group_categories(grants: list[str]) -> dict[str, list[str]]:
+    """把授权能力码按所属品类分组（``auth/verify`` 返回用，非法码丢弃）。"""
+    out: dict[str, list[str]] = {}
+    for code in grants:
+        cap = get_capability(code)
+        if cap is not None:
+            out.setdefault(cap.category, []).append(code)
+    for codes in out.values():
+        codes.sort()
+    return out
 
 
 def _classify_status(status: str | None, error: str | None) -> str:

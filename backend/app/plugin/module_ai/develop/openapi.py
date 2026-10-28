@@ -21,7 +21,7 @@ from typing import Any
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 
-from .auth import AppContext, require_app_perm
+from .auth import AppContext, require_capability
 from .model import AiIntegrationAppModel
 from .registry import Capability, get_capability
 from .service import DevelopService
@@ -216,7 +216,7 @@ async def invoke_capability(
         ctx: 已鉴权应用上下文（凭证与 app 状态已校验）。
         code: 能力码（``"agent.list"``）。
         payload: 能力入参（JSON 对象）。
-        method: 出口标识，``"REST"`` 或 ``"MCP"``（写入审计）。
+        method: 出口标识，``"REST"`` 或 ``"MCP"``（写入审计，并决定按哪条出口校验授权）。
         redis: 限流/配额用的 Redis 客户端；``None`` 时跳过限流。
         request_path / transport / client_info / ip / session_id: 审计与限流上下文。
         bypass_approval: 审批通过后由审批模块以原应用身份执行时置 ``True``，
@@ -238,7 +238,7 @@ async def invoke_capability(
     started = time.perf_counter()
 
     try:
-        require_app_perm(ctx, cap.perm)
+        require_capability(ctx, cap.code, "mcp" if method == "MCP" else "rest")
     except CustomException as e:
         await audit_call(
             ctx,
