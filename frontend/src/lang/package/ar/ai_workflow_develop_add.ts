@@ -29,6 +29,8 @@ export default {
   develop_capabilities: "القدرات",
   develop_callCount: "الاستدعاءات",
   develop_noData: 'لا توجد تطبيقات بعد. أنشئ واحدًا عبر "تطبيق جديد"',
+  develop_createdAt: "أنشئ",
+  develop_noDesc: "لا يوجد وصف",
   develop_action: "الإجراءات",
   develop_detail: "تفاصيل",
   develop_edit: "تعديل",

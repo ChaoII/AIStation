@@ -29,6 +29,8 @@ export default {
   develop_capabilities: "機能",
   develop_callCount: "呼び出し数",
   develop_noData: "まだアプリがありません。「新規アプリ」で作成してください",
+  develop_createdAt: "作成日時",
+  develop_noDesc: "説明なし",
   develop_action: "操作",
   develop_detail: "詳細",
   develop_edit: "編集",

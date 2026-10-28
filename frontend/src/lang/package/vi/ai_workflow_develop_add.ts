@@ -30,6 +30,8 @@ export default {
   develop_capabilities: "Năng lực",
   develop_callCount: "Cuộc gọi",
   develop_noData: 'Chưa có ứng dụng nào. Tạo một cái bằng "Ứng dụng mới"',
+  develop_createdAt: "Đã tạo",
+  develop_noDesc: "Không có mô tả",
   develop_action: "Thao tác",
   develop_detail: "Chi tiết",
   develop_edit: "Chỉnh sửa",

@@ -31,6 +31,8 @@ export default {
   develop_capabilities: "Capabilities",
   develop_callCount: "Calls",
   develop_noData: 'No apps yet. Create one with "New App"',
+  develop_createdAt: "Created",
+  develop_noDesc: "No description",
   develop_action: "Actions",
   develop_detail: "Detail",
   develop_edit: "Edit",

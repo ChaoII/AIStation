@@ -30,6 +30,8 @@ export default {
   develop_capabilities: "能力",
   develop_callCount: "调用数",
   develop_noData: "暂无应用，点击「新建应用」创建",
+  develop_createdAt: "创建时间",
+  develop_noDesc: "暂无描述",
   develop_action: "操作",
   develop_detail: "详情",
   develop_edit: "编辑",

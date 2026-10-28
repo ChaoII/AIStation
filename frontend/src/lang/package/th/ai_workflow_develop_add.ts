@@ -29,6 +29,8 @@ export default {
   develop_capabilities: "ความสามารถ",
   develop_callCount: "การเรียก",
   develop_noData: 'ยังไม่มีแอป สร้างด้วย "แอปใหม่"',
+  develop_createdAt: "สร้างเมื่อ",
+  develop_noDesc: "ไม่มีคำอธิบาย",
   develop_action: "การกระทำ",
   develop_detail: "รายละเอียด",
   develop_edit: "แก้ไข",

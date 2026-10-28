@@ -30,6 +30,8 @@ export default {
   develop_capabilities: "Возможности",
   develop_callCount: "Вызовы",
   develop_noData: "Приложений пока нет. Создайте с помощью «Новое приложение»",
+  develop_createdAt: "Создано",
+  develop_noDesc: "Нет описания",
   develop_action: "Действия",
   develop_detail: "Детали",
   develop_edit: "Изменить",

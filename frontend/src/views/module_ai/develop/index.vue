@@ -4,7 +4,11 @@
     <el-card shadow="never" class="develop-shell" :body-style="{ padding: '0 16px 12px' }">
       <el-tabs v-model="activeTab" class="develop-tabs" @tab-change="onTabChange">
         <!-- ============ 应用管理 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabApps')" name="apps" class="develop-apps-pane">
+        <el-tab-pane
+          :label="t('ai_workflow.develop_tabApps')"
+          name="apps"
+          class="develop-apps-pane"
+        >
           <div class="develop-head">
             <el-form :inline="true" :model="appSearch" class="develop-search">
               <el-form-item :label="t('ai_workflow.develop_keyword')">
@@ -53,42 +57,46 @@
             "
           />
 
-          <!-- 应用卡片网格（替代表格） -->
+          <!-- 应用卡片网格（替代表格）：学习能力市场卡片，卡片不展示掩码 appid（凭证进「凭据」弹窗） -->
           <div v-loading="appLoading" class="app-grid">
             <div v-for="row in apps" :key="row.id" class="app-card">
               <div class="app-card__head">
-                <div class="app-card__title" :title="row.name">{{ row.name }}</div>
+                <div class="app-card__brand">
+                  <div class="app-card__icon">
+                    <i class="ri-apps-2-line" />
+                  </div>
+                  <div class="app-card__title">
+                    <div class="app-card__name" :title="row.name">{{ row.name }}</div>
+                    <div class="app-card__sub">
+                      <el-tag
+                        size="small"
+                        :type="row.enabled !== false ? 'success' : 'info'"
+                        effect="plain"
+                      >
+                        {{
+                          row.enabled !== false
+                            ? t("ai_workflow.develop_enabledMsg")
+                            : t("ai_workflow.develop_disabledMsg")
+                        }}
+                      </el-tag>
+                      <span
+                        v-if="isExpiringSoon(row)"
+                        class="app-card__expire text-warn"
+                        :title="fmtDateTime(row.expire_at)"
+                      >
+                        {{ fmtDateTime(row.expire_at) }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
                 <el-switch
                   v-hasPerm="['module_ai:develop:update']"
                   :model-value="row.enabled !== false"
                   @change="(v) => onToggle(row, Boolean(v))"
                 />
               </div>
-              <div class="app-card__appid">
-                <span class="appid-cell__value">{{ row.appid_masked || "—" }}</span>
-                <el-tooltip :content="t('ai_workflow.develop_copyAppid')" placement="top">
-                  <el-button text type="primary" size="small" @click="copyText(row.appid)">
-                    <el-icon><CopyDocument /></el-icon>
-                  </el-button>
-                </el-tooltip>
-              </div>
-              <div class="app-card__meta">
-                <div class="app-card__meta-item">
-                  <span class="app-card__meta-label">
-                    {{ t("ai_workflow.develop_expireTime") }}
-                  </span>
-                  <span
-                    :class="{ 'text-muted': !row.expire_at, 'text-warn': isExpiringSoon(row) }"
-                  >
-                    {{ fmtDateTime(row.expire_at) }}
-                  </span>
-                </div>
-                <div class="app-card__meta-item">
-                  <span class="app-card__meta-label">
-                    {{ t("ai_workflow.develop_callCount") }}
-                  </span>
-                  <span>{{ row.call_count ?? 0 }}</span>
-                </div>
+              <div class="app-card__desc" :title="row.description">
+                {{ row.description || t("ai_workflow.develop_noDesc") }}
               </div>
               <div class="app-card__caps">
                 <template v-if="row.capabilities && row.capabilities.length">
@@ -106,46 +114,58 @@
                 <span v-else class="text-muted">—</span>
               </div>
               <div class="app-card__actions">
-                <el-tooltip :content="t('ai_workflow.develop_try')" placement="top">
-                  <el-button
-                    v-hasPerm="['module_ai:develop:query']"
-                    text
-                    class="app-act"
-                    @click="openTry(row)"
-                  >
-                    <i class="ri-play-circle-line" />
-                  </el-button>
-                </el-tooltip>
-                <el-tooltip :content="t('ai_workflow.develop_edit')" placement="top">
-                  <el-button
-                    v-hasPerm="['module_ai:develop:update']"
-                    text
-                    class="app-act"
-                    @click="openEdit(row)"
-                  >
-                    <i class="ri-edit-line" />
-                  </el-button>
-                </el-tooltip>
-                <el-tooltip content="AppKey" placement="top">
-                  <el-button
-                    v-hasPerm="['module_ai:develop:reset']"
-                    text
-                    class="app-act"
-                    @click="openKeyDialog(row)"
-                  >
-                    <i class="ri-key-2-line" />
-                  </el-button>
-                </el-tooltip>
-                <el-tooltip :content="t('ai_workflow.develop_delete')" placement="top">
-                  <el-button
-                    v-hasPerm="['module_ai:develop:delete']"
-                    text
-                    class="app-act app-act--danger"
-                    @click="onDelete(row)"
-                  >
-                    <i class="ri-delete-bin-line" />
-                  </el-button>
-                </el-tooltip>
+                <div class="app-card__metrics">
+                  <span class="app-card__metric" :title="t('ai_workflow.develop_createdAt')">
+                    <el-icon class="app-card__metric-ico"><Timer /></el-icon>
+                    {{ fmtDateTime(row.created_time) }}
+                  </span>
+                  <span class="app-card__metric" :title="t('ai_workflow.develop_callCount')">
+                    <el-icon class="app-card__metric-ico"><DataLine /></el-icon>
+                    {{ row.call_count ?? 0 }}
+                  </span>
+                </div>
+                <div class="app-card__btns">
+                  <el-tooltip :content="t('ai_workflow.develop_try')" placement="top">
+                    <el-button
+                      v-hasPerm="['module_ai:develop:query']"
+                      text
+                      class="app-act"
+                      @click="openTry(row)"
+                    >
+                      <i class="ri-play-circle-line" />
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip :content="t('ai_workflow.develop_edit')" placement="top">
+                    <el-button
+                      v-hasPerm="['module_ai:develop:update']"
+                      text
+                      class="app-act"
+                      @click="openEdit(row)"
+                    >
+                      <i class="ri-edit-line" />
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip content="AppKey" placement="top">
+                    <el-button
+                      v-hasPerm="['module_ai:develop:reset']"
+                      text
+                      class="app-act"
+                      @click="openKeyDialog(row)"
+                    >
+                      <i class="ri-key-2-line" />
+                    </el-button>
+                  </el-tooltip>
+                  <el-tooltip :content="t('ai_workflow.develop_delete')" placement="top">
+                    <el-button
+                      v-hasPerm="['module_ai:develop:delete']"
+                      text
+                      class="app-act app-act--danger"
+                      @click="onDelete(row)"
+                    >
+                      <i class="ri-delete-bin-line" />
+                    </el-button>
+                  </el-tooltip>
+                </div>
               </div>
             </div>
             <el-empty
@@ -175,7 +195,11 @@
         </el-tab-pane>
 
         <!-- ============ 调用日志 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabAudit')" name="audit" class="develop-table-pane">
+        <el-tab-pane
+          :label="t('ai_workflow.develop_tabAudit')"
+          name="audit"
+          class="develop-table-pane"
+        >
           <div class="audit-switch">
             <el-radio-group v-model="auditView" size="default">
               <el-radio-button value="all">{{ t("ai_workflow.develop_all") }}</el-radio-button>
@@ -185,434 +209,474 @@
           </div>
 
           <template v-if="auditView !== 'mcp'">
-          <el-card shadow="never" class="trend-card">
-            <template #header>
-              <div class="trend-card__head">
-                <span class="trend-card__title">{{ t("ai_workflow.develop_trendTitle") }}</span>
-                <span class="trend-card__range">{{ t("ai_workflow.develop_recent7") }}</span>
+            <el-card shadow="never" class="trend-card">
+              <template #header>
+                <div class="trend-card__head">
+                  <span class="trend-card__title">{{ t("ai_workflow.develop_trendTitle") }}</span>
+                  <span class="trend-card__range">{{ t("ai_workflow.develop_recent7") }}</span>
+                </div>
+              </template>
+              <div class="overview-stats">
+                <div v-for="s in statCards" :key="s.label" class="overview-stat">
+                  <el-icon class="overview-stat__icon" :size="16">
+                    <component :is="s.icon" />
+                  </el-icon>
+                  <span class="overview-stat__value">
+                    {{ s.value }}
+                    <span class="overview-stat__suffix">{{ s.suffix }}</span>
+                  </span>
+                  <span class="overview-stat__label">{{ s.label }}</span>
+                </div>
               </div>
-            </template>
-            <div class="overview-stats">
-              <div v-for="s in statCards" :key="s.label" class="overview-stat">
-                <el-icon class="overview-stat__icon" :size="16">
-                  <component :is="s.icon" />
-                </el-icon>
-                <span class="overview-stat__value">
-                  {{ s.value }}<span class="overview-stat__suffix">{{ s.suffix }}</span>
-                </span>
-                <span class="overview-stat__label">{{ s.label }}</span>
-              </div>
-            </div>
-            <TrendLineChart :points="logTrendPoints" :height="140" />
-          </el-card>
-          <el-form :inline="true" :model="logFilter" class="develop-search">
-            <el-form-item :label="t('ai_workflow.develop_appLabel')">
-              <el-select
-                v-model="logFilter.app_id"
-                :placeholder="t('ai_workflow.develop_all')"
-                clearable
-                filterable
-                style="width: 180px"
-              >
-                <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="t('ai_workflow.develop_category')">
-              <el-select
-                v-model="logFilter.category"
-                :placeholder="t('ai_workflow.develop_all')"
-                clearable
-                style="width: 140px"
-              >
-                <el-option
-                  v-for="(label, code) in CATEGORIES"
-                  :key="code"
-                  :label="label"
-                  :value="code"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="t('ai_workflow.develop_status')">
-              <el-select
-                v-model="logFilter.status"
-                :placeholder="t('ai_workflow.develop_all')"
-                clearable
-                style="width: 140px"
-              >
-                <el-option :label="t('ai_workflow.develop_success')" value="success" />
-                <el-option :label="t('ai_workflow.develop_failed')" value="failed" />
-                <el-option :label="t('ai_workflow.develop_denied')" value="denied" />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="t('ai_workflow.develop_timeRange')">
-              <el-date-picker
-                v-model="logFilter.range"
-                type="datetimerange"
-                :range-separator="t('ai_workflow.develop_to')"
-                :start-placeholder="t('ai_workflow.develop_startTime')"
-                :end-placeholder="t('ai_workflow.develop_endTime')"
-                value-format="YYYY-MM-DD HH:mm:ss"
-                style="width: 340px"
-              />
-              <el-button-group style="margin-left: 8px">
-                <el-button
-                  v-for="q in RANGE_PRESETS"
-                  :key="q.days"
-                  size="small"
-                  @click="setQuickRange(q.days)"
+              <TrendLineChart :points="logTrendPoints" :height="140" />
+            </el-card>
+            <el-form :inline="true" :model="logFilter" class="develop-search">
+              <el-form-item :label="t('ai_workflow.develop_appLabel')">
+                <el-select
+                  v-model="logFilter.app_id"
+                  :placeholder="t('ai_workflow.develop_all')"
+                  clearable
+                  filterable
+                  style="width: 180px"
                 >
-                  {{ q.label }}
-                </el-button>
-              </el-button-group>
-            </el-form-item>
-            <el-form-item :label="t('ai_workflow.develop_capability')">
-              <el-select
-                v-model="logFilter.capability"
-                :placeholder="t('ai_workflow.develop_all')"
-                clearable
-                filterable
-                style="width: 170px"
-                @change="loadLogs()"
-              >
-                <el-option
-                  v-for="cap in capabilities"
-                  :key="cap.code"
-                  :label="cap.code"
-                  :value="cap.code"
+                  <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('ai_workflow.develop_category')">
+                <el-select
+                  v-model="logFilter.category"
+                  :placeholder="t('ai_workflow.develop_all')"
+                  clearable
+                  style="width: 140px"
+                >
+                  <el-option
+                    v-for="(label, code) in CATEGORIES"
+                    :key="code"
+                    :label="label"
+                    :value="code"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('ai_workflow.develop_status')">
+                <el-select
+                  v-model="logFilter.status"
+                  :placeholder="t('ai_workflow.develop_all')"
+                  clearable
+                  style="width: 140px"
+                >
+                  <el-option :label="t('ai_workflow.develop_success')" value="success" />
+                  <el-option :label="t('ai_workflow.develop_failed')" value="failed" />
+                  <el-option :label="t('ai_workflow.develop_denied')" value="denied" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('ai_workflow.develop_timeRange')">
+                <el-date-picker
+                  v-model="logFilter.range"
+                  type="datetimerange"
+                  :range-separator="t('ai_workflow.develop_to')"
+                  :start-placeholder="t('ai_workflow.develop_startTime')"
+                  :end-placeholder="t('ai_workflow.develop_endTime')"
+                  value-format="YYYY-MM-DD HH:mm:ss"
+                  style="width: 340px"
                 />
-              </el-select>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" :icon="Search" @click="loadLogs()">
-                {{ t("ai_workflow.develop_query") }}
-              </el-button>
-              <el-button :icon="Download" @click="onExportLogs">
-                {{ t("ai_workflow.develop_exportCsv") }}
-              </el-button>
-            </el-form-item>
-          </el-form>
+                <el-button-group style="margin-left: 8px">
+                  <el-button
+                    v-for="q in RANGE_PRESETS"
+                    :key="q.days"
+                    size="small"
+                    @click="setQuickRange(q.days)"
+                  >
+                    {{ q.label }}
+                  </el-button>
+                </el-button-group>
+              </el-form-item>
+              <el-form-item :label="t('ai_workflow.develop_capability')">
+                <el-select
+                  v-model="logFilter.capability"
+                  :placeholder="t('ai_workflow.develop_all')"
+                  clearable
+                  filterable
+                  style="width: 170px"
+                  @change="loadLogs()"
+                >
+                  <el-option
+                    v-for="cap in capabilities"
+                    :key="cap.code"
+                    :label="cap.code"
+                    :value="cap.code"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" :icon="Search" @click="loadLogs()">
+                  {{ t("ai_workflow.develop_query") }}
+                </el-button>
+                <el-button :icon="Download" @click="onExportLogs">
+                  {{ t("ai_workflow.develop_exportCsv") }}
+                </el-button>
+              </el-form-item>
+            </el-form>
 
-          <div class="table-flow">
-            <el-table
-              v-loading="logLoading"
-              :data="logs"
-              row-key="id"
-              border
-              stripe
-              height="100%"
-              class="log-table"
-              @row-click="openLogDetail"
-            >
-            <el-table-column
-              :label="t('ai_workflow.develop_time')"
-              width="165"
-              show-overflow-tooltip
-            >
-              <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
-            </el-table-column>
-            <el-table-column label="AppID" width="120" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.appid || "—" }}</template>
-            </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_category')" width="85">
-              <template #default="{ row }">
-                {{ CATEGORIES[row.category || ""] || row.category }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="capability"
-              :label="t('ai_workflow.develop_capability')"
-              min-width="145"
-              show-overflow-tooltip
-            />
-            <el-table-column :label="t('ai_workflow.develop_method')" width="90">
-              <template #default="{ row }">{{ methodLabel(row.method) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_status')" width="100">
-              <template #default="{ row }">
-                <el-tag size="small" :type="logStatusType(row.status)">
-                  {{ statusLabel(row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="latency_ms"
-              :label="t('ai_workflow.develop_latency')"
-              width="85"
-              align="right"
-            />
-            <el-table-column prop="cost_tokens" label="Tokens" width="78" align="right" />
-            <el-table-column
-              prop="request_path"
-              :label="t('ai_workflow.develop_requestPath')"
-              min-width="145"
-              show-overflow-tooltip
-            />
-            <el-table-column
-              prop="result_summary"
-              :label="t('ai_workflow.develop_resultSummary')"
-              min-width="145"
-              show-overflow-tooltip
-            />
-            <template #empty>
-              <el-empty :image-size="80" :description="t('ai_workflow.develop_noLogs')" />
-            </template>
-          </el-table>
-          </div>
+            <div class="table-flow">
+              <el-table
+                v-loading="logLoading"
+                :data="logs"
+                row-key="id"
+                border
+                stripe
+                height="100%"
+                class="log-table"
+                @row-click="openLogDetail"
+              >
+                <el-table-column
+                  :label="t('ai_workflow.develop_time')"
+                  width="165"
+                  show-overflow-tooltip
+                >
+                  <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
+                </el-table-column>
+                <el-table-column label="AppID" width="120" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.appid || "—" }}</template>
+                </el-table-column>
+                <el-table-column :label="t('ai_workflow.develop_category')" width="85">
+                  <template #default="{ row }">
+                    {{ CATEGORIES[row.category || ""] || row.category }}
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  prop="capability"
+                  :label="t('ai_workflow.develop_capability')"
+                  min-width="145"
+                  show-overflow-tooltip
+                />
+                <el-table-column :label="t('ai_workflow.develop_method')" width="90">
+                  <template #default="{ row }">{{ methodLabel(row.method) }}</template>
+                </el-table-column>
+                <el-table-column :label="t('ai_workflow.develop_status')" width="100">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="logStatusType(row.status)">
+                      {{ statusLabel(row.status) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  prop="latency_ms"
+                  :label="t('ai_workflow.develop_latency')"
+                  width="85"
+                  align="right"
+                />
+                <el-table-column prop="cost_tokens" label="Tokens" width="78" align="right" />
+                <el-table-column
+                  prop="request_path"
+                  :label="t('ai_workflow.develop_requestPath')"
+                  min-width="145"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  prop="result_summary"
+                  :label="t('ai_workflow.develop_resultSummary')"
+                  min-width="145"
+                  show-overflow-tooltip
+                />
+                <template #empty>
+                  <el-empty :image-size="80" :description="t('ai_workflow.develop_noLogs')" />
+                </template>
+              </el-table>
+            </div>
 
-          <div v-if="logTotal > 0" class="develop-pagination">
-            <el-pagination
-              v-model:current-page="logPage"
-              v-model:page-size="logPageSize"
-              :total="logTotal"
-              :page-sizes="[10, 20, 50]"
-              layout="total, sizes, prev, pager, next"
-              background
-              @current-change="() => loadLogs(false)"
-              @size-change="
-                () => {
-                  logPage = 1;
-                  loadLogs(false);
-                }
-              "
-            />
-          </div>
+            <div v-if="logTotal > 0" class="develop-pagination">
+              <el-pagination
+                v-model:current-page="logPage"
+                v-model:page-size="logPageSize"
+                :total="logTotal"
+                :page-sizes="[10, 20, 50]"
+                layout="total, sizes, prev, pager, next"
+                background
+                @current-change="() => loadLogs(false)"
+                @size-change="
+                  () => {
+                    logPage = 1;
+                    loadLogs(false);
+                  }
+                "
+              />
+            </div>
           </template>
 
           <template v-else>
-          <el-card shadow="never" class="trend-card">
-            <template #header>
-              <div class="trend-card__head">
-                <span class="trend-card__title">{{ t("ai_workflow.develop_trendTitle") }}</span>
-                <span class="trend-card__range">
-                  {{ t("ai_workflow.develop_recentDays", { days: mcpStats.days }) }}
-                </span>
-              </div>
-            </template>
-            <div class="overview-stats">
-              <div v-for="s in mcpStatCards" :key="s.label" class="overview-stat">
-                <el-icon class="overview-stat__icon" :size="16">
-                  <component :is="s.icon" />
-                </el-icon>
-                <span class="overview-stat__value">
-                  {{ s.value }}<span class="overview-stat__suffix">{{ s.suffix }}</span>
-                </span>
-                <span class="overview-stat__label">{{ s.label }}</span>
-              </div>
-            </div>
-            <TrendLineChart :points="mcpTrendPoints" :height="140" />
-          </el-card>
-          <el-form :inline="true" :model="mcpFilter" class="develop-search">
-            <el-form-item :label="t('ai_workflow.develop_appLabel')">
-              <el-select
-                v-model="mcpFilter.app_id"
-                :placeholder="t('ai_workflow.develop_all')"
-                clearable
-                filterable
-                style="width: 180px"
-              >
-                <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" :icon="Search" @click="loadMcps()">
-                {{ t("ai_workflow.develop_query") }}
-              </el-button>
-            </el-form-item>
-          </el-form>
-
-          <transition name="el-fade-in">
-            <div v-if="mcpFilter.app_id" class="mcp-auth-panel">
-              <div class="mcp-auth-panel__head">
-                <span class="mcp-auth-panel__title">{{ t("ai_workflow.develop_authToolsTitle") }}</span>
-                <span class="mcp-auth-panel__count">
-                  {{ t("ai_workflow.develop_authToolCount", { count: selectedAppMcpTools.length }) }}
-                </span>
-              </div>
-              <div v-if="selectedAppMcpTools.length" class="mcp-auth-panel__tools">
-                <span v-for="cap in selectedAppMcpTools" :key="cap.code" class="mcp-auth-tool">
-                  {{ cap.name }}
-                  <el-tag
-                    v-if="cap.requires_approval"
-                    size="small"
-                    type="warning"
-                    effect="plain"
-                    class="mcp-auth-tool__approval"
-                  >
-                    {{ t("ai_workflow.develop_pendingStatus") }}
-                  </el-tag>
-                </span>
-              </div>
-              <div v-else class="mcp-auth-panel__empty">
-                {{ t("ai_workflow.develop_authToolsEmpty") }}
-              </div>
-            </div>
-          </transition>
-
-          <div class="table-flow">
-          <el-table v-loading="mcpLoading" :data="mcps" row-key="id" border stripe height="100%" @row-click="openMcpDetail">
-            <el-table-column label="AppID" width="110" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.appid || "—" }}</template>
-            </el-table-column>
-            <el-table-column
-              :label="t('ai_workflow.develop_sessionId')"
-              min-width="140"
-              show-overflow-tooltip
-            >
-              <template #default="{ row }">{{ row.session_id || "—" }}</template>
-            </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_transport')" width="90">
-              <template #default="{ row }">{{ transportLabel(row.transport) }}</template>
-            </el-table-column>
-            <el-table-column
-              prop="client_info"
-              :label="t('ai_workflow.develop_client')"
-              min-width="105"
-              show-overflow-tooltip
-            />
-            <el-table-column :label="t('ai_workflow.develop_usedTools')" min-width="175">
-              <template #default="{ row }">
-                <template v-if="row.tools && row.tools.length">
-                  <el-tag
-                    v-for="t in row.tools"
-                    :key="t.capability"
-                    size="small"
-                    effect="plain"
-                    class="mcp-tool-tag"
-                  >
-                    {{ toolShortName(t) }} ×{{ t.calls }}
-                  </el-tag>
-                </template>
-                <span v-else class="mcp-cell-muted">{{ t("ai_workflow.develop_noCalls") }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_startTime')" width="150">
-              <template #default="{ row }">{{ fmtDateTime(row.started_at) }}</template>
-            </el-table-column>
-            <el-table-column
-              prop="duration_s"
-              :label="t('ai_workflow.develop_duration')"
-              width="70"
-              align="right"
-            />
-            <el-table-column
-              prop="tool_calls"
-              :label="t('ai_workflow.develop_toolCalls')"
-              width="75"
-              align="right"
-            />
-            <el-table-column :label="t('ai_workflow.develop_result')" width="104">
-              <template #default="{ row }">
-                <el-tag :type="mcpStatus(row).type" size="small" effect="light">
-                  {{ mcpStatus(row).label }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="close_reason"
-              :label="t('ai_workflow.develop_closeReason')"
-              min-width="105"
-              show-overflow-tooltip
-            />
-            <template #empty>
-              <el-empty :image-size="80" :description="t('ai_workflow.develop_noMcp')" />
-            </template>
-          </el-table>
-          </div>
-
-          <div v-if="mcpTotal > 0" class="develop-pagination">
-            <el-pagination
-              v-model:current-page="mcpPage"
-              v-model:page-size="mcpPageSize"
-              :total="mcpTotal"
-              :page-sizes="[10, 20, 50]"
-              layout="total, sizes, prev, pager, next"
-              background
-              @current-change="() => loadMcps(false)"
-              @size-change="
-                () => {
-                  mcpPage = 1;
-                  loadMcps(false);
-                }
-              "
-            />
-          </div>
-
-          <el-drawer
-            v-model="mcpDetail.visible"
-            :title="t('ai_workflow.develop_mcpDetail')"
-            size="620px"
-            append-to-body
-            class="mcp-detail-drawer"
-          >
-            <template v-if="mcpDetail.row">
-              <el-descriptions :column="2" border size="small" class="mcp-detail-desc">
-                <el-descriptions-item :label="t('ai_workflow.develop_appLabel')">
-                  <span class="mono-text">{{ mcpDetail.row.appid }}</span>
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('ai_workflow.develop_transport')">
-                  {{ transportLabel(mcpDetail.row.transport) }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('ai_workflow.develop_client')">
-                  {{ mcpDetail.row.client_info || "—" }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('ai_workflow.develop_sessionDuration')">
-                  {{ mcpDetail.row.duration_s || 0 }} s
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('ai_workflow.develop_closeReason')" :span="2">
-                  {{ mcpDetail.row.close_reason || "—" }}
-                </el-descriptions-item>
-              </el-descriptions>
-
-              <div class="mcp-detail__tools">
-                <div class="mcp-detail__tools-title">
-                  {{ t("ai_workflow.develop_toolDetail") }}
+            <el-card shadow="never" class="trend-card">
+              <template #header>
+                <div class="trend-card__head">
+                  <span class="trend-card__title">{{ t("ai_workflow.develop_trendTitle") }}</span>
+                  <span class="trend-card__range">
+                    {{ t("ai_workflow.develop_recentDays", { days: mcpStats.days }) }}
+                  </span>
                 </div>
-                <el-table :data="mcpDetail.row.tools || []" size="small" border stripe>
-                  <el-table-column :label="t('ai_workflow.develop_capability')" min-width="120">
-                    <template #default="{ row }">
-                      <span class="mono-text">{{ row.name || row.capability }}</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column
-                    :label="t('ai_workflow.develop_calls')"
-                    width="54"
-                    align="right"
-                    prop="calls"
-                  />
-                  <el-table-column :label="t('ai_workflow.develop_success')" width="54" align="right">
-                    <template #default="{ row }">{{ row.success || 0 }}</template>
-                  </el-table-column>
-                  <el-table-column
-                    :label="t('ai_workflow.develop_pendingStatus')"
-                    width="60"
-                    align="right"
-                  >
-                    <template #default="{ row }">{{ row.pending || 0 }}</template>
-                  </el-table-column>
-                  <el-table-column :label="t('ai_workflow.develop_denied')" width="54" align="right">
-                    <template #default="{ row }">{{ row.denied || 0 }}</template>
-                  </el-table-column>
-                  <el-table-column :label="t('ai_workflow.develop_rateLimited')" width="58" align="right">
-                    <template #default="{ row }">{{ row.rate_limited || 0 }}</template>
-                  </el-table-column>
-                  <el-table-column :label="t('ai_workflow.develop_quotaHit')" width="68" align="right">
-                    <template #default="{ row }">{{ row.quota_hit || 0 }}</template>
-                  </el-table-column>
-                  <el-table-column :label="t('ai_workflow.develop_failed')" width="54" align="right">
-                    <template #default="{ row }">{{ row.failed || 0 }}</template>
-                  </el-table-column>
-                  <template #empty>
-                    <el-empty :image-size="60" :description="t('ai_workflow.develop_noCalls')" />
-                  </template>
-                </el-table>
+              </template>
+              <div class="overview-stats">
+                <div v-for="s in mcpStatCards" :key="s.label" class="overview-stat">
+                  <el-icon class="overview-stat__icon" :size="16">
+                    <component :is="s.icon" />
+                  </el-icon>
+                  <span class="overview-stat__value">
+                    {{ s.value }}
+                    <span class="overview-stat__suffix">{{ s.suffix }}</span>
+                  </span>
+                  <span class="overview-stat__label">{{ s.label }}</span>
+                </div>
               </div>
-            </template>
-          </el-drawer>
+              <TrendLineChart :points="mcpTrendPoints" :height="140" />
+            </el-card>
+            <el-form :inline="true" :model="mcpFilter" class="develop-search">
+              <el-form-item :label="t('ai_workflow.develop_appLabel')">
+                <el-select
+                  v-model="mcpFilter.app_id"
+                  :placeholder="t('ai_workflow.develop_all')"
+                  clearable
+                  filterable
+                  style="width: 180px"
+                >
+                  <el-option v-for="a in appOptions" :key="a.id" :label="a.name" :value="a.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" :icon="Search" @click="loadMcps()">
+                  {{ t("ai_workflow.develop_query") }}
+                </el-button>
+              </el-form-item>
+            </el-form>
+
+            <transition name="el-fade-in">
+              <div v-if="mcpFilter.app_id" class="mcp-auth-panel">
+                <div class="mcp-auth-panel__head">
+                  <span class="mcp-auth-panel__title">
+                    {{ t("ai_workflow.develop_authToolsTitle") }}
+                  </span>
+                  <span class="mcp-auth-panel__count">
+                    {{
+                      t("ai_workflow.develop_authToolCount", { count: selectedAppMcpTools.length })
+                    }}
+                  </span>
+                </div>
+                <div v-if="selectedAppMcpTools.length" class="mcp-auth-panel__tools">
+                  <span v-for="cap in selectedAppMcpTools" :key="cap.code" class="mcp-auth-tool">
+                    {{ cap.name }}
+                    <el-tag
+                      v-if="cap.requires_approval"
+                      size="small"
+                      type="warning"
+                      effect="plain"
+                      class="mcp-auth-tool__approval"
+                    >
+                      {{ t("ai_workflow.develop_pendingStatus") }}
+                    </el-tag>
+                  </span>
+                </div>
+                <div v-else class="mcp-auth-panel__empty">
+                  {{ t("ai_workflow.develop_authToolsEmpty") }}
+                </div>
+              </div>
+            </transition>
+
+            <div class="table-flow">
+              <el-table
+                v-loading="mcpLoading"
+                :data="mcps"
+                row-key="id"
+                border
+                stripe
+                height="100%"
+                @row-click="openMcpDetail"
+              >
+                <el-table-column label="AppID" width="110" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.appid || "—" }}</template>
+                </el-table-column>
+                <el-table-column
+                  :label="t('ai_workflow.develop_sessionId')"
+                  min-width="140"
+                  show-overflow-tooltip
+                >
+                  <template #default="{ row }">{{ row.session_id || "—" }}</template>
+                </el-table-column>
+                <el-table-column :label="t('ai_workflow.develop_transport')" width="90">
+                  <template #default="{ row }">{{ transportLabel(row.transport) }}</template>
+                </el-table-column>
+                <el-table-column
+                  prop="client_info"
+                  :label="t('ai_workflow.develop_client')"
+                  min-width="105"
+                  show-overflow-tooltip
+                />
+                <el-table-column :label="t('ai_workflow.develop_usedTools')" min-width="175">
+                  <template #default="{ row }">
+                    <template v-if="row.tools && row.tools.length">
+                      <el-tag
+                        v-for="t in row.tools"
+                        :key="t.capability"
+                        size="small"
+                        effect="plain"
+                        class="mcp-tool-tag"
+                      >
+                        {{ toolShortName(t) }} ×{{ t.calls }}
+                      </el-tag>
+                    </template>
+                    <span v-else class="mcp-cell-muted">
+                      {{ t("ai_workflow.develop_noCalls") }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('ai_workflow.develop_startTime')" width="150">
+                  <template #default="{ row }">{{ fmtDateTime(row.started_at) }}</template>
+                </el-table-column>
+                <el-table-column
+                  prop="duration_s"
+                  :label="t('ai_workflow.develop_duration')"
+                  width="70"
+                  align="right"
+                />
+                <el-table-column
+                  prop="tool_calls"
+                  :label="t('ai_workflow.develop_toolCalls')"
+                  width="75"
+                  align="right"
+                />
+                <el-table-column :label="t('ai_workflow.develop_result')" width="104">
+                  <template #default="{ row }">
+                    <el-tag :type="mcpStatus(row).type" size="small" effect="light">
+                      {{ mcpStatus(row).label }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  prop="close_reason"
+                  :label="t('ai_workflow.develop_closeReason')"
+                  min-width="105"
+                  show-overflow-tooltip
+                />
+                <template #empty>
+                  <el-empty :image-size="80" :description="t('ai_workflow.develop_noMcp')" />
+                </template>
+              </el-table>
+            </div>
+
+            <div v-if="mcpTotal > 0" class="develop-pagination">
+              <el-pagination
+                v-model:current-page="mcpPage"
+                v-model:page-size="mcpPageSize"
+                :total="mcpTotal"
+                :page-sizes="[10, 20, 50]"
+                layout="total, sizes, prev, pager, next"
+                background
+                @current-change="() => loadMcps(false)"
+                @size-change="
+                  () => {
+                    mcpPage = 1;
+                    loadMcps(false);
+                  }
+                "
+              />
+            </div>
+
+            <el-drawer
+              v-model="mcpDetail.visible"
+              :title="t('ai_workflow.develop_mcpDetail')"
+              size="620px"
+              append-to-body
+              class="mcp-detail-drawer"
+            >
+              <template v-if="mcpDetail.row">
+                <el-descriptions :column="2" border size="small" class="mcp-detail-desc">
+                  <el-descriptions-item :label="t('ai_workflow.develop_appLabel')">
+                    <span class="mono-text">{{ mcpDetail.row.appid }}</span>
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('ai_workflow.develop_transport')">
+                    {{ transportLabel(mcpDetail.row.transport) }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('ai_workflow.develop_client')">
+                    {{ mcpDetail.row.client_info || "—" }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('ai_workflow.develop_sessionDuration')">
+                    {{ mcpDetail.row.duration_s || 0 }} s
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('ai_workflow.develop_closeReason')" :span="2">
+                    {{ mcpDetail.row.close_reason || "—" }}
+                  </el-descriptions-item>
+                </el-descriptions>
+
+                <div class="mcp-detail__tools">
+                  <div class="mcp-detail__tools-title">
+                    {{ t("ai_workflow.develop_toolDetail") }}
+                  </div>
+                  <el-table :data="mcpDetail.row.tools || []" size="small" border stripe>
+                    <el-table-column :label="t('ai_workflow.develop_capability')" min-width="120">
+                      <template #default="{ row }">
+                        <span class="mono-text">{{ row.name || row.capability }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column
+                      :label="t('ai_workflow.develop_calls')"
+                      width="54"
+                      align="right"
+                      prop="calls"
+                    />
+                    <el-table-column
+                      :label="t('ai_workflow.develop_success')"
+                      width="54"
+                      align="right"
+                    >
+                      <template #default="{ row }">{{ row.success || 0 }}</template>
+                    </el-table-column>
+                    <el-table-column
+                      :label="t('ai_workflow.develop_pendingStatus')"
+                      width="60"
+                      align="right"
+                    >
+                      <template #default="{ row }">{{ row.pending || 0 }}</template>
+                    </el-table-column>
+                    <el-table-column
+                      :label="t('ai_workflow.develop_denied')"
+                      width="54"
+                      align="right"
+                    >
+                      <template #default="{ row }">{{ row.denied || 0 }}</template>
+                    </el-table-column>
+                    <el-table-column
+                      :label="t('ai_workflow.develop_rateLimited')"
+                      width="58"
+                      align="right"
+                    >
+                      <template #default="{ row }">{{ row.rate_limited || 0 }}</template>
+                    </el-table-column>
+                    <el-table-column
+                      :label="t('ai_workflow.develop_quotaHit')"
+                      width="68"
+                      align="right"
+                    >
+                      <template #default="{ row }">{{ row.quota_hit || 0 }}</template>
+                    </el-table-column>
+                    <el-table-column
+                      :label="t('ai_workflow.develop_failed')"
+                      width="54"
+                      align="right"
+                    >
+                      <template #default="{ row }">{{ row.failed || 0 }}</template>
+                    </el-table-column>
+                    <template #empty>
+                      <el-empty :image-size="60" :description="t('ai_workflow.develop_noCalls')" />
+                    </template>
+                  </el-table>
+                </div>
+              </template>
+            </el-drawer>
           </template>
         </el-tab-pane>
 
         <!-- ============ 用量报告 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabUsage')" name="usage" class="develop-table-pane">
+        <el-tab-pane
+          :label="t('ai_workflow.develop_tabUsage')"
+          name="usage"
+          class="develop-table-pane"
+        >
           <el-form :inline="true" class="develop-search">
             <el-form-item :label="t('ai_workflow.develop_usageRange')">
               <el-button-group>
@@ -638,64 +702,82 @@
           </el-form>
 
           <div class="table-flow">
-          <el-table v-loading="usageLoading" :data="usageItems" row-key="app_id" border stripe height="100%">
-            <el-table-column
-              prop="name"
-              :label="t('ai_workflow.develop_appLabel')"
-              min-width="160"
-              show-overflow-tooltip
-            />
-            <el-table-column prop="appid" label="AppID" width="130" show-overflow-tooltip />
-            <el-table-column
-              prop="calls"
-              :label="t('ai_workflow.develop_calls')"
-              width="80"
-              align="right"
-            />
-            <el-table-column
-              prop="success"
-              :label="t('ai_workflow.develop_success')"
-              width="80"
-              align="right"
-            />
-            <el-table-column :label="t('ai_workflow.develop_successRate')" width="90" align="right">
-              <template #default="{ row }">{{ (row.success_rate * 100).toFixed(1) }}%</template>
-            </el-table-column>
-            <el-table-column
-              prop="quota_hits"
-              :label="t('ai_workflow.develop_quotaHits')"
-              width="100"
-              align="right"
-            />
-            <el-table-column
-              prop="rate_limited"
-              :label="t('ai_workflow.develop_rateLimited')"
-              width="90"
-              align="right"
-            />
-            <el-table-column :label="t('ai_workflow.develop_topCapabilitiesShort')" min-width="240">
-              <template #default="{ row }">
-                <el-tag
-                  v-for="t in row.top"
-                  :key="t.capability"
-                  size="small"
-                  effect="plain"
-                  class="cap-tag"
-                >
-                  {{ t.capability }} · {{ t.calls }}
-                </el-tag>
-                <span v-if="!row.top.length" class="text-muted">—</span>
+            <el-table
+              v-loading="usageLoading"
+              :data="usageItems"
+              row-key="app_id"
+              border
+              stripe
+              height="100%"
+            >
+              <el-table-column
+                prop="name"
+                :label="t('ai_workflow.develop_appLabel')"
+                min-width="160"
+                show-overflow-tooltip
+              />
+              <el-table-column prop="appid" label="AppID" width="130" show-overflow-tooltip />
+              <el-table-column
+                prop="calls"
+                :label="t('ai_workflow.develop_calls')"
+                width="80"
+                align="right"
+              />
+              <el-table-column
+                prop="success"
+                :label="t('ai_workflow.develop_success')"
+                width="80"
+                align="right"
+              />
+              <el-table-column
+                :label="t('ai_workflow.develop_successRate')"
+                width="90"
+                align="right"
+              >
+                <template #default="{ row }">{{ (row.success_rate * 100).toFixed(1) }}%</template>
+              </el-table-column>
+              <el-table-column
+                prop="quota_hits"
+                :label="t('ai_workflow.develop_quotaHits')"
+                width="100"
+                align="right"
+              />
+              <el-table-column
+                prop="rate_limited"
+                :label="t('ai_workflow.develop_rateLimited')"
+                width="90"
+                align="right"
+              />
+              <el-table-column
+                :label="t('ai_workflow.develop_topCapabilitiesShort')"
+                min-width="240"
+              >
+                <template #default="{ row }">
+                  <el-tag
+                    v-for="t in row.top"
+                    :key="t.capability"
+                    size="small"
+                    effect="plain"
+                    class="cap-tag"
+                  >
+                    {{ t.capability }} · {{ t.calls }}
+                  </el-tag>
+                  <span v-if="!row.top.length" class="text-muted">—</span>
+                </template>
+              </el-table-column>
+              <template #empty>
+                <el-empty :image-size="80" :description="t('ai_workflow.develop_noUsage')" />
               </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty :image-size="80" :description="t('ai_workflow.develop_noUsage')" />
-            </template>
-          </el-table>
+            </el-table>
           </div>
         </el-tab-pane>
 
         <!-- ============ 调用审批 ============ -->
-        <el-tab-pane :label="t('ai_workflow.develop_tabApprovals')" name="approvals" class="develop-table-pane">
+        <el-tab-pane
+          :label="t('ai_workflow.develop_tabApprovals')"
+          name="approvals"
+          class="develop-table-pane"
+        >
           <div class="develop-head">
             <el-form :inline="true" :model="approvalFilter" class="develop-search">
               <el-form-item :label="t('ai_workflow.develop_status')">
@@ -743,93 +825,93 @@
           </div>
 
           <div class="table-flow">
-          <el-table
-            ref="approvalTableRef"
-            v-loading="approvalLoading"
-            :data="approvals"
-            row-key="id"
-            border
-            stripe
-            height="100%"
-            @selection-change="(rows: any[]) => (approvalSelection = rows)"
-          >
-            <el-table-column
-              type="selection"
-              width="46"
-              :selectable="(row: any) => row.status === 'pending'"
-            />
-            <el-table-column :label="t('ai_workflow.develop_applyTime')" width="155">
-              <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
-            </el-table-column>
-            <el-table-column prop="appid" label="AppID" width="130" show-overflow-tooltip />
-            <el-table-column
-              prop="capability"
-              :label="t('ai_workflow.develop_capability')"
-              min-width="150"
-              show-overflow-tooltip
-            />
-            <el-table-column :label="t('ai_workflow.develop_category')" width="95">
-              <template #default="{ row }">
-                {{ CATEGORIES[row.category] || row.category }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_status')" width="100">
-              <template #default="{ row }">
-                <el-tag size="small" :type="approvalStatusType(row.status)">
-                  {{ APPROVAL_STATUS[row.status] || row.status }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('ai_workflow.develop_reviewTime')" width="155">
-              <template #default="{ row }">{{ fmtDateTime(row.reviewed_at, "—") }}</template>
-            </el-table-column>
-            <el-table-column
-              prop="review_note"
-              :label="t('ai_workflow.develop_reviewNote')"
-              min-width="120"
-              show-overflow-tooltip
-            />
-            <el-table-column
-              :label="t('ai_workflow.develop_action')"
-              width="150"
-              :fixed="fixedAction"
+            <el-table
+              ref="approvalTableRef"
+              v-loading="approvalLoading"
+              :data="approvals"
+              row-key="id"
+              border
+              stripe
+              height="100%"
+              @selection-change="(rows: any[]) => (approvalSelection = rows)"
             >
-              <template #default="{ row }">
-                <el-tooltip :content="t('ai_workflow.develop_detail')" placement="top">
-                  <el-button text type="primary" class="app-act" @click="openApprovalDetail(row)">
-                    <i class="ri-file-list-line" />
-                  </el-button>
-                </el-tooltip>
-                <template v-if="row.status === 'pending'">
-                  <el-tooltip :content="t('ai_workflow.develop_approve')" placement="top">
-                    <el-button
-                      v-hasPerm="'module_ai:develop:approve'"
-                      text
-                      type="primary"
-                      class="app-act"
-                      @click="onReviewApproval(row, true)"
-                    >
-                      <i class="ri-check-line" />
-                    </el-button>
-                  </el-tooltip>
-                  <el-tooltip :content="t('ai_workflow.develop_reject')" placement="top">
-                    <el-button
-                      v-hasPerm="'module_ai:develop:approve'"
-                      text
-                      type="danger"
-                      class="app-act"
-                      @click="onReviewApproval(row, false)"
-                    >
-                      <i class="ri-close-line" />
-                    </el-button>
-                  </el-tooltip>
+              <el-table-column
+                type="selection"
+                width="46"
+                :selectable="(row: any) => row.status === 'pending'"
+              />
+              <el-table-column :label="t('ai_workflow.develop_applyTime')" width="155">
+                <template #default="{ row }">{{ fmtDateTime(row.created_time) }}</template>
+              </el-table-column>
+              <el-table-column prop="appid" label="AppID" width="130" show-overflow-tooltip />
+              <el-table-column
+                prop="capability"
+                :label="t('ai_workflow.develop_capability')"
+                min-width="150"
+                show-overflow-tooltip
+              />
+              <el-table-column :label="t('ai_workflow.develop_category')" width="95">
+                <template #default="{ row }">
+                  {{ CATEGORIES[row.category] || row.category }}
                 </template>
+              </el-table-column>
+              <el-table-column :label="t('ai_workflow.develop_status')" width="100">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="approvalStatusType(row.status)">
+                    {{ APPROVAL_STATUS[row.status] || row.status }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column :label="t('ai_workflow.develop_reviewTime')" width="155">
+                <template #default="{ row }">{{ fmtDateTime(row.reviewed_at, "—") }}</template>
+              </el-table-column>
+              <el-table-column
+                prop="review_note"
+                :label="t('ai_workflow.develop_reviewNote')"
+                min-width="120"
+                show-overflow-tooltip
+              />
+              <el-table-column
+                :label="t('ai_workflow.develop_action')"
+                width="150"
+                :fixed="fixedAction"
+              >
+                <template #default="{ row }">
+                  <el-tooltip :content="t('ai_workflow.develop_detail')" placement="top">
+                    <el-button text type="primary" class="app-act" @click="openApprovalDetail(row)">
+                      <i class="ri-file-list-line" />
+                    </el-button>
+                  </el-tooltip>
+                  <template v-if="row.status === 'pending'">
+                    <el-tooltip :content="t('ai_workflow.develop_approve')" placement="top">
+                      <el-button
+                        v-hasPerm="'module_ai:develop:approve'"
+                        text
+                        type="primary"
+                        class="app-act"
+                        @click="onReviewApproval(row, true)"
+                      >
+                        <i class="ri-check-line" />
+                      </el-button>
+                    </el-tooltip>
+                    <el-tooltip :content="t('ai_workflow.develop_reject')" placement="top">
+                      <el-button
+                        v-hasPerm="'module_ai:develop:approve'"
+                        text
+                        type="danger"
+                        class="app-act"
+                        @click="onReviewApproval(row, false)"
+                      >
+                        <i class="ri-close-line" />
+                      </el-button>
+                    </el-tooltip>
+                  </template>
+                </template>
+              </el-table-column>
+              <template #empty>
+                <el-empty :image-size="80" :description="t('ai_workflow.develop_noApprovals')" />
               </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty :image-size="80" :description="t('ai_workflow.develop_noApprovals')" />
-            </template>
-          </el-table>
+            </el-table>
           </div>
 
           <div v-if="approvalTotal > 0" class="develop-pagination">
@@ -1176,17 +1258,11 @@
             <div v-for="(caps, catCode) in groupedCaps" :key="catCode" class="cap-group">
               <div class="cap-group__title">
                 {{ CATEGORIES[catCode] || catCode }}
-                <span class="cap-group__count">
-                  {{ selectedCount(caps) }}/{{ caps.length }}
-                </span>
+                <span class="cap-group__count">{{ selectedCount(caps) }}/{{ caps.length }}</span>
               </div>
               <el-checkbox-group v-model="form.capabilities">
                 <div v-for="cap in caps" :key="cap.code" class="cap-row">
-                  <el-checkbox
-                    :value="cap.code"
-                    class="cap-check"
-                    @change="onCapChange(cap.code)"
-                  >
+                  <el-checkbox :value="cap.code" class="cap-check" @change="onCapChange(cap.code)">
                     {{ cap.name }}
                     <span class="cap-code">{{ cap.code }}</span>
                   </el-checkbox>
@@ -1340,7 +1416,15 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Download, Plus, Search, CopyDocument, Setting } from "@element-plus/icons-vue";
+import {
+  Download,
+  Plus,
+  Search,
+  CopyDocument,
+  Setting,
+  Timer,
+  DataLine,
+} from "@element-plus/icons-vue";
 import { useWindowSize } from "@vueuse/core";
 import {
   batchReviewApprovals,
@@ -1409,6 +1493,8 @@ interface AppRow {
   capabilities?: string[];
   channels?: Record<string, string[]>;
   call_count?: number;
+  created_time?: string | null;
+  updated_time?: string | null;
 }
 interface LogRow {
   id: number;
@@ -1613,10 +1699,7 @@ async function openEdit(row: any) {
     name: row.name,
     description: row.description || "",
     capabilities: row.capabilities || [],
-    channels:
-      row.channels && typeof row.channels === "object"
-        ? { ...row.channels }
-        : {},
+    channels: row.channels && typeof row.channels === "object" ? { ...row.channels } : {},
     expire_at: row.expire_at ? fmtDateTime(row.expire_at) : "",
     enabled: row.enabled !== false,
     requires_approval: row.requires_approval !== false,
@@ -2176,8 +2259,10 @@ function mcpStatus(row: any) {
   if (!tools.length) return { type: "info" as const, label: t("ai_workflow.develop_noCalls") };
   if (agg.failed) return { type: "danger" as const, label: t("ai_workflow.develop_failed") };
   if (agg.quota_hit) return { type: "danger" as const, label: t("ai_workflow.develop_quotaHit") };
-  if (agg.rate_limited) return { type: "warning" as const, label: t("ai_workflow.develop_rateLimited") };
-  if (agg.pending) return { type: "warning" as const, label: t("ai_workflow.develop_pendingStatus") };
+  if (agg.rate_limited)
+    return { type: "warning" as const, label: t("ai_workflow.develop_rateLimited") };
+  if (agg.pending)
+    return { type: "warning" as const, label: t("ai_workflow.develop_pendingStatus") };
   if (agg.denied) return { type: "danger" as const, label: t("ai_workflow.develop_permDenied") };
   return { type: "success" as const, label: t("ai_workflow.develop_success") };
 }
@@ -2603,52 +2688,87 @@ onMounted(() => {
   gap: 8px;
   padding: 14px 16px;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--el-border-radius-base);
-  background: var(--el-bg-color);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  border-radius: 10px;
+  background: var(--el-fill-color-blank);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.2s;
 }
 
 .app-card:hover {
   border-color: var(--el-color-primary-light-5);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 8%);
+  transform: translateY(-2px);
 }
 
 .app-card__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
+.app-card__brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-card__icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  font-size: 20px;
+}
+
 .app-card__title {
-  overflow: hidden;
-  font-size: var(--el-font-size-base);
+  min-width: 0;
+  flex: 1;
+}
+
+.app-card__name {
   font-weight: 600;
+  font-size: var(--el-font-size-base);
+  line-height: 1.5;
   color: var(--el-text-color-primary);
+  margin-bottom: 4px;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.app-card__appid {
+.app-card__sub {
   display: flex;
   align-items: center;
-  gap: 4px;
-}
-
-.app-card__meta {
-  display: flex;
-  gap: 24px;
-}
-
-.app-card__meta-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.app-card__meta-label {
+  gap: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.app-card__expire {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-card__desc {
+  color: var(--el-text-color-regular);
+  font-size: var(--el-font-size-base);
+  line-height: 1.7;
+  min-height: 40px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .app-card__caps {
@@ -2661,10 +2781,38 @@ onMounted(() => {
 .app-card__actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: auto;
   padding-top: 8px;
   border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.app-card__metrics {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.app-card__metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+
+.app-card__metric-ico {
+  font-size: 14px;
+}
+
+.app-card__btns {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
 }
 
 .app-act {

@@ -29,6 +29,8 @@ export default {
   develop_capabilities: "역량",
   develop_callCount: "호출",
   develop_noData: '아직 앱이 없습니다. "새 앱"으로 생성하세요',
+  develop_createdAt: "생성일",
+  develop_noDesc: "설명 없음",
   develop_action: "작업",
   develop_detail: "상세",
   develop_edit: "편집",
