@@ -227,24 +227,15 @@ function retargetClip({ srcProto, clip, dstProto, srcMap = BONE_MAP_AGENT, fps =
 /* AI 办公室 · Three.js 场景 v3（人物骨架 + 屏幕发光 + 家具细节） */
 export function createOffice(opts) {
   const stage = opts.stage;
-  /* ---- 角色模型：Quaternius 休闲风角色（6 个外观，按名字 hash 分配；拿不到就继续用程序化小人） ---- */
+  /* ---- 角色模型：只用自绘角色（tools/blender/build_agent_v2.py 生成），
+         自带 idle/walk/sit/dance/sing 等动作，不再加载 Quaternius 外部外观。
+         动作源（base-rig / agent.glb）仅作坐姿/蹦迪重定向的降级来源。 ---- */
   const CHAR_DIR = 'characters/quaternius/';
-  const CHAR_FILES = [
-    'casual_character.glb', 'hoodie_character.glb', 'business_man.glb',
-    'beach_character.glb', 'worker.glb', 'woman_casual.glb'
-  ];
-  const CHAR_NAME_CN = {
-    'casual_character.glb': '休闲男·灰T恤',
-    'hoodie_character.glb': '休闲男·紫卫衣',
-    'business_man.glb': '商务男·西装',
-    'beach_character.glb': '休闲男·短裤',
-    'worker.glb': '工装男·安全帽',
-    'woman_casual.glb': '休闲女'
-  };
+  const CHAR_FILES = [];        // 外部角色外观已全部移除，自绘角色为唯一
+  const CHAR_NAME_CN = {};
   /* 女性包建模单位是男性包的 2.5 倍（4.6 → 1.84m），加载后要缩回来 */
-  const CHAR_SCALE = { 'woman_casual.glb': 0.398 };
-  /* 自绘角色（tools/blender/build_agent_v2.py 生成）：自带 idle/walk/sit/dance/sing 五条动作，
-     不需要从别的骨架重定向，只按名字换衣服颜色 */
+  const CHAR_SCALE = {};
+  /* 自绘角色（tools/blender/build_agent_v2.py 生成）：自带动作，只按名字换衣服颜色 */
   const SELF_FILE = 'agent-v2.glb';
   const SELF_LOOKS = [
     { name: '蓝衬衫', fem: false, shirt: [0.56, 0.73, 0.92], pants: [0.54, 0.57, 0.64], skin: [0.96, 0.89, 0.84] },
