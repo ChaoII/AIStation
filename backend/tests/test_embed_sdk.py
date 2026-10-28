@@ -40,7 +40,7 @@ def test_sdk_destroy_lifecycle_static():
 
     js = (
         _pathlib.Path(__file__).parent.parent
-        / "app" / "plugin" / "module_ai" / "develop" / "static" / "ai-assistant.js"
+        / "app" / "plugin" / "module_ai" / "asset_embed" / "static" / "ai-assistant.js"
     ).read_text(encoding="utf-8")
     assert "global.removeEventListener(\"message\", onMessage)" in js
     assert "destroyed = true" in js

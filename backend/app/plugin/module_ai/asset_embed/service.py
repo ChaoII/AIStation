@@ -34,7 +34,7 @@ def clamp_asset_ttl(ttl: int | None) -> int:
     return max(ASSET_TOKEN_TTL_MIN, min(int(ttl), ASSET_TOKEN_TTL_MAX))
 
 
-class AssetEmbedService:
+class AssetTokenService:
     """资产嵌入令牌治理（工作台侧）。
 
     - 令牌独立绑定 ``kind + target_id``，不涉及（也不依赖）开放平台应用。

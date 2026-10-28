@@ -37,8 +37,10 @@ def test_asset_token_model_table():
 
 
 def test_asset_schema_kind_literal():
+    from pydantic import ValidationError
+
     from app.plugin.module_ai.asset_embed.schema import AssetTokenIssueSchema
 
     assert AssetTokenIssueSchema(kind="agent", target_id=1).target_id == 1
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         AssetTokenIssueSchema(kind="app", target_id=1)  # 资产不带 app 形态

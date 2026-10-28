@@ -27,7 +27,7 @@ from app.plugin.module_ai.streaming import ui_stream_response
 from .auth import EmbedContext, get_embed_ctx
 from .embed import AssetEmbedService
 from .schema import AssetRunSchema, AssetTokenIssueSchema
-from .service import AssetEmbedService as TokenService
+from .service import AssetTokenService
 
 AssetEmbedRouter = APIRouter(
     route_class=OperationLogRoute,
@@ -117,7 +117,7 @@ async def issue_asset_token(
     _auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:asset_embed:manage"]))],
 ) -> SuccessResponse:
     """工作台侧为某 agent/工作流签发独立绑定该资产的短期令牌。明文仅返回一次。"""
-    result = await TokenService.issue_token(
+    result = await AssetTokenService.issue_token(
         kind=data.kind, target_id=data.target_id, ttl=data.ttl, issued_by="admin"
     )
     return SuccessResponse(data=result, msg="签发成功")
@@ -130,7 +130,7 @@ async def list_asset_tokens(
     _auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:asset_embed:manage"]))],
 ) -> SuccessResponse:
     """列出某资产已签发令牌（只读元信息，不含明文/散列）。"""
-    items = await TokenService.list_tokens(kind, target_id)
+    items = await AssetTokenService.list_tokens(kind, target_id)
     return SuccessResponse(data={"items": items}, msg="查询成功")
 
 
@@ -140,6 +140,6 @@ async def revoke_asset_token(
     _auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:asset_embed:manage"]))],
 ) -> SuccessResponse:
     """吊销令牌（置 ``revoked=true``，立即生效；保留审计行不物理删）。"""
-    if not await TokenService.revoke_token(token_id):
+    if not await AssetTokenService.revoke_token(token_id):
         raise CustomException(msg="令牌不存在", code=10404, status_code=404)
     return SuccessResponse(data=None, msg="吊销成功")

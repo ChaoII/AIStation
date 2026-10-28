@@ -60,7 +60,7 @@ const src = fs.readFileSync(
     "app",
     "plugin",
     "module_ai",
-    "develop",
+    "asset_embed",
     "static",
     "ai-assistant.js",
   ),
