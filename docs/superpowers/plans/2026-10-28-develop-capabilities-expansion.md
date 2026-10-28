@@ -11,23 +11,25 @@
 ## 需求 2（卡片美化）—— 范围小，先做
 
 ### 步骤
-- [ ] C1 重做 `.app-card` 结构，学习 `MarketCard`：图标+名称+副行（类型/状态 tag）+固定描述区+footer（创建时间/调用量）。
-- [ ] C2 **移除卡片上的 `appid_masked` 星号**；appid/appkey 只进「凭据」弹窗（现有 `keyDialog`/`reveal`）。
-- [ ] C3 卡片头部放操作（试调/编辑/AppKey/删除），与能力市场卡片交互一致；开关保留在卡片。
-- [ ] C4 前端 `type-check` + eslint（本文件）+ 无头浏览器截图核验（有数据态 + 空态 + 弹窗）。
+- [x] C1 重做 `.app-card` 结构，学习 `MarketCard`：图标+名称+副行（类型/状态 tag）+固定描述区+footer（创建时间/调用量）。
+- [x] C2 **移除卡片上的 `appid_masked` 星号**；appid/appkey 只进「凭据」弹窗（现有 `keyDialog`/`reveal`）。
+- [x] C3 卡片头部放操作（试调/编辑/AppKey/删除），与能力市场卡片交互一致；开关保留在卡片。
+- [x] C4 前端 `type-check` + eslint（本文件）+ 无头浏览器截图核验（有数据态 + 空态 + 弹窗）。
 
 ## 需求 1（能力扩充）—— 架构级，分阶段
 
 > 每阶段独立可交付：改 `capabilities.py` 品类/权限点 + 新建/扩充 `handlers/<category>.py` + `handlers/__init__.py` 挂载 + 前端 `CATEGORIES` + i18n + 后端测试 + 重启联调 + 提交。
 
 ### 阶段 A（高价值）
-- [ ] A1 `knowledge`：list/get/create/update/delete/search/ingest/documents/分类/图谱
+- [x] A1 `knowledge`：list/get/create/update/delete/search/documents/分类/图谱
 - [ ] A2 `query` 智能问数：ask/metrics/terms/assets/pipelines
-- [ ] A3 `workflow`：list/get/create/update/delete/run/versions/rollback/schedule/runs
-- [ ] A4 `app`：list/get/create/update/delete
-- [ ] A5 `cron`：list/get/create/update/delete/run/runs
-- [ ] A6 `model` + `prompt`：标准 CRUD
-- [ ] A7 前端 `CATEGORIES` + i18n 补品类名；应用表单能力勾选自动加载
+- [x] A3 `workflow`：list/get/create/update/delete/versions/rollback/runs
+- [x] A4 `app`：list/get/create/update/delete
+- [x] A5 `cron`：list/create/update/delete/run/runs
+- [x] A6 `model` + `prompt` + `provider`：标准 CRUD
+- [x] A7 前端 `CATEGORIES` + i18n 补品类名；应用表单能力勾选自动加载
+
+> 已交付：14 → **58** 能力、11 类（train/agent/chat/bot/knowledge/workflow/cron/model/prompt/app/provider）。提交 `1eb8394a`。
 
 ### 阶段 B（资产广度）
 - [ ] B1 `dataset`
