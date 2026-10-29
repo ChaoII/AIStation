@@ -1,6 +1,6 @@
 # 「数据与集成」治理 Tab 拆出为独立页面 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把「数据与集成」页面顶层的「治理」tab 从嵌套中拆出，提升为「智能问数」目录下的独立子菜单页面（`/ai/governance`），并把治理内部子 tab 从 8 个精简为 5 个（驾驶舱/权限/数据质量/数据域/交付命题）。
 
@@ -37,24 +37,24 @@
 - Consumes: 现有 `onTab`/`load*` 函数、数据 ref（本任务读取现状）。
 - Produces: `GovernancePanel` 子 tab = overview/access/dq/domain/fde 五个分支；`onTab` 只含这五支；删除 `ontGov`/`pendingActions`/`actionList`/`actionLogs`/`lifecycle`/`govObjects` 及 `loadOntGov`/`loadAction`/`loadLifecycle`/`loadObjects`/`apAction`/`getPendingActions`/`getActionList`/`getActionLogs`/`approveAction`/`rejectAction`/`getOntologyGovernance`/`getObjectLifecycle` 相关调用与 import。Task 2 复用该组件。
 
-- [ ] **Step 1: 备份现状并确认删除范围（先跑前端静态检查基线）**
+- [x] **Step 1: 备份现状并确认删除范围（先跑前端静态检查基线）**
 
 Run: `cd frontend && pnpm run type-check`
 Expected: baseline 通过（记录是否有既有 lint 错误，若有、与本任务无关则忽略）。
 
-- [ ] **Step 2: 删除 `ontgov`（本体对象）子 tab**
+- [x] **Step 2: 删除 `ontgov`（本体对象）子 tab**
 
 模板删除 `<el-tab-pane :label="t('ai_workflow.ig_govOnt')" name="ontgov">…`（约 L393-491 整块）。
 
-- [ ] **Step 3: 删除 `action`（表级写回·旧版）子 tab**
+- [x] **Step 3: 删除 `action`（表级写回·旧版）子 tab**
 
 模板删除 `… name="action">…`（约 L494-637 整块，含待审批/定义/审计三个 table）。
 
-- [ ] **Step 4: 删除 `lifecycle`（生命周期）子 tab**
+- [x] **Step 4: 删除 `lifecycle`（生命周期）子 tab**
 
 模板删除 `… name="lifecycle">…`（约 L729-791 整块）。
 
-- [ ] **Step 5: script 清理——删数据 ref 与加载函数**
+- [x] **Step 5: script 清理——删数据 ref 与加载函数**
 
 删除：
 - `const lifecycle = ref<any>(null);`（L1400）、`const ontGov = ref<any>(...)`（L1413）、`const govObjects = ref<any[]>([])`（L1414）、`const pendingActions/actionList/actionLogs`（L1416-1418）。
@@ -64,12 +64,12 @@ Expected: baseline 通过（记录是否有既有 lint 错误，若有、与本�
 
 > 策略：删完跑 `pnpm run type-check`，按报错逐项清残留（此时最可靠），勿凭猜测删 import。
 
-- [ ] **Step 6: 前端静态检查**
+- [x] **Step 6: 前端静态检查**
 
 Run: `cd frontend && pnpm run type-check 2>&1 | last 20`
 Expected: 通过（无因删除引发的 `is defined but never used` / 引用不存在报错）。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add frontend/src/views/module_ai/integration/components/GovernancePanel.vue
@@ -88,7 +88,7 @@ git commit -m "feat(ai): 治理面板精简子tab删本体对象/旧版写回/�
 - Consumes: Task 1 的 `GovernancePanel`（现已 5 子 tab）。`QUERY_GROUP_MENUS` 的菜单结构（Task 3 用）。
 - Produces: 新页面组件 `module_ai/governance/index.vue`（Task 3 菜单 `component_path` 引用它）；`integration/index.vue` 顶部 tab 恒 9 个。
 
-- [ ] **Step 1: 新建 `module_ai/governance/index.vue`**
+- [x] **Step 1: 新建 `module_ai/governance/index.vue`**
 
 ```vue
 <!-- 治理：数据治理独立页（原「数据与集成」内嵌套的治理 tab 拆出） -->
@@ -124,22 +124,22 @@ defineOptions({ name: "GovernancePage" });
 ```
 > 说明：`GovernancePanel` 内部是 `<el-tabs>`，自带 `.gp-wrap { padding:12px }`；独立页卡片内可白板铺满。若 `GovernancePanel` 高度未撑满，可在 `index.vue` 的非 scoped 样式中给 `.gov-shell :deep(.el-card__body)` 补 flex 高度链。
 
-- [ ] **Step 2: `integration/index.vue` 删除 gov tab**
+- [x] **Step 2: `integration/index.vue` 删除 gov tab**
 
 删 `<el-tab-pane :label="t('ai_workflow.ig_governance')" name="gov"><GovernancePanel /></el-tab-pane>`（约 L942-944）。
 删 `import GovernancePanel from "./components/GovernancePanel.vue";`（约 L1640）。
 简化右列布局三元（约 L65-67）：因 `tab` 不再可能等于 `'gov'`，把 `:sm="tab === 'gov' ? 24 : 16"` 简化为常量 `:sm="16"`，`:md` 恒 `18`，`:lg` 恒 `19`；同时左列 `v-if="tab !== 'gov'"` 简化为恒显示（去掉 `v-if`）。左侧 `el-col` 保留 `:xs="24" :sm="8" :md="6" :lg="5"`。
 
-- [ ] **Step 3: 前端静态检查**
+- [x] **Step 3: 前端静态检查**
 
 Run: `cd frontend && pnpm run type-check 2>&1 | last 20`
 Expected: 通过。
 
-- [ ] **Step 4: 浏览器冒烟（若 dev 前端在跑，打开验证）**
+- [x] **Step 4: 浏览器冒烟（若 dev 前端在跑，打开验证）**
 
 用无头浏览器打开 `/ai/governance`（若该路由尚未注册会 404，属预期——Task 3 注册菜单后才可访问；此处仅用 `pnpm run type-check` 保证编译层通过即可，路由访问验收放 Task 3）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add frontend/src/views/module_ai/governance/index.vue frontend/src/views/module_ai/integration/index.vue
@@ -158,7 +158,7 @@ git commit -m "feat(ai): 治理拆出为独立页面并从数据与集成移除�
 - Consumes: Task 2 的 `module_ai/governance/index.vue` 组件路径。
 - Produces: 菜单行 `(title="治理", route_name="AiGovernance", route_path="/ai/governance", component="module_ai/governance/index", order=5)`，权限 `module_ai:query:ask`。
 
-- [ ] **Step 1: 在 `QUERY_GROUP_MENUS` 增加治理菜单**
+- [x] **Step 1: 在 `QUERY_GROUP_MENUS` 增加治理菜单**
 
 `backend/app/scripts/init_app.py` 的 `QUERY_GROUP_MENUS` 列表（L793-798）加一行：
 ```python
@@ -166,30 +166,30 @@ git commit -m "feat(ai): 治理拆出为独立页面并从数据与集成移除�
 ```
 > `QUERY_GROUP_MENUS` 现有 4 条（order 1-4），治理放 order 5，`_ensure_ai_menus` 的循环（L921-959）会幂等 upsert 该菜单 + 绑 role_id=1，无需其它改动。
 
-- [ ] **Step 2: 后端静态检查 + 菜单注册用例回归**
+- [x] **Step 2: 后端静态检查 + 菜单注册用例回归**
 
 Run: `cd backend && uv run ruff check app/scripts/init_app.py && uv run pytest tests/test_report_permission_registration.py -q`
 Expected: ruff 全过 + 菜单注册用例通过。
 
-- [ ] **Step 3: 重启后端（--no-reload）并验证菜单注册**
+- [x] **Step 3: 重启后端（--no-reload）并验证菜单注册**
 
 按 AGENTS.md 规矩重启 dev 后端（8002）：杀掉 `*main.py*`、确认端口空、`SERVER_PORT=8002 CAPTCHA_ENABLE=false main.py run --env=dev --no-reload`，等就绪后：
 `Invoke-WebRequest http://127.0.0.1:8002/api/v1/system/menu/list -Headers @{Authorization="Bearer <token>"}`
 Expected: 返回菜单树含 `AiGovernance`（`/ai/governance`）。
 （若无现成 token，可先在 `init_app.py` 启动日志确认“AI 菜单分组已就绪/已注册”，再核对菜单表行：`SELECT * FROM sys_menu WHERE route_name='AiGovernance'`。）
 
-- [ ] **Step 4: 前端访问验证**
+- [x] **Step 4: 前端访问验证**
 
 前端 dev（如在跑）打开 `/ai/governance`，确认：整页白面板铺满、不贴边；子 tab = 驾驶舱/权限/数据质量/数据域/交付命题 5 个；各 tab 数据加载正常。同时打开 `/ai/integration` 确认顶部 tab 只剩 9 个（无「治理」）、左数据源栏恒显示。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/scripts/init_app.py
 git commit -m "feat(ai): 注册治理独立菜单到智能问数目录"
 ```
 
-- [ ] **Step 6: 勾选计划 Task 并收尾**
+- [x] **Step 6: 勾选计划 Task 并收尾**
 
 本计划各 Task checkbox 全部勾选；确认与 spec `docs/superpowers/specs/2026-10-29-integration-governance-decouple.md` 对齐。
 
