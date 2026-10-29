@@ -23,6 +23,7 @@ from app.core.exceptions import CustomException
 
 from .auth import AppContext, require_capability
 from .model import AiIntegrationAppModel
+from .oauth_model import AiIntegrationOauthClientModel
 from .registry import Capability, get_capability
 from .service import DevelopService
 
@@ -105,9 +106,33 @@ async def audit_call(
 ) -> None:
     """写一条开放面调用审计（按 ``ctx.app_id`` 重新取 ORM 行）。
 
+    对 OAuth 委托（``ctx.source_type=='oauth'`` 且无应用行）走
+    ``DevelopService.log_oauth_call``（``app_id`` 为空、不更新应用计数）。
+
     审计失败只记日志、不抛出——调用方已拿到业务结果时不能被审计拖垮。
     """
     try:
+        if ctx.source_type == "oauth":
+            async with async_db_session() as db:
+                client_row = await db.get(AiIntegrationOauthClientModel, ctx.app_id)
+            if client_row is None:
+                return
+            await DevelopService.log_oauth_call(
+                client_row,
+                category=category,
+                capability=capability,
+                method=method,
+                status=status,
+                error=(error or "")[:255] or None,
+                latency_ms=latency_ms,
+                result_summary=result_summary,
+                request_body=request_body,
+                request_path=request_path,
+                session_id=session_id,
+                transport=transport,
+                client_info=client_info,
+            )
+            return
         async with async_db_session() as db:
             row = await db.get(AiIntegrationAppModel, ctx.app_id)
         if row is None:

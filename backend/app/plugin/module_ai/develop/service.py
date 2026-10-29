@@ -324,6 +324,53 @@ class DevelopService:
                 row.last_call_at = now
                 row.call_count = (row.call_count or 0) + 1
 
+    @classmethod
+    async def log_oauth_call(
+        cls,
+        client,
+        *,
+        category: str,
+        capability: str,
+        log_type: str = "invoke",
+        method: str = "REST",
+        transport: str | None = None,
+        session_id: str | None = None,
+        client_info: str | None = None,
+        request_path: str | None = None,
+        request_body: dict | None = None,
+        status: str,
+        error: str | None = None,
+        latency_ms: int = 0,
+        cost_tokens: int = 0,
+        result_summary: str | None = None,
+    ) -> None:
+        """写一条 OAuth 委托调用的审计（无 ``ai_integration_apps`` 应用行）。
+
+        与 :meth:`log_call` 不同：``app_id`` 置 ``None``（OAuth 无应用行），
+        ``appid`` 存 OAuth ``client_id``；**不更新**应用调用计数。
+        """
+        async with async_db_session.begin() as db:
+            db.add(
+                AiIntegrationCallLogModel(
+                    app_id=None,
+                    appid=client.client_id,
+                    category=category,
+                    capability=capability,
+                    log_type=log_type,
+                    method=method,
+                    transport=transport or "http",
+                    session_id=session_id,
+                    client_info=client_info,
+                    request_path=request_path or "",
+                    request_body=request_body,
+                    status=status,
+                    error=error,
+                    latency_ms=latency_ms,
+                    cost_tokens=cost_tokens,
+                    result_summary=result_summary,
+                )
+            )
+
 
 # ---------------------------------------------------------------------- #
 # 嵌入短期令牌（P4'）：生成 / 散列 / TTL 夹紧（纯逻辑，无 DB / HTTP）
