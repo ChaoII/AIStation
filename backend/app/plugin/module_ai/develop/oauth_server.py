@@ -219,3 +219,112 @@ class OAuthClientService:
             db.add(row)
             await db.flush()
             return {"code": code}
+
+
+class OAuthTokenService:
+    """OAuth 委托 token：授权码换 token / refresh 续期 / 撤销。"""
+
+    # ------------- 授权码 → token 换取 -------------
+    @classmethod
+    async def exchange_code(
+        cls, *, client_id: str, client_secret: str | None, code: str,
+        redirect_uri: str | None, code_verifier: str | None,
+    ) -> dict:
+        """用一次性授权码换取 access + refresh 对（授权码换后失效）。
+
+        校验：client 凭证、授权码存在且未消费、redirect_uri 匹配、PKCE verifier。
+        成功后置空 ``auth_code``/``auth_code_hash``（一次性），生成 access/refresh 两行。
+        """
+        client = await OAuthClientService.verify_client_credentials(client_id, client_secret or "")
+        if client is None:
+            raise CustomException(msg="鉴权失败", code=10401, status_code=401)
+
+        code_hash = _hash(code)
+        async with async_db_session.begin() as db:
+            auth_row = (
+                await db.execute(
+                    select(AiIntegrationOauthTokenModel).where(
+                        AiIntegrationOauthTokenModel.client_id == client_id,
+                        AiIntegrationOauthTokenModel.token_type == "auth",
+                        AiIntegrationOauthTokenModel.auth_code_hash == code_hash,
+                        AiIntegrationOauthTokenModel.revoked.is_(False),
+                    )
+                )
+            ).scalars().first()
+            if auth_row is None or not auth_row.auth_code:
+                raise CustomException(msg="授权码已失效", code=10400, status_code=400)
+            # redirect_uri 校验（授权码签发时的必须匹配）
+            if redirect_uri != auth_row.redirect_uri:
+                raise CustomException(msg="回调地址不匹配", code=10400, status_code=400)
+            # 过期校验
+            if auth_row.expires_at < datetime.now():
+                raise CustomException(msg="授权码已失效", code=10400, status_code=400)
+            # PKCE verifier 校验
+            if auth_row.code_challenge:
+                if not code_verifier:
+                    raise CustomException(msg="缺少 PKCE verifier", code=10400, status_code=400)
+                if auth_row.code_challenge_method == "S256":
+                    if _hash(code_verifier) != auth_row.code_challenge:
+                        raise CustomException(msg="PKCE 校验失败", code=10400, status_code=400)
+                elif code_verifier != auth_row.code_challenge:  # plain
+                    raise CustomException(msg="PKCE 校验失败", code=10400, status_code=400)
+
+            # 一次性：清空授权码
+            auth_row.auth_code = None
+            auth_row.auth_code_hash = None
+
+            grant_scope = auth_row.scope
+            user_id = auth_row.user_id
+            redirect = auth_row.redirect_uri
+            code_challenge = auth_row.code_challenge
+
+        # 生成 access + refresh（新会话）
+        return await cls._issue_access_and_refresh(
+            client, user_id, grant_scope, redirect, code_challenge
+        )
+
+    @classmethod
+    async def _issue_access_and_refresh(
+        cls, client: AiIntegrationOauthClientModel, user_id: int,
+        scope: list[str], redirect_uri: str | None, code_challenge: str | None,
+    ) -> dict:
+        """签发 access + refresh 两行（只存散列），返回明文一次。"""
+        access_token = _generate_token()
+        refresh_token = _generate_token()
+        now = datetime.now()
+        access_expires = now + timedelta(seconds=OAUTH_ACCESS_TOKEN_TTL)
+        refresh_expires = now + timedelta(seconds=OAUTH_REFRESH_TOKEN_TTL)
+
+        async with async_db_session.begin() as db:
+            db.add(AiIntegrationOauthTokenModel(
+                client_id=client.client_id,
+                oauth_client_id=client.id,
+                user_id=user_id,
+                token_type="access",
+                token_hash=_hash(access_token),
+                scope=scope,
+                redirect_uri=redirect_uri,
+                expires_at=access_expires,
+                revoked=False,
+            ))
+            db.add(AiIntegrationOauthTokenModel(
+                client_id=client.client_id,
+                oauth_client_id=client.id,
+                user_id=user_id,
+                token_type="refresh",
+                token_hash=_hash(refresh_token),
+                scope=scope,
+                redirect_uri=redirect_uri,
+                code_challenge=code_challenge,
+                expires_at=refresh_expires,
+                revoked=False,
+            ))
+            await db.flush()
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "Bearer",
+            "expires_in": OAUTH_ACCESS_TOKEN_TTL,
+            "scope": sorted(scope),
+        }
