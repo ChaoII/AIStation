@@ -1,6 +1,6 @@
 # 阶段 3b：MCP 复用外部 OAuth token 层 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 让 MCP 服务器可绑定「外部 OAuth 服务」，当该 MCP 被 Agent 在某用户会话中装配建连时自动注入该用户（= 创建者）对外部服务的 `Authorization: Bearer <access>`，复用阶段 3a 的 token 层。
 
@@ -42,7 +42,7 @@
 - Produces: `AiMcpServerModel.oauth_ext_service_id` 列；`McpCreateSchema.oauth_ext_service_id` /
   `McpUpdateSchema.oauth_ext_service_id`（`int | None`）。后续 Task 2 依赖。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_oauth_ext_mcp_model.py`：
 ```python
@@ -59,12 +59,12 @@ def test_mcp_create_schema_accepts_binding(test_client):
     assert u.oauth_ext_service_id == 7
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pytest tests/test_oauth_ext_mcp_model.py -q`
 Expected: FAIL（`AiMcpServerModel` 无 `oauth_ext_service_id` 属性 / schema 字段不存在）。
 
-- [ ] **Step 3: 实现 model 加列**
+- [x] **Step 3: 实现 model 加列**
 
 `mcp/model.py`：`from sqlalchemy import Boolean, ForeignKey, Integer, String, Text`（加 `ForeignKey`、`Integer`）。
 在 `description` 列后加：
@@ -79,14 +79,14 @@ oauth_ext_service_id: Mapped[int | None] = mapped_column(
 )
 ```
 
-- [ ] **Step 4: 实现 schema 加字段**
+- [x] **Step 4: 实现 schema 加字段**
 
 `mcp/schema.py`：`McpCreateSchema` 与 `McpUpdateSchema` 各加：
 ```python
 oauth_ext_service_id: int | None = Field(default=None, description="绑定的外部OAuth服务ID（MCP建连时注入Bearer）")
 ```
 
-- [ ] **Step 5: 写迁移文件 `a3b4c5d6e7f8_mcp_oauth_ext.py`**
+- [x] **Step 5: 写迁移文件 `a3b4c5d6e7f8_mcp_oauth_ext.py`**
 
 ```python
 """AI 集成开放平台：ai_mcp_servers 增列 oauth_ext_service_id（绑定外部OAuth服务）
@@ -131,12 +131,12 @@ def downgrade() -> None:
             op.drop_column("ai_mcp_servers", "oauth_ext_service_id")
 ```
 
-- [ ] **Step 6: 跑测试确认通过**
+- [x] **Step 6: 跑测试确认通过**
 
 Run: `pytest tests/test_oauth_ext_mcp_model.py -q`
 Expected: PASS
 
-- [ ] **Step 7: ruff + 校验 head + 提交**
+- [x] **Step 7: ruff + 校验 head + 提交**
 
 Run: `ruff check app/plugin/module_ai/mcp/ app/alembic/versions/a3b4c5d6e7f8_mcp_oauth_ext.py`
 Expected: All checks passed
@@ -163,7 +163,7 @@ git commit -m "feat(auth): 阶段3b MCP服务器加外部OAuth绑定列+迁移"
 - Produces: `build_mcp_tools(servers: list[dict] | None, user_id: int | None = None) -> list`；
   `_to_dict`/`create`/`update` 处理 `oauth_ext_service_id`。Task 3 的装配点调用依赖此签名。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_oauth_ext_mcp_inject.py`：
 ```python
@@ -230,18 +230,18 @@ def test_build_mcp_tools_not_connected_skips(monkeypatch):
     assert len(calls) == 0    # 未构造任何 MCPTools
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pytest tests/test_oauth_ext_mcp_inject.py -q`
 Expected: FAIL（`build_mcp_tools` 不接受 `user_id` / 不注入 Bearer）。
 
-- [ ] **Step 3: `mcp/service.py` 处理绑定列**
+- [x] **Step 3: `mcp/service.py` 处理绑定列**
 
 - `_to_dict` 增加 `"oauth_ext_service_id": getattr(s, "oauth_ext_service_id", None)`。
 - `create` 构造 `AiMcpServerModel(...)` 时加 `oauth_ext_service_id=getattr(data, "oauth_ext_service_id", None)`。
 - `update` 的字段循环加 `"oauth_ext_service_id"`（仅显式传入时 setattr，与其它字段一致）。
 
-- [ ] **Step 4: `mcp/tools.py` 扩展 `build_mcp_tools(servers, user_id=None)`**
+- [x] **Step 4: `mcp/tools.py` 扩展 `build_mcp_tools(servers, user_id=None)`**
 
 **决定：`build_mcp_tools` 改为 `async def`**（因为注入需 `await resolve_ext_access_token`），签名：
 ```python
@@ -270,12 +270,12 @@ async def build_mcp_tools(servers: list[dict] | None, user_id: int | None = None
 > 改 async 后必须 `await`（Task 3 处理）。若本任务改完 async 后其它同步调用点报错，
 > 一并确认是否还有未覆盖的调用点（当前仅这两处）。
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `pytest tests/test_oauth_ext_mcp_inject.py -q`
 Expected: PASS
 
-- [ ] **Step 6: ruff + 提交**
+- [x] **Step 6: ruff + 提交**
 
 Run: `ruff check app/plugin/module_ai/mcp/`
 Expected: All checks passed
@@ -297,7 +297,7 @@ git commit -m "feat(auth): 阶段3b build_mcp_tools建连前注入外部OAuth Be
 - Consumes: Task 2 的 `build_mcp_tools(servers, user_id)`（现为 async）。
 - Produces: 两处装配点 `await build_mcp_tools(servers, user_id)` / `await build_mcp_tools(servers, uid)`。
 
-- [ ] **Step 1: 两处装配点改为 async + 传 user_id**
+- [x] **Step 1: 两处装配点改为 async + 传 user_id**
 
 - `_office_caps`（约 L202）：`out["extra_tools"].extend(await build_mcp_tools(servers, user_id))`。
 - agent 运行台（约 L1944）：`mcp_tools = await build_mcp_tools(servers, uid)`。
@@ -305,30 +305,30 @@ git commit -m "feat(auth): 阶段3b build_mcp_tools建连前注入外部OAuth Be
 > 需保持可 `await`（Task 2 已改 async）。若 `build_mcp_tools` 因 async 改动导致其它同步调用处报错，
 > 检查是否还有未覆盖的调用点（当前仅这两处）。
 
-- [ ] **Step 2: 红包回归测试（无关绑定行为不变）**
+- [x] **Step 2: 红包回归测试（无关绑定行为不变）**
 
 Run: `pytest tests/ -k "mcp or oauth" -q`
 Expected: 既有 MCP/oauth 用例通过（无新失败）。
 
-- [ ] **Step 3: 校验 head 唯一**
+- [x] **Step 3: 校验 head 唯一**
 
 Run: `python -c "from alembic.config import Config; from alembic.script import ScriptDirectory; print(ScriptDirectory.from_config(Config('alembic.ini')).get_heads())"`
 Expected: `['a3b4c5d6e7f8']`
 
-- [ ] **Step 4: 重启后端（--no-reload）并验证**
+- [x] **Step 4: 重启后端（--no-reload）并验证**
 
 按 AGENTS.md 规矩：确认 8002 是 `--no-reload` main.py 实例后重启；等就绪后：
 `Invoke-WebRequest http://127.0.0.1:8002/openapi.json`
 Expected: HTTP 200 且含 `/ai/mcp` 端点（MCP 管理路由已存在）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/agent/service.py
 git commit -m "feat(auth): 阶段3b MCP装配点传user_id注入外部Bearer"
 ```
 
-- [ ] **Step 6: 勾选计划 Task 并收尾**
+- [x] **Step 6: 勾选计划 Task 并收尾**
 
 本计划各 Task 的 checkbox 全部勾选；确认 `docs/superpowers/plans/2026-10-29-mcp-ext-oauth-token.md` 与 spec 对齐。
 
