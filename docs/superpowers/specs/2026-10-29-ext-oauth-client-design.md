@@ -35,7 +35,8 @@
 | `authorize_url` | String(512) | 外部 OAuth authorize 端点 |
 | `token_url` | String(512) | 外部 token 端点 |
 | `client_id` | String(256) | 平台作为该服务 client 的 id |
-| `client_secret_hash` | String(128) | client secret 的 sha256（**只存散列**，用于换取，不回读） |
+| `client_secret_enc` | Text, null | client secret 的**加密密文**（Fernet，仅用于换取；不回读） |
+| `client_secret_hash` | String(128) | client secret 的 sha256（**只存散列**，用于校验；不回读） |
 | `redirect_uri` | String(512) | 平台回跳地址 |
 | `default_scopes` | JSONB | 授权时默认请求 scope 列表 |
 | `userinfo_url` | String(512), null | 可选：校验用户身份（解析 `provider_user_id`） |
@@ -130,7 +131,7 @@
 
 ## 六、迁移
 
-新增手写迁移 `a1b2c3d4e5f6_ext_oauth_client.py`（`down_revision='f5a6b7c8d9e0'`，即当前唯一 head）。
+新增手写迁移 `b8c9d0e1f2a3_ext_oauth_client.py`（`down_revision='f5a6b7c8d9e0'`，即当前唯一 head）。
 用 `has_table` / `has_column` 幂等守卫（继承本项目迁移惯例），避免空库全链重放失败；`revision id` 须唯一，且 alembic 链保持唯一 head。
 
 > ⚠️ 本项目 dev 库有 400+ 张未被模型覆盖的历史/影子表（`ont_*`），**迁移必须手写**，禁用 autogenerate。
@@ -168,6 +169,6 @@
 - `backend/app/plugin/module_ai/oauth_ext/model.py` / `schema.py` / `service.py` / `controller.py`（新子模块：两模型 + schema + `resolve_ext_access_token` + CRUD/connect/callback/refresh/revoke）
 - `backend/app/plugin/module_ai/tools_catalog/service.py`（`execute_http_tool` 注入 + `dispatch_tool` 透传 `user_id`）
 - `backend/app/plugin/module_ai/tools_catalog/schema.py`（`AiToolCreateSchema`/`AiToolUpdateSchema` 加 `oauth_ext_service_id`）
-- `backend/app/alembic/versions/a1b2c3d4e5f6_ext_oauth_client.py`（新迁移，down=`f5a6b7c8d9e0`）
+- `backend/app/alembic/versions/b8c9d0e1f2a3_ext_oauth_client.py`（新迁移，down=`f5a6b7c8d9e0`）
 - `backend/app/plugin/module_ai/tools_catalog/__init__.py`（如需注册 router）
 - `backend/tests/test_oauth_ext_*.py`
