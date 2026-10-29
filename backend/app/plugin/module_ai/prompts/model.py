@@ -2,10 +2,10 @@ from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
-class AiPromptModel(ModelMixin, UserMixin):
+class AiPromptModel(ModelMixin, PublicMixin, UserMixin):
     """提示词模板：有序块（系统/上下文/指令/示例/输出）+ 变量列表。"""
 
     __tablename__ = "ai_prompts"

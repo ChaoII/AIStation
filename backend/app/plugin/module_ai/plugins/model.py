@@ -5,10 +5,10 @@ from sqlalchemy import Boolean, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
-class AiPluginModel(ModelMixin, UserMixin):
+class AiPluginModel(ModelMixin, PublicMixin, UserMixin):
     """AI 能力插件：安装后被 Agent 启用的能力包（web_fetch 等）。"""
 
     __tablename__ = "ai_plugins"

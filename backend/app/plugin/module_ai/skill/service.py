@@ -28,6 +28,8 @@ def _to_dict(s: AiSkillModel) -> dict:
         "install_count": s.install_count or 0,
         "sort_order": s.sort_order or 0,
         "enabled": s.enabled,
+        "is_public": bool(getattr(s, "is_public", False)),
+        "created_id": s.created_id,
         "created_time": s.created_time,
         "updated_time": s.updated_time,
     }
@@ -36,9 +38,11 @@ def _to_dict(s: AiSkillModel) -> dict:
 class AiSkillService:
 
     @classmethod
-    async def list_skills(cls, category: str | None = None, skill_type: str | None = None) -> list[dict]:
+    async def list_skills(cls, category: str | None = None, skill_type: str | None = None, *, visible_where=None) -> list[dict]:
         async with async_db_session() as db:
             stmt = select(AiSkillModel).where(AiSkillModel.is_deleted.is_(False))
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
             if category:
                 stmt = stmt.where(AiSkillModel.category == category)
             if skill_type:
@@ -51,11 +55,35 @@ class AiSkillService:
             return [_to_dict(s) for s in rows]
 
     @classmethod
-    async def get_skill(cls, skill_id: int) -> dict | None:
+    async def get_skill(cls, skill_id: int, *, visible_where=None) -> dict | None:
         async with async_db_session() as db:
+            stmt = select(AiSkillModel).where(
+                AiSkillModel.id == skill_id,
+                AiSkillModel.is_deleted.is_(False),
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            s = (await db.execute(stmt)).scalars().first()
+            if not s:
+                return None
+            return _to_dict(s)
+
+    @classmethod
+    async def set_public(cls, skill_id: int, is_public: bool, public_perm: str = "readonly", db=None) -> dict | None:
+        """设置技能是否公开（供公开申请审核批准时写回）。"""
+        if db is not None:
             s = await db.get(AiSkillModel, skill_id)
             if not s or s.is_deleted:
                 return None
+            s.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(s)
+        async with async_db_session.begin() as db:
+            s = await db.get(AiSkillModel, skill_id)
+            if not s or s.is_deleted:
+                return None
+            s.is_public = bool(is_public)
+            await db.flush()
             return _to_dict(s)
 
     @classmethod
@@ -99,6 +127,8 @@ class AiSkillService:
 
     @classmethod
     async def create(cls, data, auth) -> dict:
+        from app.plugin.module_ai.develop.visibility import default_is_public_for_creator
+
         async with async_db_session.begin() as db:
             s = AiSkillModel(
                 name=data.name,
@@ -114,6 +144,7 @@ class AiSkillService:
                 featured=data.featured,
                 sort_order=data.sort_order or 0,
                 enabled=data.enabled,
+                is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )

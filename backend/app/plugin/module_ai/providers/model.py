@@ -2,10 +2,10 @@ from sqlalchemy import Boolean, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
-class AiProviderModel(ModelMixin, UserMixin):
+class AiProviderModel(ModelMixin, PublicMixin, UserMixin):
     """大模型提供商（OpenAI/Anthropic/Ollama/自定义兼容端点）。"""
 
     __tablename__ = "ai_providers"

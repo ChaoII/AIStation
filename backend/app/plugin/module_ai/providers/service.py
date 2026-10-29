@@ -18,6 +18,8 @@ def _to_dict(p: AiProviderModel) -> dict:
         "extra_headers": _mask_headers(p.extra_headers),
         "description": p.description,
         "api_key_masked": _mask(p.api_key),
+        "is_public": bool(getattr(p, "is_public", False)),
+        "created_id": p.created_id,
         "created_time": p.created_time,
     }
 
@@ -40,19 +42,54 @@ class AiProviderService:
             )
 
     @classmethod
-    async def list_providers(cls) -> list[dict]:
+    async def list_providers(cls, *, visible_where=None) -> list[dict]:
         async with async_db_session() as db:
-            rows = (
-                await db.execute(
-                    select(AiProviderModel)
-                    .where(AiProviderModel.is_deleted.is_(False))
-                    .order_by(AiProviderModel.id.desc())
-                )
-            ).scalars().all()
+            stmt = (
+                select(AiProviderModel)
+                .where(AiProviderModel.is_deleted.is_(False))
+                .order_by(AiProviderModel.id.desc())
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            rows = (await db.execute(stmt)).scalars().all()
             return [_to_dict(p) for p in rows]
 
     @classmethod
+    async def get_provider(cls, provider_id: int, *, visible_where=None) -> dict | None:
+        async with async_db_session() as db:
+            stmt = select(AiProviderModel).where(
+                AiProviderModel.id == provider_id,
+                AiProviderModel.is_deleted.is_(False),
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            p = (await db.execute(stmt)).scalars().first()
+            if not p:
+                return None
+            return _to_dict(p)
+
+    @classmethod
+    async def set_public(cls, provider_id: int, is_public: bool, public_perm: str = "readonly", db=None) -> dict | None:
+        """设置供应商是否公开（供公开申请审核批准时写回）。"""
+        if db is not None:
+            p = await db.get(AiProviderModel, provider_id)
+            if not p or p.is_deleted:
+                return None
+            p.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(p)
+        async with async_db_session.begin() as db:
+            p = await db.get(AiProviderModel, provider_id)
+            if not p or p.is_deleted:
+                return None
+            p.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(p)
+
+    @classmethod
     async def create(cls, data, auth) -> dict:
+        from app.plugin.module_ai.develop.visibility import default_is_public_for_creator
+
         async with async_db_session.begin() as db:
             p = AiProviderModel(
                 name=data.name,
@@ -62,6 +99,7 @@ class AiProviderService:
                 extra_headers=data.extra_headers,
                 enabled=data.enabled,
                 description=getattr(data, "description", None),
+                is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )

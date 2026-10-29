@@ -35,6 +35,8 @@ def _to_dict(a: AiAppModel) -> dict:
         "tags": a.tags or [],
         "memory": a.memory if a.memory is not None else True,
         "timeout": a.timeout or 60,
+        "is_public": bool(getattr(a, "is_public", False)),
+        "created_id": a.created_id,
         "created_time": a.created_time,
         "updated_time": a.updated_time,
     }
@@ -85,24 +87,49 @@ class AiAppService:
             )
 
     @classmethod
-    async def list_apps(cls) -> list[dict]:
+    async def list_apps(cls, *, visible_where=None) -> list[dict]:
         await _ensure_app_columns()
         async with async_db_session() as db:
-            rows = (
-                await db.execute(
-                    select(AiAppModel)
-                    .where(AiAppModel.is_deleted.is_(False))
-                    .order_by(AiAppModel.order.asc(), AiAppModel.id.desc())
-                )
-            ).scalars().all()
+            stmt = (
+                select(AiAppModel)
+                .where(AiAppModel.is_deleted.is_(False))
+                .order_by(AiAppModel.order.asc(), AiAppModel.id.desc())
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            rows = (await db.execute(stmt)).scalars().all()
             return [_to_dict(a) for a in rows]
 
     @classmethod
-    async def get_app(cls, app_id: int) -> dict | None:
+    async def get_app(cls, app_id: int, *, visible_where=None) -> dict | None:
         async with async_db_session() as db:
+            stmt = select(AiAppModel).where(
+                AiAppModel.id == app_id,
+                AiAppModel.is_deleted.is_(False),
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            a = (await db.execute(stmt)).scalars().first()
+            if not a:
+                return None
+            return _to_dict(a)
+
+    @classmethod
+    async def set_public(cls, app_id: int, is_public: bool, public_perm: str = "readonly", db=None) -> dict | None:
+        """设置应用是否公开（供公开申请审核批准时写回）。"""
+        if db is not None:
             a = await db.get(AiAppModel, app_id)
             if not a or a.is_deleted:
                 return None
+            a.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(a)
+        async with async_db_session.begin() as db:
+            a = await db.get(AiAppModel, app_id)
+            if not a or a.is_deleted:
+                return None
+            a.is_public = bool(is_public)
+            await db.flush()
             return _to_dict(a)
 
     # AIP 应用/工作流市场模板
@@ -140,6 +167,8 @@ class AiAppService:
 
     @classmethod
     async def create(cls, data, auth) -> dict:
+        from app.plugin.module_ai.develop.visibility import default_is_public_for_creator
+
         await _ensure_app_columns()
         async with async_db_session.begin() as db:
             a = AiAppModel(
@@ -163,6 +192,7 @@ class AiAppService:
                 tags=getattr(data, "tags", None) or [],
                 memory=getattr(data, "memory", True),
                 timeout=getattr(data, "timeout", 60) or 60,
+                is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )

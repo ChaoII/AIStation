@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
 class AiAgentCategoryModel(ModelMixin, UserMixin):
@@ -24,7 +24,7 @@ class AiAgentCategoryModel(ModelMixin, UserMixin):
     sort: Mapped[int] = mapped_column(Integer, default=0, comment="排序")
 
 
-class AiAgentModel(ModelMixin, UserMixin):
+class AiAgentModel(ModelMixin, PublicMixin, UserMixin):
     """AI 智能体：整合模型/提示词/工具/工作流/知识库/技能等配置。"""
 
     __tablename__ = "ai_agents"

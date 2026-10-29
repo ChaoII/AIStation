@@ -5,10 +5,10 @@ from sqlalchemy import Boolean, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
-class AiMcpServerModel(ModelMixin, UserMixin):
+class AiMcpServerModel(ModelMixin, PublicMixin, UserMixin):
     """MCP 服务器配置：Agent 运行时通过 agno MCPTools 接入。"""
 
     __tablename__ = "ai_mcp_servers"

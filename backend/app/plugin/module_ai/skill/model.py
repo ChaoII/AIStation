@@ -5,10 +5,10 @@ from sqlalchemy import Boolean, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
-class AiSkillModel(ModelMixin, UserMixin):
+class AiSkillModel(ModelMixin, PublicMixin, UserMixin):
     """技能广场：可复用能力包，按 skill_type 注入 Agent/工作流。"""
 
     __tablename__ = "ai_skills"

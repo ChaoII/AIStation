@@ -2,10 +2,10 @@ from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
-class AiAppModel(ModelMixin, UserMixin):
+class AiAppModel(ModelMixin, PublicMixin, UserMixin):
     """AI 应用：模型 + 提示词 + 工具集 + 输出格式 + 入参定义，可启停。"""
 
     __tablename__ = "ai_apps"

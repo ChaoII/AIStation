@@ -231,6 +231,8 @@ def register_standard_crud(
     get_name: str,
     label: str,
     id_key: str = "id",
+    model_path: str | None = None,
+    model_name: str | None = None,
     delete_needs_user: bool = False,
     list_needs_user: bool = False,
     get_needs_user: bool = False,
@@ -239,26 +241,50 @@ def register_standard_crud(
 ) -> None:
     """为某资产域注册标准 CRUD（list/get/create/update/delete [+toggle]）能力。
 
-    写操作统一用 ``await open_auth()``（平台服务账号）调用 service，避免 ``auth.user.id`` 崩；
-    对按 ``user_id`` 个人隔离的 service（如 mcp），list/get/delete 传服务账号 id。
+    写操作统一以 :func:`create_auth` 身份调用 service（B 应用以 owner 身份创建、
+    默认不公开；平台级以服务账号创建、默认公开）；list/get 叠加可见性过滤；
+    update/delete 加公开资源只读守卫。对按 ``user_id`` 个人隔离的 service（如 mcp），
+    list/get/delete 传服务账号 id 作兜底。
     """
     from ..registry import Capability, register
+
+    async def _visible(app_ctx: Any):
+        if not model_path or not model_name:
+            return None
+        import importlib
+
+        from app.plugin.module_ai.develop.visibility import app_visible_where
+
+        model = getattr(importlib.import_module(model_path), model_name)
+        return await app_visible_where(app_ctx, model)
+
+    async def _get_one(svc, target: int, where):
+        """按可见性取单个资源（供存在性 + created_id 只读守卫）。需要该 service 有 get 方法。"""
+        if not get_name:
+            return None
+        if get_needs_user:
+            return await getattr(svc, get_name)(target, _service_uid(), visible_where=where)
+        return await getattr(svc, get_name)(target, visible_where=where)
 
     async def _list(*, app_ctx: Any, payload: dict) -> dict:
         svc = _get_service(service_path, cls_name)
         uid = _service_uid()
-        items = await getattr(svc, list_name)(uid) if list_needs_user else await getattr(svc, list_name)()
+        where = await _visible(app_ctx)
+        if list_needs_user:
+            items = await getattr(svc, list_name)(uid, visible_where=where)
+        else:
+            items = await getattr(svc, list_name)(visible_where=where)
         return {"items": items, "total": len(items)}
 
     async def _get(*, app_ctx: Any, payload: dict) -> dict:
         svc = _get_service(service_path, cls_name)
         target = need_int(payload, id_key)
         uid = _service_uid()
-        row = (
-            await getattr(svc, get_name)(target, uid)
-            if get_needs_user
-            else await getattr(svc, get_name)(target)
-        )
+        where = await _visible(app_ctx)
+        if get_needs_user:
+            row = await getattr(svc, get_name)(target, uid, visible_where=where)
+        else:
+            row = await getattr(svc, get_name)(target, visible_where=where)
         if row is None:
             raise not_found(label)
         return row
@@ -272,7 +298,7 @@ def register_standard_crud(
             data = cls(**payload)
         except ValidationError as exc:
             raise bad_request(exc) from exc
-        return await svc.create(data, await open_auth())
+        return await svc.create(data, await create_auth(app_ctx))
 
     async def _update(*, app_ctx: Any, payload: dict) -> dict:
         svc = _get_service(service_path, cls_name)
@@ -280,12 +306,17 @@ def register_standard_crud(
         cls = _get_schema(schema_path, update_schema)
         from pydantic import ValidationError
 
+        where = await _visible(app_ctx)
+        existing = await _get_one(svc, target, where)
+        if existing is None:
+            raise not_found(label)
+        ensure_resource_writable(app_ctx, existing.get("created_id"), label)
         body = {k: v for k, v in payload.items() if k != id_key}
         try:
             data = cls(**body)
         except ValidationError as exc:
             raise bad_request(exc) from exc
-        row = await svc.update(target, data, await open_auth())
+        row = await svc.update(target, data, await create_auth(app_ctx))
         if row is None:
             raise not_found(label)
         return row
@@ -295,6 +326,11 @@ def register_standard_crud(
         target = need_int(payload, id_key)
         require_confirm(payload, f"删除{label}")
         uid = _service_uid()
+        where = await _visible(app_ctx)
+        existing = await _get_one(svc, target, where)
+        if existing is None:
+            raise not_found(label)
+        ensure_resource_writable(app_ctx, existing.get("created_id"), label)
         if delete_needs_user:
             await svc.delete([target], uid)
         else:
@@ -305,7 +341,12 @@ def register_standard_crud(
         svc = _get_service(service_path, cls_name)
         target = need_int(payload, id_key)
         enabled = bool(payload.get("enabled", True))
-        row = await getattr(svc, toggle_name)(target, enabled, await open_auth())
+        where = await _visible(app_ctx)
+        existing = await _get_one(svc, target, where)
+        if existing is None:
+            raise not_found(label)
+        ensure_resource_writable(app_ctx, existing.get("created_id"), label)
+        row = await getattr(svc, toggle_name)(target, enabled, await create_auth(app_ctx))
         if row is None:
             raise not_found(label)
         return row

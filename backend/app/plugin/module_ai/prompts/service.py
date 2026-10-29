@@ -31,6 +31,8 @@ def _to_dict(p: AiPromptModel) -> dict:
         "variables": p.variables or [],
         "version": p.version or 1,
         "enabled": p.enabled,
+        "is_public": bool(getattr(p, "is_public", False)),
+        "created_id": p.created_id,
         "created_time": p.created_time,
         "updated_time": p.updated_time,
     }
@@ -70,27 +72,54 @@ class AiPromptService:
         return await cls.create(data, auth)
 
     @classmethod
-    async def list_prompts(cls) -> list[dict]:
+    async def list_prompts(cls, *, visible_where=None) -> list[dict]:
         async with async_db_session() as db:
-            rows = (
-                await db.execute(
-                    select(AiPromptModel)
-                    .where(AiPromptModel.is_deleted.is_(False))
-                    .order_by(AiPromptModel.id.desc())
-                )
-            ).scalars().all()
+            stmt = (
+                select(AiPromptModel)
+                .where(AiPromptModel.is_deleted.is_(False))
+                .order_by(AiPromptModel.id.desc())
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            rows = (await db.execute(stmt)).scalars().all()
             return [_to_dict(p) for p in rows]
 
     @classmethod
-    async def get_prompt(cls, prompt_id: int) -> dict | None:
+    async def get_prompt(cls, prompt_id: int, *, visible_where=None) -> dict | None:
         async with async_db_session() as db:
-            p = await db.get(AiPromptModel, prompt_id)
-            if not p or p.is_deleted:
+            stmt = select(AiPromptModel).where(
+                AiPromptModel.id == prompt_id,
+                AiPromptModel.is_deleted.is_(False),
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            p = (await db.execute(stmt)).scalars().first()
+            if not p:
                 return None
             return _to_dict(p)
 
     @classmethod
+    async def set_public(cls, prompt_id: int, is_public: bool, public_perm: str = "readonly", db=None) -> dict | None:
+        """设置提示词是否公开（供公开申请审核批准时写回）。"""
+        if db is not None:
+            p = await db.get(AiPromptModel, prompt_id)
+            if not p or p.is_deleted:
+                return None
+            p.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(p)
+        async with async_db_session.begin() as db:
+            p = await db.get(AiPromptModel, prompt_id)
+            if not p or p.is_deleted:
+                return None
+            p.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(p)
+
+    @classmethod
     async def create(cls, data, auth) -> dict:
+        from app.plugin.module_ai.develop.visibility import default_is_public_for_creator
+
         async with async_db_session.begin() as db:
             p = AiPromptModel(
                 name=data.name,
@@ -99,6 +128,7 @@ class AiPromptService:
                 variables=data.variables or [],
                 version=1,
                 enabled=data.enabled,
+                is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )

@@ -67,6 +67,8 @@ def _to_dict(m: AiModelModel) -> dict:
         "extra_headers": _mask_headers(m.extra_headers),
         "description": m.description,
         "api_key_masked": _mask(m.api_key),
+        "is_public": bool(getattr(m, "is_public", False)),
+        "created_id": m.created_id,
         "created_time": m.created_time,
     }
 
@@ -134,15 +136,16 @@ class AiModelService:
         return {"imported": imported, "skipped": skipped, "total": len(todo)}
 
     @classmethod
-    async def list_models(cls) -> list[dict]:
+    async def list_models(cls, *, visible_where=None) -> list[dict]:
         async with async_db_session() as db:
-            rows = (
-                await db.execute(
-                    select(AiModelModel)
-                    .where(AiModelModel.is_deleted.is_(False))
-                    .order_by(AiModelModel.is_default.desc(), AiModelModel.id.desc())
-                )
-            ).scalars().all()
+            stmt = (
+                select(AiModelModel)
+                .where(AiModelModel.is_deleted.is_(False))
+                .order_by(AiModelModel.is_default.desc(), AiModelModel.id.desc())
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            rows = (await db.execute(stmt)).scalars().all()
             return [_to_dict(m) for m in rows]
 
     @classmethod
@@ -214,6 +217,8 @@ class AiModelService:
 
     @classmethod
     async def create(cls, data, auth) -> dict:
+        from app.plugin.module_ai.develop.visibility import default_is_public_for_creator
+
         async with async_db_session.begin() as db:
             m = AiModelModel(
                 name=data.name,
@@ -231,6 +236,7 @@ class AiModelService:
                 is_default=data.is_default,
                 extra_headers=data.extra_headers,
                 description=getattr(data, "description", None),
+                is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )
@@ -242,6 +248,38 @@ class AiModelService:
                     .where(AiModelModel.id != m.id)
                     .values(is_default=False)
                 )
+            return _to_dict(m)
+
+    @classmethod
+    async def get_model(cls, model_id: int, *, visible_where=None) -> dict | None:
+        async with async_db_session() as db:
+            stmt = select(AiModelModel).where(
+                AiModelModel.id == model_id,
+                AiModelModel.is_deleted.is_(False),
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            m = (await db.execute(stmt)).scalars().first()
+            if not m:
+                return None
+            return _to_dict(m)
+
+    @classmethod
+    async def set_public(cls, model_id: int, is_public: bool, public_perm: str = "readonly", db=None) -> dict | None:
+        """设置模型是否公开（供公开申请审核批准时写回）。"""
+        if db is not None:
+            m = await db.get(AiModelModel, model_id)
+            if not m or m.is_deleted:
+                return None
+            m.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(m)
+        async with async_db_session.begin() as db:
+            m = await db.get(AiModelModel, model_id)
+            if not m or m.is_deleted:
+                return None
+            m.is_public = bool(is_public)
+            await db.flush()
             return _to_dict(m)
 
     @classmethod

@@ -30,6 +30,8 @@ def _to_dict(s: AiMcpServerModel) -> dict:
         "auth_type": s.auth_type or "none",
         "enabled": bool(s.enabled),
         "description": s.description or "",
+        "is_public": bool(getattr(s, "is_public", False)),
+        "created_id": s.created_id,
         "created_time": s.created_time,
     }
 
@@ -81,30 +83,56 @@ async def test_connection(server: AiMcpServerModel) -> dict:
 class McpService:
 
     @classmethod
-    async def list_servers(cls, user_id: int) -> list[dict]:
+    async def list_servers(cls, user_id: int, *, visible_where=None) -> list[dict]:
         async with async_db_session() as db:
+            stmt = select(AiMcpServerModel).where(AiMcpServerModel.is_deleted.is_(False))
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            else:
+                stmt = stmt.where(AiMcpServerModel.created_id == user_id)
             rows = (
-                await db.execute(
-                    select(AiMcpServerModel)
-                    .where(
-                        AiMcpServerModel.is_deleted.is_(False),
-                        AiMcpServerModel.created_id == user_id,
-                    )
-                    .order_by(AiMcpServerModel.id.desc())
-                )
+                await db.execute(stmt.order_by(AiMcpServerModel.id.desc()))
             ).scalars().all()
             return [_to_dict(s) for s in rows]
 
     @classmethod
-    async def get(cls, server_id: int, user_id: int) -> dict | None:
+    async def get(cls, server_id: int, user_id: int, *, visible_where=None) -> dict | None:
         async with async_db_session() as db:
-            s = await db.get(AiMcpServerModel, server_id)
-            if not s or s.is_deleted or s.created_id != user_id:
+            stmt = select(AiMcpServerModel).where(
+                AiMcpServerModel.id == server_id,
+                AiMcpServerModel.is_deleted.is_(False),
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            else:
+                stmt = stmt.where(AiMcpServerModel.created_id == user_id)
+            s = (await db.execute(stmt)).scalars().first()
+            if not s:
                 return None
             return _to_dict(s)
 
     @classmethod
+    async def set_public(cls, server_id: int, is_public: bool, public_perm: str = "readonly", db=None) -> dict | None:
+        """设置 MCP 服务器是否公开（供公开申请审核批准时写回）。"""
+        if db is not None:
+            s = await db.get(AiMcpServerModel, server_id)
+            if not s or s.is_deleted:
+                return None
+            s.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(s)
+        async with async_db_session.begin() as db:
+            s = await db.get(AiMcpServerModel, server_id)
+            if not s or s.is_deleted:
+                return None
+            s.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(s)
+
+    @classmethod
     async def create(cls, data, auth) -> dict:
+        from app.plugin.module_ai.develop.visibility import default_is_public_for_creator
+
         _validate(data.transport, data.command, data.url)
         async with async_db_session.begin() as db:
             exists = await db.scalar(
@@ -126,6 +154,7 @@ class McpService:
                 auth_type=data.auth_type or "none",
                 enabled=data.enabled,
                 description=data.description or "",
+                is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )

@@ -300,6 +300,8 @@ def _to_dict(t: AiToolModel) -> dict:
         "group": meta.get("group"),
         "risk": meta.get("risk"),
         "config_fields": meta.get("config_fields") or [],
+        "is_public": bool(getattr(t, "is_public", False)),
+        "created_id": t.created_id,
     }
 
 
@@ -525,16 +527,49 @@ class AiToolService:
         return {name: (cfg or {}) for name, cfg in rows}
 
     @classmethod
-    async def list_tools(cls) -> list[dict]:
+    async def list_tools(cls, *, visible_where=None) -> list[dict]:
         async with async_db_session() as db:
-            rows = (
-                await db.execute(
-                    select(AiToolModel)
-                    .where(AiToolModel.is_deleted.is_(False))
-                    .order_by(AiToolModel.kind.asc(), AiToolModel.id.asc())
-                )
-            ).scalars().all()
+            stmt = (
+                select(AiToolModel)
+                .where(AiToolModel.is_deleted.is_(False))
+                .order_by(AiToolModel.kind.asc(), AiToolModel.id.asc())
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            rows = (await db.execute(stmt)).scalars().all()
             return [_to_dict(t) for t in rows]
+
+    @classmethod
+    async def get_tool(cls, tool_id: int, *, visible_where=None) -> dict | None:
+        async with async_db_session() as db:
+            stmt = select(AiToolModel).where(
+                AiToolModel.id == tool_id,
+                AiToolModel.is_deleted.is_(False),
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            t = (await db.execute(stmt)).scalars().first()
+            if not t:
+                return None
+            return _to_dict(t)
+
+    @classmethod
+    async def set_public(cls, tool_id: int, is_public: bool, public_perm: str = "readonly", db=None) -> dict | None:
+        """设置工具是否公开（供公开申请审核批准时写回）。"""
+        if db is not None:
+            t = await db.get(AiToolModel, tool_id)
+            if not t or t.is_deleted:
+                return None
+            t.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(t)
+        async with async_db_session.begin() as db:
+            t = await db.get(AiToolModel, tool_id)
+            if not t or t.is_deleted:
+                return None
+            t.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(t)
 
     @classmethod
     async def _load(cls, tool_id: int) -> AiToolModel:
@@ -546,6 +581,8 @@ class AiToolService:
 
     @classmethod
     async def create(cls, data, auth) -> dict:
+        from app.plugin.module_ai.develop.visibility import default_is_public_for_creator
+
         async with async_db_session.begin() as db:
             exists = await db.scalar(select(AiToolModel).where(AiToolModel.name == data.name))
             if exists:
@@ -572,6 +609,7 @@ class AiToolService:
                 timeout=int(getattr(data, "timeout", None) or 10),
                 enabled=data.enabled,
                 description=getattr(data, "description", None),
+                is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )

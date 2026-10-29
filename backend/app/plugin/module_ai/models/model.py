@@ -2,10 +2,10 @@ from sqlalchemy import Boolean, Float, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
-class AiModelModel(ModelMixin, UserMixin):
+class AiModelModel(ModelMixin, PublicMixin, UserMixin):
     """大模型配置：归属提供商 + 具体模型。"""
 
     __tablename__ = "ai_models"

@@ -2,10 +2,10 @@ from sqlalchemy import Boolean, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
-class AiToolModel(ModelMixin, UserMixin):
+class AiToolModel(ModelMixin, PublicMixin, UserMixin):
     """AI 工具：内置工具开关 + 自定义 HTTP 工具（零代码扩展）+ Python 脚本工具。"""
 
     __tablename__ = "ai_tools"

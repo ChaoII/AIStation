@@ -1,8 +1,9 @@
 """开放面能力 handler —— 能力资产标准 CRUD（skill / tool / plugin / mcp 品类）。
 
-统一用 ``register_standard_crud`` 注册标准 CRUD；写操作走平台服务账号身份
-（``await open_auth()``），对按 ``user_id`` 个人隔离的 mcp 在 list/get/delete 时传
-服务账号 id（开放面以服务账号为统一归属）。
+统一用 ``register_standard_crud`` 注册标准 CRUD；写操作身份由 :func:`create_auth`
+按应用上下文决定（B 应用以 owner 身份、默认不公开；平台级以服务账号、默认公开），
+并叠加可见性过滤与公开资源只读守卫。对按 ``user_id`` 个人隔离的 mcp 在
+list/get/delete 时传服务账号 id（开放面以服务账号为统一归属）。
 """
 from __future__ import annotations
 
@@ -24,6 +25,8 @@ def register_assets_capabilities() -> None:
         get_name="get_skill",
         label="技能",
         id_key="skill_id",
+        model_path="app.plugin.module_ai.skill.model",
+        model_name="AiSkillModel",
         delete_needs_user=True,
         approval=True,
     )
@@ -37,9 +40,11 @@ def register_assets_capabilities() -> None:
         create_schema="AiToolCreateSchema",
         update_schema="AiToolUpdateSchema",
         list_name="list_tools",
-        get_name=None,
+        get_name="get_tool",
         label="工具",
         id_key="tool_id",
+        model_path="app.plugin.module_ai.tools_catalog.model",
+        model_name="AiToolModel",
         delete_needs_user=True,
         approval=True,
     )
@@ -53,9 +58,11 @@ def register_assets_capabilities() -> None:
         create_schema="PluginCreateSchema",
         update_schema="PluginUpdateSchema",
         list_name="list_plugins",
-        get_name=None,
+        get_name="get_plugin",
         label="插件",
         id_key="plugin_id",
+        model_path="app.plugin.module_ai.plugins.model",
+        model_name="AiPluginModel",
         delete_needs_user=True,
         approval=True,
     )
@@ -72,6 +79,8 @@ def register_assets_capabilities() -> None:
         get_name="get",
         label="MCP 服务器",
         id_key="server_id",
+        model_path="app.plugin.module_ai.mcp.model",
+        model_name="AiMcpServerModel",
         delete_needs_user=True,
         list_needs_user=True,
         get_needs_user=True,
