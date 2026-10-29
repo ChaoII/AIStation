@@ -795,6 +795,7 @@ QUERY_GROUP_MENUS: list[tuple[str, str, str, str, int, str]] = [
     ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", 2, "el-icon-ChatDotRound"),
     ("问数评测", "AiEval", "/ai/eval", "module_ai/eval/index", 3, "el-icon-DataAnalysis"),
     ("报表模板", "AiQueryReports", "/ai/query/reports", "module_ai/query/reports", 4, "el-icon-Tickets"),
+    ("治理", "AiGovernance", "/ai/governance", "module_ai/governance/index", 5, "el-icon-DataBoard"),
 ]
 
 
