@@ -67,6 +67,25 @@ async def open_auth() -> SimpleNamespace:
     return SimpleNamespace(user=SimpleNamespace(id=uid, is_superuser=True))
 
 
+async def create_auth(app_ctx: Any) -> SimpleNamespace:
+    """按开放应用上下文决定「创建资源」所用的身份 auth 对象。
+
+    - **B 应用**（``owner_user_id`` 非空）：以 **owner 用户**身份创建，``created_id``
+      记为该用户，且默认 ``is_public=false``（仅自己可见，公开需申请）。
+    - **平台级/A 应用**（owner 为空）：以**平台服务账号**身份创建，``created_id``
+      为服务账号，默认 ``is_public=true``（平台共享）。
+
+    Args:
+        app_ctx: 开放应用上下文（含 ``owner_user_id``）。
+    """
+    owner = getattr(app_ctx, "owner_user_id", None)
+    if owner is not None:
+        return SimpleNamespace(
+            user=SimpleNamespace(id=owner, is_superuser=False)
+        )
+    return await open_auth()
+
+
 def need_int(payload: dict, key: str) -> int:
     """取必填整数字段，缺失/非数字抛 400。"""
     value = payload.get(key)
@@ -126,6 +145,36 @@ def require_confirm(payload: dict, action: str = "该操作") -> None:
     if payload.get("confirm") is not True:
         raise CustomException(
             msg=f"{action}不可恢复：请在 payload 中传 confirm=true 明确确认", code=10400, status_code=400
+        )
+
+
+def ensure_resource_writable(app_ctx: Any, resource_created_id: int | None, label: str = "资源") -> None:
+    """确保当前应用可对资源做写操作（更新/删除），否则按只读拒绝。
+
+    写权限规则：
+    - **平台级/A 应用**（``owner_user_id`` 为空）：可写（平台维护）。
+    - **B 应用**（owner 非空）：仅当 ``resource_created_id == owner_user_id`` 时可写；
+      其它（平台共享 / 主动公开 / 他人私有公开资源）一律**只读**，拒绝修改。
+
+    Args:
+        app_ctx: 开放应用上下文（含 ``owner_user_id``）。
+        resource_created_id: 目标资源的 ``created_id``。
+        label: 资源名（用于报错）。
+
+    Raises:
+        CustomException: 非平台级且非本人创建 → 只读拒绝（403）。
+    """
+    if app_ctx is None:
+        return
+    owner = getattr(app_ctx, "owner_user_id", None)
+    if owner is None:
+        # 平台级应用可写
+        return
+    if resource_created_id != owner:
+        raise CustomException(
+            msg=f"{label}为公开/共享资源，仅只读，允许查看；如需修改请使用自己的资源",
+            code=10403,
+            status_code=403,
         )
 
 

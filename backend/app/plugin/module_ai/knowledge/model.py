@@ -7,7 +7,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
 class AiKnowledgeCategoryModel(ModelMixin, UserMixin):
@@ -31,7 +31,7 @@ class AiKnowledgeCategoryModel(ModelMixin, UserMixin):
     sort: Mapped[int] = mapped_column(Integer, default=0, comment="同级排序")
 
 
-class AiKnowledgeBaseModel(ModelMixin, UserMixin):
+class AiKnowledgeBaseModel(ModelMixin, PublicMixin, UserMixin):
     """知识库：上传文档→分块→向量化→检索（RAG）。"""
 
     __tablename__ = "ai_knowledge_bases"

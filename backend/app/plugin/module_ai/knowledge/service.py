@@ -82,6 +82,8 @@ def _kb_to_dict(b: AiKnowledgeBaseModel) -> dict:
         "chunk_count": b.chunk_count or 0,
         "file_type": b.file_type or "text",
         "enabled": b.enabled,
+        "is_public": bool(getattr(b, "is_public", False)),
+        "created_id": b.created_id,
         "graph_nodes": 0,
         "graph_edges": 0,
         "created_time": b.created_time,
@@ -315,13 +317,15 @@ class AiKnowledgeService:
     # 知识库 CRUD
     # ------------------------------------------------------------ #
     @classmethod
-    async def list_bases(cls, category_id: int | None = None) -> list[dict]:
+    async def list_bases(cls, category_id: int | None = None, *, visible_where=None) -> list[dict]:
         async with async_db_session() as db:
             stmt = (
                 select(AiKnowledgeBaseModel)
                 .where(AiKnowledgeBaseModel.is_deleted.is_(False))
                 .order_by(AiKnowledgeBaseModel.id.desc())
             )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
             if category_id is not None:
                 ids = await cls._category_descendant_ids(db, category_id)
                 stmt = stmt.where(AiKnowledgeBaseModel.category_id.in_(ids))
@@ -331,10 +335,16 @@ class AiKnowledgeService:
         return items
 
     @classmethod
-    async def get_base(cls, kb_id: int) -> dict | None:
+    async def get_base(cls, kb_id: int, *, visible_where=None) -> dict | None:
         async with async_db_session() as db:
-            b = await db.get(AiKnowledgeBaseModel, kb_id)
-            if not b or b.is_deleted:
+            stmt = select(AiKnowledgeBaseModel).where(
+                AiKnowledgeBaseModel.id == kb_id,
+                AiKnowledgeBaseModel.is_deleted.is_(False),
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            b = (await db.execute(stmt)).scalars().first()
+            if b is None:
                 return None
             item = _kb_to_dict(b)
         await _attach_graph_stats([item])
@@ -342,6 +352,8 @@ class AiKnowledgeService:
 
     @classmethod
     async def create_base(cls, data, auth) -> dict:
+        from app.plugin.module_ai.develop.visibility import default_is_public_for_creator
+
         async with async_db_session.begin() as db:
             b = AiKnowledgeBaseModel(
                 name=data.name,
@@ -350,10 +362,40 @@ class AiKnowledgeService:
                 file_type=data.file_type or "text",
                 category_id=data.category_id,
                 enabled=data.enabled,
+                is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )
             db.add(b)
+            await db.flush()
+            return _kb_to_dict(b)
+
+    @classmethod
+    async def set_public(cls, kb_id: int, is_public: bool, public_perm: str = "readonly", db=None) -> dict | None:
+        """设置知识库是否公开（供公开申请审核批准时写回）。
+
+        Args:
+            kb_id: 知识库ID。
+            is_public: 目标公开状态。
+            public_perm: 公开权限（``readonly`` / ``read_write``），当前仅记录元数据。
+            db: 可选的已开启事务会话（复用调用方事务，避免嵌套事务冲突）。
+
+        Returns:
+            更新后的知识库 dict；不存在返回 None。
+        """
+        if db is not None:
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if not b or b.is_deleted:
+                return None
+            b.is_public = bool(is_public)
+            await db.flush()
+            return _kb_to_dict(b)
+
+        async with async_db_session.begin() as db:
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if not b or b.is_deleted:
+                return None
+            b.is_public = bool(is_public)
             await db.flush()
             return _kb_to_dict(b)
 

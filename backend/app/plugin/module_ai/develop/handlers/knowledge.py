@@ -12,20 +12,38 @@ from pydantic import ValidationError
 from app.core.exceptions import CustomException
 
 from ..registry import Capability, register
-from ._common import bad_request, need_int, need_str, not_found, open_auth, require_confirm
+from ._common import (
+    bad_request,
+    create_auth,
+    ensure_resource_writable,
+    need_int,
+    need_str,
+    not_found,
+    open_auth,
+    require_confirm,
+)
+
+
+async def _kb_visible(app_ctx: Any, model_name: str = "AiKnowledgeBaseModel"):
+    """构造 knowledge 可见性过滤条件（按 app_ctx 的 owner/平台级）。"""
+    from app.plugin.module_ai.develop.visibility import app_visible_where
+    from app.plugin.module_ai.knowledge.model import AiKnowledgeBaseModel
+
+    return await app_visible_where(app_ctx, AiKnowledgeBaseModel)
 
 
 async def _kb_list(*, app_ctx: Any, payload: dict) -> dict:
     from app.plugin.module_ai.knowledge.service import AiKnowledgeService
 
-    items = await AiKnowledgeService.list_bases()
+    where = await _kb_visible(app_ctx)
+    items = await AiKnowledgeService.list_bases(visible_where=where)
     return {"items": items, "total": len(items)}
 
 
 async def _kb_get(*, app_ctx: Any, payload: dict) -> dict:
     from app.plugin.module_ai.knowledge.service import AiKnowledgeService
 
-    kb = await AiKnowledgeService.get_base(need_int(payload, "kb_id"))
+    kb = await AiKnowledgeService.get_base(need_int(payload, "kb_id"), visible_where=await _kb_visible(app_ctx))
     if kb is None:
         raise not_found("知识库")
     return kb
@@ -39,7 +57,7 @@ async def _kb_create(*, app_ctx: Any, payload: dict) -> dict:
         data = AiKnowledgeBaseCreateSchema(**payload)
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    return await AiKnowledgeService.create_base(data, await open_auth())
+    return await AiKnowledgeService.create_base(data, await create_auth(app_ctx))
 
 
 async def _kb_update(*, app_ctx: Any, payload: dict) -> dict:
@@ -47,13 +65,15 @@ async def _kb_update(*, app_ctx: Any, payload: dict) -> dict:
     from app.plugin.module_ai.knowledge.service import AiKnowledgeService
 
     kb_id = need_int(payload, "kb_id")
-    if await AiKnowledgeService.get_base(kb_id) is None:
+    existing = await AiKnowledgeService.get_base(kb_id, visible_where=await _kb_visible(app_ctx))
+    if existing is None:
         raise not_found("知识库")
+    ensure_resource_writable(app_ctx, existing.get("created_id"), "知识库")
     try:
         data = AiKnowledgeBaseUpdateSchema(**{k: v for k, v in payload.items() if k != "kb_id"})
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    row = await AiKnowledgeService.update_base(kb_id, data, await open_auth())
+    row = await AiKnowledgeService.update_base(kb_id, data, await create_auth(app_ctx))
     if row is None:
         raise not_found("知识库")
     return row
@@ -64,6 +84,10 @@ async def _kb_delete(*, app_ctx: Any, payload: dict) -> dict:
 
     kb_id = need_int(payload, "kb_id")
     require_confirm(payload, "删除知识库")
+    existing = await AiKnowledgeService.get_base(kb_id, visible_where=await _kb_visible(app_ctx))
+    if existing is None:
+        raise not_found("知识库")
+    ensure_resource_writable(app_ctx, existing.get("created_id"), "知识库")
     await AiKnowledgeService.delete_bases([kb_id])
     return {"deleted": kb_id}
 

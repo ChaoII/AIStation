@@ -125,6 +125,26 @@ class ModelMixin(MappedBase):
     )
 
 
+class PublicMixin(MappedBase):
+    """
+    资源公开治理字段 Mixin
+
+    用于「开放平台资源可见性治理」：标记资源是否公开（平台共享 / 主动公开）。
+    默认不公开；超管/平台服务账号创建时由调用方按 :func:`default_is_public_for_creator`
+    置为公开。
+    """
+
+    __abstract__: bool = True
+
+    is_public: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+        comment="是否公开（平台共享/主动公开，其他用户可见）",
+    )
+
+
 class TenantMixin(MappedBase):
     """
     租户隔离字段 Mixin

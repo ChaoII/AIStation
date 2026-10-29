@@ -363,3 +363,60 @@ class AiIntegrationAppApplyModel(ModelMixin, UserMixin):
     review_note: Mapped[str | None] = mapped_column(
         String(255), default=None, nullable=True, comment="审核意见/驳回原因",
     )
+
+
+class AiResourcePublicAuthModel(ModelMixin, UserMixin):
+    """AI 集成开放平台 —— 资源公开授权（主动公开申请）记录。
+
+    普通用户对自己「默认不公开」的私有资源发起公开申请（``is_public`` 由默认 false
+    申请置 true），经管理员审核（内容合规）通过后生效；公开资源默认 ``public_perm``
+    为 ``readonly``（只读）。
+
+    生命周期：``apply_status`` = pending →（批准）写回资源 ``is_public=true`` 并
+    ``approved``；或（驳回）``rejected``。
+    """
+
+    __tablename__ = "ai_resource_public_auths"
+    __table_args__ = ({"comment": "AI 集成资源公开授权表"},)
+
+    resource_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, index=True,
+        comment="资源品类: agent/app/model/knowledge/workflow/prompt/provider/skill/tool/plugin/mcp/cron",
+    )
+    resource_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True, comment="资源主键ID",
+    )
+    applicant_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sys_user.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="申请者用户ID（资源创建者）",
+    )
+    resource_name: Mapped[str | None] = mapped_column(
+        String(128), default=None, nullable=True, comment="资源名称（冗余，便于审核展示）",
+    )
+    apply_status: Mapped[str] = mapped_column(
+        String(16), default="pending", nullable=False, index=True,
+        comment="审批状态: pending/approved/rejected",
+    )
+    public_perm: Mapped[str] = mapped_column(
+        String(16), default="readonly", nullable=False,
+        comment="公开权限: readonly（只读）/ read_write（读写）",
+    )
+    auto_audited: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False,
+        comment="是否自动审核通过（RESOURCE_PUBLIC_AUTO_AUDIT 开启时）",
+    )
+    reason: Mapped[str | None] = mapped_column(
+        String(255), default=None, nullable=True, comment="公开申请说明/用途",
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=None, nullable=True, comment="审核时间",
+    )
+    reviewed_by: Mapped[int | None] = mapped_column(
+        Integer, default=None, nullable=True, comment="审核人用户ID",
+    )
+    review_note: Mapped[str | None] = mapped_column(
+        String(255), default=None, nullable=True, comment="审核意见/驳回原因",
+    )

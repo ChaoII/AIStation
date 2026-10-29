@@ -244,6 +244,8 @@ class Settings(BaseSettings):
     CAPTCHA_EXPIRE_SECONDS: int = 60 * 1  # 验证码过期时间(秒) 1分钟
     CAPTCHA_FONT_SIZE: int = 32  # 字体大小
     CAPTCHA_FONT_PATH: str = "static/assets/font/Arial.ttf"  # 字体路径
+    # 资源公开治理：是否自动审核通过（默认人工审核；开启后公开申请无需管理员逐条批准）
+    RESOURCE_PUBLIC_AUTO_AUDIT: bool = False  # 资源公开申请是否自动审核
     # AI 集成嵌入通道限流（固定窗口，每分钟；超限 429）
     EMBED_RATE_TOKEN_PER_MIN: int = 30  # 每 token 每分钟消息条数上限
     EMBED_RATE_IP_PER_MIN: int = 60  # 每 IP 每分钟消息条数上限

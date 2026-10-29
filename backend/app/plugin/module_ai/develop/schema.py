@@ -140,3 +140,21 @@ class DevelopApplyUpdateSchema(BaseModel):
     description: str | None = Field(default=None, max_length=500, description="应用描述")
     capabilities: list[str] | None = Field(default=None, description="申请的能力码列表（须不超出自身角色权限）")
     reason: str | None = Field(default=None, max_length=255, description="申请说明/用途")
+
+
+# --------------------------------------------------------------------------- #
+# 阶段 1.5：资源公开申请（主动公开治理）
+# --------------------------------------------------------------------------- #
+class ResourcePublicApplySchema(BaseModel):
+    """用户对自己私有资源发起公开申请。"""
+
+    resource_type: str = Field(..., min_length=1, max_length=32, description="资源品类: knowledge/agent/...")
+    resource_id: int = Field(..., description="资源主键ID")
+    reason: str | None = Field(default=None, max_length=255, description="公开申请说明/用途")
+
+
+class ResourcePublicApplyReviewSchema(BaseModel):
+    """管理员审核资源公开申请。"""
+
+    approve: bool = Field(..., description="是否批准（true=公开该资源，false=驳回）")
+    note: str | None = Field(default=None, max_length=255, description="审核意见/驳回原因")

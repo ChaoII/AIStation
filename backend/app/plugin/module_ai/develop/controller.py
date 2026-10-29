@@ -60,6 +60,8 @@ from .schema import (
     DevelopCreateSchema,
     DevelopUpdateSchema,
     NotifyConfigSchema,
+    ResourcePublicApplyReviewSchema,
+    ResourcePublicApplySchema,
 )
 from .service import DevelopService
 
@@ -384,6 +386,102 @@ async def self_apply_review(
 
     result = await SelfApplyService.review(
         apply_id,
+        approve=data.approve,
+        reviewer_id=auth.user.id if auth.user else None,
+        note=data.note,
+    )
+    return SuccessResponse(data=result, msg="已批准" if data.approve else "已驳回")
+
+
+# --------------------------------------------------------------------------- #
+# 阶段 1.5：资源公开申请（主动公开治理）
+# --------------------------------------------------------------------------- #
+@DevelopRouter.get("/self/public-apps", summary="我的资源公开申请单（用户自助）")
+async def self_public_apply_list(
+    auth: Annotated[AuthSchema, Depends(get_current_user)],
+    apply_status: Annotated[str | None, Query(description="按状态过滤 pending/approved/rejected")] = None,
+    page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
+) -> JSONResponse:
+    """列出当前用户自己的资源公开申请单。普通用户可访问。"""
+    from .public_apps import PublicApplyService
+
+    if auth.user is None:
+        raise CustomException(msg="登录态无效", code=10401, status_code=401)
+    return SuccessResponse(
+        data=await PublicApplyService.list_mine(
+            auth.user, apply_status=apply_status, page=page_no, page_size=page_size
+        ),
+        msg="查询成功",
+    )
+
+
+@DevelopRouter.post("/self/public-apps", summary="提交资源公开申请（用户自助）")
+async def self_public_apply_submit(
+    data: ResourcePublicApplySchema,
+    auth: Annotated[AuthSchema, Depends(get_current_user)],
+) -> JSONResponse:
+    """用户对自己默认不公开的私有资源发起公开申请，等待管理员审核。"""
+    from .public_apps import PublicApplyService
+
+    if auth.user is None:
+        raise CustomException(msg="登录态无效", code=10401, status_code=401)
+    return SuccessResponse(
+        data=await PublicApplyService.submit(
+            auth.user,
+            resource_type=data.resource_type,
+            resource_id=data.resource_id,
+            reason=data.reason,
+        ),
+        msg="公开申请已提交，等待管理员审核",
+    )
+
+
+@DevelopRouter.delete("/self/public-apps/{auth_id}", summary="撤销我的资源公开申请")
+async def self_public_apply_cancel(
+    auth_id: int,
+    auth: Annotated[AuthSchema, Depends(get_current_user)],
+) -> JSONResponse:
+    from .public_apps import PublicApplyService
+
+    if auth.user is None:
+        raise CustomException(msg="登录态无效", code=10401, status_code=401)
+    await PublicApplyService.cancel(auth.user, auth_id)
+    return SuccessResponse(msg="已撤销")
+
+
+@DevelopRouter.get("/self/public-apps/all", summary="全部资源公开申请（管理员审核用）")
+async def self_public_apply_list_all(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:approve"]))],
+    apply_status: Annotated[str | None, Query(description="按状态过滤 pending/approved/rejected")] = None,
+    resource_type: Annotated[str | None, Query(description="按资源品类过滤")] = None,
+    page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
+) -> JSONResponse:
+    from .public_apps import PublicApplyService
+
+    return SuccessResponse(
+        data=await PublicApplyService.list_all(
+            apply_status=apply_status,
+            resource_type=resource_type,
+            page=page_no,
+            page_size=page_size,
+        ),
+        msg="查询成功",
+    )
+
+
+@DevelopRouter.post("/self/public-apps/{auth_id}/review", summary="审核资源公开申请（批准/驳回）")
+async def self_public_apply_review(
+    auth_id: int,
+    data: ResourcePublicApplyReviewSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:approve"]))],
+) -> JSONResponse:
+    """批准：写回资源 is_public=true 并生效；驳回则记意见。"""
+    from .public_apps import PublicApplyService
+
+    result = await PublicApplyService.review(
+        auth_id,
         approve=data.approve,
         reviewer_id=auth.user.id if auth.user else None,
         note=data.note,
