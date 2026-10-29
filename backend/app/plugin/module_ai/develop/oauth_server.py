@@ -328,3 +328,42 @@ class OAuthTokenService:
             "expires_in": OAUTH_ACCESS_TOKEN_TTL,
             "scope": sorted(scope),
         }
+
+    # ------------- refresh 续期 -------------
+    @classmethod
+    async def refresh(
+        cls, *, client_id: str, client_secret: str | None, refresh_token: str,
+    ) -> dict:
+        """用 refresh token 换新 access + refresh 对（旧 refresh 作废，防重放）。"""
+        client = await OAuthClientService.verify_client_credentials(client_id, client_secret or "")
+        if client is None:
+            raise CustomException(msg="鉴权失败", code=10401, status_code=401)
+
+        token_hash = _hash(refresh_token)
+        async with async_db_session.begin() as db:
+            row = (
+                await db.execute(
+                    select(AiIntegrationOauthTokenModel).where(
+                        AiIntegrationOauthTokenModel.client_id == client_id,
+                        AiIntegrationOauthTokenModel.token_type == "refresh",
+                        AiIntegrationOauthTokenModel.token_hash == token_hash,
+                        AiIntegrationOauthTokenModel.revoked.is_(False),
+                    )
+                )
+            ).scalars().first()
+            if row is None or row.expires_at < datetime.now():
+                raise CustomException(msg="令牌已失效", code=10401, status_code=401)
+
+            # 旧 refresh 作废
+            row.revoked = True
+            row.revoked_at = datetime.now()
+            row.last_used_at = datetime.now()
+
+            grant_scope = row.scope
+            user_id = row.user_id
+            redirect = row.redirect_uri
+            code_challenge = row.code_challenge
+
+        return await cls._issue_access_and_refresh(
+            client, user_id, grant_scope, redirect, code_challenge
+        )
