@@ -199,7 +199,7 @@ async def _office_caps(
             from app.plugin.module_ai.mcp.tools import build_mcp_tools
 
             servers = await McpService.enabled_servers(row["mcp_ids"], user_id)
-            out["extra_tools"].extend(build_mcp_tools(servers))
+            out["extra_tools"].extend(await build_mcp_tools(servers, user_id))
     except Exception:  # noqa: BLE001
         pass
 
@@ -1941,7 +1941,7 @@ class AiAgentService:
                 from app.plugin.module_ai.mcp.tools import build_mcp_tools
 
                 servers = await McpService.enabled_servers(agent["mcp_ids"], uid)
-                mcp_tools = build_mcp_tools(servers)
+                mcp_tools = await build_mcp_tools(servers, uid)
             try:
                 from app.plugin.module_ai.assistant.agno_service import run_agno_tool_stream
 
