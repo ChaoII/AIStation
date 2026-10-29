@@ -18,8 +18,13 @@ def _str_map(data) -> dict | None:
     return {str(k): str(v) for k, v in data.items()}
 
 
-def build_mcp_tools(servers: list[dict] | None) -> list:
-    """按服务器配置构建 ``MCPTools`` 列表（配置不合法者跳过）。"""
+async def build_mcp_tools(servers: list[dict] | None, user_id: int | None = None) -> list:
+    """按服务器配置构建 ``MCPTools`` 列表（配置不合法者跳过）。
+
+    若配置绑定了外部 OAuth 服务（``oauth_ext_service_id``）且传入 ``user_id``，
+    建连前解析该用户对外部服务的 access token（过期自动刷新），注入
+    ``Authorization: Bearer <access>`` 请求头；取 token 失败则跳过该服务器（降级）。
+    """
     if not servers:
         return []
     from agno.tools.mcp import MCPTools
@@ -55,11 +60,24 @@ def build_mcp_tools(servers: list[dict] | None) -> list:
                 if not url:
                     log.warning(f"MCP 服务器 {name} 缺少服务地址，已跳过")
                     continue
+                # 阶段 3b：绑定外部 OAuth 服务 -> 建连前注入该用户 access token
+                headers = _str_map(s.get("headers"))
+                service_id = s.get("oauth_ext_service_id")
+                if service_id and user_id:
+                    from app.plugin.module_ai.oauth_ext.service import OAuthExtService
+
+                    try:
+                        access = await OAuthExtService.resolve_ext_access_token(service_id, user_id)
+                    except Exception as e:  # noqa: BLE001  未连接/已撤销/刷新失败 -> 跳过该服务器
+                        log.warning(f"MCP 服务器 {name} 外部OAuth授权不可用，已跳过：{e}")
+                        continue
+                    headers = headers or {}
+                    headers["Authorization"] = f"Bearer {access}"
                 tools.append(
                     MCPTools(
                         url=url,
                         transport=transport,
-                        headers=_str_map(s.get("headers")),
+                        headers=headers,
                         name=name,
                         tool_name_prefix=prefix,
                     )

@@ -30,6 +30,7 @@ def _to_dict(s: AiMcpServerModel) -> dict:
         "auth_type": s.auth_type or "none",
         "enabled": bool(s.enabled),
         "description": s.description or "",
+        "oauth_ext_service_id": getattr(s, "oauth_ext_service_id", None),
         "is_public": bool(getattr(s, "is_public", False)),
         "created_id": s.created_id,
         "created_time": s.created_time,
@@ -154,6 +155,7 @@ class McpService:
                 auth_type=data.auth_type or "none",
                 enabled=data.enabled,
                 description=data.description or "",
+                oauth_ext_service_id=getattr(data, "oauth_ext_service_id", None),
                 is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
@@ -184,7 +186,7 @@ class McpService:
                 )
                 if dup:
                     raise CustomException(msg=f"服务器名已存在：{data.name}")
-            for key in ("name", "transport", "command", "args", "env", "url", "headers", "auth_type", "enabled", "description"):
+            for key in ("name", "transport", "command", "args", "env", "url", "headers", "auth_type", "enabled", "description", "oauth_ext_service_id"):
                 val = getattr(data, key, None)
                 if val is not None:
                     setattr(s, key, val)

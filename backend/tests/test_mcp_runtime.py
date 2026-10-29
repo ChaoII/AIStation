@@ -1,16 +1,14 @@
 """MCP 运行时装配测试：工具构建、连接生命周期、降级。"""
 import asyncio
 
-import pytest
-
 from app.plugin.module_ai.assistant import agno_service
 from app.plugin.module_ai.mcp.tools import build_mcp_tools, close_mcp_tools, connect_mcp_tools
 
 
 def test_build_mcp_tools_empty():
     """空配置返回空列表。"""
-    assert build_mcp_tools([]) == []
-    assert build_mcp_tools(None) == []
+    assert asyncio.run(build_mcp_tools([])) == []
+    assert asyncio.run(build_mcp_tools(None)) == []
 
 
 def test_build_mcp_tools_skips_invalid_config():
@@ -20,18 +18,20 @@ def test_build_mcp_tools_skips_invalid_config():
         {"name": "bad-http", "transport": "streamable-http", "url": ""},
         {"name": "good-http", "transport": "streamable-http", "url": "http://127.0.0.1:9/mcp"},
     ]
-    tools = build_mcp_tools(servers)
+    tools = asyncio.run(build_mcp_tools(servers))
     assert len(tools) == 1
     assert tools[0].name == "good-http"
 
 
 def test_build_mcp_tools_stdio_and_http():
     """stdio 与 streamable-http 均可构建（不建立连接）。"""
-    tools = build_mcp_tools(
-        [
-            {"name": "py-mcp", "transport": "stdio", "command": "python", "args": ["-c", "print(1)"]},
-            {"name": "web-mcp", "transport": "streamable-http", "url": "http://127.0.0.1:9/mcp", "headers": {"X-A": "1"}},
-        ]
+    tools = asyncio.run(
+        build_mcp_tools(
+            [
+                {"name": "py-mcp", "transport": "stdio", "command": "python", "args": ["-c", "print(1)"]},
+                {"name": "web-mcp", "transport": "streamable-http", "url": "http://127.0.0.1:9/mcp", "headers": {"X-A": "1"}},
+            ]
+        )
     )
     assert {t.name for t in tools} == {"py-mcp", "web-mcp"}
 
