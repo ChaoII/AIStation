@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,3 +41,11 @@ class AiToolModel(ModelMixin, PublicMixin, UserMixin):
     )
     timeout: Mapped[int] = mapped_column(Integer, default=10, comment="脚本执行超时（秒）")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
+    oauth_ext_service_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("ai_oauth_ext_services.id"),
+        nullable=True,
+        default=None,
+        index=True,
+        comment="绑定的外部OAuth服务ID（执行时注入Bearer）",
+    )

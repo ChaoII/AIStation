@@ -17,6 +17,7 @@ class AiToolCreateSchema(BaseModel):
     timeout: int = Field(default=10, ge=1, le=60, description="脚本执行超时（秒）")
     enabled: bool = True
     description: str | None = None
+    oauth_ext_service_id: int | None = Field(default=None, description="绑定的外部OAuth服务ID（执行时注入Bearer）")
 
 
 class AiToolUpdateSchema(BaseModel):
@@ -34,6 +35,7 @@ class AiToolUpdateSchema(BaseModel):
     timeout: int | None = Field(default=None, ge=1, le=60)
     enabled: bool | None = None
     description: str | None = None
+    oauth_ext_service_id: int | None = Field(default=None, description="绑定的外部OAuth服务ID")
 
 
 class AiToolToggleSchema(BaseModel):

@@ -302,6 +302,7 @@ def _to_dict(t: AiToolModel) -> dict:
         "config_fields": meta.get("config_fields") or [],
         "is_public": bool(getattr(t, "is_public", False)),
         "created_id": t.created_id,
+        "oauth_ext_service_id": getattr(t, "oauth_ext_service_id", None),
     }
 
 
@@ -333,7 +334,7 @@ async def execute_script_tool(tool: AiToolModel, args: dict, policies: dict | No
     )
 
 
-async def execute_http_tool(tool: AiToolModel, args: dict) -> object:
+async def execute_http_tool(tool: AiToolModel, args: dict, user_id: int | None = None) -> object:
     """执行自定义 HTTP 工具：URL 路径占位替换 + 剩余参数按方法/请求体类型进入 query/body。
 
     请求体类型（body_type）：
@@ -341,11 +342,30 @@ async def execute_http_tool(tool: AiToolModel, args: dict) -> object:
     - json：剩余入参作为 JSON body。
     - form-data：剩余入参作为 application/x-www-form-urlencoded。
     GET/DELETE 无请求体，恒为 none；POST/PUT/PATCH 默认 json。
+
+    ``user_id`` 非空且工具绑定了外部 OAuth 服务（``oauth_ext_service_id``）时，
+    自动注入 ``Authorization: Bearer <access>``；未连接/已撤销/取 token 失败
+    返回工具错误 dict（不中断对话）。``user_id`` 缺省时从 ``_USER_ID_CTX`` 取当前用户。
     """
     import httpx
 
+    from app.plugin.module_ai.agno_tools.dynamic import _USER_ID_CTX
+
+    if user_id is None:
+        user_id = _USER_ID_CTX.get()
+
     url = tool.url or ""
     headers = {str(k): str(v) for k, v in (tool.headers or {}).items()}
+    # 绑定外部 OAuth 服务：注入当前用户的外部 access token
+    oauth_service_id = getattr(tool, "oauth_ext_service_id", None)
+    if oauth_service_id and user_id:
+        from app.plugin.module_ai.oauth_ext.service import OAuthExtService
+
+        try:
+            access = await OAuthExtService.resolve_ext_access_token(oauth_service_id, user_id)
+        except Exception as e:  # noqa: BLE001  未连接/已撤销/刷新失败 -> 工具错误，不中断对话
+            return {"error": f"外部服务授权不可用：{e}"}
+        headers["Authorization"] = f"Bearer {access}"
     remaining = {k: v for k, v in (args or {}).items() if f"{{{k}}}" in url}
     for k, v in remaining.items():
         url = url.replace(f"{{{k}}}", str(v))
@@ -493,7 +513,7 @@ async def dispatch_tool(
         if not tool.enabled:
             return {"error": "工具未启用"}
         try:
-            return await execute_http_tool(tool, args)
+            return await execute_http_tool(tool, args, user_id)
         except Exception as e:  # noqa: BLE001  HTTP 工具异常兜底，不中断对话
             return {"error": str(e)}
     if tool is not None and _source_of_row(tool) == "script":
@@ -610,6 +630,7 @@ class AiToolService:
                 enabled=data.enabled,
                 description=getattr(data, "description", None),
                 is_public=default_is_public_for_creator(auth.user),
+                oauth_ext_service_id=getattr(data, "oauth_ext_service_id", None),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )
@@ -627,6 +648,9 @@ class AiToolService:
                 val = getattr(data, key, None)
                 if val is not None:
                     setattr(t, key, val)
+            # 绑定外部 OAuth 服务：仅显式传入时更新（None 不覆盖；清空用显式传 0 由上层约定）
+            if getattr(data, "oauth_ext_service_id", None) is not None:
+                t.oauth_ext_service_id = data.oauth_ext_service_id
             # 来源：仅在显式传入时更新
             if getattr(data, "source", None):
                 t.source = data.source
