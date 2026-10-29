@@ -317,3 +317,94 @@ class OAuthExtService:
             expires_in=tok.get("expires_in"),
         )
         return {"connected": True, "service_id": service_id}
+
+    # ------------- token 生命周期 -------------
+    @classmethod
+    async def _get_token_row(cls, service_id: int, user_id: int, db=None) -> AiOauthExtTokenModel | None:
+        async def _with(db_session):
+            return (
+                await db_session.execute(
+                    select(AiOauthExtTokenModel).where(
+                        AiOauthExtTokenModel.service_id == service_id,
+                        AiOauthExtTokenModel.user_id == user_id,
+                    )
+                )
+            ).scalars().first()
+
+        if db is not None:
+            return await _with(db)
+        async with async_db_session() as dbs:
+            return await _with(dbs)
+
+    @classmethod
+    async def _refresh_request(cls, service: AiOauthExtServiceModel, token_row: AiOauthExtTokenModel) -> dict:
+        """POST 外部 refresh 端点（可被测试 monkeypatch）。"""
+        if not token_row.refresh_token_enc:
+            raise CustomException(msg="无 refresh token", code=10400, status_code=400)
+        refresh = decrypt_secret(settings.SECRET_KEY, token_row.refresh_token_enc)
+        client_secret = cls.decrypt_client_secret(service)
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh,
+            "client_id": service.client_id,
+            "client_secret": client_secret,
+        }
+        async with httpx.AsyncClient(timeout=30) as c:
+            resp = await c.post(service.token_url, data=data)
+        resp.raise_for_status()
+        return resp.json()
+
+    @classmethod
+    async def resolve_ext_access_token(cls, service_id: int, user_id: int) -> str:
+        """取可用的外部 access token（未过期直接用；过期用 refresh 静默换新回写）。"""
+        async with async_db_session.begin() as db:
+            row = await cls._get_token_row(service_id, user_id, db)
+            if row is None or row.revoked:
+                raise CustomException(msg="未连接或已撤销", code=10404, status_code=404)
+            now = datetime.now()
+            if row.access_expires_at is None or row.access_expires_at > now:
+                access = decrypt_secret(settings.SECRET_KEY, row.access_token_enc)
+            else:
+                service = await cls.get_service(service_id)
+                if service is None:
+                    raise CustomException(msg="服务不存在", code=10404, status_code=404)
+                tok = await cls._refresh_request(service, row)
+                access = tok.get("access_token")
+                if not access:
+                    raise CustomException(msg="刷新 access token 失败", code=10400, status_code=400)
+                row.access_token_enc = encrypt_secret(settings.SECRET_KEY, access)
+                if tok.get("refresh_token"):
+                    row.refresh_token_enc = encrypt_secret(settings.SECRET_KEY, tok["refresh_token"])
+                if tok.get("expires_in") is not None:
+                    row.access_expires_at = datetime.now() + timedelta(seconds=int(tok["expires_in"]))
+                row.updated_time = now
+            row.last_used_at = now
+            await db.flush()
+            return access
+
+    @classmethod
+    async def connection_status(cls, service_id: int, user_id: int) -> dict:
+        """返回某用户对该服务的连接状态。"""
+        async with async_db_session() as db:
+            row = await cls._get_token_row(service_id, user_id, db)
+            if row is None:
+                return {"connected": False, "revoked": False, "scope": [], "expires_at": None}
+            return {
+                "connected": not row.revoked,
+                "revoked": bool(row.revoked),
+                "scope": row.scope or [],
+                "expires_at": row.access_expires_at,
+            }
+
+    @classmethod
+    async def revoke(cls, service_id: int, user_id: int) -> dict:
+        """用户撤销对某外部服务的授权。"""
+        async with async_db_session.begin() as db:
+            row = await cls._get_token_row(service_id, user_id, db)
+            if row is None:
+                raise CustomException(msg="未连接", code=10404, status_code=404)
+            row.revoked = True
+            row.revoked_at = datetime.now()
+            row.updated_time = datetime.now()
+            await db.flush()
+            return {"service_id": service_id, "revoked": True}

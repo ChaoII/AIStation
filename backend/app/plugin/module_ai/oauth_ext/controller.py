@@ -95,3 +95,23 @@ async def oauth_ext_callback(
         raise CustomException(msg="登录态无效", code=10401, status_code=401)
     result = await OAuthExtService.handle_callback(service_id, uid, code, state, redirect_uri=redirect_uri)
     return SuccessResponse(data=result, msg="已连接")
+
+
+@OAuthExtRouter.get("/status/{service_id}", summary="查询连接状态（用户）")
+async def oauth_ext_status(
+    service_id: int,
+    user: Annotated[AuthSchema, Depends(get_current_user)],
+) -> SuccessResponse:
+    uid = getattr(getattr(user, "user", None), "id", None)
+    data = await OAuthExtService.connection_status(service_id, uid)
+    return SuccessResponse(data=data, msg="查询成功")
+
+
+@OAuthExtRouter.post("/revoke/{service_id}", summary="撤销外部服务授权（用户）")
+async def oauth_ext_revoke(
+    service_id: int,
+    user: Annotated[AuthSchema, Depends(get_current_user)],
+) -> SuccessResponse:
+    uid = getattr(getattr(user, "user", None), "id", None)
+    data = await OAuthExtService.revoke(service_id, uid)
+    return SuccessResponse(data=data, msg="已撤销")
