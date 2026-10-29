@@ -48,7 +48,7 @@
     - `derive_fernet_key(secret_key: str) -> bytes`（从 `SECRET_KEY` 派生长度 32 的 urlsafe base64 bytes，供 `Fernet`）。
     - `encrypt_secret(secret_key: str, plaintext: str) -> str` / `decrypt_secret(secret_key: str, ciphertext: str) -> str`。
 
-- [ ] **Step 1: 写模型字段测试（实例化 + 加密往返）**
+- [x] **Step 1: 写模型字段测试（实例化 + 加密往返）**
 
 ```python
 # tests/test_oauth_ext_models.py
@@ -76,31 +76,31 @@ def test_models_instantiate_and_encrypt_roundtrip(test_client):
     assert decrypt_secret("some-secret-key-value-32chars-min!!", enc) == "my-token"
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `PYTEST_NO_APP=1 pytest tests/test_oauth_ext_models.py -q`
 Expected: FAIL（模块/方法未定义）
 
-- [ ] **Step 3: 实现 `model.py`（两模型类）**
+- [x] **Step 3: 实现 `model.py`（两模型类）**
 
 仿 `ModelMixin` 手写列；`AiOauthExtTokenModel` 加 `__table_args__ = (UniqueConstraint("service_id", "user_id", name="uq_oauth_ext_tok_svc_user"), {"comment": ...})`。`client_secret_hash` 用 String(128)。
 
-- [ ] **Step 4: 实现 `security.py`（Fernet 封装）**
+- [x] **Step 4: 实现 `security.py`（Fernet 封装）**
 
 `derive_fernet_key`：base64 urlsafe 编码 `sha256(secret_key)` 的前 32 字节（`base64.urlsafe_b64encode(hashlib.sha256(secret_key.encode()).digest())`），满足 Fernet 的 32-byte urlsafe base64。`encrypt_secret`/`decrypt_secret` 用 `Fernet(key)`。
 
-- [ ] **Step 5: 实现迁移 `b8c9d0e1f2a3_ext_oauth_client.py`**
+- [x] **Step 5: 实现迁移 `b8c9d0e1f2a3_ext_oauth_client.py`**
 
 `revision='b8c9d0e1f2a3'`，`down_revision='f5a6b7c8d9e0'`。upgrade 里对两表 `if "..." not in insp.get_table_names(): op.create_table(...)`，含 `ModelMixin` 全部列（id/uuid/status/description/created_time/updated_time/is_deleted/deleted_time + UserMixin 的 created_id/updated_id/deleted_id for service 表），建索引（`client_id`、`user_id`、`service_id`、唯一约束）。downgrade 反向 `drop_table`。
 
-- [ ] **Step 6: 跑测试确认通过 + 校验 head 唯一**
+- [x] **Step 6: 跑测试确认通过 + 校验 head 唯一**
 
 Run: `PYTEST_NO_APP=1 pytest tests/test_oauth_ext_models.py -q`
 Expected: PASS
 Run: `python -c "from alembic.config import Config; from alembic.script import ScriptDirectory; s=ScriptDirectory.from_config(Config('alembic.ini')); print(s.get_heads())"`
 Expected: `['b8c9d0e1f2a3']`（唯一 head）
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/oauth_ext/ backend/app/alembic/versions/b8c9d0e1f2a3_ext_oauth_client.py backend/tests/test_oauth_ext_models.py
@@ -125,7 +125,7 @@ git commit -m "feat(auth): 阶段3外部服务与用户token表模型+加密工�
   - `OAuthExtRouter`（`prefix="/oauth-ext"`，`route_class=OperationLogRoute`），管理面端点 `GET/POST /oauth-ext/services`、`PUT/DELETE /oauth-ext/services/{id}`，全部 `AuthPermission(["module_ai:develop:*"])`。
   - `_hash_secret`（`hashlib.sha256` + hex，供在后面任务复用）。
 
-- [ ] **Step 1: 写 schema 与创建测试**
+- [x] **Step 1: 写 schema 与创建测试**
 
 `schema.py`：`OAuthExtServiceCreateSchema`（name/authorize_url/token_url/client_id/client_secret/redirect_uri/default_scopes/userinfo_url/enabled）、`OAuthExtServiceUpdateSchema`（全部可选）。测试：
 ```python
@@ -144,21 +144,21 @@ def test_service_list_hides_secret(test_client, auth_headers):
     # 创建后 list，items 里无 client_secret_hash
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pytest tests/test_oauth_ext_service_crud.py -q`（需 `test_client` 应用；不设 `PYTEST_NO_APP`）
 Expected: FAIL（路由未定义）
 
-- [ ] **Step 3: 实现 `service.py` + `controller.py`**
+- [x] **Step 3: 实现 `service.py` + `controller.py`**
 
 `create_service`：校验 `name` 唯一（`is_deleted=false`）、归一 `default_scopes`；生成 `client_secret`（`secrets.token_urlsafe`）返回明文一次，库存 `_hash_secret(secret)`；`_service_to_dict` 不含 `client_secret_hash`。controller 挂 `OAuthExtRouter`（前缀 `/oauth-ext`）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `pytest tests/test_oauth_ext_service_crud.py -q`
 Expected: PASS
 
-- [ ] **Step 5: ruff + 提交**
+- [x] **Step 5: ruff + 提交**
 
 Run: `ruff check app/plugin/module_ai/oauth_ext/`
 Expected: All checks passed
@@ -184,11 +184,11 @@ git commit -m "feat(auth): 阶段3外部服务CRUD（管理面，secret只存散
   - `OAuthExtService.resolve_state(service_id, user_id) -> str` / `consume_state(service_id, state) -> bool`（Redis 或内存，TTL 600s）。
   - `OAuthExtService.exchange_code(service, code, redirect_uri) -> (access, refresh, expires_in, scope, provider_user_id)`（httpx POST token_url，表单 `grant_type=authorization_code` + client 凭证 + code）。仅换 token；`client_secret` 用 `service.client_secret_hash` 不直接可得 → **需存明文？**：见下面 Step 说明。
 
-- [ ] **Step 1: 处理 client_secret 换取的可还原性**
+- [x] **Step 1: 处理 client_secret 换取的可还原性**
 
 `client_secret_hash` 只存散列用于换取时**需要明文**。决策：在 `exchange_code` 换取时用 `service.client_secret` **不存**——但换取必须带明文。保守做法：把 `client_secret` 也加密存一列 `client_secret_enc`（仅用于换取，不回读）。修改 Task 1 模型加 `client_secret_enc`（Text, null），`create_service` 同时存散列+加密。`service.py` 提供 `decrypt_client_secret(service) -> str`。
 
-- [ ] **Step 2: 写授权测试（mock 外部 token 端点）**
+- [x] **Step 2: 写授权测试（mock 外部 token 端点）**
 
 用 `httpx.MockTransport` 或 monkeypatch `exchange_code` 的 POST：
 ```python
@@ -198,22 +198,22 @@ def test_callback_bad_state_rejected(test_client, auth_headers):
     # callback 传错误 state -> 被拒（不换 token）
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `pytest tests/test_oauth_ext_authorize.py -q`
 Expected: FAIL
 
-- [ ] **Step 4: 实现 connect/callback**
+- [x] **Step 4: 实现 connect/callback**
 
 `connect_redirect(service, user_id)`：生成 `state`、存 Redis（`oauth_ext:state:{service_id}:{user_id}`，TTL 600），拼 `authorize_url?client_id&redirect_uri&response_type=code&scope&state`。
 `handle_callback(service_id, user_id, code, state, redirect_uri)`：`consume_state` 校验 state → `exchange_code`（带 `decrypt_client_secret`）→ `get_or_create_token_row` 加密落库 → 返回用户信息。
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `pytest tests/test_oauth_ext_authorize.py -q`
 Expected: PASS
 
-- [ ] **Step 6: ruff + 提交**
+- [x] **Step 6: ruff + 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/oauth_ext/
@@ -236,7 +236,7 @@ git commit -m "feat(auth): 阶段3用户授权connect/callback换token加密落�
   - `OAuthExtService.connection_status(service_id, user_id) -> dict`（`{connected, expired, access_expires_at}`）。
   - 端点：`POST /oauth-ext/tokens/{service_id}/refresh`、`DELETE /oauth-ext/tokens/{service_id}`、`GET /oauth-ext/tokens/{service_id}/status`（用户面 `Depends(get_current_user)`）。
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
 
 ```python
 def test_refresh_when_access_expired(test_client, auth_headers, monkeypatch):
@@ -247,21 +247,21 @@ def test_connection_status(test_client, auth_headers):
     # 未连接 -> {connected:False}; 已连接 -> {connected:True, expired:...}
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `pytest tests/test_oauth_ext_token_lifecycle.py -q`
 Expected: FAIL
 
-- [ ] **Step 3: 实现 refresh/revoke/status**
+- [x] **Step 3: 实现 refresh/revoke/status**
 
 `refresh_token`：查 `(service_id, user_id)` 行未撤销、有 `refresh_token_enc`，POST `token_url` 表单 `grant_type=refresh_token` + client 凭证 + refresh，得新 access（+可能新的 refresh），解密/加密回写，刷新 `last_used_at`。`revoke`：置 `revoked=true`/`revoked_at`。`connection_status` 解析 `access_expires_at`。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `pytest tests/test_oauth_ext_token_lifecycle.py -q`
 Expected: PASS
 
-- [ ] **Step 5: ruff + 提交**
+- [x] **Step 5: ruff + 提交**
 
 ```bash
 git add backend/app/plugin/module_ai/oauth_ext/
@@ -284,11 +284,11 @@ git commit -m "feat(auth): 阶段3用户token刷新/撤销/连接态"
   - `OAuthExtService.resolve_ext_access_token(service_id, user_id) -> dict`（`{"ok": True, "token": 明文access}` 或 `{"ok": False, "error": "你尚未连接该外部服务"}`；access 过期时静默 refresh 再返回）。
 - Produces: 绑定服务的 http 工具执行时注入 `Authorization: Bearer`；未绑定工具行为不变。
 
-- [ ] **Step 1: 改 model/schema 加绑定列 + 迁移加列（幂等）**
+- [x] **Step 1: 改 model/schema 加绑定列 + 迁移加列（幂等）**
 
 `model.py`：`oauth_ext_service_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("ai_oauth_ext_services.id"), nullable=True, index=True, comment="绑定的外部服务ID（OAuth注入）")`。迁移 `b8c9d0e1f2a3` upgrade 追加 `if "oauth_ext_service_id" not in cols: op.add_column("ai_tools", sa.Column("oauth_ext_service_id", sa.Integer(), nullable=True))`（`has_column` 幂等）。schema 加可选 `oauth_ext_service_id`。
 
-- [ ] **Step 2: 写注入测试（先失败）**
+- [x] **Step 2: 写注入测试（先失败）**
 
 ```python
 def test_http_tool_injects_bearer(test_client, auth_headers, monkeypatch):
@@ -299,24 +299,24 @@ def test_http_tool_not_connected_returns_error(test_client, auth_headers):
     # 绑定服务但用户未授权/已撤销 -> 返回{"error": "你尚未连接该外部服务"}，不抛异常
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `pytest tests/test_oauth_ext_tool_inject.py -q`
 Expected: FAIL
 
-- [ ] **Step 4: 实现 `resolve_ext_access_token` + `execute_http_tool` 注入**
+- [x] **Step 4: 实现 `resolve_ext_access_token` + `execute_http_tool` 注入**
 
 `resolve_ext_access_token`：查 `(service_id, user_id)` 行，`revoked`→`{"ok":False,...}`；access 未过期→解密返回；过期且有 refresh→`refresh_token` 后返回；无行/无 refresh→`{"ok":False,"error":"你尚未连接该外部服务"}`。
 `execute_http_tool(tool, args, user_id=None)`：若 `tool.oauth_ext_service_id` 非空且 `user_id` 非空 → `resolve_ext_access_token`；`ok` 则 `headers["Authorization"] = f"Bearer {token}"`，否则返回该错误 dict。`dispatch_tool` http 分支改 `execute_http_tool(tool, args, user_id)`。
 
-- [ ] **Step 5: 跑测试确认通过 + 全量回归**
+- [x] **Step 5: 跑测试确认通过 + 全量回归**
 
 Run: `pytest tests/test_oauth_ext_tool_inject.py -q`
 Expected: PASS
 Run: `pytest tests/ -k "tool or develop or oauth" -q`
 Expected: 既有 tool/develop 用例不因未绑定工具而回归（未绑定工具请求不含 Authorization）。
 
-- [ ] **Step 6: ruff + 提交**
+- [x] **Step 6: ruff + 提交**
 
 Run: `ruff check app/plugin/module_ai/oauth_ext/ app/plugin/module_ai/tools_catalog/`
 Expected: All checks passed
@@ -336,22 +336,22 @@ git commit -m "feat(auth): 阶段3http工具绑定外部服务并自动注入Bea
 **Interfaces:**
 - Consumes: 全部任务。
 
-- [ ] **Step 1: 跑全部 oauth_ext 测试**
+- [x] **Step 1: 跑全部 oauth_ext 测试**
 
 Run: `pytest tests/test_oauth_ext_models.py tests/test_oauth_ext_service_crud.py tests/test_oauth_ext_authorize.py tests/test_oauth_ext_token_lifecycle.py tests/test_oauth_ext_tool_inject.py -q`
 Expected: 全部 PASS
 
-- [ ] **Step 2: 跑 develop + tool 回归**
+- [x] **Step 2: 跑 develop + tool 回归**
 
 Run: `pytest tests/ -k "develop or oauth or tool" -q`
 Expected: 通过（既有 `test_develop_insights::test_stats_shape_and_counts` 数据耦合单跑通过、`test_develop_train` MinIO 环境依赖可忽略；其余不因阶段3失败）。
 
-- [ ] **Step 3: 校验 alembic head 唯一**
+- [x] **Step 3: 校验 alembic head 唯一**
 
 Run: `python -c "from alembic.config import Config; from alembic.script import ScriptDirectory; s=ScriptDirectory.from_config(Config('alembic.ini')); print(s.get_heads())"`
 Expected: `['b8c9d0e1f2a3']`
 
-- [ ] **Step 4: 重启后端（--no-reload）并验证**
+- [x] **Step 4: 重启后端（--no-reload）并验证**
 
 ```powershell
 Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like '*main.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
@@ -362,7 +362,7 @@ $env:SERVER_PORT="8002"; $env:CAPTCHA_ENABLE="false"; .\.venv\Scripts\python.exe
 `Invoke-WebRequest http://127.0.0.1:8002/openapi.json`
 Expected: 出现 `/ai/oauth-ext/*` 端点（services/connect/callback/tokens）。
 
-- [ ] **Step 5: 提交计划勾选 + 收尾**
+- [x] **Step 5: 提交计划勾选 + 收尾**
 
 本计划各 Task 的 checkbox 全部勾选。
 
