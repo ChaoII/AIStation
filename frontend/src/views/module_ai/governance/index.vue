@@ -20,7 +20,7 @@ defineOptions({ name: "GovernancePage" });
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 12px;
+  padding: 16px;
   box-sizing: border-box;
 }
 
