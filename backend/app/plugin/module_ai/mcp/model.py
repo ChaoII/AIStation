@@ -1,7 +1,7 @@
 """MCP 服务器配置模型。"""
 from __future__ import annotations
 
-from sqlalchemy import Boolean, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,4 +41,12 @@ class AiMcpServerModel(ModelMixin, PublicMixin, UserMixin):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
     description: Mapped[str | None] = mapped_column(
         Text, nullable=True, default="", comment="描述"
+    )
+    oauth_ext_service_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("ai_oauth_ext_services.id"),
+        nullable=True,
+        default=None,
+        index=True,
+        comment="绑定的外部OAuth服务ID（MCP建连时注入Bearer）",
     )

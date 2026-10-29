@@ -15,6 +15,7 @@ class McpCreateSchema(BaseModel):
     auth_type: str = Field(default="none", max_length=16, description="none/bearer/custom")
     enabled: bool = True
     description: str | None = None
+    oauth_ext_service_id: int | None = Field(default=None, description="绑定的外部OAuth服务ID（MCP建连时注入Bearer）")
 
 
 class McpUpdateSchema(BaseModel):
@@ -30,6 +31,7 @@ class McpUpdateSchema(BaseModel):
     auth_type: str | None = Field(default=None, max_length=16)
     enabled: bool | None = None
     description: str | None = None
+    oauth_ext_service_id: int | None = Field(default=None, description="绑定的外部OAuth服务ID（MCP建连时注入Bearer）")
 
 
 class McpToggleSchema(BaseModel):
