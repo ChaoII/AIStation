@@ -420,3 +420,7 @@ class AiResourcePublicAuthModel(ModelMixin, UserMixin):
     review_note: Mapped[str | None] = mapped_column(
         String(255), default=None, nullable=True, comment="审核意见/驳回原因",
     )
+
+
+# 末尾导入 OAuth 模型，确保注册进 MappedBase.metadata（供 create_all 建表）。
+from . import oauth_model  # noqa: E402,F401  # isort: skip
