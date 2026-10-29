@@ -148,9 +148,9 @@ class AiIntegrationMcpSessionModel(MappedBase):
     created_time: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.now, nullable=False, index=True, comment="创建时间",
     )
-    app_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("ai_integration_apps.id"), nullable=False, index=True,
-        comment="所属应用ID",
+    app_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("ai_integration_apps.id"), nullable=True, index=True,
+        comment="所属应用ID（OAuth 委托 MCP 会话时为空）",
     )
     appid: Mapped[str] = mapped_column(
         String(64), nullable=False, comment="应用标识（冗余）",

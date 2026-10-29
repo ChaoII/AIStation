@@ -172,6 +172,60 @@ async def _record_session(
         row.close_reason = _close_reason(method)
 
 
+async def _oauth_ctx_from_authorization(authorization: str | None):
+    """解析 OAuth 委托 Bearer token，返回 :class:`AppContext`；无效返回 None。"""
+    from .oauth_auth import _ctx_from_oauth_token, _parse_oauth_bearer
+
+    token = _parse_oauth_bearer(authorization)
+    if token is None:
+        return None
+    return await _ctx_from_oauth_token(token)
+
+
+async def _record_oauth_session(
+    oauth_ctx,
+    *,
+    method: str | None,
+    session_key: str | None,
+    tool_calls: int,
+    duration_s: int,
+    client_info: str | None,
+) -> None:
+    """写/更新 OAuth 委托 MCP 会话审计行（无应用行，``app_id`` 空、``appid``=client_id）。"""
+    now = datetime.now()
+    async with async_db_session.begin() as db:
+        row = None
+        if session_key:
+            row = (
+                await db.execute(
+                    select(AiIntegrationMcpSessionModel).where(
+                        AiIntegrationMcpSessionModel.appid == oauth_ctx.appid,
+                        AiIntegrationMcpSessionModel.session_id == session_key,
+                    )
+                )
+            ).scalar_one_or_none()
+        if row is None:
+            db.add(
+                AiIntegrationMcpSessionModel(
+                    app_id=None,
+                    appid=oauth_ctx.appid,
+                    session_id=(session_key or f"mcp-{uuid4().hex[:16]}")[:64],
+                    transport="streamable-http",
+                    client_info=client_info,
+                    started_at=now,
+                    ended_at=now,
+                    duration_s=duration_s,
+                    tool_calls=tool_calls,
+                    close_reason=_close_reason(method),
+                )
+            )
+            return
+        row.ended_at = now
+        row.duration_s = (row.duration_s or 0) + duration_s
+        row.tool_calls = (row.tool_calls or 0) + tool_calls
+        row.close_reason = _close_reason(method)
+
+
 def _tool_function(cap: Capability):
     """按能力的 ``input_schema`` 生成带正确入参签名的 MCP 工具函数。
 
@@ -370,17 +424,28 @@ class McpAuthMiddleware:
             k.decode("latin-1").lower(): v.decode("latin-1")
             for k, v in (scope.get("headers") or [])
         }
-        parsed = _parse_bearer(headers.get("authorization"))
-        if parsed is None:
-            await _deny(send)
-            return
-        appid, appkey = parsed
-        app_row = await DevelopService.verify_appkey(appid, appkey)
-        if app_row is None:
-            await _deny(send)
-            return
+        authorization = headers.get("authorization")
+        # 先尝试应用凭证 `appid:appkey`；若含冒号能解析则走应用路径，
+        # 否则尝试 OAuth 委托 token（纯 token，无冒号）。
+        parsed = _parse_bearer(authorization)
+        if parsed is not None:
+            appid, appkey = parsed
+            app_row = await DevelopService.verify_appkey(appid, appkey)
+            if app_row is None:
+                await _deny(send)
+                return
+            ctx = _ctx_from_row(app_row)
+            oauth_ctx_holder = None
+        else:
+            # OAuth 委托 token（source_type='oauth'，无 ai_integration_apps 行）
+            oauth_ctx = await _oauth_ctx_from_authorization(authorization)
+            if oauth_ctx is None:
+                await _deny(send)
+                return
+            ctx = oauth_ctx
+            app_row = None
+            oauth_ctx_holder = ctx  # 供会话审计用（取 client_id）
 
-        ctx = _ctx_from_row(app_row)
         ctx_token = CURRENT_APP_CTX.set(ctx)
         counter = {"n": 0}
         calls_token = _TOOL_CALLS.set(counter)
@@ -413,14 +478,25 @@ class McpAuthMiddleware:
             tool_calls = counter.get("n", 0)
             duration_s = int(time.perf_counter() - started)
             with contextlib.suppress(Exception):  # 审计失败不影响协议响应
-                await _record_session(
-                    app_row,
-                    method=method,
-                    session_key=session_key,
-                    tool_calls=tool_calls,
-                    duration_s=duration_s,
-                    client_info=_client_info(headers),
-                )
+                if app_row is not None:
+                    await _record_session(
+                        app_row,
+                        method=method,
+                        session_key=session_key,
+                        tool_calls=tool_calls,
+                        duration_s=duration_s,
+                        client_info=_client_info(headers),
+                    )
+                else:
+                    # OAuth 委托：无应用行，只记会话（app_id 空，appid=client_id）
+                    await _record_oauth_session(
+                        oauth_ctx_holder,
+                        method=method,
+                        session_key=session_key,
+                        tool_calls=tool_calls,
+                        duration_s=duration_s,
+                        client_info=_client_info(headers),
+                    )
             _TOOL_CALLS.reset(calls_token)
             CURRENT_REDIS.reset(redis_token)
             CURRENT_APP_CTX.reset(ctx_token)
