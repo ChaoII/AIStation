@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
-from app.core.dependencies import AuthPermission
+from app.core.dependencies import AuthPermission, get_current_user
 
 from .schema import (
     OAuthExtServiceCreateSchema,
@@ -62,3 +62,36 @@ async def oauth_ext_service_delete(
 ) -> SuccessResponse:
     await OAuthExtService.delete_service(service_id)
     return SuccessResponse(data=None, msg="删除成功")
+
+
+# ---------------------------------------------------------------------- #
+# 用户面：授权（connect / callback），每个用户走 get_current_user。
+# ---------------------------------------------------------------------- #
+@OAuthExtRouter.get("/connect/{service_id}", summary="发起连接外部服务（生成state并跳转）")
+async def oauth_ext_connect(
+    service_id: int,
+    user: Annotated[AuthSchema, Depends(get_current_user)],
+) -> SuccessResponse:
+    user_id = getattr(user, "user", None)
+    uid = getattr(user_id, "id", None) if user_id else None
+    return SuccessResponse(data=await OAuthExtService.connect_redirect(service_id, uid), msg="请前往授权")
+
+
+@OAuthExtRouter.get("/callback", summary="外部 OAuth 授权回调（换token并落库）")
+async def oauth_ext_callback(
+    user: Annotated[AuthSchema, Depends(get_current_user)],
+    service_id: int,
+    code: Annotated[str, Query()],
+    state: Annotated[str, Query()],
+    error: Annotated[str | None, Query()] = None,
+    redirect_uri: Annotated[str | None, Query()] = None,
+) -> SuccessResponse:
+    uid = getattr(getattr(user, "user", None), "id", None)
+    if error:
+        return SuccessResponse(data={"connected": False, "error": error}, msg="授权失败")
+    if uid is None:
+        from app.core.exceptions import CustomException
+
+        raise CustomException(msg="登录态无效", code=10401, status_code=401)
+    result = await OAuthExtService.handle_callback(service_id, uid, code, state, redirect_uri=redirect_uri)
+    return SuccessResponse(data=result, msg="已连接")
