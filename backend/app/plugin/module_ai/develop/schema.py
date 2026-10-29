@@ -106,3 +106,37 @@ class ApprovalBatchReviewSchema(BaseModel):
 
     ids: list[int] = Field(..., min_length=1, max_length=50, description="审批记录 ID 列表（≤50）")
     note: str | None = Field(default=None, max_length=255, description="审批意见（可选）")
+
+
+# --------------------------------------------------------------------------- #
+# 模式 B：用户自助申请应用
+# --------------------------------------------------------------------------- #
+class DevelopApplySchema(BaseModel):
+    """用户自助申请 AI 集成应用入参（模式 B）。
+
+    - ``capabilities``：申请的能力码列表，**必须不超出申请者自身平台角色权限**
+      （越权能力会被拒绝，防提权）。
+    - 提交后进入待审核（``pending``），管理员批准才生成应用并发放 appid/appkey。
+    """
+
+    name: str = Field(..., min_length=1, max_length=128, description="申请的应用名称（唯一）")
+    description: str | None = Field(default=None, max_length=500, description="应用描述")
+    capabilities: list[str] = Field(default_factory=list, description="申请的能力码列表（须不超出自身角色权限）")
+    channels: dict | None = Field(default=None, description="出口控制 {能力码: [rest,mcp]}；缺省=全部支持")
+    reason: str | None = Field(default=None, max_length=255, description="申请说明/用途")
+
+
+class DevelopApplyReviewSchema(BaseModel):
+    """管理员审核用户自助申请。"""
+
+    approve: bool = Field(..., description="是否批准（true=批准生成应用，false=驳回）")
+    note: str | None = Field(default=None, max_length=255, description="审核意见/驳回原因")
+
+
+class DevelopApplyUpdateSchema(BaseModel):
+    """用户修改自助申请（仅允许待审核状态修改名称/描述/能力）。"""
+
+    name: str | None = Field(default=None, min_length=1, max_length=128, description="应用名称（唯一）")
+    description: str | None = Field(default=None, max_length=500, description="应用描述")
+    capabilities: list[str] | None = Field(default=None, description="申请的能力码列表（须不超出自身角色权限）")
+    reason: str | None = Field(default=None, max_length=255, description="申请说明/用途")

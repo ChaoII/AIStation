@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,6 +56,14 @@ class AiIntegrationAppModel(ModelMixin, UserMixin):
     )
     source_type: Mapped[str] = mapped_column(
         String(16), default="admin", nullable=False, comment="来源类型: admin/self",
+    )
+    owner_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("sys_user.id", onupdate="CASCADE", ondelete="SET NULL"),
+        default=None,
+        nullable=True,
+        index=True,
+        comment="归属用户ID（null=平台级/管理员分配A；非空=用户自助申请B，按该用户过滤数据）",
     )
     last_call_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=None, nullable=True, comment="最近一次调用时间",
@@ -298,4 +306,60 @@ class AiIntegrationEmbedSessionModel(ModelMixin):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="映射过期时间")
     last_active_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, comment="最后活跃时间"
+    )
+
+
+class AiIntegrationAppApplyModel(ModelMixin, UserMixin):
+    """AI 集成开放平台 —— 用户自助申请应用（模式 B）的申请单。
+
+    生命周期：``pending`` →（管理员批准）创建应用并 ``approved``；或（驳回）``rejected``。
+    ``source_type="self"``：批准后生成的 ``AiIntegrationAppModel`` 绑定申请者
+    ``owner_user_id``，数据按该用户过滤；能力清单受「申请者自身角色权限」上限约束。
+    """
+
+    __tablename__ = "ai_integration_app_applies"
+    __table_args__ = ({"comment": "AI 集成应用自助申请表"},)
+
+    app_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("ai_integration_apps.id", ondelete="SET NULL"),
+        default=None,
+        nullable=True,
+        comment="批准后生成的应用ID",
+    )
+    applicant_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sys_user.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="申请者用户ID（owner_user_id）",
+    )
+    name: Mapped[str] = mapped_column(
+        String(128), nullable=False, comment="申请的应用名称（唯一）",
+    )
+    description: Mapped[str | None] = mapped_column(
+        Text, default=None, nullable=True, comment="应用描述",
+    )
+    reason: Mapped[str | None] = mapped_column(
+        String(255), default=None, nullable=True, comment="申请说明/用途",
+    )
+    capabilities: Mapped[list | None] = mapped_column(
+        JSONB, default=list, nullable=False,
+        comment="申请的能力码列表（须不超出申请者角色权限）",
+    )
+    channels: Mapped[dict | None] = mapped_column(
+        JSONB, default=None, nullable=True,
+        comment="出口控制 {能力码: [rest,mcp]}，null=全部支持",
+    )
+    apply_status: Mapped[str] = mapped_column(
+        String(16), default="pending", nullable=False, index=True, comment="审批状态: pending/approved/rejected",
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=None, nullable=True, comment="审核时间",
+    )
+    reviewed_by: Mapped[int | None] = mapped_column(
+        Integer, default=None, nullable=True, comment="审核人用户ID",
+    )
+    review_note: Mapped[str | None] = mapped_column(
+        String(255), default=None, nullable=True, comment="审核意见/驳回原因",
     )

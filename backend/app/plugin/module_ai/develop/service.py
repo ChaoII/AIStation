@@ -74,6 +74,7 @@ def _app_to_dict(app: AiIntegrationAppModel, *, appkey: str | None = None) -> di
         "quota": app.quota,
         "requires_approval": bool(app.requires_approval),
         "source_type": app.source_type,
+        "owner_user_id": getattr(app, "owner_user_id", None),
         "last_call_at": app.last_call_at,
         "call_count": app.call_count or 0,
         "created_time": app.created_time,

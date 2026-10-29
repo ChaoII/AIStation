@@ -28,7 +28,7 @@ from sqlalchemy import func, select
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import ErrorResponse, SuccessResponse
 from app.core.database import async_db_session
-from app.core.dependencies import AuthPermission
+from app.core.dependencies import AuthPermission, get_current_user
 from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
 
@@ -54,6 +54,9 @@ from .schema import (
     ApprovalReviewSchema,
     CapabilityInvokeSchema,
     CapabilityTrySchema,
+    DevelopApplyReviewSchema,
+    DevelopApplySchema,
+    DevelopApplyUpdateSchema,
     DevelopCreateSchema,
     DevelopUpdateSchema,
     NotifyConfigSchema,
@@ -282,6 +285,110 @@ async def develop_create(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:create"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await DevelopService.create_app(data, auth), msg="创建成功")
+
+
+# --------------------------------------------------------------------------- #
+# 模式 B：用户自助申请应用（普通用户走 get_current_user，无需 module_ai:develop:*）
+# --------------------------------------------------------------------------- #
+@DevelopRouter.get("/self/apps", summary="我的应用申请单（用户自助，模式B）")
+async def self_apply_list(
+    auth: Annotated[AuthSchema, Depends(get_current_user)],
+    page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
+) -> JSONResponse:
+    """列出当前用户自己的应用申请单。普通用户可访问（不要求 develop 管理权限）。"""
+    from .self_apps import SelfApplyService
+
+    if auth.user is None:
+        raise CustomException(msg="登录态无效", code=10401, status_code=401)
+    return SuccessResponse(
+        data=await SelfApplyService.list_mine(auth.user, page=page_no, page_size=page_size),
+        msg="查询成功",
+    )
+
+
+@DevelopRouter.post("/self/apps", summary="提交应用申请（用户自助，模式B）")
+async def self_apply_submit(
+    data: DevelopApplySchema,
+    auth: Annotated[AuthSchema, Depends(get_current_user)],
+) -> JSONResponse:
+    """用户自助申请 appid/appkey；能力清单不得超出自身角色权限，提交后管理员审核。"""
+    from .self_apps import SelfApplyService
+
+    if auth.user is None:
+        raise CustomException(msg="登录态无效", code=10401, status_code=401)
+    return SuccessResponse(
+        data=await SelfApplyService.submit(auth.user, data),
+        msg="申请已提交，等待管理员审核",
+    )
+
+
+@DevelopRouter.put("/self/apps/{apply_id}", summary="修改我的申请单（用户自助，模式B）")
+async def self_apply_update(
+    apply_id: int,
+    data: DevelopApplyUpdateSchema,
+    auth: Annotated[AuthSchema, Depends(get_current_user)],
+) -> JSONResponse:
+    from .self_apps import SelfApplyService
+
+    if auth.user is None:
+        raise CustomException(msg="登录态无效", code=10401, status_code=401)
+    return SuccessResponse(
+        data=await SelfApplyService.update(auth.user, apply_id, data),
+        msg="更新成功",
+    )
+
+
+@DevelopRouter.delete("/self/apps/{apply_id}", summary="撤销我的申请单（用户自助，模式B）")
+async def self_apply_cancel(
+    apply_id: int,
+    auth: Annotated[AuthSchema, Depends(get_current_user)],
+) -> JSONResponse:
+    from .self_apps import SelfApplyService
+
+    if auth.user is None:
+        raise CustomException(msg="登录态无效", code=10401, status_code=401)
+    await SelfApplyService.cancel(auth.user, apply_id)
+    return SuccessResponse(msg="已撤销")
+
+
+@DevelopRouter.get("/self/apps/all", summary="全部应用申请单（管理员审核用）")
+async def self_apply_list_all(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:approve"]))],
+    apply_status: Annotated[str | None, Query(description="按状态过滤 pending/approved/rejected")] = None,
+    applicant_id: Annotated[int | None, Query(description="按申请者用户ID过滤")] = None,
+    page_no: Annotated[int, Query(ge=1, description="页码")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="每页条数")] = 20,
+) -> JSONResponse:
+    from .self_apps import SelfApplyService
+
+    return SuccessResponse(
+        data=await SelfApplyService.list_all(
+            apply_status=apply_status,
+            applicant_id=applicant_id,
+            page=page_no,
+            page_size=page_size,
+        ),
+        msg="查询成功",
+    )
+
+
+@DevelopRouter.post("/self/apps/{apply_id}/review", summary="审核用户应用申请（批准/驳回）")
+async def self_apply_review(
+    apply_id: int,
+    data: DevelopApplyReviewSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:approve"]))],
+) -> JSONResponse:
+    """批准：生成应用（source_type= self，绑定申请者）并返回 appid/appkey 一次；驳回则记意见。"""
+    from .self_apps import SelfApplyService
+
+    result = await SelfApplyService.review(
+        apply_id,
+        approve=data.approve,
+        reviewer_id=auth.user.id if auth.user else None,
+        note=data.note,
+    )
+    return SuccessResponse(data=result, msg="已批准" if data.approve else "已驳回")
 
 
 @DevelopRouter.put("/update/{app_id}", summary="更新AI集成应用")

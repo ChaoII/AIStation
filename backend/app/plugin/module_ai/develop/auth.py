@@ -39,6 +39,8 @@ class AppContext:
     channels: dict[str, set[str]]
     quota: dict | None
     app: dict
+    source_type: str = "admin"
+    owner_user_id: int | None = None
 
 
 def _ctx_from_row(row) -> AppContext:
@@ -51,6 +53,8 @@ def _ctx_from_row(row) -> AppContext:
         channels=resolve_channels(row.channels, grants),
         quota=row.quota,
         app=_app_to_dict(row),
+        source_type=getattr(row, "source_type", "admin") or "admin",
+        owner_user_id=getattr(row, "owner_user_id", None),
     )
 
 
