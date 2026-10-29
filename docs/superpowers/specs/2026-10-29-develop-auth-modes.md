@@ -209,6 +209,11 @@
 - **阶段 1.5（当前）**：资源公开治理（`is_public` + 平台共享/主动公开过滤 + 公开申请审核）。
   - 依赖：各资源模型加 `is_public`、service 层可见性过滤、公开申请表/端点。
   - 顺序：先做超管默认公开 + 平台共享过滤（不引入 is_public 即可跑通），再加 is_public + 公开申请审核。
+  - **已完成（2026-10-29）**：核心链路落地——统一 `visibility.py`（平台共享用户判定 + 可见性条件）、
+    `PublicMixin`（资源 is_public）、`public_apps.py`/`public_resolvers.py`（公开申请提交/撤销/审核 +
+    自动审核开关 `RESOURCE_PUBLIC_AUTO_AUDIT`）、只读守卫；knowledge 与 workflow 两品类已完整接入
+    （list/get 过滤 + create 默认公开 + set_public），其余品类已具备 is_public 字段与默认公开基础，
+    可按同一模式（`app_visible_where`/`create_auth`）逐品类接入。
 - **阶段 2（再补）**：模式 C（OAuth 2.1 用户委托 server）。
   - 依赖：OAuth server 端点、client/token 表、token 解析 + 按 `sub` 过滤、PKCE/撤销。
 - **A 全程保留**，不另起实现。
