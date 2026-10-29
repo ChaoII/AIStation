@@ -3,7 +3,7 @@
   <div class="app-container ai-mod ai-integration-page">
     <el-row :gutter="12" class="ig-fill">
       <!-- 左：数据源（纵向列表，仿「本体」左侧导航） -->
-      <el-col v-if="tab !== 'gov'" :xs="24" :sm="8" :md="6" :lg="5" class="ig-fill">
+      <el-col :xs="24" :sm="8" :md="6" :lg="5" class="ig-fill">
         <el-card shadow="never" class="ig-card">
           <template #header>
             <div class="ig-head">
@@ -62,9 +62,9 @@
       <!-- 右：选中数据源的详情 -->
       <el-col
         :xs="24"
-        :sm="tab === 'gov' ? 24 : 16"
-        :md="tab === 'gov' ? 24 : 18"
-        :lg="tab === 'gov' ? 24 : 19"
+        :sm="16"
+        :md="18"
+        :lg="19"
         class="ig-fill"
       >
         <el-card shadow="never" class="ig-card">
@@ -937,11 +937,6 @@
                 @applied="onAutoModelApplied"
               />
             </el-tab-pane>
-
-            <!-- 治理：驾驶舱/权限/数据质量/数据域/本体对象（原「治理」菜单并入） -->
-            <el-tab-pane :label="t('ai_workflow.ig_governance')" name="gov">
-              <GovernancePanel />
-            </el-tab-pane>
           </el-tabs>
         </el-card>
       </el-col>
@@ -1637,7 +1632,6 @@ import {
 } from "@/api/module_ai/query";
 import { getOntDomains, saveOntObject } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
-import GovernancePanel from "./components/GovernancePanel.vue";
 import AssetVersionsDialog from "./components/AssetVersionsDialog.vue";
 import AutoModelPreviewDialog from "./components/AutoModelPreviewDialog.vue";
 import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
