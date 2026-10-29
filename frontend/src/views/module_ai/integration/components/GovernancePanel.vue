@@ -389,254 +389,7 @@
         </el-row>
       </el-tab-pane>
 
-      <!-- 本体对象 -->
-      <el-tab-pane :label="t('ai_workflow.ig_govOnt')" name="ontgov">
-        <div class="gp-bar">
-          <el-tag size="small" type="info" effect="plain">
-            {{ t("ai_workflow.ig_govOntSummary", { avg: ontGov.avg_score ?? "-" }) }}
-          </el-tag>
-        </div>
-        <el-table :data="ontGov.items || []" size="small" border stripe>
-          <template #empty>
-            <el-empty :description="t('ai_workflow.ig_govNoOnt')" :image-size="60" />
-          </template>
-          <el-table-column
-            prop="name"
-            :label="t('ai_workflow.ig_govOnt')"
-            min-width="110"
-            show-overflow-tooltip
-          />
-          <el-table-column
-            prop="table"
-            :label="t('ai_workflow.ig_tableName')"
-            min-width="110"
-            show-overflow-tooltip
-          />
-          <el-table-column prop="rows" :label="t('ai_workflow.ig_govRowCount')" width="80" />
-          <el-table-column :label="t('ai_workflow.ig_govQuality')" width="170">
-            <template #default="{ row }">
-              <el-progress
-                :percentage="Math.round(row.score || 0)"
-                :color="
-                  (row.score || 0) >= 80
-                    ? 'var(--el-color-success)'
-                    : (row.score || 0) >= 60
-                      ? 'var(--el-color-warning)'
-                      : 'var(--el-color-danger)'
-                "
-                :stroke-width="10"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('ai_workflow.ig_govSourcePipeline')" min-width="120">
-            <template #default="{ row }">
-              <el-tag
-                v-for="p in row.source_pipelines"
-                :key="p"
-                size="small"
-                effect="plain"
-                style="margin: 0 2px"
-              >
-                {{ p }}
-              </el-tag>
-              <span v-if="!row.source_pipelines.length" class="gp-empty">—</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('ai_workflow.ig_govDownstream')" min-width="160">
-            <template #default="{ row }">
-              <el-tag
-                v-for="m in row.downstream_metrics"
-                :key="m"
-                size="small"
-                type="primary"
-                effect="plain"
-                style="margin: 0 2px"
-              >
-                {{ t("ai_workflow.ig_govMetricItem", { metric: m }) }}
-              </el-tag>
-              <el-tag
-                v-for="c in row.downstream_concepts"
-                :key="c"
-                size="small"
-                type="success"
-                effect="plain"
-                style="margin: 0 2px"
-              >
-                {{ t("ai_workflow.ig_govConceptItem", { concept: c }) }}
-              </el-tag>
-              <span
-                v-if="!row.downstream_metrics.length && !row.downstream_concepts.length"
-                class="gp-empty"
-              >
-                —
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('ai_workflow.ig_govIssue')" min-width="160">
-            <template #default="{ row }">
-              <el-tag
-                v-for="(i, k) in row.issues"
-                :key="k"
-                size="small"
-                type="warning"
-                effect="plain"
-                style="margin: 0 2px"
-              >
-                {{ i }}
-              </el-tag>
-              <span v-if="!row.issues.length" class="gp-empty">{{ t("ai_workflow.ig_none") }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
-
-      <!-- 表级写回（旧版）：写回动作的待审批/定义/审计；新动作请到 本体 → 动作类型 -->
-      <el-tab-pane :label="t('ai_workflow.ig_govAction')" name="action">
-        <el-alert
-          type="warning"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 10px"
-          :title="t('ai_workflow.ig_govActionAlert')"
-        />
-        <div class="gp-bar">
-          <el-tag size="small" type="info" effect="plain">
-            {{
-              t("ai_workflow.ig_govPendingCount", {
-                pending: pendingActions.length,
-                defs: actionList.length,
-              })
-            }}
-          </el-tag>
-        </div>
-        <div class="gp-section">{{ t("ai_workflow.ig_govPendingSection") }}</div>
-        <el-table :data="pendingActions" size="small" border style="margin-bottom: 16px" stripe>
-          <template #empty>
-            <el-empty :description="t('ai_workflow.ig_govNoPending')" :image-size="50" />
-          </template>
-          <el-table-column
-            prop="action"
-            :label="t('ai_workflow.ig_govAction')"
-            width="120"
-            show-overflow-tooltip
-          />
-          <el-table-column
-            prop="table"
-            :label="t('ai_workflow.ig_tableName')"
-            min-width="130"
-            show-overflow-tooltip
-          />
-          <el-table-column prop="key" :label="t('ai_workflow.ig_govRecord')" width="80" />
-          <el-table-column :label="t('ai_workflow.ig_govParams')" min-width="160">
-            <template #default="{ row }">
-              <div class="gp-params">{{ JSON.stringify(row.params || {}) }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column prop="operator" :label="t('ai_workflow.ig_operator')" width="80" />
-          <el-table-column
-            prop="time"
-            :label="t('ai_workflow.ig_time')"
-            min-width="150"
-            show-overflow-tooltip
-          />
-          <el-table-column
-            :label="t('ai_workflow.ig_action')"
-            width="130"
-            align="center"
-            fixed="right"
-          >
-            <template #default="{ row }">
-              <el-button icon="Check" link type="primary" size="small" @click="apAction(row, true)">
-                {{ t("ai_workflow.ig_govApprove") }}
-              </el-button>
-              <el-button icon="Close" link type="danger" size="small" @click="apAction(row, false)">
-                {{ t("ai_workflow.ig_govReject") }}
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div class="gp-section">{{ t("ai_workflow.ig_govDefSection") }}</div>
-        <el-table :data="actionList" size="small" border stripe>
-          <template #empty>
-            <el-empty :description="t('ai_workflow.ig_govNoActionDef')" :image-size="50" />
-          </template>
-          <el-table-column
-            prop="name"
-            :label="t('ai_workflow.ig_govAction')"
-            width="120"
-            show-overflow-tooltip
-          />
-          <el-table-column
-            prop="object_table"
-            :label="t('ai_workflow.ig_tableName')"
-            min-width="130"
-            show-overflow-tooltip
-          />
-          <el-table-column :label="t('ai_workflow.ig_govWritableCols')" min-width="160">
-            <template #default="{ row }">
-              <el-tag
-                v-for="c in row.writable_cols"
-                :key="c"
-                size="small"
-                effect="plain"
-                style="margin: 0 2px"
-              >
-                {{ c }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="validation"
-            :label="t('ai_workflow.ig_govValidation')"
-            min-width="120"
-            show-overflow-tooltip
-          />
-          <el-table-column :label="t('ai_workflow.ig_govNeedApprove')" width="80" align="center">
-            <template #default="{ row }">
-              <el-tag size="small" :type="row.approve ? 'warning' : 'info'" effect="plain">
-                {{ row.approve ? t("ai_workflow.ig_yes") : t("ai_workflow.ig_no") }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('ai_workflow.ig_enabled')" width="80" align="center">
-            <template #default="{ row }">
-              <el-tag size="small" :type="row.enabled ? 'success' : 'info'" effect="plain">
-                {{ row.enabled ? t("ai_workflow.ig_yes") : t("ai_workflow.ig_no") }}
-              </el-tag>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div class="gp-section">{{ t("ai_workflow.ig_govAuditLogSection") }}</div>
-        <el-table :data="actionLogs" size="small" border max-height="260" stripe>
-          <template #empty>
-            <el-empty :description="t('ai_workflow.ig_govNoAuditLog')" :image-size="50" />
-          </template>
-          <el-table-column
-            prop="action"
-            :label="t('ai_workflow.ig_govAction')"
-            width="120"
-            show-overflow-tooltip
-          />
-          <el-table-column :label="t('ai_workflow.ig_govResult')" width="90">
-            <template #default="{ row }">
-              <el-tag size="small" :type="row.status === 'approved' ? 'success' : 'info'">
-                {{ row.status }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="operator" :label="t('ai_workflow.ig_operator')" width="80" />
-          <el-table-column
-            prop="time"
-            :label="t('ai_workflow.ig_time')"
-            min-width="150"
-            show-overflow-tooltip
-          />
-        </el-table>
-      </el-tab-pane>
-
-      <!-- 交付命题：五步交付 / 影子校验（原 FDE 后端能力接入） -->
+<!-- 交付命题：五步交付 / 影子校验（原 FDE 后端能力接入） -->
       <el-tab-pane :label="t('ai_workflow.ig_govFde')" name="fde">
         <div class="gp-bar">
           <el-button type="primary" size="small" :icon="Plus" @click="openFde()">
@@ -725,71 +478,7 @@
         </el-table>
       </el-tab-pane>
 
-      <!-- 数据生命周期：对象发布/草稿/敏感/血缘概览 -->
-      <el-tab-pane :label="t('ai_workflow.ig_govLifecycle')" name="lifecycle">
-        <div class="gp-bar">
-          <el-button size="small" @click="loadLifecycle">
-            {{ t("ai_workflow.ig_govRefresh") }}
-          </el-button>
-          <el-tag size="small" type="info" effect="plain">
-            {{ t("ai_workflow.ig_govLifecycleBoard") }}
-          </el-tag>
-        </div>
-        <el-descriptions v-if="lifecycle" :column="5" border size="small">
-          <el-descriptions-item :label="t('ai_workflow.ig_govTotalObjects')">
-            {{ lifecycle.objects }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('ai_workflow.ig_govPublished')">
-            {{ lifecycle.published }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('ai_workflow.ig_govDraft')">
-            {{ lifecycle.draft }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('ai_workflow.ig_govSensitiveObjects')">
-            {{ lifecycle.sensitive_objects }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('ai_workflow.ig_govTotalLineage')">
-            {{ lifecycle.total_lineage }}
-          </el-descriptions-item>
-        </el-descriptions>
-        <el-table
-          :data="lifecycle?.objects_list || []"
-          size="small"
-          border
-          style="margin-top: 12px"
-          max-height="420"
-          stripe
-        >
-          <template #empty>
-            <el-empty :description="t('ai_workflow.ig_govNoPublished')" :image-size="60" />
-          </template>
-          <el-table-column
-            prop="table"
-            :label="t('ai_workflow.ig_tableName')"
-            min-width="200"
-            show-overflow-tooltip
-          />
-          <el-table-column
-            prop="alias"
-            :label="t('ai_workflow.ig_chineseName')"
-            min-width="160"
-            show-overflow-tooltip
-          />
-          <el-table-column
-            prop="dq"
-            :label="t('ai_workflow.ig_govQualityScore')"
-            width="90"
-            align="center"
-          />
-          <el-table-column
-            prop="sens"
-            :label="t('ai_workflow.ig_govSensitiveFields')"
-            width="100"
-            align="center"
-          />
-        </el-table>
-      </el-tab-pane>
-    </el-tabs>
+</el-tabs>
 
     <!-- 权限策略编辑 -->
     <el-dialog
@@ -1165,7 +854,6 @@ import { useI18n } from "vue-i18n";
 
 import {
   getGovernanceOverview,
-  getOntologyGovernance,
   getAccessRules,
   getAccessMatrix,
   accessPreview,
@@ -1174,21 +862,15 @@ import {
   getDqAlert,
   scanAllDq,
   getDomainObjects,
+  getQueryObjects,
   saveAccessRule,
   saveDomain,
   removeAccessRule,
   removeDomain,
-  getQueryObjects,
-  getActionList,
-  getPendingActions,
-  getActionLogs,
-  approveAction,
-  rejectAction,
   getFdeList,
   saveFdeProposition,
   deleteFdePropositions,
   fdeShadowCheck,
-  getObjectLifecycle,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "GovernancePanel" });
@@ -1397,33 +1079,14 @@ async function runFdeShadow(row: any) {
   }
 }
 const dqData = ref<any>({ avg_score: 0, healthy: 0, risk: 0, items: [] });
-const lifecycle = ref<any>(null);
-
-async function loadLifecycle() {
-  try {
-    const r = await getObjectLifecycle();
-    lifecycle.value = r.data?.data || null;
-  } catch {
-    lifecycle.value = null;
-  }
-}
 const dqAlerts = ref<any[]>([]);
 const dqScanning = ref(false);
 const domainView = ref<any>({ domains: [], unassigned: [], total_objects: 0 });
-const ontGov = ref<any>({ avg_score: 0, items: [] });
 const govObjects = ref<any[]>([]);
-// 动作审批
-const pendingActions = ref<any[]>([]);
-const actionList = ref<any[]>([]);
-const actionLogs = ref<any[]>([]);
 
 async function loadOverview() {
   const r = await getGovernanceOverview();
   g.value = { overview: r.data?.data || {} };
-}
-async function loadOntGov() {
-  const r = await getOntologyGovernance();
-  ontGov.value = r.data?.data || { avg_score: 0, items: [] };
 }
 async function loadAccess() {
   const r = await getAccessRules();
@@ -1453,39 +1116,9 @@ function onTab(name: any) {
     loadDq();
     loadDqAlert();
   } else if (name === "domain") loadDomain();
-  else if (name === "ontgov") loadOntGov();
-  else if (name === "action") loadAction();
   else if (name === "fde") loadFde();
-  else if (name === "lifecycle") loadLifecycle();
 }
 
-// 动作审批：待审批/定义/日志
-async function loadAction() {
-  try {
-    const [pa, al, lg] = await Promise.all([
-      getPendingActions(50),
-      getActionList(),
-      getActionLogs(50),
-    ]);
-    pendingActions.value = pa.data?.data || [];
-    actionList.value = al.data?.data || [];
-    actionLogs.value = lg.data?.data || [];
-  } catch {
-    pendingActions.value = [];
-    actionList.value = [];
-    actionLogs.value = [];
-  }
-}
-
-async function apAction(row: any, approve: boolean) {
-  try {
-    await (approve ? approveAction : rejectAction)({ approval_id: row.id });
-    ElMessage.success(approve ? t("ai_workflow.ig_govApproved") : t("ai_workflow.ig_govRejected"));
-    await loadAction();
-  } catch (e: any) {
-    ElMessage.error(e?.msg || t("ai_workflow.ig_govOpFail"));
-  }
-}
 async function scanAll() {
   dqScanning.value = true;
   try {
