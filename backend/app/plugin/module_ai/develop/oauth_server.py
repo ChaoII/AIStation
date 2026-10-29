@@ -367,3 +367,23 @@ class OAuthTokenService:
         return await cls._issue_access_and_refresh(
             client, user_id, grant_scope, redirect, code_challenge
         )
+
+    # ------------- 撤销 -------------
+    @classmethod
+    async def revoke(cls, token: str) -> None:
+        """撤销某个 access / refresh token（置 ``revoked``，供用户随时收回委托）。"""
+        token_hash = _hash(token)
+        async with async_db_session.begin() as db:
+            row = (
+                await db.execute(
+                    select(AiIntegrationOauthTokenModel).where(
+                        AiIntegrationOauthTokenModel.token_hash == token_hash,
+                        AiIntegrationOauthTokenModel.revoked.is_(False),
+                    )
+                )
+            ).scalars().first()
+            if row is None:
+                # 幂等：未知/已撤销 token 不报错（RFC 7009 允许）
+                return
+            row.revoked = True
+            row.revoked_at = datetime.now()

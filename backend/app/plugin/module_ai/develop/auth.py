@@ -41,6 +41,9 @@ class AppContext:
     app: dict
     source_type: str = "admin"
     owner_user_id: int | None = None
+    # OAuth 委托上下文（source_type='oauth' 时）：被委托用户 id（OAuth sub）与该 token 的 scope。
+    user_id: int | None = None
+    oauth_scope: set[str] | None = None
 
 
 def _ctx_from_row(row) -> AppContext:
