@@ -123,6 +123,8 @@ def _to_dict(w: AiWorkflowModel) -> dict:
         "graph": w.graph or {"nodes": [], "edges": []},
         "version": w.version or 1,
         "enabled": w.enabled,
+        "is_public": bool(getattr(w, "is_public", False)),
+        "created_id": w.created_id,
         "created_time": w.created_time,
         "updated_time": w.updated_time,
     }
@@ -158,22 +160,29 @@ class AiWorkflowService:
             )
 
     @classmethod
-    async def list_workflows(cls) -> list[dict]:
+    async def list_workflows(cls, *, visible_where=None) -> list[dict]:
         async with async_db_session() as db:
-            rows = (
-                await db.execute(
-                    select(AiWorkflowModel)
-                    .where(AiWorkflowModel.is_deleted.is_(False))
-                    .order_by(AiWorkflowModel.id.desc())
-                )
-            ).scalars().all()
+            stmt = (
+                select(AiWorkflowModel)
+                .where(AiWorkflowModel.is_deleted.is_(False))
+                .order_by(AiWorkflowModel.id.desc())
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            rows = (await db.execute(stmt)).scalars().all()
             return [_to_dict(w) for w in rows]
 
     @classmethod
-    async def get_workflow(cls, workflow_id: int) -> dict | None:
+    async def get_workflow(cls, workflow_id: int, *, visible_where=None) -> dict | None:
         async with async_db_session() as db:
-            w = await db.get(AiWorkflowModel, workflow_id)
-            if not w or w.is_deleted:
+            stmt = select(AiWorkflowModel).where(
+                AiWorkflowModel.id == workflow_id,
+                AiWorkflowModel.is_deleted.is_(False),
+            )
+            if visible_where is not None:
+                stmt = stmt.where(visible_where)
+            w = (await db.execute(stmt)).scalars().first()
+            if not w:
                 return None
             return _to_dict(w)
 
@@ -211,6 +220,8 @@ class AiWorkflowService:
 
     @classmethod
     async def create(cls, data, auth) -> dict:
+        from app.plugin.module_ai.develop.visibility import default_is_public_for_creator
+
         async with async_db_session.begin() as db:
             w = AiWorkflowModel(
                 name=data.name,
@@ -220,10 +231,29 @@ class AiWorkflowService:
                 enabled=data.enabled,
                 # 模板创建路径传的是 SimpleNamespace（无 category_id），故用 getattr 兜底
                 category_id=getattr(data, "category_id", None),
+                is_public=default_is_public_for_creator(auth.user),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )
             db.add(w)
+            await db.flush()
+            return _to_dict(w)
+
+    @classmethod
+    async def set_public(cls, workflow_id: int, is_public: bool, public_perm: str = "readonly", db=None) -> dict | None:
+        """设置工作流是否公开（供公开申请审核批准时写回）。"""
+        if db is not None:
+            w = await db.get(AiWorkflowModel, workflow_id)
+            if not w or w.is_deleted:
+                return None
+            w.is_public = bool(is_public)
+            await db.flush()
+            return _to_dict(w)
+        async with async_db_session.begin() as db:
+            w = await db.get(AiWorkflowModel, workflow_id)
+            if not w or w.is_deleted:
+                return None
+            w.is_public = bool(is_public)
             await db.flush()
             return _to_dict(w)
 

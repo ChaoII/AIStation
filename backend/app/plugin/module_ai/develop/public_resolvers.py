@@ -25,4 +25,15 @@ def build_resolvers() -> dict[str, dict[str, Any]]:
         return await AiKnowledgeService.set_public(resource_id, is_public, public_perm, db=db)
 
     resolvers["knowledge"] = {"get": _kb_get, "set_public": _kb_set_public}
+
+    # ---- workflow ----
+    from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+    async def _wf_get(resource_id: int) -> dict | None:
+        return await AiWorkflowService.get_workflow(resource_id, visible_where=None)
+
+    async def _wf_set_public(resource_id: int, is_public: bool, public_perm: str, db=None) -> dict | None:
+        return await AiWorkflowService.set_public(resource_id, is_public, public_perm, db=db)
+
+    resolvers["workflow"] = {"get": _wf_get, "set_public": _wf_set_public}
     return resolvers

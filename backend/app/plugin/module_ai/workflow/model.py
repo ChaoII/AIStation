@@ -5,10 +5,10 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.base_model import ModelMixin, UserMixin
+from app.core.base_model import ModelMixin, PublicMixin, UserMixin
 
 
-class AiWorkflowModel(ModelMixin, UserMixin):
+class AiWorkflowModel(ModelMixin, PublicMixin, UserMixin):
     """AI 工作流：节点 DAG 定义（开始/LLM/工具/知识库/条件/代码/变量/结束）。"""
 
     __tablename__ = "ai_workflows"

@@ -10,20 +10,36 @@ from typing import Any
 from pydantic import ValidationError
 
 from ..registry import Capability, register
-from ._common import bad_request, need_int, not_found, open_auth, require_confirm
+from ._common import (
+    bad_request,
+    create_auth,
+    ensure_resource_writable,
+    need_int,
+    not_found,
+    require_confirm,
+)
+
+
+async def _wf_visible(app_ctx: Any):
+    from app.plugin.module_ai.develop.visibility import app_visible_where
+    from app.plugin.module_ai.workflow.model import AiWorkflowModel
+
+    return await app_visible_where(app_ctx, AiWorkflowModel)
 
 
 async def _wf_list(*, app_ctx: Any, payload: dict) -> dict:
     from app.plugin.module_ai.workflow.service import AiWorkflowService
 
-    items = await AiWorkflowService.list_workflows()
+    items = await AiWorkflowService.list_workflows(visible_where=await _wf_visible(app_ctx))
     return {"items": items, "total": len(items)}
 
 
 async def _wf_get(*, app_ctx: Any, payload: dict) -> dict:
     from app.plugin.module_ai.workflow.service import AiWorkflowService
 
-    wf = await AiWorkflowService.get_workflow(need_int(payload, "workflow_id"))
+    wf = await AiWorkflowService.get_workflow(
+        need_int(payload, "workflow_id"), visible_where=await _wf_visible(app_ctx)
+    )
     if wf is None:
         raise not_found("工作流")
     return wf
@@ -37,7 +53,7 @@ async def _wf_create(*, app_ctx: Any, payload: dict) -> dict:
         data = AiWorkflowCreateSchema(**payload)
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    return await AiWorkflowService.create(data, await open_auth())
+    return await AiWorkflowService.create(data, await create_auth(app_ctx))
 
 
 async def _wf_update(*, app_ctx: Any, payload: dict) -> dict:
@@ -45,13 +61,15 @@ async def _wf_update(*, app_ctx: Any, payload: dict) -> dict:
     from app.plugin.module_ai.workflow.service import AiWorkflowService
 
     wf_id = need_int(payload, "workflow_id")
-    if await AiWorkflowService.get_workflow(wf_id) is None:
+    existing = await AiWorkflowService.get_workflow(wf_id, visible_where=await _wf_visible(app_ctx))
+    if existing is None:
         raise not_found("工作流")
+    ensure_resource_writable(app_ctx, existing.get("created_id"), "工作流")
     try:
         data = AiWorkflowUpdateSchema(**{k: v for k, v in payload.items() if k != "workflow_id"})
     except ValidationError as exc:
         raise bad_request(exc) from exc
-    row = await AiWorkflowService.update(wf_id, data, await open_auth())
+    row = await AiWorkflowService.update(wf_id, data, await create_auth(app_ctx))
     if row is None:
         raise not_found("工作流")
     return row
@@ -62,6 +80,10 @@ async def _wf_delete(*, app_ctx: Any, payload: dict) -> dict:
 
     wf_id = need_int(payload, "workflow_id")
     require_confirm(payload, "删除工作流")
+    existing = await AiWorkflowService.get_workflow(wf_id, visible_where=await _wf_visible(app_ctx))
+    if existing is None:
+        raise not_found("工作流")
+    ensure_resource_writable(app_ctx, existing.get("created_id"), "工作流")
     await AiWorkflowService.delete([wf_id])
     return {"deleted": wf_id}
 
