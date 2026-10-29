@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, Form, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -41,6 +41,8 @@ from .model import (
     AiIntegrationCallLogModel,
     AiIntegrationMcpSessionModel,
 )
+from .oauth_auth import get_oauth_api_auth
+from .oauth_schema import OAuthAuthorizeSchema, OAuthClientCreateSchema, OAuthClientUpdateSchema
 from .openapi import invoke_capability
 from .registry import (
     all_capabilities,
@@ -82,6 +84,18 @@ DevelopRouter = APIRouter(
     route_class=OperationLogRoute,
     prefix="/develop",
     tags=["AI-集成管理"],
+)
+
+
+# ---------------------------------------------------------------------- #
+# 模式 C：OAuth 2.1 用户委托 server（授权 / 取token / 撤销 / userinfo）。
+# 管理面 client CRUD 用 AuthPermission(module_ai:develop:*)；OAuth 端点本身
+# 不依赖后台登录态（token 换取等用 client 凭证 / PKCE）。
+# ---------------------------------------------------------------------- #
+OAuthRouter = APIRouter(
+    route_class=OperationLogRoute,
+    prefix="/develop/oauth",
+    tags=["AI-集成OAuth"],
 )
 
 
@@ -949,3 +963,156 @@ async def _query_mcp_sessions(
             "has_next": page_no * page_size < total,
             "items": [_mcp_session_to_dict(r, tools_map.get(r.session_id)) for r in rows],
         }
+
+
+# ---------------------------------------------------------------------- #
+# 模式 C：OAuth 2.1 用户委托 —— OAuth server 端点。
+# ---------------------------------------------------------------------- #
+@OAuthRouter.get("/clients", summary="OAuth客户端列表（管理员）")
+async def oauth_clients(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:query"]))],
+) -> JSONResponse:
+    from .oauth_server import OAuthClientService
+
+    return SuccessResponse(
+        data={"items": await OAuthClientService.list_clients(), "total": len(await OAuthClientService.list_clients())},
+        msg="查询成功",
+    )
+
+
+@OAuthRouter.post("/clients", summary="创建OAuth客户端（管理员）")
+async def oauth_client_create(
+    data: OAuthClientCreateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:create"]))],
+) -> JSONResponse:
+    from .oauth_server import OAuthClientService
+
+    return SuccessResponse(data=await OAuthClientService.create_client(data, auth), msg="创建成功")
+
+
+@OAuthRouter.put("/clients/{client_id}", summary="更新OAuth客户端（管理员）")
+async def oauth_client_update(
+    client_id: str,
+    data: OAuthClientUpdateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:develop:update"]))],
+) -> JSONResponse:
+    from .oauth_server import OAuthClientService
+
+    row = await OAuthClientService.get_client(client_id)
+    if row is None:
+        return ErrorResponse(msg="客户端不存在")
+    return SuccessResponse(data=await OAuthClientService.update_client(client_id, data, auth), msg="更新成功")
+
+
+@OAuthRouter.post("/authorize", summary="用户同意授权，签发授权码")
+async def oauth_authorize(
+    data: OAuthAuthorizeSchema,
+    user: Annotated[AuthSchema, Depends(get_current_user)],
+) -> JSONResponse:
+    """用户授权页确认后，校验 client / scope / redirect_uri / PKCE，签发一次性授权码。
+
+    返回 ``{code, state}``，由前端拼接 ``redirect_uri?code=...&state=...`` 重定向。
+    """
+    from .oauth_server import OAuthClientService
+
+    if user.user is None:
+        raise CustomException(msg="登录态无效", code=10401, status_code=401)
+    client = await OAuthClientService.get_client(data.client_id)
+    if client is None or not client.enabled:
+        raise CustomException(msg="客户端不存在或已停用", code=10400, status_code=400)
+    result = await OAuthClientService.issue_authorization_code(
+        client,
+        user.user.id,
+        scope=data.scope,
+        redirect_uri=data.redirect_uri,
+        code_challenge=data.code_challenge,
+        code_challenge_method=data.code_challenge_method,
+    )
+    return SuccessResponse(data={"code": result["code"], "state": data.state}, msg="授权成功")
+
+
+@OAuthRouter.post("/token", summary="授权码换取token（OAuth 2.1 token端点）")
+async def oauth_token(
+    grant_type: Annotated[str, Form()],
+    code: Annotated[str | None, Form()] = None,
+    redirect_uri: Annotated[str | None, Form()] = None,
+    client_id: Annotated[str | None, Form()] = None,
+    client_secret: Annotated[str | None, Form()] = None,
+    refresh_token: Annotated[str | None, Form()] = None,
+    code_verifier: Annotated[str | None, Form()] = None,
+) -> JSONResponse:
+    from .oauth_server import OAuthTokenService
+
+    if grant_type == "authorization_code":
+        if not code or not client_id:
+            raise CustomException(msg="授权参数不完整", code=10400, status_code=400)
+        result = await OAuthTokenService.exchange_code(
+            client_id=client_id,
+            client_secret=client_secret,
+            code=code,
+            redirect_uri=redirect_uri,
+            code_verifier=code_verifier,
+        )
+    elif grant_type == "refresh_token":
+        if not refresh_token or not client_id:
+            raise CustomException(msg="授权参数不完整", code=10400, status_code=400)
+        result = await OAuthTokenService.refresh(
+            client_id=client_id,
+            client_secret=client_secret,
+            refresh_token=refresh_token,
+        )
+    else:
+        raise CustomException(msg="不支持的授权类型", code=10400, status_code=400)
+    return JSONResponse(content=result)
+
+
+@OAuthRouter.post("/revoke", summary="撤销委托token")
+async def oauth_revoke(
+    token: Annotated[str, Form()],
+) -> JSONResponse:
+    from .oauth_server import OAuthTokenService
+
+    await OAuthTokenService.revoke(token)
+    return JSONResponse(content={"revoked": True})
+
+
+@OAuthRouter.get("/userinfo", summary="委托token信息（OAuth userinfo）")
+async def oauth_userinfo(
+    ctx: Annotated[AppContext, Depends(get_oauth_api_auth)],
+) -> SuccessResponse:
+    """返回委托 token 对应的被委托用户（``sub``）与授权 scope。"""
+    return SuccessResponse(
+        data={
+            "sub": ctx.user_id,
+            "client_id": ctx.appid,
+            "scope": sorted(ctx.oauth_scope or []),
+        },
+        msg="ok",
+    )
+
+
+# ---------------------------------------------------------------------- #
+# 模式 C：OAuth 数据面（REST）—— 用委托 Bearer token 调用能力。
+# ---------------------------------------------------------------------- #
+@OpenApiRouter.post("/oauth/capabilities/{code}", summary="OAuth委托调用开放能力")
+async def oauth_capability_invoke(
+    code: str,
+    data: CapabilityInvokeSchema,
+    request: Request,
+    ctx: Annotated[AppContext, Depends(get_oauth_api_auth)],
+) -> JSONResponse:
+    """OAuth 数据面：``POST /ai/develop-api/oauth/capabilities/{code}``，body ``{"payload": {...}}``。
+
+    与 ``/capabilities/{code}``（应用凭证）同一管道，仅鉴权换成委托 Bearer token；
+    数据可见性由 ``ctx.owner_user_id``（= token.sub）复用现有 visible 过滤。
+    """
+    result = await invoke_capability(
+        ctx,
+        code,
+        data.payload,
+        method="REST",
+        redis=getattr(request.app.state, "redis", None),
+        request_path=f"/oauth/capabilities/{code}",
+        ip=request.client.host if request.client else "",
+    )
+    return SuccessResponse(data=result, msg="调用成功")

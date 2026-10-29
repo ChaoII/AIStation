@@ -154,6 +154,52 @@ class OAuthClientService:
             ).scalars().first()
 
     @classmethod
+    async def update_client(cls, client_id: str, data, auth) -> dict:
+        """更新 OAuth 客户端（仅更新显式传入字段，name 唯一校验收紧）。"""
+        async with async_db_session.begin() as db:
+            row = (
+                await db.execute(
+                    select(AiIntegrationOauthClientModel).where(
+                        AiIntegrationOauthClientModel.client_id == client_id,
+                        AiIntegrationOauthClientModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalars().first()
+            if row is None:
+                raise CustomException(msg="客户端不存在", code=10404, status_code=404)
+            if data.name is not None and data.name != row.name:
+                dup = await db.scalar(
+                    select(AiIntegrationOauthClientModel).where(
+                        AiIntegrationOauthClientModel.name == data.name,
+                        AiIntegrationOauthClientModel.is_deleted.is_(False),
+                        AiIntegrationOauthClientModel.id != row.id,
+                    )
+                )
+                if dup:
+                    raise CustomException(msg=f"客户端名称已存在：{data.name}", code=10400, status_code=400)
+                row.name = data.name
+            if data.description is not None:
+                row.description = data.description
+            if data.redirect_uris is not None:
+                row.redirect_uris = list(dict.fromkeys(data.redirect_uris))
+            if data.allow_pkce is not None:
+                row.allow_pkce = bool(data.allow_pkce)
+            if data.requires_approval is not None:
+                row.requires_approval = bool(data.requires_approval)
+            if data.max_scope is not None:
+                row.max_scope = data.max_scope
+            if data.expire_at is not None:
+                row.expire_at = data.expire_at
+            if data.enabled is not None:
+                row.enabled = bool(data.enabled)
+            row.updated_time = datetime.now()
+            updater_id = getattr(getattr(auth, "user", None), "id", None)
+            if updater_id:
+                row.updated_id = updater_id
+            await db.flush()
+            return _client_to_dict(row)
+
+    @classmethod
     async def verify_client_credentials(cls, client_id: str, client_secret: str) -> AiIntegrationOauthClientModel | None:
         """校验 client 凭证：按 client_id 查，校验 enabled / expire_at / 散列比对，任一失败返回 None。"""
         row = await cls.get_client(client_id)
