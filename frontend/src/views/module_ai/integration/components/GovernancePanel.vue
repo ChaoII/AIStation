@@ -823,15 +823,14 @@
             multiple
             filterable
             clearable
-            allow-create
             :placeholder="t('ai_workflow.ig_govMemberUsersPlaceholder')"
             style="width: 100%"
           >
             <el-option
-              v-for="i in 5"
-              :key="i"
-              :label="t('ai_workflow.ig_govUserItem', { id: i })"
-              :value="i"
+              v-for="u in domainUsers"
+              :key="u.id"
+              :label="u.label"
+              :value="u.id"
             />
           </el-select>
         </el-form-item>
@@ -872,6 +871,7 @@ import {
   deleteFdePropositions,
   fdeShadowCheck,
 } from "@/api/module_ai/query";
+import { UserAPI } from "@/api/module_system/user";
 
 defineOptions({ name: "GovernancePanel" });
 
@@ -1083,6 +1083,31 @@ const dqAlerts = ref<any[]>([]);
 const dqScanning = ref(false);
 const domainView = ref<any>({ domains: [], unassigned: [], total_objects: 0 });
 const govObjects = ref<any[]>([]);
+// 数据域「域成员」候选用户（真实用户，来自 module_system/user 列表）
+const domainUsers = ref<any[]>([]);
+
+async function loadDomainUsers() {
+  try {
+    // 后端 /system/user/list 的 page_size 上限是 100，且返回 items 分页；
+    // 用户可能超过 100，这里循环分页拉全。
+    const users: any[] = [];
+    let pageNo = 1;
+    for (;;) {
+      const r = await UserAPI.listUser({ page_no: pageNo, page_size: 100 });
+      const page = r.data?.data;
+      const items = page?.items || [];
+      users.push(...items);
+      if (!items.length || !page?.has_next) break;
+      pageNo += 1;
+    }
+    domainUsers.value = users.map((u: any) => ({
+      id: u.id,
+      label: u.name || u.username || String(u.id),
+    }));
+  } catch {
+    domainUsers.value = [];
+  }
+}
 
 async function loadOverview() {
   const r = await getGovernanceOverview();
@@ -1235,6 +1260,7 @@ function delDomain(row: any) {
 onMounted(() => {
   loadOverview();
   loadObjects();
+  loadDomainUsers();
 });
 </script>
 
