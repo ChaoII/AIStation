@@ -295,12 +295,6 @@ export function getQueryKgUnified(kbId?: number | null, scope = "all") {
   if (kbId != null) params.kb_id = kbId;
   return request({ url: `${API_PATH}/assets/kg/unified`, method: "get", params });
 }
-export function getQueryKgKbs() {
-  return request({ url: `${API_PATH}/assets/kg/kbs`, method: "get" });
-}
-export function saveQueryKgLayout(items: { name: string; x: number; y: number }[]) {
-  return request({ url: `${API_PATH}/assets/kg/layout`, method: "post", data: { items } });
-}
 export function getQueryObjects() {
   return request({ url: `${API_PATH}/assets/objects`, method: "get" });
 }
@@ -334,9 +328,6 @@ export function getPendingActions(limit = 50) {
 export function getApprovalCenter() {
   return request({ url: `${API_PATH}/approval/center`, method: "get" });
 }
-export function approveVersionPublish(pending_id: number) {
-  return request({ url: `/ai/ontology/version/approve`, method: "post", data: { pending_id } });
-}
 export function approveAction(data: { approval_id: number }) {
   return request({ url: `${API_PATH}/writeback/approve`, method: "post", data });
 }
@@ -345,13 +336,6 @@ export function rejectAction(data: { approval_id: number }) {
 }
 export function getAssetVersions(table: string) {
   return request({ url: `${API_PATH}/assets/${table}/versions`, method: "get" });
-}
-export function getVersionDiff(idA: number, idB: number) {
-  return request({
-    url: `${API_PATH}/assets/version/diff`,
-    method: "get",
-    params: { id_a: idA, id_b: idB },
-  });
 }
 export function publishAsset(table: string, versionId: number) {
   return request({
@@ -426,9 +410,6 @@ export function objectBrowse(table: string, page = 1, pageSize = 20) {
     method: "get",
     params: { page, page_size: pageSize },
   });
-}
-export function createShare(table: string) {
-  return request({ url: `${API_PATH}/share/create`, method: "post", data: { table } });
 }
 export function getShareList() {
   return request({ url: `${API_PATH}/share/list`, method: "get" });
@@ -543,14 +524,8 @@ export function removeAccessRule(id: number) {
 export function getDqOverview() {
   return request({ url: `${API_PATH}/dq/overview`, method: "get" });
 }
-export function runDq(table: string) {
-  return request({ url: `${API_PATH}/dq/run`, method: "post", data: { table } });
-}
 export function scanAllDq() {
   return request({ url: `${API_PATH}/dq/scan`, method: "post" });
-}
-export function scanAssetSensitive(table: string) {
-  return request({ url: `${API_PATH}/assets/${table}/scan-sensitive`, method: "post" });
 }
 export function getDqAlert() {
   return request({ url: `${API_PATH}/dq/alert`, method: "get" });
@@ -567,14 +542,8 @@ export function removeDomain(id: number) {
 export function getDomainObjects() {
   return request({ url: `${API_PATH}/domain/objects`, method: "get" });
 }
-export function domainReconcile() {
-  return request({ url: `${API_PATH}/domain/reconcile`, method: "get" });
-}
 export function getGovernanceOverview() {
   return request({ url: `${API_PATH}/governance/overview`, method: "get" });
-}
-export function getOntologyGovernance() {
-  return request({ url: `${API_PATH}/ontology/governance`, method: "get" });
 }
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
