@@ -5707,6 +5707,7 @@ class AiQueryService:
     # ---- 示例工程（few-shot）----
     @classmethod
     async def list_fewshots(cls, datasource: str | None = None) -> list[dict]:
+        datasource = await _norm_datasource(datasource)
         async with async_db_session() as db:
             from sqlalchemy import select
 

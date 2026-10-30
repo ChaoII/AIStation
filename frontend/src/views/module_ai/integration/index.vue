@@ -1281,10 +1281,15 @@
           />
         </el-form-item>
         <el-form-item :label="t('ai_workflow.ig_datasource')">
-          <el-input
-            v-model="metricForm.datasource"
-            :placeholder="t('ai_workflow.ig_datasourcePlaceholder')"
-          />
+          <el-select v-model="metricForm.datasource" style="width: 100%">
+            <el-option :label="t('ai_workflow.ig_systemLibOption')" value="system" />
+            <el-option
+              v-for="d in datasources"
+              :key="d.code || d.id"
+              :label="d.name"
+              :value="`ds:${d.id}`"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('ai_workflow.ig_sqlTemplate')">
           <el-input
@@ -1326,7 +1331,7 @@
               v-for="d in datasources"
               :key="d.code || d.id"
               :label="d.name"
-              :value="d.code || `ds:${d.id}`"
+              :value="`ds:${d.id}`"
             />
           </el-select>
         </el-form-item>
@@ -1373,10 +1378,15 @@
           />
         </el-form-item>
         <el-form-item :label="t('ai_workflow.ig_datasource')">
-          <el-input
-            v-model="termForm.datasource"
-            :placeholder="t('ai_workflow.ig_datasourcePlaceholder')"
-          />
+          <el-select v-model="termForm.datasource" style="width: 100%">
+            <el-option :label="t('ai_workflow.ig_systemLibOption')" value="system" />
+            <el-option
+              v-for="d in datasources"
+              :key="d.code || d.id"
+              :label="d.name"
+              :value="`ds:${d.id}`"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('ai_workflow.ig_correspondingMetric')">
           <el-input
@@ -1418,6 +1428,17 @@
             :disabled="!!conceptForm.id"
             :placeholder="t('ai_workflow.ig_conceptNamePlaceholder')"
           />
+        </el-form-item>
+        <el-form-item :label="t('ai_workflow.ig_datasource')">
+          <el-select v-model="conceptForm.datasource" style="width: 100%">
+            <el-option :label="t('ai_workflow.ig_systemLibOption')" value="system" />
+            <el-option
+              v-for="d in datasources"
+              :key="d.code || d.id"
+              :label="d.name"
+              :value="`ds:${d.id}`"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('ai_workflow.ig_description')">
           <el-input v-model="conceptForm.description" type="textarea" :rows="2" />
@@ -2531,7 +2552,7 @@ function openMetric(row?: any) {
   metricForm.value = row
     ? { ...row }
     : {
-        datasource: "system",
+        datasource: defaultDsKey.value,
         name: "",
         key: "",
         sql_template: "",
@@ -2568,7 +2589,7 @@ function adoptMetric(row: any) {
   suggestVisible.value = false;
   openMetric();
   metricForm.value = {
-    datasource: "system",
+    datasource: defaultDsKey.value,
     name: row.name || "",
     key: "",
     sql_template: row.sql || "",
@@ -2584,7 +2605,7 @@ function adoptTerm(row: any) {
   openTerm();
   const isDim = row.type === "dimension";
   termForm.value = {
-    datasource: "system",
+    datasource: defaultDsKey.value,
     term: row.term || "",
     type: isDim ? "dimension" : "metric",
     metric_key: isDim ? "" : row.target || "",
@@ -2638,7 +2659,7 @@ async function removeMetric(row: any) {
 function openFewshot(row?: any) {
   fewshotForm.value = row
     ? { ...row }
-    : { datasource: "system", question: "", sql: "", enabled: true };
+    : { datasource: defaultDsKey.value, question: "", sql: "", enabled: true };
   fewshotDlg.value = true;
 }
 
@@ -2688,7 +2709,7 @@ async function removeFewshot(row: any) {
 function openTerm(row?: any) {
   termForm.value = row
     ? { ...row }
-    : { datasource: "system", term: "", metric_key: "", field_path: "", type: "metric" };
+    : { datasource: defaultDsKey.value, term: "", metric_key: "", field_path: "", type: "metric" };
   termDlg.value = true;
 }
 
@@ -2735,6 +2756,7 @@ function openConcept(row?: any) {
   conceptForm.value = row
     ? { ...row, tables_text: (row.tables || []).join(",") }
     : {
+        datasource: defaultDsKey.value,
         name: "",
         description: "",
         synonyms: "",
@@ -2866,11 +2888,26 @@ async function loadMisc() {
     }
   };
   const ds = modelingDsCode.value;
-  await safe(() => getPipelineList({ datasource: ds }), (v) => (pipelines.value = v));
-  await safe(getQueryMetrics, (v) => (metrics.value = v));
-  await safe(() => getQueryTerms({ datasource: ds }), (v) => (terms.value = v));
-  await safe(() => getQueryConcepts({ datasource: ds }), (v) => (concepts.value = v));
-  await safe(getQueryFewshots, (v) => (fewshots.value = v));
+  await safe(
+    () => getPipelineList({ datasource: ds }),
+    (v) => (pipelines.value = v)
+  );
+  await safe(
+    () => getQueryMetrics({ datasource: ds }),
+    (v) => (metrics.value = v)
+  );
+  await safe(
+    () => getQueryTerms({ datasource: ds }),
+    (v) => (terms.value = v)
+  );
+  await safe(
+    () => getQueryConcepts({ datasource: ds }),
+    (v) => (concepts.value = v)
+  );
+  await safe(
+    () => getQueryFewshots({ datasource: ds }),
+    (v) => (fewshots.value = v)
+  );
   await safe(getQueryKgStats, (v) => (kg.value = v));
   await loadUnified();
 }
@@ -2916,6 +2953,9 @@ const modelingResult = ref<any>(null);
 const modelingDsCode = computed(
   () => curDs.value?.code || (curDs.value ? `ds:${curDs.value.id}` : "")
 );
+// 数据库存储口径统一为 ds:{id}（后端 _norm_datasource 把 code 归一为 ds:{id}）；
+// 下拉/新建默认值必须用同口径，否则编辑已有数据（存的是 ds:{id}）时下拉不匹配显示空白。
+const defaultDsKey = computed(() => (curDs.value ? `ds:${curDs.value.id}` : "system"));
 const autoModelVisible = ref(false);
 const autoModelScope = ref<"metrics" | "annotations">("metrics");
 
