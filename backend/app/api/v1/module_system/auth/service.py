@@ -354,7 +354,11 @@ class CaptchaService:
         - CustomException: 验证码服务未启用时抛出异常
         """
         if not settings.CAPTCHA_ENABLE:
-            raise CustomException(msg="未开启验证码服务")
+            # 未启用验证码时返回「未启用」而非 500：前端据 enable=false 隐藏验证码并跳过校验，
+            # 避免登录页每次挂载都在控制台刷一条 500 报错。
+            return CaptchaOutSchema(
+                enable=False, key=None, img_base=None
+            ).model_dump()
 
         # 生成验证码图片和值
         captcha_base64, captcha_value = CaptchaUtil.captcha_arithmetic()
