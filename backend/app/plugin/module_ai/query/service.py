@@ -3888,9 +3888,9 @@ class AiQueryService:
             async with async_db_session() as db:
                 from sqlalchemy import text as _t
                 entities = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_kg_entity WHERE is_deleted=false")).scalar() or 0)
+                    "SELECT COUNT(*) FROM ai_knowledge_entities WHERE is_deleted=false"))).scalar() or 0
                 relations = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_kg_relation WHERE is_deleted=false")).scalar() or 0)
+                    "SELECT COUNT(*) FROM ai_knowledge_relations WHERE is_deleted=false"))).scalar() or 0
         except Exception:  # noqa: BLE001
             entities = relations = 0
         return {"data_nodes": len(assets), "data_edges": int(edges),

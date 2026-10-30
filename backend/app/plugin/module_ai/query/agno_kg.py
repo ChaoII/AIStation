@@ -409,7 +409,7 @@ async def auto_link_kb_schema() -> int:
 
         try:
             res = await db.execute(_t(
-                "SELECT DISTINCT name FROM ai_knowledge_entity WHERE is_deleted=false"))
+                "SELECT DISTINCT name FROM ai_knowledge_entities WHERE is_deleted=false"))
             ents = res.scalars().all()
         except Exception:  # noqa: BLE001
             ents = []
