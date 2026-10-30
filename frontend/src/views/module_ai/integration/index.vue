@@ -817,6 +817,22 @@
                 <el-button size="small" @click="autoLinkKg">
                   {{ t("ai_workflow.ig_autoLink") }}
                 </el-button>
+                <el-select
+                  v-model="lineageTable"
+                  clearable
+                  filterable
+                  size="small"
+                  :placeholder="t('ai_workflow.ig_lineageTablePlaceholder')"
+                  style="width: 200px"
+                >
+                  <el-option v-for="tb in kgTableOptions" :key="tb" :label="tb" :value="tb" />
+                </el-select>
+                <el-button size="small" type="primary" plain @click="openLineage">
+                  {{ t("ai_workflow.ig_lineageView") }}
+                </el-button>
+                <el-button size="small" @click="openImpact">
+                  {{ t("ai_workflow.ig_impactView") }}
+                </el-button>
                 <el-tag size="small" type="info" effect="plain">
                   {{ t("ai_workflow.ig_autoLinkHint") }}
                 </el-tag>
@@ -868,6 +884,83 @@
                 class="ig-kg-graph"
               />
               <el-empty v-else :image-size="60" :description="t('ai_workflow.ig_kgEmpty')" />
+              <el-drawer
+                v-model="lineageDrawer"
+                :title="lineageDrawerTitle"
+                size="52%"
+                append-to-body
+              >
+                <el-descriptions :column="2" size="small" border class="ig-note">
+                  <el-descriptions-item :label="t('ai_workflow.ig_table')">
+                    {{ lineageData.table || "-" }}
+                  </el-descriptions-item>
+                </el-descriptions>
+
+                <div class="gp-section">{{ t("ai_workflow.ig_lineageMetrics") }}</div>
+                <el-table :data="lineageData.metrics || []" size="small" border stripe>
+                  <el-table-column prop="key" :label="t('ai_workflow.ig_kgKey')" min-width="120" />
+                  <el-table-column
+                    prop="name"
+                    :label="t('ai_workflow.ig_kgName')"
+                    min-width="160"
+                    show-overflow-tooltip
+                  />
+                </el-table>
+
+                <div class="gp-section">{{ t("ai_workflow.ig_lineageRelations") }}</div>
+                <el-table :data="lineageData.relations || []" size="small" border stripe>
+                  <el-table-column
+                    prop="via"
+                    :label="t('ai_workflow.ig_kgVia')"
+                    min-width="120"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="from"
+                    :label="t('ai_workflow.ig_kgFrom')"
+                    min-width="120"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="to"
+                    :label="t('ai_workflow.ig_kgTo')"
+                    min-width="120"
+                    show-overflow-tooltip
+                  />
+                </el-table>
+
+                <div class="gp-section">{{ t("ai_workflow.ig_lineageObjects") }}</div>
+                <el-table :data="lineageData.dependent_objects || []" size="small" border stripe>
+                  <el-table-column
+                    prop="object"
+                    :label="t('ai_workflow.ig_kgObject')"
+                    min-width="140"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="alias"
+                    :label="t('ai_workflow.ig_kgAlias')"
+                    min-width="140"
+                    show-overflow-tooltip
+                  />
+                </el-table>
+
+                <div class="gp-section">{{ t("ai_workflow.ig_lineagePipelines") }}</div>
+                <el-table :data="lineageData.pipelines || []" size="small" border stripe>
+                  <el-table-column
+                    prop="name"
+                    :label="t('ai_workflow.ig_pipeline')"
+                    min-width="140"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="source"
+                    :label="t('ai_workflow.ig_kgSource')"
+                    min-width="140"
+                    show-overflow-tooltip
+                  />
+                </el-table>
+              </el-drawer>
             </el-tab-pane>
 
             <!-- 筛选规则工作台 -->
@@ -1636,6 +1729,8 @@ import {
   getQueryKgUnified,
   rebuildQueryKg,
   autoLinkQueryKg,
+  getAssetLineage,
+  getAssetImpact,
   extractQueryObjects,
   inferQueryAssetRelations,
   generateQueryAssetDesc,
@@ -1684,6 +1779,47 @@ const kgTypeOptions = [
 ];
 const kgTableFocus = ref("");
 const kgTableOptions = ref<any[]>([]);
+// 表级血缘全景 / 影响分析
+const lineageTable = ref("");
+const lineageDrawer = ref(false);
+const lineageDrawerTitle = ref("");
+const lineageData = ref<any>({});
+const lineageLoading = ref(false);
+async function openLineage() {
+  if (!lineageTable.value) return ElMessage.warning(t("ai_workflow.ig_pickTableFirst"));
+  lineageDrawer.value = true;
+  lineageDrawerTitle.value = `${t("ai_workflow.ig_lineageView")} · ${lineageTable.value}`;
+  lineageLoading.value = true;
+  try {
+    lineageData.value = (await getAssetLineage(lineageTable.value)).data?.data || {};
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.ig_loadFail"));
+    lineageData.value = {};
+  } finally {
+    lineageLoading.value = false;
+  }
+}
+async function openImpact() {
+  if (!lineageTable.value) return ElMessage.warning(t("ai_workflow.ig_pickTableFirst"));
+  lineageDrawer.value = true;
+  lineageDrawerTitle.value = `${t("ai_workflow.ig_impactView")} · ${lineageTable.value}`;
+  lineageLoading.value = true;
+  try {
+    const r = (await getAssetImpact(lineageTable.value)).data?.data || {};
+    lineageData.value = {
+      table: r.table,
+      metrics: r.metrics || [],
+      relations: r.incoming_relations || [],
+      dependent_objects: r.object_links || [],
+      pipelines: [],
+    };
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.ig_loadFail"));
+    lineageData.value = {};
+  } finally {
+    lineageLoading.value = false;
+  }
+}
 const filteredKgNodes = computed(() => {
   let list = kgNodes.value;
   if (kgTypeFilter.value.length) {
