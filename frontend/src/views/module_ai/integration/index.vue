@@ -494,6 +494,7 @@
                   {{ t("ai_workflow.ig_pipeHint") }}
                 </el-tag>
               </div>
+              <div class="ig-tables">
               <el-table :data="pipelines" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty :description="t('ai_workflow.ig_noPipe')" :image-size="60" />
@@ -539,6 +540,7 @@
                   </template>
                 </el-table-column>
               </el-table>
+              </div>
             </el-tab-pane>
 
             <!-- 指标 -->
@@ -554,6 +556,7 @@
                   {{ t("ai_workflow.ig_suggestMetric") }}
                 </el-button>
               </div>
+              <div class="ig-tables">
               <el-table :data="metrics" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty :description="t('ai_workflow.ig_noMetric')" :image-size="60" />
@@ -599,6 +602,7 @@
                   </template>
                 </el-table-column>
               </el-table>
+              </div>
             </el-tab-pane>
 
             <!-- 术语 -->
@@ -618,6 +622,7 @@
                 style="margin-bottom: 10px"
                 :title="t('ai_workflow.ig_termHintAlert')"
               />
+              <div class="ig-tables">
               <el-table :data="terms" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty :description="t('ai_workflow.ig_noTerm')" :image-size="60" />
@@ -657,6 +662,7 @@
                   </template>
                 </el-table-column>
               </el-table>
+              </div>
             </el-tab-pane>
 
             <!-- 概念 -->
@@ -676,6 +682,7 @@
                 style="margin-bottom: 10px"
                 :title="t('ai_workflow.ig_conceptHintAlert')"
               />
+              <div class="ig-tables">
               <el-table :data="concepts" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty :description="t('ai_workflow.ig_noConcept')" :image-size="60" />
@@ -722,6 +729,7 @@
                   </template>
                 </el-table-column>
               </el-table>
+              </div>
             </el-tab-pane>
 
             <!-- 示例工程（few-shot） -->
@@ -734,6 +742,7 @@
                   {{ t("ai_workflow.ig_fewshotHint") }}
                 </el-tag>
               </div>
+              <div class="ig-tables">
               <el-table :data="fewshots" size="small" border height="100%" stripe>
                 <template #empty>
                   <el-empty :description="t('ai_workflow.ig_noExample')" :image-size="60" />
@@ -790,6 +799,7 @@
                   </template>
                 </el-table-column>
               </el-table>
+              </div>
             </el-tab-pane>
 
             <!-- 血缘 -->
@@ -863,7 +873,7 @@
             <!-- 筛选规则工作台 -->
             <el-tab-pane :label="t('ai_workflow.ig_filterRules')" name="rules">
               <FilterRulesWorkbench v-if="curDs" :datasource="curDs" />
-              <el-empty :description="t('ai_workflow.ig_selectDsFirst')" />
+              <el-empty v-else :description="t('ai_workflow.ig_selectDsFirst')" />
             </el-tab-pane>
 
             <!-- 语义建模：大模型自动生成指标/标注（S4）——**两段式：先预览，再勾选落库** -->
