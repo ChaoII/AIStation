@@ -508,6 +508,7 @@ export default {
   ig_govDqAlert: "质量预警：{count} 个对象健康分低于 60",
   ig_govNoDq: "暂无数据质量结果，点击「扫描全部对象」",
   ig_govRowCount: "行数",
+  ig_govUnscanned: "未扫描",
   ig_govIssue: "问题",
   ig_govDomainAlert:
     "数据域（Data Domain）：把数据表按业务主题归类，用于问数权限与治理；区别于「业务域」（资产上的业务标签）与「本体域」（本体对象的命名空间）。",

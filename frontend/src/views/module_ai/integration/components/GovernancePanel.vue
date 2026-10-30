@@ -306,7 +306,11 @@
           />
           <el-table-column :label="t('ai_workflow.ig_govQuality')" width="170">
             <template #default="{ row }">
+              <el-text v-if="!row.scanned" type="info" size="small">
+                {{ t("ai_workflow.ig_govUnscanned") }}
+              </el-text>
               <el-progress
+                v-else
                 :percentage="Math.round(row.score || 0)"
                 :color="
                   (row.score || 0) >= 80
@@ -319,7 +323,9 @@
               />
             </template>
           </el-table-column>
-          <el-table-column prop="total" :label="t('ai_workflow.ig_govRowCount')" width="80" />
+          <el-table-column :label="t('ai_workflow.ig_govRowCount')" width="80">
+            <template #default="{ row }">{{ row.scanned ? row.total : "-" }}</template>
+          </el-table-column>
           <el-table-column :label="t('ai_workflow.ig_govIssue')" min-width="180">
             <template #default="{ row }">
               <el-tag
