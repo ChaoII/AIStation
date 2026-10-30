@@ -15,6 +15,19 @@
           </template>
           <div class="ig-ds-list">
             <div
+              class="ig-ds-item"
+              :class="{ 'is-active': curDs && curDs.code === 'system' }"
+              @click="pickDs(systemDs)"
+            >
+              <el-icon class="ig-ds-item__icon"><Coin /></el-icon>
+              <div class="ig-ds-item__text">
+                <div class="ig-ds-item__name" :title="systemDs.name">{{ systemDs.name }}</div>
+                <div class="ig-ds-item__sub">
+                  <el-tag size="small" type="warning" effect="plain">system</el-tag>
+                </div>
+              </div>
+            </div>
+            <div
               v-for="d in datasources"
               :key="d.id"
               class="ig-ds-item"
@@ -2878,13 +2891,19 @@ async function loadAssets() {
   }
 }
 
+// loadMisc 竞态令牌：并发触发时只应用最新一次数据源的结果
+let loadMiscSeq = 0;
+
 async function loadMisc() {
+  // 竞态守卫：初次挂载与首次选数据源会并发触发 loadMisc（ds 不同），
+  // 后返回的旧请求会覆盖新数据（曾导致系统库显示未过滤的全部示例）。只应用最新一次。
+  const seq = ++loadMiscSeq;
   const safe = async (fn: () => Promise<any>, set: (v: any) => void) => {
     try {
       const r = await fn();
-      set(r.data?.data ?? {});
+      if (seq === loadMiscSeq) set(r.data?.data ?? {});
     } catch {
-      set([]);
+      if (seq === loadMiscSeq) set([]);
     }
   };
   const ds = modelingDsCode.value;
@@ -2909,7 +2928,7 @@ async function loadMisc() {
     (v) => (fewshots.value = v)
   );
   await safe(getQueryKgStats, (v) => (kg.value = v));
-  await loadUnified();
+  if (seq === loadMiscSeq) await loadUnified();
 }
 
 async function loadUnified() {
@@ -2955,7 +2974,21 @@ const modelingDsCode = computed(
 );
 // 数据库存储口径统一为 ds:{id}（后端 _norm_datasource 把 code 归一为 ds:{id}）；
 // 下拉/新建默认值必须用同口径，否则编辑已有数据（存的是 ds:{id}）时下拉不匹配显示空白。
-const defaultDsKey = computed(() => (curDs.value ? `ds:${curDs.value.id}` : "system"));
+const defaultDsKey = computed(() =>
+  curDs.value?.code === "system"
+    ? "system"
+    : curDs.value
+      ? `ds:${curDs.value.id}`
+      : "system"
+);
+// 「系统库」伪数据源：浏览平台自身（本体支撑表/视频等领域）的指标/术语/概念/示例，与业务库隔离。
+const systemDs = computed(() => ({
+  id: -1,
+  name: t("ai_workflow.ig_systemLibOption"),
+  code: "system",
+  type: "system",
+  table_count: null,
+}));
 const autoModelVisible = ref(false);
 const autoModelScope = ref<"metrics" | "annotations">("metrics");
 

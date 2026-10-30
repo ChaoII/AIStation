@@ -604,7 +604,7 @@ _SYSTEM_METRICS = [
         "key": "query_success_rate", "name": "查询成功率", "agg": "ratio", "unit": "%",
         "description": "AI 调用查询成功率 = result='success' 占比（百分比）",
         "sql_template": (
-            "SELECT ROUND(COUNT(*) FILTER (WHERE result='success')*100.0/COUNT(*),2) AS 数值 "
+            "SELECT ROUND(COUNT(*) FILTER (WHERE result='success')*100.0/NULLIF(COUNT(*),0),2) AS 数值 "
             "FROM ai_call_logs WHERE is_deleted = false"
         ),
         "params": [], "dimensions": [], "cache_ttl": 60,
@@ -613,7 +613,7 @@ _SYSTEM_METRICS = [
         "key": "online_event_ratio", "name": "在线事件占比", "agg": "ratio", "unit": "%",
         "description": "边缘事件在线（matched=true）占比（百分比）",
         "sql_template": (
-            "SELECT ROUND(COUNT(*) FILTER (WHERE matched=true)*100.0/COUNT(*),2) AS 数值 "
+            "SELECT ROUND(COUNT(*) FILTER (WHERE matched=true)*100.0/NULLIF(COUNT(*),0),2) AS 数值 "
             "FROM video_edge_events"
         ),
         "params": [], "dimensions": [], "cache_ttl": 60,
