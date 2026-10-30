@@ -489,16 +489,23 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
 
 
 def _to_metric_dict(m: AiQueryMetricModel) -> dict:
+    # 绑定型指标（object_code + agg_fn）：不展示占位 SQL，改为展示「绑定对象/属性/聚合」口径。
+    obj_code = getattr(m, "object_code", "") or ""
+    prop_code = getattr(m, "property_code", "") or ""
+    agg_fn = getattr(m, "agg_fn", "") or ""
+    sql_template = m.sql_template
+    if obj_code and agg_fn and (not sql_template or "SELECT 1" in (sql_template or "")):
+        sql_template = f"绑定对象:{obj_code} 属性:{prop_code or '(整对象)'} 聚合:{agg_fn}"
     return {
         "id": m.id, "datasource": m.datasource, "key": m.key, "name": m.name,
-        "description": m.description or "", "sql_template": m.sql_template,
+        "description": m.description or "", "sql_template": sql_template,
         "params": m.params or [], "dimensions": m.dimensions or [], "agg": m.agg,
         "unit": m.unit or "", "permission_tag": m.permission_tag or "",
         "enabled": m.enabled, "sort": m.sort or 0, "cache_ttl": m.cache_ttl or 0,
         # 指标 ↔ 本体绑定（S1）
-        "object_code": getattr(m, "object_code", "") or "",
-        "property_code": getattr(m, "property_code", "") or "",
-        "agg_fn": getattr(m, "agg_fn", "") or "",
+        "object_code": obj_code,
+        "property_code": prop_code,
+        "agg_fn": agg_fn,
         "bound_dimensions": getattr(m, "bound_dimensions", None) or [],
     }
 
@@ -3868,6 +3875,7 @@ class AiQueryService:
         except Exception:  # noqa: BLE001
             entities = relations = 0
         return {"data_nodes": len(assets), "data_edges": int(edges),
+                "nodes": len(assets), "edges": int(edges),
                 "entities": int(entities), "relations": int(relations),
                 "objects": len(objs)}
 
@@ -5011,6 +5019,9 @@ class AiQueryService:
         concepts = await cls.list_concepts()
         alerts = []
         for it in ov["items"]:
+            # 未扫描对象不按 0 分计入预警（避免 mes_equipment/orders 等未扫描对象误导口径）
+            if not it.get("scanned"):
+                continue
             if (it["score"] or 0) < 60:
                 t = it["table"]
                 async with async_db_session() as db:
