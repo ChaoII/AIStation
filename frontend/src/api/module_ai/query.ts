@@ -480,8 +480,8 @@ export function getIndustryTemplates() {
 export function applyIndustryTemplate(template_id: string) {
   return request({ url: `${API_PATH}/industry/apply`, method: "post", data: { template_id } });
 }
-export function getPipelineList() {
-  return request({ url: `${API_PATH}/pipeline/list`, method: "get" });
+export function getPipelineList(params?: any) {
+  return request({ url: `${API_PATH}/pipeline/list`, method: "get", params });
 }
 export function getPipelineGraph() {
   return request({ url: `${API_PATH}/pipeline/graph`, method: "get" });
@@ -579,8 +579,8 @@ export function getOntologyGovernance() {
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }
-export function getQueryConcepts() {
-  return request({ url: `${API_PATH}/concepts/list`, method: "get" });
+export function getQueryConcepts(params?: any) {
+  return request({ url: `${API_PATH}/concepts/list`, method: "get", params });
 }
 export function saveQueryConcept(data: any) {
   return request({ url: `${API_PATH}/concepts/save`, method: "post", data });

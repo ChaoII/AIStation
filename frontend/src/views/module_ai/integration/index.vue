@@ -1874,6 +1874,7 @@ async function pickDs(row: any) {
   columns.value = [];
   dsTables.value = [];
   if (row) await loadDsTables();
+  void loadMisc();
 }
 
 async function loadDsTables() {
@@ -2718,10 +2719,11 @@ async function loadMisc() {
       set([]);
     }
   };
-  await safe(getPipelineList, (v) => (pipelines.value = v));
+  const ds = modelingDsCode.value;
+  await safe(() => getPipelineList({ datasource: ds }), (v) => (pipelines.value = v));
   await safe(getQueryMetrics, (v) => (metrics.value = v));
-  await safe(getQueryTerms, (v) => (terms.value = v));
-  await safe(getQueryConcepts, (v) => (concepts.value = v));
+  await safe(() => getQueryTerms({ datasource: ds }), (v) => (terms.value = v));
+  await safe(() => getQueryConcepts({ datasource: ds }), (v) => (concepts.value = v));
   await safe(getQueryFewshots, (v) => (fewshots.value = v));
   await safe(getQueryKgStats, (v) => (kg.value = v));
   await loadUnified();
