@@ -2157,7 +2157,7 @@ class AiQueryService:
                 async with async_db_session.begin() as db:
                     from sqlalchemy import text as _t
                     await db.execute(_t(
-                        "UPDATE ai_query_datasource SET enabled=true WHERE name=:n AND is_deleted=false"),
+                        "UPDATE ai_query_datasources SET enabled=true WHERE name=:n AND is_deleted=false"),
                         {"n": table})
                 return {"ok": True, "msg": f"已启用数据源 {table}"}
             except Exception as e:  # noqa: BLE001
