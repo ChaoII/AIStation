@@ -252,6 +252,7 @@ export default {
   ig_question: "问题",
   ig_exampleSql: "示例 SQL",
   ig_systemLibOption: "系统库（本体支撑表）",
+  ig_systemNoRules: "系统库不适用筛选规则，请选择业务数据源",
   ig_questionPlaceholder: "自然语言问题，如：统计摄像机的状态分布",
   ig_questionRequired: "请填写问题",
   ig_sqlRequired: "请填写示例 SQL",

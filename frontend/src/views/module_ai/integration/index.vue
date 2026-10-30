@@ -978,8 +978,15 @@
 
             <!-- 筛选规则工作台 -->
             <el-tab-pane :label="t('ai_workflow.ig_filterRules')" name="rules">
-              <FilterRulesWorkbench v-if="curDs" :datasource="curDs" />
-              <el-empty v-else :description="t('ai_workflow.ig_selectDsFirst')" />
+              <FilterRulesWorkbench v-if="curDs && curDs.code !== 'system'" :datasource="curDs" />
+              <el-empty
+                v-else
+                :description="
+                  curDs && curDs.code === 'system'
+                    ? t('ai_workflow.ig_systemNoRules')
+                    : t('ai_workflow.ig_selectDsFirst')
+                "
+              />
             </el-tab-pane>
 
             <!-- 语义建模：大模型自动生成指标/标注（S4）——**两段式：先预览，再勾选落库** -->
