@@ -131,16 +131,23 @@ def infer_links(
 
 
 def asset_payload(record: dict, description: str | None = None) -> dict:
-    """把一条同步记录转成 ``upsert_asset`` 需要的载荷（中文名取表注释）。"""
+    """把一条同步记录转成 ``upsert_asset`` 需要的载荷。
+
+    中文名（alias）取表注释的**简短形式**；业务描述（description）优先取调用方传入的
+    LLM 完整描述，否则回退到表注释。二者分开，避免「中文名=业务描述」重复。
+    """
     table = str(record.get("table") or "")
     cols = record.get("columns") or []
     comment = str(record.get("comment") or "").strip()
     key = find_key_col(cols)
+    # alias：优先表注释，缺则回退表名（避免前端显示 "-"）
+    alias = comment or table
+    desc = (comment if description is None else description).strip() or alias
     return {
         "table_name": table,
-        "alias": comment,
+        "alias": alias,
         "domain": domain_of(table),
-        "description": (comment if description is None else description).strip(),
+        "description": desc,
         "business_scenarios": "",
         "included": True,
         "remark": "",

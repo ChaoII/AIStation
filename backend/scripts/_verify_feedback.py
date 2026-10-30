@@ -35,34 +35,37 @@ async def main() -> None:
     )
     print(f"造消息 id={msg.id}")
 
-    # 用户点踩 + 给出正确 SQL（ds:4 的表）
-    out = await AiQueryService.feedback(
-        msg.id, "down", 'SELECT COUNT(*) FROM "FUEL_CMCS_ASSAY"', auth
-    )
-    print(f"feedback 返回: {out}")
+    try:
+        # 用户点踩 + 给出正确 SQL（ds:4 的表）
+        out = await AiQueryService.feedback(
+            msg.id, "down", 'SELECT COUNT(*) FROM "FUEL_CMCS_ASSAY"', auth
+        )
+        print(f"feedback 返回: {out}")
 
-    async with async_db_session() as db:
-        r = (
-            await db.execute(
-                text(
-                    "SELECT feedback, COALESCE(correct_sql,'') FROM ai_query_messages WHERE id=:i"
-                ),
-                {"i": msg.id},
-            )
-        ).fetchone()
-        print(f"库里 feedback={r[0]!r} correct_sql={r[1]!r}")
-        n = (
-            await db.execute(
-                text(
-                    "SELECT COUNT(*) FROM ai_query_fewshot WHERE is_deleted=false AND question=:q"
-                ),
-                {"q": Q},
-            )
-        ).scalar()
-        print(f"沉淀的 few-shot 条数: {n}")
-        # 清理验证数据
-        await db.execute(text("DELETE FROM ai_query_fewshot WHERE question=:q"), {"q": Q})
-        await db.execute(text("DELETE FROM ai_query_messages WHERE id=:i"), {"i": msg.id})
+        async with async_db_session() as db:
+            r = (
+                await db.execute(
+                    text(
+                        "SELECT feedback, COALESCE(correct_sql,'') FROM ai_query_messages WHERE id=:i"
+                    ),
+                    {"i": msg.id},
+                )
+            ).fetchone()
+            print(f"库里 feedback={r[0]!r} correct_sql={r[1]!r}")
+            n = (
+                await db.execute(
+                    text(
+                        "SELECT COUNT(*) FROM ai_query_fewshot WHERE is_deleted=false AND question=:q"
+                    ),
+                    {"q": Q},
+                )
+            ).scalar()
+            print(f"沉淀的 few-shot 条数: {n}")
+    finally:
+        # 无论如何都清理验证数据（避免失败残留「反馈链路验证题__请忽略」脏 few-shot）
+        async with async_db_session() as db:
+            await db.execute(text("DELETE FROM ai_query_fewshot WHERE question=:q"), {"q": Q})
+            await db.execute(text("DELETE FROM ai_query_messages WHERE id=:i"), {"i": msg.id})
     print("已清理验证数据")
 
 

@@ -1805,6 +1805,7 @@ class AiQueryService:
     # ---- 术语 ----
     @classmethod
     async def list_terms(cls, datasource: str | None = None) -> list[dict]:
+        datasource = await _norm_datasource(datasource)
         async with async_db_session() as db:
             from sqlalchemy import select
 
@@ -2716,6 +2717,7 @@ class AiQueryService:
     @classmethod
     async def list_concepts(cls, datasource: str | None = None) -> list[dict]:
         await cls._ensure_concept_table()
+        datasource = await _norm_datasource(datasource)
         async with async_db_session() as db:
             from sqlalchemy import text as _t
 
@@ -2745,6 +2747,7 @@ class AiQueryService:
         if not name:
             raise CustomException(msg="概念名称不能为空")
         ds = (data.get("datasource") or "").strip()
+        ds = await _norm_datasource(ds) or ""
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
 
@@ -4159,6 +4162,7 @@ class AiQueryService:
 
     @classmethod
     async def list_pipelines(cls, datasource: str | None = None) -> list[dict]:
+        datasource = await _norm_datasource(datasource)
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             sql = (
@@ -4186,22 +4190,23 @@ class AiQueryService:
     async def upsert_pipeline(cls, data: dict) -> dict:
         import json as _json
         mp = _json.dumps(data.get("mappings") or [], ensure_ascii=False)
+        ds = await _norm_datasource((data.get("datasource") or "").strip()) or ""
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
             if data.get("id"):
                 await db.execute(_t(
                     "UPDATE ai_pipeline SET name=:n, source_connection=:sc, source_table=:st, "
-                    "target_object=:to, mappings=:m, enabled=:e, updated_time=now() WHERE id=:i"), {
+                    "target_object=:to, mappings=:m, enabled=:e, datasource=:ds, updated_time=now() WHERE id=:i"), {
                     "n": data.get("name", ""), "sc": data.get("source_connection", ""),
                     "st": data.get("source_table", ""), "to": data.get("target_object", ""),
-                    "m": mp, "e": bool(data.get("enabled", True)), "i": data["id"]})
+                    "m": mp, "e": bool(data.get("enabled", True)), "ds": ds, "i": data["id"]})
                 return {"id": data["id"]}
             res = await db.execute(_t(
-                "INSERT INTO ai_pipeline(name,source_connection,source_table,target_object,mappings,enabled) "
-                "VALUES (:n,:sc,:st,:to,:m,:e) RETURNING id"), {
+                "INSERT INTO ai_pipeline(name,source_connection,source_table,target_object,mappings,enabled,datasource) "
+                "VALUES (:n,:sc,:st,:to,:m,:e,:ds) RETURNING id"), {
                 "n": data.get("name", ""), "sc": data.get("source_connection", ""),
                 "st": data.get("source_table", ""), "to": data.get("target_object", ""),
-                "m": mp, "e": bool(data.get("enabled", True))})
+                "m": mp, "e": bool(data.get("enabled", True)), "ds": ds})
             return {"id": res.scalar()}
 
     @classmethod
