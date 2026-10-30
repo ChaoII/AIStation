@@ -826,12 +826,7 @@
             :placeholder="t('ai_workflow.ig_govMemberUsersPlaceholder')"
             style="width: 100%"
           >
-            <el-option
-              v-for="u in domainUsers"
-              :key="u.id"
-              :label="u.label"
-              :value="u.id"
-            />
+            <el-option v-for="u in domainUsers" :key="u.id" :label="u.label" :value="u.id" />
           </el-select>
         </el-form-item>
       </el-form>
