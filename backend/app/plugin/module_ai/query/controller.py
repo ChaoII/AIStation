@@ -707,8 +707,9 @@ async def industry_apply(
 @AiQueryRouter.get("/pipeline/list", summary="数据管道列表")
 async def pipeline_list(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str | None = None,
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.list_pipelines(), msg="查询成功")
+    return SuccessResponse(data=await AiQueryService.list_pipelines(datasource), msg="查询成功")
 
 
 @AiQueryRouter.get("/pipeline/graph", summary="数据管道(ELT)编排图")
@@ -1353,8 +1354,9 @@ async def kg_traverse(
 @AiQueryRouter.get("/concepts/list", summary="业务概念列表")
 async def list_concepts(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str | None = None,
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.list_concepts(), msg="查询成功")
+    return SuccessResponse(data=await AiQueryService.list_concepts(datasource), msg="查询成功")
 
 
 @AiQueryRouter.post("/concepts/save", summary="业务概念保存")

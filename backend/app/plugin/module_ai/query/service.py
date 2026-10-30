@@ -85,6 +85,7 @@ _QUERY_TABLES_SQL = (
     "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), source_connection VARCHAR(120), "
     "source_table VARCHAR(120), target_object VARCHAR(120), mappings JSONB DEFAULT '[]', "
     "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
+    "datasource VARCHAR(120), "
     "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now())",
     "CREATE TABLE IF NOT EXISTS ai_pipeline_run ("
     "id BIGSERIAL PRIMARY KEY, pipeline_id BIGINT, status VARCHAR(20), message TEXT, "
@@ -142,6 +143,7 @@ _QUERY_TABLES_SQL = (
 #: 存量库缺列补齐（SQLite 不支持 ADD COLUMN IF NOT EXISTS，失败忽略）
 _QUERY_ALTER_SQL = (
     "ALTER TABLE ai_workshop_app ADD COLUMN IF NOT EXISTS deleted_time TIMESTAMP",
+    "ALTER TABLE ai_pipeline ADD COLUMN IF NOT EXISTS datasource VARCHAR(120)",
 )
 
 
@@ -2699,23 +2701,32 @@ class AiQueryService:
                 "id BIGSERIAL PRIMARY KEY, name VARCHAR(120) UNIQUE, description TEXT, "
                 "synonyms TEXT, parent_name VARCHAR(120), domain VARCHAR(60), "
                 "metric_key VARCHAR(80), tables JSONB, is_deleted BOOLEAN DEFAULT false, "
+                "datasource VARCHAR(120), "
                 "created_time TIMESTAMP DEFAULT now())"))
+            await db.execute(_t(
+                "ALTER TABLE ai_query_concept ADD COLUMN IF NOT EXISTS datasource VARCHAR(120)"))
 
     @classmethod
-    async def list_concepts(cls) -> list[dict]:
+    async def list_concepts(cls, datasource: str | None = None) -> list[dict]:
         await cls._ensure_concept_table()
         async with async_db_session() as db:
             from sqlalchemy import text as _t
 
-            res = await db.execute(_t(
-                "SELECT id,name,description,synonyms,parent_name,domain,metric_key,tables "
-                "FROM ai_query_concept WHERE is_deleted=false ORDER BY id"))
+            sql = ("SELECT id,name,description,synonyms,parent_name,domain,metric_key,tables,datasource "
+                   "FROM ai_query_concept WHERE is_deleted=false")
+            params: dict = {}
+            if datasource:
+                sql += " AND datasource=:ds"
+                params["ds"] = datasource
+            sql += " ORDER BY id"
+            res = await db.execute(_t(sql), params)
             rows = res.fetchall()
         import json as _json
         return [{
             "id": r[0], "name": r[1], "description": r[2] or "", "synonyms": r[3] or "",
             "parent_name": r[4] or "", "domain": r[5] or "", "metric_key": r[6] or "",
             "tables": r[7] if isinstance(r[7], list) else (_json.loads(r[7]) if r[7] else []),
+            "datasource": r[8] or "",
         } for r in rows]
 
     @classmethod
@@ -2726,27 +2737,29 @@ class AiQueryService:
         name = (data.get("name") or "").strip()
         if not name:
             raise CustomException(msg="概念名称不能为空")
+        ds = (data.get("datasource") or "").strip()
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
 
             if data.get("id"):
                 await db.execute(_t(
                     "UPDATE ai_query_concept SET name=:n, description=:d, synonyms=:s, "
-                    "parent_name=:p, domain=:do, metric_key=:m, tables=:tb "
+                    "parent_name=:p, domain=:do, metric_key=:m, tables=:tb, datasource=:ds "
                     "WHERE id=:id AND is_deleted=false"),
                     {"n": name, "d": data.get("description", ""), "s": data.get("synonyms", ""),
                      "p": data.get("parent_name", ""), "do": data.get("domain", ""),
-                     "m": data.get("metric_key", ""), "tb": tables, "id": data["id"]})
+                     "m": data.get("metric_key", ""), "tb": tables, "ds": ds, "id": data["id"]})
             else:
                 await db.execute(_t(
                     "INSERT INTO ai_query_concept(name, description, synonyms, parent_name, "
-                    "domain, metric_key, tables) VALUES (:n,:d,:s,:p,:do,:m,:tb) "
+                    "domain, metric_key, tables, datasource) VALUES (:n,:d,:s,:p,:do,:m,:tb,:ds) "
                     "ON CONFLICT (name) DO UPDATE SET description=EXCLUDED.description, "
                     "synonyms=EXCLUDED.synonyms, parent_name=EXCLUDED.parent_name, "
-                    "domain=EXCLUDED.domain, metric_key=EXCLUDED.metric_key, tables=EXCLUDED.tables"),
+                    "domain=EXCLUDED.domain, metric_key=EXCLUDED.metric_key, tables=EXCLUDED.tables, "
+                    "datasource=EXCLUDED.datasource"),
                     {"n": name, "d": data.get("description", ""), "s": data.get("synonyms", ""),
                      "p": data.get("parent_name", ""), "do": data.get("domain", ""),
-                     "m": data.get("metric_key", ""), "tb": tables})
+                     "m": data.get("metric_key", ""), "tb": tables, "ds": ds})
         return {"name": name}
 
     @classmethod
@@ -4137,21 +4150,28 @@ class AiQueryService:
         return {"nodes": nodes, "edges": edges}
 
     @classmethod
-    async def list_pipelines(cls) -> list[dict]:
+    async def list_pipelines(cls, datasource: str | None = None) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t
-            res = await db.execute(_t(
+            sql = (
                 "SELECT p.id,p.name,p.source_connection,p.source_table,p.target_object,p.mappings,p.enabled,"
                 "(SELECT status FROM ai_pipeline_run r WHERE r.pipeline_id=p.id AND r.is_deleted=false ORDER BY r.id DESC LIMIT 1) AS last_status,"
-                "(SELECT ran_at FROM ai_pipeline_run r WHERE r.pipeline_id=p.id AND r.is_deleted=false ORDER BY r.id DESC LIMIT 1) AS last_at "
-                "FROM ai_pipeline p WHERE p.is_deleted=false ORDER BY p.id DESC"))
-            rows = res.fetchall()
+                "(SELECT ran_at FROM ai_pipeline_run r WHERE r.pipeline_id=p.id AND r.is_deleted=false ORDER BY r.id DESC LIMIT 1) AS last_at,"
+                "p.datasource "
+                "FROM ai_pipeline p WHERE p.is_deleted=false")
+            params: dict = {}
+            if datasource:
+                sql += " AND p.datasource=:ds"
+                params["ds"] = datasource
+            sql += " ORDER BY p.id DESC"
+            rows = (await db.execute(_t(sql), params)).fetchall()
         import json as _json
         return [{
             "id": r[0], "name": r[1] or "", "source_connection": r[2] or "", "source_table": r[3] or "",
             "target_object": r[4] or "",
             "mappings": r[5] if isinstance(r[5], list) else (_json.loads(r[5]) if r[5] else []),
             "enabled": bool(r[6]), "last_status": r[7] or "", "last_at": str(r[8]) if r[8] else "",
+            "datasource": r[9] or "",
         } for r in rows]
 
     @classmethod
