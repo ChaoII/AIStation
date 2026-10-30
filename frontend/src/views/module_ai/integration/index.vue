@@ -264,6 +264,16 @@
                       <el-button icon="Star" link type="primary" size="small" @click="addFav(row)">
                         {{ t("ai_workflow.ig_favorite") }}
                       </el-button>
+                      <el-button
+                        v-hasPerm="'module_ai:query:ask'"
+                        icon="Download"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="exportTable(row)"
+                      >
+                        {{ t("ai_workflow.ig_export") }}
+                      </el-button>
                       <!-- 「分享」入口暂时下线：后端 share/create 会生成 /web#/ai/query?share=<token>，
                            但全前端**没有一处读这个参数**，点开就是普通问数页——
                            假闭环比没有更伤信任。恢复入口前请先实现 ?share= 的消费方。 -->
@@ -1887,6 +1897,7 @@ import {
   autoLinkQueryKg,
   getAssetLineage,
   getAssetImpact,
+  exportAsset,
   getDataLifetime,
   saveDataLifetime,
   removeDataLifetime,
@@ -2093,6 +2104,42 @@ async function addFav(row: any) {
     ElMessage.success(r?.data?.msg || t("ai_workflow.ig_favorited"));
   } catch (e: any) {
     ElMessage.error(e?.msg || t("ai_workflow.ig_favoriteFail"));
+  }
+}
+// 数据集导出：拉取真实表数据（最多 500 行）生成 CSV 下载
+async function exportTable(row: any) {
+  const table = row.table || row.table_name || "";
+  if (!table) return;
+  try {
+    const r = await exportAsset(table, 500);
+    const d = r.data?.data || {};
+    if (d.ok === false) {
+      ElMessage.error(d.msg || t("ai_workflow.ig_exportFail"));
+      return;
+    }
+    const cols: string[] = d.columns || [];
+    const data: any[] = d.rows || [];
+    const esc = (v: any) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = [cols.join(",")];
+    for (const it of data) lines.push(cols.map((c) => esc(it[c])).join(","));
+    // 加 BOM，避免 Excel 打开中文乱码
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${table}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    ElMessage.success(t("ai_workflow.ig_exportDone", { count: d.row_count ?? data.length }));
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.ig_exportFail"));
   }
 }
 const batchDlg = ref(false);
