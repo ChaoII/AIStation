@@ -203,6 +203,16 @@ async def unified_graph(kb_id: int | None = None, schema_only: bool = False,
             if n.get("name") in layout:
                 n["x"] = layout[n["name"]]["x"]
                 n["y"] = layout[n["name"]]["y"]
+    # 无保存布局/无坐标的节点：按**方阵网格**铺默认坐标，确保 GraphCanvas 能渲染出节点而非空画布。
+    # 用接近 sqrt(n) 的列数而非固定 12 列——固定列会让 844 节点排成超高竖条，
+    # 后续 preset 布局 fit 时按高度缩放，被压成一条窄竖线。
+    _missing = [n for n in merged["nodes"] if n.get("x") is None or n.get("y") is None]
+    if _missing:
+        import math
+        ncols = max(1, int(math.ceil(math.sqrt(len(_missing)))))
+        for i, n in enumerate(_missing):
+            n["x"] = 120.0 + (i % ncols) * 160.0
+            n["y"] = 120.0 + (i // ncols) * 120.0
     return merged
 
 

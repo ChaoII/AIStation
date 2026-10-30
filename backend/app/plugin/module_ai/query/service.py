@@ -3854,16 +3854,19 @@ class AiQueryService:
 
     @classmethod
     async def kg_stats(cls) -> dict:
-        """统一图谱统计：数据 schema 图节点/边 + 知识库图实体/关系。"""
+        """统一图谱统计：数据 schema 图节点/边 + 知识库图实体/关系。
+
+        ``edges`` 取自 schema 图谱（``agno_kg._ensure()``），与「数据关系图」页
+        ``unified_graph`` 实际渲染的边同源，保证「关系边」与图一致。
+        （旧实现查 ``ai_query_asset_columns.related_table`` 且用 ``is_deleted=0``
+        对布尔列比较，异常被吞掉导致恒为 0，与图谱不符。）
+        """
         assets = await cls.list_assets()
         objs = [a for a in assets if a.get("object_enabled")]
         edges = 0
         try:
-            async with async_db_session() as db:
-                from sqlalchemy import text as _t
-                edges = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_query_asset_columns "
-                    "WHERE related_table IS NOT NULL AND related_table<>'' AND is_deleted=0"))).scalar() or 0
+            from .agno_kg import _ensure as _kg_ensure
+            edges = len((await _kg_ensure()).edges)
         except Exception:  # noqa: BLE001
             edges = 0
         entities = 0
@@ -3872,9 +3875,9 @@ class AiQueryService:
             async with async_db_session() as db:
                 from sqlalchemy import text as _t
                 entities = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_kg_entity WHERE is_deleted=0")).scalar() or 0)
+                    "SELECT COUNT(*) FROM ai_kg_entity WHERE is_deleted=false")).scalar() or 0)
                 relations = (await db.execute(_t(
-                    "SELECT COUNT(*) FROM ai_kg_relation WHERE is_deleted=0")).scalar() or 0)
+                    "SELECT COUNT(*) FROM ai_kg_relation WHERE is_deleted=false")).scalar() or 0)
         except Exception:  # noqa: BLE001
             entities = relations = 0
         return {"data_nodes": len(assets), "data_edges": int(edges),

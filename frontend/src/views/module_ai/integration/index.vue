@@ -161,7 +161,7 @@
                     min-width="140"
                     show-overflow-tooltip
                   >
-                    <template #default="{ row }">{{ row.alias || "-" }}</template>
+                    <template #default="{ row }">{{ row.alias || row.description || row.table }}</template>
                   </el-table-column>
                   <el-table-column
                     :label="t('ai_workflow.ig_businessDomain')"
@@ -803,7 +803,7 @@
             </el-tab-pane>
 
             <!-- 血缘 -->
-            <el-tab-pane :label="t('ai_workflow.ig_dataGraph')" name="kg">
+            <el-tab-pane :label="t('ai_workflow.ig_dataGraph')" name="kg" lazy>
               <el-alert
                 type="info"
                 :closable="false"
@@ -863,7 +863,7 @@
                 :nodes="filteredKgNodes"
                 :edges="filteredKgEdges"
                 height="560px"
-                layout-name="grid"
+                layout-name="cose"
                 :node-style="nodeStyle"
                 class="ig-kg-graph"
               />
@@ -2748,6 +2748,8 @@ async function loadUnified() {
       name: n.name,
       etype: n.etype,
       category: n.etype,
+      x: n.x,
+      y: n.y,
     }));
     const edges = (d.edges || []).map((e: any) => ({
       source: e.source,
