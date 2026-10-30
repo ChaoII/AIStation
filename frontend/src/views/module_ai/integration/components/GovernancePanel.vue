@@ -166,13 +166,19 @@
       <!-- ABAC 权限 -->
       <el-tab-pane :label="t('ai_workflow.ig_govAccess')" name="access">
         <div class="gp-bar">
-          <el-button type="primary" size="small" :icon="Plus" @click="openAccess()">
+          <el-button
+            v-hasPerm="'module_ai:query:ask'"
+            type="primary"
+            size="small"
+            :icon="Plus"
+            @click="openAccess()"
+          >
             {{ t("ai_workflow.ig_govNewPolicy") }}
           </el-button>
-          <el-button size="small" @click="openMatrix">
+          <el-button v-hasPerm="'module_ai:query:ask'" size="small" @click="openMatrix">
             {{ t("ai_workflow.ig_govMatrix") }}
           </el-button>
-          <el-button size="small" @click="openSandbox">
+          <el-button v-hasPerm="'module_ai:query:ask'" size="small" @click="openSandbox">
             {{ t("ai_workflow.ig_govSandbox") }}
           </el-button>
           <el-tag size="small" type="info" effect="plain">
@@ -227,10 +233,23 @@
           </el-table-column>
           <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
             <template #default="{ row }">
-              <el-button icon="edit" link type="primary" size="small" @click="editAccess(row)">
+              <el-button
+                v-hasPerm="'module_ai:query:ask'"
+                icon="edit"
+                link
+                type="primary"
+                size="small"
+                @click="editAccess(row)"
+              >
                 {{ t("ai_workflow.ig_edit") }}
               </el-button>
-              <el-button link type="danger" size="small" @click="delAccess(row)">
+              <el-button
+                v-hasPerm="'module_ai:query:ask'"
+                link
+                type="danger"
+                size="small"
+                @click="delAccess(row)"
+              >
                 {{ t("ai_workflow.ig_govDel") }}
               </el-button>
             </template>
@@ -242,6 +261,7 @@
       <el-tab-pane :label="t('ai_workflow.ig_govDq')" name="dq">
         <div class="gp-bar">
           <el-button
+            v-hasPerm="'module_ai:query:ask'"
             type="primary"
             size="small"
             :icon="Refresh"
@@ -330,7 +350,13 @@
           :title="t('ai_workflow.ig_govDomainAlert')"
         />
         <div class="gp-bar">
-          <el-button type="primary" size="small" :icon="Plus" @click="openDomain()">
+          <el-button
+            v-hasPerm="'module_ai:query:ask'"
+            type="primary"
+            size="small"
+            :icon="Plus"
+            @click="openDomain()"
+          >
             {{ t("ai_workflow.ig_govNewDomain") }}
           </el-button>
           <el-tag size="small" type="info" effect="plain">
@@ -353,10 +379,23 @@
                       {{ d.code }}
                     </el-tag>
                   </span>
-                  <el-button icon="edit" link type="primary" size="small" @click="editDomain(d)">
+                  <el-button
+                    v-hasPerm="'module_ai:query:ask'"
+                    icon="edit"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="editDomain(d)"
+                  >
                     {{ t("ai_workflow.ig_edit") }}
                   </el-button>
-                  <el-button link type="danger" size="small" @click="delDomain(d)">
+                  <el-button
+                    v-hasPerm="'module_ai:query:ask'"
+                    link
+                    type="danger"
+                    size="small"
+                    @click="delDomain(d)"
+                  >
                     {{ t("ai_workflow.ig_govDel") }}
                   </el-button>
                 </div>
@@ -389,13 +428,21 @@
         </el-row>
       </el-tab-pane>
 
-<!-- 交付命题：五步交付 / 影子校验（原 FDE 后端能力接入） -->
+      <!-- 交付命题：五步交付 / 影子校验（原 FDE 后端能力接入） -->
       <el-tab-pane :label="t('ai_workflow.ig_govFde')" name="fde">
         <div class="gp-bar">
-          <el-button type="primary" size="small" :icon="Plus" @click="openFde()">
+          <el-button
+            v-hasPerm="'module_ai:query:ask'"
+            type="primary"
+            size="small"
+            :icon="Plus"
+            @click="openFde()"
+          >
             {{ t("ai_workflow.ig_govNewFde") }}
           </el-button>
-          <el-button size="small" @click="loadFde">{{ t("ai_workflow.ig_govRefresh") }}</el-button>
+          <el-button v-hasPerm="'module_ai:query:ask'" size="small" @click="loadFde">
+            {{ t("ai_workflow.ig_govRefresh") }}
+          </el-button>
           <el-tag size="small" type="info" effect="plain">
             {{ t("ai_workflow.ig_govFdeCount", { count: fdeList.length }) }}
           </el-tag>
@@ -457,10 +504,18 @@
             fixed="right"
           >
             <template #default="{ row }">
-              <el-button icon="edit" link type="primary" size="small" @click="openFde(row)">
+              <el-button
+                v-hasPerm="'module_ai:query:ask'"
+                icon="edit"
+                link
+                type="primary"
+                size="small"
+                @click="openFde(row)"
+              >
                 {{ t("ai_workflow.ig_edit") }}
               </el-button>
               <el-button
+                v-hasPerm="'module_ai:query:ask'"
                 icon="Checked"
                 link
                 type="primary"
@@ -470,15 +525,20 @@
               >
                 {{ t("ai_workflow.ig_govShadowCheck") }}
               </el-button>
-              <el-button link type="danger" size="small" @click="removeFde(row)">
+              <el-button
+                v-hasPerm="'module_ai:query:ask'"
+                link
+                type="danger"
+                size="small"
+                @click="removeFde(row)"
+              >
                 {{ t("ai_workflow.ig_govDel") }}
               </el-button>
             </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
-
-</el-tabs>
+    </el-tabs>
 
     <!-- 权限策略编辑 -->
     <el-dialog
@@ -530,7 +590,7 @@
       </el-form>
       <template #footer>
         <el-button @click="accessDialog = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
-        <el-button type="primary" @click="saveAccessForm()">
+        <el-button v-hasPerm="'module_ai:query:ask'" type="primary" @click="saveAccessForm()">
           {{ t("ai_workflow.ig_save") }}
         </el-button>
       </template>
@@ -634,6 +694,7 @@
             style="width: 110px"
           />
           <el-button
+            v-hasPerm="'module_ai:query:ask'"
             size="small"
             type="primary"
             :loading="sandboxLoading"
@@ -654,6 +715,7 @@
             <el-option v-for="r in matrixRows" :key="r.code" :label="r.name" :value="r.code" />
           </el-select>
           <el-button
+            v-hasPerm="'module_ai:query:ask'"
             size="small"
             type="primary"
             :loading="sandboxLoading"
@@ -771,7 +833,12 @@
       </el-form>
       <template #footer>
         <el-button @click="fdeDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
-        <el-button type="primary" :loading="savingFde" @click="saveFde">
+        <el-button
+          v-hasPerm="'module_ai:query:ask'"
+          type="primary"
+          :loading="savingFde"
+          @click="saveFde"
+        >
           {{ t("ai_workflow.ig_save") }}
         </el-button>
       </template>
@@ -832,7 +899,7 @@
       </el-form>
       <template #footer>
         <el-button @click="domainDialog = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
-        <el-button type="primary" @click="saveDomainForm()">
+        <el-button v-hasPerm="'module_ai:query:ask'" type="primary" @click="saveDomainForm()">
           {{ t("ai_workflow.ig_save") }}
         </el-button>
       </template>
