@@ -3537,16 +3537,28 @@ class AiQueryService:
         from datetime import datetime
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
+            await cls._ensure_asset_publish(db)
+            # 跨库 upsert：先删后插（PG/MySQL/SQLite 通用；避免 SQLite 专属 INSERT OR REPLACE）
+            await db.execute(_t("DELETE FROM ai_asset_publish WHERE table_name=:t"), {"t": table_name})
             await db.execute(_t(
-                "CREATE TABLE IF NOT EXISTS ai_asset_publish "
-                "(table_name TEXT PRIMARY KEY, version_id INTEGER, published_time TEXT, operator TEXT)"))
-            await db.execute(_t(
-                "INSERT OR REPLACE INTO ai_asset_publish(table_name,version_id,published_time,operator) "
+                "INSERT INTO ai_asset_publish(table_name,version_id,published_time,operator) "
                 "VALUES (:t,:v,:now,:op)"),
                 {"t": table_name, "v": int(version_id),
                  "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                  "op": str(getattr(getattr(auth, "user", None), "id", ""))})
         return {"ok": True, "table": table_name, "version": v[3], "msg": f"已发布版本 {v[3]}"}
+
+    @staticmethod
+    async def _ensure_asset_publish(db) -> None:
+        """幂等创建「发布版本」记录表（asset_releases 查询前 / 发布前都需保证存在）。
+
+        历史缺陷：建表只写在「发布」动作里，而「版本」弹窗先查 asset_releases，
+        表不存在时直接 400。这里统一建表，兼容 PG（VARCHAR 主键）。"""
+        from sqlalchemy import text as _t
+        await db.execute(_t(
+            "CREATE TABLE IF NOT EXISTS ai_asset_publish "
+            "(table_name VARCHAR(255) PRIMARY KEY, version_id INTEGER, "
+            "published_time VARCHAR(64), operator VARCHAR(64))"))
 
     @classmethod
     async def asset_releases(cls, table_name: str) -> dict:
@@ -3554,6 +3566,7 @@ class AiQueryService:
         import json as _json
         async with async_db_session() as db:
             from sqlalchemy import text as _t
+            await cls._ensure_asset_publish(db)
             version_rows = (await db.execute(_t(
                 "SELECT id,field_name,snapshot,version_no,created_time FROM ai_asset_version "
                 "WHERE table_name=:t AND is_deleted=false ORDER BY version_no DESC LIMIT 50"),
