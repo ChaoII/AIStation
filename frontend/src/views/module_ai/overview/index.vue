@@ -911,10 +911,9 @@
         <el-button type="primary" :loading="propLoading" @click="runPropagate">
           {{ t("ai_logs.propagate") }}
         </el-button>
-        <el-button @click="loadDqRules">{{ t("ai_logs.refreshRules") }}</el-button>
       </div>
       <el-row :gutter="12">
-        <el-col :sm="24" :md="12">
+        <el-col :sm="24">
           <div class="gov-section">
             {{ t("ai_logs.affectedDownstream", { count: propResult?.affected_count ?? 0 }) }}
           </div>
@@ -964,32 +963,6 @@
               class="mr-1 mb-1"
             >
               {{ m.name }}
-            </el-tag>
-          </div>
-        </el-col>
-        <el-col :sm="24" :md="12">
-          <div class="gov-section">{{ t("ai_logs.dqRules") }}</div>
-          <div
-            v-for="r in dqRules"
-            :key="r.key"
-            class="ov-usage-row"
-            style="justify-content: space-between; margin-bottom: 4px"
-          >
-            <div>
-              <b class="text-xs">{{ r.name }}</b>
-              <span class="ai-sub ml-1.5">
-                {{ r.desc }}
-              </span>
-            </div>
-            <el-button size="small" :loading="dqRunKey === r.key" @click="runRule(r)">
-              {{ t("ai_logs.validate") }}
-            </el-button>
-          </div>
-          <div v-if="dqRunResult" style="margin-top: 4px">
-            <el-tag size="small" :type="dqRunResult.passed ? 'success' : 'danger'" effect="plain">
-              {{ dqRunResult.rule }} ·
-              {{ t("ai_logs.passRate", { rate: dqRunResult.pass_rate }) }} ·
-              {{ dqRunResult.valid }}/{{ dqRunResult.total }}
             </el-tag>
           </div>
         </el-col>
@@ -1744,7 +1717,7 @@ import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
 import { getSecurityAudit } from "@/api/module_ai/query";
 import { getDerivedObjects, autopilotAutoFix } from "@/api/module_ai/query";
 import { getFavorites, removeFavorite, getPlugins } from "@/api/module_ai/query";
-import { lineagePropagate, getDqRules, runDqRule } from "@/api/module_ai/query";
+import { lineagePropagate } from "@/api/module_ai/query";
 import { getShareList, removeShare } from "@/api/module_ai/query";
 import {
   getCatalogCategories,
@@ -2011,27 +1984,6 @@ const propLayout = computed(() => {
   });
   return { W, H, nodes, edges };
 });
-const dqRules = ref<any[]>([]);
-const dqRunResult = ref<any>(null);
-const dqRunKey = ref("");
-async function loadDqRules() {
-  try {
-    dqRules.value = (await getDqRules()).data?.data || [];
-  } catch {
-    dqRules.value = [];
-  }
-}
-async function runRule(r: any) {
-  const table = propTable.value.trim() || "video_alarm_records";
-  dqRunKey.value = r.key;
-  try {
-    dqRunResult.value = (await runDqRule(table, "id", r.key)).data?.data || null;
-  } catch (e: any) {
-    ElMessage.error(e?.msg || t("ai_logs.ruleValidateFailed"));
-  } finally {
-    dqRunKey.value = "";
-  }
-}
 const shares = ref<any[]>([]);
 async function loadShares() {
   try {
@@ -2614,7 +2566,6 @@ onMounted(() => {
   loadPlugins();
   loadAnomaly();
   loadDecision();
-  loadDqRules();
   loadShares();
   loadTimeline();
   loadCatalog();
