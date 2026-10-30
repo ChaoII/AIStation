@@ -563,6 +563,21 @@ export function inferQueryAssetRelations() {
 export function suggestQueryAssets() {
   return request({ url: `${API_PATH}/assets/suggest`, method: "post", timeout: 120000 });
 }
+// 数据生命周期/删除策略（Palantir Data Lifetime）
+export function getDataLifetime() {
+  return request({ url: `${API_PATH}/dl/list`, method: "get" });
+}
+export function saveDataLifetime(data: {
+  id?: number;
+  table: string;
+  retention_days: number;
+  enabled?: boolean;
+}) {
+  return request({ url: `${API_PATH}/dl/save`, method: "post", data });
+}
+export function removeDataLifetime(ids: number[]) {
+  return request({ url: `${API_PATH}/dl/remove`, method: "delete", data: ids });
+}
 export function saveQueryAsset(
   data: {
     table_name: string;

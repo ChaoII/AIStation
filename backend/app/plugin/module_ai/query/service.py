@@ -4668,13 +4668,30 @@ class AiQueryService:
         """数据生命周期/删除策略列表（Palantir Data Lifetime）。"""
         from sqlalchemy import text as _t
         async with async_db_session() as db:
-            await db.execute(_t(
-                "CREATE TABLE IF NOT EXISTS ai_data_lifetime "
-                "(id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, retention_days INTEGER, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
+            await cls._ensure_data_lifetime(db)
             rows = (await db.execute(_t(
                 "SELECT id, table_name, retention_days, enabled FROM ai_data_lifetime "
                 "WHERE is_deleted=false ORDER BY id DESC"))).fetchall()
         return [{"id": r[0], "table": r[1], "retention_days": r[2], "enabled": bool(r[3])} for r in rows]
+
+    @staticmethod
+    async def _ensure_data_lifetime(db) -> None:
+        """幂等创建数据生命周期表（按方言选择自增主键，避免 SQLite 的 AUTOINCREMENT 在 PG 报错）。"""
+        from sqlalchemy import text as _t
+        dialect = (db.bind.dialect.name if db.bind else "") or ""
+        if dialect == "postgresql":
+            ddl = ("CREATE TABLE IF NOT EXISTS ai_data_lifetime "
+                   "(id BIGSERIAL PRIMARY KEY, table_name VARCHAR(255), retention_days INTEGER, "
+                   "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false)")
+        elif dialect == "mysql":
+            ddl = ("CREATE TABLE IF NOT EXISTS ai_data_lifetime "
+                   "(id BIGINT AUTO_INCREMENT PRIMARY KEY, table_name VARCHAR(255), retention_days INT, "
+                   "enabled TINYINT(1) DEFAULT 1, is_deleted TINYINT(1) DEFAULT 0)")
+        else:
+            ddl = ("CREATE TABLE IF NOT EXISTS ai_data_lifetime "
+                   "(id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, retention_days INTEGER, "
+                   "enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)")
+        await db.execute(_t(ddl))
 
     @classmethod
     async def dl_save(cls, data: dict) -> dict:
@@ -4684,9 +4701,7 @@ class AiQueryService:
         if not table:
             raise CustomException(msg="请提供数据表")
         async with async_db_session.begin() as db:
-            await db.execute(_t(
-                "CREATE TABLE IF NOT EXISTS ai_data_lifetime "
-                "(id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, retention_days INTEGER, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
+            await cls._ensure_data_lifetime(db)
             if data.get("id"):
                 await db.execute(_t(
                     "UPDATE ai_data_lifetime SET table_name=:t, retention_days=:d, enabled=:e WHERE id=:i"),
@@ -4701,6 +4716,7 @@ class AiQueryService:
     async def dl_remove(cls, ids: list[int]) -> None:
         from sqlalchemy import text as _t
         async with async_db_session.begin() as db:
+            await cls._ensure_data_lifetime(db)
             for i in ids:
                 await db.execute(_t("UPDATE ai_data_lifetime SET is_deleted=true WHERE id=:i"), {"i": i})
 

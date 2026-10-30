@@ -110,6 +110,15 @@
                   <el-button
                     v-hasPerm="'module_ai:query:ask'"
                     size="small"
+                    :icon="Timer"
+                    :disabled="!curDs"
+                    @click="openLifetime"
+                  >
+                    {{ t("ai_workflow.ig_lifetime") }}
+                  </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:query:ask'"
+                    size="small"
                     :icon="MagicStick"
                     :loading="generatingDesc"
                     :title="t('ai_workflow.ig_genDescTitle')"
@@ -1259,6 +1268,111 @@
       </el-table>
     </el-dialog>
 
+    <!-- 数据生命周期 / 删除策略 -->
+    <el-drawer
+      v-model="lifetimeDrawer"
+      :title="t('ai_workflow.ig_lifetime')"
+      size="52%"
+      append-to-body
+    >
+      <div class="ig-bar">
+        <el-button
+          v-hasPerm="'module_ai:query:ask'"
+          type="primary"
+          size="small"
+          :icon="Plus"
+          @click="openLifetimeEdit()"
+        >
+          {{ t("ai_workflow.ig_new") }}
+        </el-button>
+        <span class="ai-sub">{{ t("ai_workflow.ig_lifetimeHint") }}</span>
+      </div>
+      <el-table :data="lifetimeRows" size="small" border stripe>
+        <template #empty>
+          <el-empty :description="t('ai_workflow.ig_lifetimeEmpty')" :image-size="60" />
+        </template>
+        <el-table-column
+          prop="table"
+          :label="t('ai_workflow.ig_tableName')"
+          min-width="200"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="retention_days"
+          :label="t('ai_workflow.ig_retentionDays')"
+          width="130"
+        />
+        <el-table-column :label="t('ai_workflow.ig_enabled')" width="90">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
+              {{ row.enabled ? t("ai_workflow.ig_yes") : t("ai_workflow.ig_no") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('ai_workflow.ig_action')" width="130" align="center">
+          <template #default="{ row }">
+            <el-button
+              v-hasPerm="'module_ai:query:ask'"
+              icon="edit"
+              link
+              type="primary"
+              size="small"
+              @click="openLifetimeEdit(row)"
+            >
+              {{ t("ai_workflow.ig_edit") }}
+            </el-button>
+            <el-button
+              v-hasPerm="'module_ai:query:ask'"
+              link
+              type="danger"
+              size="small"
+              @click="removeLifetime(row)"
+            >
+              {{ t("ai_workflow.ig_delete") }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-dialog
+        v-model="lifetimeDlg"
+        :title="lifetimeForm.id ? t('ai_workflow.ig_edit') : t('ai_workflow.ig_new')"
+        width="480px"
+        append-to-body
+      >
+        <el-form :model="lifetimeForm" label-width="100px" size="small">
+          <el-form-item :label="t('ai_workflow.ig_tableName')" required>
+            <el-select
+              v-model="lifetimeForm.table"
+              filterable
+              allow-create
+              default-first-option
+              style="width: 100%"
+            >
+              <el-option
+                v-for="tb in dsTables"
+                :key="tb.table"
+                :label="tb.table"
+                :value="tb.table"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('ai_workflow.ig_retentionDays')" required>
+            <el-input-number v-model="lifetimeForm.retention_days" :min="1" :max="3650" />
+          </el-form-item>
+          <el-form-item :label="t('ai_workflow.ig_enabled')">
+            <el-switch v-model="lifetimeForm.enabled" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="lifetimeDlg = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+          <el-button v-hasPerm="'module_ai:query:ask'" type="primary" @click="saveLifetime">
+            {{ t("ai_workflow.ig_save") }}
+          </el-button>
+        </template>
+      </el-dialog>
+    </el-drawer>
+
     <!-- 查看管道落库数据 -->
     <el-dialog
       v-model="pipeDataDlg"
@@ -1731,6 +1845,7 @@ import {
   Delete,
   Coin,
   MagicStick,
+  Timer,
 } from "@element-plus/icons-vue";
 import {
   getQueryDatasources,
@@ -1772,6 +1887,9 @@ import {
   autoLinkQueryKg,
   getAssetLineage,
   getAssetImpact,
+  getDataLifetime,
+  saveDataLifetime,
+  removeDataLifetime,
   extractQueryObjects,
   inferQueryAssetRelations,
   generateQueryAssetDesc,
@@ -1859,6 +1977,66 @@ async function openImpact() {
     lineageData.value = {};
   } finally {
     lineageLoading.value = false;
+  }
+}
+
+// ---- 数据生命周期 / 删除策略 ----
+const lifetimeDrawer = ref(false);
+const lifetimeRows = ref<any[]>([]);
+const lifetimeDlg = ref(false);
+const lifetimeForm = ref<any>({ id: null, table: "", retention_days: 365, enabled: true });
+async function loadLifetime() {
+  try {
+    lifetimeRows.value = (await getDataLifetime()).data?.data || [];
+  } catch {
+    lifetimeRows.value = [];
+  }
+}
+function openLifetime() {
+  lifetimeDrawer.value = true;
+  void loadLifetime();
+}
+function openLifetimeEdit(row?: any) {
+  lifetimeForm.value = row
+    ? { ...row }
+    : { id: null, table: "", retention_days: 365, enabled: true };
+  lifetimeDlg.value = true;
+}
+async function saveLifetime() {
+  const f = lifetimeForm.value;
+  if (!f.table?.trim()) return ElMessage.warning(t("ai_workflow.ig_pickTableFirst"));
+  if (!f.retention_days || f.retention_days < 1)
+    return ElMessage.warning(t("ai_workflow.ig_retentionDays"));
+  try {
+    await saveDataLifetime({
+      id: f.id || undefined,
+      table: f.table.trim(),
+      retention_days: f.retention_days,
+      enabled: f.enabled !== false,
+    });
+    ElMessage.success(t("ai_workflow.ig_saveSuccess"));
+    lifetimeDlg.value = false;
+    await loadLifetime();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.ig_saveFail"));
+  }
+}
+async function removeLifetime(row: any) {
+  await ElMessageBox.confirm(
+    t("ai_workflow.ig_lifetimeDelConfirm", { table: row.table }),
+    t("ai_workflow.ig_delete"),
+    {
+      type: "warning",
+      confirmButtonText: t("ai_workflow.ig_delete"),
+      cancelButtonText: t("ai_workflow.ig_cancel"),
+    }
+  );
+  try {
+    await removeDataLifetime([row.id]);
+    ElMessage.success(t("ai_workflow.ig_deleted"));
+    await loadLifetime();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.ig_delFail"));
   }
 }
 const filteredKgNodes = computed(() => {
@@ -2982,11 +3160,7 @@ const modelingDsCode = computed(
 // 数据库存储口径统一为 ds:{id}（后端 _norm_datasource 把 code 归一为 ds:{id}）；
 // 下拉/新建默认值必须用同口径，否则编辑已有数据（存的是 ds:{id}）时下拉不匹配显示空白。
 const defaultDsKey = computed(() =>
-  curDs.value?.code === "system"
-    ? "system"
-    : curDs.value
-      ? `ds:${curDs.value.id}`
-      : "system"
+  curDs.value?.code === "system" ? "system" : curDs.value ? `ds:${curDs.value.id}` : "system"
 );
 // 「系统库」伪数据源：浏览平台自身（本体支撑表/视频等领域）的指标/术语/概念/示例，与业务库隔离。
 const systemDs = computed(() => ({
