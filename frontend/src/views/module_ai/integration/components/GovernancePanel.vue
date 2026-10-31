@@ -544,6 +544,104 @@
           </el-table-column>
         </el-table>
       </el-tab-pane>
+
+      <!-- 动作 / 写回（定义 + 审计日志，只读；待审批动作见「审批中心」页） -->
+      <el-tab-pane :label="t('ai_workflow.ig_govActionTab')" name="action">
+        <el-alert
+          type="info"
+          :closable="false"
+          style="margin-bottom: 10px"
+          :title="t('ai_workflow.ig_govActionAlert')"
+        />
+        <div class="gp-section">{{ t("ai_workflow.ig_govActionDef") }}</div>
+        <el-table :data="actionDefs" size="small" border stripe>
+          <template #empty>
+            <el-empty :description="t('ai_workflow.ig_govNoAction')" :image-size="60" />
+          </template>
+          <el-table-column
+            prop="name"
+            :label="t('ai_workflow.ig_govActionName')"
+            min-width="140"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            prop="object_table"
+            :label="t('ai_workflow.ig_tableName')"
+            min-width="140"
+            show-overflow-tooltip
+          />
+          <el-table-column :label="t('ai_workflow.ig_govWritableCols')" min-width="220">
+            <template #default="{ row }">
+              <el-tag
+                v-for="c in row.writable_cols || []"
+                :key="c"
+                size="small"
+                effect="plain"
+                class="ig-tag"
+              >
+                {{ c }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('ai_workflow.ig_govNeedApprove')" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.approve ? 'warning' : 'info'">
+                {{ row.approve ? t("ai_workflow.ig_yes") : t("ai_workflow.ig_no") }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('ai_workflow.ig_enabled')" width="90">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
+                {{ row.enabled ? t("ai_workflow.ig_yes") : t("ai_workflow.ig_no") }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="gp-section">{{ t("ai_workflow.ig_govActionLogs") }}</div>
+        <el-table :data="actionLogs" size="small" border stripe max-height="320">
+          <template #empty>
+            <el-empty :description="t('ai_workflow.ig_govNoActionLog')" :image-size="60" />
+          </template>
+          <el-table-column
+            prop="action"
+            :label="t('ai_workflow.ig_govActionName')"
+            min-width="120"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            prop="table"
+            :label="t('ai_workflow.ig_tableName')"
+            min-width="120"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            prop="key"
+            :label="t('ai_workflow.ig_govObjectKey')"
+            min-width="120"
+            show-overflow-tooltip
+          />
+          <el-table-column prop="operator" :label="t('ai_workflow.ig_govOperator')" width="90" />
+          <el-table-column :label="t('ai_workflow.ig_govResult')" width="90">
+            <template #default="{ row }">
+              <el-tag
+                size="small"
+                :type="row.result === 'success' ? 'success' : 'danger'"
+                effect="plain"
+              >
+                {{ row.result }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="time"
+            :label="t('ai_workflow.ig_govRunTime')"
+            min-width="150"
+            show-overflow-tooltip
+          />
+        </el-table>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 权限策略编辑 -->
@@ -938,6 +1036,8 @@ import {
   saveFdeProposition,
   deleteFdePropositions,
   fdeShadowCheck,
+  getActionList,
+  getActionLogs,
 } from "@/api/module_ai/query";
 import { UserAPI } from "@/api/module_system/user";
 
@@ -1210,6 +1310,21 @@ function onTab(name: any) {
     loadDqAlert();
   } else if (name === "domain") loadDomain();
   else if (name === "fde") loadFde();
+  else if (name === "action") loadActions();
+}
+
+// 动作 / 写回（只读：定义 + 审计日志）
+const actionDefs = ref<any[]>([]);
+const actionLogs = ref<any[]>([]);
+async function loadActions() {
+  try {
+    const [a, l]: any[] = await Promise.all([getActionList(), getActionLogs(100)]);
+    actionDefs.value = a.data?.data || [];
+    actionLogs.value = l.data?.data || [];
+  } catch {
+    actionDefs.value = [];
+    actionLogs.value = [];
+  }
 }
 
 async function scanAll() {
