@@ -886,13 +886,13 @@
               </div>
               <el-descriptions :column="3" size="small" border>
                 <el-descriptions-item :label="t('ai_workflow.ig_kgTableNode')">
-                  {{ kg.nodes ?? "-" }}
+                  {{ kgTableCount }}
                 </el-descriptions-item>
                 <el-descriptions-item :label="t('ai_workflow.ig_kgEdge')">
-                  {{ kg.edges ?? "-" }}
+                  {{ kgEdges.length }}
                 </el-descriptions-item>
-                <el-descriptions-item :label="t('ai_workflow.ig_kgEntity')">
-                  {{ kg.entities ?? "-" }}
+                <el-descriptions-item :label="t('ai_workflow.ig_kgTotalNodes')">
+                  {{ kgNodes.length }}
                 </el-descriptions-item>
               </el-descriptions>
               <div class="ig-kg-filter">
@@ -927,6 +927,7 @@
                 :edges="filteredKgEdges"
                 height="560px"
                 layout-name="cose"
+                :use-preset="true"
                 :node-style="nodeStyle"
                 class="ig-kg-graph"
               />
@@ -1955,7 +1956,6 @@ import {
   getQueryConcepts,
   saveQueryConcept,
   deleteQueryConcepts,
-  getQueryKgStats,
   getQueryKgUnified,
   rebuildQueryKg,
   autoLinkQueryKg,
@@ -1993,9 +1993,9 @@ const fewshots = ref<any[]>([]);
 const fewshotDlg = ref(false);
 const fewshotForm = ref<any>({});
 const savingFewshot = ref(false);
-const kg = ref<any>({});
 const kgNodes = ref<any[]>([]);
 const kgEdges = ref<any[]>([]);
+const kgTableCount = computed(() => kgNodes.value.filter((n) => n.etype === "table").length);
 const nodeStyle = {
   sizeMode: "fixed",
   fixedSize: 36,
@@ -3264,13 +3264,12 @@ async function loadMisc() {
     () => getQueryFewshots({ datasource: ds }),
     (v) => (fewshots.value = v)
   );
-  await safe(getQueryKgStats, (v) => (kg.value = v));
   if (seq === loadMiscSeq) await loadUnified();
 }
 
 async function loadUnified() {
   try {
-    const r = await getQueryKgUnified();
+    const r = await getQueryKgUnified(null, "all", modelingDsCode.value);
     const d = r.data?.data || { nodes: [], edges: [] };
     const nodes = (d.nodes || []).map((n: any) => ({
       id: n.name,

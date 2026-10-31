@@ -175,9 +175,128 @@ def _canvas_nodes_edges(kg: KgGraph) -> dict:
     return {"nodes": nodes, "edges": edges}
 
 
+def _apply_layout(merged: dict, layout: dict) -> dict:
+    """应用已保存布局；无坐标节点按方阵网格铺默认坐标（保证能渲染出节点）。"""
+    if layout:
+        for n in merged["nodes"]:
+            if n.get("name") in layout:
+                n["x"] = layout[n["name"]]["x"]
+                n["y"] = layout[n["name"]]["y"]
+    _missing = [n for n in merged["nodes"] if n.get("x") is None or n.get("y") is None]
+    if _missing:
+        import math
+
+        ncols = max(1, int(math.ceil(math.sqrt(len(_missing)))))
+        for i, n in enumerate(_missing):
+            n["x"] = 120.0 + (i % ncols) * 160.0
+            n["y"] = 120.0 + (i // ncols) * 120.0
+    return merged
+
+
+async def _build_ds_graph(datasource: str) -> dict | None:
+    """针对**业务数据源**（ds:N）构建数据关系图。
+
+    性能考量：故意**不展开字段节点**——业务库动辄 300+ 表 × 数十字段，铺开会到数千
+    节点把 cose 布局拖死。这里只出「表 / 指标 / 术语 / 概念 / 域」+ 它们之间的关系边
+    （含表→表关联），节点量级 ~500，与平台图相当。字段明细在「表与字段」查看即可。
+    返回 None 表示不是业务数据源（走平台/系统图）。
+    """
+    from sqlalchemy import text as _t
+
+    from .service import AiQueryService, _norm_datasource
+
+    ds = await _norm_datasource(datasource)
+    if not ds or not str(ds).startswith("ds:"):
+        return None
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        table_rows = (await db.execute(_t(
+            "SELECT table_name FROM ai_query_schema "
+            "WHERE datasource=:d AND is_deleted=false ORDER BY table_name"),
+            {"d": ds})).fetchall()
+    tables = [r[0] for r in table_rows]
+    if not tables:
+        return {"nodes": [], "edges": []}
+    tbl_lower = {str(t).lower(): t for t in tables}
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+
+    def add_node(name: str, etype: str) -> None:
+        nodes.append({"name": name, "etype": etype, "weight": 1})
+
+    def add_edge(src: str, dst: str, rtype: str) -> None:
+        edges.append({"source": src, "target": dst, "rtype": rtype, "weight": 1})
+
+    for t in tables:
+        add_node(f"表:{t}", "table")
+
+    # 指标 → 表
+    metrics = await AiQueryService.list_metrics(ds)
+    metric_node = {m["key"]: f"指标:{m.get('name') or m['key']}" for m in metrics}
+    for m in metrics:
+        add_node(metric_node[m["key"]], "metric")
+        for tb in _tables_in_sql(m.get("sql_template", "")):
+            actual = tbl_lower.get(tb.lower())
+            if actual:
+                add_edge(metric_node[m["key"]], f"表:{actual}", "uses_table")
+
+    # 术语 → 指标
+    for t in await AiQueryService.list_terms(ds):
+        tn = f"术语:{t['term']}"
+        add_node(tn, "term")
+        mk = t.get("metric_key")
+        if mk and mk in metric_node:
+            add_edge(tn, metric_node[mk], "maps_to")
+
+    # 概念 → 表 / 指标 / 父概念
+    for c in await AiQueryService.list_concepts(ds):
+        cn = f"概念:{c['name']}"
+        add_node(cn, "concept")
+        if c.get("parent_name"):
+            add_node(f"概念:{c['parent_name']}", "concept")
+            add_edge(cn, f"概念:{c['parent_name']}", "subconcept_of")
+        mk = c.get("metric_key")
+        if mk and mk in metric_node:
+            add_edge(cn, metric_node[mk], "defined_as")
+        for tb in (c.get("tables") or []):
+            actual = tbl_lower.get(str(tb).lower())
+            if actual:
+                add_edge(cn, f"表:{actual}", "about")
+
+    # 表 → 表 关联（字段级 related_table 收敛为表间边，补「数据关系图」的血缘关系）
+    try:
+        async with async_db_session() as db:
+            rel_rows = (await db.execute(_t(
+                "SELECT DISTINCT table_name, related_table FROM ai_query_asset_columns "
+                "WHERE related_table IS NOT NULL AND related_table<>'' AND is_deleted=false"))).fetchall()
+        seen = set()
+        for src_t, dst_t in rel_rows:
+            st = tbl_lower.get(str(src_t).lower())
+            dt = tbl_lower.get(str(dst_t).lower())
+            if st and dt and st != dt and (st, dt) not in seen:
+                seen.add((st, dt))
+                add_edge(f"表:{st}", f"表:{dt}", "related_to")
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {"nodes": nodes, "edges": edges}
+
+
 async def unified_graph(kb_id: int | None = None, schema_only: bool = False,
-                        knowledge_only: bool = False) -> dict:
-    """统一图谱：合并「数据 schema 图谱」与「知识库图谱(可选)」+ 自定义关系/布局。"""
+                        knowledge_only: bool = False, datasource: str | None = None) -> dict:
+    """统一图谱：合并「数据 schema 图谱」与「知识库图谱(可选)」+ 自定义关系/布局。
+
+    ``datasource`` 为业务数据源（ds:N）时，按该数据源出图（表/指标/术语/概念/域/表关系），
+    避免把平台库表与业务库表混在一起（也避免业务库字段铺开导致性能问题）。
+    """
+    # 业务数据源：按数据源出图
+    if datasource and not knowledge_only:
+        dsg = await _build_ds_graph(datasource)
+        if dsg is not None:
+            layout = await _layout_map()
+            return _apply_layout(dsg, layout)
     kg = await _ensure()
     merged = {"nodes": [], "edges": []}
     if not knowledge_only:
@@ -193,27 +312,11 @@ async def unified_graph(kb_id: int | None = None, schema_only: bool = False,
             merged["edges"] += kb.get("edges", [])
         except Exception:  # noqa: BLE001
             pass
-    # 合并自定义关系 + 应用布局
     rels = await _custom_relations()
     if rels:
         merged["edges"] += rels
     layout = await _layout_map()
-    if layout:
-        for n in merged["nodes"]:
-            if n.get("name") in layout:
-                n["x"] = layout[n["name"]]["x"]
-                n["y"] = layout[n["name"]]["y"]
-    # 无保存布局/无坐标的节点：按**方阵网格**铺默认坐标，确保 GraphCanvas 能渲染出节点而非空画布。
-    # 用接近 sqrt(n) 的列数而非固定 12 列——固定列会让 844 节点排成超高竖条，
-    # 后续 preset 布局 fit 时按高度缩放，被压成一条窄竖线。
-    _missing = [n for n in merged["nodes"] if n.get("x") is None or n.get("y") is None]
-    if _missing:
-        import math
-        ncols = max(1, int(math.ceil(math.sqrt(len(_missing)))))
-        for i, n in enumerate(_missing):
-            n["x"] = 120.0 + (i % ncols) * 160.0
-            n["y"] = 120.0 + (i // ncols) * 120.0
-    return merged
+    return _apply_layout(merged, layout)
 
 
 async def _ensure_runtime_tables() -> None:

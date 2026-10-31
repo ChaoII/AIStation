@@ -269,9 +269,10 @@ export function rebuildQueryKg() {
 export function getQueryKgStats() {
   return request({ url: `${API_PATH}/assets/kg/stats`, method: "get" });
 }
-export function getQueryKgUnified(kbId?: number | null, scope = "all") {
+export function getQueryKgUnified(kbId?: number | null, scope = "all", datasource?: string) {
   const params: Record<string, any> = { scope };
   if (kbId != null) params.kb_id = kbId;
+  if (datasource) params.datasource = datasource;
   return request({ url: `${API_PATH}/assets/kg/unified`, method: "get", params });
 }
 export function getQueryObjects() {

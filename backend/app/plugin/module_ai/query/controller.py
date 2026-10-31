@@ -1264,6 +1264,7 @@ async def kg_unified(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     kb_id: str | None = None,
     scope: str = "all",
+    datasource: str | None = None,
 ) -> JSONResponse:
     from .agno_kg import unified_graph
 
@@ -1271,7 +1272,8 @@ async def kg_unified(
     if kb_id and str(kb_id).isdigit():
         kb = int(kb_id)
     data = await unified_graph(kb, schema_only=scope == "schema",
-                               knowledge_only=scope == "knowledge")
+                               knowledge_only=scope == "knowledge",
+                               datasource=datasource)
     return SuccessResponse(data=data, msg="查询成功")
 
 

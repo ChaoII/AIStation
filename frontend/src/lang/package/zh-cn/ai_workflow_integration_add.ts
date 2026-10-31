@@ -282,6 +282,7 @@ export default {
   ig_autoLink: "自动打边",
   ig_autoLinkHint: "自动打边：知识库实体 ↔ schema 表/字段",
   ig_kgTableNode: "表节点",
+  ig_kgTotalNodes: "节点总数",
   ig_kgEdge: "关系边",
   ig_kgEntity: "实体",
   ig_kgType: "类型：",
