@@ -3809,13 +3809,53 @@ class AiQueryService:
         return {"ok": True, "table": table_name, "columns": cols, "rows": data,
                 "row_count": len(data)}
 
+    @staticmethod
+    async def _table_ds_code(table_name: str) -> str | None:
+        """返回表所属数据源编码（如 ``ds:4`` / ``system``），查不到返回 None。"""
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                row = (await db.execute(_t(
+                    "SELECT datasource FROM ai_query_schema "
+                    "WHERE UPPER(table_name)=UPPER(:t) AND is_deleted=false LIMIT 1"),
+                    {"t": table_name})).fetchone()
+                return (row[0] if row else None) or None
+        except Exception:  # noqa: BLE001
+            return None
+
     @classmethod
     async def object_browse(cls, table_name: str, auth, page: int = 1, page_size: int = 20) -> dict:
-        """对象数据浏览器：分页读取真实表数据（前端表格浏览）。"""
+        """对象数据浏览器：分页读取真实表数据（前端表格浏览）。
+
+        与导出同口径：按表所属数据源路由（外部自定义库 vs 平台库），否则平台库里
+        根本没有业务表、必然「表不存在」。
+        """
         # P0-1：表名直接拼 SELECT，先过「标识符 + 按用户白名单」校验（fail-closed）
         table_name = await cls._require_queryable_table(table_name, auth)
         page = max(1, int(page)); page_size = max(1, min(int(page_size), 100))
         offset = (page - 1) * page_size
+        ds_code = await cls._table_ds_code(table_name)
+        # 外部自定义数据源
+        if ds_code and str(ds_code).startswith("ds:"):
+            try:
+                ds_id = int(str(ds_code)[3:])
+            except ValueError:
+                ds_id = 0
+            if ds_id:
+                try:
+                    cnt = await _execute_custom_ds_sql(
+                        ds_id, f"SELECT COUNT(*) FROM {table_name}", auth)
+                    total = int(((cnt.get("rows") or [[0]])[0][0]) or 0)
+                    res = await _execute_custom_ds_sql(
+                        ds_id, f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}", auth)
+                except Exception as e:  # noqa: BLE001
+                    return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
+                cols = res.get("columns") or []
+                data = [dict(zip(cols, r, strict=False)) for r in (res.get("rows") or [])]
+                return {"ok": True, "table": table_name, "columns": cols, "rows": data,
+                        "page": page, "page_size": page_size, "total": total,
+                        "has_next": offset + page_size < total}
+        # 平台自身库
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             try:

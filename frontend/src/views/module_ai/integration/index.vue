@@ -274,6 +274,16 @@
                       >
                         {{ t("ai_workflow.ig_export") }}
                       </el-button>
+                      <el-button
+                        v-hasPerm="'module_ai:query:ask'"
+                        icon="View"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="openBrowse(row)"
+                      >
+                        {{ t("ai_workflow.ig_browse") }}
+                      </el-button>
                       <!-- 「分享」入口暂时下线：后端 share/create 会生成 /web#/ai/query?share=<token>，
                            但全前端**没有一处读这个参数**，点开就是普通问数页——
                            假闭环比没有更伤信任。恢复入口前请先实现 ?share= 的消费方。 -->
@@ -1383,6 +1393,55 @@
       </el-dialog>
     </el-drawer>
 
+    <!-- 数据浏览（分页读取真实表数据） -->
+    <el-dialog
+      v-model="browseDlg"
+      :title="t('ai_workflow.ig_browseTitle', { table: browseTable })"
+      width="1000px"
+    >
+      <div class="ig-bar">
+        <el-tag size="small" type="info" effect="plain">
+          {{ t("ai_workflow.ig_browseTotal", { total: browseTotal }) }}
+        </el-tag>
+        <span class="ig-bar__gap" />
+        <el-button
+          size="small"
+          :disabled="browsePage <= 1 || browseLoading"
+          @click="loadBrowse(browsePage - 1)"
+        >
+          {{ t("ai_workflow.ig_prevPage") }}
+        </el-button>
+        <span class="ai-sub">{{ browsePage }} / {{ browsePages }}</span>
+        <el-button
+          size="small"
+          :disabled="browsePage >= browsePages || browseLoading"
+          @click="loadBrowse(browsePage + 1)"
+        >
+          {{ t("ai_workflow.ig_nextPage") }}
+        </el-button>
+      </div>
+      <el-table
+        v-loading="browseLoading"
+        :data="browseRows"
+        size="small"
+        border
+        stripe
+        max-height="460"
+      >
+        <template #empty>
+          <el-empty :description="t('ai_workflow.ig_browseEmpty')" :image-size="60" />
+        </template>
+        <el-table-column
+          v-for="c in browseCols"
+          :key="c"
+          :prop="c"
+          :label="c"
+          min-width="120"
+          show-overflow-tooltip
+        />
+      </el-table>
+    </el-dialog>
+
     <!-- 查看管道落库数据 -->
     <el-dialog
       v-model="pipeDataDlg"
@@ -1898,6 +1957,7 @@ import {
   getAssetLineage,
   getAssetImpact,
   exportAsset,
+  objectBrowse,
   getDataLifetime,
   saveDataLifetime,
   removeDataLifetime,
@@ -2140,6 +2200,46 @@ async function exportTable(row: any) {
     ElMessage.success(t("ai_workflow.ig_exportDone", { count: d.row_count ?? data.length }));
   } catch (e: any) {
     ElMessage.error(e?.msg || t("ai_workflow.ig_exportFail"));
+  }
+}
+// 数据浏览：分页读取真实表数据（按表所属数据源）
+const browseDlg = ref(false);
+const browseTable = ref("");
+const browseCols = ref<string[]>([]);
+const browseRows = ref<any[]>([]);
+const browsePage = ref(1);
+const browseSize = ref(20);
+const browseTotal = ref(0);
+const browseLoading = ref(false);
+const browsePages = computed(() => Math.max(1, Math.ceil(browseTotal.value / browseSize.value)));
+async function openBrowse(row: any) {
+  browseTable.value = row.table || row.table_name || "";
+  if (!browseTable.value) return;
+  browseCols.value = [];
+  browseRows.value = [];
+  browseTotal.value = 0;
+  browsePage.value = 1;
+  browseDlg.value = true;
+  await loadBrowse(1);
+}
+async function loadBrowse(page: number) {
+  if (!browseTable.value) return;
+  browseLoading.value = true;
+  try {
+    const r = await objectBrowse(browseTable.value, page, browseSize.value);
+    const d = r.data?.data || {};
+    if (d.ok === false) {
+      ElMessage.error(d.msg || t("ai_workflow.ig_browseFail"));
+      return;
+    }
+    browseCols.value = d.columns || [];
+    browseRows.value = d.rows || [];
+    browseTotal.value = d.total ?? 0;
+    browsePage.value = page;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.ig_browseFail"));
+  } finally {
+    browseLoading.value = false;
   }
 }
 const batchDlg = ref(false);
