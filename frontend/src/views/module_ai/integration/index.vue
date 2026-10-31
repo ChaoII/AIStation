@@ -867,7 +867,12 @@
                   :placeholder="t('ai_workflow.ig_lineageTablePlaceholder')"
                   style="width: 200px"
                 >
-                  <el-option v-for="tb in kgTableOptions" :key="tb" :label="tb" :value="tb" />
+                  <el-option
+                    v-for="tb in dsTables"
+                    :key="tb.table"
+                    :label="tb.table"
+                    :value="tb.table"
+                  />
                 </el-select>
                 <el-button size="small" type="primary" plain @click="openLineage">
                   {{ t("ai_workflow.ig_lineageView") }}

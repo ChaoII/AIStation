@@ -3629,7 +3629,7 @@ class AiQueryService:
     @classmethod
     async def impact_analysis(cls, table_name: str) -> dict:
         """P1-② 影响分析：哪些指标用到此表 + 哪些字段/对象关联它。"""
-        metrics = await cls.list_metrics(SYSTEM_DS)
+        metrics = await cls.list_metrics()
         affected_metrics = [m for m in metrics if table_name in (m.get("sql_template") or "")]
         async with async_db_session() as db:
             from sqlalchemy import text as _t
@@ -3672,7 +3672,7 @@ class AiQueryService:
             frontier = nxt
             depth += 1
         all_tables = {table_name} | affected
-        metrics = await cls.list_metrics(SYSTEM_DS)
+        metrics = await cls.list_metrics()
         affected_metrics = [m for m in metrics
                             if any(t in (m.get("sql_template") or "") for t in all_tables)]
         return {"root": table_name, "affected_tables": sorted(affected),
@@ -4619,12 +4619,27 @@ class AiQueryService:
     async def lineage(cls, table_name: str) -> dict:
         """P3-④ 完整血缘：表 → 字段/指标/对象关联/概念/管道/术语，串成血缘图。"""
         schema = await cls._system_schema()
-        metrics = await cls.list_metrics(SYSTEM_DS)
-        terms = await cls.list_terms(SYSTEM_DS)
+        metrics = await cls.list_metrics()
+        terms = await cls.list_terms()
         concepts = await cls.concepts_mapping()
         pipelines = await cls.list_pipelines()
         # 字段
         fields = [lab.split("(")[0] for lab in schema.get(table_name, [])]
+        # 业务表（外部数据源）不在平台 _system_schema 内 → 回退到已同步的 ai_query_schema 列
+        if not fields:
+            try:
+                import json as _json
+                async with async_db_session() as db:
+                    from sqlalchemy import text as _t
+                    row = (await db.execute(_t(
+                        "SELECT columns FROM ai_query_schema "
+                        "WHERE UPPER(table_name)=UPPER(:t) AND is_deleted=false LIMIT 1"),
+                        {"t": table_name})).fetchone()
+                if row and row[0]:
+                    cols = row[0] if isinstance(row[0], list) else _json.loads(row[0])
+                    fields = [c.get("name") for c in cols if isinstance(c, dict) and c.get("name")]
+            except Exception:  # noqa: BLE001
+                pass
         # 用到此表的指标
         mets = [{"key": m["key"], "name": m["name"]} for m in metrics if table_name in (m.get("sql_template") or "")]
         # 术语/概念映射到表
