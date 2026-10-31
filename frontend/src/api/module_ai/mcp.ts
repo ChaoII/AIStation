@@ -36,14 +36,6 @@ export function updateMcp(id: number, data: any) {
   return request({ url: `${API_PATH}/update/${id}`, method: "put", data });
 }
 
-export function deleteMcp(ids: number[]) {
-  return request({ url: `${API_PATH}/delete`, method: "delete", data: ids });
-}
-
-export function toggleMcp(id: number, enabled: boolean) {
-  return request({ url: `${API_PATH}/toggle/${id}`, method: "put", data: { enabled } });
-}
-
 /** 测试 MCP 连接（可达性探测） */
 export function testMcp(id: number) {
   return request({

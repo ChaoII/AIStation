@@ -78,18 +78,6 @@ export function updateAiTool(id: number, data: any) {
   return request({ url: `${API_PATH}/update/${id}`, method: "put", data });
 }
 
-export function deleteAiTool(ids: number[]) {
-  return request({ url: `${API_PATH}/delete`, method: "delete", data: ids });
-}
-
-export function toggleAiTool(id: number, enabled: boolean) {
-  return request({ url: `${API_PATH}/toggle/${id}`, method: "put", data: { enabled } });
-}
-
-export function batchToolStatus(ids: number[], enabled: boolean) {
-  return request({ url: `${API_PATH}/batch/status`, method: "put", data: { ids, enabled } });
-}
-
 export function testAiTool(id: number) {
   return request({
     url: `${API_PATH}/test/${id}`,

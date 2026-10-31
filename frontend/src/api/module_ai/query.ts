@@ -249,9 +249,6 @@ export function saveQuerySetting(data: { key: string; value: string; remark: str
 }
 
 // 数据资产目录
-export function syncQueryAssets() {
-  return request({ url: `${API_PATH}/assets/sync`, method: "post", timeout: 60000 });
-}
 export function getQueryAssets() {
   return request({ url: `${API_PATH}/assets/list`, method: "get" });
 }
@@ -501,9 +498,6 @@ export function scanAllDq() {
 }
 export function getDqAlert() {
   return request({ url: `${API_PATH}/dq/alert`, method: "get" });
-}
-export function getDomains() {
-  return request({ url: `${API_PATH}/domain/list`, method: "get" });
 }
 export function saveDomain(data: any) {
   return request({ url: `${API_PATH}/domain/save`, method: "post", data });

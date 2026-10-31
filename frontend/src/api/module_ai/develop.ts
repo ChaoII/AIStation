@@ -123,10 +123,3 @@ export function tryCapability(appId: number, data: { capability: string; payload
  * 开放数据面鉴权校验：携带 `Authorization: Bearer <appid>:<appkey>` 调用。
  * 未传入 appid/appkey 时不覆盖自动附加的会话令牌（此时会命中管理面鉴权）。
  */
-export function verifyAuth(appid?: string, appkey?: string) {
-  return request({
-    url: "/ai/develop-api/auth/verify",
-    method: "get",
-    headers: appid && appkey ? { Authorization: `Bearer ${appid}:${appkey}` } : undefined,
-  });
-}

@@ -8,10 +8,6 @@ export function getAiKnowledgeList(params?: { category_id?: number | null }) {
   return request({ url: `${BASE}/list`, method: "get", params });
 }
 
-export function getAiKnowledgeDetail(id: number) {
-  return request({ url: `${BASE}/detail/${id}`, method: "get" });
-}
-
 export function createAiKnowledge(data: any) {
   return request({ url: `${BASE}/create`, method: "post", data });
 }
@@ -49,15 +45,6 @@ export function createAiKnowledgeCategory(data: {
   sort?: number;
 }) {
   return request({ url: `${CAT}/create`, method: "post", data });
-}
-export function updateAiKnowledgeCategory(
-  id: number,
-  data: { name?: string; parent_id?: number | null; owner?: string; remark?: string; sort?: number }
-) {
-  return request({ url: `${CAT}/update/${id}`, method: "put", data });
-}
-export function deleteAiKnowledgeCategory(ids: number[]) {
-  return request({ url: `${CAT}/delete`, method: "delete", data: ids });
 }
 
 // ---------- 入库 / 检索 / 分块 ----------
@@ -187,9 +174,6 @@ export function getAiKnowledgeSearchStats(id: number, days = 30) {
     params: { days },
   });
 }
-export function getAiKnowledgeChunkEntities(id: number, chunkId: number) {
-  return request({ url: `${BASE}/${id}/chunks/${chunkId}/entities`, method: "get" });
-}
 
 // ---------- 实体 ↔ 分块 绑定 ----------
 export function getAiKnowledgeEntityChunks(id: number, entityId: number) {
@@ -317,30 +301,11 @@ export function getAiRagTask(taskId: number) {
   return request({ url: `${TASK}/${taskId}`, method: "get" });
 }
 
-export function getAiRagTaskList(params?: Record<string, any>) {
-  return request({ url: TASK, method: "get", params });
-}
-
-export function cancelAiRagTask(taskId: number) {
-  return request({ url: `${TASK}/${taskId}/cancel`, method: "post" });
-}
 // ---------- 检索评测 ----------
 const EVAL = "/ai/knowledge/eval";
 
 export function getAiEvalSets() {
   return request({ url: `${EVAL}/sets`, method: "get" });
-}
-
-export function createAiEvalSet(data: any) {
-  return request({ url: `${EVAL}/sets`, method: "post", data });
-}
-
-export function getAiEvalItems(setId: number) {
-  return request({ url: `${EVAL}/sets/${setId}/items`, method: "get" });
-}
-
-export function createAiEvalItem(setId: number, data: any) {
-  return request({ url: `${EVAL}/sets/${setId}/items`, method: "post", data });
 }
 
 export function runAiEval(kbId: number, data: any) {

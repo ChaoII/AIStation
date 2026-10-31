@@ -29,11 +29,3 @@ export function createPlugin(data: any) {
 export function updatePlugin(id: number, data: any) {
   return request({ url: `${API_PATH}/update/${id}`, method: "put", data });
 }
-
-export function deletePlugin(ids: number[]) {
-  return request({ url: `${API_PATH}/delete`, method: "delete", data: ids });
-}
-
-export function togglePlugin(id: number, enabled: boolean) {
-  return request({ url: `${API_PATH}/toggle/${id}`, method: "put", data: { enabled } });
-}
