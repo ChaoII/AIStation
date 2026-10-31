@@ -201,32 +201,17 @@ export function getOntReferences(kind: string, code: string) {
 export function getOntProperties(object_code = "") {
   return request({ url: `${API_PATH}/properties`, method: "get", params: { object_code } });
 }
-export function saveOntProperty(data: any) {
-  return request({ url: `${API_PATH}/property/save`, method: "post", data });
-}
 export function getOntLinks(object_code = "") {
   return request({ url: `${API_PATH}/links`, method: "get", params: { object_code } });
 }
-export function saveOntLink(data: any) {
-  return request({ url: `${API_PATH}/link/save`, method: "post", data });
-}
 export function getOntActions(object_code = "") {
   return request({ url: `${API_PATH}/actions`, method: "get", params: { object_code } });
-}
-export function saveOntAction(data: any) {
-  return request({ url: `${API_PATH}/action/save`, method: "post", data });
-}
-export function removeOnt(kind: string, id: number) {
-  return request({ url: `${API_PATH}/remove`, method: "delete", params: { kind, id } });
 }
 export function materializeOntObject(code: string) {
   return request({ url: `${API_PATH}/materialize`, method: "post", data: { code } });
 }
 export function getOntFunctions(object_code = "") {
   return request({ url: `${API_PATH}/functions`, method: "get", params: { object_code } });
-}
-export function saveOntFunction(data: any) {
-  return request({ url: `${API_PATH}/function/save`, method: "post", data });
 }
 /** 执行本体函数（表达式/关联聚合/外部服务/模型） */
 export function runOntFunction(data: {
@@ -288,9 +273,6 @@ export function getOntDecisionGraph(params: Record<string, any> = {}) {
 export function getOntDecisionStats() {
   return request({ url: `${API_PATH}/decision-stats`, method: "get" });
 }
-export function initOntDecisionObjectType() {
-  return request({ url: `${API_PATH}/decision/init-object-type`, method: "post" });
-}
 
 /* ---------------- P4：对象权限 ---------------- */
 /** 对象类型的安全概览（Security 标签页） */
@@ -313,13 +295,6 @@ export function removeOntRowPolicy(id: number) {
 /** 校验策略表达式（不保存） */
 export function checkOntPolicy(data: { expression: string; object_code?: string }) {
   return request({ url: `${API_PATH}/security/policy-check`, method: "post", data });
-}
-export function getOntResourceAcl(resource_kind: string, resource_code: string) {
-  return request({
-    url: `${API_PATH}/security/resource-acl`,
-    method: "get",
-    params: { resource_kind, resource_code },
-  });
 }
 export function saveOntResourceAcl(data: {
   resource_kind: string;
@@ -375,9 +350,6 @@ export function duplicateOntScenario(code: string, name = "") {
 }
 export function removeOntScenario(code: string) {
   return request({ url: `${API_PATH}/scenario/remove`, method: "post", data: { code } });
-}
-export function getOntScenarioDiff(code: string) {
-  return request({ url: `${API_PATH}/scenario/${encodeURIComponent(code)}/diff`, method: "get" });
 }
 export function compareOntScenarios(codes: string[]) {
   return request({ url: `${API_PATH}/scenario/compare`, method: "post", data: { codes } });
@@ -561,21 +533,12 @@ export function applyOntIndexSuggestions(objectCode: string, onlyHigh = true) {
 }
 
 /* ---------------- C) 分支 / 提案 ---------------- */
-export function getOntBranches(status = "") {
-  return request({ url: `${API_PATH}/branches`, method: "get", params: { status } });
-}
-export function getOntBranch(code: string) {
-  return request({ url: `${API_PATH}/branch/${encodeURIComponent(code)}`, method: "get" });
-}
 export function createOntBranch(title: string, description = "") {
   return request({
     url: `${API_PATH}/branch/create`,
     method: "post",
     data: { title, description },
   });
-}
-export function saveOntBranchChange(data: Record<string, any>) {
-  return request({ url: `${API_PATH}/branch/save`, method: "post", data });
 }
 export function getOntProposals(tab = "") {
   return request({ url: `${API_PATH}/proposals`, method: "get", params: { tab } });
@@ -622,12 +585,6 @@ export function commentOntProposal(code: string, body: string, taskId = 0) {
     url: `${API_PATH}/proposal/comment`,
     method: "post",
     data: { code, body, task_id: taskId },
-  });
-}
-export function getOntProposalChangelog(code: string) {
-  return request({
-    url: `${API_PATH}/proposal/${encodeURIComponent(code)}/changelog`,
-    method: "get",
   });
 }
 
@@ -726,9 +683,6 @@ export function shareGraphView(code: string, share_mode: string, share_roles: st
     method: "post",
     data: { code, share_mode, share_roles },
   });
-}
-export function getGraphViewLink(code: string) {
-  return request({ url: `${API_PATH}/graph-views/${code}/link`, method: "get" });
 }
 export function getTimelineProps(domain_code = "") {
   return request({

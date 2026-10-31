@@ -51,7 +51,7 @@ export function dispatchOfficeAgent(agentId: number, text: string, signal?: Abor
     method: "post",
     data: { text },
     signal,
-    timeout: 300000
+    timeout: 300000,
   });
 }
 
@@ -108,9 +108,6 @@ export async function streamOfficeDispatch(
 }
 
 /** AI 办公室：把任务交给组长（后端用 agno Team 协同） */
-export function dispatchOfficeTask(text: string) {
-  return request({ url: `${API_PATH}/office/dispatch`, method: "post", data: { text } });
-}
 
 export function orchestrateAgents(question: string) {
   return request({ url: `${API_PATH}/orchestrate`, method: "post", data: { question } });
@@ -134,11 +131,4 @@ export function deleteAiAgent(ids: number[]) {
 
 export function batchAgentStatus(ids: number[], enabled: boolean) {
   return request({ url: `${API_PATH}/batch/status`, method: "put", data: { ids, enabled } });
-}
-
-export function getAgentTemplates() {
-  return request({ url: `${API_PATH}/templates`, method: "get" });
-}
-export function createAgentFromTemplate(key: string, name: string) {
-  return request({ url: `${API_PATH}/create-from-template`, method: "post", data: { key, name } });
 }
