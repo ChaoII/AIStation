@@ -8,6 +8,9 @@
             <el-button size="small" @click="loadRuns">
               {{ $t("ai_workflow.eval_refreshHistory") }}
             </el-button>
+            <el-button v-if="running" size="small" type="danger" @click="stopCurrent">
+              {{ $t("ai_workflow.eval_stop") }}
+            </el-button>
             <el-button
               size="small"
               type="primary"
@@ -104,6 +107,37 @@
           {{ progress.current || "-" }}
         </el-descriptions-item>
       </el-descriptions>
+      <!-- 逐题实时状态：长跑时能看到每题成功/失败/耗时，不用等整轮结束 -->
+      <el-table
+        v-if="items.length"
+        :data="items"
+        size="small"
+        border
+        stripe
+        max-height="240"
+        class="ev-desc"
+      >
+        <el-table-column type="index" label="#" width="48" />
+        <el-table-column
+          prop="question"
+          :label="$t('ai_workflow.eval_question')"
+          min-width="260"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="$t('ai_workflow.eval_result')" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_error" size="small" type="danger">
+              {{ $t("ai_workflow.eval_error") }}
+            </el-tag>
+            <el-tag v-else size="small" type="success" effect="plain">
+              {{ $t("ai_workflow.eval_correctShort") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="path" :label="$t('ai_workflow.eval_path')" width="90" />
+        <el-table-column prop="n_rows" :label="$t('ai_workflow.eval_rows')" width="70" />
+        <el-table-column prop="took_ms" :label="$t('ai_workflow.eval_ms')" width="90" />
+      </el-table>
       <el-alert
         v-if="progress?.error"
         type="error"
@@ -171,13 +205,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import {
+  getEvalItems,
   getEvalRuns,
   getEvalStatus,
   getQueryDatasources,
   startEvalRun,
+  stopEvalRun,
 } from "@/api/module_ai/query";
 import {
   DIFFICULTIES,
@@ -206,6 +242,9 @@ const starting = ref(false);
 const progress = ref<EvalRunProgress | null>(null);
 const runs = ref<EvalRunItem[]>([]);
 const loadingRuns = ref(false);
+/** 逐题实时状态（运行中每 2s 拉一次；局部刷新，不整表重拉） */
+const items = ref<any[]>([]);
+let currentRunId = "";
 
 /** 轮询句柄（**只在终止时清理**，组件卸载也必须清理）。 */
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -231,10 +270,11 @@ function stopPolling() {
   }
 }
 
-/** 运行状态中文化（后端返回 running/done/error，界面不再裸露英文）。 */
+/** 运行状态中文化（后端返回 running/done/error/stopped，界面不再裸露英文）。 */
 function statusLabel(s?: string) {
   if (s === "done") return t("ai_workflow.eval_done");
   if (s === "error") return t("ai_workflow.eval_failed");
+  if (s === "stopped") return t("ai_workflow.eval_stopped");
   if (s === "running") return t("ai_workflow.eval_running");
   return s || "-";
 }
@@ -244,6 +284,13 @@ async function poll(runId: string) {
     const r = await getEvalStatus(runId);
     const d: EvalRunProgress | null = r.data?.data || null;
     progress.value = d;
+    // 逐题进度：运行中也拉，失败静默（不影响主流程）
+    try {
+      const ri = await getEvalItems(runId);
+      items.value = ri.data?.data || [];
+    } catch {
+      /* ignore */
+    }
     if (!d || d.status !== "running") {
       stopPolling();
       await loadRuns();
@@ -252,10 +299,34 @@ async function poll(runId: string) {
         emit("finished", runId);
       } else if (d && d.status === "error") {
         ElMessage.error(d.error || t("ai_workflow.eval_evalFail"));
+      } else if (d && d.status === "stopped") {
+        ElMessage.warning(t("ai_workflow.eval_stopped"));
       }
     }
   } catch {
     // 单次轮询失败不终止（可能是瞬时网络问题）
+  }
+}
+
+/** 停止当前评测（后台会 cancel 任务并把状态落库）。 */
+async function stopCurrent() {
+  const rid = currentRunId || progress.value?.run_id;
+  if (!rid) return;
+  try {
+    await ElMessageBox.confirm(t("ai_workflow.eval_stopConfirm"), t("ai_workflow.eval_stop"), {
+      type: "warning",
+      confirmButtonText: t("ai_workflow.eval_stop"),
+      cancelButtonText: t("ai_workflow.app_cancel"),
+    });
+  } catch {
+    return;
+  }
+  try {
+    await stopEvalRun(rid);
+    ElMessage.success(t("ai_workflow.eval_stopped"));
+    await poll(rid);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.eval_stopFail"));
   }
 }
 
@@ -274,6 +345,8 @@ async function start() {
       return;
     }
     progress.value = { run_id: runId, status: "running", total: 0, done: 0, current: "" };
+    items.value = [];
+    currentRunId = runId;
     emit("started", runId);
     stopPolling();
     timer = setInterval(() => poll(runId), 1500);

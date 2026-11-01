@@ -44,9 +44,14 @@ def get_status(run_id: str | None) -> dict | None:
 
 
 async def _ask(question: str, auth, datasource: str, force_slow: bool = False) -> dict:
-    from .service import AiQueryService
+    from .service import AiQueryService, set_eval_context
 
-    return await AiQueryService.ask(question, auth, None, datasource, force_slow=force_slow)
+    # 评测打标：会话写入 is_eval=true → 不进用户的问数历史 / 使用统计
+    set_eval_context(True)
+    try:
+        return await AiQueryService.ask(question, auth, None, datasource, force_slow=force_slow)
+    finally:
+        set_eval_context(False)
 
 
 async def _resolve_schema(datasource: str) -> dict:
@@ -333,8 +338,9 @@ async def _persist_run_progress(run_id: str, total: int | None = None,
         log.warning(f"[ai-eval] 进度落库失败（忽略）: {str(e)[:120]}")
 
 
-async def _fail_run(run_id: str, error: str, done: int | None = None) -> None:
-    """把失败回写到 DB：状态 error + 原因 + 结束时间（否则历史里永远「运行中」）。"""
+async def _fail_run(run_id: str, error: str, done: int | None = None,
+                    status: str = "error") -> None:
+    """把失败/停止回写到 DB：状态 + 原因 + 结束时间（否则历史里永远「运行中」）。"""
     from sqlalchemy import text as _t
 
     from app.core.database import async_db_session
@@ -344,11 +350,11 @@ async def _fail_run(run_id: str, error: str, done: int | None = None) -> None:
         async with async_db_session.begin() as db:
             await db.execute(
                 _t(
-                    "UPDATE ai_query_testrun SET status='error', finished_at=now(), "
+                    "UPDATE ai_query_testrun SET status=:st, finished_at=now(), "
                     "summary=COALESCE(summary, '{}'::jsonb) || CAST(:e AS jsonb), "
                     "done=COALESCE(:d, done) WHERE run_id=:r"
                 ),
-                {"r": run_id, "e": payload, "d": done},
+                {"r": run_id, "e": payload, "d": done, "st": status},
             )
     except Exception as e:  # noqa: BLE001
         log.warning(f"[ai-eval] 失败状态落库失败（忽略）: {str(e)[:120]}")
@@ -453,14 +459,53 @@ async def reconcile_stale_runs(timeout_min: int = 30) -> int:
     return fixed
 
 
+def stop_run(run_id: str) -> bool:
+    """停止一个进行中的评测（含消融/方差的子运行）。"""
+    r = _RUNS.get(run_id)
+    if not r:
+        return False
+    task = r.get("_task")
+    if task is not None and not task.done():
+        try:
+            task.cancel()
+        except Exception:  # noqa: BLE001
+            pass
+    # 级联：消融/方差主 run 下面是子 run（id 前缀相同）
+    for sub, sr in list(_RUNS.items()):
+        if sub.startswith(run_id + "_"):
+            t = sr.get("_task")
+            if t is not None and not t.done():
+                try:
+                    t.cancel()
+                except Exception:  # noqa: BLE001
+                    pass
+            sr.update(status="stopped")
+    r.update(status="stopped", error="用户手动停止")
+    try:
+        asyncio.ensure_future(_fail_run(run_id, "用户手动停止", done=r.get("done"),
+                                        status="stopped"))
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
 def start_run(auth, filter: dict | None = None, mode: str = "full",
-              config: dict | None = None) -> str:
+              config: dict | None = None, internal: bool = False) -> str:
     """启动一轮评测（后台），返回 run_id。"""
     from sqlalchemy import text as _t
 
     from app.core.database import async_db_session
+    from app.core.exceptions import CustomException
 
     from .eval_set import ensure_eval_tables
+
+    if mode == "full" and not internal:
+        # 并发互斥：两个全量评测同时跑会互相抢模型/连接，结果也难归因
+        busy = [rid for rid, r in _RUNS.items()
+                if r.get("status") == "running"
+                and r.get("mode") in ("full", "ablation", "variance")]
+        if busy:
+            raise CustomException(msg="已有评测在运行，请先停止或等待其完成")
 
     run_id = f"ev_{uuid.uuid4().hex[:12]}"
     flt = dict(filter or {})
@@ -493,6 +538,7 @@ def start_run(auth, filter: dict | None = None, mode: str = "full",
                 await _run_once(run_id, auth, flt)
         except Exception as e:  # noqa: BLE001
             _RUNS[run_id].update(status="error", error=str(e)[:300])
+            await _fail_run(run_id, str(e))
 
     _RUNS[run_id]["_task"] = asyncio.ensure_future(_job())
     return run_id
@@ -608,7 +654,7 @@ def start_variance(auth, repeats: int = 3, filter: dict | None = None) -> str:
                 sql_cache_clear()  # ← 不清就是回放，见 docstring
                 _RUNS[run_id].update(current=f"第 {i + 1}/{n} 次", done=i)
                 await _persist_run_progress(run_id, total=n, done=i)
-                sub = start_run(auth, filter=flt or None)
+                sub = start_run(auth, filter=flt or None, internal=True)
                 st = await _wait_sub_run(sub)
                 if st.get("status") == "error":
                     raise RuntimeError(f"第 {i + 1} 次失败：{st.get('error')}")

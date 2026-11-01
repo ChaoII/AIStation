@@ -144,6 +144,9 @@ _QUERY_TABLES_SQL = (
 _QUERY_ALTER_SQL = (
     "ALTER TABLE ai_workshop_app ADD COLUMN IF NOT EXISTS deleted_time TIMESTAMP",
     "ALTER TABLE ai_pipeline ADD COLUMN IF NOT EXISTS datasource VARCHAR(120)",
+    # 评测会话隔离：评测会走同一个 ask 链路，不标记就会把题库的题灌进用户的问数历史
+    # （实测 8427 条会话里同一题重复 50~85 次），使用统计也被评测流量污染。
+    "ALTER TABLE ai_query_sessions ADD COLUMN IF NOT EXISTS is_eval BOOLEAN DEFAULT false",
 )
 
 
@@ -193,6 +196,16 @@ def invalidate_ont_allow_cache() -> None:
 #: 供 prompt（``_build_schema_context``）与对象查询共用。
 #: 用 ContextVar 而非类属性：请求作用域隔离，并发请求与子任务不会互相串。
 _OBJECT_CTX: ContextVar[str] = ContextVar("ai_query_object_ctx", default="")
+
+#: 评测上下文：评测（/ai/eval）逐题调用 `ask`，必须与真实用户问数历史隔离。
+#: 置 True 时会话打 `is_eval` 标记 → 问数历史默认不显示、使用统计不计入。
+_EVAL_CTX: ContextVar[bool] = ContextVar("ai_query_eval_ctx", default=False)
+
+
+def set_eval_context(on: bool = True) -> None:
+    """评测执行器调用前打标（同任务内生效，子任务会继承）。"""
+    _EVAL_CTX.set(bool(on))
+
 
 #: 对象查询热度（对象编码 → 命中次数）与「本进程已自动建过索引」的对象。
 #: 用途：**热度驱动自动建索引**（G4）。高频对象才值得建索引，避免无谓 DDL；
@@ -6383,19 +6396,25 @@ class AiQueryService:
     @classmethod
     async def stats(cls) -> dict:
         async with async_db_session() as db:
-            from sqlalchemy import func, select
+            from sqlalchemy import func, or_, select
 
-            total = (await db.execute(
-                select(func.count()).select_from(AiQueryMessageModel)
-                .where(AiQueryMessageModel.is_deleted.is_(False)))).scalar_one()
+            # 不计评测会话：评测会走同一条 ask 链路，混进来使用统计就失真了
+            base = (
+                select(func.count())
+                .select_from(AiQueryMessageModel)
+                .outerjoin(AiQuerySessionModel,
+                           AiQuerySessionModel.id == AiQueryMessageModel.session_id)
+                .where(
+                    AiQueryMessageModel.is_deleted.is_(False),
+                    or_(AiQuerySessionModel.is_eval.is_(False),
+                        AiQuerySessionModel.is_eval.is_(None)),
+                )
+            )
+            total = (await db.execute(base)).scalar_one()
             fast = (await db.execute(
-                select(func.count()).select_from(AiQueryMessageModel)
-                .where(AiQueryMessageModel.is_deleted.is_(False),
-                       AiQueryMessageModel.path == "fast"))).scalar_one()
+                base.where(AiQueryMessageModel.path == "fast"))).scalar_one()
             errors = (await db.execute(
-                select(func.count()).select_from(AiQueryMessageModel)
-                .where(AiQueryMessageModel.is_deleted.is_(False),
-                       AiQueryMessageModel.is_error.is_(True)))).scalar_one()
+                base.where(AiQueryMessageModel.is_error.is_(True)))).scalar_one()
         return {
             "total": total, "fast": fast, "slow": max(0, total - fast),
             "errors": errors, "ok": max(0, total - errors),
@@ -6833,17 +6852,22 @@ class AiQueryService:
             s = AiQuerySessionModel(
                 user_id=user, tenant_id=None, title=title[:60] or "新会话",
                 datasource=SYSTEM_DS, created_id=user, updated_id=user,
+                is_eval=_EVAL_CTX.get(),
             )
             db.add(s)
             await db.flush()
             return {"id": s.id, "title": s.title, "datasource": s.datasource}
 
     @classmethod
-    async def list_sessions(cls, auth) -> list[dict]:
+    async def list_sessions(cls, auth, include_eval: bool = False) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import or_, select
 
             conds = [AiQuerySessionModel.is_deleted.is_(False)]
+            if not include_eval:
+                # 评测会话默认不进问数历史（题库的题会把真实历史刷屏：实测同一题重复 85 次）
+                conds.append(or_(AiQuerySessionModel.is_eval.is_(False),
+                                 AiQuerySessionModel.is_eval.is_(None)))
             uid = _actor_id(auth)
             if uid is not None:
                 # 与 `_ensure_session_owner` 同口径：本人 + 历史遗留（user_id 为 NULL）。

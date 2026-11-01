@@ -227,6 +227,10 @@ class AiQuerySessionModel(ModelMixin, UserMixin):
     datasource: Mapped[str] = mapped_column(
         String(64), default="system", comment="当前数据源"
     )
+    # 评测会话标记：评测（/ai/eval）复用同一 ask 链路，必须与用户的真实问数历史隔离
+    is_eval: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="是否评测会话"
+    )
 
 
 class AiQueryMessageModel(ModelMixin, UserMixin):

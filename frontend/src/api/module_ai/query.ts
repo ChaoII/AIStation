@@ -632,6 +632,41 @@ export function deleteEvalCases(ids: number[]) {
   return request({ url: `${API_PATH}/eval/cases`, method: "delete", data: ids });
 }
 
+/** 批量导入题库：items（JSON 数组）或 csv（文本，含表头）。 */
+export function importEvalCases(data: { items?: any[]; csv?: string; datasource?: string }) {
+  return request({
+    url: `${API_PATH}/eval/cases/import`,
+    method: "post",
+    data,
+    timeout: 180000,
+  });
+}
+
+/** 校验金标 SQL：ids 为空时按 datasource/dataset 全量校验。 */
+export function verifyEvalCases(data: { ids?: number[]; datasource?: string; dataset?: string }) {
+  return request({
+    url: `${API_PATH}/eval/cases/verify`,
+    method: "post",
+    data: data || {},
+    timeout: 300000,
+  });
+}
+
+/** 停止进行中的评测（含消融/方差子运行）。 */
+export function stopEvalRun(run_id: string) {
+  return request({ url: `${API_PATH}/eval/stop`, method: "post", data: { run_id } });
+}
+
+/** 逐题进度（运行中实时表）。 */
+export function getEvalItems(run_id: string) {
+  return request({
+    url: `${API_PATH}/eval/items`,
+    method: "get",
+    params: { run_id },
+    headers: { _silent: "true" },
+  });
+}
+
 /** 生成一轮测试题：LLM 出题 + 金标执行校验，耗时较长（30~60s）。 */
 export function generateEvalRound(data: {
   datasource: string;

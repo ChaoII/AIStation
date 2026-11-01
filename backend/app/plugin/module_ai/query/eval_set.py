@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 
 from app.core.database import async_db_session
@@ -209,10 +210,14 @@ async def delete_cases(ids: list[int]) -> int:
     if not ids:
         return 0
     await ensure_eval_tables()
+    # ⚠️ `WHERE id IN :ids` 传元组在 asyncpg 下是**语法错误**（旧实现一调用就 500）。
+    # 这里显式拼占位符；id 已强制转 int，无注入风险。
+    safe_ids = [int(i) for i in ids]
+    placeholders = ", ".join(str(i) for i in safe_ids)
     async with async_db_session.begin() as db:
         res = await db.execute(
-            _t("UPDATE ai_query_testcase SET is_deleted=true WHERE id IN :ids AND is_deleted=false"),
-            {"ids": tuple(int(i) for i in ids)},
+            _t(f"UPDATE ai_query_testcase SET is_deleted=true "
+               f"WHERE id IN ({placeholders}) AND is_deleted=false")
         )
         return int(res.rowcount or 0)
 
@@ -228,6 +233,104 @@ async def import_cases(items: list[dict]) -> dict:
         saved += 1
     log.info(f"[ai-eval] 测试集导入：新增/更新 {saved} 条，跳过 {skipped} 条")
     return {"saved": saved, "skipped": skipped}
+
+
+#: CSV 导入表头（顺序即无表头时的默认列序）
+CASE_CSV_COLUMNS = ["question", "gold_sql", "datasource", "difficulty", "form",
+                    "scenario", "dataset", "expected_metric"]
+
+
+def parse_case_csv(text: str, default_datasource: str = "system") -> list[dict]:
+    """解析 CSV/TSV 题库文本 → 题目字典列表。
+
+    支持带表头（question,gold_sql,...）与无表头（按 CASE_CSV_COLUMNS 顺序）。
+    旧实现只有 `import_cases()` 函数、没有解析与接口，界面上根本导不进题。
+    """
+    import csv
+    import io
+
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    # 自动识别分隔符（逗号/制表符）
+    delim = "\t" if ("\t" in raw.split("\n", 1)[0] and "," not in raw.split("\n", 1)[0]) else ","
+    rows = [r for r in csv.reader(io.StringIO(raw), delimiter=delim) if any(str(x).strip() for x in r)]
+    if not rows:
+        return []
+    head = [str(h).strip().lower() for h in rows[0]]
+    if "question" in head and "gold_sql" in head:
+        cols = head
+        body = rows[1:]
+    else:
+        cols = CASE_CSV_COLUMNS
+        body = rows
+    out: list[dict] = []
+    for r in body:
+        item = {c: (str(r[i]).strip() if i < len(r) else "") for i, c in enumerate(cols)}
+        item.setdefault("datasource", default_datasource)
+        if not item.get("datasource"):
+            item["datasource"] = default_datasource
+        out.append(item)
+    return out
+
+
+async def verify_cases(ids: list[int] | None = None, datasource: str | None = None,
+                       dataset: str | None = None) -> dict:
+    """校验金标 SQL：能执行且有行（非全 NULL）→ verified=true。
+
+    结果写回 `verified / last_verified_at`，并返回逐题明细，供界面提示
+    「哪些题的金标已经跑不通了」（以前只能靠生成流程校验，人工改题后无法复核）。
+    """
+    from app.core.database import async_db_session
+
+    from .service import SYSTEM_DS, _execute_custom_ds_sql, _execute_sql
+
+    cases = await list_cases(datasource=datasource, dataset=dataset)
+    if ids:
+        want = {int(i) for i in ids}
+        cases = [c for c in cases if int(c["id"]) in want]
+    items: list[dict] = []
+    passed = failed = 0
+    for c in cases:
+        sql = str(c.get("gold_sql") or "").strip().rstrip(";")
+        ds = c.get("datasource") or SYSTEM_DS
+        ok, rows_n, err = False, 0, ""
+        if not sql:
+            err = "缺少金标 SQL"
+        else:
+            try:
+                if ds == SYSTEM_DS:
+                    # 用独立任务执行：系统 SQL 走的是请求作用域会话，一旦报错会污染整个请求
+                    # 的事务（后续写回/查询全部 "current transaction is aborted"）。
+                    # 新任务会拿到自己的会话（见 DBSessionMiddleware 的 owner-task 判定）。
+                    res = await asyncio.create_task(_execute_sql(sql))
+                else:
+                    res = await _execute_custom_ds_sql(int(str(ds).split(":")[-1]), sql)
+                rows = res.get("rows") or []
+                rows_n = len(rows)
+                flat = [v for r in rows for v in (r if isinstance(r, (list, tuple)) else [r])]
+                ok = bool(rows) and not all(v is None for v in flat)
+                if not ok:
+                    err = "空结果（金标无法出数）"
+            except Exception as e:  # noqa: BLE001
+                err = str(e)[:200]
+        # 写回校验状态（请求作用域会话：用 commit，不能嵌套 begin）
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+
+            await db.execute(
+                _t("UPDATE ai_query_testcase SET verified=:v, last_verified_at=now(), "
+                   "updated_time=now() WHERE id=:i"),
+                {"v": ok, "i": int(c["id"])},
+            )
+            await db.commit()
+        if ok:
+            passed += 1
+        else:
+            failed += 1
+        items.append({"id": c["id"], "question": c["question"], "ok": ok,
+                      "rows": rows_n, "error": err})
+    return {"total": len(cases), "passed": passed, "failed": failed, "items": items[:200]}
 
 
 async def load_results(run_id: str) -> list[dict]:
@@ -273,6 +376,27 @@ async def load_results(run_id: str) -> list[dict]:
             "metric_eligible": bool((tr or {}).get("metric_eligible")),
         })
     return out
+
+
+async def list_result_brief(run_id: str) -> list[dict]:
+    """逐题进度（轻量）：运行中实时表用，不带 trace/召回等大字段。"""
+    from sqlalchemy import text as _t
+
+    await ensure_eval_tables()
+    async with async_db_session() as db:
+        rows = (await db.execute(
+            _t(
+                "SELECT testcase_id,question,ok,is_error,path,n_rows,took_ms,gold_match "
+                "FROM ai_query_testresult WHERE run_id=:r AND is_deleted=false ORDER BY id"
+            ),
+            {"r": run_id},
+        )).fetchall()
+    return [
+        {"testcase_id": r[0], "question": r[1], "ok": bool(r[2]), "is_error": bool(r[3]),
+         "path": r[4] or "", "n_rows": r[5] or 0, "took_ms": r[6] or 0,
+         "gold_match": bool(r[7])}
+        for r in rows
+    ]
 
 
 async def list_runs(limit: int = 30, mode: str | None = None,

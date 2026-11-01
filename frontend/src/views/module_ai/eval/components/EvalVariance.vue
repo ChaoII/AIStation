@@ -34,6 +34,9 @@
         <el-form-item :label="$t('ai_workflow.eval_onlyGen')">
           <el-switch v-model="forceSlow" size="small" />
         </el-form-item>
+        <el-form-item :label="$t('ai_workflow.eval_limit')">
+          <el-input-number v-model="limit" size="small" :min="1" :max="200" />
+        </el-form-item>
         <el-button type="primary" size="small" :loading="running" @click="start">
           {{ $t("ai_workflow.eval_startRepeats") }}
         </el-button>
@@ -44,7 +47,7 @@
 
       <el-descriptions v-if="runId" :column="4" border size="small" class="ev-desc">
         <el-descriptions-item :label="$t('ai_workflow.eval_status')">
-          {{ st?.status || "-" }}
+          {{ statusLabel(st?.status) }}
         </el-descriptions-item>
         <el-descriptions-item :label="$t('ai_workflow.eval_progress')">
           {{ st?.done ?? 0 }} / {{ st?.repeats ?? repeats }}
@@ -173,6 +176,7 @@ interface VarianceReport {
 const repeats = ref(3);
 const datasource = ref("system");
 const forceSlow = ref(true);
+const limit = ref(20);
 const datasources = ref<any[]>([]);
 const runId = ref("");
 const running = ref(false);
@@ -181,12 +185,23 @@ const timer = ref<any>(null);
 
 const rep = computed<VarianceReport | null>(() => st.value?.report || null);
 
+/** 状态中文化（后端 running/done/error/stopped）。 */
+function statusLabel(s?: string) {
+  if (s === "done") return t("ai_workflow.eval_done");
+  if (s === "error") return t("ai_workflow.eval_failed");
+  if (s === "stopped") return t("ai_workflow.eval_stopped");
+  if (s === "running") return t("ai_workflow.eval_running");
+  return s || "-";
+}
+
 async function start() {
   running.value = true;
   try {
     const filter: any = {};
     if (datasource.value) filter.datasource = datasource.value;
     if (forceSlow.value) filter.force_slow = true;
+    // 必须带上题目上限：方差默认全量 340 题 × N 次，一轮要跑几小时（实测「点下去没反应」）
+    if (limit.value) filter.limit = limit.value;
     const r = await startEvalVariance({ repeats: repeats.value, filter });
     runId.value = r.data?.data?.run_id || "";
     ElMessage.success(t("ai_workflow.eval_startedSlow"));

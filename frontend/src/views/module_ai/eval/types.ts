@@ -85,7 +85,7 @@ export interface EvalReport {
 
 export interface EvalRunProgress {
   run_id: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "stopped";
   mode?: string;
   total: number;
   done: number;

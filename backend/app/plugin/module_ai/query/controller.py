@@ -876,6 +876,64 @@ async def eval_delete_cases(
     return SuccessResponse(data={"deleted": await delete_cases(data)}, msg="已删除")
 
 
+@AiQueryRouter.post("/eval/cases/import", summary="批量导入测试题（JSON / CSV）")
+async def eval_import_cases(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    from app.core.exceptions import CustomException
+
+    from .eval_set import import_cases, parse_case_csv
+
+    body = data or {}
+    ds = str(body.get("datasource") or "system")
+    items = body.get("items")
+    if not items:
+        items = parse_case_csv(str(body.get("csv") or ""), ds)
+    if not items:
+        raise CustomException(msg="没有可导入的题目：请粘贴 JSON 数组或 CSV（question,gold_sql,…）")
+    out = await import_cases(items)
+    return SuccessResponse(data=out, msg=f"已导入 {out.get('saved', 0)} 题")
+
+
+@AiQueryRouter.post("/eval/cases/verify", summary="校验金标 SQL（可执行且能出数）")
+async def eval_verify_cases(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
+    data: Annotated[dict | None, Body()] = None,
+) -> JSONResponse:
+    from .eval_set import verify_cases
+
+    body = data or {}
+    out = await verify_cases(
+        body.get("ids") or None,
+        body.get("datasource") or None,
+        body.get("dataset") or None,
+    )
+    return SuccessResponse(data=out, msg=f"校验完成：通过 {out['passed']} / 失败 {out['failed']}")
+
+
+@AiQueryRouter.post("/eval/stop", summary="停止正在运行的评测")
+async def eval_stop(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    from .eval_runner import stop_run
+
+    rid = str((data or {}).get("run_id") or "")
+    ok = stop_run(rid)
+    return SuccessResponse(data={"stopped": ok}, msg="已停止" if ok else "该运行不在进行中")
+
+
+@AiQueryRouter.get("/eval/items", summary="逐题进度（运行中实时表）")
+async def eval_items(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
+    run_id: str,
+) -> JSONResponse:
+    from .eval_set import list_result_brief
+
+    return SuccessResponse(data=await list_result_brief(run_id), msg="查询成功")
+
+
 @AiQueryRouter.post("/eval/run", summary="启动一轮评测")
 async def eval_run(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
@@ -1518,8 +1576,12 @@ async def save_query_setting(
 @AiQueryRouter.get("/sessions/list", summary="会话列表")
 async def list_sessions(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    include_eval: bool = False,
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.list_sessions(auth), msg="查询成功")
+    return SuccessResponse(
+        data=await AiQueryService.list_sessions(auth, include_eval=include_eval),
+        msg="查询成功",
+    )
 
 
 @AiQueryRouter.get("/sessions/{session_id}/messages", summary="会话消息")

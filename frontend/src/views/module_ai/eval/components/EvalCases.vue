@@ -79,6 +79,12 @@
             <el-button size="small" type="primary" @click="genVisible = true">
               {{ $t("ai_workflow.eval_genCase") }}
             </el-button>
+            <el-button size="small" @click="importVisible = true">
+              {{ $t("ai_workflow.eval_import") }}
+            </el-button>
+            <el-button size="small" :loading="verifying" @click="doVerify">
+              {{ $t("ai_workflow.eval_verify") }}
+            </el-button>
             <el-button
               size="small"
               type="danger"
@@ -175,6 +181,93 @@
         {{ $t("ai_workflow.eval_totalCount", { count: cases.length }) }}
       </div>
     </el-card>
+
+    <el-dialog
+      v-model="importVisible"
+      :title="$t('ai_workflow.eval_importTitle')"
+      width="680px"
+      append-to-body
+    >
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        :title="$t('ai_workflow.eval_importHint')"
+        class="ev-alert"
+      />
+      <el-form :model="importForm" label-width="90px">
+        <el-form-item :label="$t('ai_workflow.eval_datasource')">
+          <el-select v-model="importForm.datasource" style="width: 100%">
+            <el-option :label="$t('ai_workflow.eval_systemDs')" value="system" />
+            <el-option
+              v-for="d in datasources"
+              :key="d.code || d.id"
+              :label="d.name"
+              :value="d.code || `ds:${d.id}`"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('ai_workflow.eval_importFormat')">
+          <el-radio-group v-model="importForm.format" size="small">
+            <el-radio-button label="csv">CSV</el-radio-button>
+            <el-radio-button label="json">JSON</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="$t('ai_workflow.eval_importContent')">
+          <el-input
+            v-model="importForm.text"
+            type="textarea"
+            :rows="10"
+            :placeholder="$t('ai_workflow.eval_importPlaceholder')"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="importVisible = false">{{ $t("ai_workflow.app_cancel") }}</el-button>
+        <el-button type="primary" :loading="importing" @click="doImport">
+          {{ $t("ai_workflow.eval_importDo") }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="verifyVisible"
+      :title="$t('ai_workflow.eval_verifyResultTitle')"
+      width="720px"
+      append-to-body
+    >
+      <div class="ev-hint">
+        {{
+          $t("ai_workflow.eval_verifyResult", {
+            total: verifyReport.total || 0,
+            passed: verifyReport.passed || 0,
+            failed: verifyReport.failed || 0,
+          })
+        }}
+      </div>
+      <el-table :data="verifyReport.items || []" size="small" border max-height="360" stripe>
+        <el-table-column
+          prop="question"
+          :label="$t('ai_workflow.eval_question')"
+          min-width="240"
+          show-overflow-tooltip
+        />
+        <el-table-column :label="$t('ai_workflow.eval_result')" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.ok ? 'success' : 'danger'" effect="plain">
+              {{ row.ok ? $t("ai_workflow.eval_verified") : $t("ai_workflow.eval_unverified") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="rows" :label="$t('ai_workflow.eval_rows')" width="80" />
+        <el-table-column
+          prop="error"
+          :label="$t('ai_workflow.eval_errorDetail')"
+          min-width="200"
+          show-overflow-tooltip
+        />
+      </el-table>
+    </el-dialog>
 
     <el-dialog
       v-model="genVisible"
@@ -324,7 +417,9 @@ import {
   generateEvalRound,
   getEvalCases,
   getQueryDatasources,
+  importEvalCases,
   upsertEvalCase,
+  verifyEvalCases,
 } from "@/api/module_ai/query";
 import { DIFFICULTIES, FORMS, difficultyTag, diffKey, formKey, type EvalCase } from "../types";
 
@@ -350,6 +445,74 @@ const genForm = ref({
 const sqlVisible = ref(false);
 const current = ref<EvalCase | null>(null);
 const currentSql = ref("");
+
+const importVisible = ref(false);
+const importing = ref(false);
+const importForm = ref({ datasource: "system", format: "csv" as "csv" | "json", text: "" });
+
+const verifying = ref(false);
+const verifyVisible = ref(false);
+const verifyReport = ref<any>({ total: 0, passed: 0, failed: 0, items: [] });
+
+/** 批量导入：CSV（含表头 question,gold_sql,…）或 JSON 数组。 */
+async function doImport() {
+  const raw = importForm.value.text.trim();
+  if (!raw) {
+    ElMessage.warning(t("ai_workflow.eval_importEmpty"));
+    return;
+  }
+  importing.value = true;
+  try {
+    const payload: any = { datasource: importForm.value.datasource };
+    if (importForm.value.format === "json") {
+      let items: any;
+      try {
+        items = JSON.parse(raw);
+      } catch {
+        ElMessage.error(t("ai_workflow.eval_importJsonInvalid"));
+        return;
+      }
+      payload.items = Array.isArray(items) ? items : items.items || [];
+      if (!payload.items.length) {
+        ElMessage.warning(t("ai_workflow.eval_importEmpty"));
+        return;
+      }
+    } else {
+      payload.csv = raw;
+    }
+    const r = await importEvalCases(payload);
+    const d = r.data?.data || {};
+    ElMessage.success(
+      t("ai_workflow.eval_importDone", { saved: d.saved || 0, skipped: d.skipped || 0 })
+    );
+    importVisible.value = false;
+    importForm.value.text = "";
+    await load();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.eval_importFail"));
+  } finally {
+    importing.value = false;
+  }
+}
+
+/** 校验金标：选中优先，否则按当前筛选条件批量校验。 */
+async function doVerify() {
+  verifying.value = true;
+  try {
+    const payload: any = {};
+    if (selection.value.length) payload.ids = selection.value.map((x) => x.id);
+    if (filters.value.datasource) payload.datasource = filters.value.datasource;
+    if (filters.value.dataset) payload.dataset = filters.value.dataset;
+    const r = await verifyEvalCases(payload);
+    verifyReport.value = r.data?.data || { total: 0, passed: 0, failed: 0, items: [] };
+    verifyVisible.value = true;
+    await load();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.eval_verifyFail"));
+  } finally {
+    verifying.value = false;
+  }
+}
 
 const editVisible = ref(false);
 const saving = ref(false);
