@@ -194,4 +194,11 @@ export default {
   eval_clickRun: "点击「运行基准」开始",
   eval_benchDone: "基准测试完成",
   eval_benchFail: "基准测试失败",
+  eval_objectPath: "对象查询",
+  eval_clarifyPath: "澄清反问",
+  eval_truncated: "明细仅显示前 200 条（本次共 {total} 条）",
+  eval_dataset: "数据集",
+  eval_enabled: "启用",
+  eval_enabledOn: "启用",
+  eval_enabledOff: "停用",
 };

@@ -8,6 +8,7 @@ export interface EvalCase {
   difficulty: string;
   form: string;
   scenario: string;
+  dataset?: string;
   expected_metric?: string;
   verified?: boolean;
   enabled?: boolean;
@@ -75,7 +76,11 @@ export interface EvalReport {
   by_scenario: Record<string, EvalGroupRow>;
   by_form: Record<string, EvalGroupRow>;
   by_datasource: Record<string, EvalGroupRow>;
+  by_path?: Record<string, EvalGroupRow>;
   results: EvalResultRow[];
+  /** 结果总数（明细被截断时用于提示） */
+  total_results?: number;
+  truncated?: boolean;
 }
 
 export interface EvalRunProgress {

@@ -1,134 +1,140 @@
 <template>
   <div class="ev-wrap">
-    <el-alert type="info" :closable="false" show-icon :title="$t('ai_workflow.eval_varAlert')" />
+    <el-card shadow="never" class="ev-card">
+      <el-alert type="info" :closable="false" show-icon :title="$t('ai_workflow.eval_varAlert')" />
 
-    <el-form :inline="true" class="ev-form">
-      <el-form-item :label="$t('ai_workflow.eval_repeats')">
-        <el-select v-model="repeats" size="small" style="width: 110px">
-          <el-option
-            v-for="n in [2, 3, 4, 5]"
-            :key="n"
-            :label="$t('ai_workflow.eval_times', { n })"
-            :value="n"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item :label="$t('ai_workflow.eval_datasource')">
-        <el-select
-          v-model="datasource"
-          size="small"
-          clearable
-          :placeholder="$t('ai_workflow.eval_all')"
-          style="width: 190px"
-        >
-          <el-option :label="$t('ai_workflow.eval_systemShort')" value="system" />
-          <el-option
-            v-for="d in datasources"
-            :key="d.code || d.id"
-            :label="d.name"
-            :value="d.code || `ds:${d.id}`"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item :label="$t('ai_workflow.eval_onlyGen')">
-        <el-switch v-model="forceSlow" size="small" />
-      </el-form-item>
-      <el-button type="primary" size="small" :loading="running" @click="start">
-        {{ $t("ai_workflow.eval_startRepeats") }}
-      </el-button>
-      <el-button size="small" :disabled="!runId" @click="refresh">
-        {{ $t("ai_workflow.eval_refresh") }}
-      </el-button>
-    </el-form>
+      <el-form :inline="true" class="ev-form">
+        <el-form-item :label="$t('ai_workflow.eval_repeats')">
+          <el-select v-model="repeats" size="small" style="width: 110px">
+            <el-option
+              v-for="n in [2, 3, 4, 5]"
+              :key="n"
+              :label="$t('ai_workflow.eval_times', { n })"
+              :value="n"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('ai_workflow.eval_datasource')">
+          <el-select
+            v-model="datasource"
+            size="small"
+            clearable
+            :placeholder="$t('ai_workflow.eval_all')"
+            style="width: 190px"
+          >
+            <el-option :label="$t('ai_workflow.eval_systemShort')" value="system" />
+            <el-option
+              v-for="d in datasources"
+              :key="d.code || d.id"
+              :label="d.name"
+              :value="d.code || `ds:${d.id}`"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('ai_workflow.eval_onlyGen')">
+          <el-switch v-model="forceSlow" size="small" />
+        </el-form-item>
+        <el-button type="primary" size="small" :loading="running" @click="start">
+          {{ $t("ai_workflow.eval_startRepeats") }}
+        </el-button>
+        <el-button size="small" :disabled="!runId" @click="refresh">
+          {{ $t("ai_workflow.eval_refresh") }}
+        </el-button>
+      </el-form>
 
-    <el-descriptions v-if="runId" :column="4" border size="small" class="ev-desc">
-      <el-descriptions-item :label="$t('ai_workflow.eval_status')">
-        {{ st?.status || "-" }}
-      </el-descriptions-item>
-      <el-descriptions-item :label="$t('ai_workflow.eval_progress')">
-        {{ st?.done ?? 0 }} / {{ st?.repeats ?? repeats }}
-      </el-descriptions-item>
-      <el-descriptions-item :label="$t('ai_workflow.eval_current')">
-        {{ st?.current || "-" }}
-      </el-descriptions-item>
-      <el-descriptions-item :label="$t('ai_workflow.eval_noiseBand')">
-        {{ rep ? $t("ai_workflow.eval_score", { spread: rep.spread }) : "-" }}
-      </el-descriptions-item>
-    </el-descriptions>
+      <el-descriptions v-if="runId" :column="4" border size="small" class="ev-desc">
+        <el-descriptions-item :label="$t('ai_workflow.eval_status')">
+          {{ st?.status || "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('ai_workflow.eval_progress')">
+          {{ st?.done ?? 0 }} / {{ st?.repeats ?? repeats }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('ai_workflow.eval_current')">
+          {{ st?.current || "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="$t('ai_workflow.eval_noiseBand')">
+          {{ rep ? $t("ai_workflow.eval_score", { spread: rep.spread }) : "-" }}
+        </el-descriptions-item>
+      </el-descriptions>
 
-    <el-alert
-      v-if="st?.error"
-      type="error"
-      :closable="false"
-      show-icon
-      :title="st.error"
-      class="ev-mt"
-    />
-
-    <template v-if="rep">
       <el-alert
-        :type="rep.spread >= 5 ? 'warning' : 'success'"
+        v-if="st?.error"
+        type="error"
         :closable="false"
         show-icon
+        :title="st.error"
         class="ev-mt"
-        :title="
-          $t('ai_workflow.eval_varSummary', {
-            per: rep.per_run_accuracy.join(' / '),
-            mean: rep.mean,
-            std: rep.std,
-            spread: rep.spread,
-          })
-        "
       />
-      <div class="ev-stat">
-        {{
-          $t("ai_workflow.eval_stableSummary", {
-            n: rep.n_questions,
-            pass: rep.always_pass,
-            fail: rep.always_fail,
-            unstable: rep.unstable.length,
-          })
-        }}
-      </div>
 
-      <el-table :data="rep.unstable" size="small" border class="ev-mt" stripe>
-        <el-table-column :label="$t('ai_workflow.eval_crossPassRate')" width="120" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.rate >= 0.5 ? 'warning' : 'danger'">
-              {{ row.rate }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="question"
-          :label="$t('ai_workflow.eval_unstableQ')"
-          min-width="360"
-          show-overflow-tooltip
+      <template v-if="rep">
+        <el-alert
+          :type="rep.spread >= 5 ? 'warning' : 'success'"
+          :closable="false"
+          show-icon
+          class="ev-mt"
+          :title="
+            $t('ai_workflow.eval_varSummary', {
+              per: rep.per_run_accuracy.join(' / '),
+              mean: rep.mean,
+              std: rep.std,
+              spread: rep.spread,
+            })
+          "
         />
-      </el-table>
+        <div class="ev-stat">
+          {{
+            $t("ai_workflow.eval_stableSummary", {
+              n: rep.n_questions,
+              pass: rep.always_pass,
+              fail: rep.always_fail,
+              unstable: rep.unstable.length,
+            })
+          }}
+        </div>
 
-      <el-table :data="rep.pairs" size="small" border class="ev-mt" stripe>
-        <el-table-column :label="$t('ai_workflow.eval_compare')" width="100" align="center">
-          <template #default="{ row }">
-            {{ $t("ai_workflow.eval_compareTimes", { a: row.a, b: row.b }) }}
-          </template>
-        </el-table-column>
-        <el-table-column :label="$t('ai_workflow.eval_flip')" width="220" align="center">
-          <template #default="{ row }">{{ row.b01 }} / {{ row.b10 }}</template>
-        </el-table-column>
-        <el-table-column :label="$t('ai_workflow.eval_pValue')" width="100" align="center" />
-        <el-table-column :label="$t('ai_workflow.eval_verdict')" width="200">
-          <template #default="{ row }">
-            <el-tag v-if="row.significant" size="small" type="danger">
-              {{ $t("ai_workflow.eval_significant") }}
-            </el-tag>
-            <el-tag v-else size="small" type="info">
-              {{ $t("ai_workflow.eval_notSignificant") }}
-            </el-tag>
-          </template>
-        </el-table-column>
-      </el-table>
-    </template>
+        <el-table :data="rep.unstable" size="small" border class="ev-mt" stripe>
+          <el-table-column :label="$t('ai_workflow.eval_crossPassRate')" width="120" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.rate >= 0.5 ? 'warning' : 'danger'">
+                {{ row.rate }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="question"
+            :label="$t('ai_workflow.eval_unstableQ')"
+            min-width="360"
+            show-overflow-tooltip
+          />
+        </el-table>
+
+        <el-table :data="rep.pairs" size="small" border class="ev-mt" stripe>
+          <el-table-column :label="$t('ai_workflow.eval_compare')" width="100" align="center">
+            <template #default="{ row }">
+              {{ $t("ai_workflow.eval_compareTimes", { a: row.a, b: row.b }) }}
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('ai_workflow.eval_flip')" width="220" align="center">
+            <template #default="{ row }">{{ row.b01 }} / {{ row.b10 }}</template>
+          </el-table-column>
+          <el-table-column :label="$t('ai_workflow.eval_pValue')" width="100" align="center">
+            <template #default="{ row }">
+              {{ row.p === null || row.p === undefined ? "-" : Number(row.p).toFixed(3) }}
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('ai_workflow.eval_verdict')" width="200">
+            <template #default="{ row }">
+              <el-tag v-if="row.significant" size="small" type="danger">
+                {{ $t("ai_workflow.eval_significant") }}
+              </el-tag>
+              <el-tag v-else size="small" type="info">
+                {{ $t("ai_workflow.eval_notSignificant") }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-card>
   </div>
 </template>
 
@@ -225,6 +231,22 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.ev-wrap {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.ev-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ev-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 .ev-form {
   margin-top: 12px;
 }

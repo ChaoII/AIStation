@@ -81,6 +81,40 @@ function onSelect(id: string) {
   min-height: 0;
   overflow: auto;
 }
+
+/* ---- 页面外壳统一（非 scoped + 唯一前缀，防 data-v 在 keep-alive/HMR 下失效） ----
+   规范：白色面板铺满、内容区自己滚；否则卡片只到内容底部、下面留一大截灰底。 */
+.ai-eval-page .el-tabs__content > .el-tab-pane {
+  height: 100%;
+}
+.ai-eval-page .ev-cases,
+.ai-eval-page .ev-run,
+.ai-eval-page .ev-report,
+.ai-eval-page .ev-abl,
+.ai-eval-page .ev-bench {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.ai-eval-page .ev-cases > .el-card,
+.ai-eval-page .ev-run > .el-card,
+.ai-eval-page .ev-report > .el-card,
+.ai-eval-page .ev-abl > .el-card,
+.ai-eval-page .ev-bench > .el-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ai-eval-page .ev-cases > .el-card > .el-card__body,
+.ai-eval-page .ev-run > .el-card > .el-card__body,
+.ai-eval-page .ev-report > .el-card > .el-card__body,
+.ai-eval-page .ev-abl > .el-card > .el-card__body,
+.ai-eval-page .ev-bench > .el-card > .el-card__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 </style>
 
 <style scoped>

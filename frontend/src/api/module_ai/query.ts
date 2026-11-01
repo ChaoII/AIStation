@@ -618,6 +618,8 @@ export function getEvalCases(params?: {
   difficulty?: string;
   form?: string;
   scenario?: string;
+  dataset?: string;
+  enabled?: boolean;
 }) {
   return request({ url: `${API_PATH}/eval/cases`, method: "get", params });
 }
@@ -663,8 +665,12 @@ export function getEvalReport(run_id: string) {
   return request({ url: `${API_PATH}/eval/report`, method: "get", params: { run_id } });
 }
 
-export function getEvalRuns(limit = 30) {
-  return request({ url: `${API_PATH}/eval/runs`, method: "get", params: { limit } });
+export function getEvalRuns(limit = 30, params?: { mode?: string; dataset?: string }) {
+  return request({
+    url: `${API_PATH}/eval/runs`,
+    method: "get",
+    params: { limit, ...(params || {}) },
+  });
 }
 
 /** 启动消融评测（串行跑 baseline + 各组，立即返回 run_id）。 */

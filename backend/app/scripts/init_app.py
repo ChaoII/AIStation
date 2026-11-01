@@ -737,6 +737,9 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:develop:delete", "删除AI集成应用"),
     ("module_ai:develop:reset", "重置AI集成应用密钥"),
     ("module_ai:develop:approve", "审批AI集成调用"),
+    # 问数评测：读写分离（原先与「问数」共用 ask，等于「能问数就能删掉整个题库」）
+    ("module_ai:eval:query", "查看问数评测"),
+    ("module_ai:eval:manage", "维护问数评测（题库/运行/消融）"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -797,6 +800,12 @@ QUERY_GROUP_MENUS: list[tuple[str, str, str, str, int, str]] = [
     ("报表模板", "AiQueryReports", "/ai/query/reports", "module_ai/query/reports", 4, "el-icon-Tickets"),
     ("治理", "AiGovernance", "/ai/governance", "module_ai/governance/index", 5, "el-icon-DataBoard"),
 ]
+
+#: 问数链路各页面菜单的权限码：**评测页单独用 eval:query**（读写分离）。
+#: 旧实现把 5 个页面一律写成 `module_ai:query:ask`，于是「能问数」= 「能看/改评测」。
+QUERY_GROUP_PERMS: dict[str, str] = {
+    "AiEval": "module_ai:eval:query",
+}
 
 
 def ensure_perms(
@@ -920,6 +929,7 @@ async def _ensure_ai_menus() -> None:
 
             # 2) 四个子菜单迁移到目录下：恢复独立 component、清 redirect、取消隐藏
             for _title, _rn, _rpath, _comp, _order, _icon in QUERY_GROUP_MENUS:
+                _perm = QUERY_GROUP_PERMS.get(_rn, "module_ai:query:ask")
                 _row = await db.scalar(
                     select(MenuModel).where(MenuModel.route_name == _rn)
                 )
@@ -935,7 +945,7 @@ async def _ensure_ai_menus() -> None:
                             component_path=_comp,
                             route_path=_rpath,
                             parent_id=_group.id,
-                            permission="module_ai:query:ask",
+                            permission=_perm,
                             order=_order,
                             icon=_icon,
                         )
@@ -949,7 +959,7 @@ async def _ensure_ai_menus() -> None:
                         route_name=_rn,
                         route_path=_rpath,
                         component_path=_comp,
-                        permission="module_ai:query:ask",
+                        permission=_perm,
                         parent_id=_group.id,
                         status="0",
                         is_deleted=False,
@@ -1942,6 +1952,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
             await _ensure_query_tables()
         except Exception as e:  # noqa: BLE001  建表失败不阻断启动
             log.warning(f"⚠️  问数侧影子表建表失败（不阻断启动）: {e}")
+        # 问数评测启动对账：进程重启后内存进度丢失，DB 里的 running 会永久悬挂
+        # （实测 3 条「运行中」僵尸）→ 超时的标 error，并清掉不可达的孤儿结果。
+        try:
+            from app.plugin.module_ai.query.eval_runner import reconcile_stale_runs
+
+            await reconcile_stale_runs()
+        except Exception as e:  # noqa: BLE001  对账失败不阻断启动
+            log.warning(f"⚠️  问数评测启动对账失败（不阻断启动）: {e}")
         # Agno OpenTelemetry 追踪（幂等、best-effort）：agent/模型/工具调用链
         try:
             from app.plugin.module_ai.agno_tools.tracing import ensure_tracing

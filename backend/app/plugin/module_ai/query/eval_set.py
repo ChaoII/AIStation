@@ -101,7 +101,11 @@ def _case_row(r) -> dict:
 
 
 async def upsert_case(data: dict) -> dict:
-    """按 ``(datasource, question)`` 幂等写入/更新一条测试题。"""
+    """按 id（优先）或 ``(datasource, question)`` 幂等写入/更新一条测试题。
+
+    ⚠️ 必须支持按 id 更新：界面编辑时只该改这一行。旧实现只认
+    ``UNIQUE(datasource, question)``，用户把题面改了就变成「新增一条 + 旧题残留」。
+    """
     from sqlalchemy import text as _t
 
     await ensure_eval_tables()
@@ -118,7 +122,21 @@ async def upsert_case(data: dict) -> dict:
         "notes": str(data.get("notes") or ""),
         "dataset": str(data.get("dataset") or ""),
     }
+    cid = data.get("id")
     async with async_db_session.begin() as db:
+        if cid:
+            res = await db.execute(
+                _t(
+                    "UPDATE ai_query_testcase SET question=:q, gold_sql=:gold, datasource=:ds, "
+                    "difficulty=:difficulty, scenario=:scenario, form=:form, "
+                    "expected_metric=:metric, tags=CAST(:tags AS jsonb), verified=:verified, "
+                    "enabled=:enabled, notes=:notes, dataset=:dataset, updated_time=now() "
+                    "WHERE id=:id AND is_deleted=false"
+                ),
+                {**params, "id": int(cid)},
+            )
+            if res.rowcount:
+                return {"id": int(cid), "question": q, "datasource": ds}
         await db.execute(
             _t(
                 "INSERT INTO ai_query_testcase"
@@ -185,18 +203,18 @@ async def list_cases(
 
 
 async def delete_cases(ids: list[int]) -> int:
-    """软删测试题。"""
+    """软删测试题，返回**实际删除条数**（旧实现直接返回请求数，删不存在的也会虚报）。"""
     from sqlalchemy import text as _t
 
     if not ids:
         return 0
     await ensure_eval_tables()
     async with async_db_session.begin() as db:
-        await db.execute(
-            _t("UPDATE ai_query_testcase SET is_deleted=true WHERE id IN :ids"),
+        res = await db.execute(
+            _t("UPDATE ai_query_testcase SET is_deleted=true WHERE id IN :ids AND is_deleted=false"),
             {"ids": tuple(int(i) for i in ids)},
         )
-    return len(ids)
+        return int(res.rowcount or 0)
 
 
 async def import_cases(items: list[dict]) -> dict:
@@ -257,19 +275,34 @@ async def load_results(run_id: str) -> list[dict]:
     return out
 
 
-async def list_runs(limit: int = 30) -> list[dict]:
-    """历史运行列表（最近在前）。"""
+async def list_runs(limit: int = 30, mode: str | None = None,
+                    dataset: str | None = None) -> list[dict]:
+    """历史运行列表（最近在前）。
+
+    ``mode`` 用于把「单轮评测 full」与「消融 ablation / 方差 variance / 消融组」分开列：
+    它们的结果表口径不同，混在一个列表里点「查看报表」会看到空报表。
+    """
     from sqlalchemy import text as _t
 
     await ensure_eval_tables()
+    conds = ["is_deleted=false"]
+    params: dict = {"n": int(limit)}
+    if mode:
+        # full 模式也包含老数据里 mode 为空的行
+        conds.append("(mode = :m OR (:m = 'full' AND coalesce(mode,'') = ''))")
+        params["m"] = mode
+    if dataset:
+        conds.append("(filter->>'dataset') = :dset")
+        params["dset"] = dataset
     async with async_db_session() as db:
         rows = (
             await db.execute(
                 _t(
                     "SELECT run_id,mode,ablation_group,status,total,done,started_at,finished_at,summary "
-                    "FROM ai_query_testrun WHERE is_deleted=false ORDER BY id DESC LIMIT :n"
+                    "FROM ai_query_testrun WHERE " + " AND ".join(conds) +
+                    " ORDER BY id DESC LIMIT :n"
                 ),
-                {"n": int(limit)},
+                params,
             )
         ).fetchall()
     return [

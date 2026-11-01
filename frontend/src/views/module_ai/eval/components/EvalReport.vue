@@ -56,6 +56,15 @@
           </el-col>
         </el-row>
 
+        <el-alert
+          v-if="report?.truncated"
+          type="info"
+          :closable="false"
+          show-icon
+          :title="$t('ai_workflow.eval_truncated', { total: report.total_results })"
+          class="ev-degenerate"
+        />
+
         <el-divider content-position="left">{{ $t("ai_workflow.eval_dimAccuracy") }}</el-divider>
         <el-tabs v-model="dimTab" type="border-card">
           <el-tab-pane v-for="d in dims" :key="d.field" :label="dimLabels[d.field]" :name="d.field">
@@ -159,18 +168,10 @@
             min-width="240"
             show-overflow-tooltip
           />
-          <el-table-column prop="path" :label="$t('ai_workflow.eval_path')" width="90">
+          <el-table-column prop="path" :label="$t('ai_workflow.eval_path')" width="110">
             <template #default="{ row }">
-              <el-tag
-                size="small"
-                :type="row.path === 'fast' ? 'success' : 'warning'"
-                effect="plain"
-              >
-                {{
-                  row.path === "fast"
-                    ? $t("ai_workflow.eval_fastPath")
-                    : $t("ai_workflow.eval_slowPath")
-                }}
+              <el-tag size="small" :type="pathTag(row.path).type" effect="plain">
+                {{ pathTag(row.path).label }}
               </el-tag>
             </template>
           </el-table-column>
@@ -235,6 +236,8 @@ const dims = [
   { field: "form", labelKey: "eval_form" },
   { field: "scenario", labelKey: "eval_scenario" },
   { field: "datasource", labelKey: "eval_datasource" },
+  // 三路执行（快路径/对象查询/NL2SQL）的收益必须分开看
+  { field: "path", labelKey: "eval_path" },
 ];
 
 const dimLabels = computed(() =>
@@ -246,16 +249,19 @@ const results = computed<EvalResultRow[]>(() => report.value?.results || []);
 const stats = computed(() => {
   const s = report.value?.summary;
   if (!s) return [];
+  // 分母为 0 的指标显示「-」，不要显示 0% —— 否则会被读成「全错」（实测困惑）
+  const rate = (v: number | undefined, n: number | undefined) =>
+    n ? +((v ?? 0) * 100).toFixed(1) : ("-" as any);
   return [
     {
       label: t("ai_workflow.eval_genAccuracy"),
-      value: +((s.generation_accuracy ?? 0) * 100).toFixed(1),
-      suffix: "%",
+      value: rate(s.generation_accuracy, s.generation_total),
+      suffix: s.generation_total ? "%" : "",
     },
     {
       label: t("ai_workflow.eval_metricAccuracy"),
-      value: +((s.metric_accuracy ?? 0) * 100).toFixed(1),
-      suffix: "%",
+      value: rate(s.metric_accuracy, s.metric_total),
+      suffix: s.metric_total ? "%" : "",
     },
     {
       label: t("ai_workflow.eval_dataAccuracy"),
@@ -316,9 +322,19 @@ function parseJson(s: any, fallback: any = {}) {
   }
 }
 
+/** 执行路径标签：fast/object/slow/clarify 分别上色（旧实现把 object/clarify 都叫「慢路径」）。 */
+function pathTag(p?: string): { label: string; type: "success" | "primary" | "warning" | "info" } {
+  const k = String(p || "");
+  if (k === "fast") return { label: t("ai_workflow.eval_fastPath"), type: "success" };
+  if (k === "object") return { label: t("ai_workflow.eval_objectPath"), type: "primary" };
+  if (k === "clarify") return { label: t("ai_workflow.eval_clarifyPath"), type: "info" };
+  return { label: t("ai_workflow.eval_slowPath"), type: "warning" };
+}
+
 async function loadRuns() {
   try {
-    const r = await getEvalRuns(30);
+    // 报表只认单轮评测（消融/方差的结果表口径不同，选进来会是空报表）
+    const r = await getEvalRuns(30, { mode: "full" });
     runs.value = r.data?.data || [];
     if (!selected.value && runs.value.length) {
       selected.value = runs.value[0].run_id;

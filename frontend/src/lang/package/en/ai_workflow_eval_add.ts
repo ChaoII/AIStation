@@ -198,4 +198,11 @@ export default {
   eval_clickRun: 'Click "Run Benchmark" to start',
   eval_benchDone: "Benchmark completed",
   eval_benchFail: "Benchmark failed",
+  eval_objectPath: "Object query",
+  eval_clarifyPath: "Clarification",
+  eval_truncated: "Showing the first 200 rows only ({total} in total)",
+  eval_dataset: "Dataset",
+  eval_enabled: "Enabled",
+  eval_enabledOn: "Enabled",
+  eval_enabledOff: "Disabled",
 };

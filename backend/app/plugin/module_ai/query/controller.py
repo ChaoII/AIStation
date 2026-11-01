@@ -826,24 +826,29 @@ async def report_verify(
 
 
 # ---- 问数评测（测试集 / 运行 / 报表 / 消融）----
+# 权限分级：读走 `module_ai:eval:query`，增删改/启动走 `module_ai:eval:manage`。
+# 旧实现全部挂在 `module_ai:query:ask` 上 —— 等于「能问数就能删掉整个题库」（安全洞）。
 @AiQueryRouter.get("/eval/cases", summary="评测测试集列表")
 async def eval_list_cases(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
     datasource: str | None = None,
     difficulty: str | None = None,
     form: str | None = None,
     scenario: str | None = None,
+    dataset: str | None = None,
+    enabled: bool | None = None,
 ) -> JSONResponse:
     from .eval_set import list_cases
 
     return SuccessResponse(
-        data=await list_cases(datasource, difficulty, form, scenario), msg="查询成功"
+        data=await list_cases(datasource, difficulty, form, scenario, enabled, dataset),
+        msg="查询成功",
     )
 
 
 @AiQueryRouter.post("/eval/cases", summary="新增/更新测试题")
 async def eval_upsert_case(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
     from .eval_set import upsert_case
@@ -851,9 +856,9 @@ async def eval_upsert_case(
     return SuccessResponse(data=await upsert_case(data), msg="保存成功")
 
 
-@AiQueryRouter.put("/eval/cases", summary="更新测试题（同 upsert）")
+@AiQueryRouter.put("/eval/cases", summary="更新测试题（按 id）")
 async def eval_update_case(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
     from .eval_set import upsert_case
@@ -863,7 +868,7 @@ async def eval_update_case(
 
 @AiQueryRouter.delete("/eval/cases", summary="删除测试题")
 async def eval_delete_cases(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
     data: Annotated[list[int], Body()],
 ) -> JSONResponse:
     from .eval_set import delete_cases
@@ -873,7 +878,7 @@ async def eval_delete_cases(
 
 @AiQueryRouter.post("/eval/run", summary="启动一轮评测")
 async def eval_run(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
     data: Annotated[dict | None, Body()] = None,
 ) -> JSONResponse:
     from .eval_runner import start_run
@@ -887,7 +892,7 @@ async def eval_run(
 
 @AiQueryRouter.get("/eval/status", summary="评测进度")
 async def eval_status(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
     run_id: str | None = None,
 ) -> JSONResponse:
     from .eval_runner import get_status
@@ -897,13 +902,29 @@ async def eval_status(
 
 @AiQueryRouter.get("/eval/report", summary="评测结果（总览 + 分维度 + 逐题）")
 async def eval_report(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
     run_id: str,
 ) -> JSONResponse:
+    from sqlalchemy import text as _t
+
+    from app.core.database import async_db_session
+    from app.core.exceptions import CustomException
+
     from .eval_metrics import group_by, summarize
     from .eval_set import load_results
 
+    async with async_db_session() as db:
+        exists = (await db.execute(
+            _t("SELECT 1 FROM ai_query_testrun WHERE run_id=:r AND is_deleted=false"),
+            {"r": run_id})).scalar()
+    if not exists:
+        # 旧实现对不存在的 run 返回 200 + 全零，前端会当成「准确率 0%」展示（误导）
+        from fastapi import status as _status
+
+        raise CustomException(msg=f"评测运行不存在：{run_id}", status_code=_status.HTTP_404_NOT_FOUND)
+
     rows = await load_results(run_id)
+    page = rows[:200]
     return SuccessResponse(
         data={
             "summary": summarize(rows),
@@ -914,7 +935,10 @@ async def eval_report(
             # 按执行路径分组（fast=指标模板 / object=对象查询 / slow=NL2SQL）：
             # 对象查询的收益要**按路径**看，混在一起会被快路径稀释掉。
             "by_path": group_by(rows, "path"),
-            "results": rows[:200],
+            "results": page,
+            # 明细被截断时必须显式告知（旧实现悄悄只给 200 条）
+            "total_results": len(rows),
+            "truncated": len(rows) > len(page),
         },
         msg="查询成功",
     )
@@ -922,7 +946,7 @@ async def eval_report(
 
 @AiQueryRouter.post("/eval/generate", summary="生成一轮测试题（LLM 出题 + 金标执行校验）")
 async def eval_generate(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
     from .eval_generate import generate_round
@@ -934,23 +958,27 @@ async def eval_generate(
         str(body.get("form") or "单维统计"),
         int(body.get("n") or 5),
         auth,
+        generation_only=bool(body.get("generation_only")),
+        dataset=str(body.get("dataset") or ""),
     )
     return SuccessResponse(data=out, msg="生成完成")
 
 
 @AiQueryRouter.get("/eval/runs", summary="历史评测运行")
 async def eval_runs(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
     limit: int = 30,
+    mode: str | None = None,
+    dataset: str | None = None,
 ) -> JSONResponse:
     from .eval_set import list_runs
 
-    return SuccessResponse(data=await list_runs(limit), msg="查询成功")
+    return SuccessResponse(data=await list_runs(limit, mode=mode, dataset=dataset), msg="查询成功")
 
 
 @AiQueryRouter.post("/eval/ablation", summary="启动消融评测")
 async def eval_ablation(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
     data: Annotated[dict | None, Body()] = None,
 ) -> JSONResponse:
     from .eval_runner import start_ablation
@@ -962,7 +990,7 @@ async def eval_ablation(
 
 @AiQueryRouter.get("/eval/ablation", summary="消融对照表")
 async def eval_ablation_report(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
     run_id: str,
 ) -> JSONResponse:
     from .eval_runner import get_ablation_report
@@ -972,7 +1000,7 @@ async def eval_ablation_report(
 
 @AiQueryRouter.post("/eval/variance", summary="启动方差评测（同一批题重复跑 N 次）")
 async def eval_variance_start(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
     data: Annotated[dict | None, Body()] = None,
 ) -> JSONResponse:
     """回答"这个差异是真的吗"：跨次均值/标准差/噪声带 + 逐题翻转 + McNemar。"""
@@ -985,7 +1013,7 @@ async def eval_variance_start(
 
 @AiQueryRouter.get("/eval/variance", summary="方差报告")
 async def eval_variance_report(
-    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
     run_id: str,
 ) -> JSONResponse:
     from .eval_runner import get_variance_report

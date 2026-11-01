@@ -51,6 +51,27 @@
                 :value="f"
               />
             </el-select>
+            <el-select
+              v-model="filters.enabled"
+              size="small"
+              clearable
+              :placeholder="$t('ai_workflow.eval_enabled')"
+              style="width: 110px"
+              @change="load"
+            >
+              <el-option :label="$t('ai_workflow.eval_all')" value="" />
+              <el-option :label="$t('ai_workflow.eval_enabledOn')" value="true" />
+              <el-option :label="$t('ai_workflow.eval_enabledOff')" value="false" />
+            </el-select>
+            <el-input
+              v-model="filters.dataset"
+              size="small"
+              clearable
+              :placeholder="$t('ai_workflow.eval_dataset')"
+              style="width: 140px"
+              @keyup.enter="load"
+              @clear="load"
+            />
             <el-button size="small" @click="load">{{ $t("ai_workflow.eval_refresh") }}</el-button>
             <el-button size="small" type="primary" plain @click="openCreate">
               {{ $t("ai_workflow.eval_addCase") }}
@@ -109,6 +130,26 @@
           width="150"
           show-overflow-tooltip
         />
+        <el-table-column
+          prop="dataset"
+          :label="$t('ai_workflow.eval_dataset')"
+          width="130"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <el-tag v-if="row.dataset" size="small" effect="plain">{{ row.dataset }}</el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="$t('ai_workflow.eval_enabled')" width="80" align="center">
+          <template #default="{ row }">
+            <el-switch
+              v-model="row.enabled"
+              size="small"
+              @change="(v: any) => toggleEnabled(row, v)"
+            />
+          </template>
+        </el-table-column>
         <el-table-column :label="$t('ai_workflow.eval_goldSql')" width="88">
           <template #default="{ row }">
             <el-tag v-if="row.verified" size="small" type="success" effect="plain">
@@ -295,7 +336,7 @@ const cases = ref<EvalCase[]>([]);
 const datasources = ref<any[]>([]);
 const loading = ref(false);
 const selection = ref<EvalCase[]>([]);
-const filters = ref<any>({ datasource: "", difficulty: "", form: "" });
+const filters = ref<any>({ datasource: "", difficulty: "", form: "", dataset: "", enabled: "" });
 
 const genVisible = ref(false);
 const genLoading = ref(false);
@@ -329,12 +370,28 @@ async function load() {
     if (filters.value.datasource) params.datasource = filters.value.datasource;
     if (filters.value.difficulty) params.difficulty = filters.value.difficulty;
     if (filters.value.form) params.form = filters.value.form;
+    if (filters.value.dataset) params.dataset = filters.value.dataset;
+    // 启用状态：'' = 全部；'true'/'false' 转成布尔（后端按 enabled 过滤）
+    if (filters.value.enabled !== "" && filters.value.enabled !== undefined) {
+      params.enabled = filters.value.enabled === "true";
+    }
     const r = await getEvalCases(params);
     cases.value = r.data?.data || [];
   } catch {
     cases.value = [];
   } finally {
     loading.value = false;
+  }
+}
+
+/** 行内启用/停用：评测只跑 enabled 的题，必须能在列表里直接切。 */
+async function toggleEnabled(row: any, val: boolean) {
+  try {
+    await upsertEvalCase({ ...row, enabled: val });
+    ElMessage.success(t("ai_workflow.eval_saved"));
+  } catch (e: any) {
+    row.enabled = !val; // 失败回滚开关状态
+    ElMessage.error(e?.msg || t("ai_workflow.eval_saveFail"));
   }
 }
 

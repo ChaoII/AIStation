@@ -95,7 +95,7 @@
       />
       <el-descriptions v-if="progress" :column="3" size="small" border class="ev-desc">
         <el-descriptions-item :label="$t('ai_workflow.eval_status')">
-          {{ progress.status }}
+          {{ statusLabel(progress.status) }}
         </el-descriptions-item>
         <el-descriptions-item :label="$t('ai_workflow.eval_done')">
           {{ progress.done }} / {{ progress.total }}
@@ -135,7 +135,7 @@
                 row.status === 'done' ? 'success' : row.status === 'error' ? 'danger' : 'warning'
               "
             >
-              {{ row.status }}
+              {{ statusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -231,6 +231,14 @@ function stopPolling() {
   }
 }
 
+/** 运行状态中文化（后端返回 running/done/error，界面不再裸露英文）。 */
+function statusLabel(s?: string) {
+  if (s === "done") return t("ai_workflow.eval_done");
+  if (s === "error") return t("ai_workflow.eval_failed");
+  if (s === "running") return t("ai_workflow.eval_running");
+  return s || "-";
+}
+
 async function poll(runId: string) {
   try {
     const r = await getEvalStatus(runId);
@@ -284,7 +292,8 @@ function onRowClick(row: EvalRunItem) {
 async function loadRuns() {
   loadingRuns.value = true;
   try {
-    const r = await getEvalRuns(30);
+    // 只列「单轮评测」：消融/方差的结果表口径不同，混进来点「查看报表」会看到空报表
+    const r = await getEvalRuns(30, { mode: "full" });
     runs.value = r.data?.data || [];
   } catch {
     runs.value = [];

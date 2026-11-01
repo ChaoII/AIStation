@@ -194,4 +194,11 @@ export default {
   eval_clickRun: "點擊「運行基準」開始",
   eval_benchDone: "基準測試完成",
   eval_benchFail: "基準測試失敗",
+  eval_objectPath: "物件查詢",
+  eval_clarifyPath: "澄清反問",
+  eval_truncated: "明細僅顯示前 200 條（本次共 {total} 條）",
+  eval_dataset: "資料集",
+  eval_enabled: "啟用",
+  eval_enabledOn: "啟用",
+  eval_enabledOff: "停用",
 };

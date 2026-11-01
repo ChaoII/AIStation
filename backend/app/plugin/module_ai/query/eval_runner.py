@@ -183,6 +183,9 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
         except Exception as e:  # noqa: BLE001
             log.warning(f"[ai-eval] 列名同义表加载失败（退化为字符串启发式）: {str(e)[:100]}")
         _RUNS[run_id].update(total=len(cases))
+        # `total` 必须**落库**：历史列表与进度条都读 DB。旧实现只写内存，
+        # 于是 63 次运行全是 total=0，界面上显示成「12 / 0」（实测）。
+        await _persist_run_progress(run_id, total=len(cases))
         results: list[dict] = []
         schemas: dict[str, dict] = {}
         gold_cache: dict[int, dict] = {}
@@ -226,7 +229,6 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
                 "ontology_used": json.dumps(d.get("ontology_used") or [], ensure_ascii=False),
                 "difficulty": c.get("difficulty"), "scenario": c.get("scenario"),
                 "form": c.get("form"), "datasource": ds,
-                "expected_metric": c.get("expected_metric") or "",
                 # 退化题（金标为空/NULL/单值 0）：报表统计时不计入分母
                 "degenerate": bool(c.get("degenerate")),
                 # 指标快路径能答的题：报表里与"生成题"分开统计
@@ -235,10 +237,14 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
             results.append(row)
             await _save_result(run_id, row)
             _RUNS[run_id]["done"] = len(results)
+            # 进度也要落库（历史列表的「进度」列读的是 DB，不是内存）
+            await _persist_run_progress(run_id, done=len(results))
         await _finish_run(run_id, results, status="done")
     except Exception as e:  # noqa: BLE001
         log.error(f"[ai-eval] 运行失败: {e}")
         _RUNS[run_id].update(status="error", error=str(e)[:300])
+        # 失败必须回写 DB：否则那条运行在历史里永远显示「运行中」（实测 3 条 10 月的孤儿）
+        await _fail_run(run_id, str(e))
 
 
 def _lenient(d: dict, case: dict) -> bool:
@@ -246,7 +252,7 @@ def _lenient(d: dict, case: dict) -> bool:
     try:
         from .benchmark import lenient_match
 
-        cols = [m for m in (case.get("_gold_cols") or [])]
+        cols = list(case.get("_gold_cols") or [])
         rows = case.get("_gold_rows") or []
         if not cols and not rows:
             # 未预取金标结果时，退化为「SQL 跑通且非错误」
@@ -301,6 +307,150 @@ async def _finish_run(run_id: str, results: list[dict], status: str = "done") ->
              "r": run_id},
         )
     _RUNS[run_id].update(status=status, summary=summary)
+
+
+async def _persist_run_progress(run_id: str, total: int | None = None,
+                                done: int | None = None) -> None:
+    """把 total/done 落库（历史列表与进度条读 DB，不读内存）。"""
+    from sqlalchemy import text as _t
+
+    from app.core.database import async_db_session
+
+    sets, params = [], {"r": run_id}
+    if total is not None:
+        sets.append("total=:t")
+        params["t"] = int(total)
+    if done is not None:
+        sets.append("done=:d")
+        params["d"] = int(done)
+    if not sets:
+        return
+    try:
+        async with async_db_session.begin() as db:
+            await db.execute(
+                _t(f"UPDATE ai_query_testrun SET {', '.join(sets)} WHERE run_id=:r"), params)
+    except Exception as e:  # noqa: BLE001 - 进度写失败不应中断整轮
+        log.warning(f"[ai-eval] 进度落库失败（忽略）: {str(e)[:120]}")
+
+
+async def _fail_run(run_id: str, error: str, done: int | None = None) -> None:
+    """把失败回写到 DB：状态 error + 原因 + 结束时间（否则历史里永远「运行中」）。"""
+    from sqlalchemy import text as _t
+
+    from app.core.database import async_db_session
+
+    payload = json.dumps({"error": (error or "")[:300]}, ensure_ascii=False)
+    try:
+        async with async_db_session.begin() as db:
+            await db.execute(
+                _t(
+                    "UPDATE ai_query_testrun SET status='error', finished_at=now(), "
+                    "summary=COALESCE(summary, '{}'::jsonb) || CAST(:e AS jsonb), "
+                    "done=COALESCE(:d, done) WHERE run_id=:r"
+                ),
+                {"r": run_id, "e": payload, "d": done},
+            )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[ai-eval] 失败状态落库失败（忽略）: {str(e)[:120]}")
+
+
+async def _finish_meta_run(run_id: str, summary: dict | None, extra: dict | None = None,
+                           total: int | None = None, done: int | None = None) -> None:
+    """给「消融/方差」这类**元运行**写终态：summary 里带上基线指标 + 额外信息。"""
+    from sqlalchemy import text as _t
+
+    from app.core.database import async_db_session
+
+    payload = dict(summary or {})
+    if extra:
+        payload["meta"] = extra
+    sets = ["status='done'", "finished_at=now()", "summary=CAST(:s AS jsonb)"]
+    params: dict = {"r": run_id, "s": json.dumps(payload, ensure_ascii=False, default=str)}
+    if total is not None:
+        sets.append("total=:t")
+        params["t"] = int(total)
+    if done is not None:
+        sets.append("done=:d")
+        params["d"] = int(done)
+    try:
+        async with async_db_session.begin() as db:
+            await db.execute(_t(f"UPDATE ai_query_testrun SET {', '.join(sets)} WHERE run_id=:r"),
+                             params)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[ai-eval] 元运行落终态失败（忽略）: {str(e)[:120]}")
+
+
+async def _ensure_run_row(run_id: str, mode: str, flt: dict | None, config: dict | None,
+                          ablation_group: str = "") -> None:
+    """确保某 run 在 `ai_query_testrun` 里有行。
+
+    消融的子 run 之前直接写结果表、不建运行行 → `_finish_run` 的 UPDATE 命中 0 行，
+    结果永远是不可达的孤儿（实测 10 个 `ab_*` run_id 没有运行记录）。
+    """
+    from sqlalchemy import text as _t
+
+    from app.core.database import async_db_session
+
+    async with async_db_session.begin() as db:
+        exists = (await db.execute(
+            _t("SELECT 1 FROM ai_query_testrun WHERE run_id=:r"), {"r": run_id})).scalar()
+        if exists:
+            return
+        await db.execute(
+            _t(
+                "INSERT INTO ai_query_testrun(run_id,mode,filter,config,ablation_group,status,"
+                "total,done,started_at,is_deleted) "
+                "VALUES (:r,:m,CAST(:f AS jsonb),CAST(:c AS jsonb),:g,'running',0,0,now(),false)"
+            ),
+            {"r": run_id, "m": mode, "f": json.dumps(flt or {}, ensure_ascii=False),
+             "c": json.dumps(config or {}, ensure_ascii=False), "g": ablation_group or None},
+        )
+
+
+async def reconcile_stale_runs(timeout_min: int = 30) -> int:
+    """启动期对账：把「状态 running 但已超时」的运行标为 error。
+
+    进度只存在进程内 `_RUNS`，进程重启后内存清空、DB 却仍是 running
+    → 界面上永远显示「运行中」（实测 3 条 10 月的孤儿）。顺带清理
+    「有结果、无运行记录」的孤儿结果（旧版消融子 run 遗留）。
+    """
+    from sqlalchemy import text as _t
+
+    from app.core.database import async_db_session
+
+    fixed = 0
+    try:
+        async with async_db_session.begin() as db:
+            res = await db.execute(
+                _t(
+                    "UPDATE ai_query_testrun SET status='error', finished_at=now(), "
+                    "summary=COALESCE(summary,'{}'::jsonb) || "
+                    "CAST(:e AS jsonb) "
+                    "WHERE status='running' AND started_at < now() - (:m || ' minutes')::interval"
+                ),
+                {"e": json.dumps({"error": "进程重启/超时，评测已中断"}, ensure_ascii=False),
+                 "m": str(int(timeout_min))},
+            )
+            fixed = res.rowcount or 0
+            # 历史脏数据回填：老版本 total 从不落库（全是 0），已完成的运行用 done 补齐，
+            # 否则界面一直显示「12 / 0」。
+            await db.execute(
+                _t(
+                    "UPDATE ai_query_testrun SET total=done "
+                    "WHERE status='done' AND coalesce(total,0)=0 AND coalesce(done,0)>0"
+                )
+            )
+            await db.execute(
+                _t(
+                    "DELETE FROM ai_query_testresult r WHERE NOT EXISTS "
+                    "(SELECT 1 FROM ai_query_testrun t WHERE t.run_id=r.run_id)"
+                )
+            )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[ai-eval] 启动对账失败（忽略）: {str(e)[:120]}")
+    if fixed:
+        log.warning(f"[ai-eval] 启动对账：{fixed} 条僵尸「运行中」已标记为中断")
+    return fixed
 
 
 def start_run(auth, filter: dict | None = None, mode: str = "full",
@@ -361,6 +511,9 @@ async def _run_ablation_group(name: str, auth, flt: dict, overrides: dict, run_i
         "group": name, "filter": dict(flt or {}), "total": 0, "done": 0,
         "current": "", "summary": None, "error": "",
     }
+    # 子 run 必须**先落库一行**：否则 _finish_run 的 UPDATE 命中 0 行，
+    # 结果就成为不可达孤儿（实测 10 个 ab_* run_id 没有运行记录）。
+    await _ensure_run_row(sub, "ablation-group", flt, overrides, ablation_group=name)
     if overrides:
         async with override_settings(overrides):
             await _run_once(sub, auth, flt)
@@ -381,6 +534,7 @@ def start_ablation(auth, keys: list[str] | None = None, filter: dict | None = No
 
     async def _job() -> None:
         try:
+            await _ensure_run_row(run_id, "ablation", flt, {"groups": ["baseline", *use_keys]})
             for name in ["baseline", *use_keys]:
                 overrides = {} if name == "baseline" else {name: "false"}
                 summary = await _run_ablation_group(name, auth, flt, overrides, run_id)
@@ -394,8 +548,15 @@ def start_ablation(auth, keys: list[str] | None = None, filter: dict | None = No
                 s["delta_avg_ms"] = round(
                     float(s.get("avg_ms", 0)) - float(base.get("avg_ms", 0)), 1)
             _RUNS[run_id].update(status="done")
+            # 主 run 也要落终态（否则历史里既看不到、重启后又丢）
+            await _finish_meta_run(
+                run_id, base,
+                extra={"groups": ["baseline", *use_keys]},
+                total=len(_RUNS[run_id]["table"]), done=len(_RUNS[run_id]["table"]),
+            )
         except Exception as e:  # noqa: BLE001
             _RUNS[run_id].update(status="error", error=str(e)[:300])
+            await _fail_run(run_id, str(e))
 
     _RUNS[run_id]["_task"] = asyncio.ensure_future(_job())
     return run_id
@@ -442,9 +603,11 @@ def start_variance(auth, repeats: int = 3, filter: dict | None = None) -> str:
             from .eval_variance import variance_report
             from .service import sql_cache_clear
 
+            await _ensure_run_row(run_id, "variance", flt, {"repeats": n})
             for i in range(n):
                 sql_cache_clear()  # ← 不清就是回放，见 docstring
                 _RUNS[run_id].update(current=f"第 {i + 1}/{n} 次", done=i)
+                await _persist_run_progress(run_id, total=n, done=i)
                 sub = start_run(auth, filter=flt or None)
                 st = await _wait_sub_run(sub)
                 if st.get("status") == "error":
@@ -452,8 +615,18 @@ def start_variance(auth, repeats: int = 3, filter: dict | None = None) -> str:
                 _RUNS[run_id]["runs"].append({"run_id": sub, "rows": await load_results(sub)})
             _RUNS[run_id]["report"] = variance_report([x["rows"] for x in _RUNS[run_id]["runs"]])
             _RUNS[run_id].update(status="done", done=n, current="")
+            rep = _RUNS[run_id]["report"] or {}
+            # 方差主 run 落终态：历史里能看到「均值准确率 / 噪声带」
+            await _finish_meta_run(
+                run_id,
+                {"data_accuracy": rep.get("mean", 0.0), "n_runs": rep.get("n_runs", n),
+                 "spread": rep.get("spread"), "std": rep.get("std"), "repeats": n},
+                extra={"sub_runs": [x["run_id"] for x in _RUNS[run_id]["runs"]]},
+                total=n, done=n,
+            )
         except Exception as e:  # noqa: BLE001
             _RUNS[run_id].update(status="error", error=str(e)[:300])
+            await _fail_run(run_id, str(e))
 
     _RUNS[run_id]["_task"] = asyncio.ensure_future(_job())
     return run_id
