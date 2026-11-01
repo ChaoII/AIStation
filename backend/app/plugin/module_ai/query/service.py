@@ -200,6 +200,20 @@ _OBJECT_CTX: ContextVar[str] = ContextVar("ai_query_object_ctx", default="")
 _OQ_HEAT: dict[str, int] = {}
 _OQ_INDEXED: set[str] = set()
 
+#: 对象查询 IR 最近一次失败（空正文/超时）的时间戳：失败后**熔断 90 秒**。
+#: 实测连问多题时，模型对某类问题持续吐不出 IR，每题都要白等 30s×2 才降级 NL2SQL。
+_IR_FAIL_AT: float = 0.0
+_IR_FAIL_COOLDOWN = 90.0
+
+
+def _mark_ir_fail() -> None:
+    global _IR_FAIL_AT
+    _IR_FAIL_AT = time.time()
+
+
+def _ir_circuit_open() -> bool:
+    return _IR_FAIL_AT > 0 and (time.time() - _IR_FAIL_AT) < _IR_FAIL_COOLDOWN
+
 
 def _cosine(a: list[float], b: list[float]) -> float:
     if not a or not b:
@@ -1036,6 +1050,8 @@ _ONT_ALIAS_MAX_TABLES = 3
 #: 自定义数据源表结构的进程内缓存：{ds:表结构, (时间, {表: [列]})}。
 #: 331 张表的同步结果每次问答都读库太浪费。
 _DS_SCHEMA_CACHE: dict[str, tuple[float, dict]] = {}
+#: 数据源「表 → {列名: 类型}」缓存（与 schema 缓存同 TTL，供 prompt 标注类型用）
+_DS_TYPE_CACHE: dict[str, tuple[float, dict]] = {}
 _DS_SCHEMA_TTL = 600.0
 
 
@@ -1340,6 +1356,10 @@ def _is_listing_question(question: str) -> bool:
 _GENERIC_BIGRAMS = {
     "多少", "数量", "合计", "统计", "所有", "每个", "分别", "共有", "总数", "总共",
     "一共", "几条", "几个", "哪些", "什么", "怎么", "是否", "有无", "多种", "多个",
+    # 业务上到处都在用的词：不能作为「指向某张表/某个指标」的证据
+    # （实测「小程序版本**管理**」撞上「卸煤**管理**记录数」，「人员**信息**表」撞上「存款记录」）
+    "管理", "记录", "信息", "数据", "系统", "表格", "内容", "情况", "查询", "列表",
+    "明细", "总计", "本月", "上月", "最近", "当前",
 }
 
 #: 指标命中的最低分（低于此分视为"只是碰巧撞了个通用词"）
@@ -1491,6 +1511,13 @@ def _match_metric(question: str, metrics: list[dict], terms: list[dict],
             best_score = score
             best = m
     return best if best and best_score > 0 else None
+
+
+def _metric_main_table(metric: dict) -> str:
+    """指标的主表：优先从 SQL 模板的 FROM 取；绑定型指标（SQL 是注释）返回空。"""
+    m = re.search(r"\bFROM\s+\"?([A-Za-z_][A-Za-z0-9_]*)\"?",
+                  metric.get("sql_template") or "", re.IGNORECASE)
+    return m.group(1) if m else ""
 
 
 def _build_params(metric: dict, question: str) -> dict[str, Any]:
@@ -7034,6 +7061,56 @@ class AiQueryService:
                     metric.get("key"), question[:40],
                 )
                 metric = None
+            # 术语（业务黑话）口径校验：用户用的词在词典里怎么解释就怎么答。
+            #  - 问句命中**已绑定**术语（热值→avg_rz）却命中了别的指标 → 以术语为准；
+            #  - 问句命中**未绑定**术语（运损/扣吨这类还没建指标的词）→ 快路径不能抢答，
+            #    否则「供应商的运损扣吨合计」被「供应商矿点关系数」答成 140（实测答非所问）。
+            if metric:
+                q_low = question.lower()
+                _hit_terms = [t for t in terms if t.get("term") and str(t["term"]).lower() in q_low]
+                _bound = {t.get("metric_key") for t in _hit_terms if t.get("metric_key")}
+                _unbound = [t["term"] for t in _hit_terms if not t.get("metric_key")]
+                if _bound and metric["key"] not in _bound and len(_bound) == 1:
+                    _alt = next(
+                        (m for m in metrics if m["key"] in _bound and m.get("enabled")), None)
+                    if _alt:
+                        log.warning(
+                            "[query] 术语明确指向另一指标，改判：{} → {}（question={}）",
+                            metric["key"], _alt["key"], question[:40])
+                        metric = _alt
+                if _unbound:
+                    log.warning(
+                        "[query] 问句用了未绑定指标的术语 {}，跳过快路径（question={}）",
+                        _unbound, question[:40])
+                    metric = None
+            # 「指标抢答」防线：命中的指标，其来源表必须真的和问句「沾边」。
+            # 实测：「人员信息表中有多少人」被 count_fuel_stg_deposit（存款表）抢答、
+            #      「小程序版本管理中有多少个版本记录」被卸煤记录数抢答 —— 都是词面巧合。
+            # 用**表名 + 表注释 + 列注释**的二元组做廉价校验（走已缓存的 schema，几十毫秒），
+            # 比跑一次完整召回（实测 5 秒）划算。
+            if metric and (datasource or SYSTEM_DS) != SYSTEM_DS:
+                try:
+                    _mt = _metric_main_table(metric)
+                    if not _mt and metric.get("object_code"):
+                        _obmap = await cls._object_backing_map()
+                        _mt = _obmap.get(str(metric["object_code"]), "")
+                    _mname = (metric.get("name") or "").strip()
+                    # 指标名被问句**整体包含**是最强证据（如「平均合同单价」），直接放行；
+                    # 否则看指标来源表的表名/注释/列注释与问句有没有共同业务词。
+                    if _mt and not (_mname and _mname in question):
+                        _sch = await cls._ds_schema_map(datasource)
+                        _labels = _sch.get(_mt) or []
+                        _hint = " ".join(_labels)
+                        _shared = _bigrams(question) & _bigrams(_hint)
+                        _shared |= _latin_words(question) & _latin_words(_hint)
+                        if _hint and not _shared:
+                            log.warning(
+                                "[query] 指标来源表与问句无共同业务词，跳过快路径："
+                                "metric={} table={} question={}",
+                                metric.get("key"), _mt, question[:40])
+                            metric = None
+                except Exception as e:  # noqa: BLE001
+                    log.warning(f"[query] 指标来源表相关性检查失败（忽略）: {str(e)[:100]}")
         else:
             metric = None
         if metric:
@@ -7468,20 +7545,23 @@ class AiQueryService:
         async def _call() -> str:
             resp = await _asyncio.wait_for(
                 agent.arun("请严格按上面的格式只输出对象查询 JSON。"),
-                timeout=cls._cfg_int(cfg, "object_query_call_timeout", 60),
+                timeout=cls._cfg_int(cfg, "object_query_call_timeout", 20),
             )
             return (getattr(resp, "content", "") or "").strip()
 
         out = await _call()
         if not out:
-            # 偶发空正文（推理型模型把预算用在 thinking / 网关抖动）：**重试一次**。
-            # 空正文必然降级 NL2SQL，重试成本远低于降级成本。
-            log.warning("[query] IR 首次空正文，重试一次")
+            # 偶发空正文（推理型模型把预算用在 thinking / 网关抖动）：**快速重试一次**。
+            # ⚠️ 只在「上一次很快就空了」时重试：慢空（>8s）说明模型在这条 prompt 上
+            #    就是吐不出来，再等一轮只是白花 20~60 秒（实测对象查询每题耗 30s×2）。
+            log.warning("[query] IR 首次空正文，快速重试一次")
+            t0 = time.perf_counter()
             try:
                 out = await _call()
             except Exception as e:  # noqa: BLE001
                 log.warning(f"[query] IR 重试失败 [{type(e).__name__}]: {str(e)[:100]}")
                 out = ""
+            log.warning("[query] IR 重试耗时={}ms", int((time.perf_counter() - t0) * 1000))
         return out
 
     @classmethod
@@ -7617,6 +7697,26 @@ class AiQueryService:
         cfg = await cls._cfg()
         max_objs = cls._cfg_int(cfg, "object_query_max_objects", 8)
 
+        # 问句里出现**未绑定指标**的业务术语（如「扣吨」——词典有词、但库里没有对应
+        # 指标）时，对象查询帮不上忙：它只能执行「对象 + 绑定指标」的组合，硬答只会
+        # 用相近对象凑数（实测「供应商的运损扣吨合计」被答成「供应商矿点关系数 140」）。
+        # 这里直接降级 NL2SQL，让模型按真实列去算。
+        try:
+            _terms0 = await cls.list_terms(datasource)
+        except Exception:  # noqa: BLE001
+            _terms0 = []
+        _unbound0 = [t["term"] for t in _terms0
+                     if t.get("term") and str(t["term"]) in question
+                     and not t.get("metric_key")]
+        if _unbound0:
+            log.warning("[query] 对象查询：问句含未绑定指标的术语 {}，降级 NL2SQL", _unbound0)
+            return None
+        if _ir_circuit_open():
+            log.warning(
+                "[query] 对象查询：IR 熔断中（最近失败 {}s 前），本轮直接走 NL2SQL",
+                int(time.time() - _IR_FAIL_AT))
+            return None
+
         # 指标字典（供 IR 提示词注入 / 校验收敛 / 绑定型指标执行）
         try:
             metrics_list = await cls.list_metrics(datasource)
@@ -7668,6 +7768,14 @@ class AiQueryService:
             # ⚠️ 必须打**异常类型**：TimeoutError 的 str(e) 是空串，只打 message 时
             #    日志里会是"IR 生成失败 "，完全看不出是超时（实测踩到，排查了半天）。
             log.warning("[query] 对象查询：IR 生成失败 [{}] {}", type(e).__name__, str(e)[:120])
+            _mark_ir_fail()
+            return None
+
+        if not (text or "").strip():
+            # 空正文 → 降级 NL2SQL，并**熔断一段时间**：连问多题时否则每题都要
+            # 白等一轮 IR（实测 30s×2），整体慢一倍以上。
+            _mark_ir_fail()
+            log.warning("[query] 对象查询：IR 空正文，熔断后续对象查询，直接走 NL2SQL")
             return None
 
         # 留痕：模型原始输出（问数排查时这是唯一能定位"模型到底给了什么"的地方）
@@ -7737,6 +7845,9 @@ class AiQueryService:
         max_rows = cls._cfg_int(cfg, "query_cost_max_rows", 50000)
         last_err: str | None = None
         sql = ""
+        # 首轮生成失败（空内容/超时）→ 次轮强制关掉思考：实测推理型模型会把 max_tokens
+        # 全吃在思考上，返回空正文，而"再想一遍"只会更慢更空（140s 后仍然失败）。
+        force_no_thinking = False
         cached_sql = _sql_cache_get(question, datasource)
         cache_used = bool(cached_sql)
         # 阶段计时：问数是"慢"被投诉的功能，必须能一眼看出时间花在哪
@@ -7754,13 +7865,17 @@ class AiQueryService:
                         # 自一致性：不同候选用不同温度增加多样性
                         temp = round(0.2 * i, 2) if n > 1 else 0.0
                         candidate_sqls.append(
-                            await cls._nl2sql(question, datasource, prev_error=last_err, temperature=temp, auth=auth)
+                            await cls._nl2sql(question, datasource, prev_error=last_err,
+                                              temperature=temp, auth=auth,
+                                              thinking="off" if force_no_thinking else None)
                         )
                 except CustomException as e:
                     last_err = e.msg
                     # 模型偶发**返回空**（实测本地 284B 会这样）：原样重试基本没用，
-                    # 给一条可操作的提示才有意义——否则白等两轮（实测 28 秒）。
-                    if "未生成有效的查询语句" in (e.msg or ""):
+                    # 给一条可操作的提示 + 关掉思考才有意义——否则白等两轮（实测 28 秒）。
+                    if ("未生成有效的查询语句" in (e.msg or "")
+                            or "调用失败" in (e.msg or "")):
+                        force_no_thinking = True
                         last_err = ("你上次**没有返回任何 SQL**。请只输出一条 SELECT 语句，"
                                     "不要输出解释、不要输出空内容。")
                     log.warning(f"[query] NL2SQL 生成/校验失败第 {attempt + 1} 轮: {e.msg}")
@@ -7802,9 +7917,12 @@ class AiQueryService:
                 else:
                     sql = max(groups.values(), key=len)[0]
                 res = next(r for (c, r) in results if c == sql)
-                # 缓存里的 SQL 执行失败（schema/口径变了）→ 清掉缓存，下一轮重新生成。
+                # 缓存里的 SQL 执行失败/返回全 NULL（schema/口径变了）→ 清掉缓存，下一轮重新生成。
                 # 不这么做的话，一条坏 SQL 会被反复命中，变成"越缓存越慢还查不出东西"。
-                if cache_used and attempt == 0 and not res["rows"]:
+                _flat_cache = [v for r in (res.get("rows") or [])
+                               for v in (r if isinstance(r, (list, tuple)) else [r])]
+                if (cache_used and attempt == 0
+                        and (not _flat_cache or all(v is None for v in _flat_cache))):
                     _SQL_CACHE.pop(_sql_cache_key(question, datasource), None)
                     cached_sql, cache_used = None, False
                     last_err = "上一轮查询返回结果为空，可能是条件/表/字段选择不准确，请检查后再重新生成一条 SQL。"
@@ -7828,8 +7946,15 @@ class AiQueryService:
                             continue
                     except Exception as e:  # noqa: BLE001
                         log.warning(f"[query] 自校验失败（忽略）: {str(e)[:100]}")
-                # 生成成功才入缓存（失败/空的 SQL 不入，避免污染）
-                _sql_cache_set(question, datasource, sql)
+                # 生成成功才入缓存（失败/空的 SQL 不入，避免污染）。
+                # 「全 NULL 结果」也算空：旧实现只判 `rows` 是否为空，于是一条落在空表上、
+                # 返回 [[None]] 的 SQL 会被缓存 30 分钟，之后同问句永远秒回 NULL（实测）。
+                _flat = [v for r in (res.get("rows") or [])
+                         for v in (r if isinstance(r, (list, tuple)) else [r])]
+                if not _flat or all(v is None for v in _flat):
+                    log.warning("[query] 结果为全 NULL，不写 SQL 缓存：{}", question[:30])
+                else:
+                    _sql_cache_set(question, datasource, sql)
                 # 结果列头中文化 + 一句人话的答案（原先摘要是硬编码废话）
                 cn_cols = await cls._cn_columns(res["columns"], sql)
                 res["columns"] = cn_cols
@@ -7907,8 +8032,13 @@ class AiQueryService:
 
     @classmethod
     async def _nl2sql(cls, question: str, datasource: str, prev_error: str | None = None,
-                      temperature: float = 0.0, auth=None) -> str:
-        """Agno Agent 生成 SQL（慢路径）。prev_error 为上一次执行报错，用于自纠错。"""
+                      temperature: float = 0.0, auth=None,
+                      thinking: str | None = None) -> str:
+        """Agno Agent 生成 SQL（慢路径）。prev_error 为上一次执行报错，用于自纠错。
+
+        ``thinking`` 可强制覆盖「思考档位」（off/low/on）：模型偶发把预算全花在推理上
+        返回空内容，重试时传 ``off`` 能显著提高出 SQL 的概率（见 ``_slow_path``）。
+        """
         try:
             runtime = await cls._get_runtime()
         except Exception as e:  # noqa: BLE001
@@ -7996,7 +8126,7 @@ class AiQueryService:
             # 等于给了思考 8000 token 的预算 → 难题会想到**几分钟**（实测最长 467 秒）。
             # 实测同一难题：无限制 22.3s ｜ reasoning_effort=low 4.6s ｜ enable_thinking=false 3.8s
             # 现在把"思考"与"SQL 输出"**分开控制**：SQL 输出仍给足空间，思考被压住。
-            _thinking = str(cfg.get("nl2sql_thinking_mode") or "low").strip().lower()
+            _thinking = str(thinking or cfg.get("nl2sql_thinking_mode") or "low").strip().lower()
             _extra: dict = {}
             if _thinking == "off":
                 _extra = {"enable_thinking": False}
@@ -9287,6 +9417,7 @@ class AiQueryService:
         if hit and time.time() - hit[0] <= _DS_SCHEMA_TTL:
             return hit[1]
         out: dict[str, list[str]] = {}
+        types: dict[str, dict[str, str]] = {}
         try:
             ds_id = int(key.split(":")[-1])
             # **只取已纳入资产目录的表**：范围收敛到关键业务表，
@@ -9306,6 +9437,8 @@ class AiQueryService:
                     if c.get("comment"):
                         label += f"({c['comment']})"
                     cols.append(label)
+                    if c.get("type"):
+                        types.setdefault(r["table"], {})[str(c["name"])] = str(c["type"])
                 out[r["table"]] = cols
         except Exception as e:  # noqa: BLE001
             log.warning(f"[query] 读取数据源 {key} 表结构失败: {e}")
@@ -9313,6 +9446,7 @@ class AiQueryService:
         if len(_DS_SCHEMA_CACHE) >= 20:
             _DS_SCHEMA_CACHE.clear()
         _DS_SCHEMA_CACHE[key] = (time.time(), out)
+        _DS_TYPE_CACHE[key] = (time.time(), types)
         return out
 
     @classmethod
@@ -9388,12 +9522,24 @@ class AiQueryService:
                     f"下面是与问题最相关的 {len(rel)} 张）")
                 for t in rel:
                     cols = ds_schema.get(t, [])
-                    lines.append(f"- {t}: {', '.join(cols) if cols else ''}")
+                    tmap = (_DS_TYPE_CACHE.get(datasource, (0, {}))[1].get(t) or {})
+                    # 列标签后面补上**数据库类型**：模型据此决定是否需要 CAST
+                    # （实测 LF/RZ 是 varchar，模型写成 AVG("LF") → 函数不存在直接失败）
+                    rendered = [
+                        f"{c}[{tmap[c.split('(', 1)[0]]}]" if c.split("(", 1)[0] in tmap else c
+                        for c in cols
+                    ]
+                    lines.append(f"- {t}: {', '.join(rendered) if rendered else ''}")
                 lines.append(cls._query_conventions())
                 # 该库表名/字段名为英文大写且大小写敏感：不加双引号会被 PG 小写化 → 找不到表。
                 lines.append(
                     "【标识符大小写】本数据源的表名/字段名为**英文大写且大小写敏感**，"
                     'SQL 中必须用双引号引用：如 FROM "FUEL_CB_COALBALANCE"、SUM("COALMONEY")。'
+                )
+                lines.append(
+                    "【数值列类型】若某列标注为 character varying/text 但语义是数值（如 RZ、LF、"
+                    'BALANCEQTY），聚合前必须先转换：AVG(CAST("LF" AS numeric))，'
+                    "不要把 CAST 放在聚合外面（CAST(AVG(...)) 会因 avg(varchar) 不存在而失败）。"
                 )
         lines.append("【示例问题→SQL】")
         for eg in await cls._dynamic_fewshots(question, datasource):

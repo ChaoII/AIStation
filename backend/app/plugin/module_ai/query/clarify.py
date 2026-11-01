@@ -26,14 +26,56 @@ def _col_cn(label: str) -> str:
     return (m.group(1) if m else "").strip()
 
 
+#: 问句切词用：无区分度的中文二元组（出现不代表指向某张表）
+_GENERIC_BIGRAMS = {
+    "多少", "数量", "合计", "统计", "所有", "每个", "分别", "共有", "总数", "总共",
+    "一共", "几条", "几个", "哪些", "什么", "怎么", "是否", "有无", "分组", "汇总",
+    "分布", "排行", "排名", "平均", "最大", "最小", "最近", "本月", "上月", "今年",
+}
+
+
+def _bigrams(text: str) -> set[str]:
+    zh = re.sub(r"[^\u4e00-\u9fff]+", " ", text or "")
+    out: set[str] = set()
+    for part in zh.split():
+        for i in range(len(part) - 1):
+            bg = part[i:i + 2]
+            if bg not in _GENERIC_BIGRAMS:
+                out.add(bg)
+    return out
+
+
+def _table_text(table: str, labels: list[str]) -> str:
+    """表的「可检索文本」：表名 + 各列中文名（判断问句到底在问哪张表）。"""
+    cn = " ".join(_col_cn(x) for x in labels or [])
+    return f"{table} {cn}"
+
+
 def _group_key_ambiguity(question: str, schema_map: dict) -> dict | None:
-    """分组键歧义：问句要"按 X 分组"，而 X 在表里同时有**名称列**和**编号列**。
+    """分组键歧义：问句要「按 X 分组」，且 X 所在表同时有**名称列**和**编号列**。
 
     实测：问「按原煤仓分组」，`FUEL_CMCS_INCOALBUNKER` 同时有 `BUNKERNAME`/`BUNKERID`
     → 模型自己挑一个（常常挑到与金标不同的那个）→ 判错。这里直接问用户。
+
+    ⚠️ 只问「问句真正指向的那张表」：旧实现遍历全部表、撞到第一张有 ID/NAME 配对的表
+    就反问，于是「按矿点统计入厂煤批次数量」被 `DTXY_GYSKDGX`（供应商矿点关系，含
+    KDID/KDNAME）抢先反问，用户根本拿不到答案（实测）。这里先按「表名 + 列中文名」
+    给所有表打分，只有候选表是**最相关的那张**、且命中 ≥2 个业务词才反问。
     """
     if not _GROUP_HINT.search(question or ""):
         return None
+    q_grams = _bigrams(question)
+    if len(q_grams) < 2:
+        return None
+    scores = {t: len(q_grams & _bigrams(_table_text(t, labs or [])))
+              for t, labs in (schema_map or {}).items()}
+    best_score = max(scores.values()) if scores else 0
+    # 只有「唯一最相关」的那张表才值得反问：分数并列说明**表都没定**，
+    # 这时再问「名称还是编号」是误导（实测「按矿点统计入厂煤批次数量」会在
+    # 入厂批次 / 燃料运输 两张表之间并列）。
+    if best_score < 2 or sum(1 for v in scores.values() if v == best_score) != 1:
+        return None
+
     for table, labels in (schema_map or {}).items():
         by_code = {_col_code(lab): lab for lab in labels or []}
         for code, lab in by_code.items():
@@ -53,7 +95,7 @@ def _group_key_ambiguity(question: str, schema_map: dict) -> dict | None:
             cn_id = _col_cn(lab)
             cn_name = _col_cn(by_code[name_code])
             common = ""
-            for a, b in zip(cn_id, cn_name):
+            for a, b in zip(cn_id, cn_name, strict=False):
                 if a != b:
                     break
                 common += a
@@ -61,6 +103,9 @@ def _group_key_ambiguity(question: str, schema_map: dict) -> dict | None:
             if not any(
                 w in (question or "") or w.lower() in (question or "").lower() for w in words
             ):
+                continue
+            # 候选表必须是问句最相关的那张（且至少命中 2 个业务词），否则交给 NL2SQL
+            if scores.get(table, 0) < best_score or best_score < 2:
                 continue
             return {
                 "field": "group_key",
