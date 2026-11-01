@@ -1230,7 +1230,7 @@
         layout-name="breadthfirst"
         :node-style="nodeStyle"
       />
-      <el-empty :description="t('ai_workflow.ig_pipeGraphEmpty')" :image-size="60" />
+      <el-empty v-else :description="t('ai_workflow.ig_pipeGraphEmpty')" :image-size="60" />
     </el-dialog>
 
     <!-- AI 推荐指标/术语 -->
@@ -2867,15 +2867,31 @@ async function openPipeGraph() {
   try {
     const r = await getPipelineGraph();
     const d = r.data?.data || { nodes: [], edges: [] };
-    pipeGraphNodes.value = (d.nodes || []).map((n: any) => ({
-      id: String(n.id),
-      name: n.name,
+    const raw = d.nodes || [];
+    // GraphCanvas 用节点 name 作为渲染 id；同一表既作源表又作对象时 name 会撞。
+    // 先按 name 计数，重复者加角色后缀去重；边（后端用数字 id）映射为对应 name 才能连上。
+    const nameCount: Record<string, number> = {};
+    raw.forEach((n: any) => {
+      nameCount[n.name] = (nameCount[n.name] || 0) + 1;
+    });
+    const id2name: Record<string, string> = {};
+    raw.forEach((n: any) => {
+      let label = n.name;
+      if (nameCount[n.name] > 1) {
+        const suf = n.etype === "source" ? "(源表)" : n.etype === "object" ? "(对象)" : "";
+        if (suf) label = `${n.name}${suf}`;
+      }
+      id2name[String(n.id)] = label;
+    });
+    pipeGraphNodes.value = raw.map((n: any) => ({
+      id: id2name[String(n.id)],
+      name: id2name[String(n.id)],
       etype: n.etype,
       category: n.etype,
     }));
     pipeGraphEdges.value = (d.edges || []).map((e: any) => ({
-      source: String(e.source),
-      target: String(e.target),
+      source: id2name[String(e.source)] ?? String(e.source),
+      target: id2name[String(e.target)] ?? String(e.target),
       rtype: e.rtype,
     }));
   } catch {
