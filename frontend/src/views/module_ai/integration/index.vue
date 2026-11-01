@@ -1511,6 +1511,45 @@
         <el-form-item :label="t('ai_workflow.ig_agg')">
           <el-input v-model="metricForm.agg" :placeholder="t('ai_workflow.ig_aggPlaceholder')" />
         </el-form-item>
+        <el-form-item :label="t('ai_workflow.ig_bindObject')">
+          <el-select
+            v-model="metricForm.object_code"
+            clearable
+            filterable
+            style="width: 100%"
+            @change="onMetricObjectChange"
+          >
+            <el-option
+              v-for="o in ontObjects"
+              :key="o.code"
+              :label="`${o.name || o.code}（${o.code}）`"
+              :value="o.code"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('ai_workflow.ig_bindProperty')">
+          <el-select v-model="metricForm.property_code" clearable filterable style="width: 100%">
+            <el-option :label="t('ai_workflow.ig_wholeObject')" value="" />
+            <el-option
+              v-for="p in ontProps"
+              :key="p.code"
+              :label="`${p.name || p.code}（${p.code}）`"
+              :value="p.code"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('ai_workflow.ig_bindAgg')">
+          <el-select v-model="metricForm.agg_fn" clearable style="width: 100%">
+            <el-option label="count" value="count" />
+            <el-option label="sum" value="sum" />
+            <el-option label="avg" value="avg" />
+            <el-option label="max" value="max" />
+            <el-option label="min" value="min" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <span class="ai-sub">{{ t("ai_workflow.ig_bindHint") }}</span>
+        </el-form-item>
         <el-form-item :label="t('ai_workflow.ig_unit')">
           <el-input v-model="metricForm.unit" :placeholder="t('ai_workflow.ig_unitPlaceholder')" />
         </el-form-item>
@@ -1970,7 +2009,7 @@ import {
   inferQueryAssetRelations,
   generateQueryAssetDesc,
 } from "@/api/module_ai/query";
-import { getOntDomains, saveOntObject } from "@/api/module_ai/ontology";
+import { getOntDomains, saveOntObject, getOntObjects, getOntProperties } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
 import AssetVersionsDialog from "./components/AssetVersionsDialog.vue";
 import AutoModelPreviewDialog from "./components/AutoModelPreviewDialog.vue";
@@ -2274,6 +2313,28 @@ const suggestTerms = ref<any[]>([]);
 const metricDlg = ref(false);
 const savingMetric = ref(false);
 const metricForm = ref<any>({});
+// 绑定型指标：本体对象 / 属性候选
+const ontObjects = ref<any[]>([]);
+const ontProps = ref<any[]>([]);
+async function loadOntObjects() {
+  if (ontObjects.value.length) return;
+  try {
+    const r = await getOntObjects();
+    ontObjects.value = r.data?.data || [];
+  } catch {
+    ontObjects.value = [];
+  }
+}
+async function onMetricObjectChange(code: string) {
+  ontProps.value = [];
+  if (!code) return;
+  try {
+    const r = await getOntProperties(code);
+    ontProps.value = r.data?.data || [];
+  } catch {
+    ontProps.value = [];
+  }
+}
 const termDlg = ref(false);
 const savingTerm = ref(false);
 const termForm = ref<any>({});
@@ -2910,8 +2971,14 @@ function openMetric(row?: any) {
         agg: "count",
         unit: "",
         enabled: true,
+        object_code: "",
+        property_code: "",
+        agg_fn: "",
       };
   metricDlg.value = true;
+  void loadOntObjects();
+  ontProps.value = [];
+  if (row?.object_code) void onMetricObjectChange(row.object_code);
 }
 
 // AI 推荐指标/术语
