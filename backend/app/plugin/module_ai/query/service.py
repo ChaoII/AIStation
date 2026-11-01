@@ -3627,10 +3627,38 @@ class AiQueryService:
         return {"ok": True, "msg": f"已回滚到版本 {vno}"}
 
     @classmethod
+    async def _object_backing_map(cls) -> dict[str, str]:
+        """对象编码 → 物理表（ai_ont_object.backing_table）。
+
+        绑定型指标的 ``sql_template`` 是占位（不引用真实表），只能经 ``object_code``
+        → 本体对象 → ``backing_table`` 才能连到物理表。这张映射是打通「表↔对象↔绑定指标」的关键。
+        """
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                rows = (await db.execute(_t(
+                    "SELECT code, backing_table FROM ai_ont_object "
+                    "WHERE is_deleted=false AND coalesce(backing_table,'')<>''"))).fetchall()
+            return {r[0]: r[1] for r in rows}
+        except Exception:  # noqa: BLE001
+            return {}
+
+    @classmethod
     async def impact_analysis(cls, table_name: str) -> dict:
         """P1-② 影响分析：哪些指标用到此表 + 哪些字段/对象关联它。"""
         metrics = await cls.list_metrics()
-        affected_metrics = [m for m in metrics if table_name in (m.get("sql_template") or "")]
+        obmap = await cls._object_backing_map()
+        affected_metrics = []
+        _seen: set = set()
+        for m in metrics:
+            hit = table_name in (m.get("sql_template") or "")
+            if not hit:
+                oc = m.get("object_code")
+                if oc and obmap.get(oc) == table_name:
+                    hit = True
+            if hit and m["key"] not in _seen:
+                _seen.add(m["key"])
+                affected_metrics.append(m)
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             cols = (await db.execute(_t(
@@ -3673,8 +3701,18 @@ class AiQueryService:
             depth += 1
         all_tables = {table_name} | affected
         metrics = await cls.list_metrics()
-        affected_metrics = [m for m in metrics
-                            if any(t in (m.get("sql_template") or "") for t in all_tables)]
+        obmap = await cls._object_backing_map()
+        affected_metrics = []
+        _seen: set = set()
+        for m in metrics:
+            hit = any(t in (m.get("sql_template") or "") for t in all_tables)
+            if not hit:
+                oc = m.get("object_code")
+                if oc and obmap.get(oc) in all_tables:
+                    hit = True
+            if hit and m["key"] not in _seen:
+                _seen.add(m["key"])
+                affected_metrics.append(m)
         return {"root": table_name, "affected_tables": sorted(affected),
                 "affected_count": len(affected),
                 "affected_metrics": [{"key": m["key"], "name": m["name"]} for m in affected_metrics]}
@@ -4640,8 +4678,19 @@ class AiQueryService:
                     fields = [c.get("name") for c in cols if isinstance(c, dict) and c.get("name")]
             except Exception:  # noqa: BLE001
                 pass
-        # 用到此表的指标
-        mets = [{"key": m["key"], "name": m["name"]} for m in metrics if table_name in (m.get("sql_template") or "")]
+        # 用到此表的指标（真实 SQL 引用 + 绑定型指标经对象 backing_table 匹配）
+        obmap = await cls._object_backing_map()
+        mets = []
+        _mseen: set = set()
+        for m in metrics:
+            hit = table_name in (m.get("sql_template") or "")
+            if not hit:
+                oc = m.get("object_code")
+                if oc and obmap.get(oc) == table_name:
+                    hit = True
+            if hit and m["key"] not in _mseen:
+                _mseen.add(m["key"])
+                mets.append({"key": m["key"], "name": m["name"]})
         # 术语/概念映射到表
         rel_terms = [{"term": t["term"], "metric": t.get("metric_key") or t.get("field_path")} for t in terms if table_name in (t.get("field_path") or "")]
         rel_concepts = [{"name": c["name"]} for c in concepts if table_name in (c.get("tables") or [])]

@@ -295,6 +295,7 @@ export default {
   ig_kgTypeTerm: "术语",
   ig_kgTypeDomain: "域",
   ig_kgTypeConcept: "概念",
+  ig_kgTypeObject: "对象",
   ig_graphRebuilt: "图谱已重建",
   ig_fail: "失败",
   ig_autoLinkConfirm:

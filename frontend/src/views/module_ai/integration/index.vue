@@ -2011,6 +2011,7 @@ const kgTypeOptions = [
   { value: "term", label: t("ai_workflow.ig_kgTypeTerm") },
   { value: "domain", label: t("ai_workflow.ig_kgTypeDomain") },
   { value: "concept", label: t("ai_workflow.ig_kgTypeConcept") },
+  { value: "object", label: t("ai_workflow.ig_kgTypeObject") },
 ];
 const kgTableFocus = ref("");
 const kgTableOptions = ref<any[]>([]);

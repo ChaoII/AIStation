@@ -242,6 +242,29 @@ async def _build_ds_graph(datasource: str) -> dict | None:
             if actual:
                 add_edge(metric_node[m["key"]], f"表:{actual}", "uses_table")
 
+    # 本体对象 ↔ 表（backing_table）+ 绑定型指标 → 本体对象
+    # 链：表 ←backed_by— 本体对象 ←binds_object— 绑定型指标（打通「表↔对象↔绑定指标」）
+    obj_node: dict[str, str] = {}
+    try:
+        async with async_db_session() as db:
+            obj_rows = (await db.execute(_t(
+                "SELECT code, name, backing_table FROM ai_ont_object "
+                "WHERE is_deleted=false AND coalesce(backing_table,'')<>''"))).fetchall()
+        for code, oname, btable in obj_rows:
+            actual = tbl_lower.get(str(btable).lower())
+            if not actual:
+                continue
+            on = f"对象:{oname or code}"
+            obj_node[code] = on
+            add_node(on, "object")
+            add_edge(on, f"表:{actual}", "backed_by")
+        for m in metrics:
+            oc = m.get("object_code")
+            if oc and oc in obj_node:
+                add_edge(metric_node[m["key"]], obj_node[oc], "binds_object")
+    except Exception:  # noqa: BLE001
+        pass
+
     # 术语 → 指标
     for t in await AiQueryService.list_terms(ds):
         tn = f"术语:{t['term']}"
