@@ -4736,8 +4736,11 @@ class AiQueryService:
                 "SELECT column_name, related_table, related_field FROM ai_query_asset_columns "
                 "WHERE (table_name=:t OR related_table=:t) AND is_deleted=false"), {"t": table_name})).fetchall()
         rels = [{"via": r[0], "from": r[0] if r[1] == table_name else r[1], "to": r[1] if r[1] == table_name else r[0]} for r in rows]
-        # 管道目标
-        pips = [{"name": p["name"], "source": p["source_table"]} for p in pipelines if p["target_object"] == table_name]
+        # 管道目标：target_object 存的是本体对象 code（如 coal_assay），也可能直接是表名，
+        # 两种口径都要能落到这张表上（否则「表←管道」这条线在血缘里永远是空的）。
+        pips = [{"name": p["name"], "source": p["source_table"]} for p in pipelines
+                if p["target_object"] == table_name
+                or (obmap.get(str(p["target_object"])) or "").upper() == table_name.upper()]
         # 依赖此表的对象(出向是其它对象, 入向是引用它)
         objs = await cls.list_objects()
         out_links = [{"object": o["table"], "alias": o.get("alias") or o["table"]} for o in objs if any(lk["target"] == table_name for lk in o.get("links", []))]
@@ -5371,6 +5374,7 @@ class AiQueryService:
         """P3-⑧ DQ 预警 + 影响联动：风险对象(健康分<60) → 血缘下游影响(对象/指标/管道/概念)。"""
         ov = await cls.dq_overview()
         objs = {o["table"]: o for o in await cls._objects_light()}
+        obmap = await cls._object_backing_map()
         pipelines = await cls.list_pipelines()
         metrics = await cls.list_metrics()
         concepts = await cls.list_concepts()
@@ -5388,7 +5392,9 @@ class AiQueryService:
                         "WHERE related_table=:t AND is_deleted=false"), {"t": t})).fetchall()
                 dep_objs = [objs.get(r[0], {}).get("alias") or r[0] for r in deps if r[0] and r[0] != t]
                 rel_mets = [m["name"] for m in metrics if t in (m.get("sql_template") or "")]
-                rel_pips = [p["name"] for p in pipelines if p["target_object"] == t]
+                rel_pips = [p["name"] for p in pipelines
+                            if p["target_object"] == t
+                            or (obmap.get(str(p["target_object"])) or "").upper() == t.upper()]
                 rel_concepts = [c["name"] for c in concepts if t in (c.get("tables") or [])]
                 alerts.append({
                     "table": it["table"], "alias": it["alias"],
