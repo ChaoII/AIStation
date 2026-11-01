@@ -29,6 +29,9 @@
             <el-button size="small" :disabled="!selected" @click="loadReport">
               {{ $t("ai_workflow.eval_refresh") }}
             </el-button>
+            <el-button size="small" :disabled="!selected" :loading="exporting" @click="doExport">
+              {{ $t("ai_workflow.eval_export") }}
+            </el-button>
           </div>
         </div>
       </template>
@@ -214,8 +217,9 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { getEvalReport, getEvalRuns } from "@/api/module_ai/query";
+import { getEvalReport, getEvalRuns, exportEvalReport } from "@/api/module_ai/query";
 import { pct, type EvalReport, type EvalResultRow, type EvalRunItem } from "../types";
+import { saveBlob } from "../download";
 
 defineOptions({ name: "AiEvalReport" });
 
@@ -230,6 +234,21 @@ const report = ref<EvalReport | null>(null);
 const loading = ref(false);
 const dimTab = ref("difficulty");
 const only = ref<"all" | "fail" | "slow">("all");
+const exporting = ref(false);
+
+/** 导出逐题结果 CSV（评审/复盘用）。 */
+async function doExport() {
+  if (!selected.value) return;
+  exporting.value = true;
+  try {
+    const r = await exportEvalReport(selected.value);
+    saveBlob(r.data, `eval_${selected.value}.csv`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.eval_exportFail"));
+  } finally {
+    exporting.value = false;
+  }
+}
 
 const dims = [
   { field: "difficulty", labelKey: "eval_difficulty" },

@@ -37,6 +37,9 @@
         <el-form-item :label="$t('ai_workflow.eval_limit')">
           <el-input-number v-model="limit" size="small" :min="1" :max="200" />
         </el-form-item>
+        <el-form-item :label="$t('ai_workflow.eval_dataset')">
+          <el-input v-model="dataset" size="small" clearable style="width: 170px" />
+        </el-form-item>
         <el-button type="primary" size="small" :loading="running" @click="start">
           {{ $t("ai_workflow.eval_startRepeats") }}
         </el-button>
@@ -177,6 +180,7 @@ const repeats = ref(3);
 const datasource = ref("system");
 const forceSlow = ref(true);
 const limit = ref(20);
+const dataset = ref("");
 const datasources = ref<any[]>([]);
 const runId = ref("");
 const running = ref(false);
@@ -202,6 +206,7 @@ async function start() {
     if (forceSlow.value) filter.force_slow = true;
     // 必须带上题目上限：方差默认全量 340 题 × N 次，一轮要跑几小时（实测「点下去没反应」）
     if (limit.value) filter.limit = limit.value;
+    if (dataset.value) filter.dataset = dataset.value;
     const r = await startEvalVariance({ repeats: repeats.value, filter });
     runId.value = r.data?.data?.run_id || "";
     ElMessage.success(t("ai_workflow.eval_startedSlow"));

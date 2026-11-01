@@ -55,6 +55,9 @@
           <el-input-number v-model="form.limit" :min="1" :max="100" />
           <span class="ev-hint">{{ $t("ai_workflow.eval_groupHint") }}</span>
         </el-form-item>
+        <el-form-item :label="$t('ai_workflow.eval_dataset')">
+          <el-input v-model="form.dataset" size="small" clearable style="width: 190px" />
+        </el-form-item>
         <el-form-item :label="$t('ai_workflow.eval_forceSlow')">
           <el-switch v-model="form.force_slow" size="small" />
           <span class="ev-hint">{{ $t("ai_workflow.eval_slowHint") }}</span>
@@ -148,6 +151,7 @@ const datasources = ref<any[]>([]);
 const form = ref<any>({
   keys: ["recall_enabled", "agno_semantic_enabled"],
   datasource: "",
+  dataset: "",
   limit: 20,
   force_slow: false,
 });
@@ -215,6 +219,7 @@ async function start() {
   try {
     const filter: any = { limit: form.value.limit };
     if (form.value.datasource) filter.datasource = form.value.datasource;
+    if (form.value.dataset) filter.dataset = form.value.dataset;
     if (form.value.force_slow) filter.force_slow = true;
     const r = await startEvalAblation({ keys: form.value.keys, filter });
     const runId: string = r.data?.data?.run_id;

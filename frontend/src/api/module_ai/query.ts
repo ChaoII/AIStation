@@ -667,6 +667,26 @@ export function getEvalItems(run_id: string) {
   });
 }
 
+/** 导出题库 CSV（responseType=blob）。 */
+export function exportEvalCases(params?: { datasource?: string; dataset?: string }) {
+  return request({
+    url: `${API_PATH}/eval/cases/export`,
+    method: "get",
+    params,
+    responseType: "blob",
+  });
+}
+
+/** 导出逐题结果 CSV（responseType=blob）。 */
+export function exportEvalReport(run_id: string) {
+  return request({
+    url: `${API_PATH}/eval/report/export`,
+    method: "get",
+    params: { run_id },
+    responseType: "blob",
+  });
+}
+
 /** 生成一轮测试题：LLM 出题 + 金标执行校验，耗时较长（30~60s）。 */
 export function generateEvalRound(data: {
   datasource: string;

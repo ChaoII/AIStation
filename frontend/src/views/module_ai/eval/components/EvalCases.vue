@@ -85,6 +85,9 @@
             <el-button size="small" :loading="verifying" @click="doVerify">
               {{ $t("ai_workflow.eval_verify") }}
             </el-button>
+            <el-button size="small" :loading="exporting" @click="doExport">
+              {{ $t("ai_workflow.eval_export") }}
+            </el-button>
             <el-button
               size="small"
               type="danger"
@@ -414,6 +417,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import {
   deleteEvalCases,
+  exportEvalCases,
   generateEvalRound,
   getEvalCases,
   getQueryDatasources,
@@ -421,6 +425,7 @@ import {
   upsertEvalCase,
   verifyEvalCases,
 } from "@/api/module_ai/query";
+import { saveBlob } from "../download";
 import { DIFFICULTIES, FORMS, difficultyTag, diffKey, formKey, type EvalCase } from "../types";
 
 defineOptions({ name: "AiEvalCases" });
@@ -453,6 +458,23 @@ const importForm = ref({ datasource: "system", format: "csv" as "csv" | "json", 
 const verifying = ref(false);
 const verifyVisible = ref(false);
 const verifyReport = ref<any>({ total: 0, passed: 0, failed: 0, items: [] });
+const exporting = ref(false);
+
+/** 导出当前筛选下的题库（CSV 可直接回导）。 */
+async function doExport() {
+  exporting.value = true;
+  try {
+    const params: any = {};
+    if (filters.value.datasource) params.datasource = filters.value.datasource;
+    if (filters.value.dataset) params.dataset = filters.value.dataset;
+    const r = await exportEvalCases(params);
+    saveBlob(r.data, "eval_cases.csv");
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.eval_exportFail"));
+  } finally {
+    exporting.value = false;
+  }
+}
 
 /** 批量导入：CSV（含表头 question,gold_sql,…）或 JSON 数组。 */
 async function doImport() {

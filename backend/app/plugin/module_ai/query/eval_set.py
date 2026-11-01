@@ -435,3 +435,37 @@ async def list_runs(limit: int = 30, mode: str | None = None,
          "summary": r[8] if isinstance(r[8], dict) else None}
         for r in rows
     ]
+
+
+#: 题库导出列（与导入表头一致，导出的 CSV 可直接再导入）
+CASE_EXPORT_COLUMNS = ["question", "gold_sql", "datasource", "difficulty", "form",
+                       "scenario", "dataset", "expected_metric", "verified", "enabled"]
+
+
+def cases_to_csv(cases: list[dict]) -> str:
+    """题库 → CSV 文本（可直接回导）。"""
+    import csv
+    import io
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(CASE_EXPORT_COLUMNS)
+    for c in cases or []:
+        w.writerow(["" if c.get(k) is None else c.get(k) for k in CASE_EXPORT_COLUMNS])
+    return buf.getvalue()
+
+
+def results_to_csv(rows: list[dict]) -> str:
+    """逐题结果 → CSV 文本（评审/复盘用）。"""
+    import csv
+    import io
+
+    cols = ["testcase_id", "question", "datasource", "difficulty", "form", "scenario",
+            "path", "ok", "is_error", "gold_match", "n_rows", "took_ms", "recall",
+            "metric_key", "expected_metric", "sql"]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(cols)
+    for r in rows or []:
+        w.writerow(["" if r.get(k) is None else r.get(k) for k in cols])
+    return buf.getvalue()

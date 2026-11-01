@@ -225,4 +225,6 @@ export default {
   eval_verifyResult: "{total} cases: {passed} passed, {failed} failed",
   eval_verifyFail: "Verification failed",
   eval_errorDetail: "Error",
+  eval_export: "Export CSV",
+  eval_exportFail: "Export failed",
 };

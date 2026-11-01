@@ -2,7 +2,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from redis.asyncio.client import Redis
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -874,6 +874,38 @@ async def eval_delete_cases(
     from .eval_set import delete_cases
 
     return SuccessResponse(data={"deleted": await delete_cases(data)}, msg="已删除")
+
+
+@AiQueryRouter.get("/eval/cases/export", summary="导出题库（CSV，可直接回导）")
+async def eval_export_cases(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
+    datasource: str | None = None,
+    dataset: str | None = None,
+) -> Response:
+    from .eval_set import cases_to_csv, list_cases
+
+    rows = await list_cases(datasource=datasource, dataset=dataset)
+    # BOM 让 Excel 直接按 UTF-8 打开（否则中文乱码）
+    return Response(
+        content="\ufeff" + cases_to_csv(rows),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="eval_cases.csv"'},
+    )
+
+
+@AiQueryRouter.get("/eval/report/export", summary="导出逐题结果（CSV）")
+async def eval_export_report(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
+    run_id: str,
+) -> Response:
+    from .eval_set import load_results, results_to_csv
+
+    rows = await load_results(run_id)
+    return Response(
+        content="\ufeff" + results_to_csv(rows),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="eval_{run_id}.csv"'},
+    )
 
 
 @AiQueryRouter.post("/eval/cases/import", summary="批量导入测试题（JSON / CSV）")

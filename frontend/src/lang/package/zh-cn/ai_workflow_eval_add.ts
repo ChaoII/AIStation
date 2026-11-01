@@ -221,4 +221,6 @@ export default {
   eval_verifyResult: "共 {total} 题：通过 {passed}，失败 {failed}",
   eval_verifyFail: "校验失败",
   eval_errorDetail: "错误详情",
+  eval_export: "导出 CSV",
+  eval_exportFail: "导出失败",
 };
