@@ -3300,18 +3300,20 @@ async function loadAssets() {
 let loadMiscSeq = 0;
 
 async function loadMisc() {
-  // 竞态守卫：初次挂载与首次选数据源会并发触发 loadMisc（ds 不同），
-  // 后返回的旧请求会覆盖新数据（曾导致系统库显示未过滤的全部示例）。只应用最新一次。
+  // 竞态守卫：初次挂载(ds='')与选数据源(ds)会并发触发 loadMisc。
+  // 双重守卫：① seq 只应用最新一次；② 结果还必须属于「当前数据源」，
+  // 否则挂载时 ds='' 的「全部」结果若后到，会把业务库列表覆盖成含系统数据（曾导致概念/指标串源）。
   const seq = ++loadMiscSeq;
+  const ds = modelingDsCode.value;
+  const fresh = () => seq === loadMiscSeq && ds === modelingDsCode.value;
   const safe = async (fn: () => Promise<any>, set: (v: any) => void) => {
     try {
       const r = await fn();
-      if (seq === loadMiscSeq) set(r.data?.data ?? {});
+      if (fresh()) set(r.data?.data ?? {});
     } catch {
-      if (seq === loadMiscSeq) set([]);
+      if (fresh()) set([]);
     }
   };
-  const ds = modelingDsCode.value;
   await safe(
     () => getPipelineList({ datasource: ds }),
     (v) => (pipelines.value = v)
@@ -3332,7 +3334,7 @@ async function loadMisc() {
     () => getQueryFewshots({ datasource: ds }),
     (v) => (fewshots.value = v)
   );
-  if (seq === loadMiscSeq) await loadUnified();
+  if (fresh()) await loadUnified();
 }
 
 async function loadUnified() {
