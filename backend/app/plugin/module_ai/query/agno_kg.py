@@ -260,8 +260,15 @@ async def _build_ds_graph(datasource: str) -> dict | None:
             add_edge(on, f"表:{actual}", "backed_by")
         for m in metrics:
             oc = m.get("object_code")
-            if oc and oc in obj_node:
+            if not oc:
+                continue
+            if oc in obj_node:
                 add_edge(metric_node[m["key"]], obj_node[oc], "binds_object")
+            else:
+                # object_code 也可能是直接表名（历史数据两套口径并存）
+                actual = tbl_lower.get(str(oc).lower())
+                if actual:
+                    add_edge(metric_node[m["key"]], f"表:{actual}", "binds_table")
     except Exception:  # noqa: BLE001
         pass
 

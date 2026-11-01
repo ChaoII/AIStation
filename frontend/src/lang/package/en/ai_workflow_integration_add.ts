@@ -636,6 +636,8 @@ export default {
   ig_govRejected: "Rejected",
   ig_govOpFail: "Operation failed",
   ig_govScanned: "Full scan completed",
+  ig_govScanOne: "Scan",
+  ig_govScannedOne: "Scanned {table}: {score}",
   ig_govScanFail: "Scan failed",
   ig_govPolicyRequired: "Please fill in the policy name / attribute value",
   ig_govDomainNameRequired: "Please fill in the domain name",

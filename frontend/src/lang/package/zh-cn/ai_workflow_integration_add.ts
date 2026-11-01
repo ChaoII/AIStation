@@ -656,6 +656,8 @@ export default {
   ig_govRejected: "已驳回",
   ig_govOpFail: "操作失败",
   ig_govScanned: "已全量扫描",
+  ig_govScanOne: "扫描",
+  ig_govScannedOne: "已扫描 {table}：{score} 分",
   ig_govScanFail: "扫描失败",
   ig_govPolicyRequired: "请填策略名/属性值",
   ig_govDomainNameRequired: "请填域名称",

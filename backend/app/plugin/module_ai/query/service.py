@@ -3077,7 +3077,24 @@ class AiQueryService:
             log.warning(f"[query] list_objects 读取本体语义失败：{str(e)[:100]}")
             return []
         objs = [o for o in (ctx.get("objects") or []) if o.get("table")]
+        # 关系解析用「去重前」的全量编码 → 支撑表映射：本体里仍可能有指向原始对象编码
+        # （如 FUEL_CMCS_ASSAY）的关系，去重后不能把这类关系丢掉。
         code2table = {str(o.get("code")): o.get("table") for o in objs}
+        # 同一张支撑表可能同时挂「语义对象」（coal_assay，带数据源归属）与
+        # 「按表导入的原始对象」（FUEL_CMCS_ASSAY，datasource_id=0）——去重，
+        # 优先保留有数据源归属、且编码为语义编码（小写）的那个，避免对象列表/DQ 出现重复对象。
+        by_table: dict[str, dict] = {}
+        for o in objs:
+            t = str(o.get("table"))
+            cur = by_table.get(t)
+            if cur is None:
+                by_table[t] = o
+                continue
+            new_score = (int(o.get("datasource_id") or 0) > 0, str(o.get("code") or "").islower())
+            cur_score = (int(cur.get("datasource_id") or 0) > 0, str(cur.get("code") or "").islower())
+            if new_score > cur_score:
+                by_table[t] = o
+        objs = list(by_table.values())
         relations = ctx.get("relations") or []
         out = []
         for o in objs:
@@ -3098,6 +3115,7 @@ class AiQueryService:
                 "name_col": o.get("name_prop") or "name",
                 "icon": "el-icon-Box",
                 "ont_code": o.get("code") or "",
+                "datasource_id": int(o.get("datasource_id") or 0),
                 "links": links,
             })
         return out
@@ -3654,7 +3672,7 @@ class AiQueryService:
             hit = table_name in (m.get("sql_template") or "")
             if not hit:
                 oc = m.get("object_code")
-                if oc and obmap.get(oc) == table_name:
+                if oc and (obmap.get(oc) or oc).upper() == table_name.upper():
                     hit = True
             if hit and m["key"] not in _seen:
                 _seen.add(m["key"])
@@ -3708,8 +3726,10 @@ class AiQueryService:
             hit = any(t in (m.get("sql_template") or "") for t in all_tables)
             if not hit:
                 oc = m.get("object_code")
-                if oc and obmap.get(oc) in all_tables:
-                    hit = True
+                if oc:
+                    _t2 = (obmap.get(oc) or oc)
+                    if any(_t2.upper() == t.upper() for t in all_tables):
+                        hit = True
             if hit and m["key"] not in _seen:
                 _seen.add(m["key"])
                 affected_metrics.append(m)
@@ -4354,6 +4374,17 @@ class AiQueryService:
             return {"ok": False, "msg": "管道不存在"}
         name, sc, st, to, mp_raw = row[0], row[1], row[2], row[3], row[4]
         mappings = mp_raw if isinstance(mp_raw, list) else (_json.loads(mp_raw) if mp_raw else [])
+        # 映射键名兼容两种口径：界面保存的是 {from,to}，早期/接口保存的是 {source_col,target_col}。
+        # 只认后者会让「界面上新建的管道」运行时 target_cols 全空 → 落库必失败（真实断层）。
+        norm_maps = []
+        for mp in mappings:
+            if not isinstance(mp, dict):
+                continue
+            s = str(mp.get("source_col") or mp.get("from") or "").strip()
+            t = str(mp.get("target_col") or mp.get("to") or s).strip()
+            if s or t:
+                norm_maps.append({"source_col": s, "target_col": t or s})
+        mappings = norm_maps
         # 1) 拉取源数据
         try:
             if str(sc).strip().isdigit() and int(sc) > 0:
@@ -4375,7 +4406,11 @@ class AiQueryService:
             return {"ok": False, "msg": f"拉取源数据失败：{str(e)[:120]}"}
         # 2) 按映射构建目标行
         col_idx = {c: i for i, c in enumerate(src_cols)}
-        target_cols = [mp.get("target_col") or mp.get("source_col") for mp in mappings]
+        target_cols: list[str] = []
+        for mp in mappings:
+            t = mp.get("target_col") or mp.get("source_col")
+            if t and t not in target_cols:  # 去重：同名列重复会让建表 DDL 冲突
+                target_cols.append(t)
         target_rows: list[list] = []
         for r in src_rows:
             out = []
@@ -4686,7 +4721,7 @@ class AiQueryService:
             hit = table_name in (m.get("sql_template") or "")
             if not hit:
                 oc = m.get("object_code")
-                if oc and obmap.get(oc) == table_name:
+                if oc and (obmap.get(oc) or oc).upper() == table_name.upper():
                     hit = True
             if hit and m["key"] not in _mseen:
                 _mseen.add(m["key"])
@@ -5068,42 +5103,111 @@ class AiQueryService:
         return list(dict.fromkeys(violations))
 
     @classmethod
-    async def dq_run(cls, table_name: str) -> dict:
-        """P3-⑦ 数据质量(DQ)：对业务对象扫描 完整性/唯一性/新鲜度 并打分落库。"""
+    async def dq_run(cls, table_name: str, *, schema: dict | None = None,
+                     engine=None) -> dict:
+        """P3-⑦ 数据质量(DQ)：对业务对象扫描 完整性/唯一性/新鲜度 并打分落库。
+
+        对象既可能落在**系统库**（本地会话直查），也可能落在**业务数据源**
+        （如 ds:4 燃煤业务库，需走远端只读连接）。旧实现只认系统 schema，
+        导致业务对象在 DQ 页「有对象却不能扫」（点扫描必报「不在可用 schema」），
+        属于对象源与扫描能力不一致的断层。
+
+        ``schema`` / ``engine`` 可由 ``dq_scan_all`` 传入复用（避免逐表重新探 schema、
+        逐表新建远端连接——业务库对象多时那会建立上百条连接）。
+        """
         import json as _json
         objs = await cls.list_objects()
         obj = next((o for o in objs if o["table"] == table_name), None)
         if not obj:
             return {"ok": False, "msg": f"{table_name} 不是业务对象，暂不支持 DQ"}
-        schema = await cls._system_schema()
-        if table_name not in schema:
+        if schema is None:
+            schema = await cls._system_schema()
+        ds_id = int(obj.get("datasource_id") or 0)
+        local_ok = table_name in schema
+        if not local_ok and not ds_id:
+            # 表可能真实存在但不在系统库白名单（如 sys_dept/sys_position 这类本体对象）——
+            # 白名单只约束「问数可查范围」，不该让 DQ 对存在的表直接判「不支持」。
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+
+                local_ok = bool((await db.execute(
+                    _t("SELECT to_regclass(:t)"), {"t": table_name})).scalar())
+        if not local_ok and not ds_id:
             return {"ok": False, "msg": f"{table_name} 不在可用 schema"}
         name_col, key_col = obj["name_col"], obj["key_col"]
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            total = (await db.execute(_t(f'SELECT count(*) FROM "{table_name}"'))).scalar() or 0
-            name_null = name_distinct = key_distinct = None
-            try:
-                name_null = (await db.execute(_t(
-                    f'SELECT count(*) FROM "{table_name}" WHERE "{name_col}" IS NULL'))).scalar() or 0
-                name_distinct = (await db.execute(_t(
-                    f'SELECT count(DISTINCT "{name_col}") FROM "{table_name}"'))).scalar() or 0
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                key_distinct = (await db.execute(_t(
-                    f'SELECT count(DISTINCT "{key_col}") FROM "{table_name}"'))).scalar() or 0
-            except Exception:  # noqa: BLE001
-                pass
-            fresh_ts = None
-            for c in ("updated_time", "created_time"):
+        total = 0
+        name_null = name_distinct = key_distinct = None
+        fresh_ts = None
+        if local_ok:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                total = (await db.execute(_t(f'SELECT count(*) FROM "{table_name}"'))).scalar() or 0
                 try:
-                    mv = (await db.execute(_t(f'SELECT max({c}) FROM "{table_name}"'))).scalar()
-                    if mv:
-                        fresh_ts = mv
-                        break
+                    name_null = (await db.execute(_t(
+                        f'SELECT count(*) FROM "{table_name}" WHERE "{name_col}" IS NULL'))).scalar() or 0
+                    name_distinct = (await db.execute(_t(
+                        f'SELECT count(DISTINCT "{name_col}") FROM "{table_name}"'))).scalar() or 0
                 except Exception:  # noqa: BLE001
                     pass
+                try:
+                    key_distinct = (await db.execute(_t(
+                        f'SELECT count(DISTINCT "{key_col}") FROM "{table_name}"'))).scalar() or 0
+                except Exception:  # noqa: BLE001
+                    pass
+                for c in ("updated_time", "created_time"):
+                    try:
+                        mv = (await db.execute(_t(f'SELECT max({c}) FROM "{table_name}"'))).scalar()
+                        if mv:
+                            fresh_ts = mv
+                            break
+                    except Exception:  # noqa: BLE001
+                        pass
+        else:
+            # 业务数据源：远端只读扫描（口径与系统库一致）
+            from . import executor as _ex
+
+            own_engine = engine is None
+            if own_engine:
+                ds = await _load_ds(ds_id)
+                engine = _ex.build_engine(_ds_cfg_from_model(ds))
+
+            async def _one_multiline(sql: str):
+                async with engine.connect() as conn:
+                    from sqlalchemy import text as _t
+
+                    return (await conn.execute(_t(sql))).scalar()
+
+            try:
+                total = int(await _one_multiline(f'SELECT count(*) FROM "{table_name}"') or 0)
+                try:
+                    name_null = int(await _one_multiline(
+                        f'SELECT count(*) FROM "{table_name}" WHERE "{name_col}" IS NULL') or 0)
+                    name_distinct = int(await _one_multiline(
+                        f'SELECT count(DISTINCT "{name_col}") FROM "{table_name}"') or 0)
+                except Exception:  # noqa: BLE001
+                    name_null = name_distinct = None
+                try:
+                    key_distinct = int(await _one_multiline(
+                        f'SELECT count(DISTINCT "{key_col}") FROM "{table_name}"') or 0)
+                except Exception:  # noqa: BLE001
+                    key_distinct = None
+                time_col = await cls._pick_time_col(table_name, _ds_code(ds_id))
+                if time_col:
+                    try:
+                        fresh_ts = await _one_multiline(
+                            f'SELECT max("{time_col}") FROM "{table_name}"')
+                    except Exception:  # noqa: BLE001
+                        fresh_ts = None
+            finally:
+                if own_engine and engine is not None:
+                    await engine.dispose()
+        if isinstance(fresh_ts, str):
+            try:
+                from datetime import datetime as _dt
+
+                fresh_ts = _dt.fromisoformat(str(fresh_ts).replace("Z", "+00:00"))
+            except Exception:  # noqa: BLE001
+                fresh_ts = None
         # 打分
         comp = round(100 - (name_null / total * 100) if total else 100, 1) if name_null is not None else 100
         if total and name_distinct is not None:
@@ -5112,7 +5216,12 @@ class AiQueryService:
             uniq = round(key_distinct / total * 100, 1)
         else:
             uniq = 100.0
-        from datetime import datetime, timezone
+        from datetime import date, datetime, time, timezone
+
+        if isinstance(fresh_ts, date) and not isinstance(fresh_ts, datetime):
+            # 业务库的「新鲜度列」可能只到日期精度（max(date_col) 返回 date），
+            # 直接读 .tzinfo 会 AttributeError，整表扫描失败（实测 view_aikb_* 系列）。
+            fresh_ts = datetime.combine(fresh_ts, time(0, 0), tzinfo=timezone.utc)
         if fresh_ts:
             if fresh_ts.tzinfo is None:
                 fresh_ts = fresh_ts.replace(tzinfo=timezone.utc)
@@ -5130,7 +5239,10 @@ class AiQueryService:
             issues.append(f"主键列 {key_col} 不唯一（{total - key_distinct} 重复）")
         if fresh_ts is None:
             issues.append("无更新时间列，新鲜度未知")
-        async with async_db_session.begin() as db:
+        # 注意：本项目是「请求作用域会话」，同一请求内 ``async_db_session()`` 返回同一个
+        # session；这里若用 ``begin()`` 会在已有事务上再开事务而报错，把整个请求事务打挂
+        # （实测 dq/scan 全量扫描时 250 个对象连续失败）。改为显式 commit。
+        async with async_db_session() as db:
             from sqlalchemy import text as _t
             await db.execute(_t(
                 "UPDATE ai_dq_report SET is_deleted=true WHERE table_name=:t"), {"t": table_name})
@@ -5140,18 +5252,48 @@ class AiQueryService:
                 "t": table_name, "a": obj["alias"], "n": total, "s": score,
                 "c": comp, "u": uniq, "f": fresh,
                 "i": _json.dumps(issues, ensure_ascii=False)})
+            await db.commit()
         return {"ok": True, "table": table_name, "alias": obj["alias"], "total": total,
                 "score": score, "completeness": comp, "uniqueness": uniq, "freshness": fresh,
                 "issues": issues}
 
     @classmethod
-    async def dq_overview(cls) -> dict:
-        """P3-⑦ DQ 总览：从 ai_dq_report 缓存读取（直接查对象表，避免慢路径与超时）。"""
+    async def _pick_time_col(cls, table_name: str, datasource: str) -> str | None:
+        """从已同步的表结构里挑一个「更新时间」列（业务数据源扫描新鲜度用）。"""
         async with async_db_session() as db:
             from sqlalchemy import text as _t
-            obj_rows = (await db.execute(_t(
-                "SELECT table_name, CAST(object_key_col AS VARCHAR), CAST(object_name_col AS VARCHAR) "
-                "FROM ai_query_assets WHERE object_enabled=true AND is_deleted=false"))).fetchall()
+            row = (await db.execute(_t(
+                "SELECT columns FROM ai_query_schema WHERE datasource=:d AND table_name=:t "
+                "AND is_deleted=false LIMIT 1"), {"d": datasource, "t": table_name})).fetchone()
+        import json as _json
+        cols = []
+        if row and row[0]:
+            try:
+                cols = row[0] if isinstance(row[0], list) else _json.loads(row[0])
+            except Exception:  # noqa: BLE001
+                cols = []
+        names = [str(c.get("name") or "") for c in cols if isinstance(c, dict)]
+        lowered = {n.lower(): n for n in names}
+        for pref in ("lastmodificationtime", "updatetime", "updated_time", "modifytime",
+                     "modify_time", "createtime", "creationtime", "created_time"):
+            if pref in lowered:
+                return lowered[pref]
+        for n in names:
+            ln = n.lower()
+            if ln.endswith("time") or ln.endswith("date"):
+                return n
+        return None
+
+    @classmethod
+    async def dq_overview(cls) -> dict:
+        """P3-⑦ DQ 总览：对象源与「对象列表」同源（本体对象），质量分读 ai_dq_report 缓存。
+
+        旧实现对象源取 ``ai_query_assets(object_enabled)``，而预警/治理总览取本体对象，
+        两者口径不一 → 业务数据源对象（ds:4 燃煤表）在 DQ 页根本不出现。
+        """
+        objs = await cls._objects_light()
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
             rep_rows = (await db.execute(_t(
                 "SELECT table_name,alias,total,score,completeness,uniqueness,freshness,issues,checked_at "
                 "FROM ai_dq_report WHERE is_deleted=false"))).fetchall()
@@ -5160,11 +5302,12 @@ class AiQueryService:
                         "freshness": float(r[6]), "issues": r[7],
                         "checked_at": str(r[8]) if r[8] else ""} for r in rep_rows}
         results = []
-        for r in obj_rows:
-            t = r[0]
-            results.append(cache.get(t, {"table": t, "alias": t, "total": 0, "score": 0,
-                                         "completeness": 0, "uniqueness": 0, "freshness": 0,
-                                         "issues": [], "checked_at": "", "scanned": False})
+        for o in objs:
+            t = o["table"]
+            results.append(cache.get(t, {"table": t, "alias": o.get("alias") or t, "total": 0,
+                                         "score": 0, "completeness": 0, "uniqueness": 0,
+                                         "freshness": 0, "issues": [], "checked_at": "",
+                                         "scanned": False})
                            | {"table": t, "scanned": t in cache})
         scored = [x for x in results if x.get("scanned")]
         avg = round(sum((x["score"] or 0) for x in scored) / len(scored), 1) if scored else 0
@@ -5175,14 +5318,53 @@ class AiQueryService:
 
     @classmethod
     async def dq_scan_all(cls) -> dict:
-        """P3-⑦ 显式全量扫描全部业务对象。"""
+        """P3-⑦ 显式全量扫描全部业务对象。
+
+        按数据源分组：系统库复用一次 schema 探取，业务数据源每个源只建一条引擎，
+        扫完即释放（旧实现逐表新建引擎，对象一多就会建立上百条远端连接）。
+        """
         objs = await cls.list_objects()
+        try:
+            schema = await cls._system_schema()
+        except Exception:  # noqa: BLE001
+            schema = {}
+        from . import executor as _ex
+
+        engines: dict[int, object] = {}
         scanned = 0
-        for o in objs:
-            r = await cls.dq_run(o["table"])
-            if r.get("ok"):
-                scanned += 1
-        return {"ok": True, "scanned": scanned, "msg": f"已扫描 {scanned} 个对象"}
+        failed: list[str] = []
+        try:
+            for o in objs:
+                ds_id = int(o.get("datasource_id") or 0)
+                engine = None
+                if o["table"] not in schema and ds_id:
+                    engine = engines.get(ds_id)
+                    if engine is None:
+                        try:
+                            ds = await _load_ds(ds_id)
+                            engine = _ex.build_engine(_ds_cfg_from_model(ds))
+                            engines[ds_id] = engine
+                        except Exception:  # noqa: BLE001
+                            failed.append(o["table"])
+                            continue
+                try:
+                    r = await cls.dq_run(o["table"], schema=schema, engine=engine)
+                except Exception as e:  # noqa: BLE001
+                    log.warning(f"[query] DQ 扫描失败 {o['table']}: {str(e)[:120]}")
+                    failed.append(o["table"])
+                    continue
+                if r.get("ok"):
+                    scanned += 1
+        finally:
+            for eng in engines.values():
+                try:
+                    await eng.dispose()
+                except Exception:  # noqa: BLE001
+                    pass
+        msg = f"已扫描 {scanned} 个对象"
+        if failed:
+            msg += f"，{len(failed)} 个失败"
+        return {"ok": True, "scanned": scanned, "failed": len(failed), "msg": msg}
 
     @classmethod
     async def dq_alert(cls) -> dict:
@@ -5231,13 +5413,23 @@ class AiQueryService:
 
     @classmethod
     async def domain_reconcile(cls) -> dict:
-        """数据域对账：校验各域 tables 引用的对象是否都已登记（未登记标出），保证域定义完整。"""
+        """数据域对账：校验各域 tables 引用的对象是否都已登记（未登记标出），保证域定义完整。
+
+        「已登记」= 系统库 schema ∪ 各业务数据源已同步的 schema（``ai_query_schema``）：
+        旧实现只比对系统库，燃料等业务表会被误判为「缺失」，域对账结果不可信。
+        """
         domains = await cls.list_domains()
+        known: set[str] = set()
         try:
             schema = await cls._system_schema()
-            known = set(schema.keys())
+            known |= set(schema.keys())
         except Exception:  # noqa: BLE001
-            known = set(SYSTEM_ALLOWED_TABLES)
+            known |= set(SYSTEM_ALLOWED_TABLES)
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT DISTINCT table_name FROM ai_query_schema WHERE is_deleted=false"))).fetchall()
+        known |= {r[0] for r in rows if r[0]}
         issues = []
         for d in domains:
             for t in (d["tables"] or []):
@@ -5293,7 +5485,7 @@ class AiQueryService:
         objs = await cls.list_objects()
         domains = await cls.list_domains()
         try:
-            metrics = await cls.list_metrics(SYSTEM_DS)
+            metrics = await cls.list_metrics()
         except Exception:  # noqa: BLE001
             metrics = []
         try:
@@ -5301,13 +5493,17 @@ class AiQueryService:
         except Exception:  # noqa: BLE001
             pipes = []
         by_domain = {}
+        # 管道 target_object 存的是本体对象编码（如 coal_assay），数据域成员存的是支撑表
+        # （FUEL_CMCS_ASSAY）——先建立编码→表映射，否则域血缘网格里永远看不到管道。
+        code2table = {str(o.get("ont_code")): o["table"] for o in objs if o.get("ont_code")}
         for d in domains:
             tables = set(d["tables"] or [])
             dom_m = [{"key": m["key"], "name": m["name"]} for m in metrics
                      if tables and any(t in (m.get("sql_template") or "") for t in tables)]
             dom_p = [{"name": p.get("name"), "source": p.get("source_table"),
                       "target": p.get("target_object")} for p in pipes
-                     if p.get("target_object") in tables]
+                     if p.get("target_object") in tables
+                     or code2table.get(str(p.get("target_object"))) in tables]
             by_domain[d["id"]] = {
                 "id": d["id"], "name": d["name"], "code": d["code"],
                 "description": d["description"], "members": d["members"],
@@ -6324,7 +6520,10 @@ class AiQueryService:
         - 不写库、不改变已保存规则；数据源不存在时由 ``_load_ds`` 抛 CustomException（直接透传）。
         """
         ds = await _load_ds(datasource_id)
-        eff = rules if rules is not None else (ds.filter_rules or DEFAULT_FILTER_RULES)
+        # 空 dict（历史数据/新建数据源未配置）必须回落到缺省规则：
+        # 旧写法把 `{}` 当成「用户显式清空的规则」，于是预览里系统表/审计字段恒为 0，
+        # 与「缺省规则」下的真实分类完全矛盾（实测 331 表全被判成业务表）。
+        eff = (rules or None) or (ds.filter_rules or None) or DEFAULT_FILTER_RULES
         schema = await list_ds_schema(datasource_id)
         tables = [s["table"] for s in schema]
         fields = []
@@ -6476,9 +6675,13 @@ class AiQueryService:
 
     @classmethod
     async def _ds_current_rules(cls, datasource_id: int, rules: dict | None) -> dict:
-        """取当前规则上下文：``rules`` 显式非 None 时直接返回（免去多余 DB 查询）；
-        否则用数据源已保存规则，缺省回落到 ``DEFAULT_FILTER_RULES``。"""
-        if rules is not None:
+        """取当前规则上下文：``rules`` 显式非空时直接返回（免去多余 DB 查询）；
+        否则用数据源已保存规则，缺省回落到 ``DEFAULT_FILTER_RULES``。
+
+        注意：空 dict 视为「未配置」，不能当成显式规则——否则分类结果全为「业务」，
+        与缺省规则下的真实分类矛盾。
+        """
+        if rules:
             return rules
         try:
             ds = await _load_ds(datasource_id)

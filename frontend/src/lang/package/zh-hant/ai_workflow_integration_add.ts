@@ -607,6 +607,8 @@ export default {
   ig_govRejected: "已駁回",
   ig_govOpFail: "操作失敗",
   ig_govScanned: "已全量掃描",
+  ig_govScanOne: "掃描",
+  ig_govScannedOne: "已掃描 {table}：{score} 分",
   ig_govScanFail: "掃描失敗",
   ig_govPolicyRequired: "請填策略名/屬性值",
   ig_govDomainNameRequired: "請填域名稱",

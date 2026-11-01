@@ -497,6 +497,9 @@ export function getDqOverview() {
 export function scanAllDq() {
   return request({ url: `${API_PATH}/dq/scan`, method: "post" });
 }
+export function scanDq(table: string) {
+  return request({ url: `${API_PATH}/dq/run`, method: "post", data: { table } });
+}
 export function getDqAlert() {
   return request({ url: `${API_PATH}/dq/alert`, method: "get" });
 }

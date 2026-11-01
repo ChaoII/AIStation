@@ -874,7 +874,11 @@ function loadAll() {
       if (myGen !== gen) return;
       const d = r.data?.data || {};
       dsDetail.value = d;
-      const fr = normalizeRules(d.filter_rules);
+      // 详情接口返回的是 { source:{...}, tables, connector, asset_count }：
+      // filter_rules 在 source 里。旧实现只读顶层 d.filter_rules（恒 undefined），
+      // 于是草稿永远被 normalize 成空规则——顶部统计恒为「系统表 0 / 审计字段 0」，
+      // 且一保存就把数据源已配的规则覆盖为空（实测就是这个坑）。
+      const fr = normalizeRules(d.filter_rules ?? d.source?.filter_rules);
       rules.value = deepClone(fr);
       savedRules.value = deepClone(fr);
       savedPreview.value = null;

@@ -343,6 +343,21 @@
               </span>
             </template>
           </el-table-column>
+          <el-table-column :label="t('ai_workflow.ig_action')" width="90" align="center">
+            <template #default="{ row }">
+              <el-button
+                v-hasPerm="'module_ai:query:ask'"
+                link
+                type="primary"
+                size="small"
+                :loading="scanningTable === row.table"
+                :disabled="!!scanningTable && scanningTable !== row.table"
+                @click="scanOne(row)"
+              >
+                {{ t("ai_workflow.ig_govScanOne") }}
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </el-tab-pane>
 
@@ -409,26 +424,30 @@
               <div class="gp-section">
                 {{ t("ai_workflow.ig_govObjCount", { count: d.objects.length }) }}
               </div>
-              <el-tag
-                v-for="o in d.objects"
-                :key="o.table"
-                size="small"
-                effect="plain"
-                style="margin: 0 3px 4px 0"
-              >
-                {{ o.alias }}
-              </el-tag>
+              <div class="gp-tags">
+                <el-tag
+                  v-for="o in d.objects"
+                  :key="o.table"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  {{ o.alias }}
+                </el-tag>
+              </div>
               <div class="gp-section">{{ t("ai_workflow.ig_govMemberIds") }}</div>
-              <el-tag
-                v-for="m in d.members"
-                :key="m"
-                size="small"
-                type="warning"
-                effect="plain"
-                style="margin: 0 3px 4px 0"
-              >
-                #{{ m }}
-              </el-tag>
+              <div class="gp-tags">
+                <el-tag
+                  v-for="m in d.members"
+                  :key="m"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  #{{ m }}
+                </el-tag>
+              </div>
             </el-card>
           </el-col>
         </el-row>
@@ -1026,6 +1045,7 @@ import {
   getDqOverview,
   getDqAlert,
   scanAllDq,
+  scanDq,
   getDomainObjects,
   getQueryObjects,
   saveAccessRule,
@@ -1249,6 +1269,7 @@ async function runFdeShadow(row: any) {
 const dqData = ref<any>({ avg_score: 0, healthy: 0, risk: 0, items: [] });
 const dqAlerts = ref<any[]>([]);
 const dqScanning = ref(false);
+const scanningTable = ref("");
 const domainView = ref<any>({ domains: [], unassigned: [], total_objects: 0 });
 const govObjects = ref<any[]>([]);
 // 数据域「域成员」候选用户（真实用户，来自 module_system/user 列表）
@@ -1338,6 +1359,28 @@ async function scanAll() {
     ElMessage.error(e?.msg || t("ai_workflow.ig_govScanFail"));
   } finally {
     dqScanning.value = false;
+  }
+}
+/** 单对象扫描：对象可能来自业务数据源，逐行扫比「全量扫描」快得多，也便于定位问题对象。 */
+async function scanOne(row: any) {
+  if (!row?.table || scanningTable.value) return;
+  scanningTable.value = row.table;
+  try {
+    const r = await scanDq(row.table);
+    const d = r.data?.data || {};
+    if (d.ok === false) {
+      ElMessage.warning(d.msg || t("ai_workflow.ig_govScanFail"));
+    } else {
+      ElMessage.success(
+        t("ai_workflow.ig_govScannedOne", { table: row.table, score: d.score ?? "-" })
+      );
+    }
+    await loadDq();
+    await loadDqAlert();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.ig_govScanFail"));
+  } finally {
+    scanningTable.value = "";
   }
 }
 function openAccess() {
@@ -1456,6 +1499,13 @@ onMounted(() => {
   font-weight: 600;
   color: var(--el-text-color-secondary);
   margin: 8px 0 4px;
+}
+/* el-card__body 在项目全局样式里是 flex column，直接放 el-tag 会被拉伸成整行。
+   用一层 flex-wrap 容器把标签恢复成「按内容宽度、自动换行」。 */
+.gp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
 }
 .gp-empty {
   color: var(--el-text-color-placeholder);
