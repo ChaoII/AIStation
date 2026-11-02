@@ -245,7 +245,7 @@ class TestAiEval:
                 await db.execute(_t(
                     "CREATE TABLE IF NOT EXISTS ai_favorite "
                     "(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref TEXT, user_id INTEGER, "
-                    "is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
+                    "is_deleted INTEGER DEFAULT 0, created_time TIMESTAMP)"))
             f = await AiQueryService.favorites_add("table", "video_alarm_records", user_id=1)
             assert f["ok"] is True
             lst = await AiQueryService.favorites_list(user_id=1)
@@ -361,7 +361,7 @@ class TestAiEval:
                 await db.execute(_t(
                     "CREATE TABLE IF NOT EXISTS ai_asset_version "
                     "(id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, field_name TEXT, "
-                    "snapshot TEXT, version_no INTEGER, operator TEXT, is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
+                    "snapshot TEXT, version_no INTEGER, operator TEXT, is_deleted BOOLEAN DEFAULT false, created_time TIMESTAMP)"))
             # 表级
             await AiQueryService._record_version("t_diff", {"alias": "A", "domain": "d1"})
             await AiQueryService._record_version("t_diff", {"alias": "B", "domain": "d1"})
@@ -386,7 +386,7 @@ class TestAiEval:
                 await db.execute(_t(
                     "CREATE TABLE IF NOT EXISTS ai_asset_version "
                     "(id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, field_name TEXT, "
-                    "snapshot TEXT, version_no INTEGER, operator TEXT, is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
+                    "snapshot TEXT, version_no INTEGER, operator TEXT, is_deleted BOOLEAN DEFAULT false, created_time TIMESTAMP)"))
             await AiQueryService._record_version("t_rel", {"alias": "X"})
             vs = await AiQueryService.list_versions("t_rel")
             assert vs
@@ -399,7 +399,7 @@ class TestAiEval:
         assert asyncio.run(_go())
 
 
-def test_eval_reconcile_marks_only_old_running(test_client):
+def test_eval_reconcile_marks_only_old_running(test_client, db_run):
     """启动对账必须**真的生效**：超龄 running → error；新近 running 不动。
 
     回归点（2026-11 实测）：这条 UPDATE 曾写成 PG 专有语法
@@ -420,9 +420,9 @@ def test_eval_reconcile_marks_only_old_running(test_client):
     async def _go():
         await ensure_eval_tables()  # 幂等；保证表在（SQLite 下 DDL 走方言翻译）
         old_run, fresh_run = "test-reconcile-old", "test-reconcile-fresh"
-        fmt = "%Y-%m-%d %H:%M:%S"
-        old_at = (datetime.now() - timedelta(hours=2)).strftime(fmt)
-        fresh_at = datetime.now().strftime(fmt)
+        # 传 datetime 而不是字符串：SQLite 收字符串，PG 的 timestamptz 只收 datetime
+        old_at = datetime.now() - timedelta(hours=2)
+        fresh_at = datetime.now()
         try:
             async with async_db_session.begin() as db:
                 await db.execute(
@@ -444,7 +444,7 @@ def test_eval_reconcile_marks_only_old_running(test_client):
                 await db.execute(
                     _t("DELETE FROM ai_query_testrun WHERE run_id LIKE 'test-reconcile-%'"))
 
-    fixed, old_status, fresh_status = asyncio.run(_go())
+    fixed, old_status, fresh_status = db_run(_go())
     assert old_status == "error", f"超龄 running 未清理（对账没生效）：{old_status}"
     assert fresh_status == "running", f"新近 running 被误伤：{fresh_status}"
     assert fixed >= 1

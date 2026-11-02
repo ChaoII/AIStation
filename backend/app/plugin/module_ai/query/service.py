@@ -11,6 +11,7 @@ import asyncio
 import json
 import re
 import time
+from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
 from types import SimpleNamespace
@@ -155,6 +156,50 @@ def _ddl_for_dialect(sql: str) -> str:
     return ddl_for_dialect(sql)
 
 
+#: 静默降级计数：哪些能力「坏了但流程还在跑」。
+#:
+#: 这个模块有 28 处 ``except: pass`` —— 容错本身是对的（一个附加统计失败不该让
+#: 整页 500），但这些失败**不留任何痕迹**。实测三次事故都是这么来的：
+#: 影子表没建出来（no such table）、启动对账没生效、资产血缘恒为 0。
+#: 界面结构正常、数字全空，没人会发现。
+#:
+#: 约定：``except`` 里不再写裸 ``pass``，改 ``_degrade("能力名", e)`` ——
+#: 计数 + 首次几次打日志 + 暴露到 ``GET /ai/query/system/degraded``。
+_DEGRADED: Counter[str] = Counter()
+_DEGRADED_INFO: dict[str, dict] = {}
+#: 每个能力最多打几次 warning（避免每次请求刷屏）
+_DEGRADE_LOG_TIMES = 3
+
+
+def _degrade(area: str, exc: BaseException | None = None) -> None:
+    """记录一次静默降级（能力不可用，流程继续）。"""
+    _DEGRADED[area] += 1
+    _DEGRADED_INFO[area] = {
+        "at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "error": f"{type(exc).__name__}: {exc}"[:200] if exc else "",
+    }
+    if _DEGRADED[area] <= _DEGRADE_LOG_TIMES:
+        log.warning("[query][降级] {}: {}", area,
+                    f"{type(exc).__name__}: {exc}"[:160] if exc else "(无异常信息)")
+
+
+def degraded_status() -> dict:
+    """降级状态快照（给健康检查 / 运维看："现在有哪些能力是坏的"）。"""
+    return {
+        "total": sum(_DEGRADED.values()),
+        "areas": [
+            {"area": k, "count": v, **(_DEGRADED_INFO.get(k) or {})}
+            for k, v in _DEGRADED.most_common()
+        ],
+    }
+
+
+def reset_degraded() -> None:
+    """清空计数（测试与人工排查用）。"""
+    _DEGRADED.clear()
+    _DEGRADED_INFO.clear()
+
+
 async def _ensure_query_tables() -> None:
     """确保问数侧影子表与新增列存在（幂等、best-effort）。
 
@@ -165,8 +210,8 @@ async def _ensure_query_tables() -> None:
         try:
             async with async_db_session.begin() as db:
                 await db.execute(text(_ddl_for_dialect(sql)))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            _degrade("shadow_tables", e)
     for table, col, ddl in _QUERY_ALTER_COLS:
         try:
             async with async_db_session.begin() as db:
@@ -177,8 +222,8 @@ async def _ensure_query_tables() -> None:
                 )
                 if col not in cols:
                     await db.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            _degrade("shadow_table_columns", e)
 
 
 # Agno 向量库是否已播种语义单元
@@ -2147,8 +2192,8 @@ class AiQueryService:
                 ))).all():
                     if s is not None:
                         dq_map[t] = float(s)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as e:  # noqa: BLE001
+                _degrade("asset_dq", e)
 
             # ④ 血缘计数：一条 GROUP BY（本表字段数 + 被引用数）
             lin_map: dict[str, int] = {}
@@ -2166,8 +2211,8 @@ class AiQueryService:
                     ") x GROUP BY t"
                 ))).all():
                     lin_map[t] = int(n or 0)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as e:  # noqa: BLE001
+                _degrade("asset_lineage", e)
 
             out = []
             for a in rows:
@@ -2555,7 +2600,10 @@ class AiQueryService:
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
             await db.execute(_t(
-                "UPDATE ai_favorite SET is_deleted=true WHERE id=:i AND user_id=:u"),
+                # ai_favorite.is_deleted 是 **integer**（建表语句与线上库都是），
+                    # 这里原来写 `is_deleted=true`：SQLite 能容忍，PG 报
+                    # "operator does not exist: integer = boolean"（取消收藏直接失败）。
+                    "UPDATE ai_favorite SET is_deleted=1 WHERE id=:i AND user_id=:u"),
                 {"i": fav_id, "u": user_id})
         return {"ok": True, "msg": "已取消收藏"}
 

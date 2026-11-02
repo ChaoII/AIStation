@@ -27,7 +27,7 @@ from .schema import (
     QuerySettingUpsert,
     QueryTermUpsert,
 )
-from .service import AiQueryService, list_ds_schema
+from .service import AiQueryService, degraded_status, list_ds_schema
 from .service import sync_datasource_schema as _do_sync_schema
 
 # 注意：`test_datasource_conn` 是**模块级函数**，不是 AiQueryService 的类方法。
@@ -36,6 +36,21 @@ from .service import sync_datasource_schema as _do_sync_schema
 from .service import test_datasource_conn as _do_test_conn
 
 AiQueryRouter = APIRouter(route_class=OperationLogRoute, prefix="/query", tags=["AI-智能问数"])
+
+
+@AiQueryRouter.get("/system/degraded", summary="降级状态(哪些能力坏了但流程还在跑)")
+async def system_degraded(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> Response:
+    """问数链路的**静默降级**快照。
+
+    为什么需要它：这条链路有近 30 处 ``except: pass``（容错是对的），但失败不留痕迹。
+    实测三次事故（影子表没建、启动对账失效、资产血缘恒为 0）都是"界面正常、数字全空"，
+    只能靠翻日志发现。这里把「哪个能力坏了、坏了多少次、最后一次什么错」暴露出来。
+    """
+    from .service import degraded_status as _status
+
+    return SuccessResponse(data=_status(), msg="查询成功")
 
 
 @AiQueryRouter.post("/ask", summary="智能问数")

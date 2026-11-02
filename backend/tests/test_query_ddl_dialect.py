@@ -12,14 +12,21 @@
    在 SQLite 上能不能跑通 —— 这两条路径**曾经都是静默失败**。
 """
 
-import asyncio
 
 from sqlalchemy import text as _t
 
 
 def test_ddl_for_dialect_translates_pg_syntax():
-    """SQLite 下 PG 方言 DDL 必须被翻译掉，否则整个 CREATE 失败。"""
-    from app.plugin.module_ai.query.ddl_dialect import ddl_for_dialect
+    """SQLite 下 PG 方言 DDL 必须被翻译掉，否则整个 CREATE 失败。
+
+    PG 矩阵下该函数按设计**原样返回**，所以这条断言只在 SQLite 生效。
+    """
+    import pytest
+
+    from app.plugin.module_ai.query.ddl_dialect import ddl_for_dialect, is_sqlite
+
+    if not is_sqlite():
+        pytest.skip("SQLite 专用断言（PG 下 DDL 原样使用）")
 
     sql = (
         "CREATE TABLE IF NOT EXISTS t (id BIGSERIAL PRIMARY KEY, "
@@ -55,7 +62,7 @@ def test_stale_where_has_no_interval_cast_on_sqlite():
         assert len(cutoff_text(30)) == len("2026-01-01 00:00:00")
 
 
-def test_list_assets_lineage_count(test_client):
+def test_list_assets_lineage_count(test_client, db_run):
     """资产列表的血缘计数在 SQLite 上必须真的算出来。
 
     回归点：血缘那条 ``SELECT t, SUM(n)::int`` 是 PG 写法，SQLite 抛错后被
@@ -96,13 +103,13 @@ def test_list_assets_lineage_count(test_client):
                     "DELETE FROM ai_query_asset_columns "
                     "WHERE table_name LIKE 't_lineage_%' OR related_table LIKE 't_lineage_%'"))
 
-    m = asyncio.run(_go())
+    m = db_run(_go())
     assert m["t_lineage_a"]["column_count"] == 2
     assert m["t_lineage_a"]["lineage_count"] == 2, "本表字段数应计入血缘"
     assert m["t_lineage_b"]["lineage_count"] == 1, "被引用次数没算出来（SQL 在 SQLite 上失败）"
 
 
-def test_execute_action_writeback(test_client):
+def test_execute_action_writeback(test_client, db_run):
     """动作写回（P1）在 SQLite 上必须真的更新目标行。
 
     回归点：``WHERE "id"::text = :__k`` 只有 PG 认，SQLite 报
@@ -137,7 +144,7 @@ def test_execute_action_writeback(test_client):
                 await db.execute(_t("DELETE FROM ai_query_writeback WHERE name='t_wb_action'"))
                 await db.execute(_t("DELETE FROM t_wb_target"))
 
-    res, name = asyncio.run(_go())
+    res, name = db_run(_go())
     assert res.get("ok") is True, res
     assert res.get("rows") == 1, res
     assert name == "new"

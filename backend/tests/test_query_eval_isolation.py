@@ -61,7 +61,7 @@ def test_eval_ask_runs_inside_bypass_cache(monkeypatch):
 KEY = "recall_enabled"
 
 
-def test_override_settings_does_not_write_shared_table(test_client):
+def test_override_settings_does_not_write_shared_table(test_client, db_run):
     """覆盖只在当前任务内生效，**不得改动** ai_query_settings 表。"""
     from app.core.database import async_db_session
     from app.plugin.module_ai.query.eval_runner import override_settings
@@ -83,14 +83,14 @@ def test_override_settings_does_not_write_shared_table(test_client):
         cfg_after = (await AiQueryService._cfg()).get(KEY)
         return before, in_db, in_cfg, after, cfg_before, cfg_after
 
-    before, in_db, in_cfg, after, cfg_before, cfg_after = asyncio.run(_go())
+    before, in_db, in_cfg, after, cfg_before, cfg_after = db_run(_go())
     assert str(in_cfg).lower() == "false", "覆盖没生效"
     assert in_db == before, "覆盖写了共享表（真实用户会被一起改掉）"
     assert after == before
     assert str(cfg_after) == str(cfg_before), "退出后配置没恢复"
 
 
-def test_override_settings_does_not_leak_to_concurrent_task(test_client):
+def test_override_settings_does_not_leak_to_concurrent_task(test_client, db_run):
     """覆盖期间，**另一个任务**（等价于另一个正在跑的用户请求）不受影响。"""
     from app.plugin.module_ai.query.eval_runner import override_settings
     from app.plugin.module_ai.query.service import AiQueryService
@@ -108,6 +108,6 @@ def test_override_settings_does_not_leak_to_concurrent_task(test_client):
         peer_value = await peer
         return base, inside, peer_value
 
-    base, inside, peer_value = asyncio.run(_go())
+    base, inside, peer_value = db_run(_go())
     assert str(inside).lower() == "false", "覆盖没生效"
     assert str(peer_value) == str(base), f"配置外溢到并发任务：peer={peer_value} base={base}"
