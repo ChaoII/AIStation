@@ -1710,6 +1710,9 @@ _TIME_QUALIFIER_RE = re.compile(
     r"|上(月|周|年)|今天|今日|昨天|昨日|\d{4}\s*年|\d+\s*(天|日|周|个?月|年))"
 )
 
+#: 聚合诉求：对象路径（实体检索）表达不了
+_OBJECT_AGG_RE = re.compile(r"(平均|合计|总计|总量|求和|汇总|占比|百分之)")
+
 #: 排序诉求（模板只出聚合值，给不了有序结果集）
 _ORDER_WORD_RE = re.compile(r"(排序|升序|降序|从大到小|从小到大|按.{0,6}排|前\s*\d+\s*(名|条|个)|排名)")
 
@@ -8064,8 +8067,10 @@ class AiQueryService:
         # 时间范围 / 分组 / 排序：IR 只产出「对象实例过滤」，这类诉求它表达不了，
         # 实测会产出一条空 SQL 然后当成功返回（path=object、sql 为空、结果 0 行）。
         if _TIME_QUALIFIER_RE.search(question) or _wants_grouping(question) \
-                or _ORDER_WORD_RE.search(question):
-            log.warning("[query] 对象查询：问句含时间/分组/排序诉求，跳过对象路径")
+                or _ORDER_WORD_RE.search(question) or _OBJECT_AGG_RE.search(question):
+            # 对象路径只做「实体/属性检索」，聚合与分组排序都表达不了。
+            # 实测「煤质信息的平均灰分是多少」走了对象路径，产出空 SQL 且当成功返回。
+            log.warning("[query] 对象查询：问句含时间/分组/排序/聚合诉求，跳过对象路径")
             return None
         if _ir_circuit_open():
             log.warning(

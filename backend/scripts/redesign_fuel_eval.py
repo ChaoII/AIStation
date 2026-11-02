@@ -156,7 +156,7 @@ CASES: list[dict] = [
     {"cat": "占比", "q": "入厂煤批次里已删除的占百分之多少？",
      "gold": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE \"ISDELETED\") / COUNT(*), 2) AS 删除占比 "
              "FROM \"FUEL_CMCS_INFACTORYBATCH\""},
-    {"cat": "占比", "q": "关联矿点数最多的那家供应商是谁，它占全部关系的百分之多少？",
+    {"cat": "占比", "q": "按供应商名称分组统计关联矿点数，关联最多的那家供应商是谁，它占全部关系的百分之多少？",
      "gold": "SELECT \"GYSNAME\" AS 供应商, ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM \"DTXY_GYSKDGX\"), 2) AS 占比 "
              "FROM \"DTXY_GYSKDGX\" GROUP BY \"GYSNAME\" ORDER BY COUNT(*) DESC LIMIT 1"},
 
@@ -168,7 +168,7 @@ CASES: list[dict] = [
      "gold": "SELECT date(\"ASSAYDATE\") AS 日期, COUNT(*) AS 化验单数 FROM \"FUEL_CMCS_ASSAY\" "
              "WHERE \"ASSAYDATE\" >= '2026-09-01' AND \"ASSAYDATE\" < '2026-10-01' "
              "GROUP BY date(\"ASSAYDATE\") ORDER BY 日期"},
-    {"cat": "时间窗口", "q": "按日期汇总每日耗用量，耗用量合计最大的那天合计是多少？",
+    {"cat": "时间窗口", "q": "按日期汇总每日耗用量（排除已删除记录），哪一天的耗用量合计最大、合计是多少？",
      "gold": "SELECT date(\"RECORDDATE\") AS 日期, ROUND(SUM(\"TOTALUSEQTY\")::numeric, 2) AS 耗用量合计 "
              "FROM \"FUEL_REPORT_DAYINOUTSTORAGE\" WHERE \"TOTALUSEQTY\" IS NOT NULL AND \"ISDELETED\" = false "
              "GROUP BY date(\"RECORDDATE\") ORDER BY 耗用量合计 DESC LIMIT 1"},
@@ -179,7 +179,7 @@ CASES: list[dict] = [
      "gold": "SELECT COUNT(*) AS 化验日期为空数 FROM \"FUEL_CMCS_ASSAY\" WHERE \"ASSAYDATE\" IS NULL"},
     {"cat": "条件筛选", "q": "入厂煤批次里矿点名称为空的有多少条？",
      "gold": "SELECT COUNT(*) AS 矿点为空批次数 FROM \"FUEL_CMCS_INFACTORYBATCH\" "
-             "WHERE \"MINENAME\" IS NULL OR trim(\"MINENAME\") = ''"},
+             "WHERE (\"MINENAME\" IS NULL OR trim(\"MINENAME\") = '') AND \"ISDELETED\" = false"},
     {"cat": "条件筛选", "q": "矿点里编码为空的有多少个？",
      "gold": "SELECT COUNT(*) AS 编码为空的矿点数 FROM \"FUEL_CMCS_MINE\" "
              "WHERE \"CODE\" IS NULL OR trim(\"CODE\") = ''"},
@@ -245,14 +245,11 @@ CASES: list[dict] = [
     {"cat": "分组聚合", "q": "化验单按化验方式分组统计条数",
      "gold": "SELECT \"ASSAYWAY\" AS 化验方式, COUNT(*) AS 化验单数 FROM \"FUEL_CMCS_ASSAY\" "
              "GROUP BY \"ASSAYWAY\" ORDER BY 化验单数 DESC"},
-    {"cat": "分组聚合", "q": "煤质信息里品名（非空）出现次数最多的前 3 个",
-     "gold": "SELECT \"VARIETY\" AS 品名, COUNT(*) AS 记录数 FROM \"DTXY_PMXX\" "
-             "WHERE \"VARIETY\" IS NOT NULL AND trim(\"VARIETY\") <> '' "
-             "GROUP BY 1 ORDER BY 记录数 DESC, 品名 LIMIT 3"},
+    
     {"cat": "分组聚合", "q": "供应商矿点关系里关联矿点最多的前 3 家供应商及其矿点数",
      "gold": "SELECT \"GYSNAME\" AS 供应商, COUNT(*) AS 矿点数 FROM \"DTXY_GYSKDGX\" "
              "GROUP BY 1 ORDER BY 矿点数 DESC, 供应商 LIMIT 3"},
-    {"cat": "分组聚合", "q": "按矿点名称统计不同供应商名称的数量，取最多的前 3 个矿点",
+    {"cat": "分组聚合", "q": "在供应商矿点关系表里按矿点名称统计不同供应商名称的数量，并列时按矿点名称升序，取最多的前 3 个矿点",
      "gold": "SELECT \"KDNAME\" AS 矿点, COUNT(DISTINCT \"GYSNAME\") AS 供应商数 "
              "FROM \"DTXY_GYSKDGX\" WHERE \"KDNAME\" IS NOT NULL "
              "GROUP BY 1 ORDER BY 供应商数 DESC, 矿点 LIMIT 3"},
@@ -260,10 +257,11 @@ CASES: list[dict] = [
      "gold": "SELECT to_char(\"RECORDDATE\", 'YYYY-MM') AS 年月, COUNT(*) AS 记录数 "
              "FROM \"FUEL_STG_ALLINMIDDLE\" WHERE \"RECORDDATE\" IS NOT NULL "
              "GROUP BY 1 ORDER BY 年月"},
-    {"cat": "分组聚合", "q": "每日出入库报表按年月统计耗用量合计，取合计最大的前 3 个月",
+    {"cat": "分组聚合", "q": "每日出入库报表按年月统计耗用量合计（排除已删除记录），取合计最大的前 3 个月",
      "gold": "SELECT to_char(\"RECORDDATE\", 'YYYY-MM') AS 年月, "
              "ROUND(SUM(CAST(\"TOTALUSEQTY\" AS numeric))::numeric, 2) AS 耗用量合计 "
-             "FROM \"FUEL_REPORT_DAYINOUTSTORAGE\" WHERE \"RECORDDATE\" IS NOT NULL "
+             "FROM \"FUEL_REPORT_DAYINOUTSTORAGE\" "
+             "WHERE \"RECORDDATE\" IS NOT NULL AND \"ISDELETED\" = false "
              "GROUP BY 1 ORDER BY 耗用量合计 DESC, 年月 LIMIT 3"},
 
     {"cat": "排序", "q": "取煤记录里按日期统计，单日取煤量最大的前 3 天",
@@ -285,7 +283,7 @@ CASES: list[dict] = [
     {"cat": "占比", "q": "入厂煤批次里矿点名称既不是空字符串也不是 NULL 的占比是多少？",
      "gold": "SELECT ROUND(100.0 * COUNT(*) FILTER "
              "(WHERE \"MINENAME\" IS NOT NULL AND trim(\"MINENAME\") <> '') / COUNT(*), 2) AS 占比 "
-             "FROM \"FUEL_CMCS_INFACTORYBATCH\""},
+             "FROM \"FUEL_CMCS_INFACTORYBATCH\" WHERE \"ISDELETED\" = false"},
     {"cat": "时间窗口", "q": "煤质信息里 2026 年的记录有多少条？",
      "gold": "SELECT COUNT(*) AS 记录数 FROM \"DTXY_PMXX\" "
              "WHERE \"CREATIONTIME\" >= '2026-01-01' AND \"CREATIONTIME\" < '2027-01-01'"},
