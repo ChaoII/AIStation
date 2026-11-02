@@ -83,10 +83,19 @@ def compare_runs(base_rows: list[dict], target_rows: list[dict],
             "config": meta_t.get("config") or {},
             "data_accuracy": _acc(target_rows),
         },
-        "model_changed": (meta_b.get("model") or "") != (meta_t.get("model") or ""),
+        "model_changed": _model_changed(meta_b, meta_t),
         "items": items[:limit],
         "truncated": len(items) > limit,
     }
+
+
+def _model_changed(a: dict, b: dict) -> bool:
+    """只有两轮**都记录了**模型且不同才算换模型。
+
+    老运行没有 fingerprint（本轮才加），直接比较会把「未知」误报成「已变更」。
+    """
+    ma, mb = (a or {}).get("model") or "", (b or {}).get("model") or ""
+    return bool(ma and mb and ma != mb)
 
 
 def _acc(rows: list[dict]) -> float:
