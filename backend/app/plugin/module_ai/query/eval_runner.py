@@ -77,12 +77,17 @@ async def _fingerprint() -> dict:
 
 
 async def _ask(question: str, auth, datasource: str, force_slow: bool = False) -> dict:
-    from .service import AiQueryService, set_eval_context
+    from .service import AiQueryService, bypass_caches, set_eval_context
 
     # 评测打标：会话写入 is_eval=true → 不进用户的问数历史 / 使用统计
     set_eval_context(True)
     try:
-        return await AiQueryService.ask(question, auth, None, datasource, force_slow=force_slow)
+        # 评测必须**旁路缓存**：SQL 缓存 TTL 30 分钟，命中就等于回放上一轮生成的结果，
+        # 「改完再评一次」必然得到同样的数字（对比/消融/方差全部失真）；
+        # 反过来，评测生成的 SQL 也会写进共享缓存、30 分钟内喂给真实用户。
+        with bypass_caches():
+            return await AiQueryService.ask(
+                question, auth, None, datasource, force_slow=force_slow)
     finally:
         set_eval_context(False)
 
@@ -109,55 +114,20 @@ async def _resolve_schema(datasource: str) -> dict:
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def override_settings(overrides: dict):
-    """临时覆盖 `ai_query_settings` 的若干键；退出时**恢复原值**并清配置缓存。"""
-    from sqlalchemy import text as _t
+    """临时覆盖问数配置：**任务内生效，不写库、不影响其他人**。
 
-    from app.core.database import async_db_session
+    旧实现直接 ``UPDATE ai_query_settings`` 跑完再恢复。那是全局可变状态：
+    一次消融要跑几分钟，期间**所有真实用户的问数都跑在消融配置下**
+    （实测配置里就有 ``recall_enabled`` 这种会改变答案的开关）。
+    「退出时恢复」只保证了结束态，没解决进行中的污染。
 
-    from . import service as _svc
+    现在改成 ``service.config_override`` 的 ContextVar 覆盖层：不落库，
+    只影响当前任务及其子任务；哪怕进程在消融中途崩掉，也不会留下被改过的配置。
+    """
+    from .service import config_override
 
-    saved: dict[str, str | None] = {}
-    try:
-        async with async_db_session.begin() as db:
-            for k, v in (overrides or {}).items():
-                row = (
-                    await db.execute(
-                        _t("SELECT value FROM ai_query_settings WHERE key=:k"), {"k": k}
-                    )
-                ).fetchone()
-                saved[k] = row[0] if row else None
-                if row:
-                    await db.execute(
-                        _t("UPDATE ai_query_settings SET value=:v WHERE key=:k"),
-                        {"k": k, "v": str(v)},
-                    )
-                else:
-                    await db.execute(
-                        _t(
-                            "INSERT INTO ai_query_settings"
-                            "(key,value,uuid,status,is_deleted,created_time,updated_time)"
-                            " VALUES(:k,:v,:u,'0',false,now(),now())"
-                        ),
-                        {"k": k, "v": str(v), "u": uuid.uuid4().hex},
-                    )
-        _svc._SETTINGS_CACHE = None
+    with config_override(overrides or {}):
         yield
-    finally:
-        try:
-            async with async_db_session.begin() as db:
-                for k, old in saved.items():
-                    if old is None:
-                        await db.execute(
-                            _t("DELETE FROM ai_query_settings WHERE key=:k"), {"k": k}
-                        )
-                    else:
-                        await db.execute(
-                            _t("UPDATE ai_query_settings SET value=:v WHERE key=:k"),
-                            {"k": k, "v": old},
-                        )
-        except Exception as e:  # noqa: BLE001 - 恢复失败必须留下痕迹
-            log.warning(f"[ai-eval] 配置恢复失败（可能污染后续评测）: {e}")
-        _svc._SETTINGS_CACHE = None
 
 
 # ---------------------------------------------------------------------------

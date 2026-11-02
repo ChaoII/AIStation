@@ -11,6 +11,7 @@ import asyncio
 import json
 import re
 import time
+from contextlib import contextmanager
 from contextvars import ContextVar
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -216,6 +217,50 @@ _OBJECT_CTX: ContextVar[str] = ContextVar("ai_query_object_ctx", default="")
 #: 评测上下文：评测（/ai/eval）逐题调用 `ask`，必须与真实用户问数历史隔离。
 #: 置 True 时会话打 `is_eval` 标记 → 问数历史默认不显示、使用统计不计入。
 _EVAL_CTX: ContextVar[bool] = ContextVar("ai_query_eval_ctx", default=False)
+
+#: 旁路所有问数缓存（SQL / prompt 上下文 / 召回）。
+#:
+#: 为什么评测必须旁路：``_SQL_CACHE`` TTL 30 分钟，``_slow_path`` 一进来就查它。
+#: 「跑一遍 → 改配置/改提示词 → 30 分钟内再跑」时每道题都回放上一轮 SQL，
+#: 两次结果必然一致 —— 对比、消融、方差全部失去意义。
+#: 反向同样有害：评测生成的 SQL 会写进共享缓存，30 分钟内**喂给真实用户**。
+#: 所以评测期间**既不读也不写**。
+_BYPASS_CACHE: ContextVar[bool] = ContextVar("ai_query_bypass_cache", default=False)
+
+
+@contextmanager
+def bypass_caches():
+    """当前任务内旁路全部问数缓存（评测/对比用）。"""
+    token = _BYPASS_CACHE.set(True)
+    try:
+        yield
+    finally:
+        _BYPASS_CACHE.reset(token)
+
+
+#: 工程配置的任务内覆盖层。
+#:
+#: 评测的消融需要「临时改几个开关」。旧实现直接 `UPDATE ai_query_settings` 再恢复，
+#: 那是**全局可变状态**：一次消融跑几分钟，期间所有真实用户都跑在消融配置下
+#: （比如 recall 被关掉）。改成 ContextVar 覆盖层后：不写库、只影响当前任务，
+#: 子任务通过 context 继承自然生效。
+_CFG_OVERRIDE: ContextVar[dict[str, str] | None] = ContextVar(
+    "ai_query_cfg_override", default=None)
+
+
+@contextmanager
+def config_override(overrides: dict | None):
+    """当前任务内临时覆盖工程配置（不落库、不外溢）。"""
+    if not overrides:
+        yield
+        return
+    merged = {**(_CFG_OVERRIDE.get() or {}),
+              **{str(k): str(v) for k, v in overrides.items()}}
+    token = _CFG_OVERRIDE.set(merged)
+    try:
+        yield
+    finally:
+        _CFG_OVERRIDE.reset(token)
 
 
 def set_eval_context(on: bool = True) -> None:
@@ -1036,6 +1081,8 @@ def _sql_cache_key(question: str, datasource: str | None) -> str:
 
 
 def _sql_cache_get(question: str, datasource: str | None) -> str | None:
+    if _BYPASS_CACHE.get():
+        return None  # 评测：必须真的重新生成（见 _BYPASS_CACHE 的说明）
     key = _sql_cache_key(question, datasource)
     hit = _SQL_CACHE.get(key)
     if not hit:
@@ -1048,6 +1095,8 @@ def _sql_cache_get(question: str, datasource: str | None) -> str | None:
 
 
 def _sql_cache_set(question: str, datasource: str | None, sql: str) -> None:
+    if _BYPASS_CACHE.get():
+        return  # 评测生成的 SQL 不得污染真实用户的缓存
     if not sql or not sql.strip():
         return
     if len(_SQL_CACHE) >= _SQL_CACHE_MAX:
@@ -6372,10 +6421,17 @@ class AiQueryService:
 
     @classmethod
     async def _cfg(cls) -> dict:
-        """带进程级缓存的工程配置读取；save_setting 会使其失效。"""
+        """带进程级缓存的工程配置读取；save_setting 会使其失效。
+
+        覆盖层（``config_override``）只对**当前任务**生效：评测消融用它临时改开关，
+        不改库、不改全局缓存（旧实现直接 UPDATE 表，消融几分钟内真实用户全被带跑）。
+        """
         global _SETTINGS_CACHE
         if _SETTINGS_CACHE is None:
             _SETTINGS_CACHE = await cls.get_settings()
+        overlay = _CFG_OVERRIDE.get()
+        if overlay:
+            return {**_SETTINGS_CACHE, **overlay}
         return _SETTINGS_CACHE
 
     @classmethod
@@ -9283,6 +9339,9 @@ class AiQueryService:
         缓存 key **含数据源**：否则两个数据源互相串结果。
         """
         key = _retrieval_cache_key(question, datasource)
+        if _BYPASS_CACHE.get():
+            # 评测：召回结果与消融开关（recall_enabled 等）强相关，缓存会让消融失真
+            return await cls._semantic_tables_uncached(question, schema, metrics, terms)
         hit = _RETRIEVAL_CACHE.get(key)
         if hit and time.time() - hit[0] <= _RETRIEVAL_CACHE_TTL:
             return list(hit[1])
@@ -9614,7 +9673,7 @@ class AiQueryService:
     @classmethod
     async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
         # 命中短时缓存直接返回（见函数尾部写入处）
-        if not _OBJECT_CTX.get():
+        if not _OBJECT_CTX.get() and not _BYPASS_CACHE.get():
             _hit = _SCHEMA_CTX_CACHE.get(f"{datasource or ''}|{question}")
             if _hit and time.time() - _hit[0] <= _SCHEMA_CTX_TTL:
                 return _hit[1]
@@ -9718,7 +9777,7 @@ class AiQueryService:
         # 同一问题的 prompt 上下文短时缓存：自纠错重试、流式与非流式、以及「同一题再问一次」
         # 都会重复构建（首题实测 4~12 秒，主要花在向量召回），缓存后重试只剩几十毫秒。
         # 有对象上下文（每次请求不同）时不缓存，避免串题。
-        if not _OBJECT_CTX.get():
+        if not _OBJECT_CTX.get() and not _BYPASS_CACHE.get():
             key = f"{datasource or ''}|{question}"
             if len(_SCHEMA_CTX_CACHE) >= _SCHEMA_CTX_CACHE_MAX:
                 for k in list(_SCHEMA_CTX_CACHE)[: _SCHEMA_CTX_CACHE_MAX // 5]:
