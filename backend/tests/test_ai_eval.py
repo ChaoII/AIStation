@@ -397,3 +397,54 @@ class TestAiEval:
             assert any(v["published"] for v in rel["versions"])
             return True
         assert asyncio.run(_go())
+
+
+def test_eval_reconcile_marks_only_old_running(test_client):
+    """启动对账必须**真的生效**：超龄 running → error；新近 running 不动。
+
+    回归点（2026-11 实测）：这条 UPDATE 曾写成 PG 专有语法
+    ``started_at < now() - (:m || ' minutes')::interval``。SQLite 把 ``::`` 当成参数
+    前缀 → 整条语句语法错 → 被 ``except`` 吞成启动日志里一行
+    「启动对账失败（忽略）: unrecognized token: ":"」。
+    结果：「进程重启后的僵尸 running 自动清理」这个兜底**从来没生效过**，
+    界面上那些 10 月的孤儿运行会永远显示「运行中」。
+    """
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import text as _t
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.query.eval_runner import reconcile_stale_runs
+    from app.plugin.module_ai.query.eval_set import ensure_eval_tables
+
+    async def _go():
+        await ensure_eval_tables()  # 幂等；保证表在（SQLite 下 DDL 走方言翻译）
+        old_run, fresh_run = "test-reconcile-old", "test-reconcile-fresh"
+        fmt = "%Y-%m-%d %H:%M:%S"
+        old_at = (datetime.now() - timedelta(hours=2)).strftime(fmt)
+        fresh_at = datetime.now().strftime(fmt)
+        try:
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    _t("DELETE FROM ai_query_testrun WHERE run_id LIKE 'test-reconcile-%'"))
+                for run_id, at in ((old_run, old_at), (fresh_run, fresh_at)):
+                    await db.execute(
+                        _t("INSERT INTO ai_query_testrun(run_id,status,started_at,is_deleted) "
+                           "VALUES(:r,'running',:s,false)"),
+                        {"r": run_id, "s": at})
+            fixed = await reconcile_stale_runs(timeout_min=30)
+            async with async_db_session() as db:
+                rows = dict(
+                    (await db.execute(
+                        _t("SELECT run_id,status FROM ai_query_testrun "
+                           "WHERE run_id LIKE 'test-reconcile-%'"))).fetchall())
+            return fixed, rows.get(old_run), rows.get(fresh_run)
+        finally:
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    _t("DELETE FROM ai_query_testrun WHERE run_id LIKE 'test-reconcile-%'"))
+
+    fixed, old_status, fresh_status = asyncio.run(_go())
+    assert old_status == "error", f"超龄 running 未清理（对账没生效）：{old_status}"
+    assert fresh_status == "running", f"新近 running 被误伤：{fresh_status}"
+    assert fixed >= 1

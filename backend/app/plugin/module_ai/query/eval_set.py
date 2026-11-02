@@ -45,9 +45,13 @@ async def ensure_eval_tables() -> None:
     """建评测三张表（幂等）。"""
     from sqlalchemy import text as _t
 
+    from .ddl_dialect import ddl_for_dialect
+
     async with async_db_session.begin() as db:
         for ddl in (_TESTCASE_DDL, _TESTRUN_DDL, _TESTRESULT_DDL):
-            await db.execute(_t(ddl))
+            # DDL 是 PG 方言（BIGSERIAL / JSONB / DEFAULT now()）：SQLite 下必须翻译，
+            # 否则 id 不自增、`DEFAULT now()` 直接语法错（详见 dialect.py 的说明）。
+            await db.execute(_t(ddl_for_dialect(ddl)))
         await db.execute(
             _t("CREATE INDEX IF NOT EXISTS ix_ai_query_testresult_run ON ai_query_testresult(run_id)")
         )

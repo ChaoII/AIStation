@@ -148,28 +148,10 @@ _QUERY_ALTER_COLS = (
 
 
 def _ddl_for_dialect(sql: str) -> str:
-    """把 PG 方言 DDL 翻译成当前数据库方言（**只有 SQLite 需要**）。
+    """兼容旧调用名：统一走 ``ddl_dialect.ddl_for_dialect``（方言规则只有一份）。"""
+    from .ddl_dialect import ddl_for_dialect
 
-    为什么必须翻译：`DEFAULT now()` 在 SQLite 是**语法错**（只认 CURRENT_TIMESTAMP），
-    整条 CREATE 直接失败；而 `_ensure_query_tables` 是 best-effort 吞异常的，
-    于是这些表在 SQLite 库里**根本不存在**，且错误被静默丢弃。
-
-    实测后果：``tests/test_ai_eval.py::TestAiEval::test_security_audit`` 单独运行报
-    ``no such table: ai_access_rule``，只有同文件其它用例先建过表才通过 —— 典型的顺序依赖假绿。
-
-    另外 ``BIGSERIAL`` 在 SQLite 里只是个普通类型名（不是 rowid 别名），
-    不换成 ``INTEGER PRIMARY KEY AUTOINCREMENT`` 的话 id 不会自增、全为 NULL。
-    """
-    from app.config.setting import settings
-
-    if settings.DATABASE_TYPE != "sqlite":
-        return sql
-    return (
-        sql.replace("BIGSERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT")
-        .replace("DEFAULT now()", "DEFAULT CURRENT_TIMESTAMP")
-        # SQLite 会把未知类型名当 NUMERIC 亲和，这里显式落成 JSON 更贴近本意
-        .replace("JSONB", "JSON")
-    )
+    return ddl_for_dialect(sql)
 
 
 async def _ensure_query_tables() -> None:

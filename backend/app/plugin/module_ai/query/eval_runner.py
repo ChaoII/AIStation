@@ -378,13 +378,15 @@ async def _fail_run(run_id: str, error: str, done: int | None = None,
 
     from app.core.database import async_db_session
 
+    from .ddl_dialect import json_empty
+
     payload = json.dumps({"error": (error or "")[:300]}, ensure_ascii=False)
     try:
         async with async_db_session.begin() as db:
             await db.execute(
                 _t(
                     "UPDATE ai_query_testrun SET status=:st, finished_at=now(), "
-                    "summary=COALESCE(summary, '{}'::jsonb) || CAST(:e AS jsonb), "
+                    f"summary=COALESCE(summary, {json_empty()}) || CAST(:e AS jsonb), "
                     "done=COALESCE(:d, done) WHERE run_id=:r"
                 ),
                 {"r": run_id, "e": payload, "d": done, "st": status},
@@ -457,18 +459,30 @@ async def reconcile_stale_runs(timeout_min: int = 30) -> int:
 
     from app.core.database import async_db_session
 
+    from .ddl_dialect import cutoff_text, json_empty, stale_where
+
+    # 方言差异：`(:m || ' minutes')::interval` 是 **PG 专有**语法，SQLite 会把 `::` 当成
+    # 参数前缀，整条 UPDATE 报 `unrecognized token: ":"` 被 except 吞掉 —— 启动日志里
+    # 「启动对账失败（忽略）」就是这么来的，等于这个兜底**从来没生效过**（僵尸 running
+    # 一直挂在界面上）。非 PG 改成「Python 算好截止时间再传参」。
+    cond, param_name = stale_where("started_at", "m")
+    stale_params: dict = (
+        {"m": str(int(timeout_min))} if param_name == "m"
+        else {"cutoff": cutoff_text(int(timeout_min))}
+    )
+
     fixed = 0
     try:
         async with async_db_session.begin() as db:
             res = await db.execute(
                 _t(
                     "UPDATE ai_query_testrun SET status='error', finished_at=now(), "
-                    "summary=COALESCE(summary,'{}'::jsonb) || "
+                    f"summary=COALESCE(summary,{json_empty()}) || "
                     "CAST(:e AS jsonb) "
-                    "WHERE status='running' AND started_at < now() - (:m || ' minutes')::interval"
+                    f"WHERE status='running' AND {cond}"
                 ),
                 {"e": json.dumps({"error": "进程重启/超时，评测已中断"}, ensure_ascii=False),
-                 "m": str(int(timeout_min))},
+                 **stale_params},
             )
             fixed = res.rowcount or 0
             # 历史脏数据回填：老版本 total 从不落库（全是 0），已完成的运行用 done 补齐，
@@ -481,8 +495,12 @@ async def reconcile_stale_runs(timeout_min: int = 30) -> int:
             )
             await db.execute(
                 _t(
-                    "DELETE FROM ai_query_testresult r WHERE NOT EXISTS "
-                    "(SELECT 1 FROM ai_query_testrun t WHERE t.run_id=r.run_id)"
+                    # 不能写 `DELETE FROM ai_query_testresult r WHERE ...`：SQLite
+                    # **不支持 DELETE 带表别名**（近 "r": syntax error），PG 支持。
+                    # 用「表名限定」的相关子查询，两种方言都能跑。
+                    "DELETE FROM ai_query_testresult WHERE NOT EXISTS "
+                    "(SELECT 1 FROM ai_query_testrun t "
+                    " WHERE t.run_id = ai_query_testresult.run_id)"
                 )
             )
     except Exception as e:  # noqa: BLE001
