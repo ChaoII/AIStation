@@ -986,6 +986,35 @@ async def eval_compare(
     return SuccessResponse(data=out, msg="对比完成")
 
 
+@AiQueryRouter.get("/eval/compare/report", summary="对比结果导出为 HTML 报告")
+async def eval_compare_report(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
+    base: str,
+    target: str,
+) -> Response:
+    from .eval_compare import compare_runs
+    from .eval_report import render_compare_html
+    from .eval_set import load_results, load_run_meta
+
+    bm, tm = await load_run_meta(base), await load_run_meta(target)
+    if not bm or not tm:
+        from fastapi import status as _status
+
+        from app.core.exceptions import CustomException
+
+        raise CustomException(msg="对比的运行不存在", status_code=_status.HTTP_404_NOT_FOUND)
+    cmp = compare_runs(await load_results(base), await load_results(target), bm, tm)
+    html = render_compare_html(cmp, bm, tm)
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition":
+            f'attachment; filename="eval_compare_{base}_{target}.html"'
+        },
+    )
+
+
 @AiQueryRouter.post("/eval/run", summary="启动一轮评测")
 async def eval_run(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],

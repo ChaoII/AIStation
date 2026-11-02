@@ -730,6 +730,17 @@ export function compareEvalRuns(base: string, target: string) {
   });
 }
 
+/** 对比结果导出为 HTML 报告（自包含、可打印）。 */
+export function exportEvalCompare(base: string, target: string) {
+  return request({
+    url: `${API_PATH}/eval/compare/report`,
+    method: "get",
+    params: { base, target },
+    responseType: "blob",
+    timeout: 300000,
+  });
+}
+
 export function getEvalRuns(limit = 30, params?: { mode?: string; dataset?: string }) {
   return request({
     url: `${API_PATH}/eval/runs`,

@@ -246,4 +246,6 @@ export default {
   eval_newSame: "不變",
   eval_newOnlyBase: "僅基線",
   eval_newOnlyTarget: "僅對比",
+  eval_exportReport: "匯出報告",
+  eval_exportReportHint: "匯出為單檔 HTML（可直接開啟/列印成 PDF）",
 };

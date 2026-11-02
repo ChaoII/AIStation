@@ -252,6 +252,9 @@
         <el-button size="small" type="primary" :loading="comparing" @click="doCompare">
           {{ $t("ai_workflow.eval_compareRun") }}
         </el-button>
+        <el-button size="small" :disabled="!cmp" :loading="exportingReport" @click="doExportReport">
+          {{ $t("ai_workflow.eval_exportReport") }}
+        </el-button>
       </el-form>
       <template v-if="cmp">
         <el-alert
@@ -310,6 +313,7 @@ import {
   getEvalRuns,
   exportEvalReport,
   compareEvalRuns,
+  exportEvalCompare,
 } from "@/api/module_ai/query";
 import { pct, type EvalReport, type EvalResultRow, type EvalRunItem } from "../types";
 import { saveBlob } from "../download";
@@ -335,6 +339,21 @@ const baseId = ref("");
 const targetId = ref("");
 const comparing = ref(false);
 const cmp = ref<any>(null);
+const exportingReport = ref(false);
+
+/** 导出对比报告（HTML，单文件可直接打开/打印成 PDF）。 */
+async function doExportReport() {
+  if (!cmp.value || !baseId.value || !targetId.value) return;
+  exportingReport.value = true;
+  try {
+    const r = await exportEvalCompare(baseId.value, targetId.value);
+    saveBlob(r.data, `eval_compare_${baseId.value}_${targetId.value}.html`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.eval_exportFail"));
+  } finally {
+    exportingReport.value = false;
+  }
+}
 
 function openCompare() {
   // 默认：当前选中的作为对比，最近一次（若不同）作为基线

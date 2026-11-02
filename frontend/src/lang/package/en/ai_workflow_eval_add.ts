@@ -250,4 +250,6 @@ export default {
   eval_newSame: "Same",
   eval_newOnlyBase: "Baseline only",
   eval_newOnlyTarget: "Target only",
+  eval_exportReport: "Export report",
+  eval_exportReportHint: "Exports a self-contained HTML report (printable to PDF)",
 };
