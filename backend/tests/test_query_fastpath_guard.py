@@ -205,3 +205,27 @@ def test_select_metric_rejects_time_window_question():
     got = asyncio.run(AiQueryService._select_metric(
         "收到基低位发热量是多少？", SYSTEM_DS, [m], []))
     assert got and got["key"] == "avg_rz"
+
+
+@pytest.mark.parametrize("q", [
+    "已删除的入厂煤批次有多少条？",          # 状态修饰 = WHERE 条件
+    "矿点名称里带“煤”字的有多少个？",        # 「带…字」= LIKE
+    "出现过多少家不同的供应商？",            # 「多少家不同」= COUNT(DISTINCT)
+])
+def test_condition_words_block_fast_path(q):
+    """条件状语必须让位 NL2SQL（实测这几个都被"总数"指标抢答了）。"""
+    from app.plugin.module_ai.query.service import _needs_custom_sql
+
+    assert _needs_custom_sql(q) is True
+
+
+def test_total_amount_is_sum_intent():
+    """「总量」是求和，不是计数：实测「煤场进煤总量」被 COUNT(*) 指标答成行数。"""
+    from app.plugin.module_ai.query.service import _fast_path_blockers
+
+    m = {"key": "FUEL_STG_ALLINMIDDLE_count_ID", "name": "煤场进煤记录数",
+         "agg": "count", "enabled": True, "object_code": "",
+         "sql_template": 'SELECT COUNT(*) AS "数量" FROM "FUEL_STG_ALLINMIDDLE"',
+         "datasource": "ds:4"}
+    reasons = _fast_path_blockers("煤场进煤总量是多少？", m, [], [])
+    assert any("聚合" in r for r in reasons), reasons
