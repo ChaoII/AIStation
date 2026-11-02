@@ -557,6 +557,31 @@ def lenient_match(gold_cols: list, gold_rows: list, llm_cols: list, llm_rows: li
             if gproj == mproj:
                 return True
 
+    # (0b) **金标列全部能在模型列里找到** → 按金标列投影比较，模型多给的列不算错。
+    #      实测「关联矿点数最多的那家供应商占百分之多少」模型返回
+    #      （供应商, 关联矿点数, 占比）三列而金标只要（占比）—— 信息更全却判错。
+    #      这条与 (0) 对称：(0) 管"模型少给列"，这条管"模型多给列"。
+    gold_to_model: list[int] = []
+    used_m: set[int] = set()
+    complete = True
+    for gc in gold_cols or []:
+        mi = next(
+            (i for i, mc in enumerate(llm_cols)
+             if i not in used_m and _label_match(gc, mc)),
+            None,
+        )
+        if mi is None:
+            complete = False
+            break
+        used_m.add(mi)
+        gold_to_model.append(mi)
+    if complete and gold_to_model and all(len(r) >= len(llm_cols) for r in llm_rows):
+        proj = sorted(
+            tuple(str(_norm_cell(v)) for v in (r[i] for i in gold_to_model)) for r in llm_rows
+        )
+        if proj == gset:
+            return True
+
     # (1) 列名归一对齐（顺序无关；金标列找不到同名时按顺序补，允许多余列）
     order = _align_columns(gold_cols, llm_cols)
     if order is not None:

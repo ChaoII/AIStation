@@ -245,3 +245,33 @@ def test_operator_words_block_fast_path(q):
     from app.plugin.module_ai.query.service import _needs_custom_sql
 
     assert _needs_custom_sql(q) is True
+
+
+def test_aggregate_object_mismatch_blocks_wrong_metric():
+    """问「平均灰分」却被「平均发热量」模板命中 —— 会自信地报出别人的数字。"""
+    from app.plugin.module_ai.query.service import _fast_path_blockers
+
+    m = {"key": "avg_rz", "name": "平均收到基低位发热量", "agg": "avg", "enabled": True,
+         "object_code": "", "datasource": "ds:4",
+         "sql_template": 'SELECT AVG(CAST("RZ" AS numeric)) FROM "DTXY_PMXX"'}
+    reasons = _fast_path_blockers("煤质信息的平均灰分是多少？", m, [], [])
+    assert any("聚合对象" in r for r in reasons), reasons
+
+
+def test_aggregate_object_match_passes():
+    """问「平均发热量」而模板就是发热量 → 放行。"""
+    from app.plugin.module_ai.query.service import _fast_path_blockers
+
+    m = {"key": "avg_rz", "name": "平均收到基低位发热量", "agg": "avg", "enabled": True,
+         "object_code": "", "datasource": "ds:4",
+         "sql_template": 'SELECT AVG(CAST("RZ" AS numeric)) FROM "DTXY_PMXX"'}
+    assert _fast_path_blockers("煤质信息的平均发热量是多少？", m, [], []) == []
+
+
+@pytest.mark.parametrize("q", ["煤场进煤记录和取煤记录加起来一共多少条？",
+                              "煤场进煤记录比取煤记录多多少条？"])
+def test_cross_table_comparison_blocks_fast_path(q):
+    """跨表加减/比较：单表模板算不出来。"""
+    from app.plugin.module_ai.query.service import _needs_custom_sql
+
+    assert _needs_custom_sql(q) is True

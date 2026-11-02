@@ -175,6 +175,137 @@ CASES: list[dict] = [
      "gold": "SELECT date(\"RECORDDATE\") AS 日期, ROUND(SUM(\"TOTALUSEQTY\")::numeric, 2) AS 耗用量合计 "
              "FROM \"FUEL_REPORT_DAYINOUTSTORAGE\" WHERE \"TOTALUSEQTY\" IS NOT NULL AND \"ISDELETED\" = false "
              "GROUP BY date(\"RECORDDATE\") ORDER BY 耗用量合计 DESC LIMIT 1"},
+    # ---- I. 扩充：单表条件 / 极值 / 分组 / 时间（第二、三批）----
+    {"cat": "条件筛选", "q": "化验单里已删除的有多少条？",
+     "gold": "SELECT COUNT(*) AS 已删除化验单数 FROM \"FUEL_CMCS_ASSAY\" WHERE \"ISDELETED\" = true"},
+    {"cat": "条件筛选", "q": "化验单里化验日期为空的有多少条？",
+     "gold": "SELECT COUNT(*) AS 化验日期为空数 FROM \"FUEL_CMCS_ASSAY\" WHERE \"ASSAYDATE\" IS NULL"},
+    {"cat": "条件筛选", "q": "入厂煤批次里矿点名称为空的有多少条？",
+     "gold": "SELECT COUNT(*) AS 矿点为空批次数 FROM \"FUEL_CMCS_INFACTORYBATCH\" "
+             "WHERE \"MINENAME\" IS NULL OR trim(\"MINENAME\") = ''"},
+    {"cat": "条件筛选", "q": "矿点里编码为空的有多少个？",
+     "gold": "SELECT COUNT(*) AS 编码为空的矿点数 FROM \"FUEL_CMCS_MINE\" "
+             "WHERE \"CODE\" IS NULL OR trim(\"CODE\") = ''"},
+    {"cat": "条件筛选", "q": "煤质信息里全水分大于 10 的记录有多少条？",
+     "gold": "SELECT COUNT(*) AS 记录数 FROM \"DTXY_PMXX\" "
+             "WHERE CAST(\"QSF\" AS numeric) > 10"},
+    {"cat": "条件筛选", "q": "煤质信息里收到基低位发热量小于 3000 的记录有多少条？",
+     "gold": "SELECT COUNT(*) AS 记录数 FROM \"DTXY_PMXX\" "
+             "WHERE CAST(\"RZ\" AS numeric) < 3000"},
+    {"cat": "条件筛选", "q": "堆放信息里堆煤量超过 10000 的记录有多少条？",
+     "gold": "SELECT COUNT(*) AS 记录数 FROM \"FUEL_STG_DEPOSIT\" "
+             "WHERE CAST(\"TOTALQTY\" AS numeric) > 10000"},
+    {"cat": "条件筛选", "q": "每日出入库报表里耗用量为 0 的有多少条？",
+     "gold": "SELECT COUNT(*) AS 记录数 FROM \"FUEL_REPORT_DAYINOUTSTORAGE\" "
+             "WHERE CAST(\"TOTALUSEQTY\" AS numeric) = 0"},
+    {"cat": "条件筛选", "q": "化验单里 2025 年有多少条？",
+     "gold": "SELECT COUNT(*) AS 化验单数 FROM \"FUEL_CMCS_ASSAY\" "
+             "WHERE \"ASSAYDATE\" >= '2025-01-01' AND \"ASSAYDATE\" < '2026-01-01'"},
+    {"cat": "条件筛选", "q": "煤场进煤记录里 2026 年 8 月有多少条？",
+     "gold": "SELECT COUNT(*) AS 记录数 FROM \"FUEL_STG_ALLINMIDDLE\" "
+             "WHERE \"RECORDDATE\" >= '2026-08-01' AND \"RECORDDATE\" < '2026-09-01'"},
+
+    {"cat": "求和", "q": "煤质信息的平均灰分是多少？",
+     "gold": "SELECT ROUND(AVG(CAST(\"HF\" AS numeric))::numeric, 2) AS 平均灰分 "
+             "FROM \"DTXY_PMXX\" WHERE \"HF\" IS NOT NULL"},
+    {"cat": "求和", "q": "煤质信息的平均干燥无灰基挥发分是多少？",
+     "gold": "SELECT ROUND(AVG(CAST(\"HFF\" AS numeric))::numeric, 2) AS 平均挥发分 "
+             "FROM \"DTXY_PMXX\" WHERE \"HFF\" IS NOT NULL"},
+    {"cat": "求和", "q": "取煤记录一共有多少条？",
+     "gold": "SELECT COUNT(*) AS 取煤记录数 FROM \"FUEL_STG_ALLOUTMIDDLE\""},
+    {"cat": "求和", "q": "煤场进煤量的单日最大值是多少？",
+     "gold": "SELECT ROUND(MAX(d)::numeric, 2) AS 单日最大进煤量 FROM "
+             "(SELECT SUM(CAST(\"QTYIN\" AS numeric)) AS d FROM \"FUEL_STG_ALLINMIDDLE\" "
+             " GROUP BY date(\"RECORDDATE\")) x"},
+    {"cat": "求和", "q": "每日出入库报表一共有多少条记录？",
+     "gold": "SELECT COUNT(*) AS 记录数 FROM \"FUEL_REPORT_DAYINOUTSTORAGE\""},
+    {"cat": "求和", "q": "煤质信息里一共涉及多少个矿点？",
+     "gold": "SELECT COUNT(DISTINCT \"KDID\") AS 矿点数 FROM \"DTXY_PMXX\" "
+             "WHERE \"KDID\" IS NOT NULL"},
+    {"cat": "求和", "q": "每个供应商平均关联几个矿点？",
+     "gold": "SELECT ROUND(AVG(c)::numeric, 2) AS 平均关联矿点数 FROM "
+             "(SELECT COUNT(*) AS c FROM \"DTXY_GYSKDGX\" GROUP BY \"GYSNAME\") x"},
+    {"cat": "求和", "q": "煤场进煤记录和取煤记录加起来一共多少条？",
+     "gold": "SELECT (SELECT COUNT(*) FROM \"FUEL_STG_ALLINMIDDLE\") "
+             "+ (SELECT COUNT(*) FROM \"FUEL_STG_ALLOUTMIDDLE\") AS 记录总数"},
+    {"cat": "求和", "q": "化验单里化验日期最早和最晚分别是哪天？",
+     "gold": "SELECT MIN(\"ASSAYDATE\") AS 最早化验日期, MAX(\"ASSAYDATE\") AS 最晚化验日期 "
+             "FROM \"FUEL_CMCS_ASSAY\""},
+    {"cat": "求和", "q": "煤场进煤记录最早和最晚的记录日期分别是哪天？",
+     "gold": "SELECT MIN(\"RECORDDATE\") AS 最早日期, MAX(\"RECORDDATE\") AS 最晚日期 "
+             "FROM \"FUEL_STG_ALLINMIDDLE\""},
+
+    {"cat": "去重", "q": "矿点名称去重后有多少个？",
+     "gold": "SELECT COUNT(DISTINCT \"NAME\") AS 矿点数 FROM \"FUEL_CMCS_MINE\" "
+             "WHERE \"NAME\" IS NOT NULL"},
+    {"cat": "去重", "q": "煤种名称去重后有多少个？",
+     "gold": "SELECT COUNT(DISTINCT \"NAME\") AS 煤种数 FROM \"FUEL_CMCS_FUELKIND\" "
+             "WHERE \"NAME\" IS NOT NULL"},
+    {"cat": "去重", "q": "煤质信息里一共有几种煤种类型？",
+     "gold": "SELECT COUNT(DISTINCT \"COALTYPE\") AS 煤种类型数 FROM \"DTXY_PMXX\" "
+             "WHERE \"COALTYPE\" IS NOT NULL"},
+
+    {"cat": "分组聚合", "q": "化验单按化验方式分组统计条数",
+     "gold": "SELECT \"ASSAYWAY\" AS 化验方式, COUNT(*) AS 化验单数 FROM \"FUEL_CMCS_ASSAY\" "
+             "GROUP BY \"ASSAYWAY\" ORDER BY 化验单数 DESC"},
+    {"cat": "分组聚合", "q": "煤质信息里品名出现次数最多的前 3 个",
+     "gold": "SELECT \"VARIETY\" AS 品名, COUNT(*) AS 记录数 FROM \"DTXY_PMXX\" "
+             "WHERE \"VARIETY\" IS NOT NULL GROUP BY 1 ORDER BY 记录数 DESC, 品名 LIMIT 3"},
+    {"cat": "分组聚合", "q": "供应商矿点关系里关联矿点最多的前 3 家供应商及其矿点数",
+     "gold": "SELECT \"GYSNAME\" AS 供应商, COUNT(*) AS 矿点数 FROM \"DTXY_GYSKDGX\" "
+             "GROUP BY 1 ORDER BY 矿点数 DESC, 供应商 LIMIT 3"},
+    {"cat": "分组聚合", "q": "按矿点统计不同供应商数量，取最多的前 3 个矿点",
+     "gold": "SELECT \"KDNAME\" AS 矿点, COUNT(DISTINCT \"GYSNAME\") AS 供应商数 "
+             "FROM \"DTXY_GYSKDGX\" WHERE \"KDNAME\" IS NOT NULL "
+             "GROUP BY 1 ORDER BY 供应商数 DESC, 矿点 LIMIT 3"},
+    {"cat": "分组聚合", "q": "煤场进煤记录按年月统计条数",
+     "gold": "SELECT to_char(\"RECORDDATE\", 'YYYY-MM') AS 年月, COUNT(*) AS 记录数 "
+             "FROM \"FUEL_STG_ALLINMIDDLE\" WHERE \"RECORDDATE\" IS NOT NULL "
+             "GROUP BY 1 ORDER BY 年月"},
+    {"cat": "分组聚合", "q": "每日出入库报表按年月统计耗用量合计，取合计最大的前 3 个月",
+     "gold": "SELECT to_char(\"RECORDDATE\", 'YYYY-MM') AS 年月, "
+             "ROUND(SUM(CAST(\"TOTALUSEQTY\" AS numeric))::numeric, 2) AS 耗用量合计 "
+             "FROM \"FUEL_REPORT_DAYINOUTSTORAGE\" WHERE \"RECORDDATE\" IS NOT NULL "
+             "GROUP BY 1 ORDER BY 耗用量合计 DESC, 年月 LIMIT 3"},
+
+    {"cat": "排序", "q": "取煤记录里按日期统计，单日取煤量最大的前 3 天",
+     "gold": "SELECT date(\"RECORDDATE\") AS 日期, "
+             "ROUND(SUM(CAST(\"QTYOUT\" AS numeric))::numeric, 2) AS 取煤量 "
+             "FROM \"FUEL_STG_ALLOUTMIDDLE\" WHERE \"RECORDDATE\" IS NOT NULL "
+             "GROUP BY date(\"RECORDDATE\") ORDER BY 取煤量 DESC LIMIT 3"},
+    {"cat": "排序", "q": "按收到基低位发热量从高到低，列出前 3 条煤质记录的煤种和发热量",
+     "gold": "SELECT \"COALTYPE\" AS 煤种, CAST(\"RZ\" AS numeric) AS 发热量 FROM \"DTXY_PMXX\" "
+             "WHERE \"RZ\" IS NOT NULL ORDER BY 发热量 DESC, 煤种 LIMIT 3"},
+    {"cat": "排序", "q": "取煤记录里 2026 年 8 月的取煤量合计是多少？",
+     "gold": "SELECT ROUND(SUM(CAST(\"QTYOUT\" AS numeric))::numeric, 2) AS 取煤量合计 "
+             "FROM \"FUEL_STG_ALLOUTMIDDLE\" "
+             "WHERE \"RECORDDATE\" >= '2026-08-01' AND \"RECORDDATE\" < '2026-09-01'"},
+
+    {"cat": "占比", "q": "化验单里已删除的占百分之多少？",
+     "gold": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE \"ISDELETED\") / COUNT(*), 2) AS 删除占比 "
+             "FROM \"FUEL_CMCS_ASSAY\""},
+    {"cat": "占比", "q": "入厂煤批次里矿点名称不为空的占比是多少？",
+     "gold": "SELECT ROUND(100.0 * COUNT(*) FILTER "
+             "(WHERE \"MINENAME\" IS NOT NULL AND trim(\"MINENAME\") <> '') / COUNT(*), 2) AS 占比 "
+             "FROM \"FUEL_CMCS_INFACTORYBATCH\""},
+    {"cat": "时间窗口", "q": "煤质信息里 2026 年的记录有多少条？",
+     "gold": "SELECT COUNT(*) AS 记录数 FROM \"DTXY_PMXX\" "
+             "WHERE \"CREATIONTIME\" >= '2026-01-01' AND \"CREATIONTIME\" < '2027-01-01'"},
+    {"cat": "时间窗口", "q": "入厂煤批次按创建时间统计，2026 年 9 月每天有多少条？按日期升序列出",
+     "gold": "SELECT date(\"CREATIONTIME\") AS 日期, COUNT(*) AS 批次数 "
+             "FROM \"FUEL_CMCS_INFACTORYBATCH\" "
+             "WHERE \"CREATIONTIME\" >= '2026-09-01' AND \"CREATIONTIME\" < '2026-10-01' "
+             "GROUP BY date(\"CREATIONTIME\") ORDER BY 日期"},
+    {"cat": "时间窗口", "q": "煤场进煤记录里 2026 年 8 月的进煤量合计是多少？",
+     "gold": "SELECT ROUND(SUM(CAST(\"QTYIN\" AS numeric))::numeric, 2) AS 进煤量合计 "
+             "FROM \"FUEL_STG_ALLINMIDDLE\" "
+             "WHERE \"RECORDDATE\" >= '2026-08-01' AND \"RECORDDATE\" < '2026-09-01'"},
+    {"cat": "多表联查", "q": "煤场进煤记录比取煤记录多多少条？",
+     "gold": "SELECT (SELECT COUNT(*) FROM \"FUEL_STG_ALLINMIDDLE\") "
+             "- (SELECT COUNT(*) FROM \"FUEL_STG_ALLOUTMIDDLE\") AS 记录数差"},
+    {"cat": "多表联查", "q": "每个供应商关联的矿点数，和这张表里不同矿点总数相比，平均每家占几个？",
+     "gold": "SELECT ROUND(1.0 * COUNT(*) / COUNT(DISTINCT \"GYSNAME\"), 2) AS 平均每家关联矿点数 "
+             "FROM \"DTXY_GYSKDGX\""},
 ]
 
 

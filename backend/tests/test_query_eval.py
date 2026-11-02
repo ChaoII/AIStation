@@ -802,3 +802,32 @@ def test_norm_cell_treats_unknown_placeholder_as_null():
     assert _norm_cell("未知矿点") == _norm_cell("")
     assert _norm_cell("未分组") == _norm_cell(None)
     assert _norm_cell("河曲露天") != _norm_cell("")
+
+
+# ===========================================================================
+# 判分口径：模型多给列不算错（列集合包含 + 数值比对）
+# ===========================================================================
+def test_lenient_match_accepts_extra_columns():
+    """模型返回「供应商/矿点数/占比」三列，金标只要「占比」——信息更全，应判对。"""
+    from app.plugin.module_ai.query.benchmark import lenient_match
+
+    gold_cols, gold_rows = ["占比"], [[18.57]]
+    llm_cols = ["供应商", "关联矿点数", "占比百分比"]
+    llm_rows = [["河曲露天", 26, 18.57]]
+    assert lenient_match(gold_cols, gold_rows, llm_cols, llm_rows) is True
+
+
+def test_lenient_match_rejects_wrong_value_in_extra_column_case():
+    """多给列可以，但金标那一列的值必须真的对。"""
+    from app.plugin.module_ai.query.benchmark import lenient_match
+
+    assert lenient_match(["占比"], [[18.57]], ["供应商", "占比"], [["A", 99.9]]) is False
+
+
+def test_lenient_match_handles_column_order_and_synonyms():
+    """列顺序打乱、名字用同义写法（编码 vs CODE）仍要判对。"""
+    from app.plugin.module_ai.query.benchmark import lenient_match
+
+    gold = (["矿点", "批次数"], [["河曲露天", 22], ["未知矿点", 200]])
+    llm = (["批次数", "矿点"], [[22, "河曲露天"], [200, ""]])
+    assert lenient_match(*gold, *llm) is True
