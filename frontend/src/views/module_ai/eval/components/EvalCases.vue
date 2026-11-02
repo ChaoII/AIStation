@@ -188,6 +188,7 @@
         }}
       </div>
       <el-pagination
+        v-if="cases.length"
         v-model:current-page="page"
         v-model:page-size="pageSize"
         class="ev-pager"
