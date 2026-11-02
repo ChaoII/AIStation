@@ -77,6 +77,56 @@ async def _ds_table_comments() -> dict[tuple[int, str], str]:
     return out
 
 
+#: 人工审过的补充命名（四个来源都拿不到时用）。
+#:
+#: 只收**英文表名本身语义清楚**的；缩写吃不准的一律留空 —— 编错的名字比没有名字更坏
+#: （会让问数把问题路由到错误的表）。例如 VIEW_GETCZHCODE / VIEW_RCMTZ 缩写不明，
+#: 故意不收，留给人工。
+_CURATED: dict[str, str] = {
+    # ---- 平台业务表 ----
+    "annotation_audio": "音频标注",
+    "annotation_document": "文档标注",
+    "annotation_image": "图像标注",
+    "annotation_time_series": "时序标注",
+    "annotation_video": "视频标注",
+    "annotation_dataset_export": "标注集导出",
+    "train_models": "训练模型",
+    "train_model_repos": "模型仓库",
+    "train_schedules": "训练定时任务",
+    "train_deploys": "模型部署",
+    "train_evals": "模型评估",
+    "train_predicts": "模型推理",
+    "CMMS_FACILITY": "设施",
+    # ---- 燃煤业务表 ----
+    "FUEL_CMCS_INFACTORYPLAN": "入厂计划",
+    "FUEL_CMCS_INFURNACEHISTORY": "入炉历史",
+    "FUEL_CMCS_OUTCOALBUNKER": "出煤仓",
+    "FUEL_STG_CONTROLLOG": "控制日志",
+    "FUEL_STG_CONTROLLOG_CHANGEHISTORY": "控制日志变更记录",
+    "FUEL_STG_INVENTORYREPORT": "库存报表",
+    "FUEL_STG_INVENTORYREPORTDETAIL": "库存报表明细",
+    "FUEL_STG_RATIOINFO": "配比信息",
+    # ---- 问数专用视图（aikb 前缀） ----
+    "view_aikb_coalschemeinfo": "配煤方案信息视图",
+    "view_aikb_dayinoutstorage": "每日出入库视图",
+    "view_aikb_diffqcal": "热值差视图",
+    "view_aikb_fuelstorageinfo": "储煤信息视图",
+    "view_aikb_infactorybatchinfo": "入厂批次信息视图",
+    "view_aikb_infactorycoalquality": "入厂煤质视图",
+    "view_aikb_transportinfo": "运输信息视图",
+    "view_aikb_transportplan": "运输计划视图",
+    "view_rpt_shipfuelinfo": "船运燃料信息报表视图",
+    # ---- 源库视图 ----
+    "VIEW_BUYFUELTRANSPORT": "外购煤运输视图",
+    "VIEW_GETBASEQUALITY": "基准煤质视图",
+    "VIEW_GETBATCHPRICE": "批次价格视图",
+    "VIEW_GETBATCHQUALITY": "批次煤质视图",
+    "VIEW_GETBATCHQUANTITY": "批次数量视图",
+    "VIEW_INFURNACEQUALITY": "入炉煤质视图",
+    "VIEW_SAMPLEBBARREL": "样品桶视图",
+}
+
+
 async def _metric_names() -> dict[str, str]:
     """指标名 → 对象中文名（"区域数量" → "区域"）。
 
@@ -139,6 +189,8 @@ async def main() -> None:  # pragma: no cover - 运维脚本
             cand = _clean(assets.get(table), table)
         if not cand:
             cand = _clean(metric_names.get(code), code)
+        if not cand:
+            cand = _clean(_CURATED.get(code), code)
         if cand:
             plan.append((code, table or code, cand))
 
