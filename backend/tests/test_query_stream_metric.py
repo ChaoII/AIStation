@@ -58,7 +58,7 @@ def test_stream_hits_metric_fast_path(monkeypatch):
         monkeypatch.setattr(S.AiQueryService, "_summarize",
                             classmethod(lambda cls, m, r: "s"))
         monkeypatch.setattr(S, "_execute_metric", _exec_metric)
-        monkeypatch.setattr(S, "_match_metric", lambda q, m, t, c=None: m[0] if m else None)
+        monkeypatch.setattr(S, "_match_metric", lambda q, m, t, c=None, o=None: m[0] if m else None)
         monkeypatch.setattr(S, "_is_listing_question", lambda q: False)
         monkeypatch.setattr(S, "_wants_grouping", lambda q: False)
 

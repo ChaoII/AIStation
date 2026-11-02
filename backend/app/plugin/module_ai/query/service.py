@@ -1528,8 +1528,24 @@ def _wants_grouping(question: str) -> bool:
     return bool(_GROUPING_RE.search(question or ""))
 
 
+#: 指标名尾部的「度量词」：问句里通常只说实体名（「矿点」），不说「矿点数」。
+#: 实测：「矿点一共有多少个？」对指标「矿点数」的二元组得分只有 3（门槛 4），
+#: 于是明明有对应指标却走了慢路径。剥掉尾部度量词后直接命中实体名。
+_METRIC_NAME_SUFFIXES = ("记录数", "数量", "总数", "条数", "个数", "合计", "总和", "总计", "数", "量")
+
+
+def _metric_name_core(name: str) -> str:
+    """剥掉指标名尾部的度量词，得到"实体名"（矿点数 → 矿点）。"""
+    n = (name or "").strip()
+    for suf in _METRIC_NAME_SUFFIXES:
+        if n.endswith(suf) and len(n) > len(suf) + 1:
+            return n[: -len(suf)]
+    return n
+
+
 def _match_metric(question: str, metrics: list[dict], terms: list[dict],
-                  concepts: list[dict] | None = None) -> dict | None:
+                  concepts: list[dict] | None = None,
+                  objects: dict[str, dict] | None = None) -> dict | None:
     """按得分选指标：**指标自己的用词**命中 + 术语绑定 + 概念(含同义词)绑定 + 时间语境对齐。
 
     打分（实测调过）：
@@ -1569,8 +1585,25 @@ def _match_metric(question: str, metrics: list[dict], terms: list[dict],
         word = 3 * len(q_grams & n_grams) + 1 * len(q_grams & d_grams)
         if name and name in q:
             word += 6
+        else:
+            # 实体名命中：指标「矿点数」的实体是「矿点」，问句说的也是「矿点」
+            core = _metric_name_core(m.get("name")).lower()
+            if core and len(core) >= 2 and core in q:
+                word += 5
         if key and key in q:
             word += 4
+        # **本体桥**：指标绑定到哪个对象，那个对象的中文名/别名也是"用户会怎么说"。
+        # 这是本体存在的意义 —— 名字对不上时靠对象语义兜底（不带属性的轻量查询）。
+        obj = (objects or {}).get(str(m.get("object_code") or ""))
+        if obj:
+            oname = str(obj.get("name") or "").lower()
+            if oname and len(oname) >= 2 and oname in q:
+                word += 4
+            for al in (obj.get("aliases") or []):
+                al = str(al).lower()
+                if len(al) >= 2 and al in q:
+                    word += 3
+                    break
         for t in terms:
             if t.get("metric_key") == m["key"] and t.get("term") and t["term"].lower() in q:
                 word += 3
@@ -1618,6 +1651,9 @@ _TIME_QUALIFIER_RE = re.compile(
     r"(最近|近\s*\d|近一|过去|本(月|周|年|季度)|这个月|这周|当月|今年|去年"
     r"|上(月|周|年)|今天|今日|昨天|昨日|\d{4}\s*年|\d+\s*(天|日|周|个?月|年))"
 )
+
+#: 排序诉求（模板只出聚合值，给不了有序结果集）
+_ORDER_WORD_RE = re.compile(r"(排序|升序|降序|从大到小|从小到大|按.{0,6}排|前\s*\d+\s*(名|条|个)|排名)")
 
 #: 问句里的「聚合意图」词（只认会导致答案口径完全不同的那几类）
 _AGG_INTENT: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -1671,6 +1707,10 @@ def _fast_path_blockers(question: str, metric: dict,
             reasons.append("时间限定无法解析为参数")
         elif not _metric_accepts_time(metric):
             reasons.append("模板没有时间参数（会答成全量）")
+
+    # 排序诉求：模板只出一个聚合值，给不了"按X排序"的结果集
+    if _ORDER_WORD_RE.search(q):
+        reasons.append("问句要求排序（模板只出聚合值）")
 
     eff = _effective_agg(metric)
     if eff:
@@ -7212,7 +7252,20 @@ class AiQueryService:
             concepts = await cls.list_concepts()
         except Exception:  # noqa: BLE001
             concepts = []
-        metric = _match_metric(question, metrics, terms, concepts)
+        # 本体桥：指标绑定的对象名/别名也是"用户会怎么说"（语义层存在的意义）。
+        # semantic_context 有 60 秒进程缓存，这里不会打库。
+        objects: dict[str, dict] = {}
+        try:
+            from app.plugin.module_ai.ontology import semantic as _sem
+
+            ctx = await _sem.semantic_context(include_properties=False)
+            objects = {
+                str(o.get("code")): {"name": o.get("name") or "", "aliases": o.get("aliases") or []}
+                for o in (ctx.get("objects") or [])
+            }
+        except Exception:  # noqa: BLE001
+            objects = {}
+        metric = _match_metric(question, metrics, terms, concepts, objects)
         if metric and metric.get("agg") != "group" and _wants_grouping(question):
             log.warning("[query] 分组诉求，跳过单值指标快路径：metric={} question={}",
                         metric.get("key"), question[:40])
@@ -7247,7 +7300,9 @@ class AiQueryService:
                     obmap = await cls._object_backing_map()
                     mt = obmap.get(str(metric["object_code"]), "")
                 mname = (metric.get("name") or "").strip()
-                if mt and not (mname and mname in question):
+                # 本体对象名命中 = 已确认"说的是这个实体"，不必再用列标签二元组兜底
+                oname = str((objects.get(str(metric.get("object_code") or "")) or {}).get("name") or "")
+                if mt and not (mname and mname in question) and not (len(oname) >= 2 and oname in question):
                     sch = await cls._ds_schema_map(datasource)
                     hint = " ".join(sch.get(mt) or [])
                     shared = _bigrams(question) & _bigrams(hint)

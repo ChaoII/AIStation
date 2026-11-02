@@ -108,6 +108,59 @@ def test_avg_intent_blocks_count_template():
 
 
 # ---------------------------------------------------------------------------
+# 三、排序诉求（模板只出聚合值）
+# ---------------------------------------------------------------------------
+def test_ordering_question_blocks_fast_path():
+    """「按名称排序」要的是有序结果集，聚合模板给不了。"""
+    from app.plugin.module_ai.query.service import _fast_path_blockers
+
+    for q in ("煤种按名称排序", "化验单按化验日期降序排列", "运损合计排名前3的供应商"):
+        reasons = _fast_path_blockers(q, RAIL, [], [])
+        assert any("排序" in r for r in reasons), (q, reasons)
+
+
+# ---------------------------------------------------------------------------
+# 四、实体名匹配：指标名「矿点数」应对得上问句里的「矿点」
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("name,expect", [
+    ("矿点数", "矿点"),
+    ("区域数量", "区域"),
+    ("化验单数", "化验单"),
+    ("运损合计", "运损"),
+    ("供应商矿点关系数", "供应商矿点关系"),
+    ("化验单", "化验单"),          # 没有可剥的度量词，原样返回
+])
+def test_metric_name_core_strips_measure_suffix(name, expect):
+    """指标名尾部的「数/数量/合计」是度量词，用户不会说（实测「矿点」因此只差 1 分没命中）。"""
+    from app.plugin.module_ai.query.service import _metric_name_core
+
+    assert _metric_name_core(name) == expect
+
+
+def test_match_metric_uses_name_core():
+    """「矿点一共有多少个」应命中「矿点数」（裸二元组得分 3 < 门槛 4）。"""
+    from app.plugin.module_ai.query.service import _match_metric
+
+    m = {"key": "coal_mine_count", "name": "矿点数", "description": "矿点数量",
+         "agg": "count", "enabled": True, "object_code": "coal_mine",
+         "agg_fn": "count", "sql_template": "SELECT 1 AS 数量", "datasource": "ds:4"}
+    got = _match_metric("矿点一共有多少个？", [m], [], [], {})
+    assert got and got["key"] == "coal_mine_count"
+
+
+def test_match_metric_uses_ontology_object_name():
+    """本体桥：指标名是英文 key 时，靠**对象中文名**接上（语义层存在的意义）。"""
+    from app.plugin.module_ai.query.service import _match_metric
+
+    m = {"key": "DTXY_QYXX_count_ID", "name": "区域数量", "description": "",
+         "agg": "count", "enabled": True, "object_code": "DTXY_QYXX",
+         "agg_fn": "count", "sql_template": "SELECT 1 AS 数量", "datasource": "ds:4"}
+    objects = {"DTXY_QYXX": {"name": "区域信息", "aliases": ["区域"]}}
+    got = _match_metric("区域信息里有多少条？", [m], [], [], objects)
+    assert got and got["key"] == "DTXY_QYXX_count_ID"
+
+
+# ---------------------------------------------------------------------------
 # 三、聚合口径以**模板真实表达式**为准，而不是 agg 字段
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("sql,expect", [
