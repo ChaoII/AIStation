@@ -223,4 +223,9 @@ export default {
   eval_errorDetail: "錯誤詳情",
   eval_export: "匯出 CSV",
   eval_exportFail: "匯出失敗",
+  eval_loading: "載入中…",
+  eval_subRuns: "各次執行：",
+  eval_benchLegacy: "本頁是舊基準腳本（題集寫死在程式碼裡：20 道快路徑 + 98 道 NL2SQL），僅作回歸對照用；日常評測請用「執行」頁",
+  eval_goRun: "去執行評測",
+  eval_noCases: "沒有符合的題目：請檢查資料源 / 資料集 / 難度篩選，或先在「測試集」啟用題目",
 };

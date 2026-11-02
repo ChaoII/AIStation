@@ -295,7 +295,11 @@ async function poll(runId: string) {
       stopPolling();
       await loadRuns();
       if (d && d.status === "done") {
-        ElMessage.success(t("ai_workflow.eval_evalDone"));
+        if (!d.total) {
+          ElMessage.warning(t("ai_workflow.eval_noCases"));
+        } else {
+          ElMessage.success(t("ai_workflow.eval_evalDone"));
+        }
         emit("finished", runId);
       } else if (d && d.status === "error") {
         ElMessage.error(d.error || t("ai_workflow.eval_evalFail"));

@@ -223,4 +223,9 @@ export default {
   eval_errorDetail: "错误详情",
   eval_export: "导出 CSV",
   eval_exportFail: "导出失败",
+  eval_loading: "加载中…",
+  eval_subRuns: "各次运行：",
+  eval_benchLegacy: "本页是旧基准脚本（题集写死在代码里：20 道快路径 + 98 道 NL2SQL），仅作回归对照用；日常评测请用「运行」页（题库可维护、可按数据集/维度筛选、结果可导出）",
+  eval_goRun: "去运行评测",
+  eval_noCases: "没有匹配的题目：请检查数据源 / 数据集 / 难度筛选，或先在「测试集」里启用题目",
 };

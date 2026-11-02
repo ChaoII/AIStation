@@ -102,7 +102,7 @@
 
       <el-table
         v-loading="loading"
-        :data="cases"
+        :data="pagedCases"
         size="small"
         border
         stripe
@@ -181,8 +181,21 @@
         </el-table-column>
       </el-table>
       <div class="ev-total">
-        {{ $t("ai_workflow.eval_totalCount", { count: cases.length }) }}
+        {{
+          loading
+            ? $t("ai_workflow.eval_loading")
+            : $t("ai_workflow.eval_totalCount", { count: cases.length })
+        }}
       </div>
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        class="ev-pager"
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="cases.length"
+        :page-sizes="[20, 50, 100, 200]"
+      />
     </el-card>
 
     <el-dialog
@@ -412,7 +425,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import {
@@ -437,6 +450,12 @@ const datasources = ref<any[]>([]);
 const loading = ref(false);
 const selection = ref<EvalCase[]>([]);
 const filters = ref<any>({ datasource: "", difficulty: "", form: "", dataset: "", enabled: "" });
+// 分页：340 题一次性渲染要 5~9s，且表格会很长（滚动找不到位置）
+const page = ref(1);
+const pageSize = ref(20);
+const pagedCases = computed(() =>
+  cases.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
+);
 
 const genVisible = ref(false);
 const genLoading = ref(false);
@@ -562,6 +581,9 @@ async function load() {
     }
     const r = await getEvalCases(params);
     cases.value = r.data?.data || [];
+    // 换筛选后回到第一页（否则可能停在越界页，看到空表）
+    page.value = 1;
+    selection.value = [];
   } catch {
     cases.value = [];
   } finally {
@@ -706,6 +728,10 @@ onMounted(async () => {
   margin-top: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.ev-pager {
+  margin-top: 8px;
+  justify-content: flex-end;
 }
 .ev-q {
   margin-bottom: 8px;

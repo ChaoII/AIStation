@@ -74,6 +74,14 @@
 
       <template v-if="rep">
         <el-alert
+          v-if="!rep.n_questions"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="ev-mt"
+          :title="$t('ai_workflow.eval_noCases')"
+        />
+        <el-alert
           :type="rep.spread >= 5 ? 'warning' : 'success'"
           :closable="false"
           show-icon
@@ -96,6 +104,21 @@
               unstable: rep.unstable.length,
             })
           }}
+        </div>
+
+        <!-- 子运行跳转：方差跑的是 N 次独立评测，能点进去看每次的逐题明细 -->
+        <div v-if="(st?.sub_runs || []).length" class="ev-stat ev-subruns">
+          <span>{{ $t("ai_workflow.eval_subRuns") }}</span>
+          <el-button
+            v-for="(rid, i) in st.sub_runs"
+            :key="rid"
+            link
+            type="primary"
+            size="small"
+            @click="emit('select-run', rid)"
+          >
+            {{ $t("ai_workflow.eval_times", { n: i + 1 }) }}
+          </el-button>
         </div>
 
         <el-table :data="rep.unstable" size="small" border class="ev-mt" stripe>
@@ -158,6 +181,8 @@ import { useI18n } from "vue-i18n";
 import { getEvalVariance, getQueryDatasources, startEvalVariance } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiEvalVariance" });
+
+const emit = defineEmits<{ (e: "select-run", id: string): void }>();
 
 const { t } = useI18n();
 
@@ -280,5 +305,11 @@ onMounted(async () => {
   margin-top: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.ev-subruns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-text-color-regular);
 }
 </style>

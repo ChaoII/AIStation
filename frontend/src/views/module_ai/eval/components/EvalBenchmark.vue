@@ -15,6 +15,18 @@
         </div>
       </template>
       <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        class="ev-alert"
+        :title="$t('ai_workflow.eval_benchLegacy')"
+      />
+      <div class="ev-legacy">
+        <el-button size="small" type="primary" plain @click="emit('go-eval')">
+          {{ $t("ai_workflow.eval_goRun") }}
+        </el-button>
+      </div>
+      <el-alert
         type="info"
         :closable="false"
         show-icon
@@ -88,6 +100,8 @@ import { useI18n } from "vue-i18n";
 import { getQueryBenchmarkStatus, runQueryBenchmark } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiEvalBenchmark" });
+
+const emit = defineEmits<{ (e: "go-eval"): void }>();
 
 const { t } = useI18n();
 
@@ -184,5 +198,8 @@ onBeforeUnmount(stop);
   gap: 10px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.ev-legacy {
+  margin-bottom: 12px;
 }
 </style>

@@ -52,7 +52,7 @@
           class="ev-degenerate"
         />
         <el-row :gutter="12">
-          <el-col v-for="s in stats" :key="s.label" :xs="12" :sm="8" :md="4">
+          <el-col v-for="s in stats" :key="s.label" :xs="12" :sm="8" :md="6" :lg="6">
             <el-card shadow="never" class="ev-stat">
               <el-statistic :title="s.label" :value="s.value" :suffix="s.suffix" />
             </el-card>

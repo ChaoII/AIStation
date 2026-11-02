@@ -227,4 +227,9 @@ export default {
   eval_errorDetail: "Error",
   eval_export: "Export CSV",
   eval_exportFail: "Export failed",
+  eval_loading: "Loading…",
+  eval_subRuns: "Runs:",
+  eval_benchLegacy: "Legacy benchmark (hard-coded 20 fast + 98 NL2SQL cases), kept for regression only. Use the Run tab for regular evaluation (maintainable case set, dataset filters, exportable results).",
+  eval_goRun: "Go to Run",
+  eval_noCases: "No matching cases: check the datasource / dataset / difficulty filters, or enable cases in the test set first",
 };

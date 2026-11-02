@@ -14,10 +14,10 @@
         <EvalAblation />
       </el-tab-pane>
       <el-tab-pane :label="$t('ai_workflow.eval_variance')" name="variance">
-        <EvalVariance />
+        <EvalVariance @select-run="onSelect" />
       </el-tab-pane>
       <el-tab-pane :label="$t('ai_workflow.eval_benchmark')" name="benchmark">
-        <EvalBenchmark />
+        <EvalBenchmark @go-eval="tab = 'run'" />
       </el-tab-pane>
     </el-tabs>
   </div>
