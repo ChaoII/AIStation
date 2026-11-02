@@ -72,6 +72,8 @@ export interface EvalGroupRow {
 
 export interface EvalReport {
   summary: EvalSummary;
+  /** 本轮元信息：筛条件 / 配置 / 模型指纹 / 起止时间 */
+  meta?: any;
   by_difficulty: Record<string, EvalGroupRow>;
   by_scenario: Record<string, EvalGroupRow>;
   by_form: Record<string, EvalGroupRow>;

@@ -32,6 +32,9 @@
             <el-button size="small" :disabled="!selected" :loading="exporting" @click="doExport">
               {{ $t("ai_workflow.eval_export") }}
             </el-button>
+            <el-button size="small" :disabled="runs.length < 2" @click="openCompare">
+              {{ $t("ai_workflow.eval_compareRuns") }}
+            </el-button>
           </div>
         </div>
       </template>
@@ -43,6 +46,23 @@
       />
 
       <template v-else>
+        <!-- 本轮指纹：模型 + 关键配置。跨版本对比时必须能一眼看出「换了什么」 -->
+        <div v-if="meta" class="ev-meta">
+          <el-tag size="small" type="info" effect="plain">
+            {{ $t("ai_workflow.eval_model") }}：{{ meta.fingerprint?.model || "-" }}
+          </el-tag>
+          <el-tag
+            v-for="(v, k) in meta.fingerprint?.config || {}"
+            :key="k"
+            size="small"
+            effect="plain"
+          >
+            {{ k }}={{ v }}
+          </el-tag>
+          <el-tag v-if="meta.filter?.dataset" size="small" effect="plain">
+            {{ $t("ai_workflow.eval_dataset") }}：{{ meta.filter.dataset }}
+          </el-tag>
+        </div>
         <el-alert
           v-if="degenerateNote"
           type="warning"
@@ -210,6 +230,74 @@
         </el-table>
       </template>
     </el-card>
+
+    <!-- 两次运行对比：回退/修复/单边/不变 -->
+    <el-dialog
+      v-model="compareVisible"
+      :title="$t('ai_workflow.eval_compareTitle')"
+      width="1000px"
+      append-to-body
+    >
+      <el-form :inline="true">
+        <el-form-item :label="$t('ai_workflow.eval_compareBase')">
+          <el-select v-model="baseId" style="width: 260px" size="small">
+            <el-option v-for="r in runs" :key="r.run_id" :label="runLabel(r)" :value="r.run_id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('ai_workflow.eval_compareTarget')">
+          <el-select v-model="targetId" style="width: 260px" size="small">
+            <el-option v-for="r in runs" :key="r.run_id" :label="runLabel(r)" :value="r.run_id" />
+          </el-select>
+        </el-form-item>
+        <el-button size="small" type="primary" :loading="comparing" @click="doCompare">
+          {{ $t("ai_workflow.eval_compareRun") }}
+        </el-button>
+      </el-form>
+      <template v-if="cmp">
+        <el-alert
+          :type="cmp.regressed ? 'warning' : 'success'"
+          :closable="false"
+          show-icon
+          :title="compareSummary"
+          class="ev-degenerate"
+        />
+        <el-table :data="cmp.items" size="small" border max-height="420" stripe>
+          <el-table-column :label="$t('ai_workflow.eval_compareStatus')" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="statusTag(row.status)">
+                {{ statusLabel(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            prop="question"
+            :label="$t('ai_workflow.eval_question')"
+            min-width="260"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            :label="$t('ai_workflow.eval_compareBaseCol')"
+            width="100"
+            align="center"
+          >
+            <template #default="{ row }">{{ okText(row.base_ok) }}</template>
+          </el-table-column>
+          <el-table-column
+            :label="$t('ai_workflow.eval_compareTargetCol')"
+            width="100"
+            align="center"
+          >
+            <template #default="{ row }">{{ okText(row.target_ok) }}</template>
+          </el-table-column>
+          <el-table-column
+            prop="delta_ms"
+            :label="$t('ai_workflow.eval_deltaMs')"
+            width="100"
+            align="center"
+          />
+        </el-table>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -217,7 +305,12 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { getEvalReport, getEvalRuns, exportEvalReport } from "@/api/module_ai/query";
+import {
+  getEvalReport,
+  getEvalRuns,
+  exportEvalReport,
+  compareEvalRuns,
+} from "@/api/module_ai/query";
 import { pct, type EvalReport, type EvalResultRow, type EvalRunItem } from "../types";
 import { saveBlob } from "../download";
 
@@ -235,6 +328,80 @@ const loading = ref(false);
 const dimTab = ref("difficulty");
 const only = ref<"all" | "fail" | "slow">("all");
 const exporting = ref(false);
+
+// 跨运行对比
+const compareVisible = ref(false);
+const baseId = ref("");
+const targetId = ref("");
+const comparing = ref(false);
+const cmp = ref<any>(null);
+
+function openCompare() {
+  // 默认：当前选中的作为对比，最近一次（若不同）作为基线
+  targetId.value = selected.value || "";
+  const other = runs.value.find((r) => r.run_id !== targetId.value);
+  baseId.value = other?.run_id || runs.value[0]?.run_id || "";
+  cmp.value = null;
+  compareVisible.value = true;
+}
+
+function runLabel(r: any) {
+  const model = r.model || "-";
+  return `${r.run_id}（${r.total ?? 0} 题 / ${model}）`;
+}
+
+async function doCompare() {
+  if (!baseId.value || !targetId.value || baseId.value === targetId.value) {
+    ElMessage.warning(t("ai_workflow.eval_compareSame"));
+    return;
+  }
+  comparing.value = true;
+  try {
+    const r = await compareEvalRuns(baseId.value, targetId.value);
+    cmp.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || t("ai_workflow.eval_compareFail"));
+  } finally {
+    comparing.value = false;
+  }
+}
+
+const compareSummary = computed(() => {
+  const c = cmp.value;
+  if (!c) return "";
+  return t("ai_workflow.eval_compareSummary", {
+    fixed: c.fixed,
+    regressed: c.regressed,
+    same: c.same,
+    net: c.net,
+    baseAcc: +(c.base?.data_accuracy * 100).toFixed(1),
+    targetAcc: +(c.target?.data_accuracy * 100).toFixed(1),
+    modelChanged: c.model_changed ? t("ai_workflow.eval_modelChanged") : "",
+  });
+});
+
+function statusTag(s: string) {
+  if (s === "fixed") return "success";
+  if (s === "regressed") return "danger";
+  if (s === "only_base" || s === "only_target") return "info";
+  return "info";
+}
+
+function statusLabel(s: string) {
+  const map: Record<string, string> = {
+    fixed: "eval_newFixed",
+    regressed: "eval_newRegressed",
+    same: "eval_newSame",
+    only_base: "eval_newOnlyBase",
+    only_target: "eval_newOnlyTarget",
+  };
+  return t("ai_workflow." + (map[s] || "eval_newSame"));
+}
+
+function okText(v: boolean | null) {
+  if (v === null || v === undefined) return "-";
+  return v ? t("ai_workflow.eval_correctShort") : t("ai_workflow.eval_wrongShort");
+}
 
 /** 导出逐题结果 CSV（评审/复盘用）。 */
 async function doExport() {
@@ -264,6 +431,7 @@ const dimLabels = computed(() =>
 );
 
 const results = computed<EvalResultRow[]>(() => report.value?.results || []);
+const meta = computed(() => (report.value as any)?.meta || null);
 
 const stats = computed(() => {
   const s = report.value?.summary;

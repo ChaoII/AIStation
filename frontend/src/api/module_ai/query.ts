@@ -720,6 +720,16 @@ export function getEvalReport(run_id: string) {
   return request({ url: `${API_PATH}/eval/report`, method: "get", params: { run_id } });
 }
 
+/** 两次运行对比（跨模型/跨版本回归）。 */
+export function compareEvalRuns(base: string, target: string) {
+  return request({
+    url: `${API_PATH}/eval/compare`,
+    method: "get",
+    params: { base, target },
+    timeout: 300000,
+  });
+}
+
 export function getEvalRuns(limit = 30, params?: { mode?: string; dataset?: string }) {
   return request({
     url: `${API_PATH}/eval/runs`,

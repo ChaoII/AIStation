@@ -966,6 +966,26 @@ async def eval_items(
     return SuccessResponse(data=await list_result_brief(run_id), msg="查询成功")
 
 
+@AiQueryRouter.get("/eval/compare", summary="两次运行对比（跨模型/跨版本回归）")
+async def eval_compare(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:query"]))],
+    base: str,
+    target: str,
+) -> JSONResponse:
+    from .eval_compare import compare_runs
+    from .eval_set import load_results, load_run_meta
+
+    bm, tm = await load_run_meta(base), await load_run_meta(target)
+    if not bm or not tm:
+        from fastapi import status as _status
+
+        from app.core.exceptions import CustomException
+
+        raise CustomException(msg="对比的运行不存在", status_code=_status.HTTP_404_NOT_FOUND)
+    out = compare_runs(await load_results(base), await load_results(target), bm, tm)
+    return SuccessResponse(data=out, msg="对比完成")
+
+
 @AiQueryRouter.post("/eval/run", summary="启动一轮评测")
 async def eval_run(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:eval:manage"]))],
@@ -1001,7 +1021,7 @@ async def eval_report(
     from app.core.exceptions import CustomException
 
     from .eval_metrics import group_by, summarize
-    from .eval_set import load_results
+    from .eval_set import load_results, load_run_meta
 
     async with async_db_session() as db:
         exists = (await db.execute(
@@ -1018,6 +1038,8 @@ async def eval_report(
     return SuccessResponse(
         data={
             "summary": summarize(rows),
+            # 本轮使用的模型 + 关键配置指纹：跨版本对比时用来解释「为什么分变了」
+            "meta": await load_run_meta(run_id),
             "by_difficulty": group_by(rows, "difficulty"),
             "by_scenario": group_by(rows, "scenario"),
             "by_form": group_by(rows, "form"),

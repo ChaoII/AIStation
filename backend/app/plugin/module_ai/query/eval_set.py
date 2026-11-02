@@ -399,6 +399,40 @@ async def list_result_brief(run_id: str) -> list[dict]:
     ]
 
 
+async def load_run_meta(run_id: str) -> dict | None:
+    """单次运行的元信息（筛条件、配置、模型指纹、起止时间）。"""
+    from sqlalchemy import text as _t
+
+    await ensure_eval_tables()
+    async with async_db_session() as db:
+        r = (await db.execute(
+            _t("SELECT run_id,mode,filter,config,status,total,done,started_at,"
+               "finished_at,ablation_group FROM ai_query_testrun WHERE run_id=:r"),
+            {"r": run_id},
+        )).fetchone()
+    if not r:
+        return None
+
+    def _as_obj(v):  # noqa: ANN001
+        import json as _j
+
+        if isinstance(v, dict):
+            return v
+        try:
+            return _j.loads(v or "{}")
+        except Exception:  # noqa: BLE001
+            return {}
+
+    cfg = _as_obj(r[3])
+    return {
+        "run_id": r[0], "mode": r[1], "filter": _as_obj(r[2]),
+        "config": cfg, "fingerprint": cfg.get("fingerprint") or {},
+        "status": r[4], "total": r[5], "done": r[6],
+        "started_at": str(r[7] or ""), "finished_at": str(r[8] or ""),
+        "ablation_group": r[9],
+    }
+
+
 async def list_runs(limit: int = 30, mode: str | None = None,
                     dataset: str | None = None) -> list[dict]:
     """历史运行列表（最近在前）。
@@ -422,7 +456,8 @@ async def list_runs(limit: int = 30, mode: str | None = None,
         rows = (
             await db.execute(
                 _t(
-                    "SELECT run_id,mode,ablation_group,status,total,done,started_at,finished_at,summary "
+                    "SELECT run_id,mode,ablation_group,status,total,done,started_at,finished_at,"
+                    "summary, config->'fingerprint'->>'model' AS model "
                     "FROM ai_query_testrun WHERE " + " AND ".join(conds) +
                     " ORDER BY id DESC LIMIT :n"
                 ),
@@ -432,7 +467,9 @@ async def list_runs(limit: int = 30, mode: str | None = None,
     return [
         {"run_id": r[0], "mode": r[1], "ablation_group": r[2], "status": r[3],
          "total": r[4], "done": r[5], "started_at": str(r[6] or ""), "finished_at": str(r[7] or ""),
-         "summary": r[8] if isinstance(r[8], dict) else None}
+         "summary": r[8] if isinstance(r[8], dict) else None,
+         # 历史列表直接显示用的模型名（跨版本对比时一眼看出换了哪个模型）
+         "model": r[9] or ""}
         for r in rows
     ]
 

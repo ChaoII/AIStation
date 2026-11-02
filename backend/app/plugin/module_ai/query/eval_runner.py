@@ -43,6 +43,39 @@ def get_status(run_id: str | None) -> dict | None:
     return {k: v for k, v in r.items() if k != "_task"}
 
 
+async def _fingerprint() -> dict:
+    """记录本轮用的「模型 + 关键配置」指纹，供跨版本回归对比。
+
+    没有它，两次跑分对不上就说不清是「代码/提示词改了」还是「换了模型」。
+    """
+    from datetime import datetime
+
+    out: dict = {"at": datetime.now().isoformat(timespec="seconds")}
+    try:
+        from .service import AiQueryService
+
+        rt = await AiQueryService._get_runtime()
+        out["model"] = str(rt.get("model") or "")
+        out["model_id"] = rt.get("id") or rt.get("model_id")
+        out["usage"] = str(rt.get("usage") or "")
+        out["base_url"] = str(rt.get("base_url") or "")
+    except Exception as e:  # noqa: BLE001
+        out["model_error"] = str(e)[:120]
+    try:
+        from .service import AiQueryService, nl2sql_max_tokens
+
+        cfg = await AiQueryService._cfg()
+        keys = ("nl2sql_thinking_mode", "nl2sql_max_tokens", "nl2sql_call_timeout",
+                "recall_enabled", "agno_semantic_enabled", "kg_enabled", "agno_tool_agent",
+                "decomposed_planning", "empty_self_correct", "fewshot_auto_curate",
+                "enum_hint_enabled", "two_stage_planning", "self_consistency_n")
+        out["config"] = {k: cfg.get(k) for k in keys if k in cfg}
+        out["max_tokens_effective"] = nl2sql_max_tokens(cfg)
+    except Exception as e:  # noqa: BLE001
+        out["config_error"] = str(e)[:120]
+    return out
+
+
 async def _ask(question: str, auth, datasource: str, force_slow: bool = False) -> dict:
     from .service import AiQueryService, set_eval_context
 
@@ -517,6 +550,10 @@ def start_run(auth, filter: dict | None = None, mode: str = "full",
 
     async def _bootstrap() -> None:
         await ensure_eval_tables()
+        # 指纹（模型 + 关键配置）随运行一起落库：没有它，两次跑分差异无法归因
+        fp = await _fingerprint()
+        _RUNS[run_id]["fingerprint"] = fp
+        cfg_payload = {**(config or {}), "fingerprint": fp}
         async with async_db_session.begin() as db:
             await db.execute(
                 _t(
@@ -525,7 +562,7 @@ def start_run(auth, filter: dict | None = None, mode: str = "full",
                     "VALUES (:r,:m,CAST(:f AS jsonb),CAST(:c AS jsonb),'running',0,0,now(),false)"
                 ),
                 {"r": run_id, "m": mode, "f": json.dumps(flt, ensure_ascii=False),
-                 "c": json.dumps(config or {}, ensure_ascii=False)},
+                 "c": json.dumps(cfg_payload, ensure_ascii=False, default=str)},
             )
 
     async def _job() -> None:

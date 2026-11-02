@@ -161,6 +161,13 @@
       >
         <el-table-column prop="run_id" label="run_id" width="180" show-overflow-tooltip />
         <el-table-column prop="mode" :label="$t('ai_workflow.eval_mode')" width="90" />
+        <el-table-column
+          :label="$t('ai_workflow.eval_model')"
+          min-width="150"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">{{ row.model || "-" }}</template>
+        </el-table-column>
         <el-table-column prop="status" :label="$t('ai_workflow.eval_status')" width="90">
           <template #default="{ row }">
             <el-tag
