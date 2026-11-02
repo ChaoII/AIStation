@@ -78,16 +78,13 @@ _VECTOR_SEEDED = False
 # 这里补齐统一的运行时建表（幂等、best-effort），并在应用启动时调用一次。
 # SQLite（单元测试库）不支持 BIGSERIAL，由测试自身 DDL 提供结构，此处失败不影响功能。
 # ---------------------------------------------------------------------------
-_query_tables_ready = False
-
 _QUERY_TABLES_SQL = (
     "CREATE TABLE IF NOT EXISTS ai_pipeline ("
     "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), source_connection VARCHAR(120), "
     "source_table VARCHAR(120), target_object VARCHAR(120), mappings JSONB DEFAULT '[]', "
     "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
     "datasource VARCHAR(120), "
-    "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now())",
-    "CREATE TABLE IF NOT EXISTS ai_pipeline_run ("
+    "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now())", "CREATE TABLE IF NOT EXISTS ai_pipeline_run ("
     "id BIGSERIAL PRIMARY KEY, pipeline_id BIGINT, status VARCHAR(20), message TEXT, "
     "ran_at TIMESTAMP DEFAULT now(), is_deleted BOOLEAN DEFAULT false, rows INTEGER DEFAULT 0)",
     # ⚠️ 这是**问数/治理侧**的「数据域」（Data Domain：把数据表按业务主题归类，用于问数权限与治理）。
@@ -141,27 +138,39 @@ _QUERY_TABLES_SQL = (
 )
 
 #: 存量库缺列补齐（SQLite 不支持 ADD COLUMN IF NOT EXISTS，失败忽略）
-_QUERY_ALTER_SQL = (
-    "ALTER TABLE ai_workshop_app ADD COLUMN IF NOT EXISTS deleted_time TIMESTAMP",
-    "ALTER TABLE ai_pipeline ADD COLUMN IF NOT EXISTS datasource VARCHAR(120)",
-    # 评测会话隔离：评测会走同一个 ask 链路，不标记就会把题库的题灌进用户的问数历史
-    # （实测 8427 条会话里同一题重复 50~85 次），使用统计也被评测流量污染。
-    "ALTER TABLE ai_query_sessions ADD COLUMN IF NOT EXISTS is_eval BOOLEAN DEFAULT false",
+_QUERY_ALTER_COLS = (
+    # 方言无关补列：SQLite **不支持** `ADD COLUMN IF NOT EXISTS`（会语法错误），
+    # 旧实现把 ALTER 写在 SQL 串里，SQLite 测试库永远建不出这些列（实测 p.datasource 报错）。
+    ("ai_workshop_app", "deleted_time", "TIMESTAMP"),
+    ("ai_pipeline", "datasource", "VARCHAR(120)"),
+    ("ai_query_sessions", "is_eval", "BOOLEAN"),
 )
 
 
 async def _ensure_query_tables() -> None:
-    """确保问数侧影子表与新增列存在（幂等、best-effort）。"""
-    global _query_tables_ready
-    if _query_tables_ready:
-        return
-    for sql in _QUERY_TABLES_SQL + _QUERY_ALTER_SQL:
+    """确保问数侧影子表与新增列存在（幂等、best-effort）。
+
+    ⚠️ 不加"已执行"进程标记：测试会多次重建 SQLite 库，标记会让第二个库缺列。
+    这里只有 3 次 inspect + 少量 CREATE IF NOT EXISTS，重复执行代价可接受。
+    """
+    for sql in _QUERY_TABLES_SQL:
         try:
             async with async_db_session.begin() as db:
                 await db.execute(text(sql))
         except Exception:  # noqa: BLE001
             pass
-    _query_tables_ready = True
+    for table, col, ddl in _QUERY_ALTER_COLS:
+        try:
+            async with async_db_session.begin() as db:
+                from sqlalchemy import inspect
+
+                cols = await db.run_sync(
+                    lambda s, _t=table: {c["name"] for c in inspect(s.connection()).get_columns(_t)}
+                )
+                if col not in cols:
+                    await db.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # Agno 向量库是否已播种语义单元
@@ -1065,6 +1074,10 @@ _ONT_ALIAS_MAX_TABLES = 3
 _DS_SCHEMA_CACHE: dict[str, tuple[float, dict]] = {}
 #: 数据源「表 → {列名: 类型}」缓存（与 schema 缓存同 TTL，供 prompt 标注类型用）
 _DS_TYPE_CACHE: dict[str, tuple[float, dict]] = {}
+#: 问数 prompt 上下文缓存（问题 → 拼好的 schema 文本）：自纠错重试/重复提问复用
+_SCHEMA_CTX_CACHE: dict[str, tuple[float, str]] = {}
+_SCHEMA_CTX_TTL = 120.0
+_SCHEMA_CTX_CACHE_MAX = 50
 _DS_SCHEMA_TTL = 600.0
 
 
@@ -1524,6 +1537,21 @@ def _match_metric(question: str, metrics: list[dict], terms: list[dict],
             best_score = score
             best = m
     return best if best and best_score > 0 else None
+
+
+#: 「需要 WHERE/DISTINCT」的问法：单值指标模板算不出来 → 必须让位 NL2SQL。
+#: 实测：「化验单备注里有多少条包含自动生成？」被「化验单数」答成 2527（总数），
+#: 「化验方式有几种？」同样被总数抢答 —— 语义完全错。
+_NEEDS_SQL_RE = re.compile(
+    r"(包含|含有|等于|不等于|大于|小于|不少于|不超过|之间|其中|并且|而且|或者|除了|排除"
+    r"|之后|之前|以后|以前|以上|以下|超过|不足|截至|截止|至今|起算"
+    r"|几种|多少种|多少个不同|去重|重复|排名|前\s*\d+|占比|比例|百分比)"
+)
+
+
+def _needs_custom_sql(question: str) -> bool:
+    """问句是否带有指标模板无法表达的条件/去重语义。"""
+    return bool(_NEEDS_SQL_RE.search(question or ""))
 
 
 def _metric_main_table(metric: dict) -> str:
@@ -4352,15 +4380,25 @@ class AiQueryService:
     async def list_pipelines(cls, datasource: str | None = None) -> list[dict]:
         datasource = await _norm_datasource(datasource)
         async with async_db_session() as db:
+            from sqlalchemy import inspect
             from sqlalchemy import text as _t
+
+            # `datasource` 是后补列：SQLite 不支持 `ADD COLUMN IF NOT EXISTS`，老测试库可能没有。
+            # 探测列是否存在而不是「先查再兜底异常」，避免事务被污染。
+            has_ds = await db.run_sync(
+                lambda s: "datasource" in {
+                    c["name"] for c in inspect(s.connection()).get_columns("ai_pipeline")
+                }
+            )
+            ds_col = "p.datasource" if has_ds else "''"
             sql = (
                 "SELECT p.id,p.name,p.source_connection,p.source_table,p.target_object,p.mappings,p.enabled,"
                 "(SELECT status FROM ai_pipeline_run r WHERE r.pipeline_id=p.id AND r.is_deleted=false ORDER BY r.id DESC LIMIT 1) AS last_status,"
                 "(SELECT ran_at FROM ai_pipeline_run r WHERE r.pipeline_id=p.id AND r.is_deleted=false ORDER BY r.id DESC LIMIT 1) AS last_at,"
-                "p.datasource "
+                f"{ds_col} "
                 "FROM ai_pipeline p WHERE p.is_deleted=false")
             params: dict = {}
-            if datasource:
+            if datasource and has_ds:
                 sql += " AND p.datasource=:ds"
                 params["ds"] = datasource
             sql += " ORDER BY p.id DESC"
@@ -6269,11 +6307,11 @@ class AiQueryService:
             # 有翻车先例：两段式计划实测 −7.55 分）。
             "object_query_enabled": "false",         # 语义执行层开关（默认关）
             "object_query_max_objects": "5",         # 注入 IR 提示词的对象数上限（scope 收敛）
-            "object_query_call_timeout": "60",       # IR 生成单次 LLM 调用超时（秒）
+            "object_query_call_timeout": "20",       # IR 生成单次 LLM 调用超时（秒）
             "object_query_max_traverse_depth": "1",  # traverse 最大跳数（P3：可开 2–3；默认 1=不启用多跳）
-            # 为什么是 60：实测**裸调用** 11~19s，但经 agno Agent 包装后 17~32s（含波动）。
-            # 给 30 会频繁超时降级（实测踩到，日志只有空字符串的 TimeoutError）；
-            # 给 60 让绝大多数请求成功，真正的长尾再降级。
+            # 为什么是 20（原 60）：IR 只是**结构化抽取**，实测：无法产出时模型会一直想到超时，
+            # 60s × 2 次重试 = 120s 的纯等待（实测一次问数因此 158s）。20s 不成就降级 NL2SQL，
+            # 用户体验远好于「等两分钟然后还是走 SQL」。
             # IR 生成用哪个模型：**留空 = 与 NL2SQL 同源**（默认模型）。
             # 可填模型名（如 LLM-27B-FP8）或模型 id —— 实测同一提示词：
             # deepseek-flash ≈4.4s ｜ LLM-27B ≈8.9s ｜ LLM-284B ≈29.4s。
@@ -7009,6 +7047,67 @@ class AiQueryService:
         return scored[:3]
 
     @classmethod
+    async def _select_metric(cls, question: str, datasource: str | None,
+                             metrics: list[dict], terms: list[dict]) -> dict | None:
+        """指标快路径选型（**ask 与 ask_stream 共用**，避免两套路由漂移）。
+
+        规则：
+        - 列举类问题（哪些/列出/名称…）不走指标模板；
+        - 「每个/各/按X分组」跳过**单值**指标（agg != group）；
+        - 术语口径优先（命中已绑定术语以术语为准；命中未绑定术语则让位 NL2SQL）；
+        - 自定义数据源：指标来源表必须与问句有共同业务词（防「指标抢答」）。
+        """
+        if _is_listing_question(question):
+            return None
+        if _needs_custom_sql(question):
+            log.warning("[query] 问句带条件/去重语义，不走指标模板：question={}", question[:40])
+            return None
+        try:
+            concepts = await cls.list_concepts()
+        except Exception:  # noqa: BLE001
+            concepts = []
+        metric = _match_metric(question, metrics, terms, concepts)
+        if metric and metric.get("agg") != "group" and _wants_grouping(question):
+            log.warning("[query] 分组诉求，跳过单值指标快路径：metric={} question={}",
+                        metric.get("key"), question[:40])
+            metric = None
+        if metric:
+            q_low = question.lower()
+            hit_terms = [t for t in terms if t.get("term") and str(t["term"]).lower() in q_low]
+            bound = {t.get("metric_key") for t in hit_terms if t.get("metric_key")}
+            unbound = [t["term"] for t in hit_terms if not t.get("metric_key")]
+            if bound and metric["key"] not in bound and len(bound) == 1:
+                alt = next((m for m in metrics if m["key"] in bound and m.get("enabled")), None)
+                if alt:
+                    log.warning("[query] 术语明确指向另一指标，改判：{} → {}（question={}）",
+                                metric["key"], alt["key"], question[:40])
+                    metric = alt
+            if unbound:
+                log.warning("[query] 问句用了未绑定指标的术语 {}，跳过快路径（question={}）",
+                            unbound, question[:40])
+                metric = None
+        if metric and (datasource or SYSTEM_DS) != SYSTEM_DS:
+            try:
+                mt = _metric_main_table(metric)
+                if not mt and metric.get("object_code"):
+                    obmap = await cls._object_backing_map()
+                    mt = obmap.get(str(metric["object_code"]), "")
+                mname = (metric.get("name") or "").strip()
+                if mt and not (mname and mname in question):
+                    sch = await cls._ds_schema_map(datasource)
+                    hint = " ".join(sch.get(mt) or [])
+                    shared = _bigrams(question) & _bigrams(hint)
+                    shared |= _latin_words(question) & _latin_words(hint)
+                    if hint and not shared:
+                        log.warning(
+                            "[query] 指标来源表与问句无共同业务词，跳过快路径：metric={} table={} "
+                            "question={}", metric.get("key"), mt, question[:40])
+                        metric = None
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 指标来源表相关性检查失败（忽略）: {str(e)[:100]}")
+        return metric
+
+    @classmethod
     async def ask(cls, question: str, auth, session_id: int | None = None,
                   datasource: str | None = None, redis=None, force_slow: bool = False,
                   object_code: str | None = None, object_key: str | None = None) -> dict:
@@ -7068,75 +7167,7 @@ class AiQueryService:
             except Exception as e:  # noqa: BLE001
                 log.warning(f"[query] 澄清检测失败（忽略，继续正常问答）: {str(e)[:100]}")
 
-        # 列举类问题不走指标模板（快路径只认指标聚合），强制走 NL2SQL
-        if not _is_listing_question(question):
-            try:
-                _concepts = await cls.list_concepts()
-            except Exception:  # noqa: BLE001
-                _concepts = []
-            metric = _match_metric(question, metrics, terms, _concepts)
-            # 「每个/各/按X分组」是**分组诉求**：单值指标答不了 →
-            # 除非命中本身就是「分组型」指标（agg=group），否则让位给慢路径。
-            # 实测 bug：问「统计每个摄像头的告警数量」被 alert_count_today 抢答成
-            # 「今日告警数=0」，语义完全错。
-            if metric and metric.get("agg") != "group" and _wants_grouping(question):
-                log.warning(
-                    "[query] 分组诉求，跳过单值指标快路径：metric={} question={}",
-                    metric.get("key"), question[:40],
-                )
-                metric = None
-            # 术语（业务黑话）口径校验：用户用的词在词典里怎么解释就怎么答。
-            #  - 问句命中**已绑定**术语（热值→avg_rz）却命中了别的指标 → 以术语为准；
-            #  - 问句命中**未绑定**术语（运损/扣吨这类还没建指标的词）→ 快路径不能抢答，
-            #    否则「供应商的运损扣吨合计」被「供应商矿点关系数」答成 140（实测答非所问）。
-            if metric:
-                q_low = question.lower()
-                _hit_terms = [t for t in terms if t.get("term") and str(t["term"]).lower() in q_low]
-                _bound = {t.get("metric_key") for t in _hit_terms if t.get("metric_key")}
-                _unbound = [t["term"] for t in _hit_terms if not t.get("metric_key")]
-                if _bound and metric["key"] not in _bound and len(_bound) == 1:
-                    _alt = next(
-                        (m for m in metrics if m["key"] in _bound and m.get("enabled")), None)
-                    if _alt:
-                        log.warning(
-                            "[query] 术语明确指向另一指标，改判：{} → {}（question={}）",
-                            metric["key"], _alt["key"], question[:40])
-                        metric = _alt
-                if _unbound:
-                    log.warning(
-                        "[query] 问句用了未绑定指标的术语 {}，跳过快路径（question={}）",
-                        _unbound, question[:40])
-                    metric = None
-            # 「指标抢答」防线：命中的指标，其来源表必须真的和问句「沾边」。
-            # 实测：「人员信息表中有多少人」被 count_fuel_stg_deposit（存款表）抢答、
-            #      「小程序版本管理中有多少个版本记录」被卸煤记录数抢答 —— 都是词面巧合。
-            # 用**表名 + 表注释 + 列注释**的二元组做廉价校验（走已缓存的 schema，几十毫秒），
-            # 比跑一次完整召回（实测 5 秒）划算。
-            if metric and (datasource or SYSTEM_DS) != SYSTEM_DS:
-                try:
-                    _mt = _metric_main_table(metric)
-                    if not _mt and metric.get("object_code"):
-                        _obmap = await cls._object_backing_map()
-                        _mt = _obmap.get(str(metric["object_code"]), "")
-                    _mname = (metric.get("name") or "").strip()
-                    # 指标名被问句**整体包含**是最强证据（如「平均合同单价」），直接放行；
-                    # 否则看指标来源表的表名/注释/列注释与问句有没有共同业务词。
-                    if _mt and not (_mname and _mname in question):
-                        _sch = await cls._ds_schema_map(datasource)
-                        _labels = _sch.get(_mt) or []
-                        _hint = " ".join(_labels)
-                        _shared = _bigrams(question) & _bigrams(_hint)
-                        _shared |= _latin_words(question) & _latin_words(_hint)
-                        if _hint and not _shared:
-                            log.warning(
-                                "[query] 指标来源表与问句无共同业务词，跳过快路径："
-                                "metric={} table={} question={}",
-                                metric.get("key"), _mt, question[:40])
-                            metric = None
-                except Exception as e:  # noqa: BLE001
-                    log.warning(f"[query] 指标来源表相关性检查失败（忽略）: {str(e)[:100]}")
-        else:
-            metric = None
+        metric = await cls._select_metric(question, datasource, metrics, terms)
         if metric:
             params = _build_params(metric, question)
             try:
@@ -7573,12 +7604,14 @@ class AiQueryService:
             )
             return (getattr(resp, "content", "") or "").strip()
 
+        t_start = time.perf_counter()
         out = await _call()
-        if not out:
-            # 偶发空正文（推理型模型把预算用在 thinking / 网关抖动）：**快速重试一次**。
-            # ⚠️ 只在「上一次很快就空了」时重试：慢空（>8s）说明模型在这条 prompt 上
-            #    就是吐不出来，再等一轮只是白花 20~60 秒（实测对象查询每题耗 30s×2）。
-            log.warning("[query] IR 首次空正文，快速重试一次")
+        elapsed = time.perf_counter() - t_start
+        if not out and elapsed <= 8.0:
+            # 偶发空正文（推理型模型把预算用在 thinking / 网关抖动）：**只在快速空时重试**。
+            # 慢空（>8s）说明模型在这条 prompt 上就是吐不出来，再等一轮只是白花 20 秒
+            # （实测对象查询每题耗 30s×2，一次问数被拖到 158s）。
+            log.warning("[query] IR 首次空正文（耗时 {}ms），快速重试一次", int(elapsed * 1000))
             t0 = time.perf_counter()
             try:
                 out = await _call()
@@ -7586,6 +7619,8 @@ class AiQueryService:
                 log.warning(f"[query] IR 重试失败 [{type(e).__name__}]: {str(e)[:100]}")
                 out = ""
             log.warning("[query] IR 重试耗时={}ms", int((time.perf_counter() - t0) * 1000))
+        elif not out:
+            log.warning("[query] IR 慢空（{}ms），不重试，直接降级 NL2SQL", int(elapsed * 1000))
         return out
 
     @classmethod
@@ -7734,6 +7769,11 @@ class AiQueryService:
                      and not t.get("metric_key")]
         if _unbound0:
             log.warning("[query] 对象查询：问句含未绑定指标的术语 {}，降级 NL2SQL", _unbound0)
+            return None
+        if _needs_custom_sql(question):
+            # 对象查询（IR）只覆盖「对象/属性/计数」这类结构化诉求；带 WHERE/DISTINCT 的问法
+            # 它答不了，却要先花 20~30 秒构建对象白名单、再 20 秒生成 IR，最后照样降级。
+            log.warning("[query] 对象查询：问句含条件/去重语义，跳过对象路径（交给 NL2SQL）")
             return None
         if _ir_circuit_open():
             log.warning(
@@ -8266,46 +8306,48 @@ class AiQueryService:
                 )
                 _c = detect_clarify(question, schema_map)
                 if _c:
+                    # 澄清轮也要落库（与 ask 对齐）：否则刷新后历史里看不到这次追问
+                    try:
+                        await cls._save_message(
+                            sess["id"], question, path="clarify",
+                            datasource=datasource, sql="", rows=[],
+                            summary=_c.get("question") or "需要确认口径", is_error=False,
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        log.warning(f"[query] 流式澄清轮落库失败（忽略）: {str(e)[:100]}")
                     yield {"type": "clarify", "clarify": _c}
                     yield {"type": "done", "path": "clarify", "session_id": sess["id"]}
                     return
             except Exception as e:  # noqa: BLE001
                 log.warning(f"[query] 流式澄清检测失败（忽略）: {str(e)[:80]}")
 
-        # ---- 指标快路径（对齐 ask）：确定性、零 LLM；命中即流式返回 ----
-        if not _is_listing_question(question):
-            try:
-                metrics = await cls.list_metrics(datasource)
-                terms = await cls.list_terms(datasource)
-                try:
-                    _concepts = await cls.list_concepts()
-                except Exception:  # noqa: BLE001
-                    _concepts = []
-                metric = _match_metric(question, metrics, terms, _concepts)
-                if metric and metric.get("agg") != "group" and _wants_grouping(question):
-                    metric = None
-                if metric:
-                    params = _build_params(metric, question)
-                    res = await _execute_metric(metric, params, auth)
-                    # 摘要本地算一次即可：_save_message 返回的是 ORM 模型（没有 .get()），
-                    # 之前写成 msg.get("summary") → AttributeError → 被 except 吞掉后
-                    # **降级走 NL2SQL**，但消息已经提交入库 → 一次提问落 2 条历史消息、
-                    # 快路径占比统计被污染（单测当时把 _save_message mock 成 dict 了，所以没发现）。
-                    summary = cls._summarize(metric, res)
-                    msg = await cls._save_message(
-                        sess["id"], question, path="fast", datasource=metric["datasource"],
-                        sql=res["sql"], columns=res["columns"], rows=res["rows"],
-                        result_rows=len(res["rows"]), took_ms=res.get("took_ms", 0),
-                        summary=summary)
-                    yield {"type": "result", "path": "fast",
-                           "columns": res["columns"], "rows": res["rows"],
-                           "summary": summary, "message_id": msg.id}
-                    yield {"type": "done", "path": "fast", "session_id": sess["id"]}
-                    return
-            except Exception as e:  # noqa: BLE001
-                # 快路径失败**不得中断 SSE** → 记录并继续走对象/NL2SQL 流式
-                log.warning("[query] 流式指标快路径失败，降级：[{}] {}",
-                            type(e).__name__, str(e)[:120])
+        # ---- 指标快路径（与 ask 共用 _select_metric）：确定性、零 LLM；命中即流式返回 ----
+        try:
+            metrics = await cls.list_metrics(datasource)
+            terms = await cls.list_terms(datasource)
+            metric = await cls._select_metric(question, datasource, metrics, terms)
+            if metric:
+                params = _build_params(metric, question)
+                res = await _execute_metric(metric, params, auth)
+                # 摘要本地算一次即可：_save_message 返回的是 ORM 模型（没有 .get()），
+                # 之前写成 msg.get("summary") → AttributeError → 被 except 吞掉后
+                # **降级走 NL2SQL**，但消息已经提交入库 → 一次提问落 2 条历史消息、
+                # 快路径占比统计被污染（单测当时把 _save_message mock 成 dict 了，所以没发现）。
+                summary = cls._summarize(metric, res)
+                msg = await cls._save_message(
+                    sess["id"], question, path="fast", datasource=metric["datasource"],
+                    sql=res["sql"], columns=res["columns"], rows=res["rows"],
+                    result_rows=len(res["rows"]), took_ms=res.get("took_ms", 0),
+                    summary=summary)
+                yield {"type": "result", "path": "fast",
+                       "columns": res["columns"], "rows": res["rows"],
+                       "summary": summary, "message_id": msg.id}
+                yield {"type": "done", "path": "fast", "session_id": sess["id"]}
+                return
+        except Exception as e:  # noqa: BLE001
+            # 快路径失败**不得中断 SSE** → 记录并继续走对象/NL2SQL 流式
+            log.warning("[query] 流式指标快路径失败，降级：[{}] {}",
+                        type(e).__name__, str(e)[:120])
 
         # ---- 报表建议（澄清后选择）：未命中指标时推荐相关报表，不自动执行、不打断 SSE ----
         try:
@@ -8339,6 +8381,21 @@ class AiQueryService:
                        "message_id": ans.get("message_id")}
                 yield {"type": "done", "path": "object", "session_id": sess["id"],
                        "message_id": ans.get("message_id")}
+                return
+
+        # ---- SQL 缓存：同一问句直接回放上次生成的 SQL（跳过 LLM） ----
+        # 旧实现只有非流式分支有缓存，界面上重复提问要重新生成（10~40s）。
+        cached_sql = _sql_cache_get(question, datasource)
+        if cached_sql:
+            evs = await cls._finish_sql_stream(question, sess["id"], cached_sql, datasource, auth)
+            if any(e.get("type") == "error" for e in evs):
+                # 缓存的 SQL 已经跑不通（schema/口径变了）→ 失效并继续重新生成
+                _SQL_CACHE.pop(_sql_cache_key(question, datasource), None)
+                log.warning("[query] 流式缓存 SQL 执行失败，已失效并重新生成：{}", question[:30])
+            else:
+                yield {"type": "sql_final", "sql": cached_sql, "cached": True}
+                for ev in evs:
+                    yield ev
                 return
 
         # ---- 构建生成 Agent（与 _nl2sql 工具化模式一致） ----
@@ -8377,11 +8434,21 @@ class AiQueryService:
 
         from app.plugin.module_ai.models.service import build_headers
 
+        _thinking = str(cfg.get("nl2sql_thinking_mode") or "low").strip().lower()
+        _extra_body: dict = {}
+        if _thinking == "off":
+            _extra_body = {"enable_thinking": False}
+        elif _thinking == "on":
+            _extra_body = {}
+        else:
+            _extra_body = {"reasoning_effort": "low"}
         model = OpenAILike(
             id=runtime["model"], base_url=runtime["base_url"],
             api_key=runtime["api_key"] or "sk-none",
             temperature=0.0, max_tokens=nl2sql_max_tokens(cfg),
             timeout=60,
+            # 与非流式 `_nl2sql` 同款：推理型模型默认思考会拖到几十秒
+            extra_body=_extra_body or None,
             default_headers=build_headers(
                 runtime["base_url"], runtime.get("extra_headers"), "aistation-query"),
         )
@@ -8451,9 +8518,16 @@ class AiQueryService:
                     if rc:
                         yield {"type": "reasoning_done"}
                 elif etype == "RunError":
-                    yield {"type": "error", "message": str(getattr(ev, "content", ""))}
+                    msg = str(getattr(ev, "content", ""))
+                    await cls._save_message(sess["id"], question, path="slow",
+                                            datasource=datasource, sql="", rows=[],
+                                            is_error=True, summary=f"模型返回错误：{msg}")
+                    yield {"type": "error", "message": msg}
                     return
         except Exception as e:  # noqa: BLE001
+            await cls._save_message(sess["id"], question, path="slow", datasource=datasource,
+                                    sql="", rows=[], is_error=True,
+                                    summary=f"问答模型调用失败：{e}")
             yield {"type": "error", "message": f"问答模型(Agno)调用失败：{e}"}
             return
 
@@ -8462,8 +8536,12 @@ class AiQueryService:
         sql = cls._extract_sql(sql_source)
         table = await cls._allowed_for_user(auth) if datasource in (SYSTEM_DS, None) else None
         try:
-            sql = validate_sql(sql, table or set())
+            sql = validate_sql(sql, table or set(), question)
         except Exception as e:  # noqa: BLE001
+            # 失败也要落库（与 ask 对齐）：否则界面上这次提问直接消失，事后无法复盘
+            await cls._save_message(sess["id"], question, path="slow", datasource=datasource,
+                                    sql=sql, rows=[], is_error=True,
+                                    summary=f"SQL 校验失败：{e}")
             yield {"type": "error", "message": f"SQL 校验失败：{e}"}
             return
         yield {"type": "sql_final", "sql": sql}
@@ -8472,33 +8550,66 @@ class AiQueryService:
         # 本体字段级 ACL：已下沉到 `_execute_one`（ask 与 ask_stream 的共同出口）
         # 统一执行且 fail-closed。修前这里是**唯一**调用点，却包着 `except: pass`
         # ⇒ 检查一炸就等于没做，受限字段被原样查出来；非流式 ask 更是完全不走这里。
+        for ev in await cls._finish_sql_stream(question, sess["id"], sql, datasource, auth):
+            yield ev
+
+    @classmethod
+    async def _finish_sql_stream(cls, question: str, session_id: int, sql: str,
+                                 datasource: str, auth) -> list[dict]:
+        """流式问数的**唯一出口**：执行 → 落库 → 组装事件。
+
+        抽出来是为了让「缓存命中的 SQL」和「刚生成的 SQL」走**同一段**执行逻辑
+        （旧实现只有生成路径，缓存/代价护栏/空结果提示都只存在于非流式分支）。
+        """
         try:
+            # 代价护栏（对齐非流式 `_slow_path`）：系统库先 EXPLAIN 估行数，超上限直接拒绝
+            if datasource in (SYSTEM_DS, None):
+                try:
+                    er = await cls._explain_rows(sql)
+                    max_rows = cls._cfg_int(await cls._cfg(), "query_cost_max_rows", 50000)
+                    if er > max_rows:
+                        msg = (f"查询代价过高(预计{er}行>上限{max_rows})，"
+                               "请改为聚合/加条件/限制范围")
+                        await cls._save_message(session_id, question, path="slow",
+                                                datasource=datasource, sql=sql, rows=[],
+                                                is_error=True, summary=msg)
+                        return [{"type": "error", "message": msg}]
+                except CustomException as e:  # noqa: BLE001
+                    msg = f"SQL 校验失败：{e.msg}"
+                    await cls._save_message(session_id, question, path="slow",
+                                            datasource=datasource, sql=sql, rows=[],
+                                            is_error=True, summary=msg)
+                    return [{"type": "error", "message": msg}]
+                except Exception:  # noqa: BLE001
+                    pass  # EXPLAIN 本身失败不阻断执行（非 PG / 特殊 SQL）
             res = await cls._execute_one(sql, datasource, auth)
             cols = res.get("columns") or []
             rows = res.get("rows") or []
-            # Grounding **必须落库**（非流式 ask 一直有写，流式漏了）：
-            # 否则刷新/重开会话后「召回的表 / 本体对象」标签就消失了。
+            # Grounding **必须落库**（刷新/重开会话后「召回的表 / 本体对象」标签要能复原）
             retrieved = await cls._recall_grounding(question, datasource)
             ont_used = _scan_ont_tables(sql)
             msg = await cls._save_message(
-                sess["id"], question, path="slow", datasource=datasource,
+                session_id, question, path="slow", datasource=datasource,
                 sql=sql, columns=cols, rows=rows,
                 result_rows=len(rows), took_ms=res.get("took_ms", 0), cached=False,
                 summary="以下是根据你的问题生成的结果：",
                 grounding={"retrieved": retrieved, "ontology_used": ont_used},
             )
-            # message_id 必须回传：前端「有用/没用/存为报表/沉淀为指标」按钮按
-            # v-if="m.id" 门控，不带 id 用户就必须刷新/点开旧会话才看得到。
-            yield {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows),
-                   "retrieved": retrieved, "ontology_used": ont_used, "message_id": msg.id,
-                   "dq_warning": await cls._dq_warning_for_sql(sql)}
-            yield {"type": "answer", "summary": "以下是根据你的问题生成的结果："}
-            yield {"type": "done", "message_id": msg.id}
+            # 只在**真有数据**时写 SQL 缓存（全 NULL 结果会把空表 SQL 缓存住，越查越空）
+            flat = [v for r in rows for v in (r if isinstance(r, (list, tuple)) else [r])]
+            if flat and any(v is not None for v in flat):
+                _sql_cache_set(question, datasource, sql)
+            return [
+                {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows),
+                 "retrieved": retrieved, "ontology_used": ont_used, "message_id": msg.id,
+                 "dq_warning": await cls._dq_warning_for_sql(sql)},
+                {"type": "answer", "summary": "以下是根据你的问题生成的结果："},
+                {"type": "done", "message_id": msg.id},
+            ]
         except Exception as e:  # noqa: BLE001
-            await cls._save_message(sess["id"], question, path="slow", datasource=datasource,
+            await cls._save_message(session_id, question, path="slow", datasource=datasource,
                                     sql=sql, rows=[], is_error=True, summary=f"查询失败：{e}")
-            yield {"type": "error", "message": f"查询失败：{e}"}
-            return
+            return [{"type": "error", "message": f"查询失败：{e}"}]
 
     @classmethod
     def _extract_sql(cls, s: str) -> str:
@@ -9192,16 +9303,25 @@ class AiQueryService:
             log.warning(f"[query][recall] 取 schema 失败（通道将为空）: {e}")
             schema_map = schema or {}
 
-        results = await asyncio.gather(
-            cls._recall_vector(question, top_n),
-            cls._recall_keyword(question, schema_map),
-            cls._recall_ontology(question),
-            cls._recall_entity(question, schema_map),
-            return_exceptions=True,
+        async def _timed(name: str, coro):
+            t0 = time.perf_counter()
+            try:
+                return name, await coro, (time.perf_counter() - t0) * 1000
+            except Exception as e:  # noqa: BLE001
+                return name, e, (time.perf_counter() - t0) * 1000
+
+        raw = await asyncio.gather(
+            _timed("vector", cls._recall_vector(question, top_n)),
+            _timed("keyword", cls._recall_keyword(question, schema_map)),
+            _timed("ontology", cls._recall_ontology(question)),
+            _timed("entity", cls._recall_entity(question, schema_map)),
         )
         channels: dict[str, list[str]] = {}
-        for name, res in zip(("vector", "keyword", "ontology", "entity"), results, strict=False):
+        _cost = []
+        for name, res, ms in raw:
             channels[name] = [] if isinstance(res, BaseException) else list(res or [])
+            _cost.append(f"{name}={int(ms)}ms")
+        log.warning("[recall] 通道耗时：{}", " ".join(_cost))
 
         weights = {
             "vector": cls._cfg_float(cfg, "recall_w_vector", DEFAULT_WEIGHTS["vector"]),
@@ -9475,6 +9595,11 @@ class AiQueryService:
 
     @classmethod
     async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
+        # 命中短时缓存直接返回（见函数尾部写入处）
+        if not _OBJECT_CTX.get():
+            _hit = _SCHEMA_CTX_CACHE.get(f"{datasource or ''}|{question}")
+            if _hit and time.time() - _hit[0] <= _SCHEMA_CTX_TTL:
+                return _hit[1]
         lines = []
         # 当前对象上下文：**确定性注入**（对齐 Palantir Retrieval Context），放在最前面。
         octx = _OBJECT_CTX.get()
@@ -9540,7 +9665,9 @@ class AiQueryService:
             if ds_schema:
                 # 复用**统一的召回服务**（并行四路 + RRF + 阈值），
                 # 而不是旧的单路关键词 —— 否则新召回只对 system 数据源生效。
-                rel = await cls._semantic_tables_uncached(question, ds_schema, metrics, terms)
+                # ⚠️ 必须走带缓存的 `_semantic_tables`：`_recall_grounding` 会再查一次，
+                #    用 uncached 就等于同一题做两遍向量检索（实测每次白花 1.2~1.8 秒）。
+                rel = await cls._semantic_tables(question, ds_schema, metrics, terms, datasource)
                 lines.append(
                     f"（数据源 {datasource}，共 {len(ds_schema)} 张表，"
                     f"下面是与问题最相关的 {len(rel)} 张）")
@@ -9569,7 +9696,17 @@ class AiQueryService:
         for eg in await cls._dynamic_fewshots(question, datasource):
             lines.append(f"问：{eg['q']}")
             lines.append(f"SQL：{eg['sql']}")
-        return "\n".join(lines)
+        ctx = "\n".join(lines)
+        # 同一问题的 prompt 上下文短时缓存：自纠错重试、流式与非流式、以及「同一题再问一次」
+        # 都会重复构建（首题实测 4~12 秒，主要花在向量召回），缓存后重试只剩几十毫秒。
+        # 有对象上下文（每次请求不同）时不缓存，避免串题。
+        if not _OBJECT_CTX.get():
+            key = f"{datasource or ''}|{question}"
+            if len(_SCHEMA_CTX_CACHE) >= _SCHEMA_CTX_CACHE_MAX:
+                for k in list(_SCHEMA_CTX_CACHE)[: _SCHEMA_CTX_CACHE_MAX // 5]:
+                    _SCHEMA_CTX_CACHE.pop(k, None)
+            _SCHEMA_CTX_CACHE[key] = (time.time(), ctx)
+        return ctx
 
     @classmethod
     async def _get_runtime(cls) -> dict:

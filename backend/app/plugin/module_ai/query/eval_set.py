@@ -457,19 +457,32 @@ async def list_runs(limit: int = 30, mode: str | None = None,
             await db.execute(
                 _t(
                     "SELECT run_id,mode,ablation_group,status,total,done,started_at,finished_at,"
-                    "summary, config->'fingerprint'->>'model' AS model "
+                    "summary, config "
                     "FROM ai_query_testrun WHERE " + " AND ".join(conds) +
                     " ORDER BY id DESC LIMIT :n"
                 ),
                 params,
             )
         ).fetchall()
+
+    def _model_of(cfg) -> str:  # noqa: ANN001
+        import json as _j
+
+        if isinstance(cfg, str):
+            try:
+                cfg = _j.loads(cfg or "{}")
+            except Exception:  # noqa: BLE001
+                return ""
+        fp = (cfg or {}).get("fingerprint") if isinstance(cfg, dict) else None
+        return str((fp or {}).get("model") or "")
+
     return [
         {"run_id": r[0], "mode": r[1], "ablation_group": r[2], "status": r[3],
          "total": r[4], "done": r[5], "started_at": str(r[6] or ""), "finished_at": str(r[7] or ""),
          "summary": r[8] if isinstance(r[8], dict) else None,
-         # 历史列表直接显示用的模型名（跨版本对比时一眼看出换了哪个模型）
-         "model": r[9] or ""}
+         # 历史列表直接显示用的模型名（跨版本对比时一眼看出换了哪个模型）。
+         # 注意：不用 PG 的 `config->'fingerprint'->>'model'`，SQLite 测试库不支持。
+         "model": _model_of(r[9])}
         for r in rows
     ]
 

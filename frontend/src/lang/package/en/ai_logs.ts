@@ -527,4 +527,5 @@ export default {
   entryProvidersDesc: "Model provider management",
   entryLogs: "Call Logs",
   entryLogsDesc: "Stats/detail/export",
+  pathClarify: "Clarification",
 };

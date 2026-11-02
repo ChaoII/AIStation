@@ -590,6 +590,7 @@ function pathLabel(m: any): string {
   if (m?.path === "slow") return "NL2SQL";
   if (m?.path === "report") return t("ai_logs.pathReport");
   if (m?.path === "report_suggest") return t("ai_logs.pathReportSuggest");
+  if (m?.path === "clarify") return t("ai_logs.pathClarify");
   return m?.path || t("ai_logs.pathQuery");
 }
 

@@ -15,9 +15,23 @@
 
 写路径（从数据源反向生成本体）仍留在原处，不在本模块职责内。
 """
+from __future__ import annotations
+
+import time
 from typing import Any
 
 from .service import _exec
+
+#: 语义上下文进程缓存：一次问答里 `_recall_ontology` / `_ont_ctx_block` / 对象白名单
+#: 会各读一遍全量本体（426 对象 + 8.5K 属性 + 关系），实测单次 5~20 秒。
+#: 60 秒 TTL 与 `_ONT_ALLOW_TTL` 口径一致；本体编辑最多 1 分钟内生效。
+_CTX_CACHE: dict[bool, tuple[float, dict[str, Any]]] = {}
+_CTX_TTL = 60.0
+
+
+def invalidate_semantic_cache() -> None:
+    """本体定义变化后调用（可选的即时失效；不调也有 TTL 兜底）。"""
+    _CTX_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +125,13 @@ async def semantic_context(include_properties: bool = True) -> dict[str, Any]:
 
     ``concepts`` 是**合并后**的概念：本体对象自带的 ``aliases`` / 域，
     再加上问数原有的业务概念表（那部分语义问数确实独有，保留但走同一出口）。
+
+    结果按 ``include_properties`` 做**60 秒进程缓存**：一次问答里这条上下文会被读
+    3~4 次（召回、prompt、对象白名单、grounding），不缓存等于把全量本体查 3~4 遍。
     """
+    hit = _CTX_CACHE.get(include_properties)
+    if hit and time.monotonic() - hit[0] <= _CTX_TTL:
+        return hit[1]
     objects: list[dict] = await _load_objects()
 
     properties: dict[str, list[dict]] = {}
@@ -164,9 +184,11 @@ async def semantic_context(include_properties: bool = True) -> dict[str, Any]:
         functions.append({"object_code": r[0], "name": r[1], "code": r[2],
                           "expr": r[3], "kind": r[4]})
 
-    return {"objects": objects, "properties": properties,
-            "relations": relations, "functions": functions,
-            "concepts": await concepts()}
+    out = {"objects": objects, "properties": properties,
+           "relations": relations, "functions": functions,
+           "concepts": await concepts()}
+    _CTX_CACHE[include_properties] = (time.monotonic(), out)
+    return out
 
 
 def _split_aliases(raw: Any) -> list[str]:

@@ -500,4 +500,5 @@ export default {
   entryProvidersDesc: "模型服务商管理",
   entryLogs: "调用日志",
   entryLogsDesc: "统计/详情/导出",
+  pathClarify: "澄清反问",
 };

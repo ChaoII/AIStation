@@ -175,7 +175,8 @@ export default {
   directResult: "直接出結果",
   correspondingQuestion: "對應問題：{q}",
   skipQa: "算了，繼續用問答",
-  saveReportTip: "存下來後同類問題可長期重複使用（一次沉澱、長期重複使用）。確認後才進入正式報表列表。",
+  saveReportTip:
+    "存下來後同類問題可長期重複使用（一次沉澱、長期重複使用）。確認後才進入正式報表列表。",
   reportNamePlaceholder: "例如：各煤種月度化驗彙總",
   srParamHint: "範本裡偵測到 {count} 個參數；儲存後可在「報表範本」頁調整中文名/類型/必填",
   saveDraft: "儲存草稿",
@@ -196,7 +197,8 @@ export default {
   pathReport: "報表",
   pathReportSuggest: "報表建議",
   correctQuery: "糾正這次查詢",
-  correctQueryTip: "填上正確的 SQL 會存進範例庫，同類問題以後能重複使用（不填也可以只標記「沒用」）。",
+  correctQueryTip:
+    "填上正確的 SQL 會存進範例庫，同類問題以後能重複使用（不填也可以只標記「沒用」）。",
   correctSqlPlaceholder: '正確的 SQL，例如：SELECT COUNT(*) FROM "FUEL_CMCS_ASSAY"',
   markUselessOnly: "僅標記沒用",
   submitCorrect: "提交糾正",
@@ -500,4 +502,5 @@ export default {
   entryProvidersDesc: "模型服務商管理",
   entryLogs: "呼叫日誌",
   entryLogsDesc: "統計/詳情/匯出",
+  pathClarify: "澄清反問",
 };
