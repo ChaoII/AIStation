@@ -1992,8 +1992,10 @@ class AiQueryService:
             # ④ 血缘计数：一条 GROUP BY（本表字段数 + 被引用数）
             lin_map: dict[str, int] = {}
             try:
+                from .ddl_dialect import cast_int
+
                 for t, n in (await db.execute(_t(
-                    "SELECT t, SUM(n)::int FROM ("
+                    "SELECT t, " + cast_int("SUM(n)") + " FROM ("
                     "  SELECT table_name AS t, count(*) AS n FROM ai_query_asset_columns"
                     "   WHERE is_deleted=false GROUP BY table_name"
                     "  UNION ALL"
@@ -3433,9 +3435,15 @@ class AiQueryService:
             return {"ok": False, "msg": "缺少对象关键值"}
         sets = ", ".join(f'"{c}" = :{c}' for c in cols)
         try:
+            from .ddl_dialect import cast_text
+
+            # 主键可能是 int/bigint，写入侧拿到的是字符串 → 两边都转文本再比。
+            # 不能写 `"id"::text`：SQLite 不认 `::`（near "::": syntax error），
+            # 而这里只有一个 try，失败即整个写回动作报「执行失败」。
+            key_expr = cast_text('"id"')
             async with async_db_session.begin() as db:
                 res = await db.execute(_t(
-                    f'UPDATE "{table}" SET {sets} WHERE "id"::text = :__k'), {**params, "__k": str(object_key)})
+                    f'UPDATE "{table}" SET {sets} WHERE {key_expr} = :__k'), {**params, "__k": str(object_key)})
                 detail = f"action={name} {table}#{object_key} cols={cols}"
             # 审计
             import json as _json
@@ -3516,9 +3524,12 @@ class AiQueryService:
             return {"ok": False, "msg": "缺少对象关键值"}
         sets = ", ".join(f'"{c}" = :{c}' for c in cols)
         try:
+            from .ddl_dialect import cast_text
+
+            key_expr = cast_text('"id"')  # 方言无关的「主键转文本再比较」，见 execute_action
             async with async_db_session.begin() as db:
                 res = await db.execute(_t(
-                    f'UPDATE "{table}" SET {sets} WHERE "id"::text = :__k'),
+                    f'UPDATE "{table}" SET {sets} WHERE {key_expr} = :__k'),
                     {**params, "__k": str(key)})
                 await db.execute(_t(
                     "UPDATE ai_query_writeback_log SET result='approved', detail=:d, operator=:o WHERE id=:i"),

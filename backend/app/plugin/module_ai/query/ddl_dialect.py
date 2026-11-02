@@ -72,6 +72,32 @@ def json_empty() -> str:
     return "'{}'::jsonb" if is_postgres() else "'{}'"
 
 
+def cast_text(expr: str) -> str:
+    """把表达式转成文本（**方言无关**的 ``::text`` 替代）。
+
+    - PG / SQLite：``CAST(expr AS TEXT)``
+    - MySQL：``CAST(expr AS CHAR)``（MySQL 的 CAST 不接受 TEXT）
+
+    用处：主键可能是 int/bigint，而写入侧拿到的是字符串 key，
+    需要「两边都转文本」再比较；直接写 ``"id"::text`` 只有 PG 认，
+    SQLite 会报 ``near "::": syntax error``，整个写回动作失败。
+    """
+    if settings.DATABASE_TYPE == "mysql":
+        return f"CAST({expr} AS CHAR)"
+    return f"CAST({expr} AS TEXT)"
+
+
+def cast_int(expr: str) -> str:
+    """把表达式转成整数（**方言无关**的 ``::int`` 替代）。
+
+    - PG / SQLite：``CAST(expr AS INTEGER)``
+    - MySQL：``CAST(expr AS SIGNED)``（MySQL 的 CAST 不接受 INTEGER）
+    """
+    if settings.DATABASE_TYPE == "mysql":
+        return f"CAST({expr} AS SIGNED)"
+    return f"CAST({expr} AS INTEGER)"
+
+
 def stale_where(column: str, minutes_param: str = "m") -> tuple[str, str]:
     """构造「某时间列早于 N 分钟前」的比较表达式。
 
