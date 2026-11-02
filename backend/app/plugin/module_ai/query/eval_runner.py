@@ -227,7 +227,11 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
                 "path": d.get("path"), "metric_key": (d.get("metric") or {}).get("key", ""),
                 "expected_metric": c.get("expected_metric") or "",
                 "sql": d.get("sql") or "", "n_rows": len(d.get("rows") or []),
-                "took_ms": d.get("took_ms") or ms,
+                # took_ms 用**端到端**耗时：d["took_ms"] 只是 SQL 执行时间（几十~几百毫秒），
+                # 旧实现直接拿它当延迟上报，于是报表里 avg=468ms / p50=242ms，
+                # 而用户实际等的是 5~15 秒 —— 数字好看但毫无意义。执行时间放进 trace。
+                "took_ms": ms,
+                "exec_ms": int(d.get("took_ms") or 0),
                 "gold_match": _lenient(
                     d, {**c, "_gold_cols": gc.get("columns"), "_gold_rows": gc.get("rows")}
                 ),
@@ -293,7 +297,8 @@ async def _save_result(run_id: str, row: dict) -> None:
                 "ou": row["ontology_used"], "tcalls": "[]", "rt": 0,
                 "tr": json.dumps(
                     {k: row[k] for k in ("difficulty", "scenario", "form", "datasource",
-                                         "expected_metric", "degenerate", "metric_eligible")},
+                                         "expected_metric", "degenerate", "metric_eligible")}
+                    | {"exec_ms": row.get("exec_ms", 0)},
                     ensure_ascii=False),
             },
         )

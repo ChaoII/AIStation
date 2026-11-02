@@ -786,3 +786,19 @@ def test_eval_cases_and_status_endpoints(test_client, auth_headers):
     assert r.status_code == 200
     r = test_client.get("/api/v1/ai/query/eval/runs", headers=h)
     assert r.status_code == 200 and isinstance(r.json()["data"], list)
+
+
+# ===========================================================================
+# 判分口径：NULL 占位的不同写法不该被判错
+# ===========================================================================
+def test_norm_cell_treats_unknown_placeholder_as_null():
+    """``COALESCE(col,'未知矿点')`` 与 ``COALESCE(col,'')`` 语义相同。
+
+    实测被误判过：「按矿点统计入厂煤批次数量」金标写 '')，模型写 '未知矿点'，
+    字符串不等 → 整题算错。归一化后都映射成同一个空值占位。
+    """
+    from app.plugin.module_ai.query.benchmark import _norm_cell
+
+    assert _norm_cell("未知矿点") == _norm_cell("")
+    assert _norm_cell("未分组") == _norm_cell(None)
+    assert _norm_cell("河曲露天") != _norm_cell("")

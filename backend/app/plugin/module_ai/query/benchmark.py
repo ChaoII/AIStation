@@ -480,12 +480,20 @@ def _align_columns(gold_cols: list, llm_cols: list) -> list[int] | None:
     return order
 
 
+#: 「未知X / 未分组X」这类占位前缀：模型常写 ``COALESCE(col,'未知矿点')``，
+#: 金标写 ``COALESCE(col,'')`` —— 语义完全一样却因字符串不等被判错
+#: （实测「按矿点统计入厂煤批次数量」就是这么被误判成不通过的）。
+_UNKNOWN_PREFIXES = ("未知", "未分组", "未分类", "未命名", "未指定")
+
+
 def _norm_cell(v) -> str:
     """单元格归一化：统一空值/占位符，数字统一到固定精度，去除噪声。"""
     if v is None:
         return "∅"
     raw = str(v).strip()
     if raw.lower() in _NULL_TOKENS or raw in _NULL_TOKENS:
+        return "∅"
+    if raw.startswith(_UNKNOWN_PREFIXES):
         return "∅"
     # 数字统一到 2 位小数（处理 ROUND(…,2) vs 未取整浮点）
     try:
