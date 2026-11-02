@@ -275,3 +275,10 @@ def test_cross_table_comparison_blocks_fast_path(q):
     from app.plugin.module_ai.query.service import _needs_custom_sql
 
     assert _needs_custom_sql(q) is True
+
+
+def test_zero_condition_blocks_fast_path():
+    """「耗用量为 0 的有多少条」是 WHERE 条件，不能被 COUNT(*) 模板答成总数。"""
+    from app.plugin.module_ai.query.service import _needs_custom_sql
+
+    assert _needs_custom_sql("每日出入库报表里耗用量为 0 的有多少条？") is True

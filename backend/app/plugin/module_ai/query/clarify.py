@@ -64,6 +64,11 @@ def _group_key_ambiguity(question: str, schema_map: dict) -> dict | None:
     """
     if not _GROUP_HINT.search(question or ""):
         return None
+    # 问句**已经写明**用名称还是编号 → 没有歧义，别反问。
+    # 实测「按供应商名称分组，每个供应商平均关联几个矿点」被反问「名称还是编号」，
+    # 用户拿不到答案（评测里表现为 path=clarify、SQL 为空）。
+    if re.search(r"(名称|名字|编号|编码|代码)", question or ""):
+        return None
     q_grams = _bigrams(question)
     if len(q_grams) < 2:
         return None
