@@ -229,3 +229,19 @@ def test_total_amount_is_sum_intent():
          "datasource": "ds:4"}
     reasons = _fast_path_blockers("煤场进煤总量是多少？", m, [], [])
     assert any("聚合" in r for r in reasons), reasons
+
+
+@pytest.mark.parametrize("q", [
+    "化验单里备注不为空的有多少条？",        # 空值判断
+    "矿点名称以“煤”字开头的矿点有多少个？",  # 前后缀匹配
+    "同一个供应商最多关联了多少个矿点？",    # 极值（max of groups）
+    "关联矿点数最多的那家供应商占百分之多少？",
+])
+def test_operator_words_block_fast_path(q):
+    """极值/空值/前后缀/百分比表述，模板都表达不了。
+
+    实测这 4 个措辞都被「总数」类指标抢答（coal_assay.count / coal_mine.count）。
+    """
+    from app.plugin.module_ai.query.service import _needs_custom_sql
+
+    assert _needs_custom_sql(q) is True
