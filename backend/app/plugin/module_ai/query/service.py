@@ -1610,6 +1610,78 @@ def _needs_custom_sql(question: str) -> bool:
     return bool(_NEEDS_SQL_RE.search(question or ""))
 
 
+#: 时间限定词：出现即说明问句**带了时间范围**。
+#: 必须与模板参数对上，否则模板答的是"全量"，却会被标成"最近一个月"——
+#: 实测「最近一个月平均收到基低位发热量」返回的 SQL 里**一个时间条件都没有**，
+#: 用户完全看不出这是错的。
+_TIME_QUALIFIER_RE = re.compile(
+    r"(最近|近\s*\d|近一|过去|本(月|周|年|季度)|这个月|这周|当月|今年|去年"
+    r"|上(月|周|年)|今天|今日|昨天|昨日|\d{4}\s*年|\d+\s*(天|日|周|个?月|年))"
+)
+
+#: 问句里的「聚合意图」词（只认会导致答案口径完全不同的那几类）
+_AGG_INTENT: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("avg", ("平均", "均值")),
+    ("max", ("最大", "最高", "峰值")),
+    ("min", ("最小", "最低")),
+    ("sum", ("合计", "总和", "总计", "累计", "求和")),
+)
+
+
+def _effective_agg(metric: dict) -> str:
+    """指标**实际**在算什么聚合：以 SQL 模板/``agg_fn`` 为准，不信 ``agg`` 字段。
+
+    ``agg`` 是人工维护的元数据，实测存在 ``SELECT SUM(CHECKQTY)`` 却标成
+    ``count`` 的（``total_settlement_qty``）。拿它校验问句会把合法问题拦掉
+    （「验收量合计」就是这种），所以口径必须从表达式本身读。
+    """
+    if str(metric.get("object_code") or "") and str(metric.get("agg_fn") or ""):
+        return str(metric["agg_fn"]).strip().lower()
+    sql = (metric.get("sql_template") or "").upper()
+    for fn in ("AVG", "MAX", "MIN", "SUM", "COUNT"):
+        if re.search(rf"\b{fn}\s*\(", sql):
+            return fn.lower()
+    return str(metric.get("agg") or "").strip().lower()
+
+
+def _metric_accepts_time(metric: dict) -> bool:
+    """模板是否真的把时间参数用上了（目前只支持 ``{days}``）。"""
+    return "{days}" in (metric.get("sql_template") or "")
+
+
+def _fast_path_blockers(question: str, metric: dict,
+                        terms: list[dict] | None = None,
+                        concepts: list[dict] | None = None) -> list[str]:
+    """**准入检查**：指标模板能不能解释清楚这句话？返回拦下来的理由（空=可以答）。
+
+    为什么用白名单而不是黑名单：黑名单是"出现危险词才拦"，永远漏（实测已经漏了
+    「最近一个月」）；白名单是"模板必须能解释每一处限定，解释不了就让位 NL2SQL"，
+    漏的方式变成"慢一点"，而不是"自信地答错"。
+
+    目前能判定的限定：
+    - 时间范围（问句有时间词 → 模板必须有 ``{days}`` 且能解析出天数）；
+    - 聚合口径（问「最大」而模板是 SUM 之类）。
+    """
+    reasons: list[str] = []
+    q = question or ""
+
+    if _TIME_QUALIFIER_RE.search(q):
+        parsed = parse_time_range(q)
+        if not parsed.get("days"):
+            reasons.append("时间限定无法解析为参数")
+        elif not _metric_accepts_time(metric):
+            reasons.append("模板没有时间参数（会答成全量）")
+
+    eff = _effective_agg(metric)
+    if eff:
+        for want, words in _AGG_INTENT:
+            if any(w in q for w in words) and eff != want:
+                reasons.append(f"聚合口径不符：问句要 {want}，模板是 {eff}")
+                break
+
+    return reasons
+
+
 def _metric_main_table(metric: dict) -> str:
     """指标的主表：优先从 SQL 模板的 FROM 取；绑定型指标（SQL 是注释）返回空。"""
     m = re.search(r"\bFROM\s+\"?([A-Za-z_][A-Za-z0-9_]*)\"?",
@@ -7159,6 +7231,14 @@ class AiQueryService:
             if unbound:
                 log.warning("[query] 问句用了未绑定指标的术语 {}，跳过快路径（question={}）",
                             unbound, question[:40])
+                metric = None
+        # 准入检查（白名单）：模板必须能解释问句里的时间范围与聚合口径，
+        # 解释不了就让位 NL2SQL —— 宁可变慢，不要"自信地答错"。
+        if metric:
+            blockers = _fast_path_blockers(question, metric, terms, concepts)
+            if blockers:
+                log.warning("[query] 快路径让位（{}）：metric={} question={}",
+                            "；".join(blockers), metric.get("key"), question[:40])
                 metric = None
         if metric and (datasource or SYSTEM_DS) != SYSTEM_DS:
             try:
