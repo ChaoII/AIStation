@@ -627,6 +627,21 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
         for r in schema_rows
     }
     sql = quote_schema_identifiers(sql, schema_map)
+    # **值匹配纠错**：SQL 里的字面量若与库里的取值"归一后相等但写法不同"
+    # （尾随空格 / 全角 / 大小写），换成库里的原样写法 —— 否则等值比较查不到行。
+    # 这是 Genie「entity matching」的等价物（它做匹配纠错，而不是把值列进提示词）。
+    if AiQueryService._cfg_bool(await AiQueryService._cfg(), "literal_fix_enabled", True):
+        try:
+            used = [t for t in schema_map if t.lower() in sql.lower()][:5]
+            if used:
+                vmap = await AiQueryService._ds_value_map(f"ds:{datasource_id}", used, schema_map)
+                if vmap:
+                    fixed, fixes = AiQueryService.fix_sql_literals(sql, vmap)
+                    if fixes:
+                        log.info("[query] 值匹配纠错：{}（{} 处）", "；".join(fixes[:3]), len(fixes))
+                        sql = fixed
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 值匹配纠错失败（忽略）: {str(e)[:80]}")
     # **字段级 ACL 对自定义数据源同样生效**（fail-closed）。
     # 之前这道检查只在系统库分支：本体/资产里把「煤款单价」标成敏感，
     # 走 ds:4 的问数照样能查出来 —— 标记形同摆设。
@@ -9946,16 +9961,13 @@ class AiQueryService:
         r"^(IS[A-Z_]+|.*(STATUS|STATE|TYPE|WAY|KIND|MODE|LEVEL|FLAG|CATEGORY|CLASS|SOURCE))$")
 
     @classmethod
-    async def _ds_enum_hints(cls, datasource: str, tables: list[str],
-                             ds_schema: dict[str, list[str]]) -> list[str]:
-        """**从数据里**取低基数列的真实取值（`【取值】` 块）。
+    async def _ds_value_map(cls, datasource: str, tables: list[str],
+                            ds_schema: dict[str, list[str]]) -> dict[tuple[str, str], list[str]]:
+        """取「低基数列 → 真实取值列表」（(表, 列) → 值），供**值匹配纠错**与枚举提示共用。
 
-        为什么值得做：口径规范里早就写着「枚举字段必须使用【取值】里给出的原始值」，
-        但**没有任何代码产出这个块**（实测 prompt 里根本没有【取值】）——
-        于是模型只能猜 `status == '已发布'` 这种写法。
-
-        代价控制：只取前 5 张表、每表最多 2 个候选列、每列最多 8 个取值，
-        结果按 (数据源, 表, 列) 缓存 10 分钟。
+        口径规范里一直写着「枚举字段必须使用【取值】里给出的原始值」，但此前没有代码
+        产出它。这里从数据里取：只取前 5 张表、每表最多 2 个候选列、每列最多 8 个值，
+        过滤技术列与长文本，结果按 (数据源, 表集合) 缓存 10 分钟。
         """
         import asyncio as _asyncio
 
@@ -9964,27 +9976,27 @@ class AiQueryService:
         if hit and time.time() - hit[0] <= _ENUM_HINT_TTL:
             return hit[1]
 
-        out: list[str] = []
+        out: dict[tuple[str, str], list[str]] = {}
         try:
             ds = await _load_ds(int(str(datasource).split(":")[-1]))
             cfg = _ds_cfg_from_model(ds)
         except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 取列取值失败（数据源不可用）: {str(e)[:80]}")
-            return []
+            log.warning(f"[query] 取值映射：数据源不可用: {str(e)[:80]}")
+            return {}
 
-        async def _one(table: str) -> list[str]:
+        async def _one(table: str) -> dict[tuple[str, str], list[str]]:
             cands = []
             for lab in ds_schema.get(table, []):
                 col = lab.split("(", 1)[0]
-                if cls._ENUM_COL_RE.match(col) and col not in ("CREATIONTIME",):
+                if cls._ENUM_COL_RE.match(col) and not col.startswith(cls._ENUM_SKIP_PREFIX):
                     cands.append(col)
                 if len(cands) >= 2:
                     break
             if not cands:
-                return []
+                return {}
             subs = []
             for c in cands:
-                # 分支里的 ORDER BY/LIMIT 必须**加括号**，否则 UNION ALL 会报语法错
+                # 分支里的 ORDER BY/LIMIT 必须加括号，否则 UNION ALL 语法错
                 subs.append(
                     f"(SELECT '{c}' AS c, \"{c}\"::text AS v, COUNT(*) AS n FROM \"{table}\" "
                     f'WHERE "{c}" IS NOT NULL GROUP BY 2 ORDER BY 3 DESC LIMIT 9)')
@@ -9994,63 +10006,80 @@ class AiQueryService:
                 res = await _asyncio.wait_for(
                     _ex.execute_select(cfg, " UNION ALL ".join(subs)), timeout=8)
             except Exception as e:  # noqa: BLE001
-                # 静默返回会让"枚举提示"看起来永远为空（实测：NameError 被吞，0 行）
                 log.warning(f"[query] 取 {table} 列取值失败（忽略）: {str(e)[:90]}")
-                return []
-            got: dict[str, list[str]] = {}
+                return {}
+            got: dict[tuple[str, str], list[str]] = {}
+            tmp: dict[str, list[str]] = {}
             for c, v, _n in (res.get("rows") or []):
-                got.setdefault(str(c), []).append(str(v))
-            lines = []
-            for c, vals in got.items():
-                # 至少两个取值才有"选哪个"的意义；9 行说明基数更高，不注入；
-                # 长文本/技术列（同步标记之类）注入只会占篇幅
-                if not (2 <= len(vals) <= 8):
+                tmp.setdefault(str(c), []).append(str(v))
+            for c, vals in tmp.items():
+                if not (2 <= len(vals) <= 8):        # 单值无意义；9 行说明基数更高
                     continue
-                if any(len(v) > 24 for v in vals):
+                if any(len(v) > 24 for v in vals):   # 长文本不注入/不纠错
                     continue
-                if c.startswith(cls._ENUM_SKIP_PREFIX):
-                    continue
-                lines.append(f"- {table}.{c}: {'、'.join(vals[:8])}")
-            return lines
+                got[(table, c)] = vals
+            return got
 
         try:
             groups = await _asyncio.gather(*[_one(t) for t in tables[:5]], return_exceptions=True)
         except Exception:  # noqa: BLE001
             groups = []
         for g in groups:
-            if isinstance(g, list):
-                out.extend(g)
+            if isinstance(g, dict):
+                out.update(g)
         if len(_ENUM_HINT_CACHE) >= 200:
             _ENUM_HINT_CACHE.clear()
         _ENUM_HINT_CACHE[cache_key] = (time.time(), out)
         return out
 
-    #: 结构性列：主键/外键/时间/名称/状态——即使问句没提到也要保留
-    _STRUCT_COL_RE = re.compile(
-        r"(^ID$|ID$|CODE$|NAME$|DATE$|TIME$|^IS[A-Z]|STATUS$|TYPE$|WAY$|QTY$|QTY$|AMOUNT$|PRICE$)")
+    @classmethod
+    async def _ds_enum_hints(cls, datasource: str, tables: list[str],
+                             ds_schema: dict[str, list[str]]) -> list[str]:
+        """把取值映射渲染成 prompt 里的【字段取值】块（默认关，实测无收益）。"""
+        vmap = await cls._ds_value_map(datasource, tables, ds_schema)
+        return [f"- {t}.{c}: {'、'.join(vals[:8])}" for (t, c), vals in vmap.items()]
+
+    #: 字面量里的普通字符串（单引号，排除双引号标识符与转义）
+    _SQL_LITERAL_RE = re.compile(r"'((?:[^']|'')*)'")
+
+    @staticmethod
+    def _norm_value(v: str) -> str:
+        """值归一：去首尾空白 + 全角转半角 + 大小写。用于判断"是不是同一个值"。"""
+        import unicodedata
+
+        return unicodedata.normalize("NFKC", str(v or "")).strip().lower()
 
     @classmethod
-    def _prune_columns(cls, question: str, labels: list[str]) -> tuple[list[str], int]:
-        """按问题裁剪列清单：**保留问句提到的列 + 结构性列**，其余折叠。
+    def fix_sql_literals(cls, sql: str, value_map: dict[tuple[str, str], list[str]]) -> tuple[str, list[str]]:
+        """把 SQL 里**归一后相等**的字面量换成库里的原始写法（值匹配纠错）。
 
-        为什么：实测 12 张表 × 约 40 列 ≈ 480 个列名，而生成的 SQL 中位数只用到
-        1 张表、2 个标识符 —— 99% 的 schema 是噪声。同行（Palantir 语义层、
-        Databricks Genie、Snowflake Cortex）都是"少表少列"，不是全量铺开。
+        为什么：用户/模型常写成 ``'烟煤 '``（尾随空格）、``'FL'`` vs ``'fl'``、
+        全角 ``'ＡＢ'``，而库里存的是 ``'烟煤'``。语义完全相同，但等值比较查不到行 ——
+        这正是 Genie 的 entity matching 想解决的问题。
+
+        **只做"归一后相等"的替换**（strip / 全角→半角 / ASCII 大小写），
+        不做模糊匹配（编辑距离），避免把语义改掉。
         """
-        q_grams = _bigrams(question)
-        q_low = (question or "").lower()
-        kept: list[str] = []
-        for lab in labels:
-            code = lab.split("(", 1)[0]
-            cn = lab[len(code):].strip("() ")
-            hit = cls._STRUCT_COL_RE.search(code) is not None
-            if not hit and code.lower() in q_low:
-                hit = True
-            if not hit and _bigrams(cn) & q_grams:
-                hit = True
-            if hit:
-                kept.append(lab)
-        return kept, len(labels)
+        if not sql or not value_map:
+            return sql, []
+        by_norm: dict[str, str] = {}
+        for vals in value_map.values():
+            for v in vals:
+                if isinstance(v, str) and v:
+                    by_norm.setdefault(cls._norm_value(v), v)
+        if not by_norm:
+            return sql, []
+        fixes: list[str] = []
+
+        def _sub(m: re.Match) -> str:
+            raw = m.group(1)
+            canon = by_norm.get(cls._norm_value(raw))
+            if canon and canon != raw:
+                fixes.append(f"{raw!r} → {canon!r}")
+                return "'" + canon.replace("'", "''") + "'"
+            return m.group(0)
+
+        return cls._SQL_LITERAL_RE.sub(_sub, sql), fixes
 
     @classmethod
     async def _ont_prop_notes(cls, tables: list[str],
