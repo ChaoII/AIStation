@@ -251,3 +251,19 @@ def test_retrieval_cache_is_keyed_by_settings(monkeypatch):
     assert run() == ["t1"]          # 同配置命中缓存
     cfg["recall_top_k"] = "6"
     assert run() == ["t2"]          # 改配置必须重新召回
+
+
+def test_object_path_requires_columns_not_just_rows():
+    """对象路径只认「有列」的结果。
+
+    实测两次踩在同一个地方：「每日出入库报表一共有多少条记录」被 IR 接走，
+    一次是无列无行、一次是**有行但无列** —— 旧判据 `not cols and not rows` 放行了
+    后者，前端没有列名可渲染，用户看到空回答，评测判错。
+    """
+    import inspect
+
+    from app.plugin.module_ai.query.service import AiQueryService
+
+    src = inspect.getsource(AiQueryService._object_query_path)
+    assert "if not cols:" in src
+    assert "if not cols and not rows" not in src

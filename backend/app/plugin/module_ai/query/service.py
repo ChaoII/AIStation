@@ -8317,11 +8317,16 @@ class AiQueryService:
 
         cols = res.get("columns") or []
         rows = res.get("rows") or []
-        # **空结果不算"对象查询成功"**：实测「每日出入库报表一共有多少条记录」被判给对象路径，
-        # execute_ir 返回 ok=True 但 columns/rows 全空、sql 为空 —— 界面上就是一条什么都没有的
-        # 回答，而本可以走 NL2SQL 答出来。宁可降级，也不要交白卷。
-        if not cols and not rows:
-            log.warning("[query] 对象查询返回空结果（无列无行），降级 NL2SQL")
+        # **没有列的对象结果一律不算成功**：没有列名，前端无法渲染，用户看到的是
+        # 一条什么都没有的回答，而本可以走 NL2SQL 答出来。
+        # 实测两次都踩在这里：
+        #   ① 「每日出入库报表一共有多少条记录」→ ok=True 但无列无行（旧判定）；
+        #   ② 同题另一种 IR 输出 → 有行但**无列**，旧判定（`not cols and not rows`）
+        #      放行了，评测判错、界面上仍未给出数字。
+        # 所以判据只取 `not cols`：`traverse` / `traverse-agg` 这类真结果都带列。
+        if not cols:
+            log.warning("[query] 对象查询无可用列（cols={} rows={}），降级 NL2SQL",
+                        len(cols), len(rows))
             return None
         retrieved = await cls._recall_grounding(question, SYSTEM_DS)
         msg = await cls._save_message(
