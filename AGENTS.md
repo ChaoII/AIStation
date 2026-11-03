@@ -59,6 +59,20 @@ pnpm run lint                  # eslint + prettier + stylelint
   ⚠️ **别用 `-n 8`**（实测反而 256s：每个 worker 都要构造应用，CPU 争抢）。
   `pytest-xdist` 已加入 dev 依赖（`uv.lock` 仅新增 `pytest-xdist` + `execnet`，未升级其它包）。
 
+### 改问数（`module_ai/query`）时的提交前冒烟（强制）
+
+单测**覆盖不到运行时链路**：2026-11 一次"整段替换"删掉了 `_prune_columns`，`py_compile`
+通过、单测全绿，但真实提问一律 `AttributeError`，评测 accuracy 0.96 → 0.13。
+
+```bash
+cd backend
+uv run python scripts/query_smoke.py                 # 路由 + 两条真实提问，约 40s
+uv run python scripts/query_smoke.py --routing-only   # 只验路由，约 10s（不构造应用）
+```
+
+它检查三件事：慢路径依赖的类方法都在、22 条用例的快/慢路由没串（术语抢答、跨表减法、
+条件/去重必须让位）、一条快路径 + 一条慢路径**真的能答出数据**。退出码非 0 即失败。
+
 ### 首次跑测试 / 新建 worktree 必看（2026-10 实测）
 
 worktree 里**没有 `backend/.venv`、没有 `backend/env/.env.dev`**（都被 gitignore），直接 `pytest` 会
