@@ -1736,7 +1736,7 @@ _NEEDS_SQL_RE = re.compile(
     #      「备注不为空」「以…字开头」「百分之多少」同样漏网
     r"|不为空|为空|非空|为\s*\d|以.{0,6}(开头|结尾)|百分之|最多|最少|最大|最高|峰值|最小|最低"
     # 跨表加减/两者比较：单表模板算不出来
-    r"|加起来|之差|差额|比.{0,8}(多|少))"
+    r"|加起来|之差|差额|减去|扣除|再加上|比.{0,8}(多|少))"
 )
 
 
@@ -8213,6 +8213,12 @@ class AiQueryService:
 
         cols = res.get("columns") or []
         rows = res.get("rows") or []
+        # **空结果不算"对象查询成功"**：实测「每日出入库报表一共有多少条记录」被判给对象路径，
+        # execute_ir 返回 ok=True 但 columns/rows 全空、sql 为空 —— 界面上就是一条什么都没有的
+        # 回答，而本可以走 NL2SQL 答出来。宁可降级，也不要交白卷。
+        if not cols and not rows:
+            log.warning("[query] 对象查询返回空结果（无列无行），降级 NL2SQL")
+            return None
         retrieved = await cls._recall_grounding(question, SYSTEM_DS)
         msg = await cls._save_message(
             session_id, question, path="object", datasource=SYSTEM_DS,
@@ -10038,6 +10044,35 @@ class AiQueryService:
         """把取值映射渲染成 prompt 里的【字段取值】块（默认关，实测无收益）。"""
         vmap = await cls._ds_value_map(datasource, tables, ds_schema)
         return [f"- {t}.{c}: {'、'.join(vals[:8])}" for (t, c), vals in vmap.items()]
+
+    #: 结构性列：主键/外键/时间/名称/状态——即使问句没提到也要保留
+    _STRUCT_COL_RE = re.compile(
+        r"(^ID$|ID$|CODE$|NAME$|DATE$|TIME$|^IS[A-Z]|STATUS$|TYPE$|WAY$|QTY$|AMOUNT$|PRICE$)")
+
+    @classmethod
+    def _prune_columns(cls, question: str, labels: list[str]) -> tuple[list[str], int]:
+        """按问题裁剪列清单：**保留问句提到的列 + 结构性列**，其余折叠。
+
+        依据：实测 12 张表 × 约 40 列 ≈ 480 个列名，而生成的 SQL 中位数只用
+        1 张表、2 个标识符 —— 99% 的 schema 是噪声（prompt 里 84% 的字数来自这里）。
+
+        ⚠️ 本方法曾被一次"整段替换"误删（编译不报错、运行时 AttributeError），
+        删掉的后果是所有慢路径问题全挂 —— 改动这段区域时务必跑一次真实提问验证。
+        """
+        q_grams = _bigrams(question)
+        q_low = (question or "").lower()
+        kept: list[str] = []
+        for lab in labels:
+            code = lab.split("(", 1)[0]
+            cn = lab[len(code):].strip("() ")
+            hit = cls._STRUCT_COL_RE.search(code) is not None
+            if not hit and code.lower() in q_low:
+                hit = True
+            if not hit and _bigrams(cn) & q_grams:
+                hit = True
+            if hit:
+                kept.append(lab)
+        return kept, len(labels)
 
     #: 字面量里的普通字符串（单引号，排除双引号标识符与转义）
     _SQL_LITERAL_RE = re.compile(r"'((?:[^']|'')*)'")

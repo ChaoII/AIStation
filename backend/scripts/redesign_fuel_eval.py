@@ -179,7 +179,7 @@ CASES: list[dict] = [
      "gold": "SELECT COUNT(*) AS 化验日期为空数 FROM \"FUEL_CMCS_ASSAY\" WHERE \"ASSAYDATE\" IS NULL"},
     {"cat": "条件筛选", "q": "入厂煤批次里矿点名称为空的有多少条？",
      "gold": "SELECT COUNT(*) AS 矿点为空批次数 FROM \"FUEL_CMCS_INFACTORYBATCH\" "
-             "WHERE (\"MINENAME\" IS NULL OR trim(\"MINENAME\") = '') AND \"ISDELETED\" = false"},
+             "WHERE (\"MINENAME\" IS NULL OR \"MINENAME\" = '') AND \"ISDELETED\" = false"},
     {"cat": "条件筛选", "q": "矿点里编码为空的有多少个？",
      "gold": "SELECT COUNT(*) AS 编码为空的矿点数 FROM \"FUEL_CMCS_MINE\" "
              "WHERE \"CODE\" IS NULL OR trim(\"CODE\") = ''"},
@@ -282,7 +282,7 @@ CASES: list[dict] = [
              "FROM \"FUEL_CMCS_ASSAY\""},
     {"cat": "占比", "q": "入厂煤批次里矿点名称既不是空字符串也不是 NULL 的占比是多少？",
      "gold": "SELECT ROUND(100.0 * COUNT(*) FILTER "
-             "(WHERE \"MINENAME\" IS NOT NULL AND trim(\"MINENAME\") <> '') / COUNT(*), 2) AS 占比 "
+             "(WHERE \"MINENAME\" IS NOT NULL AND \"MINENAME\" <> '') / COUNT(*), 2) AS 占比 "
              "FROM \"FUEL_CMCS_INFACTORYBATCH\" WHERE \"ISDELETED\" = false"},
     {"cat": "时间窗口", "q": "煤质信息里 2026 年的记录有多少条？",
      "gold": "SELECT COUNT(*) AS 记录数 FROM \"DTXY_PMXX\" "

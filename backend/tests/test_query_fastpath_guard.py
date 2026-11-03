@@ -282,3 +282,41 @@ def test_zero_condition_blocks_fast_path():
     from app.plugin.module_ai.query.service import _needs_custom_sql
 
     assert _needs_custom_sql("每日出入库报表里耗用量为 0 的有多少条？") is True
+
+
+def test_pipeline_helpers_exist():
+    """慢路径依赖的几个类方法必须存在。
+
+    事故：一次"整段替换"把 `_prune_columns` 删掉了，而 `_build_schema_context` 仍在调它
+    —— py_compile 不报错，运行时报 AttributeError，**所有慢路径问题全挂**
+    （评测 accuracy 0.96 → 0.13）。这里用最便宜的方式钉住"别把方法删没了"。
+    """
+    from app.plugin.module_ai.query.service import AiQueryService as S
+
+    for name in ("_prune_columns", "_ds_value_map", "_ont_prop_notes",
+                 "_build_schema_context", "_select_metric"):
+        assert hasattr(S, name), f"缺少 {name}（慢路径会 500）"
+    import app.plugin.module_ai.query.service as _svc
+
+    assert hasattr(_svc, "_fast_path_blockers"), "缺少模块级 _fast_path_blockers"
+
+
+def test_column_pruning_keeps_structural_and_question_columns():
+    """裁剪规则：结构性列 + 问句提到的列保留，其余折叠。"""
+    from app.plugin.module_ai.query.service import AiQueryService as S
+
+    labels = ["ID(主键)", "MINENAME(矿点名称)", "ASSAYDATE(化验时间)",
+              "REMARK(备注)", "SOME_ODD_COL(无关字段)"]
+    kept, total = S._prune_columns("按矿点统计化验单", labels)
+    assert total == 5
+    assert any("MINENAME" in k for k in kept)      # 问句提到矿点
+    assert any(k.startswith("ID") for k in kept)   # 结构性
+    assert any("ASSAYDATE" in k for k in kept)     # 时间列
+    assert not any("SOME_ODD_COL" in k for k in kept)
+
+
+def test_cross_table_subtraction_blocks_fast_path():
+    """「A 减去 B」是跨表运算，不能被「A 合计」的指标答掉（实测踩过）。"""
+    from app.plugin.module_ai.query.service import _needs_custom_sql
+
+    assert _needs_custom_sql("煤场进煤总量减去取煤总量是多少吨？") is True
