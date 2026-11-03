@@ -1,71 +1,99 @@
-"""接线审计：前端页面 ↔ 菜单 component_path 是否一一对应（找孤儿页/缺失页）。"""
+"""接线审计：找出"定义了但没人调用"的函数/方法。
 
+用户最在意的不是"功能写错"，而是**逻辑没接上**：函数写了、开关加了，
+但运行时走的是另一条路 / 另一个常量。这类缺陷编译不报错、单测未必覆盖、
+界面上看着一切正常，只能靠静态对账 + 真实提问才能发现。
+
+用法::
+
+    cd backend
+    uv run python scripts/audit_wiring.py                    # 默认扫问数模块
+    uv run python scripts/audit_wiring.py app/plugin/module_ai/ontology
+
+判据与已知误报
+--------------
+- 有装饰器的函数**跳过**：`@router.get` / `@cli.command` / `@property` /
+  `@classmethod` 是框架按装饰器注册的，按名字找不到引用属正常。
+- 名字只出现在字符串里（`getattr(obj, "xxx")`）也算引用，故动态分派不会误报成死代码。
+- 反过来，**同名不同物**会漏报（例如两个模块各有一个 `_stats`）：只作线索，人工确认。
+
+本脚本不会删任何东西，输出仅供人工判断。
+"""
 from __future__ import annotations
 
-import asyncio
-import os
+import ast
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ.setdefault("ENVIRONMENT", os.environ.get("ENVIRONMENT", "dev"))
-if hasattr(sys.stdout, "reconfigure"):
+ROOT = Path(__file__).resolve().parents[1]          # backend/
+TARGET = ROOT / (sys.argv[1] if len(sys.argv) > 1 else "app/plugin/module_ai/query")
+SCAN_DIRS = [ROOT / "app", ROOT / "tests", ROOT / "scripts"]
+
+
+def _py_files(dirs: list[Path]) -> list[Path]:
+    out: list[Path] = []
+    for d in dirs:
+        if d.exists():
+            out += [p for p in d.rglob("*.py") if ".venv" not in p.parts]
+    return out
+
+
+def _defs(path: Path) -> tuple[list[tuple[str, int]], int]:
+    """(无装饰器的函数名与行号, 被跳过的装饰器函数个数)。"""
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:  # noqa: BLE001
-        pass
+        tree = ast.parse(open(path, encoding="utf-8").read())
+    except SyntaxError as e:                          # 语法错的文件单独提示
+        print(f"! 无法解析 {path.relative_to(ROOT)}: {e}")
+        return [], 0
+    plain: list[tuple[str, int]] = []
+    decorated = 0
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.decorator_list:
+                decorated += 1
+            elif not node.name.startswith("__"):
+                plain.append((node.name, node.lineno))
+    return plain, decorated
 
 
-async def main() -> None:
-    from main import create_app
+def main() -> None:
+    targets = _py_files([TARGET])
+    corpus = _py_files(SCAN_DIRS)
+    print(f"扫描 {TARGET.relative_to(ROOT)}：{len(targets)} 个文件；"
+          f"参照全仓 {len(corpus)} 个 .py")
 
-    create_app()
-    from sqlalchemy import text
+    entries: list[tuple[str, str, int]] = []
+    skipped_decorated = 0
+    for f in targets:
+        defs, dec = _defs(f)
+        skipped_decorated += dec
+        entries += [(n, str(f.relative_to(ROOT)), ln) for n, ln in defs]
+    print(f"跳过有装饰器的函数 {skipped_decorated} 个（路由/CLI/属性，由框架注册）\n")
 
-    from app.core.database import async_db_session
-
-    views = Path(__file__).resolve().parents[2] / "frontend" / "src" / "views"
-    # 页面集合：module_ai 下的 *.vue，**排除 components/**，并归一掉结尾的 /index
-    pages: set[str] = set()
-    for p in views.rglob("*.vue"):
-        s = str(p)
-        if "module_ai" not in s or f"{os.sep}components{os.sep}" in s:
+    # 全仓文本里各名字出现次数（减掉定义处；同名多处定义按次数减）
+    counts: Counter[str] = Counter()
+    for f in corpus:
+        try:
+            text = open(f, encoding="utf-8").read()
+        except (UnicodeDecodeError, OSError):
             continue
-        rel = str(p.relative_to(views)).replace("\\", "/")[:-4]
-        pages.add(rel[: -len("/index")] if rel.endswith("/index") else rel)
+        for name in {e[0] for e in entries}:
+            counts[name] += text.count(name)
+    defs_per_name: dict[str, int] = defaultdict(int)
+    for name, _, _ in entries:
+        defs_per_name[name] += 1
 
-    async with async_db_session() as db:
-        rows = (
-            await db.execute(
-                text(
-                    "SELECT component_path, route_path, name, hidden FROM sys_menu "
-                    "WHERE is_deleted=false AND component_path LIKE 'module_ai/%' "
-                    "ORDER BY component_path"
-                )
-            )
-        ).fetchall()
-    menu: dict[str, tuple[str, str, bool]] = {}
-    for r in rows:
-        cp = str(r[0]).strip()
-        if not cp:
-            continue
-        key = cp[: -len("/index")] if cp.endswith("/index") else cp
-        menu[key] = (str(r[1]), str(r[2]), bool(r[3]))
+    dead = [(n, p, ln) for n, p, ln in entries
+            if counts[n] - defs_per_name[n] <= 0]
 
-    print(f"前端 AI 页面 {len(pages)} 个；菜单登记的 component_path {len(menu)} 个")
-    orphan_pages = sorted(pages - set(menu))
-    missing_pages = sorted(set(menu) - pages)
-    print(f"\n=== 有页面但**没有菜单**（用户点不到）: {len(orphan_pages)} ===")
-    for p in orphan_pages:
-        print("  ", p)
-    print(f"\n=== 有菜单但**页面不存在**（点了会白屏）: {len(missing_pages)} ===")
-    for m in missing_pages:
-        rp, nm, hid = menu[m]
-        print(f"   {m}  route={rp} name={nm} hidden={hid}")
-    print("\n=== 与问数相关的菜单（含 hidden）===")
-    for m, (rp, nm, hid) in sorted(menu.items()):
-        if "query" in m or "eval" in m:
-            print(f"   {m:42s} route={rp:22s} name={nm} hidden={hid}")
+    if not dead:
+        print("✅ 没有零引用的函数")
+        return
+    print(f"【零引用】{len(dead)} 个（需人工确认：可能是预留/运维入口）")
+    for name, path, line in sorted(dead, key=lambda x: x[1]):
+        print(f"  {path}:{line}  {name}")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    main()
