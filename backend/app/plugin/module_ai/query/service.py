@@ -94,6 +94,11 @@ _QUERY_TABLES_SQL = (
     # 互不可见、互不相通、不共享数据：治理面板里的「数据域」数量/内容 ≠ 本体页的「本体域」，
     # 界面上的区分见 GovernancePanel 的说明 tooltip 与本体页「本体域」侧栏标题。
     # 合并两张表会同时动权限模型与本体命名空间，属于数据迁移级改动，**不要顺手做**。
+    #
+    # ⚠️ 2026-11 核查确认：数据域**目前不参与问数**——既不进 prompt、也不进召回，
+    # 更不参与权限（问数可查范围 = 资产白名单 `ai_query_assets.included` + ABAC 规则
+    # `ai_access_rule.allowed_tables`）。它只用于治理页的归类与统计。
+    # 界面文案已按此修正；若将来要接进召回/权限，改这里的同时记得同步那句文案。
     "CREATE TABLE IF NOT EXISTS ai_data_domain ("
     "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), code VARCHAR(60), description VARCHAR(255), "
     "tables JSONB DEFAULT '[]', members JSONB DEFAULT '[]', enabled BOOLEAN DEFAULT true, "

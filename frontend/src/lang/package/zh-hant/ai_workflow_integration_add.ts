@@ -491,7 +491,7 @@ export default {
   ig_govRowCount: "列數",
   ig_govIssue: "問題",
   ig_govDomainAlert:
-    "資料域（Data Domain）：把資料表依業務主題歸類，用於問數權限與治理；區別於「業務域」（資產上的業務標籤）與「本體域」（本體物件的命名空間）。",
+    "資料域（Data Domain）：把資料表按業務主題「歸類與展示」。注意：它目前不參與問數的表選擇/召回，也不參與權限——問數可查範圍由「資產白名單 + ABAC 規則」決定。區別於「業務域」（資產上的業務標籤）與「本體域」（本體物件命名空間）。",
   ig_govNewDomain: "新建資料域",
   ig_govDomainCount: "共 {count} 個域 · 未歸屬 {unassigned}",
   ig_govObjCount: "物件（{count}）",

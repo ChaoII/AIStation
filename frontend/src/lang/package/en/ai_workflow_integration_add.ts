@@ -514,7 +514,7 @@ export default {
   ig_govRowCount: "Rows",
   ig_govIssue: "Issues",
   ig_govDomainAlert:
-    'Data Domain: group data tables by business theme for query permissions and governance; differs from "Business Domain" (business tag on assets) and "Ontology Domain" (ontology object namespace).',
+    'Data Domain groups tables by business topic for classification and display only. It does NOT affect which tables the query engine retrieves, and grants no permissions — queryable scope is decided by the asset whitelist plus ABAC rules.',
   ig_govNewDomain: "New Data Domain",
   ig_govDomainCount: "{count} domains · Unassigned {unassigned}",
   ig_govObjCount: "Objects ({count})",

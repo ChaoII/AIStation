@@ -540,7 +540,7 @@ export default {
   ig_govUnscanned: "未扫描",
   ig_govIssue: "问题",
   ig_govDomainAlert:
-    "数据域（Data Domain）：把数据表按业务主题归类，用于问数权限与治理；区别于「业务域」（资产上的业务标签）与「本体域」（本体对象的命名空间）。",
+    "数据域（Data Domain）：把数据表按业务主题「归类与展示」。注意：它目前不参与问数的表选择/召回，也不参与权限——问数可查范围由「资产白名单 + ABAC 规则」决定。区别于「业务域」（资产上的业务标签）与「本体域」（本体对象命名空间）。",
   ig_govNewDomain: "新建数据域",
   ig_govDomainCount: "共 {count} 个域 · 未归属 {unassigned}",
   ig_govObjCount: "对象（{count}）",
