@@ -1267,6 +1267,7 @@ export default {
   openedViewMsg: "已開啟視圖「{name}」",
   emptyMeansUncategorized: "留空 = 未分類",
   actionTypeActingOn: "動作類型 · 作用於 {name}",
+  actionScopeHint: "本體動作由「物件頁 · 執行動作」「決策中心」和智慧體工具（ont_action__代碼）呼叫；問數（NL2SQL）不會自動執行動作——問數側的行級寫回是歷史實作「資料與整合 → 治理 → 動作/寫回」，正在逐步下線。",
   needsApproval: "需審批",
   noApprovalNeeded: "無需審批",
   notFilled: "未填寫",

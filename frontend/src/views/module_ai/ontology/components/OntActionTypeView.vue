@@ -29,6 +29,14 @@
 
     <!-- ============ Overview ============ -->
     <template v-if="page === 'overview'">
+      <!-- 作用域说明：动作由谁执行、问数会不会自动用（实测许多人误以为问数会调动作） -->
+      <el-alert
+        class="ont-act__scope"
+        type="info"
+        :closable="false"
+        show-icon
+        :title="i18nT('ai_ontology.actionScopeHint')"
+      />
       <section class="ont-sec">
         <div class="ont-sec__head">
           <span class="ont-sec__title">{{ i18nT("ai_ontology.metadata") }}</span>

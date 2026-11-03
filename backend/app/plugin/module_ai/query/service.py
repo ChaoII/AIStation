@@ -127,6 +127,13 @@ _QUERY_TABLES_SQL = (
     "shadow_golden VARCHAR(64) DEFAULT '', shadow_tolerance VARCHAR(32) DEFAULT '', "
     "shadow_result VARCHAR(32) DEFAULT '', shadow_actual VARCHAR(64) DEFAULT '', "
     "shadow_at TIMESTAMP)",
+    # ⚠️ 与本体动作 `ai_ont_action` 是**两套**东西（2026-11 核对）：
+    #   - 本表（ai_query_writeback）= 问数侧「表级写回」：直接 UPDATE 业务表某行、
+    #     走 writable_cols 白名单 + 审批留痕（ai_query_writeback_log）；属历史实现，
+    #     界面已标注「逐步下线」，定义在「数据与集成 → 治理 → 动作/写回」。
+    #   - ai_ont_action = 本体对象上的动作：由对象页/决策中心/智能体工具
+    #     （ont_action__<code>）调用，带字段白名单、规则校验、副作用与审批。
+    #   **问数（NL2SQL）不会自动执行任何一方**；不要在问数链路上接 ai_ont_action。
     "CREATE TABLE IF NOT EXISTS ai_query_writeback ("
     "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), object_table VARCHAR(120), "
     "writable_cols JSONB DEFAULT '[]', validation TEXT, approve BOOLEAN DEFAULT true, "

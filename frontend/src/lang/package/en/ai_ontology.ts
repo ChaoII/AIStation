@@ -1296,6 +1296,7 @@ export default {
   openedViewMsg: 'Opened view "{name}"',
   emptyMeansUncategorized: "Empty = uncategorized",
   actionTypeActingOn: "Action type · acting on {name}",
+  actionScopeHint: "Ontology actions are invoked from the object page (Run action), the decision center, and agent tools (ont_action__code). The NL2SQL query engine never runs actions automatically — its row-level write-back is the legacy 'Data & Integration → Governance → Actions/Write-back' feature, which is being retired.",
   needsApproval: "Approval required",
   noApprovalNeeded: "No approval needed",
   notFilled: "Not filled",
