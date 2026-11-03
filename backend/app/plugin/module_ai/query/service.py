@@ -10025,6 +10025,33 @@ class AiQueryService:
         _ENUM_HINT_CACHE[cache_key] = (time.time(), out)
         return out
 
+    #: 结构性列：主键/外键/时间/名称/状态——即使问句没提到也要保留
+    _STRUCT_COL_RE = re.compile(
+        r"(^ID$|ID$|CODE$|NAME$|DATE$|TIME$|^IS[A-Z]|STATUS$|TYPE$|WAY$|QTY$|QTY$|AMOUNT$|PRICE$)")
+
+    @classmethod
+    def _prune_columns(cls, question: str, labels: list[str]) -> tuple[list[str], int]:
+        """按问题裁剪列清单：**保留问句提到的列 + 结构性列**，其余折叠。
+
+        为什么：实测 12 张表 × 约 40 列 ≈ 480 个列名，而生成的 SQL 中位数只用到
+        1 张表、2 个标识符 —— 99% 的 schema 是噪声。同行（Palantir 语义层、
+        Databricks Genie、Snowflake Cortex）都是"少表少列"，不是全量铺开。
+        """
+        q_grams = _bigrams(question)
+        q_low = (question or "").lower()
+        kept: list[str] = []
+        for lab in labels:
+            code = lab.split("(", 1)[0]
+            cn = lab[len(code):].strip("() ")
+            hit = cls._STRUCT_COL_RE.search(code) is not None
+            if not hit and code.lower() in q_low:
+                hit = True
+            if not hit and _bigrams(cn) & q_grams:
+                hit = True
+            if hit:
+                kept.append(lab)
+        return kept, len(labels)
+
     @classmethod
     async def _ont_prop_notes(cls, tables: list[str],
                               ds_schema: dict[str, list[str]]) -> list[str]:
@@ -10165,10 +10192,19 @@ class AiQueryService:
                     tmap = (_DS_TYPE_CACHE.get(datasource, (0, {}))[1].get(t) or {})
                     # 列标签后面补上**数据库类型**：模型据此决定是否需要 CAST
                     # （实测 LF/RZ 是 varchar，模型写成 AVG("LF") → 函数不存在直接失败）
+                    shown, total_n = cols, len(cols)
+                    # 默认**开**（2026-11 配对实验）：prompt 20,991 → 10,077 字符（-52%），
+                    # 单轮耗时 475/382s → 361/345s（-20%），准确率持平略升
+                    # （0.9359 vs 0.9551，差异在噪声内），且内部翻转从 4 题降到 1~3 题。
+                    # 依据：生成的 SQL 中位数只用 1 张表、2 个标识符，480 个列名里 99% 是噪声。
+                    if cls._cfg_bool(cfg, "schema_column_prune_enabled", True):
+                        shown, total_n = cls._prune_columns(question, cols)
                     rendered = [
                         f"{c}[{tmap[c.split('(', 1)[0]]}]" if c.split("(", 1)[0] in tmap else c
-                        for c in cols
+                        for c in shown
                     ]
+                    if total_n > len(shown):
+                        rendered.append(f"…（另有 {total_n - len(shown)} 列未列出，需要时按列名补充）")
                     meta = tmeta.get(t) or {}
                     extras = []
                     alias = str(meta.get("alias") or "").strip()

@@ -31,7 +31,7 @@ from app.core.database import async_db_session
 
 
 def _parse(configs: str) -> list[tuple[str, dict]]:
-    """``baseline,key=false`` → [("baseline", {}), ("key=false", {"key": "false"})]"""
+    """``baseline,key=false,a=1&b=2`` → 名字 + 覆盖字典（``&`` 连接多个覆盖）。"""
     out: list[tuple[str, dict]] = []
     for raw in (configs or "baseline").split(","):
         item = raw.strip()
@@ -40,8 +40,12 @@ def _parse(configs: str) -> list[tuple[str, dict]]:
         if item == "baseline" or "=" not in item:
             out.append((item or "baseline", {}))
             continue
-        k, v = item.split("=", 1)
-        out.append((item, {k.strip(): v.strip()}))
+        ov: dict[str, str] = {}
+        for pair in item.split("&"):
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                ov[k.strip()] = v.strip()
+        out.append((item, ov))
     return out or [("baseline", {})]
 
 
