@@ -19,7 +19,7 @@ from .eval_metrics import gold_tables, recall_at_k, summarize
 #: 消融维度（spec §七）。
 ABLATION_KEYS: tuple[str, ...] = (
     "recall_enabled", "agno_semantic_enabled", "kg_enabled", "agno_tool_agent",
-    "decomposed_planning", "empty_self_correct", "fewshot_auto_curate", "enum_hint_enabled",
+    "decomposed_planning", "empty_self_correct", "fewshot_auto_curate",
 )
 
 #: 进程级运行状态：run_id -> dict

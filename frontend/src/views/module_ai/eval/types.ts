@@ -127,7 +127,6 @@ export const ABLATION_KEYS: { key: string; label: string }[] = [
   { key: "decomposed_planning", label: "eval_ablPlan" },
   { key: "empty_self_correct", label: "eval_ablSelfCorrect" },
   { key: "fewshot_auto_curate", label: "eval_ablFewshot" },
-  { key: "enum_hint_enabled", label: "eval_ablEnum" },
 ];
 
 // 难度/形式：数组元素为发送给后端的原始枚举值（数据），展示时用下面的 key 经 i18n 翻译。

@@ -1203,6 +1203,9 @@ _DS_SCHEMA_CACHE: dict[str, tuple[float, dict]] = {}
 _DS_TYPE_CACHE: dict[str, tuple[float, dict]] = {}
 #: 问数 prompt 上下文缓存（问题 → 拼好的 schema 文本）：自纠错重试/重复提问复用
 _SCHEMA_CTX_CACHE: dict[str, tuple[float, str]] = {}
+#: 低基数列取值缓存（数据源|表 → 行），取远端库有成本，缓存 10 分钟
+_ENUM_HINT_CACHE: dict[str, tuple[float, list[str]]] = {}
+_ENUM_HINT_TTL = 600.0
 _SCHEMA_CTX_TTL = 120.0
 _SCHEMA_CTX_CACHE_MAX = 50
 _DS_SCHEMA_TTL = 600.0
@@ -6562,7 +6565,9 @@ class AiQueryService:
             "schema_semantic_weight": "0.6",         # 语义检索权重
             "schema_keyword_weight": "0.4",          # 关键词检索权重
             "entity_enabled": "true",                # 是否启用「实体名词→表」基线
-            "enum_hint_enabled": "true",             # 是否注入枚举字段真实取值
+            # 是否注入枚举字段真实取值。**默认关**：配对实测关掉更好
+            # （0.9231 → 0.9487，2 题，仍在噪声内，但没有正收益证据）。
+            "enum_hint_enabled": "false",
             "full_entity_no_limit": "true",          # 全量实体查询提示词规则（不 LIMIT 截断）
             "entity_name_rule": "true",              # 实体查询提示词规则（JOIN 取 name）
             "entity_map": "{}",                      # 实体名词→表映射（JSON，覆盖默认）
@@ -8490,7 +8495,7 @@ class AiQueryService:
         if cls._cfg_bool(cfg, "entity_name_rule", True):
             rules.append("（1）问题要求按实体（摄像头/设备/算法/数据集/规则等）展示时，"
                          "应 JOIN 对应表用其「name」列，而不是直接返回外键 id；")
-        if cls._cfg_bool(cfg, "enum_hint_enabled", True):
+        if cls._cfg_bool(cfg, "enum_hint_enabled", False):
             rules.append("（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；")
         rules.append("（3）占比用“COUNT(*) * 100.0 / 总数”或“FILTER (WHERE ...)”计算；")
         rules.append("（4）多行 SQL 直接换行输出即可，不要加注释。")
@@ -8746,7 +8751,7 @@ class AiQueryService:
         if cls._cfg_bool(cfg, "entity_name_rule", True):
             rules.append("（1）问题要求按实体（摄像头/设备/算法/数据集/规则等）展示时，"
                          "应 JOIN 对应表用其「name」列，而不是直接返回外键 id；")
-        if cls._cfg_bool(cfg, "enum_hint_enabled", True):
+        if cls._cfg_bool(cfg, "enum_hint_enabled", False):
             rules.append("（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；")
         rules.append("（3）占比用“COUNT(*) * 100.0 / 总数”或“FILTER (WHERE ...)”计算；")
         rules.append("（4）多行 SQL 直接换行输出即可，不要加注释。")
@@ -9933,6 +9938,140 @@ class AiQueryService:
         _DS_TYPE_CACHE[key] = (time.time(), types)
         return out
 
+    #: 技术列前缀：同步/版本/排序这类，取值对写 SQL 没有帮助
+    _ENUM_SKIP_PREFIX = ("SYNC", "VERSION", "SORT", "SERIAL", "ROWVERSION", "DISCRIMINATOR")
+
+    #: 低基数列（枚举）候选：名字像状态/类型/标记的列
+    _ENUM_COL_RE = re.compile(
+        r"^(IS[A-Z_]+|.*(STATUS|STATE|TYPE|WAY|KIND|MODE|LEVEL|FLAG|CATEGORY|CLASS|SOURCE))$")
+
+    @classmethod
+    async def _ds_enum_hints(cls, datasource: str, tables: list[str],
+                             ds_schema: dict[str, list[str]]) -> list[str]:
+        """**从数据里**取低基数列的真实取值（`【取值】` 块）。
+
+        为什么值得做：口径规范里早就写着「枚举字段必须使用【取值】里给出的原始值」，
+        但**没有任何代码产出这个块**（实测 prompt 里根本没有【取值】）——
+        于是模型只能猜 `status == '已发布'` 这种写法。
+
+        代价控制：只取前 5 张表、每表最多 2 个候选列、每列最多 8 个取值，
+        结果按 (数据源, 表, 列) 缓存 10 分钟。
+        """
+        import asyncio as _asyncio
+
+        cache_key = "|".join([datasource or ""] + sorted(tables))
+        hit = _ENUM_HINT_CACHE.get(cache_key)
+        if hit and time.time() - hit[0] <= _ENUM_HINT_TTL:
+            return hit[1]
+
+        out: list[str] = []
+        try:
+            ds = await _load_ds(int(str(datasource).split(":")[-1]))
+            cfg = _ds_cfg_from_model(ds)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 取列取值失败（数据源不可用）: {str(e)[:80]}")
+            return []
+
+        async def _one(table: str) -> list[str]:
+            cands = []
+            for lab in ds_schema.get(table, []):
+                col = lab.split("(", 1)[0]
+                if cls._ENUM_COL_RE.match(col) and col not in ("CREATIONTIME",):
+                    cands.append(col)
+                if len(cands) >= 2:
+                    break
+            if not cands:
+                return []
+            subs = []
+            for c in cands:
+                # 分支里的 ORDER BY/LIMIT 必须**加括号**，否则 UNION ALL 会报语法错
+                subs.append(
+                    f"(SELECT '{c}' AS c, \"{c}\"::text AS v, COUNT(*) AS n FROM \"{table}\" "
+                    f'WHERE "{c}" IS NOT NULL GROUP BY 2 ORDER BY 3 DESC LIMIT 9)')
+            try:
+                from . import executor as _ex
+
+                res = await _asyncio.wait_for(
+                    _ex.execute_select(cfg, " UNION ALL ".join(subs)), timeout=8)
+            except Exception as e:  # noqa: BLE001
+                # 静默返回会让"枚举提示"看起来永远为空（实测：NameError 被吞，0 行）
+                log.warning(f"[query] 取 {table} 列取值失败（忽略）: {str(e)[:90]}")
+                return []
+            got: dict[str, list[str]] = {}
+            for c, v, _n in (res.get("rows") or []):
+                got.setdefault(str(c), []).append(str(v))
+            lines = []
+            for c, vals in got.items():
+                # 至少两个取值才有"选哪个"的意义；9 行说明基数更高，不注入；
+                # 长文本/技术列（同步标记之类）注入只会占篇幅
+                if not (2 <= len(vals) <= 8):
+                    continue
+                if any(len(v) > 24 for v in vals):
+                    continue
+                if c.startswith(cls._ENUM_SKIP_PREFIX):
+                    continue
+                lines.append(f"- {table}.{c}: {'、'.join(vals[:8])}")
+            return lines
+
+        try:
+            groups = await _asyncio.gather(*[_one(t) for t in tables[:5]], return_exceptions=True)
+        except Exception:  # noqa: BLE001
+            groups = []
+        for g in groups:
+            if isinstance(g, list):
+                out.extend(g)
+        if len(_ENUM_HINT_CACHE) >= 200:
+            _ENUM_HINT_CACHE.clear()
+        _ENUM_HINT_CACHE[cache_key] = (time.time(), out)
+        return out
+
+    @classmethod
+    async def _ont_prop_notes(cls, tables: list[str],
+                              ds_schema: dict[str, list[str]]) -> list[str]:
+        """本体属性里**数据源没有**的那部分（业务描述 / 枚举取值）才注入。
+
+        为什么只注入"差分"：实测燃料域 4985 个属性，名字与数据源列注释 **80/86 完全相同**
+        （本体是导入时复制的），描述 0 条、枚举 0 条 —— 全量注入等于把同一句话写两遍，
+        和"资产描述注入"是同一个坑。等有人把描述/枚举填上，这段自动生效。
+        """
+        try:
+            async with async_db_session() as db:
+                rows = (await db.execute(text(
+                    "SELECT o.backing_table, p.code, p.description, p.options::text "
+                    "FROM ai_ont_property p JOIN ai_ont_object o ON o.code = p.object_code "
+                    "WHERE p.is_deleted=false AND o.is_deleted=false AND o.backing_table = ANY(:t)"),
+                    {"t": list(tables)})).fetchall()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 读本体属性说明失败（忽略）: {str(e)[:80]}")
+            return []
+        # 数据源里已有的列注释（用来判断"是不是重复"）
+        cmt: dict[tuple[str, str], str] = {}
+        for t, labels in (ds_schema or {}).items():
+            for lab in labels:
+                name, _, rest = lab.partition("(")
+                cmt[(t, name)] = rest.rstrip(")")
+        out = []
+        for t, code, desc, options in rows:
+            d = (desc or "").strip()
+            if d and d != cmt.get((t, code)):
+                out.append(f"- {t}.{code}：{d[:80]}")
+            if options and options not in ("[]", "null"):
+                try:
+                    import json as _j
+
+                    vals = _j.loads(options)
+                    if isinstance(vals, list) and vals:
+                        pairs = []
+                        for v in vals[:10]:
+                            if isinstance(v, dict):
+                                pairs.append(f"{v.get('value', v.get('code', ''))}={v.get('label', '')}")
+                            else:
+                                pairs.append(str(v))
+                        out.append(f"- {t}.{code} 取值: {'、'.join(pairs)}")
+                except Exception:  # noqa: BLE001
+                    pass
+        return out
+
     @classmethod
     async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
         # 命中短时缓存直接返回（见函数尾部写入处）
@@ -10043,6 +10182,34 @@ class AiQueryService:
                         extras.append(f"业务场景:{meta['business_scenarios']}")
                     head = f"{t}【" + "；".join(extras) + "】" if extras else t
                     lines.append(f"- {head}: {', '.join(rendered) if rendered else ''}")
+                # **本体属性的"差分"**：只注入数据源注释里没有的业务描述/枚举。
+                # 实测燃料域 4985 个属性里 80/86 与列注释逐字相同、描述 0 条、枚举 0 条，
+                # 全量注入只是把同一句话写两遍（和资产描述注入同一个坑）。
+                try:
+                    # 默认**关**：配对实测「开 vs 关」无正收益（0.9231 vs 0.9295，
+                    # 差 0.5 题；同配置重跑本身翻 2~3 题）。这是第三次"往 prompt 里
+                    # 加更详细的中文元数据"测出零收益了（资产描述、本体说明、枚举取值）。
+                    _notes = (await cls._ont_prop_notes(rel, ds_schema)
+                              if cls._cfg_bool(cfg, "schema_ont_prop_notes_enabled", False)
+                              else [])
+                    if _notes:
+                        lines.append("【字段业务说明】")
+                        lines.extend(_notes)
+                except Exception as e:  # noqa: BLE001
+                    log.warning(f"[query] 本体属性说明注入失败（忽略）: {str(e)[:80]}")
+                # **枚举取值（从数据里取）**：口径规范里早就要求"用【取值】里的原始值"，
+                # 但此前没有任何代码产出这个块。见 `_ds_enum_hints`。
+                # 默认**关**：配对实测关掉更好（0.9231 → 0.9487，2 题，仍在噪声内）。
+                # 口径规范里那条「用【取值】里的原始值」在关闭时不会命中歧义，
+                # 因为规则本身只在 enum_hint_enabled 打开时才加。
+                if cls._cfg_bool(cfg, "enum_hint_enabled", False):
+                    try:
+                        _vals = await cls._ds_enum_hints(datasource, rel, ds_schema)
+                        if _vals:
+                            lines.append("【字段取值】（低基数列的真实取值，写条件时直接用这些）")
+                            lines.extend(_vals)
+                    except Exception as e:  # noqa: BLE001
+                        log.warning(f"[query] 枚举取值注入失败（忽略）: {str(e)[:80]}")
                 lines.append(cls._query_conventions())
                 # 该库表名/字段名为英文大写且大小写敏感：不加双引号会被 PG 小写化 → 找不到表。
                 lines.append(
