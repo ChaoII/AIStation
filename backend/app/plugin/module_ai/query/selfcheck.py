@@ -99,3 +99,66 @@ def run_selfcheck(question: str, columns: list, rows: list) -> list[dict]:
 def format_issue(issues: list[dict]) -> str:
     """把可疑项拼成给模型看的**具体错因**（用于重试）。"""
     return "；".join(str(x.get("msg") or "") for x in (issues or []) if x.get("msg"))
+
+
+# ---------------------------------------------------------------------------
+# SQL 意图校验：拿**问句的措辞**去对**生成的 SQL**，而不是等结果回来才反推
+#
+# 为什么要有这一层：题库对比暴露的差异几乎全是"口径"而不是"能力"——
+#   问「按名称分组」，SQL 却 GROUP BY 了 ID；
+#   问「不为空」，SQL 没有 IS NOT NULL；
+#   问「最近一个月」，SQL 里没有时间条件；
+#   问「多少家不同」，SQL 用了 COUNT(*) 而不是 COUNT(DISTINCT)。
+# 结果层面看不出来（数字都合理），只能靠"问句说要什么 / SQL 做了什么"来对。
+# 全部是**高置信度**规则：只在措辞与 SQL 明确冲突时才报，宁可漏报不误报。
+# ---------------------------------------------------------------------------
+_ASK_BY_NAME_RE = re.compile(r"(按|每个|各)\s*[\u4e00-\u9fff]{0,6}(名称|名字)")
+_ASK_NOT_NULL_RE = re.compile(r"(不为空|非空|有效|有值)")
+_ASK_DISTINCT_RE = re.compile(r"多少(家|个|种|条|位)?不同|去重|不同.{0,4}数量")
+_ASK_TIME_RE = re.compile(
+    r"(最近|近\s*\d|过去|本(月|周|年)|这个月|今年|去年|上(月|周|年)"
+    r"|\d{4}\s*年|\d+\s*(天|日|周|个?月))")
+_SQL_DATE_RE = re.compile(
+    r"(>=|<=|between|interval|current_date|date\(|to_char\(|date_trunc\(|\bnow\s*\()",
+    re.IGNORECASE)
+_GROUP_BY_ID_RE = re.compile(
+    r"GROUP\s+BY\s+[^;]*?\"?([A-Za-z_][A-Za-z0-9_]*)\"?", re.IGNORECASE)
+
+
+def check_sql_intent(question: str, sql: str) -> list[dict]:
+    """问句措辞 vs SQL 的**口径冲突**（高置信度，只提示不阻断）。"""
+    q = question or ""
+    text = sql or ""
+    up = text.upper()
+    issues: list[dict] = []
+
+    if _ASK_BY_NAME_RE.search(q):
+        m = _GROUP_BY_ID_RE.search(text)
+        grouped = re.findall(r"GROUP\s+BY\s+([^;]+?)(?:ORDER|LIMIT|$)", text, re.IGNORECASE)
+        cols = " ".join(grouped).upper() if grouped else ""
+        if re.search(r"\b\w*(ID|CODE)\b", cols) and not re.search(r"NAME", cols):
+            issues.append({"kind": "group_key",
+                           "msg": "问的是按名称分组，SQL 是按 ID/编码分组，结果可能对不上",
+                           "detail": (m.group(1) if m else cols.strip())[:60]})
+
+    if _ASK_NOT_NULL_RE.search(q) and "IS NOT NULL" not in up and "<> ''" not in text \
+            and "!= ''" not in text:
+        issues.append({"kind": "null_semantics",
+                       "msg": "问句要求非空，SQL 没有排除空值",
+                       "detail": ""})
+
+    if _ASK_DISTINCT_RE.search(q) and "DISTINCT" not in up and "GROUP BY" not in up:
+        issues.append({"kind": "distinct",
+                       "msg": "问的是不同/去重数量，SQL 用了普通计数",
+                       "detail": ""})
+
+    if _ASK_TIME_RE.search(q) and not _SQL_DATE_RE.search(text):
+        issues.append({"kind": "time_filter",
+                       "msg": "问句带了时间范围，SQL 里没有时间条件",
+                       "detail": ""})
+
+    return issues
+
+
+def format_sql_intent(issues: list[dict]) -> str:
+    return "；".join(i.get("msg", "") for i in issues or [])

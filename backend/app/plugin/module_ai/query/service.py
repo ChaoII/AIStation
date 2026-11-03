@@ -8316,6 +8316,20 @@ class AiQueryService:
                     log.warning("[query] 结果为全 NULL，不写 SQL 缓存：{}", question[:30])
                 else:
                     _sql_cache_set(question, datasource, sql)
+                # **口径提示**（只提示、不重试）：问句说要什么 vs SQL 做了什么。
+                # 这类差异在结果里看不出来（数字都合理），但值得让人知道。
+                # 实测当前题库 78 题**一次都没命中** —— 所以不拿它触发重试（重试就是多 5 秒），
+                # 只作为运行时的廉价提示挂出去。
+                try:
+                    from .selfcheck import check_sql_intent, format_sql_intent
+
+                    _advice = check_sql_intent(question, sql)
+                    if _advice:
+                        res["advice"] = _advice
+                        log.warning("[query] 口径提示：{}（question={}）",
+                                    format_sql_intent(_advice), question[:30])
+                except Exception as e:  # noqa: BLE001
+                    log.warning(f"[query] 口径提示检查失败（忽略）: {str(e)[:80]}")
                 # 结果列头中文化 + 一句人话的答案（原先摘要是硬编码废话）
                 cn_cols = await cls._cn_columns(res["columns"], sql)
                 res["columns"] = cn_cols
