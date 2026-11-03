@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import time
@@ -61,6 +62,21 @@ from .schema import QueryAssetUpsert
 SYSTEM_DS = "system"
 MAX_ROWS = 1000
 QUERY_TIMEOUT = 10  # 秒
+
+
+def _clamp_rows(n) -> int:
+    """行数上限的**唯一**收敛点：设置项脏值/<=0 时回落到 ``MAX_ROWS``。
+
+    与 `executor.clamp_max_rows` 同区间，两处必须一致（有守护测试比对）。
+    """
+    try:
+        v = int(float(n))
+    except (TypeError, ValueError):
+        return MAX_ROWS
+    if v <= 0:
+        return MAX_ROWS
+    return max(1, min(5000, v))
+
 
 # 模块级标记：系统种子仅首次执行，避免每次 ask 都做 upsert 拖慢快路径
 _SEED_DONE = False
@@ -656,7 +672,14 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
     if violations:
         raise CustomException(
             msg=f"字段级权限：无权限访问 {', '.join(violations)}（请联系管理员申请可见权限）")
-    out = await _ex.execute_select(_ds_cfg_from_model(ds), sql)
+    # 行数上限 / 执行超时同样从设置读取：这两个 key 以前只在默认值表里躺着，
+    # 实际生效的是 executor.MAX_ROWS / QUERY_TIMEOUT 常量 —— 界面改了没反应。
+    _cfg = await AiQueryService._cfg()
+    out = await _ex.execute_select(
+        _ds_cfg_from_model(ds), sql,
+        max_rows=AiQueryService._cfg_int(_cfg, "query_max_rows", _ex.MAX_ROWS),
+        timeout=AiQueryService._cfg_int(_cfg, "query_timeout_sec", int(_ex.QUERY_TIMEOUT)),
+    )
     # 回传**实际执行**的 SQL（已加引号）：否则展示/排查看到的是未加引号的模板，会被误导
     out["sql"] = sql
     return out
@@ -1262,6 +1285,32 @@ def _retrieval_cache_key(question: str, datasource: str | None = None) -> str:
     return f"{datasource or ''}|{q}"
 
 
+#: 会影响「召回结果 / prompt 内容」的设置项。这些 key 一变，缓存必须换 key，
+#: 否则管理员改完开关，进程内缓存还会按旧配置继续吐结果（TTL 120~600 秒）。
+#: 判据：**它出现在 prompt 里，或决定进 prompt 哪些表/列**。新增同类开关记得加进来。
+_CTX_CFG_KEYS: tuple[str, ...] = (
+    "recall_enabled", "recall_top_k", "recall_min_score", "recall_expand_cap",
+    "recall_w_vector", "recall_w_keyword", "recall_w_ontology", "recall_w_entity",
+    "schema_top_k", "schema_semantic_weight", "schema_keyword_weight",
+    "entity_enabled", "entity_map", "kg_enabled", "agno_semantic_enabled",
+    "schema_column_prune_enabled", "enum_hint_enabled",
+    "schema_asset_meta_enabled", "schema_ont_prop_notes_enabled",
+    "multi_dialect_enabled",
+)
+
+
+def _cfg_sig(cfg: dict | None) -> str:
+    """配置指纹：只取影响召回/prompt 的那些 key，算一个短哈希。
+
+    为什么不用「保存设置时清缓存」：那是**进程内**的，多进程/多副本部署时只有
+    接住这次保存的那个进程会清，其它进程照旧吐旧结果 —— 这类"偶发"最难查。
+    把指纹拼进 cache key 是确定性的，和有多少个进程无关。
+    """
+    cfg = cfg or {}
+    raw = "|".join(f"{k}={cfg.get(k)}" for k in _CTX_CFG_KEYS)
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
+
+
 def retrieval_cache_stats() -> dict:
     now = time.time()
     alive = sum(1 for ts, _ in _RETRIEVAL_CACHE.values()
@@ -1377,8 +1426,16 @@ async def _execute_sql(sql: str) -> dict:
     except Exception as e:  # noqa: BLE001
         log.warning(f"[query] 执行失败: {e}")
         raise CustomException(msg=f"查询执行失败：{e}")
-    data = [[_json_cell(v) for v in r] for r in rows[:MAX_ROWS]]
-    return {"columns": cols, "rows": data, "took_ms": int((time.time() - start) * 1000)}
+    # 行数上限走设置项（clamp 到安全区间），不再直接吃常量 MAX_ROWS
+    limit = MAX_ROWS
+    try:
+        limit = _clamp_rows(AiQueryService._cfg_int(await AiQueryService._cfg(),
+                                                    "query_max_rows", MAX_ROWS))
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[query] 读取行数上限失败，回落 {MAX_ROWS}：{str(e)[:80]}")
+    data = [[_json_cell(v) for v in r] for r in rows[:limit]]
+    return {"columns": cols, "rows": data, "took_ms": int((time.time() - start) * 1000),
+            "truncated": len(rows) > limit}
 
 
 async def _secure_ont_sql(sql: str, auth) -> dict:
@@ -1561,6 +1618,38 @@ def nl2sql_max_tokens(cfg: dict | None) -> int:
         # 低于下限（含未配置/非法）一律用默认值，宁可多给预算也不要出空 SQL
         return NL2SQL_DEFAULT_MAX_TOKENS
     return val
+
+
+def nl2sql_attempts(cfg: dict | None) -> int:
+    """慢路径最多尝试几次（含首次）。
+
+    设置项是 ``nl2sql_retry``，语义按**总尝试次数**解释：``2`` = 首次 + 1 次自纠错
+    （与改动前硬编码的 ``range(2)`` 完全等价，默认行为不变）。
+    想做"只试一次、不重试省时间"就把值改成 1。
+    """
+    raw = (cfg or {}).get("nl2sql_retry")
+    try:
+        val = int(float(str(raw).strip())) if raw not in (None, "") else 2
+    except (TypeError, ValueError):
+        val = 2
+    return max(1, min(5, val))
+
+
+def _ir_max_tokens(cfg: dict | None) -> int:
+    """对象查询（IR 生成）的 max_tokens。
+
+    ``object_query_max_tokens`` 的语义是**覆盖**主预算，``0``（或非法/负数）表示
+    「跟随 nl2sql_max_tokens」。之前写的是
+    ``_cfg_int(cfg, "object_query_max_tokens", nl2sql_max_tokens(cfg))`` ——
+    默认值只在 key **缺失**时生效；而该 key 一进默认值表就恒为 "0"，
+    于是 max_tokens=0，模型直接返回空（这个坑正是"键进默认值"时才暴露）。
+    """
+    raw = (cfg or {}).get("object_query_max_tokens")
+    try:
+        val = int(float(str(raw).strip())) if raw not in (None, "") else 0
+    except (TypeError, ValueError):
+        val = 0
+    return val if val > 0 else nl2sql_max_tokens(cfg)
 
 
 def score_fewshot(question: str, ex_question: str) -> int:
@@ -6562,6 +6651,8 @@ class AiQueryService:
     @classmethod
     async def get_settings(cls) -> dict:
         defaults = {
+            # 行数上限/超时/重试：**这三个以前只写在默认值里、代码从不读**
+            # （`MAX_ROWS`、`QUERY_TIMEOUT`、`range(2)` 都是硬编码），界面改了不生效。
             "query_max_rows": "1000",
             "query_timeout_sec": "10",
             "nl2sql_retry": "2",
@@ -6634,6 +6725,19 @@ class AiQueryService:
             # 把「那上周呢」补全为自包含问题再路由。默认关：多一次 LLM 调用，需 A/B 证明值。
             "query_rewrite_enabled": "false",
             "query_rewrite_call_timeout": "60",      # 重写单次 LLM 调用超时（秒）
+            # ---- 提醒词体积/取值纠错（本轮新增，默认开）----
+            # 这两个开关是上面几轮 A/B 的产物，**必须同时出现在默认值里**：
+            # 只写代码分支、不进默认值 → 新库上的设置弹窗里根本看不到它，
+            # 用户想回退只能自己去 UPDATE 数据库（真实踩过：我自己就是这样改的）。
+            "schema_column_prune_enabled": "true",   # 按问题裁剪列清单（prompt -52%，耗时 -20%）
+            "literal_fix_enabled": "true",           # 字符串字面量等价纠错（空格/全半角/大小写）
+            # 下面两个是"做了但实测零收益"，**默认关**并保留代码分支；
+            # 一旦进默认值，界面上就能看到、也就有了回退入口。
+            "schema_asset_meta_enabled": "false",    # 把资产描述注入 prompt（实测零收益）
+            "schema_ont_prop_notes_enabled": "false",  # 本体属性说明注入 prompt（实测零收益）
+            # ---- 召回/对象查询的补充旋钮 ----
+            "recall_expand_cap": "4",                # 同义扩展最多追加几张表
+            "object_query_max_tokens": "0",          # 0 = 跟随 nl2sql_max_tokens
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -7920,7 +8024,7 @@ class AiQueryService:
             # 预算太小会被思考吃光 → finish_reason=length、正文为空（实测 1200 就会空）。
             # 可用 `object_query_max_tokens` 单独调大（默认沿用 NL2SQL 的预算）。
             temperature=0.0,
-            max_tokens=cls._cfg_int(cfg, "object_query_max_tokens", nl2sql_max_tokens(cfg)),
+            max_tokens=_ir_max_tokens(cfg),
             timeout=60,
             # 思考压到 low：实测**原始调用** A(enable_thinking=false)=19.0s ｜
             # B(reasoning_effort=low)=10.9s ｜ C(默认)=17.8s —— low 最快，故用 low。
@@ -8256,6 +8360,9 @@ class AiQueryService:
         n = cls._cfg_int(cfg, "self_consistency_n", 1)
         cost_enabled = cls._cfg_bool(cfg, "query_cost_enabled", True)
         max_rows = cls._cfg_int(cfg, "query_cost_max_rows", 50000)
+        # 最多尝试次数（含首次）。以前硬编码 range(2)，而设置项 `nl2sql_retry` 只是
+        # 默认值表里的一行死数据 —— 想「少重试一次省时间」根本改不动。
+        attempts = nl2sql_attempts(cfg)
         last_err: str | None = None
         sql = ""
         # 首轮生成失败（空内容/超时）→ 次轮强制关掉思考：实测推理型模型会把 max_tokens
@@ -8267,7 +8374,7 @@ class AiQueryService:
         t_start = time.perf_counter()
         t_gen = t_start
         t_exec = t_start
-        for attempt in range(2):
+        for attempt in range(attempts):
             candidate_sqls: list[str] = []
             if cached_sql and attempt == 0:
                 # 缓存命中：跳过生成（这是"快"的主要来源）
@@ -9075,7 +9182,10 @@ class AiQueryService:
         # 3) 低基数枚举列：注入真实取值，帮助 LLM 使用正确枚举值（如 status=ERROR/RUNNING/STOPPED）
         try:
             cfg = await cls._cfg()
-            if not cls._cfg_bool(cfg, "enum_hint_enabled", True):
+            # 默认值必须与其它三处（本文件 8534/8790/10320 行）一致 = False：
+            # 这里以前写 True，一旦设置行缺失，**系统库**会去远端跑一堆 DISTINCT，
+            # 而同一开关在别处却是关的 —— 同一开关两种默认值，行为会随"哪条路径先跑"而变。
+            if not cls._cfg_bool(cfg, "enum_hint_enabled", False):
                 _SCHEMA_CACHE = schema
                 return schema
             _enum_re = re.compile(
@@ -9626,8 +9736,12 @@ class AiQueryService:
         `_recall_grounding` 做溯源——而这条路径会走向量检索。
         不缓存就是白跑一次检索（实测收尾阶段因此花掉 1.2~1.8 秒）。
         缓存 key **含数据源**：否则两个数据源互相串结果。
+        key 还要含**配置签名**：`_semantic_tables_uncached` 返回的是**已经按
+        `recall_top_k` 截断**的列表，只按「数据源|问题」缓存的话，
+        管理员把 top_k 从 12 调到 6，10 分钟内（TTL=600s）拿到的还是 12 张表的旧结果
+        —— 正好把"调参实验"变成"调了没变化"。
         """
-        key = _retrieval_cache_key(question, datasource)
+        key = f"{_retrieval_cache_key(question, datasource)}|{_cfg_sig(await cls._cfg())}"
         if _BYPASS_CACHE.get():
             # 评测：召回结果与消融开关（recall_enabled 等）强相关，缓存会让消融失真
             return await cls._semantic_tables_uncached(question, schema, metrics, terms)
@@ -10165,13 +10279,14 @@ class AiQueryService:
 
     @classmethod
     async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
-        # 命中短时缓存直接返回（见函数尾部写入处）
+        cfg = await cls._cfg()
+        # 命中短时缓存直接返回（见函数尾部写入处）。key 与写入处必须完全一致
+        # （含配置签名）—— 两处拼法不一致 = 缓存永不命中，白算一遍。
         if not _OBJECT_CTX.get() and not _BYPASS_CACHE.get():
-            _hit = _SCHEMA_CTX_CACHE.get(f"{datasource or ''}|{question}")
+            _hit = _SCHEMA_CTX_CACHE.get(f"{datasource or ''}|{question}|{_cfg_sig(cfg)}")
             if _hit and time.time() - _hit[0] <= _SCHEMA_CTX_TTL:
                 return _hit[1]
         lines = []
-        cfg = await cls._cfg()
         # 当前对象上下文：**确定性注入**（对齐 Palantir Retrieval Context），放在最前面。
         octx = _OBJECT_CTX.get()
         if octx:
@@ -10329,8 +10444,12 @@ class AiQueryService:
         # 同一问题的 prompt 上下文短时缓存：自纠错重试、流式与非流式、以及「同一题再问一次」
         # 都会重复构建（首题实测 4~12 秒，主要花在向量召回），缓存后重试只剩几十毫秒。
         # 有对象上下文（每次请求不同）时不缓存，避免串题。
+        # ⚠️ key 必须带**配置签名**：prompt 内容随 `schema_column_prune_enabled` /
+        # `enum_hint_enabled` / `schema_asset_meta_enabled` / `recall_top_k` 等开关变化，
+        # 只按「数据源|问题」缓存的话 —— 管理员刚改完开关，这边还在吐旧 prompt（最长 120 秒），
+        # 表现就是"改了没反应"。eval 走 bypass_caches 不受影响，**线上**才会踩到。
         if not _OBJECT_CTX.get() and not _BYPASS_CACHE.get():
-            key = f"{datasource or ''}|{question}"
+            key = f"{datasource or ''}|{question}|{_cfg_sig(cfg)}"
             if len(_SCHEMA_CTX_CACHE) >= _SCHEMA_CTX_CACHE_MAX:
                 for k in list(_SCHEMA_CTX_CACHE)[: _SCHEMA_CTX_CACHE_MAX // 5]:
                     _SCHEMA_CTX_CACHE.pop(k, None)

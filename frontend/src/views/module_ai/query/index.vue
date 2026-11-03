@@ -507,8 +507,8 @@
           <el-input-number
             v-else
             :model-value="Number(setForm[d.key] || 1)"
-            :min="1"
-            :max="9"
+            :min="'min' in d ? d.min : 1"
+            :max="'max' in d ? d.max : 9"
             size="small"
             style="width: 120px"
             @update:model-value="(v: number | undefined) => (setForm[d.key] = String(v ?? 1))"
@@ -902,7 +902,57 @@ const SETTING_DEFS = [
     key: "self_consistency_n",
     label: t("ai_logs.settingSelfConsistency"),
     type: "int",
+    min: 1,
+    max: 9,
     tip: t("ai_logs.settingSelfConsistencyTip"),
+  },
+  // ---- 本轮补的 6 个开关 ----
+  // 这 6 个 key 后端一直在读，但**之前没有界面入口**：想改只能自己去 UPDATE
+  // ai_query_settings 表。其中「列裁剪 / 值匹配纠错」还是我做的 A/B 开关，
+  // 说好"可回退"却没有回退按钮 —— 这属于典型的"逻辑写了、入口没接"。
+  {
+    key: "schema_column_prune_enabled",
+    label: t("ai_logs.settingColumnPrune"),
+    type: "bool",
+    tip: t("ai_logs.settingColumnPruneTip"),
+  },
+  {
+    key: "literal_fix_enabled",
+    label: t("ai_logs.settingLiteralFix"),
+    type: "bool",
+    tip: t("ai_logs.settingLiteralFixTip"),
+  },
+  {
+    key: "recall_top_k",
+    label: t("ai_logs.settingRecallTopK"),
+    type: "int",
+    min: 1,
+    max: 30,
+    tip: t("ai_logs.settingRecallTopKTip"),
+  },
+  {
+    key: "nl2sql_retry",
+    label: t("ai_logs.settingNl2sqlRetry"),
+    type: "int",
+    min: 1,
+    max: 5,
+    tip: t("ai_logs.settingNl2sqlRetryTip"),
+  },
+  {
+    key: "query_timeout_sec",
+    label: t("ai_logs.settingQueryTimeout"),
+    type: "int",
+    min: 1,
+    max: 600,
+    tip: t("ai_logs.settingQueryTimeoutTip"),
+  },
+  {
+    key: "query_max_rows",
+    label: t("ai_logs.settingMaxRows"),
+    type: "int",
+    min: 1,
+    max: 5000,
+    tip: t("ai_logs.settingMaxRowsTip"),
   },
 ] as const;
 

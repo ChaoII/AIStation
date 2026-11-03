@@ -176,7 +176,7 @@ def test_custom_ds_execution_reports_the_quoted_sql(monkeypatch):
 
     captured = {}
 
-    async def _exec(cfg, sql):
+    async def _exec(cfg, sql, **kwargs):  # noqa: ARG001
         captured["sql"] = sql
         return {"columns": [], "rows": [], "took_ms": 1}
 

@@ -5,14 +5,44 @@ file / api 类型不支持自由 SQL，请用「指标模板」方式查询。
 """
 from __future__ import annotations
 
+import asyncio
 import time
+from typing import Any
 
 from sqlalchemy import text
 
 from app.core.exceptions import CustomException
 
+#: 返回行数的**缺省**上限；实际值由设置项 `query_max_rows` 决定（见 clamp_max_rows）。
 MAX_ROWS = 1000
+#: 单条 SQL 的**缺省**超时秒数；实际值由设置项 `query_timeout_sec` 决定。
+#: ⚠️ 这个常量以前**没有任何地方使用** —— 远程库上一条慢查询能把请求挂到
+#: 客户端超时为止（连接也跟着不释放）。现在由 execute_select(timeout=...) 强制。
 QUERY_TIMEOUT = 10
+#: 行数上限的硬边界：设置项只能在 [MIN, MAX] 内调整，不能突破。
+#: 下限取 1 而不是 10：**安全只靠上限**，限制最小值只会让人以为"设了 5 变 10"。
+MAX_ROWS_MIN = 1
+MAX_ROWS_MAX = 5000
+
+
+def clamp_max_rows(n: Any) -> int:
+    """把设置项的行数上限夹到安全区间（脏值/<=0 一律回落到缺省）。"""
+    try:
+        v = int(float(n))
+    except (TypeError, ValueError):
+        return MAX_ROWS
+    if v <= 0:
+        return MAX_ROWS
+    return max(MAX_ROWS_MIN, min(MAX_ROWS_MAX, v))
+
+
+def clamp_timeout(n: Any) -> float:
+    """把设置项的超时秒数夹到 [1, 600]。"""
+    try:
+        v = float(n)
+    except (TypeError, ValueError):
+        return float(QUERY_TIMEOUT)
+    return max(1.0, min(600.0, v))
 
 
 def _url(cfg: dict) -> str | None:
@@ -57,29 +87,46 @@ async def test_connection(cfg: dict) -> dict:
     return {"ok": True, "message": "连接成功"}
 
 
-async def execute_select(cfg: dict, sql: str) -> dict:
+async def execute_select(cfg: dict, sql: str, *,
+                         max_rows: int | None = None,
+                         timeout: float | None = None) -> dict:
     """对数据源执行只读 SELECT。
 
     驱动/语法异常**必须包装成 ``CustomException``**：上层（``ask`` 的快路径）
     只认 ``CustomException`` 才会「记录错误 → 回退慢路径」；
     裸 ``ProgrammingError`` 会直接冒泡把整题打崩（实测 ds:4 未加引号时就是这样）。
+
+    ``timeout`` 由调用方从设置项 ``query_timeout_sec`` 传入（缺省 10 秒）。
+    以前这里**没有超时**：远程库一条慢查询会让请求一直等下去，连接也不释放。
     """
     eng = build_engine(cfg)
     start = time.time()
+    limit = clamp_max_rows(MAX_ROWS if max_rows is None else max_rows)
+    secs = clamp_timeout(QUERY_TIMEOUT if timeout is None else timeout)
     try:
-        async with eng.connect() as conn:
-            result = await conn.execute(text(sql))
-            rows = result.fetchall()
-            cols = list(result.keys())
+        try:
+            async with eng.connect() as conn:
+                # 超时用 wait_for 兜住：asyncpg/aiomysql 收到取消会向服务端发
+                # cancel 请求，连接随 engine.dispose() 一起回收。
+                result = await asyncio.wait_for(conn.execute(text(sql)), timeout=secs)
+                rows = result.fetchall()
+                cols = list(result.keys())
+        except TimeoutError as e:
+            raise CustomException(
+                msg=f"数据源执行超时（{secs:g} 秒），请缩小查询范围或提高 query_timeout_sec"
+            ) from e
     except Exception as e:  # noqa: BLE001
+        if isinstance(e, CustomException):
+            raise
         raise CustomException(msg=f"数据源执行失败：{str(e)[:300]}") from e
     finally:
         await eng.dispose()
     # 必须带 `took_ms`：调用方（_slow_path）会读它，缺了就是 KeyError
     # ——外部数据源问数整条路会直接 400（真实踩过）。
     return {"columns": cols,
-            "rows": [[_json_cell(v) for v in r] for r in rows[:MAX_ROWS]],
-            "took_ms": int((time.time() - start) * 1000)}
+            "rows": [[_json_cell(v) for v in r] for r in rows[:limit]],
+            "took_ms": int((time.time() - start) * 1000),
+            "truncated": len(rows) > limit}
 
 
 def _json_cell(v):

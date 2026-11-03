@@ -58,7 +58,8 @@ def test_custom_ds_allows_when_no_violation(monkeypatch):
 
     class _FakeEx:
         @staticmethod
-        async def execute_select(cfg, sql):  # noqa: ANN001
+        async def execute_select(cfg, sql, **kwargs):  # noqa: ANN001, ARG004
+            # max_rows / timeout 是 service 从设置项传下来的（有守护测试）
             called["sql"] = sql
             return {"columns": ["ID"], "rows": [[1]], "took_ms": 1}
 

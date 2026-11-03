@@ -250,6 +250,22 @@ export default {
   settingToolAgentTip: "讓模型自主呼叫檢索工具；多輪往返較慢，預設關閉。",
   settingSelfConsistency: "自一致性候選數",
   settingSelfConsistencyTip: "大於 1 時多次採樣投票，提升穩定性但更慢。",
+  settingColumnPrune: "依問題裁剪提示詞欄位清單",
+  settingColumnPruneTip:
+    "只把問句提到的欄位與結構性欄位（ID／時間／名稱／狀態）寫進提示詞。實測提問詞 -52%、單輪耗時 -20%，準確率持平。",
+  settingLiteralFix: "字面量取值糾錯",
+  settingLiteralFixTip:
+    "SQL 中的字串若與資料庫取值只差空格／全半角／大小寫（如 '煙煤 ' 與 '煙煤'），自動換成資料庫的寫法。只做等價歸一，不做模糊比對。",
+  settingRecallTopK: "召回表數量上限",
+  settingRecallTopKTip: "多路召回融合後最多選幾張表寫進提示詞。調大覆蓋更全，但提示詞更長、更慢。",
+  settingNl2sqlRetry: "生成失敗重試次數（含首次）",
+  settingNl2sqlRetryTip:
+    "NL2SQL 生成失敗時最多嘗試幾次，2 = 首次 + 1 次自糾錯。改成 1 可省一次 LLM 呼叫。",
+  settingQueryTimeout: "SQL 執行逾時（秒）",
+  settingQueryTimeoutTip:
+    "單條查詢在資料來源上的最長執行時間，逾時直接報錯而不是一直等（以前這個值不生效）。",
+  settingMaxRows: "回傳列數上限",
+  settingMaxRowsTip: "一次問答最多回傳多少列（1~5000）。調大能看全量明細，但回應更大、前端更慢。",
   example1: "銷售訂單總共有多少筆",
   example2: "各部門的銷售額是多少",
   example3: "統計攝影機的狀態分佈",
