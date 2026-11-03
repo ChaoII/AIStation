@@ -45,6 +45,15 @@ def _parse(configs: str) -> list[tuple[str, dict]]:
     return out or [("baseline", {})]
 
 
+def _bootstrap() -> None:
+    """必须先把应用构造一次：否则 ORM 关系解析不到（金标取数全部失败、
+    accuracy 恒为 0 —— 实测踩过，脚本"跑成功"但数字全是 0）。
+    """
+    from main import create_app
+
+    create_app()
+
+
 async def _wait(rid: str, timeout: int = 3600) -> dict:
     from app.plugin.module_ai.query import eval_runner as R
 
@@ -83,6 +92,8 @@ async def main() -> None:  # pragma: no cover - 运维脚本
     ap.add_argument("--dataset", default="fuel-v2")
     args = ap.parse_args()
 
+    _bootstrap()
+
     from app.plugin.module_ai.query import eval_runner as R
     from app.plugin.module_ai.query.service import sql_cache_clear
 
@@ -102,7 +113,13 @@ async def main() -> None:  # pragma: no cover - 运维脚本
             else:
                 rid = R.start_run(auth, filter=flt, internal=True)
                 s = await _wait(rid)
-            runs[name].append(await _load(rid))
+            rows = await _load(rid)
+            if not rows or not s:
+                raise SystemExit(
+                    f"运行 {name}#{i + 1} 没有产出结果（{rid}）："
+                    f"status={(R._RUNS.get(rid) or {}).get('status')} "
+                    f"err={(R._RUNS.get(rid) or {}).get('error')} —— 中止，避免把 0.0 当结论")
+            runs[name].append(rows)
             print(f"OK {name}#{i + 1} acc={s.get('data_accuracy')} "
                   f"{int(time.perf_counter() - t0)}s", flush=True)
 

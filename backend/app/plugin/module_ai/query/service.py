@@ -615,6 +615,20 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
         for r in schema_rows
     }
     sql = quote_schema_identifiers(sql, schema_map)
+    # **字段级 ACL 对自定义数据源同样生效**（fail-closed）。
+    # 之前这道检查只在系统库分支：本体/资产里把「煤款单价」标成敏感，
+    # 走 ds:4 的问数照样能查出来 —— 标记形同摆设。
+    # `_ont_sql_violations` 本身是按**表名**匹配 `ai_query_asset_columns.sensitive`，
+    # 对外部库的表一样成立，差的只是没人调用它。
+    uid = getattr(getattr(auth, "user", None), "id", None) if auth is not None else None
+    try:
+        violations = await AiQueryService._ont_sql_violations(sql, uid)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[query] 外部源字段级 ACL 校验失败，拒绝执行：{e}")
+        raise CustomException(msg=f"字段级权限校验失败，已拒绝执行：{str(e)[:120]}") from e
+    if violations:
+        raise CustomException(
+            msg=f"字段级权限：无权限访问 {', '.join(violations)}（请联系管理员申请可见权限）")
     out = await _ex.execute_select(_ds_cfg_from_model(ds), sql)
     # 回传**实际执行**的 SQL（已加引号）：否则展示/排查看到的是未加引号的模板，会被误导
     out["sql"] = sql
@@ -9915,6 +9929,7 @@ class AiQueryService:
             if _hit and time.time() - _hit[0] <= _SCHEMA_CTX_TTL:
                 return _hit[1]
         lines = []
+        cfg = await cls._cfg()
         # 当前对象上下文：**确定性注入**（对齐 Palantir Retrieval Context），放在最前面。
         octx = _OBJECT_CTX.get()
         if octx:
@@ -9985,6 +10000,11 @@ class AiQueryService:
                 lines.append(
                     f"（数据源 {datasource}，共 {len(ds_schema)} 张表，"
                     f"下面是与问题最相关的 {len(rel)} 张）")
+                # **资产目录的中文名/业务域/描述/业务场景要进 prompt**。
+                # 系统数据源分支一直有这段，自定义数据源漏了 —— 实测这些文字
+                # 只进了向量召回、没进模型上下文（in_prompt=False），等于白填。
+                tmeta = (await cls._asset_tmeta()) if cls._cfg_bool(
+                    cfg, "schema_asset_meta_enabled", True) else {}
                 for t in rel:
                     cols = ds_schema.get(t, [])
                     tmap = (_DS_TYPE_CACHE.get(datasource, (0, {}))[1].get(t) or {})
@@ -9994,7 +10014,19 @@ class AiQueryService:
                         f"{c}[{tmap[c.split('(', 1)[0]]}]" if c.split("(", 1)[0] in tmap else c
                         for c in cols
                     ]
-                    lines.append(f"- {t}: {', '.join(rendered) if rendered else ''}")
+                    meta = tmeta.get(t) or {}
+                    extras = []
+                    alias = str(meta.get("alias") or "").strip()
+                    if alias and alias.lower() != str(t).lower():
+                        extras.append(f"中文名:{alias}")
+                    if meta.get("domain"):
+                        extras.append(f"业务域:{meta['domain']}")
+                    if meta.get("description") and meta["description"] != meta.get("alias"):
+                        extras.append(f"描述:{meta['description']}")
+                    if meta.get("business_scenarios"):
+                        extras.append(f"业务场景:{meta['business_scenarios']}")
+                    head = f"{t}【" + "；".join(extras) + "】" if extras else t
+                    lines.append(f"- {head}: {', '.join(rendered) if rendered else ''}")
                 lines.append(cls._query_conventions())
                 # 该库表名/字段名为英文大写且大小写敏感：不加双引号会被 PG 小写化 → 找不到表。
                 lines.append(
