@@ -10003,8 +10003,12 @@ class AiQueryService:
                 # **资产目录的中文名/业务域/描述/业务场景要进 prompt**。
                 # 系统数据源分支一直有这段，自定义数据源漏了 —— 实测这些文字
                 # 只进了向量召回、没进模型上下文（in_prompt=False），等于白填。
+                # 默认**关**：配对方差实测「开 vs 关」无差异（0.9316 vs 0.9487，
+                # 差 1 道题，而同配置重跑本身就会翻 2~4 题）。且资产里 757 条有 567 条
+                # 中文名 == 表名（过滤后基本加不进东西），剩下的多是"供应商管理"这类
+                # 泛化说法，对选表是干扰。留开关，等资产描述质量真的提高再开。
                 tmeta = (await cls._asset_tmeta()) if cls._cfg_bool(
-                    cfg, "schema_asset_meta_enabled", True) else {}
+                    cfg, "schema_asset_meta_enabled", False) else {}
                 for t in rel:
                     cols = ds_schema.get(t, [])
                     tmap = (_DS_TYPE_CACHE.get(datasource, (0, {}))[1].get(t) or {})
