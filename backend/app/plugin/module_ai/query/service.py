@@ -1538,7 +1538,11 @@ async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> di
     # 安全补丁（P0-3）：执行一律走 `_execute_one`（与 ask / ask_stream / 报表共用
     # 的**唯一收口**）—— 字段级 ACL 与本体行/列改写都在那里做，指标不再直连
     # `_execute_sql`，否则「指标模板」就是绕过敏感字段拦截的后门。
-    res = await AiQueryService._execute_one(sql, ds_code, auth)
+    # 第四个参数传**指标名**：软删除口径改写需要“问句”来判断是不是在问已删除。
+    # 漏传过一次（只改了 ask 的两条路）—— 指标快路径把「每日耗用量合计」
+    # 答成 41,827,138（含 3390 条软删行），金标 3,550,065，评测里就这一道暴露。
+    res = await AiQueryService._execute_one(
+        sql, ds_code, auth, str(metric.get("name") or ""))
     res["sql"] = res.get("sql") or sql
     return res
 

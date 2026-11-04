@@ -315,3 +315,20 @@ def test_softdelete_rewrite_hook_and_setting_exist():
     # 提示词里那两条已移除（A/B 证明不稳定/无效，留代码就是误导）
     conv = inspect.getsource(S._query_conventions)
     assert "ISDELETED" not in conv
+
+
+def test_metric_fast_path_also_applies_softdelete_policy():
+    """指标快路径也必须过软删除改写（漏接过一次）。
+
+    真实事故：只改了 ask 的两条路，`_execute_metric` 仍调
+    `_execute_one(sql, ds_code, auth)`（不带问题）→ 改写被跳过 →
+    「每日耗用量合计」走快路径答 41,827,138（含 3390 条软删行），
+    金标 3,550,065。评测 78 题里正是这一道把它暴露出来。
+    """
+    import inspect
+
+    import app.plugin.module_ai.query.service as svc
+
+    src = inspect.getsource(svc._execute_metric)
+    assert "_execute_one(" in src
+    assert 'metric.get("name")' in src, "快路径没传指标名 → 软删除改写会被跳过"
