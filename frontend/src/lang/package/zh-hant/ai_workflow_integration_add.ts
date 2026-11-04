@@ -442,6 +442,14 @@ export default {
   ig_reasonCompare: "已儲存 {saved} → 草稿 {draft}",
 
   // ===== 治理面板 =====
+  ig_govLineage: "血緣",
+  ig_govLineageTables: "表血緣覆蓋",
+  ig_govLineageColumns: "欄位血緣覆蓋",
+  ig_govOrphan: "孤兒表（無血緣／無描述／無敏感標記）",
+  ig_govSensitivity: "敏感欄位被下游消費",
+  ig_govFrom: "來自",
+  ig_govNoLineage: "暫無資料",
+  ig_govProperty: "欄位",
   ig_govOverview: "駕駛艙",
   ig_govAccess: "權限",
   ig_govDq: "資料品質",

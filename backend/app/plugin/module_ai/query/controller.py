@@ -491,6 +491,16 @@ async def lineage_rebuild(
     )
 
 
+@AiQueryRouter.get("/governance/summary", summary="治理概览（覆盖率/孤儿表/敏感暴露）")
+async def governance_summary_api(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str = "ds:4",
+) -> JSONResponse:
+    from . import lineage as _lineage
+
+    return SuccessResponse(data=await _lineage.governance_summary(datasource), msg="查询成功")
+
+
 @AiQueryRouter.get("/lineage/coverage", summary="血缘覆盖率（表/列/按来源）")
 async def lineage_coverage_api(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

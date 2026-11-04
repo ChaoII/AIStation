@@ -559,3 +559,102 @@ async def lineage_coverage(datasource: str) -> dict:
         "columns_with_edges": len(cols),
         "by_kind": by_kind,
     }
+
+
+# ---------------------------------------------------------------------------
+# 治理概览（看板用）
+# ---------------------------------------------------------------------------
+
+async def _sensitive_map(datasource: str) -> dict[str, set[str]]:
+    """一次取全库敏感列：`{表: {列}}`（资产目录 ∪ 本体属性）。
+
+    逐表调 `_sensitive_columns` 会 N 次查库；看板要的是全量，所以单独取一次。
+    """
+    out: dict[str, set[str]] = {}
+    try:
+        async with async_db_session() as db:
+            rows = (await db.execute(text(
+                "SELECT UPPER(table_name), UPPER(column_name) FROM ai_query_asset_columns "
+                "WHERE sensitive=true AND is_deleted=false"))).fetchall()
+        for t, c in rows:
+            if t and c:
+                out.setdefault(t, set()).add(c)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[lineage] 读资产敏感列失败（忽略）: {str(e)[:80]}")
+    try:
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        table_map = await _sem.object_table_map()     # {表名或 ont_code: object_code}
+        sens = await _sem.sensitive_fields()          # {object_code: {属性 code}}
+        for key, code in (table_map or {}).items():
+            props = sens.get(code) or set()
+            if not props:
+                continue
+            out.setdefault(str(key).upper(), set()).update(str(p).upper() for p in props)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[lineage] 读本体敏感列失败（忽略）: {str(e)[:80]}")
+    return out
+
+
+async def governance_summary(datasource: str, limit: int = 200) -> dict:
+    """治理看板数据：覆盖率 + 孤儿表 + 敏感列暴露。
+
+    - **孤儿表**：既没有血缘、也没有资产描述、也没有敏感标记的表 ——
+      这类表在最需要治理的时候最容易被漏掉（没人看、没人标、没人问）。
+    - **敏感暴露**：敏感列被下游（视图/关联表）消费的情况，
+      例如 `VIEW_GETBATCHPRICE` 在裸用 `COALPRICE`。
+    """
+    coverage = await lineage_coverage(datasource)
+    columns_by_table = await _columns_by_table(datasource)
+
+    async with async_db_session() as db:
+        edge_tables = {
+            str(r[0]).upper()
+            for r in (await db.execute(text(
+                "SELECT DISTINCT src_table FROM ai_query_lineage "
+                "WHERE datasource=:d AND is_deleted=false "
+                "UNION SELECT DISTINCT dst_table FROM ai_query_lineage "
+                "WHERE datasource=:d AND is_deleted=false AND dst_table IS NOT NULL"),
+                {"d": datasource})).fetchall()
+            if r[0]
+        }
+        described = {
+            str(r[0]).upper()
+            for r in (await db.execute(text(
+                "SELECT DISTINCT table_name FROM ai_query_assets "
+                "WHERE is_deleted=false AND coalesce(description,'')<>''"))).fetchall()
+            if r[0]
+        }
+        edges = (await db.execute(text(
+            "SELECT kind, src_table, src_column, dst_table, dst_column "
+            "FROM ai_query_lineage WHERE datasource=:d AND is_deleted=false "
+            "AND kind<>'usage'"), {"d": datasource})).fetchall()
+
+    sens_map = await _sensitive_map(datasource)
+    marked = set(sens_map)
+
+    orphans = sorted(set(columns_by_table) - edge_tables - described - marked)
+
+    exposure: dict[tuple[str, str, str, str], None] = {}
+    for kind, src_t, src_c, dst_t, dst_c in edges:
+        src_t = str(src_t or "").upper()
+        dst_t = str(dst_t or "").upper()
+        if src_t in sens_map and str(src_c or "").upper() in sens_map[src_t] and dst_t:
+            exposure[(dst_t, str(dst_c or "").upper(), kind, src_t)] = None
+        if dst_t in sens_map and str(dst_c or "").upper() in sens_map[dst_t] and src_t:
+            exposure[(src_t, str(src_c or "").upper(), kind, dst_t)] = None
+
+    return {
+        "coverage": coverage,
+        "orphans": {
+            "count": len(orphans),
+            "tables": orphans[:limit],
+        },
+        "sensitive_exposure": {
+            "count": len(exposure),
+            "items": [
+                {"table": t, "column": c, "via": k, "from": frm}
+                for (t, c, k, frm) in sorted(exposure)[:limit]
+            ],
+        },
+    }

@@ -465,6 +465,14 @@ export default {
   ig_reasonCompare: "Saved {saved} → Draft {draft}",
 
   // ===== 治理面板 =====
+  ig_govLineage: "Lineage",
+  ig_govLineageTables: "Table lineage coverage",
+  ig_govLineageColumns: "Column lineage coverage",
+  ig_govOrphan: "Orphan tables (no lineage / description / sensitivity)",
+  ig_govSensitivity: "Sensitive columns consumed downstream",
+  ig_govFrom: "From",
+  ig_govNoLineage: "No data",
+  ig_govProperty: "Column",
   ig_govOverview: "Dashboard",
   ig_govAccess: "Access",
   ig_govDq: "Data Quality",
@@ -514,7 +522,7 @@ export default {
   ig_govRowCount: "Rows",
   ig_govIssue: "Issues",
   ig_govDomainAlert:
-    'Data Domain groups tables by business topic for classification and display only. It does NOT affect which tables the query engine retrieves, and grants no permissions — queryable scope is decided by the asset whitelist plus ABAC rules.',
+    "Data Domain groups tables by business topic for classification and display only. It does NOT affect which tables the query engine retrieves, and grants no permissions — queryable scope is decided by the asset whitelist plus ABAC rules.",
   ig_govNewDomain: "New Data Domain",
   ig_govDomainCount: "{count} domains · Unassigned {unassigned}",
   ig_govObjCount: "Objects ({count})",

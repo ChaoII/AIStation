@@ -661,6 +661,83 @@
           />
         </el-table>
       </el-tab-pane>
+      <el-tab-pane :label="t('ai_workflow.ig_govLineage')" name="lineage" lazy>
+        <div v-loading="lineageLoading" class="gp-lineage">
+          <el-row v-if="lineage" :gutter="12" class="gp-lineage__stats">
+            <el-col :span="8">
+              <el-statistic
+                :title="t('ai_workflow.ig_govLineageTables')"
+                :value="lineage.coverage.tables_with_edges"
+                :suffix="` / ${lineage.coverage.tables_total}`"
+              />
+            </el-col>
+            <el-col :span="8">
+              <el-statistic
+                :title="t('ai_workflow.ig_govLineageColumns')"
+                :value="lineage.coverage.columns_with_edges"
+                :suffix="` / ${lineage.coverage.columns_total}`"
+              />
+            </el-col>
+            <el-col :span="8">
+              <el-statistic :title="t('ai_workflow.ig_govOrphan')" :value="lineage.orphans.count" />
+            </el-col>
+          </el-row>
+
+          <template v-if="lineage">
+            <div class="gp-lineage__sub">
+              {{ t("ai_workflow.ig_govSensitivity") }}（{{ lineage.sensitive_exposure.count }}）
+            </div>
+            <el-table
+              :data="lineage.sensitive_exposure.items"
+              border
+              stripe
+              size="small"
+              max-height="240"
+            >
+              <el-table-column
+                prop="table"
+                :label="t('ai_workflow.ig_govObject')"
+                min-width="200"
+                show-overflow-tooltip
+              />
+              <el-table-column
+                prop="column"
+                :label="t('ai_workflow.ig_govProperty')"
+                min-width="140"
+              />
+              <el-table-column
+                prop="from"
+                :label="t('ai_workflow.ig_govFrom')"
+                min-width="200"
+                show-overflow-tooltip
+              />
+              <template #empty>
+                <el-empty :image-size="60" :description="t('ai_workflow.ig_govNoLineage')" />
+              </template>
+            </el-table>
+
+            <div class="gp-lineage__sub">
+              {{ t("ai_workflow.ig_govOrphan") }}（{{ lineage.orphans.count }}）
+            </div>
+            <el-table
+              :data="lineage.orphans.tables.map((x: string) => ({ table: x }))"
+              border
+              stripe
+              size="small"
+              max-height="260"
+            >
+              <el-table-column
+                prop="table"
+                :label="t('ai_workflow.ig_govObject')"
+                min-width="240"
+              />
+              <template #empty>
+                <el-empty :image-size="60" :description="t('ai_workflow.ig_govNoLineage')" />
+              </template>
+            </el-table>
+          </template>
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 权限策略编辑 -->
@@ -1058,6 +1135,7 @@ import {
   fdeShadowCheck,
   getActionList,
   getActionLogs,
+  getGovernanceSummary,
 } from "@/api/module_ai/query";
 import { UserAPI } from "@/api/module_system/user";
 
@@ -1066,6 +1144,21 @@ defineOptions({ name: "GovernancePanel" });
 const { t } = useI18n();
 
 const tab = ref("overview");
+
+// 血缘页签：懒加载（覆盖率要聚合多张表，别在挂载时白白跑）
+const lineage = ref<any>(null);
+const lineageLoading = ref(false);
+async function loadLineage() {
+  lineageLoading.value = true;
+  try {
+    const r: any = await getGovernanceSummary("ds:4");
+    lineage.value = r.data?.data || r.data || null;
+  } catch {
+    lineage.value = null;
+  } finally {
+    lineageLoading.value = false;
+  }
+}
 const g = ref<any>({ overview: {} });
 const accessRules = ref<any[]>([]);
 // 权限矩阵 / 沙箱
@@ -1332,6 +1425,7 @@ function onTab(name: any) {
   } else if (name === "domain") loadDomain();
   else if (name === "fde") loadFde();
   else if (name === "action") loadActions();
+  else if (name === "lineage") loadLineage();
 }
 
 // 动作 / 写回（只读：定义 + 审计日志）
@@ -1559,5 +1653,24 @@ onMounted(() => {
   color: var(--el-text-color-regular);
   font-family: monospace;
   word-break: break-all;
+}
+</style>
+
+<style lang="scss">
+/* el-row 的 gutter 会加负边距，在 overflow:auto 的页签容器里会顶出**横向滚动条**
+   （项目里记过这个坑）。这里改用 flex + gap，并把 col 的内边距清掉。 */
+.gp-lineage__stats {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 12px !important;
+}
+.gp-lineage__stats .el-col {
+  flex: 1 1 0;
+  padding: 0 !important;
+}
+.gp-lineage__sub {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

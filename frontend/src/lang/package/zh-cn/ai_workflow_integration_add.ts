@@ -50,7 +50,8 @@ export default {
   ig_tableName: "表名",
   ig_lifetime: "数据生命周期",
   ig_retentionDays: "保留天数",
-  ig_lifetimeHint: "为单位表设置数据保留天数（Palantir 风格删除策略）；到期的数据可按策略归档/清理。",
+  ig_lifetimeHint:
+    "为单位表设置数据保留天数（Palantir 风格删除策略）；到期的数据可按策略归档/清理。",
   ig_lifetimeEmpty: "暂无生命周期策略",
   ig_lifetimeDelConfirm: "将删除表「{table}」的生命周期策略（不可恢复）",
   ig_chineseName: "中文名",
@@ -483,6 +484,14 @@ export default {
   ig_reasonCompare: "已保存 {saved} → 草稿 {draft}",
 
   // ===== 治理面板 =====
+  ig_govLineage: "血缘",
+  ig_govLineageTables: "表血缘覆盖",
+  ig_govLineageColumns: "列血缘覆盖",
+  ig_govOrphan: "孤儿表（无血缘/无描述/无敏感标记）",
+  ig_govSensitivity: "敏感列被下游消费",
+  ig_govFrom: "来自",
+  ig_govNoLineage: "暂无数据",
+  ig_govProperty: "列",
   ig_govOverview: "驾驶舱",
   ig_govAccess: "权限",
   ig_govDq: "数据质量",

@@ -777,3 +777,12 @@ export function getEvalVariance(run_id: string) {
     headers: { _silent: "true" },
   });
 }
+
+/** 治理概览：覆盖率 / 孤儿表 / 敏感列暴露 */
+export function getGovernanceSummary(datasource = "ds:4") {
+  return request({
+    url: `${API_PATH}/governance/summary`,
+    method: "get",
+    params: { datasource },
+  });
+}
