@@ -13,6 +13,7 @@ from app.plugin.module_ai.query.lineage import (
     Edge,
     columns_used,
     infer_name_edges,
+    resolve_columns,
     tables_in_sql,
 )
 
@@ -76,6 +77,7 @@ def test_bad_sql_returns_empty():
     assert columns_used("this is not sql", "T", {"A"}) == set()
     assert tables_in_sql("") == set()
 
+
 def test_rebuild_is_idempotent_and_safe_without_datasource(db_run):
     """空库/数据源不存在时：不崩、可重复跑（幂等）。
 
@@ -93,6 +95,7 @@ def test_rebuild_is_idempotent_and_safe_without_datasource(db_run):
     assert set(first) == {"fk", "view", "name", "usage", "total"}
     # 远端不可用 → fk/view 为 0，但函数必须正常返回（不能抛）
     assert first["fk"] == 0 and first["view"] == 0
+
 
 def test_impact_lineage_off_by_default(db_run):
     """开关默认关：返回固定空结构，旧字段一个不少（不破坏既有消费方）。"""
@@ -113,6 +116,7 @@ def test_lineage_for_table_shape(db_run):
     assert set(d) == {"upstream", "downstream", "used_by", "sensitive_columns"}
     assert isinstance(d["upstream"], list) and isinstance(d["sensitive_columns"], list)
 
+
 def test_coverage_shape(db_run):
     from app.plugin.module_ai.query import lineage as L
 
@@ -130,3 +134,46 @@ def test_routes_registered():
     # 注册路径不含 ROOT_PATH（/api/v1 是 include 时加的）
     assert "/ai/query/lineage/coverage" in paths
     assert "/ai/query/lineage/rebuild" in paths
+
+
+def test_resolve_columns_alias_and_unique():
+    """别名映射 + 多表时未限定列只在唯一命中时才认。"""
+    cols = {
+        "FUEL_CMCS_ASSAY": {"ID", "MINENAME", "REMARK"},
+        "FUEL_CMCS_INFACTORYBATCH": {"ID", "MINENAME", "BATCHNO"},
+    }
+    sql = ('SELECT a."REMARK", "BATCHNO" FROM "FUEL_CMCS_ASSAY" a '
+           'JOIN "FUEL_CMCS_INFACTORYBATCH" b ON b."ID" = a."ID"')
+    got = set(resolve_columns(sql, cols))
+    assert ("FUEL_CMCS_ASSAY", "REMARK") in got
+    # BATCHNO 只有批次表有 → 唯一命中，认
+    assert ("FUEL_CMCS_INFACTORYBATCH", "BATCHNO") in got
+    # MINENAME 两张表都有 → 未限定，不猜
+    assert not any(c == "MINENAME" for _t, c in got)
+
+
+def test_resolve_columns_select_star_expands_but_count_star_does_not():
+    cols = {"T1": {"ID", "NAME"}}
+    assert set(resolve_columns('SELECT * FROM "T1"', cols)) == {("T1", "ID"), ("T1", "NAME")}
+    # COUNT(*) 是计数，不能展开成"用了所有列"
+    assert resolve_columns('SELECT COUNT(*) FROM "T1"', cols) == []
+
+
+def test_resolve_columns_ignores_cte_and_subquery_aliases():
+    cols = {"T1": {"ID", "NAME"}}
+    sql = ('WITH x AS (SELECT "NAME" FROM "T1") '
+           'SELECT "NAME" FROM x')
+    got = set(resolve_columns(sql, cols))
+    assert ("T1", "NAME") in got          # 内层真表
+    assert not any(t == "X" for t, _c in got)   # CTE 别名不是表
+
+
+def test_resolve_columns_single_table_unqualified():
+    cols = {"T1": {"ID", "NAME"}}
+    got = set(resolve_columns('SELECT "NAME" FROM "T1" WHERE "ID" > 1', cols))
+    assert got == {("T1", "NAME"), ("T1", "ID")}
+
+
+def test_resolve_columns_bad_sql():
+    assert resolve_columns("not sql at all", {"T": {"A"}}) == []
+    assert resolve_columns("", {"T": {"A"}}) == []

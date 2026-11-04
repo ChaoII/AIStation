@@ -89,16 +89,93 @@ def tables_in_sql(sql: str) -> set[str]:
     return {t.name.upper() for t in tree.find_all(exp.Table) if t.name}
 
 
-def columns_used(sql: str, table: str, columns: set[str]) -> set[str]:
-    """SQL 文本里出现过的、属于 `table` 的列名（大写）。
+def resolve_columns(sql: str, columns_by_table: dict[str, set[str]]) -> list[tuple[str, str]]:
+    """把 SQL 解析成**真实的 (表, 列)** 列表（第二步：正规列解析）。
 
-    第一步接受这种**粗粒度**匹配（列名以单词边界出现即算）。真正的列级解析
-    （`SELECT *` 展开、别名、CTE）是第二步，等这里的数字出来再决定值不值得做。
+    相比第一步的"列名在文本里出现就算"，这里解决了四种串表/漏算：
+
+    1. **别名**：`FROM "T" b ... b."COL"` → (T, COL)，而不是把 `b` 当表；
+    2. **单表未限定**：`SELECT COL FROM "T"` → (T, COL)；多表时若该列在**多张表**
+       都有 → 视为歧义，**不猜**（宁可少连）；
+    3. **`SELECT *`**：展开成该表全部列（`COUNT(*)` 不算 —— 它是计数不是取列）；
+    4. **CTE / 子查询别名**：`WITH x AS (...) SELECT * FROM x` 里的 `x` 不是真表，
+       表名一律以 `columns_by_table` 里存在的为准。
+
+    解析失败返回空列表：脏 SQL 不该打断重算。
+    """
+    if not sql or not sql.strip() or not columns_by_table:
+        return []
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except ImportError:  # pragma: no cover
+        return []
+    try:
+        tree = sqlglot.parse_one(sql, read="postgres")
+    except Exception:  # noqa: BLE001
+        return []
+
+    cte_names = {c.alias_or_name.upper() for c in tree.find_all(exp.CTE)}
+    out: set[tuple[str, str]] = set()
+
+    for sel in tree.find_all(exp.Select):
+        # 这个 SELECT **直接**引用的真实表：别名 → 表名
+        alias_to_table: dict[str, str] = {}
+        for t in sel.find_all(exp.Table):
+            if t.find_ancestor(exp.Select) is not sel:
+                continue
+            name = (t.name or "").upper()
+            if not name or name in cte_names or name not in columns_by_table:
+                continue
+            alias_to_table[(t.alias_or_name or name).upper()] = name
+        if not alias_to_table:
+            continue
+        real_tables = sorted(set(alias_to_table.values()))
+
+        # `SELECT *` / `t.*`：展开；`COUNT(*)` 里的星号排除
+        for star in sel.find_all(exp.Star):
+            if star.find_ancestor(exp.Select) is not sel:
+                continue
+            if star.find_ancestor(exp.Count) is not None:
+                continue
+            parent = star.parent
+            qual = ""
+            if isinstance(parent, exp.Column):
+                qual = (parent.table or "").upper()
+            for alias, table in alias_to_table.items():
+                if qual and qual != alias:
+                    continue
+                for col in columns_by_table[table]:
+                    out.add((table, col))
+
+        for col in sel.find_all(exp.Column):
+            if isinstance(col.this, exp.Star):
+                continue
+            cname = (col.name or "").upper()
+            if not cname:
+                continue
+            qual = (col.table or "").upper()
+            if qual:
+                table = alias_to_table.get(qual)
+                if table and cname in columns_by_table[table]:
+                    out.add((table, cname))
+                continue
+            cands = [t for t in real_tables if cname in columns_by_table[t]]
+            if len(cands) == 1:          # 唯一命中才认，多表都有 → 不猜
+                out.add((cands[0], cname))
+    return sorted(out)
+
+
+def columns_used(sql: str, table: str, columns: set[str]) -> set[str]:
+    """向后兼容的薄封装：只关心一张表时用。
+
+    ⚠️ 内部走 `resolve_columns` —— 多表 SQL 请直接用后者，否则只能拿到
+    这张表自己的列（这正是第一步串表的原因）。
     """
     if not sql or not columns:
         return set()
-    up = sql.upper()
-    return {c for c in columns if re.search(rf"\b{re.escape(c)}\b", up)}
+    return {c for t, c in resolve_columns(sql, {table.upper(): set(columns)})
+            if t == table.upper()}
 
 
 # ---------------------------------------------------------------------------
@@ -247,12 +324,11 @@ async def _usage_edges(datasource: str, columns_by_table: dict[str, set[str]]) -
     for ref_kind, ref_key, sql in sources:
         if not sql:
             continue
-        for table in tables_in_sql(sql):
-            if table not in columns_by_table:
-                continue
-            for col in columns_used(sql, table, columns_by_table[table]):
-                edges.append(Edge("usage", table, col, ref_kind=ref_kind,
-                                  ref_key=str(ref_key), confidence=1.0))
+        # 正规列解析：别名/CTE/`SELECT *` 都由 resolve_columns 处理。
+        # 第一步的"列名在文本里出现就算"会串表（A 表的列被算到 B 表头上）。
+        for table, col in resolve_columns(sql, columns_by_table):
+            edges.append(Edge("usage", table, col, ref_kind=ref_kind,
+                              ref_key=str(ref_key), confidence=1.0))
     return edges
 
 
