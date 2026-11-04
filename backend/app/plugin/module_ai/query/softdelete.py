@@ -79,7 +79,3 @@ def inject_softdelete(sql: str, del_tables: set[str]) -> tuple[str, list[str]]:
         return sql, []
     return parsed.sql(dialect="postgres"), hit
 
-
-def _already_filtered(sql: str) -> bool:
-    """SQL 里是否已经有 ISDELETED 条件（避免重复注入）。"""
-    return "ISDELETED" in (sql or "").replace(" ", "").upper()
