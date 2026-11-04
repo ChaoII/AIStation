@@ -541,6 +541,14 @@ async def sync_datasource_schema(datasource_id: int) -> dict:
                     columns=cols,
                 )
             )
+    # 同步完顺手重算血缘：schema 变了，旧血缘就不准了。
+    # ★ 必须 try/except —— 血缘是增强，不能因为它让 schema 同步失败。
+    try:
+        from .lineage import rebuild_lineage
+
+        await rebuild_lineage(datasource_id)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[query] 血缘重算失败（忽略）: {str(e)[:120]}")
     return {"tables": len(tables)}
 
 
@@ -6729,6 +6737,10 @@ class AiQueryService:
             # 下面两个是"做了但实测零收益"，**默认关**并保留代码分支；
             # 一旦进默认值，界面上就能看到、也就有了回退入口。
             "schema_asset_meta_enabled": "false",    # 把资产描述注入 prompt（实测零收益）
+            # 血缘：表级血缘已自动产出（ai_query_lineage），但**影响分析先不读它**。
+            # 等人工核对 3 张业务表确认无误后再改默认 true（改动只影响接口返回，
+            # 关闭时与改造前完全一致）。
+            "lineage_enabled": "false",
             # ---- 召回/对象查询的补充旋钮 ----
             # 软删除口径：**确定性改写**，不靠提示词。
             # 实测提示词版规则两轮自翻 5 题（baseline 0 题），收益 1~2 题还不如自身抖动，

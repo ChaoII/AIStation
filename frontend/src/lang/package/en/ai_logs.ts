@@ -277,6 +277,9 @@ export default {
   settingQueryTimeout: "SQL timeout (seconds)",
   settingQueryTimeoutTip:
     "Longest a single query may run on the datasource; it errors out instead of waiting forever (this value used to have no effect).",
+  settingLineage: "Impact analysis reads lineage",
+  settingLineageTip:
+    "Table-level lineage is generated automatically (FK / views / naming / usage). When on, impact analysis shows upstream, downstream and who uses it. Off by default: check a few tables first.",
   settingSoftDeleteRewrite: "Auto-exclude soft-deleted rows",
   settingSoftDeleteRewriteTip:
     'Code adds "ISDELETED" = false before execution (skipped when the question asks about deleted rows). Not a prompt rule: the prompt version flipped 5 questions between runs for a 1-2 question gain, so it was replaced by a deterministic rewrite.',

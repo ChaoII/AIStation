@@ -264,6 +264,9 @@ export default {
   settingQueryTimeout: "SQL 執行逾時（秒）",
   settingQueryTimeoutTip:
     "單條查詢在資料來源上的最長執行時間，逾時直接報錯而不是一直等（以前這個值不生效）。",
+  settingLineage: "影響分析讀血緣",
+  settingLineageTip:
+    "表級血緣已自動產生（外鍵／檢視／命名慣例／使用情況），開啟後影響分析會顯示上游、下游與被誰使用。預設關閉：先人工核對幾張表再開。",
   settingSoftDeleteRewrite: "業務資料自動排除軟刪除",
   settingSoftDeleteRewriteTip:
     '由程式在執行前補 "ISDELETED" = false（問句本身問已刪除時不加）。不用提示詞：實測提示詞版兩輪自翻 5 題、收益 1~2 題，已改為確定性改寫。',

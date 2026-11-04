@@ -332,3 +332,11 @@ def test_metric_fast_path_also_applies_softdelete_policy():
     src = inspect.getsource(svc._execute_metric)
     assert "_execute_one(" in src
     assert 'metric.get("name")' in src, "快路径没传指标名 → 软删除改写会被跳过"
+
+
+def test_lineage_switch_declared_and_default_off():
+    """新开关三件套之一：默认值表里必须有它（三件套另两件在前端/文案）。"""
+    from app.plugin.module_ai.query.service import AiQueryService as S
+
+    assert S._cfg_bool({}, "lineage_enabled", False) is False
+    assert "lineage_enabled" in _default_keys(QUERY_DIR / "service.py")

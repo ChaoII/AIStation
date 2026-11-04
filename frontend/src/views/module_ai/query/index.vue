@@ -947,6 +947,12 @@ const SETTING_DEFS = [
     tip: t("ai_logs.settingQueryTimeoutTip"),
   },
   {
+    key: "lineage_enabled",
+    label: t("ai_logs.settingLineage"),
+    type: "bool",
+    tip: t("ai_logs.settingLineageTip"),
+  },
+  {
     key: "sql_softdelete_rewrite_enabled",
     label: t("ai_logs.settingSoftDeleteRewrite"),
     type: "bool",

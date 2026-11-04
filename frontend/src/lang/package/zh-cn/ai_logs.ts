@@ -262,6 +262,9 @@ export default {
   settingQueryTimeout: "SQL 执行超时（秒）",
   settingQueryTimeoutTip:
     "单条查询在数据源上的最长执行时间，超时直接报错而不是一直等（以前这个值不生效）。",
+  settingLineage: "影响分析读血缘",
+  settingLineageTip:
+    "表级血缘已自动生成（外键/视图/命名约定/使用情况），开启后影响分析会展示上游、下游与被谁使用。默认关：先人工核对几张表再开。",
   settingSoftDeleteRewrite: "业务数据自动排除软删除",
   settingSoftDeleteRewriteTip:
     '由代码在执行前补 "ISDELETED" = false（问句本身问已删除时不加）。不用提示词：实测提示词版两轮自翻 5 题、收益 1~2 题，已改为确定性改写。',
