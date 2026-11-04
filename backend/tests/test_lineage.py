@@ -13,6 +13,7 @@ from app.plugin.module_ai.query.lineage import (
     Edge,
     columns_used,
     infer_name_edges,
+    propagate_sensitive,
     resolve_columns,
     tables_in_sql,
 )
@@ -103,7 +104,7 @@ def test_impact_lineage_off_by_default(db_run):
 
     d = db_run(S.impact_analysis("FUEL_CMCS_INFACTORYBATCH"))
     assert d["lineage"] == {"upstream": [], "downstream": [], "used_by": [],
-                            "sensitive_columns": []}
+                            "sensitive_columns": [], "sensitive_downstream": []}
     for k in ("table", "metrics", "incoming_relations", "object_links"):
         assert k in d
 
@@ -113,7 +114,8 @@ def test_lineage_for_table_shape(db_run):
     from app.plugin.module_ai.query import lineage as L
 
     d = db_run(L.lineage_for_table("ds:4", "FUEL_CMCS_INFACTORYBATCH"))
-    assert set(d) == {"upstream", "downstream", "used_by", "sensitive_columns"}
+    assert set(d) == {"upstream", "downstream", "used_by", "sensitive_columns",
+                      "sensitive_downstream"}
     assert isinstance(d["upstream"], list) and isinstance(d["sensitive_columns"], list)
 
 
@@ -177,3 +179,27 @@ def test_resolve_columns_single_table_unqualified():
 def test_resolve_columns_bad_sql():
     assert resolve_columns("not sql at all", {"T": {"A"}}) == []
     assert resolve_columns("", {"T": {"A"}}) == []
+
+
+def test_propagate_sensitive_one_hop():
+    """敏感列往下游传一格：视图/关联表消费了它就算。"""
+    rows = [
+        ("view", "FUEL_CB_COALBALANCE", "COALMONEY", "VIEW_GETBATCHPRICE", "COALMONEY", None, None, 0.9),
+        ("view", "FUEL_CB_COALBALANCE", "REMARK", "VIEW_X", "REMARK", None, None, 0.9),
+        ("usage", "FUEL_CB_COALBALANCE", "COALMONEY", None, None, "metric", "k", 1.0),
+    ]
+    got = propagate_sensitive(rows, "FUEL_CB_COALBALANCE", ["COALMONEY"])
+    assert got == [{"table": "VIEW_GETBATCHPRICE", "column": "COALMONEY", "via": "view"}]
+
+
+def test_propagate_sensitive_reverse_direction():
+    """基表在 dst 一侧时，消费方是 **src**（视图），不能传回自己。"""
+    rows = [("view", "VIEW_X", "COALMONEY", "FUEL_CB_COALBALANCE", "COALMONEY", None, None, 0.9)]
+    got = propagate_sensitive(rows, "FUEL_CB_COALBALANCE", ["COALMONEY"])
+    assert got == [{"table": "VIEW_X", "column": "COALMONEY", "via": "view"}]
+    # 不能出现指向自己
+    assert all(x["table"] != "FUEL_CB_COALBALANCE" for x in got)
+
+
+def test_propagate_sensitive_empty_when_no_sensitive():
+    assert propagate_sensitive([("view", "A", "C", "B", "C")], "A", []) == []

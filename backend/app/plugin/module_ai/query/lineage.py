@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import NamedTuple
 
 from sqlalchemy import text
@@ -48,6 +47,7 @@ EMPTY_LINEAGE: dict = {
     "downstream": [],
     "used_by": [],
     "sensitive_columns": [],
+    "sensitive_downstream": [],
 }
 
 
@@ -436,6 +436,33 @@ async def _sensitive_columns(datasource: str, table: str) -> list[str]:
     return sorted(cols)
 
 
+def propagate_sensitive(rows: list, table: str, sensitive_cols: list[str]) -> list[dict]:
+    """敏感列沿血缘**传播一格**：谁在消费这张表的敏感列。
+
+    `rows` 是 `(kind, src_table, src_column, dst_table, dst_column, ...)` 的数据库行。
+
+    ⚠️ 方向必须按**锚点表在哪一侧**判断（踩过）：
+      - 我 → 下游（`src_table == T`）：下游是 `dst`（子表引用我 / 我用 `XXXID` 指向别人）
+      - 我 ← 上游（`dst_table == T`）：我是基表，**消费方是 `src`**（视图引用我）
+    只认 src 一侧会把"视图 → 基表"的边算成基表传给自己（实测出现过
+    `{"table": "FUEL_CB_COALBALANCE"}` 这种自指）。
+
+    只做一格，不做多跳 —— 多跳误伤大，先看一格的实际效果。
+    """
+    t = str(table or "").upper()
+    sens = {str(c).upper() for c in (sensitive_cols or [])}
+    if not t or not sens:
+        return []
+    out: dict[tuple[str, str, str], None] = {}
+    for row in rows:
+        kind, src_table, src_column, dst_table, dst_column = row[:5]
+        if src_table == t and str(src_column or "").upper() in sens and dst_table:
+            out[(str(dst_table), str(dst_column or "").upper(), str(kind))] = None
+        elif dst_table == t and str(dst_column or "").upper() in sens and src_table:
+            out[(str(src_table), str(src_column or "").upper(), str(kind))] = None
+    return [{"table": tb, "column": c, "via": k} for (tb, c, k) in sorted(out)]
+
+
 async def lineage_for_table(datasource: str, table_name: str) -> dict:
     """一张表的血缘：上游（我依赖谁）/ 下游（谁依赖我）/ 被谁使用 / 敏感列。
 
@@ -480,12 +507,15 @@ async def lineage_for_table(datasource: str, table_name: str) -> dict:
         return [{"table": tbl, "kind": k, "confidence": round(c, 2)}
                 for (tbl, k), c in sorted(d.items())]
 
+    sensitive_cols = await _sensitive_columns(datasource, t)
     return {
         "upstream": _as_list(upstream),
         "downstream": _as_list(downstream),
         "used_by": [{"ref_kind": rk, "ref_key": rk_key, "kind": "usage"}
                     for (rk, rk_key) in sorted(used_by)],
-        "sensitive_columns": await _sensitive_columns(datasource, t),
+        "sensitive_columns": sensitive_cols,
+        # 敏感列被谁消费（下游一格）。用于回答"这列脱敏了，视图里还在裸奔吗"
+        "sensitive_downstream": propagate_sensitive(rows, t, sensitive_cols),
     }
 
 
