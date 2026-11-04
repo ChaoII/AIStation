@@ -277,6 +277,12 @@ export default {
   settingQueryTimeout: "SQL timeout (seconds)",
   settingQueryTimeoutTip:
     "Longest a single query may run on the datasource; it errors out instead of waiting forever (this value used to have no effect).",
+  settingSoftDeleteRule: "Exclude soft-deleted business rows",
+  settingSoftDeleteRuleTip:
+    'Adds a prompt rule: when a table has an ISDELETED column, stats and filters add "ISDELETED" = false unless the question itself asks about deleted rows. Gold answers were unified to this convention; off by default pending A/B.',
+  settingOrderingRule: "Ordering / top-one convention",
+  settingOrderingRuleTip:
+    'Multiple sort keys follow the question\'s order (count desc, then name); "the top one" must use LIMIT 1. Off by default pending A/B.',
   settingMaxRows: "Row limit",
   settingMaxRowsTip:
     "Maximum rows returned per question (1-5000). Higher shows full detail but means bigger responses and slower rendering.",

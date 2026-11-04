@@ -264,6 +264,12 @@ export default {
   settingQueryTimeout: "SQL 執行逾時（秒）",
   settingQueryTimeoutTip:
     "單條查詢在資料來源上的最長執行時間，逾時直接報錯而不是一直等（以前這個值不生效）。",
+  settingSoftDeleteRule: "業務資料預設排除軟刪除",
+  settingSoftDeleteRuleTip:
+    '提示詞加一條：表有 ISDELETED 欄位時統計／篩選預設加 "ISDELETED" = false（問句本身問已刪除時除外）。金標已統一到該口徑，預設關閉，待 A/B 驗證。',
+  settingOrderingRule: "排序／取單一口徑",
+  settingOrderingRuleTip:
+    '多鍵排序依問句敘述順序（先按數量倒序，並列再按名稱）；"最多的那家／第一名"必須 LIMIT 1。預設關閉，待 A/B 驗證。',
   settingMaxRows: "回傳列數上限",
   settingMaxRowsTip: "一次問答最多回傳多少列（1~5000）。調大能看全量明細，但回應更大、前端更慢。",
   example1: "銷售訂單總共有多少筆",

@@ -947,6 +947,18 @@ const SETTING_DEFS = [
     tip: t("ai_logs.settingQueryTimeoutTip"),
   },
   {
+    key: "prompt_softdelete_rule_enabled",
+    label: t("ai_logs.settingSoftDeleteRule"),
+    type: "bool",
+    tip: t("ai_logs.settingSoftDeleteRuleTip"),
+  },
+  {
+    key: "prompt_ordering_rule_enabled",
+    label: t("ai_logs.settingOrderingRule"),
+    type: "bool",
+    tip: t("ai_logs.settingOrderingRuleTip"),
+  },
+  {
     key: "query_max_rows",
     label: t("ai_logs.settingMaxRows"),
     type: "int",

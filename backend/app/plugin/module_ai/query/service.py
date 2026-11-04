@@ -1295,7 +1295,8 @@ _CTX_CFG_KEYS: tuple[str, ...] = (
     "entity_enabled", "entity_map", "kg_enabled", "agno_semantic_enabled",
     "schema_column_prune_enabled", "enum_hint_enabled",
     "schema_asset_meta_enabled", "schema_ont_prop_notes_enabled",
-    "multi_dialect_enabled",
+    "multi_dialect_enabled", "prompt_softdelete_rule_enabled",
+    "prompt_ordering_rule_enabled",
 )
 
 
@@ -6736,6 +6737,9 @@ class AiQueryService:
             "schema_asset_meta_enabled": "false",    # 把资产描述注入 prompt（实测零收益）
             "schema_ont_prop_notes_enabled": "false",  # 本体属性说明注入 prompt（实测零收益）
             # ---- 召回/对象查询的补充旋钮 ----
+            # 两条提示词规则（2026-11 定位的两处缺口，**默认关**等 A/B）
+            "prompt_softdelete_rule_enabled": "false",  # 业务表 ISDELETED=false 默认排除
+            "prompt_ordering_rule_enabled": "false",    # 多键排序按叙述顺序 / 单个对象 LIMIT 1
             "recall_expand_cap": "4",                # 同义扩展最多追加几张表
             "object_query_max_tokens": "0",          # 0 = 跟随 nl2sql_max_tokens
         }
@@ -10012,8 +10016,33 @@ class AiQueryService:
         return sorted(scores, key=lambda t: -scores[t])[:12]
 
     @classmethod
-    def _query_conventions(cls) -> str:
-        """查询口径规范：统一业务口径，减少 LLM 生成 SQL 时的歧义（时间/用户/联表/占比）。"""
+    def _query_conventions(cls, cfg: dict | None = None) -> str:
+        """查询口径规范：统一业务口径，减少 LLM 生成 SQL 时的歧义。
+
+        时间 / 用户统计 / 联表 / 占比 是**无条件**给的（已验证）；后面两段是
+        2026-11 定位到的两处缺口，各由一个开关控制，**默认关**，等 A/B：
+
+        - `prompt_softdelete_rule_enabled`：业务表有 `ISDELETED` 列时默认排除。
+          背景：旧金标 9 道过滤 / 48 道不过滤，同一句话两个答案（见
+          `docs/ai-query-experiments.md`）。口径统一为"排除"后，模型需要这条规则。
+        - `prompt_ordering_rule_enabled`：多键排序按叙述顺序、"最多的那家"要 LIMIT 1。
+          背景：2 道题模型把"最多的那家"答成 53 行、把"并列时按名称升序"当成主排序。
+        """
+        cfg = cfg or {}
+        extra = ""
+        if cls._cfg_bool(cfg, "prompt_softdelete_rule_enabled", False):
+            extra += (
+                "5. 软删除口径：若表有布尔列 ISDELETED（注意是**大写无下划线**），"
+                "统计/筛选时一律加 \"ISDELETED\" = false（已删除的行不算）；"
+                "只有问句本身在问「已删除多少/删除占比/按是否删除统计」时才改用 = true 或分组。\n"
+            )
+        if cls._cfg_bool(cfg, "prompt_ordering_rule_enabled", False):
+            extra += (
+                "6. 排序与取单个：问句给多个排序键时**按叙述顺序**写（例：「最多的前3个，"
+                "并列按名称升序」→ ORDER BY 计数 DESC, 名称 ASC）；问句指的是**单个**对象"
+                "（「最多的那家」「最高的那个」「第一名」）时必须 ORDER BY ... DESC LIMIT 1，"
+                "不要返回全部分组。\n"
+            )
         return (
             "【查询口径规范】\n"
             "1. 时间口径：\n"
@@ -10031,6 +10060,7 @@ class AiQueryService:
             "   - 仅'发生过/有关系的' → 用 INNER JOIN。\n"
             "   - video_alarm_records 等表无 is_deleted 字段，统计告警不要加 is_deleted 条件。\n"
             "4. 占比/平均：用 ROUND(分子*100.0/分母,2) 或 ROUND(AVG(x)::numeric,2) 保证精度。"
+            + extra
         )
 
     @classmethod
@@ -10346,7 +10376,7 @@ class AiQueryService:
                 if extras:
                     head = f"{t}【" + "；".join(extras) + "】"
                 lines.append(f"- {head}: {', '.join(cols) if cols else ''}")
-            lines.append(cls._query_conventions())
+            lines.append(cls._query_conventions(cfg))
         else:
             # **自定义数据源**：原先这里**什么都不加** —— 模型对 ds:{id} 一张表、
             # 一个字段都不知道，只能瞎猜，问数必然答不对。
@@ -10430,7 +10460,7 @@ class AiQueryService:
                             lines.extend(_vals)
                     except Exception as e:  # noqa: BLE001
                         log.warning(f"[query] 枚举取值注入失败（忽略）: {str(e)[:80]}")
-                lines.append(cls._query_conventions())
+                lines.append(cls._query_conventions(cfg))
                 # 该库表名/字段名为英文大写且大小写敏感：不加双引号会被 PG 小写化 → 找不到表。
                 lines.append(
                     "【标识符大小写】本数据源的表名/字段名为**英文大写且大小写敏感**，"

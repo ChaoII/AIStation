@@ -267,3 +267,30 @@ def test_object_path_requires_columns_not_just_rows():
     src = inspect.getsource(AiQueryService._object_query_path)
     assert "if not cols:" in src
     assert "if not cols and not rows" not in src
+
+
+def test_prompt_rules_are_gated_and_default_off():
+    """两条新规则必须默认关、且各自独立开关（A/B 要能单独归因）。
+
+    - 软删除规则：金标统一为"排除已删除"后，模型需要这条才能对上口径；
+    - 排序规则：「最多的那家」要 LIMIT 1、多键排序按叙述顺序。
+    两者都改变 prompt，必须进 `_CTX_CFG_KEYS`，否则改完开关缓存还吐旧 prompt。
+    """
+    from app.plugin.module_ai.query.service import _CTX_CFG_KEYS
+    from app.plugin.module_ai.query.service import AiQueryService as S
+
+    off = S._query_conventions({})
+    assert "ISDELETED" not in off and "LIMIT 1" not in off
+
+    soft = S._query_conventions({"prompt_softdelete_rule_enabled": "true"})
+    assert "ISDELETED" in soft and "LIMIT 1" not in soft
+
+    order = S._query_conventions({"prompt_ordering_rule_enabled": "true"})
+    assert "LIMIT 1" in order and "ISDELETED" not in order
+
+    both = S._query_conventions({"prompt_softdelete_rule_enabled": "1",
+                                 "prompt_ordering_rule_enabled": "1"})
+    assert "ISDELETED" in both and "LIMIT 1" in both
+
+    for k in ("prompt_softdelete_rule_enabled", "prompt_ordering_rule_enabled"):
+        assert k in _CTX_CFG_KEYS, f"{k} 改了但缓存 key 不变 → 改了没反应"
