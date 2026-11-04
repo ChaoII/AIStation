@@ -93,3 +93,22 @@ def test_rebuild_is_idempotent_and_safe_without_datasource(db_run):
     assert set(first) == {"fk", "view", "name", "usage", "total"}
     # 远端不可用 → fk/view 为 0，但函数必须正常返回（不能抛）
     assert first["fk"] == 0 and first["view"] == 0
+
+def test_impact_lineage_off_by_default(db_run):
+    """开关默认关：返回固定空结构，旧字段一个不少（不破坏既有消费方）。"""
+    from app.plugin.module_ai.query.service import AiQueryService as S
+
+    d = db_run(S.impact_analysis("FUEL_CMCS_INFACTORYBATCH"))
+    assert d["lineage"] == {"upstream": [], "downstream": [], "used_by": [],
+                            "sensitive_columns": []}
+    for k in ("table", "metrics", "incoming_relations", "object_links"):
+        assert k in d
+
+
+def test_lineage_for_table_shape(db_run):
+    """按表查询永远返回四个键（空库也不能是 None/异常）。"""
+    from app.plugin.module_ai.query import lineage as L
+
+    d = db_run(L.lineage_for_table("ds:4", "FUEL_CMCS_INFACTORYBATCH"))
+    assert set(d) == {"upstream", "downstream", "used_by", "sensitive_columns"}
+    assert isinstance(d["upstream"], list) and isinstance(d["sensitive_columns"], list)

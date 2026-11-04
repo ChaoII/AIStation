@@ -4128,8 +4128,20 @@ class AiQueryService:
         relations = [{"column": c[0], "from": c[1], "field": c[2]} for c in cols]
         objs = await cls.list_objects()
         obj_links = [o for o in objs if any(ln["target"] == table_name for ln in o.get("links", []))]
+        # 血缘：只增字段，开关关闭时返回固定空结构（与改造前**完全一致**）。
+        # 默认关的理由：血缘是新数据，先让人核对 3 张表再决定是否默认读它。
+        from .lineage import EMPTY_LINEAGE, lineage_for_table
+
+        lineage_payload = dict(EMPTY_LINEAGE)
+        try:
+            if cls._cfg_bool(await cls._cfg(), "lineage_enabled", False):
+                ds_code = await cls._table_ds_code(table_name) or "ds:4"
+                lineage_payload = await lineage_for_table(ds_code, table_name.upper())
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 影响分析读血缘失败（返回空）: {str(e)[:100]}")
         return {
             "table": table_name,
+            "lineage": lineage_payload,
             "metrics": [{"key": m["key"], "name": m["name"], "desc": m["description"]} for m in affected_metrics],
             "incoming_relations": relations,
             "object_links": [{"object": o["table"], "alias": o.get("alias") or o["table"]} for o in obj_links],

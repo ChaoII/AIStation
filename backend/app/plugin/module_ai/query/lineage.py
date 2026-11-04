@@ -323,3 +323,91 @@ async def rebuild_lineage(datasource_id: int) -> dict[str, int]:
     counts["total"] = len(edges)
     log.warning(f"[lineage] 重算完成 {datasource}：{counts}")
     return counts
+
+
+# ---------------------------------------------------------------------------
+# 按表查询
+# ---------------------------------------------------------------------------
+
+async def _sensitive_columns(datasource: str, table: str) -> list[str]:
+    """该表被标敏感的列：资产目录 ∪ 本体属性。
+
+    本体那半必须经 `ontology.semantic` 取 —— 问数**禁止直连读 ai_ont_***，
+    `tests/test_ontology_query_bridge.py` 会扫源码断言。
+    """
+    cols: set[str] = set()
+    try:
+        async with async_db_session() as db:
+            rows = (await db.execute(text(
+                "SELECT column_name FROM ai_query_asset_columns "
+                "WHERE UPPER(table_name)=:t AND sensitive=true AND is_deleted=false"),
+                {"t": table})).fetchall()
+        cols |= {str(r[0]).upper() for r in rows if r[0]}
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[lineage] 读资产敏感列失败（忽略）: {str(e)[:80]}")
+    try:
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        table_map = await _sem.object_table_map()      # {表名或 ont_code: object_code}
+        codes = {code for key, code in (table_map or {}).items()
+                 if str(key).upper() == table}
+        if codes:
+            sens = await _sem.sensitive_fields()       # {object_code: {属性 code}}
+            for code in codes:
+                cols |= {str(c).upper() for c in (sens.get(code) or set())}
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[lineage] 读本体敏感列失败（忽略）: {str(e)[:80]}")
+    return sorted(cols)
+
+
+async def lineage_for_table(datasource: str, table_name: str) -> dict:
+    """一张表的血缘：上游（我依赖谁）/ 下游（谁依赖我）/ 被谁使用 / 敏感列。
+
+    边方向是 `src → dst`，语义是「**src 依赖 dst**」（子表→父表、视图→基表、
+    `XXXID`→候选表）。所以：
+        上游 = src_table 是我的行 → dst
+        下游 = dst_table 是我的行 → src
+        被谁用 = kind='usage' 且 src_table 是我
+    """
+    t = (table_name or "").upper()
+    if not t:
+        return dict(EMPTY_LINEAGE)
+    try:
+        async with async_db_session() as db:
+            rows = (await db.execute(text(
+                "SELECT kind, src_table, src_column, dst_table, dst_column, "
+                "       ref_kind, ref_key, confidence "
+                "FROM ai_query_lineage WHERE datasource=:d AND is_deleted=false "
+                "AND (src_table=:t OR dst_table=:t)"), {"d": datasource, "t": t})).fetchall()
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[lineage] 读血缘失败（返回空）: {str(e)[:80]}")
+        return dict(EMPTY_LINEAGE)
+
+    # 边是**列级**的：同一张视图/同一个指标会因为多列各出现一次。
+    # 对外要的是"哪些对象依赖我"，所以按对象去重（置信度取最高）。
+    upstream: dict[tuple[str, str], float] = {}
+    downstream: dict[tuple[str, str], float] = {}
+    used_by: dict[tuple[str, str], None] = {}
+    for kind, src_t, _src_c, dst_t, _dst_c, ref_kind, ref_key, conf in rows:
+        if kind == "usage":
+            if src_t == t and ref_key:
+                used_by[(str(ref_kind or ""), str(ref_key))] = None
+            continue
+        if src_t == t and dst_t:
+            key = (dst_t, kind)
+            upstream[key] = max(upstream.get(key, 0.0), float(conf))
+        elif dst_t == t:
+            key = (src_t, kind)
+            downstream[key] = max(downstream.get(key, 0.0), float(conf))
+
+    def _as_list(d: dict[tuple[str, str], float]) -> list[dict]:
+        return [{"table": tbl, "kind": k, "confidence": round(c, 2)}
+                for (tbl, k), c in sorted(d.items())]
+
+    return {
+        "upstream": _as_list(upstream),
+        "downstream": _as_list(downstream),
+        "used_by": [{"ref_kind": rk, "ref_key": rk_key, "kind": "usage"}
+                    for (rk, rk_key) in sorted(used_by)],
+        "sensitive_columns": await _sensitive_columns(datasource, t),
+    }
