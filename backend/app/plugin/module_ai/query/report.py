@@ -297,7 +297,11 @@ async def run_report(report_id: int, params: dict | None = None, auth=None) -> d
     # 安全补丁（P0-3）：执行统一走 `AiQueryService._execute_one` —— 它是系统库取数的
     # **唯一收口**（字段级 ACL + 本体行/列改写都在里面）。修前报表直连 `_execute_sql`，
     # 于是「能问数就能造一条读敏感列的报表模板并执行」，字段级 ACL 被整段绕过。
-    res = await AiQueryService._execute_one(sql, ds, auth)
+    # 第四个参数传报表名：软删除口径改写需要“问句”判断是不是在问已删除。
+    # 不传的话，报表这条执行路径会静默跳过改写（与指标快路径同一类漏接），
+    # 于是同一张业务表：问数排除软删、报表却把删掉的行算进去。
+    res = await AiQueryService._execute_one(
+        sql, ds, auth, str(rep.get("name") or rep.get("key") or ""))
     log.info(f"[report] 执行 {rep['key']} → {len(res.get('rows') or [])} 行")
     return {
         "id": rep["id"], "key": rep["key"], "name": rep["name"],

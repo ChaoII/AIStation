@@ -62,7 +62,7 @@ ASK_CASES = [
 
 #: 慢路径依赖的类方法（删掉会导致所有慢问题 500，且编译/单测都不报）
 REQUIRED_HELPERS = (
-    "_prune_columns", "_ds_value_map", "_ont_prop_notes",
+    "_prune_columns", "_ds_value_map", "_apply_softdelete_policy",
     "_build_schema_context", "_select_metric", "_object_query_path", "_slow_path",
 )
 

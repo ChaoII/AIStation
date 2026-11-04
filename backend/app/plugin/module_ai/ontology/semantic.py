@@ -107,6 +107,23 @@ async def _load_objects() -> list[dict]:
     } for r in rows]
 
 
+async def object_backing_map() -> dict[str, str]:
+    """对象 code → 支撑表（只收有 backing_table 的）。
+
+    指标模板里的占位符是按 ``object_code`` 写的，执行前要换成真实表名。
+    这个查询以前**写在问数里**（`query/service.py::_object_backing_map`），
+    违反「本体表只能经 semantic.py 读」的约定（架构测试会红）。口径保持不变：
+    不过滤 enabled —— 停用的对象其历史指标仍要能执行。
+    """
+    try:
+        rows = (await _exec(
+            "SELECT code, backing_table FROM ai_ont_object "
+            "WHERE is_deleted=false AND coalesce(backing_table,'')<>''", {})).fetchall()
+    except Exception:  # noqa: BLE001
+        return {}
+    return {r[0]: r[1] for r in rows}
+
+
 async def semantic_context(include_properties: bool = True) -> dict[str, Any]:
     """一次拿全本体的业务语义，供 prompt grounding / 实体解析使用。
 

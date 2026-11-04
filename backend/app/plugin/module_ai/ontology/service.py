@@ -633,14 +633,6 @@ async def assign_objects_to_domain(domain_code: str, object_codes: list[str]) ->
     return {"ok": True, "updated": res.rowcount or 0}
 
 
-async def list_objects_ungrouped_count() -> int:
-    """未分组对象数（左侧「未分组」用）。"""
-    await _ensure_domain_schema()
-    r = await _exec(
-        "SELECT count(*) FROM ai_ont_object WHERE is_deleted=false AND COALESCE(domain_code,'')=''")
-    return int(r.scalar() or 0)
-
-
 async def count_pending_tasks() -> int:
     """待审（=待发布）的本体变更条数——控制台统一审计取数入口。
 
@@ -1708,26 +1700,6 @@ async def _dq_score(code: str):
     return float(v) if v is not None else None
 
 
-async def _sensitive_count(code: str) -> int:
-    r = await _exec("SELECT count(*) FROM ai_ont_property WHERE object_code=:c AND sensitive=true AND is_deleted=false", {"c": code})
-    return r.scalar() or 0
-
-
-async def _prop_count(code: str) -> int:
-    r = await _exec("SELECT count(*) FROM ai_ont_property WHERE object_code=:c AND is_deleted=false", {"c": code})
-    return r.scalar() or 0
-
-
-async def _link_count(code: str) -> int:
-    r = await _exec("SELECT count(*) FROM ai_ont_link WHERE (source_object=:c OR target_object=:c) AND is_deleted=false", {"c": code})
-    return r.scalar() or 0
-
-
-async def _action_count(code: str) -> int:
-    r = await _exec("SELECT count(*) FROM ai_ont_action WHERE object_code=:c AND is_deleted=false", {"c": code})
-    return r.scalar() or 0
-
-
 async def upsert_object(data: dict) -> dict:
     code = (data.get("code") or "").strip()
     if not code:
@@ -2109,6 +2081,16 @@ async def _log_change(object_code: str, kind: str, action: str, detail: str = ""
         await _exec_write(
             "INSERT INTO ai_ont_change_log(object_code,kind,action,detail,created_id) VALUES (:o,:k,:a,:d,:uid)",
             {"o": object_code or "-", "k": kind, "a": action, "d": detail[:250] or "", "uid": created_id or 0})
+    except Exception:  # noqa: BLE001
+        pass
+    # 本体定义一变，语义层缓存立即失效。
+    # 以前 `semantic.invalidate_semantic_cache()` 写了但没人调用，只靠 60 秒 TTL 兜底：
+    # 用户改完属性/关系，问数在接下来一分钟还拿旧定义拼 prompt（表现就是"改了没反应"）。
+    # 放在 `_log_change` 里：所有定义写入（controller / decision / agent 工具）都会经过它。
+    try:
+        from .semantic import invalidate_semantic_cache
+
+        invalidate_semantic_cache()
     except Exception:  # noqa: BLE001
         pass
 

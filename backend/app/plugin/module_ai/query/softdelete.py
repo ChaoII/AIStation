@@ -78,4 +78,3 @@ def inject_softdelete(sql: str, del_tables: set[str]) -> tuple[str, list[str]]:
     if not hit:
         return sql, []
     return parsed.sql(dialect="postgres"), hit
-

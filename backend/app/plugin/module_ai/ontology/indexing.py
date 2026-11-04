@@ -22,9 +22,7 @@
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta
-from typing import Any
 
 from app.core.exceptions import CustomException
 
@@ -431,7 +429,3 @@ async def apply_suggestions(object_code: str, only_high: bool = True) -> dict:
             "failed": built.get("failed", 0),
             "msg": f"已创建 {made} 个建议索引，构建成功 {built.get('built', 0)}、"
                    f"失败 {built.get('failed', 0)}"}
-
-
-def json_default(o: Any) -> Any:  # pragma: no cover - 兼容工具
-    return json.loads(json.dumps(o, default=str))

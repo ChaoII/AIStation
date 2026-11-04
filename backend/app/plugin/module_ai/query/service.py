@@ -1215,13 +1215,6 @@ def _sql_cache_set(question: str, datasource: str | None, sql: str) -> None:
     _SQL_CACHE[_sql_cache_key(question, datasource)] = (time.time(), sql)
 
 
-def sql_cache_stats() -> dict:
-    """给运维/自检用：缓存规模与命中情况。"""
-    now = time.time()
-    alive = sum(1 for ts, _ in _SQL_CACHE.values() if now - ts <= _SQL_CACHE_TTL)
-    return {"size": len(_SQL_CACHE), "alive": alive, "ttl_s": int(_SQL_CACHE_TTL)}
-
-
 def sql_cache_clear() -> int:
     n = len(_SQL_CACHE)
     _SQL_CACHE.clear()
@@ -1294,7 +1287,7 @@ _CTX_CFG_KEYS: tuple[str, ...] = (
     "schema_top_k", "schema_semantic_weight", "schema_keyword_weight",
     "entity_enabled", "entity_map", "kg_enabled", "agno_semantic_enabled",
     "schema_column_prune_enabled", "enum_hint_enabled",
-    "schema_asset_meta_enabled", "schema_ont_prop_notes_enabled",
+    "schema_asset_meta_enabled",
     "multi_dialect_enabled",
 )
 
@@ -1309,20 +1302,6 @@ def _cfg_sig(cfg: dict | None) -> str:
     cfg = cfg or {}
     raw = "|".join(f"{k}={cfg.get(k)}" for k in _CTX_CFG_KEYS)
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
-
-
-def retrieval_cache_stats() -> dict:
-    now = time.time()
-    alive = sum(1 for ts, _ in _RETRIEVAL_CACHE.values()
-                if now - ts <= _RETRIEVAL_CACHE_TTL)
-    return {"size": len(_RETRIEVAL_CACHE), "alive": alive,
-            "ttl_s": int(_RETRIEVAL_CACHE_TTL)}
-
-
-def retrieval_cache_clear() -> int:
-    n = len(_RETRIEVAL_CACHE)
-    _RETRIEVAL_CACHE.clear()
-    return n
 
 
 async def _system_allowed() -> set[str]:
@@ -4115,14 +4094,14 @@ class AiQueryService:
         绑定型指标的 ``sql_template`` 是占位（不引用真实表），只能经 ``object_code``
         → 本体对象 → ``backing_table`` 才能连到物理表。这张映射是打通「表↔对象↔绑定指标」的关键。
         """
+        # 走 semantic.py 的**唯一接口**：本体表不允许在问数里直连读
+        # （`test_query_reads_ontology_only_through_interface` 会扫源码断言）。
         try:
-            async with async_db_session() as db:
-                from sqlalchemy import text as _t
-                rows = (await db.execute(_t(
-                    "SELECT code, backing_table FROM ai_ont_object "
-                    "WHERE is_deleted=false AND coalesce(backing_table,'')<>''"))).fetchall()
-            return {r[0]: r[1] for r in rows}
-        except Exception:  # noqa: BLE001
+            from app.plugin.module_ai.ontology import semantic as _sem
+
+            return await _sem.object_backing_map()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 读对象支撑表失败（忽略）: {str(e)[:80]}")
             return {}
 
     @classmethod
@@ -6738,7 +6717,6 @@ class AiQueryService:
             # 下面两个是"做了但实测零收益"，**默认关**并保留代码分支；
             # 一旦进默认值，界面上就能看到、也就有了回退入口。
             "schema_asset_meta_enabled": "false",    # 把资产描述注入 prompt（实测零收益）
-            "schema_ont_prop_notes_enabled": "false",  # 本体属性说明注入 prompt（实测零收益）
             # ---- 召回/对象查询的补充旋钮 ----
             # 软删除口径：**确定性改写**，不靠提示词。
             # 实测提示词版规则两轮自翻 5 题（baseline 0 题），收益 1~2 题还不如自身抖动，
@@ -10293,53 +10271,6 @@ class AiQueryService:
         return cls._SQL_LITERAL_RE.sub(_sub, sql), fixes
 
     @classmethod
-    async def _ont_prop_notes(cls, tables: list[str],
-                              ds_schema: dict[str, list[str]]) -> list[str]:
-        """本体属性里**数据源没有**的那部分（业务描述 / 枚举取值）才注入。
-
-        为什么只注入"差分"：实测燃料域 4985 个属性，名字与数据源列注释 **80/86 完全相同**
-        （本体是导入时复制的），描述 0 条、枚举 0 条 —— 全量注入等于把同一句话写两遍，
-        和"资产描述注入"是同一个坑。等有人把描述/枚举填上，这段自动生效。
-        """
-        try:
-            async with async_db_session() as db:
-                rows = (await db.execute(text(
-                    "SELECT o.backing_table, p.code, p.description, p.options::text "
-                    "FROM ai_ont_property p JOIN ai_ont_object o ON o.code = p.object_code "
-                    "WHERE p.is_deleted=false AND o.is_deleted=false AND o.backing_table = ANY(:t)"),
-                    {"t": list(tables)})).fetchall()
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 读本体属性说明失败（忽略）: {str(e)[:80]}")
-            return []
-        # 数据源里已有的列注释（用来判断"是不是重复"）
-        cmt: dict[tuple[str, str], str] = {}
-        for t, labels in (ds_schema or {}).items():
-            for lab in labels:
-                name, _, rest = lab.partition("(")
-                cmt[(t, name)] = rest.rstrip(")")
-        out = []
-        for t, code, desc, options in rows:
-            d = (desc or "").strip()
-            if d and d != cmt.get((t, code)):
-                out.append(f"- {t}.{code}：{d[:80]}")
-            if options and options not in ("[]", "null"):
-                try:
-                    import json as _j
-
-                    vals = _j.loads(options)
-                    if isinstance(vals, list) and vals:
-                        pairs = []
-                        for v in vals[:10]:
-                            if isinstance(v, dict):
-                                pairs.append(f"{v.get('value', v.get('code', ''))}={v.get('label', '')}")
-                            else:
-                                pairs.append(str(v))
-                        out.append(f"- {t}.{code} 取值: {'、'.join(pairs)}")
-                except Exception:  # noqa: BLE001
-                    pass
-        return out
-
-    @classmethod
     async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
         cfg = await cls._cfg()
         # 命中短时缓存直接返回（见函数尾部写入处）。key 与写入处必须完全一致
@@ -10462,18 +10393,6 @@ class AiQueryService:
                 # **本体属性的"差分"**：只注入数据源注释里没有的业务描述/枚举。
                 # 实测燃料域 4985 个属性里 80/86 与列注释逐字相同、描述 0 条、枚举 0 条，
                 # 全量注入只是把同一句话写两遍（和资产描述注入同一个坑）。
-                try:
-                    # 默认**关**：配对实测「开 vs 关」无正收益（0.9231 vs 0.9295，
-                    # 差 0.5 题；同配置重跑本身翻 2~3 题）。这是第三次"往 prompt 里
-                    # 加更详细的中文元数据"测出零收益了（资产描述、本体说明、枚举取值）。
-                    _notes = (await cls._ont_prop_notes(rel, ds_schema)
-                              if cls._cfg_bool(cfg, "schema_ont_prop_notes_enabled", False)
-                              else [])
-                    if _notes:
-                        lines.append("【字段业务说明】")
-                        lines.extend(_notes)
-                except Exception as e:  # noqa: BLE001
-                    log.warning(f"[query] 本体属性说明注入失败（忽略）: {str(e)[:80]}")
                 # **枚举取值（从数据里取）**：口径规范里早就要求"用【取值】里的原始值"，
                 # 但此前没有任何代码产出这个块。见 `_ds_enum_hints`。
                 # 默认**关**：配对实测关掉更好（0.9231 → 0.9487，2 题，仍在噪声内）。

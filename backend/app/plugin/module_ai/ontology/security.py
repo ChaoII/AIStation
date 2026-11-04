@@ -550,19 +550,9 @@ def mask_props(props: dict, visible: set[str]) -> dict:
     return {k: v for k, v in (props or {}).items() if k in visible}
 
 
-async def mask_instance(object_code: str, props: dict, p: Principal) -> dict:
-    return mask_props(props, await visible_properties(object_code, p))
-
-
 # ---------------------------------------------------------------------------
 # 组合判定：能不能看这条数据
 # ---------------------------------------------------------------------------
-async def can_read_instance(object_code: str, props: dict, p: Principal) -> tuple[bool, str]:
-    """读一条对象实例：需要「资源可见」+「行策略通过」。"""
-    ok_v, why_v = await can_view_resource("object", object_code, p)
-    if not ok_v:
-        return False, f"无权查看对象类型 {object_code}：{why_v}"
-    return await row_allows(object_code, props, p)
 
 
 async def filter_instances(object_code: str, rows: list[dict], p: Principal,
@@ -607,24 +597,6 @@ async def check_action_allowed(action: dict, p: Principal) -> tuple[bool, str]:
         if not ok2:
             return False, f"动作要改的对象类型 {target}：{why2}"
     return True, "具备动作及其编辑对象类型的权限"
-
-
-async def check_link_allowed(link: dict, p: Principal) -> tuple[bool, str]:
-    """官方：*"For links: You must hold edit permissions on both the link type and the linked
-    object types."*
-    """
-    code = link.get("code") or ""
-    ok, why = await can_edit_resource("link", code, p)
-    if not ok:
-        return False, f"关系 {code}：{why}"
-    for side in ("from_object", "to_object"):
-        oc = link.get(side) or ""
-        if not oc:
-            continue
-        ok2, why2 = await can_edit_resource("object", oc, p)
-        if not ok2:
-            return False, f"关系涉及的对象类型 {oc}：{why2}"
-    return True, "具备关系及其两端对象类型的权限"
 
 
 async def can_edit_property(object_code: str, property_code: str, p: Principal) -> tuple[bool, str]:

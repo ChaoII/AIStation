@@ -293,7 +293,7 @@ def test_pipeline_helpers_exist():
     """
     from app.plugin.module_ai.query.service import AiQueryService as S
 
-    for name in ("_prune_columns", "_ds_value_map", "_ont_prop_notes",
+    for name in ("_prune_columns", "_ds_value_map",
                  "_build_schema_context", "_select_metric"):
         assert hasattr(S, name), f"缺少 {name}（慢路径会 500）"
     import app.plugin.module_ai.query.service as _svc
