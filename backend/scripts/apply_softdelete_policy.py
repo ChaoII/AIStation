@@ -36,51 +36,18 @@ from app.plugin.module_ai.query import executor as _ex
 DATASOURCE_ID = 4
 DATASET = "fuel-v2"
 
-#: 问题本身就在问"删除"的：必须保留原意，不做统一
-ASK_DELETE_HINTS = ("已删除", "排除已删除", "是否删除", "删除记录", "删除的占")
+#: 问题本身就在问"删除"的：必须保留原意，不做统一（与运行时同源）
+from app.plugin.module_ai.query.softdelete import asks_about_deletion as _asks_del  # noqa: E402
 
 
 def _inject(sql: str, del_tables: set[str]) -> tuple[str | None, str]:
-    """给每个 SELECT 各自直接引用的软删表补 `ISDELETED = false`。
+    """调用**运行时同一套**实现（softdelete.inject_softdelete），避免两份逻辑漂移。"""
+    from app.plugin.module_ai.query.softdelete import inject_softdelete
 
-    逐 `Select` 处理（而不是只动最外层）：`UNION ALL` 的两个分支、CTE、子查询
-    都要在自己的作用域里过滤，否则要么注入到语法外、要么把条件加到错的地方。
-    """
-    import sqlglot
-    from sqlglot import exp
-
-    try:
-        parsed = sqlglot.parse_one(sql, read="postgres")
-    except Exception as e:  # noqa: BLE001
-        return None, f"解析失败:{type(e).__name__}"
-
-    hit = 0
-    for sel in list(parsed.find_all(exp.Select)):
-        conds = []
-        for t in sel.find_all(exp.Table):
-            # 只要**直接属于这个 SELECT** 的表（子查询里的归它自己的 SELECT 管）
-            anc = t.find_ancestor(exp.Select)
-            if anc is not sel or t.name.upper() not in del_tables:
-                continue
-            conds.append(exp.EQ(
-                this=exp.Column(this=exp.Identifier(this="ISDELETED", quoted=True),
-                                table=exp.Identifier(this=t.alias_or_name, quoted=True)),
-                expression=exp.false(),
-            ))
-        if not conds:
-            continue
-        cond = conds[0]
-        for c in conds[1:]:
-            cond = exp.and_(cond, c)
-        old = sel.args.get("where")
-        # ⚠️ **必须就地 set**：sqlglot 的 `.where()` 返回**副本**，`replace()` 对根节点
-        # 又是空操作 —— 两种写法都会静默"注入成功"但 SQL 一点没变（实测踩过，
-        # 表现为所有题都显示"同值"，很容易误判成"这个口径不重要"）。
-        sel.set("where", exp.Where(this=exp.and_(old.this, cond) if old else cond))
-        hit += 1
+    new_sql, hit = inject_softdelete(sql, del_tables)
     if not hit:
         return None, "无软删表"
-    return parsed.sql(dialect="postgres"), "ok"
+    return new_sql, "ok"
 
 
 async def main() -> None:  # pragma: no cover - 运维脚本
@@ -120,7 +87,7 @@ async def main() -> None:  # pragma: no cover - 运维脚本
             continue
         if "ISDELETED" in g.replace(" ", "").upper():
             continue
-        if any(h in q for h in ASK_DELETE_HINTS):
+        if _asks_del(q):
             continue
         todo.append((cid, q, g))
 

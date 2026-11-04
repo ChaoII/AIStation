@@ -269,28 +269,49 @@ def test_object_path_requires_columns_not_just_rows():
     assert "if not cols and not rows" not in src
 
 
-def test_prompt_rules_are_gated_and_default_off():
-    """两条新规则必须默认关、且各自独立开关（A/B 要能单独归因）。
+def test_softdelete_rewrite_is_wired_and_gated():
+    """软删除口径由**代码改写**保证，不再靠提示词。
 
-    - 软删除规则：金标统一为"排除已删除"后，模型需要这条才能对上口径；
-    - 排序规则：「最多的那家」要 LIMIT 1、多键排序按叙述顺序。
-    两者都改变 prompt，必须进 `_CTX_CFG_KEYS`，否则改完开关缓存还吐旧 prompt。
+    背景（3 组 × 78 题配对实测）：提示词版规则把准确率从 0.8846 拉到 0.8985~0.9103，
+    但它自己两轮之间翻转 5 题（baseline 0 题）——收益 1~2 题 < 自身抖动，统计上不成立。
+    改成执行前确定性改写：0 token、可单测、不随模型波动。
     """
-    from app.plugin.module_ai.query.service import _CTX_CFG_KEYS
+    from app.plugin.module_ai.query.softdelete import (
+        asks_about_deletion,
+        inject_softdelete,
+    )
+
+    # 1) 只给直接引用的表补条件
+    sql, hit = inject_softdelete(
+        'SELECT COUNT(*) FROM "FUEL_CMCS_INFACTORYBATCH"',
+        {"FUEL_CMCS_INFACTORYBATCH"})
+    assert '"ISDELETED" = FALSE' in sql.upper() and hit == ["FUEL_CMCS_INFACTORYBATCH"]
+
+    # 2) UNION 两个分支各自注入（只动最外层会把条件加到错的地方）
+    sql2, hit2 = inject_softdelete(
+        'SELECT COUNT(*) FROM "A" UNION ALL SELECT COUNT(*) FROM "B"', {"A", "B"})
+    assert len(hit2) == 2 and sql2.upper().count('"ISDELETED" = FALSE') == 2
+
+    # 3) 表里没有 ISDELETED 就不动
+    same, hit3 = inject_softdelete('SELECT 1 FROM "C"', {"A"})
+    assert same == 'SELECT 1 FROM "C"' and hit3 == []
+
+    # 4) 问句在问"已删除"时必须放弃改写（否则问的就是反的）
+    assert asks_about_deletion("入厂煤批次里已删除的有多少条？") is True
+    assert asks_about_deletion("每日耗用量（排除已删除记录）合计是多少") is True
+    assert asks_about_deletion("矿点名称为空的批次有多少条？") is False
+
+
+def test_softdelete_rewrite_hook_and_setting_exist():
+    """执行收口必须真的调用改写，且开关在默认值表里（否则设了也改不动）。"""
+    import inspect
+
     from app.plugin.module_ai.query.service import AiQueryService as S
 
-    off = S._query_conventions({})
-    assert "ISDELETED" not in off and "LIMIT 1" not in off
-
-    soft = S._query_conventions({"prompt_softdelete_rule_enabled": "true"})
-    assert "ISDELETED" in soft and "LIMIT 1" not in soft
-
-    order = S._query_conventions({"prompt_ordering_rule_enabled": "true"})
-    assert "LIMIT 1" in order and "ISDELETED" not in order
-
-    both = S._query_conventions({"prompt_softdelete_rule_enabled": "1",
-                                 "prompt_ordering_rule_enabled": "1"})
-    assert "ISDELETED" in both and "LIMIT 1" in both
-
-    for k in ("prompt_softdelete_rule_enabled", "prompt_ordering_rule_enabled"):
-        assert k in _CTX_CFG_KEYS, f"{k} 改了但缓存 key 不变 → 改了没反应"
+    assert "sql_softdelete_rewrite_enabled" in _default_keys(QUERY_DIR / "service.py")
+    src = inspect.getsource(S._execute_one)
+    assert "_apply_softdelete_policy" in src
+    assert "sql_softdelete_rewrite_enabled" in src
+    # 提示词里那两条已移除（A/B 证明不稳定/无效，留代码就是误导）
+    conv = inspect.getsource(S._query_conventions)
+    assert "ISDELETED" not in conv

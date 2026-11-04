@@ -262,12 +262,9 @@ export default {
   settingQueryTimeout: "SQL 执行超时（秒）",
   settingQueryTimeoutTip:
     "单条查询在数据源上的最长执行时间，超时直接报错而不是一直等（以前这个值不生效）。",
-  settingSoftDeleteRule: "业务数据默认排除软删除",
-  settingSoftDeleteRuleTip:
-    '提示词里加一条：表有 ISDELETED 列时统计/筛选默认加 "ISDELETED" = false（问句本身问已删除时除外）。金标已统一到该口径，默认关，待 A/B 验证。',
-  settingOrderingRule: "排序/取单个口径",
-  settingOrderingRuleTip:
-    '多键排序按问句叙述顺序（先按数量倒序，并列再按名称）；"最多的那家/第一名"必须 LIMIT 1。默认关，待 A/B 验证。',
+  settingSoftDeleteRewrite: "业务数据自动排除软删除",
+  settingSoftDeleteRewriteTip:
+    '由代码在执行前补 "ISDELETED" = false（问句本身问已删除时不加）。不用提示词：实测提示词版两轮自翻 5 题、收益 1~2 题，已改为确定性改写。',
   settingMaxRows: "返回行数上限",
   settingMaxRowsTip: "一次问答最多返回多少行（1~5000）。调大能看全量明细，但响应更大、前端更慢。",
   example1: "销售订单总共有多少笔",

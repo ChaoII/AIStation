@@ -1295,8 +1295,7 @@ _CTX_CFG_KEYS: tuple[str, ...] = (
     "entity_enabled", "entity_map", "kg_enabled", "agno_semantic_enabled",
     "schema_column_prune_enabled", "enum_hint_enabled",
     "schema_asset_meta_enabled", "schema_ont_prop_notes_enabled",
-    "multi_dialect_enabled", "prompt_softdelete_rule_enabled",
-    "prompt_ordering_rule_enabled",
+    "multi_dialect_enabled",
 )
 
 
@@ -6737,9 +6736,10 @@ class AiQueryService:
             "schema_asset_meta_enabled": "false",    # 把资产描述注入 prompt（实测零收益）
             "schema_ont_prop_notes_enabled": "false",  # 本体属性说明注入 prompt（实测零收益）
             # ---- 召回/对象查询的补充旋钮 ----
-            # 两条提示词规则（2026-11 定位的两处缺口，**默认关**等 A/B）
-            "prompt_softdelete_rule_enabled": "false",  # 业务表 ISDELETED=false 默认排除
-            "prompt_ordering_rule_enabled": "false",    # 多键排序按叙述顺序 / 单个对象 LIMIT 1
+            # 软删除口径：**确定性改写**，不靠提示词。
+            # 实测提示词版规则两轮自翻 5 题（baseline 0 题），收益 1~2 题还不如自身抖动，
+            # 已放弃；改为执行前由代码补 `"ISDELETED" = false`（见 softdelete 模块）。
+            "sql_softdelete_rewrite_enabled": "true",
             "recall_expand_cap": "4",                # 同义扩展最多追加几张表
             "object_query_max_tokens": "0",          # 0 = 跟随 nl2sql_max_tokens
         }
@@ -7710,7 +7710,42 @@ class AiQueryService:
             pass
 
     @classmethod
-    async def _execute_one(cls, sql: str, datasource: str, auth) -> dict:
+    async def _apply_softdelete_policy(cls, question: str, sql: str,
+                                       datasource: str) -> str:
+        """按"业务数据默认排除软删除"口径改写模型生成的 SQL。
+
+        只在**自定义数据源**上用（系统库用 `is_deleted` 小写，且口径已写在提示词里）。
+        问句本身在问"已删除"时**不动**；SQL 里已经有 `ISDELETED` 条件时也不动
+        （避免覆盖模型自己写的 `= true`）。
+
+        失败一律返回原 SQL：改写是**增强**，绝不能因为改写失败让整题挂掉。
+        """
+        from .softdelete import asks_about_deletion, inject_softdelete
+
+        try:
+            if not sql or asks_about_deletion(question):
+                return sql
+            if "ISDELETED" in sql.replace(" ", "").upper():
+                return sql
+            schema_map = await cls._ds_schema_map(datasource)
+            del_tables = {
+                t.upper() for t, labels in (schema_map or {}).items()
+                if any(str(lab).upper().startswith("ISDELETED(") for lab in (labels or []))
+            }
+            if not del_tables:
+                return sql
+            new_sql, hit = inject_softdelete(sql, del_tables)
+            if hit:
+                log.info("[query] 软删除口径改写：表 {}（{} 处）",
+                         "/".join(sorted(set(hit))[:3]), len(hit))
+            return new_sql
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 软删除口径改写失败（用原 SQL）: {str(e)[:100]}")
+            return sql
+
+    @classmethod
+    async def _execute_one(cls, sql: str, datasource: str, auth,
+                          question: str = "") -> dict:
         """**系统库取数的唯一收口**（P0-3）：白名单 → 字段级 ACL → 行/列改写 → 执行。
 
         四条路径（ask / ask_stream / report / metric）都必须经过这里：
@@ -7722,9 +7757,17 @@ class AiQueryService:
         自定义数据源（``ds:{id}``）走独立连接，字段级 ACL 的元数据
         （``ai_query_asset_columns`` / 本体属性）不描述外部库的表，故不在此检查
         （与修前口径一致）。
+
+        ``question`` 用于**软删除口径改写**（见 `softdelete` 模块）：给了问题、且
+        问句不是在问"已删除"时，给业务表的 SQL 补 `"ISDELETED" = false`。
+        为什么放在这里而不是提示词：实测提示词规则两轮自翻 5 题（baseline 0 题），
+        收益 1~2 题还不如自身抖动；口径这种确定规则交给代码才稳定。
         """
         if datasource and datasource != SYSTEM_DS:
             ds_id = int(datasource.split(":")[-1])
+            if question and cls._cfg_bool(await cls._cfg(),
+                                          "sql_softdelete_rewrite_enabled", True):
+                sql = await cls._apply_softdelete_policy(question, sql, datasource)
             return await _execute_custom_ds_sql(ds_id, sql, auth)
         # 复用本体的行级/列级权限：把本体对象支撑表改写成"已过滤的子查询"。
         # 问数是**任意形状的读**（聚合/分组/join），外面套 WHERE 是错的——
@@ -8428,7 +8471,7 @@ class AiQueryService:
                         if er > max_rows:
                             last_err = f"查询代价过高(预计{er}行>上限{max_rows})，请改为聚合/加条件/限制范围"
                             continue
-                    res = await cls._execute_one(csql, datasource, auth)
+                    res = await cls._execute_one(csql, datasource, auth, question)
                     results.append((csql, res))
                     sig = tuple(sorted(tuple(str(v) for v in r) for r in res["rows"]))
                     groups.setdefault(sig, []).append(csql)
@@ -9061,7 +9104,7 @@ class AiQueryService:
                     return [{"type": "error", "message": msg}]
                 except Exception:  # noqa: BLE001
                     pass  # EXPLAIN 本身失败不阻断执行（非 PG / 特殊 SQL）
-            res = await cls._execute_one(sql, datasource, auth)
+            res = await cls._execute_one(sql, datasource, auth, question)
             cols = res.get("columns") or []
             rows = res.get("rows") or []
             # Grounding **必须落库**（刷新/重开会话后「召回的表 / 本体对象」标签要能复原）
@@ -10016,33 +10059,14 @@ class AiQueryService:
         return sorted(scores, key=lambda t: -scores[t])[:12]
 
     @classmethod
-    def _query_conventions(cls, cfg: dict | None = None) -> str:
-        """查询口径规范：统一业务口径，减少 LLM 生成 SQL 时的歧义。
+    def _query_conventions(cls) -> str:
+        """查询口径规范：统一业务口径，减少 LLM 生成 SQL 时的歧义（时间/用户/联表/占比）。
 
-        时间 / 用户统计 / 联表 / 占比 是**无条件**给的（已验证）；后面两段是
-        2026-11 定位到的两处缺口，各由一个开关控制，**默认关**，等 A/B：
-
-        - `prompt_softdelete_rule_enabled`：业务表有 `ISDELETED` 列时默认排除。
-          背景：旧金标 9 道过滤 / 48 道不过滤，同一句话两个答案（见
-          `docs/ai-query-experiments.md`）。口径统一为"排除"后，模型需要这条规则。
-        - `prompt_ordering_rule_enabled`：多键排序按叙述顺序、"最多的那家"要 LIMIT 1。
-          背景：2 道题模型把"最多的那家"答成 53 行、把"并列时按名称升序"当成主排序。
+        ⚠️ 2026-11 试过在这里加"软删除默认排除"和"排序/取单个"两条，配对 A/B 结果：
+        软删除版两轮自翻 5 题（baseline 0 题）、收益 1~2 题；排序版两轮零变化。
+        两条都已移除 —— **口径这类确定规则交给代码（softdelete 模块）比交给模型稳**。
+        别再往这里加"模型应该记得住的规则"，除非 A/B 证明它稳定。
         """
-        cfg = cfg or {}
-        extra = ""
-        if cls._cfg_bool(cfg, "prompt_softdelete_rule_enabled", False):
-            extra += (
-                "5. 软删除口径：若表有布尔列 ISDELETED（注意是**大写无下划线**），"
-                "统计/筛选时一律加 \"ISDELETED\" = false（已删除的行不算）；"
-                "只有问句本身在问「已删除多少/删除占比/按是否删除统计」时才改用 = true 或分组。\n"
-            )
-        if cls._cfg_bool(cfg, "prompt_ordering_rule_enabled", False):
-            extra += (
-                "6. 排序与取单个：问句给多个排序键时**按叙述顺序**写（例：「最多的前3个，"
-                "并列按名称升序」→ ORDER BY 计数 DESC, 名称 ASC）；问句指的是**单个**对象"
-                "（「最多的那家」「最高的那个」「第一名」）时必须 ORDER BY ... DESC LIMIT 1，"
-                "不要返回全部分组。\n"
-            )
         return (
             "【查询口径规范】\n"
             "1. 时间口径：\n"
@@ -10060,7 +10084,6 @@ class AiQueryService:
             "   - 仅'发生过/有关系的' → 用 INNER JOIN。\n"
             "   - video_alarm_records 等表无 is_deleted 字段，统计告警不要加 is_deleted 条件。\n"
             "4. 占比/平均：用 ROUND(分子*100.0/分母,2) 或 ROUND(AVG(x)::numeric,2) 保证精度。"
-            + extra
         )
 
     @classmethod
@@ -10376,7 +10399,7 @@ class AiQueryService:
                 if extras:
                     head = f"{t}【" + "；".join(extras) + "】"
                 lines.append(f"- {head}: {', '.join(cols) if cols else ''}")
-            lines.append(cls._query_conventions(cfg))
+            lines.append(cls._query_conventions())
         else:
             # **自定义数据源**：原先这里**什么都不加** —— 模型对 ds:{id} 一张表、
             # 一个字段都不知道，只能瞎猜，问数必然答不对。
@@ -10460,7 +10483,7 @@ class AiQueryService:
                             lines.extend(_vals)
                     except Exception as e:  # noqa: BLE001
                         log.warning(f"[query] 枚举取值注入失败（忽略）: {str(e)[:80]}")
-                lines.append(cls._query_conventions(cfg))
+                lines.append(cls._query_conventions())
                 # 该库表名/字段名为英文大写且大小写敏感：不加双引号会被 PG 小写化 → 找不到表。
                 lines.append(
                     "【标识符大小写】本数据源的表名/字段名为**英文大写且大小写敏感**，"
