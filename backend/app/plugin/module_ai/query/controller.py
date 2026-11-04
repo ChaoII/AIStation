@@ -476,6 +476,31 @@ async def datasource_schema(
     return SuccessResponse(data=await list_ds_schema(datasource_id), msg="查询成功")
 
 
+# ---- 血缘（表级）----
+@AiQueryRouter.post("/lineage/rebuild", summary="重算血缘（四源：外键/视图/命名约定/使用）")
+async def lineage_rebuild(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str = "ds:4",
+) -> JSONResponse:
+    from . import lineage as _lineage
+
+    counts = await _lineage.rebuild_lineage(int(str(datasource).split(":")[-1]))
+    return SuccessResponse(
+        data={"counts": counts, "coverage": await _lineage.lineage_coverage(datasource)},
+        msg="重算完成",
+    )
+
+
+@AiQueryRouter.get("/lineage/coverage", summary="血缘覆盖率（表/列/按来源）")
+async def lineage_coverage_api(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str = "ds:4",
+) -> JSONResponse:
+    from . import lineage as _lineage
+
+    return SuccessResponse(data=await _lineage.lineage_coverage(datasource), msg="查询成功")
+
+
 # ---- 数据资产目录 ----
 @AiQueryRouter.post("/assets/sync", summary="同步数据资产目录")
 async def sync_query_assets(

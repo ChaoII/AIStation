@@ -411,3 +411,45 @@ async def lineage_for_table(datasource: str, table_name: str) -> dict:
                     for (rk, rk_key) in sorted(used_by)],
         "sensitive_columns": await _sensitive_columns(datasource, t),
     }
+
+
+# ---------------------------------------------------------------------------
+# 覆盖率
+# ---------------------------------------------------------------------------
+
+async def lineage_coverage(datasource: str) -> dict:
+    """血缘覆盖率：多少表 / 多少列参与至少一条关系，按来源分布。
+
+    分母来自本地已同步的 `ai_query_schema`（与用户看到的表一致），
+    分子来自 `ai_query_lineage`。
+    """
+    columns_by_table = await _columns_by_table(datasource)
+    tables_total = len(columns_by_table)
+    columns_total = sum(len(v) for v in columns_by_table.values())
+
+    async with async_db_session() as db:
+        pairs = (await db.execute(text(
+            "SELECT src_table, src_column, dst_table, dst_column, kind "
+            "FROM ai_query_lineage WHERE datasource=:d AND is_deleted=false"),
+            {"d": datasource})).fetchall()
+
+    cols: set[tuple[str, str]] = set()
+    tables: set[str] = set()
+    by_kind: dict[str, int] = {}
+    for src_t, src_c, dst_t, dst_c, kind in pairs:
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        if src_t:
+            tables.add(src_t)
+        if src_c:
+            cols.add((src_t, src_c))
+        if dst_t:
+            tables.add(dst_t)
+        if dst_c:
+            cols.add((dst_t, dst_c))
+    return {
+        "tables_total": tables_total,
+        "tables_with_edges": len(tables),
+        "columns_total": columns_total,
+        "columns_with_edges": len(cols),
+        "by_kind": by_kind,
+    }

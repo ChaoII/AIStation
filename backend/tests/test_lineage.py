@@ -112,3 +112,21 @@ def test_lineage_for_table_shape(db_run):
     d = db_run(L.lineage_for_table("ds:4", "FUEL_CMCS_INFACTORYBATCH"))
     assert set(d) == {"upstream", "downstream", "used_by", "sensitive_columns"}
     assert isinstance(d["upstream"], list) and isinstance(d["sensitive_columns"], list)
+
+def test_coverage_shape(db_run):
+    from app.plugin.module_ai.query import lineage as L
+
+    c = db_run(L.lineage_coverage("ds:4"))
+    assert set(c) == {"tables_total", "tables_with_edges", "columns_total",
+                      "columns_with_edges", "by_kind"}
+    assert c["tables_total"] >= 0 and c["columns_with_edges"] >= 0
+
+
+def test_routes_registered():
+    """两条路由必须真在 app.routes 里（防止被别的路径参数路由吃掉/漏注册）。"""
+    from main import create_app
+
+    paths = {getattr(r, "path", "") for r in create_app().routes}
+    # 注册路径不含 ROOT_PATH（/api/v1 是 include 时加的）
+    assert "/ai/query/lineage/coverage" in paths
+    assert "/ai/query/lineage/rebuild" in paths
