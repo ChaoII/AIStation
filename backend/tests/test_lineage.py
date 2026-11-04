@@ -75,3 +75,21 @@ def test_bad_sql_returns_empty():
     assert tables_in_sql("this is not sql") == set()
     assert columns_used("this is not sql", "T", {"A"}) == set()
     assert tables_in_sql("") == set()
+
+def test_rebuild_is_idempotent_and_safe_without_datasource(db_run):
+    """空库/数据源不存在时：不崩、可重复跑（幂等）。
+
+    ⚠️ 与计划里的差异：原计划断言"total > 500"，但 pytest 用的是**空的 SQLite
+    测试库**，没有 ds:4 的 schema/指标，也没有可连的远端库，断言不出来。
+    "> 500" 属于**对 dev 库的验收**，在 Task 3 用真实库跑过：
+        {'fk': 16, 'view': 328, 'name': 250, 'usage': 3706, 'total': 4300}
+    这里保留可自动化的部分：远端取不到时四路都要**静默降级**而不是抛异常。
+    """
+    from app.plugin.module_ai.query import lineage as L
+
+    first = db_run(L.rebuild_lineage(4))
+    second = db_run(L.rebuild_lineage(4))
+    assert first == second                      # 幂等
+    assert set(first) == {"fk", "view", "name", "usage", "total"}
+    # 远端不可用 → fk/view 为 0，但函数必须正常返回（不能抛）
+    assert first["fk"] == 0 and first["view"] == 0

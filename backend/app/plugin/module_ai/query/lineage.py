@@ -17,8 +17,16 @@
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import NamedTuple
+
+from sqlalchemy import text
+
+from app.core.database import async_db_session
+from app.core.logger import log
+
+from .ddl_dialect import cast_text, ddl_for_dialect
 
 
 class Edge(NamedTuple):
@@ -91,3 +99,227 @@ def columns_used(sql: str, table: str, columns: set[str]) -> set[str]:
         return set()
     up = sql.upper()
     return {c for c in columns if re.search(rf"\b{re.escape(c)}\b", up)}
+
+
+# ---------------------------------------------------------------------------
+# 落库
+# ---------------------------------------------------------------------------
+
+_DDL = (
+    """CREATE TABLE IF NOT EXISTS ai_query_lineage (
+        id            BIGSERIAL PRIMARY KEY,
+        datasource    VARCHAR(64)  NOT NULL,
+        kind          VARCHAR(16)  NOT NULL,
+        src_table     VARCHAR(128) NOT NULL,
+        src_column    VARCHAR(128),
+        dst_table     VARCHAR(128),
+        dst_column    VARCHAR(128),
+        ref_kind      VARCHAR(16),
+        ref_key       VARCHAR(255),
+        confidence    REAL         NOT NULL DEFAULT 1.0,
+        is_deleted    BOOLEAN      NOT NULL DEFAULT FALSE,
+        created_time  TIMESTAMP    NOT NULL DEFAULT now(),
+        updated_time  TIMESTAMP    NOT NULL DEFAULT now()
+    )""",
+    """CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_query_lineage
+       ON ai_query_lineage (datasource, kind, src_table,
+                            COALESCE(src_column,''), COALESCE(dst_table,''),
+                            COALESCE(dst_column,''), COALESCE(ref_key,''))""",
+    "CREATE INDEX IF NOT EXISTS ix_ai_query_lineage_src "
+    "ON ai_query_lineage (datasource, src_table)",
+    "CREATE INDEX IF NOT EXISTS ix_ai_query_lineage_dst "
+    "ON ai_query_lineage (datasource, dst_table)",
+)
+
+
+async def ensure_lineage_table() -> None:
+    """幂等建表（插件表不走 alembic，与 `ai_query_kg_relation` 一致）。
+
+    ⚠️ 必须过 `ddl_for_dialect`：`BIGSERIAL` / `DEFAULT now()` 在 SQLite（测试库）
+    是**语法错误**，不是"不生效"。项目已有这个转换器，别再手写方言分支。
+    """
+    async with async_db_session.begin() as db:
+        for stmt in _DDL:
+            await db.execute(text(ddl_for_dialect(stmt)))
+
+
+async def _columns_by_table(datasource: str) -> dict[str, set[str]]:
+    """本地已同步的 schema：`{表: {列}}`（`columns` 是 JSONB 数组）。"""
+    async with async_db_session() as db:
+        # `columns::text` 是 PG 专有写法，SQLite 报 `unrecognized token: ":"`
+        # —— 用项目现成的 cast_text
+        rows = (await db.execute(text(
+            f"SELECT table_name, {cast_text('columns')} FROM ai_query_schema "
+            "WHERE datasource=:d AND is_deleted=false"), {"d": datasource})).fetchall()
+    out: dict[str, set[str]] = {}
+    for table, raw in rows:
+        try:
+            labels = json.loads(raw or "[]")
+        except Exception:  # noqa: BLE001
+            labels = []
+        cols = set()
+        for lab in labels:
+            name = lab.get("name") if isinstance(lab, dict) else str(lab).split("(", 1)[0]
+            if name:
+                cols.add(str(name).upper())
+        out[(table or "").upper()] = cols
+    return out
+
+
+async def _fk_edges(datasource_id: int) -> list[Edge]:
+    """真外键：子表.列 → 父表.列。燃料库几乎没有（全库 16 条），但最可信。"""
+    from . import executor as _ex
+    from .service import _ds_cfg_from_model, _load_ds
+
+    ds = await _load_ds(datasource_id)
+    rows = await _ex.execute_select(_ds_cfg_from_model(ds), """
+        SELECT tc.table_name, kcu.column_name,
+               ccu.table_name AS ref_table, ccu.column_name AS ref_col
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name
+         AND tc.table_schema = kcu.table_schema
+        JOIN information_schema.constraint_column_usage ccu
+          ON ccu.constraint_name = tc.constraint_name
+         AND ccu.table_schema = tc.table_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema='public'
+    """, max_rows=20000)
+    return [
+        Edge("fk", str(t).upper(), str(c).upper(), str(rt).upper(), str(rc).upper(),
+             confidence=1.0)
+        for t, c, rt, rc in (rows.get("rows") or [])
+    ]
+
+
+async def _view_edges(datasource_id: int, columns_by_table: dict[str, set[str]]) -> list[Edge]:
+    """视图 → 基表：视图定义里引用到的表，同名列算一条（同名才连，避免瞎猜）。"""
+    from . import executor as _ex
+    from .service import _ds_cfg_from_model, _load_ds
+
+    ds = await _load_ds(datasource_id)
+    cfg = _ds_cfg_from_model(ds)
+    rows = (await _ex.execute_select(cfg, """
+        SELECT table_name, view_definition FROM information_schema.views
+        WHERE table_schema='public'
+    """, max_rows=5000)).get("rows") or []
+    if not rows:
+        return []
+    names = [str(r[0]).upper() for r in rows]
+    # 视图自身的列（用来判断"同名列"）
+    col_rows = (await _ex.execute_select(cfg, """
+        SELECT table_name, column_name FROM information_schema.columns
+        WHERE table_schema='public'
+    """, max_rows=50000)).get("rows") or []
+    view_cols: dict[str, set[str]] = {}
+    for t, c in col_rows:
+        view_cols.setdefault(str(t).upper(), set()).add(str(c).upper())
+
+    edges: list[Edge] = []
+    for vname, vdef in zip(names, [r[1] for r in rows], strict=False):
+        for ref in tables_in_sql(vdef or ""):
+            if ref not in columns_by_table:
+                continue
+            for col in view_cols.get(vname, set()) & columns_by_table[ref]:
+                edges.append(Edge("view", vname, col, ref, col, confidence=0.9))
+    return edges
+
+
+async def _usage_edges(datasource: str, columns_by_table: dict[str, set[str]]) -> list[Edge]:
+    """使用血缘：表.列被哪个指标 / 报表 / 问数用过（"谁在查这一列"）。"""
+    async with async_db_session() as db:
+        metrics = (await db.execute(text(
+            "SELECT key, sql_template FROM ai_query_metrics "
+            "WHERE datasource=:d AND is_deleted=false"), {"d": datasource})).fetchall()
+        reports = (await db.execute(text(
+            "SELECT key, sql_template FROM ai_report_template "
+            "WHERE datasource=:d AND is_deleted=false"), {"d": datasource})).fetchall()
+        asks = (await db.execute(text(
+            "SELECT id, sql FROM ai_query_messages "
+            "WHERE datasource=:d AND coalesce(sql,'')<>'' "
+            "ORDER BY id DESC LIMIT 3000"), {"d": datasource})).fetchall()
+
+    edges: list[Edge] = []
+    sources = (
+        [("metric", k, s) for k, s in metrics]
+        + [("report", k, s) for k, s in reports]
+        + [("ask", str(i), s) for i, s in asks]
+    )
+    for ref_kind, ref_key, sql in sources:
+        if not sql:
+            continue
+        for table in tables_in_sql(sql):
+            if table not in columns_by_table:
+                continue
+            for col in columns_used(sql, table, columns_by_table[table]):
+                edges.append(Edge("usage", table, col, ref_kind=ref_kind,
+                                  ref_key=str(ref_key), confidence=1.0))
+    return edges
+
+
+def _dedupe(edges: list[Edge]) -> list[Edge]:
+    """同一 (kind, src, dst, ref) 只留置信度最高的一条（对应唯一索引）。"""
+    best: dict[tuple, Edge] = {}
+    for e in edges:
+        k = (e.kind, e.src_table, e.src_column, e.dst_table, e.dst_column, e.ref_key)
+        cur = best.get(k)
+        if cur is None or e.confidence > cur.confidence:
+            best[k] = e
+    return list(best.values())
+
+
+async def rebuild_lineage(datasource_id: int) -> dict[str, int]:
+    """幂等重算：先按数据源清空，再按四个来源重建。
+
+    任何一步失败都只记 warning 并继续 —— 血缘是**增强**，不能因为它让
+    schema 同步失败（同步本身是主流程）。
+    """
+    from .service import _ds_code
+
+    await ensure_lineage_table()
+    datasource = _ds_code(datasource_id)
+    columns_by_table = await _columns_by_table(datasource)
+    counts = {"fk": 0, "view": 0, "name": 0, "usage": 0}
+    edges: list[Edge] = []
+
+    for kind, fn in (
+        ("fk", lambda: _fk_edges(datasource_id)),
+        ("view", lambda: _view_edges(datasource_id, columns_by_table)),
+        ("usage", lambda: _usage_edges(datasource, columns_by_table)),
+    ):
+        try:
+            got = await fn()
+            edges += got
+            counts[kind] = len(got)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[lineage] {kind} 推断失败（忽略）: {str(e)[:120]}")
+
+    try:
+        named = [e for e in infer_name_edges(columns_by_table)
+                 if e.src_table in columns_by_table]
+        edges += named
+        counts["name"] = len(named)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[lineage] name 推断失败（忽略）: {str(e)[:120]}")
+
+    edges = _dedupe(edges)
+    async with async_db_session.begin() as db:
+        await db.execute(text("DELETE FROM ai_query_lineage WHERE datasource=:d"),
+                         {"d": datasource})
+        if edges:
+            await db.execute(
+                text(
+                    "INSERT INTO ai_query_lineage(datasource,kind,src_table,src_column,"
+                    "dst_table,dst_column,ref_kind,ref_key,confidence) VALUES "
+                    "(:ds,:k,:st,:sc,:dt,:dc,:rk,:rkey,:cf) "
+                    "ON CONFLICT DO NOTHING"
+                ),
+                [
+                    {"ds": datasource, "k": e.kind, "st": e.src_table, "sc": e.src_column,
+                     "dt": e.dst_table, "dc": e.dst_column, "rk": e.ref_kind,
+                     "rkey": e.ref_key, "cf": e.confidence}
+                    for e in edges
+                ],
+            )
+    counts["total"] = len(edges)
+    log.warning(f"[lineage] 重算完成 {datasource}：{counts}")
+    return counts
