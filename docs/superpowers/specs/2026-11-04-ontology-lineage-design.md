@@ -1,7 +1,7 @@
 # 本体血缘与影响分析（第一步：表级）— 设计
 
 日期：2026-11-04
-状态：待评审
+状态：**已实现（第一步）** —— 2026-11-04
 范围：`module_ai/query` 的数据资产血缘；为 `module_ai/ontology` 的治理能力提供数据基础
 
 ## 1. 背景
@@ -181,3 +181,43 @@ async def rebuild_lineage(datasource_id: int) -> dict:
    `DTXY_GYSKDGX`），影响分析能答出"依赖它的指标/视图/问数"，人工核对无误
 4. 开关关闭时，接口返回与改造前**完全一致**
 5. 单测全绿；`query_smoke.py` 完整模式通过
+
+
+---
+
+## 10. 实现结果（2026-11-04）
+
+**落地情况**：`query/lineage.py`（四源推断 + 幂等落库 + 覆盖率）、
+`ai_query_lineage` 表、`POST /ai/query/lineage/rebuild`、
+`GET /ai/query/lineage/coverage`、影响分析 `lineage` 字段、
+schema 同步后自动重算、`lineage_enabled` 开关（默认关，已进设置弹窗）。
+
+**ds:4 实测（真库）**
+
+```
+重算：{'fk': 16, 'view': 328, 'name': 250, 'usage': 3706, 'total': 4300}   跑两次完全一致
+覆盖：表 220 / 331 = 66.5%      列 793 / 7021 = 11.3%
+```
+
+比只读探测（表级 54.7%）高，因为使用血缘按"表.列 × 使用方"计数，比按列去重更细。
+
+**三张表人工核对**
+
+| 表 | 上游 | 下游 | 被谁使用 | 判断 |
+|---|---|---|---|---|
+| `FUEL_CMCS_INFACTORYBATCH` | 合同 / 煤种 / …（9） | 化验单、批次明细等（27） | 347 个（指标 + 问数） | 合理 |
+| `FUEL_REPORT_DAYINOUTSTORAGE` | 0 | `VIEW_AIKB_DAYINOUTSTORAGE`（1） | 321 | 合理（报表表无外键） |
+| `DTXY_GYSKDGX` | 0 | 0 | 504 | 合理（无视图依赖，只有使用） |
+| `FUEL_CB_COALBALANCE` | 3 | 2 | 0 | 敏感列 `BALANCEMONEY / BALANCEPRICE / COALMONEY / COALPRICE` 正确 |
+
+**与设计的差异**
+
+- 覆盖率验收写的"表级 ≥ 50%"实测 66.5%，达成。
+- 计划的集成测试原本断言 `total > 500`，但 pytest 用空 SQLite 库、无可连远端库，
+  改为断言"数据源不存在时四路静默降级 + 幂等"；`> 500` 作为 dev 库验收保留。
+
+**下一步（未做）**
+
+- `lineage_enabled` 观察一段时间后再改默认 true
+- 列级 SQL 深度解析（`SELECT *` 展开、别名、CTE）——现在 `columns_used` 是文本匹配
+- 敏感字段沿血缘传播与强制脱敏
