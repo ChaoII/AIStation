@@ -73,13 +73,7 @@
       </el-col>
 
       <!-- 右：选中数据源的详情 -->
-      <el-col
-        :xs="24"
-        :sm="16"
-        :md="18"
-        :lg="19"
-        class="ig-fill"
-      >
+      <el-col :xs="24" :sm="16" :md="18" :lg="19" class="ig-fill">
         <el-card shadow="never" class="ig-card">
           <el-tabs v-model="tab" class="ig-tabs">
             <!-- 表与字段：核心——选表后就地维护 -->
@@ -183,7 +177,9 @@
                     min-width="140"
                     show-overflow-tooltip
                   >
-                    <template #default="{ row }">{{ row.alias || row.description || row.table }}</template>
+                    <template #default="{ row }">
+                      {{ row.alias || row.description || row.table }}
+                    </template>
                   </el-table-column>
                   <el-table-column
                     :label="t('ai_workflow.ig_businessDomain')"
@@ -537,51 +533,57 @@
                 </el-tag>
               </div>
               <div class="ig-tables">
-              <el-table :data="pipelines" size="small" border height="100%" stripe>
-                <template #empty>
-                  <el-empty :description="t('ai_workflow.ig_noPipe')" :image-size="60" />
-                </template>
-                <el-table-column
-                  prop="name"
-                  :label="t('ai_workflow.ig_pipeline')"
-                  min-width="140"
-                  show-overflow-tooltip
-                />
-                <el-table-column
-                  :label="t('ai_workflow.ig_srcToTarget')"
-                  min-width="180"
-                  show-overflow-tooltip
-                >
-                  <template #default="{ row }">
-                    {{ row.source_table }} → {{ row.target_object }}
+                <el-table :data="pipelines" size="small" border height="100%" stripe>
+                  <template #empty>
+                    <el-empty :description="t('ai_workflow.ig_noPipe')" :image-size="60" />
                   </template>
-                </el-table-column>
-                <el-table-column :label="t('ai_workflow.ig_action')" width="180" align="center">
-                  <template #default="{ row }">
-                    <el-button
-                      icon="VideoPlay"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="runPipe(row)"
-                    >
-                      {{ t("ai_workflow.ig_run") }}
-                    </el-button>
-                    <el-button icon="edit" link type="primary" size="small" @click="openPipe(row)">
-                      {{ t("ai_workflow.ig_edit") }}
-                    </el-button>
-                    <el-button
-                      icon="DataLine"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="viewPipeData(row)"
-                    >
-                      {{ t("ai_workflow.ig_data") }}
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+                  <el-table-column
+                    prop="name"
+                    :label="t('ai_workflow.ig_pipeline')"
+                    min-width="140"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    :label="t('ai_workflow.ig_srcToTarget')"
+                    min-width="180"
+                    show-overflow-tooltip
+                  >
+                    <template #default="{ row }">
+                      {{ row.source_table }} → {{ row.target_object }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column :label="t('ai_workflow.ig_action')" width="180" align="center">
+                    <template #default="{ row }">
+                      <el-button
+                        icon="VideoPlay"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="runPipe(row)"
+                      >
+                        {{ t("ai_workflow.ig_run") }}
+                      </el-button>
+                      <el-button
+                        icon="edit"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="openPipe(row)"
+                      >
+                        {{ t("ai_workflow.ig_edit") }}
+                      </el-button>
+                      <el-button
+                        icon="DataLine"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="viewPipeData(row)"
+                      >
+                        {{ t("ai_workflow.ig_data") }}
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </div>
             </el-tab-pane>
 
@@ -599,51 +601,51 @@
                 </el-button>
               </div>
               <div class="ig-tables">
-              <el-table :data="metrics" size="small" border height="100%" stripe>
-                <template #empty>
-                  <el-empty :description="t('ai_workflow.ig_noMetric')" :image-size="60" />
-                </template>
-                <el-table-column
-                  prop="name"
-                  :label="t('ai_workflow.ig_metric')"
-                  min-width="150"
-                  show-overflow-tooltip
-                />
-                <el-table-column
-                  prop="key"
-                  :label="t('ai_workflow.ig_code')"
-                  min-width="130"
-                  show-overflow-tooltip
-                />
-                <el-table-column
-                  prop="sql_template"
-                  :label="t('ai_workflow.ig_sqlTemplate')"
-                  min-width="240"
-                  show-overflow-tooltip
-                />
-                <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
-                  <template #default="{ row }">
-                    <el-button
-                      icon="edit"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="openMetric(row)"
-                    >
-                      {{ t("ai_workflow.ig_edit") }}
-                    </el-button>
-                    <el-button
-                      icon="delete"
-                      link
-                      type="danger"
-                      size="small"
-                      @click="removeMetric(row)"
-                    >
-                      {{ t("ai_workflow.ig_delete") }}
-                    </el-button>
+                <el-table :data="metrics" size="small" border height="100%" stripe>
+                  <template #empty>
+                    <el-empty :description="t('ai_workflow.ig_noMetric')" :image-size="60" />
                   </template>
-                </el-table-column>
-              </el-table>
+                  <el-table-column
+                    prop="name"
+                    :label="t('ai_workflow.ig_metric')"
+                    min-width="150"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="key"
+                    :label="t('ai_workflow.ig_code')"
+                    min-width="130"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="sql_template"
+                    :label="t('ai_workflow.ig_sqlTemplate')"
+                    min-width="240"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
+                    <template #default="{ row }">
+                      <el-button
+                        icon="edit"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="openMetric(row)"
+                      >
+                        {{ t("ai_workflow.ig_edit") }}
+                      </el-button>
+                      <el-button
+                        icon="delete"
+                        link
+                        type="danger"
+                        size="small"
+                        @click="removeMetric(row)"
+                      >
+                        {{ t("ai_workflow.ig_delete") }}
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </div>
             </el-tab-pane>
 
@@ -665,45 +667,51 @@
                 :title="t('ai_workflow.ig_termHintAlert')"
               />
               <div class="ig-tables">
-              <el-table :data="terms" size="small" border height="100%" stripe>
-                <template #empty>
-                  <el-empty :description="t('ai_workflow.ig_noTerm')" :image-size="60" />
-                </template>
-                <el-table-column
-                  prop="term"
-                  :label="t('ai_workflow.ig_term')"
-                  min-width="150"
-                  show-overflow-tooltip
-                />
-                <el-table-column
-                  prop="metric_key"
-                  :label="t('ai_workflow.ig_metric')"
-                  min-width="130"
-                  show-overflow-tooltip
-                />
-                <el-table-column
-                  prop="field_path"
-                  :label="t('ai_workflow.ig_fieldPath')"
-                  min-width="220"
-                  show-overflow-tooltip
-                />
-                <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
-                  <template #default="{ row }">
-                    <el-button icon="edit" link type="primary" size="small" @click="openTerm(row)">
-                      {{ t("ai_workflow.ig_edit") }}
-                    </el-button>
-                    <el-button
-                      icon="delete"
-                      link
-                      type="danger"
-                      size="small"
-                      @click="removeTerm(row)"
-                    >
-                      {{ t("ai_workflow.ig_delete") }}
-                    </el-button>
+                <el-table :data="terms" size="small" border height="100%" stripe>
+                  <template #empty>
+                    <el-empty :description="t('ai_workflow.ig_noTerm')" :image-size="60" />
                   </template>
-                </el-table-column>
-              </el-table>
+                  <el-table-column
+                    prop="term"
+                    :label="t('ai_workflow.ig_term')"
+                    min-width="150"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="metric_key"
+                    :label="t('ai_workflow.ig_metric')"
+                    min-width="130"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="field_path"
+                    :label="t('ai_workflow.ig_fieldPath')"
+                    min-width="220"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
+                    <template #default="{ row }">
+                      <el-button
+                        icon="edit"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="openTerm(row)"
+                      >
+                        {{ t("ai_workflow.ig_edit") }}
+                      </el-button>
+                      <el-button
+                        icon="delete"
+                        link
+                        type="danger"
+                        size="small"
+                        @click="removeTerm(row)"
+                      >
+                        {{ t("ai_workflow.ig_delete") }}
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </div>
             </el-tab-pane>
 
@@ -725,52 +733,52 @@
                 :title="t('ai_workflow.ig_conceptHintAlert')"
               />
               <div class="ig-tables">
-              <el-table :data="concepts" size="small" border height="100%" stripe>
-                <template #empty>
-                  <el-empty :description="t('ai_workflow.ig_noConcept')" :image-size="60" />
-                </template>
-                <el-table-column
-                  prop="name"
-                  :label="t('ai_workflow.ig_conceptShort')"
-                  min-width="150"
-                  show-overflow-tooltip
-                />
-                <el-table-column :label="t('ai_workflow.ig_relatedTables')" min-width="240">
-                  <template #default="{ row }">
-                    <el-tag
-                      v-for="tbl in row.tables || []"
-                      :key="tbl"
-                      size="small"
-                      effect="plain"
-                      class="ig-tag"
-                    >
-                      {{ tbl }}
-                    </el-tag>
+                <el-table :data="concepts" size="small" border height="100%" stripe>
+                  <template #empty>
+                    <el-empty :description="t('ai_workflow.ig_noConcept')" :image-size="60" />
                   </template>
-                </el-table-column>
-                <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
-                  <template #default="{ row }">
-                    <el-button
-                      icon="edit"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="openConcept(row)"
-                    >
-                      {{ t("ai_workflow.ig_edit") }}
-                    </el-button>
-                    <el-button
-                      icon="delete"
-                      link
-                      type="danger"
-                      size="small"
-                      @click="removeConcept(row)"
-                    >
-                      {{ t("ai_workflow.ig_delete") }}
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+                  <el-table-column
+                    prop="name"
+                    :label="t('ai_workflow.ig_conceptShort')"
+                    min-width="150"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column :label="t('ai_workflow.ig_relatedTables')" min-width="240">
+                    <template #default="{ row }">
+                      <el-tag
+                        v-for="tbl in row.tables || []"
+                        :key="tbl"
+                        size="small"
+                        effect="plain"
+                        class="ig-tag"
+                      >
+                        {{ tbl }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
+                    <template #default="{ row }">
+                      <el-button
+                        icon="edit"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="openConcept(row)"
+                      >
+                        {{ t("ai_workflow.ig_edit") }}
+                      </el-button>
+                      <el-button
+                        icon="delete"
+                        link
+                        type="danger"
+                        size="small"
+                        @click="removeConcept(row)"
+                      >
+                        {{ t("ai_workflow.ig_delete") }}
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </div>
             </el-tab-pane>
 
@@ -785,62 +793,64 @@
                 </el-tag>
               </div>
               <div class="ig-tables">
-              <el-table :data="fewshots" size="small" border height="100%" stripe>
-                <template #empty>
-                  <el-empty :description="t('ai_workflow.ig_noExample')" :image-size="60" />
-                </template>
-                <el-table-column
-                  prop="question"
-                  :label="t('ai_workflow.ig_question')"
-                  min-width="200"
-                  show-overflow-tooltip
-                />
-                <el-table-column
-                  prop="sql"
-                  :label="t('ai_workflow.ig_exampleSql')"
-                  min-width="260"
-                  show-overflow-tooltip
-                />
-                <el-table-column
-                  prop="datasource"
-                  :label="t('ai_workflow.ig_datasource')"
-                  width="110"
-                  show-overflow-tooltip
-                />
-                <el-table-column :label="t('ai_workflow.ig_enabled')" width="70" align="center">
-                  <template #default="{ row }">
-                    <el-tag
-                      size="small"
-                      :type="row.enabled === false ? 'info' : 'success'"
-                      effect="plain"
-                    >
-                      {{ row.enabled === false ? t("ai_workflow.ig_no") : t("ai_workflow.ig_yes") }}
-                    </el-tag>
+                <el-table :data="fewshots" size="small" border height="100%" stripe>
+                  <template #empty>
+                    <el-empty :description="t('ai_workflow.ig_noExample')" :image-size="60" />
                   </template>
-                </el-table-column>
-                <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
-                  <template #default="{ row }">
-                    <el-button
-                      icon="edit"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="openFewshot(row)"
-                    >
-                      {{ t("ai_workflow.ig_edit") }}
-                    </el-button>
-                    <el-button
-                      icon="delete"
-                      link
-                      type="danger"
-                      size="small"
-                      @click="removeFewshot(row)"
-                    >
-                      {{ t("ai_workflow.ig_delete") }}
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+                  <el-table-column
+                    prop="question"
+                    :label="t('ai_workflow.ig_question')"
+                    min-width="200"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="sql"
+                    :label="t('ai_workflow.ig_exampleSql')"
+                    min-width="260"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column
+                    prop="datasource"
+                    :label="t('ai_workflow.ig_datasource')"
+                    width="110"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column :label="t('ai_workflow.ig_enabled')" width="70" align="center">
+                    <template #default="{ row }">
+                      <el-tag
+                        size="small"
+                        :type="row.enabled === false ? 'info' : 'success'"
+                        effect="plain"
+                      >
+                        {{
+                          row.enabled === false ? t("ai_workflow.ig_no") : t("ai_workflow.ig_yes")
+                        }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column :label="t('ai_workflow.ig_action')" width="110" align="center">
+                    <template #default="{ row }">
+                      <el-button
+                        icon="edit"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="openFewshot(row)"
+                      >
+                        {{ t("ai_workflow.ig_edit") }}
+                      </el-button>
+                      <el-button
+                        icon="delete"
+                        link
+                        type="danger"
+                        size="small"
+                        @click="removeFewshot(row)"
+                      >
+                        {{ t("ai_workflow.ig_delete") }}
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </div>
             </el-tab-pane>
 
@@ -992,6 +1002,94 @@
                     show-overflow-tooltip
                   />
                 </el-table>
+
+                <template v-if="lineageData.lineage">
+                  <div class="gp-section">{{ t("ai_workflow.ig_lineageUpstream") }}</div>
+                  <el-table :data="lineageData.lineage.upstream || []" size="small" border stripe>
+                    <el-table-column
+                      prop="table"
+                      :label="t('ai_workflow.ig_kgObject')"
+                      min-width="200"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="kind"
+                      :label="t('ai_workflow.ig_lineageKind')"
+                      width="90"
+                    />
+                    <el-table-column
+                      prop="confidence"
+                      :label="t('ai_workflow.ig_lineageConfidence')"
+                      width="90"
+                    />
+                    <template #empty>
+                      <el-empty :image-size="50" :description="t('ai_workflow.ig_noData')" />
+                    </template>
+                  </el-table>
+
+                  <div class="gp-section">{{ t("ai_workflow.ig_lineageDownstream") }}</div>
+                  <el-table :data="lineageData.lineage.downstream || []" size="small" border stripe>
+                    <el-table-column
+                      prop="table"
+                      :label="t('ai_workflow.ig_kgObject')"
+                      min-width="200"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="kind"
+                      :label="t('ai_workflow.ig_lineageKind')"
+                      width="90"
+                    />
+                    <el-table-column
+                      prop="confidence"
+                      :label="t('ai_workflow.ig_lineageConfidence')"
+                      width="90"
+                    />
+                    <template #empty>
+                      <el-empty :image-size="50" :description="t('ai_workflow.ig_noData')" />
+                    </template>
+                  </el-table>
+
+                  <div class="gp-section">{{ t("ai_workflow.ig_lineageUsedBy") }}</div>
+                  <el-table
+                    :data="lineageData.lineage.used_by || []"
+                    size="small"
+                    border
+                    stripe
+                    max-height="220"
+                  >
+                    <el-table-column
+                      prop="ref_kind"
+                      :label="t('ai_workflow.ig_lineageKind')"
+                      width="100"
+                    />
+                    <el-table-column
+                      prop="ref_key"
+                      :label="t('ai_workflow.ig_kgKey')"
+                      min-width="160"
+                      show-overflow-tooltip
+                    />
+                    <template #empty>
+                      <el-empty :image-size="50" :description="t('ai_workflow.ig_noData')" />
+                    </template>
+                  </el-table>
+
+                  <div class="gp-section">{{ t("ai_workflow.ig_lineageSensitive") }}</div>
+                  <div>
+                    <el-tag
+                      v-for="c in lineageData.lineage.sensitive_columns || []"
+                      :key="c"
+                      size="small"
+                      type="danger"
+                      class="ig-note"
+                    >
+                      {{ c }}
+                    </el-tag>
+                    <span v-if="!(lineageData.lineage.sensitive_columns || []).length">
+                      {{ t("ai_workflow.ig_noData") }}
+                    </span>
+                  </div>
+                </template>
 
                 <div class="gp-section">{{ t("ai_workflow.ig_lineagePipelines") }}</div>
                 <el-table :data="lineageData.pipelines || []" size="small" border stripe>
@@ -2009,7 +2107,12 @@ import {
   inferQueryAssetRelations,
   generateQueryAssetDesc,
 } from "@/api/module_ai/query";
-import { getOntDomains, saveOntObject, getOntObjects, getOntProperties } from "@/api/module_ai/ontology";
+import {
+  getOntDomains,
+  saveOntObject,
+  getOntObjects,
+  getOntProperties,
+} from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
 import AssetVersionsDialog from "./components/AssetVersionsDialog.vue";
 import AutoModelPreviewDialog from "./components/AutoModelPreviewDialog.vue";
@@ -2086,6 +2189,8 @@ async function openImpact() {
       metrics: r.metrics || [],
       relations: r.incoming_relations || [],
       dependent_objects: r.object_links || [],
+      // 血缘：后端只在开关打开时返回（lineage_enabled），关着时是空结构
+      lineage: r.lineage || null,
       pipelines: [],
     };
   } catch (e: any) {

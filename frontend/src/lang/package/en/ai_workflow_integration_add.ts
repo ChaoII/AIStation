@@ -465,6 +465,12 @@ export default {
   ig_reasonCompare: "Saved {saved} → Draft {draft}",
 
   // ===== 治理面板 =====
+  ig_lineageUpstream: "Upstream (what I depend on)",
+  ig_lineageDownstream: "Downstream (what depends on me)",
+  ig_lineageUsedBy: "Used by",
+  ig_lineageSensitive: "Sensitive columns",
+  ig_lineageKind: "Kind",
+  ig_lineageConfidence: "Confidence",
   ig_govLineage: "Lineage",
   ig_govLineageTables: "Table lineage coverage",
   ig_govLineageColumns: "Column lineage coverage",

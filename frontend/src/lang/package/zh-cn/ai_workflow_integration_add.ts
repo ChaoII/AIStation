@@ -484,6 +484,12 @@ export default {
   ig_reasonCompare: "已保存 {saved} → 草稿 {draft}",
 
   // ===== 治理面板 =====
+  ig_lineageUpstream: "上游（我依赖谁）",
+  ig_lineageDownstream: "下游（谁依赖我）",
+  ig_lineageUsedBy: "被谁使用",
+  ig_lineageSensitive: "敏感列",
+  ig_lineageKind: "类型",
+  ig_lineageConfidence: "置信度",
   ig_govLineage: "血缘",
   ig_govLineageTables: "表血缘覆盖",
   ig_govLineageColumns: "列血缘覆盖",
