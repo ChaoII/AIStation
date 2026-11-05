@@ -22,16 +22,15 @@
         <template v-for="group in sessionGroups" :key="group.label">
           <div class="chat-group-head">
             <span class="chat-group-label">{{ group.label }}</span>
-            <el-button
+            <el-tooltip
               v-if="group.key === 'today' && todaySessions.length"
-              icon="Delete"
-              link
-              size="small"
-              class="chat-group-del"
-              @click="delToday"
+              :content="t('ai_chat.workspaceChat_deleteToday')"
+              placement="top"
             >
-              {{ t("ai_chat.workspaceChat_deleteToday") }}
-            </el-button>
+              <el-icon class="chat-group-del" @click.stop="delToday">
+                <Delete />
+              </el-icon>
+            </el-tooltip>
           </div>
           <div
             v-for="s in group.items"
@@ -251,7 +250,9 @@ async function openSession(s: AiSessionItem) {
     .map((m) => ({
       id: String(m.id),
       role: m.role,
-      parts: (m.parts || []).map((p: any) => ({ type: p.type, text: p.text })),
+      // ⚠️ 必须原样保留 part：只留 {type,text} 会把工具调用的 state/input/output
+      // 全丢掉 —— 界面上就是「永远进行中、点不开详情」（真实踩过）。
+      parts: (m.parts || []).map((p: any) => ({ ...p })),
     }));
 }
 
@@ -382,8 +383,9 @@ loadModels();
   font-size: var(--el-font-size-base);
 }
 
+/* 搜索框与下面分组之间留出呼吸感（原来几乎贴在一起，像被一条横线切开） */
 .chat-search {
-  padding: 0 12px 8px;
+  padding: 10px 12px 14px;
 }
 
 .chat-side-scroll {
@@ -395,7 +397,7 @@ loadModels();
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px 4px;
+  padding: 10px 14px 6px;
 }
 
 .chat-group-label {
@@ -404,17 +406,29 @@ loadModels();
 }
 
 .chat-group-del {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--el-text-color-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+
+  &:hover {
+    color: var(--el-color-danger);
+  }
+}
+
+.chat-group-head:hover .chat-group-del {
+  opacity: 1;
 }
 
 .chat-sess {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 14px;
+  padding: 9px 14px;
+  margin: 0 6px 2px;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;
   position: relative;
   transition: background 0.15s;
   &:hover {
@@ -422,6 +436,7 @@ loadModels();
   }
   &.chat-sess--active {
     background: var(--el-color-primary-light-9);
+    box-shadow: inset 3px 0 0 var(--el-color-primary);
   }
 
   .chat-sess-del {

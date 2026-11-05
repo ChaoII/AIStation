@@ -11,52 +11,49 @@
     </template>
 
     <div class="message-body">
-        <!-- Agent 工具调用时间线（通常先于正文，置于顶部） -->
-        <ToolCallTimeline v-if="toolParts.length" :parts="toolParts" class="message-tools" />
-
-        <template v-for="(p, idx) in nonToolParts" :key="idx">
-          <ReasoningBlock
-            v-if="p.type === 'reasoning'"
-            :text="p.text || ''"
-            :streaming="streaming === true && p.state === 'streaming'"
-          />
-          <div
-            v-else-if="p.type === 'text'"
-            class="message-text"
-            :class="{ 'is-user': message.role === 'user' }"
+      <template v-for="(p, idx) in nonToolParts" :key="idx">
+        <ReasoningBlock
+          v-if="p.type === 'reasoning'"
+          :text="p.text || ''"
+          :streaming="streaming === true && p.state === 'streaming'"
+        />
+        <div
+          v-else-if="p.type === 'text'"
+          class="message-text"
+          :class="{ 'is-user': message.role === 'user' }"
+        >
+          <RichContent :content="p.text || ''" />
+          <span v-if="streaming && p.state === 'streaming'" class="cursor-typing" />
+        </div>
+        <div
+          v-else-if="p.type === 'source-url' || p.type === 'source-document'"
+          class="message-source"
+        >
+          <el-icon class="message-source__icon"><Document /></el-icon>
+          <span class="message-source__title">{{ sourceTitle(p) }}</span>
+          <a
+            v-if="p.type === 'source-url' && p.url"
+            class="message-source__link"
+            :href="p.url"
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            <RichContent :content="p.text || ''" />
-            <span v-if="streaming && p.state === 'streaming'" class="cursor-typing" />
-          </div>
-          <div
-            v-else-if="p.type === 'source-url' || p.type === 'source-document'"
-            class="message-source"
-          >
-            <el-icon class="message-source__icon"><Document /></el-icon>
-            <span class="message-source__title">{{ sourceTitle(p) }}</span>
-            <a
-              v-if="p.type === 'source-url' && p.url"
-              class="message-source__link"
-              :href="p.url"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {{ t("ai_chat.messageItem_view") }}
-            </a>
-          </div>
-          <div v-else-if="isDataPart(p)" class="message-data">
-            {{ renderData(p.data) }}
-          </div>
-        </template>
+            {{ t("ai_chat.messageItem_view") }}
+          </a>
+        </div>
+        <div v-else-if="isDataPart(p)" class="message-data">
+          {{ renderData(p.data) }}
+        </div>
+      </template>
 
-        <div v-if="message.role === 'assistant' && isLoading && streaming" class="typing-indicator">
-          <div class="typing-dots">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
+      <div v-if="message.role === 'assistant' && isLoading && streaming" class="typing-indicator">
+        <div class="typing-dots">
+          <span></span>
+          <span></span>
+          <span></span>
         </div>
       </div>
+    </div>
     <template #footer>
       <div v-if="fullText" class="message-actions">
         <el-tooltip :content="t('ai_chat.messageItem_copy')" placement="top">
@@ -92,13 +89,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
-import {
-  CopyDocument,
-  Document,
-  Refresh,
-  Star,
-  EditPen,
-} from "@element-plus/icons-vue";
+import { CopyDocument, Document, Refresh, Star, EditPen } from "@element-plus/icons-vue";
 import { ref } from "vue";
 import type { UIMessage } from "ai";
 import ChatMessage from "@/components/chat/ChatMessage.vue";

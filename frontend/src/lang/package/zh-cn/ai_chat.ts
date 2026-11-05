@@ -61,6 +61,7 @@ export default {
   toolTimeline_done: "完成",
   toolTimeline_failed: "失败",
   toolTimeline_running: "进行中",
+  toolTimeline_title: "工具调用",
   toolTimeline_input: "输入",
   toolTimeline_output: "输出",
 
