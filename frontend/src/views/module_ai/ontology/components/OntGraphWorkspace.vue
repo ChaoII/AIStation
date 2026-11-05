@@ -172,11 +172,14 @@
           sizeMode: 'weight',
           shapeMode: 'uniform',
           uniformShape: 'round-rectangle',
-          labelSize: 12,
+          labelSize: 10,
           colorMode: 'category',
         }"
         :edge-style="{
-          label: 'show',
+          // 本体图谱一个域动辄 300+ 节点、200+ 关系，关系名普遍是长中文
+          // （「配煤方案主表-配煤方案明细」），全画出来会把节点标签糊住。
+          // 默认不显示，点选/悬停时再看（边本身保留方向箭头）。
+          label: 'none',
           colorMode: 'category',
           curve: 'bezier',
           arrow: 'triangle',

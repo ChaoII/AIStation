@@ -286,7 +286,7 @@ const graphStyle: any[] = [
       "text-valign": "bottom",
       "text-margin-y": 5,
       "text-wrap": "wrap",
-      "text-max-width": NS.value.labelSize * 10,
+      "text-max-width": NS.value.labelSize * 9,
       width: (ele: any) => nodeSize(ele.data("weight")),
       height: (ele: any) => nodeSize(ele.data("weight")),
       shape: (ele: any) => nodeShape(ele.data("etype")),
@@ -429,6 +429,10 @@ function runLayout() {
       opts.numIter = 2500;
       opts.nodeOverlap = 20;
       opts.spacingFactor = 1.2;
+      // 无连边的孤立节点会被 cose 排成紧密几行、标签互相压住；
+      // componentSpacing 给不同连通块之间留出空隙，avoidOverlap 兜住节点重叠。
+      opts.componentSpacing = 60;
+      opts.avoidOverlap = true;
     }
   } else {
     opts.name = name;
