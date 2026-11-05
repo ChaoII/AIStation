@@ -170,6 +170,12 @@ export default {
   useless: "Not useful",
   saveAsReport: "Save as Report",
   promoteMetric: "Promote to Metric",
+  metricBasis: "Metric definition",
+  ontologyMissHint:
+    'No ontology object matched this time — answered via terms and table recall. Check the definition in "View ontology".',
+  ontologyBasis: "Ontology basis",
+  ontologyUsedCount: "{count} ontology objects matched",
+  recallCount: "{count} tables recalled",
   ontologyObjects: "Ontology objects:",
   recalledTables: "Recalled tables:",
   andMoreTables: "and {count} more tables",

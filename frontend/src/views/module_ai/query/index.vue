@@ -208,6 +208,61 @@
                     </el-table>
                   </div>
 
+                  <!-- 本体依据：这次用了哪些本体对象、召回了哪些表（可点开看全量） -->
+                  <div v-if="ontologyOf(m).length || recalledOf(m).length" class="q-onto">
+                    <div class="q-onto__head">
+                      <span class="q-onto__title">{{ t("ai_logs.ontologyBasis") }}</span>
+                      <el-tag v-if="ontologyOf(m).length" size="small" type="success" effect="dark">
+                        {{ t("ai_logs.ontologyUsedCount", { count: ontologyOf(m).length }) }}
+                      </el-tag>
+                      <el-tag v-if="recalledOf(m).length" size="small" effect="plain">
+                        {{ t("ai_logs.recallCount", { count: recalledOf(m).length }) }}
+                      </el-tag>
+                    </div>
+
+                    <div v-if="ontologyOf(m).length" class="q-onto__row">
+                      <span class="q-onto__label">{{ t("ai_logs.ontologyObjects") }}</span>
+                      <el-tag
+                        v-for="t in ontologyOf(m)"
+                        :key="`o-${t}`"
+                        size="small"
+                        type="success"
+                        effect="plain"
+                      >
+                        {{ t }}
+                      </el-tag>
+                    </div>
+
+                    <div v-if="m.metric?.name" class="q-onto__row">
+                      <span class="q-onto__label">{{ t("ai_logs.metricBasis") }}</span>
+                      <el-tag size="small" type="warning" effect="plain">
+                        {{ m.metric.name }}
+                      </el-tag>
+                    </div>
+
+                    <div
+                      v-if="!ontologyOf(m).length && recalledOf(m).length"
+                      class="q-onto__row q-onto__hint"
+                    >
+                      {{ t("ai_logs.ontologyMissHint") }}
+                    </div>
+
+                    <div v-if="recalledOf(m).length" class="q-onto__row">
+                      <span class="q-onto__label">{{ t("ai_logs.recalledTables") }}</span>
+                      <el-tag
+                        v-for="t in recalledOf(m).slice(0, 8)"
+                        :key="`t-${t}`"
+                        size="small"
+                        effect="plain"
+                      >
+                        {{ t }}
+                      </el-tag>
+                      <span v-if="recalledOf(m).length > 8" class="q-onto__more">
+                        {{ t("ai_logs.andMoreTables", { count: recalledOf(m).length }) }}
+                      </span>
+                    </div>
+                  </div>
+
                   <template #meta>
                     <el-tag size="small" effect="plain">{{ pathLabel(m) }}</el-tag>
                     <el-tag v-if="m.metric?.name" size="small" type="success" effect="plain">
@@ -244,34 +299,6 @@
                       >
                         {{ t("ai_logs.promoteMetric") }}
                       </el-button>
-                    </div>
-                    <div v-if="recalledOf(m).length || ontologyOf(m).length" class="q-msg__ont">
-                      <template v-if="ontologyOf(m).length">
-                        <span class="q-msg__ont-label">{{ t("ai_logs.ontologyObjects") }}</span>
-                        <el-tag
-                          v-for="t in ontologyOf(m)"
-                          :key="`o-${t}`"
-                          size="small"
-                          type="success"
-                          effect="plain"
-                        >
-                          {{ t }}
-                        </el-tag>
-                      </template>
-                      <template v-if="recalledOf(m).length">
-                        <span class="q-msg__ont-label">{{ t("ai_logs.recalledTables") }}</span>
-                        <el-tag
-                          v-for="t in recalledOf(m).slice(0, 8)"
-                          :key="`t-${t}`"
-                          size="small"
-                          effect="plain"
-                        >
-                          {{ t }}
-                        </el-tag>
-                        <span v-if="recalledOf(m).length > 8" class="q-msg__ont-more">
-                          {{ t("ai_logs.andMoreTables", { count: recalledOf(m).length }) }}
-                        </span>
-                      </template>
                     </div>
                   </template>
                 </ChatMessage>
@@ -1677,6 +1704,61 @@ onMounted(async () => {
   background: var(--el-color-primary-light-9);
   border-color: var(--el-color-primary-light-7);
   box-shadow: inset 3px 0 0 var(--el-color-primary);
+}
+
+/* 对话字号按项目规范统一：正文 14（--el-font-size-base）、次要 12
+   之前消息正文是 16px，比系统其它页面大一档，看着"虚"。 */
+.ai-query-page .chat-msg__body,
+.ai-query-page .chat-msg__bubble {
+  font-size: var(--el-font-size-base);
+  line-height: 1.7;
+}
+
+.ai-query-page .chat-msg__name {
+  font-size: var(--el-font-size-base);
+}
+
+/* 本体依据块 */
+.ai-query-page .q-onto {
+  margin-top: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: var(--el-fill-color-lighter);
+  border-radius: var(--el-border-radius-base);
+}
+
+.ai-query-page .q-onto__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.ai-query-page .q-onto__title {
+  font-size: var(--el-font-size-base);
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.ai-query-page .q-onto__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.ai-query-page .q-onto__label {
+  color: var(--el-text-color-secondary);
+}
+
+.ai-query-page .q-onto__hint {
+  color: var(--el-text-color-secondary);
+}
+
+.ai-query-page .q-onto__more {
+  color: var(--el-text-color-secondary);
 }
 
 /* 过程时间线：一眼看到 思考 → 工具 → SQL → 结果 */
