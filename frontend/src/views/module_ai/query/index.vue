@@ -1187,11 +1187,25 @@ onMounted(async () => {
   const q = (route.query || {}) as Record<string, any>;
   if (q.object_code) objectCode.value = String(q.object_code);
   if (q.object_key) objectKey.value = String(q.object_key);
+  // 本体页「去问数验证」会带 ?datasource=ds:4：不接这个参数，页面会停在默认的
+  // system 库上，燃料库的问题全部变成 relation "DTXY_PMXX" does not exist。
+  if (q.datasource) datasource.value = String(q.datasource);
   await loadSessions();
   await loadExamples();
   try {
     const r = await getQueryDatasources();
     datasources.value = r.data?.data || [];
+    // 数据源有两套标识：内部 `ds:4`（schema/消息里用的）与 `code`（下拉的 value，如
+    // ezdcs_pg）。本体页传的是 ds:{id}，这里统一归一化成下拉认识的值；
+    // 找不到（已删/无权限）才回落 system。
+    const dsValue = (d: any) => d.code || `ds:${d.id}`;
+    const want = datasource.value;
+    const hit =
+      datasources.value.find((d: any) => dsValue(d) === want) ||
+      (/^ds:\d+$/.test(want)
+        ? datasources.value.find((d: any) => `ds:${d.id}` === want)
+        : null);
+    datasource.value = hit ? dsValue(hit) : "system";
   } catch {
     datasources.value = [];
   }

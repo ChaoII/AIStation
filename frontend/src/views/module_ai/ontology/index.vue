@@ -1018,8 +1018,29 @@ const router = useRouter();
 
 /** 双向闭环：本体 → 问数（用刚定义/改动的语义去验证一次真实问数）。 */
 function goQuery() {
-  router.push("/ai/query");
+  // 带当前域的数据源：本体对象来自 ds:4（燃煤业务库）时必须切过去，
+  // 否则问数拿 system 库执行，报 relation "DTXY_PMXX" does not exist。
+  const dsId = domainDatasourceId.value;
+  router.push({
+    path: "/ai/query",
+    query: dsId ? { datasource: `ds:${dsId}` } : {},
+  });
 }
+
+/** 当前域内对象所属的数据源 id（唯一才用；域为空/混合则不猜） */
+const domainDatasourceId = computed(() => {
+  const ids = new Set(
+    (objects.value || [])
+      .filter((o: any) =>
+        currentDomain.value === undefined
+          ? true
+          : (o.domain_code || "") === currentDomain.value
+      )
+      .map((o: any) => o.datasource_id)
+      .filter((x: any) => x)
+  );
+  return ids.size === 1 ? Number([...ids][0]) : undefined;
+});
 
 const {
   domains,
