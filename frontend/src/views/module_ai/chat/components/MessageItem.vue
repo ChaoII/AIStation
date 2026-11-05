@@ -1,18 +1,16 @@
 <template>
-  <div :class="['message-item', message.role]">
-    <div class="message-avatar">
-      <div v-if="message.role === 'user'" class="user-avatar">
-        <el-icon><User /></el-icon>
-      </div>
-      <div v-else class="ai-avatar">
-        <el-icon><ChatDotRound /></el-icon>
-      </div>
-    </div>
-    <div class="message-content">
-      <div class="message-header">
-        <strong class="sender-name">{{ roleLabel }}</strong>
-      </div>
-      <div class="message-body">
+  <ChatMessage
+    :role="message.role === 'user' ? 'user' : 'assistant'"
+    :name="roleLabel"
+    :streaming="!!streaming && isLoading"
+    :live-label="t('ai_chat.reasoning_thinking')"
+  >
+    <template #tools>
+      <!-- Agent 工具调用时间线：公共组件，可展开入参/出参 -->
+      <ToolCallTimeline v-if="toolParts.length" :parts="toolParts" class="message-tools" />
+    </template>
+
+    <div class="message-body">
         <!-- Agent 工具调用时间线（通常先于正文，置于顶部） -->
         <ToolCallTimeline v-if="toolParts.length" :parts="toolParts" class="message-tools" />
 
@@ -59,6 +57,7 @@
           </div>
         </div>
       </div>
+    <template #footer>
       <div v-if="fullText" class="message-actions">
         <el-tooltip :content="t('ai_chat.messageItem_copy')" placement="top">
           <span class="msg-action" @click="handleCopy">
@@ -85,8 +84,8 @@
           </span>
         </el-tooltip>
       </div>
-    </div>
-  </div>
+    </template>
+  </ChatMessage>
 </template>
 
 <script setup lang="ts">
@@ -94,8 +93,6 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  User,
-  ChatDotRound,
   CopyDocument,
   Document,
   Refresh,
@@ -104,6 +101,7 @@ import {
 } from "@element-plus/icons-vue";
 import { ref } from "vue";
 import type { UIMessage } from "ai";
+import ChatMessage from "@/components/chat/ChatMessage.vue";
 import RichContent from "./RichContent.vue";
 import ReasoningBlock from "./ReasoningBlock.vue";
 import ToolCallTimeline from "./ToolCallTimeline.vue";
