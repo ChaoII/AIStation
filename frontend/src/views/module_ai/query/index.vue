@@ -139,80 +139,121 @@
                   class="q-msg__err"
                 />
                 <template v-else>
-                  <div v-if="m.reasoning" class="q-msg__reason">
-                    <el-collapse v-model="reasonOpen">
-                      <el-collapse-item :title="t('ai_logs.thinkingProcess')" name="r">
-                        <pre class="q-sql">{{ m.reasoning }}</pre>
-                      </el-collapse-item>
-                    </el-collapse>
+                  <!-- 过程时间线：思考 / 工具 / SQL / 结果，全部可见，随流式增长 -->
+                  <div v-if="m.summary && !(m.columns && m.columns.length)" class="q-msg__sum">
+                    {{ m.summary }}
                   </div>
-                  <div v-if="m.tools?.length" class="q-msg__tools">
-                    <el-tag
-                      v-for="(t, ti) in m.tools"
-                      :key="ti"
-                      size="small"
-                      effect="plain"
-                      :type="
-                        t.status === 'error'
-                          ? 'danger'
-                          : t.status === 'running'
-                            ? 'warning'
-                            : 'success'
-                      "
-                    >
-                      {{ t.name }}{{ t.status === "running" ? "…" : "" }}
-                    </el-tag>
+
+                  <div class="q-steps">
+                    <!-- ① 思考 -->
+                    <div v-if="m.reasoning || m.streaming" class="q-step">
+                      <div class="q-step__head">
+                        <span
+                          class="q-step__dot"
+                          :class="{
+                            'is-running': m.streaming && !m.sql,
+                            'is-done': !m.streaming || m.sql,
+                          }"
+                        />
+                        <span class="q-step__title">{{ t("ai_logs.thinkingProcess") }}</span>
+                        <el-button link size="small" @click="toggleReason(i)">
+                          {{ reasonOpenAt(i) }}
+                        </el-button>
+                      </div>
+                      <pre v-show="reasonIsOpen(i)" class="q-step__body q-pre">{{
+                        m.reasoning || t("ai_logs.thinking")
+                      }}</pre>
+                    </div>
+
+                    <!-- ② 工具调用 -->
+                    <div v-if="m.tools && m.tools.length" class="q-step">
+                      <div class="q-step__head">
+                        <span
+                          class="q-step__dot"
+                          :class="{
+                            'is-running': m.tools.some((x: any) => x.status === 'running'),
+                          }"
+                        />
+                        <span class="q-step__title">{{ t("ai_logs.toolCalls") }}</span>
+                        <span class="q-step__badge">{{ m.tools.length }}</span>
+                      </div>
+                      <div class="q-step__body q-tools">
+                        <div v-for="(tool, ti) in m.tools" :key="ti" class="q-tool">
+                          <span class="q-tool__dot" :class="'is-' + (tool.status || 'done')" />
+                          <span class="q-tool__name">{{ tool.name }}</span>
+                          <span class="q-tool__status">{{ tool.status }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- ③ SQL -->
+                    <div v-if="m.sql || (m.streaming && m.path === 'slow')" class="q-step">
+                      <div class="q-step__head">
+                        <span
+                          class="q-step__dot"
+                          :class="{ 'is-running': m.streaming && !m.columns?.length }"
+                        />
+                        <span class="q-step__title">{{ t("ai_logs.generatedSql") }}</span>
+                      </div>
+                      <pre class="q-step__body q-pre q-code">{{ m.sql || "…" }}</pre>
+                    </div>
+
+                    <!-- 对象查询 IR（保留折叠，属于排查细节） -->
+                    <div v-if="irOf(m)" class="q-step">
+                      <div class="q-step__head">
+                        <span class="q-step__dot is-done" />
+                        <span class="q-step__title">{{ t("ai_logs.viewObjectQuery") }}</span>
+                      </div>
+                      <el-collapse class="q-step__body q-msg__sql">
+                        <el-collapse-item :title="t('ai_logs.viewObjectQuery')" name="ir">
+                          <pre class="q-sql">{{ JSON.stringify(irOf(m), null, 2) }}</pre>
+                          <div class="q-msg__ir-note">
+                            {{ t("ai_logs.objectQueryNote") }}
+                            <span v-if="m.object_query?.note">· {{ m.object_query.note }}</span>
+                          </div>
+                        </el-collapse-item>
+                      </el-collapse>
+                    </div>
+
+                    <!-- ④ 结果 -->
+                    <div v-if="m.columns && m.columns.length" class="q-step">
+                      <div class="q-step__head">
+                        <span class="q-step__dot is-done" />
+                        <span class="q-step__title">{{ t("ai_logs.resultTitle") }}</span>
+                        <el-tag size="small" type="info" effect="plain">
+                          {{ t("ai_logs.totalRows", { count: m.result_rows }) }}
+                        </el-tag>
+                        <span v-if="m.took_ms" class="q-step__badge">{{ m.took_ms }} ms</span>
+                      </div>
+                      <el-table
+                        :data="rowsOf(m)"
+                        size="small"
+                        border
+                        max-height="340"
+                        class="q-msg__table"
+                        :style="m.columns.length <= 2 ? 'max-width: 460px' : ''"
+                        stripe
+                      >
+                        <el-table-column
+                          v-for="c in m.columns"
+                          :key="c"
+                          :prop="c"
+                          :label="c"
+                          min-width="120"
+                          show-overflow-tooltip
+                        />
+                      </el-table>
+                    </div>
                   </div>
-                  <div v-if="m.summary" class="q-msg__sum">{{ m.summary }}</div>
+
+                  <!-- 元信息（弱化） -->
                   <div class="q-msg__meta">
-                    <el-tag size="small" effect="plain">
-                      {{ pathLabel(m) }}
-                    </el-tag>
+                    <el-tag size="small" effect="plain">{{ pathLabel(m) }}</el-tag>
                     <el-tag v-if="m.metric?.name" size="small" type="success" effect="plain">
                       {{ t("ai_logs.metric", { name: m.metric.name }) }}
                     </el-tag>
-                    <span v-if="m.evidence?.source" class="q-msg__src">
-                      {{ m.evidence.source }}
-                    </span>
-                    <span v-if="m.result_rows">
-                      {{ t("ai_logs.totalRows", { count: m.result_rows }) }}
-                    </span>
-                    <span v-if="m.took_ms">{{ m.took_ms }} ms</span>
                     <span v-if="m.cached">{{ t("ai_logs.cacheHit") }}</span>
                   </div>
-                  <el-collapse v-if="m.sql" class="q-msg__sql">
-                    <el-collapse-item :title="t('ai_logs.viewSql')" name="sql">
-                      <pre class="q-sql">{{ m.sql }}</pre>
-                    </el-collapse-item>
-                  </el-collapse>
-                  <el-collapse v-if="irOf(m)" class="q-msg__sql">
-                    <el-collapse-item :title="t('ai_logs.viewObjectQuery')" name="ir">
-                      <pre class="q-sql">{{ JSON.stringify(irOf(m), null, 2) }}</pre>
-                      <div class="q-msg__ir-note">
-                        {{ t("ai_logs.objectQueryNote") }}
-                        <span v-if="m.object_query?.note">· {{ m.object_query.note }}</span>
-                      </div>
-                    </el-collapse-item>
-                  </el-collapse>
-                  <el-table
-                    v-if="m.columns && m.columns.length"
-                    :data="rowsOf(m)"
-                    size="small"
-                    border
-                    max-height="340"
-                    class="q-msg__table"
-                    :style="m.columns.length <= 2 ? 'max-width: 460px' : ''"
-                    stripe
-                  >
-                    <el-table-column
-                      v-for="c in m.columns"
-                      :key="c"
-                      :prop="c"
-                      :label="c"
-                      min-width="120"
-                      show-overflow-tooltip
-                    />
-                  </el-table>
                   <div v-if="m.id" class="q-msg__fb">
                     <el-button icon="Select" link size="small" @click="feedback(m, 'up')">
                       {{ t("ai_logs.useful") }}
@@ -563,7 +604,14 @@ const route = useRoute();
 
 const sessions = ref<any[]>([]);
 const messages = ref<any[]>([]);
-const reasonOpen = ref<any[]>([]);
+
+// 每条消息的「思考」展开状态：默认展开（用户就是想看过程），可单独收起
+const reasonOpenMap = ref<Record<number, boolean>>({});
+const reasonIsOpen = (i: number) => reasonOpenMap.value[i] !== false;
+const reasonOpenAt = (i: number) => (reasonIsOpen(i) ? "收起" : "展开");
+function toggleReason(i: number) {
+  reasonOpenMap.value = { ...reasonOpenMap.value, [i]: !reasonIsOpen(i) };
+}
 const datasources = ref<any[]>([]);
 const sessionId = ref<number | null>(null);
 const datasource = ref("system");
@@ -1659,6 +1707,118 @@ onMounted(async () => {
   background: var(--el-color-primary-light-9);
   border-color: var(--el-color-primary-light-7);
   box-shadow: inset 3px 0 0 var(--el-color-primary);
+}
+
+/* 过程时间线：一眼看到 思考 → 工具 → SQL → 结果 */
+.ai-query-page .q-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ai-query-page .q-step__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.ai-query-page .q-step__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.ai-query-page .q-step__badge {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.ai-query-page .q-step__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--el-color-success);
+  flex: 0 0 auto;
+}
+
+.ai-query-page .q-step__dot.is-running {
+  background: var(--el-color-primary);
+  animation: q-pulse 1s ease-in-out infinite;
+}
+
+.ai-query-page .q-step__dot.is-done {
+  background: var(--el-color-success);
+}
+
+@keyframes q-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.75);
+  }
+}
+
+.ai-query-page .q-step__body {
+  margin: 0 0 6px 16px;
+}
+
+.ai-query-page .q-pre {
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  font-family: var(--el-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--el-text-color-regular);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--el-fill-color-light);
+  border-radius: var(--el-border-radius-base);
+}
+
+.ai-query-page .q-code {
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color);
+}
+
+.ai-query-page .q-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-query-page .q-tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+
+.ai-query-page .q-tool__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-success);
+}
+
+.ai-query-page .q-tool__dot.is-running {
+  background: var(--el-color-warning);
+  animation: q-pulse 1s ease-in-out infinite;
+}
+
+.ai-query-page .q-tool__dot.is-error {
+  background: var(--el-color-danger);
+}
+
+.ai-query-page .q-tool__status {
+  color: var(--el-text-color-secondary);
 }
 
 /* 消息 */

@@ -1,7 +1,8 @@
 <!-- AI 工作台：左「分类」独立卡片 + 右「工具栏 + 卡片网格」独立卡片（区域隔离，参照个人工作空间） -->
 <template>
   <div class="app-container ai-workspace-page">
-    <div class="ws-layout">      <!-- 左：分类树（独立卡片） -->
+    <div class="ws-layout">
+      <!-- 左：分类树（独立卡片） -->
       <el-card shadow="never" class="ws-side">
         <template #header>
           <div class="ws-side-head">
@@ -717,16 +718,39 @@ async function onCatCmd(data: WorkspaceCategory, cmd: string) {
   padding-right: 4px;
 }
 
+/* 加号/更多不占位：平时隐藏，悬停时浮在右侧。
+   之前它们常驻（一个半透明、一个 opacity:0 但仍占宽），把分类名挤到只剩 2~3 个字。 */
+.ai-workspace-page .ai-tree-node {
+  position: relative;
+  padding-right: 6px;
+}
+
 .ai-workspace-page .ws-tree-actions {
-  display: inline-flex;
+  position: absolute;
+  right: 2px;
+  display: none;
   align-items: center;
   gap: 2px;
-  margin-left: 6px;
+  padding: 0 2px;
+  background: var(--el-fill-color-light);
+  border-radius: var(--el-border-radius-base);
+}
+
+.ai-workspace-page .ai-tree-node:hover .ws-tree-actions {
+  display: inline-flex;
 }
 
 /* 「＋」新建子分类：默认轻微可见，悬停变醒目（保证总能发现建子目录入口） */
+.ai-workspace-page .ws-side .el-tree-node__content {
+  height: 28px;
+}
+
+.ai-workspace-page .ws-side .ai-tree-node__label {
+  font-size: 13px;
+}
+
 .ai-workspace-page .ws-tree-add {
-  opacity: 0.55;
+  opacity: 1;
 }
 
 /* 「⋮」更多（重命名/删除）：悬停显示。注意选择器必须匹配模板的 ai-tree-node，
