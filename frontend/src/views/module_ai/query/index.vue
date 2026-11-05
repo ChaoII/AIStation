@@ -94,7 +94,7 @@
             </div>
           </template>
 
-          <div class="q-chat">
+          <ChatShell>
             <div class="q-chat__scroll">
               <el-alert
                 v-if="objectCode"
@@ -314,35 +314,37 @@
               </div>
             </div>
 
-            <div class="q-chat__composer">
-              <div class="q-composer">
-                <el-input
-                  v-model="question"
-                  type="textarea"
-                  :rows="2"
-                  resize="none"
-                  :placeholder="t('ai_logs.questionPlaceholder')"
-                  @keydown.enter.exact.prevent="ask"
-                />
-                <el-button type="primary" :loading="asking" @click="ask">
-                  {{ t("ai_logs.ask") }}
-                </el-button>
+            <template #footer>
+              <div class="q-chat__composer">
+                <div class="q-composer">
+                  <el-input
+                    v-model="question"
+                    type="textarea"
+                    :rows="2"
+                    resize="none"
+                    :placeholder="t('ai_logs.questionPlaceholder')"
+                    @keydown.enter.exact.prevent="ask"
+                  />
+                  <el-button type="primary" :loading="asking" @click="ask">
+                    {{ t("ai_logs.ask") }}
+                  </el-button>
+                </div>
+                <div class="q-examples">
+                  <span class="q-examples__label">{{ t("ai_logs.examples") }}</span>
+                  <el-tag
+                    v-for="e in examples"
+                    :key="e"
+                    class="q-examples__tag"
+                    effect="plain"
+                    size="small"
+                    @click="question = e"
+                  >
+                    {{ e }}
+                  </el-tag>
+                </div>
               </div>
-              <div class="q-examples">
-                <span class="q-examples__label">{{ t("ai_logs.examples") }}</span>
-                <el-tag
-                  v-for="e in examples"
-                  :key="e"
-                  class="q-examples__tag"
-                  effect="plain"
-                  size="small"
-                  @click="question = e"
-                >
-                  {{ e }}
-                </el-tag>
-              </div>
-            </div>
-          </div>
+            </template>
+          </ChatShell>
         </el-card>
       </el-col>
     </el-row>
@@ -578,6 +580,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
+import ChatShell from "@/components/chat/ChatShell.vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   deleteQuerySession,
@@ -1609,18 +1612,7 @@ onMounted(async () => {
   min-width: 0;
 }
 
-.ai-query-page .q-chat {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 0;
-  height: 100%;
-}
-
 .ai-query-page .q-chat__scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
   padding: 4px 4px 12px;
 }
 

@@ -87,25 +87,29 @@
           </el-tooltip>
         </div>
       </div>
-      <ChatMessages
-        ref="msgRef"
-        :messages="chat.messages.value"
-        :error="chat.error.value || ''"
-        :is-streaming="chat.isStreaming.value"
-        @prompt-click="onPrompt"
-        @resend="onSend"
-      />
-      <ChatInput
-        :disabled="chat.isStreaming.value"
-        :sending="chat.isStreaming.value"
-        :models="models"
-        :model-id="chatModelId"
-        :thinking="chatThinking"
-        @send="onSend"
-        @stop="chat.stop()"
-        @update:model-id="(v: number) => (chatModelId = v)"
-        @update:thinking="(v: 'quick' | 'deep') => (chatThinking = v)"
-      />
+      <ChatShell :scroll="false">
+        <ChatMessages
+          ref="msgRef"
+          :messages="chat.messages.value"
+          :error="chat.error.value || ''"
+          :is-streaming="chat.isStreaming.value"
+          @prompt-click="onPrompt"
+          @resend="onSend"
+        />
+        <template #footer>
+          <ChatInput
+            :disabled="chat.isStreaming.value"
+            :sending="chat.isStreaming.value"
+            :models="models"
+            :model-id="chatModelId"
+            :thinking="chatThinking"
+            @send="onSend"
+            @stop="chat.stop()"
+            @update:model-id="(v: number) => (chatModelId = v)"
+            @update:thinking="(v: 'quick' | 'deep') => (chatThinking = v)"
+          />
+        </template>
+      </ChatShell>
     </main>
   </div>
 </template>
@@ -126,6 +130,7 @@ import {
 } from "@/api/module_ai/session";
 import ChatInput from "@/views/module_ai/chat/components/ChatInput.vue";
 import ChatMessages from "@/views/module_ai/chat/components/ChatMessages.vue";
+import ChatShell from "@/components/chat/ChatShell.vue";
 import { getAiModelList } from "@/api/module_ai/model";
 import { useAiChat } from "@/composables/ai/useAiChat";
 

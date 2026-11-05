@@ -65,6 +65,13 @@ export const constantRoutes: RouteRecordRaw[] = [
         meta: { title: "个人中心", icon: "user", hidden: true },
         component: () => import("@/views/current/profile.vue"),
       },
+      // 工作台对话：以前是 Layout 之外的整页，导致没有侧边栏、和系统其它页面两套观感。
+      {
+        path: "ai/workspace/chat/:kind/:id",
+        name: "AiWorkspaceChat",
+        component: () => import("@/views/module_ai/workspace/chat.vue"),
+        meta: { hidden: true, title: "工作台对话" },
+      },
     ],
   },
   {
@@ -80,12 +87,6 @@ export const constantRoutes: RouteRecordRaw[] = [
     meta: { hidden: true, title: "数据资产（已并入数据与集成）" },
   },
   // 工作台对话（独立聊天页，静态兜底避免 404）
-  {
-    path: "/ai/workspace/chat/:kind/:id",
-    name: "AiWorkspaceChat",
-    component: () => import("@/views/module_ai/workspace/chat.vue"),
-    meta: { hidden: true, title: "工作台对话" },
-  },
   // Big screen display (standalone, no sidebar)
   {
     path: "/video/big-screen",
