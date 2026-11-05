@@ -166,7 +166,7 @@
                   <!-- SQL -->
                   <div v-if="m.sql || (m.streaming && m.path === 'slow')" class="q-block">
                     <div class="q-block__title">{{ t("ai_logs.generatedSql") }}</div>
-                    <pre class="q-pre q-code">{{ m.sql || "…" }}</pre>
+                    <CodeBlock :code="m.sql || '…'" language="sql" />
                   </div>
 
                   <!-- 对象查询 IR（排查细节，折叠） -->
@@ -210,7 +210,7 @@
 
                   <!-- 本体依据：这次用了哪些本体对象、召回了哪些表（可点开看全量） -->
                   <div v-if="ontologyOf(m).length || recalledOf(m).length" class="q-onto">
-                    <div class="q-onto__head">
+                    <div class="q-onto__head" @click="toggleOnto(i)">
                       <span class="q-onto__title">{{ t("ai_logs.ontologyBasis") }}</span>
                       <el-tag v-if="ontologyOf(m).length" size="small" type="success" effect="dark">
                         {{ t("ai_logs.ontologyUsedCount", { count: ontologyOf(m).length }) }}
@@ -218,48 +218,44 @@
                       <el-tag v-if="recalledOf(m).length" size="small" effect="plain">
                         {{ t("ai_logs.recallCount", { count: recalledOf(m).length }) }}
                       </el-tag>
+                      <el-tag v-if="m.metric?.name" size="small" type="warning" effect="plain">
+                        {{ t("ai_logs.metricBasis") }}·{{ m.metric.name }}
+                      </el-tag>
+                      <span class="q-onto__toggle">{{ ontoOpen(i) ? "收起" : "详情" }}</span>
                     </div>
 
-                    <div v-if="ontologyOf(m).length" class="q-onto__row">
-                      <span class="q-onto__label">{{ t("ai_logs.ontologyObjects") }}</span>
-                      <el-tag
-                        v-for="t in ontologyOf(m)"
-                        :key="`o-${t}`"
-                        size="small"
-                        type="success"
-                        effect="plain"
+                    <div v-show="ontoOpen(i)" class="q-onto__body">
+                      <div
+                        v-if="!ontologyOf(m).length && recalledOf(m).length"
+                        class="q-onto__hint"
                       >
-                        {{ t }}
-                      </el-tag>
-                    </div>
+                        {{ t("ai_logs.ontologyMissHint") }}
+                      </div>
 
-                    <div v-if="m.metric?.name" class="q-onto__row">
-                      <span class="q-onto__label">{{ t("ai_logs.metricBasis") }}</span>
-                      <el-tag size="small" type="warning" effect="plain">
-                        {{ m.metric.name }}
-                      </el-tag>
-                    </div>
+                      <div v-if="ontologyOf(m).length" class="q-onto__row">
+                        <span class="q-onto__label">{{ t("ai_logs.ontologyObjects") }}</span>
+                        <el-tag
+                          v-for="t in ontologyOf(m)"
+                          :key="`o-${t}`"
+                          size="small"
+                          type="success"
+                          effect="plain"
+                        >
+                          {{ t }}
+                        </el-tag>
+                      </div>
 
-                    <div
-                      v-if="!ontologyOf(m).length && recalledOf(m).length"
-                      class="q-onto__row q-onto__hint"
-                    >
-                      {{ t("ai_logs.ontologyMissHint") }}
-                    </div>
-
-                    <div v-if="recalledOf(m).length" class="q-onto__row">
-                      <span class="q-onto__label">{{ t("ai_logs.recalledTables") }}</span>
-                      <el-tag
-                        v-for="t in recalledOf(m).slice(0, 8)"
-                        :key="`t-${t}`"
-                        size="small"
-                        effect="plain"
-                      >
-                        {{ t }}
-                      </el-tag>
-                      <span v-if="recalledOf(m).length > 8" class="q-onto__more">
-                        {{ t("ai_logs.andMoreTables", { count: recalledOf(m).length }) }}
-                      </span>
+                      <div v-if="recalledOf(m).length" class="q-onto__row">
+                        <span class="q-onto__label">{{ t("ai_logs.recalledTables") }}</span>
+                        <el-tag
+                          v-for="t in recalledOf(m)"
+                          :key="`t-${t}`"
+                          size="small"
+                          effect="plain"
+                        >
+                          {{ t }}
+                        </el-tag>
+                      </div>
                     </div>
                   </div>
 
@@ -573,6 +569,7 @@ import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import ChatShell from "@/components/chat/ChatShell.vue";
 import ChatMessage from "@/components/chat/ChatMessage.vue";
+import CodeBlock from "@/components/chat/CodeBlock.vue";
 import ReasoningBlock from "@/views/module_ai/chat/components/ReasoningBlock.vue";
 import ToolCallTimeline from "@/views/module_ai/chat/components/ToolCallTimeline.vue";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -684,6 +681,13 @@ async function removeSession(s: any) {
   ElMessage.success(t("ai_logs.deleted"));
   if (sessionId.value === s.id) newSession();
   await loadSessions();
+}
+
+// 本体依据默认收起：召回表一多就是一堵墙，需要时再展开
+const ontoOpenMap = ref<Record<number, boolean>>({});
+const ontoOpen = (i: number) => !!ontoOpenMap.value[i];
+function toggleOnto(i: number) {
+  ontoOpenMap.value = { ...ontoOpenMap.value, [i]: !ontoOpen(i) };
 }
 
 /** 问数的工具状态 → 公共 ToolCallTimeline 需要的 AiUIPart 形状 */
@@ -1732,7 +1736,17 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  margin-bottom: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ai-query-page .q-onto__toggle {
+  margin-left: auto;
+  color: var(--el-color-primary);
+}
+
+.ai-query-page .q-onto__body {
+  padding: 4px 0 6px;
 }
 
 .ai-query-page .q-onto__title {
