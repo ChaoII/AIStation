@@ -20,7 +20,7 @@ from sqlalchemy import text
 
 from app.core.database import async_db_session
 
-APP_ID = 4            # 智能体 id（/ai/workspace/chat/agent/4）
+APP_ID = 3            # 智能体 id（/ai/workspace/chat/agent/3 = 数据洞察助手，内容对得上）
 USER_ID = 1
 TITLE = "【演示】多轮工具调用"
 
