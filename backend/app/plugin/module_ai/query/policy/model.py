@@ -88,16 +88,32 @@ POLICY_TABLES_SQL: list[str] = [
         "diff_kind VARCHAR(32), "
         "policy_ids JSONB DEFAULT '[]', "
         "sql_preview TEXT, "
+        # 新引擎要新增的改写（行过滤 / 掩码）：rewrite_only 差异靠它解释"藏了哪些行"
+        "rewrite JSONB DEFAULT '[]', "
         "created_time TIMESTAMP DEFAULT now())"
     ),
 ]
 
+#: 存量库补列（``CREATE TABLE IF NOT EXISTS`` 不会给已存在的表加新列）。
+#:
+#: 照 ``service._QUERY_ALTER_COLS`` 的做法：运行时先 ``inspect`` 有没有该列，
+#: 没有才 ``ALTER TABLE ... ADD COLUMN``，**幂等**，每次启动跑一遍。
+#: 只用于新增的**可空/带默认值**列（老行不需要回填）。
+POLICY_ALTER_COLS: tuple[tuple[str, str, str], ...] = (
+    ("ai_policy_shadow_diff", "rewrite", "JSONB DEFAULT '[]'"),
+)
+
 
 async def ensure_policy_tables() -> None:
-    """确保三张策略表存在（幂等、best-effort）。
+    """确保三张策略表存在（幂等、best-effort），并给存量库补新增列。
 
     复刻 ``service._ensure_query_tables`` 的做法：逐条方言翻译 + 独立事务提交；
     单条失败记一次降级（``policy_tables``），不向上抛 —— 应用启动不能被建表拖垮。
+
+    第二步是**存量库补列**（``POLICY_ALTER_COLS``）：``CREATE TABLE IF NOT EXISTS``
+    对已存在的表是空操作，新加的 ``ai_policy_shadow_diff.rewrite`` 必须靠
+    ``inspect`` + ``ALTER TABLE ADD COLUMN`` 补上，否则 shadow 写差异会因"列不存在"
+    整条失败（而且它是 fail-open 的，表现为**差异表悄悄没数据**）。
     """
     from .. import service
 
@@ -107,6 +123,27 @@ async def ensure_policy_tables() -> None:
                 await db.execute(text(service._ddl_for_dialect(sql)))
         except Exception as e:  # noqa: BLE001
             service._degrade("policy_tables", e)
+
+    for table, col, ddl in POLICY_ALTER_COLS:
+        try:
+            async with async_db_session.begin() as db:
+                from sqlalchemy import inspect as sa_inspect
+
+                cols = await db.run_sync(
+                    lambda s, _t=table: {
+                        c["name"] for c in sa_inspect(s.connection()).get_columns(_t)
+                    }
+                )
+                if col not in cols:
+                    await db.execute(
+                        text(
+                            service._ddl_for_dialect(
+                                f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"
+                            )
+                        )
+                    )
+        except Exception as e:  # noqa: BLE001 - 补列失败只降级，不拖垮启动
+            service._degrade("policy_table_columns", e)
 
 
 async def sensitive_tables() -> set[str]:

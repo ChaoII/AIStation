@@ -60,6 +60,15 @@ def test_policy_tables_columns_match_design():
         assert col in joined, f"缺少列：{col}"
 
 
+def test_shadow_diff_ddl_has_rewrite_column():
+    """shadow 差异表要带 ``rewrite`` 列（rewrite_only 差异的解释全靠它）。"""
+    from app.plugin.module_ai.query.policy.model import POLICY_ALTER_COLS, POLICY_TABLES_SQL
+
+    ddl = next(s for s in POLICY_TABLES_SQL if "ai_policy_shadow_diff" in s).lower()
+    assert "rewrite" in ddl and "jsonb default '[]'" in ddl, ddl
+    assert ("ai_policy_shadow_diff", "rewrite", "JSONB DEFAULT '[]'") in POLICY_ALTER_COLS
+
+
 def test_ensure_policy_tables_creates_tables(test_client, db_run):
     """幂等建表：应用库上连跑两次都必须成功，且三张表真的存在。"""
     from sqlalchemy import inspect
@@ -81,6 +90,44 @@ def test_ensure_policy_tables_creates_tables(test_client, db_run):
         assert t in names, f"{t} 没建出来"
     st = S.degraded_status()
     assert not any(r["area"] == "policy_tables" for r in st["areas"]), st
+
+
+def test_ensure_policy_tables_adds_missing_rewrite_column(test_client, db_run):
+    """存量库补列：老表没有 ``rewrite`` 时必须幂等 ALTER 出来（连跑两次不报错）。"""
+    from sqlalchemy import inspect, text
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.query import service as S
+    from app.plugin.module_ai.query.policy.model import ensure_policy_tables
+
+    old_ddl = (
+        "CREATE TABLE ai_policy_shadow_diff ("
+        "id BIGSERIAL PRIMARY KEY, sql_hash CHAR(64), user_id INTEGER, entry VARCHAR(32), "
+        "legacy_decision VARCHAR(8), new_decision VARCHAR(8), diff_kind VARCHAR(32), "
+        "policy_ids JSONB DEFAULT '[]', sql_preview TEXT, "
+        "created_time TIMESTAMP DEFAULT now())"
+    )
+
+    async def _go():
+        async with async_db_session.begin() as db:
+            await db.execute(text("DROP TABLE IF EXISTS ai_policy_shadow_diff"))
+            await db.execute(text(S._ddl_for_dialect(old_ddl)))
+        await ensure_policy_tables()
+        await ensure_policy_tables()  # 幂等：第二次不能重复 ADD COLUMN 报错
+        async with async_db_session() as db:
+            conn = await db.connection()
+            return await conn.run_sync(
+                lambda c: [
+                    col["name"]
+                    for col in inspect(c).get_columns("ai_policy_shadow_diff")
+                ]
+            )
+
+    S.reset_degraded()
+    cols = db_run(_go())
+    assert "rewrite" in cols, f"存量库没补上 rewrite 列：{cols}"
+    st = S.degraded_status()
+    assert not any(r["area"] == "policy_table_columns" for r in st["areas"]), st
 
 
 def test_sensitive_tables_lowercased_and_deduped(test_client, db_run):

@@ -302,6 +302,35 @@ def test_shadow_write_failure_does_not_break_query(monkeypatch):
     assert d.permit, "shadow 写差异失败必须 fail-open（不能把查询搞挂）"
 
 
+def test_shadow_records_rewrite_only_for_row_filter(monkeypatch):
+    """双放行但新引擎多出 `dept_id = 3` 这类行过滤 → rewrite_only，且 rewrite 列有内容。
+
+    这是 T9 之后"用户的行被静默藏掉"最该被抓到的变更；此前 `_new_decision` 丢弃
+    `d.sql`，diff 条数恒为 0。
+    """
+    G = _guard()
+    sink: dict = {}
+    _setup(
+        monkeypatch,
+        G,
+        mode="shadow",
+        policies=(_policy(condition="dept_id = 3"),),
+        record_shadow=False,
+    )
+    monkeypatch.setattr(G, "async_db_session_fresh", _fresh(sink))
+
+    async def _legacy():
+        return Decision(True, "旧判定放行")
+
+    d = _run(G, legacy_check=_legacy)
+
+    assert d.permit, "shadow 仍返回旧结论"
+    p = sink["params"]
+    assert p["kind"] == "rewrite_only", p
+    assert p["legacy"] == "permit" and p["new"] == "permit"
+    assert '"row"' in p["rw"] and "dept_id = 3" in p["rw"], p["rw"]
+
+
 # ---------------------------------------------------------------------------
 # 4. enforce：新结论生效
 # ---------------------------------------------------------------------------
@@ -371,6 +400,93 @@ def test_enforce_unparsable_sql_denies(monkeypatch):
 
     assert not d.permit
     assert "解析" in d.reason, d.reason
+
+
+# ---------------------------------------------------------------------------
+# 4.1 引擎意外异常：enforce 转 deny + 审计；shadow 不影响旧结论
+# ---------------------------------------------------------------------------
+def test_enforce_engine_error_denies_and_still_audits(monkeypatch):
+    """``decide_table`` 抛非 ``_PolicyLoadError`` 的异常：不能 500、也不能审计 0 条。"""
+    G = _guard()
+    st = _setup(monkeypatch, G, mode="enforce", policies=(_policy(),))
+
+    def _boom(*a, **k):
+        raise ValueError("引擎炸了")
+
+    monkeypatch.setattr(G, "decide_table", _boom)
+
+    d = _run(G)
+
+    assert not d.permit
+    assert "policy engine error" in d.reason and "引擎炸了" in d.reason, d.reason
+    assert st.audit_calls and st.audit_calls[-1]["decision"] == "deny", (
+        "引擎异常也必须落审计（否则线上只看到 500，查不到是谁、哪条 SQL）"
+    )
+
+
+def test_shadow_engine_error_returns_legacy_without_diff(monkeypatch):
+    """shadow 下引擎异常不能把旧逻辑本来放行的查询打成失败。"""
+    G = _guard()
+    st = _setup(monkeypatch, G, mode="shadow", policies=(_policy(),))
+
+    def _boom(*a, **k):
+        raise ValueError("引擎炸了")
+
+    monkeypatch.setattr(G, "decide_table", _boom)
+
+    async def _legacy():
+        return Decision(True, "旧判定放行")
+
+    d = _run(G, legacy_check=_legacy)
+
+    assert d.permit and d.reason == "旧判定放行"
+    assert not st.shadow_calls, "引擎异常不是业务差异，不能写进差异表"
+
+
+# ---------------------------------------------------------------------------
+# 4.2 行过滤条件随 Decision 带出（shadow 靠它发现"多了一层过滤"）
+# ---------------------------------------------------------------------------
+def test_new_decision_carries_row_condition(monkeypatch):
+    G = _guard()
+    _setup(monkeypatch, G, mode="enforce", policies=(_policy(condition="dept_id = 3"),))
+
+    d = _run(G)
+
+    assert d.permit
+    assert d.sql == "dept_id = 3", "行过滤条件必须带出来"
+    assert d.applied and d.applied[0].get("row") == "dept_id = 3", d.applied
+
+
+def test_new_decision_unions_row_conditions(monkeypatch):
+    G = _guard()
+    _setup(
+        monkeypatch,
+        G,
+        mode="enforce",
+        policies=(
+            _policy(condition="dept_id = 3", pid=1),
+            _policy(condition="dept_id = 4", pid=2),
+        ),
+    )
+
+    d = _run(G)
+
+    assert d.sql == "(dept_id = 3) OR (dept_id = 4)", d.sql
+    assert len(d.applied) == 2, d.applied
+
+
+def test_new_decision_unconditional_allow_absorbs_conditions(monkeypatch):
+    G = _guard()
+    _setup(
+        monkeypatch,
+        G,
+        mode="enforce",
+        policies=(_policy(condition="dept_id = 3", pid=1), _policy(pid=2)),
+    )
+
+    d = _run(G)
+
+    assert d.sql == "" and d.applied == (), "无条件授权吸收条件（union_condition 语义）"
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +561,28 @@ def test_sensitive_tables_load_failure_denies(monkeypatch):
 
     assert not d.permit
     assert "fail-closed" in d.reason, d.reason
+
+
+def test_star_denial_writes_audit(monkeypatch):
+    """星号拒绝路径同样要落审计（P0 被拦的查询必须可回溯）。"""
+    G = _guard()
+    st = _setup(
+        monkeypatch,
+        G,
+        mode="legacy",
+        sensitive=("fuel_price",),
+        tables=("fuel_price",),
+    )
+    sql = "select * from fuel_price"
+
+    d = _run(G, sql=sql)
+
+    assert not d.permit
+    assert st.audit_calls, "星号拒绝也要写审计"
+    call = st.audit_calls[-1]
+    assert call["decision"] == "deny"
+    assert "fuel_price" in call["reason"]
+    assert call["sql"] == sql
 
 
 # ---------------------------------------------------------------------------
@@ -588,6 +726,28 @@ def test_audit_records_decision_and_metadata(monkeypatch):
     assert isinstance(call["policy_ids"], list) and 5 in call["policy_ids"]
     assert isinstance(call["rewrite"], list)
     assert isinstance(call["elapsed_ms"], int) and call["elapsed_ms"] >= 0
+
+
+def test_guard_does_not_catch_audit_errors(monkeypatch):
+    """锁定「guard 自己**不** try/except 审计」：fail-open 由 ``audit.write_access_log`` 保证。
+
+    用一个会抛的桩替身：异常必须原样冒出来（说明 guard 没吞）——生产里真实现不会抛，
+    异常已在 T3 内部转成 warning。若哪天有人给 guard 包了 try/except，这条用例会红。
+    """
+    G = _guard()
+    _setup(monkeypatch, G, mode="legacy")
+
+    async def _boom(**kw):
+        raise RuntimeError("审计设施炸了")
+
+    monkeypatch.setattr(G, "write_access_log", _boom)
+
+    try:
+        _run(G)
+    except RuntimeError as e:
+        assert "审计设施" in str(e)
+    else:  # pragma: no cover
+        raise AssertionError("guard 不该包 try/except 审计（会掩盖真实问题）")
 
 
 # ---------------------------------------------------------------------------

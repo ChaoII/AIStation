@@ -8,7 +8,8 @@
                              datasource=ds, legacy_check=legacy)
     if not decision.permit:
         raise CustomException(decision.reason)
-    # ⚠️ P1 不做 SQL 改写：decision.sql 恒为空串，**不要**用它覆盖原 SQL。
+    # ⚠️ P1 不做 SQL 改写：decision.sql 只用于 shadow 差异（多表条件 OR 到一起
+    #    不是可执行 SQL），**不要**用它覆盖/拼接原 SQL。
     #    行/列改写由 T9 编译器产出，届时这里才变成 ``sql = decision.sql``。
 
 三种开关（``POLICY_ENGINE``，读 ``AiQueryService._cfg()``，缺失/未知按 ``legacy``）：
@@ -36,7 +37,9 @@ P1 的判定粒度**只到表级**（不含 SQL 改写，列级/改写留给 T9 
 
 - 用 ``AiQueryService._sql_query_scope`` 取涉及的表，逐表 ``engine.decide_table``；
 - 任一表拒绝 → 整体 deny，reason 带表名与策略 id；
-- 全部放行 → permit，``sql=""``、``applied=()``（还没改写能力，绝不能假装改了）。
+- 全部放行 → permit，并把各表的行过滤条件用 ``engine.union_condition`` 合并进
+  ``Decision.sql`` / ``applied``。**这份条件只给 shadow 看**（`"双放行但新增行过滤"`
+  正是 T9 之后"用户行被静默藏掉"的变更，必须被抓到），P1 **不执行**它。
 
 已知边界（P1，写在明处）：
 
@@ -48,6 +51,7 @@ P1 的判定粒度**只到表级**（不含 SQL 改写，列级/改写留给 T9 
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
@@ -59,7 +63,7 @@ from app.core.database import async_db_session_fresh
 from app.core.logger import log
 
 from .audit import sql_hash, sql_preview, write_access_log
-from .engine import Decision, decide_table
+from .engine import Decision, decide_table, union_condition
 from .model import sensitive_tables
 from .repo import domain_codes_for_user, list_policies
 from .star import unexpanded_star
@@ -76,8 +80,8 @@ _MODES = ("legacy", "shadow", "enforce")
 _INSERT_SHADOW_SQL = (
     "INSERT INTO ai_policy_shadow_diff"
     "(sql_hash, user_id, entry, legacy_decision, new_decision, diff_kind, "
-    "policy_ids, sql_preview) "
-    "VALUES(:h, :uid, :entry, :legacy, :new, :kind, :pids, :prev)"
+    "policy_ids, sql_preview, rewrite) "
+    "VALUES(:h, :uid, :entry, :legacy, :new, :kind, :pids, :prev, :rw)"
 )
 
 
@@ -240,6 +244,8 @@ async def _new_decision(
         return Decision(False, "无法解析查询语句，按拒绝处理（fail-closed）")
 
     policy_ids: list[int] = []
+    conditions: list[str] = []
+    applied: list[dict] = []
     for table in sorted(tables):
         d = decide_table(policies, principal, table)
         if not d.permit:
@@ -248,11 +254,19 @@ async def _new_decision(
                 reason += f"（policy_ids={list(d.policy_ids)}）"
             return Decision(False, reason, d.policy_ids)
         policy_ids.extend(d.policy_ids)
+        conditions.append(d.sql)
+        applied.extend(dict(item) for item in d.applied)
 
+    # 行过滤条件按 union_condition 合并（空串=无条件授权，吸收整组）。
+    # ⚠️ P1 这里**只用于 shadow 差异**：多表的条件 OR 到一起不是可执行 SQL（各表约束
+    # 应分别下推），真正的改写由 T9 编译器产出。T7 接线时不要拿 decision.sql 去拼查询。
+    row_sql = union_condition(conditions)
     return Decision(
         True,
         f"新引擎放行：{len(tables)} 张表均通过表级判定",
         tuple(dict.fromkeys(policy_ids)),
+        row_sql,
+        tuple(applied),
     )
 
 
@@ -263,8 +277,14 @@ def _diff_kind(*, legacy_decision: Decision, new_decision: Decision) -> str | No
     """新旧结论的差异类型；``None`` = 没差异（不写表）。
 
     三种 kind 与 DDL 注释一致：``legacy_permit_new_deny`` / ``legacy_deny_new_permit``
-    / ``rewrite_only``。P1 新引擎还不生成改写，因此 ``rewrite_only`` 只会在
-    「旧判定自带 sql/applied 而新判定为空」时出现（T9 之后才成为常态）。
+    / ``rewrite_only``。``rewrite_only`` 覆盖两种情况：
+
+    - 两边都放行但**新引擎多出/改变了行过滤条件**（``sql`` 或 ``applied`` 不同）——
+      T9 之后这就是"用户的行被静默藏掉"这类变更，必须被 shadow 抓到；
+    - 两边都放行且改写不同（T9 起常见）。
+
+    注意：旧逻辑目前不产出行条件（``sql=""``），所以只要新引擎有行过滤就是
+    ``rewrite_only``；反过来（旧有、新无）同样记录，方向由 ``rewrite`` 列体现。
     """
     if legacy_decision.permit and not new_decision.permit:
         return "legacy_permit_new_deny"
@@ -281,6 +301,31 @@ def _diff_kind(*, legacy_decision: Decision, new_decision: Decision) -> str | No
 def _clip(value, limit: int) -> str:
     """按列宽截断（PG 的 ``VARCHAR(n)`` 超长会整条写失败）。"""
     return str(value or "")[:limit]
+
+
+def _json_array(value) -> str:
+    """追加写 jsonb 列：序列化成 JSON 文本（与 ``audit`` 同口径）。
+
+    失败退回 ``"[]"``：差异行本身的"谁/哪条 SQL/什么结论"更重要，不能因为某个
+    表达式节点不可序列化就整条丢掉。
+    """
+    try:
+        return json.dumps(list(value or ()), ensure_ascii=False, default=str)
+    except Exception:  # noqa: BLE001
+        return "[]"
+
+
+def _shadow_rewrite(new: Decision) -> list[dict]:
+    """新引擎本次要施加的改写清单（``{"row": ...}`` / ``{"mask": ...}``）。
+
+    ``decide_table`` 已经把行条件放进 ``applied``；这里做一次兜底：万一某条实现
+    只填了 ``sql`` 没填 ``applied``，也要能在差异表里看到过滤条件（否则
+    ``rewrite_only`` 差异只剩一个空数组，等于没解释）。
+    """
+    items = [dict(item) for item in new.applied]
+    if not items and (new.sql or ""):
+        items.append({"row": new.sql})
+    return items
 
 
 async def _record_shadow_diff(
@@ -310,6 +355,8 @@ async def _record_shadow_diff(
             # 落新引擎参与裁决的策略 id（到期复盘"是哪条策略翻的案"）
             "pids": "[" + ", ".join(str(int(i)) for i in new.policy_ids) + "]",
             "prev": sql_preview(sql),
+            # 新增的行过滤/掩码：rewrite_only 差异的解释全靠这一列
+            "rw": _json_array(_shadow_rewrite(new)),
         }
         async with async_db_session_fresh() as db:
             async with db.begin():
@@ -403,6 +450,16 @@ async def _prepare(
             return await _new_decision(sql=sql, principal=principal, dialect=dialect)
         except _PolicyLoadError as e:
             return Decision(False, str(e))
+        except Exception as e:  # noqa: BLE001
+            # 引擎内部意外异常（如某条策略把一个坏值喂给 decide_table）：不能让 500 冒泡
+            # ——那样审计一条都不会写（prepare 的审计在判定之后）。fail-closed 成 deny。
+            # 用 ``except Exception``：CancelledError 是 BaseException，不能被吞。
+            log.opt(exception=True).warning(
+                f"[问数权限] policy engine error（按拒绝处理）: err={e}"
+            )
+            return Decision(
+                False, f"policy engine error：新判定异常，按拒绝处理（fail-closed）：{e}"
+            )
 
     # ⑤ shadow：新旧都算，旧结论生效，差异落表（写失败 fail-open）
     legacy = await _legacy_decision(legacy_check)
@@ -411,6 +468,13 @@ async def _prepare(
     except _PolicyLoadError as e:
         # 新引擎这轮判断不出来：不写差异（否则灰度报告会全是"库坏了"的假差异）
         log.warning(f"[问数权限] shadow 新判定不可用，本轮跳过差异记录: {e}")
+        return legacy
+    except Exception as e:  # noqa: BLE001
+        # 灰度期诊断能力出问题，绝不能把旧逻辑本来放行的查询打成失败。
+        # 同样用 ``except Exception``（CancelledError 继续上抛）。
+        log.opt(exception=True).warning(
+            f"[问数权限] policy engine error（shadow 跳过本轮差异记录）: err={e}"
+        )
         return legacy
 
     # 没差异就不进写函数：既省一次会话，也让「是否产生差异」这件事在编排层可测
