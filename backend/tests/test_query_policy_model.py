@@ -215,8 +215,13 @@ class _FakeSession:
         return _FakeResult(self.rows)
 
 
-def _patch_sources(monkeypatch, *, catalog_rows, fields, table_map):
-    """把「资产目录 + 本体语义」两个来源都换成假存储。"""
+def _patch_sources(monkeypatch, *, catalog_rows, fields, table_map, backing_map=None):
+    """把「资产目录 + 本体语义」两个来源都换成假存储。
+
+    ``backing_map`` 默认打桩成空：``object_backing_map`` 是**不过滤 enabled** 的主来源
+    （C1），这些用例只关心合并逻辑，不该被 dev 库的真实本体数据干扰；真实过滤语义
+    由下面 ``_patch_ontology_storage``（假 ``_exec``）的用例覆盖。
+    """
     # 先导入 UserModel：问数模型的关系（created_by/updated_by）指向它，
     # 否则 SQLAlchemy 配置 mapper 时报 "failed to locate a name 'UserModel'"
     # （PYTEST_NO_APP=1 不构造应用，没人替我们导入；冒烟脚本同样要显式加载）。
@@ -238,6 +243,11 @@ def _patch_sources(monkeypatch, *, catalog_rows, fields, table_map):
             return table_map
 
         monkeypatch.setattr(ont, "object_table_map", _tmap)
+
+    async def _bmap():
+        return dict(backing_map or {})
+
+    monkeypatch.setattr(ont, "object_backing_map", _bmap)
     return sink
 
 
@@ -264,6 +274,102 @@ def test_sensitive_tables_unions_ontology_marked_tables(monkeypatch):
     assert "orders" in got, f"本体敏感对象映射不到物理表：{got}"
     assert "ont_orders" not in got, "同一对象优先用真实业务表，不要带上 ont_ 影子表"
     assert "catalog_marked" in got, "资产目录来源不能被本体覆盖掉（两边并集）"
+
+
+class _OntRows:
+    """假 ``semantic._exec`` 的返回值（``fetchall`` 够用）。"""
+
+    def __init__(self, rows):
+        self._rows = list(rows)
+
+    def fetchall(self):
+        return list(self._rows)
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def scalar(self):
+        return self._rows[0][0] if self._rows else None
+
+
+def _patch_ontology_storage(monkeypatch, *, objects, properties):
+    """用**假存储**替换 ``semantic._exec``：真实模拟 SQL 的 ``enabled`` 过滤。
+
+    ``objects``: ``(code, backing_table, enabled)``；
+    ``properties``: ``(object_code, code, sensitive, roles)``。
+
+    刻意只打桩到 ``_exec`` 这一层：``object_backing_map()`` / ``restricted_fields()`` /
+    ``object_table_map()`` 全部走**真实现**——整体打桩 ``object_table_map`` 正是 C1
+    漏检的原因（它会过滤 enabled，停用对象因此整批消失）。
+    """
+    from app.api.v1.module_system.user.model import UserModel  # noqa: F401
+    from app.plugin.module_ai.ontology import semantic as ont
+
+    async def _exec(sql, params=None):
+        text = " ".join(str(sql).split()).lower()
+        if "information_schema.tables" in text:
+            return _OntRows([(b,) for _c, b, _e in objects if b])
+        if "from ai_ont_property" in text:
+            return _OntRows(properties)
+        if "from ai_ont_object" in text:
+            if "select code, backing_table" in text:
+                # object_backing_map 的 SQL **没有 enabled 条件**（停用对象的历史指针仍要执行）
+                return _OntRows([(c, b) for c, b, _e in objects if b])
+            # _load_objects 的 SQL 带 enabled=true —— 这里如实模拟过滤
+            return _OntRows(
+                [
+                    (c, c, b, "", None, "", "id", "name", 0)
+                    for c, b, e in objects
+                    if e
+                ]
+            )
+        raise AssertionError(f"未预期的语义层 SQL：{sql}")
+
+    monkeypatch.setattr(ont, "_exec", _exec)
+
+
+def test_sensitive_tables_includes_disabled_object(monkeypatch):
+    """C1：**停用对象**的敏感表也必须进清单（select * 不能被放行）。
+
+    dev 库实测漏 7 张（``SYS_USERS`` / ``OPS_DBBACKUPCONFIG`` /
+    ``SYS_WEBHOOKSUBSCRIPTIONS`` 等），``select * from "SYS_USERS"`` 在
+    legacy 下明文读出 ``PASSWORD``。根因：走 ``object_table_map()`` 会过滤
+    ``enabled=true``，而 ``restricted_fields()`` 不过滤。
+    """
+    from app.plugin.module_ai.query.policy import model as M
+    from app.plugin.module_ai.query.policy.star import unexpanded_star
+
+    _patch_ontology_storage(
+        monkeypatch,
+        objects=[("SYS_USERS", "SYS_USERS", False)],  # enabled=False
+        properties=[("SYS_USERS", "PASSWORD", True, None)],
+    )
+    monkeypatch.setattr(M, "async_db_session", lambda: _FakeSession({}, []))
+
+    got = asyncio.run(M.sensitive_tables())
+
+    assert "sys_users" in got, f"停用对象的敏感表漏了：{got}"
+    assert unexpanded_star('select * from "SYS_USERS"', got) == "sys_users", (
+        f"停用对象的表上 select * 没被判定为风险：{got}"
+    )
+
+
+def test_sensitive_tables_still_includes_enabled_object(monkeypatch):
+    """防修反：启用对象 + 敏感字段，仍然必须命中（不能为了停用对象改坏正常路径）。"""
+    from app.plugin.module_ai.query.policy import model as M
+    from app.plugin.module_ai.query.policy.star import unexpanded_star
+
+    _patch_ontology_storage(
+        monkeypatch,
+        objects=[("video_cameras", "video_cameras", True)],
+        properties=[("video_cameras", "password", None, ["analyst"])],
+    )
+    monkeypatch.setattr(M, "async_db_session", lambda: _FakeSession({}, []))
+
+    got = asyncio.run(M.sensitive_tables())
+
+    assert "video_cameras" in got, f"启用对象的敏感表漏了：{got}"
+    assert unexpanded_star("select * from video_cameras", got) == "video_cameras"
 
 
 def test_sensitive_tables_ontology_failure_is_best_effort(monkeypatch):
@@ -355,6 +461,28 @@ def test_export_and_browse_reject_sensitive_table(monkeypatch):
     for out in (export, browse):
         assert out["ok"] is False, out
         assert "敏感" in out["msg"], out
+
+
+def test_export_and_browse_fail_closed_when_sensitive_tables_raise(monkeypatch):
+    """I1 fail-closed：读不到敏感清单时导出/浏览一律拒绝（判断不了就不能放行）。"""
+    from app.plugin.module_ai.query.policy import model as M
+    from app.plugin.module_ai.query.service import AiQueryService as Q
+
+    async def _require(cls, table, auth):
+        return table
+
+    async def _boom():
+        raise RuntimeError("敏感表清单不可用")
+
+    monkeypatch.setattr(Q, "_require_queryable_table", classmethod(_require))
+    monkeypatch.setattr(M, "sensitive_tables", _boom)
+
+    export = asyncio.run(Q.export_asset("t_fail_closed", None, limit=10))
+    browse = asyncio.run(Q.object_browse("t_fail_closed", None, page=1, page_size=10))
+
+    for out in (export, browse):
+        assert out["ok"] is False, out
+        assert "拒绝" in out["msg"] or "fail-closed" in out["msg"], out
 
 
 # ---------------------------------------------------------------------------

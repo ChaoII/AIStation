@@ -213,13 +213,13 @@ _ATTR_CALL_RE = re.compile(r"user\.attribute\(\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)
 #: ``user.id`` / ``user.dept`` 这类直接取值。
 _USER_DOT_RE = re.compile(r"\buser\.([A-Za-z_][A-Za-z0-9_]*)")
 
-#: 能一一对到引擎占位符的用户属性（其余如 ``user.role(...)`` 无法表达成**行条件**）。
+#: 能一一对到引擎占位符、且 ``Principal`` 真的会加载的用户属性。
+#: ⚠️ ``username`` / ``name`` **故意不在此表**：``principal._ATTR_COLUMNS`` 只有
+#: ``dept_id``，映射成 ``$attr.username`` 会永远绑不上 → 条件永不成立（I3 残留）。
 _USER_ATTR_MAP: dict[str, str] = {
     "id": "$user.id",
     "dept": "$attr.dept_id",
     "dept_id": "$attr.dept_id",
-    "username": "$attr.username",
-    "name": "$attr.name",
 }
 
 

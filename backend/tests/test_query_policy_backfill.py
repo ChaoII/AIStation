@@ -280,6 +280,19 @@ def test_translate_condition_skips_unmappable_attribute():
     assert translate_condition("x == user.attribute('dept2')") is None
 
 
+def test_translate_condition_skips_attrs_principal_never_loads():
+    """I3 残留：``Principal`` 只加载 ``dept_id``，``username`` / ``name`` 永远绑不上。
+
+    映射成 ``$attr.username`` 的条件会"永不成立"，迁移后整表 deny；
+    宁可返回 ``None``（跳过 + 留痕）。
+    """
+    from app.plugin.module_ai.query.policy.backfill import translate_condition
+
+    assert translate_condition("owner == user.name") is None
+    assert translate_condition("owner == user.attribute('username')") is None
+    assert translate_condition("owner == user.attribute('name')") is None
+
+
 def test_legacy_default_allow_is_per_user_not_everyone(monkeypatch):
     """兜底 allow：按用户发（subject=user），逐表一条、priority 最低、无条件无列。"""
     B, store = _wire(monkeypatch, **_full_house())

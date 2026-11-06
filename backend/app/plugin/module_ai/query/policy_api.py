@@ -165,15 +165,6 @@ def _validate(
     columns = _norm_columns(merged.get("columns") or [])
 
     empty: set[str] = set()
-    # C2（2026-11 复审裁决）：编译器未接线前，行/列策略一律不允许保存。
-    # ``_execute_one`` 执行的是**原 SQL**，condition/mask_expr 不会生效 —— 收下它们等于
-    # 让管理员以为行过滤/脱敏已生效（explain 还会显示 permit）。只在**本次请求真的提供了**
-    # 这两个字段时拦：存量库里可能已有历史行，允许改名/停用，但不允许新配。
-    if ("condition" in provided and condition) or ("mask_expr" in provided and mask_expr):
-        return {}, empty, (
-            "编译器未接线前不支持行/列策略（condition / mask_expr 不会被执行）。"
-            "请先使用 legacy/shadow，等 SQL 编译器接入后再配置"
-        )
     if not name:
         return {}, empty, "策略名不能为空"
     if not resource_code:
@@ -219,6 +210,19 @@ def _validate(
         error = validate_condition(condition)
         if error:
             return {}, empty, f"condition 不合法：{error}"
+
+    # C2（2026-11 复审裁决）：编译器未接线前，行/列策略一律不允许保存。
+    # ``_execute_one`` 执行的是**原 SQL**，condition/mask_expr 不会生效 —— 收下它们等于
+    # 让管理员以为行过滤/脱敏已生效（explain 还会显示 permit）。只在**本次请求真的提供了**
+    # 这两个字段时拦：存量库里可能已有历史行，允许改名/停用，但不允许新配。
+    #
+    # ⚠️ 必须在**结构校验之后**：闸门放在前面会把枚举/条件/掩码语法的 9 条用例全部
+    #    短路（用例仍绿但一点校验力都没有）。先校验"策略本身写对没有"，再谈"能不能用"。
+    if ("condition" in provided and condition) or ("mask_expr" in provided and mask_expr):
+        return {}, empty, (
+            "编译器未接线前不支持行/列策略（condition / mask_expr 不会被执行）。"
+            "请先使用 legacy/shadow，等 SQL 编译器接入后再配置"
+        )
 
     fields = {
         "name": name,

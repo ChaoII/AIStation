@@ -329,6 +329,29 @@ def test_update_unknown_id_rejected(test_client, auth_headers):
 
 
 # ---------------------------------------------------------------------------
+# 表达式校验（不经过「编译器未接线」闸门，直接锁死校验能力）
+# ---------------------------------------------------------------------------
+def test_validate_condition_rejects_statement_injection():
+    """C2：``validate_condition`` 必须自己挡住分号注入。
+
+    历史缺陷：``_validate`` 的「带 condition → 400」闸门在结构校验**之前**，
+    下面的坏表达式全都在闸门处短路 —— 用例是绿的，但根本没校验到语法。
+    """
+    from app.plugin.module_ai.query.policy.compiler import validate_condition
+
+    assert validate_condition("a=1;drop table t"), "分号注入必须被拒绝"
+    assert validate_condition("dept_id = 1") == "", "合法条件不能被误拒"
+
+
+def test_validate_mask_rejects_illegal_function():
+    """C2：``validate_mask`` 必须自己挡住系统函数（真实校验，不靠闸门）。"""
+    from app.plugin.module_ai.query.policy.compiler import validate_mask
+
+    assert validate_mask("pg_read_file('/etc/passwd')"), "系统函数必须被拒绝"
+    assert validate_mask("upper(phone)") == "", "合法掩码不能被误拒"
+
+
+# ---------------------------------------------------------------------------
 # explain：用库里的身份，不信任入参
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")

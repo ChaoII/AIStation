@@ -151,7 +151,8 @@ async def sensitive_tables() -> set[str]:
 
     来源一：``ai_query_asset_columns.sensitive=true``（问数资产目录，已有实现）。
     来源二（C1）：``ontology.semantic.restricted_fields()`` 里的属性（``sensitive=true``
-    或 ``roles`` 非空）经 ``object_table_map()`` 反查到的**物理表**。
+    或 ``roles`` 非空）经 ``object_backing_map()``（**不过滤 enabled**）+
+    ``object_table_map()`` 反查到的**物理表**。
 
     为什么必须并上本体：两套标记实测长期不一致（本体 77 / 资产目录 66），
     ``video_cameras.password`` 只标在本体上 → 只查资产目录时该表不在清单里 →
@@ -187,30 +188,64 @@ async def _ontology_sensitive_tables() -> set[str]:
     """本体侧敏感/限角色属性 → 物理表名（best-effort，失败返回空集）。
 
     只经 ``ontology.semantic`` 读本体（架构约定：问数不直读 ``ai_ont_*``）。
-    同一对象可能同时映射到 ``ont_<code>`` 与真实业务表，**优先真实业务表**
-    （与 ``backfill.build_object_table_map`` 同口径）：``ont_`` 影子表通常不存在。
+
+    **主来源是 ``object_backing_map()``（C1）**：它**不过滤 ``enabled``** —— 停用对象的
+    历史指针仍要执行，敏感标记也还在。此前用 ``object_table_map()``（``enabled=true``）
+    会让停用对象的整张表漏出星号止血清单（dev 实测漏 7 张：``SYS_USERS`` /
+    ``OPS_DBBACKUPCONFIG`` / ``SYS_WEBHOOKSUBSCRIPTIONS`` 等），
+    ``select * from "SYS_USERS"`` 在 legacy 下明文读出 ``PASSWORD``。
+    而 ``restricted_fields()`` 本来就不按 enabled 过滤，两边口径必须一致。
+
+    再用 ``object_table_map()`` 补充：没有 ``backing_table`` 的对象（真实表是
+    ``ont_{code}``）只有它能覆盖。同一对象可能同时映射到 ``ont_<code>`` 与真实业务表，
+    **优先真实业务表**（与 ``backfill.build_object_table_map`` 同口径）：
+    ``ont_`` 影子表通常不存在。
     """
+    from app.core.logger import log
+
     try:
         from ...ontology import semantic as ont
 
         fields = await ont.restricted_fields()
         if not fields:
             return set()
+
         table_by_code: dict[str, str] = {}
-        for table, code in (await ont.object_table_map()).items():
-            table, code = str(table or "").strip(), str(code or "").strip()
-            if not table or not code:
-                continue
+
+        def _remember(code: str, table: str) -> None:
+            code, table = str(code or "").strip(), str(table or "").strip()
+            if not code or not table:
+                return
             cur = table_by_code.get(code)
             if cur is None or (cur.startswith("ont_") and not table.startswith("ont_")):
                 table_by_code[code] = table
+
+        backing_loader = getattr(ont, "object_backing_map", None)
+        if backing_loader is None:
+            log.warning(
+                "[问数权限] 语义层缺少 object_backing_map（停用对象的敏感表可能漏检），"
+                "回退 object_table_map"
+            )
+        else:
+            try:
+                for code, table in (await backing_loader()).items():
+                    _remember(code, table)
+            except Exception as e:  # noqa: BLE001 - 回退到 table_map，不拖垮资产目录来源
+                log.warning(
+                    f"[问数权限] object_backing_map 读取失败（回退 object_table_map）: err={e}"
+                )
+
+        try:
+            for table, code in (await ont.object_table_map()).items():
+                _remember(code, table)
+        except Exception as e:  # noqa: BLE001 - 主来源已拿到就继续
+            log.warning(f"[问数权限] 本体支撑表补充映射读取失败（已忽略）: err={e}")
+
         return {
             table_by_code[code].lower()
             for code in fields
             if code in table_by_code
         }
     except Exception as e:  # noqa: BLE001 - 本体读失败不能拖垮资产目录来源
-        from app.core.logger import log
-
         log.warning(f"[问数权限] 本体敏感字段读取失败（已忽略，仅用资产目录）: err={e}")
         return set()
