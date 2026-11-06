@@ -35,6 +35,7 @@ class _FakeStore:
         assets=(),
         object_table=None,
         system_tables=(),
+        users=(),
         load_errors=(),
     ):
         self.domains = list(domains)
@@ -44,6 +45,7 @@ class _FakeStore:
         self.assets = list(assets)
         self.object_table = dict(object_table or {})
         self.system_tables = set(system_tables)
+        self.users = list(users)
         self.load_errors = list(load_errors)
         # 写入侧记账
         self.policies: list[dict] = []
@@ -62,6 +64,7 @@ class _FakeStore:
             "asset_tables": set(self.assets),
             "object_table": dict(self.object_table),
             "system_tables": set(self.system_tables),
+            "users": list(self.users),
             "migrations": [
                 {"source_table": s, "source_id": i} for s, i, _ in self.migrations
             ],
@@ -92,7 +95,7 @@ def _by_name(policies, prefix):
 
 
 def _full_house():
-    """一套最小的旧数据：域 / ABAC / 敏感列 / 对象行策略 / 系统表白名单。"""
+    """一套最小的旧数据：域 / ABAC / 敏感列 / 对象行策略 / 用户 / 系统表白名单。"""
     return {
         "domains": [
             {
@@ -100,6 +103,8 @@ def _full_house():
                 "name": "人力域",
                 "code": "hr",
                 "tables": ["t_domain_a", "T_Domain_B", "t_domain_a"],
+                # 101 是域成员 → 不该拿到兜底 allow（否则域隔离被抹平）
+                "members": [101],
             }
         ],
         "access_rules": [
@@ -130,6 +135,12 @@ def _full_house():
         "assets": ["orders"],
         "object_table": {"ont_orders": "orders"},
         "system_tables": ["sys_user", "train_tasks"],
+        "users": [
+            {"id": 101, "is_superuser": False, "roles": ["USER"]},  # 域成员
+            {"id": 102, "is_superuser": False, "roles": ["ANALYST"]},  # ABAC 命中
+            {"id": 103, "is_superuser": False, "roles": []},  # 无人覆盖 → 兜底
+            {"id": 104, "is_superuser": True, "roles": ["ADMIN"]},  # 超管不建
+        ],
     }
 
 
@@ -244,23 +255,84 @@ def test_row_policy_lands_on_physical_table(monkeypatch):
     assert "dept_id == user.attribute('dept')" in row["description"]
 
 
-def test_legacy_default_allow_per_table_lowest_priority(monkeypatch):
-    """兜底 allow：按 _system_allowed() 逐表一条，同名、priority 最低、无条件无列。"""
+def test_legacy_default_allow_is_per_user_not_everyone(monkeypatch):
+    """兜底 allow：按用户发（subject=user），逐表一条、priority 最低、无条件无列。"""
     B, store = _wire(monkeypatch, **_full_house())
 
     result = asyncio.run(B.backfill_policies())
 
     rows = _by_name(store.policies, "legacy_default_allow")
+    # 只有 103（无域、无 ABAC）拿到，2 张系统表 → 2 行
     assert {r["resource_code"] for r in rows} == {"sys_user", "train_tasks"}
     for r in rows:
         assert r["name"] == "legacy_default_allow"
-        assert r["subject_kind"] == "everyone"
+        assert r["subject_kind"] == "user"
+        assert r["subject_value"] == "103"
         assert r["effect"] == "allow"
         assert r["priority"] == 1
         assert r["columns"] == []
         assert r["condition"] == ""
-        assert r["description"].startswith("迁移期兜底")
-    assert result["by_source"]["legacy_default_allow"] == 2
+        assert r["description"].startswith("legacy_default_allow")
+        assert "仅限无域/无 ABAC 的存量用户" in r["description"]
+    assert result["by_source"]["legacy_default_allow"] == {"users": 1, "rows": 2}
+
+
+def test_domain_member_gets_no_default_allow(monkeypatch):
+    """**关键回归**：域成员不拿兜底 allow（否则 enforce 后域隔离被抹平 = 越权）。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    asyncio.run(B.backfill_policies())
+
+    rows = _by_name(store.policies, "legacy_default_allow")
+    assert {r["subject_value"] for r in rows} == {"103"}, rows
+    assert "101" not in {r["subject_value"] for r in rows}
+
+
+def test_role_matched_user_gets_no_default_allow(monkeypatch):
+    """命中启用 ABAC 角色的用户也不发兜底（他已被 role allow 覆盖）。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    asyncio.run(B.backfill_policies())
+
+    rows = _by_name(store.policies, "legacy_default_allow")
+    assert "102" not in {r["subject_value"] for r in rows}
+
+
+def test_default_allow_rerun_creates_zero(monkeypatch):
+    """兜底 allow 也走迁移台账判重：第二轮 0 新建。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    first = asyncio.run(B.backfill_policies())
+    second = asyncio.run(B.backfill_policies())
+
+    assert first["by_source"]["legacy_default_allow"] == {"users": 1, "rows": 2}
+    assert second["by_source"]["legacy_default_allow"] == {"users": 0, "rows": 0}
+    assert second["created"] == 0
+
+
+def test_default_allow_over_limit_skips_without_writing(monkeypatch):
+    """超上限（用户×表 > 2000）不硬写：返回 skipped，一条策略都不落库。"""
+    from app.plugin.module_ai.query.policy import backfill as B0
+
+    monkeypatch.setattr(B0, "LEGACY_DEFAULT_ALLOW_MAX_ROWS", 3)
+    data = _full_house()
+    # 3 个无覆盖用户 × 2 张表 = 6 > 3
+    data["users"] = [
+        {"id": 201, "is_superuser": False, "roles": []},
+        {"id": 202, "is_superuser": False, "roles": []},
+        {"id": 203, "is_superuser": False, "roles": []},
+    ]
+    B, store = _wire(monkeypatch, **data)
+
+    result = asyncio.run(B.backfill_policies())
+
+    assert not _by_name(store.policies, "legacy_default_allow")
+    assert store.migrations == [] or all(
+        s != "legacy_default_allow" for s, _i, _p in store.migrations
+    )
+    skipped = [s for s in result["skipped"] if s["source"] == "legacy_default_allow"]
+    assert skipped and "legacy_default_allow rows > 3" in skipped[0]["reason"]
+    assert result["by_source"]["legacy_default_allow"] == {"users": 0, "rows": 0}
 
 
 def test_system_tables_included_in_upper_bound_only(monkeypatch):
@@ -270,6 +342,7 @@ def test_system_tables_included_in_upper_bound_only(monkeypatch):
         monkeypatch,
         system_tables=["sys_user"],
         assets=["t_not_in_system"],
+        users=[{"id": 201, "is_superuser": False, "roles": []}],
     )
 
     asyncio.run(B.backfill_policies())
@@ -437,7 +510,14 @@ def test_by_source_covers_all_five_sources(monkeypatch):
         "ai_ont_row_policy",
         "legacy_default_allow",
     }
-    assert all(v >= 1 for v in result["by_source"].values())
+    assert result["by_source"]["legacy_default_allow"] == {"users": 1, "rows": 2}
+    for source in (
+        "ai_data_domain",
+        "ai_access_rule",
+        "ai_query_asset_columns",
+        "ai_ont_row_policy",
+    ):
+        assert result["by_source"][source] >= 1, source
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +550,7 @@ def test_backfill_on_real_db_is_idempotent(test_client, db_run):
 
     sfx = uuid.uuid4().hex[:6]
     dom_code = f"t8{sfx}"
+    u_free_name, u_dom_name = f"t8u{sfx}", f"t8d{sfx}"
     t_dom_a, t_dom_b = f"t8_{sfx}_a", f"t8_{sfx}_b"
     t_abac = f"t8_{sfx}_abac"
     t_sec = f"t8_{sfx}_sec"
@@ -485,12 +566,15 @@ def test_backfill_on_real_db_is_idempotent(test_client, db_run):
                 "DELETE FROM ai_access_rule WHERE value='T8ROLE'",
                 "DELETE FROM ai_query_asset_columns WHERE table_name=:sec",
                 "DELETE FROM ai_query_assets WHERE table_name=:obj",
+                "DELETE FROM sys_user WHERE username=:u1 OR username=:u2",
             ):
                 params = {
                     "oc": t_obj,
                     "code": dom_code,
                     "sec": t_sec,
                     "obj": t_obj,
+                    "u1": u_free_name,
+                    "u2": u_dom_name,
                 }
                 try:
                     await db.execute(text(sql), params)
@@ -500,9 +584,31 @@ def test_backfill_on_real_db_is_idempotent(test_client, db_run):
     async def _run():
         from sqlalchemy import text as _text
 
+        from app.api.v1.module_system.user.model import UserModel
+
         await _cleanup()
         try:
             async with async_db_session.begin() as db:
+                # 两个用户：一个"无域无 ABAC"（该拿兜底），一个域成员（**不许**拿）。
+                # 域成员若也拿到兜底，等于 enforce 后域隔离被抹平 —— 这是本用例要守的线。
+                u_free = UserModel(
+                    username=u_free_name,
+                    password="x",
+                    name="t8无域用户",
+                    is_superuser=False,
+                    is_deleted=False,
+                )
+                u_dom = UserModel(
+                    username=u_dom_name,
+                    password="x",
+                    name="t8域内用户",
+                    is_superuser=False,
+                    is_deleted=False,
+                )
+                db.add_all([u_free, u_dom])
+                await db.flush()
+                free_id, dom_id = int(u_free.id), int(u_dom.id)
+
                 # 本体行策略表在 SQLite 上不会被启动建表建出来（DDL 是 PG 方言，
                 # ontology 侧 best-effort 建表会跳过）；这里按方言翻译后自己建一次。
                 from app.plugin.module_ai.ontology.service import _ONT_TABLES_SQL
@@ -515,9 +621,13 @@ def test_backfill_on_real_db_is_idempotent(test_client, db_run):
                 await db.execute(
                     _text(
                         "INSERT INTO ai_data_domain (name, code, tables, members, enabled, "
-                        "is_deleted) VALUES ('t8域', :code, :tables, '[]', true, false)"
+                        "is_deleted) VALUES ('t8域', :code, :tables, :members, true, false)"
                     ),
-                    {"code": dom_code, "tables": f'["{t_dom_a}", "{t_dom_b}"]'},
+                    {
+                        "code": dom_code,
+                        "tables": f'["{t_dom_a}", "{t_dom_b}"]',
+                        "members": f"[{dom_id}]",
+                    },
                 )
                 await db.execute(
                     _text(
@@ -569,11 +679,11 @@ def test_backfill_on_real_db_is_idempotent(test_client, db_run):
                 mig = (
                     await db.execute(_text("SELECT count(*) FROM ai_policy_migration"))
                 ).scalar()
-            return first, second, rows, mig
+            return first, second, rows, mig, free_id, dom_id
         finally:
             await _cleanup()
 
-    first, second, rows, mig = db_run(_run())
+    first, second, rows, mig, free_id, dom_id = db_run(_run())
 
     assert first["created"] > 0, first
     assert second["created"] == 0, second
@@ -602,6 +712,13 @@ def test_backfill_on_real_db_is_idempotent(test_client, db_run):
     assert obj[1] == "table" and obj[2] == "allow"
     assert obj[5] == "dept_id = $attr.dept"
 
-    # 兜底 allow：系统白名单里至少 sys_user
-    assert "sys_user" in by_code
-    assert by_code["sys_user"][0][7] == "legacy_default_allow"
+    # 兜底 allow：按用户发 —— 无域无 ABAC 的用户拿到，**域成员绝不拿**（否则域隔离被抹平）
+    user_rows = [r for r in rows if r[3] == "user"]
+    subjects = {r[4] for r in user_rows}
+    assert str(free_id) in subjects, f"无域用户 {free_id} 没拿到兜底 allow：{subjects}"
+    assert str(dom_id) not in subjects, f"域成员 {dom_id} 不该拿到兜底 allow：{subjects}"
+    assert all(r[7] == "legacy_default_allow" for r in user_rows)
+    free_rows = [r for r in user_rows if r[4] == str(free_id)]
+    assert "sys_user" in {r[0] for r in free_rows}
+    assert first["by_source"]["legacy_default_allow"]["users"] >= 1
+    assert first["by_source"]["legacy_default_allow"]["rows"] >= 1

@@ -16,8 +16,14 @@
 ABAC 规则     ``allow`` + ``subject_kind=role``、``subject_value=<角色码>``
 敏感列        一条 ``deny``（同表多列合成 ``columns``）+ ``marking=sensitive``
 对象行策略    物理表上的 ``allow``（``condition`` 语法对齐后搬迁）
-未配置即全表  ``legacy_default_allow``：逐表一条 ``everyone`` 无条件 allow
+未配置即全表  ``legacy_default_allow``：只给「不在任何数据域、也没有命中角色的
+              ABAC 规则」的存量用户，逐表一条 ``subject_kind=user`` 的 allow
 ===========  ===============================================================
+
+为什么兜底**按用户**而不是 ``everyone``：旧逻辑里「属于某数据域 → 只能查域内表」是
+**收紧**，而新模型是 allow 并集。一条 ``everyone`` 的全表 allow 会把域隔离整体抹平 ——
+enforce 当天域成员就能查全表，这是**越权**，不能靠"shadow 期人工收窄"兜底。
+所以兜底只发给"旧逻辑里本来就未配置 → 全表"的那批人（``subject_kind=user``）。
 
 为什么**每个域/规则按表拆成多行**：``ai_policy`` 一行只有一个 ``resource_code``，
 引擎也是逐表匹配（``decide_table``）。一条 allow 覆盖不了表集合 —— 把表清单塞进
@@ -86,8 +92,15 @@ LEGACY_DEFAULT_ALLOW_NAME = "legacy_default_allow"
 
 #: 兜底 allow 的统一说明（控制者裁决第 2 条要求写明"确认后可删除"）。
 LEGACY_DEFAULT_ALLOW_DESC = (
-    "迁移期兜底：未配置域/ABAC 的存量用户沿用旧的全表白名单；确认后可删除"
+    "legacy_default_allow：迁移期兜底，仅限无域/无 ABAC 的存量用户；确认后可删除"
 )
+
+#: 兜底 allow 的行数上限：超过就不硬写（先让管理员把域/ABAC 配齐）。
+#:
+#: 为什么必须有：兜底是「用户 × 表」的笛卡尔积。dev 库 60 余个可查表 × 40 个存量用户
+#: 就是 2400 行，硬写进去既难治理也会把策略表撑大；而且**行数爆炸本身就是信号**：
+#: 说明域/ABAC 根本没配，应该先治理再迁移，而不是把"全员全表"写死成几百条策略。
+LEGACY_DEFAULT_ALLOW_MAX_ROWS = 2000
 
 #: ``VARCHAR(120)`` / ``VARCHAR(255)`` 的截断长度（超长在 PG 上会整条 INSERT 失败）。
 _NAME_MAX = 120
@@ -137,6 +150,26 @@ def _skip(skipped: list[dict], source: str, reason: str, **extra) -> None:
     item = {"source": source, "reason": reason, **extra}
     skipped.append(item)
     log.warning("[问数权限][迁移] 跳过 {}：{}（{}）", source, reason, extra or "-")
+
+
+def _group_users(rows) -> list[dict]:
+    """``(id, is_superuser, role_code)`` 的 LEFT JOIN 结果 → 按用户聚合。
+
+    没有角色的用户也会有一行（role_code 为 ``None``），聚合后 ``roles=[]`` ——
+    这类用户恰恰是最需要兜底 allow 的（既不属域、也没有 ABAC 命中）。
+    """
+    grouped: dict[str, dict] = {}
+    for uid, is_super, code in rows or ():
+        key = _text(uid)
+        if not key:
+            continue
+        item = grouped.setdefault(
+            key, {"id": uid, "is_superuser": bool(is_super), "roles": []}
+        )
+        role = _text(code)
+        if role and role.upper() not in {r.upper() for r in item["roles"]}:
+            item["roles"].append(role)
+    return list(grouped.values())
 
 
 def _policy_row(
@@ -477,30 +510,90 @@ def plan_row_policies(
     return planned
 
 
-def plan_legacy_default_allow(tables) -> list[dict]:
-    """``_system_allowed()`` 全集 → 逐表一条 ``everyone`` 无条件 allow（兜底）。
+def plan_legacy_default_allow(
+    users,
+    domains,
+    abac_policies,
+    tables,
+    skipped: list[dict],
+) -> list[dict]:
+    """给**真正需要兜底**的用户逐表建 ``everyone``→``user`` 的 allow。
 
-    为什么不是"一条 allow 带表清单"：``columns`` 语义是列，塞表名会让策略静默失效；
-    ``resource_code`` 一行只能一个表。所以按表逐条建，``name`` 统一为
-    ``legacy_default_allow``（brief 要求），``priority=1``（最低，便于治理页排序）。
+    为什么不再用 ``everyone``（越权）：旧逻辑里「属于某数据域 → 只能查域内表」是**收紧**，
+    而新模型是 allow 并集 —— 一条 ``everyone`` 的全表 allow 会把域隔离整体抹平，
+    enforce 当天域成员就能查全表。所以兜底**只发给**：
+
+    - 不在任何**已迁出策略的启用数据域**成员里，且
+    - 没有任何命中其角色的**已迁出策略的启用 ABAC 规则**。
+
+    这两类用户本来就「未配置 → 全表」，给他们 ``subject_kind=user`` 的兜底才等价。
+    超管不建（引擎直接 bypass，建了也是废行）。
+
+    每张表一条（``columns`` 是列不是表，塞表清单会让策略静默失效）。
+    ``(用户数 × 表数) > LEGACY_DEFAULT_ALLOW_MAX_ROWS`` 时**一条都不写**，
+    只返回一条 ``skipped`` 让管理员先配域/ABAC —— 防爆比"先给上"更重要。
     """
-    planned: list[dict] = []
-    for table in _dedupe(tables):
-        planned.append(
-            {
-                "source": "legacy_default_allow",
-                "source_table": "legacy_default_allow",
-                "source_id": table.lower(),
-                "values": _policy_row(
-                    name=LEGACY_DEFAULT_ALLOW_NAME,
-                    description=LEGACY_DEFAULT_ALLOW_DESC,
-                    resource_code=table,
-                    effect="allow",
-                    subject_kind="everyone",
-                    priority=1,
-                ),
-            }
+    table_list = _dedupe(tables)
+    covered: set[str] = set()
+
+    # 域成员：只有真正迁出了 allow 的域（有 code、有 tables）才算"被覆盖"
+    for dom in domains or ():
+        if not _text(dom.get("code")):
+            continue  # 没 code 迁不出 domain 策略 → 其成员仍需兜底（否则会被锁死）
+        if not _dedupe(_as_list(dom.get("tables"))):
+            continue  # 空表域在旧逻辑里也不收紧（falsy → 落到 ABAC/全表）
+        covered.update(_text(uid) for uid in _as_list(dom.get("members")) if _text(uid))
+
+    # ABAC 覆盖：按**已迁出的 role 策略**算（被跳过的规则等于没覆盖）
+    covered_roles = {
+        _text(item["values"].get("subject_value")).upper()
+        for item in abac_policies or ()
+        if _text(item["values"].get("subject_kind")) == "role"
+    }
+    eligible: list[str] = []
+    for user in users or ():
+        uid = _text(user.get("id"))
+        if not uid or user.get("is_superuser"):
+            continue
+        if uid in covered:
+            continue
+        roles = {_text(r).upper() for r in (user.get("roles") or ()) if _text(r)}
+        if roles & covered_roles:
+            continue
+        eligible.append(uid)
+
+    total = len(eligible) * len(table_list)
+    if total > LEGACY_DEFAULT_ALLOW_MAX_ROWS:
+        _skip(
+            skipped,
+            "legacy_default_allow",
+            f"legacy_default_allow rows > {LEGACY_DEFAULT_ALLOW_MAX_ROWS}，"
+            f"请先配置数据域/ABAC 再迁移（本次 {len(eligible)} 用户 × "
+            f"{len(table_list)} 表 = {total} 行）",
         )
+        return []
+
+    planned: list[dict] = []
+    for uid in eligible:
+        for table in table_list:
+            planned.append(
+                {
+                    "source": "legacy_default_allow",
+                    "source_table": "legacy_default_allow",
+                    # 幂等键：用户 + 表（换用户不会互相顶掉，换表也不会被误判"已迁移"）
+                    "source_id": f"{uid}:{table.lower()}",
+                    "user_id": int(uid) if uid.isdigit() else None,
+                    "values": _policy_row(
+                        name=LEGACY_DEFAULT_ALLOW_NAME,
+                        description=f"{LEGACY_DEFAULT_ALLOW_DESC}（uid={uid}）",
+                        resource_code=table,
+                        effect="allow",
+                        subject_kind="user",
+                        subject_value=uid,
+                        priority=1,
+                    ),
+                }
+            )
     return planned
 
 
@@ -536,7 +629,7 @@ class _DbStore:
 
         domain_rows = await _safe(
             "ai_data_domain",
-            "SELECT id, name, code, tables FROM ai_data_domain "
+            "SELECT id, name, code, tables, members FROM ai_data_domain "
             "WHERE enabled=true AND is_deleted=false ORDER BY id",
         )
         rule_rows = await _safe(
@@ -559,6 +652,16 @@ class _DbStore:
             "ai_query_assets",
             "SELECT table_name FROM ai_query_assets WHERE is_deleted=false ORDER BY id",
         )
+        # 兜底 allow 要按**用户**发（不能 everyone，否则抹平域隔离）：需要「用户 → 角色码」。
+        # LEFT JOIN 的写法让"没有任何角色的用户"也返回一行（code 为 NULL）。
+        user_rows = await _safe(
+            "sys_user",
+            "SELECT u.id, COALESCE(u.is_superuser,false), r.code "
+            "FROM sys_user u "
+            "LEFT JOIN sys_user_roles ur ON ur.user_id = u.id "
+            "LEFT JOIN sys_role r ON r.id = ur.role_id "
+            "WHERE u.is_deleted = false ORDER BY u.id",
+        )
         # 迁移台账：首次运行（表还不存在）读不到属正常，不当错误上报
         migration_rows = (
             await self._rows("SELECT source_table, source_id FROM ai_policy_migration")
@@ -568,7 +671,7 @@ class _DbStore:
 
         object_table: dict[str, str] = {}
         try:
-            from ..ontology import semantic
+            from ...ontology import semantic
 
             object_table = dict(await semantic.object_table_map())
         except Exception as e:  # noqa: BLE001
@@ -591,6 +694,7 @@ class _DbStore:
                     "name": r[1],
                     "code": r[2],
                     "tables": r[3],
+                    "members": r[4],
                 }
                 for r in domain_rows
             ],
@@ -623,6 +727,7 @@ class _DbStore:
             "asset_tables": {_text(r[0]) for r in asset_rows if _text(r[0])},
             "object_table": object_table,
             "system_tables": system_tables,
+            "users": _group_users(user_rows),
             "migrations": [
                 {"source_table": r[0], "source_id": r[1]} for r in migration_rows
             ],
@@ -700,12 +805,14 @@ async def backfill_policies(dry_run: bool = False) -> dict:
     - ``skipped``：没迁成的条目（``{"source", "reason", "id"/"object_code"...}``），
       每条都配一条 ``log.warning``；
     - ``by_source``：五类来源各自新建了多少条（固定键，含 0）。
+      ``legacy_default_allow`` 是唯一的结构化项：``{"users": n, "rows": m}``
+      （行是「用户 × 表」的笛卡尔积，只看行数看不出影响面）。
 
     ``dry_run=True`` 只规划、不写库（**连迁移表都不建**），用于切 enforce 前评估影响面。
     """
     store = _make_store()
     skipped: list[dict] = []
-    by_source: dict[str, int] = dict.fromkeys(SOURCES, 0)
+    by_source: dict[str, Any] = dict.fromkeys(SOURCES, 0)
 
     if not dry_run:
         await store.ensure_migration_table()
@@ -719,17 +826,25 @@ async def backfill_policies(dry_run: bool = False) -> dict:
         for m in (data.get("migrations") or ())
     }
 
-    planned: list[dict] = []
-    planned += plan_domains(data.get("domains") or (), skipped)
-    planned += plan_access_rules(data.get("access_rules") or (), skipped)
+    domain_planned = plan_domains(data.get("domains") or (), skipped)
+    abac_planned = plan_access_rules(data.get("access_rules") or (), skipped)
 
     asset_tables = set(data.get("asset_tables") or ())
     code_to_table = build_object_table_map(data.get("object_table") or {}, asset_tables)
+    planned: list[dict] = list(domain_planned) + list(abac_planned)
     planned += plan_row_policies(
         data.get("row_policies") or (), code_to_table, asset_tables, skipped
     )
     planned += plan_sensitive_columns(data.get("sensitive_columns") or (), skipped)
-    planned += plan_legacy_default_allow(data.get("system_tables") or ())
+    # 兜底 allow **按用户**发（everyone 会抹平域隔离）：只给"域/ABAC 都覆盖不到"的存量用户。
+    # 域/ABAC 的"覆盖范围"必须用**已迁出的策略**算（被跳过的规则等于没覆盖）。
+    default_planned = plan_legacy_default_allow(
+        data.get("users") or (),
+        data.get("domains") or (),
+        abac_planned,
+        data.get("system_tables") or (),
+        skipped,
+    )
 
     created = 0
     for item in planned:
@@ -738,14 +853,31 @@ async def backfill_policies(dry_run: bool = False) -> dict:
             continue
         existing.add(key)
         source = item["source"]
-        if dry_run:
-            created += 1
-            by_source[source] = by_source.get(source, 0) + 1
-            continue
-        policy_id = await store.insert_policy(item["values"])
-        await store.record_migration(key[0], key[1], policy_id)
+        if not dry_run:
+            policy_id = await store.insert_policy(item["values"])
+            await store.record_migration(key[0], key[1], policy_id)
         created += 1
         by_source[source] = by_source.get(source, 0) + 1
+
+    # 兜底 allow 单独记账：``{"users": 覆盖/新建的用户数, "rows": 新建行数}``
+    # （行是「用户 × 表」的笛卡尔积，只报行数看不出影响面）
+    default_users: set = set()
+    default_rows = 0
+    for item in default_planned:
+        key = (item["source_table"], item["source_id"])
+        if key in existing:
+            continue
+        existing.add(key)
+        if not dry_run:
+            policy_id = await store.insert_policy(item["values"])
+            await store.record_migration(key[0], key[1], policy_id)
+        default_rows += 1
+        default_users.add(item.get("source_id", "").split(":", 1)[0])
+        created += 1
+    by_source["legacy_default_allow"] = {
+        "users": len(default_users),
+        "rows": default_rows,
+    }
 
     log.info(
         "[问数权限][迁移] {}完成：新建 {} 条，跳过 {} 条，明细 {}",
