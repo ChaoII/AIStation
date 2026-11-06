@@ -208,7 +208,7 @@ def _policy_row(
 # ---------------------------------------------------------------------------
 # 行条件语法对齐：旧表达式是 Python 语法 + ``user.*`` 取值，引擎用的是 SQL 风格占位符
 # ---------------------------------------------------------------------------
-#: ``user.attribute('dept')`` → ``$attr.dept``。
+#: ``user.attribute('dept')`` → ``$attr.dept_id``（经 ``_USER_ATTR_MAP`` 映射）。
 _ATTR_CALL_RE = re.compile(r"user\.attribute\(\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\)")
 #: ``user.id`` / ``user.dept`` 这类直接取值。
 _USER_DOT_RE = re.compile(r"\buser\.([A-Za-z_][A-Za-z0-9_]*)")
@@ -232,8 +232,14 @@ def translate_condition(expression: str) -> str | None:
 
     只做两件事，语义一字不改：
 
-    1. 占位符对齐：``user.attribute('dept')`` → ``$attr.dept``、``user.id`` → ``$user.id``；
+    1. 占位符对齐：``user.attribute('dept')`` → ``$attr.dept_id``（见 ``_USER_ATTR_MAP``）、
+       ``user.id`` → ``$user.id``；
     2. 比较运算符对齐：``==`` → ``=``（引擎把条件交给 SQL 编译器下推，``==`` 不是 SQL）。
+
+    ⚠️ 属性**必须走映射**：``Principal`` 只加载 ``dept_id``（``principal._ATTR_COLUMNS``），
+    直接把属性名拼成 ``$attr.dept`` 会永远绑不上 → 条件永不成立 → 迁移后整表 deny
+    （2026-11 复审 I3）。映射表里没有的属性同样返回 ``None``：宁可不迁并留痕，
+    也不能固化一个永不成立的条件。
 
     ``user.role('ADMIN')`` / ``user.superuser`` 这类**主体判定**没有对应的行条件写法
     （行条件只能看列与属性），返回 ``None`` —— 猜一个近似语义比拒绝更危险。
@@ -241,7 +247,18 @@ def translate_condition(expression: str) -> str | None:
     expr = _text(expression)
     if not expr:
         return ""
-    out = _ATTR_CALL_RE.sub(lambda m: f"$attr.{m.group(2)}", expr)
+
+    def _attr_sub(match) -> str:
+        name = match.group(2)
+        mapped = _USER_ATTR_MAP.get(name)
+        if mapped is None or not mapped.startswith("$attr."):
+            raise _Unsupported(name)
+        return mapped
+
+    try:
+        out = _ATTR_CALL_RE.sub(_attr_sub, expr)
+    except _Unsupported:
+        return None
 
     def _sub(match) -> str:
         name = match.group(1)

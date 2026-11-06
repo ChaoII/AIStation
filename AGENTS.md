@@ -69,6 +69,7 @@ cd backend
 uv run python scripts/query_smoke.py                 # 路由 + 两条真实提问，约 40s
 uv run python scripts/query_smoke.py --routing-only   # 只验路由，约 10s（不构造应用）
 uv run python scripts/query_policy_smoke.py           # 权限网关 + 星号止血，约 20s
+uv run python scripts/query_policy_backfill.py --dry-run  # 旧权限→策略迁移预演（不写库）
 ```
 
 它检查三件事：慢路径依赖的类方法都在、22 条用例的快/慢路由没串（术语抢答、跨表减法、

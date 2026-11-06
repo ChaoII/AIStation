@@ -251,10 +251,33 @@ def test_row_policy_lands_on_physical_table(monkeypatch):
     assert row["resource_code"] == "ont_orders"
     assert row["effect"] == "allow"
     assert row["subject_kind"] == "everyone"
-    # user.attribute('dept') → $attr.dept（引擎占位符）；== → =
-    assert row["condition"] == "dept_id = $attr.dept"
+    # user.attribute('dept') → $attr.dept_id（Principal 只加载 dept_id）；== → =
+    assert row["condition"] == "dept_id = $attr.dept_id"
     # 原表达式留痕，便于治理页人工核对
     assert "dept_id == user.attribute('dept')" in row["description"]
+
+
+def test_translate_condition_maps_attributes_to_loaded_principal_attrs():
+    """I3：``user.attribute('dept')`` 必须映射成 ``$attr.dept_id``。
+
+    Principal 只加载 ``dept_id``（``principal._ATTR_COLUMNS``）；若翻译成
+    ``$attr.dept``，属性永远绑不上 → 条件永不成立 → 迁移后的策略整表 deny。
+    """
+    from app.plugin.module_ai.query.policy.backfill import translate_condition
+
+    assert translate_condition("dept_id == user.attribute('dept')") == (
+        "dept_id = $attr.dept_id"
+    )
+    assert translate_condition("owner == user.id") == "owner = $user.id"
+    assert translate_condition("dept_id == user.dept_id") == "dept_id = $attr.dept_id"
+
+
+def test_translate_condition_skips_unmappable_attribute():
+    """读不到的属性宁可不迁（留痕跳过），也不能固化一个永不成立的条件。"""
+    from app.plugin.module_ai.query.policy.backfill import translate_condition
+
+    assert translate_condition("region == user.attribute('region')") is None
+    assert translate_condition("x == user.attribute('dept2')") is None
 
 
 def test_legacy_default_allow_is_per_user_not_everyone(monkeypatch):
@@ -751,7 +774,7 @@ def test_backfill_on_real_db_is_idempotent(test_client, db_run):
     # 行策略：落到物理表（table）+ 条件语法对齐
     obj = by_code[t_obj][0]
     assert obj[1] == "table" and obj[2] == "allow"
-    assert obj[5] == "dept_id = $attr.dept"
+    assert obj[5] == "dept_id = $attr.dept_id"
 
     # 兜底 allow：按用户发 —— 无域无 ABAC 的用户拿到，**域成员绝不拿**（否则域隔离被抹平）
     user_rows = [r for r in rows if r[3] == "user"]
