@@ -204,214 +204,136 @@ async function feedback() {
 </script>
 
 <style lang="scss" scoped>
-.message-item {
+/* ⚠️ 这些选择器必须是**扁平**的。
+   外壳换成 ChatMessage 之后，`.message-item / .message-content` 两层 DOM 已经不存在了，
+   而原来的规则全嵌在它们下面 —— 结果就是「样式静默失效」（按钮间距、正文样式都不生效），
+   编译不报错、页面也不报错，只能靠量计算样式才发现。 */
+
+/* 反馈图标：与正文拉开距离、彼此留空隙、24px 点击热区 */
+.message-actions {
   display: flex;
-  gap: 16px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding-left: 2px;
+  opacity: 0.55;
+  transition: opacity 0.2s;
 
-  .message-avatar {
-    flex-shrink: 0;
+  &:hover {
+    opacity: 1;
+  }
+}
 
-    .user-avatar {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      font-size: 14px;
-      color: white;
-      background: var(--el-color-primary);
-      border-radius: 6px;
-    }
+.msg-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
 
-    .ai-avatar {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 32px;
-      height: 32px;
-      font-size: 14px;
-      color: white;
-      background: var(--el-color-success);
-      border-radius: 6px;
-    }
+  &:hover {
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
   }
 
-  .message-content {
+  &.is-on {
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+  }
+}
+
+.message-body .message-tools {
+  margin-bottom: 8px;
+}
+
+/* 正文：气泡/底色由 ChatMessage 负责，这里只管排版 */
+.message-text {
+  font-size: var(--el-font-size-base);
+  line-height: 1.6;
+  color: var(--el-text-color-primary);
+  word-wrap: break-word;
+}
+
+.cursor-typing {
+  color: var(--el-color-primary);
+  animation: cursor-blink 0.8s step-end infinite;
+}
+
+.message-source {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  margin: 6px 0;
+  font-size: 12px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+
+  .message-source__icon {
+    color: var(--el-color-primary);
+  }
+
+  .message-source__title {
     flex: 1;
-    min-width: 0;
-
-    .message-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-
-      .sender-name {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--el-text-color-primary);
-      }
-    }
-
-    .message-actions {
-      display: flex;
-      align-items: center;
-      gap: 2px;
-      margin-top: 6px;
-      opacity: 0.55;
-      transition: opacity 0.2s;
-
-      &:hover {
-        opacity: 1;
-      }
-
-      .msg-action {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
-        font-size: 14px;
-        color: var(--el-text-color-secondary);
-        cursor: pointer;
-        transition: all 0.2s;
-
-        &:hover {
-          color: var(--el-color-primary);
-          background: var(--el-color-primary-light-9);
-        }
-
-        &.is-on {
-          color: var(--el-color-primary);
-          background: var(--el-color-primary-light-9);
-        }
-      }
-    }
-
-    .message-body {
-      .message-tools {
-        margin-bottom: 8px;
-      }
-
-      .message-text {
-        font-size: var(--el-font-size-base);
-        line-height: 1.6;
-        color: var(--el-text-color-primary);
-        word-wrap: break-word;
-
-        &.is-user {
-          display: inline-block;
-          padding: 10px 14px;
-          background: var(--el-color-primary-light-9);
-          border: 1px solid var(--el-border-color-light);
-          border-radius: 12px;
-        }
-      }
-
-      .cursor-typing {
-        color: var(--el-color-primary);
-        animation: cursor-blink 0.8s step-end infinite;
-      }
-
-      .message-source {
-        display: flex;
-        gap: 6px;
-        align-items: center;
-        padding: 6px 10px;
-        margin: 6px 0;
-        font-size: 12px;
-        background: var(--el-fill-color-light);
-        border: 1px solid var(--el-border-color-light);
-        border-radius: 6px;
-
-        .message-source__icon {
-          color: var(--el-color-primary);
-        }
-
-        .message-source__title {
-          flex: 1;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .message-source__link {
-          font-size: 12px;
-          color: var(--el-color-primary);
-          text-decoration: none;
-
-          &:hover {
-            text-decoration: underline;
-          }
-        }
-      }
-
-      .message-data {
-        padding: 8px 10px;
-        margin: 6px 0;
-        font-size: var(--el-font-size-small);
-        color: var(--el-text-color-secondary);
-        white-space: pre-wrap;
-        background: var(--el-fill-color-light);
-        border-radius: 6px;
-      }
-
-      .typing-indicator {
-        display: flex;
-        align-items: center;
-        padding: 8px 0;
-
-        .typing-dots {
-          display: flex;
-          gap: 4px;
-
-          span {
-            width: 8px;
-            height: 8px;
-            background: var(--el-text-color-secondary);
-            border-radius: 50%;
-            animation: typing 1.4s infinite ease-in-out;
-
-            &:nth-child(1) {
-              animation-delay: 0s;
-            }
-
-            &:nth-child(2) {
-              animation-delay: 0.2s;
-            }
-
-            &:nth-child(3) {
-              animation-delay: 0.4s;
-            }
-          }
-        }
-      }
-    }
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  &.user {
-    flex-direction: row-reverse;
+  .message-source__link {
+    font-size: 12px;
+    color: var(--el-color-primary);
+    text-decoration: none;
 
-    .message-content {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-
-      .message-header {
-        .sender-name {
-          text-align: right;
-        }
-      }
+    &:hover {
+      text-decoration: underline;
     }
   }
+}
 
-  &.assistant {
-    .message-content {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
+.message-data {
+  padding: 8px 10px;
+  margin: 6px 0;
+  font-size: var(--el-font-size-small);
+  color: var(--el-text-color-secondary);
+  white-space: pre-wrap;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+}
+
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.typing-dots {
+  display: flex;
+  gap: 4px;
+
+  span {
+    width: 8px;
+    height: 8px;
+    background: var(--el-text-color-secondary);
+    border-radius: 50%;
+    animation: typing 1.4s infinite ease-in-out;
+
+    &:nth-child(1) {
+      animation-delay: 0s;
+    }
+
+    &:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    &:nth-child(3) {
+      animation-delay: 0.4s;
     }
   }
 }

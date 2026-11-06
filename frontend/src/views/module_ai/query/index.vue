@@ -1928,8 +1928,13 @@ onMounted(async () => {
   margin-top: 4px;
 }
 
+/* 反馈按钮：与正文拉开、按钮之间留空隙（原来 6px 贴在一起） */
 .ai-query-page .q-msg__fb {
-  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  margin-top: 12px;
 }
 
 /* 顶部提示条压扁 */
