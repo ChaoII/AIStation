@@ -81,6 +81,7 @@ def merge(fragment: AccessPlan, view: str) -> AccessPlan:
         masked=dict(fragment.masked),
         denied=dict(fragment.denied),
         policy_ids=fragment.policy_ids,
+        deny_reason=fragment.deny_reason,
     )
 
 
@@ -257,6 +258,43 @@ def test_unmapped_view_with_unresolvable_entry_is_denied():
     assert DENIED_ALL in plan.denied["v3"]
 
 
+# ---------------------------------------------------------------------------
+# 直传 lineage.py 的真实输出（``upstream`` 是 list[dict]）
+# ---------------------------------------------------------------------------
+def test_lineage_dict_entry_with_protected_base_is_denied():
+    """``{"table": "fuel_price"}`` 必须归一成表级映射，不能当字符串解析失败而放行。"""
+    lineage = {"v_d": [{"table": "fuel_price", "kind": "view", "confidence": 0.9}]}
+
+    plan, tier = resolve_view_policies("v_d", lineage, POLS)
+
+    assert tier == "table"
+    assert plan.row_filters == {}
+    assert DENIED_ALL in plan.denied["v_d"]
+    assert "行条件" in plan.deny_reason
+
+
+def test_lineage_dict_entry_with_unprotected_base_is_permitted():
+    """dict 条目指向没有策略的表 → 没有可施加的映射，放行。"""
+    lineage = {"v_d": [{"table": "unknown_table", "kind": "view"}]}
+
+    plan, tier = resolve_view_policies("v_d", lineage, POLS)
+
+    assert tier == "none"
+    assert not plan.denied
+    assert plan.row_filters == {}
+
+
+def test_lineage_malformed_dict_entry_is_denied_with_policy_ids():
+    """dict 缺 ``table`` / 非字符串 → 不可解析；拒绝时 policy_ids 要能定位策略。"""
+    lineage = {"v_d": [{"kind": "view"}]}
+
+    plan, tier = resolve_view_policies("v_d", lineage, POLS)
+
+    assert tier == "none"
+    assert DENIED_ALL in plan.denied["v_d"]
+    assert plan.policy_ids, "不可解析的整视图拒绝也要带策略 id（审计可追）"
+
+
 def test_view_without_lineage_is_permitted_with_empty_fragment():
     """完全没有血缘记录 → 空片段（不改变调用方判定），tier 记 none 供审计。"""
     plan, tier = resolve_view_policies("v4", {}, POLS)
@@ -293,6 +331,62 @@ def test_multiple_bases_with_different_row_conditions_are_denied():
 
     assert tier == "column"
     assert DENIED_ALL in plan.denied["v_join"]
+
+
+def test_mixed_granularity_with_row_condition_is_denied():
+    """混合粒度（一张到列、一张只到表）+ 行条件 → 拒绝：三值里没有 mixed。"""
+    pols = [
+        pol("allow", "fuel_price", condition="dept_id = 3"),
+        pol("allow", "coal_price"),
+    ]
+    lineage = {"v_mix": ["fuel_price.dept_id", "coal_price"]}
+
+    plan, tier = resolve_view_policies("v_mix", lineage, pols)
+
+    assert tier == "table"
+    assert plan.row_filters == {}, "tier=table 时不允许出现行条件"
+    assert DENIED_ALL in plan.denied["v_mix"]
+    assert "混合粒度" in plan.deny_reason
+
+    # 拒绝原因要能透传到编译器（审计/explain 用）
+    decision = rewrite("select dept_id from v_mix", merge(plan, "v_mix"))
+    assert not decision.permit
+    assert "混合粒度" in decision.reason
+
+
+def test_wildcard_mapping_with_column_deny_is_denied():
+    """``表.*`` 只声明"整表列都暴露"，列级 deny 无法精确落地 → 拒绝。"""
+    pols = [pol("allow", "fuel_price"), pol("deny", "fuel_price", columns=("phone",))]
+    plan, tier = resolve_view_policies("v_w", {"v_w": ["fuel_price.*"]}, pols)
+
+    assert tier == "column"
+    assert DENIED_ALL in plan.denied["v_w"]
+
+
+def test_cross_base_deny_wins_over_mask_without_contradiction():
+    """同一视图列被 A 基表 deny、B 基表 mask：deny 优先，不产生 mask/allowed 自相矛盾。"""
+    pols = [
+        pol("allow", "fuel_price"),
+        pol("deny", "fuel_price", columns=("phone",)),
+        pol("allow", "coal_price"),
+        pol("mask", "coal_price", columns=("phone",), mask_expr="'***'"),
+    ]
+    lineage = {
+        "v_c": [
+            "fuel_price.phone",
+            "fuel_price.price",
+            "coal_price.phone",
+            "coal_price.price",
+        ]
+    }
+
+    plan, tier = resolve_view_policies("v_c", lineage, pols)
+
+    assert tier == "column"
+    assert "phone" in (plan.denied["v_c"] or frozenset())
+    assert not (plan.masked.get("v_c") or {}).get("phone"), "deny 列不应再配掩码"
+    assert "phone" not in (plan.allowed_columns["v_c"] or ())
+    assert plan.allowed_columns["v_c"] == ("price",)
 
 
 def test_case_and_schema_are_normalized():

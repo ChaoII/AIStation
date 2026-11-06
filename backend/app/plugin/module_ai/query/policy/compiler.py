@@ -107,6 +107,9 @@ class AccessPlan:
     denied: dict[str, frozenset[str]]
     #: 实际参与本次计划的策略 id（``build_plan`` 填，``rewrite`` 透传进 ``Decision``）。
     policy_ids: tuple[int, ...] = ()
+    #: 整表/整视图拒绝的原因（仅审计与提示用，不参与判定）。视图血缘三级降级会填
+    #: 「混合粒度无法安全套用行条件」这类说明；``rewrite`` 拒绝时并入 ``Decision.reason``。
+    deny_reason: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -892,7 +895,9 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                     False, f"表 {table_id} 不在访问计划内，按拒绝处理（fail-closed）"
                 )
             if DENIED_ALL in (plan.denied.get(table_id) or frozenset()):
-                return Decision(False, f"表 {table_id} 被策略拒绝（deny）")
+                reason = f"表 {table_id} 被策略拒绝（deny）"
+                note = str(getattr(plan, "deny_reason", "") or "").strip()
+                return Decision(False, f"{reason}：{note}" if note else reason)
 
         # 作用域链：相关子查询里的列可能属于外层真实表（无别名时无法精确判定，
         # 保守地把外层表也算进候选——宁可误拒，也不放过 deny 列）。

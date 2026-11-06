@@ -26,14 +26,20 @@ tier       触发条件                                       施加到视图上
 - ``"表"``：只映射到表（tier=table）；``public.表`` 同样按表处理；
 - ``"表.列"``：视图暴露该基表的**同名列**（tier=column）；
 - ``"表.*"``：该基表所有同名列都暴露（列清单不可枚举，星号保留）；
-- ``"unknown"`` / ``"?"`` / 空段：血缘推断失败的占位，**不是真实表名**（tier=none）。
+- ``"unknown"`` / ``"?"`` / 空段：血缘推断失败的占位，**不是真实表名**（tier=none）；
+- ``dict`` 条目：取 ``table`` 字段（``lineage.py`` 的 ``upstream`` 就是这个形状），
+  按**表级**处理；缺 ``table`` / 非字符串 / 其它类型 → 不可解析（同占位处理）。
+
+⚠️ ``lineage.py`` 的 ``upstream`` 只有表级信息（``{"table": ...}``），直传只能到
+``table``；列级映射需要调用方另外提供「基表.列」条目（列级血缘）。
 
 返回值
 ------
 ``AccessPlan`` 是**补充片段**：只包含从基表推导出的限制，调用方叠加到"视图自身"的
 计划条目上（视图自己的策略仍由 ``build_plan`` 判定）。``tier == "none"`` 且放行时
 片段为空（不改变调用方判定）；拒绝时 ``denied[视图] = {"*"}`` —— 键是**视图**，
-因为最终 SQL 引用的是视图名。
+因为最终 SQL 引用的是视图名；拒绝原因写进 ``AccessPlan.deny_reason``，
+``compiler.rewrite`` 会把它并入 ``Decision.reason``（审计/explain 可直接读）。
 
 几条硬约定
 ----------
@@ -43,7 +49,11 @@ tier       触发条件                                       施加到视图上
   （编译期）负责；未绑定的占位符会被 :func:`compiler.rewrite` 拒绝（fail-closed）。
 - **多基表行条件不合并**：一份视图条件表达不了两张表各自的过滤（T9 Ruling：
   跨表 ``OR`` 会静默丢表）→ 拒绝。
-- **列冲突按拒绝**：同一视图列被两张基表映射成不同掩码 → 无法判定归属 → 拒绝。
+- **混合粒度不施加行条件**：一张基表到了列、另一张只到表时，``tier`` 只能是 ``table``
+  （三值里没有 mixed），而 table 级按约定**不出现行条件** → 整视图拒绝，原因
+  ``REASON_MIXED``（不伪造、也不把表级 allow 当行过滤放行）。
+- **列冲突按拒绝**：同一视图列被两张基表映射成不同掩码 → 无法判定归属 → 拒绝；
+  deny 优先于 mask（跨基表也一样，不会再给 deny 列挂掩码）。
 - 纯逻辑：不读库、不解析真实视图定义，``PYTEST_NO_APP=1`` 可单测。
 """
 
@@ -76,6 +86,14 @@ _SCHEMA_PREFIXES = frozenset({"public", "dbo", "ai", "information_schema", "pg_c
 #: 本模块只处理表/视图策略（与 engine 的 Ruling 一致）。
 _RESOURCE_KINDS = frozenset({"table", "view"})
 
+#: 整视图拒绝的原因：写进 ``AccessPlan.deny_reason``，``rewrite`` 会并入 ``Decision.reason``
+#: （审计/explain 直接可读，不靠人猜为什么拒）。
+REASON_UNRESOLVABLE = "视图血缘不可解析，无法证明不依赖受保护的表"
+REASON_MIXED = "混合粒度无法安全套用行条件"
+REASON_TABLE_ROW = "视图只映射到表，无法安全套用行条件"
+REASON_TABLE_COLUMN = "视图只映射到表，无法排除列级限制/标记列被暴露"
+REASON_MULTI_ROW = "多张基表的行条件无法合并成一份视图条件"
+
 
 # ---------------------------------------------------------------------------
 # 小工具
@@ -100,7 +118,7 @@ def _empty_plan(policy_ids=()) -> AccessPlan:
     )
 
 
-def _deny_plan(view_key: str, policy_ids=()) -> AccessPlan:
+def _deny_plan(view_key: str, policy_ids=(), reason: str = "") -> AccessPlan:
     """整视图拒绝：键是视图名（SQL 里引用的就是它）。"""
     return AccessPlan(
         row_filters={},
@@ -108,6 +126,7 @@ def _deny_plan(view_key: str, policy_ids=()) -> AccessPlan:
         masked={},
         denied={view_key: frozenset({DENIED_ALL})},
         policy_ids=tuple(policy_ids),
+        deny_reason=reason,
     )
 
 
@@ -170,14 +189,32 @@ def _parse_entry(entry) -> tuple[str, str | None] | None:
     return (table, _lower(column))
 
 
-def _lineage_entries(view_key: str, lineage) -> list[str]:
-    """取该视图的血缘条目（键按 ``_table_key`` 归一：大小写 / schema 不敏感）。"""
+def _entry_text(item) -> str | None:
+    """血缘条目归一：
+
+    - ``str`` → 原样；
+    - ``dict`` → 取 ``table`` 字段（``lineage.py`` 的 ``upstream`` 就是这个形状）；
+    - 其它 / 缺 ``table`` / 非字符串 → ``None``（不可解析，按"上游存在但认不出"处理）。
+    """
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        table = item.get("table")
+        return table if isinstance(table, str) and table.strip() else None
+    return None
+
+
+def _lineage_entries(view_key: str, lineage) -> list[str | None]:
+    """取该视图的血缘条目（键按 ``_table_key`` 归一：大小写 / schema 不敏感）。
+
+    条目只做"取出"，不做解析 —— ``None`` 表示这条无法归一（见 :func:`_entry_text`）。
+    """
     for key, value in (lineage or {}).items():
         if _table_key(key) != view_key:
             continue
-        if isinstance(value, str):
-            return [value]
-        return [str(item) for item in (value or ())]
+        if isinstance(value, str) or isinstance(value, dict):
+            value = [value]
+        return [_entry_text(item) for item in (value or ())]
     return []
 
 
@@ -300,7 +337,7 @@ def resolve_view_policies(
         # 「上游存在但认不出来」≠「没有上游」：只要库里有策略，就无法证明视图不依赖
         # 受保护的表 → fail-closed（审计 tier=none 可见）。
         if entries:
-            return _deny_plan(view_key), "none"
+            return _deny_plan(view_key, _unique_ids(entries), REASON_UNRESOLVABLE), "none"
         return _empty_plan(), "none"
 
     # 基表顺序按血缘出现顺序（稳定输出，便于测试与审计）
@@ -325,6 +362,7 @@ def resolve_view_policies(
     masked_columns: dict[str, str] = {}
     used: list[Policy] = []
     deny_view = False
+    deny_reason = ""
 
     for table in protected:
         base_policies = by_table[table]
@@ -340,6 +378,7 @@ def resolve_view_policies(
         if table_denies:
             used.extend(table_denies)
             deny_view = True
+            deny_reason = f"基表 {table} 被表级 deny 拒绝"
             continue
 
         allows = [policy for policy in base_policies if _effect(policy) == "allow"]
@@ -347,6 +386,7 @@ def resolve_view_policies(
             # 没有任何适用的 allow → 默认拒绝（引擎口径），视图同样不可用。
             used.extend(base_policies)
             deny_view = True
+            deny_reason = f"基表 {table} 没有任何适用的 allow 策略（默认拒绝）"
             continue
 
         used.extend(allows)
@@ -357,6 +397,7 @@ def resolve_view_policies(
             # 无法证明视图暴露了条件列，写上去就是"假装过滤"。
             if any(conditions):
                 deny_view = True
+                deny_reason = REASON_TABLE_ROW
                 continue
             # 基表带标记（敏感）+ 映射不到列 → 无法证明视图没暴露标记列
             marking = next(
@@ -375,6 +416,7 @@ def resolve_view_policies(
             )
             if marking or column_restricted:
                 deny_view = True
+                deny_reason = REASON_TABLE_COLUMN
             continue
 
         # 一级：列可映射
@@ -384,6 +426,7 @@ def resolve_view_policies(
             condition = union_condition(conditions)
             if not _check_expr_columns(condition, exposed_set):
                 deny_view = True  # 条件列没被视图暴露 / 带基表限定 → 不伪造
+                deny_reason = f"基表 {table} 的行条件无法映射到视图列"
                 continue
             row_conditions.append((table, condition))
 
@@ -398,6 +441,7 @@ def resolve_view_policies(
         if exposed is None:
             # 整表列映射（``表.*``）但列清单不可枚举：列级限制无法精确落地 → 拒绝。
             deny_view = True
+            deny_reason = f"基表 {table} 的列级限制无法在整表列映射下落地"
             continue
         for name in exposed:
             low = name.lower()
@@ -410,6 +454,10 @@ def resolve_view_policies(
                 denied_columns.add(name)
                 masked_columns.pop(name, None)  # deny 优先于 mask
                 continue
+            if name in denied_columns:
+                # 别的基表已把这一视图列 deny 了：deny 优先，不再挂掩码
+                # （否则会出现 allowed_columns 里没有它、masked 里却有它的自相矛盾）。
+                continue
             masks = [
                 policy
                 for policy in column_policies
@@ -421,21 +469,29 @@ def resolve_view_policies(
             expr = str(getattr(masks[0], "mask_expr", "") or "").strip()
             if not expr or not _check_expr_columns(expr, exposed_set):
                 deny_view = True  # 空掩码 / 引用未暴露列 → 不能生成非法 SQL
+                deny_reason = f"基表 {table} 的掩码表达式无法安全套用到视图"
                 break
             previous = masked_columns.get(name)
             if previous and previous != expr:
                 deny_view = True  # 同一视图列被两张基表配了不同掩码，无法判定
+                deny_reason = f"视图列 {name} 来自多张基表且掩码不一致"
                 break
             masked_columns[name] = expr
 
     policy_ids = _unique_ids(used)
 
+    if not deny_view and row_conditions and tier != "column":
+        # 混合粒度：一张基表到了列、另一张只到表。tier 三值里没有 mixed，
+        # 而"table 级只套 allow/deny"又要求不出现行条件 → 整视图拒绝（不许假装过滤）。
+        deny_view = True
+        deny_reason = REASON_MIXED
+
     if deny_view:
-        return _deny_plan(view_key, policy_ids), tier
+        return _deny_plan(view_key, policy_ids, deny_reason), tier
 
     # 不同基表的行条件不能 OR 到一起（会把另一张表的过滤整段丢掉）
     if len(row_conditions) > 1:
-        return _deny_plan(view_key, policy_ids), tier
+        return _deny_plan(view_key, policy_ids, REASON_MULTI_ROW), tier
 
     row_filters: dict[str, str] = {}
     if row_conditions:
