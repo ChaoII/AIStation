@@ -16,7 +16,9 @@
    生效，与管理员意图不符，直接拒绝；
 3. ``mask`` 必须有 ``mask_expr``；``allow`` / ``deny`` 的 ``mask_expr`` 必须为空；
 4. ``subject_kind`` 非 ``everyone`` 时 ``subject_value`` 不能为空（否则这条策略
-   永远匹配不到任何主体 = 白配一条）。
+   永远匹配不到任何主体 = 白配一条）；
+5. **2026-11 复审裁决（C2）**：编译器未接线前，``condition`` / ``mask_expr`` 一律 400
+   —— 执行的是原 SQL，收下它们等于让管理员以为行过滤/脱敏已生效。
 
 解释接口的身份**只从库里读**（``sys_user.is_superuser`` + 角色 + ``dept_id``）：
 入参只有 ``user_id``，没有 ``is_superuser``，避免"传个 true 就成超管"。
@@ -163,6 +165,15 @@ def _validate(
     columns = _norm_columns(merged.get("columns") or [])
 
     empty: set[str] = set()
+    # C2（2026-11 复审裁决）：编译器未接线前，行/列策略一律不允许保存。
+    # ``_execute_one`` 执行的是**原 SQL**，condition/mask_expr 不会生效 —— 收下它们等于
+    # 让管理员以为行过滤/脱敏已生效（explain 还会显示 permit）。只在**本次请求真的提供了**
+    # 这两个字段时拦：存量库里可能已有历史行，允许改名/停用，但不允许新配。
+    if ("condition" in provided and condition) or ("mask_expr" in provided and mask_expr):
+        return {}, empty, (
+            "编译器未接线前不支持行/列策略（condition / mask_expr 不会被执行）。"
+            "请先使用 legacy/shadow，等 SQL 编译器接入后再配置"
+        )
     if not name:
         return {}, empty, "策略名不能为空"
     if not resource_code:
@@ -459,6 +470,8 @@ async def explain_access(
                 "matched": [],
                 "attrs_missing": [],
                 "superuser": False,
+                # C2：编译器未接线，实际施加的改写恒为空 —— 治理页据此判断"没生效"
+                "applied": [],
             },
             msg="查询成功",
         )
@@ -480,6 +493,9 @@ async def explain_access(
             ],
             "attrs_missing": list(engine.missing_attributes(policies, principal, table)),
             "superuser": bool(principal.is_superuser),
+            # C2：enforce 未接线编译器，本次判定**没有施加任何**行过滤/掩码。
+            # 恒为空数组是刻意的：策略里有 condition/mask 也不代表它生效。
+            "applied": [],
         },
         msg="查询成功",
     )

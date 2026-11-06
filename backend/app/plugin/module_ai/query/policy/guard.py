@@ -18,7 +18,25 @@
 |---|---|
 | ``legacy`` | 只做「无主体拒绝 + 星号止血 + 审计」，结论来自调用方 ``legacy_check``；**不读策略、不跑引擎** |
 | ``shadow`` | 新旧都算；**旧结论生效**；结论不同（或改写不同）时写 ``ai_policy_shadow_diff`` |
-| ``enforce`` | 新引擎结论生效（表级默认拒绝） |
+| ``enforce`` | **硬闸：一律拒绝**（2026-11 复审裁决）。编译器接线前不可用，见下 |
+
+⚠️ ``enforce`` 为什么是硬闸
+--------------------------
+``_execute_one`` 执行的始终是**原 SQL**（``decision.sql`` 从未被使用，行/列改写由
+``policy.compiler`` 产出、但**生产零调用点**）。若放开 enforce，就会出现"策略 API 收下
+``condition`` / ``mask_expr``、explain 显示 permit，而实际明文全行"的假安全。
+所以：``policy_engine == "enforce"`` 时一律 deny，reason 写明原因并打 warning，
+管理员只需切回 ``legacy`` / ``shadow``。
+
+**恢复 enforce 的前置条件（un-gate，P3/P4）**：
+
+1. 先接入 ``policy.compiler``：执行前用 ``build_plan`` + ``rewrite`` 生成 SQL，
+   ``_execute_one`` 改为执行 ``decision.sql``（当前注释里写死了"不要用"）；
+2. 编译器自带 **SELECT-only + 系统函数白名单**检查（C3：enforce 当前丢掉了只读/系统
+   函数校验，硬闸顺带堵住了这个洞 —— un-gate 前**必须**补回）；
+3. 行/列策略的**上界求交**（多表条件与列白名单取交集）也要先生效；
+4. ``policy_api`` 的 ``condition`` / ``mask_expr`` 保存拦截同步放开，并让 explain 的
+   ``applied`` 反映真实改写。
 
 四条硬约定（评审关注点，别改动语义）：
 
@@ -478,22 +496,17 @@ async def _prepare(
     if mode == "legacy":
         return await _legacy_decision(legacy_check)
 
-    # ④ enforce：新引擎结论生效
+    # ④ enforce：**硬闸**（编译器未接线，见模块 docstring 的 un-gate 前置条件）
     if mode == "enforce":
-        try:
-            return await _new_decision(sql=sql, principal=principal, dialect=dialect)
-        except _PolicyLoadError as e:
-            return Decision(False, str(e))
-        except Exception as e:  # noqa: BLE001
-            # 引擎内部意外异常（如某条策略把一个坏值喂给 decide_table）：不能让 500 冒泡
-            # ——那样审计一条都不会写（prepare 的审计在判定之后）。fail-closed 成 deny。
-            # 用 ``except Exception``：CancelledError 是 BaseException，不能被吞。
-            log.opt(exception=True).warning(
-                f"[问数权限] policy engine error（按拒绝处理）: err={e}"
-            )
-            return Decision(
-                False, f"policy engine error：新判定异常，按拒绝处理（fail-closed）：{e}"
-            )
+        log.warning(
+            "[问数权限] POLICY_ENGINE=enforce 但 SQL 编译器尚未接线：按拒绝处理。"
+            "请改用 legacy/shadow，或先完成 un-gate 前置条件（见 policy/guard.py 文档）"
+        )
+        return Decision(
+            False,
+            "enforce 尚未接线 SQL 编译器，请使用 legacy/shadow"
+            "（当前会执行原 SQL，行/列策略不会生效，故一律拒绝）",
+        )
 
     # ⑤ shadow：新旧都算，旧结论生效，差异落表（写失败 fail-open）
     legacy = await _legacy_decision(legacy_check)

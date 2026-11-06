@@ -15,8 +15,8 @@
    'smoke-policy-%'`` 清理，**不动真实策略**）；
 4. 审计表能读到第 2 步**本次新写**的 deny 记录（先记 ``max(id)`` 水位，只认
    ``id > 水位`` —— 审计 append-only，只按 hash 找会被历史行假通过）；
-5. 无法解析的 SQL → deny（编译器 + enforce 网关各验一次，且 reason 必须是"解析失败"，
-   不能是"表未覆盖"）。
+5. 无法解析的 SQL → deny（编译器必须**因解析失败**拒；enforce 网关当前是硬闸，
+   只断言 deny，un-gate 后要恢复成"解析失败"的同口径断言）。
 
 用法::
 
@@ -237,11 +237,15 @@ async def _check_audit(sql: str, min_id: int) -> tuple[bool, str]:
 
 
 async def _check_parse_fail() -> tuple[bool, str]:
-    """⑤ 无法解析的 SQL → deny（编译器 + enforce 网关，且必须**因解析失败**而拒）。
+    """⑤ 无法解析的 SQL → deny（编译器 + enforce 网关各验一次）。
 
     坏 SQL 用 ``select (((``：正则兜底（``from|join <name>``）也提不出表名，因此
     走的是「无法解析 → fail-closed」这条语义。老版本用 ``select from where ((``，
     正则猜出表 ``where`` → 实际是"表未覆盖 → 默认拒绝"，**没验到解析失败**（Important 4）。
+
+    ⚠️ 2026-11 复审（C2）：``enforce`` 在编译器接线前是**硬闸**（一律 deny），
+    所以网关这一侧只断言「拒绝」。**un-gate 后必须恢复**成"reason 含解析失败"的断言
+    （前置条件见 ``policy/guard.py`` 模块 docstring）。
 
     ``POLICY_ENGINE`` 只作用于**本进程**（``_cfg`` 每次读取都看环境变量），
     不改库、不影响已启动的后端服务。
@@ -268,12 +272,17 @@ async def _check_parse_fail() -> tuple[bool, str]:
         os.environ.pop("POLICY_ENGINE", None)
     if gateway.permit:
         return False, "enforce 网关放过了无法解析的 SQL"
-    if "解析" not in gateway.reason:
+    if "解析" in gateway.reason:
+        tail = gateway.reason[:40]
+    elif "enforce" in gateway.reason and "编译器" in gateway.reason:
+        # 当前形态：硬闸。不是"表未覆盖"那种误判，可以接受。
+        tail = f"硬闸：{gateway.reason[:40]}"
+    else:
         return False, (
-            "enforce 网关拒绝了，但不是解析失败（说明验的是『表未覆盖』而不是 fail-closed）："
+            "enforce 网关拒绝了，但不是预期原因（既不是解析失败也不是 enforce 硬闸）："
             f"{gateway.reason}"
         )
-    return True, f"compiler={compiled.reason[:40]} | guard={gateway.reason[:40]}"
+    return True, f"compiler={compiled.reason[:40]} | guard={tail}"
 
 
 def _report(index: int, title: str, ok: bool, detail: str) -> None:

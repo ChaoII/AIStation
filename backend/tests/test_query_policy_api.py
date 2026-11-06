@@ -125,30 +125,27 @@ def test_save_rejects_bad_policy(test_client, auth_headers, label, over):
     assert not [row for row in rows if row["name"] == name], f"{label} 的坏策略被写进了库"
 
 
-def test_save_accepts_condition_with_attr_placeholders(test_client, auth_headers):
-    """``$attr.*`` / ``$user.id`` 是合法写法：保存时按"占位符可绑定"校验，
-    不能因为"运行期才知道具体值"就把正确的策略拒掉。"""
+def test_save_rejects_row_condition_until_compiler_wired(test_client, auth_headers):
+    """C2：编译器未接线前，保存带 ``condition`` 的策略一律 400 且不入库。
+
+    历史缺陷：策略 API 收下 condition、explain 显示 permit，但执行路径用的是**原 SQL**
+    —— 管理员以为行过滤生效，实际明文全行。宁可显式拒绝，也不能"看起来配了"。
+    """
+    name = "pytest-policy-attr-blocked"
     r = _save(
         test_client,
         auth_headers,
-        name="pytest-policy-attr-ok",
+        name=name,
         resource_code="pytest_policy_attr",
         condition="dept_id = $attr.dept_id AND owner_id = $user.id",
         columns=["dept_id", "owner_id"],
     )
-    assert r.status_code == 200, r.text
-    pid = r.json()["data"]["id"]
-    try:
-        row = next(
-            x for x in _list(test_client, auth_headers, resource_code="pytest_policy_attr")
-            if x["id"] == pid
-        )
-        assert "$attr.dept_id" in row["condition"]
-        assert row["columns"] == ["dept_id", "owner_id"]
-    finally:
-        test_client.post(
-            f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers
-        )
+    assert r.status_code == 400, r.text
+    msg = r.json()["msg"]
+    assert "编译器" in msg, f"拒绝文案要说明原因（编译器未接线）：{msg}"
+
+    rows = _list(test_client, auth_headers, resource_code="pytest_policy_attr")
+    assert not [row for row in rows if row["name"] == name], "被拒的策略不得入库"
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +157,6 @@ def test_save_list_filter_update_delete(test_client, auth_headers):
         auth_headers,
         name="pytest-policy-crud",
         resource_code="pytest_policy_crud",
-        condition="dept_id = 1",
         columns=["dept_id", "id"],
         priority=7,
     )
@@ -182,7 +178,7 @@ def test_save_list_filter_update_delete(test_client, auth_headers):
         # 过滤器真的生效（不同 resource_code 查不到）
         assert _list(test_client, auth_headers, resource_code="pytest_policy_other") == []
 
-        # 更新（带 id）：改 enabled / priority / 条件
+        # 更新（带 id）：改 enabled / priority
         upd = _save(
             test_client,
             auth_headers,
@@ -191,7 +187,6 @@ def test_save_list_filter_update_delete(test_client, auth_headers):
             resource_code="pytest_policy_crud",
             enabled=False,
             priority=3,
-            condition="dept_id = 2",
         )
         assert upd.status_code == 200, upd.text
         row = next(
@@ -200,7 +195,7 @@ def test_save_list_filter_update_delete(test_client, auth_headers):
         )
         assert row["enabled"] is False
         assert row["priority"] == 3
-        assert row["condition"] == "dept_id = 2"
+        assert row["condition"] == "", "未提供 condition 时不该凭空写入行条件"
     finally:
         d = test_client.post(
             f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers
@@ -264,36 +259,24 @@ def test_partial_update_keeps_unchanged_fields(test_client, auth_headers):
         test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
 
 
-def test_partial_update_preserves_mask_expression(test_client, auth_headers):
-    """只改名字不该把已有 ``mask_expr`` 冲成空（否则该列策略会变成 fail-closed 拒答）。"""
-    created = _save(
+def test_save_rejects_mask_until_compiler_wired(test_client, auth_headers):
+    """C2：编译器未接线前，保存带 ``mask_expr`` 的策略一律 400（列脱敏不生效）。"""
+    name = "pytest-policy-mask-blocked"
+    r = _save(
         test_client,
         auth_headers,
-        name="pytest-policy-mask-keep",
+        name=name,
         resource_code="pytest_policy_mask_keep",
         effect="mask",
         columns=["phone"],
         mask_expr="upper(phone)",
     )
-    assert created.status_code == 200, created.text
-    pid = created.json()["data"]["id"]
-    try:
-        upd = test_client.post(
-            f"{BASE}/policy/save",
-            json={"id": pid, "name": "pytest-policy-mask-keep-2"},
-            headers=auth_headers,
-        )
-        assert upd.status_code == 200, upd.text
-        row = next(
-            x
-            for x in _list(test_client, auth_headers, resource_code="pytest_policy_mask_keep")
-            if x["id"] == pid
-        )
-        assert row["mask_expr"] == "upper(phone)"
-        assert row["columns"] == ["phone"]
-        assert row["effect"] == "mask"
-    finally:
-        test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
+    assert r.status_code == 400, r.text
+    msg = r.json()["msg"]
+    assert "编译器" in msg, f"拒绝文案要说明原因（编译器未接线）：{msg}"
+
+    rows = _list(test_client, auth_headers, resource_code="pytest_policy_mask_keep")
+    assert not [row for row in rows if row["name"] == name], "被拒的 mask 策略不得入库"
 
 
 def test_update_validates_merged_state(test_client, auth_headers):
@@ -411,11 +394,16 @@ def test_explain_default_deny_for_plain_user(test_client, auth_headers, plain_us
     )
     assert r.status_code == 200, r.text
     data = r.json()["data"]
-    assert set(data) == {"permit", "reason", "policy_ids", "matched", "attrs_missing", "superuser"}
+    assert set(data) == {
+        "permit", "reason", "policy_ids", "matched", "attrs_missing", "superuser",
+        "applied",
+    }
     assert data["permit"] is False
     assert data["superuser"] is False
     assert "默认拒绝" in data["reason"]
     assert data["policy_ids"] == [] and data["matched"] == []
+    # C2：enforce 未接线编译器，explain 明确告诉治理页「实际施加的改写」为空
+    assert data["applied"] == []
 
 
 def test_explain_superuser_bypass_comes_from_db(test_client, auth_headers):
@@ -434,7 +422,7 @@ def test_explain_superuser_bypass_comes_from_db(test_client, auth_headers):
 
 
 def test_explain_reports_deny_policy_and_missing_attr(
-    test_client, auth_headers, plain_user_id
+    test_client, auth_headers, plain_user_id, db_exec
 ):
     deny = _save(
         test_client,
@@ -444,18 +432,29 @@ def test_explain_reports_deny_policy_and_missing_attr(
         effect="deny",
         subject_kind="everyone",
     )
-    attr = _save(
-        test_client,
-        auth_headers,
-        name="pytest-policy-explain-attr",
-        resource_code="pytest_explain_attr",
-        effect="allow",
-        subject_kind="everyone",
-        # 该用户 dept_id 为空 → 缺属性 → allow 不适用 → 拒绝
-        condition="dept_id = $attr.dept_id",
-        columns=["dept_id"],
+    # 行/列策略暂时**不能经 API 保存**（C2 硬闸）—— 但存量库里可能已有这类行，
+    # explain 必须照样解释它们，所以这里直接写库（模拟迁移/历史数据）。
+    from datetime import datetime
+
+    now = datetime.now().replace(microsecond=0)
+    attr_id = int(
+        db_exec(
+            "INSERT INTO ai_policy (name, description, enabled, priority, resource_kind, "
+            "resource_code, effect, subject_kind, subject_value, condition, columns, "
+            "mask_expr, marking, created_time, updated_time, is_deleted) "
+            "VALUES (:n, '', true, 100, 'table', :c, 'allow', 'everyone', '', :cond, "
+            ":cols, '', '', :now, :now, false) RETURNING id",
+            {
+                "n": "pytest-policy-explain-attr",
+                "c": "pytest_explain_attr",
+                # 该用户 dept_id 为空 → 缺属性 → allow 不适用 → 拒绝
+                "cond": "dept_id = $attr.dept_id",
+                "cols": '["dept_id"]',
+                "now": now,
+            },
+        )
     )
-    ids = [deny.json()["data"]["id"], attr.json()["data"]["id"]]
+    ids = [deny.json()["data"]["id"], attr_id]
     try:
         d = test_client.get(
             f"{BASE}/access/explain",
@@ -465,6 +464,7 @@ def test_explain_reports_deny_policy_and_missing_attr(
         assert d["permit"] is False
         assert ids[0] in d["policy_ids"]
         assert any(m["id"] == ids[0] and m["effect"] == "deny" for m in d["matched"])
+        assert d["applied"] == []
 
         a = test_client.get(
             f"{BASE}/access/explain",
@@ -478,6 +478,7 @@ def test_explain_reports_deny_policy_and_missing_attr(
         assert a["permit"] is False
         assert "dept_id" in a["attrs_missing"]
         assert ids[1] in a["policy_ids"]
+        assert a["applied"] == [], "编译器未接线时不得声称已施加列/行改写"
     finally:
         test_client.post(
             f"{BASE}/policy/delete", json={"ids": ids}, headers=auth_headers
