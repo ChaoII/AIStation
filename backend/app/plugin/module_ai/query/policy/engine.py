@@ -12,22 +12,37 @@
 2. 同一 effect 内按**主体具体性** ``user > attr > role > domain > everyone``；
 3. 同具体性按 ``priority`` 降序；仍并列时按 ``id`` 升序（保证结果稳定可复现）；
    ``allow`` 并列取**并集**（多条行条件用 ``OR`` 连接，policy_ids 全带上）；
+   **无条件 allow 吸收条件**：只要有一条无条件的 allow，整表可读、``sql=""``；
 4. 超管绕过一切策略，``reason="superuser bypass"``、``policy_ids=()``；
 5. **表级默认拒绝**：没有任何适用的 ``allow`` 就拒绝；
 6. **列级默认继承**：表的 ``allow``（``columns=[]`` 即整表可读）覆盖所有列，
    列的限制**只来自显式** ``deny`` / ``mask``。这里刻意**不实现**"列默认拒绝"——
    ``allow.columns`` 是「按列的额外授予」（如允许对敏感列做聚合），不是列白名单。
 
-两个容易踩的语义边界：
+资源范围（Ruling）：**本引擎只吃 ``resource_kind in {"table","view"}`` 的策略**，
+``object`` / ``datasource`` 等 kind 在 ``decide_table`` / ``decide_column`` 内直接忽略
+（对象权限走 ``ontology/security.py``；对象行策略由 T8 迁成物理表的 table 策略）。
+
+三个容易踩的语义边界：
 
 - ``condition`` 只有 ``allow`` 用（行级过滤）。表达式里的 ``$attr.<name>`` 在
   ``principal.attrs`` 里缺失（或为空）时视为**条件不成立** → 该 allow 不适用；
   若所有 allow 都不适用 → 该表 deny（fail-closed，不是"忽略条件放行"）。
+  保守之处：``$attr.x`` 出现在**字符串字面量**里也会被当成属性引用（宁可误拒）。
 - ``mask`` / ``deny`` **不是授权**：只有 mask 而没有 allow 时，表仍然默认拒绝。
+- ``attr`` 主体的写法是 ``dept_id == 3``，值**不要加引号**（``"3"`` / ``'3'`` 不匹配）；
+  属性值可以是标量，也可以是 list/tuple/set（任一元素命中即匹配）。
+- ``domain`` 主体读 ``attrs["domains"]``（或 ``attrs["domain"]``），值可以是逗号串
+  或容器。**T6 接线时必须注入该属性**（``load_principal`` 现在只读 ``dept_id``），
+  否则域策略在 enforce 下永远不匹配。
 
 ``Decision.sql`` 的语义：表级判定时放行策略的行条件（多条以 ``OR`` 并集连接，
 原样保留 ``$attr.*`` / ``$user.id`` 占位符，由编译器做参数命名空间隔离）；
-列级判定时为空串；掩码改写放在 ``applied[0]["mask"]``。
+**有一条无条件 allow 时为空串**（无条件授权吸收条件）；列级判定时为空串；
+掩码改写放在 ``applied[0]["mask"]``。
+
+T9 ``build_plan`` 复用 :func:`applicable_condition` 与 :func:`union_condition`，
+不要另写一套并集/缺属性判断（两套实现会 drift，shadow diff 抓不到）。
 """
 
 from __future__ import annotations
@@ -39,7 +54,18 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # 运行时不依赖 principal（它要连库），保持纯逻辑与可单测
     from .principal import Principal
 
-__all__ = ["Decision", "Policy", "decide_column", "decide_table"]
+__all__ = [
+    "Decision",
+    "Policy",
+    "applicable_condition",
+    "decide_column",
+    "decide_table",
+    "union_condition",
+]
+
+#: 本引擎处理的资源类型（Ruling）：对象权限走 ``ontology/security.py``，
+#: 数据源级策略不落到具体表。其它 kind 在判定时**直接忽略**。
+_POLICY_RESOURCE_KINDS = frozenset({"table", "view"})
 
 #: 主体具体性：数值越大越具体（spec §3.2 第 2 条，brief 把 domain 排在 role 之后）。
 _SUBJECT_SPECIFICITY: dict[str, int] = {
@@ -116,7 +142,19 @@ class Decision:
 # 小型工具（全部 fail-closed：看不懂就"不匹配/不放行"，绝不猜）
 # ---------------------------------------------------------------------------
 def _text(value) -> str:
-    return str(value or "").strip()
+    """转成去空白字符串；只有 ``None`` 算"没有值"。
+
+    不能写 ``str(value or "")``：``0`` / ``False`` 会被误判成缺失（属性值 0 是合法值，
+    按缺失处理会让行条件被误拒）。
+    """
+    return "" if value is None else str(value).strip()
+
+
+def _is_enabled(value) -> bool:
+    """``enabled`` 归一：数据库 bool 之外，也容忍配置串（``"false"`` / ``"0"`` / ``"no"``）。"""
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off", "n"}
+    return bool(value)
 
 
 def _table_key(value) -> str:
@@ -141,9 +179,48 @@ def _sort_key(policy: Policy) -> tuple[int, int, int, int]:
     )
 
 
-def _attr_pairs(principal) -> dict[str, str]:
+def _raw_attrs(principal) -> dict[str, object]:
+    """主体属性（键小写），**保留原始类型**（可能是 str，也可能是 list/tuple/set）。"""
     attrs = getattr(principal, "attrs", None) or {}
-    return {_text(k).lower(): _text(v) for k, v in attrs.items()}
+    return {_text(k).lower(): v for k, v in attrs.items()}
+
+
+def _attr_values(value) -> list[str]:
+    """把一个属性值摊平成文本列表；容器（list/tuple/set）逐元素摊平。
+
+    字符串保持**整体**（不按空白/逗号切分）——``attr`` 主体的 ``dept_name == East China``
+    这类值本身可能带空格。需要切分成多个记号的是域成员，见 :func:`_domain_tokens`。
+    """
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set, frozenset)):
+        out: list[str] = []
+        for item in value:
+            out.extend(_attr_values(item))
+        return out
+    text = _text(value)
+    return [text] if text else []
+
+
+def _domain_tokens(value) -> list[str]:
+    """域成员记号：在 :func:`_attr_values` 基础上再按逗号/分号/空白切分。"""
+    out: list[str] = []
+    for item in _attr_values(value):
+        out.extend(v for v in (tok.strip() for tok in _DOMAIN_SPLIT.split(item)) if v)
+    return out
+
+
+def _attr_present(value) -> bool:
+    """属性是否有可用值；容器要求至少一个非空元素，空串视为缺失（fail-closed）。"""
+    return bool(_attr_values(value))
+
+
+def _attr_matches(value, expected: str) -> bool:
+    """属性值是否等于期望值；容器任一元素命中即可（大小写不敏感）。"""
+    want = _text(expected).lower()
+    if not want:
+        return False
+    return any(v.lower() == want for v in _attr_values(value))
 
 
 def _subject_matches(policy: Policy, principal) -> bool:
@@ -165,63 +242,100 @@ def _subject_matches(policy: Policy, principal) -> bool:
         return value.upper() in roles
 
     if kind == "attr":
+        # 约定：subject_value 写成 ``dept_id == 3``，值**不要加引号**（``"3"`` / `'3'` 都不匹配）。
         m = _ATTR_SUBJECT.match(value)
         if not m:
             return False
         name, expected = m.group(1).lower(), _text(m.group(2))
-        actual = _attr_pairs(principal).get(name, "")
-        return bool(actual) and actual.lower() == expected.lower()
+        return _attr_matches(_raw_attrs(principal).get(name), expected)
 
     if kind == "domain":
         if not value:
             return False
-        attrs = _attr_pairs(principal)
+        attrs = _raw_attrs(principal)
         members: set[str] = set()
         for key in _DOMAIN_ATTR_KEYS:
-            for item in _DOMAIN_SPLIT.split(attrs.get(key, "")):
-                if item:
-                    members.add(item.lower())
+            members.update(v.lower() for v in _domain_tokens(attrs.get(key)))
         return value.lower() in members
 
     return False
 
 
-def _condition_state(policy: Policy, principal) -> tuple[bool, tuple[str, ...]]:
-    """行条件对该主体是否成立；返回 ``(是否成立, 缺失的属性名)``。
+def _missing_conditions(policy: Policy, principal) -> tuple[str, ...]:
+    """行条件里**无法在本主体上判定**的引用；空元组 = 条件对主体成立。
 
     引擎不执行 SQL，只做**可判定部分**：``$attr.x`` 缺属性、``$user.id`` 缺身份
     → 条件不成立（spec §5.2：缺属性按不成立处理，不是忽略条件）。其余表达式
     （常量比较、列比较）交给编译器下推，这里视为成立。
+
+    保守之处：``$attr.x`` 出现在**字符串字面量**里（如 ``note = '$attr.dept_id'``）
+    也会被当成属性引用；属性缺失时该策略不适用。这偏向误拒而非误放，可接受。
     """
     condition = _text(policy.condition)
     if not condition:
-        return True, ()
+        return ()
 
-    attrs = _attr_pairs(principal)
+    attrs = _raw_attrs(principal)
     missing: list[str] = []
     for name in _ATTR_REF.findall(condition):
-        if not attrs.get(name.lower(), ""):
+        if not _attr_present(attrs.get(name.lower())):
             missing.append(name)
     if _USER_ID_REF.search(condition) and not getattr(principal, "user_id", None):
         missing.append("$user.id")
 
     # 去重且保持出现顺序：reason 里的提示要稳定
-    return (not missing), tuple(dict.fromkeys(missing))
+    return tuple(dict.fromkeys(missing))
+
+
+def applicable_condition(policy: Policy, principal: Principal) -> str | None:
+    """公开 helper（T9 ``build_plan`` 复用）：该 allow 策略对这个主体的行条件。
+
+    - ``None``：**不适用**（缺属性 / 缺 ``$user.id``）；
+    - ``""``：适用且**无条件**（整表可读）；
+    - 其它：适用，返回条件表达式（``$attr.*`` / ``$user.id`` 占位符原样保留，
+      由编译器做参数命名空间隔离）。
+    """
+    missing = _missing_conditions(policy, principal)
+    if missing:
+        return None
+    return _text(policy.condition)
+
+
+def union_condition(conditions: list[str]) -> str:
+    """公开 helper（T9 ``build_plan`` 复用）：多条行条件取**并集**。
+
+    - 任一为空串（无条件授权）→ 整组吸收，返回 ``""``（否则会把无条件授权缩窄成
+      有条件过滤，用户被静默藏行——T8 backfill 后 ``legacy_default_allow`` 与域/行策略
+      同命中时会真实发生）；
+    - 空列表 → ``""``（没有约束）；
+    - 多条 → ``(a) OR (b)``；单条原样返回。
+    """
+    rows = list(conditions or ())
+    if not rows or any(row == "" for row in rows):
+        return ""
+    if len(rows) == 1:
+        return rows[0]
+    return " OR ".join(f"({row})" for row in rows)
 
 
 def _candidates(policies, principal, table: str) -> list[Policy]:
     """筛出「启用 + 资源命中 + 主体命中」的策略，并保持稳定顺序。
 
-    资源只比 ``resource_code``（大小写与 schema 前缀不敏感）。``resource_kind``
-    不在这里过滤：调用方按需只加载表/视图/对象策略；数据源级策略（``ds:4``）
-    与表名不会撞名，交给上层处理。
+    只处理 ``resource_kind in {"table","view"}`` 的策略（Ruling）：对象权限走
+    ``ontology/security.py``，数据源级策略与表名不是同一层资源。否则同一个 code 的
+    ``object`` 策略会意外给同名物理表放行。
+
+    资源只比 ``resource_code``（大小写与 schema 前缀不敏感）。
     """
     target = _table_key(table)
     if not target:
         return []
     out: list[Policy] = []
     for policy in policies or ():
-        if policy is None or not getattr(policy, "enabled", True):
+        if policy is None or not _is_enabled(getattr(policy, "enabled", True)):
+            continue
+        kind = _text(getattr(policy, "resource_kind", "")).lower()
+        if kind not in _POLICY_RESOURCE_KINDS:
             continue
         if _table_key(policy.resource_code) != target:
             continue
@@ -273,6 +387,26 @@ def _default_deny_reason(table: str) -> str:
     return f"默认拒绝：表 {table} 没有任何适用的 allow 策略"
 
 
+def _split_allows(
+    allows: list[Policy], principal
+) -> tuple[list[Policy], list[str], tuple[str, ...]]:
+    """把 allow 分成「适用」与「不适用」，并带回适用的行条件与缺失属性。
+
+    条件返回值语义见 :func:`applicable_condition`：``None`` = 不适用，``""`` = 无条件。
+    """
+    applicable: list[Policy] = []
+    conditions: list[str] = []
+    missing: list[str] = []
+    for policy in allows:
+        condition = applicable_condition(policy, principal)
+        if condition is None:
+            missing.extend(_missing_conditions(policy, principal))
+            continue
+        applicable.append(policy)
+        conditions.append(condition)
+    return applicable, conditions, tuple(dict.fromkeys(missing))
+
+
 # ---------------------------------------------------------------------------
 # 对外接口
 # ---------------------------------------------------------------------------
@@ -281,7 +415,8 @@ def decide_table(policies: list[Policy], principal: Principal, table: str) -> De
 
     - 显式表级 ``deny``（``columns`` 为空）短路 → 拒绝；列级 deny 不影响表级放行；
     - 没有任何适用的 ``allow`` → 拒绝（默认拒绝），缺属性导致的 allow 不适用也拒绝；
-    - 放行时 ``sql`` 是多条行条件的并集（``OR``），``applied`` 逐条记录。
+    - 放行时 ``sql`` 是行条件的并集；**只要有一条无条件的 allow，``sql`` 就是空串**
+      （无条件授权吸收所有条件，整表可读，``applied`` 也为空）。
     """
     if principal is None:
         return Decision(False, "missing principal")
@@ -296,33 +431,25 @@ def decide_table(policies: list[Policy], principal: Principal, table: str) -> De
         return Decision(False, _deny_reason(table_denies, f"表 {table}"), _ids(table_denies))
 
     allows = _by_effect(candidates, "allow")
-    applicable: list[Policy] = []
-    missing: list[str] = []
-    for policy in allows:
-        ok, lacked = _condition_state(policy, principal)
-        if ok:
-            applicable.append(policy)
-        else:
-            missing.extend(lacked)
+    applicable, conditions, missing = _split_allows(allows, principal)
 
     if not applicable:
         if allows:
             return Decision(
                 False,
-                _missing_attr_reason(allows, tuple(dict.fromkeys(missing)), f"表 {table}"),
+                _missing_attr_reason(allows, missing, f"表 {table}"),
                 _ids(sorted(allows, key=_sort_key)),
             )
         return Decision(False, _default_deny_reason(table))
 
     applicable.sort(key=_sort_key)
-    rows = [c for c in (_text(p.condition) for p in applicable) if c]
-    sql = " OR ".join(f"({c})" for c in rows) if len(rows) > 1 else (rows[0] if rows else "")
+    sql = union_condition(conditions)
     return Decision(
         True,
         f"允许：表 {table} 命中 {len(applicable)} 条 allow 策略",
         _ids(applicable),
         sql,
-        tuple({"row": c} for c in rows),
+        tuple({"row": c} for c in conditions) if sql else (),
     )
 
 
@@ -354,20 +481,13 @@ def decide_column(
         return Decision(False, _deny_reason(column_denies, f"列 {column}"), _ids(column_denies))
 
     allows = _by_effect(candidates, "allow")
-    applicable: list[Policy] = []
-    missing: list[str] = []
-    for policy in allows:
-        ok, lacked = _condition_state(policy, principal)
-        if ok:
-            applicable.append(policy)
-        else:
-            missing.extend(lacked)
+    applicable, _conditions, missing = _split_allows(allows, principal)
 
     if not applicable:
         if allows:
             return Decision(
                 False,
-                _missing_attr_reason(allows, tuple(dict.fromkeys(missing)), f"列 {column}"),
+                _missing_attr_reason(allows, missing, f"列 {column}"),
                 _ids(sorted(allows, key=_sort_key)),
             )
         return Decision(False, _default_deny_reason(table))

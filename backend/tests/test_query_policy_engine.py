@@ -21,8 +21,10 @@ import itertools
 from app.plugin.module_ai.query.policy.engine import (
     Decision,
     Policy,
+    applicable_condition,
     decide_column,
     decide_table,
+    union_condition,
 )
 from app.plugin.module_ai.query.policy.principal import Principal
 
@@ -226,6 +228,54 @@ def test_allow_conditions_are_unioned():
     assert len(d.applied) == 2
 
 
+def test_unconditional_allow_absorbs_conditional_union():
+    """无条件授权吸收有条件授权：整表可读，绝不能缩窄成行过滤（否则用户被静默藏行）。
+
+    T8 backfill 后 ``legacy_default_allow``（无条件）与域/行策略同时命中时会真实发生。
+    """
+    pols = [
+        allow(subject_kind="everyone", subject_value="", condition=""),
+        allow("t", "role", "USER", condition="dept_id = $attr.dept_id"),
+    ]
+    d = decide_table(pols, P(roles=("USER",), attrs={"dept_id": "3"}), "t")
+    assert d.permit
+    assert d.sql == "", f"无条件 allow 必须吸收条件，实际得到 {d.sql!r}"
+    assert d.applied == ()
+    assert set(d.policy_ids) == {pols[0].id, pols[1].id}, "两条 allow 都参与裁决"
+
+
+def test_unconditional_allow_not_downgraded_by_missing_attr():
+    """无条件 allow 在场时，缺属性的有条件 allow 只是"不适用"，不影响整表放行。"""
+    pols = [
+        allow(subject_kind="everyone", subject_value="", condition=""),
+        allow(condition="dept_id = $attr.dept_id"),
+    ]
+    d = decide_table(pols, P(attrs={}), "t")
+    assert d.permit and d.sql == "" and d.applied == ()
+    assert d.policy_ids == (pols[0].id,)
+
+
+def test_union_condition_helper():
+    assert union_condition([]) == ""
+    assert union_condition([""]) == ""
+    assert union_condition(["a = 1"]) == "a = 1"
+    assert union_condition(["a = 1", "b = 2"]) == "(a = 1) OR (b = 2)"
+    # 任一空串 = 无条件授权 → 整组吸收
+    assert union_condition(["a = 1", ""]) == ""
+
+
+def test_applicable_condition_helper():
+    p_ok = allow(condition="owner_id = $user.id")
+    assert applicable_condition(p_ok, P(user_id=7)) == "owner_id = $user.id"
+    assert applicable_condition(p_ok, P(user_id=None)) is None
+
+    p_attr = allow(condition="dept_id = $attr.dept_id")
+    assert applicable_condition(p_attr, P(attrs={})) is None
+    assert applicable_condition(p_attr, P(attrs={"dept_id": "3"})) == "dept_id = $attr.dept_id"
+
+    assert applicable_condition(allow(condition=""), P()) == ""
+
+
 # ---------------------------------------------------------------------------
 # 规则「缺属性 → 条件不成立 → 该表 deny」（不是忽略条件）
 # ---------------------------------------------------------------------------
@@ -288,6 +338,33 @@ def test_disabled_policy_is_ignored():
     assert d.permit and d.applied == ()
 
 
+def test_enabled_accepts_config_strings():
+    """``enabled`` 是配置串时也要认得 "false"/"0"/"no"，不能一律当启用。"""
+    for raw in ("false", "FALSE", "0", "no", "off", " n ", ""):
+        assert not decide_table([allow(enabled=raw)], P(), "t").permit, raw
+    for raw in ("true", "1", "yes", "on"):
+        assert decide_table([allow(enabled=raw)], P(), "t").permit, raw
+
+
+def test_only_table_and_view_policies_are_processed():
+    """Ruling：同名的 object/datasource 策略不能给物理表放行（对象权限另有引擎）。"""
+    for kind in ("object", "datasource", "OBJECT", ""):
+        d = decide_table([allow(subject_kind="everyone", subject_value="", kind=kind)], P(), "t")
+        assert not d.permit, f"resource_kind={kind!r} 不应参与表判定"
+
+    # view 与 table 同等处理
+    assert decide_table([allow(kind="view")], P(), "t").permit
+    assert decide_table([allow(kind="TABLE")], P(), "t").permit
+    assert decide_column([allow(kind="view")], P(), "t", "phone").permit
+
+
+def test_zero_attr_value_is_not_treated_as_missing():
+    """属性值 0 是合法值（``str(value or \"\")`` 会误判成缺失）。"""
+    pols = [allow(condition="dept_id = $attr.dept_id")]
+    d = decide_table(pols, P(attrs={"dept_id": 0}), "t")
+    assert d.permit and d.sql == "dept_id = $attr.dept_id"
+
+
 def test_role_and_table_match_are_case_insensitive():
     d = decide_table([allow(table="  T ", subject_value="user")], P(roles=("user",)), "t")
     assert d.permit
@@ -319,6 +396,23 @@ def test_domain_subject_matches_domain_membership():
     assert decide_table(pols, P(attrs={"domains": "hr, finance"}), "t").permit
     assert not decide_table(pols, P(attrs={"domains": "hr"}), "t").permit
     assert not decide_table(pols, P(attrs={}), "t").permit
+
+
+def test_domain_subject_accepts_container_attrs():
+    """T6 可能注入 list/tuple/set：容器里的任一元素命中即匹配（不能 str() 化成 "['hr']"）。"""
+    pols = [allow(subject_kind="domain", subject_value="finance")]
+    for domains in (
+        ["hr", "finance"],
+        ("finance",),
+        {"finance", "hr"},
+        frozenset({"FINANCE"}),
+        ["", " finance "],
+    ):
+        assert decide_table(pols, P(attrs={"domains": domains}), "t").permit, domains
+    assert not decide_table(pols, P(attrs={"domains": []}), "t").permit
+    assert not decide_table(pols, P(attrs={"domains": ["hr"]}), "t").permit
+    # 兼容单数键 domain
+    assert decide_table(pols, P(attrs={"domain": "finance"}), "t").permit
 
 
 def test_unknown_subject_kind_never_matches():
