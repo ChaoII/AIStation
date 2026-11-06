@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import re
 import time
 from collections import Counter
@@ -256,6 +257,20 @@ async def _ensure_query_tables() -> None:
     from .policy.model import ensure_policy_tables
 
     await ensure_policy_tables()
+    # T7 接线自检（addendum 第 4 条）：shadow 差异写入依赖
+    # ``ai_policy_shadow_diff.rewrite`` 这一列。补列失败（无 DDL 权限）时差异会整条
+    # 写不进去，而写入本身是 fail-open —— 表现为「差异表悄悄没数据」，灰度报告被
+    # 静默骗过。启动时明确 warning，别让它沉在日志里。
+    _policy_bad = [
+        a["area"] for a in degraded_status()["areas"]
+        if a["area"] in ("policy_tables", "policy_table_columns")
+    ]
+    if _policy_bad:
+        log.warning(
+            "[问数权限] 策略表就绪异常（degraded_status 含 {}）：shadow 差异可能整条"
+            "写不进去（fail-open，不会报错），切 shadow/enforce 前先修表结构",
+            "/".join(_policy_bad),
+        )
 
 
 # Agno 向量库是否已播种语义单元
@@ -1532,8 +1547,9 @@ async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> di
     # 第四个参数传**指标名**：软删除口径改写需要“问句”来判断是不是在问已删除。
     # 漏传过一次（只改了 ask 的两条路）—— 指标快路径把「每日耗用量合计」
     # 答成 41,827,138（含 3390 条软删行），金标 3,550,065，评测里就这一道暴露。
+    # ``entry="metric"``：审计/shadow 差异按入口标记（P1 唯一收口的口径）。
     res = await AiQueryService._execute_one(
-        sql, ds_code, auth, str(metric.get("name") or ""))
+        sql, ds_code, auth, str(metric.get("name") or ""), entry="metric")
     res["sql"] = res.get("sql") or sql
     return res
 
@@ -6752,6 +6768,11 @@ class AiQueryService:
             "sql_softdelete_rewrite_enabled": "true",
             "recall_expand_cap": "4",                # 同义扩展最多追加几张表
             "object_query_max_tokens": "0",          # 0 = 跟随 nl2sql_max_tokens
+            # ---- 问数权限网关（P1：legacy/shadow/enforce）----
+            # 必须进默认值表：只写代码分支不进默认值 → 设置页看不到、线上切不动
+            # （§10 三态开关；值只认 legacy/shadow/enforce，缺失/未知按 legacy）。
+            # 也支持环境变量 POLICY_ENGINE 覆盖（见 `_cfg`，dev 用，方便切 shadow）。
+            "policy_engine": "legacy",
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -6781,14 +6802,23 @@ class AiQueryService:
 
         覆盖层（``config_override``）只对**当前任务**生效：评测消融用它临时改开关，
         不改库、不改全局缓存（旧实现直接 UPDATE 表，消融几分钟内真实用户全被带跑）。
+
+        环境变量覆盖（``POLICY_ENGINE``）同理只作用于**读取结果**，不写回缓存：
+        灰度切 shadow 时不必清缓存/重启进程即可验证，也不会污染库里的默认值。
+        优先级：任务内 ``config_override``（评测消融，最具体）> ``POLICY_ENGINE`` 环境变量
+        > 库/默认值。未设置环境变量时**零开销**（直接返回缓存对象，不拷贝）。
         """
         global _SETTINGS_CACHE
         if _SETTINGS_CACHE is None:
             _SETTINGS_CACHE = await cls.get_settings()
+        merged = _SETTINGS_CACHE
+        env_engine = (os.environ.get("POLICY_ENGINE") or "").strip()
+        if env_engine:
+            merged = {**merged, "policy_engine": env_engine}
         overlay = _CFG_OVERRIDE.get()
         if overlay:
-            return {**_SETTINGS_CACHE, **overlay}
-        return _SETTINGS_CACHE
+            merged = {**merged, **overlay}
+        return merged
 
     @classmethod
     def _cfg_bool(cls, cfg: dict, key: str, default: bool = True) -> bool:
@@ -7755,49 +7785,129 @@ class AiQueryService:
 
     @classmethod
     async def _execute_one(cls, sql: str, datasource: str, auth,
-                          question: str = "") -> dict:
-        """**系统库取数的唯一收口**（P0-3）：白名单 → 字段级 ACL → 行/列改写 → 执行。
+                          question: str = "", entry: str = "ask") -> dict:
+        """**取数的唯一收口**（P0-3）：权限网关 → 字段级 ACL → 行/列改写 → 执行。
 
         四条路径（ask / ask_stream / report / metric）都必须经过这里：
-        字段级 ACL（``_ont_sql_violations``）**只在本函数内实现一次**。
+        **权限判定只在本函数内做一次** —— P1 起统一交给 :func:`policy.guard.prepare`
+        （星号止血 + 表级策略 + 审计 + shadow 差异），字段级 ACL
+        （``_ont_sql_violations``）作为独立一层保留。
         修前它只挂在 ask/ask_stream 这条路上，报表与指标各自直连 ``_execute_sql``，
         于是「能问数就能造一条读敏感列的指标/报表模板并执行」——
         ``metrics/save`` / ``reports`` 与问数同权限码（``module_ai:query:ask``）。
 
-        自定义数据源（``ds:{id}``）走独立连接，字段级 ACL 的元数据
-        （``ai_query_asset_columns`` / 本体属性）不描述外部库的表，故不在此检查
-        （与修前口径一致）。
+        ``entry``：入口标记（ask/report/metric/export/eval/...），审计与 shadow 差异
+        都用它；报表与指标已显式传 ``report`` / ``metric``，其余入口暂用默认 ``ask``
+        （T8 起按入口逐个补齐）。
+
+        **自定义数据源（``ds:{id}``）也走同一个网关**（旧判定换成它自己的
+        ``_assert_ds_access``）：否则 ds:* 这条真实主链路整体绕过星号止血/主体校验/审计。
+        差异只在两处，都与修前口径一致：
+        - 字段级 ACL 仍由 ``_execute_custom_ds_sql`` 做（它按**外部库 schema** 校验）；
+        - ``validate_sql`` 的系统表白名单不适用于外部库，故不进自定义源的 legacy_check。
 
         ``question`` 用于**软删除口径改写**（见 `softdelete` 模块）：给了问题、且
         问句不是在问"已删除"时，给业务表的 SQL 补 `"ISDELETED" = false`。
         为什么放在这里而不是提示词：实测提示词规则两轮自翻 5 题（baseline 0 题），
         收益 1~2 题还不如自身抖动；口径这种确定规则交给代码才稳定。
         """
+        # ---- 权限唯一收口（P1）：QueryGuard.prepare -------------------------
+        # 设计稿 §7/§10：所有问数入口的**权限判定**只走这一处，各入口只换 ``entry``。
+        # 放在字段级 ACL **之前**：星号止血（P0）与表级策略必须先于列级判定生效，
+        # 否则"旧判定放行的查询仍带着敏感星号过去"（见 guard 模块 docstring 第 2 条）。
+        # ⚠️ P1 不执行 SQL 改写：``decision.sql`` 只给 shadow 差异看，执行仍用原 sql
+        #    （T9 编译器接入后才改成 ``sql = decision.sql``）。
+        from .policy import guard as _policy_guard
+        from .policy.engine import Decision as _PolicyDecision
+        from .policy.principal import load_principal as _load_principal
+
+        principal = await _load_principal(auth, entry)
+
         if datasource and datasource != SYSTEM_DS:
             ds_id = int(datasource.split(":")[-1])
             if question and cls._cfg_bool(await cls._cfg(),
                                           "sql_softdelete_rewrite_enabled", True):
                 sql = await cls._apply_softdelete_policy(question, sql, datasource)
+
+            async def _legacy_ds_check() -> _PolicyDecision:
+                """自定义源的旧判定：数据源角色授权（``_assert_ds_access``）。
+
+                异常照旧上抛（无权限 → ``您无权限访问该数据源``），与修前文案一致。
+                ``_execute_custom_ds_sql`` 里还会再查一次（幂等、只多一次短查询），
+                那里不能省：enforce 模式下 guard 不会再调这个闭包。
+                """
+                await _assert_ds_access(ds_id, auth)
+                return _PolicyDecision(True, "legacy：数据源访问校验通过")
+
+            decision = await _policy_guard.prepare(
+                sql=sql,
+                principal=principal,
+                entry=entry,
+                datasource=datasource,
+                legacy_check=_legacy_ds_check,
+            )
+            if not decision.permit:
+                raise CustomException(msg=decision.reason)
             return await _execute_custom_ds_sql(ds_id, sql, auth)
+
         # 复用本体的行级/列级权限：把本体对象支撑表改写成"已过滤的子查询"。
         # 问数是**任意形状的读**（聚合/分组/join），外面套 WHERE 是错的——
         # 过滤必须在聚合之前，所以这里做子查询改写。
         secured = await _secure_ont_sql(sql, auth)
         if secured.get("deny"):
             raise CustomException(msg=secured["msg"])
-        # 安全补丁（2026-10-19）：字段级 ACL 必须在**共同执行出口**生效，且 fail-closed。
-        # 修前只在 ask_stream 里调过一次且包着 ``except: pass`` —— 非流式 ask 走的
-        # 慢路径根本没调它；而且检查一炸就等于没做，受限字段会被原样查出来。
+
         uid = getattr(getattr(auth, "user", None), "id", None)
-        try:
-            violations = await cls._ont_sql_violations(sql, uid)
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 字段级 ACL 检查失败，拒绝执行：{e}")
+        # legacy_check 已算过的字段级 ACL 结论；guard 之后复用，同一请求只查一次元数据。
+        acl_violations: list[str] | None = None
+
+        async def _legacy_check() -> _PolicyDecision:
+            """旧校验组合：白名单（``validate_sql``）+ 字段级 ACL（``_ont_sql_violations``）。
+
+            写成闭包（而不是先把结论算好再传）是为了**保持旧语义**：旧判定抛的
+            ``CustomException`` 必须原样上抛 —— 具体文案与 fail-closed 收尾是前端、
+            评测与既有用例依赖的；guard 的 ``_legacy_decision`` 正好不吞异常。
+            """
+            nonlocal acl_violations
+            allowed = await cls._allowed_for_user(auth)
+            validate_sql(sql, allowed)   # 只做校验，返回值不用（上游已规范化）
+            try:
+                acl_violations = await cls._ont_sql_violations(sql, uid)
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 字段级 ACL 检查失败，拒绝执行：{e}")
+                raise CustomException(
+                    msg=f"字段级权限校验失败，已拒绝执行：{str(e)[:120]}") from e
+            if acl_violations:
+                return _PolicyDecision(
+                    False,
+                    f"字段级权限：无权限访问 {', '.join(acl_violations)}（本体属性级 ACL）")
+            return _PolicyDecision(True, "legacy：白名单与字段级 ACL 均通过")
+
+        decision = await _policy_guard.prepare(
+            sql=sql,
+            principal=principal,
+            entry=entry,
+            datasource=datasource or SYSTEM_DS,
+            legacy_check=_legacy_check,
+        )
+        if not decision.permit:
+            raise CustomException(msg=decision.reason)
+
+        # 字段级 ACL：仍是**独立一层**。legacy_check 算过就直接复用；``enforce`` 模式下
+        # guard 只做表级判定（列级掩码属 T9），这里必须补算 —— 否则"切到新引擎"会把
+        # 列级 ACL 丢掉，受限字段重新变成可读。
+        # 安全补丁（2026-10-19）：必须在**共同执行出口**生效，且 fail-closed
+        # （检查一炸就等于没做，受限字段会被原样查出来）。
+        if acl_violations is None:
+            try:
+                acl_violations = await cls._ont_sql_violations(sql, uid)
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 字段级 ACL 检查失败，拒绝执行：{e}")
+                raise CustomException(
+                    msg=f"字段级权限校验失败，已拒绝执行：{str(e)[:120]}") from e
+        if acl_violations:
             raise CustomException(
-                msg=f"字段级权限校验失败，已拒绝执行：{str(e)[:120]}") from e
-        if violations:
-            raise CustomException(
-                msg=f"字段级权限：无权限访问 {', '.join(violations)}（本体属性级 ACL）")
+                msg=f"字段级权限：无权限访问 {', '.join(acl_violations)}（本体属性级 ACL）")
         # P1-12 方案 b：内置默认敏感列名单（fail-closed 底板）——作为「配置显式标记」
         # （`ai_query_asset_columns.sensitive` / 本体属性 `sensitive`）之外的兜底，放在
         # 字段级 ACL **之后**：配置标记（业务明标敏感）优先报「字段级权限」；无标记但命中

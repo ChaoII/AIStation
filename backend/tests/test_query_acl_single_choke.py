@@ -23,6 +23,10 @@ import asyncio
 
 import pytest
 
+# P1（T7）起 `_execute_one` 会读 POLICY_ENGINE（`_cfg()` → 库）：纯逻辑用例没有应用/
+# 建表，故把**配置读取**打桩为 legacy（守卫与 ACL 逻辑仍真跑）。
+pytestmark = pytest.mark.usefixtures("query_cfg_legacy")
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -193,7 +197,9 @@ def test_report_and_metric_share_execute_one_choke(monkeypatch):
 
     from app.plugin.module_ai.query.service import AiQueryService as Q
 
-    async def _one(cls, sql, datasource, auth):
+    async def _one(cls, sql, datasource, auth, *args, **kwargs):
+        # 收口签名在 T7 之后还可能加关键字参数（question / entry），
+        # 这条用例只约束"经过收口"，不约束签名本身。
         calls.append((sql, datasource))
         return {"columns": [SAFE_COL], "rows": [["cam-1"]], "took_ms": 1}
 

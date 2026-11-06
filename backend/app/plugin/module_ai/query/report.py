@@ -290,8 +290,11 @@ async def run_report(report_id: int, params: dict | None = None, auth=None) -> d
         if uid:
             allowed = await AiQueryService._allowed_for_user(auth)
         else:
-            # 内部/定时执行等无身份场景：保持既有行为，但显式留痕（不假装做过校验）
-            log.warning("[report] 无调用者身份，报表按全局白名单执行")
+            # 内部/定时执行等无身份场景：这里仍按全局白名单校验一次；
+            # ⚠️ P1（T7）起这不再是"退路" —— `_execute_one` 的权限网关对无主体
+            # （auth=None）一律 deny（P0 验收：auth=None 不得落库 permit）。
+            # 定时/内部执行要能跑，必须由调用方带主体（P4 给 cron 建 Principal）。
+            log.warning("[report] 无调用者身份，报表按全局白名单校验（执行仍会被网关拒绝）")
             allowed = await _system_allowed()
         sql = validate_sql(sql, allowed)
     # 安全补丁（P0-3）：执行统一走 `AiQueryService._execute_one` —— 它是系统库取数的
@@ -300,8 +303,10 @@ async def run_report(report_id: int, params: dict | None = None, auth=None) -> d
     # 第四个参数传报表名：软删除口径改写需要“问句”判断是不是在问已删除。
     # 不传的话，报表这条执行路径会静默跳过改写（与指标快路径同一类漏接），
     # 于是同一张业务表：问数排除软删、报表却把删掉的行算进去。
+    # ``entry="report"``：审计/shadow 差异按入口标记（P1 唯一收口的口径）。
     res = await AiQueryService._execute_one(
-        sql, ds, auth, str(rep.get("name") or rep.get("key") or ""))
+        sql, ds, auth, str(rep.get("name") or rep.get("key") or ""),
+        entry="report")
     log.info(f"[report] 执行 {rep['key']} → {len(res.get('rows') or [])} 行")
     return {
         "id": rep["id"], "key": rep["key"], "name": rep["name"],

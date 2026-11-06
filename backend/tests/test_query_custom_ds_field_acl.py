@@ -13,6 +13,10 @@ import pytest
 from app.core.exceptions import CustomException
 from app.plugin.module_ai.query import service as S
 
+# P1（T7）起 `_execute_one` / 自定义源执行都会读 POLICY_ENGINE（`_cfg()` → 库）：
+# 纯逻辑用例没有应用/建表，故把**配置读取**打桩为 legacy。
+pytestmark = pytest.mark.usefixtures("query_cfg_legacy")
+
 
 def _auth(uid: int = 2, superuser: bool = False):
     return SimpleNamespace(user=SimpleNamespace(id=uid, is_superuser=superuser))

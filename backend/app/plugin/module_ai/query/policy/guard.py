@@ -413,7 +413,11 @@ async def prepare(
         decision="permit" if decision.permit else "deny",
         reason=decision.reason,
         policy_ids=list(decision.policy_ids),
-        rewrite=list(decision.applied),
+        # ⚠️ P1 只做判定、**不执行任何 SQL 改写**：``decision.applied`` 是"计划中的
+        # 行过滤/掩码"，只给 shadow 差异表（``ai_policy_shadow_diff.rewrite``）做诊断。
+        # 审计里写"已施加"会让人误以为用户的行/列已被过滤，而实际执行的是原 SQL。
+        # T9 编译器接入后这里才改回 ``list(decision.applied)``（那时它确实已施加）。
+        rewrite=[],
         elapsed_ms=elapsed_ms,
     )
     return decision

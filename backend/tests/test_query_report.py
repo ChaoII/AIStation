@@ -1,5 +1,6 @@
 """自定义报表模板：建表/CRUD/执行。"""
 import asyncio
+from types import SimpleNamespace
 
 
 def test_ensure_report_tables_is_idempotent():
@@ -62,7 +63,10 @@ def test_run_report_renders_params_and_validates(monkeypatch):
         monkeypatch.setattr(S, "_system_allowed", _allowed)
         monkeypatch.setattr(S, "_execute_sql", _exec)
 
-        out = await R.run_report(1, {"min_id": 5})
+        # P0/T7 起执行必须有主体（无身份一律 deny，见 QueryGuard）；
+        # 报表的"内部无身份执行"退路已废除，这里用管理员身份跑通渲染/执行链路。
+        auth = SimpleNamespace(user=SimpleNamespace(id=1, is_superuser=True))
+        out = await R.run_report(1, {"min_id": 5}, auth=auth)
         assert out["rows"] == [[7]]
         assert "id > 5" in captured["sql"], captured["sql"]      # 参数已渲染
         assert "LIMIT" in captured["sql"].upper() or True

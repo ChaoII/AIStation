@@ -13,6 +13,10 @@ import asyncio
 
 import pytest
 
+# P1（T7）起 `_execute_one` 会读 POLICY_ENGINE（`_cfg()` → 库）：纯逻辑用例没有应用/
+# 建表，故把**配置读取**打桩为 legacy（守卫与 ACL 逻辑仍真跑）。
+pytestmark = pytest.mark.usefixtures("query_cfg_legacy")
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -21,6 +25,20 @@ def _run(coro):
 def _auth(uid: int = 42):
     """造一个最小的 auth 替身（run_report / _execute_one 只用到 auth.user.id）。"""
     return type("A", (), {"user": type("U", (), {"id": uid})()})()
+
+
+def _patch_allowed(monkeypatch, table: str = "video_cameras"):
+    """打桩用户白名单。
+
+    P1（T7）起 ``_execute_one`` 的 legacy_check 会重跑 ``validate_sql`` + 字段级 ACL，
+    白名单读库（数据域/ABAC）；纯逻辑用例没有建表，必须打桩。
+    """
+    from app.plugin.module_ai.query.service import AiQueryService as Q
+
+    async def _allowed(auth):
+        return {table}
+
+    monkeypatch.setattr(Q, "_allowed_for_user", staticmethod(_allowed))
 
 
 # ===========================================================================
@@ -156,6 +174,7 @@ def test_execute_one_denies_on_column_acl_violation(monkeypatch):
         async def _exec(sql):
             raise AssertionError("不该执行到这一步（越权字段已放行）")
 
+        _patch_allowed(monkeypatch)
         monkeypatch.setattr(Q, "_ont_sql_violations", staticmethod(_violations))
         monkeypatch.setattr(S, "_secure_ont_sql", _secure)
         monkeypatch.setattr(S, "_execute_sql", _exec)
@@ -188,6 +207,7 @@ def test_execute_one_fails_closed_when_acl_check_errors(monkeypatch):
         async def _exec(sql):
             raise AssertionError("检查失败时不该放行执行")
 
+        _patch_allowed(monkeypatch)
         monkeypatch.setattr(Q, "_ont_sql_violations", staticmethod(_violations))
         monkeypatch.setattr(S, "_secure_ont_sql", _secure)
         monkeypatch.setattr(S, "_execute_sql", _exec)
@@ -215,6 +235,7 @@ def test_execute_one_passes_when_no_violation(monkeypatch):
         async def _exec(sql):
             return {"columns": ["id"], "rows": [[1]], "took_ms": 1}
 
+        _patch_allowed(monkeypatch)
         monkeypatch.setattr(Q, "_ont_sql_violations", staticmethod(_violations))
         monkeypatch.setattr(S, "_secure_ont_sql", _secure)
         monkeypatch.setattr(S, "_execute_sql", _exec)

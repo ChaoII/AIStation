@@ -211,6 +211,25 @@ def test_client(_session_database):
     return _client
 
 
+@pytest.fixture
+def query_cfg_legacy(monkeypatch):
+    """把问数**工程配置读取**打桩为 ``policy_engine=legacy``（纯逻辑用例专用）。
+
+    P1（T7）起 ``_execute_one`` 会读开关（``AiQueryService._cfg()`` → 库）：
+    ``PYTEST_NO_APP=1`` 没有应用生命周期（不建表、ORM 映射未配置），读库必炸，
+    guard 会按 fail-closed 一律拒 —— 纯逻辑用例就被"基础设施不可用"带红了。
+
+    这里只桩**配置读取**，守卫（星号止血/三态开关/审计编排/legacy_check 调用）仍真跑；
+    字段级 ACL、白名单、执行层照旧由各用例自己打桩。
+    """
+    from app.plugin.module_ai.query.service import AiQueryService
+
+    async def _cfg(cls):  # noqa: ANN001 - 与产品签名一致（classmethod）
+        return {"policy_engine": "legacy"}
+
+    monkeypatch.setattr(AiQueryService, "_cfg", classmethod(_cfg))
+
+
 @pytest.fixture(scope="session")
 def db_run(test_client):
     """在**应用的**事件循环里跑协程。

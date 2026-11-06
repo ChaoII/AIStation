@@ -22,6 +22,12 @@
 """
 import asyncio
 
+import pytest
+
+# P1（T7）起 `_execute_one` 会读 POLICY_ENGINE（`_cfg()` → 库）：纯逻辑用例没有应用/
+# 建表，故把**配置读取**打桩为 legacy（守卫与 ACL 逻辑仍真跑）。
+pytestmark = pytest.mark.usefixtures("query_cfg_legacy")
+
 
 def _run(coro):
     return asyncio.run(coro)

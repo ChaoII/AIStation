@@ -17,6 +17,10 @@ import asyncio
 
 import pytest
 
+# P1（T7）起 `_execute_one` 会读 POLICY_ENGINE（`_cfg()` → 库）：纯逻辑用例没有应用/
+# 建表，故把**配置读取**打桩为 legacy（守卫与 ACL 逻辑仍真跑）。
+pytestmark = pytest.mark.usefixtures("query_cfg_legacy")
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -41,6 +45,9 @@ def _patch(monkeypatch, executed: list):
     import app.plugin.module_ai.query.service as S
     from app.plugin.module_ai.query.service import AiQueryService as Q
 
+    async def _allowed(auth):
+        return {TABLE}      # 用户白名单（P1 起 legacy_check 会重跑 validate_sql）
+
     async def _no_violation(sql, uid):
         return []          # 无配置标记 —— 隔离出「内置名单」这一层
 
@@ -52,6 +59,7 @@ def _patch(monkeypatch, executed: list):
         return {"columns": ["id", "created_time"], "rows": [[1, "2026-01-01"]],
                 "took_ms": 1}
 
+    monkeypatch.setattr(Q, "_allowed_for_user", staticmethod(_allowed))
     monkeypatch.setattr(Q, "_ont_sql_violations", staticmethod(_no_violation))
     monkeypatch.setattr(S, "_secure_ont_sql", _secure)
     monkeypatch.setattr(S, "_execute_sql", _exec)
