@@ -489,13 +489,6 @@ def _is_system_table(table) -> bool:
     return db in _SYSTEM_SCHEMAS or catalog in _SYSTEM_SCHEMAS
 
 
-def _is_table_item(node) -> bool:
-    """FROM 项是否最终落到真实表（而非派生表/CTE 的 SELECT）。"""
-    while isinstance(node, exp.Subquery):
-        node = node.args.get("this")
-    return isinstance(node, exp.Table)
-
-
 def _group_members(subquery, cte_names: set[str]):
     """括号组里的真实表 + 是否含未知来源（派生表/CTE）。
 
@@ -517,9 +510,11 @@ def _group_members(subquery, cte_names: set[str]):
             if not name:
                 continue
             if not (node.db or node.catalog) and _norm_ident(name) in cte_names:
+                # CTE 基项：列未知，但**不能 continue**——它的 joins 里可能有真实表
+                # （`(c join u on true) AS j`），漏掉 u 会让整组策略失效。
                 unknown = True
-                continue
-            members.append(node)
+            else:
+                members.append(node)
         for child in node.iter_expressions():
             if isinstance(child, exp.Select):
                 unknown = True
@@ -867,8 +862,8 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
         for node in _scope_own_nodes(scope, scope_roots):
             if not isinstance(node, exp.Subquery) or not node.alias:
                 continue
-            if not _is_table_item(node):
-                continue  # 派生表/CTE：它自己的作用域处理
+            if isinstance(node.args.get("this"), exp.Select):
+                continue  # 派生表别名（`(select …) x`）：列由它自己的作用域处理
             members, unknown = _group_members(node, cte_names)
             table_ids = tuple(
                 dict.fromkeys(_table_key(table.name) for table in members if table.name)
@@ -1240,55 +1235,23 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                 if not table_id:
                     group = group_aliases.get(qualifier)
                     if group is not None:
-                        group_ids, unknown = group
-                        if unknown:
+                        group_ids, _unknown = group
+                        # Ruling（round 4）：组别名会隐藏内层表名，展开成 `t.col` 是
+                        # PG 非法 SQL。多表组的 `j.*`：组内任何 deny/mask/row_filter
+                        # 无法安全施加 → DENY；否则原样保留 `j.*`（合法）。
+                        restricted = any(
+                            (plan.denied.get(tid) or frozenset())
+                            or (plan.masked.get(tid) or {})
+                            or str(plan.row_filters.get(tid) or "").strip()
+                            for tid in group_ids
+                        )
+                        if restricted:
                             return Decision(
                                 False,
-                                f"括号组 {qualifier}.* 含派生表/CTE，无法安全展开，"
-                                "按拒绝处理（fail-closed）",
+                                f"括号组 {qualifier}.* 涉及 deny/mask/行过滤，且组别名"
+                                "隐藏了内层表名，无法安全展开，按拒绝处理（fail-closed）",
                             )
-                        group_entries = [
-                            (table_node, tid, visible)
-                            for table_node, tid, visible in real
-                            if tid in group_ids
-                        ]
-                        group_columns: list[object] = []
-                        group_masks: list[dict] = []
-                        for _table_node, tid, visible in group_entries:
-                            if plan.allowed_columns.get(tid) is None:
-                                return Decision(
-                                    False,
-                                    f"括号组 {qualifier}.* 中表 {tid} 没有列元数据，"
-                                    "无法完整展开，按拒绝处理（fail-closed）",
-                                )
-                            columns, why = _expand_star(plan, tid, dialect, visible)
-                            if why:
-                                return Decision(
-                                    False,
-                                    f"括号组 {qualifier}.* 无法展开表 {tid}，按拒绝"
-                                    f"处理（fail-closed）：{why}",
-                                )
-                            group_columns.extend(columns)
-                            for column in plan.allowed_columns.get(tid) or ():
-                                mask = _mask_for(plan, tid, column)
-                                if mask:
-                                    group_masks.append(
-                                        {
-                                            "mask": mask,
-                                            "table": tid,
-                                            "column": column.lower(),
-                                        }
-                                    )
-                        if not group_columns:
-                            return Decision(
-                                False,
-                                f"括号组 {qualifier}.* 展开后没有可读列，按拒绝处理"
-                                "（fail-closed）",
-                            )
-                        for item in group_masks:
-                            _record(item)
-                        projections.extend(group_columns)
-                        changed = True
+                        projections.append(projection)
                         continue
                     projections.append(projection)  # 派生表/CTE 的星号，内层已判定
                     continue

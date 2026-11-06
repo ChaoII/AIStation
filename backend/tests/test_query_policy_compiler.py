@@ -896,23 +896,33 @@ def test_group_alias_whole_row_denied(group, tables):
 
 
 @pytest.mark.parametrize("group,tables", JOIN_GROUPS)
-def test_group_alias_star_expands_all_group_tables(group, tables):
+def test_group_alias_star_is_kept_when_unrestricted(group, tables):
+    """round 4 Ruling：多表组的 `j.*` 不再展开成 `t.col`（组别名隐藏内层表名），
+    无 deny/mask/row_filter 时原样保留 `j.*`（合法）。"""
     d = rewrite(
         f"select j.* from {group}",
         plan(allowed=dict.fromkeys(tables, ("id", "phone"))),
     )
     assert d.permit, d.reason
-    text = norm(d.sql)
-    for table in tables:
-        assert f"{table}.id" in text, f"{group} 丢掉了 {table} 的列：{text}"
+    assert "j.*" in norm(d.sql), d.sql
 
 
-def test_group_alias_star_without_metadata_is_denied():
+@pytest.mark.parametrize("group,tables", JOIN_GROUPS)
+def test_group_alias_star_is_denied_when_restricted(group, tables):
+    p = plan(
+        allowed=dict.fromkeys(tables, ("id", "phone")),
+        row_filters={tables[-1]: "x = 1"},
+    )
+    assert not rewrite(f"select j.* from {group}", p).permit, group
+
+
+def test_group_alias_star_without_metadata_is_kept_when_unrestricted():
     d = rewrite(
         "select j.* from (t join u on t.id = u.id) as j",
         plan(allowed={"t": ("id",), "u": None}),
     )
-    assert not d.permit  # 无法展开就拒绝，不能静默丢 u 的列
+    assert d.permit
+    assert "j.*" in norm(d.sql)
 
 
 @pytest.mark.parametrize("group,tables", JOIN_GROUPS)
@@ -938,3 +948,83 @@ def test_group_alias_join_side_row_filter_still_applied():
     assert d.permit
     text = norm(d.sql)
     assert "a = 1" in text and "b = 2" in text
+
+
+# ===========================================================================
+# round 4：组内首项是 CTE / 派生表；j.* 不再展开成引用隐藏别名的 SQL
+# ===========================================================================
+def test_cte_headed_group_column_deny():
+    d = rewrite(
+        "with c as (select id from t) select j.phone from (c join u on true) as j",
+        plan(
+            allowed={"t": ("id",), "u": ("id", "phone")},
+            denied={"u": {"phone"}},
+        ),
+    )
+    assert not d.permit
+
+
+def test_cte_headed_group_column_mask():
+    d = rewrite(
+        "with c as (select id from t) select j.phone from (c join u on true) as j",
+        plan(
+            allowed={"t": ("id",), "u": ("id", "phone")},
+            masked={"u": {"phone": "left(phone, 3)"}},
+        ),
+    )
+    assert not d.permit
+
+
+def test_cte_headed_group_whole_row_and_star_denied():
+    p = plan(
+        allowed={"t": ("id",), "u": ("id", "phone")},
+        masked={"u": {"phone": "left(phone, 3)"}},
+    )
+    for sql in (
+        "with c as (select id from t) select j from (c join u on true) as j",
+        "with c as (select id from t) select j.* from (c join u on true) as j",
+    ):
+        assert not rewrite(sql, p).permit, sql
+
+
+def test_cte_headed_group_predicate_mask_denied():
+    d = rewrite(
+        "with c as (select id from t) "
+        "select u.id from (c join u on true) as j where j.phone like '1%'",
+        plan(
+            allowed={"t": ("id",), "u": ("id", "phone")},
+            masked={"u": {"phone": "left(phone, 3)"}},
+        ),
+    )
+    assert not d.permit
+
+
+def test_derived_headed_group_column_deny():
+    d = rewrite(
+        "select j.phone from ((select id from t) x join u on true) as j",
+        plan(
+            allowed={"t": ("id",), "u": ("id", "phone")},
+            denied={"u": {"phone"}},
+        ),
+    )
+    assert not d.permit
+
+
+def test_derived_headed_group_whole_row_and_star_denied():
+    p = plan(
+        allowed={"t": ("id",), "u": ("id", "phone")},
+        masked={"u": {"phone": "left(phone, 3)"}},
+    )
+    for sql in (
+        "select j from ((select id from t) x join u on true) as j",
+        "select j.* from ((select id from t) x join u on true) as j",
+    ):
+        assert not rewrite(sql, p).permit, sql
+
+
+def test_single_table_group_alias_star_still_expands():
+    """单表括号 `(t) AS j` 的别名是合法的，`j.*` 仍可展开成 `j.col`。"""
+    d = rewrite("select j.* from (t) as j", plan(allowed={"t": ("id", "phone")}))
+    assert d.permit
+    text = norm(d.sql)
+    assert "j.id" in text and "j.phone" in text
