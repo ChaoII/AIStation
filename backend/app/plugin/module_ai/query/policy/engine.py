@@ -60,6 +60,8 @@ __all__ = [
     "applicable_condition",
     "decide_column",
     "decide_table",
+    "matched_policies",
+    "missing_attributes",
     "union_condition",
 ]
 
@@ -347,6 +349,37 @@ def _candidates(policies, principal, table: str) -> list[Policy]:
 
 def _by_effect(candidates, effect: str) -> list[Policy]:
     return [p for p in candidates if _text(p.effect).lower() == effect]
+
+
+def matched_policies(policies, principal, table: str) -> list[Policy]:
+    """**explain 接口用**：命中「资源 + 主体」的策略，按裁决顺序返回。
+
+    只是 :func:`_candidates` 的公开镜像（再按 ``_sort_key`` 排序），供治理页展示
+    「这次判定看到了哪些策略」。判定本身仍只走 :func:`decide_table` /
+    :func:`decide_column`，这里不参与放行/拒绝。
+    """
+    if principal is None or getattr(principal, "is_superuser", False):
+        # 超管绕过一切策略：展示"没有策略参与"比列一堆会误导人。
+        return []
+    out = _candidates(policies, principal, table)
+    out.sort(key=_sort_key)
+    return out
+
+
+def missing_attributes(policies, principal, table: str) -> tuple[str, ...]:
+    """**explain 接口用**：命中的 ``allow`` 策略里，本主体缺失的属性名。
+
+    与 :func:`applicable_condition` 同一套判断（缺属性 → allow 不适用 → 该表拒绝），
+    只是把"缺了什么"单独摊出来给运维看。没有缺失时返回空元组。
+    """
+    if principal is None or getattr(principal, "is_superuser", False):
+        return ()
+    missing: list[str] = []
+    for policy in _candidates(policies, principal, table):
+        if _text(policy.effect).lower() != "allow":
+            continue
+        missing.extend(_missing_conditions(policy, principal))
+    return tuple(dict.fromkeys(missing))
 
 
 def _columns_of(policy: Policy) -> set[str]:

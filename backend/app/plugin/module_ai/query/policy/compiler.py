@@ -71,7 +71,14 @@ except Exception:  # noqa: BLE001 # pragma: no cover - 依赖缺失只在极端�
     exp = None  # type: ignore[assignment]
     traverse_scope = None  # type: ignore[assignment]
 
-__all__ = ["DENIED_ALL", "AccessPlan", "build_plan", "rewrite"]
+__all__ = [
+    "DENIED_ALL",
+    "AccessPlan",
+    "build_plan",
+    "rewrite",
+    "validate_condition",
+    "validate_mask",
+]
 
 #: ``denied[table]`` 里的整表拒绝哨兵。
 #:
@@ -437,6 +444,67 @@ def _compile_mask(raw: str, dialect: str, alias: str | None):
             if not column.table:
                 column.set("table", exp.to_identifier(alias))
     return parsed, ""
+
+
+def validate_condition(raw: str, dialect: str = "postgres") -> str:
+    """**保存策略时**校验管理员行条件；返回错误原因，空串 = 合法。
+
+    与执行期同一套白名单（:func:`_compile_condition`），区别只有一处：
+    ``$attr.*`` / ``$user.id`` 在保存时还没有具体用户，这里先按 AST 绑定成
+    **合成字面量**再校验。否则一条完全正确的
+    ``dept_id = $attr.dept_id`` 会因为"参数未绑定"被拒掉。
+
+    绑定失败（``$role.*`` 等不支持的命名空间）直接返回错误：执行期
+    ``_bind_condition`` 同样会保留占位符，让 ``rewrite`` 拒绝——那种策略存进库
+    等于"永远拒绝"，必须在入库前拦住。
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if exp is None or sqlglot is None:  # pragma: no cover - 依赖缺失
+        return "sqlglot 不可用，无法校验条件"
+    # 与执行期同一套"文本级"闸门，且必须在 parse **之前**做：
+    # ``sqlglot.parse_one`` 会把 ``a = 1; drop table t`` 悄悄截成第一条，
+    # 校验因此在"绑定 → 序列化"后看不到分号，坏条件就被放行进库了。
+    if ";" in text:
+        return "条件里不允许分号（防多条语句）"
+    if "--" in text or "/*" in text or "*/" in text:
+        return "条件里不允许注释"
+    if _DDL_WORDS.search(text):
+        return "条件里不允许 DDL/DML 关键字"
+    try:
+        parsed = sqlglot.parse_one(text, read=dialect)
+    except Exception as e:  # noqa: BLE001 - 脏条件按拒绝处理
+        return f"条件无法解析：{e}"
+    if parsed is None:
+        return "条件无法解析"
+    for dot in list(parsed.find_all(exp.Dot)):
+        ref = _placeholder_ref(dot)
+        if ref is None:
+            continue
+        namespace, field = ref
+        if namespace == "user" and field == "id":
+            dot.replace(exp.Literal.number(1))
+            continue
+        if namespace == "attr":
+            dot.replace(exp.Literal.string("v"))
+            continue
+        return (
+            f"不支持的策略参数 ${namespace}.{field}"
+            "（只支持 $attr.<属性名> / $user.id）"
+        )
+    try:
+        bound = parsed.sql(dialect=dialect)
+    except Exception as e:  # noqa: BLE001
+        return f"条件无法序列化：{e}"
+    _parsed, error = _compile_condition(bound, dialect)
+    return error
+
+
+def validate_mask(raw: str, dialect: str = "postgres") -> str:
+    """**保存策略时**校验掩码表达式；返回错误原因，空串 = 合法。"""
+    _parsed, error = _compile_mask(raw, dialect, None)
+    return error
 
 
 # ---------------------------------------------------------------------------

@@ -24,7 +24,7 @@ from app.core.database import async_db_session
 
 from .engine import Policy
 
-__all__ = ["domain_codes_for_user", "list_policies"]
+__all__ = ["domain_codes_for_user", "list_policies", "list_policy_rows"]
 
 #: 读取策略（列顺序与 :func:`_policy_row` 一一对应）。
 #:
@@ -40,6 +40,18 @@ _POLICY_SQL = (
 _DOMAIN_SQL = (
     "SELECT code, members FROM ai_data_domain "
     "WHERE enabled=true AND is_deleted=false ORDER BY id"
+)
+
+#: **管理视图**（T12 策略管理接口）：包含 ``enabled=false`` 的行 —— 停下一条策略后
+#: 还得能看见它、再启回来；``list_policies`` 是判定输入，两者口径**故意不同**。
+#:
+#: 与判定视图的另一个差别：这里要 ``name`` / ``description`` 等展示字段
+#: （``Policy`` 投影里没有），所以单独一条 SQL，不复用 ``_POLICY_SQL``。
+_MANAGE_SQL = (
+    "SELECT id, name, description, enabled, priority, resource_kind, resource_code, "
+    "effect, subject_kind, subject_value, condition, columns, mask_expr, marking, "
+    "created_time, updated_time "
+    "FROM ai_policy WHERE is_deleted=false"
 )
 
 
@@ -91,6 +103,54 @@ async def list_policies() -> list[Policy]:
     async with async_db_session() as db:
         rows = (await db.execute(text(_POLICY_SQL))).fetchall()
     return [_policy_row(r) for r in rows]
+
+
+def _row_dict(row) -> dict:
+    """``ai_policy`` 行 → 管理接口的 dict（``columns`` 归一成小写列表）。"""
+    from .audit import _time_text  # 与审计接口/操作日志同一套时间格式
+
+    return {
+        "id": int(row[0] or 0),
+        "name": _text(row[1]),
+        "description": _text(row[2]),
+        "enabled": bool(row[3]),
+        "priority": int(row[4] or 0),
+        "resource_kind": _text(row[5]).lower(),
+        "resource_code": _text(row[6]),
+        "effect": _text(row[7]).lower(),
+        "subject_kind": _text(row[8]).lower(),
+        "subject_value": _text(row[9]),
+        "condition": _text(row[10]),
+        "columns": [c for c in (_text(v).lower() for v in _as_list(row[11])) if c],
+        "mask_expr": _text(row[12]),
+        "marking": _text(row[13]),
+        "created_time": _time_text(row[14]),
+        "updated_time": _time_text(row[15]),
+    }
+
+
+async def list_policy_rows(
+    *, resource_kind: str = "", resource_code: str = ""
+) -> list[dict]:
+    """策略管理列表（**含停用**，不含软删），按 id 升序。
+
+    ``resource_kind`` / ``resource_code`` 为空即不过滤（治理页默认看全量）。
+    注意这不是判定输入 —— 判定侧一律走 :func:`list_policies`，那里只读启用策略。
+    """
+    sql = _MANAGE_SQL
+    params: dict[str, str] = {}
+    kind = _text(resource_kind).lower()
+    if kind:
+        sql += " AND lower(resource_kind)=:kind"
+        params["kind"] = kind
+    code = _text(resource_code)
+    if code:
+        sql += " AND resource_code=:code"
+        params["code"] = code
+    sql += " ORDER BY id"
+    async with async_db_session() as db:
+        rows = (await db.execute(text(sql), params)).fetchall()
+    return [_row_dict(r) for r in rows]
 
 
 def _member_ids(value) -> set[str]:

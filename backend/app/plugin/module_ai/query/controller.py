@@ -10,6 +10,7 @@ from app.common.response import ErrorResponse, SuccessResponse
 from app.core.dependencies import AuthPermission, redis_getter
 from app.core.router_class import OperationLogRoute
 
+from . import policy_api
 from .schema import (
     FilterRulesAdviseRequest,
     FilterRulesParseRequest,
@@ -36,6 +37,11 @@ from .service import sync_datasource_schema as _do_sync_schema
 from .service import test_datasource_conn as _do_test_conn
 
 AiQueryRouter = APIRouter(route_class=OperationLogRoute, prefix="/query", tags=["AI-智能问数"])
+
+# 权限策略管理 / 解释（T12）：独立模块自己建 router，再挂进问数容器。
+# 不用「在 controller 顶层再导出一个 APIRouter 变量」的写法：动态发现会把两个
+# router 各注册一次（路径重复、openapi operationId 冲突）。
+AiQueryRouter.include_router(policy_api.PolicyRouter)
 
 
 @AiQueryRouter.get("/system/degraded", summary="降级状态(哪些能力坏了但流程还在跑)")

@@ -740,6 +740,12 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     # 问数评测：读写分离（原先与「问数」共用 ask，等于「能问数就能删掉整个题库」）
     ("module_ai:eval:query", "查看问数评测"),
     ("module_ai:eval:manage", "维护问数评测（题库/运行/消融）"),
+    # 问数权限策略（T12）：策略决定「谁能看哪张表的哪些列/行」，必须与 ask 分离。
+    # 只给「能问数」的人改策略 = 任何人都能给自己提权。
+    ("module_ai:query:policy:query", "查看问数权限策略"),
+    ("module_ai:query:policy:create", "新增问数权限策略"),
+    ("module_ai:query:policy:update", "编辑问数权限策略"),
+    ("module_ai:query:policy:delete", "删除问数权限策略"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
