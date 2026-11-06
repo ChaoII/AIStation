@@ -80,14 +80,6 @@ __all__ = ["DENIED_ALL", "AccessPlan", "build_plan", "rewrite"]
 #: 出现即表示**整张表不可读**（包括 ``select 1 from t`` 这种不带列引用的查询）。
 DENIED_ALL = "*"
 
-#: 行条件里的属性引用（与 ``engine`` 同口径）。
-_ATTR_REF = re.compile(r"\$attr\.([A-Za-z_][A-Za-z0-9_]*)\b")
-#: 行条件里的用户 id 引用。
-_USER_ID_REF = re.compile(r"\$user\.id\b")
-#: ``col = $attr.x``：属性是多值时改写成 ``col IN (...)`。
-_EQ_ATTR_REF = re.compile(
-    r"(?P<col>[A-Za-z_][A-Za-z0-9_.]*)\s*=\s*\$attr\.(?P<name>[A-Za-z_][A-Za-z0-9_]*)\b"
-)
 #: 条件/掩码里禁止出现的写操作与 DDL 关键字（词边界，避免误伤 created/updated 之类）。
 _DDL_WORDS = re.compile(
     r"\b(alter|call|copy|create|delete|do|drop|execute|grant|insert|merge|revoke|"
@@ -113,67 +105,111 @@ class AccessPlan:
     allowed_columns: dict[str, tuple[str, ...] | None]
     masked: dict[str, dict[str, str]]
     denied: dict[str, frozenset[str]]
+    #: 实际参与本次计划的策略 id（``build_plan`` 填，``rewrite`` 透传进 ``Decision``）。
+    policy_ids: tuple[int, ...] = ()
 
 
 # ---------------------------------------------------------------------------
 # 条件绑定（build_plan 侧）
 # ---------------------------------------------------------------------------
-def _sql_literal(value) -> str:
-    """把属性值转成 SQL 字面量。
+def _placeholder_ref(node):
+    """``$attr.x`` / ``$user.id`` 在 sqlglot 里是 ``Dot(Parameter(Var), Identifier)``。
 
-    字符串**一律加引号**（即使看起来是数字）：``dept_id = '3'`` 在 PG 里是 unknown
-    字面量、会按列类型隐式转换，对 int 与 text 列都成立；反过来把 ``'3'`` 当数字内联，
-    遇到 text 列会直接报类型错。引号内的 ``'`` 双写转义。
+    返回 ``(命名空间, 字段)``；不是占位符返回 ``None``。
     """
-    if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    if isinstance(value, int):
-        return str(value)
-    return "'" + str(value).replace("'", "''") + "'"
-
-
-def _attr_literal(attrs: dict, name: str):
-    """单值属性 → 字面量；多值返回 ``None``（调用方决定能否表达）。"""
-    values = _attr_values(attrs.get(name.lower()))
-    return values[0] if len(values) == 1 else None
+    if not isinstance(node, exp.Dot):
+        return None
+    left = node.this
+    if isinstance(left, exp.Parameter):
+        left = left.this
+    if not isinstance(left, exp.Var):
+        return None
+    field = node.expression
+    name = field.name if isinstance(field, exp.Identifier) else ""
+    return (_norm_ident(left.this), _norm_ident(name))
 
 
 def _bind_condition(condition: str, principal: Principal) -> str:
-    """把 ``$attr.*`` / ``$user.id`` 绑定成字面量（只处理引擎判定为"条件成立"的策略）。
+    """把 ``$attr.*`` / ``$user.id`` 按 **AST** 绑定成安全字面量。
 
-    多值属性：只在 ``col = $attr.x`` 的位置改写成 ``col IN (v1, v2)``；其它位置无法用
-    单个字面量表达，**原样保留占位符**——:func:`rewrite` 会因条件里残留 ``$`` 而拒绝
-    （fail-closed，不猜、不丢条件）。
+    必须先解析再替换：正则替换会命中**字符串字面量内部**（
+    ``note = '$attr.dept_id'`` 是"拿这个字符串做比较"，不是属性引用），改成按
+    ``Dot(Parameter(Var(...)))`` 节点替换就没有这个问题。
 
-    缺属性/缺身份：引擎的 ``applicable_condition`` 已经把这些 ``allow`` 排除了，正常
-    不会走到这里；真出现时以 ``1 = 0`` / ``NULL`` 兜底（宁可查不到行，也不放宽）。
+    规则：
+    - ``$user.id`` → 数字字面量；
+    - ``$attr.x`` 单值 → 字符串字面量（引号双写转义）；
+    - ``$attr.x`` 多值且位置是 ``col = $attr.x`` → ``col IN (v1, v2)``；
+    - 其余情况（类型不符 / 多值出现在别的比较里 / 未知命名空间如 ``$role``）→
+      **原样返回条件**（里面还带占位符节点）→ :func:`rewrite` 的条件校验会拒绝，
+      fail-closed，不猜、不放宽。
+
+    缺属性：引擎的 ``applicable_condition`` 已把这类 ``allow`` 排除了，正常不会走到；
+    真出现时同样原样返回 → 拒绝。
     """
+    text = str(condition or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = sqlglot.parse_one(text, read="postgres")
+    except Exception:  # noqa: BLE001 - 解析失败交给 rewrite 拒绝
+        return text
+    if parsed is None:
+        return text
+
     attrs = {
         str(k).lower(): v
         for k, v in (getattr(principal, "attrs", None) or {}).items()
     }
+    ok = True
 
-    def _eq_repl(m: re.Match) -> str:
-        values = _attr_values(attrs.get(m.group("name").lower()))
-        if not values:
-            return "1 = 0"
-        col = m.group("col")
-        if len(values) == 1:
-            return f"{col} = {_sql_literal(values[0])}"
-        return f"{col} IN ({', '.join(_sql_literal(v) for v in values)})"
+    for dot in list(parsed.find_all(exp.Dot)):
+        ref = _placeholder_ref(dot)
+        if ref is None:
+            continue  # 普通 Dot（如 (x).y）不在这里处理，交给条件白名单
+        namespace, field = ref
 
-    out = _EQ_ATTR_REF.sub(_eq_repl, condition or "")
+        if namespace == "user" and field == "id":
+            try:
+                uid = int(getattr(principal, "user_id", None))
+            except (TypeError, ValueError):
+                ok = False
+                continue
+            dot.replace(exp.Literal.number(uid))
+            continue
 
-    def _attr_repl(m: re.Match) -> str:
-        literal = _attr_literal(attrs, m.group(1))
-        # 多值/缺失 → 保留原占位符，交给 rewrite 拒绝
-        return m.group(0) if literal is None else _sql_literal(literal)
+        if namespace == "attr":
+            raw = attrs.get(field)
+            if isinstance(raw, (dict, bytes, bytearray)):
+                ok = False
+                continue
+            values = _attr_values(raw)
+            if not values:
+                ok = False
+                continue
+            if len(values) == 1:
+                dot.replace(exp.Literal.string(values[0]))
+                continue
+            parent = dot.parent
+            if isinstance(parent, exp.EQ) and parent.args.get("expression") is dot:
+                parent.replace(
+                    exp.In(
+                        this=parent.this.copy(),
+                        expressions=[exp.Literal.string(v) for v in values],
+                    )
+                )
+                continue
+            ok = False
+            continue
 
-    out = _ATTR_REF.sub(_attr_repl, out)
+        ok = False  # $role.* 等暂不支持 → 拒绝
 
-    uid = getattr(principal, "user_id", None)
-    out = _USER_ID_REF.sub(str(int(uid)) if uid else "NULL", out)
-    return out
+    if not ok:
+        return text  # 保留占位符，rewrite 会以"未绑定的策略参数"拒绝
+    try:
+        return parsed.sql(dialect="postgres")
+    except Exception:  # noqa: BLE001
+        return text
 
 
 def _table_marking(policies, table: str) -> str:
@@ -235,6 +271,12 @@ def build_plan(
     allowed_columns: dict[str, tuple[str, ...] | None] = {}
     masked: dict[str, dict[str, str]] = {}
     denied: dict[str, frozenset[str]] = {}
+    policy_ids: list[int] = []
+
+    def _add_ids(ids) -> None:
+        for pid in ids or ():
+            if pid not in policy_ids:
+                policy_ids.append(int(pid))
 
     for raw_table, raw_columns in (tables or {}).items():
         table = _table_key(raw_table)
@@ -242,6 +284,7 @@ def build_plan(
             continue
 
         table_decision = decide_table(policies, principal, table)
+        _add_ids(table_decision.policy_ids)
         if not table_decision.permit:
             # 表级拒绝（含"没有任何适用的 allow"）：用哨兵表达整表不可读
             denied[table] = frozenset({DENIED_ALL})
@@ -255,6 +298,14 @@ def build_plan(
             # 无列元数据：带标记 → 拒绝（不放未知列）；否则保留星号并记审计
             if _table_marking(policies, table):
                 denied[table] = frozenset({DENIED_ALL})
+                # 标记本身也是"生效的策略"，审计要能追到
+                for policy in policies or ():
+                    if policy is None or not _is_enabled(getattr(policy, "enabled", True)):
+                        continue
+                    if str(getattr(policy, "marking", "") or "").strip() and _table_key(
+                        getattr(policy, "resource_code", "")
+                    ) == table:
+                        _add_ids([getattr(policy, "id", 0)])
             else:
                 allowed_columns[table] = None
             continue
@@ -264,6 +315,7 @@ def build_plan(
         readable: list[str] = []
         for column in columns:
             column_decision = decide_column(policies, principal, table, column)
+            _add_ids(column_decision.policy_ids)
             if not column_decision.permit:
                 blocked.add(column.lower())
                 continue
@@ -284,6 +336,7 @@ def build_plan(
         allowed_columns=allowed_columns,
         masked=masked,
         denied=denied,
+        policy_ids=tuple(policy_ids),
     )
 
 
@@ -327,8 +380,6 @@ def _compile_condition(raw: str, dialect: str):
     text = str(raw or "").strip()
     if not text:
         return None, ""
-    if "$" in text:
-        return None, "条件里残留未绑定的策略参数（如 $attr.* / $user.id）"
     if ";" in text:
         return None, "条件里不允许分号（防多条语句）"
     if "--" in text or "/*" in text or "*/" in text:
@@ -341,6 +392,10 @@ def _compile_condition(raw: str, dialect: str):
         return None, f"条件无法解析：{e}"
     if parsed is None or isinstance(parsed, (exp.Select, exp.Subquery, exp.Command)):
         return None, "条件只允许布尔表达式（不允许子查询/语句）"
+    for node in parsed.walk():
+        if isinstance(node, (exp.Parameter, exp.Var, exp.Placeholder)):
+            # 不是"文本里出现 $"，而是真的留下占位符节点（字符串字面量里的 $ 不算）
+            return None, "条件里存在未绑定的策略参数（$attr.* / $user.id/$role.*）"
     allowed = _allowed_condition_nodes()
     for node in parsed.walk():
         if not isinstance(node, allowed):
@@ -371,6 +426,9 @@ def _compile_mask(raw: str, dialect: str, alias: str | None):
     for node in parsed.walk():
         if isinstance(node, (exp.Select, exp.Subquery, exp.Command)):
             return None, "掩码表达式不允许子查询"
+    for func in parsed.find_all(exp.Func):
+        if _is_system_function(func):
+            return None, "掩码表达式里不允许调用系统函数"
     if alias:
         for column in parsed.find_all(exp.Column):
             if not column.table:
@@ -386,21 +444,80 @@ def _norm_ident(name) -> str:
     return str(name or "").strip().strip('"').strip("`").strip().lower()
 
 
-def _real_tables(scope) -> list[tuple[object, str]]:
-    """该作用域的**真实表**：``(Table 节点, 归一化表名)``。
+#: 系统 schema：这些 schema 下的表一律拒绝（编译器是执行边界）。
+_SYSTEM_SCHEMAS = frozenset({"pg_catalog", "information_schema", "pg_toast"})
 
-    CTE 名不是表：``scope.cte_sources`` 是该作用域真正可见的 CTE（本 SELECT 的 WITH +
-    祖先链，CTE 体内看不到自身），带 schema 限定的引用永远是真实表。
+#: 系统函数（``pg_*`` 之外、需要单独点名的）。``pg_*`` 前缀统一拒绝。
+_SYSTEM_FUNCTIONS = frozenset(
+    {
+        "lo_import",
+        "lo_export",
+        "dblink",
+        "dblink_connect",
+        "dblink_exec",
+        "pg_read_file",
+        "pg_read_binary_file",
+        "pg_ls_dir",
+        "pg_stat_file",
+        "pg_sleep",
+    }
+)
+
+
+def _func_name(func) -> str:
+    """函数名归一（``Anonymous`` 的 ``this`` 是字符串，其余走 ``sql_name``）。"""
+    if isinstance(func, exp.Anonymous):
+        return _norm_ident(func.this)
+    try:
+        return _norm_ident(func.sql_name())
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _is_system_function(func) -> bool:
+    name = _func_name(func)
+    return bool(name) and (name.startswith("pg_") or name in _SYSTEM_FUNCTIONS)
+
+
+def _is_system_table(table) -> bool:
+    """``pg_*`` / ``pg_catalog`` / ``information_schema`` / ``pg_toast`` 一律拒绝。"""
+    name = _norm_ident(table.name)
+    db = _norm_ident(table.db)
+    catalog = _norm_ident(table.catalog)
+    if name.startswith("pg_"):
+        return True
+    return db in _SYSTEM_SCHEMAS or catalog in _SYSTEM_SCHEMAS
+
+
+def _real_tables(scope) -> list[tuple[object, str, str]]:
+    """该作用域的**真实表**：``(Table 节点, 归一化表名, 可见别名)``。
+
+    从 ``scope.sources`` 取，而不是 ``scope.tables``（Critical 1）：
+
+    - 值是 ``Table``：普通引用 / join 两侧 / 括号 join 内部；
+    - 值是"表作用域"（``expression`` 是 ``Table``）：``FROM (t) AS j`` —— sqlglot
+      把括号表变成一个 derived-table 作用域，真实表在它的表达式里，``scope.tables``
+      为空；只看 ``scope.tables`` 会让整张表绕过策略；
+    - CTE 与派生表（``select ...``）的 source 是查询作用域 → 自然排除，不会被当表。
+
+    可见别名取 ``sources`` 的键（``(t) AS j`` 的 ``j``、``t AS x`` 的 ``x``），
+    星号展开与列解析都用它。
     """
-    cte_names = {_norm_ident(name) for name in scope.cte_sources}
-    out: list[tuple[object, str]] = []
-    for table in scope.tables:
+    out: list[tuple[object, str, str]] = []
+    seen: set[int] = set()
+    for alias, source in scope.sources.items():
+        table = None
+        if isinstance(source, exp.Table):
+            table = source
+        elif isinstance(getattr(source, "expression", None), exp.Table):
+            table = source.expression
+        if table is None or id(table) in seen:
+            continue
         name = str(table.name or "").strip()
         if not name:
             continue
-        if not (table.db or table.catalog) and _norm_ident(name) in cte_names:
-            continue
-        out.append((table, _table_key(name)))
+        seen.add(id(table))
+        out.append((table, _table_key(name), str(alias or table.alias_or_name)))
     return out
 
 
@@ -414,19 +531,13 @@ def _covered(plan: AccessPlan, table: str) -> bool:
     )
 
 
-def _scope_own_columns(scope, scope_roots: set[int]) -> list[object]:
-    """该作用域**自己**的列引用（不进入嵌套子查询作用域）。
-
-    不能用 ``scope.columns``：它不含 ``HAVING`` / ``QUALIFY`` 里的列（实测
-    ``having count(phone) > 1`` 的 ``phone`` 缺失），会把 deny 列藏起来。
-    嵌套作用域的根整棵跳过，交给它自己的作用域判定。
-    """
+def _scope_own_nodes(scope, scope_roots: set[int]) -> list[object]:
+    """该作用域**自己**的节点（不进入嵌套子查询作用域）。"""
     out: list[object] = []
     stack: list[object] = [scope.expression]
     while stack:
         node = stack.pop()
-        if isinstance(node, exp.Column):
-            out.append(node)
+        out.append(node)
         for child in node.iter_expressions():
             if id(child) in scope_roots:
                 continue
@@ -434,8 +545,86 @@ def _scope_own_columns(scope, scope_roots: set[int]) -> list[object]:
     return out
 
 
+def _scope_own_columns(scope, scope_roots: set[int]) -> list[object]:
+    """该作用域**自己**的列引用（不进入嵌套子查询作用域）。
+
+    不能用 ``scope.columns``：它不含 ``HAVING`` / ``QUALIFY`` 里的列（实测
+    ``having count(phone) > 1`` 的 ``phone`` 缺失），会把 deny 列藏起来。
+    嵌套作用域的根整棵跳过，交给它自己的作用域判定。
+    """
+    return [
+        node for node in _scope_own_nodes(scope, scope_roots) if isinstance(node, exp.Column)
+    ]
+
+
+def _scope_clause_nodes(scope, scope_roots: set[int]) -> list[object]:
+    """该作用域**非投影**部分的节点（WHERE / GROUP BY / HAVING / ORDER BY / JOIN ON…）。
+
+    mask 只作用于投影；同一列出现在这些位置时必须拒绝（防"用条件反推值"）。
+    UNION 作用域没有自己的 SELECT（ORDER BY 挂在 Union 节点上）→ 全部按"非投影"处理。
+    """
+    expression = scope.expression
+    if not isinstance(expression, exp.Select):
+        return _scope_own_nodes(scope, scope_roots)
+    out: list[object] = []
+    for key, value in expression.args.items():
+        if key == "expressions":
+            continue
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            if not isinstance(item, exp.Expression):
+                continue
+            stack = [item]
+            while stack:
+                node = stack.pop()
+                out.append(node)
+                for child in node.iter_expressions():
+                    if id(child) in scope_roots:
+                        continue
+                    stack.append(child)
+    return out
+
+
+def _own_columns_of(node, scope_roots: set[int]) -> list[object]:
+    """子树里的列引用（跳过嵌套查询作用域）。"""
+    out: list[object] = []
+    stack: list[object] = [node]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, exp.Column):
+            out.append(current)
+        for child in current.iter_expressions():
+            if id(child) in scope_roots:
+                continue
+            stack.append(child)
+    return out
+
+
+#: 对掩码列做这些聚合默认拒绝（spec §5.3：mask 只改显示形态，不授予聚合权限）。
+_ROW_AGGREGATES = (exp.Sum, exp.Avg, exp.Max, exp.Min)
+
+
 def _mask_for(plan: AccessPlan, table: str, column: str) -> str:
     return str((plan.masked.get(table) or {}).get(column.lower()) or "")
+
+
+def _masked_target(column, real, plan: AccessPlan, resolve):
+    """该列命中的 masked 表；``(None, True)`` 表示多表同名无法判定归属。
+
+    ``resolve`` 把限定名解析成真实表（本作用域 / 作用域链）。无别名列只在**本作用域**
+    的真实表里找掩码；多于一张表命中视为歧义（调用方拒绝，绝不猜）。
+    """
+    qualifier = _norm_ident(column.table)
+    name = _norm_ident(column.name)
+    if qualifier:
+        table_id = resolve(qualifier)
+        if table_id and _mask_for(plan, table_id, name):
+            return table_id, False
+        return None, False
+    hits = [table_id for _table, table_id, _alias in real if _mask_for(plan, table_id, name)]
+    if len(hits) > 1:
+        return None, True
+    return (hits[0], False) if hits else (None, False)
 
 
 def _mask_touches_denied(expr, plan: AccessPlan, table: str) -> bool:
@@ -487,20 +676,49 @@ def _expand_star(
     return out, ""
 
 
-def _wrap_table(table, condition) -> None:
+def _wrap_table(table, condition, alias: str) -> None:
     """把表引用换成 ``(SELECT * FROM t WHERE <cond>) AS <原别名>`` 并原地替换。
 
     内部 ``SELECT *`` 是编译中间态：本模块先做列改写、最后才包装，因此它不会被
-    列策略再检查一遍。别名优先沿用原别名（``from t x`` → ``as x``），没别名则用表名，
-    保证 ``t.col`` 这类限定列引用继续有效。
+    列策略再检查一遍。
+
+    **joins 必须摘出来单独处理**（Critical 2）：sqlglot 把 ``t JOIN u`` 的 joins 挂在
+    ``t`` 节点上，直接 ``table.copy()`` 会把 u 一起复制进子查询；之后对原 u 的包装
+    作用在游离副本上，u 的过滤既不进 SQL、applied 里却写着它。正确做法是把原 join
+    节点**移动**到包装结果上（不 copy，保持后续对 join 内表的引用仍有效）。
+
+    别名：``FROM (t) AS j`` 的外层 ``Subquery`` 已经提供别名，内层不再加别名
+    （否则是 ``((SELECT ...) AS t) AS j`` 的双重别名）；其余情况沿用原别名/可见别名。
     """
+    joins = table.args.get("joins")
     inner_table = table.copy()
     inner_table.set("alias", None)
+    inner_table.set("joins", None)
     inner = exp.select("*").from_(inner_table).where(condition.copy())
 
-    alias_node = table.args.get("alias")
-    alias = alias_node.copy() if alias_node is not None else exp.TableAlias(this=table.this.copy())
-    table.replace(exp.Subquery(this=inner, alias=alias))
+    parent = table.parent
+    covered_by_parent = False
+    while isinstance(parent, exp.Subquery):
+        if parent.args.get("alias") is not None:
+            covered_by_parent = True
+            break
+        parent = parent.parent
+
+    wrapper = exp.Subquery(this=inner)
+    if not covered_by_parent:
+        alias_node = table.args.get("alias")
+        wrapper.set(
+            "alias",
+            alias_node.copy()
+            if alias_node is not None
+            else exp.TableAlias(this=exp.to_identifier(alias)),
+        )
+    if joins:
+        wrapper.set("joins", joins)
+        for join in joins:
+            join.parent = wrapper
+
+    table.replace(wrapper)
 
 
 def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decision:
@@ -544,12 +762,23 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
     except Exception as e:  # noqa: BLE001
         return Decision(False, f"查询作用域解析失败，按拒绝处理（fail-closed）：{e}")
 
-    # 逐作用域收集真实表与别名映射（CTE 名不算表）
-    entries: list[tuple[object, list[tuple[object, str]], dict[str, str]]] = []
+    # 系统函数是执行边界：pg_* / 文件读写等直接拒绝（不依赖计划是否覆盖）
+    for func in tree.find_all(exp.Func):
+        if _is_system_function(func):
+            return Decision(
+                False,
+                f"不允许调用系统函数 {_func_name(func)}，按拒绝处理（fail-closed）",
+            )
+
+    # 逐作用域收集真实表与别名映射（CTE / 派生表不是真实表）
+    entries: list[tuple[object, list[tuple[object, str, str]], dict[str, str]]] = []
     for scope in scopes:
+        if isinstance(scope.expression, exp.Table):
+            # (t) 的"表作用域"：由父作用域通过 sources 处理，避免重复判定/包装
+            continue
         real = _real_tables(scope)
         alias_to_table = {
-            _norm_ident(table.alias_or_name): table_id for table, table_id in real
+            _norm_ident(alias): table_id for _table, table_id, alias in real
         }
         entries.append((scope, real, alias_to_table))
 
@@ -558,7 +787,12 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
     scope_meta = {id(scope): (real, aliases) for scope, real, aliases in entries}
 
     for scope, real, _alias_to_table in entries:
-        for _table, table_id in real:
+        for table, table_id, _visible in real:
+            if _is_system_table(table):
+                return Decision(
+                    False,
+                    f"系统表 {table_id} 不允许查询，按拒绝处理（fail-closed）",
+                )
             if not _covered(plan, table_id):
                 return Decision(
                     False, f"表 {table_id} 不在访问计划内，按拒绝处理（fail-closed）"
@@ -573,22 +807,101 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
         while node is not None:
             chain.append(node)
             node = getattr(node, "parent", None)
+
+        union_branches = list(getattr(scope, "union_scopes", None) or [])
+
+        def _resolve(qualifier: str, chain=chain, union_branches=union_branches):
+            """限定名 → 真实表（先本作用域，再沿作用域链，最后 UNION 分支）。"""
+            for item in chain:
+                meta = scope_meta.get(id(item))
+                if meta and qualifier in meta[1]:
+                    return meta[1][qualifier]
+            for branch in union_branches:
+                meta = scope_meta.get(id(branch))
+                if meta and qualifier in meta[1]:
+                    return meta[1][qualifier]
+            return None
+
+        # UNION 的 ORDER BY 挂在外层 Union 节点上，不是任何分支的 SELECT：
+        # 列要按**分支表**判定，否则 `... union ... order by phone` 能绕过 deny/mask。
+        checked_real = list(real)
+        seen_tables = {table_id for _table, table_id, _alias in checked_real}
+        for branch in union_branches:
+            meta = scope_meta.get(id(branch))
+            if not meta:
+                continue
+            for entry in meta[0]:
+                if entry[1] not in seen_tables:
+                    checked_real.append(entry)
+                    seen_tables.add(entry[1])
+
         visible: list[str] = []
         for item in chain:
             meta = scope_meta.get(id(item))
             if not meta:
                 continue
-            for _table, table_id in meta[0]:
+            for _table, table_id, _alias in meta[0]:
                 if table_id not in visible:
                     visible.append(table_id)
+        for _table, table_id, _alias in checked_real:
+            if table_id not in visible:
+                visible.append(table_id)
 
         # CTE / 派生表作用域不能引用外层查询（非 LATERAL），无别名列只可能是本地表；
         # 其余作用域（EXISTS / 标量子查询等）可能相关引用外层，保守地把外层也算进候选。
         visible_candidates = (
-            [table_id for _table, table_id in real]
+            [table_id for _table, table_id, _alias in checked_real]
             if getattr(scope, "is_cte", False) or getattr(scope, "is_derived_table", False)
             else visible
         )
+
+        expression = scope.expression
+        select_expression = expression if isinstance(expression, exp.Select) else None
+
+        def _under_aggregate(column, expression=expression) -> bool:
+            """该列是否位于 SUM/AVG/MAX/MIN 之下（mask 列聚合默认拒绝）。"""
+            parent = column.parent
+            while parent is not None and parent is not expression:
+                if isinstance(parent, _ROW_AGGREGATES):
+                    return True
+                parent = parent.parent
+            return False
+
+        # 整行/整表引用（Critical 3）：select t / (t).phone / row_to_json(t) /
+        # count(t) / t::text / row_to_json(t.*) —— 只要表有 deny 或 mask 就拒绝。
+        for node in _scope_own_nodes(scope, scope_roots):
+            if not isinstance(node, exp.Column):
+                continue
+            if isinstance(node.this, exp.Star):
+                qualifier = _norm_ident(node.table)
+                if not qualifier:
+                    continue  # 裸星号（含 count(*)）另行处理
+                table_id = _resolve(qualifier)
+                if not table_id:
+                    continue
+                if not (plan.denied.get(table_id) or plan.masked.get(table_id)):
+                    continue
+                # 顶层 t.* 投影会被展开；函数参数/条件里的 t.* 是整表引用
+                if node.parent is select_expression and any(
+                    node is projection for projection in select_expression.expressions
+                ):
+                    continue
+                return Decision(
+                    False,
+                    f"表 {table_id} 的整表引用（{qualifier}.*）无法安全施加列策略，"
+                    "按拒绝处理（fail-closed）",
+                )
+            if node.table:
+                continue  # 限定列：不是整行引用
+            name = _norm_ident(node.name)
+            # 无别名列指向表别名 → 整行引用（PG 语义：t 表示整行）
+            table_id = _alias_to_table.get(name) or _resolve(name)
+            if table_id and (plan.denied.get(table_id) or plan.masked.get(table_id)):
+                return Decision(
+                    False,
+                    f"表 {table_id} 的整行引用（{name}）涉及 deny/mask 列，"
+                    "按拒绝处理（fail-closed）",
+                )
 
         for column in _scope_own_columns(scope, scope_roots):
             if isinstance(column.this, exp.Star):  # t.* 星号另行处理
@@ -598,12 +911,7 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                 continue
             qualifier = _norm_ident(column.table)
             if qualifier:
-                table_id = None
-                for item in chain:
-                    meta = scope_meta.get(id(item))
-                    if meta and qualifier in meta[1]:
-                        table_id = meta[1][qualifier]
-                        break
+                table_id = _resolve(qualifier)
                 # 派生表 / CTE 列：真实表由内层作用域处理，这里不猜
                 candidates = [table_id] if table_id else []
             else:
@@ -615,11 +923,42 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                         f"列 {table_id}.{column_name} 被策略拒绝（deny，不可用于"
                         "投影/条件/排序/分组）",
                     )
+            masked_table, ambiguous = _masked_target(column, checked_real, plan, _resolve)
+            if ambiguous:
+                return Decision(
+                    False,
+                    f"列 {column_name} 无法确定属于哪张表（多表同名掩码），"
+                    "按拒绝处理（fail-closed）",
+                )
+            if masked_table and _under_aggregate(column):
+                return Decision(
+                    False,
+                    f"列 {masked_table}.{column_name} 已配置掩码，不允许做 "
+                    "SUM/AVG/MAX/MIN 聚合（需单独 allow），按拒绝处理（fail-closed）",
+                )
+
+        # mask 列出现在 WHERE/GROUP BY/ORDER BY/HAVING/JOIN ON → 拒绝（防反推值）
+        for node in _scope_clause_nodes(scope, scope_roots):
+            if not isinstance(node, exp.Column) or isinstance(node.this, exp.Star):
+                continue
+            masked_table, ambiguous = _masked_target(node, checked_real, plan, _resolve)
+            if ambiguous:
+                return Decision(
+                    False,
+                    f"列 {_norm_ident(node.name)} 无法确定属于哪张表（多表同名掩码），"
+                    "按拒绝处理（fail-closed）",
+                )
+            if masked_table:
+                return Decision(
+                    False,
+                    f"列 {masked_table}.{_norm_ident(node.name)} 已配置掩码，不允许"
+                    "出现在 WHERE/GROUP BY/ORDER BY/HAVING/JOIN 中（mask 只作用于投影）",
+                )
 
     # ③ 行条件校验（只校验真正被引用的表）
     conditions: dict[str, object] = {}
     for _scope, real, _alias_to_table in entries:
-        for _table, table_id in real:
+        for _table, table_id, _visible in real:
             if table_id in conditions:
                 continue
             raw = str(plan.row_filters.get(table_id) or "").strip()
@@ -656,12 +995,15 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                 expanded: list[object] = []
                 blocked: list[str] = []
                 pending_masks: list[dict] = []
-                # 同作用域还有 CTE/派生表（sources 里不是 Table）时，它们的列未知，
-                # 裸星号不能"只展开真实表"——否则会把 CTE/派生表的列整段丢掉。
+                # 同作用域还有 CTE/派生表（sources 里既不是 Table，也不是"表作用域"）
+                # 时，它们的列未知，裸星号不能"只展开真实表"——否则会把 CTE/派生表
+                # 的列整段丢掉。`(t) AS j` 是"表作用域"，列已知，不算未知来源。
                 has_unknown_source = any(
-                    not isinstance(source, exp.Table) for source in scope.sources.values()
+                    not isinstance(source, exp.Table)
+                    and not isinstance(getattr(source, "expression", None), exp.Table)
+                    for source in scope.sources.values()
                 )
-                for table, table_id in real:
+                for _table, table_id, visible_alias in real:
                     if has_unknown_source:
                         if (plan.denied.get(table_id) or frozenset()) or (
                             plan.masked.get(table_id) or {}
@@ -673,7 +1015,7 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                             )
                         blocked.append(table_id)
                         continue
-                    qualifier = table.alias_or_name if len(real) > 1 else None
+                    qualifier = visible_alias if len(real) > 1 else None
                     columns, why = _expand_star(plan, table_id, dialect, qualifier)
                     if why == "no-metadata":
                         blocked.append(table_id)
@@ -702,7 +1044,7 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                 if blocked:
                     # 无法完整展开 = 只能保留用户的星号：此时任何列级限制（deny/mask）
                     # 都会被原样读出来（掩码没施加），必须拒绝。
-                    for _table, table_id in real:
+                    for _table, table_id, _alias in real:
                         if (plan.denied.get(table_id) or frozenset()) or (
                             plan.masked.get(table_id) or {}
                         ):
@@ -766,24 +1108,22 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                 continue
 
             # 直接列投影（含 `col as alias`）：mask 只作用于投影，保留输出列名
+            # 顶层裸列投影：mask 后保留输出列名；其余表达式在任意位置替换（Critical 4）
             inner = projection.this if isinstance(projection, exp.Alias) else projection
             if isinstance(inner, exp.Column) and not isinstance(inner.this, exp.Star):
                 column_name = _norm_ident(inner.name)
-                qualifier = _norm_ident(inner.table)
-                if qualifier:
-                    table_id = alias_to_table.get(qualifier)
-                elif len(real) == 1:
-                    table_id = real[0][1]
-                else:
-                    hits = [
-                        table_id
-                        for _table, table_id in real
-                        if _mask_for(plan, table_id, column_name)
-                    ]
-                    table_id = hits[0] if len(hits) == 1 else None
+                table_id, _ambiguous = _masked_target(
+                    inner, real, plan, alias_to_table.get
+                )
                 mask = _mask_for(plan, table_id, column_name) if table_id else ""
                 if mask:
-                    expr, error = _compile_mask(mask, dialect, qualifier or None)
+                    qualifier = _norm_ident(inner.table) or None
+                    if qualifier is None and len(real) > 1:
+                        qualifier = next(
+                            (visible for _t, tid, visible in real if tid == table_id),
+                            None,
+                        )
+                    expr, error = _compile_mask(mask, dialect, qualifier)
                     if error:
                         return Decision(
                             False, f"表 {table_id} 的掩码表达式不合法，按拒绝处理：{error}"
@@ -794,11 +1134,54 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                             f"表 {table_id} 的掩码表达式引用了 deny 列，按拒绝处理"
                             "（fail-closed）",
                         )
-                    out_name = projection.alias or inner.name
-                    projections.append(expr.as_(out_name))
+                    projections.append(expr.as_(projection.alias or inner.name))
                     _record({"mask": mask, "table": table_id, "column": column_name})
                     changed = True
                     continue
+                projections.append(projection)
+                continue
+
+            # 复杂表达式：mask 列出现在任意位置 → 该列替换成掩码表达式
+            replaced = False
+            for column in _own_columns_of(projection, scope_roots):
+                if isinstance(column.this, exp.Star):
+                    continue
+                table_id, ambiguous = _masked_target(
+                    column, real, plan, alias_to_table.get
+                )
+                if ambiguous:
+                    return Decision(
+                        False,
+                        f"列 {_norm_ident(column.name)} 无法确定属于哪张表（多表同名"
+                        "掩码），按拒绝处理（fail-closed）",
+                    )
+                if not table_id:
+                    continue
+                column_name = _norm_ident(column.name)
+                mask = _mask_for(plan, table_id, column_name)
+                if not mask:
+                    continue
+                qualifier = _norm_ident(column.table) or None
+                if qualifier is None and len(real) > 1:
+                    qualifier = next(
+                        (visible for _t, tid, visible in real if tid == table_id), None
+                    )
+                expr, error = _compile_mask(mask, dialect, qualifier)
+                if error:
+                    return Decision(
+                        False, f"表 {table_id} 的掩码表达式不合法，按拒绝处理：{error}"
+                    )
+                if _mask_touches_denied(expr, plan, table_id):
+                    return Decision(
+                        False,
+                        f"表 {table_id} 的掩码表达式引用了 deny 列，按拒绝处理"
+                        "（fail-closed）",
+                    )
+                column.replace(expr)
+                _record({"mask": mask, "table": table_id, "column": column_name})
+                replaced = True
+            if replaced:
+                changed = True
 
             projections.append(projection)
 
@@ -807,11 +1190,11 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
 
     # ⑤ 行包装（逐表，绝不把不同表的条件合并成一个字符串）
     for _scope, real, _alias_to_table in entries:
-        for table, table_id in real:
+        for table, table_id, visible in real:
             condition = conditions.get(table_id)
             if condition is None:
                 continue
-            _wrap_table(table, condition)
+            _wrap_table(table, condition, visible)
             _record({"row": str(plan.row_filters.get(table_id) or ""), "table": table_id})
 
     # ⑥ 生成 SQL，恢复用户参数前缀
@@ -826,5 +1209,4 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
         reason = f"SQL 编译完成：{len(applied)} 处策略改写"
     else:
         reason = "SQL 编译完成：没有需要施加的策略"
-    # policy_ids 恒为空：AccessPlan 没有策略 id 字段（接口固定），由调用方合并
-    return Decision(True, reason, (), compiled, tuple(applied))
+    return Decision(True, reason, plan.policy_ids, compiled, tuple(applied))

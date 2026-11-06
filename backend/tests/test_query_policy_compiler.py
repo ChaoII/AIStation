@@ -15,9 +15,14 @@
 2. ``build_plan``（策略 → 计划）：
    - 逐表 ``decide_table``：无 allow → 整表拒绝（``denied[t]`` 里的 ``"*"`` 哨兵）；
    - 行条件用 ``decide_table`` 的并集（复用 engine 的 union/缺属性语义），
-     ``$attr.*`` / ``$user.id`` 在**编译期**内联为安全转义的字面量（Decision 没有参数通道）；
+     ``$attr.*`` / ``$user.id`` 在**编译期**按 AST 替换为安全转义的字面量
+     （Decision 没有参数通道；字符串字面量内的 ``$`` 不动）；
    - 逐列 ``decide_column``：deny 进 ``denied``、mask 进 ``masked``、其余进 ``allowed_columns``；
    - 无列元数据且表带 ``marking`` → 整表拒绝；无元数据无标记 → ``allowed_columns[t] = None``。
+
+评审修复（Critical 1-4）另有一组回归：括号表 ``(t) AS j``、括号 join、整行引用
+（``select t`` / ``(t).phone`` / ``row_to_json(t)`` / ``count(t)`` / ``t::text``）、
+mask 列出现在任意投影表达式/条件/排序/聚合，以及系统表与系统函数。
 
 全部用例 ``PYTEST_NO_APP=1`` 可跑（不需要应用与数据库）。
 """
@@ -475,3 +480,242 @@ def test_build_plan_normalizes_schema_qualified_table_names():
     d = rewrite("select id from public.t", built)
     assert d.permit
     assert "dept_id = 3" in norm(d.sql)
+
+
+# ===========================================================================
+# 评审修复回归（Critical 1-4 + Important）
+# ===========================================================================
+MASKED = {
+    "allowed": {"t": ("id", "phone")},
+    "masked": {"t": {"phone": "left(phone, 3)"}},
+}
+
+
+def masked_plan() -> AccessPlan:
+    return plan(**MASKED)
+
+
+# ---------------------------------------------------------------------------
+# Critical 1：FROM (t) AS j 绕过全部策略
+# ---------------------------------------------------------------------------
+def test_parenthesized_table_alias_denies_column():
+    assert not rewrite("select j.phone from (t) as j", plan(denied={"t": {"phone"}})).permit
+
+
+def test_parenthesized_table_alias_denies_table():
+    assert not rewrite(
+        "select j.phone from (t) as j", plan(denied={"t": {DENIED_ALL}})
+    ).permit
+
+
+def test_parenthesized_table_alias_applies_row_filter():
+    d = rewrite(
+        "select * from (t) as j",
+        plan(row_filters={"t": "dept = 1"}, allowed={"t": ("id", "dept")}),
+    )
+    assert d.permit
+    text = norm(d.sql)
+    assert "dept = 1" in text
+    # 括号表的列元数据是已知的：星号要展开，不能走 star_unexpanded
+    assert text.startswith("select id, dept from")
+    assert not any(item.get("star") == "unexpanded" for item in d.applied)
+    assert any(item.get("row") == "dept = 1" for item in d.applied)
+
+
+def test_parenthesized_table_alias_masks_projection():
+    d = rewrite(
+        "select j.phone from (t) as j",
+        plan(allowed={"t": ("phone",)}, masked={"t": {"phone": "left(phone, 3)"}}),
+    )
+    assert d.permit
+    assert "left(j.phone, 3)" in norm(d.sql)
+
+
+def test_parenthesized_table_alias_whole_row_denied():
+    assert not rewrite("select j from (t) as j", masked_plan()).permit
+
+
+# ---------------------------------------------------------------------------
+# Critical 2：括号 join 丢行过滤还伪造 applied
+# ---------------------------------------------------------------------------
+def test_parenthesized_join_applies_both_row_filters_and_keeps_joins():
+    d = rewrite(
+        "select * from (t join u on t.id = u.id)",
+        plan(row_filters={"t": "a = 1", "u": "b = 2"}, allowed={"t": None, "u": None}),
+    )
+    assert d.permit
+    text = norm(d.sql)
+    assert text.count("a = 1") == 1
+    assert text.count("b = 2") == 1
+    # join 结构保留（两张表各自包装后仍在同一条 join 上）
+    assert "join" in text and "on t.id = u.id" in text
+    rows = [item["row"] for item in d.applied if "row" in item]
+    assert set(rows) == {"a = 1", "b = 2"}
+    for row in rows:  # applied 必须与最终 SQL 一致
+        assert row in text
+
+
+def test_join_applied_entries_all_appear_in_sql():
+    d = rewrite(
+        "select * from t join u on t.id = u.id",
+        plan(row_filters={"t": "a = 1", "u": "b = 2"}, allowed={"t": None, "u": None}),
+    )
+    assert d.permit
+    text = norm(d.sql)
+    for item in d.applied:
+        if "row" in item:
+            assert item["row"] in text
+
+
+def test_union_level_order_by_denied_column_is_denied():
+    d = rewrite(
+        "select id from t union select id from t order by phone",
+        plan(allowed={"t": ("id",)}, denied={"t": {"phone"}}),
+    )
+    assert not d.permit
+
+
+def test_union_level_order_by_masked_column_is_denied():
+    d = rewrite(
+        "select id from t union select id from t order by phone",
+        plan(allowed={"t": ("id", "phone")}, masked={"t": {"phone": "left(phone, 3)"}}),
+    )
+    assert not d.permit
+
+
+# ---------------------------------------------------------------------------
+# Critical 3：整行 / 整表引用绕过 deny 与 mask
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select t from t",
+        "select (t).phone from t",
+        "select row_to_json(t) from t",
+        "select to_jsonb(t) from t",
+        "select json_agg(t) from t",
+        "select count(t) from t",
+        "select t::text from t",
+        "select row_to_json(t.*) from t",
+    ],
+)
+def test_whole_row_reference_is_denied_when_restricted(sql):
+    d = rewrite(sql, masked_plan())
+    assert not d.permit, sql
+
+
+def test_whole_row_reference_allowed_without_restrictions():
+    d = rewrite("select t from t", plan(allowed={"t": ("id",)}))
+    assert d.permit
+
+
+# ---------------------------------------------------------------------------
+# Critical 4：mask 只挡最外层裸列
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select max(phone) from t",
+        "select min(phone) from t",
+        "select avg(phone) from t",
+        "select sum(phone) from t",
+    ],
+)
+def test_aggregate_over_masked_column_is_denied(sql):
+    assert not rewrite(sql, masked_plan()).permit, sql
+
+
+@pytest.mark.parametrize(
+    "sql,needle",
+    [
+        ("select substring(phone, 1, 2) from t", "substring(left(phone, 3)"),
+        ("select phone || '' from t", "left(phone, 3) ||"),
+        (
+            "select case when phone is null then 1 else 0 end from t",
+            "case when left(phone, 3) is null",
+        ),
+    ],
+)
+def test_masked_column_inside_projection_expression_is_wrapped(sql, needle):
+    d = rewrite(sql, masked_plan())
+    assert d.permit, d.reason
+    assert needle in norm(d.sql)
+    assert any("mask" in item for item in d.applied)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select id from t where phone like '1%'",
+        "select id from t order by phone",
+        "select id from t group by phone",
+        "select id from t group by id having max(phone) > 1",
+        "select id from t join u on u.id = t.phone",
+    ],
+)
+def test_masked_column_outside_projection_is_denied(sql):
+    p = plan(
+        allowed={"t": ("id", "phone"), "u": ("id",)},
+        masked={"t": {"phone": "left(phone, 3)"}},
+    )
+    assert not rewrite(sql, p).permit, sql
+
+
+# ---------------------------------------------------------------------------
+# Important：policy_ids 透传
+# ---------------------------------------------------------------------------
+def test_build_plan_collects_policy_ids_and_rewrite_passes_through():
+    allow = pol("allow", pid=11)
+    mask = pol("mask", columns=("phone",), mask_expr="left(phone, 3)", pid=12)
+    built = build_plan([allow, mask], P(), {"t": ["id", "phone"]})
+    assert set(built.policy_ids) == {11, 12}
+    d = rewrite("select phone from t", built)
+    assert d.permit
+    assert set(d.policy_ids) == {11, 12}
+
+
+# ---------------------------------------------------------------------------
+# Important：行条件按 AST 绑定
+# ---------------------------------------------------------------------------
+def test_condition_dollar_inside_string_literal_is_not_substituted():
+    allow = pol("allow", condition="note = '$attr.dept_id'")
+    built = build_plan([allow], P(attrs={"dept_id": "3"}), {"t": ["id"]})
+    assert built.row_filters["t"] == "note = '$attr.dept_id'"
+    d = rewrite("select id from t", built)
+    assert d.permit
+    assert "$attr.dept_id" in d.sql  # 字符串字面量原样保留
+
+
+def test_binding_failure_denies_without_raising():
+    allow = pol("allow", condition="dept_id = $attr.dept_id")
+    built = build_plan([allow], P(attrs={"dept_id": {"nested": 1}}), {"t": ["id"]})
+    d = rewrite("select id from t", built)
+    assert not d.permit
+
+
+# ---------------------------------------------------------------------------
+# Important：系统表 / 系统函数
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select * from pg_class",
+        "select * from pg_catalog.pg_class",
+        "select * from information_schema.tables",
+    ],
+)
+def test_system_table_is_denied(sql):
+    d = rewrite(sql, plan(allowed={"pg_class": None, "tables": None}))
+    assert not d.permit, sql
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select pg_read_file('/etc/passwd')",
+        "select id from t where id = pg_ls_dir('.')",
+    ],
+)
+def test_system_function_is_denied(sql):
+    d = rewrite(sql, plan(allowed={"t": ("id",)}))
+    assert not d.permit, sql
