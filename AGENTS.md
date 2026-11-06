@@ -68,10 +68,15 @@ pnpm run lint                  # eslint + prettier + stylelint
 cd backend
 uv run python scripts/query_smoke.py                 # 路由 + 两条真实提问，约 40s
 uv run python scripts/query_smoke.py --routing-only   # 只验路由，约 10s（不构造应用）
+uv run python scripts/query_policy_smoke.py           # 权限网关 + 星号止血，约 20s
 ```
 
 它检查三件事：慢路径依赖的类方法都在、22 条用例的快/慢路由没串（术语抢答、跨表减法、
 条件/去重必须让位）、一条快路径 + 一条慢路径**真的能答出数据**。退出码非 0 即失败。
+
+`query_policy_smoke.py` 直接驱动线上的 `guard.prepare` / `compiler.rewrite`（不经过 LLM，
+也不需要起服务，但需要数据库）：无主体拒绝、敏感表 `select *` 拒绝、行策略真的生成
+`WHERE` 过滤、审计落库、解析失败 fail-closed；临时策略用 `smoke-policy-%` 首尾自清理。
 
 ### 首次跑测试 / 新建 worktree 必看（2026-10 实测）
 
