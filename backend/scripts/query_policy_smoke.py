@@ -13,13 +13,18 @@
 2. 敏感表 ``select *`` → deny（P0 星号止血，三种模式都生效）；
 3. 行策略 → 生成的 SQL 含过滤条件（临时插一条 allow，``WHERE name LIKE
    'smoke-policy-%'`` 清理，**不动真实策略**）；
-4. 审计表能读到第 2 步的 deny 记录（审计链路真的落库）；
-5. 无法解析的 SQL → deny（编译器 + enforce 网关各验一次，fail-closed）。
+4. 审计表能读到第 2 步**本次新写**的 deny 记录（先记 ``max(id)`` 水位，只认
+   ``id > 水位`` —— 审计 append-only，只按 hash 找会被历史行假通过）；
+5. 无法解析的 SQL → deny（编译器 + enforce 网关各验一次，且 reason 必须是"解析失败"，
+   不能是"表未覆盖"）。
 
 用法::
 
     cd backend
     uv run python scripts/query_policy_smoke.py
+
+    # 自检第 4 项不是假通过：注入审计写入失败，预期冒烟失败（退出码 1）
+    uv run python scripts/query_policy_smoke.py --simulate-audit-failure
 
 退出码非 0 即失败，可直接接进提交前钩子。
 
@@ -33,6 +38,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import os
@@ -111,6 +117,27 @@ async def _cleanup() -> int:
         return int(result.rowcount or 0)
 
 
+async def _max_audit_id() -> int:
+    """审计表当前最大 id（**水位**）。
+
+    审计是 append-only 的：同一 SQL 历史上已经有同 ``sql_hash`` 的 deny 行，
+    只按 hash 找会让"本次写失败"也 ✅。第 ④ 项必须断言存在 ``id > 水位`` 的新行。
+    """
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        return int(
+            (
+                await db.execute(
+                    text("SELECT COALESCE(MAX(id), 0) FROM ai_query_access_log")
+                )
+            ).scalar()
+            or 0
+        )
+
+
 async def _insert_smoke_policy() -> int:
     """插一条 allow + 行条件的临时策略（表名是假的，只给编译器用）。"""
     from sqlalchemy import text
@@ -185,23 +212,36 @@ async def _check_row_filter(policy_id: int) -> tuple[bool, str]:
     return True, sql[:160]
 
 
-async def _check_audit(sql: str) -> tuple[bool, str]:
-    """④ 审计表能读到第 ② 步的 deny 记录。"""
+async def _check_audit(sql: str, min_id: int) -> tuple[bool, str]:
+    """④ 审计表能读到第 ② 步**本次新写**的 deny 记录（``id > min_id``）。"""
     from app.plugin.module_ai.query.policy import audit
 
     want = audit.sql_hash(sql)
     rows = await audit.list_access_logs(limit=100)
     hit = next(
-        (r for r in rows if r.get("sql_hash") == want and r.get("decision") == "deny"),
+        (
+            r
+            for r in rows
+            if r.get("sql_hash") == want
+            and r.get("decision") == "deny"
+            and int(r.get("id") or 0) > int(min_id)
+        ),
         None,
     )
     if hit is None:
-        return False, f"最近 100 条审计里没有 sql_hash={want[:12]}… 的 deny 记录"
-    return True, f"id={hit['id']} reason={str(hit.get('reason') or '')[:70]}"
+        return False, (
+            f"水位 {min_id} 之后没有该 SQL（hash={want[:12]}…）的 deny 记录 —— "
+            "审计可能没写进去（或被历史行假通过）"
+        )
+    return True, f"id={hit['id']} (> 水位 {min_id}) reason={str(hit.get('reason') or '')[:60]}"
 
 
 async def _check_parse_fail() -> tuple[bool, str]:
-    """⑤ 无法解析的 SQL → deny（编译器 + enforce 网关，两条都验）。
+    """⑤ 无法解析的 SQL → deny（编译器 + enforce 网关，且必须**因解析失败**而拒）。
+
+    坏 SQL 用 ``select (((``：正则兜底（``from|join <name>``）也提不出表名，因此
+    走的是「无法解析 → fail-closed」这条语义。老版本用 ``select from where ((``，
+    正则猜出表 ``where`` → 实际是"表未覆盖 → 默认拒绝"，**没验到解析失败**（Important 4）。
 
     ``POLICY_ENGINE`` 只作用于**本进程**（``_cfg`` 每次读取都看环境变量），
     不改库、不影响已启动的后端服务。
@@ -209,13 +249,15 @@ async def _check_parse_fail() -> tuple[bool, str]:
     from app.plugin.module_ai.query.policy import compiler, repo
     from app.plugin.module_ai.query.policy.guard import prepare
 
-    bad = "select from where (("
+    bad = "select ((("
     principal = _principal()
     policies = await repo.list_policies()
     plan = compiler.build_plan(policies, principal, {SMOKE_TABLE: ["id"]})
     compiled = compiler.rewrite(bad, plan)
     if compiled.permit:
         return False, "编译器放过了无法解析的 SQL"
+    if "解析" not in compiled.reason:
+        return False, f"编译器拒绝了，但不是因为解析失败：{compiled.reason}"
 
     os.environ["POLICY_ENGINE"] = "enforce"
     try:
@@ -226,7 +268,12 @@ async def _check_parse_fail() -> tuple[bool, str]:
         os.environ.pop("POLICY_ENGINE", None)
     if gateway.permit:
         return False, "enforce 网关放过了无法解析的 SQL"
-    return True, f"compiler={compiled.reason[:50]} | guard={gateway.reason[:50]}"
+    if "解析" not in gateway.reason:
+        return False, (
+            "enforce 网关拒绝了，但不是解析失败（说明验的是『表未覆盖』而不是 fail-closed）："
+            f"{gateway.reason}"
+        )
+    return True, f"compiler={compiled.reason[:40]} | guard={gateway.reason[:40]}"
 
 
 def _report(index: int, title: str, ok: bool, detail: str) -> None:
@@ -235,8 +282,30 @@ def _report(index: int, title: str, ok: bool, detail: str) -> None:
 
 
 async def main() -> int:
+    ap = argparse.ArgumentParser(description="问数权限网关端到端冒烟")
+    ap.add_argument(
+        "--simulate-audit-failure",
+        action="store_true",
+        help=(
+            "自检第 ④ 项不是假通过：把审计写入换成空操作（只影响本进程），"
+            "预期冒烟**失败**（退出码 1）且第 ④ 项报错"
+        ),
+    )
+    args = ap.parse_args()
+
     started = time.perf_counter()
     _load_orm_models()
+
+    if args.simulate_audit_failure:
+        # ``guard`` 在模块导入时就绑定了 ``write_access_log``，必须打在 guard 上
+        # （打 ``audit.write_access_log`` 不会生效 —— 这正是要验证的写入路径）。
+        from app.plugin.module_ai.query.policy import guard
+
+        async def _drop_audit(**_kwargs) -> None:  # noqa: ANN003
+            return None
+
+        guard.write_access_log = _drop_audit
+        print("⚠️  已注入审计写入失败（自检模式，预期本次冒烟失败）")
 
     try:
         from app.plugin.module_ai.query.policy.model import (
@@ -247,6 +316,9 @@ async def main() -> int:
         await ensure_policy_tables()
         sensitive = sorted(await sensitive_tables())
         await _cleanup()
+        # 水位必须记在**所有可能写审计的步骤之前**：审计 append-only，
+        # 历史同 hash 行会让"本次没写"看起来也成功（Important 3）。
+        watermark = await _max_audit_id()
     except Exception as e:  # noqa: BLE001
         print(f"❌ 无法连接数据库 / 初始化策略表：{type(e).__name__}: {e}")
         print("   本脚本不需要 HTTP 服务，但需要可用的数据库：")
@@ -280,10 +352,10 @@ async def main() -> int:
             problems.append(f"③ {detail}")
 
         if sql_star:
-            ok, detail = await _check_audit(sql_star)
+            ok, detail = await _check_audit(sql_star, watermark)
         else:
             ok, detail = False, "第 ② 步未执行，没有可核对的 SQL"
-        _report(4, "审计表能读到 ② 的 deny 记录", ok, detail)
+        _report(4, f"审计表能读到 ② 的新增 deny 记录（id > {watermark}）", ok, detail)
         if not ok:
             problems.append(f"④ {detail}")
 

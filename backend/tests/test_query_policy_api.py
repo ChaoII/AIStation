@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 BASE = "/api/v1/ai/query"
@@ -93,7 +95,10 @@ BAD_POLICIES = [
     ("deny 不该有 mask_expr", {"effect": "deny", "mask_expr": "upper(name)"}),
     ("condition 带分号", {"condition": "dept_id = 1; drop table t"}),
     ("deny 不支持行条件", {"effect": "deny", "condition": "dept_id = 1"}),
-    ("mask 不支持行条件", {"effect": "mask", "mask_expr": "upper(name)", "condition": "dept_id = 1"}),
+    ("mask 不支持行条件", {"effect": "mask", "columns": ["name"], "mask_expr": "upper(name)", "condition": "dept_id = 1"}),
+    ("mask 缺 columns", {"effect": "mask", "mask_expr": "upper(name)"}),
+    ("attr 主体带空格等号", {"subject_kind": "attr", "subject_value": "dept_id = 3"}),
+    ("user 主体不是数字", {"subject_kind": "user", "subject_value": "admin"}),
     ("condition 带注释", {"condition": "dept_id = 1 -- 注释"}),
     ("condition 带子查询", {"condition": "id in (select id from t)"}),
     ("condition 带未知参数", {"condition": "id = $role.x"}),
@@ -209,6 +214,123 @@ def test_save_list_filter_update_delete(test_client, auth_headers):
     ]
 
 
+def test_partial_update_keeps_unchanged_fields(test_client, auth_headers):
+    """Important 1：更新**只写请求里实际传的字段**。
+
+    历史缺陷：``PolicyUpsert`` 给 ``effect="allow"`` / ``subject_kind="everyone"`` /
+    ``marking=""`` 默认值，而 UPDATE 写所有列 —— 只传 ``{id,name,resource_code}`` 就会
+    把 deny 变 allow、把 role:analyst 变 everyone、顺手清掉 marking（等于关掉星号止血）。
+    """
+    created = _save(
+        test_client,
+        auth_headers,
+        name="pytest-policy-partial",
+        resource_code="pytest_policy_partial",
+        effect="deny",
+        subject_kind="role",
+        subject_value="analyst",
+        marking="sensitive",
+        priority=42,
+    )
+    assert created.status_code == 200, created.text
+    pid = created.json()["data"]["id"]
+    try:
+        # 只传 3 个字段（id / name / resource_code）
+        upd = test_client.post(
+            f"{BASE}/policy/save",
+            json={
+                "id": pid,
+                "name": "pytest-policy-partial-renamed",
+                "resource_code": "pytest_policy_partial",
+            },
+            headers=auth_headers,
+        )
+        assert upd.status_code == 200, upd.text
+
+        row = next(
+            x
+            for x in _list(test_client, auth_headers, resource_code="pytest_policy_partial")
+            if x["id"] == pid
+        )
+        assert row["name"] == "pytest-policy-partial-renamed"
+        # 没传的字段一个都不能被"默认值"覆盖
+        assert row["effect"] == "deny"
+        assert row["subject_kind"] == "role"
+        assert row["subject_value"] == "analyst"
+        assert row["marking"] == "sensitive"
+        assert row["enabled"] is True
+        assert row["priority"] == 42
+    finally:
+        test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
+
+
+def test_partial_update_preserves_mask_expression(test_client, auth_headers):
+    """只改名字不该把已有 ``mask_expr`` 冲成空（否则该列策略会变成 fail-closed 拒答）。"""
+    created = _save(
+        test_client,
+        auth_headers,
+        name="pytest-policy-mask-keep",
+        resource_code="pytest_policy_mask_keep",
+        effect="mask",
+        columns=["phone"],
+        mask_expr="upper(phone)",
+    )
+    assert created.status_code == 200, created.text
+    pid = created.json()["data"]["id"]
+    try:
+        upd = test_client.post(
+            f"{BASE}/policy/save",
+            json={"id": pid, "name": "pytest-policy-mask-keep-2"},
+            headers=auth_headers,
+        )
+        assert upd.status_code == 200, upd.text
+        row = next(
+            x
+            for x in _list(test_client, auth_headers, resource_code="pytest_policy_mask_keep")
+            if x["id"] == pid
+        )
+        assert row["mask_expr"] == "upper(phone)"
+        assert row["columns"] == ["phone"]
+        assert row["effect"] == "mask"
+    finally:
+        test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
+
+
+def test_update_validates_merged_state(test_client, auth_headers):
+    """部分更新也必须按「库里现值 + 本次改动」合并后校验。
+
+    只传 ``effect="mask"`` 而库里没有 ``mask_expr`` → 400，且库里那条 allow 不受影响
+    （不能"先写一半再报错"）。
+    """
+    created = _save(
+        test_client,
+        auth_headers,
+        name="pytest-policy-merged",
+        resource_code="pytest_policy_merged",
+        effect="allow",
+        columns=["id"],
+    )
+    assert created.status_code == 200, created.text
+    pid = created.json()["data"]["id"]
+    try:
+        upd = test_client.post(
+            f"{BASE}/policy/save",
+            json={"id": pid, "effect": "mask"},
+            headers=auth_headers,
+        )
+        assert upd.status_code == 400, upd.text
+        assert "mask_expr" in upd.json()["msg"]
+
+        row = next(
+            x
+            for x in _list(test_client, auth_headers, resource_code="pytest_policy_merged")
+            if x["id"] == pid
+        )
+        assert row["effect"] == "allow"
+    finally:
+        test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
+
+
 def test_delete_unknown_id_is_idempotent(test_client, auth_headers):
     """删一个不存在的 id 不该 500（前端批量删/重复点很常见）。"""
     r = test_client.post(
@@ -226,6 +348,25 @@ def test_update_unknown_id_rejected(test_client, auth_headers):
 # ---------------------------------------------------------------------------
 # explain：用库里的身份，不信任入参
 # ---------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def db_exec(test_client, db_run):
+    """在**应用事件循环**里执行一条 SQL（造停用用户/角色、改状态）。"""
+
+    def _run(sql: str, params: dict | None = None):
+        from sqlalchemy import text
+
+        from app.core.database import async_db_session
+
+        async def _do():
+            async with async_db_session.begin() as db:
+                result = await db.execute(text(sql), params or {})
+                return result.scalar() if result.returns_rows else None
+
+        return db_run(_do())
+
+    return _run
+
+
 @pytest.fixture(scope="module")
 def plain_user_id(test_client, db_run):
     """造一个**非超管、无角色**的用户：explain 必须按默认拒绝回答。"""
@@ -341,6 +482,168 @@ def test_explain_reports_deny_policy_and_missing_attr(
         test_client.post(
             f"{BASE}/policy/delete", json={"ids": ids}, headers=auth_headers
         )
+
+
+def test_explain_disabled_user_is_denied(test_client, auth_headers, db_exec):
+    """Important 2：停用账号即便有 allow 策略也必须 deny，且 reason 写明原因。
+
+    真实链路里停用用户连登录都过不去（``get_current_user`` 抛 401）；解释接口如果
+    还给 permit，治理页就会告诉管理员"这个人还能看"，与线上行为相反。
+    """
+    from datetime import datetime
+
+    from app.utils.common_util import uuid4_str
+
+    now = datetime.now().replace(microsecond=0)
+    uid = int(
+        db_exec(
+            "INSERT INTO sys_user (tenant_id, username, password, name, is_superuser, "
+            "status, uuid, created_time, updated_time, is_deleted) "
+            "VALUES (1, :u, 'x', :n, false, '1', :uuid, :now, :now, false) "
+            "RETURNING id",
+            {
+                "u": f"pytest-disabled-{uuid4_str()[:8]}",
+                "n": "停用用户（策略解释）",
+                "uuid": uuid4_str(),
+                "now": now,
+            },
+        )
+    )
+    saved = _save(
+        test_client,
+        auth_headers,
+        name="pytest-policy-disabled-user",
+        resource_code="pytest_explain_disabled_user",
+        effect="allow",
+        subject_kind="everyone",
+    )
+    pid = saved.json()["data"]["id"]
+    try:
+        data = test_client.get(
+            f"{BASE}/access/explain",
+            params={"user_id": uid, "table": "pytest_explain_disabled_user"},
+            headers=auth_headers,
+        ).json()["data"]
+        assert data["permit"] is False
+        assert "停用" in data["reason"]
+        assert data["matched"] == []
+    finally:
+        test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
+        db_exec("DELETE FROM sys_user WHERE id=:u", {"u": uid})
+
+
+def test_explain_ignores_disabled_role(test_client, auth_headers, db_exec):
+    """Important 2：停用角色不能给主体加分。
+
+    ``_user_role_codes_by_id`` 只滤 ``is_deleted``；``AuthPermission`` 只认
+    ``role.status == "0"``。解释接口必须按后者的口径过滤，否则停用角色仍显示 permit。
+    """
+    from datetime import datetime
+
+    from app.utils.common_util import uuid4_str
+
+    now = datetime.now().replace(microsecond=0)
+    uid = int(
+        db_exec(
+            "INSERT INTO sys_user (tenant_id, username, password, name, is_superuser, "
+            "status, uuid, created_time, updated_time, is_deleted) "
+            "VALUES (1, :u, 'x', :n, false, '0', :uuid, :now, :now, false) "
+            "RETURNING id",
+            {
+                "u": f"pytest-role-user-{uuid4_str()[:8]}",
+                "n": "角色停用测试用户",
+                "uuid": uuid4_str(),
+                "now": now,
+            },
+        )
+    )
+    role_code = f"pytest_role_{uuid4_str()[:6]}"
+    rid = int(
+        db_exec(
+            'INSERT INTO sys_role (name, code, "order", data_scope, uuid, status, '
+            "created_time, updated_time, is_deleted) "
+            "VALUES (:n, :c, 999, 4, :uuid, '1', :now, :now, false) RETURNING id",
+            {
+                "n": "停用角色（策略解释）",
+                "c": role_code,
+                "uuid": uuid4_str(),
+                "now": now,
+            },
+        )
+    )
+    db_exec(
+        "INSERT INTO sys_user_roles (user_id, role_id) VALUES (:u, :r)",
+        {"u": uid, "r": rid},
+    )
+    saved = _save(
+        test_client,
+        auth_headers,
+        name="pytest-policy-disabled-role",
+        resource_code="pytest_explain_disabled_role",
+        effect="allow",
+        subject_kind="role",
+        subject_value=role_code,
+    )
+    pid = saved.json()["data"]["id"]
+
+    def _explain() -> dict:
+        return test_client.get(
+            f"{BASE}/access/explain",
+            params={"user_id": uid, "table": "pytest_explain_disabled_role"},
+            headers=auth_headers,
+        ).json()["data"]
+
+    try:
+        denied = _explain()
+        assert denied["permit"] is False, f"停用角色不应放行：{denied}"
+        assert denied["matched"] == []
+
+        # 对照：角色启停用后同一条策略生效（证明上面的 deny 是"角色被过滤"造成的）
+        db_exec("UPDATE sys_role SET status='0' WHERE id=:r", {"r": rid})
+        allowed = _explain()
+        assert allowed["permit"] is True, allowed
+        assert any(m["subject_kind"] == "role" for m in allowed["matched"])
+    finally:
+        test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
+        db_exec("DELETE FROM sys_user_roles WHERE user_id=:u", {"u": uid})
+        db_exec("DELETE FROM sys_role WHERE id=:r", {"r": rid})
+        db_exec("DELETE FROM sys_user WHERE id=:u", {"u": uid})
+
+
+def _fake_auth(*codes: str):
+    """只有指定权限码的登录主体（用于权限分档的单测，不需要应用）。"""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        check_data_scope=True,
+        user=SimpleNamespace(
+            id=9,
+            name="权限单元测试",
+            is_superuser=False,
+            roles=[
+                SimpleNamespace(
+                    status="0",
+                    menus=[SimpleNamespace(permission=c, status="0") for c in codes],
+                )
+            ],
+        ),
+    )
+
+
+def test_permission_split_create_and_update_are_exclusive():
+    """只有 create 不能 update，只有 update 不能 create。"""
+    from app.core.exceptions import CustomException
+    from app.plugin.module_ai.query.policy_api import _require_perm
+
+    create_only = _fake_auth("module_ai:query:policy:create")
+    asyncio.run(_require_perm(create_only, "module_ai:query:policy:create"))
+    with pytest.raises(CustomException):
+        asyncio.run(_require_perm(create_only, "module_ai:query:policy:update"))
+
+    update_only = _fake_auth("module_ai:query:policy:update")
+    asyncio.run(_require_perm(update_only, "module_ai:query:policy:update"))
+    with pytest.raises(CustomException):
+        asyncio.run(_require_perm(update_only, "module_ai:query:policy:create"))
 
 
 def test_explain_unknown_user_is_denied(test_client, auth_headers):

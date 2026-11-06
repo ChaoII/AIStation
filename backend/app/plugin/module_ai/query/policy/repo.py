@@ -153,6 +153,25 @@ async def list_policy_rows(
     return [_row_dict(r) for r in rows]
 
 
+async def get_policy_row(policy_id: int) -> dict | None:
+    """按 id 读一条**管理视图**（含停用，不含软删）；不存在返回 ``None``。
+
+    用途：更新前读现值，让「部分更新」既能按合并后的完整策略校验，
+    又只写请求里实际出现的列（见 ``policy_api._validate``）。
+    """
+    try:
+        pid = int(policy_id)
+    except (TypeError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    async with async_db_session() as db:
+        row = (
+            await db.execute(text(_MANAGE_SQL + " AND id=:id"), {"id": pid})
+        ).fetchone()
+    return _row_dict(row) if row else None
+
+
 def _member_ids(value) -> set[str]:
     """``ai_data_domain.members`` → 成员 id 文本集合（兼容 int / str / JSON 文本）。"""
     return {_text(v) for v in _as_list(value) if _text(v)}
