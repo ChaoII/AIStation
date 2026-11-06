@@ -147,11 +147,24 @@ async def ensure_policy_tables() -> None:
 
 
 async def sensitive_tables() -> set[str]:
-    """``ai_query_asset_columns`` 里 ``sensitive=true`` 的表名集合（小写去重）。
+    """敏感表名集合（小写去重）：**资产目录 ∪ 本体** 两个来源的并集。
 
-    用途：``SELECT *`` / ``t.*`` 的止血判定（敏感表上的星号一律拒绝，P0），
-    以及迁移时把 ``sensitive`` 列标记转成 ``deny`` 列策略 + ``marking=sensitive``。
-    已软删的字段行不计入；表名统一小写（SQL 里的表名大小写不敏感）。
+    来源一：``ai_query_asset_columns.sensitive=true``（问数资产目录，已有实现）。
+    来源二（C1）：``ontology.semantic.restricted_fields()`` 里的属性（``sensitive=true``
+    或 ``roles`` 非空）经 ``object_table_map()`` 反查到的**物理表**。
+
+    为什么必须并上本体：两套标记实测长期不一致（本体 77 / 资产目录 66），
+    ``video_cameras.password`` 只标在本体上 → 只查资产目录时该表不在清单里 →
+    ``select * from video_cameras`` 被放行，**明文读出 password**。
+
+    失败语义刻意不对称：
+
+    - 资产目录读失败**照旧上抛**（调用方 guard 按 deny 处理，fail-closed）；
+    - 本体读失败只记 warning（best-effort）—— 本体库不可用不该让整条问数链路拒答，
+      而且资产目录来源仍然有效。
+
+    用途：``SELECT *`` / ``t.*`` 的止血判定（P0）、导出/浏览的敏感表拦截（I1），
+    以及迁移时把 ``sensitive`` 标记转成 ``deny`` 列策略 + ``marking=sensitive``。
     """
     from ..model import AiQueryAssetColumnModel
 
@@ -166,4 +179,38 @@ async def sensitive_tables() -> set[str]:
                 .distinct()
             )
         ).all()
-    return {str(r[0]).strip().lower() for r in rows if r[0]}
+    catalog = {str(r[0]).strip().lower() for r in rows if r[0]}
+    return catalog | await _ontology_sensitive_tables()
+
+
+async def _ontology_sensitive_tables() -> set[str]:
+    """本体侧敏感/限角色属性 → 物理表名（best-effort，失败返回空集）。
+
+    只经 ``ontology.semantic`` 读本体（架构约定：问数不直读 ``ai_ont_*``）。
+    同一对象可能同时映射到 ``ont_<code>`` 与真实业务表，**优先真实业务表**
+    （与 ``backfill.build_object_table_map`` 同口径）：``ont_`` 影子表通常不存在。
+    """
+    try:
+        from ...ontology import semantic as ont
+
+        fields = await ont.restricted_fields()
+        if not fields:
+            return set()
+        table_by_code: dict[str, str] = {}
+        for table, code in (await ont.object_table_map()).items():
+            table, code = str(table or "").strip(), str(code or "").strip()
+            if not table or not code:
+                continue
+            cur = table_by_code.get(code)
+            if cur is None or (cur.startswith("ont_") and not table.startswith("ont_")):
+                table_by_code[code] = table
+        return {
+            table_by_code[code].lower()
+            for code in fields
+            if code in table_by_code
+        }
+    except Exception as e:  # noqa: BLE001 - 本体读失败不能拖垮资产目录来源
+        from app.core.logger import log
+
+        log.warning(f"[问数权限] 本体敏感字段读取失败（已忽略，仅用资产目录）: err={e}")
+        return set()

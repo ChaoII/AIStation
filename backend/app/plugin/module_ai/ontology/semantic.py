@@ -281,6 +281,31 @@ async def sensitive_fields() -> dict[str, set[str]]:
     return out
 
 
+async def restricted_fields() -> dict[str, set[str]]:
+    """对象 code → **需要保护**的属性集合（``sensitive=true`` 或 ``roles`` 非空）。
+
+    与 :func:`sensitive_fields` 的区别：后者只认 ``sensitive`` 布尔值；而"按角色限制
+    可见"的属性同样是敏感数据（实测 ``video_cameras.password`` 只在 ``roles`` 里限制、
+    ``sensitive`` 没勾）。星号止血必须把两者一并算上，否则 ``select *`` 会把明文读出来。
+
+    读不到返回空字典（best-effort）：调用方（问数权限）会把资产目录来源作为兜底。
+    """
+    try:
+        rows = (await _exec(
+            "SELECT object_code, code, sensitive, roles FROM ai_ont_property "
+            "WHERE is_deleted=false", {})).fetchall()
+    except Exception:  # noqa: BLE001
+        return {}
+    out: dict[str, set[str]] = {}
+    for oc, code, sensitive, roles in rows:
+        object_code, prop_code = str(oc or ""), str(code or "")
+        if not object_code or not prop_code:
+            continue
+        if bool(sensitive) or _split_aliases(roles):
+            out.setdefault(object_code, set()).add(prop_code)
+    return out
+
+
 async def sensitive_diff() -> dict:
     """对比两套敏感标记，列出**不一致**的字段。
 

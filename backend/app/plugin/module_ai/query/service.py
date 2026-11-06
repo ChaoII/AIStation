@@ -4299,6 +4299,27 @@ class AiQueryService:
                     "total": total, "valid": uniq, "pass_rate": rate, "passed": rate >= 99}
         return {"ok": False, "msg": "不支持的规则类型"}
 
+    @staticmethod
+    async def _sensitive_table_deny(table_name: str) -> str:
+        """表命中敏感清单时返回拒绝文案，否则空串（导出/浏览共用，2026-11 复审 I1）。
+
+        导出/浏览走的是 ``SELECT *`` 直读，绕过了星号止血与策略网关；含敏感列的表
+        必须一律拒绝，否则 ``select * from video_cameras`` 的明文 password 能从
+        「数据集导出」出去。
+
+        读清单失败按**拒绝**处理（fail-closed）：判断不了就不能放行。
+        """
+        from .policy.model import sensitive_tables
+
+        try:
+            sensitive = await sensitive_tables()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[问数] 敏感表清单读取失败（导出/浏览按拒绝处理）: err={e}")
+            return "敏感列清单读取失败，按拒绝处理（fail-closed）"
+        if str(table_name or "").strip().lower() in sensitive:
+            return "含敏感列的表不支持导出/浏览"
+        return ""
+
     @classmethod
     async def export_asset(cls, table_name: str, auth, limit: int = 100) -> dict:
         """数据集导出：读取真实表数据（CSV/JSON 由前端生成下载）。
@@ -4307,6 +4328,9 @@ class AiQueryService:
         ``ai_query_schema.datasource`` 定位归属：外部源在其库执行，平台源在平台库执行。
         """
         table_name = await cls._require_queryable_table(table_name, auth)
+        deny = await cls._sensitive_table_deny(table_name)
+        if deny:
+            return {"ok": False, "msg": deny}
         n = max(1, min(int(limit), 500))
         # 定位表所属数据源
         ds_code = None
@@ -4373,6 +4397,9 @@ class AiQueryService:
         """
         # P0-1：表名直接拼 SELECT，先过「标识符 + 按用户白名单」校验（fail-closed）
         table_name = await cls._require_queryable_table(table_name, auth)
+        deny = await cls._sensitive_table_deny(table_name)
+        if deny:
+            return {"ok": False, "msg": deny}
         page = max(1, int(page)); page_size = max(1, min(int(page_size), 100))
         offset = (page - 1) * page_size
         ds_code = await cls._table_ds_code(table_name)
@@ -6867,6 +6894,20 @@ class AiQueryService:
 
     @classmethod
     async def save_setting(cls, key: str, value: str, remark: str, auth) -> dict:
+        """写一条工程配置。
+
+        ``policy_engine`` 是**问数权限判定开关**，只允许超级管理员修改：
+        ``/ai/query/settings/save`` 只要求 ``module_ai:query:ask``，任何能问数的人都能
+        把它改成 ``legacy`` 来关掉判定（2026-11 复审 I2）。这里不静默忽略 —— 显式报错
+        才能让调用方知道"没生效"，也不会让管理员误以为保存成功。
+        """
+        if str(key or "").strip() == "policy_engine":
+            is_super = bool(getattr(getattr(auth, "user", None), "is_superuser", False))
+            if not is_super:
+                raise CustomException(
+                    msg="policy_engine 只允许超级管理员修改（问数权限判定开关，禁止普通用户变更）",
+                    status_code=403,
+                )
         async with async_db_session.begin() as db:
             from sqlalchemy import select
 
