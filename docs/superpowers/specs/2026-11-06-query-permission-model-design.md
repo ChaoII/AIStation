@@ -61,8 +61,8 @@
 
 ### 2.1 目标
 
-1. **单一真相**：一处定义策略，所有入口（问数、智能体、应用、工作流、定时任务、报表、
-   指标、对象查询、导出、评测）使用同一套判定。
+1. **单一真相**：一处定义策略，所有**读**入口（问数、智能体、应用、工作流、定时任务、报表、
+   指标、对象查询、导出、评测）使用同一套判定；行级写权限仍归 action 引擎，但共用同一 Principal。
 2. **默认拒绝**：没有显式 allow 的表/列不可查；不可判定时一律拒绝（fail-closed）。
 3. **行级可执行**：策略表达式编译成 SQL 谓词，在基表引用处生效（单表 / join / 聚合 /
    子查询 / CTE / union 都覆盖），不依赖提示词。
@@ -106,18 +106,26 @@ Decision
 
 | 类别 | 例子 | 生效范围 | 是否传播到派生/导出 |
 |---|---|---|---|
-| **读时过滤**（granular） | 行策略、列 allow/deny/mask | 查询期 | **否**（必须显式处理导出） |
+| **读时过滤**（granular） | 行策略、列 allow/deny/mask | 查询期 | **否**——所以**导出不属于"读"**，见下 |
 | **标记**（marking） | `sensitive`、`PHI` | 全链路 | **是**（报表/指标/导出/血缘继承） |
+
+**导出的唯一正确做法**：导出不是"把已存结果再发一次"，而是**用导出者主体重新走一遍
+`QueryGuard` 编译并重新执行**。任何"先查询、后按权限删行"的后置过滤都不可靠
+（Palantir 明确说粒度控制 read-time only，正是这个原因）。
 
 迁移时把现有 `sensitive` 列标记归入 marking 类，以保证导出路径不会绕过。
 
-### 3.2 优先级（显式，不再隐式）
+### 3.2 优先级与默认值（显式，不再隐式）
 
 1. `deny` 永远优先于 `mask`，`mask` 优先于 `allow`。
 2. 同一 effect 内：主体具体性 `user > attr > role > everyone`。
-3. 同具体性按 `priority` 降序；仍并列则取更严格者。
-4. 超级管理员绕过一切策略，但**每次绕过都记审计**。
-5. 无任何 `allow` 覆盖 → 拒绝（默认拒绝）。
+3. 同具体性按 `priority` 降序；仍并列时：`allow` 取**并集**（多给不冲突），
+   `mask` 取 `priority` 最高的一条（并列取 `mask_expr` 更严格的那条，由配置时校验），
+   `deny` 早已短路，不涉及并列。
+4. 超级管理员绕过一切策略，但**每次绕过都记审计**（`reason="superuser bypass"`）。
+5. **表级默认拒绝**：无任何 `allow` 覆盖该表 → 拒绝。
+6. **列级默认继承**：表的 `allow` 且 `columns=[]` 表示"整表可读"；列的限制**只来自显式
+   `deny` / `mask`**。这不是"列级默认拒绝"，两层默认值不同，实现时不要混。
 
 ## 4. 数据模型
 
@@ -168,14 +176,36 @@ CREATE TABLE ai_query_access_log (
 
 | 旧机制 | 迁移为 |
 |---|---|
-| `ai_query_assets.included=false` 的表 | 不迁移（这是"目录是否对外"，不是权限） |
+| `ai_query_assets.included=false` 的表 | 不迁移（这是"目录是否对外"，不是权限）。**但 `included=true` 仍是可用集合的上界**：策略 allow 只在上界内生效 |
 | `ai_data_domain.tables` + 成员 | 一条 `allow`，`subject_kind=domain`、`subject_value=<域 code>`（成员关系仍由域本身维护，策略只引用） |
 | `ai_access_rule.allowed_tables` | `allow`（subject=`role:<value>`），`sensitive_ok` → 列 `mask`/`allow` 策略 |
 | `ai_query_asset_columns.sensitive` | `deny` 列策略 + `marking=sensitive` |
 | `ai_ont_row_policy` | `allow` 行策略（`condition` 原样搬迁，表达式语法对齐） |
+| **现在"未配置域/ABAC → 全表"的用户** | 生成一条 `everyone` allow 覆盖**当前** `_system_allowed()` 全集，打 `legacy_default_allow=true` 标记。shadow 期间必须输出"仅靠这条 allow 存活"的用户清单；切 enforce 前由管理员显式确认（或按域收窄），确认后才允许删除这条 allow |
+
+> 最后一行是「默认拒绝」与「不锁死存量」之间唯一的调和点：**默认拒绝在引擎层立即生效，
+> 但存量可用性由一条显式的、可审计、可删除的 `legacy_default_allow` 承载**，
+> 而不是隐藏在代码里的 `return base`。
 
 迁移器写入 `ai_policy_migration` 记录（旧表 → 新策略 id），重复执行不产生重复策略。
 旧表保留只读，直到 `POLICY_ENGINE=enforce` 稳定后再下线。
+
+shadow 差异表：
+
+```sql
+CREATE TABLE ai_policy_shadow_diff (
+  id              BIGSERIAL PRIMARY KEY,
+  sql_hash        CHAR(64),
+  user_id         INTEGER,
+  entry           VARCHAR(32),
+  legacy_decision VARCHAR(8),   -- permit | deny
+  new_decision    VARCHAR(8),
+  diff_kind       VARCHAR(32),  -- legacy_permit_new_deny | legacy_deny_new_permit | rewrite_only
+  policy_ids      JSONB DEFAULT '[]',
+  sql_preview     TEXT,
+  created_time    TIMESTAMP DEFAULT now()
+);
+```
 
 ## 5. SQL 编译（核心）
 
@@ -196,32 +226,55 @@ parse(sqlglot) → 解析表/列/CTE/子查询
   字面量或 `$user.id / $role.* / $attr.<name>`；**禁止子查询、函数调用、字符串拼接**。
 - 编译：表引用 `FROM t AS x` 改写为 `FROM (SELECT * FROM t WHERE <pred>) AS x`。
   join / 子查询 / CTE 内的引用同样处理。
+  **包装里这个 `*` 是编译中间态，不参与列策略判定**（列策略只作用于用户自己的投影），
+  否则 `(SELECT * ...)` 会被自己的列规则拦死。
+- 参数命名空间隔离：策略参数一律 `:p_policy_<n>`，用户/模板参数保持原前缀，
+  禁止合并到同一个字典里（否则策略值可能被用户输入覆盖）。
 - 属性缺失（如用户没有 `mine_id`）→ 视为条件不成立 → 该表 deny，不是忽略条件。
 - 性能：包装会阻止部分谓词下推；要求被策略覆盖的表在策略列上有索引，
   上线前用 `EXPLAIN` 抽查 3 条典型查询（单表 / join / 聚合）。
 
 ### 5.3 列策略
 
-- 先把 `*` / `t.*` 展开为真实列（来自 schema 元数据）；展开失败 → deny。
+- 先把 `*` / `t.*` 展开为真实列（来自 schema 元数据）。**分三种情况**：
+  1. 有列元数据 → 精确展开后逐列判定；
+  2. 无元数据但该表带 `marking`（如 `sensitive`）→ **deny**（宁可拒绝，不放未知列）；
+  3. 无元数据且无标记 → 放行整表，审计记 `rewrite="star_unexpanded"`（保可用性）。
 - 逐列判定：deny → 该列不可出现在投影/条件/排序中；mask → 投影替换为 `mask_expr`
   （白名单函数：`NULLIF`、`LEFT`、`REPLACE`、`ROUND`、`CASE`）。
 - 敏感列出现在 `WHERE` / `GROUP BY` / `ORDER BY` 时按 deny 处理（防止"用条件反推值"）。
   `mask` 只作用于**投影**，不代表允许拿它做条件；需要按敏感列筛选时必须单独配置
   `allow` 列策略，并在审计里标注。
-- `COUNT(*)` 允许；对敏感列做聚合（`SUM/AVG/MAX/MIN`）默认 deny，可被显式 `mask` 策略放开。
+- `COUNT(*)` 允许。对敏感列做聚合（`SUM/AVG/MAX/MIN`）默认 deny，**放开靠 `allow` 列策略，
+  不是 `mask`**（mask 只改显示形态，不授予聚合权限）。
 
 ### 5.4 视图与血缘
 
 - 视图引用：用 `ai_query_lineage` 找基表；把基表的行条件按列映射套到视图列上。
-- 单层视图在 P2 支持；多层/物化视图在 P5。无法映射 → deny。
+- **血缘覆盖率不足以支撑"映射不了就全拒"**：实测 ds:4 表级覆盖 66.5%、列级仅 11.3%。
+  因此按三级降级：
+  1. 能映射到列 → 精确套用行/列策略；
+  2. 只映射到表 → 套用该表的 allow/deny；行策略仅在视图确实暴露了条件列时应用，
+     否则**拒绝该视图上的行策略表**（不能假装过滤了）；
+  3. 完全映射不到 → 若视图血缘里包含**任何受策略保护的表**则 deny，否则放行并记审计。
+- 单层视图在 P2 支持；多层/物化视图在 P5。
 - 标记类（`marking`）沿血缘传播；导出/报表继承标记（已在 `lineage.py` 有敏感传播一格，
   此处扩展为通用标记）。
 
-### 5.5 允许清单（防绕过）
+### 5.5 与对象侧的一致性（防两套实现漂移）
+
+`ontology/security.py` 现在用 Python 对 `props` 求值行策略（`eval_policy`），本设计在
+SQL 侧用编译器求值。同一条策略两份实现，时间一长必然分叉。约束：
+
+- 表达式先解析成**一份 AST**（共用解析器），对象侧改为"解释 AST"，SQL 侧改为"生成 SQL"；
+- 建一致性用例：取 100 条策略 × 10 组主体/属性，两侧结论必须逐条相同，纳入 CI。
+
+### 5.6 允许清单（防绕过）
 
 - 只允许 `SELECT`；`WITH`（CTE）允许但不允许递归。
 - 禁止：`INTO`、`COPY`、`pg_*` 系统表、`information_schema`、外部扩展函数。
 - 解析器版本与方言白名单写死；新增方言需补回归用例。
+- 解析失败一律 deny（可用性让位于安全），并把失败样本落库，供扩展语法用。
 
 ## 6. 上下文投影（生成前）
 
@@ -230,6 +283,9 @@ parse(sqlglot) → 解析表/列/CTE/子查询
   指标/术语/样例同样过滤（指标绑定到无权表 → 不出现）。
 - 提示词追加一段确定性约束：
   「你只能查询以下表；涉及行级限制的表系统会自动追加过滤条件，不要试图绕过。」
+- **`_SCHEMA_CTX_CACHE` 的 key 必须加 `scope_hash`**：现在的 key 是
+  `datasource|question|cfg_sig`，不加主体指纹会让 A 用户的"有权 schema"提示词被 B 用户复用
+  （等于绕过上下文裁剪）。
 - 目的：把"生成后被拒"降为"根本不会生成"，同时避免 schema 名称泄露给无权用户。
 
 ## 7. 执行网关（唯一收口）
@@ -238,9 +294,12 @@ parse(sqlglot) → 解析表/列/CTE/子查询
 # 所有入口只走这一个函数
 decision = await QueryGuard.prepare(sql, principal, entry=...)
 if not decision.permit:
-    audit(...); raise CustomException(decision.reason)
+    raise CustomException(decision.reason)   # 审计在 prepare 内部统一写（见 §8）
 sql = decision.sql
 ```
+
+**范围**：本网关只管**读**。行级写权限（action 写回）仍由 `check_action_allowed()`
+判定，但必须复用同一个 `Principal`（不允许两套主体解析）。
 
 | 入口 | 今日身份 | 改造后 |
 |---|---|---|
@@ -248,8 +307,8 @@ sql = decision.sql
 | agent 工具 / app 运行 | auth 或 None | 发起者 Principal；无发起者 → deny |
 | workflow 节点 | auth 或 None | 同上 |
 | cron | None | **owner Principal**（创建者**当前**的权限；创建者停用/删除 → deny），审计标注 `entry=cron` |
-| 报表 / 指标渲染 | auth | 阅读者 Principal |
-| 导出 / 下载 | auth | 阅读者 + 标记校验 |
+| 报表 / 指标渲染 | auth | 阅读者 Principal（模板 SQL 重新编译后执行） |
+| 导出 / 下载 | auth | 阅读者 Principal，**重新执行**（不得直接导出已存结果） |
 | 评测 / 金标执行 | None | 管理员 Principal（`entry=eval`），审计标记 |
 | 对象查询 | auth | Principal + 现有对象策略 |
 
@@ -266,10 +325,14 @@ sql = decision.sql
 ## 9. 派生资产与缓存
 
 - 查询缓存 key 增加 `scope_hash`（主体 + 策略版本指纹），不同主体不复用结果。
-  定义：`sha256(user_id | 排序后的角色码 | 排序后的 attrs | max(ai_policy.updated_time))`，
-  策略一改，指纹变化，旧缓存自然失效。
+  定义：`sha256(user_id | 排序后的角色码 | 排序后的 attrs | max(updated_time of enabled,not-deleted policies))`
+  —— 策略一改（含停用），指纹变化，旧缓存自然失效。
 - 报表/指标：渲染时按阅读者重跑 `QueryGuard`（模板 SQL 也要编译），不得直接复存结果。
+  报表若覆盖带 `marking` 的表，报表本身继承该标记；打开者缺标记则整体不可渲染
+  （而不是"渲染了但列被遮掉"）。
 - 会话历史：本人回放；他人（含管理员）查看时按其自身权限过滤或显示"部分内容不可见"。
+- **导出/下载**：必须用导出者主体**重新走 guard 并重新执行**（见 §3.1）；
+  禁止把会话/报表里已存的结果直接序列化下发——那条路径绕开了所有行/列策略。
 - 评测金标：执行时用管理员主体，但**结果只用于评测，不回流给普通用户**。
 
 ## 10. 迁移与灰度
@@ -282,11 +345,15 @@ sql = decision.sql
 | `shadow`（默认上线值） | 旧逻辑决策生效；新引擎并行判定，差异写 `ai_policy_shadow_diff` |
 | `enforce` | 新引擎决策生效，旧逻辑只读 |
 
-灰度顺序：`ask` → `agent/app` → `cron` → `report/metric` → `export`。
+灰度顺序（受依赖约束，不是拍脑袋）：`ask` → `agent/app` → `report/metric` → `export` → **`cron`**。
+cron 必须排最后：它今天根本没有主体（`auth=None`），要先等 P4 网关把"创建者 Principal"
+接通，才能谈"按创建者权限执行"；放在 P1/P2 灰度里是空转。
+
 每一步的单入口可独立切回 `legacy`。
 
-**默认拒绝的落地靠"祖父条款"**：backfill 把现有域/ABAC 规则转成显式 `allow`，
-因此切换瞬间不会锁死现有用户；差异由 shadow 报告逐条确认。
+**默认拒绝的落地靠"祖父条款"**：backfill 把现有域/ABAC 规则和"未配置即全表"的现状
+（§4.1 最后一行）转成显式 `allow`，切换瞬间不锁死；差异由 shadow 报告逐条确认，
+确认后才能删除那条兜底 allow。
 
 ## 11. 阶段与验收
 
@@ -299,11 +366,15 @@ sql = decision.sql
 | 阶段 | 交付 | 验收（可测） |
 |---|---|---|
 | **P0 止血** | ① 含敏感列的表一旦出现 `*` / `t.*` 直接拒绝（保守，P2 再做精确展开）；② `auth=None` 网关拒绝；③ 审计表 + shadow 记录；④ 确认并收紧 `_execute_sql` 旁路（仅超管 + 留痕） | 3 条 exploit SQL（`*`、`t.*`、`COUNT(*)` 变体）被拦；无 `auth=None` 落库为 permit |
-| **P1 模型** | `ai_policy` + 判定引擎 + backfill + shadow 对比 | 对最近 500 条真实 SQL 双跑，差异逐条有解释；backfill 幂等 |
-| **P2 编译器** | 行包装、列投影、mask、视图单层、fail-closed | 绕过回归集 ≥12 条全拦（star/alias/cte/union/subquery/join/function/view/注释/引号/大小写/动态 SQL）；EXPLAIN 性能抽查通过 |
-| **P3 上下文** | schema/指标/术语裁剪 + 提示词约束 | 无权表列不出现在 prompt（自动断言）；生成后拒绝率下降 ≥50% |
-| **P4 网关** | 全入口接入 + explain + 看板 | 每个入口各 1 条用例，均能回答"为什么放/拒" |
-| **P5 派生** | 报表/指标/缓存分桶、导出标记、多层视图 | 换主体打开同一报表结果一致且不越权；导出按标记拦截 |
+| **P1 模型** | `ai_policy` + 判定引擎 + backfill + shadow 对比 | 对**最近 2 周**、`ai_query_history`（若不存在则用 action log）里**按 datasource 分层抽样 500 条**双跑，差异逐条有解释；backfill 幂等（连跑 3 次策略数不变） |
+| **P2 编译器** | 行包装、列投影、mask、视图单层、fail-closed | 绕过回归集 ≥12 条**全部按预期拒绝**（star/alias/cte/union/subquery/join/function/view/注释/引号/大小写/动态 SQL），而不是"一律拒绝"；EXPLAIN 性能抽查（3 类查询）不劣化 30% 以上 |
+| **P3 上下文** | schema/指标/术语裁剪 + 提示词约束 | 无权表列不出现在 prompt（自动断言）；拒绝率相对**切换前 2 周基线**下降 ≥50% |
+| **P4 网关** | 全入口接入 + explain + 看板 | 每个入口各 1 条用例，均能回答"为什么放/拒"；`auth=None` 调用为 0 |
+| **P5 派生** | 报表/指标/缓存分桶、导出重执行、多层视图 | 换主体打开同一报表结果一致且不越权；导出走重新执行路径（不是复制旧结果） |
+
+**P0 的已知残余风险**（不隐瞒）：`sensitive` 是按**基表名**登记的，
+`SELECT * FROM 视图` 仍然绕过 P0 的星号检查；真正的修复依赖 P2 的血缘映射。
+因此 P0 上线时必须同时输出"暴露敏感列的视图清单"，供管理员临时下线或收紧。
 
 ## 12. 风险与对策
 
@@ -311,8 +382,8 @@ sql = decision.sql
 |---|---|
 | 行策略包装导致查询变慢 | 策略列建索引；上线前 EXPLAIN 抽查；必要时把谓词合并到外层 WHERE |
 | sqlglot 对方言覆盖不足 | fail-closed + 方言白名单 + 回归集；解析失败按 deny 处理 |
-| 默认拒绝锁死存量用户 | shadow 双跑 + 祖父条款 backfill + 单入口灰度 |
-| 视图/物化视图映射不准 | 先单层、再血缘递归；映射不了直接 deny |
+| 默认拒绝锁死存量用户 | shadow 双跑 + 祖父条款 backfill（含"未配置即全表"的兜底 allow）+ 单入口灰度 |
+| 视图/物化视图映射不准 | 按 §5.4 三级降级（精确列映射 → 表级 allow/deny → 血缘含受保护表才拒）；不搞"一律 deny"，否则 11.3% 的列级覆盖会锁死大片视图 |
 | 掩码表达式被滥用 | 掩码函数白名单；`mask_expr` 只允许由管理员配置，不接收用户输入 |
 | 审计表膨胀 | 90 天清理 + `sql_preview` 截断 + 只存 hash 不存全量 |
 
