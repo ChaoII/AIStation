@@ -617,6 +617,46 @@ header 根本无处可停，所以一点都吸不住。
 
 ---
 
+## 调试记忆：换组件外壳后，嵌套 scoped CSS 会整段「静默失效」
+
+### 现象（2026-11 实测，连续两次踩）
+
+把消息组件的外壳换成新的 `ChatMessage` 之后，原来的样式全都不生效：反馈按钮挤成一坨、
+正文行高不对。但：**编译通过、运行时无报错、控制台干净、页面照常渲染**——
+只有量计算样式才看得出（`gap: normal`、`margin-top: 0`）。
+
+### 根因
+
+原 scoped 样式是**嵌套**写的：
+
+```scss
+.message-item {          // ← 换外壳后这层 DOM 没了
+  .message-content {     // ← 这层也没了
+    .message-actions { gap: 12px; margin-top: 12px; }
+  }
+}
+```
+
+外壳组件把 `.message-item` / `.message-content` 换成了别人渲染的节点，
+**这两层选择器永远匹配不到**，下面所有规则一起变成死代码。CSS 不会报"规则没有命中"。
+
+### 规矩
+
+1. **换外壳（抽公共组件、替换根节点 class）时，必须同步检查被替换组件里的 scoped 样式**：
+   凡是嵌套在**已删除容器**下的规则，一律**拍平成顶层选择器**，或改成 `:deep()`。
+2. 判定"样式是否生效"**不能看编译**，必须量计算样式：
+   ```js
+   getComputedStyle(document.querySelector(".message-actions")).gap   // "normal" = 没命中
+   ```
+3. 同一份样式里如果还留着与外壳重复的部分（如用户气泡的底色/圆角），要一起删掉，
+   否则会出现**双层气泡**——这种反而看得见，但很容易被当成"新组件写错了"。
+
+### 相关文件
+- `frontend/src/views/module_ai/chat/components/MessageItem.vue` — 已把整块样式拍平
+- `frontend/src/components/chat/ChatMessage.vue` — 新外壳（负责气泡/头像/名字）
+
+---
+
 ## 调试记忆：后端热重载（reload）是陷阱，开发时禁止开
 
 ### 现象与代价（2026-10-18 实测，代价：约 1 小时的错误排查）
