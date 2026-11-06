@@ -13,13 +13,21 @@
 2. 别名要还原成真实表名：``select f.* from fuel_price f`` → ``fuel_price``；
 3. 裸 ``*`` 会展开**该 SELECT 作用域内全部表**的列，只要其中任一张敏感即算命中
    （join / 逗号连接都按此处理）；
-4. 表名比较**大小写不敏感**；``public.fuel_price`` 的 schema 前缀不参与比较 ——
-   带不带 schema 展开的是同一张表的全部列；
-5. CTE / 子查询别名**不是真实表**：星号落在它们身上不算命中，真正的风险由**内层**
-   SELECT 的星号判定覆盖（``with x as (select * from fuel_price) select * from x``
-   命中 ``fuel_price``）；
+4. **作用域感知的 CTE 识别**（``sqlglot.optimizer.scope.traverse_scope``）：
+   只有**本作用域真正可见**的 CTE 名才算"假表"——本 SELECT 的 WITH（按 PG 语义
+   定义在前的才可见）+ 祖先作用域链；CTE 体内的引用**看不到自身名字**（非递归）；
+   **带 schema 限定的引用永远是真实表**（``with fuel_price as (...) select * from
+   public.fuel_price`` 必须命中）。不能用"全语句 CTE 名集合"，那会把同名真表误判成
+   假表而静默放行；
+5. 表名比较**大小写不敏感**：``public.fuel_price`` / ``"public"."Fuel_Price"`` 都归成
+   裸表名 ``fuel_price``；返回的也是**归一化（小写、去 schema）的真实表名**；
 6. **解析失败返回 ``"*"``**（fail-closed）：调用方据此拒绝。空 SQL / 没有敏感表
    返回 ``None``——没有敏感列可泄漏。
+
+⚠️ T6 接线注意口径差异：本模块**大小写不敏感**且**去掉 schema**，而
+``service._sensitive_asset_cols`` 是 ``table_name == table`` 的**精确匹配**、敏感表清单
+也来自字段资产目录的原始写法。调用方拿返回值去查敏感列时需自行归一（例如
+``table.split(".")[-1]`` 后按库内实际写法比对），否则混合大小写/带 schema 的表名会失配。
 
 纯逻辑、无 IO，``PYTEST_NO_APP=1`` 可单测。
 """
@@ -37,22 +45,27 @@ def _normalize(name: str | None) -> str:
 
 
 def _sensitive_names(sensitive_tables: Iterable[str]) -> set[str]:
-    """敏感表清单 → 归一化后的**裸表名**集合（``public.t`` 只取 ``t``）。"""
+    """敏感表清单 → 归一化后的**裸表名**集合。
+
+    必须**按 ``.`` 分段后逐段去引号**：整体 ``strip('"')`` 会把
+    ``'"public"."Fuel_Price"'`` 变成 ``'"fuel_price'``（残留引号），永不匹配（fail-open）。
+    """
     out: set[str] = set()
     for raw in sensitive_tables or ():
-        parts = [p for p in _normalize(raw).split(".") if p]
+        parts = [_normalize(p) for p in (raw or "").split(".")]
+        parts = [p for p in parts if p]
         if parts:
             out.add(parts[-1])
     return out
 
 
-def _inside_function(star, sel, exp) -> bool:
+def _inside_function(star, scope_expression, exp) -> bool:
     """星号是否位于函数调用内（``count(*)`` 不取列，必须放过）。
 
-    只看 star 到所属 SELECT 之间的祖先链：链上出现 ``exp.Func`` 即视为聚合/函数。
+    只看 star 到所属作用域根表达式之间的祖先链：链上出现 ``exp.Func`` 即视为聚合/函数。
     """
     node = star.parent
-    while node is not None and node is not sel:
+    while node is not None and node is not scope_expression:
         if isinstance(node, exp.Func):
             return True
         node = node.parent
@@ -68,8 +81,12 @@ def unexpanded_star(
 
     Args:
         sql: 待检查的查询（单条 SELECT；其它语句也能解析，只是同样检查其内部 SELECT）。
-        sensitive_tables: 含敏感列的表名集合（大小写不敏感，可带 schema 前缀）。
+        sensitive_tables: 含敏感列的表名集合（大小写不敏感，可带 schema 前缀与引号）。
         dialect: sqlglot 的读方言，与 ``service.py`` 保持一致（默认 postgres）。
+
+    Returns:
+        命中的真实表名（**归一化后的小写裸表名**，如 ``fuel_price``）；
+        ``None`` = 无风险；``"*"`` = 无法安全判定，调用方应拒绝。
     """
     if not sql or not sql.strip():
         return None
@@ -94,36 +111,46 @@ def unexpanded_star(
     for tree in trees:
         if tree is None:
             return "*"
-        hit = _star_hit(tree, exp, sensitive)
+        if isinstance(tree, exp.Command):
+            # sqlglot 遇到不支持的语法会退化成 Command（stdout 会打一条 warning），
+            # 此时遍历不到任何 star，若返回 None 就是静默放行 → fail-closed。
+            return "*"
+        try:
+            hit = _star_hit(tree, sensitive)
+        except Exception:  # noqa: BLE001 - 遍历阶段意外抛错不能冒泡（fail-closed）
+            return "*"
         if hit:
             return hit
     return None
 
 
-def _star_hit(tree, exp, sensitive: set[str]) -> str | None:
-    """在单条语句的语法树里找落在敏感表上的未展开星号。"""
-    # CTE 名不是真实表；内层 SELECT 会各自被检查，这里只用来排除"假表"
-    cte_names = {_normalize(c.alias_or_name) for c in tree.find_all(exp.CTE)}
+def _star_hit(tree, sensitive: set[str]) -> str | None:
+    """在单条语句的语法树里找落在敏感表上的未展开星号（按作用域判定）。"""
+    from sqlglot import exp
+    from sqlglot.optimizer.scope import traverse_scope
 
-    for sel in tree.find_all(exp.Select):
+    for scope in traverse_scope(tree):
+        # ``scope.cte_sources`` 就是"该作用域真正可见的 CTE"：本 SELECT 的 WITH
+        # （CTE 体内只有定义在前的兄弟 CTE，非递归时不含自身）+ 祖先作用域链。
+        # 绝不能用全语句的 CTE 名集合 —— 那会把同名真表一起遮住（Critical 绕过）。
+        cte_names = {_normalize(name) for name in scope.cte_sources}
+
         tables: list[str] = []
         alias_to_table: dict[str, str] = {}
-        for t in sel.find_all(exp.Table):
-            # 只算**直接**属于本 SELECT 的表；子查询/CTE 内部的表归属内层 SELECT
-            if t.find_ancestor(exp.Select) is not sel:
-                continue
+        for t in scope.tables:
             name = (t.name or "").strip()
-            if not name or _normalize(name) in cte_names:
+            if not name:
+                continue
+            # schema 限定（public.t）不可能是 CTE 引用，永远是真实表
+            if not (t.db or t.catalog) and _normalize(name) in cte_names:
                 continue
             tables.append(name)
             alias_to_table[_normalize(t.alias_or_name)] = name
         if not tables:
             continue
 
-        for star in sel.find_all(exp.Star):
-            if star.find_ancestor(exp.Select) is not sel:
-                continue  # 内层 SELECT 的星号交给内层判定
-            if _inside_function(star, sel, exp):
+        for star in scope.find_all(exp.Star):
+            if _inside_function(star, scope.expression, exp):
                 continue  # count(*) 之类不是取列
 
             if isinstance(star.parent, exp.Column):
@@ -133,12 +160,12 @@ def _star_hit(tree, exp, sensitive: set[str]) -> str | None:
                     continue
                 real = alias_to_table.get(qualifier)
                 if real and _normalize(real) in sensitive:
-                    return real
+                    return _normalize(real)
                 continue
 
-            # 裸星号：展开本 SELECT 作用域内所有表的全部列，任一敏感即命中
+            # 裸星号：展开本作用域内所有表的全部列，任一敏感即命中
             for name in tables:
                 if _normalize(name) in sensitive:
-                    return name
+                    return _normalize(name)
 
     return None
