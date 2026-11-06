@@ -105,3 +105,6 @@ frontend/vite.e2e.config.mts
 
 # AI 办公室的设计稿/验收截图（本地过程产物，211 个文件约 172MB；文档未引用，不入库）
 docs/mockups/
+
+# 本地截图（playwright 调试产物，不进仓库）
+frontend/.openchamber-screenshots/
