@@ -1,0 +1,607 @@
+"""Task 8：旧权限规则 backfill（幂等 / 映射 / 跳过 / dry_run / 兜底 allow）。
+
+覆盖点（全部走**注入的假存储**，``PYTEST_NO_APP=1`` 可跑）：
+
+1. **幂等**：连跑两次，第二次 ``created == 0``，策略行不重复（判重靠
+   ``ai_policy_migration(source_table, source_id)``）；
+2. **五行映射**：
+   - ``ai_data_domain`` → ``allow`` + ``subject_kind=domain``（按表拆行，因为
+     ``ai_policy`` 一行只能挂一个 ``resource_code``）；
+   - ``ai_access_rule`` → ``allow`` + ``subject_kind=role``；
+   - ``ai_query_asset_columns.sensitive`` → 一条 ``deny`` + ``columns`` + ``marking=sensitive``
+     （同表多列合并）；
+   - ``ai_ont_row_policy``（allow）→ 物理表上的 ``allow`` + ``condition``；
+   - ``legacy_default_allow`` → 按 ``_system_allowed()`` 逐表一条兜底 ``allow``；
+3. **解析不到不静默**：对象码解析不到物理表、条件含 ``user.role()``、条件 deny 等
+   一律进 ``skipped`` 并 ``log.warning``，**绝不**写成引擎不认的 ``resource_kind=object``；
+4. **dry_run 不写库**（不建迁移表、不插策略、不记迁移）。
+"""
+from __future__ import annotations
+
+import asyncio
+
+
+# ---------------------------------------------------------------------------
+# 假存储：与 ``backfill._DbStore`` 同签名，内存里记账，便于断言「写了什么」
+# ---------------------------------------------------------------------------
+class _FakeStore:
+    def __init__(
+        self,
+        *,
+        domains=(),
+        access_rules=(),
+        sensitive_columns=(),
+        row_policies=(),
+        assets=(),
+        object_table=None,
+        system_tables=(),
+        load_errors=(),
+    ):
+        self.domains = list(domains)
+        self.access_rules = list(access_rules)
+        self.sensitive_columns = list(sensitive_columns)
+        self.row_policies = list(row_policies)
+        self.assets = list(assets)
+        self.object_table = dict(object_table or {})
+        self.system_tables = set(system_tables)
+        self.load_errors = list(load_errors)
+        # 写入侧记账
+        self.policies: list[dict] = []
+        self.migrations: list[tuple[str, str, int]] = []
+        self.ensure_calls = 0
+
+    async def ensure_migration_table(self) -> None:
+        self.ensure_calls += 1
+
+    async def load_sources(self) -> dict:
+        return {
+            "domains": list(self.domains),
+            "access_rules": list(self.access_rules),
+            "sensitive_columns": list(self.sensitive_columns),
+            "row_policies": list(self.row_policies),
+            "asset_tables": set(self.assets),
+            "object_table": dict(self.object_table),
+            "system_tables": set(self.system_tables),
+            "migrations": [
+                {"source_table": s, "source_id": i} for s, i, _ in self.migrations
+            ],
+            "errors": list(self.load_errors),
+        }
+
+    async def insert_policy(self, values: dict) -> int:
+        self.policies.append(dict(values))
+        return len(self.policies)
+
+    async def record_migration(
+        self, source_table: str, source_id: str, policy_id: int
+    ) -> None:
+        self.migrations.append((source_table, source_id, policy_id))
+
+
+def _wire(monkeypatch, **kw):
+    """把 ``backfill`` 的存储换成假存储，返回 ``(模块, 存储)``。"""
+    from app.plugin.module_ai.query.policy import backfill as B
+
+    store = _FakeStore(**kw)
+    monkeypatch.setattr(B, "_make_store", lambda: store)
+    return B, store
+
+
+def _by_name(policies, prefix):
+    return [p for p in policies if str(p.get("name", "")).startswith(prefix)]
+
+
+def _full_house():
+    """一套最小的旧数据：域 / ABAC / 敏感列 / 对象行策略 / 系统表白名单。"""
+    return {
+        "domains": [
+            {
+                "id": 3,
+                "name": "人力域",
+                "code": "hr",
+                "tables": ["t_domain_a", "T_Domain_B", "t_domain_a"],
+            }
+        ],
+        "access_rules": [
+            {
+                "id": 4,
+                "name": "分析师只读",
+                "attribute": "role",
+                "value": "ANALYST",
+                "allowed_tables": ["t_abac_a"],
+                "sensitive_ok": False,
+            }
+        ],
+        "sensitive_columns": [
+            {"table_name": "t_abac_a", "column_name": "phone"},
+            {"table_name": "t_abac_a", "column_name": "id_card"},
+        ],
+        "row_policies": [
+            {
+                "id": 7,
+                "object_code": "orders",
+                "name": "只看本部门",
+                "expression": "dept_id == user.attribute('dept')",
+                "effect": "allow",
+                "enabled": True,
+                "priority": 10,
+            }
+        ],
+        "assets": ["orders"],
+        "object_table": {"ont_orders": "orders"},
+        "system_tables": ["sys_user", "train_tasks"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# 1. 幂等
+# ---------------------------------------------------------------------------
+def test_backfill_is_idempotent(monkeypatch):
+    """重复执行真的 0 新建（判重靠 ai_policy_migration）。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    first = asyncio.run(B.backfill_policies())
+    second = asyncio.run(B.backfill_policies())
+
+    assert first["created"] > 0, first
+    assert second["created"] == 0, second
+    # 策略条数没有翻倍
+    assert len(store.policies) == first["created"]
+    assert len(store.migrations) == first["created"]
+    # 第二轮不再建表（建表本身幂等，但重复调用应可接受）
+    assert store.ensure_calls == 2
+
+
+def test_backfill_creates_only_new_rows_on_rerun(monkeypatch):
+    """第二轮只补新增的旧数据，已迁移的不重复。"""
+    B, store = _wire(monkeypatch, **_full_house())
+    first = asyncio.run(B.backfill_policies())
+
+    # 新增一条 ABAC 规则后再跑
+    store.access_rules.append(
+        {
+            "id": 9,
+            "name": "新增规则",
+            "attribute": "role",
+            "value": "VIEWER",
+            "allowed_tables": ["t_abac_new"],
+            "sensitive_ok": False,
+        }
+    )
+    second = asyncio.run(B.backfill_policies())
+
+    assert second["created"] == 1, second
+    assert len(store.policies) == first["created"] + 1
+    assert len(_by_name(store.policies, "legacy_default_allow")) == 2  # 没重复建兜底
+
+
+# ---------------------------------------------------------------------------
+# 2. 五行映射
+# ---------------------------------------------------------------------------
+def test_domain_maps_to_domain_allow_per_table(monkeypatch):
+    """域 → allow + subject_kind=domain，按表拆行，表名大小写去重。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    asyncio.run(B.backfill_policies())
+
+    rows = _by_name(store.policies, "legacy_domain")
+    assert {r["resource_code"] for r in rows} == {"t_domain_a", "T_Domain_B"}
+    for r in rows:
+        assert r["effect"] == "allow"
+        assert r["subject_kind"] == "domain"
+        assert r["subject_value"] == "hr"
+        assert r["resource_kind"] == "table"
+
+
+def test_access_rule_maps_to_role_allow(monkeypatch):
+    """ABAC 规则（attribute=role）→ allow + subject_kind=role。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    asyncio.run(B.backfill_policies())
+
+    rows = _by_name(store.policies, "legacy_abac")
+    assert len(rows) == 1, rows
+    row = rows[0]
+    assert row["resource_code"] == "t_abac_a"
+    assert row["subject_kind"] == "role"
+    assert row["subject_value"] == "ANALYST"
+    assert row["effect"] == "allow"
+
+
+def test_sensitive_columns_merge_into_one_deny(monkeypatch):
+    """同表多个敏感列合成一条 deny（columns 数组），marking=sensitive。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    asyncio.run(B.backfill_policies())
+
+    rows = _by_name(store.policies, "legacy_sensitive")
+    assert len(rows) == 1, rows
+    row = rows[0]
+    assert row["resource_code"] == "t_abac_a"
+    assert row["effect"] == "deny"
+    assert row["subject_kind"] == "everyone"
+    assert row["marking"] == "sensitive"
+    assert sorted(row["columns"]) == ["id_card", "phone"]
+
+
+def test_row_policy_lands_on_physical_table(monkeypatch):
+    """对象行策略必须落到**物理表**（resource_kind=table），condition 语法对齐。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    asyncio.run(B.backfill_policies())
+
+    rows = _by_name(store.policies, "legacy_row")
+    assert len(rows) == 1, rows
+    row = rows[0]
+    assert row["resource_kind"] == "table"
+    # object_code="orders" → 真实支撑表 ont_orders（语义映射优先）
+    assert row["resource_code"] == "ont_orders"
+    assert row["effect"] == "allow"
+    assert row["subject_kind"] == "everyone"
+    # user.attribute('dept') → $attr.dept（引擎占位符）；== → =
+    assert row["condition"] == "dept_id = $attr.dept"
+    # 原表达式留痕，便于治理页人工核对
+    assert "dept_id == user.attribute('dept')" in row["description"]
+
+
+def test_legacy_default_allow_per_table_lowest_priority(monkeypatch):
+    """兜底 allow：按 _system_allowed() 逐表一条，同名、priority 最低、无条件无列。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    result = asyncio.run(B.backfill_policies())
+
+    rows = _by_name(store.policies, "legacy_default_allow")
+    assert {r["resource_code"] for r in rows} == {"sys_user", "train_tasks"}
+    for r in rows:
+        assert r["name"] == "legacy_default_allow"
+        assert r["subject_kind"] == "everyone"
+        assert r["effect"] == "allow"
+        assert r["priority"] == 1
+        assert r["columns"] == []
+        assert r["condition"] == ""
+        assert r["description"].startswith("迁移期兜底")
+    assert result["by_source"]["legacy_default_allow"] == 2
+
+
+def test_system_tables_included_in_upper_bound_only(monkeypatch):
+    """``ai_query_assets.included=false`` 的表不出现在兜底 allow 里时才安全 ——
+    这里验证「兜底集合 = 系统白名单」，不额外放大到资产目录里的任意表。"""
+    B, store = _wire(
+        monkeypatch,
+        system_tables=["sys_user"],
+        assets=["t_not_in_system"],
+    )
+
+    asyncio.run(B.backfill_policies())
+
+    rows = _by_name(store.policies, "legacy_default_allow")
+    assert [r["resource_code"] for r in rows] == ["sys_user"]
+
+
+# ---------------------------------------------------------------------------
+# 3. 解析不到不静默
+# ---------------------------------------------------------------------------
+def test_unresolvable_object_code_is_skipped_not_object_kind(monkeypatch):
+    """对象码解析不到物理表 → 跳过 + 记 skipped，绝不写成 resource_kind=object。"""
+    B, store = _wire(
+        monkeypatch,
+        row_policies=[
+            {
+                "id": 11,
+                "object_code": "ghost_object",
+                "name": "幽灵",
+                "expression": "x == 1",
+                "effect": "allow",
+                "enabled": True,
+                "priority": 0,
+            }
+        ],
+        assets=[],
+        object_table={},
+    )
+
+    result = asyncio.run(B.backfill_policies())
+
+    assert not [p for p in store.policies if p.get("resource_kind") == "object"]
+    assert not _by_name(store.policies, "legacy_row")
+    skipped = [s for s in result["skipped"] if s["source"] == "ai_ont_row_policy"]
+    assert skipped and "ghost_object" in str(skipped[0])
+
+
+def test_unsupported_expression_and_deny_are_skipped(monkeypatch):
+    """``user.role()`` 无法表达成行条件；条件 deny 会被整表短路 —— 都跳过并留痕。"""
+    B, store = _wire(
+        monkeypatch,
+        row_policies=[
+            {
+                "id": 21,
+                "object_code": "orders",
+                "name": "角色条件",
+                "expression": "user.role('ADMIN') or owner == user.name",
+                "effect": "allow",
+                "enabled": True,
+                "priority": 0,
+            },
+            {
+                "id": 22,
+                "object_code": "orders",
+                "name": "排除作废行",
+                "expression": "status == 'void'",
+                "effect": "deny",
+                "enabled": True,
+                "priority": 0,
+            },
+        ],
+        assets=["orders"],
+        object_table={"ont_orders": "orders"},
+    )
+
+    result = asyncio.run(B.backfill_policies())
+
+    assert not _by_name(store.policies, "legacy_row")
+    reasons = {
+        s["id"]: s["reason"] for s in result["skipped"] if s["source"] == "ai_ont_row_policy"
+    }
+    assert 21 in reasons and "user." in reasons[21]
+    assert 22 in reasons and "deny" in reasons[22]
+
+
+def test_unsupported_access_rule_attribute_is_skipped(monkeypatch):
+    """ABAC 只支持 role；其它 attribute 不猜，进 skipped。"""
+    B, store = _wire(
+        monkeypatch,
+        access_rules=[
+            {
+                "id": 31,
+                "name": "按部门",
+                "attribute": "dept",
+                "value": "3",
+                "allowed_tables": ["t_x"],
+                "sensitive_ok": False,
+            }
+        ],
+    )
+
+    result = asyncio.run(B.backfill_policies())
+
+    assert not _by_name(store.policies, "legacy_abac")
+    skipped = [s for s in result["skipped"] if s["source"] == "ai_access_rule"]
+    assert skipped and skipped[0]["id"] == 31
+
+
+def test_sensitive_ok_is_reported_for_manual_handling(monkeypatch):
+    """``sensitive_ok`` 无法用「everyone 列 deny」表达（引擎 deny>allow），必须报出来。"""
+    B, _store = _wire(
+        monkeypatch,
+        access_rules=[
+            {
+                "id": 41,
+                "name": "风控可看敏感列",
+                "attribute": "role",
+                "value": "RISK",
+                "allowed_tables": ["t_risk"],
+                "sensitive_ok": True,
+            }
+        ],
+    )
+
+    result = asyncio.run(B.backfill_policies())
+
+    notes = [s for s in result["skipped"] if s["id"] == 41]
+    assert notes and "sensitive_ok" in notes[0]["reason"]
+
+
+def test_load_error_is_reported(monkeypatch):
+    """旧表读不出来（不存在/无权限）不能静默 —— 进 skipped。"""
+    B, _store = _wire(
+        monkeypatch,
+        load_errors=[{"source": "ai_ont_row_policy", "reason": "no such table"}],
+    )
+
+    result = asyncio.run(B.backfill_policies())
+
+    assert any(s["source"] == "ai_ont_row_policy" for s in result["skipped"])
+
+
+# ---------------------------------------------------------------------------
+# 4. dry_run
+# ---------------------------------------------------------------------------
+def test_dry_run_writes_nothing(monkeypatch):
+    """dry_run 只算数量：不建迁移表、不插策略、不记迁移。"""
+    B, store = _wire(monkeypatch, **_full_house())
+
+    result = asyncio.run(B.backfill_policies(dry_run=True))
+
+    assert result["created"] > 0
+    assert store.policies == []
+    assert store.migrations == []
+    assert store.ensure_calls == 0
+
+    # 真跑一次后数量一致（dry_run 的预测可信）
+    real = asyncio.run(B.backfill_policies())
+    assert real["created"] == result["created"]
+    assert real["by_source"] == result["by_source"]
+
+
+def test_by_source_covers_all_five_sources(monkeypatch):
+    """返回值形状固定：三个键 + 五类来源计数（含 0）。"""
+    B, _store = _wire(monkeypatch, **_full_house())
+
+    result = asyncio.run(B.backfill_policies())
+
+    assert set(result) == {"created", "skipped", "by_source"}
+    assert set(result["by_source"]) == {
+        "ai_data_domain",
+        "ai_access_rule",
+        "ai_query_asset_columns",
+        "ai_ont_row_policy",
+        "legacy_default_allow",
+    }
+    assert all(v >= 1 for v in result["by_source"].values())
+
+
+# ---------------------------------------------------------------------------
+# 5. 迁移表 DDL（纯常量）
+# ---------------------------------------------------------------------------
+def test_migration_table_ddl_is_idempotent_with_unique_key():
+    from app.plugin.module_ai.query.policy.backfill import MIGRATION_TABLE_SQL
+
+    low = MIGRATION_TABLE_SQL.lower()
+    assert "create table if not exists ai_policy_migration" in low
+    assert "unique(source_table, source_id)" in low
+    assert "policy_id" in low
+
+
+# ---------------------------------------------------------------------------
+# 6. 真库集成（``PYTEST_NO_APP=1`` 时自动 skip；全量/单文件带应用时跑）
+# ---------------------------------------------------------------------------
+def test_backfill_on_real_db_is_idempotent(test_client, db_run):
+    """真跑一次：SQL 能执行、迁移表建得出、第二轮 0 新建、行策略真的落到物理表。"""
+    import uuid
+
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.query.model import (
+        AiQueryAssetColumnModel,
+        AiQueryAssetModel,
+    )
+    from app.plugin.module_ai.query.policy import backfill as B
+
+    sfx = uuid.uuid4().hex[:6]
+    dom_code = f"t8{sfx}"
+    t_dom_a, t_dom_b = f"t8_{sfx}_a", f"t8_{sfx}_b"
+    t_abac = f"t8_{sfx}_abac"
+    t_sec = f"t8_{sfx}_sec"
+    t_obj = f"t8_{sfx}_obj"
+
+    async def _cleanup():
+        async with async_db_session.begin() as db:
+            for sql in (
+                "DELETE FROM ai_policy_migration",
+                "DELETE FROM ai_policy WHERE name LIKE 'legacy_%'",
+                "DELETE FROM ai_ont_row_policy WHERE object_code=:oc",
+                "DELETE FROM ai_data_domain WHERE code=:code",
+                "DELETE FROM ai_access_rule WHERE value='T8ROLE'",
+                "DELETE FROM ai_query_asset_columns WHERE table_name=:sec",
+                "DELETE FROM ai_query_assets WHERE table_name=:obj",
+            ):
+                params = {
+                    "oc": t_obj,
+                    "code": dom_code,
+                    "sec": t_sec,
+                    "obj": t_obj,
+                }
+                try:
+                    await db.execute(text(sql), params)
+                except Exception:  # noqa: BLE001 - 清理尽力而为
+                    pass
+
+    async def _run():
+        from sqlalchemy import text as _text
+
+        await _cleanup()
+        try:
+            async with async_db_session.begin() as db:
+                # 本体行策略表在 SQLite 上不会被启动建表建出来（DDL 是 PG 方言，
+                # ontology 侧 best-effort 建表会跳过）；这里按方言翻译后自己建一次。
+                from app.plugin.module_ai.ontology.service import _ONT_TABLES_SQL
+                from app.plugin.module_ai.query.ddl_dialect import ddl_for_dialect
+
+                row_policy_ddl = next(
+                    s for s in _ONT_TABLES_SQL if "ai_ont_row_policy" in s
+                )
+                await db.execute(_text(ddl_for_dialect(row_policy_ddl)))
+                await db.execute(
+                    _text(
+                        "INSERT INTO ai_data_domain (name, code, tables, members, enabled, "
+                        "is_deleted) VALUES ('t8域', :code, :tables, '[]', true, false)"
+                    ),
+                    {"code": dom_code, "tables": f'["{t_dom_a}", "{t_dom_b}"]'},
+                )
+                await db.execute(
+                    _text(
+                        "INSERT INTO ai_access_rule (name, attribute, value, allowed_tables, "
+                        "sensitive_ok, enabled, is_deleted) VALUES ('t8规则', 'role', 'T8ROLE', "
+                        ":tables, false, true, false)"
+                    ),
+                    {"tables": f'["{t_abac}"]'},
+                )
+                for col in ("phone", "id_card"):
+                    db.add(
+                        AiQueryAssetColumnModel(
+                            table_name=t_sec,
+                            column_name=col,
+                            sensitive=True,
+                            included=True,
+                            is_deleted=False,
+                        )
+                    )
+                db.add(
+                    AiQueryAssetModel(
+                        table_name=t_obj,
+                        included=True,
+                        object_enabled=True,
+                        is_deleted=False,
+                    )
+                )
+                await db.flush()
+                await db.execute(
+                    _text(
+                        "INSERT INTO ai_ont_row_policy (object_code, name, expression, effect, "
+                        "enabled, priority) VALUES (:oc, 't8部门', "
+                        "'dept_id == user.attribute(''dept'')', 'allow', true, 5)"
+                    ),
+                    {"oc": t_obj},
+                )
+            first = await B.backfill_policies()
+            second = await B.backfill_policies()
+            async with async_db_session() as db:
+                rows = (
+                    await db.execute(
+                        _text(
+                            "SELECT resource_code, resource_kind, effect, subject_kind, "
+                            "subject_value, condition, columns, name FROM ai_policy "
+                            "WHERE name LIKE 'legacy_%' ORDER BY id"
+                        )
+                    )
+                ).fetchall()
+                mig = (
+                    await db.execute(_text("SELECT count(*) FROM ai_policy_migration"))
+                ).scalar()
+            return first, second, rows, mig
+        finally:
+            await _cleanup()
+
+    first, second, rows, mig = db_run(_run())
+
+    assert first["created"] > 0, first
+    assert second["created"] == 0, second
+    assert mig == first["created"]
+
+    by_code = {}
+    for r in rows:
+        by_code.setdefault(r[0], []).append(r)
+
+    # 域：每个域 × 每张表一条 allow（subject=domain）
+    for table in (t_dom_a, t_dom_b):
+        assert table in by_code, f"域表 {table} 没迁出来：{list(by_code)}"
+        assert by_code[table][0][3] == "domain"
+        assert by_code[table][0][4] == dom_code
+
+    # ABAC：role allow
+    assert by_code[t_abac][0][3] == "role"
+    assert by_code[t_abac][0][4] == "T8ROLE"
+
+    # 敏感列：一条 deny，两列合并，marking 用 name 前缀间接验证（DDL 列在 rows 未取）
+    sec = by_code[t_sec][0]
+    assert sec[2] == "deny" and "phone" in str(sec[6]) and "id_card" in str(sec[6])
+
+    # 行策略：落到物理表（table）+ 条件语法对齐
+    obj = by_code[t_obj][0]
+    assert obj[1] == "table" and obj[2] == "allow"
+    assert obj[5] == "dept_id = $attr.dept"
+
+    # 兜底 allow：系统白名单里至少 sys_user
+    assert "sys_user" in by_code
+    assert by_code["sys_user"][0][7] == "legacy_default_allow"
