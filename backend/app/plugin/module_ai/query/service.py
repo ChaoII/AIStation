@@ -252,6 +252,10 @@ async def _ensure_query_tables() -> None:
                     await db.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
         except Exception as e:  # noqa: BLE001
             _degrade("shadow_table_columns", e)
+    # 策略/审计/shadow 三张表（统一策略引擎的数据层），建表逻辑收敛在 policy/model.py
+    from .policy.model import ensure_policy_tables
+
+    await ensure_policy_tables()
 
 
 # Agno 向量库是否已播种语义单元
