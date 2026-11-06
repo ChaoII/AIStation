@@ -680,7 +680,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ArrowDown } from "@element-plus/icons-vue";
 import {
   getAiAgentDetail,
   getAiAgentOffice,
@@ -692,7 +691,7 @@ import {
   dispatchOfficeAgent,
 } from "@/api/module_ai/agent";
 import { getAiModelList } from "@/api/module_ai/model";
-import { getAiLogRecent, getAiToolCalls } from "@/api/module_ai/logs";
+import { getAiLogRecent } from "@/api/module_ai/logs";
 import { getApprovalCenter } from "@/api/module_ai/query";
 // @ts-ignore 纯 JS 场景模块（three 无类型声明）
 import { createOffice } from "./office3d.js";
@@ -1195,18 +1194,6 @@ type RunRec = {
 const lastRun = ref<RunRec | null>(null);
 const replaying = ref(false);
 const canReplay = computed(() => !!lastRun.value?.frames?.length);
-/** 「更多」菜单 */
-function onMore(cmd: string) {
-  if (cmd === "replay") {
-    // 本地有这轮的气泡帧就动画重放；没有就直接摊开最近一次落库的执行记录
-    if (canReplay.value) replayLast();
-    else openRun();
-  } else if (cmd === "refresh") {
-    load(true);
-    loadTasks(taskPage.value);
-    loadRecent();
-  }
-}
 
 /* ---------- 执行过程（对话式时间线） ---------- */
 type Step = {
@@ -1319,17 +1306,6 @@ watch(
     }
   }
 );
-
-const KIND_LABEL: Record<string, string> = {
-  plan: "规划",
-  tool: "工具",
-  reply: "回话",
-  summary: "汇总",
-  error: "失败",
-};
-function kindLabel(k: string) {
-  return KIND_LABEL[k] || k;
-}
 
 /** 工具步骤的专属渲染：不同工具显示不同结构 */
 /** 纯文本化：块体是纯文本，去掉 markdown 粗体/行内代码记号，免得看到 **55** */
@@ -1824,9 +1800,6 @@ const statusText = computed(() => {
   const st = agents.value.find((a) => a.id === detail.value?.id)?.status;
   return st === "busy" ? "工作中" : st === "wait" ? "等你确认" : "在岗";
 });
-const statusTag = computed<"primary" | "warning" | "info">(() =>
-  statusText.value === "工作中" ? "primary" : statusText.value === "等你确认" ? "warning" : "info"
-);
 /* 分类功能已在 main 下线（后端 category 路由删除）：这里改用角色，别再依赖分类树 */
 const categoryName = computed(() => detail.value?.agent_role || "未分类");
 const modelName = computed(() => {
@@ -1895,20 +1868,6 @@ async function showBadge() {
     });
   const myRuns = logs;
 
-  /* 工具级时间线：有工具记录就用工具（tool / 耗时 / 成败），没有就退回调用记录 */
-  let toolEntries: { t: string; k: string; ms: number | null; ok: boolean }[] = [];
-  try {
-    const tr: any = await getAiToolCalls(d.id, 6);
-    const list = tr?.data?.data || [];
-    toolEntries = list.map((x: any) => ({
-      t: String(x.time || "").slice(0, 8),
-      k: String(x.tool || "").slice(0, 12),
-      ms: x.duration_ms ?? null,
-      ok: !!x.ok,
-    }));
-  } catch {
-    toolEntries = [];
-  }
   /* 墙上大屏切成这个人的工作日志（只换内容，镜头继续对着人） */
   office?.setScreen?.(
     "log",
@@ -2103,7 +2062,7 @@ async function doDispatch() {
           });
           if (f.type === "delegate") {
             if (f.to && !roster.includes(f.to)) roster.push(f.to);
-            refreshSoon(f.to);
+            refreshSoon();
             office?.ping?.(f.to);
             office?.engage?.(f.to);
             office?.lookAtLeader?.(f.to, 4);
@@ -2146,7 +2105,7 @@ async function doDispatch() {
             f.from || ""
           );
           if (f.from) {
-            refreshSoon(f.from);
+            refreshSoon();
             office?.ping?.(f.from);
             office?.toolScreen?.(f.from, f.tool);
             addCast("tool", `${f.from} 调用 ${f.tool || "工具"}`);
@@ -2319,11 +2278,6 @@ async function openSummary() {
   }
 }
 
-function pct(n: number) {
-  const max = Math.max(1, ...(summary.value.top || []).map((t: any) => t.count));
-  return Math.round((n / max) * 100);
-}
-
 /* ---------- 回放：把上一轮协同原样重演 ---------- */
 const RUN_KEY = "office:lastRun";
 
@@ -2380,14 +2334,8 @@ function replayLast() {
 }
 
 /** 组员刚被点名：先把他的工位点亮（不用等 20 秒轮询） */
-function refreshSoon(_name?: string) {
+function refreshSoon() {
   window.setTimeout(() => load(true), 1200);
-}
-
-/** app_id → 智能体名字（日志里只有 id） */
-function agentName(appId?: number | null): string {
-  if (!appId) return "";
-  return agents.value.find((a) => a.id === appId)?.name || "";
 }
 
 const USAGE_LABEL: Record<string, string> = {
