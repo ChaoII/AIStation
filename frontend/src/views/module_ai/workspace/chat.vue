@@ -87,6 +87,11 @@
         </div>
       </div>
       <ChatShell :scroll="false">
+        <ChatOutline
+          :items="outlineItems"
+          container=".chat-messages"
+          :title="t('ai_chat.chatOutline_title')"
+        />
         <ChatMessages
           ref="msgRef"
           :messages="chat.messages.value"
@@ -131,11 +136,13 @@ import {
 import ChatInput from "@/views/module_ai/chat/components/ChatInput.vue";
 import ChatMessages from "@/views/module_ai/chat/components/ChatMessages.vue";
 import ChatShell from "@/components/chat/ChatShell.vue";
+import ChatOutline from "@/components/chat/ChatOutline.vue";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiAgentDetail } from "@/api/module_ai/agent";
 import { getAiWorkflowDetail } from "@/api/module_ai/workflow";
 import { getAiAppList } from "@/api/module_ai/app";
 import { useAiChat } from "@/composables/ai/useAiChat";
+import { textOf } from "@/composables/ai/uiMessage";
 
 defineOptions({ name: "AiWorkspaceChat" });
 
@@ -268,6 +275,17 @@ const sessionGroups = computed(() => {
 });
 
 const todaySessions = computed(() => sessions.value.filter((s) => isToday(s.updated_time)));
+
+/** 长会话导航：按顺序列出用户提过的每个问题 */
+const outlineItems = computed(() =>
+  (chat.messages.value || [])
+    .map((m: any, i: number) => ({ m, i }))
+    .filter((x) => x.m.role === "user")
+    .map((x) => ({
+      id: `msg-${x.i}`,
+      text: String(textOf(x.m) || "").slice(0, 80),
+    }))
+);
 
 async function openSession(s: AiSessionItem) {
   currentSessionId.value = s.id;

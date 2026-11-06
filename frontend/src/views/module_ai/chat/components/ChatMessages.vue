@@ -4,6 +4,7 @@
     <div v-else class="messages-list">
       <MessageItem
         v-for="(message, i) in messages"
+        :id="`msg-${i}`"
         :key="message.id"
         :message="message"
         :streaming="isStreaming && i === messages.length - 1"

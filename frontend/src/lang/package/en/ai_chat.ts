@@ -63,6 +63,7 @@ export default {
   toolTimeline_done: "Completed",
   toolTimeline_failed: "Failed",
   toolTimeline_running: "Running",
+  chatOutline_title: "Questions",
   toolTimeline_title: "Tool calls",
   toolTimeline_input: "Input",
   toolTimeline_output: "Output",

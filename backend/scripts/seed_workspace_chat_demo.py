@@ -65,6 +65,65 @@ MESSAGES: list[tuple[str, list[dict]]] = [
                                  "传感器 474 条；传感器中温度越限最突出（201 条），"
                                  "建议优先排查相关点位。"},
     ]),
+    # ---- 以下为「超长会话」补充轮次：验证问题导航能滚到任意一条 ----
+    ("user", [{"type": "text", "text": "上周和这周比，告警量是涨还是跌？"}]),
+    ("assistant", [
+        _parts_tool("sql_query", "c6",
+                    {"sql": "SELECT week, COUNT(*) FROM alarms WHERE week IN "
+                            "('this','last') GROUP BY 1"},
+                    {"rows": [{"week": "last", "c": 1620}, {"week": "this", "c": 1489}]}),
+        {"type": "text", "text": "这周 1489 条，上周 1620 条，**下降 8.1%**。"},
+    ]),
+    ("user", [{"type": "text", "text": "重复告警最多的前 5 个设备是哪些？"}]),
+    ("assistant", [
+        _parts_tool("alarm_rank", "c7", {"by": "device", "top": 5},
+                    {"rows": [{"device": "CAM-3201", "c": 96},
+                              {"device": "CAM-1188", "c": 81},
+                              {"device": "SEN-0452", "c": 77},
+                              {"device": "DOOR-0210", "c": 63},
+                              {"device": "CAM-2907", "c": 58}]}),
+        {"type": "text", "text": "前五：CAM-3201（96）、CAM-1188（81）、SEN-0452（77）、"
+                                 "DOOR-0210（63）、CAM-2907（58）。前两台贡献了近 12% 的告警。"},
+    ]),
+    ("user", [{"type": "text", "text": "门禁告警有没有集中在某个时间段？"}]),
+    ("assistant", [
+        _parts_tool("sql_query", "c8",
+                    {"sql": "SELECT extract(hour FROM ts) h, COUNT(*) c FROM alarms "
+                            "WHERE type='door' GROUP BY 1 ORDER BY c DESC LIMIT 3"},
+                    {"rows": [{"h": 8, "c": 88}, {"h": 12, "c": 61}, {"h": 18, "c": 54}]}),
+        {"type": "text", "text": "门禁告警集中在 **8 点（88 条）**、12 点（61 条）、18 点（54 条）——"
+                                 "正好是上下班和午休高峰。"},
+    ]),
+    ("user", [{"type": "text", "text": "22 点以后的告警占比多少？"}]),
+    ("assistant", [
+        _parts_tool("query_metrics", "c9", {"metric": "alarm_night_ratio"},
+                    {"value": 0.173, "unit": "%"}),
+        {"type": "text", "text": "22 点之后占 **17.3%**（约 258 条），夜间无人值守，建议单独设阈值。"},
+    ]),
+    ("user", [{"type": "text", "text": "给我一份排查清单，按优先级排。"}]),
+    ("assistant", [
+        {"type": "reasoning", "text": "需要按影响面排序：先处理重复告警设备，再按时间段调阈值，"
+                                      "最后补夜间巡检。"},
+        _parts_tool("write_note", "c10", {"title": "告警排查清单", "body": "..."}, {"ok": True}),
+        {"type": "text", "text": "1. 先查 CAM-3201 / CAM-1188 的重复告警（合计 177 条）；\n"
+                                 "2. 门禁 8 点高峰核对权限策略；\n"
+                                 "3. 22 点后 258 条单独设阈值；\n"
+                                 "4. 传感器温度越限复核点位校准。"},
+    ]),
+    ("user", [{"type": "text", "text": "把上面全部结论压缩成 5 条要点。"}]),
+    ("assistant", [
+        {"type": "reasoning", "text": "合并总量、环比、集中设备、时段、夜间占比五项。"},
+        {"type": "text", "text": "1. 本周 1489 条，环比降 8.1%；\n"
+                                 "2. 摄像头 612 / 门禁 403 / 传感器 474；\n"
+                                 "3. 传感器内温度越限最多（201）；\n"
+                                 "4. 前五设备 375 条，CAM-3201 最突出；\n"
+                                 "5. 夜间占 17.3%，门禁高峰在 8 点。"},
+    ]),
+    ("user", [{"type": "text", "text": "最后给运维一句建议。"}]),
+    ("assistant", [
+        {"type": "text", "text": "建议先把 CAM-3201 / CAM-1188 的重复告警降下来——两台设备占了近 12%，"
+                                 "大概率是镜头遮挡或灵敏度设置问题。"},
+    ]),
 ]
 
 

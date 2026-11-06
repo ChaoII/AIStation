@@ -95,6 +95,11 @@
           </template>
 
           <ChatShell>
+            <ChatOutline
+              :items="outlineItems"
+              container=".chat-shell__body"
+              :title="t('ai_chat.chatOutline_title')"
+            />
             <div class="q-chat__scroll">
               <el-alert
                 v-if="objectCode"
@@ -127,7 +132,7 @@
                 :image-size="70"
               />
 
-              <div v-for="(m, i) in messages" :key="m.id || i" class="q-turn">
+              <div v-for="(m, i) in messages" :id="`q-turn-${i}`" :key="m.id || i" class="q-turn">
                 <ChatMessage role="user">{{ m.question }}</ChatMessage>
 
                 <el-alert
@@ -570,6 +575,7 @@ import { useRoute, useRouter } from "vue-router";
 import ChatShell from "@/components/chat/ChatShell.vue";
 import ChatMessage from "@/components/chat/ChatMessage.vue";
 import CodeBlock from "@/components/chat/CodeBlock.vue";
+import ChatOutline from "@/components/chat/ChatOutline.vue";
 import ReasoningBlock from "@/views/module_ai/chat/components/ReasoningBlock.vue";
 import ToolCallTimeline from "@/views/module_ai/chat/components/ToolCallTimeline.vue";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -707,6 +713,14 @@ function partsOf(m: any) {
     errorText: tool.error,
   }));
 }
+
+/** 长会话导航：按顺序列出用户提过的每个问题 */
+const outlineItems = computed(() =>
+  (messages.value || []).map((m: any, i: number) => ({
+    id: `q-turn-${i}`,
+    text: String(m.question || "").slice(0, 80),
+  }))
+);
 
 async function ask() {
   const q = question.value.trim();

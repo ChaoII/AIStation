@@ -36,6 +36,7 @@ withDefaults(defineProps<{ scroll?: boolean }>(), { scroll: true });
 
 <style lang="scss">
 .chat-shell {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
