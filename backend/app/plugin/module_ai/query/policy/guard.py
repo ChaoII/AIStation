@@ -390,19 +390,49 @@ async def prepare(
 
     审计写入**不在 try/except 里**：``audit.write_access_log`` 自身保证 fail-open
     （评审裁决：不要在这里重复吞异常，否则真出问题连 warning 都看不到）。
+
+    唯一例外是**判定过程抛异常**（T7 评审 Important）：``legacy_check`` 里的白名单校验 /
+    ``_allowed_for_user`` / 字段级 ACL 都可能抛 ``CustomException``，异常会直接穿出
+    ``_prepare``。若不在那里补一条审计，这些**拒绝**一条痕迹都没有（审计成了"只有放行
+    和引擎判定才有记录"）。处置：写一条 ``deny``（reason 带异常类型与摘要）后**原样
+    re-raise** —— 异常类型/文案是调用方与前端依赖的，绝不能被替换或吞掉。
     """
     started = time.perf_counter()
 
     if principal is None:
         decision = Decision(False, "missing principal")
     else:
-        decision = await _prepare(
-            sql=sql,
-            principal=principal,
-            entry=entry,
-            dialect=dialect,
-            legacy_check=legacy_check,
-        )
+        try:
+            decision = await _prepare(
+                sql=sql,
+                principal=principal,
+                entry=entry,
+                dialect=dialect,
+                legacy_check=legacy_check,
+            )
+        except Exception as exc:  # noqa: BLE001 - CancelledError 是 BaseException，不捕
+            # 先落"判定异常"这条 deny 审计，再把**原异常**原样抛出。
+            # 审计自身若再抛（正常实现不会，它内部已 fail-open），也只 warning：
+            # 审计设施的问题不能顶替掉真正的判定异常，否则调用方看到的是假错误。
+            elapsed_err = int((time.perf_counter() - started) * 1000)
+            try:
+                await write_access_log(
+                    principal=principal,
+                    entry=entry,
+                    datasource=datasource,
+                    sql=sql,
+                    decision="deny",
+                    reason=f"判定异常：{type(exc).__name__}: {exc}",
+                    policy_ids=[],
+                    rewrite=[],
+                    elapsed_ms=elapsed_err,
+                )
+            except Exception as audit_err:  # noqa: BLE001
+                log.warning(
+                    f"[问数权限] 判定异常时写审计失败（已忽略，原异常照旧抛出）: "
+                    f"err={audit_err}"
+                )
+            raise
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     await write_access_log(

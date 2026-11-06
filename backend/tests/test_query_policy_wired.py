@@ -15,7 +15,6 @@
 """
 
 import asyncio
-import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -376,16 +375,92 @@ def test_custom_datasource_denied_when_access_check_fails(monkeypatch):
     assert rec.executed == [], f"无权限的数据源仍被执行：{rec.executed}"
 
 
+def test_execute_one_without_auth_is_denied(monkeypatch):
+    """``auth=None`` 必须 deny（P0 验收：无主体不得落库 permit）。
+
+    guard 层已有用例；这里锁的是**接线后**的端到端行为：`_execute_one` 真的会被
+    无身份调用（内部/定时），不能因为"没传 auth"就退化成放行。
+    """
+    import app.plugin.module_ai.query.service as S
+    from app.core.exceptions import CustomException
+    from app.plugin.module_ai.query.policy import guard
+    from app.plugin.module_ai.query.service import AiQueryService as Q
+
+    executed: list[str] = []
+    audited: list[dict] = []
+
+    async def _secure(sql, auth):
+        return {"sql": sql, "deny": False, "rewritten": [], "msg": ""}
+
+    async def _exec(sql):  # pragma: no cover - 不该被调用
+        executed.append(sql)
+        return {"columns": ["name"], "rows": [["x"]], "took_ms": 1}
+
+    async def _audit(**kw):
+        audited.append(kw)
+
+    monkeypatch.setattr(S, "_secure_ont_sql", _secure)
+    monkeypatch.setattr(S, "_execute_sql", _exec)
+    monkeypatch.setattr(guard, "write_access_log", _audit)
+
+    with pytest.raises(CustomException) as ei:
+        _run(Q._execute_one(SQL, "system", None))
+
+    assert "missing principal" in ei.value.msg, ei.value.msg
+    assert executed == [], f"无主体时仍执行了 SQL：{executed}"
+    assert audited and audited[-1]["decision"] == "deny", (
+        f"无主体拒绝没有落审计：{audited}")
+
+
+def test_datasource_none_normalizes_to_system(monkeypatch):
+    """``datasource=None`` 按系统库处理（guard 收到的必须是 ``system``，不是 None）。"""
+    rec = _patch_env(monkeypatch)
+
+    from app.plugin.module_ai.query.service import AiQueryService as Q
+
+    _run(Q._execute_one(SQL, None, _auth()))
+
+    assert rec.prepare_kwargs["datasource"] == "system", (
+        f"datasource 没归一成 system：{rec.prepare_kwargs.get('datasource')!r}")
+    assert rec.executed == [SQL], rec.executed
+
+
 # ===========================================================================
 # ④ 开关可打开（addendum 第 1 条）
 # ===========================================================================
 def test_policy_engine_has_default_key(monkeypatch):
-    """``policy_engine`` 必须进默认值表（否则设置页看不到、也切不动）。"""
+    """``policy_engine`` 必须在默认值表里（新库/空设置表上也读得到 ``legacy``）。
+
+    行为断言，不做源码字符串匹配：把 ``async_db_session`` 换成"设置表为空"的假会话，
+    让 ``get_settings()`` 走**真实**默认值路径，再断言 ``_cfg()`` 里有这个键。
+    """
+    from contextlib import asynccontextmanager
+
+    import app.plugin.module_ai.query.service as S
     from app.plugin.module_ai.query.service import AiQueryService as Q
 
-    src = inspect.getsource(Q.get_settings)
-    assert '"policy_engine": "legacy"' in src, (
-        "get_settings 的默认值里没有 policy_engine —— 开关永远是空值")
+    class _EmptyResult:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return []
+
+    class _FakeDB:
+        async def execute(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return _EmptyResult()
+
+    @asynccontextmanager
+    async def _fake_session():
+        yield _FakeDB()
+
+    monkeypatch.setattr(S, "async_db_session", _fake_session)
+    monkeypatch.setattr(S, "_SETTINGS_CACHE", None)
+    monkeypatch.delenv("POLICY_ENGINE", raising=False)
+
+    cfg = _run(Q._cfg())
+    assert cfg.get("policy_engine") == "legacy", (
+        f"默认值表里没有 policy_engine（设置页看不到、线上也切不动）：{cfg.get('policy_engine')!r}")
 
 
 def test_policy_engine_env_override(monkeypatch):

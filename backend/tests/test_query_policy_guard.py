@@ -199,6 +199,62 @@ def test_legacy_exception_propagates(monkeypatch):
         raise AssertionError("legacy 模式不应吞掉旧判定的异常")
 
 
+def test_legacy_exception_still_writes_deny_audit(monkeypatch):
+    """判定抛异常也必须落一条 deny 审计，且**原异常原样抛出**（类型/文案不变）。
+
+    T7 接线后 ``legacy_check`` 会跑白名单校验 / 字段级 ACL / 数据源授权，
+    这些失败都是 ``CustomException``。若异常路径不写审计，拒答就完全没有痕迹
+    —— 审计变成"只有放行和引擎判定才有记录"，治理上等于缺口。
+    """
+    from app.core.exceptions import CustomException
+
+    G = _guard()
+    st = _setup(monkeypatch, G, mode="legacy")
+
+    async def _deny():
+        raise CustomException(msg="表「hack」不在可查询白名单内")
+
+    try:
+        _run(G, legacy_check=_deny, entry="export", datasource="ds:9")
+    except CustomException as e:
+        assert e.msg == "表「hack」不在可查询白名单内", (
+            f"原异常文案被改写了：{e.msg}")
+    else:  # pragma: no cover
+        raise AssertionError("判定异常必须原样抛出，不能被换成 Decision")
+
+    assert st.audit_calls, "异常路径一条审计都没写（治理缺口）"
+    call = st.audit_calls[-1]
+    assert call["decision"] == "deny", call
+    assert call["policy_ids"] == [], call
+    assert call["rewrite"] == [], call
+    assert "CustomException" in call["reason"], f"reason 没带异常类型：{call['reason']}"
+    assert "hack" in call["reason"], f"reason 没带异常摘要：{call['reason']}"
+    assert call["entry"] == "export" and call["datasource"] == "ds:9", call
+
+
+def test_audit_failure_does_not_mask_decision_exception(monkeypatch):
+    """审计本身也抛错时，抛出的必须是**原判定异常**，不是审计异常。"""
+    G = _guard()
+    _setup(monkeypatch, G, mode="legacy")
+
+    async def _boom():
+        raise RuntimeError("字段级权限校验失败")
+
+    async def _audit_boom(**kw):
+        raise OSError("审计库不可用")
+
+    monkeypatch.setattr(G, "write_access_log", _audit_boom)
+
+    try:
+        _run(G, legacy_check=_boom)
+    except RuntimeError as e:
+        assert "字段级权限校验失败" in str(e), f"原异常被审计异常顶替了：{e}"
+    except OSError as e:  # pragma: no cover
+        raise AssertionError(f"审计异常掩盖了原判定异常：{e}") from e
+    else:  # pragma: no cover
+        raise AssertionError("异常被吞掉了")
+
+
 # ---------------------------------------------------------------------------
 # 3. shadow：返回旧结论 + 真的写差异
 # ---------------------------------------------------------------------------
