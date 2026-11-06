@@ -533,11 +533,11 @@ async function handleRun(row: WorkspaceCronRow) {
       {
         confirmButtonText: t("ai_workflow.cron_execute"),
         cancelButtonText: t("ai_workflow.cron_cancel"),
-        type: "warning"
+        type: "warning",
       }
     );
   } catch {
-    return;   // 点了取消：什么都不做（别把 confirm 的 reject 抛到控制台）
+    return; // 点了取消：什么都不做（别把 confirm 的 reject 抛到控制台）
   }
   const before = row.last_run_time || "";
   runLoadingId.value = row.id;
@@ -562,7 +562,7 @@ async function pollCronResult(id: number, before: string) {
   try {
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 3000));
-      if (!alive) return;   // 用户已经离开这一页：别再打接口、也别弹提示
+      if (!alive) return; // 用户已经离开这一页：别再打接口、也别弹提示
       const res: any = await getWorkspaceCronList();
       const fresh = (res?.data?.data?.items || []).find((x: any) => x.id === id);
       if (!fresh) break;

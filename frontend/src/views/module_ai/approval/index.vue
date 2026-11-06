@@ -4,7 +4,11 @@
       <div class="ap-head">
         <div class="t">
           <h2>审批中心</h2>
-          <p>待处理 <span class="num">{{ total }}</span> 项：动作写回 {{ actions.length }} · 本体发布 {{ versions.length }}</p>
+          <p>
+            待处理
+            <span class="num">{{ total }}</span>
+            项：动作写回 {{ actions.length }} · 本体发布 {{ versions.length }}
+          </p>
         </div>
         <div class="acts">
           <el-button :loading="loading" @click="loadAll">刷新</el-button>
@@ -13,7 +17,7 @@
 
       <el-tabs v-model="tab" class="ap-tabs">
         <el-tab-pane :label="`动作写回 (${actions.length})`" name="action">
-          <el-table :data="actions" border stripe height="100%" v-loading="loading">
+          <el-table v-loading="loading" :data="actions" border stripe height="100%">
             <el-table-column prop="action" label="动作" min-width="150" show-overflow-tooltip />
             <el-table-column prop="table" label="对象表" min-width="130" show-overflow-tooltip />
             <el-table-column prop="key" label="对象键" min-width="120" show-overflow-tooltip />
@@ -26,8 +30,22 @@
             <el-table-column prop="time" label="申请时间" width="170" />
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button v-hasPerm="'module_ai:query:ask'" link type="primary" @click="approveAction(row)">批准</el-button>
-                <el-button v-hasPerm="'module_ai:query:ask'" link type="danger" @click="rejectAction(row)">驳回</el-button>
+                <el-button
+                  v-hasPerm="'module_ai:query:ask'"
+                  link
+                  type="primary"
+                  @click="approveAction(row)"
+                >
+                  批准
+                </el-button>
+                <el-button
+                  v-hasPerm="'module_ai:query:ask'"
+                  link
+                  type="danger"
+                  @click="rejectAction(row)"
+                >
+                  驳回
+                </el-button>
               </template>
             </el-table-column>
             <template #empty>
@@ -37,8 +55,13 @@
         </el-tab-pane>
 
         <el-tab-pane :label="`本体发布 (${versions.length})`" name="version">
-          <el-table :data="versions" border stripe height="100%" v-loading="loading">
-            <el-table-column prop="object_code" label="对象类型" min-width="160" show-overflow-tooltip />
+          <el-table v-loading="loading" :data="versions" border stripe height="100%">
+            <el-table-column
+              prop="object_code"
+              label="对象类型"
+              min-width="160"
+              show-overflow-tooltip
+            />
             <el-table-column label="版本信息" min-width="260">
               <template #default="{ row }">
                 <span class="mono">{{ brief(row.detail) }}</span>
@@ -47,7 +70,14 @@
             <el-table-column prop="created_time" label="申请时间" width="180" />
             <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
-                <el-button v-hasPerm="'module_ai:ontology:manage'" link type="primary" @click="approveVersion(row)">批准发布</el-button>
+                <el-button
+                  v-hasPerm="'module_ai:ontology:manage'"
+                  link
+                  type="primary"
+                  @click="approveVersion(row)"
+                >
+                  批准发布
+                </el-button>
               </template>
             </el-table-column>
             <template #empty>
@@ -63,7 +93,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { approveAction as apiApproveAction, getPendingActions, rejectAction as apiRejectAction } from "@/api/module_ai/query";
+import {
+  approveAction as apiApproveAction,
+  getPendingActions,
+  rejectAction as apiRejectAction,
+} from "@/api/module_ai/query";
 import { approveOntVersion, getOntVersionPending } from "@/api/module_ai/ontology";
 
 const tab = ref<"action" | "version">("action");

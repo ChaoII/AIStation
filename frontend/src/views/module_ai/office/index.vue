@@ -9,28 +9,38 @@
             :class="{ on: rosterTab === 'people' }"
             @click="setRosterTab('people')"
           >
-            成员<span class="n">{{ onDuty }}</span>
+            成员
+            <span class="n">{{ onDuty }}</span>
           </button>
           <button
             class="of-tab"
             :class="{ on: rosterTab === 'tasks' }"
             @click="setRosterTab('tasks')"
           >
-            任务<span class="n">{{ taskTotal }}</span>
+            任务
+            <span class="n">{{ taskTotal }}</span>
           </button>
         </div>
 
         <template v-if="rosterTab === 'people'">
           <div class="of-stat">
-            <span><b>{{ onDuty }}</b> 在岗</span>
-            <span>入座 <b>{{ seated }}</b></span>
+            <span>
+              <b>{{ onDuty }}</b>
+              在岗
+            </span>
+            <span>
+              入座
+              <b>{{ seated }}</b>
+            </span>
             <span v-if="overflow > 0" class="warn">{{ overflow }} 人未入座</span>
             <span
               v-if="pendingReview > 0"
               class="warn pending"
               :title="'动作写回 / 本体版本发布待审批，共 ' + pendingReview + ' 项'"
               @click="goApproval"
-            >{{ pendingReview }} 待确认</span>
+            >
+              {{ pendingReview }} 待确认
+            </span>
           </div>
           <input v-model="keyword" class="of-input" placeholder="搜索成员" />
           <div class="of-list">
@@ -48,8 +58,11 @@
             >
               <span class="m-av" :class="a.status">{{ (a.name || "?").slice(0, 1) }}</span>
               <div class="who">
-                <div class="n">{{ a.name }}<span v-if="a.isLeader" class="lead">组长</span></div>
-                <div class="s">{{ a.role || '未设置角色' }}</div>
+                <div class="n">
+                  {{ a.name }}
+                  <span v-if="a.isLeader" class="lead">组长</span>
+                </div>
+                <div class="s">{{ a.role || "未设置角色" }}</div>
               </div>
               <span class="st" :class="a.status">{{ statusWord(a.status) }}</span>
             </div>
@@ -72,7 +85,9 @@
               class="of-chip"
               :class="{ on: taskStatus === o.v }"
               @click="setTaskStatus(o.v)"
-            >{{ o.label }}</button>
+            >
+              {{ o.label }}
+            </button>
             <select v-model="taskAgent" class="of-select" @change="reloadTasks">
               <option value="">全部成员</option>
               <option v-for="a in agents" :key="a.id" :value="a.name">{{ a.name }}</option>
@@ -100,14 +115,22 @@
               </span>
               <button
                 v-if="t.status === 'error' && t.prompt && !t.prompt.startsWith('定时任务：')"
+                v-hasPerm="'module_ai:office:dispatch'"
                 class="tl-retry"
                 title="用同样的任务重跑一次"
-                v-hasPerm="'module_ai:office:dispatch'"
                 @click.stop="retryRun(t)"
-              >重试</button>
+              >
+                重试
+              </button>
             </div>
             <div v-if="!tasks.length && !taskLoading" class="of-empty">
-              {{ taskFiltered ? "没有符合条件的派活" : taskDate ? "这一天没有派活" : "最近 30 天没有派活" }}
+              {{
+                taskFiltered
+                  ? "没有符合条件的派活"
+                  : taskDate
+                    ? "这一天没有派活"
+                    : "最近 30 天没有派活"
+              }}
               <div v-if="!taskFiltered" class="of-samples">
                 <span class="lbl">试试：</span>
                 <button
@@ -116,33 +139,44 @@
                   class="sample"
                   :title="s"
                   @click="usePrompt(s)"
-                >{{ s }}</button>
+                >
+                  {{ s }}
+                </button>
               </div>
             </div>
           </div>
-          <div class="of-pager" v-if="taskTotal > taskPageSize">
-            <button class="of-ico" :disabled="taskPage <= 1" @click="loadTasks(taskPage - 1)">‹</button>
-            <span><b>{{ taskPage }}</b> / {{ Math.max(1, Math.ceil(taskTotal / taskPageSize)) }}</span>
+          <div v-if="taskTotal > taskPageSize" class="of-pager">
+            <button class="of-ico" :disabled="taskPage <= 1" @click="loadTasks(taskPage - 1)">
+              ‹
+            </button>
+            <span>
+              <b>{{ taskPage }}</b>
+              / {{ Math.max(1, Math.ceil(taskTotal / taskPageSize)) }}
+            </span>
             <button
               class="of-ico"
               :disabled="taskPage * taskPageSize >= taskTotal"
               @click="loadTasks(taskPage + 1)"
-            >›</button>
+            >
+              ›
+            </button>
           </div>
         </template>
       </div>
 
       <!-- 右：3D 舞台 -->
       <el-card
+        v-loading="booting"
         class="office-stage-card"
         shadow="never"
-        v-loading="booting"
         element-loading-text="正在布置办公室…"
       >
         <div class="office-bar">
           <div class="of-bar">
             <span v-if="detail" class="of-picked" @click="clearPick">
-              <i class="dot" :class="detail.status" />{{ detail.name }}<b>×</b>
+              <i class="dot" :class="detail.status" />
+              {{ detail.name }}
+              <b>×</b>
             </span>
             <textarea
               v-if="detail"
@@ -162,7 +196,9 @@
                   aria-haspopup="listbox"
                   :aria-expanded="recentOpen"
                   @click="recentOpen = !recentOpen"
-                >最近 ▾</button>
+                >
+                  最近 ▾
+                </button>
                 <i v-if="recentOpen" class="of-pop-mask" @click="recentOpen = false" />
                 <div v-if="recentOpen" class="of-menu recent" role="listbox">
                   <button
@@ -172,7 +208,9 @@
                     :aria-selected="false"
                     :title="t"
                     @click="usePrompt(t)"
-                  >{{ t }}</button>
+                  >
+                    {{ t }}
+                  </button>
                 </div>
               </div>
               <textarea
@@ -186,11 +224,7 @@
                 @input="onBarInput"
               />
             </template>
-            <button
-              v-if="detail && oneLoading"
-              class="of-btn stop"
-              @click="stopOne"
-            >停止</button>
+            <button v-if="detail && oneLoading" class="of-btn stop" @click="stopOne">停止</button>
             <button
               v-else-if="detail"
               v-hasPerm="'module_ai:office:dispatch'"
@@ -198,12 +232,10 @@
               :disabled="!oneText.trim() || oneLoading"
               :title="oneText.trim() ? '只派给这个人（Enter）' : '先写一句要他做什么'"
               @click="dispatchOne"
-            >派给他</button>
-            <button
-              v-else-if="dispatching"
-              class="of-btn stop"
-              @click="stopDispatch"
-            >停止</button>
+            >
+              派给他
+            </button>
+            <button v-else-if="dispatching" class="of-btn stop" @click="stopDispatch">停止</button>
             <button
               v-else
               v-hasPerm="'module_ai:office:dispatch'"
@@ -211,62 +243,66 @@
               :disabled="!canSend"
               :title="canSend ? '交给组长协调（Enter）' : '先写一句要做什么'"
               @click="doDispatch"
-            >派活</button>
+            >
+              派活
+            </button>
 
             <div v-if="detail" class="of-look">
               <button class="of-btn" @click="lookOpen = !lookOpen">改形象</button>
               <i v-if="lookOpen" class="of-pop-mask" @click="lookOpen = false" />
               <div v-if="lookOpen" class="of-pop">
-              <div class="ln">发型</div>
-              <div class="sw">
-                <button
-                  v-for="st in HAIR_STYLES"
-                  :key="st.key"
-                  class="chip"
-                  :class="{ on: lookDraft.style === st.key }"
-                  @click="applyLook({ style: st.key })"
-                >{{ st.label }}</button>
-              </div>
-              <div class="ln">衬衫</div>
-              <div class="sw">
-                <button
-                  v-for="c in SHIRT_COLORS"
-                  :key="c"
-                  class="dot"
-                  :style="{ background: c }"
-                  @click="applyLook({ shirt: c })"
-                />
-              </div>
-              <div class="ln">裤子</div>
-              <div class="sw">
-                <button
-                  v-for="c in PANTS_COLORS"
-                  :key="c"
-                  class="dot"
-                  :style="{ background: c }"
-                  @click="applyLook({ pants: c })"
-                />
-              </div>
-              <div class="ln">鞋子</div>
-              <div class="sw">
-                <button
-                  v-for="c in SHOE_COLORS"
-                  :key="c"
-                  class="dot"
-                  :style="{ background: c }"
-                  @click="applyLook({ shoe: c })"
-                />
-              </div>
-              <div class="ln">头发</div>
-              <div class="sw">
-                <button
-                  v-for="c in HAIR_COLORS"
-                  :key="c"
-                  class="dot"
-                  :style="{ background: c }"
-                  @click="applyLook({ hair: c })"
-                />
-              </div>
+                <div class="ln">发型</div>
+                <div class="sw">
+                  <button
+                    v-for="st in HAIR_STYLES"
+                    :key="st.key"
+                    class="chip"
+                    :class="{ on: lookDraft.style === st.key }"
+                    @click="applyLook({ style: st.key })"
+                  >
+                    {{ st.label }}
+                  </button>
+                </div>
+                <div class="ln">衬衫</div>
+                <div class="sw">
+                  <button
+                    v-for="c in SHIRT_COLORS"
+                    :key="c"
+                    class="dot"
+                    :style="{ background: c }"
+                    @click="applyLook({ shirt: c })"
+                  />
+                </div>
+                <div class="ln">裤子</div>
+                <div class="sw">
+                  <button
+                    v-for="c in PANTS_COLORS"
+                    :key="c"
+                    class="dot"
+                    :style="{ background: c }"
+                    @click="applyLook({ pants: c })"
+                  />
+                </div>
+                <div class="ln">鞋子</div>
+                <div class="sw">
+                  <button
+                    v-for="c in SHOE_COLORS"
+                    :key="c"
+                    class="dot"
+                    :style="{ background: c }"
+                    @click="applyLook({ shoe: c })"
+                  />
+                </div>
+                <div class="ln">头发</div>
+                <div class="sw">
+                  <button
+                    v-for="c in HAIR_COLORS"
+                    :key="c"
+                    class="dot"
+                    :style="{ background: c }"
+                    @click="applyLook({ hair: c })"
+                  />
+                </div>
               </div>
             </div>
 
@@ -275,7 +311,14 @@
               <button :aria-pressed="floor === 1" @click="switchFloor(1)">1F</button>
               <button :aria-pressed="floor === 2" @click="switchFloor(2)">2F</button>
             </div>
-            <button class="of-ico" :class="{ lit: partyOn }" title="叫人来蹦 / 清场" @click="toggleParty">🎉</button>
+            <button
+              class="of-ico"
+              :class="{ lit: partyOn }"
+              title="叫人来蹦 / 清场"
+              @click="toggleParty"
+            >
+              🎉
+            </button>
             <div class="of-more">
               <button class="of-ico" title="更多" @click="menuOpen = !menuOpen">⋯</button>
               <i v-if="menuOpen" class="of-pop-mask" @click="menuOpen = false" />
@@ -296,31 +339,37 @@
         <!-- 连接断了：留在页面上，别用会消失的 toast 糊过去 -->
         <div v-if="connLost" class="conn-lost">
           <span class="t">与后端的连接断了：{{ connLost.reason }}</span>
-          <span class="d">
-            这一轮可能已经中断；如果服务端其实跑完了，下面会自动把结论补回来。
-          </span>
+          <span class="d">这一轮可能已经中断；如果服务端其实跑完了，下面会自动把结论补回来。</span>
           <span class="spacer" />
-          <button v-if="connLost.retry" class="of-btn" @click="retryAfterLost">
-            重试这一轮
-          </button>
+          <button v-if="connLost.retry" class="of-btn" @click="retryAfterLost">重试这一轮</button>
           <button class="of-btn" @click="connLost = null">知道了</button>
         </div>
 
         <!-- 今日统计：常驻一条，点开看完整简报 -->
-        <div class="of-stats" v-if="summary.runs && summary.runs.total">
-          <span class="it">今日派活 <b>{{ summary.runs.total }}</b></span>
+        <div v-if="summary.runs && summary.runs.total" class="of-stats">
+          <span class="it">
+            今日派活
+            <b>{{ summary.runs.total }}</b>
+          </span>
           <span class="it" :class="{ bad: summary.runs.errors }">
-            失败 <b>{{ summary.runs.errors }}</b>
+            失败
+            <b>{{ summary.runs.errors }}</b>
             <template v-if="summary.runs.errors">（{{ summary.runs.error_rate }}%）</template>
           </span>
-          <span class="it">平均 <b>{{ fmtMs(summary.runs.avg_ms) }}</b></span>
-          <span class="it">最近 <b>{{ summary.runs.last_time || "—" }}</b></span>
+          <span class="it">
+            平均
+            <b>{{ fmtMs(summary.runs.avg_ms) }}</b>
+          </span>
+          <span class="it">
+            最近
+            <b>{{ summary.runs.last_time || "—" }}</b>
+          </span>
           <span class="spacer" />
           <span class="more" @click="openSummary">今日简报 ›</span>
         </div>
 
-        <div class="stage" ref="stageRef" :class="{ night: isNight }">
-          <div class="plates" ref="platesRef" />
+        <div ref="stageRef" class="stage" :class="{ night: isNight }">
+          <div ref="platesRef" class="plates" />
 
           <!-- 镜头预设：全景 / 跟随执行者 / 白板 / 大屏 -->
           <div class="cam-presets" role="group" aria-label="镜头预设">
@@ -331,11 +380,19 @@
               :aria-pressed="camMode === m.v"
               :title="m.tip"
               @click="setCamMode(m.v)"
-            >{{ m.label }}</button>
+            >
+              {{ m.label }}
+            </button>
           </div>
 
           <!-- 首次引导：只出现一次，菜单里可重看 -->
-          <div v-if="guideOpen" class="guide-mask" role="dialog" aria-modal="true" aria-label="办公室上手指引">
+          <div
+            v-if="guideOpen"
+            class="guide-mask"
+            role="dialog"
+            aria-modal="true"
+            aria-label="办公室上手指引"
+          >
             <div class="guide-card">
               <div class="g-head">
                 <span class="g-cap">第 {{ guideStep + 1 }} / {{ GUIDE_STEPS.length }} 步</span>
@@ -359,10 +416,11 @@
               </div>
             </div>
           </div>
-          <div class="people-hint" v-if="peopleHint && !webglError">
-            <i class="dot" />同事正在入座…
+          <div v-if="peopleHint && !webglError" class="people-hint">
+            <i class="dot" />
+            同事正在入座…
           </div>
-          <div class="gl-lost" v-if="glLost && !webglError">
+          <div v-if="glLost && !webglError" class="gl-lost">
             <div class="t">3D 场景被系统回收了</div>
             <div class="d">
               {{
@@ -391,10 +449,11 @@
             </span>
             <span v-if="cronBanner.agent" class="who">{{ cronBanner.agent }}</span>
           </div>
-          <div class="wrap-hint" v-if="wrapHint">
-            <i class="dot" />{{ wrapHint }}
+          <div v-if="wrapHint" class="wrap-hint">
+            <i class="dot" />
+            {{ wrapHint }}
           </div>
-          <div class="of-trace" v-if="steps.length">
+          <div v-if="steps.length" class="of-trace">
             <div class="of-thead">
               <span class="t">执行过程</span>
               <i v-if="oneLoading || dispatching" class="live" />
@@ -405,11 +464,13 @@
                 class="of-linkbtn"
                 :aria-label="allOpen ? '收起全部步骤' : '展开全部步骤'"
                 @click="toggleAllSteps"
-              >{{ allOpen ? "收起全部" : "展开全部" }}</button>
+              >
+                {{ allOpen ? "收起全部" : "展开全部" }}
+              </button>
               <span class="c">{{ steps.length }} 步</span>
             </div>
-            <div class="of-tbody" ref="stepsBodyRef" @scroll.passive="onStepsScroll">
-              <div class="of-root" v-if="tree.plan">
+            <div ref="stepsBodyRef" class="of-tbody" @scroll.passive="onStepsScroll">
+              <div v-if="tree.plan" class="of-root">
                 <i class="bul" />
                 <div>
                   <div class="ttl">
@@ -421,9 +482,9 @@
               </div>
 
               <div
-                class="of-branch"
                 v-for="(b, i) in tree.branches"
                 :key="i"
+                class="of-branch"
                 :style="{ animationDelay: Math.min(i, 6) * 45 + 'ms' }"
               >
                 <div class="bhead">
@@ -431,15 +492,16 @@
                   <span class="n">{{ b.agent || "组长" }}</span>
                   <span v-if="b.tools.length" class="cnt">{{ b.tools.length }} 次工具</span>
                   <span v-if="b.delegate?.time" class="tm">
-                    {{ b.delegate.time
-                    }}<template v-if="b.reply?.time || b.delegate?.replyTime">
-                      → {{ b.reply?.time || b.delegate?.replyTime }}</template>
+                    {{ b.delegate.time }}
+                    <template v-if="b.reply?.time || b.delegate?.replyTime">
+                      → {{ b.reply?.time || b.delegate?.replyTime }}
+                    </template>
                   </span>
                 </div>
                 <div
-                  class="tool"
                   v-for="(t, k) in b.tools"
                   :key="k"
+                  class="tool"
                   :class="{ open: t.open }"
                   @click="t.open = !t.open"
                 >
@@ -453,9 +515,16 @@
                 </div>
               </div>
 
-              <div v-if="tree.summary" class="of-sum" :class="{ err: tree.summary.kind === 'error' }">
+              <div
+                v-if="tree.summary"
+                class="of-sum"
+                :class="{ err: tree.summary.kind === 'error' }"
+              >
                 <div class="h">
-                  <i class="who-dot" :style="{ background: personColor(tree.summary.actor || '') }" />
+                  <i
+                    class="who-dot"
+                    :style="{ background: personColor(tree.summary.actor || '') }"
+                  />
                   {{ tree.summary.kind === "error" ? "失败" : "汇总" }} ·
                   {{ tree.summary.actor || "组长" }}
                   <span class="spacer" />
@@ -468,7 +537,9 @@
                         tree.summary.kind === 'error' ? '已复制错误信息' : '已复制结论'
                       )
                     "
-                  >{{ tree.summary.kind === "error" ? "复制错误" : "复制结论" }}</button>
+                  >
+                    {{ tree.summary.kind === "error" ? "复制错误" : "复制结论" }}
+                  </button>
                 </div>
                 <div class="x">{{ plainText(tree.summary.detail || "") }}</div>
               </div>
@@ -478,37 +549,51 @@
               class="of-jump"
               aria-label="回到最新步骤"
               @click="jumpLatest"
-            >回到最新 ↓</button>
+            >
+              回到最新 ↓
+            </button>
             <div class="of-tfoot">
-              <span class="lg"><i class="dot" />完成</span>
-              <span class="lg"><i class="dot wait" />待确认</span>
-              <span class="lg"><i class="dot err" />失败</span>
+              <span class="lg">
+                <i class="dot" />
+                完成
+              </span>
+              <span class="lg">
+                <i class="dot wait" />
+                待确认
+              </span>
+              <span class="lg">
+                <i class="dot err" />
+                失败
+              </span>
               <span class="sp" />
               <span>拖动旋转 · 滚轮缩放</span>
             </div>
           </div>
 
-          <div class="stage-empty" v-if="!booting && !agents.length">
+          <div v-if="!booting && !agents.length" class="stage-empty">
             <div class="of-empty-block">
               <div class="t">办公室里还没有智能体</div>
               <button class="of-btn" @click="openWorkspace">去工作台新建</button>
             </div>
           </div>
-          <div class="stage-empty" v-else-if="webglError">
+          <div v-else-if="webglError" class="stage-empty">
             <div class="of-empty-block">
               <div class="t">3D 场景没能加载</div>
               <div class="d">
-                当前浏览器或显卡不支持 WebGL（{{ webglError }}）。<br />
+                当前浏览器或显卡不支持 WebGL（{{ webglError }}）。
+                <br />
                 右侧「执行过程」照常可用，派活、任务列表都不受影响。
               </div>
             </div>
           </div>
-
         </div>
 
         <!-- 任务播报：一行滚动，展开看最近 30 条（只在前端内存，不额外请求） -->
         <div class="cast-bar" :class="{ open: castOpen, bad: castBad }">
-          <span class="cap"><i class="live" />播报</span>
+          <span class="cap">
+            <i class="live" />
+            播报
+          </span>
           <span class="one" :class="{ bad: castLast?.bad }" :title="castLast?.text || ''">
             <template v-if="castLast">
               <i class="g">{{ castGlyph(castLast?.kind ?? "info") }}</i>
@@ -523,7 +608,9 @@
             :aria-expanded="castOpen"
             aria-label="展开或收起任务播报"
             @click="toggleCast"
-          >{{ castOpen ? "收起" : `展开（${casts.length}）` }}</button>
+          >
+            {{ castOpen ? "收起" : `展开（${casts.length}）` }}
+          </button>
           <div v-if="castOpen" class="cast-list" role="log" aria-live="polite">
             <div v-for="c in castDesc" :key="c.id" class="c" :class="{ bad: c.bad }">
               <em>{{ c.t }}</em>
@@ -534,19 +621,23 @@
           </div>
         </div>
 
-        <div class="brief-bar" v-if="briefText">
-          <span class="cap"><i class="dot" />组长结论</span>
+        <div v-if="briefText" class="brief-bar">
+          <span class="cap">
+            <i class="dot" />
+            组长结论
+          </span>
           <span class="txt" :title="resultText">{{ briefText }}</span>
           <el-button link type="primary" size="small" @click="showResultOnScreen">看全文</el-button>
-          <el-button
-            link
-            size="small"
-            @click="copyText(resultText || briefText, '已复制结论')"
-          >复制</el-button>
+          <el-button link size="small" @click="copyText(resultText || briefText, '已复制结论')">
+            复制
+          </el-button>
           <el-button link size="small" @click="briefText = ''">收起</el-button>
         </div>
         <div class="run-strip">
-          <span class="cap"><i class="live" />最近执行</span>
+          <span class="cap">
+            <i class="live" />
+            最近执行
+          </span>
           <span
             v-for="t in recentTasks"
             :key="t.run_id"
@@ -565,15 +656,23 @@
           <span class="more" @click="goLogs">日志 ›</span>
         </div>
         <div class="stage-foot">
-          <span class="legend"><i class="d idle" />在岗</span>
-          <span class="legend"><i class="d busy" />工作中</span>
-          <span class="legend"><i class="d wait" />等你确认</span>
+          <span class="legend">
+            <i class="d idle" />
+            在岗
+          </span>
+          <span class="legend">
+            <i class="d busy" />
+            工作中
+          </span>
+          <span class="legend">
+            <i class="d wait" />
+            等你确认
+          </span>
           <span class="spacer" />
           <span class="tip">拖动旋转 · 滚轮缩放 · 人多了自动收起名牌</span>
         </div>
       </el-card>
     </div>
-
   </div>
 </template>
 
@@ -590,7 +689,7 @@ import {
   getOfficeRuns,
   clearOfficeMemory,
   streamOfficeDispatch,
-  dispatchOfficeAgent
+  dispatchOfficeAgent,
 } from "@/api/module_ai/agent";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiLogRecent, getAiToolCalls } from "@/api/module_ai/logs";
@@ -622,7 +721,8 @@ const peopleReady = ref(false);
 const peopleHint = ref(false);
 let peopleHintTimer: number | null = null;
 /** 3D 初始化失败的原因（WebGL 不可用等）；为空表示正常 */
-const webglError = ref("");const keyword = ref("");
+const webglError = ref("");
+const keyword = ref("");
 const selected = ref<number | null>(null);
 const seated = ref(0);
 
@@ -633,16 +733,16 @@ const guideStep = ref(0);
 const GUIDE_STEPS = [
   {
     t: "选人 = 单独派活",
-    d: "点左上名单里的某位同事（或在 3D 里点他），派活框会切成「派给他」，任务只交给这一个人。"
+    d: "点左上名单里的某位同事（或在 3D 里点他），派活框会切成「派给他」，任务只交给这一个人。",
   },
   {
     t: "不选人 = 交给组长",
-    d: "直接在顶部输入框写任务，组长会自己拆活、分给合适的同事，并把结果汇总回来。"
+    d: "直接在顶部输入框写任务，组长会自己拆活、分给合适的同事，并把结果汇总回来。",
   },
   {
     t: "右侧看执行过程",
-    d: "接活、调了哪些工具、谁回了什么、最后结论，都在右侧「执行过程」里，点开每一步看参数和返回。"
-  }
+    d: "接活、调了哪些工具、谁回了什么、最后结论，都在右侧「执行过程」里，点开每一步看参数和返回。",
+  },
 ];
 function openGuide() {
   guideStep.value = 0;
@@ -803,16 +903,20 @@ const castDesc = computed(() => casts.value.slice().reverse());
 /** 镜头预设按钮 */
 const CAM_MODES: { v: CamMode; label: string; tip: string }[] = [
   { v: "overview", label: "全景", tip: "回到默认全景视角（g / Esc）" },
-  { v: "follow", label: "跟随", tip: "有新步骤时把镜头推给当前执行者（3 秒一次，避免乱跳）；按 f 切换" },
+  {
+    v: "follow",
+    label: "跟随",
+    tip: "有新步骤时把镜头推给当前执行者（3 秒一次，避免乱跳）；按 f 切换",
+  },
   { v: "board", label: "白板", tip: "看白板上的分工与打勾（按 b）" },
-  { v: "screen", label: "大屏", tip: "看大屏上的结论（按 s）" }
+  { v: "screen", label: "大屏", tip: "看大屏上的结论（按 s）" },
 ];
 
 /** 空态示例任务：点一下只填入输入框，不自动发送 */
 const SAMPLE_TASKS = [
   "让团队统计一下数据集总数和标注任务数，汇总成两行",
   "查一下最近一周失败的任务，说明原因",
-  "帮我写一段本周数据治理工作的周报要点"
+  "帮我写一段本周数据治理工作的周报要点",
 ];
 
 /* ================= 复制结论 / 错误 ================= */
@@ -888,7 +992,7 @@ const TASK_STATUS: { v: "" | "ok" | "error" | "running"; label: string }[] = [
   { v: "", label: "全部" },
   { v: "ok", label: "完成" },
   { v: "error", label: "失败" },
-  { v: "running", label: "进行中" }
+  { v: "running", label: "进行中" },
 ];
 
 function fmtDay(d: Date): string {
@@ -1000,7 +1104,7 @@ async function clearBoard() {
     await ElMessageBox.confirm("白板上「最近结论」的 5 条会被清空，且不可恢复。", "清空白板", {
       confirmButtonText: "清空",
       cancelButtonText: "取消",
-      type: "warning"
+      type: "warning",
     });
   } catch {
     return;
@@ -1050,7 +1154,13 @@ function refreshAll() {
 
 /** 成员状态用词 */
 function statusWord(st: string): string {
-  return st === "error" ? "执行失败" : st === "busy" ? "工作中" : st === "wait" ? "等你确认" : "待命";
+  return st === "error"
+    ? "执行失败"
+    : st === "busy"
+      ? "工作中"
+      : st === "wait"
+        ? "等你确认"
+        : "待命";
 }
 /** 待你确认（审批中心总数：动作写回 + 本体发布） */
 const pendingReview = ref(0);
@@ -1067,8 +1177,21 @@ const wrapHint = ref("");
 /** 结论摘要（贴在舞台上，避免弹窗把整场戏遮住） */
 const briefText = ref("");
 /* 回放：记住最近一轮的"派活帧"，可以原样重演（刷新页面也还在） */
-type RunFrame = { t: number; type: string; from?: string; to?: string; text?: string; task?: string };
-type RunRec = { at: string; leader?: string; members: string[]; summary: string; frames: RunFrame[] };
+type RunFrame = {
+  t: number;
+  type: string;
+  from?: string;
+  to?: string;
+  text?: string;
+  task?: string;
+};
+type RunRec = {
+  at: string;
+  leader?: string;
+  members: string[];
+  summary: string;
+  frames: RunFrame[];
+};
 const lastRun = ref<RunRec | null>(null);
 const replaying = ref(false);
 const canReplay = computed(() => !!lastRun.value?.frames?.length);
@@ -1078,8 +1201,7 @@ function onMore(cmd: string) {
     // 本地有这轮的气泡帧就动画重放；没有就直接摊开最近一次落库的执行记录
     if (canReplay.value) replayLast();
     else openRun();
-  }
-  else if (cmd === "refresh") {
+  } else if (cmd === "refresh") {
     load(true);
     loadTasks(taskPage.value);
     loadRecent();
@@ -1203,7 +1325,7 @@ const KIND_LABEL: Record<string, string> = {
   tool: "工具",
   reply: "回话",
   summary: "汇总",
-  error: "失败"
+  error: "失败",
 };
 function kindLabel(k: string) {
   return KIND_LABEL[k] || k;
@@ -1238,7 +1360,17 @@ function stepView(s: Step): { text: string; code: boolean } {
     if (keys.length === 1 && typeof a[keys[0]] !== "object") {
       const k = keys[0];
       const v = String(a[k]);
-      const contentKeys = ["question", "query", "q", "keyword", "task", "text", "name", "url", "sql"];
+      const contentKeys = [
+        "question",
+        "query",
+        "q",
+        "keyword",
+        "task",
+        "text",
+        "name",
+        "url",
+        "sql",
+      ];
       return { text: contentKeys.includes(k) ? v : `${k}=${v}`, code: false };
     }
     return { text: JSON.stringify(a, null, 2), code: true };
@@ -1257,7 +1389,7 @@ function foldRows(rows: any[]): Step[] {
       actor: r.agent_name || "",
       detail: (r.detail || "").trim(),
       time: r.time,
-      open: false
+      open: false,
     };
     // 工具步骤自带返回值（真实工具调用的结果）→ 直接作为结果块
     if (one.kind === "tool") {
@@ -1283,7 +1415,7 @@ function foldRows(rows: any[]): Step[] {
         const usedTools = folded.slice(di + 1).some((x) => x.kind === "tool" && x.actor === who);
         if (!usedTools) {
           folded[di].result = one.detail;
-          folded[di].replyTime = one.time;   // 回话时间要留着，面板上显示"派活 → 回话"
+          folded[di].replyTime = one.time; // 回话时间要留着，面板上显示"派活 → 回话"
           return;
         }
       }
@@ -1350,8 +1482,8 @@ async function openRun(runId?: string) {
           tool: st.kind === "tool" ? toolName(st) : "",
           to: st.kind === "tool" ? toolTarget(st) : "",
           text: stepView(st).text,
-          result: st.result || ""
-        }))
+          result: st.result || "",
+        })),
       },
       { focus: false }
     );
@@ -1370,7 +1502,7 @@ async function loadTasks(page = taskPage.value) {
       date: taskDate.value || undefined,
       days: 30,
       status: taskStatus.value || undefined,
-      agent_name: taskAgent.value || undefined
+      agent_name: taskAgent.value || undefined,
     });
     const d = res?.data?.data || {};
     tasks.value = d.items || [];
@@ -1398,7 +1530,10 @@ const seenCron = new Set<string>();
 let cronPrimed = false;
 
 function reactCron(run: any) {
-  const name = String(run.prompt || "").replace(/^定时任务：/, "").trim() || "定时任务";
+  const name =
+    String(run.prompt || "")
+      .replace(/^定时任务：/, "")
+      .trim() || "定时任务";
   const agent = run.leader || "";
   const status = run.status || "running";
   cronBanner.value = { name, agent, status, ms: run.duration_ms || 0, runId: run.run_id };
@@ -1421,10 +1556,13 @@ function reactCron(run: any) {
   } else {
     /* 兜底：这一轮要是永远不收尾（服务重启 / 跨天从列表里消失），
        提示条不能一直挂"执行中"，10 分钟后自己收掉 */
-    window.setTimeout(() => {
-      const b = cronBanner.value;
-      if (b && b.runId === run.run_id && b.status === "running") cronBanner.value = null;
-    }, 10 * 60 * 1000);
+    window.setTimeout(
+      () => {
+        const b = cronBanner.value;
+        if (b && b.runId === run.run_id && b.status === "running") cronBanner.value = null;
+      },
+      10 * 60 * 1000
+    );
   }
 }
 
@@ -1481,7 +1619,7 @@ async function loadRecent() {
 function updateBigScreenLive() {
   if (!office) return;
   const mode = office.screenMode?.();
-  if (mode === "brief" || mode === "result") return;   // 专场优先，不抢占
+  if (mode === "brief" || mode === "result") return; // 专场优先，不抢占
   const rows = steps.value.slice(-4);
   if (!rows.length) {
     /* 步骤被清空（新一轮/停止）：大屏回到待命屏 */
@@ -1500,8 +1638,8 @@ function updateBigScreenLive() {
         tool: st.kind === "tool" ? toolName(st) : "",
         to: st.kind === "tool" ? toolTarget(st) : "",
         text: stepView(st).text,
-        result: st.result || ""
-      }))
+        result: st.result || "",
+      })),
     },
     { focus: false }
   );
@@ -1522,7 +1660,7 @@ function pushStep(kind: string, title: string, detail = "", actor = "") {
   }
   steps.value = [
     ...steps.value,
-    { kind, title, actor, detail, time: new Date().toTimeString().slice(0, 8), open: false }
+    { kind, title, actor, detail, time: new Date().toTimeString().slice(0, 8), open: false },
   ];
   updateBigScreenLive();
 }
@@ -1543,16 +1681,24 @@ function switchFloor(n: 1 | 2) {
 
 /** 视角：室内 / 露台（露台是加座区，人多时用得上） */
 
-
 /* ---------- 形象编辑：颜色/发型当场生效，按 agent id 存本地 ---------- */
 const HAIR_STYLES = [
   { key: "short", label: "短发" },
   { key: "side", label: "侧分" },
   { key: "bowl", label: "锅盖" },
   { key: "bun", label: "丸子头" },
-  { key: "long", label: "长发" }
+  { key: "long", label: "长发" },
 ];
-const SHIRT_COLORS = ["#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#0ea5e9", "#f97362", "#ec4899", "#64748b"];
+const SHIRT_COLORS = [
+  "#3b82f6",
+  "#8b5cf6",
+  "#f59e0b",
+  "#10b981",
+  "#0ea5e9",
+  "#f97362",
+  "#ec4899",
+  "#64748b",
+];
 const PANTS_COLORS = ["#334155", "#3f3f46", "#44403c", "#1f2937", "#4b5563", "#6b7280"];
 const SHOE_COLORS = ["#39414d", "#2b303a", "#5b4636", "#e8ecf2", "#8b5a3c", "#3b4a5e"];
 const HAIR_COLORS = ["#2f343d", "#3a3129", "#4a3a2c", "#584a3c", "#8a6a4a", "#2c323b"];
@@ -1597,7 +1743,7 @@ function showResultOnScreen() {
   office?.setScreen?.("result", {
     title: resultTitle.value,
     text: resultText.value,
-    hint: resultSessionId.value ? "已存为会话，可在工作台的会话列表里追溯" : ""
+    hint: resultSessionId.value ? "已存为会话，可在工作台的会话列表里追溯" : "",
   });
 }
 const resultTitle = ref("组长结论");
@@ -1636,10 +1782,14 @@ async function load(silent = false) {
       id: a.id,
       name: a.name || "未命名",
       role: a.role || "",
-      status: (a.status === "error" ? "error" : a.status === "busy" ? "busy" : "idle") as OfficeAgent["status"],
+      status: (a.status === "error"
+        ? "error"
+        : a.status === "busy"
+          ? "busy"
+          : "idle") as OfficeAgent["status"],
       task: a.task || "",
       last_active: a.last_active || null,
-      isLeader: !!a.is_leader
+      isLeader: !!a.is_leader,
     }));
     office?.setAgents(agents.value);
     seated.value = office ? office.count() : 0;
@@ -1693,7 +1843,8 @@ const caps = computed(() => {
   const out: { text: string; type: any }[] = [];
   if (d.tool_ids?.length) out.push({ text: `工具 ${d.tool_ids.length}`, type: "warning" });
   if (d.skill_ids?.length) out.push({ text: `技能 ${d.skill_ids.length}`, type: "success" });
-  if (d.knowledge_ids?.length) out.push({ text: `知识库 ${d.knowledge_ids.length}`, type: "success" });
+  if (d.knowledge_ids?.length)
+    out.push({ text: `知识库 ${d.knowledge_ids.length}`, type: "success" });
   if (d.mcp_ids?.length) out.push({ text: `MCP ${d.mcp_ids.length}`, type: "danger" });
   if (d.workflow_id) out.push({ text: "工作流编排", type: "primary" });
   return out;
@@ -1753,7 +1904,7 @@ async function showBadge() {
       t: String(x.time || "").slice(0, 8),
       k: String(x.tool || "").slice(0, 12),
       ms: x.duration_ms ?? null,
-      ok: !!x.ok
+      ok: !!x.ok,
     }));
   } catch {
     toolEntries = [];
@@ -1771,8 +1922,8 @@ async function showBadge() {
         tool: st.kind === "tool" ? toolName(st) : "",
         to: st.kind === "tool" ? toolTarget(st) : "",
         text: stepView(st).text,
-        result: st.result || ""
-      }))
+        result: st.result || "",
+      })),
     },
     { focus: false }
   );
@@ -1784,7 +1935,7 @@ async function showBadge() {
     status: st,
     model: modelName.value,
     last: lastActive.value,
-    caps: caps.value.map((c: any) => c.text)
+    caps: caps.value.map((c: any) => c.text),
   });
 }
 
@@ -1936,96 +2087,105 @@ async function doDispatch() {
     const division: { who: string; task: string; done?: boolean }[] = [];
     const t0 = performance.now();
     const frames: RunFrame[] = [];
-    await streamOfficeDispatch(text, (f: any) => {
-      if (f.type === "delegate" || f.type === "reply") {
-        // 运行中就把「谁派给谁 / 谁回了什么」冒出来
-        office?.say?.({ ...f, kind: f.type });
-        frames.push({
-          t: Math.round(performance.now() - t0),
-          type: f.type,
-          from: f.from,
-          to: f.to,
-          text: f.text,
-          task: f.task
-        });
-        if (f.type === "delegate") {
-          if (f.to && !roster.includes(f.to)) roster.push(f.to);
-          refreshSoon(f.to);
-          office?.ping?.(f.to);
-          office?.engage?.(f.to);
-          office?.lookAtLeader?.(f.to, 4);
-          addCast("delegate", castHandoff(f.from, f.to, f.task));
-          followIfNeeded(f.to);
-          /* 协同可视化：组长 → 组员拉一条任务线，名牌上标"受命/等待" */
-          office?.handoff?.(f.from, f.to);
-          /* 组长本人走过去交代一句（只走第一次，后面并派不再折返） */
-          if (!roster.length) office?.leaderVisit?.(f.to);
-          /* 白板上的分工跟着更新：谁负责哪一段 */
-          division.push({ who: f.to, task: f.task || text });
-          office?.taskBoard?.(text, division);
-          pushStep("tool", `派活 → ${f.to}`, JSON.stringify({ tool: "delegate_task_to_member", args: { member: f.to, task: f.task || "" } }), f.from || "");
-        } else {
-          office?.replyDone?.(f.from);
-          /* 白板分工打勾：这个人交结果了 */
-          const row = division.find((r) => r.who === f.from);
-          if (row) {
-            row.done = true;
+    await streamOfficeDispatch(
+      text,
+      (f: any) => {
+        if (f.type === "delegate" || f.type === "reply") {
+          // 运行中就把「谁派给谁 / 谁回了什么」冒出来
+          office?.say?.({ ...f, kind: f.type });
+          frames.push({
+            t: Math.round(performance.now() - t0),
+            type: f.type,
+            from: f.from,
+            to: f.to,
+            text: f.text,
+            task: f.task,
+          });
+          if (f.type === "delegate") {
+            if (f.to && !roster.includes(f.to)) roster.push(f.to);
+            refreshSoon(f.to);
+            office?.ping?.(f.to);
+            office?.engage?.(f.to);
+            office?.lookAtLeader?.(f.to, 4);
+            addCast("delegate", castHandoff(f.from, f.to, f.task));
+            followIfNeeded(f.to);
+            /* 协同可视化：组长 → 组员拉一条任务线，名牌上标"受命/等待" */
+            office?.handoff?.(f.from, f.to);
+            /* 组长本人走过去交代一句（只走第一次，后面并派不再折返） */
+            if (!roster.length) office?.leaderVisit?.(f.to);
+            /* 白板上的分工跟着更新：谁负责哪一段 */
+            division.push({ who: f.to, task: f.task || text });
             office?.taskBoard?.(text, division);
+            pushStep(
+              "tool",
+              `派活 → ${f.to}`,
+              JSON.stringify({
+                tool: "delegate_task_to_member",
+                args: { member: f.to, task: f.task || "" },
+              }),
+              f.from || ""
+            );
+          } else {
+            office?.replyDone?.(f.from);
+            /* 白板分工打勾：这个人交结果了 */
+            const row = division.find((r) => r.who === f.from);
+            if (row) {
+              row.done = true;
+              office?.taskBoard?.(text, division);
+            }
+            pushStep("reply", `${f.from} 回话`, f.text || "", f.from || "");
+            addCast("reply", `${f.from || "成员"} 回话：${f.text || ""}`);
+            followIfNeeded(f.from);
           }
-          pushStep("reply", `${f.from} 回话`, f.text || "", f.from || "");
-          addCast("reply", `${f.from || "成员"} 回话：${f.text || ""}`);
-          followIfNeeded(f.from);
+        } else if (f.type === "tool") {
+          // 组长/组员真实调用工具：立刻落一行（工具名 + 参数 + 返回）
+          pushStep(
+            "tool",
+            String(f.tool || "tool"),
+            JSON.stringify({ tool: f.tool, args: f.args || {}, result: f.result || "" }),
+            f.from || ""
+          );
+          if (f.from) {
+            refreshSoon(f.from);
+            office?.ping?.(f.from);
+            office?.toolScreen?.(f.from, f.tool);
+            addCast("tool", `${f.from} 调用 ${f.tool || "工具"}`);
+            followIfNeeded(f.from);
+          }
+        } else if (f.type === "queue") {
+          /* 目标在忙：后端排队执行（方案 A），先给个交代，别让人以为卡住了 */
+          const ahead = Number(f.ahead || 0);
+          addCast("conn", `前面还有 ${ahead} 个任务在跑，已排队，轮到会自动开始`);
+          office?.writeBoard?.([`任务：${text.slice(0, 26)}`, `排队中：前面还有 ${ahead} 个任务`]);
+        } else if (f.type === "start") {
+          hasMemory.value = !!f.memory;
+          // 有成员的模型配置坏了（被跳过）：说清楚，别让人以为"他没干活"
+          const skipped = (f.skipped || []).filter(Boolean);
+          if (skipped.length) {
+            const msg = `${skipped.join("、")} 的模型配置不可用，本轮跳过（请到「模型配置」检查绑定）`;
+            ElMessage.warning(msg);
+            addCast("conn", msg, true);
+          }
+          // 有活干了：正在摸鱼的人陆续回工位
+          office?.backToDesks?.();
+          /* 开工动员：全员先到白板前站一下，白板写"当前任务 + 分工" */
+          const team = (f.members || []).filter((n: string) => n !== f.leader);
+          if (team.length) office?.kickoff?.(team, 4500);
+          office?.taskBoard?.(text, []);
+          if (skipped.length) {
+            office?.writeBoard?.([
+              `任务：${text.slice(0, 26)}`,
+              `⚠ ${skipped.join("、")} 模型配置不可用，本轮跳过`,
+              "点右侧「执行过程」看详情",
+            ]);
+          }
+          pushStep("plan", `收到任务：${text.slice(0, 40)}`, text, f.leader || "");
+        } else if (f.type === "done") {
+          doneFrame = f;
         }
-      } else if (f.type === "tool") {
-        // 组长/组员真实调用工具：立刻落一行（工具名 + 参数 + 返回）
-        pushStep(
-          "tool",
-          String(f.tool || "tool"),
-          JSON.stringify({ tool: f.tool, args: f.args || {}, result: f.result || "" }),
-          f.from || ""
-        );
-        if (f.from) {
-          refreshSoon(f.from);
-          office?.ping?.(f.from);
-          office?.toolScreen?.(f.from, f.tool);
-          addCast("tool", `${f.from} 调用 ${f.tool || "工具"}`);
-          followIfNeeded(f.from);
-        }
-      } else if (f.type === "queue") {
-        /* 目标在忙：后端排队执行（方案 A），先给个交代，别让人以为卡住了 */
-        const ahead = Number(f.ahead || 0);
-        addCast("conn", `前面还有 ${ahead} 个任务在跑，已排队，轮到会自动开始`);
-        office?.writeBoard?.([
-          `任务：${text.slice(0, 26)}`,
-          `排队中：前面还有 ${ahead} 个任务`
-        ]);
-      } else if (f.type === "start") {
-        hasMemory.value = !!f.memory;
-        // 有成员的模型配置坏了（被跳过）：说清楚，别让人以为"他没干活"
-        const skipped = (f.skipped || []).filter(Boolean);
-        if (skipped.length) {
-          const msg = `${skipped.join("、")} 的模型配置不可用，本轮跳过（请到「模型配置」检查绑定）`;
-          ElMessage.warning(msg);
-          addCast("conn", msg, true);
-        }
-        // 有活干了：正在摸鱼的人陆续回工位
-        office?.backToDesks?.();
-        /* 开工动员：全员先到白板前站一下，白板写"当前任务 + 分工" */
-        const team = (f.members || []).filter((n: string) => n !== f.leader);
-        if (team.length) office?.kickoff?.(team, 4500);
-        office?.taskBoard?.(text, []);
-        if (skipped.length) {
-          office?.writeBoard?.([
-            `任务：${text.slice(0, 26)}`,
-            `⚠ ${skipped.join("、")} 模型配置不可用，本轮跳过`,
-            "点右侧「执行过程」看详情"
-          ]);
-        }
-        pushStep("plan", `收到任务：${text.slice(0, 40)}`, text, f.leader || "");
-      } else if (f.type === "done") {
-        doneFrame = f;
-      }
-    }, ctrl.signal);
+      },
+      ctrl.signal
+    );
     if (!doneFrame) {
       /* 流正常结束却没收到结束帧 = 被中途掐断（代理缓冲/网关超时），不能当成功 */
       throw new Error("连接提前中断（没收到结束帧）");
@@ -2040,7 +2200,7 @@ async function doDispatch() {
       office?.writeBoard?.([
         `任务失败：${text.slice(0, 26)}`,
         why.slice(0, 60),
-        "点右侧「执行过程」看详情"
+        "点右侧「执行过程」看详情",
       ]);
       return;
     }
@@ -2048,10 +2208,14 @@ async function doDispatch() {
     // 取「像结论的一行」：跳过 "…如下：" 这种引言行
     const lines = (d.content || "")
       .split("\n")
-      .map((l: string) => l.replace(/^[#>*\-\s]+/, "").replace(/\*\*/g, "").trim())
+      .map((l: string) =>
+        l
+          .replace(/^[#>*\-\s]+/, "")
+          .replace(/\*\*/g, "")
+          .trim()
+      )
       .filter((l: string) => l.length > 0);
-    const summary =
-      lines.find((l: string) => l.length >= 6 && !/[：:]$/.test(l)) || lines[0] || "";
+    const summary = lines.find((l: string) => l.length >= 6 && !/[：:]$/.test(l)) || lines[0] || "";
     // 组长走到白板前把结论说出来（纯表演，结论条已经先亮）
     wrapHint.value = "组长去白板公布结论…";
     office?.wrapUp?.({ leader: d.leader, members: roster, text: summary.slice(0, 46) });
@@ -2062,7 +2226,9 @@ async function doDispatch() {
     } else {
       office?.release?.(roster);
     }
-    window.setTimeout(() => { wrapHint.value = ""; }, 2600);
+    window.setTimeout(() => {
+      wrapHint.value = "";
+    }, 2600);
     resultTitle.value = `组长 ${d.leader || ""} 的结论`;
     resultText.value = d.content || "（组长没有返回内容）";
     resultSessionId.value = d.session_id || null;
@@ -2080,26 +2246,20 @@ async function doDispatch() {
     window.setTimeout(refreshPartyState, 800);
   } catch (e: any) {
     if (ctrl.signal.aborted) {
-      ElMessage.info(
-        ctrl.signal.reason === "timeout" ? "超过 5 分钟，已自动停止" : "已停止这一轮"
-      );
+      ElMessage.info(ctrl.signal.reason === "timeout" ? "超过 5 分钟，已自动停止" : "已停止这一轮");
       pushStep("error", "已停止", "下面是停止之前跑完的步骤");
       addCast("info", ctrl.signal.reason === "timeout" ? "超时自动停止" : "手动停止了这一轮");
     } else {
       const reason = describeErr(e);
       pushStep("error", "连接断开", reason);
       addCast("conn", `连接断开：${reason}`, true);
-      office?.writeBoard?.([
-        "连接断开",
-        reason.slice(0, 60),
-        "可点上方「重试这一轮」"
-      ]);
+      office?.writeBoard?.(["连接断开", reason.slice(0, 60), "可点上方「重试这一轮」"]);
       connLost.value = {
         reason,
         retry: () => {
           dispatchText.value = text;
           doDispatch();
-        }
+        },
       };
       void recoverAfterDrop(text);
     }
@@ -2146,7 +2306,7 @@ const summary = ref<any>({
   error_rate: 0,
   runs: { total: 0, errors: 0, error_rate: 0, avg_ms: 0, last_time: null },
   last_time: null,
-  top: [] as { id: number; name: string; count: number }[]
+  top: [] as { id: number; name: string; count: number }[],
 });
 
 async function openSummary() {
@@ -2197,7 +2357,7 @@ function replayLast() {
   office?.backToDesks?.();
 
   let acc = 300;
-  let prev = run.frames[0].t;   // 第一帧立刻出，不要干等它原本的耗时
+  let prev = run.frames[0].t; // 第一帧立刻出，不要干等它原本的耗时
   run.frames.forEach((fr) => {
     const gap = Math.max(260, (fr.t - prev) * 0.55);
     prev = fr.t;
@@ -2210,7 +2370,7 @@ function replayLast() {
     office?.wrapUp?.({
       leader: run.leader,
       members: run.members,
-      text: (run.summary || "").slice(0, 46)
+      text: (run.summary || "").slice(0, 46),
     });
     window.setTimeout(() => {
       wrapHint.value = "";
@@ -2237,7 +2397,7 @@ const USAGE_LABEL: Record<string, string> = {
   chat: "对话",
   workflow: "工作流",
   query: "问数",
-  embedding: "向量化"
+  embedding: "向量化",
 };
 function usageLabel(u?: string): string {
   return USAGE_LABEL[u || ""] || u || "";
@@ -2304,7 +2464,12 @@ async function dispatchOne() {
     const oneLine =
       String(d.content || "")
         .split("\n")
-        .map((l: string) => l.replace(/^[#>*\-\s]+/, "").replace(/\*\*/g, "").trim())
+        .map((l: string) =>
+          l
+            .replace(/^[#>*\-\s]+/, "")
+            .replace(/\*\*/g, "")
+            .trim()
+        )
         .find((l: string) => l.length >= 6 && !/[：:]$/.test(l)) || "";
     if (oneLine) briefText.value = oneLine.slice(0, 80);
     addCast("summary", `${who || "成员"} 完成：${oneLine || resultText.value.slice(0, 50)}`);
@@ -2314,9 +2479,7 @@ async function dispatchOne() {
     loadRuns();
   } catch (e: any) {
     if (ctrl.signal.aborted) {
-      ElMessage.info(
-        ctrl.signal.reason === "timeout" ? "超过 5 分钟，已自动停止" : "已停止这一次"
-      );
+      ElMessage.info(ctrl.signal.reason === "timeout" ? "超过 5 分钟，已自动停止" : "已停止这一次");
     } else {
       const reason = describeErr(e);
       pushStep("error", "连接断开", reason);
@@ -2326,7 +2489,7 @@ async function dispatchOne() {
         retry: () => {
           oneText.value = text;
           dispatchOne();
-        }
+        },
       };
       void recoverAfterDrop(text, who || undefined);
     }
@@ -2387,10 +2550,12 @@ async function mountOffice() {
         else clearPick();
       },
       onBadgeClick: () => goApproval(),
-      onNight: (v: boolean) => { isNight.value = v; },
+      onNight: (v: boolean) => {
+        isNight.value = v;
+      },
       onFloorSwitch: (n: 1 | 2) => switchFloor(n),
       onContextLost: () => handleGlLost(),
-      onContextRestored: () => handleGlRestored()
+      onContextRestored: () => handleGlRestored(),
     });
     /* 恢复上次的楼层（默认 1F） */
     try {
@@ -2418,7 +2583,7 @@ async function mountOffice() {
     peopleHintTimer = null;
   }
   restoreLooks();
-  applyQuality();          // 恢复上次的省电模式选择（重建场景后也要重新应用）
+  applyQuality(); // 恢复上次的省电模式选择（重建场景后也要重新应用）
   seated.value = office.count();
   loadRun();
   loadBoard();
@@ -2453,12 +2618,7 @@ function inEditable(el: EventTarget | null): boolean {
   const t = el as HTMLElement | null;
   if (!t) return false;
   const tag = (t.tagName || "").toLowerCase();
-  return (
-    tag === "input" ||
-    tag === "textarea" ||
-    tag === "select" ||
-    t.isContentEditable === true
-  );
+  return tag === "input" || tag === "textarea" || tag === "select" || t.isContentEditable === true;
 }
 function onHotkey(e: KeyboardEvent) {
   /* Esc：按「弹层 → 下拉 → 选中 → 视角」的顺序一层层退，一次只退一层 */
@@ -2503,10 +2663,19 @@ function onHotkey(e: KeyboardEvent) {
     return;
   }
   /* b / s：一键切到白板 / 大屏（镜头预设键盘直达） */
-  if (e.key === "b" || e.key === "B") { setCamMode("board"); return; }
-  if (e.key === "s" || e.key === "S") { setCamMode("screen"); return; }
+  if (e.key === "b" || e.key === "B") {
+    setCamMode("board");
+    return;
+  }
+  if (e.key === "s" || e.key === "S") {
+    setCamMode("screen");
+    return;
+  }
   /* g：回到默认全景（比 Esc 更直白，且不干扰 Esc 的逐层退出） */
-  if (e.key === "g" || e.key === "G") { setCamMode("overview"); return; }
+  if (e.key === "g" || e.key === "G") {
+    setCamMode("overview");
+    return;
+  }
 }
 
 /* ---------- 磁吸（magnet）：鼠标靠近按钮时轻轻被吸过去 ----------
@@ -2765,7 +2934,9 @@ onBeforeUnmount(() => {
     color: var(--el-text-color-regular);
     font-size: 11px;
     font-weight: 600;
-    transition: background-color 0.18s ease, color 0.18s ease;
+    transition:
+      background-color 0.18s ease,
+      color 0.18s ease;
   }
   .m-row .m-av.busy {
     background: var(--el-color-primary-light-9);
@@ -3258,7 +3429,9 @@ onBeforeUnmount(() => {
     border: 1.5px solid #c3ccd9;
     box-shadow: 0 1px 3px rgba(31, 39, 51, 0.22);
     pointer-events: none;
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    transition:
+      transform 0.12s ease,
+      box-shadow 0.12s ease;
   }
   .ag-dot.busy {
     background: var(--el-color-primary);
@@ -3414,133 +3587,133 @@ onBeforeUnmount(() => {
   }
 
   /* 顶部常驻统计条 */
-.of-stats {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  margin: 0 0 8px;
-  padding: 6px 12px;
-  border-radius: var(--el-border-radius-base);
-  background: var(--el-fill-color-lighter);
-  color: var(--el-text-color-regular);
-  font-size: 12px;
-}
-.of-stats .it b {
-  color: var(--el-text-color-primary);
-  font-variant-numeric: tabular-nums;
-}
-.of-stats .it.bad b {
-  color: var(--el-color-danger);
-}
-.of-stats .spacer {
-  flex: 1 1 auto;
-}
-.of-stats .more {
-  color: var(--el-color-primary);
-  cursor: pointer;
-}
-.of-stats .more:hover {
-  text-decoration: underline;
-}
+  .of-stats {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin: 0 0 8px;
+    padding: 6px 12px;
+    border-radius: var(--el-border-radius-base);
+    background: var(--el-fill-color-lighter);
+    color: var(--el-text-color-regular);
+    font-size: 12px;
+  }
+  .of-stats .it b {
+    color: var(--el-text-color-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .of-stats .it.bad b {
+    color: var(--el-color-danger);
+  }
+  .of-stats .spacer {
+    flex: 1 1 auto;
+  }
+  .of-stats .more {
+    color: var(--el-color-primary);
+    cursor: pointer;
+  }
+  .of-stats .more:hover {
+    text-decoration: underline;
+  }
 
-/* 连接断开提示条：常驻，直到用户处理 */
-.conn-lost {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 0 0 8px;
-  padding: 8px 12px;
-  border-radius: var(--el-border-radius-base);
-  border: 1px solid var(--el-color-danger-light-5);
-  background: var(--el-color-danger-light-9);
-  color: var(--el-text-color-regular);
-  font-size: var(--el-font-size-base);
-}
-.conn-lost .t {
-  color: var(--el-color-danger);
-  font-weight: 600;
-}
-.conn-lost .d {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.conn-lost .spacer {
-  flex: 1 1 auto;
-}
-.conn-lost .of-btn {
-  padding: 2px 10px;
-  border-radius: 4px;
-  border: 1px solid var(--el-color-danger-light-5);
-  background: var(--el-bg-color);
-  color: var(--el-color-danger);
-  cursor: pointer;
-  font-size: 12px;
-}
-.conn-lost .of-btn:hover {
-  background: var(--el-color-danger-light-8);
-}
+  /* 连接断开提示条：常驻，直到用户处理 */
+  .conn-lost {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 0 0 8px;
+    padding: 8px 12px;
+    border-radius: var(--el-border-radius-base);
+    border: 1px solid var(--el-color-danger-light-5);
+    background: var(--el-color-danger-light-9);
+    color: var(--el-text-color-regular);
+    font-size: var(--el-font-size-base);
+  }
+  .conn-lost .t {
+    color: var(--el-color-danger);
+    font-weight: 600;
+  }
+  .conn-lost .d {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+  .conn-lost .spacer {
+    flex: 1 1 auto;
+  }
+  .conn-lost .of-btn {
+    padding: 2px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--el-color-danger-light-5);
+    background: var(--el-bg-color);
+    color: var(--el-color-danger);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .conn-lost .of-btn:hover {
+    background: var(--el-color-danger-light-8);
+  }
 
-/* 任务列表里的失败原因（单行省略，悬停看全文） */
-.tl-item .tl-e {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--el-color-danger);
-}
+  /* 任务列表里的失败原因（单行省略，悬停看全文） */
+  .tl-item .tl-e {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--el-color-danger);
+  }
 
-/* 任务列表里的「重试」 */
-.tl-item .tl-retry {
-  margin-left: auto;
-  flex: 0 0 auto;
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--el-color-danger-light-5);
-  background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
-  cursor: pointer;
-}
-.tl-item .tl-retry:hover {
-  background: var(--el-color-danger-light-7);
-}
+  /* 任务列表里的「重试」 */
+  .tl-item .tl-retry {
+    margin-left: auto;
+    flex: 0 0 auto;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--el-color-danger-light-5);
+    background: var(--el-color-danger-light-9);
+    color: var(--el-color-danger);
+    cursor: pointer;
+  }
+  .tl-item .tl-retry:hover {
+    background: var(--el-color-danger-light-7);
+  }
 
-/* 名牌上的协同标记：受命于谁 / 组长在等谁 */
-.ag-chip .hb {
-  font-size: 12px;
-  padding: 0 4px;
-  border-radius: 3px;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-.ag-chip .hb.wt {
-  color: var(--el-color-warning);
-  background: var(--el-color-warning-light-9);
-}
+  /* 名牌上的协同标记：受命于谁 / 组长在等谁 */
+  .ag-chip .hb {
+    font-size: 12px;
+    padding: 0 4px;
+    border-radius: 3px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+  }
+  .ag-chip .hb.wt {
+    color: var(--el-color-warning);
+    background: var(--el-color-warning-light-9);
+  }
 
-/* 名牌上的定时任务标记：到点自己跑起来，不是人派的，用暖色区分 */
-.ag-chip .cron {
-  font-size: 12px;
-  font-style: normal;
-  padding: 0 4px;
-  border-radius: 3px;
-  color: var(--el-color-warning);
-  background: var(--el-color-warning-light-9);
-}
+  /* 名牌上的定时任务标记：到点自己跑起来，不是人派的，用暖色区分 */
+  .ag-chip .cron {
+    font-size: 12px;
+    font-style: normal;
+    padding: 0 4px;
+    border-radius: 3px;
+    color: var(--el-color-warning);
+    background: var(--el-color-warning-light-9);
+  }
 
-/* 执行过程里的时间戳：让"谁先谁后"一眼看出来 */
-.of-trace .tm {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  font-variant-numeric: tabular-nums;
-}
+  /* 执行过程里的时间戳：让"谁先谁后"一眼看出来 */
+  .of-trace .tm {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    font-variant-numeric: tabular-nums;
+  }
 
-/* 最近执行流水条 */
+  /* 最近执行流水条 */
   .brief-bar {
     display: flex;
     align-items: center;
@@ -3639,7 +3812,6 @@ onBeforeUnmount(() => {
 
   /* 详情抽屉 */
 }
-
 
 /* 今日简报弹窗（append-to-body，所以不能嵌在 .ai-office-page 里） */
 .sum-top {
@@ -3798,7 +3970,13 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 8px 10px 10px;
-  mask-image: linear-gradient(to bottom, transparent 0, #000 8px, #000 calc(100% - 8px), transparent 100%);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 8px,
+    #000 calc(100% - 8px),
+    transparent 100%
+  );
 }
 /* 细滚动条：面板窄，默认滚动条太抢眼 */
 .steps-body::-webkit-scrollbar {
@@ -4571,7 +4749,13 @@ onBeforeUnmount(() => {
   padding: 9px 11px 11px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  mask-image: linear-gradient(to bottom, transparent 0, #000 6px, #000 calc(100% - 6px), transparent 100%);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 6px,
+    #000 calc(100% - 6px),
+    transparent 100%
+  );
 }
 .of-tbody::-webkit-scrollbar {
   width: 6px;
@@ -4760,7 +4944,6 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
 }
 
-
 /* 底部流水条 / 图例：跟着暖色板走，别留 EP 的蓝 */
 .ai-office-page .run-strip {
   border-top: 1px solid var(--of-line2);
@@ -4817,7 +5000,6 @@ onBeforeUnmount(() => {
 .ai-office-page .picked .dot {
   border-color: currentColor;
 }
-
 
 /* ---------- 顶栏（全自绘） ---------- */
 .of-bar {
@@ -5141,7 +5323,6 @@ onBeforeUnmount(() => {
   font-size: 10.5px;
 }
 
-
 /* ---------- 执行过程：支线依次长出来 ---------- */
 @keyframes of-in {
   from {
@@ -5244,7 +5425,6 @@ onBeforeUnmount(() => {
   }
 }
 
-
 @media (prefers-reduced-motion: reduce) {
   .of-root,
   .of-branch,
@@ -5257,7 +5437,6 @@ onBeforeUnmount(() => {
   }
 }
 
-
 /* ===== 夜间：DOM 名牌/气泡跟着变暗，别在黑屋子里打白光 ===== */
 .stage.night .ag-chip {
   background: rgba(26, 29, 35, 0.92);
@@ -5267,7 +5446,9 @@ onBeforeUnmount(() => {
 }
 .stage.night .ag-chip.sel {
   border-color: #b07d3f;
-  box-shadow: 0 0 0 1px rgba(176, 125, 63, 0.5), 0 3px 12px rgba(0, 0, 0, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(176, 125, 63, 0.5),
+    0 3px 12px rgba(0, 0, 0, 0.55);
 }
 .stage.night .ag-chip.hov {
   border-color: rgba(180, 190, 210, 0.5);
@@ -5762,5 +5943,4 @@ html.dark .ai-office-page .ag-chip.err {
   background: #2b1c1a !important;
   border-color: rgba(224, 128, 107, 0.5) !important;
 }
-
 </style>

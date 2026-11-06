@@ -32,7 +32,9 @@
           <template #header>
             <div class="dash-chart-header">
               <span class="dash-chart-title">{{ t("dashboard.chartAnnoStatus") }}</span>
-              <span class="dash-chart-note">{{ t("dashboard.noteTaskCount", { n: stats.taskTotal }) }}</span>
+              <span class="dash-chart-note">
+                {{ t("dashboard.noteTaskCount", { n: stats.taskTotal }) }}
+              </span>
             </div>
           </template>
           <div class="dash-chart-wrapper">
@@ -46,7 +48,9 @@
           <template #header>
             <div class="dash-chart-header">
               <span class="dash-chart-title">{{ t("dashboard.chartTrainStatus") }}</span>
-              <span class="dash-chart-note">{{ t("dashboard.noteTaskCount", { n: stats.trainTotal }) }}</span>
+              <span class="dash-chart-note">
+                {{ t("dashboard.noteTaskCount", { n: stats.trainTotal }) }}
+              </span>
             </div>
           </template>
           <div class="dash-chart-wrapper">
@@ -63,7 +67,9 @@
           <template #header>
             <div class="dash-chart-header">
               <span class="dash-chart-title">{{ t("dashboard.chartDatasetImages") }}</span>
-              <span class="dash-chart-note">{{ t("dashboard.noteDatasetCount", { n: stats.datasetCount }) }}</span>
+              <span class="dash-chart-note">
+                {{ t("dashboard.noteDatasetCount", { n: stats.datasetCount }) }}
+              </span>
             </div>
           </template>
           <div class="dash-chart-wrapper">
@@ -77,7 +83,9 @@
           <template #header>
             <div class="dash-chart-header">
               <span class="dash-chart-title">{{ t("dashboard.chartTaskType") }}</span>
-              <span class="dash-chart-note">{{ t("dashboard.noteTypeCount", { n: stats.taskTypeTotal }) }}</span>
+              <span class="dash-chart-note">
+                {{ t("dashboard.noteTypeCount", { n: stats.taskTypeTotal }) }}
+              </span>
             </div>
           </template>
           <div class="dash-chart-wrapper">
@@ -277,11 +285,13 @@ function sTag(s: string) {
 }
 function sLbl(s: string) {
   return (
-    ({
-      pending: t("dashboard.statusPending"),
-      in_progress: t("dashboard.statusInProgress"),
-      completed: t("dashboard.statusCompleted"),
-    } as any)[s] || s
+    (
+      {
+        pending: t("dashboard.statusPending"),
+        in_progress: t("dashboard.statusInProgress"),
+        completed: t("dashboard.statusCompleted"),
+      } as any
+    )[s] || s
   );
 }
 function trainTag(s: string) {
@@ -325,9 +335,21 @@ const taskStatusPie = computed(() => ({
       center: ["50%", "50%"],
       label: { show: true, formatter: "{b}\n{d}%", fontSize: 11 },
       data: [
-        { value: stats.taskPending || 1, name: t("dashboard.statusPending"), itemStyle: { color: "#cbd5e1" } },
-        { value: stats.taskInProgress || 1, name: t("dashboard.statusInProgress"), itemStyle: { color: "#0984e3" } },
-        { value: stats.taskCompleted || 1, name: t("dashboard.statusCompleted"), itemStyle: { color: "#00b894" } },
+        {
+          value: stats.taskPending || 1,
+          name: t("dashboard.statusPending"),
+          itemStyle: { color: "#cbd5e1" },
+        },
+        {
+          value: stats.taskInProgress || 1,
+          name: t("dashboard.statusInProgress"),
+          itemStyle: { color: "#0984e3" },
+        },
+        {
+          value: stats.taskCompleted || 1,
+          name: t("dashboard.statusCompleted"),
+          itemStyle: { color: "#00b894" },
+        },
       ],
     },
   ],
@@ -342,10 +364,26 @@ const trainStatusPie = computed(() => ({
       center: ["50%", "50%"],
       label: { show: true, formatter: "{b}\n{d}%", fontSize: 11 },
       data: [
-        { value: stats.trainPending || 1, name: t("dashboard.statusPending"), itemStyle: { color: "#cbd5e1" } },
-        { value: stats.trainRunning || 1, name: t("dashboard.statusTraining"), itemStyle: { color: "#0984e3" } },
-        { value: stats.trainSuccess || 1, name: t("dashboard.statusCompleted"), itemStyle: { color: "#00b894" } },
-        { value: stats.trainFailed || 1, name: t("dashboard.statusFailed"), itemStyle: { color: "#ff7675" } },
+        {
+          value: stats.trainPending || 1,
+          name: t("dashboard.statusPending"),
+          itemStyle: { color: "#cbd5e1" },
+        },
+        {
+          value: stats.trainRunning || 1,
+          name: t("dashboard.statusTraining"),
+          itemStyle: { color: "#0984e3" },
+        },
+        {
+          value: stats.trainSuccess || 1,
+          name: t("dashboard.statusCompleted"),
+          itemStyle: { color: "#00b894" },
+        },
+        {
+          value: stats.trainFailed || 1,
+          name: t("dashboard.statusFailed"),
+          itemStyle: { color: "#ff7675" },
+        },
       ],
     },
   ],
