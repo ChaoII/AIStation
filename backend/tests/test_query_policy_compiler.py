@@ -719,3 +719,116 @@ def test_system_table_is_denied(sql):
 def test_system_function_is_denied(sql):
     d = rewrite(sql, plan(allowed={"t": ("id",)}))
     assert not d.permit, sql
+
+
+# ===========================================================================
+# 复审修复轮（round 2）
+# ===========================================================================
+def test_paren_join_alias_denies_join_side_column():
+    d = rewrite(
+        "select u.phone from (t join u on t.id = u.id) as j",
+        plan(
+            allowed={"t": ("id",), "u": ("id", "phone")},
+            denied={"u": {"phone"}},
+        ),
+    )
+    assert not d.permit
+
+
+def test_paren_join_alias_denies_join_side_table():
+    d = rewrite(
+        "select u.phone from (t join u on t.id = u.id) as j",
+        plan(
+            allowed={"t": ("id",), "u": ("id",)},
+            denied={"u": {DENIED_ALL}},
+        ),
+    )
+    assert not d.permit
+
+
+def test_paren_join_group_alias_checks_all_group_tables():
+    """`j.phone` 属于多表括号组：组内任一表命中 deny/mask 就拒绝（不能当别名不存在）。"""
+    d = rewrite(
+        "select j.phone from (t join u on t.id = u.id) as j",
+        plan(
+            allowed={"t": ("id", "phone"), "u": ("id",)},
+            denied={"t": {"phone"}},
+        ),
+    )
+    assert not d.permit
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select * from (t join u on t.id = u.id) as j",
+        "select * from ((t join u on t.id = u.id)) as j",
+    ],
+)
+def test_paren_join_alias_applies_both_row_filters(sql):
+    d = rewrite(
+        sql,
+        plan(row_filters={"t": "a = 1", "u": "b = 2"}, allowed={"t": None, "u": None}),
+    )
+    assert d.permit
+    text = norm(d.sql)
+    assert text.count("a = 1") == 1
+    assert text.count("b = 2") == 1
+    for item in d.applied:  # applied 与最终 SQL 一致
+        if "row" in item:
+            assert item["row"] in text
+
+
+def test_nested_paren_join_applies_all_row_filters():
+    """`((t join u) join v)`：外层 join 挂在括号 Subquery 上，v 也要被包装。"""
+    d = rewrite(
+        "select * from ((t join u on t.id = u.id) join v on v.id = t.id) as j",
+        plan(
+            row_filters={"t": "a = 1", "u": "b = 2", "v": "c = 3"},
+            allowed={"t": None, "u": None, "v": None},
+        ),
+    )
+    assert d.permit
+    text = norm(d.sql)
+    for cond in ("a = 1", "b = 2", "c = 3"):
+        assert text.count(cond) == 1, text
+    rows = [item["row"] for item in d.applied if "row" in item]
+    assert set(rows) == {"a = 1", "b = 2", "c = 3"}
+    for row in rows:
+        assert row in text
+
+
+def test_paren_join_alias_uncovered_join_side_is_denied():
+    d = rewrite(
+        "select * from (t join u on t.id = u.id) as j",
+        plan(allowed={"t": None}),
+    )
+    assert not d.permit
+
+
+def test_paren_join_alias_star_expands_both_tables():
+    d = rewrite(
+        "select * from (t join u on t.id = u.id) as j",
+        plan(allowed={"t": ("t_id",), "u": ("u_id", "u_phone")}),
+    )
+    assert d.permit
+    text = norm(d.sql)
+    assert "t_id" in text and "u_id" in text and "u_phone" in text
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select (select phone) from t",
+        "select id from t where id in (select 1 where phone like '1%')",
+        "select id from t where exists (select 1 from u where u.id = phone)",
+        "select * from t, lateral (select phone as p) x",
+        "select t.id from t, lateral (select phone as p) x",
+    ],
+)
+def test_masked_column_in_subquery_is_denied(sql):
+    p = plan(
+        allowed={"t": ("id", "phone"), "u": ("id",)},
+        masked={"t": {"phone": "left(phone, 3)"}},
+    )
+    assert not rewrite(sql, p).permit, sql

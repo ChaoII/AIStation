@@ -489,35 +489,33 @@ def _is_system_table(table) -> bool:
     return db in _SYSTEM_SCHEMAS or catalog in _SYSTEM_SCHEMAS
 
 
-def _real_tables(scope) -> list[tuple[object, str, str]]:
+def _real_tables(scope, scope_roots: set[int]) -> list[tuple[object, str, str]]:
     """该作用域的**真实表**：``(Table 节点, 归一化表名, 可见别名)``。
 
-    从 ``scope.sources`` 取，而不是 ``scope.tables``（Critical 1）：
+    收集该作用域**自己**的全部 ``exp.Table`` 节点（``_scope_own_nodes`` 只跳过嵌套
+    **查询**作用域，不跳过括号表/括号 join 的表作用域）：
 
-    - 值是 ``Table``：普通引用 / join 两侧 / 括号 join 内部；
-    - 值是"表作用域"（``expression`` 是 ``Table``）：``FROM (t) AS j`` —— sqlglot
-      把括号表变成一个 derived-table 作用域，真实表在它的表达式里，``scope.tables``
-      为空；只看 ``scope.tables`` 会让整张表绕过策略；
-    - CTE 与派生表（``select ...``）的 source 是查询作用域 → 自然排除，不会被当表。
+    - 普通 FROM / join 两侧 / 括号 join 内部 / ``FROM (t JOIN u) AS j`` 全部覆盖；
+      只看 ``scope.tables`` 会漏掉 ``(t) AS j`` 和 join 侧（复审 Critical 1/2）；
+    - CTE 引用按 ``scope.cte_sources`` 排除（CTE 名不是表），schema 限定的不算 CTE；
+    - 派生表/子查询里的表属于它自己的作用域（那个 SELECT 是作用域根，被跳过）。
 
-    可见别名取 ``sources`` 的键（``(t) AS j`` 的 ``j``、``t AS x`` 的 ``x``），
-    星号展开与列解析都用它。
+    可见别名用表自己的别名/表名；``(t) AS j`` 这类单表括号的外层别名由调用方补进
+    别名映射（一个别名只对应一张表时）。
     """
+    cte_names = {_norm_ident(name) for name in scope.cte_sources}
     out: list[tuple[object, str, str]] = []
     seen: set[int] = set()
-    for alias, source in scope.sources.items():
-        table = None
-        if isinstance(source, exp.Table):
-            table = source
-        elif isinstance(getattr(source, "expression", None), exp.Table):
-            table = source.expression
-        if table is None or id(table) in seen:
+    for node in _scope_own_nodes(scope, scope_roots):
+        if not isinstance(node, exp.Table):
             continue
-        name = str(table.name or "").strip()
-        if not name:
+        name = str(node.name or "").strip()
+        if not name or id(node) in seen:
             continue
-        seen.add(id(table))
-        out.append((table, _table_key(name), str(alias or table.alias_or_name)))
+        if not (node.db or node.catalog) and _norm_ident(name) in cte_names:
+            continue
+        seen.add(id(node))
+        out.append((node, _table_key(name), str(node.alias_or_name or name)))
     return out
 
 
@@ -608,23 +606,49 @@ def _mask_for(plan: AccessPlan, table: str, column: str) -> str:
     return str((plan.masked.get(table) or {}).get(column.lower()) or "")
 
 
-def _masked_target(column, real, plan: AccessPlan, resolve):
-    """该列命中的 masked 表；``(None, True)`` 表示多表同名无法判定归属。
+def _masked_target(column, real, plan: AccessPlan, resolve, fallback=()):
+    """该列命中的 masked 表；返回 ``(表名, 是否歧义, 是否跨作用域)``。
 
-    ``resolve`` 把限定名解析成真实表（本作用域 / 作用域链）。无别名列只在**本作用域**
-    的真实表里找掩码；多于一张表命中视为歧义（调用方拒绝，绝不猜）。
+    ``resolve`` 把限定名解析成真实表（本作用域 / 作用域链）。无别名列先在本作用域找
+    掩码；本地没有时，若列名**不被本地元数据认识**（无 FROM 的子查询、相关子查询、
+    LATERAL 等），回退到 ``fallback``（外层作用域的表）。多于一张表命中视为歧义，
+    调用方拒绝，绝不猜。
+
+    ``external=True`` 表示引用的是外层表的掩码列：子查询里无法安全替换掩码，
+    调用方必须拒绝（复审 Critical 3）。
     """
+    local_ids = {table_id for _table, table_id, _alias in real}
     qualifier = _norm_ident(column.table)
     name = _norm_ident(column.name)
     if qualifier:
         table_id = resolve(qualifier)
         if table_id and _mask_for(plan, table_id, name):
-            return table_id, False
-        return None, False
+            return table_id, False, table_id not in local_ids
+        return None, False, False
+
     hits = [table_id for _table, table_id, _alias in real if _mask_for(plan, table_id, name)]
     if len(hits) > 1:
-        return None, True
-    return (hits[0], False) if hits else (None, False)
+        return None, True, False
+    if hits:
+        return hits[0], False, False
+
+    # 本地元数据"认识"这一列 → 它是本作用域的列（只是没配掩码），不要误判成外层引用
+    known: set[str] = set()
+    for _table, table_id, _alias in real:
+        columns = plan.allowed_columns.get(table_id)
+        if columns is not None:
+            known.update(str(column).lower() for column in columns)
+        known.update(plan.denied.get(table_id) or ())
+        known.update((plan.masked.get(table_id) or {}).keys())
+    if name in known:
+        return None, False, False
+
+    outer_hits = [table_id for _table, table_id, _alias in fallback if _mask_for(plan, table_id, name)]
+    if len(outer_hits) > 1:
+        return None, True, True
+    if outer_hits:
+        return outer_hits[0], False, True
+    return None, False, False
 
 
 def _mask_touches_denied(expr, plan: AccessPlan, table: str) -> bool:
@@ -698,11 +722,12 @@ def _wrap_table(table, condition, alias: str) -> None:
 
     parent = table.parent
     covered_by_parent = False
-    while isinstance(parent, exp.Subquery):
-        if parent.args.get("alias") is not None:
-            covered_by_parent = True
-            break
-        parent = parent.parent
+    if not joins:  # 有 join 时必须保留表别名，否则 ON 里的 t.col/u.col 失效
+        while isinstance(parent, exp.Subquery):
+            if parent.args.get("alias") is not None:
+                covered_by_parent = True
+                break
+            parent = parent.parent
 
     wrapper = exp.Subquery(this=inner)
     if not covered_by_parent:
@@ -771,22 +796,52 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
             )
 
     # 逐作用域收集真实表与别名映射（CTE / 派生表不是真实表）
-    entries: list[tuple[object, list[tuple[object, str, str]], dict[str, str]]] = []
+    # 作用域根只跳过**查询**作用域；"表作用域"（表达式是 Table）不是查询，不能跳过，
+    # 否则 `(t JOIN u) AS j` 里 join 侧的表会整段消失（复审 Critical 1）。
+    scope_roots = {
+        id(scope.expression)
+        for scope in scopes
+        if not isinstance(scope.expression, exp.Table)
+    }
+    entries: list[
+        tuple[object, list[tuple[object, str, str]], dict[str, str], dict[str, tuple[str, ...]]]
+    ] = []
     for scope in scopes:
         if isinstance(scope.expression, exp.Table):
-            # (t) 的"表作用域"：由父作用域通过 sources 处理，避免重复判定/包装
+            # (t) 的"表作用域"：父作用域已经把它当真实表收进来，避免重复判定/包装
             continue
-        real = _real_tables(scope)
+        real = _real_tables(scope, scope_roots)
         alias_to_table = {
             _norm_ident(alias): table_id for _table, table_id, alias in real
         }
-        entries.append((scope, real, alias_to_table))
+        # 括号组的别名：单表（`FROM (t) AS j`）补进 1:1 映射；
+        # 多表 join 组（`(t JOIN u) AS j`）一个别名对应多张表，单独记，按"组内任一表
+        # 命中策略"保守处理（组别名不能解析成单表，但也不能当成不存在）。
+        group_aliases: dict[str, tuple[str, ...]] = {}
+        for table, table_id, _alias in real:
+            parent = table.parent
+            while isinstance(parent, exp.Subquery):
+                alias = parent.alias
+                if alias:
+                    key = _norm_ident(alias)
+                    group_aliases[key] = group_aliases.get(key, ()) + (table_id,)
+                parent = parent.parent
+        for key, table_ids in group_aliases.items():
+            unique_ids = tuple(dict.fromkeys(table_ids))
+            group_aliases[key] = unique_ids
+            if len(unique_ids) == 1:
+                alias_to_table.setdefault(key, unique_ids[0])
+        entries.append((scope, real, alias_to_table, group_aliases))
 
     # ② 表级/列级 deny（包装前，此时树里只有用户自己的引用）
-    scope_roots = {id(scope.expression) for scope in scopes}
-    scope_meta = {id(scope): (real, aliases) for scope, real, aliases in entries}
+    scope_meta = {id(scope): (real, aliases) for scope, real, aliases, _groups in entries}
 
-    for scope, real, _alias_to_table in entries:
+    for scope, real, _alias_to_table, group_aliases in entries:
+        # 多表括号组的别名：不能解析成单表，但引用它要按"组内任一表命中"保守拒绝
+        multi_groups = {
+            alias: ids for alias, ids in group_aliases.items() if len(ids) > 1
+        }
+
         for table, table_id, _visible in real:
             if _is_system_table(table):
                 return Decision(
@@ -835,6 +890,19 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                     checked_real.append(entry)
                     seen_tables.add(entry[1])
 
+        # 外层作用域的真实表（相关子查询 / LATERAL / 无 FROM 子查询里的列可能属于它们）。
+        # 用于 mask 列的跨作用域判定：子查询里无法安全替换掩码 → 拒绝。
+        ancestor_real: list[tuple[object, str, str]] = []
+        ancestor_seen = {table_id for _table, table_id, _alias in checked_real}
+        for item in chain[1:]:
+            meta = scope_meta.get(id(item))
+            if not meta:
+                continue
+            for entry in meta[0]:
+                if entry[1] not in ancestor_seen:
+                    ancestor_real.append(entry)
+                    ancestor_seen.add(entry[1])
+
         visible: list[str] = []
         for item in chain:
             meta = scope_meta.get(id(item))
@@ -877,7 +945,19 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                 if not qualifier:
                     continue  # 裸星号（含 count(*)）另行处理
                 table_id = _resolve(qualifier)
+                group_ids = multi_groups.get(qualifier, ())
                 if not table_id:
+                    # 多表括号组的 `j.*`：无法安全展开，组内任一表有列级限制就拒绝
+                    if group_ids and any(
+                        (plan.denied.get(tid) or frozenset())
+                        or (plan.masked.get(tid) or {})
+                        for tid in group_ids
+                    ):
+                        return Decision(
+                            False,
+                            f"括号组 {qualifier}.* 涉及 deny/mask 列且无法安全展开，"
+                            "按拒绝处理（fail-closed）",
+                        )
                     continue
                 if not (plan.denied.get(table_id) or plan.masked.get(table_id)):
                     continue
@@ -896,6 +976,17 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
             name = _norm_ident(node.name)
             # 无别名列指向表别名 → 整行引用（PG 语义：t 表示整行）
             table_id = _alias_to_table.get(name) or _resolve(name)
+            if not table_id and name in multi_groups:
+                if any(
+                    (plan.denied.get(tid) or frozenset()) or (plan.masked.get(tid) or {})
+                    for tid in multi_groups[name]
+                ):
+                    return Decision(
+                        False,
+                        f"括号组 {name} 的整行引用涉及 deny/mask 列，按拒绝处理"
+                        "（fail-closed）",
+                    )
+                continue
             if table_id and (plan.denied.get(table_id) or plan.masked.get(table_id)):
                 return Decision(
                     False,
@@ -912,8 +1003,11 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
             qualifier = _norm_ident(column.table)
             if qualifier:
                 table_id = _resolve(qualifier)
-                # 派生表 / CTE 列：真实表由内层作用域处理，这里不猜
-                candidates = [table_id] if table_id else []
+                if table_id:
+                    candidates = [table_id]
+                else:
+                    # 多表括号组别名（`(t JOIN u) AS j`）：按组内所有表检查 deny
+                    candidates = list(multi_groups.get(qualifier, ()))
             else:
                 candidates = visible_candidates
             for table_id in candidates:
@@ -923,12 +1017,28 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                         f"列 {table_id}.{column_name} 被策略拒绝（deny，不可用于"
                         "投影/条件/排序/分组）",
                     )
-            masked_table, ambiguous = _masked_target(column, checked_real, plan, _resolve)
+            if qualifier and qualifier in multi_groups and not _resolve(qualifier):
+                # 组别名 + 掩码列：无法确定是哪张表的列，不能安全替换 → 拒绝
+                if any(_mask_for(plan, gid, column_name) for gid in multi_groups[qualifier]):
+                    return Decision(
+                        False,
+                        f"列 {qualifier}.{column_name} 属于多表括号组且配置了掩码，"
+                        "无法判定归属，按拒绝处理（fail-closed）",
+                    )
+            masked_table, ambiguous, external = _masked_target(
+                column, checked_real, plan, _resolve, ancestor_real
+            )
             if ambiguous:
                 return Decision(
                     False,
                     f"列 {column_name} 无法确定属于哪张表（多表同名掩码），"
                     "按拒绝处理（fail-closed）",
+                )
+            if masked_table and external:
+                return Decision(
+                    False,
+                    f"子查询引用了外层表 {masked_table} 的掩码列 {column_name}，"
+                    "无法安全替换掩码，按拒绝处理（fail-closed）",
                 )
             if masked_table and _under_aggregate(column):
                 return Decision(
@@ -941,7 +1051,9 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
         for node in _scope_clause_nodes(scope, scope_roots):
             if not isinstance(node, exp.Column) or isinstance(node.this, exp.Star):
                 continue
-            masked_table, ambiguous = _masked_target(node, checked_real, plan, _resolve)
+            masked_table, ambiguous, _external = _masked_target(
+                node, checked_real, plan, _resolve, ancestor_real
+            )
             if ambiguous:
                 return Decision(
                     False,
@@ -957,7 +1069,7 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
 
     # ③ 行条件校验（只校验真正被引用的表）
     conditions: dict[str, object] = {}
-    for _scope, real, _alias_to_table in entries:
+    for _scope, real, _alias_to_table, _group_aliases in entries:
         for _table, table_id, _visible in real:
             if table_id in conditions:
                 continue
@@ -979,7 +1091,7 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
             applied.append(item)
 
     # ④ 列投影改写（先列、后行，避免包装内的 * 被自己拦死）
-    for scope, real, alias_to_table in entries:
+    for scope, real, alias_to_table, _group_aliases in entries:
         expression = scope.expression
         if not isinstance(expression, exp.Select):
             continue
@@ -1112,7 +1224,7 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
             inner = projection.this if isinstance(projection, exp.Alias) else projection
             if isinstance(inner, exp.Column) and not isinstance(inner.this, exp.Star):
                 column_name = _norm_ident(inner.name)
-                table_id, _ambiguous = _masked_target(
+                table_id, _ambiguous, _external = _masked_target(
                     inner, real, plan, alias_to_table.get
                 )
                 mask = _mask_for(plan, table_id, column_name) if table_id else ""
@@ -1146,7 +1258,7 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
             for column in _own_columns_of(projection, scope_roots):
                 if isinstance(column.this, exp.Star):
                     continue
-                table_id, ambiguous = _masked_target(
+                table_id, ambiguous, _external = _masked_target(
                     column, real, plan, alias_to_table.get
                 )
                 if ambiguous:
@@ -1189,7 +1301,7 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
             expression.set("expressions", projections)
 
     # ⑤ 行包装（逐表，绝不把不同表的条件合并成一个字符串）
-    for _scope, real, _alias_to_table in entries:
+    for _scope, real, _alias_to_table, _group_aliases in entries:
         for table, table_id, visible in real:
             condition = conditions.get(table_id)
             if condition is None:
