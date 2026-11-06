@@ -108,3 +108,4 @@ docs/mockups/
 
 # 本地截图（playwright 调试产物，不进仓库）
 frontend/.openchamber-screenshots/
+.superpowers/sdd/
