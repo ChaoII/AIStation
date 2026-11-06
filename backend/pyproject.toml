@@ -90,6 +90,7 @@ dev = [
     "pytest-xdist==3.8.0",
     "execnet==2.1.2",
     "ruff==0.14.13",          # 代码检查/格式化
+    "watchfiles>=0.21",
 ]
 
 # uv 需要构建根项目元数据时（如 optional-dependencies 出现本地 file:// 依赖），

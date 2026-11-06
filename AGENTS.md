@@ -657,37 +657,61 @@ header 根本无处可停，所以一点都吸不住。
 
 ---
 
-## 调试记忆：后端热重载（reload）是陷阱，开发时禁止开
+## 调试记忆：后端热重载（reload）—— 2026-11 已修复，dev 默认开启
 
-### 现象与代价（2026-10-18 实测，代价：约 1 小时的错误排查）
+### 现状（2026-11-06 起）
 
-`main.py run --env=dev` 在 dev 下**硬编码** `reload=True`（`backend/main.py:99`）。它的 reloader 父进程持有端口 socket 并把 fd 交给子 worker，由此产生两个致命假象：
+`python main.py run --env=dev` **默认开启 reload**（`--no-reload` 关闭；prod 仍默认关）。
+历史上它被禁用，是因为 uvicorn 0.54 在 Windows 上有两个真 bug —— 都已在本仓库
+`main.py::_patch_windows_reload()` 里修掉：
 
-- **杀掉父进程后，孤儿 worker 会继续占着同一个端口、用旧代码服务**。实测：杀掉 reloader 后旧 worker 又跑了 1 小时，
-  接口一律按**旧代码**返回 400「请先配置触发时间」，我据此误判「代码有 bug」，实际代码早已正确。
-- **reload 失败时只记一行 `Reloading...` 然后静默保留旧进程**，后续改动也不再重载（`StatReload` 的检测日志会一起停）。
+| # | uvicorn 的 bug | 表现 | 修法 |
+|---|----------------|------|------|
+| 1 | `BaseReload.restart()` 在 win32 用 `os.kill(pid, CTRL_C_EVENT)` | 子进程没有独立控制台（IDE 任务 / 重定向 / 隐藏窗口）时收不到事件，reloader 卡在 `process.join()`：日志只打出 `Reloading...`，然后**几分钟不动** | 改成 `process.terminate()`（TerminateProcess，必达） |
+| 2 | `BaseReload.shutdown()` 在 win32 只 `self.should_exit.set()`（那是 reloader 自己的标志） | Ctrl+C 后父进程不退，或父进程没了但**子进程继续占着端口用旧代码服务**（就是历史上的「孤儿 worker」） | 改成终止子进程 + 关 socket |
 
-结论：**"我改了代码但接口行为没变"这类假象几乎无法从行为上分辨**，只能靠下面第 2 条的两步验证。
+另外两处配套改动：
 
-### 规矩（强制）
+- **装 `watchfiles`（dev 依赖）**：没有它时 uvicorn 退化成 `StatReload`，每 0.25s 把
+  `backend/` 下所有 `.py` 逐个 `stat` 一遍（`.venv` 里有 **24819** 个文件），CPU 空转、
+  且 `reload_excludes` **完全无效**（uvicorn 会打 warning）。
+- **`RELOAD_EXCLUDES`**：把 `.venv / submodules / data / logs / tests / static / sql / keys / env`
+  排除，只盯 `app/` 与 `main.py`。
 
-1. **开发时不要用 reload 启动**：`uv run main.py run --env=dev --no-reload`（等价 `RELOAD=false`）。
-2. **改完后端代码必须彻底重启，并且必须验证新代码真的生效**（两步都做，缺一不可）：
+### 实测（2026-11-06，1920 环境同机）
+
+| 场景 | 结果 |
+|------|------|
+| 冷启动到端口可连 | 62 ~ 131s（波动大，主要在 `create_app` 与 lifespan） |
+| 改文件 → 被检测到 | **0.0 ~ 0.2s**（watchfiles；StatReload 时代 3.5s） |
+| 改文件 → 新进程监听 | 12.7 ~ 29.6s |
+| 改文件 → 接口可用 | **37.7 ~ 57s** |
+| 改文件 → 旧行为（修之前） | 3 分 15 秒后才 `Shutting down`，无控制台时**永久卡住** |
+
+验证方式（比"看日志"可信）：临时给 `/ai/office/summary` 的 summary 加标记 →
+轮询 `/openapi.json` 看标记出现/消失（65.1s 出现、58.0s 消失），证明 reload 后
+跑的是**新代码**，不是"端口有响应"就算数。
+
+### 仍然要知道的
+
+1. **reload 是硬终止**（TerminateProcess），不走 lifespan 的优雅关闭。dev 够用；
+   进程级残留（running 中的工作流/评测记录）由启动期的 reconcile 兜底。
+2. **每次 reload 仍要 40~60s**，因为 `create_app()`（440+ 路由发现 + OpenAPI 预生成）
+   与 lifespan（库初始化 + 二十多个幂等 `_ensure_*` 菜单）本身就重。嫌慢可加 fast-start，
+   但会跳过菜单注册，**改菜单/权限时不要用**。
+3. **直接杀掉 reloader（Stop-Process / 任务管理器）仍会留下子进程**（那是强杀，任何清理都跑不到）。
+   收尾命令照旧：
 
 ```powershell
-# 1) 按命令行精确杀干净（只杀监听 PID 是不够的，会留下孤儿 worker）
+# 按命令行精确杀干净（含 spawn_main 子进程）
 Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-  Where-Object { $_.CommandLine -like '*main.py*' } |
+  Where-Object { $_.CommandLine -like '*AIStation\backend*main.py*' -or $_.CommandLine -like '*spawn_main*' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-# 2) 确认端口已空（还有 OwningProcess 说明没杀干净）
-Get-NetTCPConnection -LocalPort 8002 -State Listen -ErrorAction SilentlyContinue
-# 3) 重启（不开 reload）
-cd backend; uv run main.py run --env=dev --no-reload
-# 4) 验证新代码生效——不要只看"端口有响应"
-curl http://127.0.0.1:8002/openapi.json   # 新字段/新路由是否出现？
+Get-NetTCPConnection -LocalPort 8002 -State Listen -ErrorAction SilentlyContinue   # 必须为空
 ```
 
-3. **不要用「接口返回 400/404」直接推断代码有问题**：先用 `/openapi.json` 或启动日志确认在跑的是哪份代码。
+4. **"改了代码但行为没变"仍要两步验证**：看 `/openapi.json`（新字段/新路由）或启动日志里
+   的重载时间戳，别只凭接口返回码推断。
 
 ---
 

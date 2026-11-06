@@ -1,4 +1,6 @@
 import os
+import sys
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -11,6 +13,66 @@ from app.common.enums import EnvironmentEnum
 
 aistation_cli = typer.Typer()
 alembic_cfg = Config("alembic.ini")
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# 热重载只盯代码目录：backend/ 下有 .venv(2.4 万文件)、submodules、data、logs，
+# 全量盯着会让文件监听器空转（StatReload 甚至会把 .venv 里每个 .py 都 stat 一遍）。
+RELOAD_EXCLUDES = [
+    "*.pyc",
+    "__pycache__/*",
+    ".venv/*",
+    "submodules/*",
+    "data/*",
+    "logs/*",
+    "tests/*",
+    "docs/*",
+    "static/*",
+    "sql/*",
+    "keys/*",
+    "env/*",
+    ".pytest_cache/*",
+    ".ruff_cache/*",
+]
+
+
+def _patch_windows_reload() -> None:
+    """
+    修掉 Windows 上 uvicorn reloader 的死锁（0.54 实测）。
+
+    `BaseReload.restart()` 在 win32 走 `os.kill(pid, signal.CTRL_C_EVENT)` 通知子进程退出，
+    这个事件只有在父/子进程挂在**同一个控制台**时才送得到。从 IDE 任务、重定向输出、
+    Start-Process -WindowStyle Hidden 等方式启动时根本没有控制台 → 子进程收不到 Ctrl+C
+    就继续跑，reloader 卡在 `process.join()`：
+    日志显示「StatReload detected changes ... Reloading...」，然后几分钟纹丝不动。
+
+    这里改成 `process.terminate()`（TerminateProcess，必达）。dev 场景不做优雅关闭，
+    进程级别的收尾由启动期的 reconcile（工作流/问数评测僵尸记录）兜底。
+
+    返回:
+    - None
+    """
+    from uvicorn.supervisors import basereload
+
+    def restart(self) -> None:  # type: ignore[no-untyped-def]
+        self.process.terminate()
+        self.process.join()
+        self.process = basereload.get_subprocess(
+            config=self.config, target=self.target, sockets=self.sockets
+        )
+        self.process.start()
+
+    def shutdown(self) -> None:  # type: ignore[no-untyped-def]
+        # 原版 win32 分支只 `self.should_exit.set()`（那是 reloader 自己的标志），
+        # 子进程根本没收到通知，`join()` 于是永久阻塞 —— 表现为 Ctrl+C 后父进程不退、
+        # 或者父进程没了但子进程还占着端口用旧代码服务。
+        self.process.terminate()
+        self.process.join()
+        for sock in self.sockets:
+            sock.close()
+
+    basereload.BaseReload.restart = restart  # type: ignore[method-assign]
+    basereload.BaseReload.shutdown = shutdown  # type: ignore[method-assign]
 
 
 def create_app() -> FastAPI:
@@ -73,24 +135,26 @@ def run(
         EnvironmentEnum, typer.Option("--env", help="运行环境 (dev, prod)")
     ] = EnvironmentEnum.DEV,
     reload: Annotated[
-        bool,
+        bool | None,
         typer.Option(
             "--reload/--no-reload",
-            help="是否开启热重载（默认关闭：reload 会留下占着端口的孤儿 worker、用旧代码服务，"
-            "造成「改了代码但行为没变」的假象；需要时显式 --reload）",
+            help="热重载。**dev 默认开启**、prod 默认关闭；Windows 上已修掉 uvicorn 的"
+            "CTRL_C_EVENT 死锁（见 _patch_windows_reload）。",
         ),
-    ] = False,
+    ] = None,
 ) -> None:
     """
     按指定环境加载配置并启动 Uvicorn。
 
     参数:
     - env (EnvironmentEnum): 运行环境，对应 `--env`。
-    - reload (bool): 热重载开关，对应 `--reload` / `--no-reload`，**默认关闭**。
+    - reload (bool | None): 热重载；None 时 dev 开、prod 关。
 
     返回:
     - None
     """
+    if reload is None:
+        reload = env == EnvironmentEnum.DEV
 
     try:
         # 设置环境变量
@@ -112,12 +176,17 @@ def run(
 
         worship(env.value)
 
-        # 启动uvicorn服务（reload 由 --reload 显式开启，见 AGENTS.md「后端热重载是陷阱」）
+        # 启动uvicorn服务（dev 默认开 reload；Windows 的 reloader 死锁在此修掉）
+        if reload and sys.platform == "win32":
+            _patch_windows_reload()
+
         uvicorn.run(
             app="main:create_app",
             host=settings.SERVER_HOST,
             port=settings.SERVER_PORT,
             reload=reload,
+            reload_dirs=[str(BASE_DIR)] if reload else None,
+            reload_excludes=RELOAD_EXCLUDES if reload else None,
             factory=True,
             log_config=None,
         )
