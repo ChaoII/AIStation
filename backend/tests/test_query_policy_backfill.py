@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 
 # ---------------------------------------------------------------------------
 # 假存储：与 ``backfill._DbStore`` 同签名，内存里记账，便于断言「写了什么」
@@ -333,6 +335,45 @@ def test_default_allow_over_limit_skips_without_writing(monkeypatch):
     skipped = [s for s in result["skipped"] if s["source"] == "legacy_default_allow"]
     assert skipped and "legacy_default_allow rows > 3" in skipped[0]["reason"]
     assert result["by_source"]["legacy_default_allow"] == {"users": 0, "rows": 0}
+
+
+@pytest.mark.parametrize("bad_source", ["ai_data_domain", "ai_access_rule"])
+def test_default_allow_skipped_when_coverage_read_fails(monkeypatch, bad_source):
+    """覆盖判定读失败 → 一条兜底都不写（否则"人人全表"= 越权）。"""
+    data = _full_house()
+    data["load_errors"] = [{"source": bad_source, "reason": "no such column: members"}]
+    B, store = _wire(monkeypatch, **data)
+
+    result = asyncio.run(B.backfill_policies())
+
+    assert not _by_name(store.policies, "legacy_default_allow")
+    notes = [s for s in result["skipped"] if s["source"] == "legacy_default_allow"]
+    assert any("覆盖判定读取失败" in n["reason"] for n in notes), notes
+    assert result["by_source"]["legacy_default_allow"] == {"users": 0, "rows": 0}
+    # 其它来源照常迁移：一个来源读失败不该拖垮整次迁移
+    assert result["created"] > 0
+
+
+def test_domain_without_code_still_covers_members(monkeypatch):
+    """域「有表但 code 为空」的成员仍算被覆盖（与旧逻辑只看 tables 等价）→ 不拿兜底。"""
+    B, store = _wire(
+        monkeypatch,
+        domains=[
+            {"id": 9, "name": "缺 code 的域", "code": "", "tables": ["t_x"], "members": [301]}
+        ],
+        users=[
+            {"id": 301, "is_superuser": False, "roles": []},
+            {"id": 302, "is_superuser": False, "roles": []},
+        ],
+        system_tables=["sys_user"],
+    )
+
+    result = asyncio.run(B.backfill_policies())
+
+    rows = _by_name(store.policies, "legacy_default_allow")
+    assert {r["subject_value"] for r in rows} == {"302"}, rows
+    # code 为空写不出 domain 策略 → 该域有 skipped 提示（管理员需补 code）
+    assert any(s["source"] == "ai_data_domain" for s in result["skipped"])
 
 
 def test_system_tables_included_in_upper_bound_only(monkeypatch):

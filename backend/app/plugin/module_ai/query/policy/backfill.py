@@ -516,6 +516,7 @@ def plan_legacy_default_allow(
     abac_policies,
     tables,
     skipped: list[dict],
+    coverage_errors: list[dict] | None = None,
 ) -> list[dict]:
     """给**真正需要兜底**的用户逐表建 ``everyone``→``user`` 的 allow。
 
@@ -523,25 +524,42 @@ def plan_legacy_default_allow(
     而新模型是 allow 并集 —— 一条 ``everyone`` 的全表 allow 会把域隔离整体抹平，
     enforce 当天域成员就能查全表。所以兜底**只发给**：
 
-    - 不在任何**已迁出策略的启用数据域**成员里，且
+    - 不在任何**启用数据域**成员里（该域有 tables，与旧逻辑 ``_domain_tables_for_user``
+      等价；**不要求 code** —— code 为空只是写不出 ``domain`` 策略，不代表成员不受限），且
     - 没有任何命中其角色的**已迁出策略的启用 ABAC 规则**。
 
     这两类用户本来就「未配置 → 全表」，给他们 ``subject_kind=user`` 的兜底才等价。
     超管不建（引擎直接 bypass，建了也是废行）。
 
+    **覆盖判定不可靠就整体跳过**（fail-closed）：只要 ``ai_data_domain`` 或
+    ``ai_access_rule`` 读失败（典型：老库缺 ``ai_data_domain.members`` 列），
+    ``covered`` 就会是空集合 → 所有非超管都被判成 eligible → **人人全表**。
+    这种"看起来迁成功、其实是越权"的结果比"没兜底"危险得多，所以整块不写并留痕。
+
     每张表一条（``columns`` 是列不是表，塞表清单会让策略静默失效）。
     ``(用户数 × 表数) > LEGACY_DEFAULT_ALLOW_MAX_ROWS`` 时**一条都不写**，
     只返回一条 ``skipped`` 让管理员先配域/ABAC —— 防爆比"先给上"更重要。
     """
+    failures = list(coverage_errors or ())
+    if failures:
+        reason = "；".join(
+            f"{_text(err.get('source'))}: {_text(err.get('reason'))}" for err in failures
+        )
+        _skip(
+            skipped,
+            "legacy_default_allow",
+            f"legacy_default_allow 跳过：覆盖判定读取失败（{reason}）",
+        )
+        return []
+
     table_list = _dedupe(tables)
     covered: set[str] = set()
 
-    # 域成员：只有真正迁出了 allow 的域（有 code、有 tables）才算"被覆盖"
+    # 域成员：旧逻辑只看 tables（``_domain_tables_for_user``），不看 code。
+    # 只看"有表"才与旧行为等价：空表域在旧逻辑里也不收紧（falsy → 落到 ABAC/全表）。
     for dom in domains or ():
-        if not _text(dom.get("code")):
-            continue  # 没 code 迁不出 domain 策略 → 其成员仍需兜底（否则会被锁死）
         if not _dedupe(_as_list(dom.get("tables"))):
-            continue  # 空表域在旧逻辑里也不收紧（falsy → 落到 ABAC/全表）
+            continue
         covered.update(_text(uid) for uid in _as_list(dom.get("members")) if _text(uid))
 
     # ABAC 覆盖：按**已迁出的 role 策略**算（被跳过的规则等于没覆盖）
@@ -837,13 +855,21 @@ async def backfill_policies(dry_run: bool = False) -> dict:
     )
     planned += plan_sensitive_columns(data.get("sensitive_columns") or (), skipped)
     # 兜底 allow **按用户**发（everyone 会抹平域隔离）：只给"域/ABAC 都覆盖不到"的存量用户。
-    # 域/ABAC 的"覆盖范围"必须用**已迁出的策略**算（被跳过的规则等于没覆盖）。
+    # 域/ABAC 的"覆盖范围"必须用**已迁出的策略**算（被跳过的规则等于没覆盖）；
+    # 而**读取失败的域/ABAC 视为不可靠** —— 覆盖集合会算成空，等于人人全表（越权），
+    # 因此把这两个来源的读取错误传给规划器，让它整块跳过。
+    coverage_errors = [
+        err
+        for err in (data.get("errors") or ())
+        if _text(err.get("source")) in ("ai_data_domain", "ai_access_rule")
+    ]
     default_planned = plan_legacy_default_allow(
         data.get("users") or (),
         data.get("domains") or (),
         abac_planned,
         data.get("system_tables") or (),
         skipped,
+        coverage_errors,
     )
 
     created = 0
