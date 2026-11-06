@@ -4,7 +4,7 @@
     <!-- 左：会话列表 -->
     <aside class="chat-side">
       <div class="chat-side-head">
-        <span class="chat-side-name">{{ assetLabel }}</span>
+        <span class="chat-side-name">{{ assistantName }}</span>
         <el-button size="small" type="primary" :icon="Plus" @click="newSession">
           {{ t("ai_chat.workspaceChat_newSession") }}
         </el-button>
@@ -92,6 +92,7 @@
           :messages="chat.messages.value"
           :error="chat.error.value || ''"
           :is-streaming="chat.isStreaming.value"
+          :assistant-name="assistantName"
           @prompt-click="onPrompt"
           @resend="onSend"
         />
@@ -131,6 +132,9 @@ import ChatInput from "@/views/module_ai/chat/components/ChatInput.vue";
 import ChatMessages from "@/views/module_ai/chat/components/ChatMessages.vue";
 import ChatShell from "@/components/chat/ChatShell.vue";
 import { getAiModelList } from "@/api/module_ai/model";
+import { getAiAgentDetail } from "@/api/module_ai/agent";
+import { getAiWorkflowDetail } from "@/api/module_ai/workflow";
+import { getAiAppList } from "@/api/module_ai/app";
 import { useAiChat } from "@/composables/ai/useAiChat";
 
 defineOptions({ name: "AiWorkspaceChat" });
@@ -150,6 +154,7 @@ const pathMap: Record<string, string> = {
 // 历史链接守卫：定时任务已迁出工作台（cron 不再有对话语义）。此前 cron 会回落到
 // agent 的 run 接口（拿 cron id 当 agent id），直达旧 URL 会打错接口——这里直接送回工作台。
 onMounted(() => {
+  loadAssetName();
   if (!pathMap[kind]) {
     ElMessage.info(t("ai_chat.workspaceChat_noLongerSupported"));
     router.replace("/ai/workspace");
@@ -163,6 +168,29 @@ const assetLabel = computed(
       workflow: t("ai_chat.workspaceChat_workflow"),
     })[kind] || t("ai_chat.workspaceChat_chat")
 );
+
+// 从哪个智能体进来就用它的名字（以前助手固定叫「FA助手」，换个智能体也还是它）
+const assetName = ref("");
+const assistantName = computed(() => assetName.value || assetLabel.value);
+
+async function loadAssetName() {
+  try {
+    if (kind === "agent") {
+      const r: any = await getAiAgentDetail(assetId);
+      // 注意：智能体表叫 agent_name，应用/工作流才是 name（写错过一次，界面上就退回"智能体"）
+      assetName.value = r.data?.data?.agent_name || r.data?.data?.name || "";
+    } else if (kind === "workflow") {
+      const r: any = await getAiWorkflowDetail(assetId);
+      assetName.value = r.data?.data?.name || "";
+    } else if (kind === "app") {
+      const r: any = await getAiAppList();
+      const hit = (r.data?.data || []).find((x: any) => Number(x.id) === assetId);
+      assetName.value = hit?.name || "";
+    }
+  } catch {
+    /* 取不到名称就退回「智能体/应用/工作流」通用名 */
+  }
+}
 // ---- 会话 ----
 const sessions = ref<AiSessionItem[]>([]);
 const currentSessionId = ref<number | null>(null);

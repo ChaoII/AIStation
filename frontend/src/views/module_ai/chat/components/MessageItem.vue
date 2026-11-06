@@ -103,6 +103,8 @@ interface Props {
   message: UIMessage;
   /** 是否为当前正在流式生成的消息（仅此时显示光标/「思考中」）。 */
   streaming?: boolean;
+  /** 助手显示名（智能体名称）；缺省用通用文案 */
+  assistantName?: string;
 }
 
 const props = defineProps<Props>();
@@ -115,7 +117,7 @@ const userStore = useUserStoreHook();
 const roleLabel = computed(() =>
   props.message.role === "user"
     ? userStore.basicInfo.name || t("ai_chat.messageItem_user")
-    : t("ai_chat.messageItem_assistant")
+    : props.assistantName || t("ai_chat.messageItem_assistant")
 );
 
 const fullText = computed(() => textOf(props.message));

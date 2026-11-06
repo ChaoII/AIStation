@@ -7,6 +7,7 @@
         :key="message.id"
         :message="message"
         :streaming="isStreaming && i === messages.length - 1"
+        :assistant-name="assistantName"
         @resend="(text: string) => emit('resend', text)"
       />
     </div>
@@ -27,6 +28,8 @@ interface Props {
   error: string;
   /** 是否有消息正在流式生成（用于控制光标/「思考中」显示）。 */
   isStreaming?: boolean;
+  /** 助手显示名：从哪个智能体进来就用它的名字 */
+  assistantName?: string;
 }
 
 interface Emits {
