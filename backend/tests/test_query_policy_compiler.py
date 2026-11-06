@@ -832,3 +832,109 @@ def test_masked_column_in_subquery_is_denied(sql):
         masked={"t": {"phone": "left(phone, 3)"}},
     )
     assert not rewrite(sql, p).permit, sql
+
+
+# ===========================================================================
+# round 3：括号 join 的**组别名**（`(t JOIN u) AS j` 后用 `j.col` / `j.*` / `j`）
+# ===========================================================================
+JOIN_GROUPS = [
+    ("(t join u on t.id = u.id) as j", ("t", "u")),
+    ("(t left join u on t.id = u.id) as j", ("t", "u")),
+    ("(t cross join u) as j", ("t", "u")),
+    ("(t, u) as j", ("t", "u")),
+    ("((t join u on t.id = u.id)) as j", ("t", "u")),
+    ("((t join u on t.id = u.id) join v on v.id = t.id) as j", ("t", "u", "v")),
+]
+
+
+@pytest.mark.parametrize("group,tables", JOIN_GROUPS)
+def test_group_alias_column_deny_checks_whole_group(group, tables):
+    d = rewrite(
+        f"select j.phone from {group}",
+        plan(
+            allowed=dict.fromkeys(tables, ("id", "phone")),
+            denied={tables[-1]: {"phone"}},
+        ),
+    )
+    assert not d.permit, group
+
+
+@pytest.mark.parametrize("group,tables", JOIN_GROUPS)
+def test_group_alias_table_deny_checks_whole_group(group, tables):
+    d = rewrite(
+        f"select j.phone from {group}",
+        plan(
+            allowed=dict.fromkeys(tables, ("id", "phone")),
+            denied={tables[-1]: {DENIED_ALL}},
+        ),
+    )
+    assert not d.permit, group
+
+
+@pytest.mark.parametrize("group,tables", JOIN_GROUPS)
+def test_group_alias_mask_is_not_plaintext(group, tables):
+    d = rewrite(
+        f"select j.phone from {group}",
+        plan(
+            allowed=dict.fromkeys(tables, ("id", "phone")),
+            masked={tables[-1]: {"phone": "left(phone, 3)"}},
+        ),
+    )
+    assert not d.permit, group  # 投影位置无法判定归属 → deny（不是明文放行）
+
+
+@pytest.mark.parametrize("group,tables", JOIN_GROUPS)
+def test_group_alias_whole_row_denied(group, tables):
+    d = rewrite(
+        f"select j from {group}",
+        plan(
+            allowed=dict.fromkeys(tables, ("id", "phone")),
+            masked={tables[-1]: {"phone": "left(phone, 3)"}},
+        ),
+    )
+    assert not d.permit, group
+
+
+@pytest.mark.parametrize("group,tables", JOIN_GROUPS)
+def test_group_alias_star_expands_all_group_tables(group, tables):
+    d = rewrite(
+        f"select j.* from {group}",
+        plan(allowed=dict.fromkeys(tables, ("id", "phone"))),
+    )
+    assert d.permit, d.reason
+    text = norm(d.sql)
+    for table in tables:
+        assert f"{table}.id" in text, f"{group} 丢掉了 {table} 的列：{text}"
+
+
+def test_group_alias_star_without_metadata_is_denied():
+    d = rewrite(
+        "select j.* from (t join u on t.id = u.id) as j",
+        plan(allowed={"t": ("id",), "u": None}),
+    )
+    assert not d.permit  # 无法展开就拒绝，不能静默丢 u 的列
+
+
+@pytest.mark.parametrize("group,tables", JOIN_GROUPS)
+def test_group_alias_mask_in_predicate_is_denied(group, tables):
+    d = rewrite(
+        f"select t.id from {group} where j.phone like '1%'",
+        plan(
+            allowed=dict.fromkeys(tables, ("id", "phone")),
+            masked={tables[-1]: {"phone": "left(phone, 3)"}},
+        ),
+    )
+    assert not d.permit, group
+
+
+def test_group_alias_join_side_row_filter_still_applied():
+    d = rewrite(
+        "select j.id from (t join u on t.id = u.id) as j",
+        plan(
+            row_filters={"t": "a = 1", "u": "b = 2"},
+            allowed={"t": ("id",), "u": ("id",)},
+        ),
+    )
+    assert d.permit
+    text = norm(d.sql)
+    assert "a = 1" in text and "b = 2" in text

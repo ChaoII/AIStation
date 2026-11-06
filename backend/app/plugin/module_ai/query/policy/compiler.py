@@ -489,6 +489,45 @@ def _is_system_table(table) -> bool:
     return db in _SYSTEM_SCHEMAS or catalog in _SYSTEM_SCHEMAS
 
 
+def _is_table_item(node) -> bool:
+    """FROM 项是否最终落到真实表（而非派生表/CTE 的 SELECT）。"""
+    while isinstance(node, exp.Subquery):
+        node = node.args.get("this")
+    return isinstance(node, exp.Table)
+
+
+def _group_members(subquery, cte_names: set[str]):
+    """括号组里的真实表 + 是否含未知来源（派生表/CTE）。
+
+    从 ``Subquery`` 出发遍历整棵 FROM 项（含 ``joins``），遇到 ``SELECT`` 就标记
+    unknown 并跳过（派生表自己的作用域会判定它的基表）。CTE 引用同样记 unknown。
+    不能沿 ``table.parent`` 的 Subquery 链走：``(t JOIN u) AS j`` 里 u 的 parent 是
+    ``Join``，第一层就断了（round 3 的根因）。
+    """
+    members: list[object] = []
+    unknown = False
+    stack: list[object] = [subquery]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, exp.Select):
+            unknown = True
+            continue
+        if isinstance(node, exp.Table):
+            name = str(node.name or "").strip()
+            if not name:
+                continue
+            if not (node.db or node.catalog) and _norm_ident(name) in cte_names:
+                unknown = True
+                continue
+            members.append(node)
+        for child in node.iter_expressions():
+            if isinstance(child, exp.Select):
+                unknown = True
+                continue
+            stack.append(child)
+    return members, unknown
+
+
 def _real_tables(scope, scope_roots: set[int]) -> list[tuple[object, str, str]]:
     """该作用域的**真实表**：``(Table 节点, 归一化表名, 可见别名)``。
 
@@ -804,7 +843,12 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
         if not isinstance(scope.expression, exp.Table)
     }
     entries: list[
-        tuple[object, list[tuple[object, str, str]], dict[str, str], dict[str, tuple[str, ...]]]
+        tuple[
+            object,
+            list[tuple[object, str, str]],
+            dict[str, str],
+            dict[str, tuple[tuple[str, ...], bool]],
+        ]
     ] = []
     for scope in scopes:
         if isinstance(scope.expression, exp.Table):
@@ -814,34 +858,34 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
         alias_to_table = {
             _norm_ident(alias): table_id for _table, table_id, alias in real
         }
-        # 括号组的别名：单表（`FROM (t) AS j`）补进 1:1 映射；
-        # 多表 join 组（`(t JOIN u) AS j`）一个别名对应多张表，单独记，按"组内任一表
-        # 命中策略"保守处理（组别名不能解析成单表，但也不能当成不存在）。
-        group_aliases: dict[str, tuple[str, ...]] = {}
-        for table, table_id, _alias in real:
-            parent = table.parent
-            while isinstance(parent, exp.Subquery):
-                alias = parent.alias
-                if alias:
-                    key = _norm_ident(alias)
-                    group_aliases[key] = group_aliases.get(key, ()) + (table_id,)
-                parent = parent.parent
-        for key, table_ids in group_aliases.items():
-            unique_ids = tuple(dict.fromkeys(table_ids))
-            group_aliases[key] = unique_ids
-            if len(unique_ids) == 1:
-                alias_to_table.setdefault(key, unique_ids[0])
+        # 括号组的别名：必须按**组内全部真实表**建映射，不能沿 parent 链走
+        # （`(t JOIN u) AS j` 的 u 挂在 Join 上，parent 链第一层就断了）。
+        # 单表组（`FROM (t) AS j`）补进 1:1 映射；多表/含派生表的组记进 group_aliases，
+        # 之后 `j.col` / `j.*` / 整行 `j` 一律按"组内任一表命中"保守处理。
+        cte_names = {_norm_ident(name) for name in scope.cte_sources}
+        group_aliases: dict[str, tuple[tuple[str, ...], bool]] = {}
+        for node in _scope_own_nodes(scope, scope_roots):
+            if not isinstance(node, exp.Subquery) or not node.alias:
+                continue
+            if not _is_table_item(node):
+                continue  # 派生表/CTE：它自己的作用域处理
+            members, unknown = _group_members(node, cte_names)
+            table_ids = tuple(
+                dict.fromkeys(_table_key(table.name) for table in members if table.name)
+            )
+            if not table_ids:
+                continue
+            alias_key = _norm_ident(node.alias)
+            if len(table_ids) == 1 and not unknown:
+                alias_to_table.setdefault(alias_key, table_ids[0])
+            else:
+                group_aliases[alias_key] = (table_ids, unknown)
         entries.append((scope, real, alias_to_table, group_aliases))
 
     # ② 表级/列级 deny（包装前，此时树里只有用户自己的引用）
     scope_meta = {id(scope): (real, aliases) for scope, real, aliases, _groups in entries}
 
     for scope, real, _alias_to_table, group_aliases in entries:
-        # 多表括号组的别名：不能解析成单表，但引用它要按"组内任一表命中"保守拒绝
-        multi_groups = {
-            alias: ids for alias, ids in group_aliases.items() if len(ids) > 1
-        }
-
         for table, table_id, _visible in real:
             if _is_system_table(table):
                 return Decision(
@@ -945,10 +989,13 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                 if not qualifier:
                     continue  # 裸星号（含 count(*)）另行处理
                 table_id = _resolve(qualifier)
-                group_ids = multi_groups.get(qualifier, ())
+                group = group_aliases.get(qualifier)
+                group_ids = group[0] if group else ()
                 if not table_id:
-                    # 多表括号组的 `j.*`：无法安全展开，组内任一表有列级限制就拒绝
-                    if group_ids and any(
+                    is_top_projection = node.parent is select_expression and any(
+                        node is projection for projection in select_expression.expressions
+                    )
+                    if group_ids and not is_top_projection and any(
                         (plan.denied.get(tid) or frozenset())
                         or (plan.masked.get(tid) or {})
                         for tid in group_ids
@@ -976,10 +1023,11 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
             name = _norm_ident(node.name)
             # 无别名列指向表别名 → 整行引用（PG 语义：t 表示整行）
             table_id = _alias_to_table.get(name) or _resolve(name)
-            if not table_id and name in multi_groups:
+            group = group_aliases.get(name)
+            if not table_id and group:
                 if any(
                     (plan.denied.get(tid) or frozenset()) or (plan.masked.get(tid) or {})
-                    for tid in multi_groups[name]
+                    for tid in group[0]
                 ):
                     return Decision(
                         False,
@@ -1006,8 +1054,9 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                 if table_id:
                     candidates = [table_id]
                 else:
-                    # 多表括号组别名（`(t JOIN u) AS j`）：按组内所有表检查 deny
-                    candidates = list(multi_groups.get(qualifier, ()))
+                    # 括号组别名（`(t JOIN u) AS j`）：按组内所有表检查 deny
+                    group = group_aliases.get(qualifier)
+                    candidates = list(group[0]) if group else []
             else:
                 candidates = visible_candidates
             for table_id in candidates:
@@ -1017,9 +1066,12 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                         f"列 {table_id}.{column_name} 被策略拒绝（deny，不可用于"
                         "投影/条件/排序/分组）",
                     )
-            if qualifier and qualifier in multi_groups and not _resolve(qualifier):
+            if qualifier and qualifier in group_aliases and not _resolve(qualifier):
                 # 组别名 + 掩码列：无法确定是哪张表的列，不能安全替换 → 拒绝
-                if any(_mask_for(plan, gid, column_name) for gid in multi_groups[qualifier]):
+                if any(
+                    _mask_for(plan, gid, column_name)
+                    for gid in group_aliases[qualifier][0]
+                ):
                     return Decision(
                         False,
                         f"列 {qualifier}.{column_name} 属于多表括号组且配置了掩码，"
@@ -1091,7 +1143,7 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
             applied.append(item)
 
     # ④ 列投影改写（先列、后行，避免包装内的 * 被自己拦死）
-    for scope, real, alias_to_table, _group_aliases in entries:
+    for scope, real, alias_to_table, group_aliases in entries:
         expression = scope.expression
         if not isinstance(expression, exp.Select):
             continue
@@ -1181,11 +1233,63 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
                 changed = True
                 continue
 
-            # 限定星号 t.*：按别名映射还原真实表
+            # 限定星号 t.*：按别名映射还原真实表；组别名 j.* 展开整组
             if isinstance(projection, exp.Column) and isinstance(projection.this, exp.Star):
                 qualifier = _norm_ident(projection.table)
                 table_id = alias_to_table.get(qualifier)
                 if not table_id:
+                    group = group_aliases.get(qualifier)
+                    if group is not None:
+                        group_ids, unknown = group
+                        if unknown:
+                            return Decision(
+                                False,
+                                f"括号组 {qualifier}.* 含派生表/CTE，无法安全展开，"
+                                "按拒绝处理（fail-closed）",
+                            )
+                        group_entries = [
+                            (table_node, tid, visible)
+                            for table_node, tid, visible in real
+                            if tid in group_ids
+                        ]
+                        group_columns: list[object] = []
+                        group_masks: list[dict] = []
+                        for _table_node, tid, visible in group_entries:
+                            if plan.allowed_columns.get(tid) is None:
+                                return Decision(
+                                    False,
+                                    f"括号组 {qualifier}.* 中表 {tid} 没有列元数据，"
+                                    "无法完整展开，按拒绝处理（fail-closed）",
+                                )
+                            columns, why = _expand_star(plan, tid, dialect, visible)
+                            if why:
+                                return Decision(
+                                    False,
+                                    f"括号组 {qualifier}.* 无法展开表 {tid}，按拒绝"
+                                    f"处理（fail-closed）：{why}",
+                                )
+                            group_columns.extend(columns)
+                            for column in plan.allowed_columns.get(tid) or ():
+                                mask = _mask_for(plan, tid, column)
+                                if mask:
+                                    group_masks.append(
+                                        {
+                                            "mask": mask,
+                                            "table": tid,
+                                            "column": column.lower(),
+                                        }
+                                    )
+                        if not group_columns:
+                            return Decision(
+                                False,
+                                f"括号组 {qualifier}.* 展开后没有可读列，按拒绝处理"
+                                "（fail-closed）",
+                            )
+                        for item in group_masks:
+                            _record(item)
+                        projections.extend(group_columns)
+                        changed = True
+                        continue
                     projections.append(projection)  # 派生表/CTE 的星号，内层已判定
                     continue
                 columns, why = _expand_star(
@@ -1311,7 +1415,9 @@ def rewrite(sql: str, plan: AccessPlan, *, dialect: str = "postgres") -> Decisio
 
     # ⑥ 生成 SQL，恢复用户参数前缀
     try:
-        compiled = tree.sql(dialect=dialect)
+        # 函数名按小写输出：与管理员配置的掩码/条件文本观感一致（PG 里未加引号的
+        # 函数名大小写不敏感），也避免 "LEFT(...)" 与 "left(...)" 的核对歧义。
+        compiled = tree.sql(dialect=dialect, normalize_functions="lower")
     except Exception as e:  # noqa: BLE001
         return Decision(False, f"SQL 生成失败，按拒绝处理（fail-closed）：{e}")
     for name in placeholders:
