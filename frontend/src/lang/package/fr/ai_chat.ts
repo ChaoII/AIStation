@@ -7,7 +7,8 @@ export default {
   chatInput_sendImage: "Envoyer une image",
   chatInput_uploadFile: "Téléverser un fichier",
   chatInput_pickFromSpace: "Choisir dans l'espace personnel",
-  chatInput_hint: "Prend en charge les images et fichiers · Entrée pour envoyer, Maj+Entrée pour un saut de ligne",
+  chatInput_hint:
+    "Prend en charge les images et fichiers · Entrée pour envoyer, Maj+Entrée pour un saut de ligne",
   chatInput_selectModel: "Sélectionner un modèle",
   chatInput_cmdSearchName: "Recherche web",
   chatInput_cmdReportName: "Générer un rapport",
@@ -32,7 +33,8 @@ export default {
   messageItem_feedback: "Commentaire",
   messageItem_submit: "Envoyer",
   messageItem_cancel: "Annuler",
-  messageItem_feedbackPlaceholder: "par ex. La réponse n'est pas exacte / le format nécessite un ajustement…",
+  messageItem_feedbackPlaceholder:
+    "par ex. La réponse n'est pas exacte / le format nécessite un ajustement…",
   messageItem_feedbackSaved: "Commentaire enregistré",
   messageItem_view: "Voir",
   messageItem_copy: "Copier",
@@ -84,7 +86,8 @@ export default {
   welcome_promptPerfPrompt: "Comment optimiser les performances du système AIStation ?",
 
   // workspace/chat.vue
-  workspaceChat_noLongerSupported: "Ce type d'élément ne prend plus en charge le chat ; retour à l'espace de travail",
+  workspaceChat_noLongerSupported:
+    "Ce type d'élément ne prend plus en charge le chat ; retour à l'espace de travail",
   workspaceChat_agent: "Agent",
   workspaceChat_app: "Application",
   workspaceChat_workflow: "Workflow",
@@ -106,7 +109,8 @@ export default {
   workspaceChat_searchSession: "Rechercher des sessions...",
   workspaceChat_unnamed: "Session sans titre",
   workspaceChat_messageCount: "{count} messages",
-  workspaceChat_empty: 'Aucune session pour le moment. Cliquez sur "Nouvelle session" pour commencer.',
+  workspaceChat_empty:
+    'Aucune session pour le moment. Cliquez sur "Nouvelle session" pour commencer.',
   workspaceChat_exportTip: "Exporter la session au format Markdown",
   workspaceChat_export: "Exporter",
 
@@ -185,7 +189,8 @@ export default {
   agentForm_mcp: "MCP",
   agentForm_selectMcp: "Lier des serveurs MCP",
   agentForm_query: "Requête IA",
-  agentForm_queryHint: "Lorsque activé, peut répondre à des questions métier à partir des données du système",
+  agentForm_queryHint:
+    "Lorsque activé, peut répondre à des questions métier à partir des données du système",
   agentForm_queryDatasource: "Source de données de requête",
   agentForm_systemData: "Données système",
   agentForm_temperature: "Température",
@@ -254,7 +259,8 @@ export default {
   workshop_clear: "Effacer",
   workshop_demoHint: "Démo : seul ont_orders prend en charge l'écriture",
   workshop_noFieldForApp: "Cette application n'a aucun champ configuré",
-  workshop_dragHint: "Glissez l'en-tête de colonne pour déplacer (démo, réinitialisé à l'actualisation)",
+  workshop_dragHint:
+    "Glissez l'en-tête de colonne pour déplacer (démo, réinitialisé à l'actualisation)",
   workshop_inputAppName: "Veuillez saisir le nom de l'application",
   workshop_updated: "Mis à jour",
   workshop_created: "Créé",
@@ -262,7 +268,8 @@ export default {
   workshop_loadFailed: "Échec du chargement",
   workshop_savedToObject: "Enregistré dans la table de l'objet",
   workshop_submitFailed: "Échec de la soumission",
-  workshop_deleteConfirm: 'Supprimer l\'application "{name}" ? Cette action est irréversible. Continuer ?',
+  workshop_deleteConfirm:
+    'Supprimer l\'application "{name}" ? Cette action est irréversible. Continuer ?',
   workshop_deleteTitle: "Confirmation de suppression",
   workshop_deleted: "Supprimé",
 
@@ -296,7 +303,8 @@ export default {
   space_inputFileName: "Veuillez saisir le nom du fichier",
   space_moveSuccess: "Déplacé avec succès",
   space_moveFailed: "Échec du déplacement",
-  space_deleteFilesConfirm: "Supprimer {label} ({count} élément(s)) ? Cette action est irréversible.",
+  space_deleteFilesConfirm:
+    "Supprimer {label} ({count} élément(s)) ? Cette action est irréversible.",
   space_deleteFile: "Supprimer le fichier",
   space_deletedCount: "{count} fichier(s) supprimé(s)",
   space_previewFailed: "Échec de l'aperçu",

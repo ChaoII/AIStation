@@ -81,7 +81,8 @@ export default {
   serverDiskUsed: "Belegte Größe",
 
   // resource
-  resourceTip: "Ressourcendateiverwaltung: Klicken Sie auf einen Pfad, um schnell zum übergeordneten Verzeichnis zurückzukehren",
+  resourceTip:
+    "Ressourcendateiverwaltung: Klicken Sie auf einen Pfad, um schnell zum übergeordneten Verzeichnis zurückzukehren",
   resourceFileList: "Dateiliste (aktueller Pfad):",
   resourceUpload: "Datei hochladen",
   resourceCreateDir: "Neuer Ordner",

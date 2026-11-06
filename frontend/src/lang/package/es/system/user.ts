@@ -70,7 +70,8 @@ export default {
 
   // 提示 / 确认
   warning: "Advertencia",
-  deleteConfirmMessage: "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
+  deleteConfirmMessage:
+    "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
   confirmEnableOrDisable: "¿Está seguro de habilitar o deshabilitar el elemento seleccionado?",
   resetPasswordPrompt: "Ingrese la nueva contraseña para el usuario {username}",
   passwordMinLength: "La contraseña debe tener al menos 6 caracteres. Vuelva a ingresarla.",

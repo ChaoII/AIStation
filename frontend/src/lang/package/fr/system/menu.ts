@@ -56,13 +56,15 @@ export default {
   componentPathPlaceholder: "Veuillez saisir le chemin du composant, ex. system/user/index",
   componentPathTooltip:
     "Chemin complet de la page du composant, relatif à src/views/, ex. system/user/index, sans le suffixe .vue",
-  paramsTooltip: "La page du composant lit la valeur du paramètre de route via useRoute().query.paramName.",
+  paramsTooltip:
+    "La page du composant lit la valeur du paramètre de route via useRoute().query.paramName.",
   addParam: "Ajouter un paramètre de route",
   paramName: "Nom du paramètre",
   paramValue: "Valeur du paramètre",
-  hiddenTooltip: 'Choisissez « Oui » pour masquer dans le menu\nChoisissez « Non » pour afficher dans le menu.',
+  hiddenTooltip:
+    "Choisissez « Oui » pour masquer dans le menu\nChoisissez « Non » pour afficher dans le menu.",
   alwaysShowTooltip:
-    'Choisissez « Oui » : même si un répertoire ou un menu n\'a qu\'un seul enfant, le parent reste affiché.\nChoisissez « Non » : si un répertoire ou un menu n\'a qu\'un seul enfant, seul cet enfant est affiché et le parent est masqué.\nS\'il s\'agit d\'un nœud feuille, choisissez « Non ».',
+    "Choisissez « Oui » : même si un répertoire ou un menu n'a qu'un seul enfant, le parent reste affiché.\nChoisissez « Non » : si un répertoire ou un menu n'a qu'un seul enfant, seul cet enfant est affiché et le parent est masqué.\nS'il s'agit d'un nœud feuille, choisissez « Non ».",
   cachePage: "Mettre en cache la page",
   open: "Activé",
   close: "Désactivé",
@@ -82,7 +84,8 @@ export default {
   updateMenu: "Modifier le menu",
   createMenu: "Nouveau menu",
   warning: "Avertissement",
-  deleteConfirmMessage: "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
+  deleteConfirmMessage:
+    "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
   menuNameRequired: "Veuillez saisir le nom du menu",
   lengthBetween: "Longueur de {min} à {max} caractères",
   parentMenuRequired: "Veuillez sélectionner le menu parent",

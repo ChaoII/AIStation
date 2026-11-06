@@ -29,7 +29,8 @@ export default {
   endDatePlaceholder: "Enddatum",
   to: "bis",
   deleteConfirmTitle: "Warnung",
-  deleteConfirmMessage: "Möchten Sie die ausgewählten Daten wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
+  deleteConfirmMessage:
+    "Möchten Sie die ausgewählten Daten wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
   operationSuccess: "Vorgang erfolgreich",
   ruleTenantNameRequired: "Bitte Mandantennamen eingeben",
   ruleTenantCodeRequired: "Bitte Mandantencode eingeben",

@@ -44,7 +44,8 @@ export default {
   warning: "Warnung",
   confirmEnable: "Diesen Datensatz aktivieren?",
   confirmDisable: "Diesen Datensatz deaktivieren?",
-  deleteConfirmMessage: "Die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
+  deleteConfirmMessage:
+    "Die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
   dataAuth: "Datenautorisierung",
   dataAuthTip: "Den Datenbereich, den der autorisierte Benutzer bearbeiten kann",
   menuAuth: "Menüautorisierung",

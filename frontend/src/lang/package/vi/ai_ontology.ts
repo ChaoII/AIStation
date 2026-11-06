@@ -1010,7 +1010,8 @@ export default {
   entityUpdatedWithRelationCascade: "Đã cập nhật thực thể (với tầng quan hệ)",
   selectedTimePropertyHasNoTimeValues: "Thuộc tính thời gian đã chọn không có giá trị thời gian",
   notLinkedImportedByExternalSync: "Chưa liên kết (được nhập bằng đồng bộ bên ngoài)",
-  thisVersionHasNoDiffFromCurrentDefinition: "Phiên bản này không có khác biệt so với định nghĩa hiện tại",
+  thisVersionHasNoDiffFromCurrentDefinition:
+    "Phiên bản này không có khác biệt so với định nghĩa hiện tại",
   pleaseFillAtLeastOneFieldToWrite: "Vui lòng điền ít nhất một trường để ghi",
   selectCategoryEmptyUncategorized: "Chọn danh mục (trống = chưa phân loại)",
   eGAddAMaintenanceStatusFieldToCameras: "ví dụ: thêm một trường trạng thái bảo trì cho camera",
@@ -1021,20 +1022,21 @@ export default {
   noExpiredScenariosNothingToClean: "Không có tình huống hết hạn, không có gì để dọn dẹp",
   dryRunWritesNoData: "Chạy thử (không ghi dữ liệu)",
   whyThisDecisionWhatIsTheBasis: "Tại sao quyết định này? Căn cứ là gì?",
-  availableObjectPropertiesWriteColumnNamesAnd:
-    "Thuộc tính đối tượng khả dụng (viết tên cột) và",
+  availableObjectPropertiesWriteColumnNamesAnd: "Thuộc tính đối tượng khả dụng (viết tên cột) và",
   layoutMemoryClearedReLayoutAutomatically: "Đã xóa bộ nhớ bố cục, tự động bố cục lại",
   expandRelatedEntitiesByKnowledgeGraphWhenEnabled:
     "Mở rộng các thực thể liên quan bằng đồ thị tri thức khi được bật",
   searchInstancesFuzzyMatchOnTitleProperty: "Tìm kiếm phiên bản (khớp mờ trên thuộc tính tiêu đề)",
   searchHitsTheseWordsPressEnterToAdd: "Tìm kiếm trúng các từ này, nhấn Enter để thêm",
-  searchFailedSuggestRelatedChunksAndAnnotate: "Tìm kiếm thất bại? Đề xuất đoạn liên quan và chú thích",
+  searchFailedSuggestRelatedChunksAndAnnotate:
+    "Tìm kiếm thất bại? Đề xuất đoạn liên quan và chú thích",
   noInstancesToPreviewForThisObjectType: "Không có phiên bản để xem trước cho loại đối tượng này",
   runFunctionWritesNoData: "Chạy hàm (không ghi dữ liệu)",
   derivedByComparingObjectSnapshotsAfterExecution:
     "Dẫn xuất bằng cách so sánh ảnh chụp đối tượng sau khi thực thi",
   noFunctionsClickNewFunctionAtTopRight: "Không có hàm, nhấp 'Hàm mới' ở góc trên bên phải",
-  noRulesConfiguredUsingWhitelistFallback: "Chưa cấu hình quy tắc (dùng dự phòng danh sách cho phép)",
+  noRulesConfiguredUsingWhitelistFallback:
+    "Chưa cấu hình quy tắc (dùng dự phòng danh sách cho phép)",
   pleaseSelectAnOntologyDomainOnTheLeftFirst: "Vui lòng chọn một miền bản thể luận bên trái trước",
   pleaseEnterFunctionNameCodeAndOwningObjectType:
     "Vui lòng nhập tên hàm, mã và loại đối tượng sở hữu",
@@ -1044,7 +1046,8 @@ export default {
   versionPublishedForThisObjectTypeAtDecisionTime:
     "Phiên bản đã xuất bản cho loại đối tượng này tại thời điểm quyết định",
   objectPKOptionalOnlyTypeAndColumn: "Khóa chính đối tượng (tùy chọn, chỉ loại và cột)",
-  stagedClickSaveAtTopRightToApply: "Đã đưa vào giai đoạn (nhấp 'Lưu' ở góc trên bên phải để áp dụng)",
+  stagedClickSaveAtTopRightToApply:
+    "Đã đưa vào giai đoạn (nhấp 'Lưu' ở góc trên bên phải để áp dụng)",
   thisObjectTypeIsNotMaterializedYet: "Loại đối tượng này chưa được vật chất hóa",
   nameFromTargetSideEGContainsDevices: "Tên từ phía đích, ví dụ: 'chứa thiết bị'",
   destructiveChangesExistEnterEntityNameToConfirm:
@@ -1056,8 +1059,7 @@ export default {
   deleteThisChunkThisCannotBeUndone: "Xóa đoạn này? Điều này không thể hoàn tác.",
   thisObjectTypeNoLongerExistsOrIsOutOfScope:
     "Loại đối tượng này không còn tồn tại hoặc nằm ngoài phạm vi",
-  noOntologyDomainsYetClickNewDomainToCreate:
-    "Chưa có miền bản thể luận, nhấp 'Miền mới' để tạo",
+  noOntologyDomainsYetClickNewDomainToCreate: "Chưa có miền bản thể luận, nhấp 'Miền mới' để tạo",
   referenceAnotherDecisionCodeToFormDecisionLineage:
     "Tham chiếu mã quyết định khác để tạo dòng dõi quyết định",
   referenceSourceClickTheBadgeInTheAnswerToSeeLocation:
@@ -1068,7 +1070,8 @@ export default {
     "Dạng xem bảng giữ thông tin chính để các ứng dụng khác nhúng",
   higherDegreeMeansMoreWorthDefiningActionsAndGovernance:
     "Bậc cao hơn nghĩa là đáng định nghĩa hành động và quản trị hơn",
-  noNodesRightClickCanvasOrClickNewNode: "Không có nút, nhấp chuột phải vào canvas hoặc nhấp 'Nút mới'",
+  noNodesRightClickCanvasOrClickNewNode:
+    "Không có nút, nhấp chuột phải vào canvas hoặc nhấp 'Nút mới'",
   editChunkContentSavingWillReVectorizeThisChunk:
     "Chỉnh sửa nội dung đoạn, lưu sẽ tạo lại vector cho đoạn này",
   allowEndUsersToEditThisObjectTypeWritebackWhenEnabled:
@@ -1244,7 +1247,8 @@ export default {
   expandDomain: "Mở rộng miền bản thể luận",
   collapseDomain: "Thu gọn miền bản thể luận",
   wipNotSaved: "{count} thay đổi chưa được lưu, nhấp 'Lưu' để áp dụng",
-  enrichBusinessSemantic: "Điền ngược ngữ nghĩa nghiệp vụ (chú thích → tên/enum, khóa ngoại → quan hệ)",
+  enrichBusinessSemantic:
+    "Điền ngược ngữ nghĩa nghiệp vụ (chú thích → tên/enum, khóa ngoại → quan hệ)",
   writeSampleCapabilities: "Ghi năng lực mẫu (10 hàm + 7 hành động)",
   batchAssignDomain: "Gán hàng loạt vào miền bản thể luận ({count} đã chọn)",
   pendingVersionPublishCount: "Đang chờ xuất bản phiên bản ({count})",
@@ -1342,10 +1346,8 @@ export default {
     "Khi một tình huống được chọn, chỉ khác biệt được đưa vào giai đoạn và bảng thực không được ghi; nó chỉ có hiệu lực sau khi hợp nhất tình huống",
   updateWhitelistFields:
     "Định vị dòng theo khóa chính và cập nhật các trường trong danh sách cho phép: {fields}",
-  onlyUpdateSupportedInsertBlocked:
-    "Hiện chỉ hỗ trợ ghi lại cập nhật; chèn sẽ bị từ chối",
-  onlyUpdateSupportedDeleteBlocked:
-    "Hiện chỉ hỗ trợ ghi lại cập nhật; xóa sẽ bị từ chối",
+  onlyUpdateSupportedInsertBlocked: "Hiện chỉ hỗ trợ ghi lại cập nhật; chèn sẽ bị từ chối",
+  onlyUpdateSupportedDeleteBlocked: "Hiện chỉ hỗ trợ ghi lại cập nhật; xóa sẽ bị từ chối",
   paramValue: "Tham số {value}",
   subConditionsCount: "({count} điều kiện con) {operator}",
   mustBeArrayShort: "{label} phải là một mảng",
@@ -1409,8 +1411,7 @@ export default {
   readCountLabel: "Số lần đọc (cuộc gọi công cụ Agent)",
   usageHint:
     "Dữ liệu đến từ các bảng nhật ký hiện có (nhật ký cuộc gọi Agent / nhật ký thực thi hành động / dấu vết thay đổi định nghĩa), không cần thiết bị đo bổ sung. 'Số người dùng hoạt động' chính thức yêu cầu tổng hợp nhật ký cuộc gọi theo người dùng, chưa làm trong phiên bản này.",
-  pleaseFillPropIdFirst:
-    "Vui lòng điền ID thuộc tính và lưu nó trước khi tính thử",
+  pleaseFillPropIdFirst: "Vui lòng điền ID thuộc tính và lưu nó trước khi tính thử",
   matchedHops: "Đã khớp {matched} mục, {hops} cấp",
   pleaseEnterDisplayNameAndPropId: "Vui lòng điền tên hiển thị và ID thuộc tính",
   derivedConfigNotValidJson: "Cấu hình dẫn xuất không phải JSON hợp lệ",
@@ -1425,8 +1426,7 @@ export default {
   fnExposedHint:
     'Các hàm được cung cấp cho AI dưới dạng năng lực Agent (công cụ). Các thay đổi vào danh sách chờ lưu; có hiệu lực sau khi nhấp "Lưu".',
   fnNamePlaceholder: "ví dụ: Tỷ lệ trực tuyến camera (%)",
-  exprBuiltinsHint:
-    "Hỗ trợ + - * / và so sánh, biểu thức ba ngôi, và {count} hàm dựng sẵn.",
+  exprBuiltinsHint: "Hỗ trợ + - * / và so sánh, biểu thức ba ngôi, và {count} hàm dựng sẵn.",
   collapse: "Thu gọn",
   viewBuiltins: "Xem các hàm dựng sẵn",
   inputsJson: "Đầu vào (JSON)",
@@ -1443,8 +1443,7 @@ export default {
   runSuccess: "Thực thi thành công",
   fnKindAggregateHint:
     "Tổng hợp trên các đối tượng liên quan dọc theo chuỗi quan hệ (count/sum/avg/min/max/first/last/collect_list/collect_set), yêu cầu khóa chính đối tượng làm ngữ cảnh",
-  fnKindHttpHint:
-    "Gọi một REST API bên ngoài và lấy giá trị từ phản hồi qua result_path",
+  fnKindHttpHint: "Gọi một REST API bên ngoài và lấy giá trị từ phản hồi qua result_path",
   fnKindModelHint:
     "Gọi một mô hình đã đăng ký trên nền tảng (quản lý AI → cấu hình mô hình) và trả về văn bản phản hồi",
   fnKindExprHint:
@@ -1554,7 +1553,8 @@ export default {
   ttlDaysHint: "Mặc định chính thức 31 ngày, hết hạn và tự động xóa",
   scenarioDetail: "Chi tiết tình huống",
   modelResultsNotice: "Có {count} kết quả dự đoán mô hình; {note}",
-  compareAlert: "Cùng một đối tượng trở thành gì trong các tình huống khác nhau — để cân nhắc các phương án",
+  compareAlert:
+    "Cùng một đối tượng trở thành gì trong các tình huống khác nhau — để cân nhắc các phương án",
   mergeScenarioConfirm:
     'Sẽ ghi {count} thay đổi đối tượng của tình huống "{name}" **vào bảng dữ liệu thực trong một giao dịch duy nhất**; bất kỳ thất bại nào cũng hoàn tác tất cả. Điều này không thể tự hoàn tác. Xác nhận hợp nhất?',
   discardScenarioConfirm:
@@ -1569,8 +1569,7 @@ export default {
     "Kiểm soát ai có thể xem/chỉnh sửa/quản lý định nghĩa loại đối tượng này. Xem loại khác với xem dữ liệu — dữ liệu được quản trị bởi các chính sách cấp dòng và cấp cột bên dưới.",
   leaveEmptyEveryoneCanView: "Để trống = nhìn thấy bởi tất cả",
   leaveEmptyEveryoneCanEdit: "Để trống = chỉnh sửa bởi tất cả",
-  leaveEmptyEveryoneCanManage:
-    "Để trống = quản lý bởi tất cả (bao gồm thay đổi chính sách quyền)",
+  leaveEmptyEveryoneCanManage: "Để trống = quản lý bởi tất cả (bao gồm thay đổi chính sách quyền)",
   countItems: "{count}",
   rowPolicyAlert:
     "Chỉ có hiệu lực khi đọc: lọc những phiên bản đối tượng mà người dùng có thể đọc, không ảnh hưởng dữ liệu nền, và không lan truyền đến các xuất hạ nguồn. Trống (không có chính sách cho phép đã bật) = tất cả nhìn thấy.",
@@ -1598,7 +1597,7 @@ export default {
   deleteViewConfirm:
     'Sẽ xóa dạng xem đồ thị "{name}" và tất cả bản ghi phiên bản của nó, không thể khôi phục.',
   indexBuildAlert:
-    "Xây dựng một chỉ mục thực sự thực thi CREATE INDEX trên bảng nền của loại đối tượng. Trạng thái \"ready\" nghĩa là sẵn sàng dùng (tương đương dấu kiểm xanh chính thức).",
+    'Xây dựng một chỉ mục thực sự thực thi CREATE INDEX trên bảng nền của loại đối tượng. Trạng thái "ready" nghĩa là sẵn sàng dùng (tương đương dấu kiểm xanh chính thức).',
   primaryKeyParen: "(khóa chính)",
   rowsAndSize: "Số dòng / Kích thước",
   autoRetryAt: "Sẽ tự động thử lại lúc {time}",

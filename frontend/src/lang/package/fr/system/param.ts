@@ -43,7 +43,8 @@ export default {
 
   // 提示 / 确认
   warnTitle: "Avertissement",
-  deleteConfirmMessage: "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
+  deleteConfirmMessage:
+    "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
   requiredConfigName: "Veuillez saisir le nom de la configuration système",
   requiredConfigKey: "Veuillez saisir la clé de configuration système",
   requiredConfigValue: "Veuillez saisir la valeur de configuration système",

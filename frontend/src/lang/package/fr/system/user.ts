@@ -70,7 +70,8 @@ export default {
 
   // 提示 / 确认
   warning: "Avertissement",
-  deleteConfirmMessage: "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
+  deleteConfirmMessage:
+    "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
   confirmEnableOrDisable: "Voulez-vous activer ou désactiver l'élément sélectionné ?",
   resetPasswordPrompt: "Veuillez saisir le nouveau mot de passe de l'utilisateur {username}",
   passwordMinLength: "Le mot de passe doit comporter au moins 6 caractères. Veuillez le ressaisir.",

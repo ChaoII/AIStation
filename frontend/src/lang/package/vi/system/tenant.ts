@@ -29,7 +29,8 @@ export default {
   endDatePlaceholder: "Ngày kết thúc",
   to: "đến",
   deleteConfirmTitle: "Cảnh báo",
-  deleteConfirmMessage: "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
+  deleteConfirmMessage:
+    "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
   operationSuccess: "Thao tác thành công",
   ruleTenantNameRequired: "Vui lòng nhập tên khách hàng",
   ruleTenantCodeRequired: "Vui lòng nhập mã khách hàng",

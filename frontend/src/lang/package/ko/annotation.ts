@@ -92,8 +92,7 @@ export default {
   descriptionPlaceholder: "설명을 입력하세요",
   newDataset: "새 데이터셋",
   editDataset: "데이터셋 편집",
-  deleteDatasetConfirm:
-    "선택한 데이터셋을 삭제하시겠습니까? 보존 기간 내에 복원할 수 있습니다.",
+  deleteDatasetConfirm: "선택한 데이터셋을 삭제하시겠습니까? 보존 기간 내에 복원할 수 있습니다.",
   noTaskYet: "이 데이터셋에는 아직 주석 작업이 없습니다. 먼저 하나를 생성하세요.",
   dangerOperation: "위험한 작업",
   purge: "삭제",
@@ -125,10 +124,10 @@ export default {
   stepParseAnnotations: "주석 파싱",
   stepWriteImages: "이미지 쓰기",
   selectZipFile: "ZIP 파일 선택",
-  importHint: "압축 파일에는 이미지와 일치하는 .json 주석 파일이 포함되어야 하며, 최대 {max}MB입니다.",
+  importHint:
+    "압축 파일에는 이미지와 일치하는 .json 주석 파일이 포함되어야 하며, 최대 {max}MB입니다.",
   selected: "선택됨",
-  clearBeforeImport:
-    "가져오기 전에 이 데이터셋의 기존 이미지와 주석을 삭제합니다 (중복 방지)",
+  clearBeforeImport: "가져오기 전에 이 데이터셋의 기존 이미지와 주석을 삭제합니다 (중복 방지)",
   importReady: "준비됨",
   importUploading: "업로드 중 {percent}%",
   importPreparingDelete: "삭제 준비 중...",
@@ -167,7 +166,8 @@ export default {
   backgroundContinue: "백그라운드에서 계속",
   stayOnPage: "페이지에 머물기",
   cancelImport: "가져오기 취소",
-  cancelImportConfirm: "업로드/파싱이 완료되지 않았습니다. 닫으면 가져오기가 취소됩니다. 취소하시겠습니까?",
+  cancelImportConfirm:
+    "업로드/파싱이 완료되지 않았습니다. 닫으면 가져오기가 취소됩니다. 취소하시겠습니까?",
   importDoneSummary: "가져오기 완료: {imported} 이미지, {annotations} 주석",
   importSkipped: ", {skipped}개 중복 건너뜀",
   openAnnotationTask: "주석 작업 열기",
@@ -182,12 +182,12 @@ export default {
   exportRec: "인식 데이터셋 내보내기 (rec)",
   trainRatio: "학습 비율",
   trainRatioHint: "나머지 {ratio}%는 검증 세트입니다",
-  exportAlert:
-    "이 데이터셋의 모든 주석 이미지와 주석 파일을 ZIP 다운로드로 내보냅니다.",
+  exportAlert: "이 데이터셋의 모든 주석 이미지와 주석 파일을 ZIP 다운로드로 내보냅니다.",
   exporting: "내보내는 중...",
   exportAndDownload: "내보내기 및 다운로드",
   selectOcrExport: "최소 하나의 OCR 내보내기(det/rec)를 선택하세요",
-  noDownloadLink: "내보내기는 완료되었지만 다운로드 링크가 반환되지 않았습니다. 백엔드 로그를 확인하세요.",
+  noDownloadLink:
+    "내보내기는 완료되었지만 다운로드 링크가 반환되지 않았습니다. 백엔드 로그를 확인하세요.",
   fmtYoloDetection: "YOLO HBB (가로 상자)",
   fmtYoloRotated: "YOLO OBB (회전 상자)",
   fmtYoloSeg: "YOLO Seg (분할)",

@@ -173,7 +173,8 @@ export default {
   reviewApproveTitle: "อนุมัติ",
   reviewOfflineTitle: "นำผลิตภัณฑ์ออก",
   reviewRejectTitle: "ปฏิเสธผลิตภัณฑ์",
-  batchApproveConfirm: "การดำเนินการนี้จะอนุมัติและเผยแพร่ {count} ผลิตภัณฑ์: {names} ดำเนินการต่อ?",
+  batchApproveConfirm:
+    "การดำเนินการนี้จะอนุมัติและเผยแพร่ {count} ผลิตภัณฑ์: {names} ดำเนินการต่อ?",
   batchRejectConfirm:
     "การดำเนินการนี้จะปฏิเสธ {count} ผลิตภัณฑ์: {names} (คุณสามารถอธิบายเหตุผลในความเห็น) ดำเนินการต่อ?",
   batchReviewTitle: "ยืนยันการตรวจสอบเป็นชุด",
@@ -209,8 +210,7 @@ export default {
     "เครื่องมือสคริปต์ถูกปิดใช้งานบนแพลตฟอร์มนี้; เฉพาะผู้ดูแลระบบเท่านั้นที่สร้างได้",
   requestMethod: "เมธอด HTTP",
   requestUrl: "URL คำขอ",
-  urlPlaceholder:
-    "เช่น https://api.example.com/items/{id} โดย {id} ถูกแทนที่ด้วยพารามิเตอร์อินพุต",
+  urlPlaceholder: "เช่น https://api.example.com/items/{id} โดย {id} ถูกแทนที่ด้วยพารามิเตอร์อินพุต",
   requestHeaders: "เฮดเดอร์",
   headerNamePlaceholder: "ชื่อเฮดเดอร์ เช่น Authorization",
   valuePlaceholder: "ค่า",
@@ -245,9 +245,9 @@ export default {
   runtimeParamsLabel: "พารามิเตอร์รันไทม์",
   runtimeParamKeyPlaceholder: "ชื่อพารามิเตอร์ เช่น api_key",
   runtimeValuePlaceholder: "ค่า (ซ่อนหลังบันทึก)",
-  runtimeTipPre: "สำหรับคีย์/ค่าละเอียดอ่อน/พารามิเตอร์ต่อผู้ใช้ (เช่น api_key, username) อ่านผ่าน ",
-  runtimeTipPost:
-    " ภายในสคริปต์ ไม่เขียนลงซอร์ส; ค่าถูกซ่อนเสมอหลังบันทึก",
+  runtimeTipPre:
+    "สำหรับคีย์/ค่าละเอียดอ่อน/พารามิเตอร์ต่อผู้ใช้ (เช่น api_key, username) อ่านผ่าน ",
+  runtimeTipPost: " ภายในสคริปต์ ไม่เขียนลงซอร์ส; ค่าถูกซ่อนเสมอหลังบันทึก",
   sandboxAlert:
     "สคริปต์ทำงานในแซนด์บ็อกซ์ที่ควบคุม: นำเข้าได้เฉพาะโมดอลที่อนุญาต เช่น json/math/re/datetime; ห้ามเรียกไฟล์ เครือข่ายและระบบ แนะนำให้ใช้ลายเซ็นหลายพารามิเตอร์พร้อมคำอธิบายชนิด (เช่น def run(name: str = 'x')) และคลิก \"แยกพารามิเตอร์จากโค้ด\" เพื่อสร้างตารางพารามิเตอร์อัตโนมัติ",
   trialRun: "รันทดลอง",
@@ -296,8 +296,7 @@ export default {
   skillCategoryPlaceholder: 'เช่น ประสิทธิภาพสำนักงาน (เว้นว่างเพื่อวางใต้ "สกิลที่นำเข้า")',
   uploadDragText: "ลากไฟล์ Zip สกิลมาที่นี่ หรือ",
   uploadClickText: "คลิกเพื่อเลือก",
-  uploadTip:
-    "แพลตฟอร์มอ่านเฉพาะ SKILL.md และไฟล์ข้อความภายใน ไม่เก็บหรือรันสคริปต์",
+  uploadTip: "แพลตฟอร์มอ่านเฉพาะ SKILL.md และไฟล์ข้อความภายใน ไม่เก็บหรือรันสคริปต์",
   importDisabledAlert:
     "สกิลที่นำเข้าถูกปิดเป็นค่าเริ่มต้น: ตรวจสอบเนื้อหาและสคริปต์ที่มาพร้อมก่อนเปิดใช้งาน (แพลตฟอร์มจะไม่รันสคริปต์ที่นำเข้า)",
   requireSkillName: "กรุณากรอกชื่อสกิล",
@@ -325,7 +324,8 @@ export default {
   commandLabel: "คำสั่งเริ่มต้น",
   commandPlaceholder: "เช่น npx หรือ python",
   argsLabel: "อาร์กิวเมนต์คำสั่ง",
-  argsPlaceholder: "หนึ่งอาร์กิวเมนต์ต่อบรรทัด เช่น\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+  argsPlaceholder:
+    "หนึ่งอาร์กิวเมนต์ต่อบรรทัด เช่น\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "ตัวแปรสภาพแวดล้อม",
   envPlaceholder: "หนึ่ง KEY=VALUE ต่อบรรทัด เช่น\nAPI_KEY=xxx",
   urlLabel: "URL เซิร์ฟเวอร์",

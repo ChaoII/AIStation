@@ -125,7 +125,8 @@ export default {
   cron_latency: "Latenz",
   cron_errorSummary: "Fehler- / Ausgabezusammenfassung",
   cron_noOutput: "(keine Ausgabe)",
-  cron_noRun: 'Keine Laufzeitdatensätze. Klicken Sie auf "Jetzt ausführen" oder warten Sie auf den Zeitplan',
+  cron_noRun:
+    'Keine Laufzeitdatensätze. Klicken Sie auf "Jetzt ausführen" oder warten Sie auf den Zeitplan',
   cron_cron: "Geplant",
   cron_interval: "Intervall",
   cron_date: "Einmalig",

@@ -43,7 +43,8 @@ export default {
 
   // 提示 / 确认
   warnTitle: "Advertencia",
-  deleteConfirmMessage: "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
+  deleteConfirmMessage:
+    "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
   requiredConfigName: "Ingrese el nombre de la configuración del sistema",
   requiredConfigKey: "Ingrese la clave de configuración del sistema",
   requiredConfigValue: "Ingrese el valor de configuración del sistema",

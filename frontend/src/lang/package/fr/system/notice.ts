@@ -29,7 +29,8 @@ export default {
   endDate: "Date de fin",
   rangeSeparator: "à",
   warning: "Avertissement",
-  deleteConfirmMessage: "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
+  deleteConfirmMessage:
+    "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
   createTitle: "Ajouter une annonce",
   updateTitle: "Modifier l'annonce",
   detailTitle: "Détail de l'annonce",

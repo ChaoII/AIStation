@@ -178,7 +178,8 @@ export default {
     'LLM wird aufgerufen, um die ersten {maxObjects} Objekte von "{datasource}" zu analysieren, dauert normalerweise über zehn Sekunden…',
   ig_candidateCount: "{total} Kandidaten, {selected} ausgewählt",
   ig_selectAllNone: "Alle auswählen / Auswahl aufheben",
-  ig_invalidCandidates: "Kandidaten, die die Validierung nicht bestanden haben (werden nicht gespeichert)",
+  ig_invalidCandidates:
+    "Kandidaten, die die Validierung nicht bestanden haben (werden nicht gespeichert)",
   ig_applySelected: "Ausgewählte anwenden {count}",
   ig_autoModelTitleMetric: "Gebundene Kennzahlen automatisch erzeugen (Vorschau)",
   ig_autoModelTitleAnnotation: "Objekt-/Eigenschaftsannotationen automatisch erzeugen (Vorschau)",
@@ -245,8 +246,7 @@ export default {
   ig_question: "Frage",
   ig_exampleSql: "Beispiel-SQL",
   ig_systemLibOption: "Systembibliothek (Ontologie-Stütztabellen)",
-  ig_questionPlaceholder:
-    "Frage in natürlicher Sprache, z. B. Statusverteilung der Kameras zählen",
+  ig_questionPlaceholder: "Frage in natürlicher Sprache, z. B. Statusverteilung der Kameras zählen",
   ig_questionRequired: "Bitte eine Frage eingeben",
   ig_sqlRequired: "Bitte das Beispiel-SQL eingeben",
   ig_exampleSaved: "Beispiel gespeichert",
@@ -291,7 +291,8 @@ export default {
   ig_unknownCount: "{count} Einträge nicht in den Tabellen der aktuellen Datenquelle",
   ig_batchPreviewEmpty: "Vorschau erscheint hier nach dem Einfügen von Inhalt",
   ig_match: "Übereinstimmung",
-  ig_batchPreviewLimit: "Nur die ersten 8 Einträge werden vorgeschaut; beim Speichern werden alle geschrieben.",
+  ig_batchPreviewLimit:
+    "Nur die ersten 8 Einträge werden vorgeschaut; beim Speichern werden alle geschrieben.",
   ig_saveCount: "{count} Einträge speichern",
   ig_batchSaveFail: "Stapel speichern fehlgeschlagen",
   ig_savedTableCount: "{count} Tabellen gespeichert",
@@ -396,7 +397,8 @@ export default {
   ig_frwbHint:
     'Jede Regeländerung aktualisiert die Vorschau unten automatisch (schreibgeschützt, beeinflusst gespeicherte Regeln nicht); bestätigen und dann "Regeln speichern / Speichern & Anwenden" klicken.',
   ig_tabRuleConfig: "Regelkonfiguration",
-  ig_enableRuleHint: "Wenn aus, werden Systemtabellen / Prüffelder nicht mehr automatisch von Regeln gekennzeichnet",
+  ig_enableRuleHint:
+    "Wenn aus, werden Systemtabellen / Prüffelder nicht mehr automatisch von Regeln gekennzeichnet",
   ig_sysTableDetect: "Erkennung von Systemtabellen",
   ig_auditFieldDetect: "Erkennung von Prüffeldern",
   ig_draftStatus:
@@ -415,12 +417,14 @@ export default {
   ig_auditBiz: "Prüf/Geschäft",
   ig_tabCompare: "Vor/Nach",
   ig_refreshCompare: "Vergleich aktualisieren",
-  ig_compareHint: "Gespeicherte Regeln vs. aktueller Entwurf (Tabellen/Felder, deren Trefferkennzeichnung sich geändert hat)",
+  ig_compareHint:
+    "Gespeicherte Regeln vs. aktueller Entwurf (Tabellen/Felder, deren Trefferkennzeichnung sich geändert hat)",
   ig_savedDraftCount: "Gespeichert {saved} / Entwurf {draft}",
   ig_compareEmpty:
     'Noch nicht verglichen: Nach dem Klicken auf "Vergleich aktualisieren" die Unterschiede bei den Treffern zwischen gespeicherten Regeln und dem aktuellen Entwurf anzeigen.',
   ig_compareSame: "Gespeicherte Regeln entsprechen dem aktuellen Entwurf; keine Trefferänderungen.",
-  ig_noDiff: 'Noch keine Unterschiede (zuerst "Vergleich aktualisieren" klicken oder die Entwurfsregeln ändern)',
+  ig_noDiff:
+    'Noch keine Unterschiede (zuerst "Vergleich aktualisieren" klicken oder die Entwurfsregeln ändern)',
   ig_name: "Name",
   ig_hitChange: "Trefferänderung",
   ig_hitRuleCompare: "Getroffene Regel (Gespeichert → Entwurf)",
@@ -433,12 +437,14 @@ export default {
     'Alle drei Bereiche unten sind LLM-unterstützte Kandidatenregeln / -vorschläge; "Auf Entwurf anwenden" schreibt nur in den Front-End-Entwurf (nicht gespeichert). Bestätigt können Sie in "Regelkonfiguration" feinjustieren und dann speichern.',
   ig_genCandidateRules: "Kandidatenregeln erzeugen",
   ig_applyDraft: "Auf Entwurf anwenden",
-  ig_genCandidateEmpty: 'Klicken Sie auf "Kandidatenregeln erzeugen", um das LLM Kandidatenregeln geben zu lassen',
+  ig_genCandidateEmpty:
+    'Klicken Sie auf "Kandidatenregeln erzeugen", um das LLM Kandidatenregeln geben zu lassen',
   ig_nlConfig: "Konfiguration in natürlicher Sprache",
   ig_nlPlaceholder:
     "Regeln in natürlicher Sprache beschreiben, z. B. Tabellen mit Präfix SYS_ als Systemtabellen behandeln und created_time / is_deleted als Prüffelder",
   ig_parse: "Parsen",
-  ig_parseEmpty: 'Natürliche Sprache eingeben und dann "Parsen" klicken, um in Filterregeln umzuwandeln',
+  ig_parseEmpty:
+    'Natürliche Sprache eingeben und dann "Parsen" klicken, um in Filterregeln umzuwandeln',
   ig_perTableSuggest: "Vorschläge pro Tabelle/Feld",
   ig_getClassify: "Klassifizierungsvorschläge abrufen",
   ig_sysSuggest: "Vorschläge für Systemtabellen ({count})",
@@ -446,7 +452,8 @@ export default {
   ig_suggestReason: "Grund",
   ig_classifyHint:
     "Dies sind Klassifizierungsvorschläge pro Punkt, keine vollständigen Regeln; nur als Referenz und werden nicht in den Entwurf zurückgeschrieben.",
-  ig_classifyEmpty: 'Klicken Sie auf "Klassifizierungsvorschläge abrufen", um Vorschläge pro Tabelle/Feld anzusehen',
+  ig_classifyEmpty:
+    'Klicken Sie auf "Klassifizierungsvorschläge abrufen", um Vorschläge pro Tabelle/Feld anzusehen',
   ig_enabledOn: "Aktiviert",
   ig_enabledOff: "Deaktiviert",
   ig_previewFail: "Vorschau fehlgeschlagen",
@@ -500,7 +507,8 @@ export default {
   ig_govPolicyCount: "{count} ABAC-Richtlinien",
   ig_govAbacAlert:
     'ABAC: Super-Administratoren sehen standardmäßig alles; die "Sensitive Freigabe" entsprechen, können sensible Objektfelder sehen, andernfalls entfernt das Auflösen/Abfragen automatisch sensible Felder.',
-  ig_govNoPolicy: 'Keine ABAC-Richtlinien. Klicken Sie auf "Neue Richtlinie", um den Zugriff zu konfigurieren',
+  ig_govNoPolicy:
+    'Keine ABAC-Richtlinien. Klicken Sie auf "Neue Richtlinie", um den Zugriff zu konfigurieren',
   ig_govPolicy: "Richtlinie",
   ig_govAttribute: "Attribut",
   ig_govAttributeValue: "Attributwert",
@@ -521,7 +529,8 @@ export default {
   ig_govMemberIds: "Mitglieds-Benutzer-IDs",
   ig_govOntSummary:
     "Ontologie-Objekte · Quellpipelines / stromabwärts / Datenqualitätswertung | Durchschn. {avg}",
-  ig_govNoOnt: 'Keine Ontologie-Objekte. Objekte unter "Ontologie" definieren und zuerst materialisieren',
+  ig_govNoOnt:
+    'Keine Ontologie-Objekte. Objekte unter "Ontologie" definieren und zuerst materialisieren',
   ig_govQuality: "Gesundheitswertung",
   ig_govSourcePipeline: "Quellpipelines",
   ig_govDownstream: "Nachgelagerte Kennzahlen/Konzepte",
@@ -636,6 +645,8 @@ export default {
   ig_govRejected: "Abgelehnt",
   ig_govOpFail: "Vorgang fehlgeschlagen",
   ig_govScanned: "Vollständiger Scan abgeschlossen",
+  ig_govScanOne: "Scannen",
+  ig_govScannedOne: "{table} gescannt: {score}",
   ig_govScanFail: "Scan fehlgeschlagen",
   ig_govPolicyRequired: "Bitte Richtliniennamen / Attributwert ausfüllen",
   ig_govDomainNameRequired: "Bitte den Domänennamen ausfüllen",

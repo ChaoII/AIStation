@@ -86,7 +86,8 @@ export default {
   relationNameRequired: "Introduzca un nombre de tipo de relación",
   relationNameExists: "El nombre de tipo de relación ya existe",
   deleteEntityConfirm: '¿Eliminar el tipo de entidad "{name}"? Esta acción no se puede deshacer.',
-  deleteRelationConfirm: '¿Eliminar el tipo de relación "{name}"? Esta acción no se puede deshacer.',
+  deleteRelationConfirm:
+    '¿Eliminar el tipo de relación "{name}"? Esta acción no se puede deshacer.',
 
   datasetNamePlaceholder: "Introduzca el nombre del conjunto de datos",
   descriptionPlaceholder: "Introduzca la descripción",
@@ -100,7 +101,8 @@ export default {
   purgeDatasetConfirm:
     '¿Purgar el conjunto de datos "{name}"? Se eliminarán todas las imágenes, anotaciones y artefactos exportados, y no se puede deshacer.',
   noDatasetToPurge: "No hay conjuntos de datos que eliminar",
-  purgeStarted: 'La eliminación ha comenzado. Puede comprobar el progreso en "Estado de importación".',
+  purgeStarted:
+    'La eliminación ha comenzado. Puede comprobar el progreso en "Estado de importación".',
   purgeFailed: "Error al purgar el conjunto de datos",
   images: "Imágenes",
   selectImages: "Seleccione las imágenes que desea subir",
@@ -125,7 +127,8 @@ export default {
   stepParseAnnotations: "Analizar anotaciones",
   stepWriteImages: "Escribir imágenes",
   selectZipFile: "Seleccionar archivo ZIP",
-  importHint: "El archivo debe contener imágenes y archivos de anotación .json correspondientes, hasta {max}MB.",
+  importHint:
+    "El archivo debe contener imágenes y archivos de anotación .json correspondientes, hasta {max}MB.",
   selected: "Seleccionado",
   clearBeforeImport:
     "Limpiar las imágenes y anotaciones existentes de este conjunto de datos antes de importar (evita duplicados)",
@@ -167,7 +170,8 @@ export default {
   backgroundContinue: "Continuar en segundo plano",
   stayOnPage: "Permanecer en la página",
   cancelImport: "Cancelar importación",
-  cancelImportConfirm: "La subida/el análisis no ha terminado. Al cerrar se cancelará la importación. ¿Cancelarla?",
+  cancelImportConfirm:
+    "La subida/el análisis no ha terminado. Al cerrar se cancelará la importación. ¿Cancelarla?",
   importDoneSummary: "Importación completada: {imported} imágenes, {annotations} anotaciones",
   importSkipped: ", {skipped} duplicados omitidos",
   openAnnotationTask: "Abrir tarea de anotación",
@@ -187,7 +191,8 @@ export default {
   exporting: "Exportando...",
   exportAndDownload: "Exportar y descargar",
   selectOcrExport: "Seleccione al menos una exportación OCR (det/rec)",
-  noDownloadLink: "La exportación terminó pero no se devolvió ningún enlace de descarga. Compruebe los registros del backend.",
+  noDownloadLink:
+    "La exportación terminó pero no se devolvió ningún enlace de descarga. Compruebe los registros del backend.",
   fmtYoloDetection: "YOLO HBB (cajas horizontales)",
   fmtYoloRotated: "YOLO OBB (cajas rotadas)",
   fmtYoloSeg: "YOLO Seg (segmentación)",
@@ -200,11 +205,14 @@ export default {
   fmtTorchkilnDetection: "Detección TorchKiln (etiquetas YOLO + listas de entrenamiento)",
   fmtTorchkilnRotated: "TorchKiln rotado (YOLO OBB + listas de entrenamiento)",
   fmtTorchkilnSeg: "Segmentación TorchKiln (YOLO Seg + listas de entrenamiento)",
-  fmtTorchkilnSemanticSeg: "Segmentación semántica TorchKiln (PNG de máscara + listas de entrenamiento)",
+  fmtTorchkilnSemanticSeg:
+    "Segmentación semántica TorchKiln (PNG de máscara + listas de entrenamiento)",
   fmtTorchkilnKeypoint: "Puntos clave TorchKiln (YOLO Pose + listas de entrenamiento)",
-  fmtTorchkilnClassification: "Clasificación TorchKiln (carpetas de clases + listas de entrenamiento)",
+  fmtTorchkilnClassification:
+    "Clasificación TorchKiln (carpetas de clases + listas de entrenamiento)",
   fmtTorchkilnOcr: "OCR TorchKiln (texto de 4 puntos / imagen completa + listas de entrenamiento)",
-  fmtTorchkilnVideoDetection: "Detección de vídeo TorchKiln (muestreo de fotogramas + listas de entrenamiento)",
+  fmtTorchkilnVideoDetection:
+    "Detección de vídeo TorchKiln (muestreo de fotogramas + listas de entrenamiento)",
   fmtTorchkilnCuboid: "Cajas 3D TorchKiln (cámara 7-dof + listas de entrenamiento)",
   fmtAudioEventJsonl: "Eventos de audio (intervalos JSONL)",
   fmtAudioEventCsv: "Eventos de audio (intervalos CSV)",

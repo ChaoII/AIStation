@@ -173,7 +173,8 @@ export default {
   repoStatusReleased: "Publicado",
   rePredict: "Volver a predecir",
   retrain: "Volver a entrenar",
-  retrainConfirm: '¿Volver a entrenar la tarea "{name}"? Esto borrará los resultados de entrenamiento anteriores.',
+  retrainConfirm:
+    '¿Volver a entrenar la tarea "{name}"? Esto borrará los resultados de entrenamiento anteriores.',
   retrainConfirmBtn: "Confirmar reentrenamiento",
   save: "Guardar",
   savedGoManage: "Guardado, ir a gestionar",

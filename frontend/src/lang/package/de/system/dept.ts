@@ -30,7 +30,8 @@ export default {
   orderRequired: "Bitte Sortierreihenfolge eingeben",
   selection: "Auswahl",
   warning: "Warnung",
-  deleteConfirm: "Die ausgewählten Daten löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
+  deleteConfirm:
+    "Die ausgewählten Daten löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
   operationSuccess: "Vorgang erfolgreich",
   selectFirst: "Bitte wählen Sie zuerst die zu bearbeitenden Daten aus",
   confirmToggle: "Diesen Eintrag {action}?",

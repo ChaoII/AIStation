@@ -90,8 +90,7 @@ export default {
   ig_importAsObject: "นำเข้าเป็นอ็อบเจกต์ ontology",
   ig_aliasPlaceholder: "เช่น ตารางหลักการชำระถ่านหิน",
   ig_domainPlaceholder: "เช่น ถ่านหิน / อุปกรณ์ / บุคลากร",
-  ig_descPlaceholder:
-    "ตารางนี้เก็บอะไรและใช้อย่างไร — การสอบถามอ่านสิ่งนี้เพื่อเข้าใจตาราง",
+  ig_descPlaceholder: "ตารางนี้เก็บอะไรและใช้อย่างไร — การสอบถามอ่านสิ่งนี้เพื่อเข้าใจตาราง",
   ig_bizScenarioPlaceholder: "รายงาน/ธุรกิจใดใช้มัน",
   ig_includeQuery: "รวมในการสอบถาม",
   ig_objectModeling: "การสร้างแบบจำลองอ็อบเจกต์ ontology",
@@ -101,8 +100,7 @@ export default {
   ig_nameCol: "คอลัมน์ชื่อแสดง",
   ig_fieldCount: "ฟิลด์ ({count})",
   ig_onlyBizField: "เฉพาะฟิลด์ธุรกิจ",
-  ig_auditHint:
-    "คอมเมนต์ต้นน้ำเพื่ออ้างอิง; ชื่อภาษาไทย/enum สามารถบำรุงรักษาด้วยมือได้",
+  ig_auditHint: "คอมเมนต์ต้นน้ำเพื่ออ้างอิง; ชื่อภาษาไทย/enum สามารถบำรุงรักษาด้วยมือได้",
   ig_noColEmpty: "ไม่มีข้อมูลฟิลด์สำหรับตารางนี้ ซิงค์สคีมาก่อน",
   ig_field: "ฟิลด์",
   ig_relatedTable: "ตารางที่เกี่ยวข้อง",
@@ -184,8 +182,7 @@ export default {
   ig_autoModelTitleAnnotation: "สร้าง annotate อ็อบเจกต์/พร็อพเพอร์ตี้อัตโนมัติ (พรีวิว)",
   ig_emptyHintMetric:
     "ไม่มีผู้สมัครเมตริกที่ใช้ได้สำหรับอ็อบเจกต์ชุดนี้ในแหล่งข้อมูลนี้ (อาจเป็นเพราะอ็อบเจกต์ไม่มีพร็อพเพอร์ตี้ตัวเลขที่รวมได้ หรือ LLM ไม่ให้เมตริกที่ตรวจสอบได้)",
-  ig_emptyHintAnnotation:
-    "ไม่มีผู้สมัคร annotate ที่ใช้ได้สำหรับอ็อบเจกต์ชุดนี้ในแหล่งข้อมูลนี้",
+  ig_emptyHintAnnotation: "ไม่มีผู้สมัคร annotate ที่ใช้ได้สำหรับอ็อบเจกต์ชุดนี้ในแหล่งข้อมูลนี้",
   ig_analysisFail: "วิเคราะห์ล้มเหลว",
   ig_applyMixed: "บันทึก {saved}, {failed} ล้มเหลว: {first}",
   ig_applySuccess: "บันทึก {saved}",
@@ -245,8 +242,7 @@ export default {
   ig_question: "คำถาม",
   ig_exampleSql: "SQL ตัวอย่าง",
   ig_systemLibOption: "ไลบรารีระบบ (ตารางรองรับ ontology)",
-  ig_questionPlaceholder:
-    "คำถามภาษาธรรมชาติ เช่น นับการกระจายสถานะของกล้อง",
+  ig_questionPlaceholder: "คำถามภาษาธรรมชาติ เช่น นับการกระจายสถานะของกล้อง",
   ig_questionRequired: "กรุณากรอกคำถาม",
   ig_sqlRequired: "กรุณากรอก SQL ตัวอย่าง",
   ig_exampleSaved: "บันทึกตัวอย่างแล้ว",
@@ -326,8 +322,7 @@ export default {
     "LLM แนะนำเมตริกความถี่สูงและศัพท์ธุรกิจตามพจนานุกรมภาษาไทยของสินทรัพย์ที่รวม; นำไปใช้ทีละรายการเพื่อเขียนลงไลบรารีเมตริก/ศัพท์",
   ig_suggestMetrics: "เมตริกที่แนะนำ ({count})",
   ig_suggestTerms: "ศัพท์ที่แนะนำ ({count})",
-  ig_noSuggestResult:
-    "ไม่มีคำแนะนำที่สร้าง ปรับปรุงคำอธิบายธุรกิจของสินทรัพย์ก่อนแล้วลองใหม่",
+  ig_noSuggestResult: "ไม่มีคำแนะนำที่สร้าง ปรับปรุงคำอธิบายธุรกิจของสินทรัพย์ก่อนแล้วลองใหม่",
   ig_suggestFail: "แนะนำล้มเหลว",
 
   // ===== 字段属性 =====
@@ -451,8 +446,7 @@ export default {
   ig_enabledOff: "ปิดใช้งาน",
   ig_previewFail: "พรีวิวล้มเหลว",
   ig_noValidRules: "ไม่มีกฎที่ถูกต้องส่งคืน; การใช้ถูกยกเลิก",
-  ig_appliedDraft:
-    'ใช้กับฉบับร่างแล้ว (ยังไม่บันทึก); กลับไป "การกำหนดค่ากฎ" เพื่อปรับก่อนบันทึก',
+  ig_appliedDraft: 'ใช้กับฉบับร่างแล้ว (ยังไม่บันทึก); กลับไป "การกำหนดค่ากฎ" เพื่อปรับก่อนบันทึก',
   ig_genCandidateFail: "สร้างกฎผู้สมัครล้มเหลว",
   ig_parseFail: "แยกวิเคราะห์ล้มเหลว",
   ig_getClassifyFail: "รับข้อเสนอการจำแนกล้มเหลว",
@@ -529,15 +523,13 @@ export default {
   ig_govActionAlert:
     'นี่คือ "เขียนกลับตาราง" เดิม; กำหนดแอ็กชันใหม่ภายใต้ ontology → ประเภทแอ็กชัน (ตรงกับความหมาย Palantir) โมดูลนี้กำลังถูกยุติ',
   ig_govPendingCount: "แอ็กชันรอดำเนินการ {pending} · คำนิยามแอ็กชัน {defs}",
-  ig_govPendingSection:
-    "รอดำเนินการ (การเขียนกลับต้องมีการอนุมัติด้วยมือ; มีผลหลังอนุมัติ)",
+  ig_govPendingSection: "รอดำเนินการ (การเขียนกลับต้องมีการอนุมัติด้วยมือ; มีผลหลังอนุมัติ)",
   ig_govNoPending: "ไม่มีแอ็กชันรอดำเนินการ",
   ig_govRecord: "บันทึก",
   ig_govParams: "พารามิเตอร์",
   ig_govApprove: "อนุมัติ",
   ig_govReject: "ปฏิเสธ",
-  ig_govDefSection:
-    "คำนิยามแอ็กชัน (คอลัมน์ที่เขียนได้ / การตรวจสอบ / ต้องอนุมัติหรือไม่)",
+  ig_govDefSection: "คำนิยามแอ็กชัน (คอลัมน์ที่เขียนได้ / การตรวจสอบ / ต้องอนุมัติหรือไม่)",
   ig_govNoActionDef: "ไม่มีคำนิยามแอ็กชัน",
   ig_govWritableCols: "คอลัมน์ที่เขียนได้",
   ig_govValidation: "การตรวจสอบ",
@@ -623,8 +615,7 @@ export default {
   ig_govSuperuser: "สูงสุด",
   ig_govNoRoleText: "ไม่มีบทบาท",
   ig_govFdeTitleRequired: "กรุณากรอกชื่อข้อเสนอ",
-  ig_govDelFdeConfirm:
-    'การดำเนินการนี้จะลบข้อเสนอการส่งมอบ "{name}" และไม่สามารถย้อนกลับได้',
+  ig_govDelFdeConfirm: 'การดำเนินการนี้จะลบข้อเสนอการส่งมอบ "{name}" และไม่สามารถย้อนกลับได้',
   ig_govDelFdeTitle: "ลบข้อเสนอการส่งมอบ",
   ig_govShadowConfirm:
     'การดำเนินการนี้จะเปรียบเทียบค่าจริงของเมตริกเงาของ "{title}" กับมาตรฐานทอง ({golden}) ดำเนินการต่อ?',
@@ -636,6 +627,8 @@ export default {
   ig_govRejected: "ปฏิเสธแล้ว",
   ig_govOpFail: "การดำเนินการล้มเหลว",
   ig_govScanned: "สแกนเต็มเสร็จสมบูรณ์",
+  ig_govScanOne: "Scan",
+  ig_govScannedOne: "Scanned {table}: {score}",
   ig_govScanFail: "สแกนล้มเหลว",
   ig_govPolicyRequired: "กรุณากรอกชื่อนโยบาย / ค่าแอตทริบิวต์",
   ig_govDomainNameRequired: "กรุณากรอกชื่อโดเมน",

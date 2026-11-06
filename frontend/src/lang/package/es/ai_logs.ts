@@ -149,7 +149,8 @@ export default {
     "Contexto de objeto actual: {code}{key} (se adjuntará automáticamente a tu pregunta, no hace falta repetirlo)",
   queryReuseTip:
     "La reutilización de consultas reutiliza la semántica y los permisos de la ontología: los nombres de los objetos de negocio, los nombres en chino de los campos y las relaciones entre tablas provienen de la ontología; las políticas de filas/columnas se incorporan a las subconsultas al generar el SQL.",
-  questionPlaceholder: "Pregunta en lenguaje de negocio, p. ej. cuál es el total de ventas por departamento",
+  questionPlaceholder:
+    "Pregunta en lenguaje de negocio, p. ej. cuál es el total de ventas por departamento",
   ask: "Preguntar",
   examples: "Ejemplos:",
   noQueries: "Aún no hay consultas",
@@ -224,7 +225,8 @@ export default {
   noSettingsChanged: "No hay cambios que guardar",
   savedSettingsCount: "Guardado(s) {count} ajuste(s)",
   saveSettingsFailed: "Error al guardar los ajustes",
-  promoteNameKeyRequired: "Por favor, completa el nombre de visualización y el código de la métrica",
+  promoteNameKeyRequired:
+    "Por favor, completa el nombre de visualización y el código de la métrica",
   metricCodeInvalid: "El código de la métrica solo admite letras/dígitos/guion bajo",
   promoted: "Promovido a métrica; las preguntas similares tomarán la ruta rápida determinista",
   promoteFailed: "Error en la promoción",
@@ -255,7 +257,8 @@ export default {
   settingRecallTip:
     "Recuperación por vector / palabra clave / ontología / entidad fusionada antes de la selección de tablas.",
   settingTwoStage: "Planificación en dos etapas (descomposición real)",
-  settingTwoStageTip: "Primero planifica, luego escribe el SQL. Ganancia negativa medida, desactivado por defecto.",
+  settingTwoStageTip:
+    "Primero planifica, luego escribe el SQL. Ganancia negativa medida, desactivado por defecto.",
   settingToolAgent: "Agente basado en herramientas",
   settingToolAgentTip:
     "Deja que el modelo llame a las herramientas de recuperación de forma autónoma; idas y vueltas más lentas, desactivado por defecto.",
@@ -297,13 +300,15 @@ export default {
   pipelineStatus: "Estado del pipeline",
   noPipelineRun: "No hay pipeline en ejecución",
   aipConsole: "Consola AIP · Seguimiento de ejecuciones",
-  aipConsoleSub: "Seguimiento de ejecuciones de agentes/IA · distribución de uso · cola de revisión manual",
+  aipConsoleSub:
+    "Seguimiento de ejecuciones de agentes/IA · distribución de uso · cola de revisión manual",
   runRecords: "Registros de ejecución",
   usageDist: "Distribución de uso",
   latencyMs: "Latencia (ms)",
   costYuanValue: "¥{value}",
   agentDashboard: "Panel de orquestación de agentes",
-  agentDashboardSub: "Volumen de ejecuciones / tasa de error / latencia + herramientas vinculadas · habilidades · matriz de capacidades",
+  agentDashboardSub:
+    "Volumen de ejecuciones / tasa de error / latencia + herramientas vinculadas · habilidades · matriz de capacidades",
   totalAgents: "Agentes totales",
   enabledAgents: "Habilitados",
   totalRuns: "Ejecuciones totales",
@@ -352,7 +357,8 @@ export default {
   computedValue: "Valor calculado",
   computeFailed: "Error en el cálculo",
   securityAudit: "Auditoría de seguridad y acceso a datos",
-  securityAuditSub: "Activos sensibles · fuentes de datos de solo lectura · reglas ABAC · registros de auditoría de acceso",
+  securityAuditSub:
+    "Activos sensibles · fuentes de datos de solo lectura · reglas ABAC · registros de auditoría de acceso",
   securitySummary: "{tables} tablas base · {fields} campos sensibles",
   securityScore: "Puntuación de seguridad {score}",
   auditLogCount: "Registros de auditoría de acceso ({count} recientes)",
@@ -408,11 +414,13 @@ export default {
   shareLinkMsg: "Enlace de compartición: {link}",
   datasetShare: "Compartición de conjunto de datos",
   unifiedTimeline: "Línea de tiempo de actividad unificada",
-  unifiedTimelineSub: "Línea de tiempo unificada de llamadas / acciones / aprobaciones de IA (últimos 7 días)",
+  unifiedTimelineSub:
+    "Línea de tiempo unificada de llamadas / acciones / aprobaciones de IA (últimos 7 días)",
   eventsCount: "{count} evento(s)",
   noActivity: "No hay actividad en los últimos 7 días",
   compassRelationsDrill: "Catálogo Compass · Relaciones de objetos · Profundización de acceso",
-  compassRelationsSub: "Clasificación del catálogo de datos / grafo de relaciones de objetos / sandbox de acceso a datos",
+  compassRelationsSub:
+    "Clasificación del catálogo de datos / grafo de relaciones de objetos / sandbox de acceso a datos",
   catalogCategories: "Categorías del catálogo Compass ({count})",
   objectRelations: "Grafo de relaciones de objetos ({edges} aristas / {nodes} objetos)",
   noObjectRelations: "No hay relaciones de objetos",
@@ -425,7 +433,8 @@ export default {
   aipGuardrailsSub:
     "ABAC / dominios de datos / eliminación de datos sensibles / aprobación / auditoría / estado de barreras de versión",
   objectBrowser: "Explorador de datos de objetos",
-  objectBrowserSub: "Vista paginada de datos reales de tablas (vista previa de instancias de objetos)",
+  objectBrowserSub:
+    "Vista paginada de datos reales de tablas (vista previa de instancias de objetos)",
   browseTablePlaceholder: "Ingresa el nombre de la tabla, p. ej. video_alarm_records",
   browseSummary: "{total} filas · página {page}",
   aipGovernanceReport: "Informe de gobernanza de datos AIP",
@@ -438,7 +447,8 @@ export default {
   governanceCheck: "Verificación de gobernanza",
   governanceReportFile: "governance_report",
   assetHotspots: "Puntos calientes de activos y ciclo de vida de objetos",
-  assetHotspotsSub: "Clasificación por referencias de métricas · visión general del estado de publicación de objetos",
+  assetHotspotsSub:
+    "Clasificación por referencias de métricas · visión general del estado de publicación de objetos",
   assetHotspotsTitle: "Puntos calientes de activos de datos (por referencia de métricas)",
   refs: "Referencias {count}",
   objectLifecycle: "Ciclo de vida de objetos",
@@ -457,7 +467,8 @@ export default {
   failedCount: "Fallidas {count}",
   actionsCount: "Acciones {count}",
   pendingApprovals: "Aprobaciones pendientes {count}",
-  capabilityEval: "Evaluación de capacidades de IA (evaluación de capacidades · regresión en sombra)",
+  capabilityEval:
+    "Evaluación de capacidades de IA (evaluación de capacidades · regresión en sombra)",
   capabilityEvalSub:
     "Cada fila {input, expected_keywords[], actual}; acierta las aserciones clave para aprobar, precisión de salida",
   evalSamplePlaceholder:

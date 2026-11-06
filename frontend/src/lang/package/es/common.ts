@@ -65,7 +65,8 @@ export default {
   filter: "Filtrar columnas",
   view: "Ver",
   delTitle: "Confirmación de eliminación",
-  delConfirmMessage: "¿Confirmar la eliminación? Se eliminarán {count} elemento(s). Esta acción no se puede deshacer.",
+  delConfirmMessage:
+    "¿Confirmar la eliminación? Se eliminarán {count} elemento(s). Esta acción no se puede deshacer.",
   selectDeleteData: "Seleccione los elementos a eliminar",
   exportTitle: "Exportar datos",
   fileName: "Nombre del archivo",

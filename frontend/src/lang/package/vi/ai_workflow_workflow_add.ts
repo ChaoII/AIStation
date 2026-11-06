@@ -172,8 +172,7 @@ export default {
   p_add_cond: "Thêm Điều kiện",
   p_gen_expr: "Tạo Biểu thức",
   p_cond_hint_1: "Hỗ trợ tiếng Anh/số/boolean/mảng, hoặc",
-  p_cond_hint_2:
-    '; nhấp "Tạo Biểu thức" để ghi vào biểu thức bên dưới, rồi tinh chỉnh thủ công.',
+  p_cond_hint_2: '; nhấp "Tạo Biểu thức" để ghi vào biểu thức bên dưới, rồi tinh chỉnh thủ công.',
   p_cond_expr: "Biểu thức điều kiện",
   p_cond_expr_ph: "ví dụ: {{a}} == 1 and {{b}} > 2",
   p_cond_handle_alert:
@@ -439,8 +438,7 @@ export default {
   wf_diff_deleted: "Trong phiên bản này, không có trên canvas hiện tại",
   wf_connected: 'Đã nối "{from}" → Nút mới',
   wf_added_node: 'Đã thêm nút "{label}"; chỉnh sửa nó bên phải',
-  wf_apply_tpl_confirm:
-    "Áp dụng mẫu sẽ thay thế canvas hiện tại và không thể hoàn tác. Tiếp tục?",
+  wf_apply_tpl_confirm: "Áp dụng mẫu sẽ thay thế canvas hiện tại và không thể hoàn tác. Tiếp tục?",
   wf_apply_tpl_title: "Áp dụng Mẫu",
   wf_apply: "Áp dụng",
   wf_applied_tpl: 'Đã áp dụng mẫu "{name}"',

@@ -82,7 +82,8 @@ export default {
   updateMenu: "Sửa menu",
   createMenu: "Tạo menu",
   warning: "Cảnh báo",
-  deleteConfirmMessage: "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
+  deleteConfirmMessage:
+    "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
   menuNameRequired: "Vui lòng nhập tên menu",
   lengthBetween: "Độ dài {min} đến {max} ký tự",
   parentMenuRequired: "Vui lòng chọn menu cha",

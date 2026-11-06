@@ -154,8 +154,7 @@ export default {
   eval_score: "{spread} نقطة",
   eval_varSummary:
     "الدقة لكل تشغيل {per} · المتوسط {mean} · الانحراف المعياري {std} · النطاق (نطاق الضوضاء) {spread} نقطة",
-  eval_stableSummary:
-    "{n} سؤال · {pass} ينجح دائمًا · {fail} يفشل دائمًا · {unstable} غير مستقر",
+  eval_stableSummary: "{n} سؤال · {pass} ينجح دائمًا · {fail} يفشل دائمًا · {unstable} غير مستقر",
   eval_crossPassRate: "معدل النجاح عبر التشغيلات",
   eval_unstableQ: "أسئلة غير مستقرة (تقلب عبر التشغيلات)",
   eval_compare: "مقارنة",

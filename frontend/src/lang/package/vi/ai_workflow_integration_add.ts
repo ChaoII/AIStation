@@ -215,7 +215,8 @@ export default {
   // ===== 概念 =====
   ig_newConcept: "Khái niệm mới",
   ig_editConcept: "Chỉnh sửa Khái niệm",
-  ig_conceptHint: "Khái niệm nghiệp vụ (lớp ngữ nghĩa truy vấn; bao gồm bí danh đối tượng bản thể luận)",
+  ig_conceptHint:
+    "Khái niệm nghiệp vụ (lớp ngữ nghĩa truy vấn; bao gồm bí danh đối tượng bản thể luận)",
   ig_conceptHintAlert:
     'Phân công lao động: Khái niệm = khái niệm nghiệp vụ phân cấp + từ đồng nghĩa; "Chỉ số liên quan" tham gia khớp đường nhanh. Bảo trì bí danh đối tượng trong Bản thể luận (chỉ đọc, hợp nhất tại đây); dùng "Thuật ngữ" cho ánh xạ biệt ngữ.',
   ig_noConcept: "Không có khái niệm",
@@ -245,8 +246,7 @@ export default {
   ig_question: "Câu hỏi",
   ig_exampleSql: "SQL ví dụ",
   ig_systemLibOption: "Thư viện hệ thống (bảng hỗ trợ bản thể luận)",
-  ig_questionPlaceholder:
-    "Câu hỏi ngôn ngữ tự nhiên, ví dụ: đếm phân bố trạng thái của các camera",
+  ig_questionPlaceholder: "Câu hỏi ngôn ngữ tự nhiên, ví dụ: đếm phân bố trạng thái của các camera",
   ig_questionRequired: "Vui lòng nhập câu hỏi",
   ig_sqlRequired: "Vui lòng nhập SQL ví dụ",
   ig_exampleSaved: "Đã lưu ví dụ",
@@ -396,7 +396,8 @@ export default {
   ig_frwbHint:
     'Mọi thay đổi quy tắc tự động làm mới bản xem trước bên dưới (chỉ đọc, không ảnh hưởng quy tắc đã lưu); xác nhận rồi nhấp "Lưu Quy tắc / Lưu & Áp dụng".',
   ig_tabRuleConfig: "Cấu hình Quy tắc",
-  ig_enableRuleHint: "Khi tắt, bảng hệ thống / trường kiểm toán không còn được tự động gắn nhãn bởi quy tắc",
+  ig_enableRuleHint:
+    "Khi tắt, bảng hệ thống / trường kiểm toán không còn được tự động gắn nhãn bởi quy tắc",
   ig_sysTableDetect: "Phát hiện Bảng hệ thống",
   ig_auditFieldDetect: "Phát hiện Trường kiểm toán",
   ig_draftStatus:
@@ -521,7 +522,8 @@ export default {
   ig_govMemberIds: "ID người dùng thành viên",
   ig_govOntSummary:
     "Đối tượng bản thể luận · pipeline nguồn / hạ nguồn / điểm chất lượng dữ liệu | Trung bình {avg}",
-  ig_govNoOnt: 'Không có đối tượng bản thể luận. Hãy định nghĩa đối tượng trong "Bản thể luận" và vật chất hóa chúng trước',
+  ig_govNoOnt:
+    'Không có đối tượng bản thể luận. Hãy định nghĩa đối tượng trong "Bản thể luận" và vật chất hóa chúng trước',
   ig_govQuality: "Điểm sức khỏe",
   ig_govSourcePipeline: "Pipeline nguồn",
   ig_govDownstream: "Chỉ số/Khái niệm hạ nguồn",
@@ -529,15 +531,13 @@ export default {
   ig_govActionAlert:
     'Đây là "Ghi lại Bảng" kế thừa; hãy định nghĩa hành động mới trong Bản thể luận → Loại hành động (căn chỉnh ngữ nghĩa Palantir). Mô-đun này đang được loại bỏ dần.',
   ig_govPendingCount: "Hành động đang chờ {pending} · Định nghĩa hành động {defs}",
-  ig_govPendingSection:
-    "Đang chờ (ghi lại cần phê duyệt thủ công; có hiệu lực sau khi phê duyệt)",
+  ig_govPendingSection: "Đang chờ (ghi lại cần phê duyệt thủ công; có hiệu lực sau khi phê duyệt)",
   ig_govNoPending: "Không có hành động đang chờ",
   ig_govRecord: "Bản ghi",
   ig_govParams: "Tham số",
   ig_govApprove: "Duyệt",
   ig_govReject: "Từ chối",
-  ig_govDefSection:
-    "Định nghĩa Hành động (cột ghi được / xác thực / có cần phê duyệt không)",
+  ig_govDefSection: "Định nghĩa Hành động (cột ghi được / xác thực / có cần phê duyệt không)",
   ig_govNoActionDef: "Không có định nghĩa hành động",
   ig_govWritableCols: "Cột ghi được",
   ig_govValidation: "Xác thực",
@@ -636,6 +636,8 @@ export default {
   ig_govRejected: "Đã từ chối",
   ig_govOpFail: "Thao tác thất bại",
   ig_govScanned: "Đã hoàn tất quét toàn bộ",
+  ig_govScanOne: "Quét",
+  ig_govScannedOne: "Đã quét {table}: {score}",
   ig_govScanFail: "Quét thất bại",
   ig_govPolicyRequired: "Vui lòng điền tên chính sách / giá trị thuộc tính",
   ig_govDomainNameRequired: "Vui lòng điền tên miền",

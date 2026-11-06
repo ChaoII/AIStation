@@ -74,7 +74,8 @@ export default {
   entityNamePlaceholder: "エンティティ種別名を入力（例：人物）",
   relationNamePlaceholder: "関係種別名を入力（例：所属）",
   classNamePlaceholder: "クラス名を入力（例：person）",
-  entityEmpty: "エンティティ種別がまだありません。追加するとアノテーションワークベンチで使用できます。",
+  entityEmpty:
+    "エンティティ種別がまだありません。追加するとアノテーションワークベンチで使用できます。",
   relationEmpty: "関係種別がまだありません。追加するとアノテーションワークベンチで使用できます。",
   classEmpty: "クラスがまだありません。追加するとアノテーションワークベンチで使用できます。",
   instance: "インスタンス",
@@ -85,22 +86,21 @@ export default {
   entityNameExists: "エンティティ種別名は既に存在します",
   relationNameRequired: "関係種別名を入力してください",
   relationNameExists: "関係種別名は既に存在します",
-  deleteEntityConfirm: 'エンティティ種別「{name}」を削除しますか？この操作は取り消せません。',
-  deleteRelationConfirm: '関係種別「{name}」を削除しますか？この操作は取り消せません。',
+  deleteEntityConfirm: "エンティティ種別「{name}」を削除しますか？この操作は取り消せません。",
+  deleteRelationConfirm: "関係種別「{name}」を削除しますか？この操作は取り消せません。",
 
   datasetNamePlaceholder: "データセット名を入力",
   descriptionPlaceholder: "説明を入力",
   newDataset: "新規データセット",
   editDataset: "データセットを編集",
-  deleteDatasetConfirm:
-    "選択したデータセットを削除しますか？保持期間内であれば復元できます。",
+  deleteDatasetConfirm: "選択したデータセットを削除しますか？保持期間内であれば復元できます。",
   noTaskYet: "このデータセットにはアノテーションタスクがまだありません。先に作成してください。",
   dangerOperation: "危険な操作",
   purge: "完全削除",
   purgeDatasetConfirm:
-    'データセット「{name}」を完全削除しますか？すべての画像・アノテーション・エクスポート成果物が削除され、取り消せません。',
+    "データセット「{name}」を完全削除しますか？すべての画像・アノテーション・エクスポート成果物が削除され、取り消せません。",
   noDatasetToPurge: "削除が必要なデータセットはありません",
-  purgeStarted: '削除を開始しました。進捗は「インポート状態」で確認できます。',
+  purgeStarted: "削除を開始しました。進捗は「インポート状態」で確認できます。",
   purgeFailed: "データセットの完全削除に失敗しました",
   images: "画像",
   selectImages: "アップロードする画像を選択してください",
@@ -120,12 +120,13 @@ export default {
   clickSelect: "クリックして選択",
   startUpload: "アップロード開始",
 
-  importTo: 'アノテーションを「{name}」にインポート',
+  importTo: "アノテーションを「{name}」にインポート",
   stepUploadZip: "ZIP をアップロード",
   stepParseAnnotations: "アノテーションを解析",
   stepWriteImages: "画像を書き込み",
   selectZipFile: "ZIP ファイルを選択",
-  importHint: "アーカイブには画像と対応する .json アノテーションファイルが含まれている必要があります（最大 {max}MB）。",
+  importHint:
+    "アーカイブには画像と対応する .json アノテーションファイルが含まれている必要があります（最大 {max}MB）。",
   selected: "選択済み",
   clearBeforeImport:
     "インポート前にこのデータセット内の既存の画像とアノテーションを削除（重複を回避）",
@@ -167,7 +168,8 @@ export default {
   backgroundContinue: "バックグラウンドで続行",
   stayOnPage: "このページに留まる",
   cancelImport: "インポートをキャンセル",
-  cancelImportConfirm: "アップロード/解析が完了していません。閉じるとインポートがキャンセルされます。キャンセルしますか？",
+  cancelImportConfirm:
+    "アップロード/解析が完了していません。閉じるとインポートがキャンセルされます。キャンセルしますか？",
   importDoneSummary: "インポート完了：{imported} 枚の画像、{annotations} 件のアノテーション",
   importSkipped: "、{skipped} 件の重複をスキップ",
   openAnnotationTask: "アノテーションタスクを開く",
@@ -187,7 +189,8 @@ export default {
   exporting: "エクスポート中...",
   exportAndDownload: "エクスポート＆ダウンロード",
   selectOcrExport: "OCR エクスポート（det/rec）を少なくとも1つ選択してください",
-  noDownloadLink: "エクスポートは完了しましたがダウンロードリンクが返されませんでした。バックエンドのログを確認してください。",
+  noDownloadLink:
+    "エクスポートは完了しましたがダウンロードリンクが返されませんでした。バックエンドのログを確認してください。",
   fmtYoloDetection: "YOLO HBB（水平ボックス）",
   fmtYoloRotated: "YOLO OBB（回転ボックス）",
   fmtYoloSeg: "YOLO Seg（セグメンテーション）",
@@ -200,7 +203,8 @@ export default {
   fmtTorchkilnDetection: "TorchKiln 検出（YOLO ラベル + トレーニングリスト）",
   fmtTorchkilnRotated: "TorchKiln 回転（YOLO OBB + トレーニングリスト）",
   fmtTorchkilnSeg: "TorchKiln セグメンテーション（YOLO Seg + トレーニングリスト）",
-  fmtTorchkilnSemanticSeg: "TorchKiln セマンティックセグメンテーション（マスク PNG + トレーニングリスト）",
+  fmtTorchkilnSemanticSeg:
+    "TorchKiln セマンティックセグメンテーション（マスク PNG + トレーニングリスト）",
   fmtTorchkilnKeypoint: "TorchKiln キーポイント（YOLO Pose + トレーニングリスト）",
   fmtTorchkilnClassification: "TorchKiln 分類（クラスディレクトリ + トレーニングリスト）",
   fmtTorchkilnOcr: "TorchKiln OCR（4点 / 全画面テキスト + トレーニングリスト）",

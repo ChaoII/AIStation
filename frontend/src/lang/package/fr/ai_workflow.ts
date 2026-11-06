@@ -4,7 +4,8 @@ export default {
   app_batchDisable: "Désactivation groupée",
   app_summary: "{total} composants au total · {enabled} activés · {disabled} désactivés",
   app_createFromTemplate: "Créer depuis un modèle",
-  app_noData: 'Aucun composant pour le moment. Cliquez sur "Nouveau" en haut à droite pour en créer un',
+  app_noData:
+    'Aucun composant pour le moment. Cliquez sur "Nouveau" en haut à droite pour en créer un',
   app_icon: "Icône",
   app_name: "Nom",
   app_type: "Type",
@@ -68,7 +69,8 @@ export default {
   app_detailTitle: "Détail de l'application",
   app_createdTime: "Date de création",
   app_runDebug: "Exécuter le débogage",
-  app_runPlaceholder: "Saisissez une question pour déboguer le composant (appuyez sur Entrée pour envoyer)",
+  app_runPlaceholder:
+    "Saisissez une question pour déboguer le composant (appuyez sur Entrée pour envoyer)",
   app_send: "Envoyer",
   app_answer: "Réponse",
   app_runEmpty: "Saisissez une question pour démarrer le débogage",
@@ -125,7 +127,8 @@ export default {
   cron_latency: "Latence",
   cron_errorSummary: "Résumé d'erreur / sortie",
   cron_noOutput: "(aucune sortie)",
-  cron_noRun: 'Aucun enregistrement d\'exécution. Cliquez sur "Exécuter maintenant" ou attendez le déclenchement de la planification',
+  cron_noRun:
+    'Aucun enregistrement d\'exécution. Cliquez sur "Exécuter maintenant" ou attendez le déclenchement de la planification',
   cron_cron: "Planifié",
   cron_interval: "Intervalle",
   cron_date: "Une fois",

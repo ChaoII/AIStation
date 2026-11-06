@@ -43,7 +43,8 @@ export default {
   providerAll: "Todos",
   providerStatus: "Estado",
   providerWarnTitle: "Advertencia",
-  providerDeleteConfirm: "¿Eliminar los proveedores seleccionados? Sus configuraciones de modelos dejarán de estar disponibles.",
+  providerDeleteConfirm:
+    "¿Eliminar los proveedores seleccionados? Sus configuraciones de modelos dejarán de estar disponibles.",
   providerBatchResult: "{action} {count} proveedores",
   providerOperationFailed: "Error en la operación",
   providerLoadFailed: "Error al cargar",
@@ -56,7 +57,8 @@ export default {
   providerTestSuccess: "Conexión realizada con éxito",
   providerConnectionFailed: "Error en la conexión",
   providerTestFailed: "Error en la prueba",
-  providerNoModels: "No se obtuvieron modelos. Comprueba la conectividad y la autenticación del proveedor.",
+  providerNoModels:
+    "No se obtuvieron modelos. Comprueba la conectividad y la autenticación del proveedor.",
   providerPullFailed: "Error al obtener",
   providerImportResult: "Importados {imported} modelos",
   providerImportSkipped: ", omitidos {skipped} existentes",
@@ -128,7 +130,8 @@ export default {
   modelPullFailed: "Error al obtener",
   modelEditTitle: "Editar configuración del modelo",
   modelCreateTitle: "Añadir configuración del modelo",
-  modelRequiredFields: "Por favor, ingresa el nombre de la configuración, el nombre del modelo y la URL base de la API",
+  modelRequiredFields:
+    "Por favor, ingresa el nombre de la configuración, el nombre del modelo y la URL base de la API",
   modelSaveSuccess: "Guardado",
   modelSaveFailed: "Error al guardar",
   modelSetDefaultSuccess: "Establecido como modelo predeterminado",

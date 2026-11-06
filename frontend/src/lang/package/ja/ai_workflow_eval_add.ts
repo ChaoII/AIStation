@@ -79,7 +79,8 @@ export default {
   eval_questionPlaceholder: "自然言語の質問",
   eval_scenarioPlaceholder: "業務シナリオ（任意）",
   eval_genSuccess: "生成: {saved} 件保存、{rejected} 件拒否",
-  eval_genNoNew: "今回新規の質問はありません（{rejected} 件拒否）。フィルターを調整して再実行してください。",
+  eval_genNoNew:
+    "今回新規の質問はありません（{rejected} 件拒否）。フィルターを調整して再実行してください。",
   eval_genFail: "生成に失敗しました",
   eval_fillQuestion: "質問を入力してください",
   eval_fillGoldSql: "ゴールド SQL を入力してください",
@@ -154,8 +155,7 @@ export default {
   eval_score: "{spread} ポイント",
   eval_varSummary:
     "実行ごとの精度 {per} · 平均 {mean} · 標準偏差 {std} · 範囲（ノイズバンド）{spread} ポイント",
-  eval_stableSummary:
-    "{n} 問 · 常に合格 {pass} · 常に失敗 {fail} · 不安定 {unstable}",
+  eval_stableSummary: "{n} 問 · 常に合格 {pass} · 常に失敗 {fail} · 不安定 {unstable}",
   eval_crossPassRate: "実行間合格率",
   eval_unstableQ: "不安定な質問（実行間反転）",
   eval_compare: "比較",
@@ -175,7 +175,8 @@ export default {
   eval_ablSwitches: "アブレーションスイッチ",
   eval_perGroupLimit: "グループごとの上限",
   eval_groupHint: "10〜20 問を推奨。それ以上だと時間がかかりすぎます",
-  eval_slowHint: "高速パスは再呼び出しをスキップします。再呼び出しのアブレーションにはこちらをチェック",
+  eval_slowHint:
+    "高速パスは再呼び出しをスキップします。再呼び出しのアブレーションにはこちらをチェック",
   eval_ablFail: "アブレーションに失敗しました",
   eval_currentPrefix: "現在: {current}",
   eval_deltaAccuracy: "Δ 精度",
@@ -195,7 +196,7 @@ export default {
   eval_nl2sqlAccuracy: "NL2SQL 精度",
   eval_correctShort: "正",
   eval_wrongShort: "誤",
-  eval_clickRun: '「ベンチマークを実行」をクリックして開始',
+  eval_clickRun: "「ベンチマークを実行」をクリックして開始",
   eval_benchDone: "ベンチマークが完了しました",
   eval_benchFail: "ベンチマークに失敗しました",
 };

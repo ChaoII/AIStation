@@ -14,8 +14,7 @@ export default {
   restoreDefault: "기본값 복원",
   collapseAll: "모두 접기",
   expandAll: "모두 펼치기",
-  disturbHint:
-    "비활성화된 변형은 생성에서 제외됩니다. 매개변수는 랜덤 범위 [하한 ~ 상한]입니다.",
+  disturbHint: "비활성화된 변형은 생성에서 제외됩니다. 매개변수는 랜덤 범위 [하한 ~ 상한]입니다.",
   output: "출력",
   writeDataset: "데이터셋에 기록",
   previewOnly: "미리보기만",

@@ -1,10 +1,12 @@
 export default {
   action: "Actions",
   annoTask: "Tâche d'annotation",
-  annoTaskUnsupported: 'La tâche d\'annotation "{name}" ({type}) n\'est pas prise en charge par ce cadre',
+  annoTaskUnsupported:
+    "La tâche d'annotation \"{name}\" ({type}) n'est pas prise en charge par ce cadre",
   apiKeyCopied: "Clé API copiée",
   apiKeyGenerated: "Clé API générée",
-  apiKeyHint: "Veuillez conserver votre clé API en sécurité ; elle n'est affichée qu'une seule fois",
+  apiKeyHint:
+    "Veuillez conserver votre clé API en sécurité ; elle n'est affichée qu'une seule fois",
   autoScroll: "Défilement automatique",
   baseModel: "Modèle de base",
   baseModelPlaceholder: "Sélectionner le modèle de base",
@@ -173,7 +175,8 @@ export default {
   repoStatusReleased: "Publié",
   rePredict: "Re-prédire",
   retrain: "Ré-entraîner",
-  retrainConfirm: 'Ré-entraîner la tâche "{name}" ? Cela effacera les résultats d\'entraînement précédents.',
+  retrainConfirm:
+    'Ré-entraîner la tâche "{name}" ? Cela effacera les résultats d\'entraînement précédents.',
   retrainConfirmBtn: "Confirmer le ré-entraînement",
   save: "Enregistrer",
   savedGoManage: "Enregistré, aller gérer",

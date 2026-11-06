@@ -98,8 +98,7 @@ export default {
 
     // 输入占位
     inputName: "이름을 입력하세요",
-    inputNameFormat:
-      "이름을 입력하세요 (2-50자, 영문, 숫자, 밑줄 또는 하이픈만 허용)",
+    inputNameFormat: "이름을 입력하세요 (2-50자, 영문, 숫자, 밑줄 또는 하이픈만 허용)",
     selectStatus: "상태를 선택하세요",
     descriptionQuery: "설명으로 검색",
     inputDescription: "설명을 입력하세요 (선택, 최대 255자)",

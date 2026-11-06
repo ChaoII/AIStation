@@ -28,8 +28,7 @@ export default {
   serverSysMem: "시스템 메모리",
   serverPyMem: "Python 메모리",
   serverGpuUsage: "GPU 사용률",
-  serverGpuTip:
-    "학습 컨테이너 사용 가능 여부와 무관한 호스트 NVIDIA GPU의 실시간 상태",
+  serverGpuTip: "학습 컨테이너 사용 가능 여부와 무관한 호스트 NVIDIA GPU의 실시간 상태",
   serverGpuDriver: "드라이버 {ver}",
   serverGpuCuda: "드라이버가 CUDA {ver}을(를) 지원합니다",
   serverNoGpu: "NVIDIA GPU가 감지되지 않았습니다",

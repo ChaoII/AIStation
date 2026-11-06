@@ -161,8 +161,7 @@ export default {
   p_output_var_name: "출력 변수 이름",
   p_python_code: "Python 코드",
   p_input_map_json: "입력 변수 매핑 (JSON)",
-  p_code_ns_alert:
-    "제한된 네임스페이스에서 실행되며, 마지막 표현식 결과가 출력 변수에 기록됩니다",
+  p_code_ns_alert: "제한된 네임스페이스에서 실행되며, 마지막 표현식 결과가 출력 변수에 기록됩니다",
   p_cond_build: "조건 빌더 (파라미터화, 다중 조건)",
   p_cond_and: "모두 (AND)",
   p_cond_or: "하나 이상 (OR)",
@@ -172,8 +171,7 @@ export default {
   p_add_cond: "조건 추가",
   p_gen_expr: "표현식 생성",
   p_cond_hint_1: "영문/숫자/불리언/배열 지원, 또는",
-  p_cond_hint_2:
-    '; "표현식 생성"을 클릭하여 아래 표현식에 기록한 후 수동으로 미세 조정하세요.',
+  p_cond_hint_2: '; "표현식 생성"을 클릭하여 아래 표현식에 기록한 후 수동으로 미세 조정하세요.',
   p_cond_expr: "조건 표현식",
   p_cond_expr_ph: "예: {{a}} == 1 and {{b}} > 2",
   p_cond_handle_alert:
@@ -256,8 +254,7 @@ export default {
   p_group_title: "그룹 제목",
   p_group_title_ph: "그룹 제목",
   p_group_size: "크기",
-  p_group_alert:
-    '다른 노드를 우클릭하여 "그룹에 추가"; 그룹 상자를 끌어 포함된 노드를 함께 이동.',
+  p_group_alert: '다른 노드를 우클릭하여 "그룹에 추가"; 그룹 상자를 끌어 포함된 노드를 함께 이동.',
   p_cond_op_eq: "같음 ==",
   p_cond_op_neq: "같지 않음 !=",
   p_cond_op_gt: "보다 큼 >",
@@ -331,8 +328,7 @@ export default {
   wf_similarity: "유사도 {score}",
   wf_allow: "허용",
   wf_reject: "거부",
-  wf_approval_hint:
-    "승인 세션은 약 30분 유효합니다; 만료 후 워크플로우를 재실행하세요.",
+  wf_approval_hint: "승인 세션은 약 30분 유효합니다; 만료 후 워크플로우를 재실행하세요.",
   wf_node_trace: "노드 실행 (클릭하여 상세)",
   wf_input: "입력",
   wf_output: "출력",

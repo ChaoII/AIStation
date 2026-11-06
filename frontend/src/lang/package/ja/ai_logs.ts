@@ -170,8 +170,7 @@ export default {
   recalledTables: "呼び出されたテーブル:",
   andMoreTables: "ほか {count} テーブル",
   confirmNeeded: "確認が必要",
-  clarifyTip:
-    "この質問は曖昧です。より正確な口径を選択してください（選択内容で再クエリします）。",
+  clarifyTip: "この質問は曖昧です。より正確な口径を選択してください（選択内容で再クエリします）。",
   queryByChoice: "この口径でクエリ",
   foundReports: "関連レポートが見つかりました",
   reportSuggestTip:
@@ -241,8 +240,7 @@ export default {
   settingObjectQueryTip:
     "LLM は構造化されたオブジェクトクエリ IR のみを出力し、オントロジーインスタンス層が決定的に実行します（SQL は生成されません）。失敗時は SQL 生成にフォールバックします。デフォルトでオフ。比較検証後に有効化してください。",
   settingQueryCost: "クエリコストガードレール",
-  settingQueryCostTip:
-    "実行前に EXPLAIN で行数を推定し、上限を超えると拒否して再生成します。",
+  settingQueryCostTip: "実行前に EXPLAIN で行数を推定し、上限を超えると拒否して再生成します。",
   settingAutoIndex: "オブジェクトクエリ · 自動インデックス",
   settingAutoIndexTip:
     "オブジェクトクエリが閾値に達すると、バックグラウンドで高頻度オブジェクトにインデックスを自動追加します（オントロジーインデックスモジュールを再利用）。デフォルトでオフ。",
@@ -260,8 +258,7 @@ export default {
   settingToolAgentTip:
     "モデルに検索ツールを自律的に呼び出させます。ラウンドトリップが遅くなります。デフォルトでオフ。",
   settingSelfConsistency: "自己整合性候補数",
-  settingSelfConsistencyTip:
-    "> 1 で複数回サンプリングして投票し、安定性を高めますが遅くなります。",
+  settingSelfConsistencyTip: "> 1 で複数回サンプリングして投票し、安定性を高めますが遅くなります。",
   example1: "販売注文は合計何件？",
   example2: "部門ごとの売上金額は？",
   example3: "カメラの状態分布を表示",
@@ -335,8 +332,7 @@ export default {
   candidatesCount: "候補 {count} 件",
   noRiskSuggest: "リスク提案がありません",
   autoHandle: "自動処理",
-  manualHandle:
-    "このアクションは手動処理項目です。対応するモジュールで処理してください",
+  manualHandle: "このアクションは手動処理項目です。対応するモジュールで処理してください",
   executed: "実行しました",
   autoFixConfirm:
     "修正可能なすべての項目（機密スキャン / 説明補完 / DQ 再スキャン）を自動実行します。続行しますか？",
@@ -345,8 +341,7 @@ export default {
   autoFixDone: "修正完了: {fixed}/{attempted}",
   autoFixFailed: "自動修正に失敗しました",
   derivedMetrics: "オントロジー派生指標",
-  derivedMetricsSub:
-    "基本指標から派生指標を自動導出（分子 / 分母 / 除数ルールエンジン）",
+  derivedMetricsSub: "基本指標から派生指標を自動導出（分子 / 分母 / 除数ルールエンジン）",
   derivedMetric: "派生指標",
   baseMetrics: "基本指標",
   computedValue: "計算値",
@@ -376,8 +371,7 @@ export default {
   aipPlugins: "AIP プラグイン ({count})",
   removeFailed: "削除に失敗しました",
   anomalyCenter: "AI 異常検知と意思決定センター",
-  anomalyCenterSub:
-    "日次集計でベースラインと比較して異常を識別 · アクション意思決定提案を集計",
+  anomalyCenterSub: "日次集計でベースラインと比較して異常を識別 · アクション意思決定提案を集計",
   rescanAnomaly: "異常を再スキャン",
   refreshDecision: "意思決定を更新",
   anomalies: "異常 ({count})",
@@ -422,8 +416,7 @@ export default {
   sensitiveVisible: "機密可視 {value}",
   accessAllowedList: "アクセス可能: {list}",
   aipGuardrails: "AIP ガードレール",
-  aipGuardrailsSub:
-    "ABAC / データドメイン / 機密除去 / 承認 / 監査 / バージョンガードレール状態",
+  aipGuardrailsSub: "ABAC / データドメイン / 機密除去 / 承認 / 監査 / バージョンガードレール状態",
   objectBrowser: "オブジェクトデータブラウザ",
   objectBrowserSub: "実テーブルデータのページ閲覧（オブジェクトインスタンスプレビュー）",
   browseTablePlaceholder: "テーブル名を入力。例: video_alarm_records",

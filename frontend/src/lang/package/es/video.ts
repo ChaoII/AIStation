@@ -11,7 +11,8 @@ export default {
     save: "Guardar",
     confirm: "Confirmar",
     warning: "Advertencia",
-    deleteConfirmMsg: "¿Seguro que desea eliminar los datos seleccionados? Esta acción no se puede deshacer.",
+    deleteConfirmMsg:
+      "¿Seguro que desea eliminar los datos seleccionados? Esta acción no se puede deshacer.",
     saveSuccess: "Guardado correctamente",
     started: "Iniciado",
     stopped: "Detenido",
@@ -318,7 +319,8 @@ export default {
     retryFailed: "Reintentar tareas fallidas",
     close: "Cerrar",
     retryDispatchFail: "El reintento de distribución falló",
-    hotUpdateConfirm: "¿Actualizar en caliente el modelo actual del algoritmo「{name}」a todas las tareas que lo usan?",
+    hotUpdateConfirm:
+      "¿Actualizar en caliente el modelo actual del algoritmo「{name}」a todas las tareas que lo usan?",
     hotUpdateConfirmTitle: "Confirmar actualización en caliente",
     confirmDispatch: "Confirmar distribución",
     hotUpdateFail: "La actualización en caliente falló",
@@ -394,8 +396,10 @@ export default {
     updateSuccess: "Actualizado correctamente",
     enrollSuccess: "Inscrito correctamente",
     readFileFail: "Error al leer el archivo",
-    reidEmptyTip: "Biblioteca ReID vacía: las reglas REID_TRACK no se activarán, inscriba primero las características ReID",
-    reidEmptyListTip: "Biblioteca ReID vacía: inscriba las características ReID antes de activar las reglas REID_TRACK",
+    reidEmptyTip:
+      "Biblioteca ReID vacía: las reglas REID_TRACK no se activarán, inscriba primero las características ReID",
+    reidEmptyListTip:
+      "Biblioteca ReID vacía: inscriba las características ReID antes de activar las reglas REID_TRACK",
     faceEmptyTip:
       "Biblioteca de rostros vacía: las reglas FACE_REC / STRANGER no se activarán, inscriba primero las características faciales",
     faceEmptyListTip:
@@ -502,7 +506,8 @@ export default {
     selectAlgorithm: "Seleccione el algoritmo",
     analyzeStream: "Analizar flujo",
     roiArea: "Área de detección (ROI)",
-    roiHint: "Haga clic en la vista previa para dibujar un polígono; vacío significa fotograma completo",
+    roiHint:
+      "Haga clic en la vista previa para dibujar un polígono; vacío significa fotograma completo",
     effectivePeriod: "Seleccione el período de tiempo en el que el algoritmo está activo",
     other: "Otro",
     algoParamOverride: "Anulaciones de parámetros del algoritmo",
@@ -639,7 +644,8 @@ export default {
     whitelistConflict: "Conflicto entre lista blanca y negra: {names} no pueden estar en ambas",
     selectLinkCamera: "Seleccione una cámara enlazada",
     selectLinkGroup: "Seleccione un grupo enlazado",
-    selectSceneFirst2: "Parámetros o condiciones configurados, seleccione primero una escena de negocio",
+    selectSceneFirst2:
+      "Parámetros o condiciones configurados, seleccione primero una escena de negocio",
     completePoints: "Complete 「{label}」(al menos {need} puntos)",
     notEnabled: "Evaluador/familia de modelos no listos",
     edgeNotImpl: "No implementado en el perímetro",
@@ -653,7 +659,8 @@ export default {
   // ===== cond =====
   cond: {
     notAlertTitle: "Se detectaron condiciones NOT unarias históricas",
-    notTip: "El árbol de condiciones solo admite AND/OR; los nodos NOT son de solo lectura y se conservan tal cual:",
+    notTip:
+      "El árbol de condiciones solo admite AND/OR; los nodos NOT son de solo lectura y se conservan tal cual:",
     loadingCap: "Cargando capacidades de reglas...",
     unsupportedTitle: "Condiciones no reconocidas (solo lectura, no se conservan al guardar)",
     unknownLeaf: "Hoja desconocida",

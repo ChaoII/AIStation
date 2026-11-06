@@ -27,7 +27,8 @@ export default {
   endDate: "Date de fin",
   rangeSeparator: "à",
   confirmTitle: "Avertissement",
-  deleteConfirmMessage: "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
+  deleteConfirmMessage:
+    "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
   detailTitle: "Détail du poste",
   updateTitle: "Modifier le poste",
   createTitle: "Nouveau poste",

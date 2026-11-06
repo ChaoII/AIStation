@@ -100,7 +100,8 @@ export default {
   mineMarket: "Mercado",
   mineNotSubmitted: "No enviado",
   mineInstallCount: "{count} instalaciones",
-  mineEmpty: 'No hay activos: instala desde "Mercado de capacidades", o crea uno mediante "Nuevo" arriba',
+  mineEmpty:
+    'No hay activos: instala desde "Mercado de capacidades", o crea uno mediante "Nuevo" arriba',
   disable: "Deshabilitar",
   enableAction: "Habilitar",
   submitMarket: "Enviar al mercado",
@@ -228,13 +229,17 @@ export default {
   addField: "Añadir campo",
   bodyTypeLabel: "Tipo de cuerpo de la petición",
   bodyNone: "Ninguno (parámetros mediante la cadena de consulta)",
-  bodyHintGet: "{m} no tiene cuerpo de petición, los parámetros restantes se convierten en la cadena de consulta.",
-  bodyHintNoBody: "Se envía mediante {m} sin cuerpo de petición, los parámetros restantes se convierten en la cadena de consulta.",
+  bodyHintGet:
+    "{m} no tiene cuerpo de petición, los parámetros restantes se convierten en la cadena de consulta.",
+  bodyHintNoBody:
+    "Se envía mediante {m} sin cuerpo de petición, los parámetros restantes se convierten en la cadena de consulta.",
   bodyHintFormData:
     "Se envía mediante {m}, los parámetros restantes se convierten en application/x-www-form-urlencoded (Form Data).",
   bodyHintPost: "Se envía mediante POST, los parámetros restantes se convierten en el cuerpo JSON.",
-  bodyHintPut: "Se envía mediante PUT, los parámetros restantes se convierten en el cuerpo JSON (reemplazo completo).",
-  bodyHintPatch: "Se envía mediante PATCH, los parámetros restantes se convierten en el cuerpo JSON (actualización parcial).",
+  bodyHintPut:
+    "Se envía mediante PUT, los parámetros restantes se convierten en el cuerpo JSON (reemplazo completo).",
+  bodyHintPatch:
+    "Se envía mediante PATCH, los parámetros restantes se convierten en el cuerpo JSON (actualización parcial).",
   requestBodyLabel: "Cuerpo de la petición",
   scriptCode: "Código del script",
   extractParams: "Extraer parámetros del código",
@@ -245,7 +250,8 @@ export default {
   runtimeParamsLabel: "Parámetros de ejecución",
   runtimeParamKeyPlaceholder: "Nombre del parámetro, p. ej. api_key",
   runtimeValuePlaceholder: "Valor (oculto tras guardar)",
-  runtimeTipPre: "Para claves/valores sensibles/parámetros por usuario (p. ej. api_key, username). Léelo mediante ",
+  runtimeTipPre:
+    "Para claves/valores sensibles/parámetros por usuario (p. ej. api_key, username). Léelo mediante ",
   runtimeTipPost:
     " dentro del script, no se escribe en el código fuente; los valores siempre están ocultos tras guardar.",
   sandboxAlert:
@@ -293,7 +299,8 @@ export default {
   skillName: "Nombre de la habilidad",
   nameIfBlankPlaceholder: "Déjalo en blanco para usar el nombre del documento",
   sourceLabel: "Origen",
-  skillCategoryPlaceholder: 'p. ej. Productividad de oficina (déjalo en blanco para ponerlo en "Habilidades importadas")',
+  skillCategoryPlaceholder:
+    'p. ej. Productividad de oficina (déjalo en blanco para ponerlo en "Habilidades importadas")',
   uploadDragText: "Arrastra aquí el Zip de la habilidad, o",
   uploadClickText: "haz clic para seleccionar",
   uploadTip:
@@ -325,7 +332,8 @@ export default {
   commandLabel: "Comando de inicio",
   commandPlaceholder: "p. ej. npx o python",
   argsLabel: "Argumentos del comando",
-  argsPlaceholder: "Un argumento por línea, p. ej.\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+  argsPlaceholder:
+    "Un argumento por línea, p. ej.\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "Variables de entorno",
   envPlaceholder: "Un KEY=VALUE por línea, p. ej.\nAPI_KEY=xxx",
   urlLabel: "URL del servidor",

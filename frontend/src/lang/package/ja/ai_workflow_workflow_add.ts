@@ -161,8 +161,7 @@ export default {
   p_output_var_name: "出力変数名",
   p_python_code: "Python コード",
   p_input_map_json: "入力変数マッピング (JSON)",
-  p_code_ns_alert:
-    "制限された名前空間で実行されます。最後の式の結果が出力変数に書き込まれます",
+  p_code_ns_alert: "制限された名前空間で実行されます。最後の式の結果が出力変数に書き込まれます",
   p_cond_build: "条件ビルダー（パラメータ化、複数条件）",
   p_cond_and: "すべて（AND）",
   p_cond_or: "いずれか（OR）",
@@ -172,8 +171,7 @@ export default {
   p_add_cond: "条件を追加",
   p_gen_expr: "式を生成",
   p_cond_hint_1: "英語/数値/真偽値/配列に対応。または",
-  p_cond_hint_2:
-    "。「式を生成」をクリックして下の式に書き込み、手動で微調整してください。",
+  p_cond_hint_2: "。「式を生成」をクリックして下の式に書き込み、手動で微調整してください。",
   p_cond_expr: "条件式",
   p_cond_expr_ph: "例: {{a}} == 1 and {{b}} > 2",
   p_cond_handle_alert:
@@ -414,7 +412,7 @@ export default {
   wf_save: "保存",
   wf_topo_info: "{nodes} ノード · {edges} エッジ",
   wf_embed_hint:
-    'チャット埋め込みは「AI 統合 → アプリ管理」で、対象アプリの「埋め込み」でコードを生成してください。',
+    "チャット埋め込みは「AI 統合 → アプリ管理」で、対象アプリの「埋め込み」でコードを生成してください。",
   wf_read_schedule_fail: "スケジュール設定の読み込みに失敗しました",
   wf_schedule_saved: "スケジュールを保存しました",
   wf_save_fail_config: "保存に失敗しました（トリガー設定が無効な可能性があります）",
@@ -443,7 +441,7 @@ export default {
     "テンプレートを適用すると現在のキャンバスが置き換えられ、元に戻せません。続行しますか？",
   wf_apply_tpl_title: "テンプレートを適用",
   wf_apply: "適用",
-  wf_applied_tpl: 'テンプレート「{name}」を適用しました',
+  wf_applied_tpl: "テンプレート「{name}」を適用しました",
   wf_delete_node_confirm: "このノードを削除してもよろしいですか？",
   wf_confirm_title: "プロンプト",
   wf_delete: "削除",
@@ -461,14 +459,15 @@ export default {
     "{count} 個の選択ノードとその接続エッジを削除します。元に戻せません。続行しますか？",
   wf_batch_del_title: "一括削除",
   wf_batch_deleted: "一括削除しました",
-  wf_select_nodes_tpl: "先にノードを選択して（Shift/Ctrl で複数選択）、テンプレートとして保存してください",
+  wf_select_nodes_tpl:
+    "先にノードを選択して（Shift/Ctrl で複数選択）、テンプレートとして保存してください",
   wf_tpl_name_label: "テンプレート名",
   wf_save_as_tpl_title: "テンプレートとして保存",
   wf_tpl_name_ph: "例: 検索 QA サブグラフ",
   wf_my_tpl: "自分のテンプレート",
   wf_unnamed: "無題",
   wf_tpl_saved: "テンプレートを保存しました",
-  wf_inserted_tpl: 'テンプレート「{name}」を挿入しました（{count} ノード）',
+  wf_inserted_tpl: "テンプレート「{name}」を挿入しました（{count} ノード）",
   wf_no_nodes: "キャンバスにノードがありません",
   wf_group_layout_warn:
     "グループがあります。自動レイアウトでグループ関係が壊れる可能性があります。手動で調整してください",

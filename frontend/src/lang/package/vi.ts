@@ -55,5 +55,11 @@ export default {
   task,
   train,
   video,
-  ai_workflow: { ...aiWorkflow, ...aiWorkflowEvalAdd, ...aiWorkflowDevelopAdd, ...aiWorkflowIntegrationAdd, ...aiWorkflowWorkflowAdd },
+  ai_workflow: {
+    ...aiWorkflow,
+    ...aiWorkflowEvalAdd,
+    ...aiWorkflowDevelopAdd,
+    ...aiWorkflowIntegrationAdd,
+    ...aiWorkflowWorkflowAdd,
+  },
 };

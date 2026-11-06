@@ -27,8 +27,7 @@ export default {
   messageItem_copied: "클립보드에 복사됨",
   messageItem_liked: "좋아요 표시됨",
   messageItem_unliked: "좋아요 취소됨",
-  messageItem_feedbackPrompt:
-    "피드백을 남겨주세요 (선택, 답변 개선에만 사용됩니다):",
+  messageItem_feedbackPrompt: "피드백을 남겨주세요 (선택, 답변 개선에만 사용됩니다):",
   messageItem_feedback: "피드백",
   messageItem_submit: "제출",
   messageItem_cancel: "취소",
@@ -84,7 +83,8 @@ export default {
   welcome_promptPerfPrompt: "AIStation 시스템의 성능을 어떻게 최적화하나요?",
 
   // workspace/chat.vue
-  workspaceChat_noLongerSupported: "이 항목 유형은 더 이상 채팅을 지원하지 않습니다. 작업대로 돌아갑니다",
+  workspaceChat_noLongerSupported:
+    "이 항목 유형은 더 이상 채팅을 지원하지 않습니다. 작업대로 돌아갑니다",
   workspaceChat_agent: "에이전트",
   workspaceChat_app: "앱",
   workspaceChat_workflow: "워크플로우",
@@ -93,7 +93,8 @@ export default {
   workspaceChat_yesterday: "어제",
   workspaceChat_week: "지난 7일",
   workspaceChat_earlier: "이전",
-  workspaceChat_deleteTodayConfirm: "오늘 생성된 {count}개 세션을 삭제하시겠습니까? 계속하시겠습니까?",
+  workspaceChat_deleteTodayConfirm:
+    "오늘 생성된 {count}개 세션을 삭제하시겠습니까? 계속하시겠습니까?",
   workspaceChat_deleteToday: "오늘 항목 삭제",
   workspaceChat_delete: "삭제",
   workspaceChat_cancel: "취소",
@@ -174,8 +175,7 @@ export default {
   agentForm_tools: "도구",
   agentForm_selectTools: "도구 선택",
   agentForm_ontologyTools: "온톨로지 도구",
-  agentForm_ontologyPlaceholder:
-    "온톨로지 함수/액션 바인딩 (에이전트가 도구를 조립할 때 생성됨)",
+  agentForm_ontologyPlaceholder: "온톨로지 함수/액션 바인딩 (에이전트가 도구를 조립할 때 생성됨)",
   agentForm_ontologyHint:
     "체크 후 에이전트가 해당 온톨로지 함수/액션 도구를 갖게 됩니다. 실행 시 호출자의 온톨로지 권한을 여전히 검증합니다.",
   agentForm_skills: "스킬",
@@ -262,7 +262,8 @@ export default {
   workshop_loadFailed: "로드 실패",
   workshop_savedToObject: "객체 테이블에 저장됨",
   workshop_submitFailed: "제출 실패",
-  workshop_deleteConfirm: '앱 "{name}"을(를) 삭제하시겠습니까? 되돌릴 수 없습니다. 계속하시겠습니까?',
+  workshop_deleteConfirm:
+    '앱 "{name}"을(를) 삭제하시겠습니까? 되돌릴 수 없습니다. 계속하시겠습니까?',
   workshop_deleteTitle: "삭제 확인",
   workshop_deleted: "삭제됨",
 
@@ -345,8 +346,7 @@ export default {
   space_reason: "사유",
   space_reasonPlaceholder:
     "더 많은 공간이 필요한 이유를 설명하세요. 예: 더 많은 모델 학습 아티팩트를 저장해야 함.",
-  space_pendingAlert:
-    "이미 대기 중인 확장 요청이 있습니다. 관리자가 처리할 때까지 기다려 주세요.",
+  space_pendingAlert: "이미 대기 중인 확장 요청이 있습니다. 관리자가 처리할 때까지 기다려 주세요.",
   space_myRequests: "내 요청",
   space_noRequests: "요청 기록이 없습니다",
   space_status: "상태",

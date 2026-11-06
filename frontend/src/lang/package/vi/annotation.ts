@@ -204,7 +204,8 @@ export default {
   fmtTorchkilnKeypoint: "Điểm mốc TorchKiln (YOLO Pose + danh sách huấn luyện)",
   fmtTorchkilnClassification: "Phân loại TorchKiln (thư mục lớp + danh sách huấn luyện)",
   fmtTorchkilnOcr: "OCR TorchKiln (văn bản 4 điểm / toàn ảnh + danh sách huấn luyện)",
-  fmtTorchkilnVideoDetection: "Phát hiện video TorchKiln (lấy mẫu khung hình + danh sách huấn luyện)",
+  fmtTorchkilnVideoDetection:
+    "Phát hiện video TorchKiln (lấy mẫu khung hình + danh sách huấn luyện)",
   fmtTorchkilnCuboid: "Hộp 3D TorchKiln (camera 7-dof + danh sách huấn luyện)",
   fmtAudioEventJsonl: "Sự kiện âm thanh (khoảng thời gian JSONL)",
   fmtAudioEventCsv: "Sự kiện âm thanh (khoảng thời gian CSV)",

@@ -1005,12 +1005,15 @@ export default {
   pleaseCreateAndSelectAnEvalSetFirst: "Bitte zuerst einen Auswertungssatz erstellen und auswählen",
   whoChangedWhatWhen: "Wer hat wann was geändert",
   notExecutedOrNoFieldChanges: "Nicht ausgeführt oder keine Feldänderungen",
-  leaveEmptyToAutoDeriveByRelationName: "Leer lassen, um automatisch nach Beziehungsname abzuleiten",
-  columnLevelSecurityPropertyVisibilityRoles: "Sicherheit auf Spaltenebene (Rollen der Eigenschaftssichtbarkeit)",
+  leaveEmptyToAutoDeriveByRelationName:
+    "Leer lassen, um automatisch nach Beziehungsname abzuleiten",
+  columnLevelSecurityPropertyVisibilityRoles:
+    "Sicherheit auf Spaltenebene (Rollen der Eigenschaftssichtbarkeit)",
   entityUpdatedWithRelationCascade: "Entität aktualisiert (mit Beziehungskaskade)",
   selectedTimePropertyHasNoTimeValues: "Ausgewählte Zeiteigenschaft hat keine Zeitwerte",
   notLinkedImportedByExternalSync: "Nicht verknüpft (durch externe Synchronisierung importiert)",
-  thisVersionHasNoDiffFromCurrentDefinition: "Diese Version hat keinen Unterschied zur aktuellen Definition",
+  thisVersionHasNoDiffFromCurrentDefinition:
+    "Diese Version hat keinen Unterschied zur aktuellen Definition",
   pleaseFillAtLeastOneFieldToWrite: "Bitte mindestens ein Feld zum Schreiben ausfüllen",
   selectCategoryEmptyUncategorized: "Kategorie auswählen (leer = nicht kategorisiert)",
   eGAddAMaintenanceStatusFieldToCameras: "z. B. ein Wartungsstatusfeld zu Kameras hinzufügen",
@@ -1026,15 +1029,18 @@ export default {
   layoutMemoryClearedReLayoutAutomatically: "Layout-Speicher geleert, automatisch neu anordnen",
   expandRelatedEntitiesByKnowledgeGraphWhenEnabled:
     "Verwandte Entitäten über den Wissensgraphen erweitern, wenn aktiviert",
-  searchInstancesFuzzyMatchOnTitleProperty: "Instanzen durchsuchen (unscharfe Übereinstimmung auf Titeleigenschaft)",
+  searchInstancesFuzzyMatchOnTitleProperty:
+    "Instanzen durchsuchen (unscharfe Übereinstimmung auf Titeleigenschaft)",
   searchHitsTheseWordsPressEnterToAdd: "Suche trifft diese Wörter, Enter zum Hinzufügen drücken",
-  searchFailedSuggestRelatedChunksAndAnnotate: "Suche fehlgeschlagen? Verwandte Chunks vorschlagen und annotieren",
+  searchFailedSuggestRelatedChunksAndAnnotate:
+    "Suche fehlgeschlagen? Verwandte Chunks vorschlagen und annotieren",
   noInstancesToPreviewForThisObjectType: "Keine Instanzen zur Vorschau für diesen Objekttyp",
   runFunctionWritesNoData: "Funktion ausführen (schreibt keine Daten)",
   derivedByComparingObjectSnapshotsAfterExecution:
     "Abgeleitet durch Vergleich von Objektmomentaufnahmen nach der Ausführung",
   noFunctionsClickNewFunctionAtTopRight: "Keine Funktionen, oben rechts 'Neue Funktion' klicken",
-  noRulesConfiguredUsingWhitelistFallback: "Keine Regeln konfiguriert (Whitelist-Rückfall wird verwendet)",
+  noRulesConfiguredUsingWhitelistFallback:
+    "Keine Regeln konfiguriert (Whitelist-Rückfall wird verwendet)",
   pleaseSelectAnOntologyDomainOnTheLeftFirst: "Bitte zuerst links eine Ontologie-Domäne auswählen",
   pleaseEnterFunctionNameCodeAndOwningObjectType:
     "Bitte Funktionsname, Code und gehörenden Objekttyp eingeben",
@@ -1053,7 +1059,8 @@ export default {
     "Erfordert Genehmigung vor der Ausführung, sonst wird nur ein ausstehendes Formular erzeugt",
   externalDependenciesLikeAgentsAndWorkflowsAreNotConnectedYet:
     "Externe Abhängigkeiten wie Agenten und Workflows sind noch nicht verbunden.",
-  deleteThisChunkThisCannotBeUndone: "Diesen Chunk löschen? Dies kann nicht rückgängig gemacht werden.",
+  deleteThisChunkThisCannotBeUndone:
+    "Diesen Chunk löschen? Dies kann nicht rückgängig gemacht werden.",
   thisObjectTypeNoLongerExistsOrIsOutOfScope:
     "Dieser Objekttyp existiert nicht mehr oder liegt außerhalb des Umfangs",
   noOntologyDomainsYetClickNewDomainToCreate:
@@ -1068,7 +1075,8 @@ export default {
     "Panelansicht enthält Schlüsselinformationen zur Einbettung durch andere Apps",
   higherDegreeMeansMoreWorthDefiningActionsAndGovernance:
     "Höherer Grad bedeutet, dass es sich mehr lohnt, Aktionen und Governance zu definieren",
-  noNodesRightClickCanvasOrClickNewNode: "Keine Knoten, mit der rechten Maustaste auf die Leinwand klicken oder 'Neuer Knoten' klicken",
+  noNodesRightClickCanvasOrClickNewNode:
+    "Keine Knoten, mit der rechten Maustaste auf die Leinwand klicken oder 'Neuer Knoten' klicken",
   editChunkContentSavingWillReVectorizeThisChunk:
     "Chunk-Inhalt bearbeiten, das Speichern vektorisiert diesen Chunk neu",
   allowEndUsersToEditThisObjectTypeWritebackWhenEnabled:
@@ -1169,7 +1177,8 @@ export default {
   chunkSizeValue: "Chunk-Größe {size}",
   batchDeleteWithCount: "Stapellöschung ({count})",
   exportFaqCache: "FAQ-Cache exportieren",
-  qaInputPlaceholder: "Eine Frage eingeben; die KI antwortet aus der Wissensdatenbank und zitiert Quellen",
+  qaInputPlaceholder:
+    "Eine Frage eingeben; die KI antwortet aus der Wissensdatenbank und zitiert Quellen",
   pageLoc: "Seite {page}",
   lineLoc: "Zeile {line}",
   cantLocateLinePage: "Zeile/Seite kann nicht lokalisiert werden",
@@ -1221,16 +1230,20 @@ export default {
     "{count} verwandte Chunks erkannt, von denen {unhit} nicht getroffen wurden. Sie können zuerst annotieren und dann erneut abrufen.",
   suggestRelatedHitMsg: "Erkannte verwandte Chunks wurden getroffen.",
   fileUploadedMsg: '"{name}" hochgeladen, wird verarbeitet. Bitte später im Hintergrund prüfen.',
-  deleteDocConfirm: 'Dokument "{name}" löschen? Chunks werden ebenfalls entfernt, nicht wiederherstellbar!',
-  batchDeleteDocsConfirm: "{count} Dokumente werden gelöscht (alle Daten/Chunks), nicht wiederherstellbar!",
+  deleteDocConfirm:
+    'Dokument "{name}" löschen? Chunks werden ebenfalls entfernt, nicht wiederherstellbar!',
+  batchDeleteDocsConfirm:
+    "{count} Dokumente werden gelöscht (alle Daten/Chunks), nicht wiederherstellbar!",
   deleteDocsMsg: "{count} Dokumente gelöscht",
   exportFaqMsg: "FAQ exportiert ({count} Elemente)",
-  linkModeNodeHint: 'Knoten "{name}" ausgewählt, klicken Sie auf den Zielknoten, um die Verbindung abzuschließen',
+  linkModeNodeHint:
+    'Knoten "{name}" ausgewählt, klicken Sie auf den Zielknoten, um die Verbindung abzuschließen',
   saveLayoutMsg: "{count} Knotenpositionen gespeichert",
   deleteDsConfirm: 'Datenquelle "{name}" löschen? Nach dem Löschen nicht wiederherstellbar!',
   syncPromptLabel: "Datenbanknamen/Abfrage zum Synchronisieren eingeben (z. B. Benutzer)",
   syncDsConfirm: 'Synchronisieren der Daten von "{name}" in die Ziel-Wissensdatenbank bestätigen?',
-  syncDoneMsg: "Synchronisierung abgeschlossen ({rows} Zeilen gezogen, {chunks} Chunks geschrieben)",
+  syncDoneMsg:
+    "Synchronisierung abgeschlossen ({rows} Zeilen gezogen, {chunks} Chunks geschrieben)",
   graphLegendAnnotLabel: "Chunk annotieren / verknüpfen",
   kbCopiedMsg: 'Nach "{name}" kopiert ({count} Chunks)',
   graphFilePrefix: "Wissensgraph_",
@@ -1252,7 +1265,8 @@ export default {
   codeId: "Code (ID)",
   codePlaceholder: "z. B. video_cameras (Kleinbuchstaben/Ziffern/Bindestriche, eindeutig)",
   apiName: "API-Name",
-  manyToManyJoinDatasetHint: "Viele-zu-viele muss einen 'Verknüpfungstabellen-Datensatz' verwenden (offizielle Regel)",
+  manyToManyJoinDatasetHint:
+    "Viele-zu-viele muss einen 'Verknüpfungstabellen-Datensatz' verwenden (offizielle Regel)",
   actionUpdate: "aktualisieren (Objekt ändern)",
   actionInsert: "einfügen (noch nicht unterstützt, wird abgelehnt)",
   actionDelete: "löschen (noch nicht unterstützt, wird abgelehnt)",
@@ -1363,7 +1377,8 @@ export default {
   rightUndefinedParam: "{where}: rechts verweist auf undefinierten Parameter {param}",
   notifyNoRecipients: "{where}: Benachrichtigung hat keine Empfänger angegeben",
   webhookUrlInvalid: "{where}: Webhook-URL muss http/https sein",
-  effectTypeNotSupported: "{where}: Typ nicht unterstützt {type} (verfügbar: notification, webhook)",
+  effectTypeNotSupported:
+    "{where}: Typ nicht unterstützt {type} (verfügbar: notification, webhook)",
   stagedSaveHint: '{label} gestuft (oben rechts "Speichern" klicken, um anzuwenden)',
   pleaseFillObjectRowId: "Bitte die Objekt-Zeilen-ID ausfüllen",
   objectTypeSub: "Objekttyp · {info}",
@@ -1433,7 +1448,8 @@ export default {
   paramsSourceHint:
     "Wird deklariert, um die Agent-Werkzeugeingaben zu erzeugen. source kann parameter (vom Aufrufer übergeben), object_property (Objekteigenschaft nehmen, object_property ausfüllen), static, current_user, current_time sein.",
   outputsJson: "Ausgaben (JSON)",
-  outputsHint: "Deklariert die Rückgabewertstruktur, wird in die Agent-Werkzeugbeschreibung geschrieben",
+  outputsHint:
+    "Deklariert die Rückgabewertstruktur, wird in die Agent-Werkzeugbeschreibung geschrieben",
   configJson: "Formkonfiguration (JSON)",
   fnToolDescriptionPlaceholder:
     'Werkzeugbeschreibung für die KI: was diese Funktion berechnet und wann sie aufzurufen ist. Leer lassen, um auf "Beschreibung" zurückzufallen',
@@ -1456,7 +1472,8 @@ export default {
   summarizePrompt: "Zusammenfassen: {'{{'}text{'}}'}",
   fnConfigHintAggregate:
     "link_path ist ein Array von Beziehungs-IDs (bis zu 3 Ebenen); property kann für count leer gelassen werden",
-  fnConfigHintHttp: "URL muss http/https sein; body_template unterstützt {'{{'}param{'}}'}-Platzhalter",
+  fnConfigHintHttp:
+    "URL muss http/https sein; body_template unterstützt {'{{'}param{'}}'}-Platzhalter",
   fnConfigHintModel:
     "model_id leer lassen, um das Standardmodell zu verwenden; prompt unterstützt {'{{'}param{'}}'}-Platzhalter",
   configMustBeJsonObject: "Formkonfiguration muss ein JSON-Objekt sein",
@@ -1554,7 +1571,8 @@ export default {
   ttlDaysHint: "Offizieller Standard 31 Tage, läuft ab und wird automatisch gelöscht",
   scenarioDetail: "Szenariodetails",
   modelResultsNotice: "Es gibt {count} Modellvorhersageergebnisse; {note}",
-  compareAlert: "Was dasselbe Objekt in verschiedenen Szenarien wird — um verschiedene Optionen abzuwägen",
+  compareAlert:
+    "Was dasselbe Objekt in verschiedenen Szenarien wird — um verschiedene Optionen abzuwägen",
   mergeScenarioConfirm:
     'Die {count} Objektänderungen des Szenarios "{name}" werden **in einer einzigen Transaktion in die echte Datentabelle geschrieben**; jeder Fehler rollt alles zurück. Dies kann nicht automatisch rückgängig gemacht werden. Zusammenführen bestätigen?',
   discardScenarioConfirm:
@@ -1598,7 +1616,7 @@ export default {
   deleteViewConfirm:
     'Graphansicht "{name}" und alle ihre Versionsdatensätze werden gelöscht, nicht wiederherstellbar.',
   indexBuildAlert:
-    "Das Erstellen eines Index führt tatsächlich CREATE INDEX auf der Basistabelle des Objekttyps aus. Status \"ready\" bedeutet, es ist einsatzbereit (entspricht dem offiziellen grünen Haken).",
+    'Das Erstellen eines Index führt tatsächlich CREATE INDEX auf der Basistabelle des Objekttyps aus. Status "ready" bedeutet, es ist einsatzbereit (entspricht dem offiziellen grünen Haken).',
   primaryKeyParen: "(Primärschlüssel)",
   rowsAndSize: "Zeilen / Größe",
   autoRetryAt: "Wird um {time} automatisch erneut versucht",
@@ -1643,7 +1661,8 @@ export default {
   editCountWithAuthors: "{count} Bearbeitungen · {authors}",
   commentsCount: "{count} Kommentare",
   anonymous: "Anonym",
-  commentPlaceholder: "Schreiben Sie Ihre Meinung, Prüfschlussfolgerung oder einen zusätzlichen Hinweis…",
+  commentPlaceholder:
+    "Schreiben Sie Ihre Meinung, Prüfschlussfolgerung oder einen zusätzlichen Hinweis…",
   discardTaskConfirm:
     'Die Änderungen der Aufgabe "{resource}" werden verworfen (nicht mehr auf dem Branch enthalten). Bestätigen?',
   mergeProposalConfirm:

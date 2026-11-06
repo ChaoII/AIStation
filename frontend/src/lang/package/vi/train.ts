@@ -173,7 +173,8 @@ export default {
   repoStatusReleased: "Đã phát hành",
   rePredict: "Dự đoán lại",
   retrain: "Huấn luyện lại",
-  retrainConfirm: 'Huấn luyện lại nhiệm vụ "{name}"? Thao tác này sẽ xóa kết quả huấn luyện trước đó.',
+  retrainConfirm:
+    'Huấn luyện lại nhiệm vụ "{name}"? Thao tác này sẽ xóa kết quả huấn luyện trước đó.',
   retrainConfirmBtn: "Xác nhận huấn luyện lại",
   save: "Lưu",
   savedGoManage: "Đã lưu, đi đến quản lý",

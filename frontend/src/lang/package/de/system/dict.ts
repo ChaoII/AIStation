@@ -27,7 +27,8 @@ export default {
   startDate: "Startdatum",
   endDate: "Enddatum",
   to: "bis",
-  confirmDeleteMessage: "Möchten Sie die ausgewählten Datensätze löschen? Dies kann nicht rückgängig gemacht werden.",
+  confirmDeleteMessage:
+    "Möchten Sie die ausgewählten Datensätze löschen? Dies kann nicht rückgängig gemacht werden.",
   confirmToggle: "Diesen Datensatz {status}?",
 
   // 字典类型

@@ -27,7 +27,8 @@ export default {
   endDate: "Ngày kết thúc",
   rangeSeparator: "đến",
   confirmTitle: "Cảnh báo",
-  deleteConfirmMessage: "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
+  deleteConfirmMessage:
+    "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
   detailTitle: "Chi tiết chức vụ",
   updateTitle: "Sửa chức vụ",
   createTitle: "Tạo chức vụ",

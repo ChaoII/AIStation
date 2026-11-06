@@ -83,8 +83,7 @@ export default {
     "모든 작업을 지우시겠습니까?\n대기 중인 모든 작업 로그가 취소로 표시되며, 기록 실행 기록은 삭제되지 않습니다.\n모든 실행 기록을 삭제하려면 실행 기록의 일괄 삭제 기능을 사용하세요.",
   noTaskInfo: "작업 정보가 없습니다",
   getConsoleFailed: "콘솔 정보를 가져오지 못했습니다",
-  clearConsoleConfirm:
-    "스케줄러 콘솔 출력을 지우시겠습니까? 지운 후에는 복구할 수 없습니다.",
+  clearConsoleConfirm: "스케줄러 콘솔 출력을 지우시겠습니까? 지운 후에는 복구할 수 없습니다.",
   clearConfirmTitle: "지우기 확인",
   clearButton: "지우기",
   removeJobConfirm: "이 작업을 제거하시겠습니까?",
@@ -220,8 +219,7 @@ export default {
   validatePassWithWarnings: "워크플로 검증은 통과했지만 경고가 있습니다 ({count}):",
   validateFailed: "검증에 실패했습니다",
   deleteNodeTitle: "노드 삭제",
-  deleteNodeConfirmSingle:
-    "이 노드를 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.",
+  deleteNodeConfirmSingle: "이 노드를 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.",
   nodeDeleteSuccess: "노드가 삭제되었습니다",
   deleteEdgeTitle: "엣지 삭제",
   deleteEdgeConfirm: "이 엣지를 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.",

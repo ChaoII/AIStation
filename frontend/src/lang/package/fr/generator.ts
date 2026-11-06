@@ -34,7 +34,8 @@ export default {
   none: "Aucun",
   selectDataToModify: "Veuillez sélectionner les données à modifier",
   loadDetailFailed: "Échec du chargement du détail de la table, veuillez réessayer plus tard",
-  menuDictLoadFailed: "Échec du chargement du menu ou des options de dictionnaire, certains menus déroulants peuvent être vides",
+  menuDictLoadFailed:
+    "Échec du chargement du menu ou des options de dictionnaire, certains menus déroulants peuvent être vides",
   selectDataToDelete: "Veuillez sélectionner les données à supprimer",
   deleteConfirmTitle: "Confirmation de suppression",
   deleteConfirmMsg: "Voulez-vous vraiment supprimer les {count} élément(s) sélectionné(s) ?",
@@ -49,7 +50,8 @@ export default {
   // 校验规则
   masterSubPairError:
     "Le nom de la sous-table et la colonne de clé étrangère doivent être remplis ensemble ou laissés vides ensemble",
-  masterSubSameError: "Le nom de la sous-table ne peut pas être identique au nom de la table principale",
+  masterSubSameError:
+    "Le nom de la sous-table ne peut pas être identique au nom de la table principale",
   businessNameEmpty: "Le nom métier ne peut pas être vide",
   requiredTableName: "Le nom de la table ne peut pas être vide",
   requiredEntity: "Le nom de l'entité ne peut pas être vide",
@@ -66,7 +68,8 @@ export default {
   // 确认写入路径
   writeMoreFiles: "Il y a <b>{count}</b> autre(s) fichier(s) non listé(s)",
   writeNoPath: "Aucun chemin d'aperçu obtenu ; l'écriture continuera quand même.",
-  writeConfirmTip: "Même source que l'« Aperçu du code » ; les chemins sont relatifs à la racine du projet sur disque.",
+  writeConfirmTip:
+    "Même source que l'« Aperçu du code » ; les chemins sont relatifs à la racine du projet sur disque.",
   writeHeader: "Les fichiers suivants seront écrits",
   writeCount: "{count} élément(s) au total · Relatif à la racine du projet",
   writeConfirmTitle: "Confirmer l'écriture locale",
@@ -99,7 +102,8 @@ export default {
   prevStep: "Précédent",
   nextStepColumns: "Suivant : Configuration des champs",
   nextStepPreview: "Suivant : Aperçu du code",
-  downloadTip: "Conditionner en ZIP et télécharger localement ; aucun menu ni fichier n'est créé sur le serveur",
+  downloadTip:
+    "Conditionner en ZIP et télécharger localement ; aucun menu ni fichier n'est créé sur le serveur",
   downloadCode: "Télécharger le code",
   writeTip:
     "Générer le code source dans le répertoire du projet serveur et créer automatiquement les répertoires/menu/boutons (si les noms n'entrent pas en conflit)",
@@ -230,10 +234,12 @@ export default {
   subTable: "Sous-table",
   subTableNamePlaceholder: "ex. gen_demo_order_item",
   fkColumn: "Colonne FK",
-  fkColumnPlaceholder: "La colonne de la sous-table pointant vers la table principale, ex. order_id",
+  fkColumnPlaceholder:
+    "La colonne de la sous-table pointant vers la table principale, ex. order_id",
   fkRefColumn: "Colonne principale correspondante",
   fkRefColumnPlaceholder: "Généralement id",
-  needManualAdjust: "Des ajustements manuels nécessaires ? Générez le SQL et passez à « Écrire du SQL »",
+  needManualAdjust:
+    "Des ajustements manuels nécessaires ? Générez le SQL et passez à « Écrire du SQL »",
   execSql: "SQL à exécuter (se met à jour automatiquement avec la table ci-dessus)",
   autoGenPlaceholder: "Généré automatiquement après le remplissage du nom de la table",
   createTableBtn: "Créer la table",
@@ -258,7 +264,8 @@ export default {
   cancelConfirm: "Annuler",
 
   // 帮助面板
-  helpCollapseTitle: "Mappage du menu, de la route de page et du chemin d'API (lors de l'écriture locale)",
+  helpCollapseTitle:
+    "Mappage du menu, de la route de page et du chemin d'API (lors de l'écriture locale)",
   colParent: "Répertoire parent",
   colSidebar: "Structure de la barre latérale (catalogue → menu → bouton)",
   colPage: "URL du navigateur (route de page)",

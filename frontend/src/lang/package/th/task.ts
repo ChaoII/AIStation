@@ -220,8 +220,7 @@ export default {
   validatePassWithWarnings: "การตรวจสอบเวิร์กโฟลว์ผ่าน แต่มีคำเตือน ({count}):",
   validateFailed: "การตรวจสอบล้มเหลว",
   deleteNodeTitle: "ลบโหนด",
-  deleteNodeConfirmSingle:
-    "คุณต้องการลบโหนดนี้หรือไม่? ไม่สามารถกู้คืนได้หลังลบ",
+  deleteNodeConfirmSingle: "คุณต้องการลบโหนดนี้หรือไม่? ไม่สามารถกู้คืนได้หลังลบ",
   nodeDeleteSuccess: "ลบโหนดสำเร็จ",
   deleteEdgeTitle: "ลบเส้นเชื่อม",
   deleteEdgeConfirm: "คุณต้องการลบเส้นเชื่อมนี้หรือไม่? ไม่สามารถกู้คืนได้หลังลบ",

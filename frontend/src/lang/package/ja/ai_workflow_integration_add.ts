@@ -45,7 +45,7 @@ export default {
 
   // ===== 数据源 =====
   ig_datasource: "データソース",
-  ig_dsEmpty: 'データソースがありません。「新規」をクリックして作成してください',
+  ig_dsEmpty: "データソースがありません。「新規」をクリックして作成してください",
   ig_testConnection: "接続テスト",
   ig_tableCount: "{count} テーブル",
   ig_tableName: "テーブル名",
@@ -101,8 +101,7 @@ export default {
   ig_nameCol: "表示名列",
   ig_fieldCount: "フィールド ({count})",
   ig_onlyBizField: "業務フィールドのみ",
-  ig_auditHint:
-    "上流コメントは参考用。中国語名/列挙値は手動でメンテナンスできます",
+  ig_auditHint: "上流コメントは参考用。中国語名/列挙値は手動でメンテナンスできます",
   ig_noColEmpty: "このテーブルのフィールド情報がありません。先にスキーマを同期してください",
   ig_field: "フィールド",
   ig_relatedTable: "関連テーブル",
@@ -132,7 +131,8 @@ export default {
   ig_fieldMapping: "フィールドマッピング",
   ig_mappingPlaceholder:
     '各行「ソースフィールド ターゲットフィールド」。または JSON 配列 [{"from":"a","to":"b"}] を貼り付け',
-  ig_pipeGraphTitle: "パイプラインオーケストレーショングラフ（ソーステーブル → パイプライン → オントロジーオブジェクト）",
+  ig_pipeGraphTitle:
+    "パイプラインオーケストレーショングラフ（ソーステーブル → パイプライン → オントロジーオブジェクト）",
   ig_pipeGraphEmpty: "まだパイプラインがありません。先に作成してください",
   ig_pipeDataTitle: "パイプラインデータ: {name}",
   ig_pipeDataEmpty: "データがありません。先にパイプラインを実行してください",
@@ -175,7 +175,7 @@ export default {
   ig_object: "オブジェクト",
   ig_property: "プロパティ",
   ig_modelingLoading:
-    '「{datasource}」の最初の {maxObjects} オブジェクトを分析するため LLM を呼び出しています。通常 10 秒以上かかります…',
+    "「{datasource}」の最初の {maxObjects} オブジェクトを分析するため LLM を呼び出しています。通常 10 秒以上かかります…",
   ig_candidateCount: "{total} 候補、{selected} 選択",
   ig_selectAllNone: "すべて選択 / 選択解除",
   ig_invalidCandidates: "検証に失敗した候補（保存されません）",
@@ -217,7 +217,7 @@ export default {
   ig_editConcept: "概念を編集",
   ig_conceptHint: "業務概念（クエリ意味論レイヤー。オントロジーオブジェクト別名を含む）",
   ig_conceptHintAlert:
-    '役割分担: 概念 = 階層的な業務概念 + 同義語。「関連指標」は高速パスマッチングに参加します。オブジェクトの別名はオントロジーで維持（ここでは読み取り専用で統合）。用語マッピングには「用語」を使用してください。',
+    "役割分担: 概念 = 階層的な業務概念 + 同義語。「関連指標」は高速パスマッチングに参加します。オブジェクトの別名はオントロジーで維持（ここでは読み取り専用で統合）。用語マッピングには「用語」を使用してください。",
   ig_noConcept: "概念がありません",
   ig_conceptName: "概念名",
   ig_conceptShort: "概念",
@@ -245,8 +245,7 @@ export default {
   ig_question: "質問",
   ig_exampleSql: "例 SQL",
   ig_systemLibOption: "システムライブラリ（オントロジー支援テーブル）",
-  ig_questionPlaceholder:
-    "自然言語の質問。例: カメラの状態分布を数える",
+  ig_questionPlaceholder: "自然言語の質問。例: カメラの状態分布を数える",
   ig_questionRequired: "質問を入力してください",
   ig_sqlRequired: "例 SQL を入力してください",
   ig_exampleSaved: "例を保存しました",
@@ -256,7 +255,7 @@ export default {
 
   // ===== 血缘图 =====
   ig_kgAlert:
-    'データ側のリネージ: テーブル / フィールド / 指標 / 用語 / 概念間の関係です。「オントロジータイプレイヤーグラフ」とは異なります — 後者はオントロジー → 関係タイプ → 可視化にあります。',
+    "データ側のリネージ: テーブル / フィールド / 指標 / 用語 / 概念間の関係です。「オントロジータイプレイヤーグラフ」とは異なります — 後者はオントロジー → 関係タイプ → 可視化にあります。",
   ig_rebuildGraph: "グラフを再構築",
   ig_autoLink: "エッジを自動リンク",
   ig_autoLinkHint: "自動リンク: ナレッジベースエンティティ ↔ スキーマテーブル/フィールド",
@@ -266,7 +265,8 @@ export default {
   ig_kgType: "タイプ:",
   ig_kgFocusPlaceholder: "テーブルでフォーカス（このテーブルのリネージのみ）",
   ig_kgNodeCount: "現在 {count} ノード",
-  ig_kgEmpty: 'グラフがありません。「グラフを再構築」をクリックするか、フィルターを調整してください',
+  ig_kgEmpty:
+    "グラフがありません。「グラフを再構築」をクリックするか、フィルターを調整してください",
   ig_kgTypeTable: "テーブル",
   ig_kgTypeField: "フィールド",
   ig_kgTypeMetric: "指標",
@@ -284,7 +284,7 @@ export default {
   // ===== 批量维护 =====
   ig_batchMaintainTitle: "テーブル情報を一括メンテナンス",
   ig_batchMaintainHint:
-    '1 行 1 エントリ。「テーブル名 中国語名」または「テーブル名,中国語名,業務ドメイン」形式。中国語名のみの記入では既存の説明はクリアされません。',
+    "1 行 1 エントリ。「テーブル名 中国語名」または「テーブル名,中国語名,業務ドメイン」形式。中国語名のみの記入では既存の説明はクリアされません。",
   ig_batchPlaceholder:
     "FUEL_CB_COALBALANCE 石炭購買決済マスターテーブル\nFUEL_CMCS_ASSAY,化検テーブル,石炭",
   ig_parsedCount: "{count} エントリを解析しました",
@@ -298,7 +298,7 @@ export default {
 
   // ===== AI 辅助建模 =====
   ig_modelingAlert:
-    'LLM を使用して、選択したデータソースの「バインド済み指標」と「オブジェクト/プロパティ注釈」を生成します。フローは 2 段階: まず「プレビュー」で候補を（保存されない）、次に選択して正確に保存 — LLM は再実行されず、保存されるのはまさに表示されているものです。',
+    "LLM を使用して、選択したデータソースの「バインド済み指標」と「オブジェクト/プロパティ注釈」を生成します。フローは 2 段階: まず「プレビュー」で候補を（保存されない）、次に選択して正確に保存 — LLM は再実行されず、保存されるのはまさに表示されているものです。",
   ig_processObjects: "処理するオブジェクト数",
   ig_genBoundMetric: "バインド済み指標を生成",
   ig_genAnnotation: "オブジェクト/プロパティ注釈を生成",
@@ -310,7 +310,7 @@ export default {
   ig_boundMetricScope: "バインド済み指標",
   ig_failReason: "失敗理由",
   ig_extractConfirm:
-    'LLM を使用して、含まれる資産テーブルから「業務オブジェクト」を抽出し、意味論レイヤーに書き込みます。時間がかかる場合があります。続行しますか？',
+    "LLM を使用して、含まれる資産テーブルから「業務オブジェクト」を抽出し、意味論レイヤーに書き込みます。時間がかかる場合があります。続行しますか？",
   ig_extractTitle: "オブジェクトを意味論的に抽出",
   ig_extractedCount: "抽出されたオブジェクト: {count}",
   ig_extractFail: "抽出に失敗しました",
@@ -326,8 +326,7 @@ export default {
     "LLM は含まれる資産の中国語辞書に基づいて高頻度の指標と業務用語を推奨します。1 つずつ採用して指標/用語ライブラリに書き込みます。",
   ig_suggestMetrics: "推奨指標 ({count})",
   ig_suggestTerms: "推奨用語 ({count})",
-  ig_noSuggestResult:
-    "推奨が生成されませんでした。まず資産の業務説明を改善して再試行してください",
+  ig_noSuggestResult: "推奨が生成されませんでした。まず資産の業務説明を改善して再試行してください",
   ig_suggestFail: "推奨に失敗しました",
 
   // ===== 字段属性 =====
@@ -337,7 +336,7 @@ export default {
   ig_relatedTablePlaceholder: "関連テーブルを選択",
   ig_relatedFieldPlaceholder: "対応するフィールドを選択",
   ig_enumPlaceholder: "入力して Enter で追加",
-  ig_fieldSaved: 'フィールド「{name}」を保存しました',
+  ig_fieldSaved: "フィールド「{name}」を保存しました",
 
   // ===== 数据源弹窗 =====
   ig_editDs: "データソースを編集",
@@ -369,7 +368,8 @@ export default {
   ig_syncedCount: "{count} テーブルを同期しました",
   ig_syncFail: "同期に失敗しました",
   ig_tableSaved: "テーブル情報を保存しました",
-  ig_importedObject: 'オントロジーオブジェクト「{object}」として {count} プロパティでインポートしました',
+  ig_importedObject:
+    "オントロジーオブジェクト「{object}」として {count} プロパティでインポートしました",
   ig_noImportBizTable: "インポートする業務テーブルがありません（システムテーブルは非表示）",
   ig_importedCount: "{count} オントロジーオブジェクトをインポートしました",
   ig_batchImportFail: "一括インポートに失敗しました",
@@ -384,7 +384,7 @@ export default {
   ig_selectDsEmpty: "左のデータソースを選択してください",
   ig_noBizTableAfterHide: "システムテーブルを非表示にしました。現在業務テーブルがありません",
   ig_noMatchTable: "一致するテーブルがありません",
-  ig_syncToLoad: '「同期」をクリックしてスキーマを読み込んでください',
+  ig_syncToLoad: "「同期」をクリックしてスキーマを読み込んでください",
   ig_descGenerated:
     "説明を生成しました: {tables} テーブル、{columns} フィールド（手動レビュー後に有効）",
   ig_descGenFail: "AI 説明生成に失敗しました",
@@ -394,13 +394,13 @@ export default {
   ig_saveRules: "ルールを保存",
   ig_saveApplyRules: "保存して適用",
   ig_frwbHint:
-    'ルールを変更すると下のプレビューが自動更新されます（読み取り専用。保存済みルールには影響しません）。確認して「ルールを保存 / 保存して適用」をクリックしてください。',
+    "ルールを変更すると下のプレビューが自動更新されます（読み取り専用。保存済みルールには影響しません）。確認して「ルールを保存 / 保存して適用」をクリックしてください。",
   ig_tabRuleConfig: "ルール設定",
-  ig_enableRuleHint: "オフの場合、システムテーブル/監査フィールドはルールで自動タグ付けされなくなります",
+  ig_enableRuleHint:
+    "オフの場合、システムテーブル/監査フィールドはルールで自動タグ付けされなくなります",
   ig_sysTableDetect: "システムテーブル検出",
   ig_auditFieldDetect: "監査フィールド検出",
-  ig_draftStatus:
-    '現在の下書き: {status}。保存後「前後」比較のベースラインになります',
+  ig_draftStatus: "現在の下書き: {status}。保存後「前後」比較のベースラインになります",
   ig_tabPreview: "ライブプレビュー",
   ig_frwbPreviewHint:
     "以下は現在の下書きルールのマッチ結果です（読み取り専用）。保存済みルールには影響しません。",
@@ -418,9 +418,10 @@ export default {
   ig_compareHint: "保存済みルール vs 現在の下書き（ヒットタグが変わったテーブル/フィールド）",
   ig_savedDraftCount: "保存 {saved} / 下書き {draft}",
   ig_compareEmpty:
-    'まだ比較していません:「比較を更新」をクリックすると、保存済みルールと現在の下書きのヒット差分を表示します。',
+    "まだ比較していません:「比較を更新」をクリックすると、保存済みルールと現在の下書きのヒット差分を表示します。",
   ig_compareSame: "保存済みルールは現在の下書きと一致しています。ヒット変化はありません。",
-  ig_noDiff: 'まだ差分がありません（「比較を更新」をクリックするか、先に下書きルールを変更してください）',
+  ig_noDiff:
+    "まだ差分がありません（「比較を更新」をクリックするか、先に下書きルールを変更してください）",
   ig_name: "名前",
   ig_hitChange: "ヒット変化",
   ig_hitRuleCompare: "マッチしたルール（保存 → 下書き）",
@@ -430,15 +431,15 @@ export default {
   ig_auditVsBiz: "監査 vs 業務フィールド",
   ig_tabLlm: "LLM 支援",
   ig_llmHint:
-    '以下の 3 領域すべてが LLM 支援の候補ルール/提案です。「下書きに適用」はフロントエンドの下書きのみに書き込まれます（保存されません）。確認後、「ルール設定」で微調整してから保存できます。',
+    "以下の 3 領域すべてが LLM 支援の候補ルール/提案です。「下書きに適用」はフロントエンドの下書きのみに書き込まれます（保存されません）。確認後、「ルール設定」で微調整してから保存できます。",
   ig_genCandidateRules: "候補ルールを生成",
   ig_applyDraft: "下書きに適用",
-  ig_genCandidateEmpty: '「候補ルールを生成」をクリックして LLM に候補ルールを出させてください',
+  ig_genCandidateEmpty: "「候補ルールを生成」をクリックして LLM に候補ルールを出させてください",
   ig_nlConfig: "自然言語設定",
   ig_nlPlaceholder:
     "自然言語でルールを記述。例: SYS_ で始まるテーブルをシステムテーブル、created_time / is_deleted を監査フィールドとして扱う",
   ig_parse: "解析",
-  ig_parseEmpty: '自然言語を入力して「解析」をクリックするとフィルタールールに変換されます',
+  ig_parseEmpty: "自然言語を入力して「解析」をクリックするとフィルタールールに変換されます",
   ig_perTableSuggest: "テーブル/フィールドごとの提案",
   ig_getClassify: "分類提案を取得",
   ig_sysSuggest: "システムテーブル提案 ({count})",
@@ -446,13 +447,14 @@ export default {
   ig_suggestReason: "理由",
   ig_classifyHint:
     "これらは項目ごとの分類提案であり、完全なルールではありません。参考用のみで、下書きには書き戻されません。",
-  ig_classifyEmpty: '「分類提案を取得」をクリックしてテーブル/フィールドごとの提案を表示してください',
+  ig_classifyEmpty:
+    "「分類提案を取得」をクリックしてテーブル/フィールドごとの提案を表示してください",
   ig_enabledOn: "有効",
   ig_enabledOff: "無効",
   ig_previewFail: "プレビューに失敗しました",
   ig_noValidRules: "有効なルールが返されませんでした。適用をキャンセルしました",
   ig_appliedDraft:
-    '下書きに適用しました（保存されていません）。保存前に「ルール設定」に戻って微調整してください',
+    "下書きに適用しました（保存されていません）。保存前に「ルール設定」に戻って微調整してください",
   ig_genCandidateFail: "候補ルールの生成に失敗しました",
   ig_parseFail: "解析に失敗しました",
   ig_getClassifyFail: "分類提案の取得に失敗しました",
@@ -499,8 +501,9 @@ export default {
   ig_govSandbox: "アクセスプレビュー",
   ig_govPolicyCount: "{count} 件の ABAC ポリシー",
   ig_govAbacAlert:
-    'ABAC: スーパー管理者はデフォルトですべてを表示。「機密公開」に該当するものは機密オブジェクトフィールドを表示でき、それ以外は解決/クエリ時に機密フィールドを自動除去します。',
-  ig_govNoPolicy: 'ABAC ポリシーがありません。「新規ポリシー」をクリックしてアクセス制御を設定してください',
+    "ABAC: スーパー管理者はデフォルトですべてを表示。「機密公開」に該当するものは機密オブジェクトフィールドを表示でき、それ以外は解決/クエリ時に機密フィールドを自動除去します。",
+  ig_govNoPolicy:
+    "ABAC ポリシーがありません。「新規ポリシー」をクリックしてアクセス制御を設定してください",
   ig_govPolicy: "ポリシー",
   ig_govAttribute: "属性",
   ig_govAttributeValue: "属性値",
@@ -510,34 +513,34 @@ export default {
   ig_govScanAll: "すべてのオブジェクトをスキャン",
   ig_govDqSummary: "平均 {avg} · 正常 {healthy} · リスク {risk}",
   ig_govDqAlert: "品質アラート: {count} オブジェクトのヘルススコアが 60 未満です",
-  ig_govNoDq: 'データ品質結果がありません。「すべてのオブジェクトをスキャン」をクリックしてください',
+  ig_govNoDq:
+    "データ品質結果がありません。「すべてのオブジェクトをスキャン」をクリックしてください",
   ig_govRowCount: "行数",
   ig_govIssue: "問題",
   ig_govDomainAlert:
-    'データドメイン: クエリ権限とガバナンスのためにデータテーブルを業務テーマでグループ化します。「業務ドメイン」（資産上の業務タグ）や「オントロジードメイン」（オントロジーオブジェクト名前空間）とは異なります。',
+    "データドメイン: クエリ権限とガバナンスのためにデータテーブルを業務テーマでグループ化します。「業務ドメイン」（資産上の業務タグ）や「オントロジードメイン」（オントロジーオブジェクト名前空間）とは異なります。",
   ig_govNewDomain: "新規データドメイン",
   ig_govDomainCount: "{count} ドメイン · 未割り当て {unassigned}",
   ig_govObjCount: "オブジェクト ({count})",
   ig_govMemberIds: "メンバーユーザー ID",
   ig_govOntSummary:
     "オントロジーオブジェクト · ソースパイプライン / 下流 / データ品質スコア | 平均 {avg}",
-  ig_govNoOnt: 'オントロジーオブジェクトがありません。「オントロジー」でオブジェクトを定義し、まず実体化してください',
+  ig_govNoOnt:
+    "オントロジーオブジェクトがありません。「オントロジー」でオブジェクトを定義し、まず実体化してください",
   ig_govQuality: "ヘルススコア",
   ig_govSourcePipeline: "ソースパイプライン",
   ig_govDownstream: "下流の指標/概念",
   ig_govConceptItem: "概念 {concept}",
   ig_govActionAlert:
-    'これはレガシーの「テーブル書き戻し」です。新しいアクションはオントロジー → アクションタイプで定義してください（Palantir の意味論に準拠）。このモジュールは段階的に廃止予定です。',
+    "これはレガシーの「テーブル書き戻し」です。新しいアクションはオントロジー → アクションタイプで定義してください（Palantir の意味論に準拠）。このモジュールは段階的に廃止予定です。",
   ig_govPendingCount: "保留中のアクション {pending} · アクション定義 {defs}",
-  ig_govPendingSection:
-    "保留中（書き戻しは手動承認が必要。承認後に有効）",
+  ig_govPendingSection: "保留中（書き戻しは手動承認が必要。承認後に有効）",
   ig_govNoPending: "保留中のアクションがありません",
   ig_govRecord: "レコード",
   ig_govParams: "パラメータ",
   ig_govApprove: "承認",
   ig_govReject: "却下",
-  ig_govDefSection:
-    "アクション定義（書き込み可能列 / 検証 / 承認が必要かどうか）",
+  ig_govDefSection: "アクション定義（書き込み可能列 / 検証 / 承認が必要かどうか）",
   ig_govNoActionDef: "アクション定義がありません",
   ig_govWritableCols: "書き込み可能列",
   ig_govValidation: "検証",
@@ -577,7 +580,7 @@ export default {
   ig_govEmptyAll: "空欄 = すべて",
   ig_govMatrixTitle: "データドメインアクセスマトリクス（ロール別）",
   ig_govMatrixAlert:
-    'システムロールごとの、クエリ可能オブジェクトの「統合」リスト。ポリシーに該当しないものは制限なし（デフォルトですべて）。',
+    "システムロールごとの、クエリ可能オブジェクトの「統合」リスト。ポリシーに該当しないものは制限なし（デフォルトですべて）。",
   ig_govNoRole: "ロールがありません",
   ig_govRestricted: "制限あり",
   ig_govUnrestricted: "制限なし",
@@ -590,7 +593,7 @@ export default {
   ig_govSubject: "主体",
   ig_govQueryableCount: "クエリ可能オブジェクト数",
   ig_govNoQueryable: "クエリ可能オブジェクトがありません",
-  ig_govSandboxEmpty: 'ユーザーまたはロールを選択して「プレビュー」をクリックしてください',
+  ig_govSandboxEmpty: "ユーザーまたはロールを選択して「プレビュー」をクリックしてください",
   ig_govEditFde: "納品提案を編集",
   ig_govNewFdeTitle: "新規納品提案",
   ig_govFdeTitle: "提案タイトル",
@@ -623,11 +626,10 @@ export default {
   ig_govSuperuser: "スーパー",
   ig_govNoRoleText: "ロールなし",
   ig_govFdeTitleRequired: "提案タイトルを入力してください",
-  ig_govDelFdeConfirm:
-    "納品提案「{name}」を削除します。この操作は元に戻せません。",
+  ig_govDelFdeConfirm: "納品提案「{name}」を削除します。この操作は元に戻せません。",
   ig_govDelFdeTitle: "納品提案を削除",
   ig_govShadowConfirm:
-    '「{title}」のシャドー指標実績とゴールデンスタンダード（{golden}）を比較します。続行しますか？',
+    "「{title}」のシャドー指標実績とゴールデンスタンダード（{golden}）を比較します。続行しますか？",
   ig_govShadowTitle: "シャドーチェック",
   ig_govCheck: "チェック",
   ig_govShadowResult: "シャドーチェック: {result}",
@@ -636,11 +638,13 @@ export default {
   ig_govRejected: "却下済み",
   ig_govOpFail: "操作に失敗しました",
   ig_govScanned: "全スキャンが完了しました",
+  ig_govScanOne: "スキャン",
+  ig_govScannedOne: "{table} をスキャンしました：{score}",
   ig_govScanFail: "スキャンに失敗しました",
   ig_govPolicyRequired: "ポリシー名 / 属性値を入力してください",
   ig_govDomainNameRequired: "ドメイン名を入力してください",
-  ig_govDelPolicyConfirm: 'アクセスポリシー「{name}」を削除しますか？',
-  ig_govDelDomainConfirm: 'データドメイン「{name}」を削除しますか？',
+  ig_govDelPolicyConfirm: "アクセスポリシー「{name}」を削除しますか？",
+  ig_govDelDomainConfirm: "データドメイン「{name}」を削除しますか？",
   ig_govStepDiagnosis: "診断",
   ig_govStepModeling: "モデリング",
   ig_govStepAssembly: "組み立て",

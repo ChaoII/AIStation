@@ -79,15 +79,15 @@ export default {
   eval_questionPlaceholder: "자연어 질문",
   eval_scenarioPlaceholder: "업무 시나리오 (선택)",
   eval_genSuccess: "생성됨: {saved}개 저장, {rejected}개 거부",
-  eval_genNoNew: "이번 라운드에 새 질문이 없습니다 ({rejected}개 거부). 필터를 조정하고 재시도하세요.",
+  eval_genNoNew:
+    "이번 라운드에 새 질문이 없습니다 ({rejected}개 거부). 필터를 조정하고 재시도하세요.",
   eval_genFail: "생성 실패",
   eval_fillQuestion: "질문을 입력하세요",
   eval_fillGoldSql: "골드 SQL을 입력하세요",
   eval_saved: "저장됨",
   eval_added: "추가됨",
   eval_saveFail: "저장 실패",
-  eval_deleteConfirmMsg:
-    "{count}개 테스트 질문(골드 SQL 포함)을 삭제하며, 되돌릴 수 없습니다.",
+  eval_deleteConfirmMsg: "{count}개 테스트 질문(골드 SQL 포함)을 삭제하며, 되돌릴 수 없습니다.",
   eval_deleteConfirmTitle: "테스트 질문 삭제",
   eval_deletedMsg: "{count}개 질문 삭제됨",
   eval_deleteFail: "삭제 실패",
@@ -154,8 +154,7 @@ export default {
   eval_score: "{spread}포인트",
   eval_varSummary:
     "실행별 정확도 {per} · 평균 {mean} · 표준편차 {std} · 범위(노이즈 밴드) {spread}포인트",
-  eval_stableSummary:
-    "{n}개 질문 · {pass}개 항상 통과 · {fail}개 항상 실패 · {unstable}개 불안정",
+  eval_stableSummary: "{n}개 질문 · {pass}개 항상 통과 · {fail}개 항상 실패 · {unstable}개 불안정",
   eval_crossPassRate: "실행 간 통과율",
   eval_unstableQ: "불안정 질문 (실행 간 플립)",
   eval_compare: "비교",

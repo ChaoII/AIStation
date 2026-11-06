@@ -32,7 +32,8 @@ export default {
   messageItem_feedback: "Comentarios",
   messageItem_submit: "Enviar",
   messageItem_cancel: "Cancelar",
-  messageItem_feedbackPlaceholder: "p. ej. La respuesta no es precisa / el formato necesita ajustes…",
+  messageItem_feedbackPlaceholder:
+    "p. ej. La respuesta no es precisa / el formato necesita ajustes…",
   messageItem_feedbackSaved: "Comentarios registrados",
   messageItem_view: "Ver",
   messageItem_copy: "Copiar",
@@ -84,7 +85,8 @@ export default {
   welcome_promptPerfPrompt: "¿Cómo optimizar el rendimiento del sistema AIStation?",
 
   // workspace/chat.vue
-  workspaceChat_noLongerSupported: "Este tipo de elemento ya no admite chat; volviendo al espacio de trabajo",
+  workspaceChat_noLongerSupported:
+    "Este tipo de elemento ya no admite chat; volviendo al espacio de trabajo",
   workspaceChat_agent: "Agente",
   workspaceChat_app: "Aplicación",
   workspaceChat_workflow: "Flujo de trabajo",
@@ -185,7 +187,8 @@ export default {
   agentForm_mcp: "MCP",
   agentForm_selectMcp: "Vincular servidores MCP",
   agentForm_query: "Consulta de IA",
-  agentForm_queryHint: "Al habilitarse, puede responder preguntas de negocio basándose en los datos del sistema",
+  agentForm_queryHint:
+    "Al habilitarse, puede responder preguntas de negocio basándose en los datos del sistema",
   agentForm_queryDatasource: "Fuente de datos de consulta",
   agentForm_systemData: "Datos del sistema",
   agentForm_temperature: "Temperatura",
@@ -254,7 +257,8 @@ export default {
   workshop_clear: "Limpiar",
   workshop_demoHint: "Demo: solo ont_orders admite escritura",
   workshop_noFieldForApp: "Esta aplicación no tiene campos configurados",
-  workshop_dragHint: "Arrastra el encabezado de la columna para mover (demo, se restablece al actualizar)",
+  workshop_dragHint:
+    "Arrastra el encabezado de la columna para mover (demo, se restablece al actualizar)",
   workshop_inputAppName: "Por favor, ingresa el nombre de la aplicación",
   workshop_updated: "Actualizado",
   workshop_created: "Creado",
@@ -262,7 +266,8 @@ export default {
   workshop_loadFailed: "Error al cargar",
   workshop_savedToObject: "Guardado en la tabla de objetos",
   workshop_submitFailed: "Error al enviar",
-  workshop_deleteConfirm: '¿Eliminar la aplicación "{name}"? Esto no se puede deshacer. ¿Continuar?',
+  workshop_deleteConfirm:
+    '¿Eliminar la aplicación "{name}"? Esto no se puede deshacer. ¿Continuar?',
   workshop_deleteTitle: "Confirmación de eliminación",
   workshop_deleted: "Eliminado",
 

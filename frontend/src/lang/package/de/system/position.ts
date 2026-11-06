@@ -27,7 +27,8 @@ export default {
   endDate: "Enddatum",
   rangeSeparator: "bis",
   confirmTitle: "Warnung",
-  deleteConfirmMessage: "Möchten Sie die ausgewählten Daten wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
+  deleteConfirmMessage:
+    "Möchten Sie die ausgewählten Daten wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
   detailTitle: "Positionsdetails",
   updateTitle: "Position bearbeiten",
   createTitle: "Neue Position",

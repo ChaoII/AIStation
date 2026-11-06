@@ -396,10 +396,8 @@ export default {
     readFileFail: "อ่านไฟล์ล้มเหลว",
     reidEmptyTip: "คลัง ReID ว่าง: กฎ REID_TRACK จะไม่ทำงาน ลงทะเบียนฟีเจอร์ ReID ก่อน",
     reidEmptyListTip: "คลัง ReID ว่าง: ลงทะเบียนฟีเจอร์ ReID ก่อนเปิดใช้กฎ REID_TRACK",
-    faceEmptyTip:
-      "คลังใบหน้าว่าง: กฎ FACE_REC / STRANGER จะไม่ทำงาน ลงทะเบียนฟีเจอร์ใบหน้าก่อน",
-    faceEmptyListTip:
-      "คลังใบหน้าว่าง: ลงทะเบียนฟีเจอร์ใบหน้าก่อนเปิดใช้กฎ FACE_REC / STRANGER",
+    faceEmptyTip: "คลังใบหน้าว่าง: กฎ FACE_REC / STRANGER จะไม่ทำงาน ลงทะเบียนฟีเจอร์ใบหน้าก่อน",
+    faceEmptyListTip: "คลังใบหน้าว่าง: ลงทะเบียนฟีเจอร์ใบหน้าก่อนเปิดใช้กฎ FACE_REC / STRANGER",
   },
   // ===== event =====
   event: {
@@ -517,8 +515,7 @@ export default {
     multiSelect: "เลือกหลายรายการ พิมพ์เพื่อเพิ่ม",
     preset: "ค่าเริ่มต้น: {value}",
     previewTitle: "ตัวอย่างภาพจับขอบ",
-    previewHint:
-      "รีเฟรชทุก 2 วินาที; หากว่าง ให้ตรวจสอบว่าอุปกรณ์ขอบออนไลน์และงานปรับใช้ทำงานอยู่",
+    previewHint: "รีเฟรชทุก 2 วินาที; หากว่าง ให้ตรวจสอบว่าอุปกรณ์ขอบออนไลน์และงานปรับใช้ทำงานอยู่",
     editPlan: "แก้ไขแผนปรับใช้",
     addPlan: "แผนปรับใช้ใหม่",
     inferenceStopped: "การอนุมานหยุดแล้ว",

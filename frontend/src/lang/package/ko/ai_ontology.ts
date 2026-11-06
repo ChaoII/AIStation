@@ -1015,34 +1015,27 @@ export default {
   selectCategoryEmptyUncategorized: "카테고리 선택 (비우면 미분류)",
   eGAddAMaintenanceStatusFieldToCameras: "예: 카메라에 유지보수 상태 필드 추가",
   instanceLevelGraphRealObjectsAsNodes: "인스턴스 수준 그래프 (실제 객체를 노드로)",
-  modelingAnalysisStructureDiagnosisSuggestions:
-    "모델링 분석 (구조 진단 및 제안)",
+  modelingAnalysisStructureDiagnosisSuggestions: "모델링 분석 (구조 진단 및 제안)",
   noRowLevelPolicyAllVisible: "행 수준 정책 없음 (모두 표시)",
   noExpiredScenariosNothingToClean: "만료된 시나리오 없음, 정리할 것 없음",
   dryRunWritesNoData: "건식 실행 (데이터 쓰지 않음)",
   whyThisDecisionWhatIsTheBasis: "왜 이 의사결정인가요? 근거는 무엇인가요?",
-  availableObjectPropertiesWriteColumnNamesAnd:
-    "사용 가능한 객체 속성 (컬럼 이름 작성) 및",
+  availableObjectPropertiesWriteColumnNamesAnd: "사용 가능한 객체 속성 (컬럼 이름 작성) 및",
   layoutMemoryClearedReLayoutAutomatically: "레이아웃 메모리 지워짐, 자동 재배치",
-  expandRelatedEntitiesByKnowledgeGraphWhenEnabled:
-    "활성화 시 지식 그래프로 관련 엔티티 확장",
+  expandRelatedEntitiesByKnowledgeGraphWhenEnabled: "활성화 시 지식 그래프로 관련 엔티티 확장",
   searchInstancesFuzzyMatchOnTitleProperty: "인스턴스 검색 (제목 속성 퍼지 매칭)",
   searchHitsTheseWordsPressEnterToAdd: "검색이 이 단어에 적중, Enter로 추가",
   searchFailedSuggestRelatedChunksAndAnnotate: "검색 실패? 관련 청크 제안 및 어노테이션",
   noInstancesToPreviewForThisObjectType: "이 객체 유형에 미리보기할 인스턴스 없음",
   runFunctionWritesNoData: "함수 실행 (데이터 쓰지 않음)",
-  derivedByComparingObjectSnapshotsAfterExecution:
-    "실행 후 객체 스냅샷 비교로 파생됨",
+  derivedByComparingObjectSnapshotsAfterExecution: "실행 후 객체 스냅샷 비교로 파생됨",
   noFunctionsClickNewFunctionAtTopRight: "함수가 없습니다, 오른쪽 위 '새 함수'를 클릭하세요",
   noRulesConfiguredUsingWhitelistFallback: "구성된 규칙 없음 (화이트리스트 폴백 사용)",
   pleaseSelectAnOntologyDomainOnTheLeftFirst: "먼저 왼쪽에서 온톨로지 도메인을 선택하세요",
-  pleaseEnterFunctionNameCodeAndOwningObjectType:
-    "함수 이름, 코드, 소유 객체 유형을 입력하세요",
-  pleaseEnterActionNameCodeAndTargetObjectType:
-    "액션 이름, 코드, 대상 객체 유형을 입력하세요",
+  pleaseEnterFunctionNameCodeAndOwningObjectType: "함수 이름, 코드, 소유 객체 유형을 입력하세요",
+  pleaseEnterActionNameCodeAndTargetObjectType: "액션 이름, 코드, 대상 객체 유형을 입력하세요",
   nameFromSourceSideEGOwningGroup: "원본 쪽에서 이름, 예: '소속 그룹'",
-  versionPublishedForThisObjectTypeAtDecisionTime:
-    "의사결정 시점에 이 객체 유형에 게시된 버전",
+  versionPublishedForThisObjectTypeAtDecisionTime: "의사결정 시점에 이 객체 유형에 게시된 버전",
   objectPKOptionalOnlyTypeAndColumn: "객체 PK (선택, 유형과 컬럼만)",
   stagedClickSaveAtTopRightToApply: "스테이지됨 (적용하려면 오른쪽 위 '저장' 클릭)",
   thisObjectTypeIsNotMaterializedYet: "이 객체 유형은 아직 구체화되지 않았습니다",
@@ -1287,8 +1280,7 @@ export default {
   pluralExampleHint: "예: 카메라 테이블",
   apiExampleHint: "예: VideoCameras",
   selectSourceTargetObjectType: "원본/대상 객체 유형을 선택하세요",
-  manyToManyJoinDatasetWarning:
-    "다대다 관계는 '조인 테이블 데이터셋' 조인 방식을 사용해야 합니다",
+  manyToManyJoinDatasetWarning: "다대다 관계는 '조인 테이블 데이터셋' 조인 방식을 사용해야 합니다",
   notValidJson: "{label}은(는) 유효한 JSON이 아닙니다",
   mustBeJsonArray: "{label}은(는) JSON 배열이어야 합니다",
   discardWipConfirm:
@@ -1320,8 +1312,7 @@ export default {
   objectReference: "객체 참조",
   officialParamsHint:
     "공식 파라미터는 기본값, 드롭다운 필터, 보안 정책, 오버라이드, 성능 구성을 지원하며 도구 JSON Schema를 생성합니다. 현재 버전에서는 이 모두를 아직 지원하지 않습니다.",
-  needsApprovalPendingOnly:
-    "승인 필요 (대기 승인 폼만 생성, 관리자가 승인)",
+  needsApprovalPendingOnly: "승인 필요 (대기 승인 폼만 생성, 관리자가 승인)",
   criteriaCountAllMatch: "{count}개 구성됨, 모두 충족해야 제출 가능",
   notSatisfiedHint: "→ 미충족 시 힌트: {msg}",
   execOrderHint:
@@ -1340,12 +1331,9 @@ export default {
   targetTablePrimaryKey: "대상 테이블 기본 키 id",
   scenarioStagedOnly:
     "시나리오가 선택되면 diff만 스테이징되고 실제 테이블에는 작성되지 않습니다; 시나리오 병합 후에만 적용됩니다",
-  updateWhitelistFields:
-    "기본 키로 행을 찾아 화이트리스트의 필드를 갱신합니다: {fields}",
-  onlyUpdateSupportedInsertBlocked:
-    "현재 update 쓰기 반영만 지원되며, insert는 거부됩니다",
-  onlyUpdateSupportedDeleteBlocked:
-    "현재 update 쓰기 반영만 지원되며, delete는 거부됩니다",
+  updateWhitelistFields: "기본 키로 행을 찾아 화이트리스트의 필드를 갱신합니다: {fields}",
+  onlyUpdateSupportedInsertBlocked: "현재 update 쓰기 반영만 지원되며, insert는 거부됩니다",
+  onlyUpdateSupportedDeleteBlocked: "현재 update 쓰기 반영만 지원되며, delete는 거부됩니다",
   paramValue: "파라미터 {value}",
   subConditionsCount: "({count}개 하위 조건) {operator}",
   mustBeArrayShort: "{label}은(는) 배열이어야 합니다",
@@ -1395,8 +1383,7 @@ export default {
   derivedLimitHint:
     "제한: 관계 체인 최대 3단계; 컬렉션 한도 기본 10, 최대 100; 파생 속성은 다른 파생 속성에 의존할 수 없음.",
   structFieldsLabel: "구조체 필드",
-  structFieldsHint:
-    "구조체는 단일 구조체 컬럼으로 뒷받침됩니다; 여기서 필드 구성을 설명합니다",
+  structFieldsHint: "구조체는 단일 구조체 컬럼으로 뒷받침됩니다; 여기서 필드 구성을 설명합니다",
   nameWithCode: "{name} ({code})",
   emptyEqualsPublic: "비우면 공개",
   rolePublic: "공개 (public)",
@@ -1409,8 +1396,7 @@ export default {
   readCountLabel: "조회 (에이전트 도구 호출)",
   usageHint:
     "데이터는 기존 로그 테이블(에이전트 호출 로그 / 액션 실행 로그 / 정의 변경 추적)에서 옵니다, 추가 계측 없음. 공식 '활성 사용자 수'는 사용자별 호출 로그 집계가 필요한데 이 버전에서는 하지 않았습니다.",
-  pleaseFillPropIdFirst:
-    "시험 계산 전에 먼저 속성 ID를 입력하고 저장하세요",
+  pleaseFillPropIdFirst: "시험 계산 전에 먼저 속성 ID를 입력하고 저장하세요",
   matchedHops: "{matched}개 매칭됨, {hops}단계",
   pleaseEnterDisplayNameAndPropId: "표시 이름과 속성 ID를 입력하세요",
   derivedConfigNotValidJson: "파생 구성이 유효한 JSON이 아닙니다",
@@ -1425,8 +1411,7 @@ export default {
   fnExposedHint:
     '함수는 AI에 에이전트 역량(도구)으로 노출됩니다. 변경 사항은 대기 저장 목록에 들어가며 "저장" 클릭 후 적용됩니다.',
   fnNamePlaceholder: "예: 카메라 온라인율 (%)",
-  exprBuiltinsHint:
-    "+ - * / 및 비교, 삼항 표현식, {count}개 내장 함수를 지원합니다.",
+  exprBuiltinsHint: "+ - * / 및 비교, 삼항 표현식, {count}개 내장 함수를 지원합니다.",
   collapse: "접기",
   viewBuiltins: "내장 함수 보기",
   inputsJson: "입력 (JSON)",
@@ -1443,10 +1428,8 @@ export default {
   runSuccess: "실행 성공",
   fnKindAggregateHint:
     "관계 체인을 따라 관련 객체에서 집계합니다 (count/sum/avg/min/max/first/last/collect_list/collect_set), 객체 기본 키를 컨텍스트로 필요",
-  fnKindHttpHint:
-    "외부 REST API를 호출하고 result_path를 통해 응답에서 값을 가져옵니다",
-  fnKindModelHint:
-    "플랫폼에 등록된 모델(AI 관리 → 모델 구성)을 호출하고 응답 텍스트를 반환합니다",
+  fnKindHttpHint: "외부 REST API를 호출하고 result_path를 통해 응답에서 값을 가져옵니다",
+  fnKindModelHint: "플랫폼에 등록된 모델(AI 관리 → 모델 구성)을 호출하고 응답 텍스트를 반환합니다",
   fnKindExprHint:
     "통제된 표현식: 산술, 비교, 삼항 + 내장 함수; 필드 접근 없음, 임의 코드 실행 없음",
   objectId: "객체 ID",
@@ -1456,7 +1439,8 @@ export default {
   summarizePrompt: "요약: {'{{'}text{'}}'}",
   fnConfigHintAggregate:
     "link_path는 관계 ID 배열(최대 3단계)입니다; count의 경우 property를 비울 수 있습니다",
-  fnConfigHintHttp: "URL은 http/https여야 합니다; body_template은 {'{{'}param{'}}'} 플레이스홀더 지원",
+  fnConfigHintHttp:
+    "URL은 http/https여야 합니다; body_template은 {'{{'}param{'}}'} 플레이스홀더 지원",
   fnConfigHintModel:
     "model_id를 비우면 기본 모델을 사용합니다; prompt는 {'{{'}param{'}}'} 플레이스홀더 지원",
   configMustBeJsonObject: "모양 구성은 JSON 객체여야 합니다",
@@ -1498,8 +1482,7 @@ export default {
   exportImportDomainNote:
     '내보내기/가져오기는 현재 온톨로지 "{name}"(전체 도메인)에 적용되며, 이 객체 유형에 국한되지 않습니다.',
   exportJson: "JSON 내보내기",
-  exportJsonHint:
-    "현재 온톨로지의 객체/속성/관계/액션 정의를 다운로드, 마이그레이션 또는 백업용",
+  exportJsonHint: "현재 온톨로지의 객체/속성/관계/액션 정의를 다운로드, 마이그레이션 또는 백업용",
   selectJsonFile: "JSON 파일 선택",
   importTextPlaceholder:
     '온톨로지 JSON을 붙여넣거나 위의 "JSON 파일 선택"을 클릭하여 읽습니다. 형식은 내보내기와 일치합니다.',
@@ -1569,8 +1552,7 @@ export default {
     "이 객체 유형 정의를 누가 보고/편집/관리할 수 있는지 제어합니다. 유형을 보는 것과 데이터를 보는 것은 다릅니다 — 데이터는 아래의 행 수준 및 컬럼 수준 정책이 규율합니다.",
   leaveEmptyEveryoneCanView: "비우면 모두에게 표시",
   leaveEmptyEveryoneCanEdit: "비우면 모두가 편집 가능",
-  leaveEmptyEveryoneCanManage:
-    "비우면 모두가 관리 가능 (권한 정책 변경 포함)",
+  leaveEmptyEveryoneCanManage: "비우면 모두가 관리 가능 (권한 정책 변경 포함)",
   countItems: "{count}",
   rowPolicyAlert:
     "읽기에만 적용됩니다: 사용자가 읽을 수 있는 객체 인스턴스를 필터링하며, 기본 데이터에는 영향이 없고, 다운스트림 내보내기로 전파되지 않습니다. 비어 있음(활성 허용 정책 없음) = 모두 표시.",
@@ -1595,18 +1577,16 @@ export default {
   noPathFound: '"{a}"와(과) "{b}" 사이에 경로가 없습니다',
   graphFileName: "ontology-graph",
   loadedView: '"{name}" 로드됨',
-  deleteViewConfirm:
-    '그래프 보기 "{name}"과(와) 모든 버전 기록을 삭제하며, 복구할 수 없습니다.',
+  deleteViewConfirm: '그래프 보기 "{name}"과(와) 모든 버전 기록을 삭제하며, 복구할 수 없습니다.',
   indexBuildAlert:
-    "인덱스를 빌드하면 객체 유형의 백킹 테이블에 CREATE INDEX를 실제로 실행합니다. 상태 \"ready\"는 사용 가능함을 의미합니다 (공식 초록 체크와 동일).",
+    '인덱스를 빌드하면 객체 유형의 백킹 테이블에 CREATE INDEX를 실제로 실행합니다. 상태 "ready"는 사용 가능함을 의미합니다 (공식 초록 체크와 동일).',
   primaryKeyParen: "(기본 키)",
   rowsAndSize: "행 / 크기",
   autoRetryAt: "{time}에 자동 재시도",
   readyTotal: "준비/총",
   allReady: "모두 준비됨",
   partNotReady: "일부 준비 안 됨",
-  pipelineHint:
-    "공식: 배치 파이프라인 vs 스트리밍 파이프라인, 데이터 소스와 지연 요구에 따라 선택",
+  pipelineHint: "공식: 배치 파이프라인 vs 스트리밍 파이프라인, 데이터 소스와 지연 요구에 따라 선택",
   indexSuggestAlert:
     "기준: 기본 키/표시 이름, 행 수준 정책이 참조하는 필드, 관계 조인 필드, 고유 제약 필드",
   highPriority: "높음",
@@ -1681,8 +1661,7 @@ export default {
   primaryKeyColon: "기본 키: {name}",
   sourceProperty: "원본 속성",
   targetProperty: "대상 속성",
-  relationOwnPropsNotSupported:
-    "관계 유형의 자체 속성(객체 기반 링크)은 아직 지원되지 않습니다",
+  relationOwnPropsNotSupported: "관계 유형의 자체 속성(객체 기반 링크)은 아직 지원되지 않습니다",
   relationSecurityAlert:
     '관계 권한은 두 끝점 객체 유형의 백킹 데이터 소스 권한을 따릅니다. 필드 수준 제한은 각 객체 유형의 "보안" 하위 페이지에 있습니다.',
   datasourceAlert:

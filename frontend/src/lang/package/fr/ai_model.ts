@@ -43,7 +43,8 @@ export default {
   providerAll: "Tout",
   providerStatus: "Statut",
   providerWarnTitle: "Avertissement",
-  providerDeleteConfirm: "Supprimer les fournisseurs sélectionnés ? Leurs configurations de modèle deviendront indisponibles.",
+  providerDeleteConfirm:
+    "Supprimer les fournisseurs sélectionnés ? Leurs configurations de modèle deviendront indisponibles.",
   providerBatchResult: "{action} {count} fournisseurs",
   providerOperationFailed: "Échec de l'opération",
   providerLoadFailed: "Échec du chargement",
@@ -56,7 +57,8 @@ export default {
   providerTestSuccess: "Connexion réussie",
   providerConnectionFailed: "Échec de la connexion",
   providerTestFailed: "Échec du test",
-  providerNoModels: "Aucun modèle récupéré. Vérifiez la connectivité et l'authentification du fournisseur.",
+  providerNoModels:
+    "Aucun modèle récupéré. Vérifiez la connectivité et l'authentification du fournisseur.",
   providerPullFailed: "Échec de la récupération",
   providerImportResult: "{imported} modèle(s) importé(s)",
   providerImportSkipped: ", {skipped} existant(s) ignoré(s)",
@@ -73,7 +75,8 @@ export default {
   modelBatchEnable: "Activation groupée",
   modelBatchDisable: "Désactivation groupée",
   modelSummary: "{total} configurations · {enabled} activées · {disabled} désactivées",
-  modelEmpty: 'Aucune configuration de modèle pour le moment. Cliquez sur "Ajouter" pour en créer une.',
+  modelEmpty:
+    'Aucune configuration de modèle pour le moment. Cliquez sur "Ajouter" pour en créer une.',
   modelConfigName: "Nom de la configuration",
   modelModel: "Modèle",
   modelUsage: "Usage",
@@ -128,7 +131,8 @@ export default {
   modelPullFailed: "Échec de la récupération",
   modelEditTitle: "Modifier la configuration de modèle",
   modelCreateTitle: "Ajouter une configuration de modèle",
-  modelRequiredFields: "Veuillez saisir le nom de la configuration, le nom du modèle et l'URL de base de l'API",
+  modelRequiredFields:
+    "Veuillez saisir le nom de la configuration, le nom du modèle et l'URL de base de l'API",
   modelSaveSuccess: "Enregistré",
   modelSaveFailed: "Échec de l'enregistrement",
   modelSetDefaultSuccess: "Défini comme modèle par défaut",

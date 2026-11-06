@@ -27,7 +27,8 @@ export default {
   startDate: "Date de début",
   endDate: "Date de fin",
   to: "à",
-  confirmDeleteMessage: "Voulez-vous vraiment supprimer les enregistrements sélectionnés ? Cette action est irréversible.",
+  confirmDeleteMessage:
+    "Voulez-vous vraiment supprimer les enregistrements sélectionnés ? Cette action est irréversible.",
   confirmToggle: "Confirmer {status} cet enregistrement ?",
 
   // 字典类型
@@ -58,7 +59,8 @@ export default {
   inputDataType: "Veuillez saisir le type de données",
   inputDataLabel: "Veuillez saisir le libellé des données",
   inputDataValue: "Veuillez saisir la valeur des données",
-  selectColorOrCustom: "Veuillez sélectionner une couleur courante ou saisir une valeur personnalisée",
+  selectColorOrCustom:
+    "Veuillez sélectionner une couleur courante ou saisir une valeur personnalisée",
   selectListClass: "Veuillez sélectionner la classe CSS de liste",
   dictDataLabelSearch: "Libellé des données du dictionnaire",
   inputDictLabel: "Veuillez saisir le libellé du dictionnaire",

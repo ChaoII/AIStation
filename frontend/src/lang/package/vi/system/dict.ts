@@ -27,7 +27,8 @@ export default {
   startDate: "Ngày bắt đầu",
   endDate: "Ngày kết thúc",
   to: "đến",
-  confirmDeleteMessage: "Bạn có chắc chắn muốn xóa các bản ghi đã chọn? Hành động này không thể hoàn tác.",
+  confirmDeleteMessage:
+    "Bạn có chắc chắn muốn xóa các bản ghi đã chọn? Hành động này không thể hoàn tác.",
   confirmToggle: "Xác nhận {status} bản ghi này?",
 
   // 字典类型

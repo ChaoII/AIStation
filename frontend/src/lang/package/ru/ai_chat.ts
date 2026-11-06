@@ -7,7 +7,8 @@ export default {
   chatInput_sendImage: "Отправить изображение",
   chatInput_uploadFile: "Загрузить файл",
   chatInput_pickFromSpace: "Выбрать из личного пространства",
-  chatInput_hint: "Поддерживаются изображения и файлы · Enter — отправить, Shift+Enter — новая строка",
+  chatInput_hint:
+    "Поддерживаются изображения и файлы · Enter — отправить, Shift+Enter — новая строка",
   chatInput_selectModel: "Выбрать модель",
   chatInput_cmdSearchName: "Поиск в интернете",
   chatInput_cmdReportName: "Создать отчёт",
@@ -84,7 +85,8 @@ export default {
   welcome_promptPerfPrompt: "Как оптимизировать производительность системы AIStation?",
 
   // workspace/chat.vue
-  workspaceChat_noLongerSupported: "Этот тип элемента больше не поддерживает чат; возвращаемся на рабочий стол",
+  workspaceChat_noLongerSupported:
+    "Этот тип элемента больше не поддерживает чат; возвращаемся на рабочий стол",
   workspaceChat_agent: "Агент",
   workspaceChat_app: "Приложение",
   workspaceChat_workflow: "Рабочий процесс",
@@ -106,7 +108,7 @@ export default {
   workspaceChat_searchSession: "Поиск сессий...",
   workspaceChat_unnamed: "Сессия без названия",
   workspaceChat_messageCount: "{count} сообщений",
-  workspaceChat_empty: 'Сессий пока нет. Нажмите «Новая сессия», чтобы начать.',
+  workspaceChat_empty: "Сессий пока нет. Нажмите «Новая сессия», чтобы начать.",
   workspaceChat_exportTip: "Экспортировать сессию в Markdown",
   workspaceChat_export: "Экспорт",
 
@@ -121,7 +123,7 @@ export default {
   workspace_capKnowledge: "Знания {count}",
   workspace_capMcp: "MCP {count}",
   workspace_capNodes: "Узлы {count}",
-  workspace_deleteConfirm: 'Удалить «{name}»? Продолжить?',
+  workspace_deleteConfirm: "Удалить «{name}»? Продолжить?",
   workspace_deleteTitle: "Подтверждение удаления",
   workspace_delete: "Удалить",
   workspace_cancel: "Отмена",
@@ -135,7 +137,7 @@ export default {
   workspace_saveSuccess: "Успешно сохранено",
   workspace_renameCategory: "Переименовать категорию",
   workspace_deleteCategoryConfirm:
-    'Удалить категорию «{name}» (подкатегории и элементы станут без категории)? Продолжить?',
+    "Удалить категорию «{name}» (подкатегории и элементы станут без категории)? Продолжить?",
   workspace_deleteCategory: "Удалить категорию",
   workspace_deleteSuccess: "Успешно удалено",
   workspace_category: "Категории",
@@ -219,7 +221,7 @@ export default {
   workshop_noFields: "Поля не выбраны (в предпросмотре показаны все столбцы)",
   workshop_empty: "Объектных приложений пока нет",
   workshop_emptySuggest:
-    'Немного данных — и можно собрать полезное приложение. Попробуйте «Новое приложение» в правом верхнем углу.',
+    "Немного данных — и можно собрать полезное приложение. Попробуйте «Новое приложение» в правом верхнем углу.",
   workshop_editObjectApp: "Изменить объектное приложение",
   workshop_createObjectApp: "Новое объектное приложение",
   workshop_appName: "Название приложения",
@@ -254,7 +256,8 @@ export default {
   workshop_clear: "Очистить",
   workshop_demoHint: "Демо: запись поддерживает только ont_orders",
   workshop_noFieldForApp: "У этого приложения нет настроенных полей",
-  workshop_dragHint: "Перетащите заголовок столбца для перемещения (демо, сбрасывается при обновлении)",
+  workshop_dragHint:
+    "Перетащите заголовок столбца для перемещения (демо, сбрасывается при обновлении)",
   workshop_inputAppName: "Введите название приложения",
   workshop_updated: "Обновлено",
   workshop_created: "Создано",
@@ -262,7 +265,7 @@ export default {
   workshop_loadFailed: "Ошибка загрузки",
   workshop_savedToObject: "Сохранено в таблицу объекта",
   workshop_submitFailed: "Ошибка отправки",
-  workshop_deleteConfirm: 'Удалить приложение «{name}»? Это действие необратимо. Продолжить?',
+  workshop_deleteConfirm: "Удалить приложение «{name}»? Это действие необратимо. Продолжить?",
   workshop_deleteTitle: "Подтверждение удаления",
   workshop_deleted: "Удалено",
 
@@ -281,7 +284,7 @@ export default {
   space_createFolder: "Новая папка",
   space_renameFolder: "Переименовать папку",
   space_deleteFolderConfirm:
-    'Удалить папку «{name}» и все её подпапки с {count} файлами? Это действие необратимо.',
+    "Удалить папку «{name}» и все её подпапки с {count} файлами? Это действие необратимо.",
   space_deleteFolder: "Удалить папку",
   space_delete: "Удалить",
   space_cancel: "Отмена",
@@ -361,9 +364,9 @@ export default {
   quotaReview_loadFailed: "Не удалось загрузить заявки",
   quotaReview_user: "Пользователь {id}",
   quotaReview_approveConfirm:
-    'Одобрить заявку на расширение пользователя «{user}», предоставив квоту {quota} ГБ (исходная цель {target})? Это действие необратимо.',
+    "Одобрить заявку на расширение пользователя «{user}», предоставив квоту {quota} ГБ (исходная цель {target})? Это действие необратимо.",
   quotaReview_rejectConfirm:
-    'Отклонить заявку на расширение пользователя «{user}» (цель {target})? Его квота останется без изменений.',
+    "Отклонить заявку на расширение пользователя «{user}» (цель {target})? Его квота останется без изменений.",
   quotaReview_approveTitle: "Одобрить заявку на расширение",
   quotaReview_rejectTitle: "Отклонить заявку на расширение",
   quotaReview_confirmApprove: "Подтвердить одобрение",

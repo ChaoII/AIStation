@@ -43,7 +43,8 @@ export default {
   providerAll: "전체",
   providerStatus: "상태",
   providerWarnTitle: "경고",
-  providerDeleteConfirm: "선택한 공급자를 삭제하시겠습니까? 해당 모델 구성은 사용할 수 없게 됩니다.",
+  providerDeleteConfirm:
+    "선택한 공급자를 삭제하시겠습니까? 해당 모델 구성은 사용할 수 없게 됩니다.",
   providerBatchResult: "{action} {count}개 공급자",
   providerOperationFailed: "작업 실패",
   providerLoadFailed: "로드 실패",

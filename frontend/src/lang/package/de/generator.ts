@@ -27,14 +27,16 @@ export default {
   invalidTableId: "Ungültige Tabellen-ID",
   selectDataToGen: "Bitte die zu generierenden Daten auswählen",
   customPathSingleOnly: "Benutzerdefinierter Pfad kann nur Einzeltabellen-Code generieren",
-  writtenToProject: "In das Projektverzeichnis geschrieben und Menü erstellt (falls noch nicht vorhanden)",
+  writtenToProject:
+    "In das Projektverzeichnis geschrieben und Menü erstellt (falls noch nicht vorhanden)",
   batchGenFailed: "Massen-Generierung fehlgeschlagen",
   downloadStarted: "Der Download von code.zip wurde gestartet",
   noneListed: "Keine",
   none: "Keine",
   selectDataToModify: "Bitte die zu bearbeitenden Daten auswählen",
   loadDetailFailed: "Tabellendetails konnten nicht geladen werden, bitte später erneut versuchen",
-  menuDictLoadFailed: "Menü- oder Wörterbuchoptionen konnten nicht geladen werden, einige Dropdowns sind möglicherweise leer",
+  menuDictLoadFailed:
+    "Menü- oder Wörterbuchoptionen konnten nicht geladen werden, einige Dropdowns sind möglicherweise leer",
   selectDataToDelete: "Bitte die zu löschenden Daten auswählen",
   deleteConfirmTitle: "Löschbestätigung",
   deleteConfirmMsg: "Möchten Sie die ausgewählten {count} Einträge wirklich löschen?",
@@ -66,7 +68,8 @@ export default {
   // 确认写入路径
   writeMoreFiles: "Es gibt <b>{count}</b> weitere Dateien, die nicht aufgeführt sind",
   writeNoPath: "Keine Vorschaupfade erhalten; das Schreiben wird trotzdem fortgesetzt.",
-  writeConfirmTip: "Gleiche Quelle wie 'Codevorschau'; Pfade sind relativ zum Projektstamm auf der Festplatte.",
+  writeConfirmTip:
+    "Gleiche Quelle wie 'Codevorschau'; Pfade sind relativ zum Projektstamm auf der Festplatte.",
   writeHeader: "Die folgenden Dateien werden geschrieben",
   writeCount: "{count} Einträge insgesamt · Relativ zum Projektstamm",
   writeConfirmTitle: "Lokales Schreiben bestätigen",
@@ -99,7 +102,8 @@ export default {
   prevStep: "Zurück",
   nextStepColumns: "Weiter: Feldkonfiguration",
   nextStepPreview: "Weiter: Codevorschau",
-  downloadTip: "Als ZIP packen und lokal herunterladen; auf dem Server werden keine Menüs oder Dateien erstellt",
+  downloadTip:
+    "Als ZIP packen und lokal herunterladen; auf dem Server werden keine Menüs oder Dateien erstellt",
   downloadCode: "Code herunterladen",
   writeTip:
     "Quellcode im Server-Projektverzeichnis generieren und automatisch Verzeichnisse/Menü/Buttons erstellen (falls Namen nicht kollidieren)",
@@ -230,7 +234,8 @@ export default {
   subTable: "Untertabelle",
   subTableNamePlaceholder: "z. B. gen_demo_order_item",
   fkColumn: "FK-Spalte",
-  fkColumnPlaceholder: "Die Spalte in der Untertabelle, die auf die Haupttabelle zeigt, z. B. order_id",
+  fkColumnPlaceholder:
+    "Die Spalte in der Untertabelle, die auf die Haupttabelle zeigt, z. B. order_id",
   fkRefColumn: "Entsprechende Hauptspalte",
   fkRefColumnPlaceholder: "Normalerweise id",
   needManualAdjust: "Manuelle Anpassungen nötig? SQL generieren und zu 'SQL schreiben' wechseln",

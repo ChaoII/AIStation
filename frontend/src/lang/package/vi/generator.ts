@@ -34,7 +34,8 @@ export default {
   none: "Không có",
   selectDataToModify: "Vui lòng chọn dữ liệu để sửa",
   loadDetailFailed: "Không thể tải chi tiết bảng, vui lòng thử lại sau",
-  menuDictLoadFailed: "Không thể tải menu hoặc tùy chọn từ điển, một số danh sách thả xuống có thể trống",
+  menuDictLoadFailed:
+    "Không thể tải menu hoặc tùy chọn từ điển, một số danh sách thả xuống có thể trống",
   selectDataToDelete: "Vui lòng chọn dữ liệu để xóa",
   deleteConfirmTitle: "Xác nhận xóa",
   deleteConfirmMsg: "Bạn có chắc chắn muốn xóa {count} mục đã chọn?",
@@ -47,8 +48,7 @@ export default {
   configFields: "Vui lòng cấu hình thông tin trường",
 
   // 校验规则
-  masterSubPairError:
-    "Tên bảng con và khóa ngoại phải được điền cùng nhau hoặc bỏ trống cùng nhau",
+  masterSubPairError: "Tên bảng con và khóa ngoại phải được điền cùng nhau hoặc bỏ trống cùng nhau",
   masterSubSameError: "Tên bảng con không được trùng với tên bảng chính",
   businessNameEmpty: "Tên nghiệp vụ không được để trống",
   requiredTableName: "Tên bảng không được để trống",
@@ -132,24 +132,20 @@ export default {
   entityName: "Tên lớp thực thể",
   inputPlaceholder: "Vui lòng nhập",
   packageName: "Tên gói",
-  packageTip:
-    "Tên gói plugin (thư mục plugin cấp cao nhất). Ví dụ ba phân đoạn: module_example",
+  packageTip: "Tên gói plugin (thư mục plugin cấp cao nhất). Ví dụ ba phân đoạn: module_example",
   packagePlaceholder: "ví dụ: module_example",
   moduleName: "Tên mô-đun",
   moduleTip: "Thư mục cấp hai dưới gói. Ví dụ: demo / gen_demo02",
   modulePlaceholder: "ví dụ: demo",
   businessName: "Tên nghiệp vụ",
-  businessTip:
-    "Thư mục cấp ba dưới mô-đun (tùy chọn). Ví dụ: demo01; để trống cho chỉ cấp mô-đun",
+  businessTip: "Thư mục cấp ba dưới mô-đun (tùy chọn). Ví dụ: demo01; để trống cho chỉ cấp mô-đun",
   businessPlaceholder: "ví dụ: demo01 (tùy chọn)",
   functionName: "Tên chức năng",
   functionTip: "Được dùng làm tên menu khi ghi cục bộ, ví dụ: Quản lý người dùng",
   functionPlaceholder: "ví dụ: Quản lý người dùng",
   parentMenu: "Menu cha",
-  parentMenuTip:
-    "Chỉ chọn được danh mục; để trống để tạo thư mục mô-đun dưới gốc thanh bên",
-  parentMenuPlaceholder:
-    "Trống = gắn thư mục mô-đun dưới gốc; đã chọn = gắn dưới thư mục đó",
+  parentMenuTip: "Chỉ chọn được danh mục; để trống để tạo thư mục mô-đun dưới gốc thanh bên",
+  parentMenuPlaceholder: "Trống = gắn thư mục mô-đun dưới gốc; đã chọn = gắn dưới thư mục đó",
   remark: "Ghi chú",
   subTableName: "Tên bảng phụ",
   subTableNameTip: "Tên bảng vật lý hiện có trong DB, ví dụ: gen_order_item",
@@ -237,8 +233,7 @@ export default {
   execSql: "SQL sẽ được thực thi (tự cập nhật theo bảng phía trên)",
   autoGenPlaceholder: "Tự động tạo sau khi điền tên bảng",
   createTableBtn: "Tạo bảng",
-  linkedFromGen:
-    "Các tên bảng từ tạo mã đã được đưa vào; sau khi kiểm tra, bấm 'Tạo bảng'",
+  linkedFromGen: "Các tên bảng từ tạo mã đã được đưa vào; sau khi kiểm tra, bấm 'Tạo bảng'",
   switchedToSql: "Đã chuyển sang 'Viết SQL', bạn có thể tiếp tục chỉnh sửa",
   fillMainTableName: "Vui lòng điền tên bảng chính",
   fillSubTableName: "Vui lòng điền tên bảng phụ",

@@ -27,7 +27,8 @@ export default {
   endDate: "Fecha de fin",
   rangeSeparator: "a",
   confirmTitle: "Advertencia",
-  deleteConfirmMessage: "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
+  deleteConfirmMessage:
+    "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
   detailTitle: "Detalle del cargo",
   updateTitle: "Editar cargo",
   createTitle: "Nuevo cargo",

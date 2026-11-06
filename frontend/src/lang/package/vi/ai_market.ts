@@ -229,12 +229,14 @@ export default {
   bodyTypeLabel: "Loại nội dung yêu cầu",
   bodyNone: "Không (tham số qua chuỗi truy vấn)",
   bodyHintGet: "{m} không có nội dung yêu cầu, các tham số còn lại trở thành chuỗi truy vấn.",
-  bodyHintNoBody: "Được gửi qua {m} không có nội dung yêu cầu, các tham số còn lại trở thành chuỗi truy vấn.",
+  bodyHintNoBody:
+    "Được gửi qua {m} không có nội dung yêu cầu, các tham số còn lại trở thành chuỗi truy vấn.",
   bodyHintFormData:
     "Được gửi qua {m}, các tham số còn lại trở thành application/x-www-form-urlencoded (Form Data).",
   bodyHintPost: "Được gửi qua POST, các tham số còn lại trở thành nội dung JSON.",
   bodyHintPut: "Được gửi qua PUT, các tham số còn lại trở thành nội dung JSON (thay thế toàn bộ).",
-  bodyHintPatch: "Được gửi qua PATCH, các tham số còn lại trở thành nội dung JSON (cập nhật một phần).",
+  bodyHintPatch:
+    "Được gửi qua PATCH, các tham số còn lại trở thành nội dung JSON (cập nhật một phần).",
   requestBodyLabel: "Nội dung yêu cầu",
   scriptCode: "Mã script",
   extractParams: "Trích xuất tham số từ mã",
@@ -245,9 +247,9 @@ export default {
   runtimeParamsLabel: "Tham số chạy",
   runtimeParamKeyPlaceholder: "Tên tham số, ví dụ: api_key",
   runtimeValuePlaceholder: "Giá trị (ẩn sau khi lưu)",
-  runtimeTipPre: "Dành cho khóa/giá trị nhạy cảm/tham số theo người dùng (ví dụ: api_key, tên người dùng). Đọc qua ",
-  runtimeTipPost:
-    " bên trong script, không được ghi vào nguồn; giá trị luôn được ẩn sau khi lưu.",
+  runtimeTipPre:
+    "Dành cho khóa/giá trị nhạy cảm/tham số theo người dùng (ví dụ: api_key, tên người dùng). Đọc qua ",
+  runtimeTipPost: " bên trong script, không được ghi vào nguồn; giá trị luôn được ẩn sau khi lưu.",
   sandboxAlert:
     "Script chạy trong hộp cát được kiểm soát: chỉ các mô-đun trong danh sách trắng như json/math/re/datetime được phép import; các lệnh gọi tệp, mạng và hệ thống bị cấm. Nên dùng chữ ký nhiều tham số với chú thích kiểu (ví dụ: def run(name: str = 'x')) và nhấp \"Trích xuất tham số từ mã\" để tự động tạo bảng tham số.",
   trialRun: "Chạy thử",
@@ -325,7 +327,8 @@ export default {
   commandLabel: "Lệnh khởi động",
   commandPlaceholder: "ví dụ: npx hoặc python",
   argsLabel: "Đối số lệnh",
-  argsPlaceholder: "Mỗi đối số một dòng, ví dụ:\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+  argsPlaceholder:
+    "Mỗi đối số một dòng, ví dụ:\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "Biến môi trường",
   envPlaceholder: "Mỗi KEY=VALUE một dòng, ví dụ:\nAPI_KEY=xxx",
   urlLabel: "URL máy chủ",

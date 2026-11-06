@@ -74,9 +74,12 @@ export default {
   entityNamePlaceholder: "Saisir le nom du type d'entité, ex. Personne",
   relationNamePlaceholder: "Saisir le nom du type de relation, ex. affiliation",
   classNamePlaceholder: "Saisir le nom de la classe, ex. personne",
-  entityEmpty: "Aucun type d'entité pour l'instant. Ajoutez-en pour les utiliser dans l'atelier d'annotation.",
-  relationEmpty: "Aucun type de relation pour l'instant. Ajoutez-en pour les utiliser dans l'atelier d'annotation.",
-  classEmpty: "Aucune classe pour l'instant. Ajoutez-en pour les utiliser dans l'atelier d'annotation.",
+  entityEmpty:
+    "Aucun type d'entité pour l'instant. Ajoutez-en pour les utiliser dans l'atelier d'annotation.",
+  relationEmpty:
+    "Aucun type de relation pour l'instant. Ajoutez-en pour les utiliser dans l'atelier d'annotation.",
+  classEmpty:
+    "Aucune classe pour l'instant. Ajoutez-en pour les utiliser dans l'atelier d'annotation.",
   instance: "Instance",
   background: "Arrière-plan",
   classNameRequired: "Veuillez saisir un nom de classe",
@@ -94,13 +97,15 @@ export default {
   editDataset: "Modifier le jeu de données",
   deleteDatasetConfirm:
     "Supprimer les jeux de données sélectionnés ? Ils peuvent être restaurés pendant la période de rétention.",
-  noTaskYet: "Ce jeu de données n'a pas encore de tâche d'annotation. Veuillez d'abord en créer une.",
+  noTaskYet:
+    "Ce jeu de données n'a pas encore de tâche d'annotation. Veuillez d'abord en créer une.",
   dangerOperation: "Opération dangereuse",
   purge: "Purger",
   purgeDatasetConfirm:
     'Purger le jeu de données "{name}" ? Cela supprimera toutes les images, les annotations et les artefacts exportés, et cette action est irréversible.',
   noDatasetToPurge: "Aucun jeu de données à supprimer",
-  purgeStarted: 'Suppression lancée. Vous pouvez suivre la progression sous « État de l\'importation ».',
+  purgeStarted:
+    "Suppression lancée. Vous pouvez suivre la progression sous « État de l'importation ».",
   purgeFailed: "Échec de la purge du jeu de données",
   images: "Images",
   selectImages: "Veuillez sélectionner les images à téléverser",
@@ -125,7 +130,8 @@ export default {
   stepParseAnnotations: "Analyser les annotations",
   stepWriteImages: "Écrire les images",
   selectZipFile: "Sélectionner le fichier ZIP",
-  importHint: "L'archive doit contenir des images et les fichiers d'annotation .json correspondants, jusqu'à {max} Mo.",
+  importHint:
+    "L'archive doit contenir des images et les fichiers d'annotation .json correspondants, jusqu'à {max} Mo.",
   selected: "Sélectionné",
   clearBeforeImport:
     "Effacer les images et annotations existantes de ce jeu de données avant l'importation (évite les doublons)",
@@ -167,7 +173,8 @@ export default {
   backgroundContinue: "Continuer en arrière-plan",
   stayOnPage: "Rester sur la page",
   cancelImport: "Annuler l'importation",
-  cancelImportConfirm: "Le téléversement/analyse n'est pas terminé. La fermeture annulera l'importation. Annuler ?",
+  cancelImportConfirm:
+    "Le téléversement/analyse n'est pas terminé. La fermeture annulera l'importation. Annuler ?",
   importDoneSummary: "Importation terminée : {imported} images, {annotations} annotations",
   importSkipped: ", {skipped} doublons ignorés",
   openAnnotationTask: "Ouvrir la tâche d'annotation",
@@ -187,7 +194,8 @@ export default {
   exporting: "Exportation...",
   exportAndDownload: "Exporter et télécharger",
   selectOcrExport: "Veuillez sélectionner au moins une exportation OCR (det/rec)",
-  noDownloadLink: "L'exportation est terminée mais aucun lien de téléchargement n'a été renvoyé. Vérifiez les journaux du serveur.",
+  noDownloadLink:
+    "L'exportation est terminée mais aucun lien de téléchargement n'a été renvoyé. Vérifiez les journaux du serveur.",
   fmtYoloDetection: "YOLO HBB (boîtes horizontales)",
   fmtYoloRotated: "YOLO OBB (boîtes orientées)",
   fmtYoloSeg: "YOLO Seg (segmentation)",
@@ -202,9 +210,11 @@ export default {
   fmtTorchkilnSeg: "Segmentation TorchKiln (YOLO Seg + listes d'entraînement)",
   fmtTorchkilnSemanticSeg: "Segmentation sémantique TorchKiln (masque PNG + listes d'entraînement)",
   fmtTorchkilnKeypoint: "Points clés TorchKiln (YOLO Pose + listes d'entraînement)",
-  fmtTorchkilnClassification: "Classification TorchKiln (dossiers de classes + listes d'entraînement)",
+  fmtTorchkilnClassification:
+    "Classification TorchKiln (dossiers de classes + listes d'entraînement)",
   fmtTorchkilnOcr: "OCR TorchKiln (texte 4 points / image entière + listes d'entraînement)",
-  fmtTorchkilnVideoDetection: "Détection vidéo TorchKiln (échantillonnage de trames + listes d'entraînement)",
+  fmtTorchkilnVideoDetection:
+    "Détection vidéo TorchKiln (échantillonnage de trames + listes d'entraînement)",
   fmtTorchkilnCuboid: "Boîtes 3D TorchKiln (caméra 7-dof + listes d'entraînement)",
   fmtAudioEventJsonl: "Événements audio (intervalles JSONL)",
   fmtAudioEventCsv: "Événements audio (intervalles CSV)",

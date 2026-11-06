@@ -29,7 +29,8 @@ export default {
   endDatePlaceholder: "Fecha de fin",
   to: "a",
   deleteConfirmTitle: "Advertencia",
-  deleteConfirmMessage: "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
+  deleteConfirmMessage:
+    "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
   operationSuccess: "Operación exitosa",
   ruleTenantNameRequired: "Ingrese el nombre del inquilino",
   ruleTenantCodeRequired: "Ingrese el código del inquilino",

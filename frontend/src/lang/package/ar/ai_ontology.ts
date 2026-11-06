@@ -1015,14 +1015,12 @@ export default {
   selectCategoryEmptyUncategorized: "اختر فئة (فارغ = بدون فئة)",
   eGAddAMaintenanceStatusFieldToCameras: "مثال: أضف حقل حالة الصيانة إلى الكاميرات",
   instanceLevelGraphRealObjectsAsNodes: "مخطط على مستوى المثيل (كائنات فعلية كعقد)",
-  modelingAnalysisStructureDiagnosisSuggestions:
-    "تحليل النمذجة (تشخيص الهيكل واقتراحات)",
+  modelingAnalysisStructureDiagnosisSuggestions: "تحليل النمذجة (تشخيص الهيكل واقتراحات)",
   noRowLevelPolicyAllVisible: "لا توجد سياسة على مستوى الصف (الكل مرئي)",
   noExpiredScenariosNothingToClean: "لا توجد سيناريوهات منتهية، لا شيء للتنظيف",
   dryRunWritesNoData: "تشغيل تجريبي (لا يكتب بيانات)",
   whyThisDecisionWhatIsTheBasis: "لماذا هذا القرار؟ ما الأساس؟",
-  availableObjectPropertiesWriteColumnNamesAnd:
-    "خصائص الكائن المتاحة (اكتب أسماء الأعمدة) و",
+  availableObjectPropertiesWriteColumnNamesAnd: "خصائص الكائن المتاحة (اكتب أسماء الأعمدة) و",
   layoutMemoryClearedReLayoutAutomatically: "مُسحت ذاكرة التخطيط، أُعيد التخطيط تلقائيًا",
   expandRelatedEntitiesByKnowledgeGraphWhenEnabled:
     "توسيع الكيانات المرتبطة عبر مخطط المعرفة عند التفعيل",
@@ -1031,35 +1029,29 @@ export default {
   searchFailedSuggestRelatedChunksAndAnnotate: "فشل البحث؟ اقترح مقاطع مرتبطة وعلّم",
   noInstancesToPreviewForThisObjectType: "لا توجد مثيلات للمعاينة لهذا النوع من الكائنات",
   runFunctionWritesNoData: "تشغيل الوظيفة (لا يكتب بيانات)",
-  derivedByComparingObjectSnapshotsAfterExecution:
-    "مشتق بمقارنة لقطات الكائنات بعد التنفيذ",
+  derivedByComparingObjectSnapshotsAfterExecution: "مشتق بمقارنة لقطات الكائنات بعد التنفيذ",
   noFunctionsClickNewFunctionAtTopRight: "لا توجد وظائف، انقر 'وظيفة جديدة' في أعلى اليمين",
-  noRulesConfiguredUsingWhitelistFallback: "لا توجد قواعد مُهيأة (يُستخدم التراجع للقائمة المسموحة)",
+  noRulesConfiguredUsingWhitelistFallback:
+    "لا توجد قواعد مُهيأة (يُستخدم التراجع للقائمة المسموحة)",
   pleaseSelectAnOntologyDomainOnTheLeftFirst: "يرجى اختيار نطاق وجود على اليسار أولاً",
   pleaseEnterFunctionNameCodeAndOwningObjectType:
     "يرجى إدخال اسم الوظيفة ورمزها ونوع الكائن المالك",
-  pleaseEnterActionNameCodeAndTargetObjectType:
-    "يرجى إدخال اسم الفعل ورمزه ونوع الكائن الهدف",
+  pleaseEnterActionNameCodeAndTargetObjectType: "يرجى إدخال اسم الفعل ورمزه ونوع الكائن الهدف",
   nameFromSourceSideEGOwningGroup: "الاسم من جانب المصدر، مثال: 'المجموعة المالكة'",
-  versionPublishedForThisObjectTypeAtDecisionTime:
-    "إصدار منشور لهذا النوع من الكائنات وقت القرار",
+  versionPublishedForThisObjectTypeAtDecisionTime: "إصدار منشور لهذا النوع من الكائنات وقت القرار",
   objectPKOptionalOnlyTypeAndColumn: "المفتاح الأساسي للكائن (اختياري، النوع والعمود فقط)",
   stagedClickSaveAtTopRightToApply: "مرحّلي (انقر 'حفظ' في أعلى اليمين للتطبيق)",
   thisObjectTypeIsNotMaterializedYet: "نوع الكائن هذا غير مُجسّد بعد",
   nameFromTargetSideEGContainsDevices: "الاسم من جانب الهدف، مثال: 'يحتوي أجهزة'",
-  destructiveChangesExistEnterEntityNameToConfirm:
-    "توجد تغييرات هدمية، أدخل اسم الكيان للتأكيد",
+  destructiveChangesExistEnterEntityNameToConfirm: "توجد تغييرات هدمية، أدخل اسم الكيان للتأكيد",
   requiresApprovalBeforeExecutionOtherwiseOnlyAPendingFormIsGenerated:
     "يتطلب موافقة قبل التنفيذ، وإلا يُنشأ نموذج معلّق فقط",
   externalDependenciesLikeAgentsAndWorkflowsAreNotConnectedYet:
     "التبعيات الخارجية مثل الوكلاء وسير العمل غير متصلة بعد.",
   deleteThisChunkThisCannotBeUndone: "حذف هذا المقطع؟ لا يمكن التراجع عن هذا.",
-  thisObjectTypeNoLongerExistsOrIsOutOfScope:
-    "نوع الكائن هذا لم يعد موجودًا أو خارج النطاق",
-  noOntologyDomainsYetClickNewDomainToCreate:
-    "لا توجد نطاقات وجود بعد، انقر 'نطاق جديد' للإنشاء",
-  referenceAnotherDecisionCodeToFormDecisionLineage:
-    "أشر إلى رمز قرار آخر لتشكيل نسب القرار",
+  thisObjectTypeNoLongerExistsOrIsOutOfScope: "نوع الكائن هذا لم يعد موجودًا أو خارج النطاق",
+  noOntologyDomainsYetClickNewDomainToCreate: "لا توجد نطاقات وجود بعد، انقر 'نطاق جديد' للإنشاء",
+  referenceAnotherDecisionCodeToFormDecisionLineage: "أشر إلى رمز قرار آخر لتشكيل نسب القرار",
   referenceSourceClickTheBadgeInTheAnswerToSeeLocation:
     "مصدر المرجع (انقر الشارة في الإجابة لرؤية الموقع)",
   thisOntologyHasNoObjectTypesRightClickBlankAreaToCreate:
@@ -1079,8 +1071,7 @@ export default {
     "توليد أنواع الكائنات وخصائصها بتعيين أعمدة مصدر البيانات",
   cannotCreateAnObjectTwiceInOneSubmissionOfficialLimit:
     "لا يمكن إنشاء كائن مرتين في إرسال واحد (حد رسمي)",
-  noResultsTryAnotherPhrasingOrAnnotateChunks:
-    "لا نتائج، جرّب صياغة أخرى أو علّم المقاطع",
+  noResultsTryAnotherPhrasingOrAnnotateChunks: "لا نتائج، جرّب صياغة أخرى أو علّم المقاطع",
   expiredChangesWonTApplyAndCanTBeRecoveredCleanUp:
     "التغييرات المنتهية لن تُطبّق ولا يمكن استعادتها. تنظيف؟",
   noViewsYetClickNewViewOrLetTheSystemAutoGenerate:
@@ -1089,8 +1080,7 @@ export default {
     "المنع له الأولوية على السماح؛ مع سياسات السماح يجب مطابقة واحدة على الأقل",
   notConfiguredAnyRequestSatisfyingParamsAndWhitelistCanSubmit:
     "غير مُهيأ (أي طلب يستوفي المعلمات والقائمة المسموحة يمكنه الإرسال)",
-  pickAPersonToSeeIfTheyCanSeeAnObjectAndWhy:
-    "اختر شخصًا لمعرفة إن كان يمكنه رؤية كائن ولماذا",
+  pickAPersonToSeeIfTheyCanSeeAnObjectAndWhy: "اختر شخصًا لمعرفة إن كان يمكنه رؤية كائن ولماذا",
   selectADatasetToRunEvalOrCreateEvalSetsAndItemsViaAPI:
     "اختر مجموعة بيانات لتشغيل التقييم، أو أنشئ مجموعات وعناصر تقييم عبر API",
   onlyNonSensitiveNonActionFilledPropertiesCanBeWrittenWithAudit:
@@ -1161,8 +1151,7 @@ export default {
     "انقر يمين عقدة لتعديل الخصائص / ربط المقاطع / إضافة علاقة / حذف؛ انقر يمين مساحة فارغة لإنشاء عقدة.",
   chunksTitle: "المقاطع · {name}",
   kbManageTitle: "إدارة قاعدة المعرفة · {name}",
-  rebuildIndexHint:
-    "إعادة بناء الفهرس تعيد توليد متجهات جميع المقاطع وتبني المخطط (مزامنة Age).",
+  rebuildIndexHint: "إعادة بناء الفهرس تعيد توليد متجهات جميع المقاطع وتبني المخطط (مزامنة Age).",
   fixedOverlap: "طول ثابت + تداخل",
   chunkSizeOverlap: "حجم المقطع / التداخل",
   docFileExtHint: "(txt/md/docx/pdf)",
@@ -1204,8 +1193,7 @@ export default {
   editDataSource: "تعديل مصدر البيانات",
   connUri: "رابط الاتصال",
   apiUrl: "رابط API",
-  deleteKbConfirm:
-    'حذف قاعدة المعرفة "{name}"؟ سيُحذف {count} مقطع فعلي ولا يمكن استعادتها!',
+  deleteKbConfirm: 'حذف قاعدة المعرفة "{name}"؟ سيُحذف {count} مقطع فعلي ولا يمكن استعادتها!',
   kbUpdatedMsg: 'حُدّث إلى "{name}" ({count} مقطع)',
   ingestSuccessMsg: "نجح الإدخال، كُتب {count} مقطع",
   noPathMsg: "{a} ← {b} لا يوجد مسار متصل",
@@ -1252,7 +1240,8 @@ export default {
   codeId: "الرمز (المعرف)",
   codePlaceholder: "مثال: video_cameras (أحرف صغيرة/أرقام/شرطات، فريد)",
   apiName: "اسم API",
-  manyToManyJoinDatasetHint: "العلاقة عدة-لأكثر يجب أن تستخدم 'مجموعة بيانات جدول انضمام' (قاعدة رسمية)",
+  manyToManyJoinDatasetHint:
+    "العلاقة عدة-لأكثر يجب أن تستخدم 'مجموعة بيانات جدول انضمام' (قاعدة رسمية)",
   actionUpdate: "تحديث (تعديل كائن)",
   actionInsert: "إدراج (غير مدعوم بعد، سيُرفض)",
   actionDelete: "حذف (غير مدعوم بعد، سيُرفض)",
@@ -1320,8 +1309,7 @@ export default {
   objectReference: "مرجع الكائن",
   officialParamsHint:
     "المعلمات الرسمية تدعم القيمة الافتراضية ومرشّح القائمة المنسدلة وسياسة الأمان والتجاوز وإعداد الأداء، وتولّد مخطط JSON Schema للأداة. الإصدار الحالي لا يدعم كل هذا بعد.",
-  needsApprovalPendingOnly:
-    "مطلوبة موافقة (تنشئ نموذج موافقة معلّق فقط، يوافق عليه المسؤول)",
+  needsApprovalPendingOnly: "مطلوبة موافقة (تنشئ نموذج موافقة معلّق فقط، يوافق عليه المسؤول)",
   criteriaCountAllMatch: "{count} مُهيأة، يجب استيفاء الكل للإرسال",
   notSatisfiedHint: "← تلميح عند عدم الاستيفاء: {msg}",
   execOrderHint:
@@ -1340,12 +1328,9 @@ export default {
   targetTablePrimaryKey: "معرف المفتاح الأساسي للجدول الهدف",
   scenarioStagedOnly:
     "عند اختيار سيناريو، يُرحَّل الفرق فقط ولا يُكتب الجدول الفعلي؛ يسري فقط بعد دمج السيناريو",
-  updateWhitelistFields:
-    "حدد الصف بالمفتاح الأساسي وحدّث الحقول في القائمة المسموحة: {fields}",
-  onlyUpdateSupportedInsertBlocked:
-    "الكتابة العكسية للتحديث فقط مدعومة حاليًا؛ سيُرفض الإدراج",
-  onlyUpdateSupportedDeleteBlocked:
-    "الكتابة العكسية للتحديث فقط مدعومة حاليًا؛ سيُرفض الحذف",
+  updateWhitelistFields: "حدد الصف بالمفتاح الأساسي وحدّث الحقول في القائمة المسموحة: {fields}",
+  onlyUpdateSupportedInsertBlocked: "الكتابة العكسية للتحديث فقط مدعومة حاليًا؛ سيُرفض الإدراج",
+  onlyUpdateSupportedDeleteBlocked: "الكتابة العكسية للتحديث فقط مدعومة حاليًا؛ سيُرفض الحذف",
   paramValue: "المعلمة {value}",
   subConditionsCount: "({count} شرط فرعي) {operator}",
   mustBeArrayShort: "{label} يجب أن يكون مصفوفة",
@@ -1395,8 +1380,7 @@ export default {
   derivedLimitHint:
     "القيود: سلسلة العلاقة حتى 3 مستويات؛ حد التجميع الافتراضي 10، الأقصى 100؛ لا يمكن لخاصية مشتقّة أن تعتمد على خاصية مشتقّة أخرى.",
   structFieldsLabel: "حقول الهيكل",
-  structFieldsHint:
-    "يُدعم الهيكل بعمود هيكل واحد؛ هنا تصف تركيبة حقوله",
+  structFieldsHint: "يُدعم الهيكل بعمود هيكل واحد؛ هنا تصف تركيبة حقوله",
   nameWithCode: "{name} ({code})",
   emptyEqualsPublic: "فارغ = عام",
   rolePublic: "عام (public)",
@@ -1409,8 +1393,7 @@ export default {
   readCountLabel: "القراءات (استدعاءات أدوات الوكيل)",
   usageHint:
     "تأتي البيانات من جداول السجلات الموجودة (سجلات استدعاءات الوكيل / سجلات تنفيذ الأفعال / تتبعات تغيير التعريفات)، دون أدوات قياس إضافية. 'عدد المستخدمين النشطين' الرسمي يتطلب تجميع سجلات الاستدعاءات حسب المستخدم، وهو غير منجز في هذا الإصدار.",
-  pleaseFillPropIdFirst:
-    "يرجى ملء معرف الخاصية وحفظه أولاً قبل الحساب التجريبي",
+  pleaseFillPropIdFirst: "يرجى ملء معرف الخاصية وحفظه أولاً قبل الحساب التجريبي",
   matchedHops: "طابق {matched} عنصر، {hops} مستوى",
   pleaseEnterDisplayNameAndPropId: "يرجى ملء اسم العرض ومعرف الخاصية",
   derivedConfigNotValidJson: "الإعداد المشتق ليس JSON صالحًا",
@@ -1425,8 +1408,7 @@ export default {
   fnExposedHint:
     'تُعرض الدوال للذكاء الاصطناعي كقدرات وكيل (أدوات). تذهب التغييرات إلى قائمة الحفظ المعلّق؛ تسري بعد النقر على "حفظ".',
   fnNamePlaceholder: "مثال: معدل تواجد الكاميرات (%)",
-  exprBuiltinsHint:
-    "يدعم + - * / والمقارنة والتعبيرات الثلاثية، و{count} دالة مدمجة.",
+  exprBuiltinsHint: "يدعم + - * / والمقارنة والتعبيرات الثلاثية، و{count} دالة مدمجة.",
   collapse: "طي",
   viewBuiltins: "عرض الدوال المدمجة",
   inputsJson: "المدخلات (JSON)",
@@ -1443,8 +1425,7 @@ export default {
   runSuccess: "نُفّذ بنجاح",
   fnKindAggregateHint:
     "تجمّع على الكائنات المرتبطة على طول سلسلة العلاقة (count/sum/avg/min/max/first/last/collect_list/collect_set)، وتتطلب المفتاح الأساسي للكائن كسياق",
-  fnKindHttpHint:
-    "تستدعي واجهة REST خارجية وتأخذ القيمة من الاستجابة عبر result_path",
+  fnKindHttpHint: "تستدعي واجهة REST خارجية وتأخذ القيمة من الاستجابة عبر result_path",
   fnKindModelHint:
     "تستدعي نموذجًا مسجّلًا في النظام (إدارة الذكاء الاصطناعي ← إعداد النموذج) وتُرجع نص الاستجابة",
   fnKindExprHint:
@@ -1456,7 +1437,8 @@ export default {
   summarizePrompt: "لخّص: {'{{'}text{'}}'}",
   fnConfigHintAggregate:
     "link_path مصفوفة من معرّفات العلاقة (حتى 3 مستويات)؛ يمكن ترك الخاصية فارغة للعد",
-  fnConfigHintHttp: "يجب أن يكون الرابط http/https؛ يدعم body_template عناصر نائبة {'{{'}param{'}}'}",
+  fnConfigHintHttp:
+    "يجب أن يكون الرابط http/https؛ يدعم body_template عناصر نائبة {'{{'}param{'}}'}",
   fnConfigHintModel:
     "اترك model_id فارغًا لاستخدام النموذج الافتراضي؛ يدعم التلميح عناصر نائبة {'{{'}param{'}}'}",
   configMustBeJsonObject: "يجب أن يكون إعداد الشكل كائن JSON",
@@ -1507,8 +1489,7 @@ export default {
     "الاستيراد المرحّلي = تذهب التغييرات إلى قائمة الحفظ المعلّق أولاً؛ الاستيراد المباشر = يُكتب فورًا وقد يستبدل تعريفات بنفس الاسم (مع تأكيد ثانٍ).",
   tableCountOption: "{name} ({count} جدول)",
   tablesCount: "{count} جدول",
-  exportSummary:
-    "صُدّر {objects} كائن / {properties} خاصية / {links} علاقة / {actions} فعل",
+  exportSummary: "صُدّر {objects} كائن / {properties} خاصية / {links} علاقة / {actions} فعل",
   jsonParseFailedCheckContent: "فشل تحليل JSON، يرجى فحص المحتوى الملصوق",
   notValidOntologyMissingObjects: "ليس تعريف وجود صالحًا (كائنات مفقودة)",
   importDirectlyConfirm:
@@ -1595,10 +1576,9 @@ export default {
   noPathFound: 'لا يوجد مسار بين "{a}" و"{b}"',
   graphFileName: "ontology-graph",
   loadedView: 'حُمّل "{name}"',
-  deleteViewConfirm:
-    'سيحذف عرض المخطط "{name}" وجميع سجلات إصداراته، ولا يمكن استعادته.',
+  deleteViewConfirm: 'سيحذف عرض المخطط "{name}" وجميع سجلات إصداراته، ولا يمكن استعادته.',
   indexBuildAlert:
-    "بناء فهرس ينفّذ فعلًا CREATE INDEX على الجدول الداعم لنوع الكائن. الحالة \"جاهز\" تعني أنه جاهز (تعادل العلامة الخضراء الرسمية).",
+    'بناء فهرس ينفّذ فعلًا CREATE INDEX على الجدول الداعم لنوع الكائن. الحالة "جاهز" تعني أنه جاهز (تعادل العلامة الخضراء الرسمية).',
   primaryKeyParen: "(المفتاح الأساسي)",
   rowsAndSize: "الصفوف / الحجم",
   autoRetryAt: "سيُعاد تلقائيًا في {time}",
@@ -1613,8 +1593,7 @@ export default {
   mediumPriority: "متوسطة",
   deleteIndexConfirm:
     'سيحذف الفهرس "{index}" و**يسقطه فعليًا في قاعدة البيانات**، ولا يمكن استعادته. تأكيد الحذف؟',
-  markExpiredConfirm:
-    'سيعلّم {count} فهرس جاهز لـ"{name}" كمنتهي، مما يتطلب إعادة بناء. تأكيد؟',
+  markExpiredConfirm: 'سيعلّم {count} فهرس جاهز لـ"{name}" كمنتهي، مما يتطلب إعادة بناء. تأكيد؟',
   manualMaintenance: "مُدار يدويًا",
   viewInfoAlert:
     "العرض هو عرض قابل لإعادة الاستخدام لبيانات الكائن. يُولَّد العرض الافتراضي تلقائيًا من نوع الكائن؛ بمجرد تعديله يصبح مُدارًا يدويًا ولم تعد تغييرات نوع الكائن اللاحقة تتزامن تلقائيًا.",
@@ -1625,8 +1604,7 @@ export default {
   leaveEmptyAllRelations: "اتركه فارغًا = جميع العلاقات",
   filterAppliesHint: "يسري المرشّح على الجداول/الكائنات المرتبطة في نفس التبويب",
   leaveEmptyAllActions: "اتركه فارغًا = جميع الأفعال",
-  shareViewAlert:
-    "رؤية عرض ≠ رؤية بيانات: تمر البيانات عبر صلاحيات الكائن وسياسات الصف/العمود.",
+  shareViewAlert: "رؤية عرض ≠ رؤية بيانات: تمر البيانات عبر صلاحيات الكائن وسياسات الصف/العمود.",
   activeFiltersSummary: "المرشّحات النشطة على هذا التبويب: {filters}",
   customViewName: "{code} عرض مخصص",
   deleteObjectViewConfirm:
@@ -1644,8 +1622,7 @@ export default {
   commentsCount: "{count} تعليق",
   anonymous: "مجهول",
   commentPlaceholder: "اكتب رأيك أو خلاصة المراجعة أو ملاحظة إضافية...",
-  discardTaskConfirm:
-    'سيُتجاهل تغييرات المهمة "{resource}" (لن تُدرج بعد الآن على الفرع). تأكيد؟',
+  discardTaskConfirm: 'سيُتجاهل تغييرات المهمة "{resource}" (لن تُدرج بعد الآن على الفرع). تأكيد؟',
   mergeProposalConfirm:
     'سيحصل {count} تغيير للاقتراح "{title}" **في الوجود الأساسي** (لا يمكن التراجع تلقائيًا؛ يتطلب التراجع تحرير كل عنصر بالعكس). تأكيد الدمج؟',
   closeProposalConfirm:
@@ -1681,8 +1658,7 @@ export default {
   primaryKeyColon: "المفتاح الأساسي: {name}",
   sourceProperty: "الخاصية المصدر",
   targetProperty: "الخاصية الهدف",
-  relationOwnPropsNotSupported:
-    "خصائص نوع العلاقة الخاصة (رابط مدعوم بالكائن) غير مدعومة بعد",
+  relationOwnPropsNotSupported: "خصائص نوع العلاقة الخاصة (رابط مدعوم بالكائن) غير مدعومة بعد",
   relationSecurityAlert:
     'تتبع صلاحيات العلاقة صلاحيات مصدر البيانات الداعم لنوعي الكائن الطرفين. القيود على مستوى الحقل موجودة في صفحة "الأمان" لكل نوع كائن.',
   datasourceAlert:
@@ -1693,8 +1669,7 @@ export default {
     "تُشتق قواعد التنظيف من فحص الوجود في الخلفية (مثل غير مستخدم طويلًا، غير مشار إليه بأي علاقة/فعل/وظيفة، إلخ.). وسم كمنسوخ يضع حالة الكائن كمنسوخ؛ تذهب التغييرات إلى قائمة الحفظ المعلّق أولاً.",
   loadingCleanup: "جارٍ تحميل اقتراحات التنظيف...",
   cleanupSuggestClean: "اقتراح تنظيف",
-  deprecateConfirm:
-    'سيعلّم "{name}" كمنسوخ. تذهب التغييرات إلى قائمة الحفظ المعلّق أولاً. تأكيد؟',
+  deprecateConfirm: 'سيعلّم "{name}" كمنسوخ. تذهب التغييرات إلى قائمة الحفظ المعلّق أولاً. تأكيد؟',
   instanceVsTypeLevelHint: ' (صفوف بيانات فعلية)، لـ"نوع الكائن / نوع العلاقة"',
   demoLoadedCount: "حُمّل {count} عنصر",
   demoNotLoaded: "غير محمّل",

@@ -79,7 +79,8 @@ export default {
   eval_questionPlaceholder: "Вопрос на естественном языке",
   eval_scenarioPlaceholder: "Бизнес-сценарий (необязательно)",
   eval_genSuccess: "Сгенерировано: сохранено {saved}, отклонено {rejected}",
-  eval_genNoNew: "В этом раунде нет новых вопросов (отклонено {rejected}). Скорректируйте фильтры и повторите.",
+  eval_genNoNew:
+    "В этом раунде нет новых вопросов (отклонено {rejected}). Скорректируйте фильтры и повторите.",
   eval_genFail: "Ошибка генерации",
   eval_fillQuestion: "Введите вопрос",
   eval_fillGoldSql: "Введите эталонный SQL",
@@ -195,7 +196,7 @@ export default {
   eval_nl2sqlAccuracy: "Точность NL2SQL",
   eval_correctShort: "Верно",
   eval_wrongShort: "Неверно",
-  eval_clickRun: 'Нажмите «Запустить бенчмарк», чтобы начать',
+  eval_clickRun: "Нажмите «Запустить бенчмарк», чтобы начать",
   eval_benchDone: "Бенчмарк завершён",
   eval_benchFail: "Ошибка бенчмарка",
 };

@@ -27,14 +27,16 @@ export default {
   invalidTableId: "잘못된 테이블 ID",
   selectDataToGen: "생성할 데이터를 선택하세요",
   customPathSingleOnly: "사용자 지정 경로는 단일 테이블 코드만 생성할 수 있습니다",
-  writtenToProject: "프로젝트 디렉터리에 기록되고 메뉴가 생성되었습니다 (이미 있으면 생성하지 않음)",
+  writtenToProject:
+    "프로젝트 디렉터리에 기록되고 메뉴가 생성되었습니다 (이미 있으면 생성하지 않음)",
   batchGenFailed: "일괄 생성에 실패했습니다",
   downloadStarted: "code.zip 다운로드가 시작되었습니다",
   noneListed: "없음",
   none: "없음",
   selectDataToModify: "편집할 데이터를 선택하세요",
   loadDetailFailed: "테이블 상세를 불러오지 못했습니다. 나중에 다시 시도하세요",
-  menuDictLoadFailed: "메뉴 또는 사전 옵션을 불러오지 못했습니다. 일부 드롭다운이 비어 있을 수 있습니다",
+  menuDictLoadFailed:
+    "메뉴 또는 사전 옵션을 불러오지 못했습니다. 일부 드롭다운이 비어 있을 수 있습니다",
   selectDataToDelete: "삭제할 데이터를 선택하세요",
   deleteConfirmTitle: "삭제 확인",
   deleteConfirmMsg: "선택한 {count}개 항목을 삭제하시겠습니까?",
@@ -47,8 +49,7 @@ export default {
   configFields: "필드 정보를 설정하세요",
 
   // 校验规则
-  masterSubPairError:
-    "하위 테이블 이름과 외래 키 열은 함께 입력하거나 함께 비워 두어야 합니다",
+  masterSubPairError: "하위 테이블 이름과 외래 키 열은 함께 입력하거나 함께 비워 두어야 합니다",
   masterSubSameError: "하위 테이블 이름은 마스터 테이블 이름과 같을 수 없습니다",
   businessNameEmpty: "비즈니스 이름은 비워 둘 수 없습니다",
   requiredTableName: "테이블 이름은 비워 둘 수 없습니다",
@@ -132,15 +133,13 @@ export default {
   entityName: "엔티티 클래스 이름",
   inputPlaceholder: "입력하세요",
   packageName: "패키지 이름",
-  packageTip:
-    "플러그인 패키지 이름 (최상위 플러그인 디렉터리). 3세그먼트 예: module_example",
+  packageTip: "플러그인 패키지 이름 (최상위 플러그인 디렉터리). 3세그먼트 예: module_example",
   packagePlaceholder: "예: module_example",
   moduleName: "모듈 이름",
   moduleTip: "패키지 아래의 2차 디렉터리. 예: demo / gen_demo02",
   modulePlaceholder: "예: demo",
   businessName: "비즈니스 이름",
-  businessTip:
-    "모듈 아래의 3차 디렉터리 (선택). 예: demo01; 모듈 수준만으로 하려면 비워 두세요",
+  businessTip: "모듈 아래의 3차 디렉터리 (선택). 예: demo01; 모듈 수준만으로 하려면 비워 두세요",
   businessPlaceholder: "예: demo01 (선택)",
   functionName: "기능 이름",
   functionTip: "로컬에 쓸 때 메뉴 이름으로 사용됩니다. 예: 사용자 관리",
@@ -148,8 +147,7 @@ export default {
   parentMenu: "상위 메뉴",
   parentMenuTip:
     "카탈로그만 선택할 수 있습니다. 비워 두면 사이드바 루트 아래에 모듈 디렉터리가 생성됩니다",
-  parentMenuPlaceholder:
-    "비움 = 루트 아래에 모듈 디렉터리 생성, 선택 = 해당 디렉터리 아래에 생성",
+  parentMenuPlaceholder: "비움 = 루트 아래에 모듈 디렉터리 생성, 선택 = 해당 디렉터리 아래에 생성",
   remark: "비고",
   subTableName: "하위 테이블 이름",
   subTableNameTip: "DB에 존재하는 물리적 테이블 이름, 예: gen_order_item",
@@ -164,8 +162,7 @@ export default {
   // 字段配置步骤
   masterSubEnabled:
     "마스터-하위가 활성화되었습니다: 다음은 '마스터 테이블' 필드 구성입니다. 하위 테이블 필드는 DB 구조에서 가져오며 저장 후 미리볼 수 있습니다.",
-  columnsTip:
-    "메뉴/라우트/API 매핑은 '기본 구성' 1단계의 접힌 '매핑' 표를 참조하세요.",
+  columnsTip: "메뉴/라우트/API 매핑은 '기본 구성' 1단계의 접힌 '매핑' 표를 참조하세요.",
   noMatchCols: "일치하는 열이 없습니다. 필터를 조정하거나 필터 상자를 지우세요",
   filterPlaceholder: "열 이름 또는 주석으로 필터링",
   bulkSet: "일괄 설정:",

@@ -101,8 +101,7 @@ export default {
   ig_nameCol: "표시 이름 컬럼",
   ig_fieldCount: "필드 ({count})",
   ig_onlyBizField: "업무 필드만",
-  ig_auditHint:
-    "업스트림 주석은 참고용이며, 한글 이름/열거형은 수동으로 유지할 수 있습니다",
+  ig_auditHint: "업스트림 주석은 참고용이며, 한글 이름/열거형은 수동으로 유지할 수 있습니다",
   ig_noColEmpty: "이 테이블에 필드 정보가 없습니다. 먼저 스키마를 동기화하세요",
   ig_field: "필드",
   ig_relatedTable: "관련 테이블",
@@ -115,8 +114,7 @@ export default {
   ig_newPipe: "새 파이프라인",
   ig_editPipe: "파이프라인 편집",
   ig_pipeGraph: "파이프라인 그래프",
-  ig_pipeHint:
-    "원본 테이블 → 대상 객체; 실행 시 파이프라인 구체화 테이블로 구체화됩니다",
+  ig_pipeHint: "원본 테이블 → 대상 객체; 실행 시 파이프라인 구체화 테이블로 구체화됩니다",
   ig_noPipe: "파이프라인 없음",
   ig_srcToTarget: "원본 → 대상",
   ig_run: "실행",
@@ -184,8 +182,7 @@ export default {
   ig_autoModelTitleAnnotation: "객체/속성 어노테이션 자동 생성 (미리보기)",
   ig_emptyHintMetric:
     "이 데이터 소스의 이 객체 묶음에 사용 가능한 지표 후보가 없습니다 (객체에 집계 가능한 숫자 속성이 없거나, LLM이 검증 가능한 지표를 주지 않았을 수 있음)",
-  ig_emptyHintAnnotation:
-    "이 데이터 소스의 이 객체 묶음에 사용 가능한 어노테이션 후보가 없습니다",
+  ig_emptyHintAnnotation: "이 데이터 소스의 이 객체 묶음에 사용 가능한 어노테이션 후보가 없습니다",
   ig_analysisFail: "분석 실패",
   ig_applyMixed: "{saved}개 저장, {failed}개 실패: {first}",
   ig_applySuccess: "{saved}개 저장됨",
@@ -245,8 +242,7 @@ export default {
   ig_question: "질문",
   ig_exampleSql: "예시 SQL",
   ig_systemLibOption: "시스템 라이브러리 (온톨로지 지원 테이블)",
-  ig_questionPlaceholder:
-    "자연어 질문, 예: 카메라의 상태 분포 세기",
+  ig_questionPlaceholder: "자연어 질문, 예: 카메라의 상태 분포 세기",
   ig_questionRequired: "질문을 입력하세요",
   ig_sqlRequired: "예시 SQL을 입력하세요",
   ig_exampleSaved: "예시 저장됨",
@@ -326,8 +322,7 @@ export default {
     "포함된 자산의 한글 사전을 바탕으로 LLM이 고빈도 지표와 업무 용어를 추천합니다; 하나씩 채택하여 지표/용어 라이브러리에 기록하세요.",
   ig_suggestMetrics: "추천 지표 ({count})",
   ig_suggestTerms: "추천 용어 ({count})",
-  ig_noSuggestResult:
-    "생성된 추천이 없습니다. 자산의 업무 설명을 개선한 후 재시도하세요",
+  ig_noSuggestResult: "생성된 추천이 없습니다. 자산의 업무 설명을 개선한 후 재시도하세요",
   ig_suggestFail: "추천 실패",
 
   // ===== 字段属性 =====
@@ -385,8 +380,7 @@ export default {
   ig_noBizTableAfterHide: "시스템 테이블 숨김; 현재 업무 테이블 없음",
   ig_noMatchTable: "일치하는 테이블 없음",
   ig_syncToLoad: '스키마를 로드하려면 "동기화"를 클릭하세요',
-  ig_descGenerated:
-    "설명 생성됨: {tables}개 테이블, {columns}개 필드 (수동 검토 후 적용)",
+  ig_descGenerated: "설명 생성됨: {tables}개 테이블, {columns}개 필드 (수동 검토 후 적용)",
   ig_descGenFail: "AI 설명 생성 실패",
 
   // ===== 筛选规则工作台 =====
@@ -399,8 +393,7 @@ export default {
   ig_enableRuleHint: "끄면 시스템 테이블/감사 필드가 더 이상 규칙으로 자동 태깅되지 않습니다",
   ig_sysTableDetect: "시스템 테이블 감지",
   ig_auditFieldDetect: "감사 필드 감지",
-  ig_draftStatus:
-    '현재 초안: {status}; 저장 후 "이전/이후" 비교의 기준선이 됩니다',
+  ig_draftStatus: '현재 초안: {status}; 저장 후 "이전/이후" 비교의 기준선이 됩니다',
   ig_tabPreview: "실시간 미리보기",
   ig_frwbPreviewHint:
     "아래는 현재 초안 규칙의 매칭 결과(읽기 전용)이며, 저장된 규칙에 영향 없습니다.",
@@ -451,8 +444,7 @@ export default {
   ig_enabledOff: "비활성화됨",
   ig_previewFail: "미리보기 실패",
   ig_noValidRules: "유효한 규칙이 반환되지 않았습니다; 적용 취소됨",
-  ig_appliedDraft:
-    '초안에 적용됨 (저장 안 됨); 저장 전 "규칙 구성"으로 돌아가 미세 조정하세요',
+  ig_appliedDraft: '초안에 적용됨 (저장 안 됨); 저장 전 "규칙 구성"으로 돌아가 미세 조정하세요',
   ig_genCandidateFail: "후보 규칙 생성 실패",
   ig_parseFail: "파싱 실패",
   ig_getClassifyFail: "분류 제안 가져오기 실패",
@@ -519,8 +511,7 @@ export default {
   ig_govDomainCount: "{count}개 도메인 · 미할당 {unassigned}",
   ig_govObjCount: "객체 ({count})",
   ig_govMemberIds: "구성원 사용자 ID",
-  ig_govOntSummary:
-    "온톨로지 객체 · 원본 파이프라인 / 다운스트림 / 데이터 품질 점수 | 평균 {avg}",
+  ig_govOntSummary: "온톨로지 객체 · 원본 파이프라인 / 다운스트림 / 데이터 품질 점수 | 평균 {avg}",
   ig_govNoOnt: '온톨로지 객체가 없습니다. "온톨로지"에서 객체를 정의하고 먼저 구체화하세요',
   ig_govQuality: "상태 점수",
   ig_govSourcePipeline: "원본 파이프라인",
@@ -529,15 +520,13 @@ export default {
   ig_govActionAlert:
     '이것은 레거시 "테이블 쓰기 반영"입니다. 새 액션은 온톨로지 → 액션 유형에서 정의하세요 (Palantir 의미와 일치). 이 모듈은 단계적으로 제거됩니다.',
   ig_govPendingCount: "대기 액션 {pending} · 액션 정의 {defs}",
-  ig_govPendingSection:
-    "대기 (쓰기 반영은 수동 승인 필요; 승인 후 적용)",
+  ig_govPendingSection: "대기 (쓰기 반영은 수동 승인 필요; 승인 후 적용)",
   ig_govNoPending: "대기 액션 없음",
   ig_govRecord: "기록",
   ig_govParams: "파라미터",
   ig_govApprove: "승인",
   ig_govReject: "거부",
-  ig_govDefSection:
-    "액션 정의 (쓰기 가능 컬럼 / 검증 / 승인 필요 여부)",
+  ig_govDefSection: "액션 정의 (쓰기 가능 컬럼 / 검증 / 승인 필요 여부)",
   ig_govNoActionDef: "액션 정의 없음",
   ig_govWritableCols: "쓰기 가능 컬럼",
   ig_govValidation: "검증",
@@ -623,8 +612,7 @@ export default {
   ig_govSuperuser: "슈퍼",
   ig_govNoRoleText: "역할 없음",
   ig_govFdeTitleRequired: "제안 제목을 입력하세요",
-  ig_govDelFdeConfirm:
-    '배송 제안 "{name}"을(를) 삭제하며, 되돌릴 수 없습니다.',
+  ig_govDelFdeConfirm: '배송 제안 "{name}"을(를) 삭제하며, 되돌릴 수 없습니다.',
   ig_govDelFdeTitle: "배송 제안 삭제",
   ig_govShadowConfirm:
     '"{title}"의 섀도 지표 실적을 골든 표준({golden})과 비교합니다. 계속하시겠습니까?',
@@ -636,6 +624,8 @@ export default {
   ig_govRejected: "거부됨",
   ig_govOpFail: "작업 실패",
   ig_govScanned: "전체 스캔 완료",
+  ig_govScanOne: "스캔",
+  ig_govScannedOne: "{table} 스캔 완료: {score}",
   ig_govScanFail: "스캔 실패",
   ig_govPolicyRequired: "정책 이름 / 속성 값을 입력하세요",
   ig_govDomainNameRequired: "도메인 이름을 입력하세요",

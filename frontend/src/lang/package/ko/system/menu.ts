@@ -56,7 +56,8 @@ export default {
   componentPathPlaceholder: "컴포넌트 경로를 입력해 주세요. 예: system/user/index",
   componentPathTooltip:
     "컴포넌트 페이지의 전체 경로로 src/views/ 기준입니다. 예: system/user/index, .vue 접미사는 생략합니다",
-  paramsTooltip: "컴포넌트 페이지는 useRoute().query.paramName을 통해 라우트 파라미터 값을 읽습니다.",
+  paramsTooltip:
+    "컴포넌트 페이지는 useRoute().query.paramName을 통해 라우트 파라미터 값을 읽습니다.",
   addParam: "라우트 파라미터 추가",
   paramName: "파라미터 이름",
   paramValue: "파라미터 값",

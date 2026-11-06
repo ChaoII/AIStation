@@ -65,7 +65,7 @@ export default {
   systemDsLabel: "Bibliothèque système (tables de support d'ontologie)",
   onlyConfirmed: "Uniquement confirmés",
   reportOrigTip:
-    'Les rapports proviennent de l\'action "Enregistrer comme rapport" de la page de résultats de requête intelligente. Ce n\'est qu\'après confirmation qu\'ils deviennent des rapports officiels ; les questions complexes peuvent ainsi être réglées une fois et réutilisées.',
+    "Les rapports proviennent de l'action \"Enregistrer comme rapport\" de la page de résultats de requête intelligente. Ce n'est qu'après confirmation qu'ils deviennent des rapports officiels ; les questions complexes peuvent ainsi être réglées une fois et réutilisées.",
   reportName: "Nom du rapport",
   reportKey: "Clé",
   datasource: "Source de données",
@@ -149,7 +149,8 @@ export default {
     "Contexte d'objet actuel : {code}{key} (il sera joint automatiquement à votre question, inutile de le répéter)",
   queryReuseTip:
     "La réutilisation de requête réutilise la sémantique et les permissions de l'ontologie : les noms d'objets métier, les noms chinois de champs et les relations de tables proviennent tous de l'ontologie ; les politiques de lignes/colonnes sont poussées dans les sous-requêtes lors de la génération du SQL.",
-  questionPlaceholder: "Posez la question en langage métier, par ex. quel est le total des ventes par département",
+  questionPlaceholder:
+    "Posez la question en langage métier, par ex. quel est le total des ventes par département",
   ask: "Demander",
   examples: "Exemples :",
   noQueries: "Aucune requête pour le moment",
@@ -219,7 +220,8 @@ export default {
   askFailed: "Échec de la demande",
   clarifyGroup: "[Préciser] le calibre de groupe utilise {label}",
   noSaveableSql: "Aucun SQL enregistrable cette fois",
-  savedReportDraft: "Enregistré comme brouillon de rapport ; confirmez-le dans la liste des rapports",
+  savedReportDraft:
+    "Enregistré comme brouillon de rapport ; confirmez-le dans la liste des rapports",
   readSettingsFailed: "Échec de la lecture des paramètres de requête",
   noSettingsChanged: "Aucune modification à enregistrer",
   savedSettingsCount: "{count} paramètre(s) enregistré(s)",
@@ -250,12 +252,14 @@ export default {
   settingIrModelTip:
     "Quel modèle génère le IR de requête objet : vide = identique à NL2SQL. Renseignez un nom de modèle plus rapide (par ex. LLM-27B-FP8) ou un identifiant de modèle.",
   settingEmptySelfCorrect: "Auto-correction de résultat vide",
-  settingEmptySelfCorrectTip: "Lorsque le résultat est vide, régénérer une fois avec une indication.",
+  settingEmptySelfCorrectTip:
+    "Lorsque le résultat est vide, régénérer une fois avec une indication.",
   settingRecall: "Rappel multi-voies (fusion RRF)",
   settingRecallTip:
     "Rappel fusionné sur quatre voies : vecteur / mot-clé / ontologie / entité avant la sélection de table.",
   settingTwoStage: "Planification en deux étapes (vraie décomposition)",
-  settingTwoStageTip: "Planifier d'abord, puis écrire le SQL. Gain négatif mesuré, désactivé par défaut.",
+  settingTwoStageTip:
+    "Planifier d'abord, puis écrire le SQL. Gain négatif mesuré, désactivé par défaut.",
   settingToolAgent: "Agent basé sur des outils",
   settingToolAgentTip:
     "Laisser le modèle appeler des outils de récupération de manière autonome ; allers-retours plus lents, désactivé par défaut.",
@@ -297,13 +301,15 @@ export default {
   pipelineStatus: "Statut du pipeline",
   noPipelineRun: "Aucun pipeline en cours",
   aipConsole: "Console AIP · Suivi d'exécution",
-  aipConsoleSub: "Suivi des exécutions d'appels Agent/IA · répartition d'usage · file de revue manuelle",
+  aipConsoleSub:
+    "Suivi des exécutions d'appels Agent/IA · répartition d'usage · file de revue manuelle",
   runRecords: "Enregistrements d'exécution",
   usageDist: "Répartition d'usage",
   latencyMs: "Latence (ms)",
   costYuanValue: "¥{value}",
   agentDashboard: "Tableau de bord d'orchestration d'agents",
-  agentDashboardSub: "Volume d'exécutions / taux d'erreur / latence + outils liés · compétences · matrice de capacités",
+  agentDashboardSub:
+    "Volume d'exécutions / taux d'erreur / latence + outils liés · compétences · matrice de capacités",
   totalAgents: "Agents totaux",
   enabledAgents: "Activés",
   totalRuns: "Exécutions totales",
@@ -352,7 +358,8 @@ export default {
   computedValue: "Valeur calculée",
   computeFailed: "Échec du calcul",
   securityAudit: "Audit de sécurité et d'accès aux données",
-  securityAuditSub: "Actifs sensibles · sources de données en lecture seule · règles ABAC · journaux d'audit d'accès",
+  securityAuditSub:
+    "Actifs sensibles · sources de données en lecture seule · règles ABAC · journaux d'audit d'accès",
   securitySummary: "{tables} tables de base · {fields} champs sensibles",
   securityScore: "Score de sécurité {score}",
   auditLogCount: "Journaux d'audit d'accès ({count} récents)",
@@ -408,11 +415,13 @@ export default {
   shareLinkMsg: "Lien de partage : {link}",
   datasetShare: "Partage de jeu de données",
   unifiedTimeline: "Chronologie d'activité unifiée",
-  unifiedTimelineSub: "Chronologie unifiée des appels / actions / approbations IA (7 derniers jours)",
+  unifiedTimelineSub:
+    "Chronologie unifiée des appels / actions / approbations IA (7 derniers jours)",
   eventsCount: "{count} événement(s)",
   noActivity: "Aucune activité au cours des 7 derniers jours",
   compassRelationsDrill: "Catalogue Compass · Relations d'objets · Explorer l'accès",
-  compassRelationsSub: "Classification du catalogue de données / graphe de relations d'objets / bac à sable d'accès aux données",
+  compassRelationsSub:
+    "Classification du catalogue de données / graphe de relations d'objets / bac à sable d'accès aux données",
   catalogCategories: "Catégories du catalogue Compass ({count})",
   objectRelations: "Graphe de relations d'objets ({edges} arêtes / {nodes} objets)",
   noObjectRelations: "Aucune relation d'objets",
@@ -425,7 +434,8 @@ export default {
   aipGuardrailsSub:
     "ABAC / domaines de données / masquage des données sensibles / approbation / audit / statut des garde-fous de version",
   objectBrowser: "Navigateur de données d'objets",
-  objectBrowserSub: "Parcourir par pages les données réelles des tables (aperçu d'instances d'objets)",
+  objectBrowserSub:
+    "Parcourir par pages les données réelles des tables (aperçu d'instances d'objets)",
   browseTablePlaceholder: "Saisir le nom de la table, par ex. video_alarm_records",
   browseSummary: "{total} lignes · page {page}",
   aipGovernanceReport: "Rapport de gouvernance des données AIP",
@@ -438,7 +448,8 @@ export default {
   governanceCheck: "Vérification de gouvernance",
   governanceReportFile: "governance_report",
   assetHotspots: "Points chauds d'actifs et cycle de vie des objets",
-  assetHotspotsSub: "Classement par références de mesures · vue d'ensemble du statut de publication des objets",
+  assetHotspotsSub:
+    "Classement par références de mesures · vue d'ensemble du statut de publication des objets",
   assetHotspotsTitle: "Points chauds d'actifs de données (par référence de mesure)",
   refs: "Références {count}",
   objectLifecycle: "Cycle de vie des objets",
@@ -448,7 +459,8 @@ export default {
   sensitiveCount: "Sensible {count}",
   objectList: "Liste d'objets",
   evalAndAudit: "Évaluation des capacités IA et audit unifié",
-  evalAndAuditSub: "Comparaison de régression des artefacts · audit de pipeline complet inter-modules",
+  evalAndAuditSub:
+    "Comparaison de régression des artefacts · audit de pipeline complet inter-modules",
   evalBenchmark: "Référence d'évaluation (régression d'artefacts)",
   runAndFix: "Exécuter et consolider",
   noEvalRecords: "Aucun enregistrement d'évaluation",

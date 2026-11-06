@@ -229,7 +229,8 @@ export default {
   bodyTypeLabel: "リクエストボディタイプ",
   bodyNone: "なし（パラメータはクエリ文字列経由）",
   bodyHintGet: "{m} にはリクエストボディがなく、残りのパラメータはクエリ文字列になります。",
-  bodyHintNoBody: "{m} でリクエストボディなしで送信され、残りのパラメータはクエリ文字列になります。",
+  bodyHintNoBody:
+    "{m} でリクエストボディなしで送信され、残りのパラメータはクエリ文字列になります。",
   bodyHintFormData:
     "{m} で送信され、残りのパラメータは application/x-www-form-urlencoded（Form Data）になります。",
   bodyHintPost: "POST で送信され、残りのパラメータは JSON ボディになります。",
@@ -245,9 +246,9 @@ export default {
   runtimeParamsLabel: "実行時パラメータ",
   runtimeParamKeyPlaceholder: "パラメータ名、例: api_key",
   runtimeValuePlaceholder: "値（保存後は非表示）",
-  runtimeTipPre: "キー・機密値・ユーザーごとのパラメータ用（例: api_key、username）。スクリプト内で ",
-  runtimeTipPost:
-    " から読み取ります。ソースには書き込まれず、値は保存後常に非表示です。",
+  runtimeTipPre:
+    "キー・機密値・ユーザーごとのパラメータ用（例: api_key、username）。スクリプト内で ",
+  runtimeTipPost: " から読み取ります。ソースには書き込まれず、値は保存後常に非表示です。",
   sandboxAlert:
     "スクリプトは管理されたサンドボックスで実行されます: json/math/re/datetime などの許可済みモジュールのみインポート可能。ファイル・ネットワーク・システム呼び出しは禁止されています。型アノテーション付きのマルチパラメータ署名（例: def run(name: str = 'x')）を使用し、「コードからパラメータを抽出」でパラメータ表を自動生成することを推奨します。",
   trialRun: "試行実行",

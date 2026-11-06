@@ -42,7 +42,8 @@ export default {
   isShow: "Anzeigen",
   isAffix: "An Tab anheften",
   parentMenuPlaceholder: "Übergeordnetes Menü auswählen",
-  parentLockedTip: "Unter einem Menü können nur Schaltflächen hinzugefügt werden; das übergeordnete Element ist festgelegt",
+  parentLockedTip:
+    "Unter einem Menü können nur Schaltflächen hinzugefügt werden; das übergeordnete Element ist festgelegt",
   menuNamePlaceholder: "Bitte Menünamen eingeben",
   titlePlaceholder: "Bitte Menütitel eingeben",
   extlinkAddress: "Adresse des externen Links",
@@ -56,11 +57,13 @@ export default {
   componentPathPlaceholder: "Bitte Komponentenpfad eingeben, z. B. system/user/index",
   componentPathTooltip:
     "Vollständiger Pfad der Komponentenseite, relativ zu src/views/, z. B. system/user/index, ohne die Endung .vue",
-  paramsTooltip: "Die Komponentenseite liest den Routenparameterwert über useRoute().query.paramName.",
+  paramsTooltip:
+    "Die Komponentenseite liest den Routenparameterwert über useRoute().query.paramName.",
   addParam: "Routenparameter hinzufügen",
   paramName: "Parametername",
   paramValue: "Parameterwert",
-  hiddenTooltip: 'Wählen Sie "Ja", um im Menü auszublenden\nWählen Sie "Nein", um im Menü anzuzeigen.',
+  hiddenTooltip:
+    'Wählen Sie "Ja", um im Menü auszublenden\nWählen Sie "Nein", um im Menü anzuzeigen.',
   alwaysShowTooltip:
     'Wählen Sie "Ja": Auch wenn ein Verzeichnis oder Menü nur ein Kind hat, wird das übergeordnete Element weiterhin angezeigt.\nWählen Sie "Nein": Wenn ein Verzeichnis oder Menü nur ein Kind hat, wird nur dieses Kind angezeigt und das übergeordnete Element ausgeblendet.\nWenn es sich um einen Blattknoten handelt, wählen Sie "Nein".',
   cachePage: "Seite cachen",
@@ -82,7 +85,8 @@ export default {
   updateMenu: "Menü bearbeiten",
   createMenu: "Neues Menü",
   warning: "Warnung",
-  deleteConfirmMessage: "Möchten Sie die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
+  deleteConfirmMessage:
+    "Möchten Sie die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
   menuNameRequired: "Bitte Menünamen eingeben",
   lengthBetween: "Länge {min} bis {max} Zeichen",
   parentMenuRequired: "Bitte übergeordnetes Menü auswählen",

@@ -154,8 +154,7 @@ export default {
   eval_score: "{spread} คะแนน",
   eval_varSummary:
     "ความแม่นยำต่อรัน {per} · ค่าเฉลี่ย {mean} · ส่วนเบี่ยง {std} · ช่วง (แถบสัญญาณรบกวน) {spread} คะแนน",
-  eval_stableSummary:
-    "{n} คำถาม · {pass} ผ่านเสมอ · {fail} ล้มเหลวเสมอ · {unstable} ไม่เสถียร",
+  eval_stableSummary: "{n} คำถาม · {pass} ผ่านเสมอ · {fail} ล้มเหลวเสมอ · {unstable} ไม่เสถียร",
   eval_crossPassRate: "อัตราผ่านข้ามรัน",
   eval_unstableQ: "คำถามไม่เสถียร (พลิกข้ามรัน)",
   eval_compare: "เปรียบเทียบ",

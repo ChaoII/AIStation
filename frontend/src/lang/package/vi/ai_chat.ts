@@ -84,7 +84,8 @@ export default {
   welcome_promptPerfPrompt: "Làm thế nào để tối ưu hiệu năng của hệ thống AIStation?",
 
   // workspace/chat.vue
-  workspaceChat_noLongerSupported: "Loại mục này không còn hỗ trợ trò chuyện; đang quay về bảng công việc",
+  workspaceChat_noLongerSupported:
+    "Loại mục này không còn hỗ trợ trò chuyện; đang quay về bảng công việc",
   workspaceChat_agent: "Tác nhân",
   workspaceChat_app: "Ứng dụng",
   workspaceChat_workflow: "Quy trình",
@@ -345,8 +346,7 @@ export default {
   space_reason: "Lý do",
   space_reasonPlaceholder:
     "Vui lòng giải thích lý do bạn cần thêm dung lượng, ví dụ: cần lưu trữ nhiều sản phẩm huấn luyện mô hình hơn.",
-  space_pendingAlert:
-    "Bạn đã có một yêu cầu mở rộng đang chờ. Vui lòng đợi quản trị viên xử lý.",
+  space_pendingAlert: "Bạn đã có một yêu cầu mở rộng đang chờ. Vui lòng đợi quản trị viên xử lý.",
   space_myRequests: "Yêu cầu của tôi",
   space_noRequests: "Không có bản ghi yêu cầu",
   space_status: "Trạng thái",

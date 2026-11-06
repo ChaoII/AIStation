@@ -11,7 +11,8 @@ export default {
     save: "Lưu",
     confirm: "Xác nhận",
     warning: "Cảnh báo",
-    deleteConfirmMsg: "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
+    deleteConfirmMsg:
+      "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
     saveSuccess: "Đã lưu thành công",
     started: "Đã bắt đầu",
     stopped: "Đã dừng",
@@ -318,7 +319,8 @@ export default {
     retryFailed: "Thử lại các nhiệm vụ thất bại",
     close: "Đóng",
     retryDispatchFail: "Thử lại phân phối thất bại",
-    hotUpdateConfirm: "Cập nhật nóng mô hình hiện tại của thuật toán「{name}」cho tất cả nhiệm vụ đang dùng nó?",
+    hotUpdateConfirm:
+      "Cập nhật nóng mô hình hiện tại của thuật toán「{name}」cho tất cả nhiệm vụ đang dùng nó?",
     hotUpdateConfirmTitle: "Xác nhận cập nhật nóng",
     confirmDispatch: "Xác nhận phân phối",
     hotUpdateFail: "Cập nhật nóng thất bại",
@@ -394,8 +396,10 @@ export default {
     updateSuccess: "Đã cập nhật thành công",
     enrollSuccess: "Đã đăng ký thành công",
     readFileFail: "Không thể đọc tệp",
-    reidEmptyTip: "Thư viện ReID trống: các quy tắc REID_TRACK sẽ không khớp, hãy đăng ký đặc trưng ReID trước",
-    reidEmptyListTip: "Thư viện ReID trống: hãy đăng ký đặc trưng ReID trước khi bật quy tắc REID_TRACK",
+    reidEmptyTip:
+      "Thư viện ReID trống: các quy tắc REID_TRACK sẽ không khớp, hãy đăng ký đặc trưng ReID trước",
+    reidEmptyListTip:
+      "Thư viện ReID trống: hãy đăng ký đặc trưng ReID trước khi bật quy tắc REID_TRACK",
     faceEmptyTip:
       "Thư viện khuôn mặt trống: các quy tắc FACE_REC / STRANGER sẽ không khớp, hãy đăng ký đặc trưng khuôn mặt trước",
     faceEmptyListTip:

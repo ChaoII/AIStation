@@ -79,7 +79,8 @@ export default {
   eval_questionPlaceholder: "Eine Frage in natürlicher Sprache",
   eval_scenarioPlaceholder: "Geschäftsszenario (optional)",
   eval_genSuccess: "Erzeugt: {saved} gespeichert, {rejected} abgelehnt",
-  eval_genNoNew: "Keine neuen Fragen in dieser Runde ({rejected} abgelehnt). Filter anpassen und erneut versuchen.",
+  eval_genNoNew:
+    "Keine neuen Fragen in dieser Runde ({rejected} abgelehnt). Filter anpassen und erneut versuchen.",
   eval_genFail: "Erzeugung fehlgeschlagen",
   eval_fillQuestion: "Bitte eine Frage eingeben",
   eval_fillGoldSql: "Bitte das Gold-SQL eingeben",
@@ -165,7 +166,8 @@ export default {
   eval_verdict: "Urteil",
   eval_significant: "Signifikant",
   eval_notSignificant: "Nicht signifikant (durch Rauschen erklärt)",
-  eval_startedSlow: "Gestartet. Wiederholte Läufe sind langsam (jeder ist eine vollständige Auswertung).",
+  eval_startedSlow:
+    "Gestartet. Wiederholte Läufe sind langsam (jeder ist eine vollständige Auswertung).",
 
   // ===== EvalAblation =====
   eval_ablTitle: "Ablationsauswertung",
@@ -175,7 +177,8 @@ export default {
   eval_ablSwitches: "Ablationsschalter",
   eval_perGroupLimit: "Limit pro Gruppe",
   eval_groupHint: "Empfohlen 10~20 Fragen, sonst dauert es zu lange",
-  eval_slowHint: "Der Schnellweg überspringt den Abruf; für die Ablationsauswertung des Abrufs aktivieren",
+  eval_slowHint:
+    "Der Schnellweg überspringt den Abruf; für die Ablationsauswertung des Abrufs aktivieren",
   eval_ablFail: "Ablation fehlgeschlagen",
   eval_currentPrefix: "Aktuell: {current}",
   eval_deltaAccuracy: "Δ Genauigkeit",

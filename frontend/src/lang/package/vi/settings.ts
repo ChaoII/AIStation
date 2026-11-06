@@ -37,7 +37,8 @@ export default {
   resetSuccess: "Đặt lại về cấu hình mặc định",
   copyDescription:
     "Sao chép cấu hình sẽ tạo mã cài đặt hiện tại, đặt lại sẽ khôi phục tất cả cài đặt về mặc định",
-  confirmReset: "Bạn có chắc chắn muốn đặt lại tất cả cài đặt về mặc định? Thao tác này không thể hoàn tác.",
+  confirmReset:
+    "Bạn có chắc chắn muốn đặt lại tất cả cài đặt về mặc định? Thao tác này không thể hoàn tác.",
   applyToFile: "Áp dụng vào tệp",
   onlyCopy: "Chỉ sao chép",
   leftLayout: "Chế độ trái",

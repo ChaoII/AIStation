@@ -11,7 +11,8 @@ export default {
     save: "Сохранить",
     confirm: "Подтвердить",
     warning: "Предупреждение",
-    deleteConfirmMsg: "Вы уверены, что хотите удалить выбранные данные? Это действие нельзя отменить.",
+    deleteConfirmMsg:
+      "Вы уверены, что хотите удалить выбранные данные? Это действие нельзя отменить.",
     saveSuccess: "Успешно сохранено",
     started: "Запущено",
     stopped: "Остановлено",
@@ -318,7 +319,8 @@ export default {
     retryFailed: "Повторить неудачные задачи",
     close: "Закрыть",
     retryDispatchFail: "Ошибка повторной отправки",
-    hotUpdateConfirm: "Горячее обновление текущей модели алгоритма «{name}» для всех задач, использующих её?",
+    hotUpdateConfirm:
+      "Горячее обновление текущей модели алгоритма «{name}» для всех задач, использующих её?",
     hotUpdateConfirmTitle: "Подтверждение горячего обновления",
     confirmDispatch: "Подтвердить отправку",
     hotUpdateFail: "Ошибка горячего обновления",
@@ -394,7 +396,8 @@ export default {
     updateSuccess: "Успешно обновлено",
     enrollSuccess: "Успешно добавлено",
     readFileFail: "Не удалось прочитать файл",
-    reidEmptyTip: "База ReID пуста: правила REID_TRACK не будут срабатывать, сначала добавьте признаки ReID",
+    reidEmptyTip:
+      "База ReID пуста: правила REID_TRACK не будут срабатывать, сначала добавьте признаки ReID",
     reidEmptyListTip: "База ReID пуста: добавьте признаки ReID перед включением правил REID_TRACK",
     faceEmptyTip:
       "База лиц пуста: правила FACE_REC / STRANGER не будут срабатывать, сначала добавьте признаки лиц",
@@ -428,7 +431,8 @@ export default {
     pushChannel: "Канал отправки",
     channelExample: "например webhook_target",
     advancedJson: "Расширенный JSON (необязательно, переопределяет вышеуказанное)",
-    advancedJsonPlaceholder: 'Используйте для более сложных параметров, например {"storage_days": 30}',
+    advancedJsonPlaceholder:
+      'Используйте для более сложных параметров, например {"storage_days": 30}',
     editLinkage: "Изменить связку",
     newLinkage: "Новая связка",
     jsonFormatError: "Ошибка формата расширенного JSON, игнорируется",
@@ -653,7 +657,8 @@ export default {
   // ===== cond =====
   cond: {
     notAlertTitle: "Обнаружены исторические унарные условия NOT",
-    notTip: "Дерево условий поддерживает только AND/OR; узлы NOT доступны только для чтения и сохраняются как есть:",
+    notTip:
+      "Дерево условий поддерживает только AND/OR; узлы NOT доступны только для чтения и сохраняются как есть:",
     loadingCap: "Загрузка возможностей правила...",
     unsupportedTitle: "Нераспознанные условия (только чтение, не сохраняются)",
     unknownLeaf: "Неизвестный лист",

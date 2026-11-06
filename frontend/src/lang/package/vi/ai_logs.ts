@@ -149,7 +149,8 @@ export default {
     "Ngữ cảnh đối tượng hiện tại: {code}{key} (nó sẽ được tự động gắn vào câu hỏi của bạn, không cần nêu lại)",
   queryReuseTip:
     "Tái sử dụng truy vấn sẽ tái dùng ngữ nghĩa và quyền của bản thể luận: tên đối tượng nghiệp vụ, tên tiếng Việt của trường và quan hệ bảng đều đến từ bản thể luận; các chính sách hàng/cột được đẩy vào các truy vấn con khi tạo SQL.",
-  questionPlaceholder: "Hỏi bằng ngôn ngữ nghiệp vụ, ví dụ: tổng doanh số theo từng bộ phận là bao nhiêu",
+  questionPlaceholder:
+    "Hỏi bằng ngôn ngữ nghiệp vụ, ví dụ: tổng doanh số theo từng bộ phận là bao nhiêu",
   ask: "Hỏi",
   examples: "Ví dụ:",
   noQueries: "Chưa có truy vấn nào",
@@ -297,13 +298,15 @@ export default {
   pipelineStatus: "Trạng thái pipeline",
   noPipelineRun: "Không có pipeline đang chạy",
   aipConsole: "Bảng điều khiển AIP · Theo dõi chạy",
-  aipConsoleSub: "Theo dõi chạy cuộc gọi Tác nhân/AI · phân bố sử dụng · hàng đợi xét duyệt thủ công",
+  aipConsoleSub:
+    "Theo dõi chạy cuộc gọi Tác nhân/AI · phân bố sử dụng · hàng đợi xét duyệt thủ công",
   runRecords: "Bản ghi chạy",
   usageDist: "Phân bố sử dụng",
   latencyMs: "Độ trễ (ms)",
   costYuanValue: "¥{value}",
   agentDashboard: "Bảng điều khiển điều phối tác nhân",
-  agentDashboardSub: "Khối lượng chạy / tỷ lệ lỗi / độ trễ + công cụ đã liên kết · kỹ năng · ma trận năng lực",
+  agentDashboardSub:
+    "Khối lượng chạy / tỷ lệ lỗi / độ trễ + công cụ đã liên kết · kỹ năng · ma trận năng lực",
   totalAgents: "Tổng số tác nhân",
   enabledAgents: "Đã kích hoạt",
   totalRuns: "Tổng số lần chạy",
@@ -335,8 +338,7 @@ export default {
   candidatesCount: "Ứng viên {count} mục",
   noRiskSuggest: "Không có gợi ý rủi ro",
   autoHandle: "Tự động xử lý",
-  manualHandle:
-    "Hành động này là mục xử lý thủ công; vui lòng xử lý trong mô-đun tương ứng",
+  manualHandle: "Hành động này là mục xử lý thủ công; vui lòng xử lý trong mô-đun tương ứng",
   executed: "Đã thực thi",
   autoFixConfirm:
     "Tất cả các mục có thể sửa (quét nhạy cảm / hoàn thiện mô tả / quét lại DQ) sẽ được tự động thực thi. Tiếp tục?",
@@ -352,7 +354,8 @@ export default {
   computedValue: "Giá trị đã tính",
   computeFailed: "Tính toán thất bại",
   securityAudit: "Kiểm toán Bảo mật & Truy cập Dữ liệu",
-  securityAuditSub: "Tài sản nhạy cảm · nguồn dữ liệu chỉ đọc · quy tắc ABAC · nhật ký kiểm toán truy cập",
+  securityAuditSub:
+    "Tài sản nhạy cảm · nguồn dữ liệu chỉ đọc · quy tắc ABAC · nhật ký kiểm toán truy cập",
   securitySummary: "{tables} bảng cơ sở · {fields} trường nhạy cảm",
   securityScore: "Điểm bảo mật {score}",
   auditLogCount: "Nhật ký kiểm toán truy cập ({count} gần đây)",
@@ -412,7 +415,8 @@ export default {
   eventsCount: "{count} sự kiện",
   noActivity: "Không có hoạt động trong 7 ngày qua",
   compassRelationsDrill: "Danh mục Compass · Quan hệ đối tượng · Khoan truy cập",
-  compassRelationsSub: "Phân loại danh mục dữ liệu / đồ thị quan hệ đối tượng / hộp cát truy cập dữ liệu",
+  compassRelationsSub:
+    "Phân loại danh mục dữ liệu / đồ thị quan hệ đối tượng / hộp cát truy cập dữ liệu",
   catalogCategories: "Danh mục Compass ({count})",
   objectRelations: "Đồ thị quan hệ đối tượng ({edges} cạnh / {nodes} đối tượng)",
   noObjectRelations: "Không có quan hệ đối tượng",

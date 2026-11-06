@@ -220,8 +220,7 @@ export default {
   validatePassWithWarnings: "ワークフロー検証は合格しましたが、警告があります（{count}）：",
   validateFailed: "検証に失敗しました",
   deleteNodeTitle: "ノードを削除",
-  deleteNodeConfirmSingle:
-    "このノードを削除してもよろしいですか？削除後は復元できません。",
+  deleteNodeConfirmSingle: "このノードを削除してもよろしいですか？削除後は復元できません。",
   nodeDeleteSuccess: "ノードを削除しました",
   deleteEdgeTitle: "エッジを削除",
   deleteEdgeConfirm: "このエッジを削除してもよろしいですか？削除後は復元できません。",

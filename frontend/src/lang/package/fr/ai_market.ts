@@ -100,7 +100,8 @@ export default {
   mineMarket: "Marché",
   mineNotSubmitted: "Non soumis",
   mineInstallCount: "{count} installations",
-  mineEmpty: 'Aucun actif : installez depuis le "Marché des capacités", ou créez-en un via "Nouveau" ci-dessus',
+  mineEmpty:
+    'Aucun actif : installez depuis le "Marché des capacités", ou créez-en un via "Nouveau" ci-dessus',
   disable: "Désactiver",
   enableAction: "Activer",
   submitMarket: "Soumettre au marché",
@@ -228,13 +229,17 @@ export default {
   addField: "Ajouter un champ",
   bodyTypeLabel: "Type de corps de requête",
   bodyNone: "Aucun (paramètres via la chaîne de requête)",
-  bodyHintGet: "{m} n'a pas de corps de requête, les paramètres restants deviennent la chaîne de requête.",
-  bodyHintNoBody: "Envoyé via {m} sans corps de requête, les paramètres restants deviennent la chaîne de requête.",
+  bodyHintGet:
+    "{m} n'a pas de corps de requête, les paramètres restants deviennent la chaîne de requête.",
+  bodyHintNoBody:
+    "Envoyé via {m} sans corps de requête, les paramètres restants deviennent la chaîne de requête.",
   bodyHintFormData:
     "Envoyé via {m}, les paramètres restants deviennent application/x-www-form-urlencoded (Form Data).",
   bodyHintPost: "Envoyé via POST, les paramètres restants deviennent le corps JSON.",
-  bodyHintPut: "Envoyé via PUT, les paramètres restants deviennent le corps JSON (remplacement complet).",
-  bodyHintPatch: "Envoyé via PATCH, les paramètres restants deviennent le corps JSON (mise à jour partielle).",
+  bodyHintPut:
+    "Envoyé via PUT, les paramètres restants deviennent le corps JSON (remplacement complet).",
+  bodyHintPatch:
+    "Envoyé via PATCH, les paramètres restants deviennent le corps JSON (mise à jour partielle).",
   requestBodyLabel: "Corps de requête",
   scriptCode: "Code du script",
   extractParams: "Extraire les paramètres du code",
@@ -245,7 +250,8 @@ export default {
   runtimeParamsLabel: "Paramètres d'exécution",
   runtimeParamKeyPlaceholder: "Nom du paramètre, par ex. api_key",
   runtimeValuePlaceholder: "Valeur (masquée après enregistrement)",
-  runtimeTipPre: "Pour les clés/valeurs sensibles/paramètres par utilisateur (par ex. api_key, username). Lues via ",
+  runtimeTipPre:
+    "Pour les clés/valeurs sensibles/paramètres par utilisateur (par ex. api_key, username). Lues via ",
   runtimeTipPost:
     " dans le script, non écrites dans le code source ; les valeurs sont toujours masquées après enregistrement.",
   sandboxAlert:
@@ -293,7 +299,8 @@ export default {
   skillName: "Nom de la compétence",
   nameIfBlankPlaceholder: "Laissez vide pour utiliser le nom du document",
   sourceLabel: "Source",
-  skillCategoryPlaceholder: 'par ex. Productivité Bureau (laissez vide pour le ranger sous "Compétences importées")',
+  skillCategoryPlaceholder:
+    'par ex. Productivité Bureau (laissez vide pour le ranger sous "Compétences importées")',
   uploadDragText: "Glissez le Zip de compétence ici, ou",
   uploadClickText: "cliquez pour sélectionner",
   uploadTip:
@@ -325,7 +332,8 @@ export default {
   commandLabel: "Commande de démarrage",
   commandPlaceholder: "par ex. npx ou python",
   argsLabel: "Arguments de commande",
-  argsPlaceholder: "Un argument par ligne, par ex.\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+  argsPlaceholder:
+    "Un argument par ligne, par ex.\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "Variables d'environnement",
   envPlaceholder: "Une KEY=VALUE par ligne, par ex.\nAPI_KEY=xxx",
   urlLabel: "URL du serveur",

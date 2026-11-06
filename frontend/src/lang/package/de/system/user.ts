@@ -70,7 +70,8 @@ export default {
 
   // 提示 / 确认
   warning: "Warnung",
-  deleteConfirmMessage: "Möchten Sie die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
+  deleteConfirmMessage:
+    "Möchten Sie die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
   confirmEnableOrDisable: "Möchten Sie das ausgewählte Element aktivieren oder deaktivieren?",
   resetPasswordPrompt: "Bitte geben Sie das neue Passwort für Benutzer {username} ein",
   passwordMinLength: "Das Passwort muss mindestens 6 Zeichen lang sein. Bitte erneut eingeben.",

@@ -37,7 +37,8 @@ export default {
   resetSuccess: "Réinitialisé à la configuration par défaut",
   copyDescription:
     "La copie de la configuration générera le code des paramètres actuels, la réinitialisation rétablira tous les paramètres par défaut",
-  confirmReset: "Êtes-vous sûr de vouloir réinitialiser tous les paramètres par défaut ? Cette action est irréversible.",
+  confirmReset:
+    "Êtes-vous sûr de vouloir réinitialiser tous les paramètres par défaut ? Cette action est irréversible.",
   applyToFile: "Appliquer au fichier",
   onlyCopy: "Copier uniquement",
   leftLayout: "Mode gauche",

@@ -143,7 +143,8 @@ export default {
   condition: "Bedingung",
   control: "Steuerung",
   all: "Alle",
-  funcPlaceholder: "Muss handler(*args, **kwargs) definieren, kann Upstream und Variablen empfangen",
+  funcPlaceholder:
+    "Muss handler(*args, **kwargs) definieren, kann Upstream und Variablen empfangen",
   argsPlaceholder: "Durch Kommas getrennt, z. B. a, b",
   kwargsPlaceholder: 'JSON, z. B. {"key": "v"}',
   createNodeType: "Knotentyp erstellen",
@@ -176,7 +177,8 @@ export default {
   executeNow: "Jetzt ausführen",
   deleteWorkflowConfirm: "Möchten Sie die ausgewählten Workflows wirklich löschen?",
   publishConfirmTitle: "Veröffentlichung bestätigen",
-  publishConfirm: "Möchten Sie diesen Workflow wirklich veröffentlichen? Er kann nach der Veröffentlichung ausgeführt werden.",
+  publishConfirm:
+    "Möchten Sie diesen Workflow wirklich veröffentlichen? Er kann nach der Veröffentlichung ausgeführt werden.",
   workflowIdMissing: "Die Workflow-ID existiert nicht",
   publishSuccess: "Erfolgreich veröffentlicht",
   publishFailed: "Veröffentlichung fehlgeschlagen",
@@ -224,7 +226,8 @@ export default {
     "Möchten Sie diesen Knoten wirklich löschen? Er kann nach dem Löschen nicht wiederhergestellt werden.",
   nodeDeleteSuccess: "Knoten erfolgreich gelöscht",
   deleteEdgeTitle: "Kante löschen",
-  deleteEdgeConfirm: "Möchten Sie diese Kante wirklich löschen? Sie kann nach dem Löschen nicht wiederhergestellt werden.",
+  deleteEdgeConfirm:
+    "Möchten Sie diese Kante wirklich löschen? Sie kann nach dem Löschen nicht wiederhergestellt werden.",
   edgeDeleteSuccess: "Kante erfolgreich gelöscht",
   saveWorkflowFailed: "Workflow konnte nicht gespeichert werden",
 
@@ -241,7 +244,8 @@ export default {
   kvKeyPlaceholder: "Schlüssel",
   kvValuePlaceholder: "Wert (unterstützt {'{{'}Variable{'}}'}-Interpolation)",
   addParam: "Parameter hinzufügen",
-  kvHint: "Schlüsselwortargumente in Schlüssel-Wert-Form, Variablenwerte können andere Variablen referenzieren",
+  kvHint:
+    "Schlüsselwortargumente in Schlüssel-Wert-Form, Variablenwerte können andere Variablen referenzieren",
   descLabel: "Beschreibung",
   inputDesc: "Bitte Beschreibung eingeben",
   deleteNode: "Knoten löschen",

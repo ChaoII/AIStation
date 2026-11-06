@@ -86,14 +86,14 @@ export default {
   relationNameRequired: "กรุณากรอกชื่อประเภทความสัมพันธ์",
   relationNameExists: "ชื่อประเภทความสัมพันธ์นี้มีอยู่แล้ว",
   deleteEntityConfirm: 'ลบประเภทเอนทิตี "{name}" หรือไม่? การดำเนินการนี้ไม่สามารถย้อนกลับได้',
-  deleteRelationConfirm: 'ลบประเภทความสัมพันธ์ "{name}" หรือไม่? การดำเนินการนี้ไม่สามารถย้อนกลับได้',
+  deleteRelationConfirm:
+    'ลบประเภทความสัมพันธ์ "{name}" หรือไม่? การดำเนินการนี้ไม่สามารถย้อนกลับได้',
 
   datasetNamePlaceholder: "กรอกชื่อชุดข้อมูล",
   descriptionPlaceholder: "กรอกคำอธิบาย",
   newDataset: "ชุดข้อมูลใหม่",
   editDataset: "แก้ไขชุดข้อมูล",
-  deleteDatasetConfirm:
-    "ลบชุดข้อมูลที่เลือกหรือไม่? สามารถกู้คืนได้ภายในระยะเวลาการเก็บรักษา",
+  deleteDatasetConfirm: "ลบชุดข้อมูลที่เลือกหรือไม่? สามารถกู้คืนได้ภายในระยะเวลาการเก็บรักษา",
   noTaskYet: "ชุดข้อมูลนี้ยังไม่มีงานติดป้ายกำกับ กรุณาสร้างก่อน",
   dangerOperation: "การดำเนินการที่อันตราย",
   purge: "ล้างข้อมูล",
@@ -167,7 +167,8 @@ export default {
   backgroundContinue: "ดำเนินการต่อในพื้นหลัง",
   stayOnPage: "อยู่บนหน้านี้",
   cancelImport: "ยกเลิกการนำเข้า",
-  cancelImportConfirm: "การอัปโหลด/การประมวลผลยังไม่เสร็จสิ้น การปิดจะยกเลิกการนำเข้า ยกเลิกหรือไม่?",
+  cancelImportConfirm:
+    "การอัปโหลด/การประมวลผลยังไม่เสร็จสิ้น การปิดจะยกเลิกการนำเข้า ยกเลิกหรือไม่?",
   importDoneSummary: "นำเข้าเสร็จสิ้น: {imported} รูปภาพ, {annotations} การติดป้ายกำกับ",
   importSkipped: ", ข้าม {skipped} รายการที่ซ้ำ",
   openAnnotationTask: "เปิดงานติดป้ายกำกับ",

@@ -159,7 +159,8 @@ export default {
   createSuccess: "Créé avec succès",
   updateFailed: "Échec de la mise à jour",
   createFailed: "Échec de la création",
-  deleteNodeTypeConfirm: "Voulez-vous vraiment supprimer les types de nœuds de flux de travail sélectionnés ?",
+  deleteNodeTypeConfirm:
+    "Voulez-vous vraiment supprimer les types de nœuds de flux de travail sélectionnés ?",
 
   // ===== workflow definition =====
   flowName: "Nom du flux",
@@ -170,13 +171,15 @@ export default {
   published: "Publié",
   archived: "Archivé",
   workflowListTitle: "Gestion des flux de travail",
-  workflowListTip: "Liste d'orchestration des flux de travail, prend en charge la publication et l'exécution",
+  workflowListTip:
+    "Liste d'orchestration des flux de travail, prend en charge la publication et l'exécution",
   publish: "Publier",
   execute: "Exécuter",
   executeNow: "Exécuter maintenant",
   deleteWorkflowConfirm: "Voulez-vous vraiment supprimer les flux de travail sélectionnés ?",
   publishConfirmTitle: "Confirmer la publication",
-  publishConfirm: "Voulez-vous vraiment publier ce flux de travail ? Il pourra être exécuté après publication.",
+  publishConfirm:
+    "Voulez-vous vraiment publier ce flux de travail ? Il pourra être exécuté après publication.",
   workflowIdMissing: "L'ID du flux de travail n'existe pas",
   publishSuccess: "Publié avec succès",
   publishFailed: "Échec de la publication",
@@ -217,14 +220,16 @@ export default {
   validateResult: "Résultat de la validation du flux de travail",
   errorsTitle: "Erreurs ({count}) :",
   warningsTitle: "Avertissements ({count}) :",
-  validatePassWithWarnings: "Validation du flux de travail réussie, mais avec des avertissements ({count}) :",
+  validatePassWithWarnings:
+    "Validation du flux de travail réussie, mais avec des avertissements ({count}) :",
   validateFailed: "Échec de la validation",
   deleteNodeTitle: "Supprimer le nœud",
   deleteNodeConfirmSingle:
     "Voulez-vous vraiment supprimer ce nœud ? Il ne peut pas être récupéré après la suppression.",
   nodeDeleteSuccess: "Nœud supprimé avec succès",
   deleteEdgeTitle: "Supprimer l'arête",
-  deleteEdgeConfirm: "Voulez-vous vraiment supprimer cette arête ? Elle ne peut pas être récupérée après la suppression.",
+  deleteEdgeConfirm:
+    "Voulez-vous vraiment supprimer cette arête ? Elle ne peut pas être récupérée après la suppression.",
   edgeDeleteSuccess: "Arête supprimée avec succès",
   saveWorkflowFailed: "Échec de l'enregistrement du flux de travail",
 
@@ -241,7 +246,8 @@ export default {
   kvKeyPlaceholder: "Clé",
   kvValuePlaceholder: "Valeur (prend en charge l'interpolation {'{{'}variable{'}}'})",
   addParam: "Ajouter un paramètre",
-  kvHint: "Arguments nommés sous forme clé-valeur, les valeurs de variables peuvent référencer d'autres variables",
+  kvHint:
+    "Arguments nommés sous forme clé-valeur, les valeurs de variables peuvent référencer d'autres variables",
   descLabel: "Description",
   inputDesc: "Veuillez saisir la description",
   deleteNode: "Supprimer le nœud",

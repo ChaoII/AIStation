@@ -44,7 +44,8 @@ export default {
   warning: "Advertencia",
   confirmEnable: "¿Confirmar habilitar estos datos?",
   confirmDisable: "¿Confirmar deshabilitar estos datos?",
-  deleteConfirmMessage: "¿Confirmar la eliminación de los datos seleccionados? Esta acción no se puede deshacer.",
+  deleteConfirmMessage:
+    "¿Confirmar la eliminación de los datos seleccionados? Esta acción no se puede deshacer.",
   dataAuth: "Autorización de datos",
   dataAuthTip: "El rango de datos que el usuario autorizado puede operar",
   menuAuth: "Autorización de menú",

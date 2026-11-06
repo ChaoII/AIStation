@@ -79,7 +79,8 @@ export default {
   eval_questionPlaceholder: "Una pregunta en lenguaje natural",
   eval_scenarioPlaceholder: "Escenario de negocio (opcional)",
   eval_genSuccess: "Generado: {saved} guardadas, {rejected} rechazadas",
-  eval_genNoNew: "No hay preguntas nuevas en esta ronda ({rejected} rechazadas). Ajusta los filtros y vuelve a intentarlo.",
+  eval_genNoNew:
+    "No hay preguntas nuevas en esta ronda ({rejected} rechazadas). Ajusta los filtros y vuelve a intentarlo.",
   eval_genFail: "Error en la generación",
   eval_fillQuestion: "Por favor, ingresa una pregunta",
   eval_fillGoldSql: "Por favor, ingresa el SQL de referencia",
@@ -165,7 +166,8 @@ export default {
   eval_verdict: "Veredicto",
   eval_significant: "Significativo",
   eval_notSignificant: "No significativo (explicado por el ruido)",
-  eval_startedSlow: "Iniciado. Las ejecuciones repetidas son lentas (cada una es una evaluación completa).",
+  eval_startedSlow:
+    "Iniciado. Las ejecuciones repetidas son lentas (cada una es una evaluación completa).",
 
   // ===== EvalAblation =====
   eval_ablTitle: "Evaluación de ablación",
@@ -175,7 +177,8 @@ export default {
   eval_ablSwitches: "Interruptores de ablación",
   eval_perGroupLimit: "Límite por grupo",
   eval_groupHint: "Se recomiendan 10~20 preguntas, de lo contrario tarda demasiado",
-  eval_slowHint: "La ruta rápida omite la recuperación; marca esto para la ablación de recuperación",
+  eval_slowHint:
+    "La ruta rápida omite la recuperación; marca esto para la ablación de recuperación",
   eval_ablFail: "Error en la ablación",
   eval_currentPrefix: "Actual: {current}",
   eval_deltaAccuracy: "Δ Precisión",

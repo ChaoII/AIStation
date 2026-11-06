@@ -11,7 +11,8 @@ export default {
     save: "Enregistrer",
     confirm: "Confirmer",
     warning: "Avertissement",
-    deleteConfirmMsg: "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
+    deleteConfirmMsg:
+      "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
     saveSuccess: "Enregistré avec succès",
     started: "Démarré",
     stopped: "Arrêté",
@@ -318,7 +319,8 @@ export default {
     retryFailed: "Réessayer les tâches échouées",
     close: "Fermer",
     retryDispatchFail: "Échec de la nouvelle tentative de répartition",
-    hotUpdateConfirm: "Mettre à jour à chaud le modèle actuel de l'algorithme « {name} » vers toutes les tâches qui l'utilisent ?",
+    hotUpdateConfirm:
+      "Mettre à jour à chaud le modèle actuel de l'algorithme « {name} » vers toutes les tâches qui l'utilisent ?",
     hotUpdateConfirmTitle: "Confirmation de la mise à jour à chaud",
     confirmDispatch: "Confirmer la répartition",
     hotUpdateFail: "Échec de la mise à jour à chaud",
@@ -373,7 +375,8 @@ export default {
     updatedTime: "Heure de mise à jour",
     pasteVectorTip:
       "Collez le vecteur de caractéristiques (tableau JSON / séparé par virgules / base64 f16b64) ou importez-le depuis un fichier",
-    updateTip: "Laisser le vecteur vide pour conserver inchangé ; ne mettre à jour que le nom/n°/image",
+    updateTip:
+      "Laisser le vecteur vide pour conserver inchangé ; ne mettre à jour que le nom/n°/image",
     libType: "Type de bibliothèque",
     selectLibType: "Sélectionner le type de bibliothèque",
     faceLibOption: "Bibliothèque de visages (FACE_REC / STRANGER)",
@@ -394,8 +397,10 @@ export default {
     updateSuccess: "Mis à jour avec succès",
     enrollSuccess: "Enrôlé avec succès",
     readFileFail: "Échec de la lecture du fichier",
-    reidEmptyTip: "Bibliothèque ReID vide : les règles REID_TRACK ne seront pas déclenchées, enrôlez d'abord les caractéristiques ReID",
-    reidEmptyListTip: "Bibliothèque ReID vide : enrôlez les caractéristiques ReID avant d'activer les règles REID_TRACK",
+    reidEmptyTip:
+      "Bibliothèque ReID vide : les règles REID_TRACK ne seront pas déclenchées, enrôlez d'abord les caractéristiques ReID",
+    reidEmptyListTip:
+      "Bibliothèque ReID vide : enrôlez les caractéristiques ReID avant d'activer les règles REID_TRACK",
     faceEmptyTip:
       "Bibliothèque de visages vide : les règles FACE_REC / STRANGER ne seront pas déclenchées, enrôlez d'abord les caractéristiques de visage",
     faceEmptyListTip:
@@ -428,7 +433,8 @@ export default {
     pushChannel: "Canal de poussée",
     channelExample: "ex. webhook_target",
     advancedJson: "JSON avancé (facultatif, remplace ce qui précède)",
-    advancedJsonPlaceholder: 'Utilisez pour des paramètres plus complexes, ex. {"storage_days": 30}',
+    advancedJsonPlaceholder:
+      'Utilisez pour des paramètres plus complexes, ex. {"storage_days": 30}',
     editLinkage: "Modifier la liaison",
     newLinkage: "Nouvelle liaison",
     jsonFormatError: "Erreur de format du JSON avancé, ignorée",
@@ -633,10 +639,12 @@ export default {
     percent0: "0 (inactif)",
     percent100: "100 (complet)",
     whitelist: "Liste blanche de caméras",
-    whitelistHint: "Les caméras de la liste blanche sont toujours actives (ignorent le pourcentage)",
+    whitelistHint:
+      "Les caméras de la liste blanche sont toujours actives (ignorent le pourcentage)",
     blacklist: "Liste noire de caméras",
     blacklistHint: "Les caméras de la liste noire sont toujours ignorées",
-    whitelistConflict: "Conflit entre liste blanche et noire : {names} ne peuvent pas être dans les deux",
+    whitelistConflict:
+      "Conflit entre liste blanche et noire : {names} ne peuvent pas être dans les deux",
     selectLinkCamera: "Sélectionner une caméra liée",
     selectLinkGroup: "Sélectionner un groupe lié",
     selectSceneFirst2: "Paramètres ou conditions configurés, sélectionnez d'abord une scène métier",
@@ -653,7 +661,8 @@ export default {
   // ===== cond =====
   cond: {
     notAlertTitle: "Conditions NOT unaires historiques détectées",
-    notTip: "L'arbre de conditions ne prend en charge que AND/OR ; les nœuds NOT sont en lecture seule et sont conservés tels quels :",
+    notTip:
+      "L'arbre de conditions ne prend en charge que AND/OR ; les nœuds NOT sont en lecture seule et sont conservés tels quels :",
     loadingCap: "Chargement des capacités de règle...",
     unsupportedTitle: "Conditions non reconnues (lecture seule, non conservées à l'enregistrement)",
     unknownLeaf: "Feuille inconnue",

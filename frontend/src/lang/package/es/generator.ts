@@ -34,7 +34,8 @@ export default {
   none: "Ninguno",
   selectDataToModify: "Seleccione los datos para editar",
   loadDetailFailed: "Error al cargar el detalle de la tabla, inténtelo de nuevo más tarde",
-  menuDictLoadFailed: "Error al cargar las opciones de menú o diccionario, algunos desplegables pueden estar vacíos",
+  menuDictLoadFailed:
+    "Error al cargar las opciones de menú o diccionario, algunos desplegables pueden estar vacíos",
   selectDataToDelete: "Seleccione los datos para eliminar",
   deleteConfirmTitle: "Confirmación de eliminación",
   deleteConfirmMsg: "¿Seguro que desea eliminar los {count} elemento(s) seleccionados?",
@@ -66,7 +67,8 @@ export default {
   // 确认写入路径
   writeMoreFiles: "Hay <b>{count}</b> archivos más no listados",
   writeNoPath: "No se obtuvieron rutas de vista previa; la escritura continuará de todos modos.",
-  writeConfirmTip: "Misma fuente que 'Vista previa del código'; las rutas son relativas a la raíz del proyecto en disco.",
+  writeConfirmTip:
+    "Misma fuente que 'Vista previa del código'; las rutas son relativas a la raíz del proyecto en disco.",
   writeHeader: "Se escribirán los siguientes archivos",
   writeCount: "{count} elemento(s) en total · Relativo a la raíz del proyecto",
   writeConfirmTitle: "Confirmar escritura local",
@@ -99,7 +101,8 @@ export default {
   prevStep: "Anterior",
   nextStepColumns: "Siguiente: Configuración de campos",
   nextStepPreview: "Siguiente: Vista previa del código",
-  downloadTip: "Empaquetar como ZIP y descargar localmente; no se crean menús ni archivos en el servidor",
+  downloadTip:
+    "Empaquetar como ZIP y descargar localmente; no se crean menús ni archivos en el servidor",
   downloadCode: "Descargar código",
   writeTip:
     "Generar código fuente en el directorio del proyecto del servidor y crear automáticamente directorios/menú/botones (si los nombres no entran en conflicto)",
@@ -268,7 +271,8 @@ export default {
   rowSelectedParent: "Seleccionado",
   rowUnselectedParent: "No seleccionado",
   rowSidebarSelected: "Catálogo principal → directorio corto del paquete → menú de función → botón",
-  rowSidebarUnselected: "module_<package> → menú de función → botón (igual que el directorio del complemento)",
+  rowSidebarUnselected:
+    "module_<package> → menú de función → botón (igual que el directorio del complemento)",
   rowPageSelected: "/<package>/<business>",
   rowPageUnselected: "/module_<package>/<business>",
   rowApi: "/<short-package>/<business>",

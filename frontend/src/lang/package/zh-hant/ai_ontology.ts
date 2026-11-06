@@ -1055,7 +1055,8 @@ export default {
   higherDegreeMeansMoreWorthDefiningActionsAndGovernance: "度數越高，越值得優先定義動作與治理規則",
   noNodesRightClickCanvasOrClickNewNode: "暫無節點，右鍵畫布或點「新建節點」建立",
   editChunkContentSavingWillReVectorizeThisChunk: "編輯分塊內容，儲存後將重新向量化該分塊",
-  allowEndUsersToEditThisObjectTypeWritebackWhenEnabled: "開啟後允許終端使用者編輯該類型物件（寫回）",
+  allowEndUsersToEditThisObjectTypeWritebackWhenEnabled:
+    "開啟後允許終端使用者編輯該類型物件（寫回）",
   objectTypesThatDonTSatisfyConstraintsAreRejectedAndListMissingItems:
     "不滿足約束的物件類型會被拒絕，並列出缺失項",
   generateObjectTypesAndPropertiesByMappingDataSourceColumns:
@@ -1473,7 +1474,8 @@ export default {
     "組是**跨物件類型**的多對多分組（不同於「所屬本體」的一對一歸屬），可用於篩選與批次操作",
   valueTypeHint:
     "值類型是基礎類型之上的**語意包裝**（郵箱/URL/UUID/列舉…）＋約束＋版本；屬性可引用它",
-  sharedHint: "定義一次、多個物件類型引用；**只共享中繼資料，不共享資料**。改中繼資料會同步到引用方",
+  sharedHint:
+    "定義一次、多個物件類型引用；**只共享中繼資料，不共享資料**。改中繼資料會同步到引用方",
   interfaceHint: "介面宣告必需屬性/關係/動作；讓物件類型實現時**約束在實現側強制**，不滿足會被拒絕",
   nonCompliantCount: "不合規 {count}",
   constraintsJson: "約束（JSON）",

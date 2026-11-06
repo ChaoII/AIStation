@@ -27,7 +27,8 @@ export default {
   startDate: "Fecha de inicio",
   endDate: "Fecha de fin",
   to: "a",
-  confirmDeleteMessage: "¿Está seguro de eliminar los registros seleccionados? Esta acción no se puede deshacer.",
+  confirmDeleteMessage:
+    "¿Está seguro de eliminar los registros seleccionados? Esta acción no se puede deshacer.",
   confirmToggle: "¿Confirmar {status} este registro?",
 
   // 字典类型

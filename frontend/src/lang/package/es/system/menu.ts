@@ -56,7 +56,8 @@ export default {
   componentPathPlaceholder: "Ingrese la ruta del componente, p. ej. system/user/index",
   componentPathTooltip:
     "Ruta completa de la página del componente, relativa a src/views/, p. ej. system/user/index, sin el sufijo .vue",
-  paramsTooltip: "La página del componente lee el valor del parámetro de la ruta mediante useRoute().query.paramName.",
+  paramsTooltip:
+    "La página del componente lee el valor del parámetro de la ruta mediante useRoute().query.paramName.",
   addParam: "Agregar parámetro de ruta",
   paramName: "Nombre del parámetro",
   paramValue: "Valor del parámetro",
@@ -82,7 +83,8 @@ export default {
   updateMenu: "Editar menú",
   createMenu: "Nuevo menú",
   warning: "Advertencia",
-  deleteConfirmMessage: "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
+  deleteConfirmMessage:
+    "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
   menuNameRequired: "Ingrese el nombre del menú",
   lengthBetween: "Longitud de {min} a {max} caracteres",
   parentMenuRequired: "Seleccione el menú superior",

@@ -44,7 +44,8 @@ export default {
   warning: "Avertissement",
   confirmEnable: "Confirmer l'activation de ces données ?",
   confirmDisable: "Confirmer la désactivation de ces données ?",
-  deleteConfirmMessage: "Confirmer la suppression des données sélectionnées ? Cette action est irréversible.",
+  deleteConfirmMessage:
+    "Confirmer la suppression des données sélectionnées ? Cette action est irréversible.",
   dataAuth: "Autorisation des données",
   dataAuthTip: "Plage de données que l'utilisateur autorisé peut traiter",
   menuAuth: "Autorisation des menus",

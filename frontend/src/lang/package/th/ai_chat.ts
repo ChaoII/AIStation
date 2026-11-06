@@ -68,8 +68,7 @@ export default {
 
   // WelcomeScreen
   welcome_title: "ผู้ช่วย AI",
-  welcome_subtitle:
-    "ฉันคือผู้ช่วย AI ประจำตัวของคุณ พร้อมตอบคำถาม จัดการงาน และสนทนาอย่างชาญฉลาด",
+  welcome_subtitle: "ฉันคือผู้ช่วย AI ประจำตัวของคุณ พร้อมตอบคำถาม จัดการงาน และสนทนาอย่างชาญฉลาด",
   welcome_promptSysTitle: "แนะนำระบบ",
   welcome_promptSysBody: "แนะนำระบบ AIStation",
   welcome_promptSysPrompt: "กรุณาแนะนำระบบ AIStation",
@@ -84,7 +83,8 @@ export default {
   welcome_promptPerfPrompt: "จะปรับปรุงประสิทธิภาพของระบบ AIStation ได้อย่างไร?",
 
   // workspace/chat.vue
-  workspaceChat_noLongerSupported: "รายการประเภทนี้ไม่รองรับการแชทอีกต่อไป กำลังกลับไปยังเวิร์กเบนช์",
+  workspaceChat_noLongerSupported:
+    "รายการประเภทนี้ไม่รองรับการแชทอีกต่อไป กำลังกลับไปยังเวิร์กเบนช์",
   workspaceChat_agent: "เอเจนต์",
   workspaceChat_app: "แอป",
   workspaceChat_workflow: "เวิร์กโฟลว์",
@@ -218,8 +218,7 @@ export default {
   workshop_delete: "ลบ",
   workshop_noFields: "ยังไม่ได้เลือกฟิลด์ (พรีวิวแสดงทุกคอลัมน์)",
   workshop_empty: "ยังไม่มีแอปอ็อบเจกต์",
-  workshop_emptySuggest:
-    'ด้วยข้อมูลเล็กน้อยคุณก็สร้างแอปที่ใช้งานได้ ลอง "แอปใหม่" ที่มุมขวาบน',
+  workshop_emptySuggest: 'ด้วยข้อมูลเล็กน้อยคุณก็สร้างแอปที่ใช้งานได้ ลอง "แอปใหม่" ที่มุมขวาบน',
   workshop_editObjectApp: "แก้ไขแอปอ็อบเจกต์",
   workshop_createObjectApp: "แอปอ็อบเจกต์ใหม่",
   workshop_appName: "ชื่อแอป",
@@ -345,8 +344,7 @@ export default {
   space_reason: "เหตุผล",
   space_reasonPlaceholder:
     "กรุณาอธิบายว่าทำไมคุณถึงต้องการพื้นที่เพิ่ม เช่น ต้องจัดเก็บอาร์ติแฟกต์การฝึกโมเดลเพิ่มเติม",
-  space_pendingAlert:
-    "คุณมีคำขอขยายพื้นที่ที่ค้างอยู่แล้ว กรุณารอให้ผู้ดูแลระบบดำเนินการ",
+  space_pendingAlert: "คุณมีคำขอขยายพื้นที่ที่ค้างอยู่แล้ว กรุณารอให้ผู้ดูแลระบบดำเนินการ",
   space_myRequests: "คำขอของฉัน",
   space_noRequests: "ไม่มีบันทึกคำขอ",
   space_status: "สถานะ",

@@ -1,7 +1,8 @@
 export default {
   action: "Aktionen",
   annoTask: "Annotation-Aufgabe",
-  annoTaskUnsupported: 'Annotation-Aufgabe "{name}" ({type}) wird von diesem Framework nicht unterstützt',
+  annoTaskUnsupported:
+    'Annotation-Aufgabe "{name}" ({type}) wird von diesem Framework nicht unterstützt',
   apiKeyCopied: "API-Schlüssel kopiert",
   apiKeyGenerated: "API-Schlüssel generiert",
   apiKeyHint: "Bitte bewahren Sie Ihren API-Schlüssel sicher auf; er wird nur einmal angezeigt",

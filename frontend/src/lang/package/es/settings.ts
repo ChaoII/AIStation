@@ -37,7 +37,8 @@ export default {
   resetSuccess: "Restablecer a la configuración predeterminada",
   copyDescription:
     "Copiar la configuración generará el código de los ajustes actuales; restablecer restaurará todos los ajustes a los valores predeterminados",
-  confirmReset: "¿Está seguro de restablecer todos los ajustes a los valores predeterminados? Esta operación no se puede deshacer.",
+  confirmReset:
+    "¿Está seguro de restablecer todos los ajustes a los valores predeterminados? Esta operación no se puede deshacer.",
   applyToFile: "Aplicar al archivo",
   onlyCopy: "Solo copiar",
   leftLayout: "Modo izquierdo",

@@ -74,9 +74,12 @@ export default {
   entityNamePlaceholder: "Entitätstypnamen eingeben, z. B. Person",
   relationNamePlaceholder: "Beziehungstypnamen eingeben, z. B. Zugehörigkeit",
   classNamePlaceholder: "Klassennamen eingeben, z. B. Person",
-  entityEmpty: "Noch keine Entitätstypen. Fügen Sie sie hinzu, um sie im Annotation-Workbench zu verwenden.",
-  relationEmpty: "Noch keine Beziehungstypen. Fügen Sie sie hinzu, um sie im Annotation-Workbench zu verwenden.",
-  classEmpty: "Noch keine Klassen. Fügen Sie sie hinzu, um sie im Annotation-Workbench zu verwenden.",
+  entityEmpty:
+    "Noch keine Entitätstypen. Fügen Sie sie hinzu, um sie im Annotation-Workbench zu verwenden.",
+  relationEmpty:
+    "Noch keine Beziehungstypen. Fügen Sie sie hinzu, um sie im Annotation-Workbench zu verwenden.",
+  classEmpty:
+    "Noch keine Klassen. Fügen Sie sie hinzu, um sie im Annotation-Workbench zu verwenden.",
   instance: "Instanz",
   background: "Hintergrund",
   classNameRequired: "Bitte einen Klassennamen eingeben",
@@ -86,7 +89,8 @@ export default {
   relationNameRequired: "Bitte einen Beziehungstypnamen eingeben",
   relationNameExists: "Der Beziehungstypname existiert bereits",
   deleteEntityConfirm: 'Entitätstyp "{name}" löschen? Dies kann nicht rückgängig gemacht werden.',
-  deleteRelationConfirm: 'Beziehungstyp "{name}" löschen? Dies kann nicht rückgängig gemacht werden.',
+  deleteRelationConfirm:
+    'Beziehungstyp "{name}" löschen? Dies kann nicht rückgängig gemacht werden.',
 
   datasetNamePlaceholder: "Datensatznamen eingeben",
   descriptionPlaceholder: "Beschreibung eingeben",
@@ -125,7 +129,8 @@ export default {
   stepParseAnnotations: "Annotationen analysieren",
   stepWriteImages: "Bilder schreiben",
   selectZipFile: "ZIP-Datei auswählen",
-  importHint: "Das Archiv muss Bilder und passende .json-Annotationsdateien enthalten, bis zu {max} MB.",
+  importHint:
+    "Das Archiv muss Bilder und passende .json-Annotationsdateien enthalten, bis zu {max} MB.",
   selected: "Ausgewählt",
   clearBeforeImport:
     "Vor dem Import vorhandene Bilder und Annotationen in diesem Datensatz löschen (Duplikate vermeiden)",
@@ -167,7 +172,8 @@ export default {
   backgroundContinue: "Im Hintergrund fortfahren",
   stayOnPage: "Auf der Seite bleiben",
   cancelImport: "Import abbrechen",
-  cancelImportConfirm: "Upload/Analyse ist nicht abgeschlossen. Beim Schließen wird der Import abgebrochen. Abbrechen?",
+  cancelImportConfirm:
+    "Upload/Analyse ist nicht abgeschlossen. Beim Schließen wird der Import abgebrochen. Abbrechen?",
   importDoneSummary: "Import abgeschlossen: {imported} Bilder, {annotations} Annotationen",
   importSkipped: ", {skipped} Duplikate übersprungen",
   openAnnotationTask: "Annotation-Aufgabe öffnen",
@@ -187,7 +193,8 @@ export default {
   exporting: "Wird exportiert...",
   exportAndDownload: "Exportieren und herunterladen",
   selectOcrExport: "Bitte mindestens einen OCR-Export (det/rec) auswählen",
-  noDownloadLink: "Export abgeschlossen, aber es wurde kein Download-Link zurückgegeben. Prüfen Sie die Backend-Logs.",
+  noDownloadLink:
+    "Export abgeschlossen, aber es wurde kein Download-Link zurückgegeben. Prüfen Sie die Backend-Logs.",
   fmtYoloDetection: "YOLO HBB (horizontale Boxen)",
   fmtYoloRotated: "YOLO OBB (rotierte Boxen)",
   fmtYoloSeg: "YOLO Seg (Segmentierung)",

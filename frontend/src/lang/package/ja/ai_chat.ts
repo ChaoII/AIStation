@@ -27,8 +27,7 @@ export default {
   messageItem_copied: "クリップボードにコピーしました",
   messageItem_liked: "いいねしました",
   messageItem_unliked: "いいねを解除しました",
-  messageItem_feedbackPrompt:
-    "フィードバックをお寄せください（任意。回答改善にのみ使用します）:",
+  messageItem_feedbackPrompt: "フィードバックをお寄せください（任意。回答改善にのみ使用します）:",
   messageItem_feedback: "フィードバック",
   messageItem_submit: "送信",
   messageItem_cancel: "キャンセル",
@@ -84,7 +83,8 @@ export default {
   welcome_promptPerfPrompt: "AIStation システムのパフォーマンスを最適化するには？",
 
   // workspace/chat.vue
-  workspaceChat_noLongerSupported: "この項目タイプはチャットをサポートしなくなりました。ワークベンチに戻ります",
+  workspaceChat_noLongerSupported:
+    "この項目タイプはチャットをサポートしなくなりました。ワークベンチに戻ります",
   workspaceChat_agent: "エージェント",
   workspaceChat_app: "アプリ",
   workspaceChat_workflow: "ワークフロー",
@@ -93,7 +93,8 @@ export default {
   workspaceChat_yesterday: "昨日",
   workspaceChat_week: "過去 7 日間",
   workspaceChat_earlier: "それ以前",
-  workspaceChat_deleteTodayConfirm: "今日作成された {count} 件のセッションを削除しますか？続行しますか？",
+  workspaceChat_deleteTodayConfirm:
+    "今日作成された {count} 件のセッションを削除しますか？続行しますか？",
   workspaceChat_deleteToday: "今日分を削除",
   workspaceChat_delete: "削除",
   workspaceChat_cancel: "キャンセル",
@@ -106,7 +107,8 @@ export default {
   workspaceChat_searchSession: "セッションを検索...",
   workspaceChat_unnamed: "無題のセッション",
   workspaceChat_messageCount: "{count} 件のメッセージ",
-  workspaceChat_empty: "まだセッションがありません。「新しいセッション」をタップして開始してください。",
+  workspaceChat_empty:
+    "まだセッションがありません。「新しいセッション」をタップして開始してください。",
   workspaceChat_exportTip: "セッションを Markdown としてエクスポート",
   workspaceChat_export: "エクスポート",
 
@@ -262,7 +264,8 @@ export default {
   workshop_loadFailed: "読み込みに失敗しました",
   workshop_savedToObject: "オブジェクトテーブルに保存しました",
   workshop_submitFailed: "送信に失敗しました",
-  workshop_deleteConfirm: "アプリ「{name}」を削除しますか？この操作は元に戻せません。続行しますか？",
+  workshop_deleteConfirm:
+    "アプリ「{name}」を削除しますか？この操作は元に戻せません。続行しますか？",
   workshop_deleteTitle: "削除確認",
   workshop_deleted: "削除しました",
 
@@ -345,8 +348,7 @@ export default {
   space_reason: "理由",
   space_reasonPlaceholder:
     "より多くのスペースが必要な理由を説明してください。例: モデル学習の成果物を保存する必要がある。",
-  space_pendingAlert:
-    "保留中の拡張申請があります。管理者の処理をお待ちください。",
+  space_pendingAlert: "保留中の拡張申請があります。管理者の処理をお待ちください。",
   space_myRequests: "自分の申請",
   space_noRequests: "申請記録がありません",
   space_status: "状態",

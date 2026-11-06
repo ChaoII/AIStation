@@ -67,7 +67,8 @@ export default {
   node_branch_tag: "Rama",
   node_disabled_tag: "Deshabilitado",
   node_group_default: "Grupo",
-  group_hint: "Doble clic para contraer / expandir; clic derecho en un nodo para añadir / quitar del grupo",
+  group_hint:
+    "Doble clic para contraer / expandir; clic derecho en un nodo para añadir / quitar del grupo",
   node_start_empty: "Define las variables de entrada",
   node_llm_prompt_set: "Prompt configurado",
   node_llm_no_prompt: "Sin prompt",
@@ -119,7 +120,8 @@ export default {
   p_retry_tip: "Vuelve a ejecutar automáticamente este nodo ante fallo y continúa aguas abajo",
   p_upstream_chain: "Cadena de llamadas aguas arriba",
   p_insert_var: "Insertar variable",
-  p_insert_var_tip: "Tras hacer clic en un cuadro de entrada, selecciona aquí una variable para insertarla",
+  p_insert_var_tip:
+    "Tras hacer clic en un cuadro de entrada, selecciona aquí una variable para insertarla",
   p_input_vars: "Variables de entrada",
   p_no_ref: "Sin referencias",
   p_undefined_var: "Variable no definida (comprueba su origen)",
@@ -129,7 +131,8 @@ export default {
   p_output_var: "Variable de salida",
   p_not_set: "No establecida",
   p_copy_ref: "Copiar referencia",
-  p_select_input_first: "Por favor, haz clic primero en un cuadro de entrada y luego inserta una variable",
+  p_select_input_first:
+    "Por favor, haz clic primero en un cuadro de entrada y luego inserta una variable",
   p_add_var: "Añadir variable",
   p_var_name: "Nombre de la variable",
   p_type_text: "Texto",
@@ -225,7 +228,8 @@ export default {
   p_loop_items_ph: "Matriz JSON o variable de lista, p. ej. {{items}} o [1,2,3]",
   p_max_loop: "Máximo de iteraciones del bucle",
   p_agg_list_result: "Resultado de lista agregado",
-  p_loop_alert_1: "Cada elemento se inyecta en el flujo de trabajo de cuerpo de bucle como variable",
+  p_loop_alert_1:
+    "Cada elemento se inyecta en el flujo de trabajo de cuerpo de bucle como variable",
   p_loop_alert_2: ", y el resultado es una lista de la salida de cada elemento.",
   p_parallel_branches: "Ramas paralelas",
   p_branch_name: "Nombre de la rama",
@@ -248,7 +252,8 @@ export default {
   p_sql_with_var: "SQL (admite {{variable}})",
   p_row_array: "Matriz de filas resultante",
   p_output_template: "Plantilla de salida",
-  p_output_template_ph: "Déjalo vacío para tomar la salida del último paso; puede escribir {{variable}}",
+  p_output_template_ph:
+    "Déjalo vacío para tomar la salida del último paso; puede escribir {{variable}}",
   p_note_title: "Título",
   p_note_title_ph: "Título de la nota",
   p_note_content: "Contenido",
@@ -449,7 +454,8 @@ export default {
   wf_delete: "Eliminar",
   wf_node_deleted: "Nodo eliminado",
   wf_node_copied: "Nodo copiado; puedes editar su configuración",
-  wf_open_debug: "Depuración de nodo único abierta; vuelve a ejecutar este nodo para ver el resultado",
+  wf_open_debug:
+    "Depuración de nodo único abierta; vuelve a ejecutar este nodo para ver el resultado",
   wf_group_cant_join: "Los nodos de grupo no se pueden añadir a un grupo",
   wf_please_select_group: "Por favor, selecciona un grupo",
   wf_joined_group: "Añadido al grupo",
@@ -461,7 +467,8 @@ export default {
     "Esto eliminará {count} nodos seleccionados y sus aristas conectadas, y no se puede deshacer. ¿Continuar?",
   wf_batch_del_title: "Eliminar en lote",
   wf_batch_deleted: "Lote eliminado",
-  wf_select_nodes_tpl: "Selecciona primero los nodos (Shift/Ctrl multiselección) y luego guarda como plantilla",
+  wf_select_nodes_tpl:
+    "Selecciona primero los nodos (Shift/Ctrl multiselección) y luego guarda como plantilla",
   wf_tpl_name_label: "Nombre de la plantilla",
   wf_save_as_tpl_title: "Guardar como plantilla",
   wf_tpl_name_ph: "p. ej. Subgrafo de consulta con recuperación",

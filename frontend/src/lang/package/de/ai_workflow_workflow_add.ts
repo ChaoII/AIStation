@@ -67,7 +67,8 @@ export default {
   node_branch_tag: "Zweig",
   node_disabled_tag: "Deaktiviert",
   node_group_default: "Gruppe",
-  group_hint: "Doppelklicken zum Einklappen / Erweitern; mit der rechten Maustaste auf einen Knoten klicken, um zur Gruppe hinzuzufügen / zu entfernen",
+  group_hint:
+    "Doppelklicken zum Einklappen / Erweitern; mit der rechten Maustaste auf einen Knoten klicken, um zur Gruppe hinzuzufügen / zu entfernen",
   node_start_empty: "Eingabevariablen definieren",
   node_llm_prompt_set: "Prompt konfiguriert",
   node_llm_no_prompt: "Kein Prompt",
@@ -119,7 +120,8 @@ export default {
   p_retry_tip: "Diesen Knoten bei Fehler automatisch erneut ausführen und stromabwärts fortfahren",
   p_upstream_chain: "Aufwärts-Aufrufkette",
   p_insert_var: "Variable einfügen",
-  p_insert_var_tip: "Nach dem Klicken auf ein Eingabefeld hier eine Variable zum Einfügen auswählen",
+  p_insert_var_tip:
+    "Nach dem Klicken auf ein Eingabefeld hier eine Variable zum Einfügen auswählen",
   p_input_vars: "Eingabevariablen",
   p_no_ref: "Keine Referenzen",
   p_undefined_var: "Undefinierte Variable (prüfen Sie ihre Quelle)",
@@ -248,7 +250,8 @@ export default {
   p_sql_with_var: "SQL (unterstützt {{variable}})",
   p_row_array: "Ergebniszeilen-Array",
   p_output_template: "Ausgabevorlage",
-  p_output_template_ph: "Leer lassen, um die Ausgabe des letzten Schritts zu übernehmen; kann {{variable}} schreiben",
+  p_output_template_ph:
+    "Leer lassen, um die Ausgabe des letzten Schritts zu übernehmen; kann {{variable}} schreiben",
   p_note_title: "Titel",
   p_note_title_ph: "Notiztitel",
   p_note_content: "Inhalt",
@@ -417,7 +420,8 @@ export default {
     'Für die Chat-Einbettung gehen Sie zu "KI-Integration → App-Verwaltung" und erzeugen den Code in der "Einbettung" der Ziel-App.',
   wf_read_schedule_fail: "Zeitplankonfiguration konnte nicht gelesen werden",
   wf_schedule_saved: "Zeitplan gespeichert",
-  wf_save_fail_config: "Speichern fehlgeschlagen (Trigger-Konfiguration ist möglicherweise ungültig)",
+  wf_save_fail_config:
+    "Speichern fehlgeschlagen (Trigger-Konfiguration ist möglicherweise ungültig)",
   wf_run_triggered: "Lauf ausgelöst (im Ausführungsverlauf ansehen)",
   wf_trigger_fail: "Auslösen fehlgeschlagen",
   wf_status_running: "Wird ausgeführt",
@@ -449,7 +453,8 @@ export default {
   wf_delete: "Löschen",
   wf_node_deleted: "Knoten gelöscht",
   wf_node_copied: "Knoten kopiert; Sie können seine Konfiguration bearbeiten",
-  wf_open_debug: "Einzelknoten-Debug geöffnet; führen Sie diesen Knoten erneut aus, um das Ergebnis zu sehen",
+  wf_open_debug:
+    "Einzelknoten-Debug geöffnet; führen Sie diesen Knoten erneut aus, um das Ergebnis zu sehen",
   wf_group_cant_join: "Gruppenknoten können keiner Gruppe hinzugefügt werden",
   wf_please_select_group: "Bitte eine Gruppe auswählen",
   wf_joined_group: "Zur Gruppe hinzugefügt",
@@ -461,7 +466,8 @@ export default {
     "Dies löscht {count} ausgewählte Knoten und ihre verbundenen Kanten, und kann nicht rückgängig gemacht werden. Fortfahren?",
   wf_batch_del_title: "Stapellöschung",
   wf_batch_deleted: "Stapel gelöscht",
-  wf_select_nodes_tpl: "Zuerst Knoten auswählen (Umschalt/Strg Mehrfachauswahl), dann als Vorlage speichern",
+  wf_select_nodes_tpl:
+    "Zuerst Knoten auswählen (Umschalt/Strg Mehrfachauswahl), dann als Vorlage speichern",
   wf_tpl_name_label: "Vorlagenname",
   wf_save_as_tpl_title: "Als Vorlage speichern",
   wf_tpl_name_ph: "z. B. Abruf-F&A-Teilgraph",

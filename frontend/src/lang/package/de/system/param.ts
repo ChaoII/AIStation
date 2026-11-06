@@ -43,7 +43,8 @@ export default {
 
   // 提示 / 确认
   warnTitle: "Warnung",
-  deleteConfirmMessage: "Möchten Sie die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
+  deleteConfirmMessage:
+    "Möchten Sie die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
   requiredConfigName: "Bitte Namen der Systemkonfiguration eingeben",
   requiredConfigKey: "Bitte Schlüssel der Systemkonfiguration eingeben",
   requiredConfigValue: "Bitte Wert der Systemkonfiguration eingeben",

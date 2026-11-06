@@ -65,7 +65,8 @@ export default {
   filter: "Spalten filtern",
   view: "Ansicht",
   delTitle: "Löschbestätigung",
-  delConfirmMessage: "Löschen bestätigen? {count} Element(e) werden gelöscht. Dies kann nicht rückgängig gemacht werden.",
+  delConfirmMessage:
+    "Löschen bestätigen? {count} Element(e) werden gelöscht. Dies kann nicht rückgängig gemacht werden.",
   selectDeleteData: "Bitte wählen Sie zu löschende Elemente aus",
   exportTitle: "Daten exportieren",
   fileName: "Dateiname",

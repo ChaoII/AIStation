@@ -29,7 +29,8 @@ export default {
   endDatePlaceholder: "Date de fin",
   to: "à",
   deleteConfirmTitle: "Avertissement",
-  deleteConfirmMessage: "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
+  deleteConfirmMessage:
+    "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
   operationSuccess: "Opération réussie",
   ruleTenantNameRequired: "Veuillez saisir le nom du locataire",
   ruleTenantCodeRequired: "Veuillez saisir le code du locataire",

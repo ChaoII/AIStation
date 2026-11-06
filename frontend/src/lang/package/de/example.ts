@@ -112,7 +112,8 @@ export default {
     // 校验提示
     requiredName: "Bitte Namen eingeben",
     nameLengthMessage: "Die Namenslänge muss zwischen 2 und 50 Zeichen liegen",
-    namePatternMessage: "Der Name darf nur Buchstaben, Ziffern, Unterstriche und Bindestriche enthalten",
+    namePatternMessage:
+      "Der Name darf nur Buchstaben, Ziffern, Unterstriche und Bindestriche enthalten",
     requiredStatus: "Bitte Status auswählen",
     descriptionMaxMessage: "Die Beschreibung darf 255 Zeichen nicht überschreiten",
 

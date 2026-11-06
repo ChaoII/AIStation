@@ -92,8 +92,7 @@ export default {
   descriptionPlaceholder: "أدخل الوصف",
   newDataset: "مجموعة بيانات جديدة",
   editDataset: "تعديل مجموعة البيانات",
-  deleteDatasetConfirm:
-    "حذف مجموعات البيانات المحددة؟ يمكن استعادتها خلال فترة الاحتفاظ.",
+  deleteDatasetConfirm: "حذف مجموعات البيانات المحددة؟ يمكن استعادتها خلال فترة الاحتفاظ.",
   noTaskYet: "لا توجد مهمة تمييز لهذه المجموعة بعد. يُرجى إنشاء واحدة أولاً.",
   dangerOperation: "عملية خطيرة",
   purge: "حذف نهائي",

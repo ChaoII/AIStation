@@ -43,7 +43,8 @@ export default {
   providerAll: "Tất cả",
   providerStatus: "Trạng thái",
   providerWarnTitle: "Cảnh báo",
-  providerDeleteConfirm: "Xóa các nhà cung cấp đã chọn? Cấu hình mô hình của họ sẽ không còn khả dụng.",
+  providerDeleteConfirm:
+    "Xóa các nhà cung cấp đã chọn? Cấu hình mô hình của họ sẽ không còn khả dụng.",
   providerBatchResult: "{action} {count} nhà cung cấp",
   providerOperationFailed: "Thao tác thất bại",
   providerLoadFailed: "Tải thất bại",

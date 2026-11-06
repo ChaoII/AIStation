@@ -318,7 +318,8 @@ export default {
     retryFailed: "失敗したタスクを再試行",
     close: "閉じる",
     retryDispatchFail: "再試行の配信に失敗しました",
-    hotUpdateConfirm: "アルゴリズム「{name}」の現在のモデルを使用するすべてのタスクにホットアップデートしますか？",
+    hotUpdateConfirm:
+      "アルゴリズム「{name}」の現在のモデルを使用するすべてのタスクにホットアップデートしますか？",
     hotUpdateConfirmTitle: "ホットアップデート確認",
     confirmDispatch: "配信を確認",
     hotUpdateFail: "ホットアップデートに失敗しました",
@@ -394,8 +395,10 @@ export default {
     updateSuccess: "更新しました",
     enrollSuccess: "登録しました",
     readFileFail: "ファイルの読み込みに失敗しました",
-    reidEmptyTip: "ReID ライブラリが空です：REID_TRACK ルールはヒットしません。まず ReID 特徴を登録してください",
-    reidEmptyListTip: "ReID ライブラリが空です：REID_TRACK ルールを有効にする前に ReID 特徴を登録してください",
+    reidEmptyTip:
+      "ReID ライブラリが空です：REID_TRACK ルールはヒットしません。まず ReID 特徴を登録してください",
+    reidEmptyListTip:
+      "ReID ライブラリが空です：REID_TRACK ルールを有効にする前に ReID 特徴を登録してください",
     faceEmptyTip:
       "顔ライブラリが空です：FACE_REC / STRANGER ルールはヒットしません。まず顔特徴を登録してください",
     faceEmptyListTip:
@@ -639,7 +642,8 @@ export default {
     whitelistConflict: "ホワイトリストとブラックリストが競合：{names} は両方に入れられません",
     selectLinkCamera: "連動カメラを選択",
     selectLinkGroup: "連動グループを選択",
-    selectSceneFirst2: "パラメータまたは条件が設定されています。先にビジネスシーンを選択してください",
+    selectSceneFirst2:
+      "パラメータまたは条件が設定されています。先にビジネスシーンを選択してください",
     completePoints: "「{label}」を完成（少なくとも {need} 点）",
     notEnabled: "評価器/モデルファミリーが準備できていません",
     edgeNotImpl: "エッジで未実装",
@@ -653,7 +657,8 @@ export default {
   // ===== cond =====
   cond: {
     notAlertTitle: "過去の単項 NOT 条件を検出しました",
-    notTip: "条件ツリーは AND/OR のみに対応しています。NOT ノードは読み取り専用で、そのまま保持されます：",
+    notTip:
+      "条件ツリーは AND/OR のみに対応しています。NOT ノードは読み取り専用で、そのまま保持されます：",
     loadingCap: "ルール機能を読み込み中...",
     unsupportedTitle: "認識されない条件（読み取り専用、保存時は保持されません）",
     unknownLeaf: "不明なリーフ",

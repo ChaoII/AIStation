@@ -81,7 +81,8 @@ export default {
   serverDiskUsed: "Tamaño usado",
 
   // resource
-  resourceTip: "Gestión de archivos de recursos: haga clic en una ruta para volver rápidamente al directorio principal",
+  resourceTip:
+    "Gestión de archivos de recursos: haga clic en una ruta para volver rápidamente al directorio principal",
   resourceFileList: "Lista de archivos (ruta actual):",
   resourceUpload: "Subir archivo",
   resourceCreateDir: "Nueva carpeta",

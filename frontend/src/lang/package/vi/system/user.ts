@@ -70,7 +70,8 @@ export default {
 
   // 提示 / 确认
   warning: "Cảnh báo",
-  deleteConfirmMessage: "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
+  deleteConfirmMessage:
+    "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
   confirmEnableOrDisable: "Bạn có chắc chắn muốn kích hoạt hoặc vô hiệu hóa mục đã chọn?",
   resetPasswordPrompt: "Vui lòng nhập mật khẩu mới cho người dùng {username}",
   passwordMinLength: "Mật khẩu phải có ít nhất 6 ký tự. Vui lòng nhập lại.",

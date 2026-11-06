@@ -56,20 +56,20 @@ export default {
   componentPathPlaceholder: "コンポーネントパス（例：system/user/index）を入力してください",
   componentPathTooltip:
     "コンポーネントページのフルパス。src/views/ からの相対パス。例：system/user/index。.vue 拡張子は含めません",
-  paramsTooltip: "コンポーネントページは useRoute().query.paramName でルートパラメータ値を読み取ります。",
+  paramsTooltip:
+    "コンポーネントページは useRoute().query.paramName でルートパラメータ値を読み取ります。",
   addParam: "ルートパラメータを追加",
   paramName: "パラメータ名",
   paramValue: "パラメータ値",
-  hiddenTooltip: '「はい」を選ぶとメニューに非表示\n「いいえ」を選ぶとメニューに表示。',
+  hiddenTooltip: "「はい」を選ぶとメニューに非表示\n「いいえ」を選ぶとメニューに表示。",
   alwaysShowTooltip:
-    '「はい」を選ぶ：ディレクトリやメニューに子が1つだけでも、親を表示します。\n「いいえ」を選ぶ：ディレクトリやメニューに子が1つだけの場合、その子だけを表示し親は非表示。\n葉ノードの場合は「いいえ」を選択。',
+    "「はい」を選ぶ：ディレクトリやメニューに子が1つだけでも、親を表示します。\n「いいえ」を選ぶ：ディレクトリやメニューに子が1つだけの場合、その子だけを表示し親は非表示。\n葉ノードの場合は「いいえ」を選択。",
   cachePage: "ページをキャッシュ",
   open: "オン",
   close: "オフ",
   permissionPlaceholder: "権限（例：sys:user:add）を入力してください",
   redirectPlaceholder: "任意。リダイレクト先ルートを入力してください",
-  redirectCatalogPlaceholder:
-    "ディレクトリでは必須。通常は既定の子ルートパス。例：/system/user",
+  redirectCatalogPlaceholder: "ディレクトリでは必須。通常は既定の子ルートパス。例：/system/user",
   affixLabel: "タブに固定",
   descriptionPlaceholder: "説明を入力してください",
   confirm: "確認",

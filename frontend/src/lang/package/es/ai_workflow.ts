@@ -4,7 +4,8 @@ export default {
   app_batchDisable: "Deshabilitar en lote",
   app_summary: "{total} componentes en total · {enabled} habilitados · {disabled} deshabilitados",
   app_createFromTemplate: "Crear desde plantilla",
-  app_noData: 'Aún no hay componentes. Haz clic en "Nuevo" en la parte superior derecha para crear uno',
+  app_noData:
+    'Aún no hay componentes. Haz clic en "Nuevo" en la parte superior derecha para crear uno',
   app_icon: "Icono",
   app_name: "Nombre",
   app_type: "Tipo",
@@ -125,7 +126,8 @@ export default {
   cron_latency: "Latencia",
   cron_errorSummary: "Resumen de error / salida",
   cron_noOutput: "(sin salida)",
-  cron_noRun: 'No hay registros de ejecución. Haz clic en "Ejecutar ahora" o espera a que el planificador lo dispare',
+  cron_noRun:
+    'No hay registros de ejecución. Haz clic en "Ejecutar ahora" o espera a que el planificador lo dispare',
   cron_cron: "Programado",
   cron_interval: "Intervalo",
   cron_date: "Una vez",

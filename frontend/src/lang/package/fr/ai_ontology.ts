@@ -992,11 +992,13 @@ export default {
   selectOrEnterRelationType: "Sélectionner ou saisir un type de relation",
   stateInOneSentenceWhatToDecide: "Énoncez en une phrase ce qu'il faut décider",
   primaryOntologyNoScenarioOverlay: "Ontologie primaire (aucune superposition de scénario)",
-  theFollowingWarningsWonTBlockSaving: "Les avertissements suivants ne bloqueront pas l'enregistrement",
+  theFollowingWarningsWonTBlockSaving:
+    "Les avertissements suivants ne bloqueront pas l'enregistrement",
   relationTypeNameEGDepends: "Nom du type de relation, par ex. dépend",
   annotationDeletedAndIndexUpdated: "Annotation supprimée et index mis à jour",
   annotationAddedAndIndexUpdated: "Annotation ajoutée et index mis à jour",
-  validateValueAgainstValueTypeConstraints: "Valider la valeur par rapport aux contraintes de type de valeur",
+  validateValueAgainstValueTypeConstraints:
+    "Valider la valeur par rapport aux contraintes de type de valeur",
   realTableColumnMappingOptional: "Correspondance de colonnes de table réelle (facultatif)",
   standardViewAuto: "Vue standard (auto)",
   noPendingPublishRequests: "Aucune demande de publication en attente",
@@ -1005,15 +1007,20 @@ export default {
   pleaseCreateAndSelectAnEvalSetFirst: "Veuillez d'abord créer et sélectionner un jeu d'évaluation",
   whoChangedWhatWhen: "Qui a changé quoi, quand",
   notExecutedOrNoFieldChanges: "Non exécuté ou aucun changement de champ",
-  leaveEmptyToAutoDeriveByRelationName: "Laissez vide pour dériver automatiquement par nom de relation",
-  columnLevelSecurityPropertyVisibilityRoles: "Sécurité au niveau des colonnes (rôles de visibilité des propriétés)",
+  leaveEmptyToAutoDeriveByRelationName:
+    "Laissez vide pour dériver automatiquement par nom de relation",
+  columnLevelSecurityPropertyVisibilityRoles:
+    "Sécurité au niveau des colonnes (rôles de visibilité des propriétés)",
   entityUpdatedWithRelationCascade: "Entité mise à jour (avec cascade de relations)",
-  selectedTimePropertyHasNoTimeValues: "La propriété temporelle sélectionnée n'a aucune valeur temporelle",
+  selectedTimePropertyHasNoTimeValues:
+    "La propriété temporelle sélectionnée n'a aucune valeur temporelle",
   notLinkedImportedByExternalSync: "Non lié (importé par synchronisation externe)",
-  thisVersionHasNoDiffFromCurrentDefinition: "Cette version n'a aucune différence avec la définition actuelle",
+  thisVersionHasNoDiffFromCurrentDefinition:
+    "Cette version n'a aucune différence avec la définition actuelle",
   pleaseFillAtLeastOneFieldToWrite: "Veuillez remplir au moins un champ à écrire",
   selectCategoryEmptyUncategorized: "Sélectionner une catégorie (vide = sans catégorie)",
-  eGAddAMaintenanceStatusFieldToCameras: "par ex. ajouter un champ de statut de maintenance aux caméras",
+  eGAddAMaintenanceStatusFieldToCameras:
+    "par ex. ajouter un champ de statut de maintenance aux caméras",
   instanceLevelGraphRealObjectsAsNodes: "Graphe au niveau instance (objets réels comme nœuds)",
   modelingAnalysisStructureDiagnosisSuggestions:
     "Analyse de modélisation (diagnostic de structure et suggestions)",
@@ -1023,19 +1030,25 @@ export default {
   whyThisDecisionWhatIsTheBasis: "Pourquoi cette décision ? Quelle est la base ?",
   availableObjectPropertiesWriteColumnNamesAnd:
     "Propriétés d'objet disponibles (écrire les noms de colonnes) et",
-  layoutMemoryClearedReLayoutAutomatically: "Mémoire de disposition effacée, réorganisation automatique",
+  layoutMemoryClearedReLayoutAutomatically:
+    "Mémoire de disposition effacée, réorganisation automatique",
   expandRelatedEntitiesByKnowledgeGraphWhenEnabled:
     "Développer les entités liées par le graphe de connaissances une fois activé",
-  searchInstancesFuzzyMatchOnTitleProperty: "Rechercher des instances (correspondance floue sur la propriété de titre)",
-  searchHitsTheseWordsPressEnterToAdd: "La recherche touche ces mots, appuyez sur Entrée pour ajouter",
-  searchFailedSuggestRelatedChunksAndAnnotate: "Recherche échouée ? Suggérer des fragments liés et annoter",
+  searchInstancesFuzzyMatchOnTitleProperty:
+    "Rechercher des instances (correspondance floue sur la propriété de titre)",
+  searchHitsTheseWordsPressEnterToAdd:
+    "La recherche touche ces mots, appuyez sur Entrée pour ajouter",
+  searchFailedSuggestRelatedChunksAndAnnotate:
+    "Recherche échouée ? Suggérer des fragments liés et annoter",
   noInstancesToPreviewForThisObjectType: "Aucune instance à prévisualiser pour ce type d'objet",
   runFunctionWritesNoData: "Exécuter la fonction (n'écrit aucune donnée)",
   derivedByComparingObjectSnapshotsAfterExecution:
     "Dérivé en comparant les instantanés d'objets après exécution",
-  noFunctionsClickNewFunctionAtTopRight: "Aucune fonction, cliquez sur 'Nouvelle fonction' en haut à droite",
+  noFunctionsClickNewFunctionAtTopRight:
+    "Aucune fonction, cliquez sur 'Nouvelle fonction' en haut à droite",
   noRulesConfiguredUsingWhitelistFallback: "Aucune règle configurée (repli sur la liste blanche)",
-  pleaseSelectAnOntologyDomainOnTheLeftFirst: "Veuillez d'abord sélectionner un domaine d'ontologie à gauche",
+  pleaseSelectAnOntologyDomainOnTheLeftFirst:
+    "Veuillez d'abord sélectionner un domaine d'ontologie à gauche",
   pleaseEnterFunctionNameCodeAndOwningObjectType:
     "Veuillez saisir le nom de fonction, le code et le type d'objet propriétaire",
   pleaseEnterActionNameCodeAndTargetObjectType:
@@ -1044,7 +1057,8 @@ export default {
   versionPublishedForThisObjectTypeAtDecisionTime:
     "Version publiée pour ce type d'objet au moment de la décision",
   objectPKOptionalOnlyTypeAndColumn: "PK d'objet (facultatif, uniquement type et colonne)",
-  stagedClickSaveAtTopRightToApply: "Mis en attente (cliquez sur 'Enregistrer' en haut à droite pour appliquer)",
+  stagedClickSaveAtTopRightToApply:
+    "Mis en attente (cliquez sur 'Enregistrer' en haut à droite pour appliquer)",
   thisObjectTypeIsNotMaterializedYet: "Ce type d'objet n'est pas encore matérialisé",
   nameFromTargetSideEGContainsDevices: "Nom du côté cible, par ex. 'contient des appareils'",
   destructiveChangesExistEnterEntityNameToConfirm:
@@ -1054,8 +1068,7 @@ export default {
   externalDependenciesLikeAgentsAndWorkflowsAreNotConnectedYet:
     "Les dépendances externes comme les agents et les workflows ne sont pas encore connectées.",
   deleteThisChunkThisCannotBeUndone: "Supprimer ce fragment ? Cette action est irréversible.",
-  thisObjectTypeNoLongerExistsOrIsOutOfScope:
-    "Ce type d'objet n'existe plus ou est hors périmètre",
+  thisObjectTypeNoLongerExistsOrIsOutOfScope: "Ce type d'objet n'existe plus ou est hors périmètre",
   noOntologyDomainsYetClickNewDomainToCreate:
     "Aucun domaine d'ontologie pour le moment, cliquez sur 'Nouveau domaine' pour créer",
   referenceAnotherDecisionCodeToFormDecisionLineage:
@@ -1068,7 +1081,8 @@ export default {
     "La vue de panneau contient les informations clés pour l'incorporation par d'autres applications",
   higherDegreeMeansMoreWorthDefiningActionsAndGovernance:
     "Un degré plus élevé signifie qu'il vaut plus la peine de définir des actions et de la gouvernance",
-  noNodesRightClickCanvasOrClickNewNode: "Aucun nœud, faites un clic droit sur le canevas ou cliquez sur 'Nouveau nœud'",
+  noNodesRightClickCanvasOrClickNewNode:
+    "Aucun nœud, faites un clic droit sur le canevas ou cliquez sur 'Nouveau nœud'",
   editChunkContentSavingWillReVectorizeThisChunk:
     "Modifier le contenu du fragment, l'enregistrement re-vectorisera ce fragment",
   allowEndUsersToEditThisObjectTypeWritebackWhenEnabled:
@@ -1169,7 +1183,8 @@ export default {
   chunkSizeValue: "Taille de fragment {size}",
   batchDeleteWithCount: "Suppression groupée ({count})",
   exportFaqCache: "Exporter le cache FAQ",
-  qaInputPlaceholder: "Saisissez une question ; l'IA répond depuis la base de connaissances et cite les sources",
+  qaInputPlaceholder:
+    "Saisissez une question ; l'IA répond depuis la base de connaissances et cite les sources",
   pageLoc: "Page {page}",
   lineLoc: "Ligne {line}",
   cantLocateLinePage: "Impossible de localiser la ligne/page",
@@ -1220,16 +1235,20 @@ export default {
   suggestRelatedMsg:
     "{count} fragments liés détectés, dont {unhit} non touchés. Vous pouvez d'abord annoter, puis rappeler à nouveau.",
   suggestRelatedHitMsg: "Les fragments liés détectés ont été touchés.",
-  fileUploadedMsg: '"{name}" téléversé, traitement en cours. Veuillez vérifier plus tard en arrière-plan.',
-  deleteDocConfirm: 'Supprimer le document "{name}" ? Les fragments seront également supprimés et ne peuvent pas être récupérés !',
-  batchDeleteDocsConfirm: "Supprimera {count} documents (toutes les données/fragments), irrécupérable !",
+  fileUploadedMsg:
+    '"{name}" téléversé, traitement en cours. Veuillez vérifier plus tard en arrière-plan.',
+  deleteDocConfirm:
+    'Supprimer le document "{name}" ? Les fragments seront également supprimés et ne peuvent pas être récupérés !',
+  batchDeleteDocsConfirm:
+    "Supprimera {count} documents (toutes les données/fragments), irrécupérable !",
   deleteDocsMsg: "{count} documents supprimés",
   exportFaqMsg: "FAQ exportée ({count} éléments)",
   linkModeNodeHint: 'Nœud "{name}" sélectionné, cliquez sur le nœud cible pour terminer la liaison',
   saveLayoutMsg: "{count} positions de nœuds enregistrées",
   deleteDsConfirm: 'Supprimer la source de données "{name}" ? Irrécupérable après suppression !',
   syncPromptLabel: "Saisissez le nom de base de données/la requête à synchroniser (par ex. users)",
-  syncDsConfirm: 'Confirmer la synchronisation des données depuis "{name}" vers la base de connaissances cible ?',
+  syncDsConfirm:
+    'Confirmer la synchronisation des données depuis "{name}" vers la base de connaissances cible ?',
   syncDoneMsg: "Synchronisation terminée ({rows} lignes récupérées, {chunks} fragments écrits)",
   graphLegendAnnotLabel: "Annoter / relier un fragment",
   kbCopiedMsg: 'Copié vers "{name}" ({count} fragments)',
@@ -1243,8 +1262,10 @@ export default {
   tooltipRel: "Relation : {rtype}",
   expandDomain: "Développer le domaine d'ontologie",
   collapseDomain: "Réduire le domaine d'ontologie",
-  wipNotSaved: "{count} changements ne sont pas encore enregistrés, cliquez sur 'Enregistrer' pour appliquer",
-  enrichBusinessSemantic: "Remplissage de la sémantique métier (commentaire → nom/énumération, FK → relation)",
+  wipNotSaved:
+    "{count} changements ne sont pas encore enregistrés, cliquez sur 'Enregistrer' pour appliquer",
+  enrichBusinessSemantic:
+    "Remplissage de la sémantique métier (commentaire → nom/énumération, FK → relation)",
   writeSampleCapabilities: "Écrire des capacités d'exemple (10 fonctions + 7 actions)",
   batchAssignDomain: "Affectation groupée au domaine d'ontologie ({count} sélectionnés)",
   pendingVersionPublishCount: "Publication de version en attente ({count})",
@@ -1252,14 +1273,16 @@ export default {
   codeId: "Code (ID)",
   codePlaceholder: "par ex. video_cameras (lettres minuscules/chiffres/tirets, unique)",
   apiName: "Nom d'API",
-  manyToManyJoinDatasetHint: "Plusieurs-à-plusieurs doit utiliser un 'jeu de données de table de jointure' (règle officielle)",
+  manyToManyJoinDatasetHint:
+    "Plusieurs-à-plusieurs doit utiliser un 'jeu de données de table de jointure' (règle officielle)",
   actionUpdate: "mise à jour (modifier l'objet)",
   actionInsert: "insertion (pas encore prise en charge, sera rejetée)",
   actionDelete: "suppression (pas encore prise en charge, sera rejetée)",
   toolDescriptionPlaceholder:
     "Description de l'outil pour l'IA : ce que fait cette action et quand l'appeler. Laissez vide pour revenir à la 'description' ci-dessus.",
   paramsJson: "Paramètres (JSON)",
-  paramsJsonSchemaHint: "Les paramètres généreront directement le JSON Schema de l'outil de l'Agent",
+  paramsJsonSchemaHint:
+    "Les paramètres généreront directement le JSON Schema de l'outil de l'Agent",
   paramsPlaceholder: '[{"key":"name","label":"Nouveau nom","type":"string","required":true}]',
   sideEffectsJson: "Effets secondaires (JSON)",
   sideEffectsPlaceholder: '[{"type":"notification","detail":"Notifier l\'astreinte"}]',
@@ -1274,13 +1297,13 @@ export default {
   selectedObjectTypesHint: "{count} types d'objets sélectionnés : ",
   selectNoneUnassigned: "Aucun = revenir à non affecté",
   deleteDomainConfirm:
-    'Supprimera l\'ontologie "{name}" et ses {count} types d\'objets (les types d\'objets deviennent non affectés, l\'ontologie elle-même ne peut pas être récupérée). Continuer ?',
+    "Supprimera l'ontologie \"{name}\" et ses {count} types d'objets (les types d'objets deviennent non affectés, l'ontologie elle-même ne peut pas être récupérée). Continuer ?",
   batchDeleteObjectTypesConfirm:
     "Supprimera {count} types d'objets ({names}) et leurs définitions de propriétés/relations/actions (n'affecte pas les tables de données réelles). Les changements vont d'abord dans la liste d'enregistrement en attente. Confirmer la suppression ?",
   publishVersionConfirm:
     'Approuvera "{code}" v{version} comme version officielle. Tous les consommateurs prennent effet selon la nouvelle définition ensuite. Continuer ?',
   deleteObjectTypeConfirm:
-    'Supprimera le type d\'objet "{name}" et ses définitions de propriétés/relations/actions (n\'affecte pas les tables de données réelles). Les changements vont d\'abord dans la liste d\'enregistrement en attente. Confirmer la suppression ?',
+    "Supprimera le type d'objet \"{name}\" et ses définitions de propriétés/relations/actions (n'affecte pas les tables de données réelles). Les changements vont d'abord dans la liste d'enregistrement en attente. Confirmer la suppression ?",
   backfillViewsConfirm:
     "Remplira les vues par défaut pour les types d'objets qui n'en ont pas encore (les vues existantes ne seront pas écrasées).",
   backfillingViews: "Remplissage des vues d'objets par défaut…",
@@ -1363,8 +1386,10 @@ export default {
   rightUndefinedParam: "{where} : right référence un paramètre indéfini {param}",
   notifyNoRecipients: "{where} : la notification n'a aucun destinataire spécifié",
   webhookUrlInvalid: "{where} : l'URL du webhook doit être http/https",
-  effectTypeNotSupported: "{where} : type non pris en charge {type} (disponible : notification, webhook)",
-  stagedSaveHint: '{label} mis en attente (cliquez sur "Enregistrer" en haut à droite pour appliquer)',
+  effectTypeNotSupported:
+    "{where} : type non pris en charge {type} (disponible : notification, webhook)",
+  stagedSaveHint:
+    '{label} mis en attente (cliquez sur "Enregistrer" en haut à droite pour appliquer)',
   pleaseFillObjectRowId: "Veuillez renseigner l'ID de ligne d'objet",
   objectTypeSub: "Type d'objet · {info}",
   objectCount: "{count} objets",
@@ -1379,7 +1404,8 @@ export default {
     "Le statut de l'index est dérivé de l'existence de la table de support dans la base (succès = la structure de la table est lisible). La chronologie de synchronisation doit être câblée aux enregistrements de synchronisation de source de données, ce qui n'est pas encore fourni.",
   dependenciesHint:
     "Compte les références internes (relations/actions/fonctions) et les références externes (capacités d'agent qui référencent les codes de fonction/action de cet objet). D'autres consommateurs comme les workflows ne sont pas encore câblés.",
-  apiNameAutoHint: "Laissez vide pour dériver automatiquement le PascalCase à partir de l'ID de propriété",
+  apiNameAutoHint:
+    "Laissez vide pour dériver automatiquement le PascalCase à partir de l'ID de propriété",
   typeString: "Chaîne",
   typeNumber: "Nombre",
   typeDate: "Date",
@@ -1416,14 +1442,14 @@ export default {
   derivedConfigNotValidJson: "La configuration dérivée n'est pas un JSON valide",
   structFieldsNotValidJson: "Les champs de structure ne sont pas un JSON valide",
   deletePropertyConfirm:
-    'Supprimera la propriété "{name}" et sa définition (n\'affecte pas les colonnes de la table de données réelle). Les changements vont d\'abord dans la liste d\'enregistrement en attente. Confirmer la suppression ?',
+    "Supprimera la propriété \"{name}\" et sa définition (n'affecte pas les colonnes de la table de données réelle). Les changements vont d'abord dans la liste d'enregistrement en attente. Confirmer la suppression ?",
   deleteRelTypeConfirm:
-    'Supprimera le type de relation "{name}" (affecte les sauts au niveau instance et les liens de graphe de cette relation ; les changements vont d\'abord dans la liste d\'enregistrement en attente). Confirmer la suppression ?',
+    "Supprimera le type de relation \"{name}\" (affecte les sauts au niveau instance et les liens de graphe de cette relation ; les changements vont d'abord dans la liste d'enregistrement en attente). Confirmer la suppression ?",
   deleteActionTypeConfirm:
-    'Supprimera le type d\'action "{name}" (sa configuration de réécriture/approbation est également supprimée ; les changements vont d\'abord dans la liste d\'enregistrement en attente). Confirmer la suppression ?',
+    "Supprimera le type d'action \"{name}\" (sa configuration de réécriture/approbation est également supprimée ; les changements vont d'abord dans la liste d'enregistrement en attente). Confirmer la suppression ?",
   metricKey: "Clé de mesure",
   fnExposedHint:
-    'Les fonctions sont exposées à l\'IA comme capacités d\'Agent (outils). Les changements vont dans la liste d\'enregistrement en attente ; prennent effet après clic sur "Enregistrer".',
+    "Les fonctions sont exposées à l'IA comme capacités d'Agent (outils). Les changements vont dans la liste d'enregistrement en attente ; prennent effet après clic sur \"Enregistrer\".",
   fnNamePlaceholder: "par ex. Taux de caméras en ligne (%)",
   exprBuiltinsHint:
     "Prend en charge + - * / et les comparaisons, les expressions ternaires, et {count} fonctions intégrées.",
@@ -1433,18 +1459,18 @@ export default {
   paramsSourceHint:
     "Déclaré pour générer les entrées de l'outil de l'Agent. source peut être parameter (passé par l'appelant), object_property (prendre une propriété d'objet, remplir object_property), static, current_user, current_time.",
   outputsJson: "Sorties (JSON)",
-  outputsHint: "Déclare la structure de valeur de retour, écrite dans la description de l'outil de l'Agent",
+  outputsHint:
+    "Déclare la structure de valeur de retour, écrite dans la description de l'outil de l'Agent",
   configJson: "Configuration de forme (JSON)",
   fnToolDescriptionPlaceholder:
-    'Description de l\'outil pour l\'IA : ce que calcule cette fonction et quand l\'appeler. Laissez vide pour revenir à "Description"',
+    "Description de l'outil pour l'IA : ce que calcule cette fonction et quand l'appeler. Laissez vide pour revenir à \"Description\"",
   fnAggObjectKeyPlaceholder: "Clé primaire du contexte d'agrégation/objet",
   fnInferredParamsHint:
-    'Cette fonction n\'a aucune entrée déclarée ; ci-dessous est déduit des variables de l\'expression. Il est recommandé de déclarer des entrées dans "Modifier" pour que l\'IA puisse transmettre correctement les valeurs lors de l\'appel.',
+    "Cette fonction n'a aucune entrée déclarée ; ci-dessous est déduit des variables de l'expression. Il est recommandé de déclarer des entrées dans \"Modifier\" pour que l'IA puisse transmettre correctement les valeurs lors de l'appel.",
   runSuccess: "Exécuté avec succès",
   fnKindAggregateHint:
     "Agrège sur les objets liés le long de la chaîne de relations (count/sum/avg/min/max/first/last/collect_list/collect_set), nécessite la clé primaire d'objet comme contexte",
-  fnKindHttpHint:
-    "Appelle une API REST externe et prend la valeur de la réponse via result_path",
+  fnKindHttpHint: "Appelle une API REST externe et prend la valeur de la réponse via result_path",
   fnKindModelHint:
     "Appelle un modèle enregistré sur la plateforme (gestion IA → configuration de modèle) et retourne le texte de réponse",
   fnKindExprHint:
@@ -1456,14 +1482,16 @@ export default {
   summarizePrompt: "Résumer : {'{{'}text{'}}'}",
   fnConfigHintAggregate:
     "link_path est un tableau d'IDs de relations (jusqu'à 3 niveaux) ; property peut être laissé vide pour count",
-  fnConfigHintHttp: "L'URL doit être http/https ; body_template prend en charge les espaces réservés {'{{'}param{'}}'}",
+  fnConfigHintHttp:
+    "L'URL doit être http/https ; body_template prend en charge les espaces réservés {'{{'}param{'}}'}",
   fnConfigHintModel:
     "Laissez model_id vide pour utiliser le modèle par défaut ; prompt prend en charge les espaces réservés {'{{'}param{'}}'}",
   configMustBeJsonObject: "La configuration de forme doit être un objet JSON",
   jsonParseFailed: "Échec de l'analyse JSON",
-  exprVarsNotDeclared: "Les variables {vars} de l'expression ne sont pas déclarées dans les entrées",
+  exprVarsNotDeclared:
+    "Les variables {vars} de l'expression ne sont pas déclarées dans les entrées",
   deleteFunctionConfirm:
-    'Supprimera la fonction "{name}" ; les capacités d\'agent qui la référencent deviendront invalides. Les changements vont d\'abord dans la liste d\'enregistrement en attente. Confirmer la suppression ?',
+    "Supprimera la fonction \"{name}\" ; les capacités d'agent qui la référencent deviendront invalides. Les changements vont d'abord dans la liste d'enregistrement en attente. Confirmer la suppression ?",
   functionColonName: "Fonction : {name} ({kind})",
   fnExprPlaceholder: "par ex. round(percent(online_count, total_count), 1)",
   titleReasonPlaceholder: "Mot-clé de titre / justification",
@@ -1496,13 +1524,13 @@ export default {
   typeRelationCount: "{typeCount} types / {relationCount} relations",
   importExportTitle: "Importer / Exporter",
   exportImportDomainNote:
-    'Export/import s\'applique à l\'ontologie actuelle "{name}" (domaine entier), non limité à ce type d\'objet.',
+    "Export/import s'applique à l'ontologie actuelle \"{name}\" (domaine entier), non limité à ce type d'objet.",
   exportJson: "Exporter en JSON",
   exportJsonHint:
     "Télécharger les définitions d'objet/propriété/relation/action de l'ontologie actuelle, pour migration ou sauvegarde",
   selectJsonFile: "Sélectionner un fichier JSON",
   importTextPlaceholder:
-    'Collez le JSON d\'ontologie, ou cliquez sur "Sélectionner un fichier JSON" ci-dessus pour lire. Le format correspond à l\'export.',
+    "Collez le JSON d'ontologie, ou cliquez sur \"Sélectionner un fichier JSON\" ci-dessus pour lire. Le format correspond à l'export.",
   stageImportNote:
     "Import en attente = les changements vont d'abord dans la liste d'enregistrement en attente ; import direct = écrit immédiatement et peut écraser les définitions de même nom (avec une seconde confirmation).",
   tableCountOption: "{name} ({count} tables)",
@@ -1510,14 +1538,15 @@ export default {
   exportSummary:
     "Exporté {objects} objets / {properties} propriétés / {links} relations / {actions} actions",
   jsonParseFailedCheckContent: "Échec de l'analyse JSON, veuillez vérifier le contenu collé",
-  notValidOntologyMissingObjects: "Ce n'est pas une définition d'ontologie valide (objets manquants)",
+  notValidOntologyMissingObjects:
+    "Ce n'est pas une définition d'ontologie valide (objets manquants)",
   importDirectlyConfirm:
     "Le contenu importé sera **écrit directement** dans l'ontologie (via la liste d'enregistrement en attente, pas), peut écraser les définitions de même nom existantes. Confirmer l'import direct ?",
   importedObjects: "{count} objets importés",
   appliedTemplate: 'Modèle "{name}" appliqué',
   totalCountShort: "Total {count}",
   groupHint:
-    'Un groupe est un regroupement plusieurs-à-plusieurs **inter-types d\'objets** (différent d\'un "appartient à l\'ontologie" un-à-un), utilisable pour les filtres et les opérations groupées',
+    "Un groupe est un regroupement plusieurs-à-plusieurs **inter-types d'objets** (différent d'un \"appartient à l'ontologie\" un-à-un), utilisable pour les filtres et les opérations groupées",
   valueTypeHint:
     "Un type de valeur est un **enveloppeur sémantique** au-dessus des types de base (email/URL/UUID/énumération...) plus des contraintes plus une version ; les propriétés peuvent le référencer",
   sharedHint:
@@ -1546,7 +1575,7 @@ export default {
   countUnit: "{count}",
   compareSelectedCount: "Comparer la sélection ({count})",
   scenarioInfoAlert:
-    'Les modifications dans un scénario n\'existent que dans le bac à sable et n\'affectent pas les données réelles ; lire un scénario affiche "référence + différence de scénario". Ce n\'est qu\'à la fusion qu\'elles sont réécrites dans l\'ontologie primaire en une seule transaction.',
+    "Les modifications dans un scénario n'existent que dans le bac à sable et n'affectent pas les données réelles ; lire un scénario affiche \"référence + différence de scénario\". Ce n'est qu'à la fusion qu'elles sont réécrites dans l'ontologie primaire en une seule transaction.",
   scenarioNamePlaceholder: "par ex. Plan A - renommer d'abord et observer",
   mergeActionHint:
     "Officiel : un scénario est fusionné **via un type d'action** ; les conditions de soumission de cette action décident qui peut fusionner (laissez vide pour aucune limite)",
@@ -1554,7 +1583,8 @@ export default {
   ttlDaysHint: "Défaut officiel 31 jours, expire et se supprime automatiquement",
   scenarioDetail: "Détails du scénario",
   modelResultsNotice: "Il y a {count} résultats de prédiction de modèle ; {note}",
-  compareAlert: "Ce que le même objet devient dans différents scénarios — pour peser différentes options",
+  compareAlert:
+    "Ce que le même objet devient dans différents scénarios — pour peser différentes options",
   mergeScenarioConfirm:
     'Écrira les {count} changements d\'objets du scénario "{name}" **dans la table de données réelle en une seule transaction** ; tout échec annule tout. Ceci ne peut pas être auto-annulé. Confirmer la fusion ?',
   discardScenarioConfirm:
@@ -1584,7 +1614,7 @@ export default {
   resetAclConfirm:
     'Effacera la configuration de permission de ressource de ce type d\'objet, rétablissant "visible/modifiable par tous". Les politiques au niveau des lignes et des colonnes ne sont pas affectées. Confirmer la restauration ?',
   deletePolicyConfirm:
-    'Supprimera la politique au niveau des lignes "{name}". La politique ne participe plus au filtrage après suppression (si c\'est la seule politique d\'autorisation, chacun retrouve la visibilité de tous les objets). Confirmer la suppression ?',
+    "Supprimera la politique au niveau des lignes \"{name}\". La politique ne participe plus au filtrage après suppression (si c'est la seule politique d'autorisation, chacun retrouve la visibilité de tous les objets). Confirmer la suppression ?",
   graphTemplate: "Modèle de graphe",
   saveView: "Enregistrer la vue",
   batchDeleteSelected: "Suppression groupée ({count})",
@@ -1652,7 +1682,7 @@ export default {
     'Fermera la proposition "{title}" ; ses {count} changements ne prendront pas effet. **Une proposition fermée ne peut pas être rouverte.** Confirmer la fermeture ?',
   taskHash: "Tâche #{id}",
   versionInfoAlert:
-    'Les versions sont générées lors de l\'enregistrement des changements en attente. Restaurer une version historique écrase les définitions de propriétés/relations/actions/fonctions du type d\'objet avec la version choisie ; les changements vont d\'abord dans la liste d\'enregistrement en attente et prennent effet après clic sur "Enregistrer".',
+    "Les versions sont générées lors de l'enregistrement des changements en attente. Restaurer une version historique écrase les définitions de propriétés/relations/actions/fonctions du type d'objet avec la version choisie ; les changements vont d'abord dans la liste d'enregistrement en attente et prennent effet après clic sur \"Enregistrer\".",
   versionCompareTitle: "Comparaison de version v{version}",
   computingDiff: "Calcul de la différence...",
   restoreVersionConfirm:
@@ -1684,7 +1714,7 @@ export default {
   relationOwnPropsNotSupported:
     "Les propriétés propres du type de relation (lien adossé à un objet) ne sont pas encore prises en charge",
   relationSecurityAlert:
-    'Les permissions de relation suivent les permissions de source de données de support des deux types d\'objets de bout. Les restrictions au niveau des champs sont sur la sous-page "Sécurité" de chaque type d\'objet.',
+    "Les permissions de relation suivent les permissions de source de données de support des deux types d'objets de bout. Les restrictions au niveau des champs sont sur la sous-page \"Sécurité\" de chaque type d'objet.",
   datasourceAlert:
     "plusieurs-à-plusieurs doit être adossé à un jeu de données de table de jointure ; les liens adossés à un objet nécessitent un type d'objet intermédiaire. La configuration associée n'est pas entièrement prise en charge dans la version actuelle.",
   foreignKeyJoinHint:
@@ -1694,7 +1724,7 @@ export default {
   loadingCleanup: "Chargement des suggestions de nettoyage...",
   cleanupSuggestClean: "Suggérer un nettoyage",
   deprecateConfirm:
-    'Marquera "{name}" comme obsolète. Les changements vont d\'abord dans la liste d\'enregistrement en attente. Confirmer ?',
+    "Marquera \"{name}\" comme obsolète. Les changements vont d'abord dans la liste d'enregistrement en attente. Confirmer ?",
   instanceVsTypeLevelHint: ' (lignes de données réelles), de "Type d\'objet / Type de relation"',
   demoLoadedCount: "{count} éléments chargés",
   demoNotLoaded: "Non chargé",

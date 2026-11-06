@@ -209,8 +209,7 @@ export default {
     "이 플랫폼에서는 스크립트 도구가 비활성화되어 있습니다. 시스템 관리자만 생성할 수 있습니다",
   requestMethod: "HTTP 메서드",
   requestUrl: "요청 URL",
-  urlPlaceholder:
-    "예: https://api.example.com/items/{id}, {id}는 입력 파라미터로 대체됩니다",
+  urlPlaceholder: "예: https://api.example.com/items/{id}, {id}는 입력 파라미터로 대체됩니다",
   requestHeaders: "헤더",
   headerNamePlaceholder: "헤더 이름, 예: Authorization",
   valuePlaceholder: "값",
@@ -246,8 +245,7 @@ export default {
   runtimeParamKeyPlaceholder: "파라미터 이름, 예: api_key",
   runtimeValuePlaceholder: "값 (저장 후 숨김)",
   runtimeTipPre: "키/민감 값/사용자별 파라미터용 (예: api_key, username). 스크립트 내에서 ",
-  runtimeTipPost:
-    "로 읽으며 소스에 기록되지 않고, 저장 후 값은 항상 숨겨집니다.",
+  runtimeTipPost: "로 읽으며 소스에 기록되지 않고, 저장 후 값은 항상 숨겨집니다.",
   sandboxAlert:
     "스크립트는 통제된 샌드박스에서 실행됩니다: json/math/re/datetime 같은 화이트리스트 모듈만 임포트 가능하며, 파일/네트워크/시스템 호출은 금지됩니다. 여러 파라미터 시그니처에 타입 어노테이션을 사용하는 것이 좋습니다 (예: def run(name: str = 'x')) 그리고 \"코드에서 파라미터 추출\"을 클릭해 파라미터 테이블을 자동 생성하세요.",
   trialRun: "시험 실행",

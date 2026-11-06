@@ -26,8 +26,7 @@ export default {
   providerCancel: "ยกเลิก",
   providerSave: "บันทึก",
   providerRemoteModelsTitle: "โมเดลระยะไกล · {name}",
-  providerRemoteIntro:
-    "พบ {count} โมเดล การนำเข้าจะสร้างการกำหนดค่าโมเดล (ขจัดรายการซ้ำอัตโนมัติ)",
+  providerRemoteIntro: "พบ {count} โมเดล การนำเข้าจะสร้างการกำหนดค่าโมเดล (ขจัดรายการซ้ำอัตโนมัติ)",
   providerUsage: "การใช้งาน",
   providerUsageChat: "แชท",
   providerUsageAssistant: "ผู้ช่วย",

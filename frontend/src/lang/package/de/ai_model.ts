@@ -43,7 +43,8 @@ export default {
   providerAll: "Alle",
   providerStatus: "Status",
   providerWarnTitle: "Warnung",
-  providerDeleteConfirm: "Ausgewählte Anbieter löschen? Deren Modellkonfigurationen werden nicht mehr verfügbar sein.",
+  providerDeleteConfirm:
+    "Ausgewählte Anbieter löschen? Deren Modellkonfigurationen werden nicht mehr verfügbar sein.",
   providerBatchResult: "{action} {count} Anbieter",
   providerOperationFailed: "Vorgang fehlgeschlagen",
   providerLoadFailed: "Laden fehlgeschlagen",
@@ -56,7 +57,8 @@ export default {
   providerTestSuccess: "Verbindung erfolgreich",
   providerConnectionFailed: "Verbindung fehlgeschlagen",
   providerTestFailed: "Test fehlgeschlagen",
-  providerNoModels: "Keine Modelle abgerufen. Prüfen Sie Erreichbarkeit und Authentifizierung des Anbieters.",
+  providerNoModels:
+    "Keine Modelle abgerufen. Prüfen Sie Erreichbarkeit und Authentifizierung des Anbieters.",
   providerPullFailed: "Abruf fehlgeschlagen",
   providerImportResult: "{imported} Modelle importiert",
   providerImportSkipped: ", {skipped} vorhandene übersprungen",

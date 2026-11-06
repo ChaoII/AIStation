@@ -79,7 +79,8 @@ export default {
   eval_questionPlaceholder: "Một câu hỏi ngôn ngữ tự nhiên",
   eval_scenarioPlaceholder: "Tình huống nghiệp vụ (tùy chọn)",
   eval_genSuccess: "Đã tạo: {saved} lưu, {rejected} loại bỏ",
-  eval_genNoNew: "Không có câu hỏi mới trong vòng này ({rejected} loại bỏ). Điều chỉnh bộ lọc và thử lại.",
+  eval_genNoNew:
+    "Không có câu hỏi mới trong vòng này ({rejected} loại bỏ). Điều chỉnh bộ lọc và thử lại.",
   eval_genFail: "Tạo thất bại",
   eval_fillQuestion: "Vui lòng nhập câu hỏi",
   eval_fillGoldSql: "Vui lòng nhập SQL vàng",

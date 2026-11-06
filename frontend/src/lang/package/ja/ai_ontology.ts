@@ -1015,21 +1015,21 @@ export default {
   selectCategoryEmptyUncategorized: "カテゴリを選択（空 = 未分類）",
   eGAddAMaintenanceStatusFieldToCameras: "例: カメラにメンテナンス状態フィールドを追加",
   instanceLevelGraphRealObjectsAsNodes: "インスタンスレベルグラフ（実オブジェクトをノードに）",
-  modelingAnalysisStructureDiagnosisSuggestions:
-    "モデリング分析（構造診断と提案）",
+  modelingAnalysisStructureDiagnosisSuggestions: "モデリング分析（構造診断と提案）",
   noRowLevelPolicyAllVisible: "行レベルポリシーなし（すべて表示）",
   noExpiredScenariosNothingToClean: "期限切れシナリオがなく、クリーンアップ対象なし",
   dryRunWritesNoData: "ドライラン（データを書き込みません）",
   whyThisDecisionWhatIsTheBasis: "なぜこの意思決定なのか？根拠は？",
-  availableObjectPropertiesWriteColumnNamesAnd:
-    "利用可能なオブジェクトプロパティ（列名を書く）と",
+  availableObjectPropertiesWriteColumnNamesAnd: "利用可能なオブジェクトプロパティ（列名を書く）と",
   layoutMemoryClearedReLayoutAutomatically: "レイアウトメモリをクリアし、自動再レイアウト",
   expandRelatedEntitiesByKnowledgeGraphWhenEnabled:
     "有効時はナレッジグラフで関連エンティティを展開",
-  searchInstancesFuzzyMatchOnTitleProperty: "インスタンスを検索（タイトルプロパティであいまい一致）",
+  searchInstancesFuzzyMatchOnTitleProperty:
+    "インスタンスを検索（タイトルプロパティであいまい一致）",
   searchHitsTheseWordsPressEnterToAdd: "検索はこれらの語にヒット。Enter で追加",
   searchFailedSuggestRelatedChunksAndAnnotate: "検索に失敗？関連チャンクを提案して注釈",
-  noInstancesToPreviewForThisObjectType: "このオブジェクトタイプのプレビュー対象インスタンスがありません",
+  noInstancesToPreviewForThisObjectType:
+    "このオブジェクトタイプのプレビュー対象インスタンスがありません",
   runFunctionWritesNoData: "関数を実行（データを書き込みません）",
   derivedByComparingObjectSnapshotsAfterExecution:
     "実行後のオブジェクトスナップショットを比較して導出",
@@ -1068,7 +1068,8 @@ export default {
     "パネルビューは他アプリによる埋め込み用の主要情報を保持",
   higherDegreeMeansMoreWorthDefiningActionsAndGovernance:
     "次数が高いほどアクションとガバナンスの定義価値が高い",
-  noNodesRightClickCanvasOrClickNewNode: "ノードがありません。キャンバスを右クリックするか「新規ノード」をクリック",
+  noNodesRightClickCanvasOrClickNewNode:
+    "ノードがありません。キャンバスを右クリックするか「新規ノード」をクリック",
   editChunkContentSavingWillReVectorizeThisChunk:
     "チャンク内容を編集。保存するとこのチャンクを再ベクトル化します",
   allowEndUsersToEditThisObjectTypeWritebackWhenEnabled:
@@ -1079,8 +1080,7 @@ export default {
     "データソース列のマッピングでオブジェクトタイプとプロパティを生成",
   cannotCreateAnObjectTwiceInOneSubmissionOfficialLimit:
     "1 回の提出でオブジェクトを 2 回作成できません（公式制限）",
-  noResultsTryAnotherPhrasingOrAnnotateChunks:
-    "結果がありません。別の表現を試すかチャンクを注釈",
+  noResultsTryAnotherPhrasingOrAnnotateChunks: "結果がありません。別の表現を試すかチャンクを注釈",
   expiredChangesWonTApplyAndCanTBeRecoveredCleanUp:
     "期限切れの変更は適用されず復元できません。クリーンアップしますか？",
   noViewsYetClickNewViewOrLetTheSystemAutoGenerate:
@@ -1205,8 +1205,8 @@ export default {
   connUri: "接続 URI",
   apiUrl: "API URL",
   deleteKbConfirm:
-    'ナレッジベース「{name}」を削除しますか？実際の {count} チャンクが削除され、復元できません！',
-  kbUpdatedMsg: '「{name}」に更新しました（{count} チャンク）',
+    "ナレッジベース「{name}」を削除しますか？実際の {count} チャンクが削除され、復元できません！",
+  kbUpdatedMsg: "「{name}」に更新しました（{count} チャンク）",
   ingestSuccessMsg: "取り込みに成功し、{count} チャンクを書き込みました",
   noPathMsg: "{a} → {b} に接続経路がありません",
   shortestPathMsg: "最短経路: {a} → {b}、{length} ホップ",
@@ -1215,24 +1215,26 @@ export default {
   sourceTargetNotEmpty: "ソース/ターゲットは空にできません",
   exportChunksMsg: "{count} チャンクをエクスポートしました",
   rebuildKbConfirm:
-    'ナレッジベース「{name}」の再構築はすべてのチャンクを再ベクトル化しグラフを再構築します。時間がかかり、オンラインサービスに影響する可能性があります。再構築を確認しますか？',
+    "ナレッジベース「{name}」の再構築はすべてのチャンクを再ベクトル化しグラフを再構築します。時間がかかり、オンラインサービスに影響する可能性があります。再構築を確認しますか？",
   rebuildDoneMsg: "再構築完了（{count} チャンク）",
   suggestRelatedMsg:
     "{count} 個の関連チャンクを検出。そのうち {unhit} 個はヒットしませんでした。先に注釈してから再呼び出しできます。",
   suggestRelatedHitMsg: "検出された関連チャンクはヒットしました。",
-  fileUploadedMsg: '「{name}」をアップロードしました。処理中です。後でバックグラウンドを確認してください。',
-  deleteDocConfirm: 'ドキュメント「{name}」を削除しますか？チャンクも削除され、復元できません！',
-  batchDeleteDocsConfirm: "{count} ドキュメント（すべてのデータ/チャンク）を削除します。復元できません！",
+  fileUploadedMsg:
+    "「{name}」をアップロードしました。処理中です。後でバックグラウンドを確認してください。",
+  deleteDocConfirm: "ドキュメント「{name}」を削除しますか？チャンクも削除され、復元できません！",
+  batchDeleteDocsConfirm:
+    "{count} ドキュメント（すべてのデータ/チャンク）を削除します。復元できません！",
   deleteDocsMsg: "{count} ドキュメントを削除しました",
   exportFaqMsg: "FAQ をエクスポートしました（{count} 項目）",
-  linkModeNodeHint: 'ノード「{name}」を選択しました。ターゲットノードをクリックしてリンクを完了',
+  linkModeNodeHint: "ノード「{name}」を選択しました。ターゲットノードをクリックしてリンクを完了",
   saveLayoutMsg: "{count} ノード位置を保存しました",
-  deleteDsConfirm: 'データソース「{name}」を削除しますか？削除後は復元できません！',
+  deleteDsConfirm: "データソース「{name}」を削除しますか？削除後は復元できません！",
   syncPromptLabel: "同期するデータベース名/クエリを入力（例: users）",
-  syncDsConfirm: '「{name}」からデータをターゲットナレッジベースに同期しますか？',
+  syncDsConfirm: "「{name}」からデータをターゲットナレッジベースに同期しますか？",
   syncDoneMsg: "同期完了（{rows} 行取得、{chunks} チャンク書き込み）",
   graphLegendAnnotLabel: "チャンクを注釈 / 関連付け",
-  kbCopiedMsg: '「{name}」にコピーしました（{count} チャンク）',
+  kbCopiedMsg: "「{name}」にコピーしました（{count} チャンク）",
   graphFilePrefix: "ナレッジグラフ_",
   kbChunksFilePrefix: "KB チャンク_",
   kbFaqFilePrefix: "KB FAQ_",
@@ -1252,7 +1254,8 @@ export default {
   codeId: "コード (ID)",
   codePlaceholder: "例: video_cameras（小文字英数字/ハイフン、一意）",
   apiName: "API 名",
-  manyToManyJoinDatasetHint: "多対多は「結合テーブルデータセット」を使用する必要があります（公式規則）",
+  manyToManyJoinDatasetHint:
+    "多対多は「結合テーブルデータセット」を使用する必要があります（公式規則）",
   actionUpdate: "更新（オブジェクト変更）",
   actionInsert: "挿入（未対応、拒否されます）",
   actionDelete: "削除（未対応、拒否されます）",
@@ -1274,13 +1277,13 @@ export default {
   selectedObjectTypesHint: "{count} オブジェクトタイプを選択: ",
   selectNoneUnassigned: "なし = 未割り当てに戻す",
   deleteDomainConfirm:
-    'オントロジー「{name}」とその {count} オブジェクトタイプを削除します（オブジェクトタイプは未割り当てになり、オントロジー自体は復元できません）。続行しますか？',
+    "オントロジー「{name}」とその {count} オブジェクトタイプを削除します（オブジェクトタイプは未割り当てになり、オントロジー自体は復元できません）。続行しますか？",
   batchDeleteObjectTypesConfirm:
     "{count} オブジェクトタイプ（{names}）とそのプロパティ/関係/アクション定義を削除します（実データテーブルには影響しません）。変更はまず保存待ちリストに入ります。削除を確認しますか？",
   publishVersionConfirm:
-    '「{code}」v{version} を公式版として承認します。以後すべてのコンシューマは新しい定義に従って有効になります。続行しますか？',
+    "「{code}」v{version} を公式版として承認します。以後すべてのコンシューマは新しい定義に従って有効になります。続行しますか？",
   deleteObjectTypeConfirm:
-    'オブジェクトタイプ「{name}」とそのプロパティ/関係/アクション定義を削除します（実データテーブルには影響しません）。変更はまず保存待ちリストに入ります。削除を確認しますか？',
+    "オブジェクトタイプ「{name}」とそのプロパティ/関係/アクション定義を削除します（実データテーブルには影響しません）。変更はまず保存待ちリストに入ります。削除を確認しますか？",
   backfillViewsConfirm:
     "まだデフォルトビューがないオブジェクトタイプにデフォルトビューをバックフィルします（既存ビューは上書きされません）。",
   backfillingViews: "デフォルトオブジェクトビューをバックフィル中…",
@@ -1293,14 +1296,14 @@ export default {
   mustBeJsonArray: "{label} は JSON 配列である必要があります",
   discardWipConfirm:
     "{count} 件の未保存変更を破棄します。復元できません（データベースデータには影響しません）。破棄を確認しますか？",
-  openedViewMsg: 'ビュー「{name}」を開きました',
+  openedViewMsg: "ビュー「{name}」を開きました",
   emptyMeansUncategorized: "空 = 未分類",
   actionTypeActingOn: "アクションタイプ · {name} に作用",
   needsApproval: "承認が必要",
   noApprovalNeeded: "承認不要",
   notFilled: "未記入",
   toolDescriptionForAI: "ツール説明（AI 呼び出し用）",
-  notFilledAgentFallback: '未記入 — エージェントは「説明」にフォールバックします',
+  notFilledAgentFallback: "未記入 — エージェントは「説明」にフォールバックします",
   inputToRules: "入力 → ルール",
   inputCol: "入力",
   rulesCol: "ルール",
@@ -1310,7 +1313,7 @@ export default {
   notification: "通知",
   totalRulesCount: "合計 {count}",
   noRulesConfiguredCompat:
-    'ルール未設定: 現在は互換パスを使用しています（「書き戻しターゲットテーブル + 書き込み可能フィールドホワイトリスト」に従って update を実行）。ルール設定後は書き込まれる列はルールで決まります。',
+    "ルール未設定: 現在は互換パスを使用しています（「書き戻しターゲットテーブル + 書き込み可能フィールドホワイトリスト」に従って update を実行）。ルール設定後は書き込まれる列はルールで決まります。",
   beforeEdit: "編集前",
   afterEdit: "編集後",
   recipientsValue: "受信者 {value}",
@@ -1320,8 +1323,7 @@ export default {
   objectReference: "オブジェクト参照",
   officialParamsHint:
     "公式パラメータはデフォルト値、ドロップダウンフィルター、セキュリティポリシー、上書き、パフォーマンス設定に対応し、ツール JSON スキーマを生成します。現在のバージョンではこれらすべてをまだサポートしていません。",
-  needsApprovalPendingOnly:
-    "承認が必要（承認フォームのみ生成され、管理者が承認）",
+  needsApprovalPendingOnly: "承認が必要（承認フォームのみ生成され、管理者が承認）",
   criteriaCountAllMatch: "{count} 設定。すべて満たすと送信可能",
   notSatisfiedHint: "→ 満たさない場合のヒント: {msg}",
   execOrderHint:
@@ -1340,8 +1342,7 @@ export default {
   targetTablePrimaryKey: "ターゲットテーブル主キー id",
   scenarioStagedOnly:
     "シナリオを選択すると、差分のみステージングされ実テーブルは書き込まれません。シナリオのマージ後にのみ有効になります",
-  updateWhitelistFields:
-    "主キーで行を特定し、ホワイトリスト内のフィールドを更新: {fields}",
+  updateWhitelistFields: "主キーで行を特定し、ホワイトリスト内のフィールドを更新: {fields}",
   onlyUpdateSupportedInsertBlocked:
     "現在サポートされているのは update 書き戻しのみ。insert は拒否されます",
   onlyUpdateSupportedDeleteBlocked:
@@ -1363,8 +1364,9 @@ export default {
   rightUndefinedParam: "{where}: right が未定義のパラメータ {param} を参照",
   notifyNoRecipients: "{where}: 通知に受信者が指定されていません",
   webhookUrlInvalid: "{where}: Webhook URL は http/https である必要があります",
-  effectTypeNotSupported: "{where}: サポートされないタイプ {type}（利用可能: notification、webhook）",
-  stagedSaveHint: '{label} をステージングしました（右上の「保存」をクリックして適用）',
+  effectTypeNotSupported:
+    "{where}: サポートされないタイプ {type}（利用可能: notification、webhook）",
+  stagedSaveHint: "{label} をステージングしました（右上の「保存」をクリックして適用）",
   pleaseFillObjectRowId: "オブジェクト行 ID を入力してください",
   objectTypeSub: "オブジェクトタイプ · {info}",
   objectCount: "{count} オブジェクト",
@@ -1395,8 +1397,7 @@ export default {
   derivedLimitHint:
     "制限: 関係チェーンは最大 3 レベル。コレクション上限はデフォルト 10、最大 100。派生プロパティは別の派生プロパティに依存できません。",
   structFieldsLabel: "構造体フィールド",
-  structFieldsHint:
-    "構造体は単一の構造体列で支えられます。ここでそのフィールド構成を記述します",
+  structFieldsHint: "構造体は単一の構造体列で支えられます。ここでそのフィールド構成を記述します",
   nameWithCode: "{name}（{code}）",
   emptyEqualsPublic: "空 = 公開",
   rolePublic: "公開 (public)",
@@ -1409,24 +1410,22 @@ export default {
   readCountLabel: "読み取り（エージェントツール呼び出し）",
   usageHint:
     "データは既存のログテーブル（エージェント呼び出しログ / アクション実行ログ / 定義変更トレース）から来ます。追加の計装はありません。公式の「アクティブユーザー数」は呼び出しログのユーザー別集計が必要ですが、このバージョンでは未実装です。",
-  pleaseFillPropIdFirst:
-    "先にプロパティ ID を入力して保存してから試算してください",
+  pleaseFillPropIdFirst: "先にプロパティ ID を入力して保存してから試算してください",
   matchedHops: "{matched} 件マッチ、{hops} レベル",
   pleaseEnterDisplayNameAndPropId: "表示名とプロパティ ID を入力してください",
   derivedConfigNotValidJson: "派生設定が有効な JSON ではありません",
   structFieldsNotValidJson: "構造体フィールドが有効な JSON ではありません",
   deletePropertyConfirm:
-    'プロパティ「{name}」とその定義を削除します（実データテーブル列には影響しません）。変更はまず保存待ちリストに入ります。削除を確認しますか？',
+    "プロパティ「{name}」とその定義を削除します（実データテーブル列には影響しません）。変更はまず保存待ちリストに入ります。削除を確認しますか？",
   deleteRelTypeConfirm:
-    '関係タイプ「{name}」を削除します（この関係のインスタンスレベルジャンプとグラフリンクに影響します。変更はまず保存待ちリストに入ります）。削除を確認しますか？',
+    "関係タイプ「{name}」を削除します（この関係のインスタンスレベルジャンプとグラフリンクに影響します。変更はまず保存待ちリストに入ります）。削除を確認しますか？",
   deleteActionTypeConfirm:
-    'アクションタイプ「{name}」を削除します（書き戻し/承認設定も削除されます。変更はまず保存待ちリストに入ります）。削除を確認しますか？',
+    "アクションタイプ「{name}」を削除します（書き戻し/承認設定も削除されます。変更はまず保存待ちリストに入ります）。削除を確認しますか？",
   metricKey: "指標キー",
   fnExposedHint:
-    '関数は AI にエージェント機能（ツール）として公開されます。変更は保存待ちリストに入ります。「保存」クリック後に有効になります。',
+    "関数は AI にエージェント機能（ツール）として公開されます。変更は保存待ちリストに入ります。「保存」クリック後に有効になります。",
   fnNamePlaceholder: "例: カメラオンライン率（%）",
-  exprBuiltinsHint:
-    "+ - * / と比較、三項式、{count} 個の組み込み関数に対応します。",
+  exprBuiltinsHint: "+ - * / と比較、三項式、{count} 個の組み込み関数に対応します。",
   collapse: "折りたたむ",
   viewBuiltins: "組み込み関数を表示",
   inputsJson: "入力 (JSON)",
@@ -1436,15 +1435,14 @@ export default {
   outputsHint: "戻り値構造を宣言し、エージェントツール説明に書き込みます",
   configJson: "形状設定 (JSON)",
   fnToolDescriptionPlaceholder:
-    'AI 向けツール説明: この関数が何を計算し、いつ呼ぶか。空欄の場合は「説明」にフォールバック',
+    "AI 向けツール説明: この関数が何を計算し、いつ呼ぶか。空欄の場合は「説明」にフォールバック",
   fnAggObjectKeyPlaceholder: "集約/オブジェクトコンテキストの主キー",
   fnInferredParamsHint:
-    'この関数には宣言された入力がありません。以下は式中の変数から推論されたものです。AI が呼び出し時に値を正しく渡せるよう、「編集」で入力を宣言することを推奨します。',
+    "この関数には宣言された入力がありません。以下は式中の変数から推論されたものです。AI が呼び出し時に値を正しく渡せるよう、「編集」で入力を宣言することを推奨します。",
   runSuccess: "実行に成功しました",
   fnKindAggregateHint:
     "関係チェーンに沿って関連オブジェクトを集約（count/sum/avg/min/max/first/last/collect_list/collect_set）。コンテキストとしてオブジェクト主キーが必要です",
-  fnKindHttpHint:
-    "外部 REST API を呼び出し、result_path で応答から値を取得します",
+  fnKindHttpHint: "外部 REST API を呼び出し、result_path で応答から値を取得します",
   fnKindModelHint:
     "プラットフォーム登録済みモデル（AI 管理 → モデル設定）を呼び出し、応答テキストを返します",
   fnKindExprHint:
@@ -1456,14 +1454,15 @@ export default {
   summarizePrompt: "要約: {'{{'}text{'}}'}",
   fnConfigHintAggregate:
     "link_path は関係 ID の配列（最大 3 レベル）。count の場合はプロパティを空にできます",
-  fnConfigHintHttp: "URL は http/https である必要があります。body_template は {'{{'}param{'}}'} プレースホルダーに対応",
+  fnConfigHintHttp:
+    "URL は http/https である必要があります。body_template は {'{{'}param{'}}'} プレースホルダーに対応",
   fnConfigHintModel:
     "model_id を空にするとデフォルトモデルを使用。プロンプトは {'{{'}param{'}}'} プレースホルダーに対応",
   configMustBeJsonObject: "形状設定は JSON オブジェクトである必要があります",
   jsonParseFailed: "JSON 解析に失敗しました",
   exprVarsNotDeclared: "式中の変数 {vars} が入力に宣言されていません",
   deleteFunctionConfirm:
-    '関数「{name}」を削除します。それを参照するエージェント機能は無効になります。変更はまず保存待ちリストに入ります。削除を確認しますか？',
+    "関数「{name}」を削除します。それを参照するエージェント機能は無効になります。変更はまず保存待ちリストに入ります。削除を確認しますか？",
   functionColonName: "関数: {name}（{kind}）",
   fnExprPlaceholder: "例: round(percent(online_count, total_count), 1)",
   titleReasonPlaceholder: "タイトル / 根拠キーワード",
@@ -1486,23 +1485,23 @@ export default {
   upstreamDecisions: "上流の意思決定 {count}",
   downstreamDecisions: "下流の意思決定 {count}",
   jsonParseFailedColon: "JSON 解析に失敗しました: {msg}",
-  executeDecisionConfirm: '意思決定「{title}」を実行します',
+  executeDecisionConfirm: "意思決定「{title}」を実行します",
   actionWithCode: "（アクション {action}）",
   deleteDecisionConfirm:
-    '意思決定「{title}」とその {options} オプション、{evidence} 証拠項目、{impacts} 影響記録を削除します。復元できません。削除を確認しますか？',
+    "意思決定「{title}」とその {options} オプション、{evidence} 証拠項目、{impacts} 影響記録を削除します。復元できません。削除を確認しますか？",
   notFilledParen: "（未記入）",
   emptyParen: "（空）",
   nodeTraceResult: "{op} · left {left} · right {right} → {result}",
   typeRelationCount: "{typeCount} タイプ / {relationCount} 関係",
   importExportTitle: "インポート / エクスポート",
   exportImportDomainNote:
-    'エクスポート/インポートは現在のオントロジー「{name}」（ドメイン全体）に適用され、このオブジェクトタイプに限定されません。',
+    "エクスポート/インポートは現在のオントロジー「{name}」（ドメイン全体）に適用され、このオブジェクトタイプに限定されません。",
   exportJson: "JSON をエクスポート",
   exportJsonHint:
     "現在のオントロジーのオブジェクト/プロパティ/関係/アクション定義をダウンロード。移行またはバックアップ用",
   selectJsonFile: "JSON ファイルを選択",
   importTextPlaceholder:
-    'オントロジー JSON を貼り付けるか、上の「JSON ファイルを選択」をクリックして読み取り。形式はエクスポートと一致します。',
+    "オントロジー JSON を貼り付けるか、上の「JSON ファイルを選択」をクリックして読み取り。形式はエクスポートと一致します。",
   stageImportNote:
     "ステージインポート = 変更がまず保存待ちリストに入る。直接インポート = 即時書き込みで同名定義を上書きする可能性あり（2 回目の確認付き）。",
   tableCountOption: "{name}（{count} テーブル）",
@@ -1510,14 +1509,15 @@ export default {
   exportSummary:
     "{objects} オブジェクト / {properties} プロパティ / {links} 関係 / {actions} アクションをエクスポートしました",
   jsonParseFailedCheckContent: "JSON 解析に失敗しました。貼り付けた内容を確認してください",
-  notValidOntologyMissingObjects: "有効なオントロジー定義ではありません（オブジェクトがありません）",
+  notValidOntologyMissingObjects:
+    "有効なオントロジー定義ではありません（オブジェクトがありません）",
   importDirectlyConfirm:
     "インポートする内容はオントロジーに**直接書き込まれます**（保存待ちリスト経由ではありません）。既存の同名定義を上書きする可能性があります。直接インポートを確認しますか？",
   importedObjects: "{count} オブジェクトをインポートしました",
-  appliedTemplate: 'テンプレート「{name}」を適用しました',
+  appliedTemplate: "テンプレート「{name}」を適用しました",
   totalCountShort: "合計 {count}",
   groupHint:
-    'グループは**オブジェクトタイプ横断**の多対多グループです（1 対 1 の「オントロジーに所属」とは異なる）。フィルターと一括操作に使用できます',
+    "グループは**オブジェクトタイプ横断**の多対多グループです（1 対 1 の「オントロジーに所属」とは異なる）。フィルターと一括操作に使用できます",
   valueTypeHint:
     "値タイプは基本タイプ（email/URL/UUID/列挙値...）の上の**意味論ラッパー**で、制約とバージョンを加えます。プロパティはそれを参照できます",
   sharedHint:
@@ -1539,14 +1539,14 @@ export default {
   validatePass: "検証に合格しました",
   validateNotPass: "検証に失敗しました",
   rejectedDetail: "{base}; 拒否: {detail}",
-  stillReferencedCount: '「{label}」にはまだ {count} 件の参照があります: {refs}',
-  deleteConfirmLabel: '「{label}」を削除します。確認しますか？',
+  stillReferencedCount: "「{label}」にはまだ {count} 件の参照があります: {refs}",
+  deleteConfirmLabel: "「{label}」を削除します。確認しますか？",
   foundNonCompliant: "{count} 件の非適合を検出",
   parenCode: "（{code}）",
   countUnit: "{count}",
   compareSelectedCount: "選択したものを比較 ({count})",
   scenarioInfoAlert:
-    'シナリオ内の編集はサンドボックスにのみ存在し、実データには影響しません。シナリオを読むと「ベースライン + シナリオ差分」が表示されます。マージ時のみ単一トランザクションでプライマリオントロジーに書き戻されます。',
+    "シナリオ内の編集はサンドボックスにのみ存在し、実データには影響しません。シナリオを読むと「ベースライン + シナリオ差分」が表示されます。マージ時のみ単一トランザクションでプライマリオントロジーに書き戻されます。",
   scenarioNamePlaceholder: "例: 計画 A - まず名前を変更して観察",
   mergeActionHint:
     "公式: シナリオは**アクションタイプを通じて**マージされます。そのアクションの送信条件が誰にマージを許可するかを決めます（空欄 = 制限なし）",
@@ -1556,21 +1556,20 @@ export default {
   modelResultsNotice: "{count} 件のモデル予測結果があります。{note}",
   compareAlert: "同じオブジェクトが異なるシナリオでどうなるか — 異なる選択肢を比較するため",
   mergeScenarioConfirm:
-    'シナリオ「{name}」の {count} オブジェクト変更を**単一トランザクションで実データテーブルに書き込みます**。いずれかの失敗で全ロールバック。自動では元に戻せません。マージを確認しますか？',
+    "シナリオ「{name}」の {count} オブジェクト変更を**単一トランザクションで実データテーブルに書き込みます**。いずれかの失敗で全ロールバック。自動では元に戻せません。マージを確認しますか？",
   discardScenarioConfirm:
-    'シナリオ「{name}」の {count} 件の編集を破棄します。これらの変更は反映されません。破棄を確認しますか？',
+    "シナリオ「{name}」の {count} 件の編集を破棄します。これらの変更は反映されません。破棄を確認しますか？",
   deleteScenarioConfirm:
-    'シナリオ「{name}」とその {count} 件の編集記録を削除します。復元できません（実データには影響しません）。削除を確認しますか？',
+    "シナリオ「{name}」とその {count} 件の編集記録を削除します。復元できません（実データには影響しません）。削除を確認しますか？",
   selectAtLeastTwoScenarios: "少なくとも 2 つのシナリオを選択してください",
   expireScenariosConfirm:
-    'TTL を超えたすべてのシナリオを「期限切れ」とマークし、その編集記録を削除します（公式デフォルト 31 日）。期限切れの変更は適用されず復元できません。クリーンアップを確認しますか？',
+    "TTL を超えたすべてのシナリオを「期限切れ」とマークし、その編集記録を削除します（公式デフォルト 31 日）。期限切れの変更は適用されず復元できません。クリーンアップを確認しますか？",
   expiredScenarios: "{count} シナリオを期限切れにしました",
   resourceAclAlert:
     "このオブジェクトタイプの定義を誰が見る/編集する/管理できるかを制御します。タイプを見ることはデータを見ることと同じではありません — データは以下の行レベル・列レベルポリシーで管理されます。",
   leaveEmptyEveryoneCanView: "空欄 = 全員に表示",
   leaveEmptyEveryoneCanEdit: "空欄 = 全員が編集可能",
-  leaveEmptyEveryoneCanManage:
-    "空欄 = 全員が管理可能（権限ポリシーの変更を含む）",
+  leaveEmptyEveryoneCanManage: "空欄 = 全員が管理可能（権限ポリシーの変更を含む）",
   countItems: "{count}",
   rowPolicyAlert:
     "読み取り時のみ有効: ユーザーが読めるオブジェクトインスタンスをフィルターします。基盤データには影響せず、下流のエクスポートには伝播しません。空（有効な許可ポリシーなし）= すべて表示。",
@@ -1582,9 +1581,9 @@ export default {
   unreadableProps: "読み取り不可プロパティ: {list}",
   exprSupportHint: "and / or / not / in と比較に対応します。",
   resetAclConfirm:
-    'このオブジェクトタイプのリソース権限設定をクリアし、「全員に表示/編集可能」に戻します。行レベル・列レベルポリシーは影響を受けません。復元を確認しますか？',
+    "このオブジェクトタイプのリソース権限設定をクリアし、「全員に表示/編集可能」に戻します。行レベル・列レベルポリシーは影響を受けません。復元を確認しますか？",
   deletePolicyConfirm:
-    '行レベルポリシー「{name}」を削除します。削除後、ポリシーはフィルタリングに参加しなくなります（これが唯一の許可ポリシーの場合、全員がすべてのオブジェクトの可視性を取り戻します）。削除を確認しますか？',
+    "行レベルポリシー「{name}」を削除します。削除後、ポリシーはフィルタリングに参加しなくなります（これが唯一の許可ポリシーの場合、全員がすべてのオブジェクトの可視性を取り戻します）。削除を確認しますか？",
   graphTemplate: "グラフテンプレート",
   saveView: "ビューを保存",
   batchDeleteSelected: "一括削除 ({count})",
@@ -1592,11 +1591,11 @@ export default {
   selectedCountHint: "{count} オブジェクトタイプを選択（一括削除 / クリア）",
   enterOrSelectRoleCode: "ロールコードを入力/選択",
   viewNameDefault: "ビュー {time}",
-  noPathFound: '「{a}」と「{b}」の間に経路が見つかりません',
+  noPathFound: "「{a}」と「{b}」の間に経路が見つかりません",
   graphFileName: "ontology-graph",
-  loadedView: '「{name}」を読み込みました',
+  loadedView: "「{name}」を読み込みました",
   deleteViewConfirm:
-    'グラフビュー「{name}」とそのすべてのバージョン記録を削除します。復元できません。',
+    "グラフビュー「{name}」とそのすべてのバージョン記録を削除します。復元できません。",
   indexBuildAlert:
     "インデックス構築はオブジェクトタイプの基盤テーブルに対して実際に CREATE INDEX を実行します。状態「ready」は利用可能であることを意味します（公式の緑チェックに相当）。",
   primaryKeyParen: "（主キー）",
@@ -1612,9 +1611,9 @@ export default {
   highPriority: "高",
   mediumPriority: "中",
   deleteIndexConfirm:
-    'インデックス「{index}」を削除し、**データベースで実際に DROP します**。復元できません。削除を確認しますか？',
+    "インデックス「{index}」を削除し、**データベースで実際に DROP します**。復元できません。削除を確認しますか？",
   markExpiredConfirm:
-    '「{name}」の {count} 個の準備完了インデックスを期限切れとマークし、再構築を要求します。確認しますか？',
+    "「{name}」の {count} 個の準備完了インデックスを期限切れとマークし、再構築を要求します。確認しますか？",
   manualMaintenance: "手動メンテナンス",
   viewInfoAlert:
     "ビューはオブジェクトデータの再利用可能な表示です。デフォルトビューはオブジェクトタイプから自動生成されます。編集すると手動メンテナンスになり、以後のオブジェクトタイプ変更は自動同期されなくなります。",
@@ -1630,7 +1629,7 @@ export default {
   activeFiltersSummary: "このタブで有効なフィルター: {filters}",
   customViewName: "{code} カスタムビュー",
   deleteObjectViewConfirm:
-    'ビュー「{name}」とその {count} 過去バージョンを削除します。復元できません。削除を確認しますか？',
+    "ビュー「{name}」とその {count} 過去バージョンを削除します。復元できません。削除を確認しますか？",
   rollbackViewConfirm:
     "ビューを v{version} にロールバックします（現在の内容は先に新バージョンとして保存されます）。ロールバックを確認しますか？",
   linkCopied: "リンクをコピーしました: {url}",
@@ -1645,30 +1644,30 @@ export default {
   anonymous: "匿名",
   commentPlaceholder: "あなたの意見、レビュー結論、追加メモを書いてください...",
   discardTaskConfirm:
-    'タスク「{resource}」の変更を破棄します（分岐に含まれなくなります）。確認しますか？',
+    "タスク「{resource}」の変更を破棄します（分岐に含まれなくなります）。確認しますか？",
   mergeProposalConfirm:
-    '提案「{title}」の {count} 件の変更を**プライマリオントロジーに書き込みます**（自動では元に戻せません。戻すには各項目を逆順に編集する必要があります）。マージを確認しますか？',
+    "提案「{title}」の {count} 件の変更を**プライマリオントロジーに書き込みます**（自動では元に戻せません。戻すには各項目を逆順に編集する必要があります）。マージを確認しますか？",
   closeProposalConfirm:
-    '提案「{title}」を閉じます。その {count} 件の変更は反映されません。**閉じた提案は再オープンできません。** 閉じることを確認しますか？',
+    "提案「{title}」を閉じます。その {count} 件の変更は反映されません。**閉じた提案は再オープンできません。** 閉じることを確認しますか？",
   taskHash: "タスク #{id}",
   versionInfoAlert:
     "バージョンは保存待ち変更を保存するときに生成されます。過去バージョンを復元すると、オブジェクトタイプのプロパティ/関係/アクション/関数定義が選択したバージョンで上書きされます。変更はまず保存待ちリストに入り、「保存」クリック後に有効になります。",
   versionCompareTitle: "バージョン比較 v{version}",
   computingDiff: "差分を計算中...",
   restoreVersionConfirm:
-    '「{name}」の定義をバージョン v{version} に復元します（現在のプロパティ/関係/アクション/関数定義を上書き）。変更はまず保存待ちリストに入り、「保存」クリック後に有効になります。復元を確認しますか？',
+    "「{name}」の定義をバージョン v{version} に復元します（現在のプロパティ/関係/アクション/関数定義を上書き）。変更はまず保存待ちリストに入り、「保存」クリック後に有効になります。復元を確認しますか？",
   publishCurrentConfirm:
-    '「{name}」の**現在の定義**を新バージョンとして公開します（後で比較/復元/ロールバックできる不変バージョンスナップショットを作成）。公開を確認しますか？',
+    "「{name}」の**現在の定義**を新バージョンとして公開します（後で比較/復元/ロールバックできる不変バージョンスナップショットを作成）。公開を確認しますか？",
   rollbackVersionConfirm:
-    '「{name}」の定義をバージョン v{version} に**即時ロールバック**します。「復元」と異なり、ロールバックは**現在の定義を直接上書きして即時有効**になり（保存待ちリスト経由ではありません）、元に戻せません。ロールバックを確認しますか？',
+    "「{name}」の定義をバージョン v{version} に**即時ロールバック**します。「復元」と異なり、ロールバックは**現在の定義を直接上書きして即時有効**になり（保存待ちリスト経由ではありません）、元に戻せません。ロールバックを確認しますか？",
   batchExecuteActionCount: "アクションを一括実行（{count} 選択）",
   expandSteps: "{count} ステップを展開",
   linkLabelFull: "{name}（{direction}{other}）",
   instanceGraphHint:
-    '（例: カメラ、アラーム記録）。エッジは実際に関係タイプで接続されます。ノードをクリックするとそのインスタンスにジャンプします。タイプレベルのグラフは「関係タイプ → 可視化」を参照してください。',
+    "（例: カメラ、アラーム記録）。エッジは実際に関係タイプで接続されます。ノードをクリックするとそのインスタンスにジャンプします。タイプレベルのグラフは「関係タイプ → 可視化」を参照してください。",
   willExecuteOnSelected: "選択した {count} インスタンスに 1 つずつ実行します",
   targetInstanceCount: "{count}: {keys}",
-  pivotFound: '「{name}」に沿って {count} 件の {other} が見つかりました',
+  pivotFound: "「{name}」に沿って {count} 件の {other} が見つかりました",
   instanceInfo: "インスタンス: {name}（{code} #{key}）",
   actionTitleWithCount: "{name}（{count} インスタンス）",
   executedCount: "監査トレース付きで {count} インスタンスにアクションを実行しました",
@@ -1684,7 +1683,7 @@ export default {
   relationOwnPropsNotSupported:
     "関係タイプ自身のプロパティ（オブジェクトで支えられたリンク）は未対応です",
   relationSecurityAlert:
-    '関係権限は 2 つの端点オブジェクトタイプの基盤データソース権限に従います。フィールドレベルの制限は各オブジェクトタイプの「セキュリティ」サブページにあります。',
+    "関係権限は 2 つの端点オブジェクトタイプの基盤データソース権限に従います。フィールドレベルの制限は各オブジェクトタイプの「セキュリティ」サブページにあります。",
   datasourceAlert:
     "多対多は結合テーブルデータセットで支えられる必要があります。オブジェクトで支えられたリンクには中間オブジェクトタイプが必要です。関連設定は現在のバージョンでは完全に対応していません。",
   foreignKeyJoinHint:
@@ -1694,8 +1693,8 @@ export default {
   loadingCleanup: "クリーンアップ提案を読み込み中...",
   cleanupSuggestClean: "クリーンアップを提案",
   deprecateConfirm:
-    '「{name}」を非推奨とマークします。変更はまず保存待ちリストに入ります。確認しますか？',
-  instanceVsTypeLevelHint: '（実データ行）、「オブジェクトタイプ / 関係タイプ」の',
+    "「{name}」を非推奨とマークします。変更はまず保存待ちリストに入ります。確認しますか？",
+  instanceVsTypeLevelHint: "（実データ行）、「オブジェクトタイプ / 関係タイプ」の",
   demoLoadedCount: "{count} 項目を読み込みました",
   demoNotLoaded: "未読み込み",
   willDeleteLoadedDemoItems: "読み込んだ {count} 個のデモ項目を削除します",

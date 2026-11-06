@@ -211,8 +211,7 @@ export default {
     '스마트 질의의 엔지니어링 스위치입니다. 저장 후 즉시 적용됩니다. "실험적"으로 표시된 항목은 기본 꺼져 있으며, 비교 검증 후에만 활성화해야 합니다.',
   leaveEmptyDefault: "비우면 기본값",
   pleaseInputQuestion: "먼저 질문을 입력하세요",
-  removeSessionMsg:
-    '세션 "{title}"과(와) 모든 Q&A 기록을 삭제하며, 되돌릴 수 없습니다.',
+  removeSessionMsg: '세션 "{title}"과(와) 모든 Q&A 기록을 삭제하며, 되돌릴 수 없습니다.',
   removeSession: "세션 삭제",
   tool: "도구",
   queryDone: "질의 완료",
@@ -252,16 +251,14 @@ export default {
   settingEmptySelfCorrect: "빈 결과 자가 수정",
   settingEmptySelfCorrectTip: "결과가 비면 힌트를 넣어 한 번 재생성합니다.",
   settingRecall: "다중 경로 회상 (RRF 융합)",
-  settingRecallTip:
-    "벡터/키워드/온톨로지/엔티티 4경로 회상을 테이블 선택 전에 융합합니다.",
+  settingRecallTip: "벡터/키워드/온톨로지/엔티티 4경로 회상을 테이블 선택 전에 융합합니다.",
   settingTwoStage: "2단계 계획 (진정한 분해)",
   settingTwoStageTip: "계획을 먼저 세우고 SQL을 작성합니다. 측정상 이득이 없어 기본 꺼짐.",
   settingToolAgent: "도구 기반 에이전트",
   settingToolAgentTip:
     "모델이 검색 도구를 자율적으로 호출하게 합니다. 왕복이 느려지므로 기본 꺼짐.",
   settingSelfConsistency: "자가 일관성 후보 수",
-  settingSelfConsistencyTip:
-    "> 1이면 여러 번 샘플링하고 투표하여 안정성을 높이지만 느려집니다.",
+  settingSelfConsistencyTip: "> 1이면 여러 번 샘플링하고 투표하여 안정성을 높이지만 느려집니다.",
   example1: "판매 주문이 총 몇 건인가요",
   example2: "부서별 판매 금액은 얼마인가요",
   example3: "카메라의 상태 분포를 보여주세요",
@@ -329,14 +326,12 @@ export default {
   participantAgents: "참여 에이전트 ({count})",
   noParticipantAgent: "역량 속성이 매칭된 활성화 에이전트가 없습니다",
   governanceInspection: "거버넌스 점검 (후보 액션)",
-  governanceInspectionSub:
-    "거버넌스/품질/보안/승인에 대한 규칙 스캔, 후보 자율 액션 생성",
+  governanceInspectionSub: "거버넌스/품질/보안/승인에 대한 규칙 스캔, 후보 자율 액션 생성",
   oneClickFix: "원클릭 자동 수정",
   candidatesCount: "후보 {count}건",
   noRiskSuggest: "위험 제안이 없습니다",
   autoHandle: "자동 처리",
-  manualHandle:
-    "이 액션은 수동 처리 항목입니다. 해당 모듈에서 처리하세요",
+  manualHandle: "이 액션은 수동 처리 항목입니다. 해당 모듈에서 처리하세요",
   executed: "실행됨",
   autoFixConfirm:
     "수정 가능한 모든 항목 (민감 스캔 / 설명 완성 / DQ 재스캔)이 자동 실행됩니다. 계속하시겠습니까?",
@@ -345,8 +340,7 @@ export default {
   autoFixDone: "수정 완료: {fixed}/{attempted}",
   autoFixFailed: "자동 수정 실패",
   derivedMetrics: "온톨로지 파생 지표",
-  derivedMetricsSub:
-    "기본 지표에서 파생 지표를 자동 생성 (분자/분모/제수 규칙 엔진)",
+  derivedMetricsSub: "기본 지표에서 파생 지표를 자동 생성 (분자/분모/제수 규칙 엔진)",
   derivedMetric: "파생 지표",
   baseMetrics: "기본 지표",
   computedValue: "계산값",
@@ -376,8 +370,7 @@ export default {
   aipPlugins: "AIP 플러그인 ({count})",
   removeFailed: "제거 실패",
   anomalyCenter: "AI 이상 탐지 및 의사결정 센터",
-  anomalyCenterSub:
-    "일별 집계로 기준선과 비교하여 이상을 식별 · 집계 액션 의사결정 제안",
+  anomalyCenterSub: "일별 집계로 기준선과 비교하여 이상을 식별 · 집계 액션 의사결정 제안",
   rescanAnomaly: "이상 재스캔",
   refreshDecision: "의사결정 새로고침",
   anomalies: "이상 ({count})",
@@ -385,8 +378,7 @@ export default {
   decisionSuggestions: "의사결정 제안 ({count})",
   noDecision: "대기 중인 의사결정이 없습니다",
   impactPropagation: "영향 전파 및 데이터 품질 규칙",
-  impactPropagationSub:
-    "종단 간 영향 전파 (다운스트림 테이블/지표) · 데이터 품질 규칙 엔진",
+  impactPropagationSub: "종단 간 영향 전파 (다운스트림 테이블/지표) · 데이터 품질 규칙 엔진",
   propTablePlaceholder: "메인 테이블 이름 입력, 예: video_alarm_records",
   propagate: "전파",
   refreshRules: "규칙 새로고침",
@@ -422,8 +414,7 @@ export default {
   sensitiveVisible: "민감 표시 {value}",
   accessAllowedList: "접근 가능: {list}",
   aipGuardrails: "AIP 가드레일",
-  aipGuardrailsSub:
-    "ABAC / 데이터 도메인 / 민감 제거 / 승인 / 감사 / 버전 가드레일 상태",
+  aipGuardrailsSub: "ABAC / 데이터 도메인 / 민감 제거 / 승인 / 감사 / 버전 가드레일 상태",
   objectBrowser: "객체 데이터 브라우저",
   objectBrowserSub: "실제 테이블 데이터의 페이지 탐색 (객체 인스턴스 미리보기)",
   browseTablePlaceholder: "테이블 이름 입력, 예: video_alarm_records",

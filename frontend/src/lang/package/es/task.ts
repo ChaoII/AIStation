@@ -143,7 +143,8 @@ export default {
   condition: "Condición",
   control: "Control",
   all: "Todos",
-  funcPlaceholder: "Debe definir handler(*args, **kwargs), puede recibir valores ascendentes y variables",
+  funcPlaceholder:
+    "Debe definir handler(*args, **kwargs), puede recibir valores ascendentes y variables",
   argsPlaceholder: "Separados por comas, p. ej. a, b",
   kwargsPlaceholder: 'JSON, p. ej. {"key": "v"}',
   createNodeType: "Crear tipo de nodo",
@@ -159,7 +160,8 @@ export default {
   createSuccess: "Creado correctamente",
   updateFailed: "La actualización falló",
   createFailed: "La creación falló",
-  deleteNodeTypeConfirm: "¿Seguro que desea eliminar los tipos de nodo de flujo de trabajo seleccionados?",
+  deleteNodeTypeConfirm:
+    "¿Seguro que desea eliminar los tipos de nodo de flujo de trabajo seleccionados?",
 
   // ===== workflow definition =====
   flowName: "Nombre del flujo",
@@ -176,7 +178,8 @@ export default {
   executeNow: "Ejecutar ahora",
   deleteWorkflowConfirm: "¿Seguro que desea eliminar los flujos de trabajo seleccionados?",
   publishConfirmTitle: "Confirmar publicación",
-  publishConfirm: "¿Seguro que desea publicar este flujo de trabajo? Se puede ejecutar después de publicarlo.",
+  publishConfirm:
+    "¿Seguro que desea publicar este flujo de trabajo? Se puede ejecutar después de publicarlo.",
   workflowIdMissing: "El ID del flujo de trabajo no existe",
   publishSuccess: "Publicado correctamente",
   publishFailed: "La publicación falló",
@@ -217,14 +220,16 @@ export default {
   validateResult: "Resultado de la validación del flujo de trabajo",
   errorsTitle: "Errores ({count}):",
   warningsTitle: "Advertencias ({count}):",
-  validatePassWithWarnings: "La validación del flujo de trabajo pasó, pero con advertencias ({count}):",
+  validatePassWithWarnings:
+    "La validación del flujo de trabajo pasó, pero con advertencias ({count}):",
   validateFailed: "La validación falló",
   deleteNodeTitle: "Eliminar nodo",
   deleteNodeConfirmSingle:
     "¿Seguro que desea eliminar este nodo? No se puede recuperar después de la eliminación.",
   nodeDeleteSuccess: "Nodo eliminado correctamente",
   deleteEdgeTitle: "Eliminar arista",
-  deleteEdgeConfirm: "¿Seguro que desea eliminar esta arista? No se puede recuperar después de la eliminación.",
+  deleteEdgeConfirm:
+    "¿Seguro que desea eliminar esta arista? No se puede recuperar después de la eliminación.",
   edgeDeleteSuccess: "Arista eliminada correctamente",
   saveWorkflowFailed: "Error al guardar el flujo de trabajo",
 
@@ -241,7 +246,8 @@ export default {
   kvKeyPlaceholder: "Clave",
   kvValuePlaceholder: "Valor (admite interpolación de {'{{'}variable{'}}'})",
   addParam: "Añadir parámetro",
-  kvHint: "Argumentos de palabra clave en forma clave-valor, los valores de variables pueden referenciar otras variables",
+  kvHint:
+    "Argumentos de palabra clave en forma clave-valor, los valores de variables pueden referenciar otras variables",
   descLabel: "Descripción",
   inputDesc: "Introduzca la descripción",
   deleteNode: "Eliminar nodo",

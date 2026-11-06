@@ -26,6 +26,6 @@ export function getAiToolCalls(agentId?: number, limit = 20) {
   return request({
     url: "/ai/logs/tool-calls",
     method: "get",
-    params: { agent_id: agentId, limit }
+    params: { agent_id: agentId, limit },
   });
 }

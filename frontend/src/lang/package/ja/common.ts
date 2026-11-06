@@ -65,7 +65,8 @@ export default {
   filter: "列の絞り込み",
   view: "表示",
   delTitle: "削除の確認",
-  delConfirmMessage: "削除してよろしいですか？{count}件の項目が削除されます。この操作は取り消せません。",
+  delConfirmMessage:
+    "削除してよろしいですか？{count}件の項目が削除されます。この操作は取り消せません。",
   selectDeleteData: "削除する項目を選択してください",
   exportTitle: "データのエクスポート",
   fileName: "ファイル名",

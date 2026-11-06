@@ -996,24 +996,31 @@ export default {
   relationTypeNameEGDepends: "Nombre del tipo de relación, p. ej. depende",
   annotationDeletedAndIndexUpdated: "Anotación eliminada e índice actualizado",
   annotationAddedAndIndexUpdated: "Anotación añadida e índice actualizado",
-  validateValueAgainstValueTypeConstraints: "Validar el valor contra las restricciones del tipo de valor",
+  validateValueAgainstValueTypeConstraints:
+    "Validar el valor contra las restricciones del tipo de valor",
   realTableColumnMappingOptional: "Mapeo de columnas de la tabla real (opcional)",
   standardViewAuto: "Vista estándar (automática)",
   noPendingPublishRequests: "No hay solicitudes de publicación pendientes",
   leaveEmptyToAutoDeriveByType: "Déjalo vacío para derivar automáticamente por tipo",
   noEditsInThisScenarioYet: "Aún no hay ediciones en este escenario",
-  pleaseCreateAndSelectAnEvalSetFirst: "Por favor, crea y selecciona primero un conjunto de evaluación",
+  pleaseCreateAndSelectAnEvalSetFirst:
+    "Por favor, crea y selecciona primero un conjunto de evaluación",
   whoChangedWhatWhen: "Quién cambió qué y cuándo",
   notExecutedOrNoFieldChanges: "No ejecutado o sin cambios de campos",
-  leaveEmptyToAutoDeriveByRelationName: "Déjalo vacío para derivar automáticamente por nombre de relación",
-  columnLevelSecurityPropertyVisibilityRoles: "Seguridad a nivel de columna (roles de visibilidad de propiedades)",
+  leaveEmptyToAutoDeriveByRelationName:
+    "Déjalo vacío para derivar automáticamente por nombre de relación",
+  columnLevelSecurityPropertyVisibilityRoles:
+    "Seguridad a nivel de columna (roles de visibilidad de propiedades)",
   entityUpdatedWithRelationCascade: "Entidad actualizada (con cascada de relaciones)",
-  selectedTimePropertyHasNoTimeValues: "La propiedad de tiempo seleccionada no tiene valores de tiempo",
+  selectedTimePropertyHasNoTimeValues:
+    "La propiedad de tiempo seleccionada no tiene valores de tiempo",
   notLinkedImportedByExternalSync: "No enlazado (importado por sincronización externa)",
-  thisVersionHasNoDiffFromCurrentDefinition: "Esta versión no tiene diferencias con la definición actual",
+  thisVersionHasNoDiffFromCurrentDefinition:
+    "Esta versión no tiene diferencias con la definición actual",
   pleaseFillAtLeastOneFieldToWrite: "Por favor, completa al menos un campo para escribir",
   selectCategoryEmptyUncategorized: "Selecciona categoría (vacío = sin categoría)",
-  eGAddAMaintenanceStatusFieldToCameras: "p. ej. añadir un campo de estado de mantenimiento a las cámaras",
+  eGAddAMaintenanceStatusFieldToCameras:
+    "p. ej. añadir un campo de estado de mantenimiento a las cámaras",
   instanceLevelGraphRealObjectsAsNodes: "Grafo a nivel de instancia (objetos reales como nodos)",
   modelingAnalysisStructureDiagnosisSuggestions:
     "Análisis de modelado (diagnóstico de estructura y sugerencias)",
@@ -1023,19 +1030,27 @@ export default {
   whyThisDecisionWhatIsTheBasis: "¿Por qué esta decisión? ¿Cuál es la base?",
   availableObjectPropertiesWriteColumnNamesAnd:
     "Propiedades de objeto disponibles (escribe nombres de columna) y",
-  layoutMemoryClearedReLayoutAutomatically: "Memoria de diseño borrada, reorganizar automáticamente",
+  layoutMemoryClearedReLayoutAutomatically:
+    "Memoria de diseño borrada, reorganizar automáticamente",
   expandRelatedEntitiesByKnowledgeGraphWhenEnabled:
     "Expandir entidades relacionadas mediante el grafo de conocimiento cuando esté habilitado",
-  searchInstancesFuzzyMatchOnTitleProperty: "Buscar instancias (coincidencia difusa en la propiedad de título)",
-  searchHitsTheseWordsPressEnterToAdd: "La búsqueda acierta estas palabras, pulsa Intro para añadir",
-  searchFailedSuggestRelatedChunksAndAnnotate: "¿Falló la búsqueda? Sugerir chunks relacionados y anotar",
-  noInstancesToPreviewForThisObjectType: "No hay instancias para previsualizar en este tipo de objeto",
+  searchInstancesFuzzyMatchOnTitleProperty:
+    "Buscar instancias (coincidencia difusa en la propiedad de título)",
+  searchHitsTheseWordsPressEnterToAdd:
+    "La búsqueda acierta estas palabras, pulsa Intro para añadir",
+  searchFailedSuggestRelatedChunksAndAnnotate:
+    "¿Falló la búsqueda? Sugerir chunks relacionados y anotar",
+  noInstancesToPreviewForThisObjectType:
+    "No hay instancias para previsualizar en este tipo de objeto",
   runFunctionWritesNoData: "Ejecutar función (no escribe datos)",
   derivedByComparingObjectSnapshotsAfterExecution:
     "Derivado al comparar instantáneas de objetos tras la ejecución",
-  noFunctionsClickNewFunctionAtTopRight: "No hay funciones, haz clic en 'Nueva función' en la parte superior derecha",
-  noRulesConfiguredUsingWhitelistFallback: "No hay reglas configuradas (usando el respaldo de lista blanca)",
-  pleaseSelectAnOntologyDomainOnTheLeftFirst: "Por favor, selecciona primero un dominio de ontología a la izquierda",
+  noFunctionsClickNewFunctionAtTopRight:
+    "No hay funciones, haz clic en 'Nueva función' en la parte superior derecha",
+  noRulesConfiguredUsingWhitelistFallback:
+    "No hay reglas configuradas (usando el respaldo de lista blanca)",
+  pleaseSelectAnOntologyDomainOnTheLeftFirst:
+    "Por favor, selecciona primero un dominio de ontología a la izquierda",
   pleaseEnterFunctionNameCodeAndOwningObjectType:
     "Por favor, ingresa el nombre de la función, el código y el tipo de objeto propietario",
   pleaseEnterActionNameCodeAndTargetObjectType:
@@ -1044,9 +1059,11 @@ export default {
   versionPublishedForThisObjectTypeAtDecisionTime:
     "Versión publicada para este tipo de objeto en el momento de la decisión",
   objectPKOptionalOnlyTypeAndColumn: "PK del objeto (opcional, solo tipo y columna)",
-  stagedClickSaveAtTopRightToApply: "Preparado (haz clic en 'Guardar' en la parte superior derecha para aplicar)",
+  stagedClickSaveAtTopRightToApply:
+    "Preparado (haz clic en 'Guardar' en la parte superior derecha para aplicar)",
   thisObjectTypeIsNotMaterializedYet: "Este tipo de objeto aún no está materializado",
-  nameFromTargetSideEGContainsDevices: "Nombre desde el lado objetivo, p. ej. 'contiene dispositivos'",
+  nameFromTargetSideEGContainsDevices:
+    "Nombre desde el lado objetivo, p. ej. 'contiene dispositivos'",
   destructiveChangesExistEnterEntityNameToConfirm:
     "Existen cambios destructivos, ingresa el nombre de la entidad para confirmar",
   requiresApprovalBeforeExecutionOtherwiseOnlyAPendingFormIsGenerated:
@@ -1068,7 +1085,8 @@ export default {
     "La vista de panel contiene información clave para la incrustación por otras aplicaciones",
   higherDegreeMeansMoreWorthDefiningActionsAndGovernance:
     "Un grado mayor significa más valor en definir acciones y gobernanza",
-  noNodesRightClickCanvasOrClickNewNode: "No hay nodos, haz clic derecho en el lienzo o haz clic en 'Nuevo nodo'",
+  noNodesRightClickCanvasOrClickNewNode:
+    "No hay nodos, haz clic derecho en el lienzo o haz clic en 'Nuevo nodo'",
   editChunkContentSavingWillReVectorizeThisChunk:
     "Edita el contenido del chunk; al guardar se re-vectorizará este chunk",
   allowEndUsersToEditThisObjectTypeWritebackWhenEnabled:
@@ -1169,7 +1187,8 @@ export default {
   chunkSizeValue: "Tamaño del chunk {size}",
   batchDeleteWithCount: "Eliminar en lote ({count})",
   exportFaqCache: "Exportar caché de preguntas frecuentes",
-  qaInputPlaceholder: "Ingresa una pregunta; la IA responde desde la base de conocimiento y cita fuentes",
+  qaInputPlaceholder:
+    "Ingresa una pregunta; la IA responde desde la base de conocimiento y cita fuentes",
   pageLoc: "Página {page}",
   lineLoc: "Línea {line}",
   cantLocateLinePage: "No se puede localizar la línea/página",
@@ -1220,17 +1239,23 @@ export default {
   suggestRelatedMsg:
     "Se detectaron {count} chunks relacionados, de los cuales {unhit} no fueron acertados. Puedes anotar primero y luego recuperar de nuevo.",
   suggestRelatedHitMsg: "Los chunks relacionados detectados ya han sido acertados.",
-  fileUploadedMsg: 'Subido "{name}", procesando. Por favor, compruébalo en segundo plano más tarde.',
-  deleteDocConfirm: '¿Eliminar el documento "{name}"? Los chunks también se eliminarán y no se pueden recuperar!',
-  batchDeleteDocsConfirm: "Se eliminarán {count} documentos (todos los datos/chunks), no se pueden recuperar!",
+  fileUploadedMsg:
+    'Subido "{name}", procesando. Por favor, compruébalo en segundo plano más tarde.',
+  deleteDocConfirm:
+    '¿Eliminar el documento "{name}"? Los chunks también se eliminarán y no se pueden recuperar!',
+  batchDeleteDocsConfirm:
+    "Se eliminarán {count} documentos (todos los datos/chunks), no se pueden recuperar!",
   deleteDocsMsg: "Eliminados {count} documentos",
   exportFaqMsg: "Preguntas frecuentes exportadas ({count} elementos)",
-  linkModeNodeHint: 'Nodo "{name}" seleccionado, haz clic en el nodo objetivo para completar el enlace',
+  linkModeNodeHint:
+    'Nodo "{name}" seleccionado, haz clic en el nodo objetivo para completar el enlace',
   saveLayoutMsg: "Guardadas {count} posiciones de nodo",
   deleteDsConfirm: '¿Eliminar la fuente de datos "{name}"? ¡No se puede recuperar tras eliminarla!',
   syncPromptLabel: "Ingresa el nombre de la base de datos/consulta para sincronizar (p. ej. users)",
-  syncDsConfirm: '¿Confirmar la sincronización de datos desde "{name}" a la base de conocimiento objetivo?',
-  syncDoneMsg: "Sincronización completada (se extrajeron {rows} filas, se escribieron {chunks} chunks)",
+  syncDsConfirm:
+    '¿Confirmar la sincronización de datos desde "{name}" a la base de conocimiento objetivo?',
+  syncDoneMsg:
+    "Sincronización completada (se extrajeron {rows} filas, se escribieron {chunks} chunks)",
   graphLegendAnnotLabel: "Anotar / relacionar chunk",
   kbCopiedMsg: 'Copiado a "{name}" ({count} chunks)',
   graphFilePrefix: "Grafo de conocimiento_",
@@ -1244,7 +1269,8 @@ export default {
   expandDomain: "Expandir dominio de ontología",
   collapseDomain: "Contraer dominio de ontología",
   wipNotSaved: "{count} cambios aún no se han persistido, haz clic en 'Guardar' para aplicar",
-  enrichBusinessSemantic: "Relleno de semántica de negocio (comentario → nombre/enum, FK → relación)",
+  enrichBusinessSemantic:
+    "Relleno de semántica de negocio (comentario → nombre/enum, FK → relación)",
   writeSampleCapabilities: "Escribir capacidades de ejemplo (10 funciones + 7 acciones)",
   batchAssignDomain: "Asignar en lote al dominio de ontología ({count} seleccionados)",
   pendingVersionPublishCount: "Publicación de versión pendiente ({count})",
@@ -1252,14 +1278,16 @@ export default {
   codeId: "Código (ID)",
   codePlaceholder: "p. ej. video_cameras (letras minúsculas/dígitos/guiones, único)",
   apiName: "Nombre de la API",
-  manyToManyJoinDatasetHint: "Muchos a muchos debe usar un 'conjunto de datos de tabla de unión' (regla oficial)",
+  manyToManyJoinDatasetHint:
+    "Muchos a muchos debe usar un 'conjunto de datos de tabla de unión' (regla oficial)",
   actionUpdate: "actualizar (modificar objeto)",
   actionInsert: "insertar (aún no soportado, será rechazado)",
   actionDelete: "eliminar (aún no soportado, será rechazado)",
   toolDescriptionPlaceholder:
     "Descripción de la herramienta para la IA: qué hace esta acción y cuándo llamarla. Déjala vacía para recurrir a la 'descripción' de arriba.",
   paramsJson: "Parámetros (JSON)",
-  paramsJsonSchemaHint: "Los parámetros generarán directamente el JSON Schema de la herramienta del agente",
+  paramsJsonSchemaHint:
+    "Los parámetros generarán directamente el JSON Schema de la herramienta del agente",
   paramsPlaceholder: '[{"key":"name","label":"Nuevo nombre","type":"string","required":true}]',
   sideEffectsJson: "Efectos secundarios (JSON)",
   sideEffectsPlaceholder: '[{"type":"notification","detail":"Notificar al de guardia"}]',
@@ -1364,7 +1392,8 @@ export default {
   notifyNoRecipients: "{where}: la notificación no tiene destinatarios especificados",
   webhookUrlInvalid: "{where}: la URL del webhook debe ser http/https",
   effectTypeNotSupported: "{where}: tipo no soportado {type} (disponible: notification, webhook)",
-  stagedSaveHint: '{label} preparado (haz clic en "Guardar" en la parte superior derecha para aplicar)',
+  stagedSaveHint:
+    '{label} preparado (haz clic en "Guardar" en la parte superior derecha para aplicar)',
   pleaseFillObjectRowId: "Por favor, completa el ID de fila del objeto",
   objectTypeSub: "Tipo de objeto · {info}",
   objectCount: "{count} objetos",
@@ -1379,7 +1408,8 @@ export default {
     "El estado del índice se deriva de la existencia de la tabla subyacente en la base de datos (éxito = la estructura de la tabla es legible). La línea de tiempo de sincronización debe conectarse a los registros de sincronización de la fuente de datos, lo cual aún no se proporciona.",
   dependenciesHint:
     "Cuenta las referencias internas (relaciones/acciones/funciones) y las referencias externas (capacidades de agentes que referencian los códigos de función/acción de este objeto). Otros consumidores como los flujos de trabajo aún no están conectados.",
-  apiNameAutoHint: "Déjalo vacío para derivar automáticamente PascalCase desde el ID de la propiedad",
+  apiNameAutoHint:
+    "Déjalo vacío para derivar automáticamente PascalCase desde el ID de la propiedad",
   typeString: "Cadena",
   typeNumber: "Número",
   typeDate: "Fecha",
@@ -1412,7 +1442,8 @@ export default {
   pleaseFillPropIdFirst:
     "Por favor, completa el ID de la propiedad y guárdalo primero antes del cálculo de prueba",
   matchedHops: "Coincidieron {matched} elementos, {hops} niveles",
-  pleaseEnterDisplayNameAndPropId: "Por favor, completa el nombre de visualización y el ID de la propiedad",
+  pleaseEnterDisplayNameAndPropId:
+    "Por favor, completa el nombre de visualización y el ID de la propiedad",
   derivedConfigNotValidJson: "La configuración derivada no es JSON válido",
   structFieldsNotValidJson: "Los campos de estructura no son JSON válido",
   deletePropertyConfirm:
@@ -1433,7 +1464,8 @@ export default {
   paramsSourceHint:
     "Declarado para generar las entradas de la herramienta del agente. source puede ser parameter (pasado por el llamador), object_property (tomar propiedad de objeto, completar object_property), static, current_user, current_time.",
   outputsJson: "Salidas (JSON)",
-  outputsHint: "Declara la estructura del valor de retorno, escrita en la descripción de la herramienta del agente",
+  outputsHint:
+    "Declara la estructura del valor de retorno, escrita en la descripción de la herramienta del agente",
   configJson: "Configuración de forma (JSON)",
   fnToolDescriptionPlaceholder:
     'Descripción de la herramienta para la IA: qué calcula esta función y cuándo llamarla. Déjala vacía para recurrir a "Descripción"',
@@ -1554,7 +1586,8 @@ export default {
   ttlDaysHint: "Oficial por defecto 31 días, expira y se elimina automáticamente",
   scenarioDetail: "Detalles del escenario",
   modelResultsNotice: "Hay {count} resultados de predicción del modelo; {note}",
-  compareAlert: "En qué se convierte el mismo objeto en diferentes escenarios — para sopesar diferentes opciones",
+  compareAlert:
+    "En qué se convierte el mismo objeto en diferentes escenarios — para sopesar diferentes opciones",
   mergeScenarioConfirm:
     'Se escribirán los {count} cambios de objeto del escenario "{name}" **en la tabla de datos real en una única transacción**; cualquier fallo revierte todo. Esto no se puede deshacer automáticamente. ¿Confirmar fusión?',
   discardScenarioConfirm:
@@ -1598,7 +1631,7 @@ export default {
   deleteViewConfirm:
     'Se eliminará la vista de grafo "{name}" y todos sus registros de versión, no se puede recuperar.',
   indexBuildAlert:
-    "Construir un índice realmente ejecuta CREATE INDEX en la tabla subyacente del tipo de objeto. El estado \"ready\" significa que está listo (equivalente a la marca verde oficial).",
+    'Construir un índice realmente ejecuta CREATE INDEX en la tabla subyacente del tipo de objeto. El estado "ready" significa que está listo (equivalente a la marca verde oficial).',
   primaryKeyParen: "(clave primaria)",
   rowsAndSize: "Filas / Tamaño",
   autoRetryAt: "Se reintentará automáticamente en {time}",

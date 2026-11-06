@@ -49,7 +49,8 @@ export default {
   node_database: "Base de données",
   node_database_desc: "Exécuter une requête SQL sur une base de données",
   node_note: "Note",
-  node_note_desc: "Un groupe de note / commentaire pour ajouter du texte explicatif (visuel uniquement)",
+  node_note_desc:
+    "Un groupe de note / commentaire pour ajouter du texte explicatif (visuel uniquement)",
   node_group: "Groupe",
   node_group_desc: "Conteneur : grouper des nœuds, glisser pour déplacer ensemble",
   node_end: "Fin",
@@ -67,7 +68,8 @@ export default {
   node_branch_tag: "Branche",
   node_disabled_tag: "Désactivé",
   node_group_default: "Groupe",
-  group_hint: "Double-cliquez pour réduire / développer ; faites un clic droit sur un nœud pour l'ajouter / retirer du groupe",
+  group_hint:
+    "Double-cliquez pour réduire / développer ; faites un clic droit sur un nœud pour l'ajouter / retirer du groupe",
   node_start_empty: "Définir les variables d'entrée",
   node_llm_prompt_set: "Prompt configuré",
   node_llm_no_prompt: "Aucun prompt",
@@ -119,7 +121,8 @@ export default {
   p_retry_tip: "Réexécuter automatiquement ce nœud en cas d'échec et continuer en aval",
   p_upstream_chain: "Chaîne d'appels en amont",
   p_insert_var: "Insérer une variable",
-  p_insert_var_tip: "Après avoir cliqué sur une zone de saisie, sélectionnez une variable ici pour l'insérer",
+  p_insert_var_tip:
+    "Après avoir cliqué sur une zone de saisie, sélectionnez une variable ici pour l'insérer",
   p_input_vars: "Variables d'entrée",
   p_no_ref: "Aucune référence",
   p_undefined_var: "Variable indéfinie (vérifiez sa source)",
@@ -129,7 +132,8 @@ export default {
   p_output_var: "Variable de sortie",
   p_not_set: "Non définie",
   p_copy_ref: "Copier la référence",
-  p_select_input_first: "Veuillez d'abord cliquer sur une zone de saisie, puis insérer une variable",
+  p_select_input_first:
+    "Veuillez d'abord cliquer sur une zone de saisie, puis insérer une variable",
   p_add_var: "Ajouter une variable",
   p_var_name: "Nom de variable",
   p_type_text: "Texte",
@@ -173,7 +177,7 @@ export default {
   p_gen_expr: "Générer l'expression",
   p_cond_hint_1: "Prend en charge l'anglais/les nombres/les booléens/les tableaux, ou",
   p_cond_hint_2:
-    ' ; cliquez sur "Générer l\'expression" pour écrire dans l\'expression ci-dessous, puis affinez manuellement.',
+    " ; cliquez sur \"Générer l'expression\" pour écrire dans l'expression ci-dessous, puis affinez manuellement.",
   p_cond_expr: "Expression de condition",
   p_cond_expr_ph: "par ex. {{a}} == 1 and {{b}} > 2",
   p_cond_handle_alert:
@@ -248,7 +252,8 @@ export default {
   p_sql_with_var: "SQL (prend en charge {{variable}})",
   p_row_array: "Tableau de lignes résultant",
   p_output_template: "Modèle de sortie",
-  p_output_template_ph: "Laissez vide pour prendre la sortie de la dernière étape ; peut écrire {{variable}}",
+  p_output_template_ph:
+    "Laissez vide pour prendre la sortie de la dernière étape ; peut écrire {{variable}}",
   p_note_title: "Titre",
   p_note_title_ph: "Titre de note",
   p_note_content: "Contenu",
@@ -417,7 +422,8 @@ export default {
     'Pour l\'intégration de chat, allez dans "Intégration IA → Gestion des applications" et générez le code dans "Intégration" de l\'application cible.',
   wf_read_schedule_fail: "Échec de la lecture de la configuration de planification",
   wf_schedule_saved: "Planification enregistrée",
-  wf_save_fail_config: "Échec de l'enregistrement (la configuration du déclencheur peut être invalide)",
+  wf_save_fail_config:
+    "Échec de l'enregistrement (la configuration du déclencheur peut être invalide)",
   wf_run_triggered: "Exécution déclenchée (voir dans l'historique d'exécution)",
   wf_trigger_fail: "Échec du déclenchement",
   wf_status_running: "En cours",
@@ -461,7 +467,8 @@ export default {
     "Ceci supprimera {count} nœuds sélectionnés et leurs arêtes connectées, et cela ne peut pas être annulé. Continuer ?",
   wf_batch_del_title: "Suppression groupée",
   wf_batch_deleted: "Supprimé en lot",
-  wf_select_nodes_tpl: "Sélectionnez d'abord des nœuds (sélection multiple Maj/Ctrl), puis enregistrez comme modèle",
+  wf_select_nodes_tpl:
+    "Sélectionnez d'abord des nœuds (sélection multiple Maj/Ctrl), puis enregistrez comme modèle",
   wf_tpl_name_label: "Nom du modèle",
   wf_save_as_tpl_title: "Enregistrer comme modèle",
   wf_tpl_name_ph: "par ex. Sous-graphe QA de récupération",
@@ -494,7 +501,7 @@ export default {
   wf_run_failed_detail: "Échec de l'exécution : {message}",
   wf_run_failed: "Échec de l'exécution",
   wf_stop_confirm:
-    'Ceci interrompra immédiatement l\'exécution actuelle (le nœud actuel sera interrompu) et l\'exécution sera enregistrée comme "Annulée". Continuer ?',
+    "Ceci interrompra immédiatement l'exécution actuelle (le nœud actuel sera interrompu) et l'exécution sera enregistrée comme \"Annulée\". Continuer ?",
   wf_stop_title: "Arrêter l'exécution",
   wf_stop_run: "Arrêter l'exécution",
   wf_continue_run: "Continuer l'exécution",

@@ -43,7 +43,8 @@ export default {
 
   // 提示 / 确认
   warnTitle: "Cảnh báo",
-  deleteConfirmMessage: "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
+  deleteConfirmMessage:
+    "Bạn có chắc chắn muốn xóa dữ liệu đã chọn? Hành động này không thể hoàn tác.",
   requiredConfigName: "Vui lòng nhập tên cấu hình hệ thống",
   requiredConfigKey: "Vui lòng nhập khóa cấu hình hệ thống",
   requiredConfigValue: "Vui lòng nhập giá trị cấu hình hệ thống",

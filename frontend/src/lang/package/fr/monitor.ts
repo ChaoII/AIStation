@@ -81,7 +81,8 @@ export default {
   serverDiskUsed: "Taille utilisée",
 
   // resource
-  resourceTip: "Gestion des fichiers de ressources : cliquez sur un chemin pour revenir rapidement au répertoire parent",
+  resourceTip:
+    "Gestion des fichiers de ressources : cliquez sur un chemin pour revenir rapidement au répertoire parent",
   resourceFileList: "Liste des fichiers (chemin actuel) :",
   resourceUpload: "Téléverser un fichier",
   resourceCreateDir: "Nouveau dossier",
@@ -111,7 +112,8 @@ export default {
   resourceDeleteConfirm: "Voulez-vous vraiment supprimer {name} ?",
   resourceDeleteSuccess: "Supprimé avec succès",
   resourceSelectDelete: "Veuillez sélectionner les fichiers à supprimer",
-  resourceBatchDeleteConfirm: "Voulez-vous vraiment supprimer les {count} fichier(s) sélectionné(s) ?",
+  resourceBatchDeleteConfirm:
+    "Voulez-vous vraiment supprimer les {count} fichier(s) sélectionné(s) ?",
 
   // online
   onlineForceAll: "Forcer la déconnexion de tous",

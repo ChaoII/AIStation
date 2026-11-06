@@ -34,6 +34,7 @@ export default {
   endDate: "Enddatum",
   selection: "Auswahl",
   warning: "Warnung",
-  deleteConfirmMessage: "Möchten Sie die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
+  deleteConfirmMessage:
+    "Möchten Sie die ausgewählten Daten löschen? Dies kann nicht rückgängig gemacht werden.",
   logDetail: "Protokolldetails",
 };

@@ -1006,7 +1006,8 @@ export default {
   whoChangedWhatWhen: "ใครเปลี่ยนอะไร เมื่อไหร่",
   notExecutedOrNoFieldChanges: "ไม่ได้ดำเนินการหรือไม่มีการเปลี่ยนแปลงฟิลด์",
   leaveEmptyToAutoDeriveByRelationName: "เว้นว่างเพื่ออนุมานตามชื่อความสัมพันธ์อัตโนมัติ",
-  columnLevelSecurityPropertyVisibilityRoles: "ความปลอดภัยระดับคอลัมน์ (บทบาทการมองเห็นพร็อพเพอร์ตี้)",
+  columnLevelSecurityPropertyVisibilityRoles:
+    "ความปลอดภัยระดับคอลัมน์ (บทบาทการมองเห็นพร็อพเพอร์ตี้)",
   entityUpdatedWithRelationCascade: "อัปเดตเอนทิตี (พร้อมการเชื่อมโยงความสัมพันธ์)",
   selectedTimePropertyHasNoTimeValues: "พร็อพเพอร์ตี้เวลาที่เลือกไม่มีค่าเวลา",
   notLinkedImportedByExternalSync: "ไม่ได้เชื่อมโยง (นำเข้าโดยการซิงค์ภายนอก)",
@@ -1023,12 +1024,15 @@ export default {
   whyThisDecisionWhatIsTheBasis: "ทำไมถึงตัดสินใจนี้? พื้นฐานคืออะไร?",
   availableObjectPropertiesWriteColumnNamesAnd:
     "พร็อพเพอร์ตี้อ็อบเจกต์ที่มี (เขียนชื่อคอลัมน์) และ",
-  layoutMemoryClearedReLayoutAutomatically: "ล้างหน่วยความจำเลย์เอาต์แล้ว จัดเลย์เอาต์ใหม่อัตโนมัติ",
+  layoutMemoryClearedReLayoutAutomatically:
+    "ล้างหน่วยความจำเลย์เอาต์แล้ว จัดเลย์เอาต์ใหม่อัตโนมัติ",
   expandRelatedEntitiesByKnowledgeGraphWhenEnabled:
     "ขยายเอนทิตีที่เกี่ยวข้องตามกราฟความรู้เมื่อเปิดใช้งาน",
-  searchInstancesFuzzyMatchOnTitleProperty: "ค้นหาอินสแตนซ์ (จับคู่คลุมเครือบนพร็อพเพอร์ตี้ชื่อเรื่อง)",
+  searchInstancesFuzzyMatchOnTitleProperty:
+    "ค้นหาอินสแตนซ์ (จับคู่คลุมเครือบนพร็อพเพอร์ตี้ชื่อเรื่อง)",
   searchHitsTheseWordsPressEnterToAdd: "การค้นหาชนคำเหล่านี้ กด Enter เพื่อเพิ่ม",
-  searchFailedSuggestRelatedChunksAndAnnotate: "การค้นหาล้มเหลว? แนะนำชิ้นส่วนที่เกี่ยวข้องและ annotate",
+  searchFailedSuggestRelatedChunksAndAnnotate:
+    "การค้นหาล้มเหลว? แนะนำชิ้นส่วนที่เกี่ยวข้องและ annotate",
   noInstancesToPreviewForThisObjectType: "ไม่มีอินสแตนซ์ที่จะพรีวิวสำหรับประเภทอ็อบเจกต์นี้",
   runFunctionWritesNoData: "รันฟังก์ชัน (ไม่เขียนข้อมูล)",
   derivedByComparingObjectSnapshotsAfterExecution:
@@ -1056,16 +1060,14 @@ export default {
   deleteThisChunkThisCannotBeUndone: "ลบชิ้นส่วนนี้หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้",
   thisObjectTypeNoLongerExistsOrIsOutOfScope:
     "ประเภทอ็อบเจกต์นี้ไม่มีอยู่อีกต่อไปหรืออยู่นอกขอบเขต",
-  noOntologyDomainsYetClickNewDomainToCreate:
-    "ยังไม่มีโดเมน ontology คลิก 'โดเมนใหม่' เพื่อสร้าง",
+  noOntologyDomainsYetClickNewDomainToCreate: "ยังไม่มีโดเมน ontology คลิก 'โดเมนใหม่' เพื่อสร้าง",
   referenceAnotherDecisionCodeToFormDecisionLineage:
     "อ้างอิงรหัสการตัดสินใจอื่นเพื่อสร้างสายสัมพันธ์การตัดสินใจ",
   referenceSourceClickTheBadgeInTheAnswerToSeeLocation:
     "แหล่งอ้างอิง (คลิกป้ายในคำตอบเพื่อดูตำแหน่ง)",
   thisOntologyHasNoObjectTypesRightClickBlankAreaToCreate:
     "ontology นี้ไม่มีประเภทอ็อบเจกต์ คลิกขวาบริเวณว่างเพื่อสร้าง",
-  panelViewHoldsKeyInfoForEmbeddingByOtherApps:
-    "มุมมองแผงเก็บข้อมูลสำคัญสำหรับการฝังโดยแอปอื่น",
+  panelViewHoldsKeyInfoForEmbeddingByOtherApps: "มุมมองแผงเก็บข้อมูลสำคัญสำหรับการฝังโดยแอปอื่น",
   higherDegreeMeansMoreWorthDefiningActionsAndGovernance:
     "ดีกรีสูงหมายถึงควรกำหนดแอ็กชันและการกำกับดูแลมากขึ้น",
   noNodesRightClickCanvasOrClickNewNode: "ไม่มีโหนด คลิกขวาที่ผืนผ้าใบหรือคลิก 'โหนดใหม่'",
@@ -1287,8 +1289,7 @@ export default {
   pluralExampleHint: "เช่น ตารางกล้อง",
   apiExampleHint: "เช่น VideoCameras",
   selectSourceTargetObjectType: "กรุณาเลือกประเภทอ็อบเจกต์ต้นทาง/เป้าหมาย",
-  manyToManyJoinDatasetWarning:
-    "ความสัมพันธ์หลายต่อหลายต้องใช้วิธีเชื่อม 'ชุดข้อมูลตารางเชื่อม'",
+  manyToManyJoinDatasetWarning: "ความสัมพันธ์หลายต่อหลายต้องใช้วิธีเชื่อม 'ชุดข้อมูลตารางเชื่อม'",
   notValidJson: "{label} ไม่ใช่ JSON ที่ถูกต้อง",
   mustBeJsonArray: "{label} ต้องเป็นอาร์เรย์ JSON",
   discardWipConfirm:
@@ -1340,12 +1341,9 @@ export default {
   targetTablePrimaryKey: "คีย์หลักตารางเป้าหมาย id",
   scenarioStagedOnly:
     "เมื่อเลือกสถานการณ์ เฉพาะความต่างถูกจัดฉากและไม่เขียนตารางจริง; มีผลหลังรวมสถานการณ์เท่านั้น",
-  updateWhitelistFields:
-    "ระบุแถวโดยคีย์หลักและอัปเดตฟิลด์ในรายการอนุญาต: {fields}",
-  onlyUpdateSupportedInsertBlocked:
-    "ปัจจุบันรองรับเฉพาะการเขียนกลับแบบอัปเดต; การแทรกจะถูกปฏิเสธ",
-  onlyUpdateSupportedDeleteBlocked:
-    "ปัจจุบันรองรับเฉพาะการเขียนกลับแบบอัปเดต; การลบจะถูกปฏิเสธ",
+  updateWhitelistFields: "ระบุแถวโดยคีย์หลักและอัปเดตฟิลด์ในรายการอนุญาต: {fields}",
+  onlyUpdateSupportedInsertBlocked: "ปัจจุบันรองรับเฉพาะการเขียนกลับแบบอัปเดต; การแทรกจะถูกปฏิเสธ",
+  onlyUpdateSupportedDeleteBlocked: "ปัจจุบันรองรับเฉพาะการเขียนกลับแบบอัปเดต; การลบจะถูกปฏิเสธ",
   paramValue: "พารามิเตอร์ {value}",
   subConditionsCount: "({count} เงื่อนไขย่อย) {operator}",
   mustBeArrayShort: "{label} ต้องเป็นอาร์เรย์",
@@ -1395,8 +1393,7 @@ export default {
   derivedLimitHint:
     "ข้อจำกัด: สายโซ่ความสัมพันธ์สูงสุด 3 ระดับ; ขีดจำกัดคอลเลกชันค่าเริ่มต้น 10 สูงสุด 100; พร็อพเพอร์ตี้ที่ได้รับไม่สามารถอ้างอิงพร็อพเพอร์ตี้ที่ได้รับอื่น",
   structFieldsLabel: "ฟิลด์โครงสร้าง",
-  structFieldsHint:
-    "โครงสร้างรองรับโดยคอลัมน์โครงสร้างเดียว; ที่นี่คุณอธิบายองค์ประกอบฟิลด์ของมัน",
+  structFieldsHint: "โครงสร้างรองรับโดยคอลัมน์โครงสร้างเดียว; ที่นี่คุณอธิบายองค์ประกอบฟิลด์ของมัน",
   nameWithCode: "{name} ({code})",
   emptyEqualsPublic: "ว่าง = สาธารณะ",
   rolePublic: "สาธารณะ (public)",
@@ -1409,8 +1406,7 @@ export default {
   readCountLabel: "การอ่าน (การเรียกเครื่องมือเอเจนต์)",
   usageHint:
     "ข้อมูลมาจากตารางบันทึกที่มีอยู่ (บันทึกการเรียกเอเจนต์ / บันทึกการดำเนินการแอ็กชัน / ร่องรอยการเปลี่ยนแปลงคำนิยาม) โดยไม่มีการเพิ่มเครื่องมือ 'จำนวนผู้ใช้ที่ใช้งาน' ทางการต้องรวมบันทึกการเรียกตามผู้ใช้ ยังไม่ได้ทำในเวอร์ชันนี้",
-  pleaseFillPropIdFirst:
-    "กรุณากรอก ID พร็อพเพอร์ตี้และบันทึกก่อนการคำนวณทดลอง",
+  pleaseFillPropIdFirst: "กรุณากรอก ID พร็อพเพอร์ตี้และบันทึกก่อนการคำนวณทดลอง",
   matchedHops: "ตรง {matched} รายการ, {hops} ระดับ",
   pleaseEnterDisplayNameAndPropId: "กรุณากรอกชื่อแสดงและ ID พร็อพเพอร์ตี้",
   derivedConfigNotValidJson: "การกำหนดค่าที่ได้รับไม่ใช่ JSON ที่ถูกต้อง",
@@ -1443,8 +1439,7 @@ export default {
   runSuccess: "ดำเนินการสำเร็จ",
   fnKindAggregateHint:
     "รวมบนอ็อบเจกต์ที่เกี่ยวข้องตามสายโซ่ความสัมพันธ์ (count/sum/avg/min/max/first/last/collect_list/collect_set) ต้องใช้คีย์หลักอ็อบเจกต์เป็นบริบท",
-  fnKindHttpHint:
-    "เรียก REST API ภายนอกและนำค่าจากการตอบกลับผ่าน result_path",
+  fnKindHttpHint: "เรียก REST API ภายนอกและนำค่าจากการตอบกลับผ่าน result_path",
   fnKindModelHint:
     "เรียกโมเดลที่ลงทะเบียนบนแพลตฟอร์ม (การจัดการ AI → การกำหนดค่าโมเดล) และส่งคืนข้อความตอบกลับ",
   fnKindExprHint:
@@ -1569,8 +1564,7 @@ export default {
     "ควบคุมว่าใครเห็น/แก้ไข/จัดการคำนิยามของประเภทอ็อบเจกต์นี้ การเห็นประเภทไม่เหมือนการเห็นข้อมูล — ข้อมูลถูกควบคุมโดยนโยบายระดับแถวและระดับคอลัมน์ด้านล่าง",
   leaveEmptyEveryoneCanView: "ว่าง = มองเห็นได้ทั้งหมด",
   leaveEmptyEveryoneCanEdit: "ว่าง = แก้ไขได้ทั้งหมด",
-  leaveEmptyEveryoneCanManage:
-    "ว่าง = จัดการได้ทั้งหมด (รวมการเปลี่ยนนโยบายสิทธิ์)",
+  leaveEmptyEveryoneCanManage: "ว่าง = จัดการได้ทั้งหมด (รวมการเปลี่ยนนโยบายสิทธิ์)",
   countItems: "{count}",
   rowPolicyAlert:
     "มีผลเฉพาะเมื่ออ่าน: กรองว่าอินสแตนซ์อ็อบเจกต์ใดที่ผู้ใช้อ่านได้ ไม่กระทบข้อมูลพื้นฐาน และไม่แพร่สู่การส่งออกปลายน้ำ ว่าง (ไม่มีนโยบายอนุญาตที่เปิด) = มองเห็นทั้งหมด",
@@ -1595,10 +1589,9 @@ export default {
   noPathFound: 'ไม่พบเส้นทางระหว่าง "{a}" และ "{b}"',
   graphFileName: "ontology-graph",
   loadedView: 'โหลด "{name}" แล้ว',
-  deleteViewConfirm:
-    'จะลบมุมมองกราฟ "{name}" และบันทึกเวอร์ชันทั้งหมดของมัน กู้คืนไม่ได้',
+  deleteViewConfirm: 'จะลบมุมมองกราฟ "{name}" และบันทึกเวอร์ชันทั้งหมดของมัน กู้คืนไม่ได้',
   indexBuildAlert:
-    "การสร้างดัชนีดำเนินการ CREATE INDEX จริงบนตารางรองรับของประเภทอ็อบเจกต์ สถานะ \"พร้อม\" หมายถึงพร้อมใช้งาน (เทียบเท่าเครื่องหมายสีเขียวทางการ)",
+    'การสร้างดัชนีดำเนินการ CREATE INDEX จริงบนตารางรองรับของประเภทอ็อบเจกต์ สถานะ "พร้อม" หมายถึงพร้อมใช้งาน (เทียบเท่าเครื่องหมายสีเขียวทางการ)',
   primaryKeyParen: "(คีย์หลัก)",
   rowsAndSize: "แถว / ขนาด",
   autoRetryAt: "จะลองใหม่อัตโนมัติที่ {time}",

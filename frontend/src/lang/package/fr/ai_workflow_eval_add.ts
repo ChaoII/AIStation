@@ -79,7 +79,8 @@ export default {
   eval_questionPlaceholder: "Une question en langage naturel",
   eval_scenarioPlaceholder: "Scénario métier (facultatif)",
   eval_genSuccess: "Générées : {saved} enregistrées, {rejected} rejetées",
-  eval_genNoNew: "Aucune nouvelle question cette série ({rejected} rejetées). Ajustez les filtres et réessayez.",
+  eval_genNoNew:
+    "Aucune nouvelle question cette série ({rejected} rejetées). Ajustez les filtres et réessayez.",
   eval_genFail: "Échec de la génération",
   eval_fillQuestion: "Veuillez saisir une question",
   eval_fillGoldSql: "Veuillez saisir le SQL de référence",
@@ -111,7 +112,8 @@ export default {
   // ===== EvalReport =====
   eval_reportTitle: "Rapport d'évaluation",
   eval_selectRun: "Sélectionner une exécution",
-  eval_selectRunEmpty: "Veuillez sélectionner une exécution (ou en démarrer une sur l'onglet Exécuter)",
+  eval_selectRunEmpty:
+    "Veuillez sélectionner une exécution (ou en démarrer une sur l'onglet Exécuter)",
   eval_loadFail: "Échec du chargement du rapport",
   eval_dimAccuracy: "Précision par dimension",
   eval_trace: "Trace par question",
@@ -165,7 +167,8 @@ export default {
   eval_verdict: "Verdict",
   eval_significant: "Significatif",
   eval_notSignificant: "Non significatif (expliqué par le bruit)",
-  eval_startedSlow: "Démarré. Les exécutions répétées sont lentes (chacune est une évaluation complète).",
+  eval_startedSlow:
+    "Démarré. Les exécutions répétées sont lentes (chacune est une évaluation complète).",
 
   // ===== EvalAblation =====
   eval_ablTitle: "Évaluation d'ablation",

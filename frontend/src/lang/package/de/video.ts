@@ -11,7 +11,8 @@ export default {
     save: "Speichern",
     confirm: "Bestätigen",
     warning: "Warnung",
-    deleteConfirmMsg: "Möchten Sie die ausgewählten Daten wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
+    deleteConfirmMsg:
+      "Möchten Sie die ausgewählten Daten wirklich löschen? Dies kann nicht rückgängig gemacht werden.",
     saveSuccess: "Erfolgreich gespeichert",
     started: "Gestartet",
     stopped: "Gestoppt",
@@ -318,7 +319,8 @@ export default {
     retryFailed: "Fehlgeschlagene Aufgaben erneut senden",
     close: "Schließen",
     retryDispatchFail: "Erneutes Senden fehlgeschlagen",
-    hotUpdateConfirm: "Das aktuelle Modell des Algorithmus「{name}」per Hot-Update auf alle Aufgaben anwenden, die es verwenden?",
+    hotUpdateConfirm:
+      "Das aktuelle Modell des Algorithmus「{name}」per Hot-Update auf alle Aufgaben anwenden, die es verwenden?",
     hotUpdateConfirmTitle: "Hot-Update bestätigen",
     confirmDispatch: "Versand bestätigen",
     hotUpdateFail: "Hot-Update fehlgeschlagen",
@@ -394,8 +396,10 @@ export default {
     updateSuccess: "Erfolgreich aktualisiert",
     enrollSuccess: "Erfolgreich eingeschrieben",
     readFileFail: "Datei konnte nicht gelesen werden",
-    reidEmptyTip: "ReID-Bibliothek leer: REID_TRACK-Regeln greifen nicht, zuerst ReID-Features einschreiben",
-    reidEmptyListTip: "ReID-Bibliothek leer: ReID-Features einschreiben, bevor REID_TRACK-Regeln aktiviert werden",
+    reidEmptyTip:
+      "ReID-Bibliothek leer: REID_TRACK-Regeln greifen nicht, zuerst ReID-Features einschreiben",
+    reidEmptyListTip:
+      "ReID-Bibliothek leer: ReID-Features einschreiben, bevor REID_TRACK-Regeln aktiviert werden",
     faceEmptyTip:
       "Gesichtsbibliothek leer: FACE_REC / STRANGER-Regeln greifen nicht, zuerst Gesichts-Features einschreiben",
     faceEmptyListTip:
@@ -639,7 +643,8 @@ export default {
     whitelistConflict: "Whitelist- und Blacklist-Konflikt: {names} können nicht in beiden sein",
     selectLinkCamera: "Eine verknüpfte Kamera auswählen",
     selectLinkGroup: "Eine verknüpfte Gruppe auswählen",
-    selectSceneFirst2: "Parameter oder Bedingungen konfiguriert, zuerst eine Geschäftsszene auswählen",
+    selectSceneFirst2:
+      "Parameter oder Bedingungen konfiguriert, zuerst eine Geschäftsszene auswählen",
     completePoints: "「{label}」 vervollständigen (mindestens {need} Punkte)",
     notEnabled: "Evaluator/Modellfamilie nicht bereit",
     edgeNotImpl: "Edge nicht implementiert",
@@ -653,9 +658,11 @@ export default {
   // ===== cond =====
   cond: {
     notAlertTitle: "Historische unäre NICHT-Bedingungen erkannt",
-    notTip: "Der Bedingungsbaum unterstützt nur UND/ODER; NICHT-Knoten sind schreibgeschützt und werden unverändert beibehalten:",
+    notTip:
+      "Der Bedingungsbaum unterstützt nur UND/ODER; NICHT-Knoten sind schreibgeschützt und werden unverändert beibehalten:",
     loadingCap: "Regelfähigkeiten werden geladen...",
-    unsupportedTitle: "Nicht erkannte Bedingungen (schreibgeschützt, werden beim Speichern nicht behalten)",
+    unsupportedTitle:
+      "Nicht erkannte Bedingungen (schreibgeschützt, werden beim Speichern nicht behalten)",
     unknownLeaf: "Unbekanntes Blatt",
     unavailableTitle: "Nicht unterstützte Blätter",
     notImplemented: "Nicht implementiert",

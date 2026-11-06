@@ -65,7 +65,8 @@ export default {
   filter: "Filtrer les colonnes",
   view: "Voir",
   delTitle: "Confirmation de suppression",
-  delConfirmMessage: "Confirmer la suppression ? Cela supprimera {count} élément(s). Cette action est irréversible.",
+  delConfirmMessage:
+    "Confirmer la suppression ? Cela supprimera {count} élément(s). Cette action est irréversible.",
   selectDeleteData: "Veuillez sélectionner les éléments à supprimer",
   exportTitle: "Exporter les données",
   fileName: "Nom du fichier",

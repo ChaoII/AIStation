@@ -34,6 +34,7 @@ export default {
   endDate: "Date de fin",
   selection: "Sélection",
   warning: "Avertissement",
-  deleteConfirmMessage: "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
+  deleteConfirmMessage:
+    "Voulez-vous vraiment supprimer les données sélectionnées ? Cette action est irréversible.",
   logDetail: "Détail du journal",
 };

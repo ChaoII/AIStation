@@ -100,7 +100,8 @@ export default {
   mineMarket: "Markt",
   mineNotSubmitted: "Nicht eingereicht",
   mineInstallCount: "{count} Installationen",
-  mineEmpty: 'Keine Vermögenswerte: aus dem "Fähigkeitsmarkt" installieren oder über "Neu" oben einen erstellen',
+  mineEmpty:
+    'Keine Vermögenswerte: aus dem "Fähigkeitsmarkt" installieren oder über "Neu" oben einen erstellen',
   disable: "Deaktivieren",
   enableAction: "Aktivieren",
   submitMarket: "Zum Markt einreichen",
@@ -229,12 +230,15 @@ export default {
   bodyTypeLabel: "Typ des Anfragekörpers",
   bodyNone: "Keine (Parameter über Query-String)",
   bodyHintGet: "{m} hat keinen Anfragekörper, verbleibende Parameter werden zum Query-String.",
-  bodyHintNoBody: "Über {m} ohne Anfragekörper gesendet, verbleibende Parameter werden zum Query-String.",
+  bodyHintNoBody:
+    "Über {m} ohne Anfragekörper gesendet, verbleibende Parameter werden zum Query-String.",
   bodyHintFormData:
     "Über {m} gesendet, verbleibende Parameter werden zu application/x-www-form-urlencoded (Formulardaten).",
   bodyHintPost: "Über POST gesendet, verbleibende Parameter werden zum JSON-Körper.",
-  bodyHintPut: "Über PUT gesendet, verbleibende Parameter werden zum JSON-Körper (vollständige Ersetzung).",
-  bodyHintPatch: "Über PATCH gesendet, verbleibende Parameter werden zum JSON-Körper (teilweise Aktualisierung).",
+  bodyHintPut:
+    "Über PUT gesendet, verbleibende Parameter werden zum JSON-Körper (vollständige Ersetzung).",
+  bodyHintPatch:
+    "Über PATCH gesendet, verbleibende Parameter werden zum JSON-Körper (teilweise Aktualisierung).",
   requestBodyLabel: "Anfragekörper",
   scriptCode: "Skriptcode",
   extractParams: "Parameter aus Code extrahieren",
@@ -245,7 +249,8 @@ export default {
   runtimeParamsLabel: "Laufzeitparameter",
   runtimeParamKeyPlaceholder: "Parametername, z. B. api_key",
   runtimeValuePlaceholder: "Wert (nach dem Speichern ausgeblendet)",
-  runtimeTipPre: "Für Schlüssel/sensible Werte/pro Benutzer-Parameter (z. B. api_key, Benutzername). Im Skript über ",
+  runtimeTipPre:
+    "Für Schlüssel/sensible Werte/pro Benutzer-Parameter (z. B. api_key, Benutzername). Im Skript über ",
   runtimeTipPost:
     " lesen, nicht in den Quellcode geschrieben; Werte werden nach dem Speichern immer ausgeblendet.",
   sandboxAlert:
@@ -293,7 +298,8 @@ export default {
   skillName: "Fähigkeitsname",
   nameIfBlankPlaceholder: "Leer lassen, um den Namen aus dem Dokument zu verwenden",
   sourceLabel: "Quelle",
-  skillCategoryPlaceholder: 'z. B. Büroproduktivität (leer lassen, um unter "Importierte Fähigkeiten" abzulegen)',
+  skillCategoryPlaceholder:
+    'z. B. Büroproduktivität (leer lassen, um unter "Importierte Fähigkeiten" abzulegen)',
   uploadDragText: "Die Fähigkeits-Zip hierher ziehen, oder",
   uploadClickText: "zum Auswählen klicken",
   uploadTip:
@@ -325,7 +331,8 @@ export default {
   commandLabel: "Startbefehl",
   commandPlaceholder: "z. B. npx oder python",
   argsLabel: "Befehlsargumente",
-  argsPlaceholder: "Ein Argument pro Zeile, z. B.\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+  argsPlaceholder:
+    "Ein Argument pro Zeile, z. B.\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "Umgebungsvariablen",
   envPlaceholder: "Ein KEY=VALUE pro Zeile, z. B.\nAPI_KEY=xxx",
   urlLabel: "Server-URL",

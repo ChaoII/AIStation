@@ -68,8 +68,7 @@ export default {
   close: "معطّل",
   permissionPlaceholder: "يرجى إدخال الصلاحية، مثلاً sys:user:add",
   redirectPlaceholder: "اختياري، يرجى إدخال مسار إعادة التوجيه",
-  redirectCatalogPlaceholder:
-    "مطلوب للدليل، عادةً مسار الفرع الافتراضي، مثلاً /system/user",
+  redirectCatalogPlaceholder: "مطلوب للدليل، عادةً مسار الفرع الافتراضي، مثلاً /system/user",
   affixLabel: "تثبيت في علامات التبويب",
   descriptionPlaceholder: "يرجى إدخال الوصف",
   confirm: "تأكيد",

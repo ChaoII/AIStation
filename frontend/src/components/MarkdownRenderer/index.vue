@@ -75,8 +75,7 @@ function attachCopyButtons() {
     btn.type = "button";
     btn.textContent = "复制";
     btn.addEventListener("click", () => {
-      const code =
-        (pre.querySelector("code") as HTMLElement | null)?.innerText || pre.innerText;
+      const code = (pre.querySelector("code") as HTMLElement | null)?.innerText || pre.innerText;
       navigator.clipboard
         ?.writeText(code)
         .then(() => {

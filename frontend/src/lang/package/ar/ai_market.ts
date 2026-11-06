@@ -205,12 +205,10 @@ export default {
   toolType: "نوع الأداة",
   httpRequest: "طلب HTTP",
   pythonScript: "سكربت بايثون",
-  scriptDisabledAlert:
-    "أدوات السكربت معطّلة على هذا النظام؛ يمكن لمسؤولي النظام فقط إنشاؤها",
+  scriptDisabledAlert: "أدوات السكربت معطّلة على هذا النظام؛ يمكن لمسؤولي النظام فقط إنشاؤها",
   requestMethod: "طريقة HTTP",
   requestUrl: "رابط الطلب",
-  urlPlaceholder:
-    "مثال: https://api.example.com/items/{id}، حيث يُستبدل {id} بمعلمة الإدخال",
+  urlPlaceholder: "مثال: https://api.example.com/items/{id}، حيث يُستبدل {id} بمعلمة الإدخال",
   requestHeaders: "الترويسات",
   headerNamePlaceholder: "اسم الترويسة، مثال: Authorization",
   valuePlaceholder: "القيمة",
@@ -246,8 +244,7 @@ export default {
   runtimeParamKeyPlaceholder: "اسم المعلمة، مثال: api_key",
   runtimeValuePlaceholder: "القيمة (مخفية بعد الحفظ)",
   runtimeTipPre: "للمفاتيح/القيم الحساسة/معلمات كل مستخدم (مثل api_key, username). تُقرأ عبر ",
-  runtimeTipPost:
-    " داخل السكربت، ولا تُكتب في المصدر؛ وتُخفى القيم دائمًا بعد الحفظ.",
+  runtimeTipPost: " داخل السكربت، ولا تُكتب في المصدر؛ وتُخفى القيم دائمًا بعد الحفظ.",
   sandboxAlert:
     "يعمل السكربت في بيئة معزولة خاضعة للتحكم: يمكن استيراد الوحدات المسموح بها فقط مثل json/math/re/datetime؛ ويُمنع الوصول إلى الملفات والشبكة واستدعاءات النظام. يُوصى باستخدام توقيع متعدد المعلمات مع تعليقات الأنواع (مثل def run(name: str = 'x')) والنقر على \"استخراج المعلمات من الكود\" لتوليد جدول المعلمات تلقائيًا.",
   trialRun: "تشغيل تجريبي",
@@ -296,8 +293,7 @@ export default {
   skillCategoryPlaceholder: 'مثال: إنتاجية المكتب (اتركه فارغًا لوضعه تحت "المهارات المستوردة")',
   uploadDragText: "اسحب ملف Zip للمهارة هنا، أو",
   uploadClickText: "انقر للاختيار",
-  uploadTip:
-    "يقرأ النظام فقط SKILL.md والملفات النصية بداخله، ولا يحفظ أو ينفّذ السكربتات",
+  uploadTip: "يقرأ النظام فقط SKILL.md والملفات النصية بداخله، ولا يحفظ أو ينفّذ السكربتات",
   importDisabledAlert:
     "المهارات المستوردة معطّلة افتراضيًا: افحص المحتوى والسكربتات المرفقة قبل التفعيل (لن ينفّذ النظام السكربتات المستوردة).",
   requireSkillName: "يرجى إدخال اسم المهارة",

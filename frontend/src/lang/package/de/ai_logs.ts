@@ -101,7 +101,8 @@ export default {
   confirmFailed: "Bestätigung fehlgeschlagen",
   deleteReportMsg: 'Dies löscht den Bericht "{name}", was nicht rückgängig gemacht werden kann.',
   deleteReport: "Bericht löschen",
-  batchDeleteReportsMsg: "Dies löscht {count} Bericht(e), was nicht rückgängig gemacht werden kann.",
+  batchDeleteReportsMsg:
+    "Dies löscht {count} Bericht(e), was nicht rückgängig gemacht werden kann.",
   batchDeleteReports: "Stapellöschung",
   deleted: "Gelöscht",
   deleteFailed: "Löschen fehlgeschlagen",
@@ -255,7 +256,8 @@ export default {
   settingRecallTip:
     "Vektor / Stichwort / Ontologie / Entität — vier Pfade werden vor der Tabellenauswahl fusioniert.",
   settingTwoStage: "Zweistufige Planung (echte Zerlegung)",
-  settingTwoStageTip: "Erst planen, dann SQL schreiben. Gemessener negativer Effekt, standardmäßig deaktiviert.",
+  settingTwoStageTip:
+    "Erst planen, dann SQL schreiben. Gemessener negativer Effekt, standardmäßig deaktiviert.",
   settingToolAgent: "Werkzeugbasierter Agent",
   settingToolAgentTip:
     "Das Modell autonom Abrufwerkzeuge aufrufen lassen; langsamere Rundwege, standardmäßig deaktiviert.",
@@ -297,13 +299,15 @@ export default {
   pipelineStatus: "Pipeline-Status",
   noPipelineRun: "Keine Pipeline in Ausführung",
   aipConsole: "AIP-Konsole · Laufzeittracking",
-  aipConsoleSub: "Laufzeittracking von Agent/KI-Aufrufen · Nutzungsverteilung · manuelle Prüfwarteschlange",
+  aipConsoleSub:
+    "Laufzeittracking von Agent/KI-Aufrufen · Nutzungsverteilung · manuelle Prüfwarteschlange",
   runRecords: "Laufzeitdatensätze",
   usageDist: "Nutzungsverteilung",
   latencyMs: "Latenz (ms)",
   costYuanValue: "¥{value}",
   agentDashboard: "Agent-Orchestrierungs-Dashboard",
-  agentDashboardSub: "Aufrufvolumen / Fehlerquote / Latenz + gebundene Werkzeuge · Fähigkeiten · Fähigkeitsmatrix",
+  agentDashboardSub:
+    "Aufrufvolumen / Fehlerquote / Latenz + gebundene Werkzeuge · Fähigkeiten · Fähigkeitsmatrix",
   totalAgents: "Agenten insgesamt",
   enabledAgents: "Aktiviert",
   totalRuns: "Läufe insgesamt",
@@ -352,7 +356,8 @@ export default {
   computedValue: "Berechneter Wert",
   computeFailed: "Berechnung fehlgeschlagen",
   securityAudit: "Datensicherheits- & Zugriffsprüfung",
-  securityAuditSub: "Sensible Vermögenswerte · schreibgeschützte Datenquellen · ABAC-Regeln · Zugriffsprüfungsprotokolle",
+  securityAuditSub:
+    "Sensible Vermögenswerte · schreibgeschützte Datenquellen · ABAC-Regeln · Zugriffsprüfungsprotokolle",
   securitySummary: "{tables} Basistabellen · {fields} sensible Felder",
   securityScore: "Sicherheitswertung {score}",
   auditLogCount: "Zugriffsprüfungsprotokolle ({count} letzte)",
@@ -408,11 +413,13 @@ export default {
   shareLinkMsg: "Freigabelink: {link}",
   datasetShare: "Datensatzfreigabe",
   unifiedTimeline: "Einheitliche Aktivitätszeitleiste",
-  unifiedTimelineSub: "Einheitliche Zeitleiste für KI-Aufrufe / Aktionen / Genehmigungen (letzte 7 Tage)",
+  unifiedTimelineSub:
+    "Einheitliche Zeitleiste für KI-Aufrufe / Aktionen / Genehmigungen (letzte 7 Tage)",
   eventsCount: "{count} Ereignis(se)",
   noActivity: "Keine Aktivität in den letzten 7 Tagen",
   compassRelationsDrill: "Compass-Katalog · Objektbeziehungen · Zugriffsaufschlüsselung",
-  compassRelationsSub: "Datenkatalogklassifizierung / Objektbeziehungsgraph / Datenzugriffs-Sandbox",
+  compassRelationsSub:
+    "Datenkatalogklassifizierung / Objektbeziehungsgraph / Datenzugriffs-Sandbox",
   catalogCategories: "Compass-Katalogkategorien ({count})",
   objectRelations: "Objektbeziehungsgraph ({edges} Kanten / {nodes} Objekte)",
   noObjectRelations: "Keine Objektbeziehungen",
@@ -438,7 +445,8 @@ export default {
   governanceCheck: "Governance-Prüfung",
   governanceReportFile: "governance_report",
   assetHotspots: "Vermögenswert-Hotspots & Objektlebenszyklus",
-  assetHotspotsSub: "Rangfolge nach Kennzahlenreferenzen · Überblick über den Objektveröffentlichungsstatus",
+  assetHotspotsSub:
+    "Rangfolge nach Kennzahlenreferenzen · Überblick über den Objektveröffentlichungsstatus",
   assetHotspotsTitle: "Datenvermögenswert-Hotspots (nach Kennzahlenreferenz)",
   refs: "Referenzen {count}",
   objectLifecycle: "Objektlebenszyklus",
@@ -448,7 +456,8 @@ export default {
   sensitiveCount: "Sensitiv {count}",
   objectList: "Objektliste",
   evalAndAudit: "KI-Fähigkeitsbewertung & einheitliche Prüfung",
-  evalAndAuditSub: "Artefakt-Regressionsvergleich · modulübergreifende vollständige Pipeline-Prüfung",
+  evalAndAuditSub:
+    "Artefakt-Regressionsvergleich · modulübergreifende vollständige Pipeline-Prüfung",
   evalBenchmark: "Auswertungs-Benchmark (Artefakt-Regression)",
   runAndFix: "Ausführen & festigen",
   noEvalRecords: "Keine Auswertungsdatensätze",

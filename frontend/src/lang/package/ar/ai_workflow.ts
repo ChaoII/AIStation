@@ -43,8 +43,7 @@ export default {
   app_contextWindowPlaceholder: "مثال: 128000",
   app_timeout: "المهلة (ثانية)",
   app_systemPrompt: "تلميح النظام",
-  app_systemPromptPlaceholder:
-    "تلميح نظام مخصص (يتجاوز التلميح المحدد)؛ اتركه فارغًا للافتراضي",
+  app_systemPromptPlaceholder: "تلميح نظام مخصص (يتجاوز التلميح المحدد)؛ اتركه فارغًا للافتراضي",
   app_tags: "الوسوم",
   app_tagsPlaceholder: "وسوم مفصولة بفواصل، مثال: دعم، مبيعات",
   app_memory: "ذاكرة متعددة الجولات",

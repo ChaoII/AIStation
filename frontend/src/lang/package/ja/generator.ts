@@ -27,14 +27,16 @@ export default {
   invalidTableId: "テーブルIDが無効です",
   selectDataToGen: "生成するデータを選択してください",
   customPathSingleOnly: "カスタムパスでは単一テーブルのコードのみ生成できます",
-  writtenToProject: "プロジェクトディレクトリに書き込み、メニューを作成しました（既に存在する場合は除く）",
+  writtenToProject:
+    "プロジェクトディレクトリに書き込み、メニューを作成しました（既に存在する場合は除く）",
   batchGenFailed: "一括生成に失敗しました",
   downloadStarted: "code.zip のダウンロードを開始しました",
   noneListed: "なし",
   none: "なし",
   selectDataToModify: "編集するデータを選択してください",
   loadDetailFailed: "テーブル詳細の読み込みに失敗しました。しばらくしてから再試行してください",
-  menuDictLoadFailed: "メニューまたは辞書オプションの読み込みに失敗しました。一部のドロップダウンが空の可能性があります",
+  menuDictLoadFailed:
+    "メニューまたは辞書オプションの読み込みに失敗しました。一部のドロップダウンが空の可能性があります",
   selectDataToDelete: "削除するデータを選択してください",
   deleteConfirmTitle: "削除確認",
   deleteConfirmMsg: "選択した {count} 件を削除してもよろしいですか？",
@@ -47,8 +49,7 @@ export default {
   configFields: "フィールド情報を設定してください",
 
   // 校验规则
-  masterSubPairError:
-    "サブテーブル名と外部キー列は、両方入力するか、両方空にしてください",
+  masterSubPairError: "サブテーブル名と外部キー列は、両方入力するか、両方空にしてください",
   masterSubSameError: "サブテーブル名をマスターテーブル名と同じにすることはできません",
   businessNameEmpty: "ビジネス名は空にできません",
   requiredTableName: "テーブル名は空にできません",
@@ -66,7 +67,8 @@ export default {
   // 确认写入路径
   writeMoreFiles: "ここに表示されていないファイルが <b>{count}</b> 個あります",
   writeNoPath: "プレビューパスが取得できませんでしたが、書き込みは続行されます。",
-  writeConfirmTip: "'コードプレビュー' と同一のソースです。パスはディスク上のプロジェクトルートからの相対パスです。",
+  writeConfirmTip:
+    "'コードプレビュー' と同一のソースです。パスはディスク上のプロジェクトルートからの相対パスです。",
   writeHeader: "以下のファイルが書き込まれます",
   writeCount: "合計 {count} 件 · プロジェクトルートからの相対パス",
   writeConfirmTitle: "ローカルへの書き込みを確認",
@@ -99,7 +101,8 @@ export default {
   prevStep: "前へ",
   nextStepColumns: "次へ：フィールド設定",
   nextStepPreview: "次へ：コードプレビュー",
-  downloadTip: "ZIP にまとめてローカルにダウンロードします。サーバー上にメニューやファイルは作成されません",
+  downloadTip:
+    "ZIP にまとめてローカルにダウンロードします。サーバー上にメニューやファイルは作成されません",
   downloadCode: "コードをダウンロード",
   writeTip:
     "サーバーのプロジェクトディレクトリにソースコードを生成し、ディレクトリ/メニュー/ボタンを自動的に作成します（名前が競合しない場合）",
@@ -166,7 +169,8 @@ export default {
     "マスター・サブが有効です。以下は 'マスターテーブル' のフィールド設定です。サブテーブルのフィールドは DB 構造に基づき、保存後にプレビューできます。",
   columnsTip:
     "メニュー/ルート/API のマッピングについては、'基本設定' のステップ1にある折りたたみの 'マッピング' テーブルを参照してください。",
-  noMatchCols: "一致する列がありません。フィルターを調整するか、フィルターボックスをクリアしてください",
+  noMatchCols:
+    "一致する列がありません。フィルターを調整するか、フィルターボックスをクリアしてください",
   filterPlaceholder: "列名またはコメントでフィルター",
   bulkSet: "一括設定：",
   query: "クエリ",

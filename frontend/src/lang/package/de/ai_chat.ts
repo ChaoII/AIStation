@@ -7,7 +7,8 @@ export default {
   chatInput_sendImage: "Bild senden",
   chatInput_uploadFile: "Datei hochladen",
   chatInput_pickFromSpace: "Aus dem persönlichen Bereich wählen",
-  chatInput_hint: "Unterstützt Bilder & Dateien · Enter zum Senden, Umschalt+Enter für Zeilenumbruch",
+  chatInput_hint:
+    "Unterstützt Bilder & Dateien · Enter zum Senden, Umschalt+Enter für Zeilenumbruch",
   chatInput_selectModel: "Modell auswählen",
   chatInput_cmdSearchName: "Websuche",
   chatInput_cmdReportName: "Bericht erstellen",
@@ -32,7 +33,8 @@ export default {
   messageItem_feedback: "Feedback",
   messageItem_submit: "Senden",
   messageItem_cancel: "Abbrechen",
-  messageItem_feedbackPlaceholder: "z. B. Die Antwort ist nicht präzise / das Format muss angepasst werden…",
+  messageItem_feedbackPlaceholder:
+    "z. B. Die Antwort ist nicht präzise / das Format muss angepasst werden…",
   messageItem_feedbackSaved: "Feedback gespeichert",
   messageItem_view: "Anzeigen",
   messageItem_copy: "Kopieren",
@@ -84,7 +86,8 @@ export default {
   welcome_promptPerfPrompt: "Wie optimiere ich die Leistung des AIStation-Systems?",
 
   // workspace/chat.vue
-  workspaceChat_noLongerSupported: "Dieser Elementtyp unterstützt keinen Chat mehr; Rückkehr zum Arbeitsbereich",
+  workspaceChat_noLongerSupported:
+    "Dieser Elementtyp unterstützt keinen Chat mehr; Rückkehr zum Arbeitsbereich",
   workspaceChat_agent: "Agent",
   workspaceChat_app: "App",
   workspaceChat_workflow: "Workflow",
@@ -185,7 +188,8 @@ export default {
   agentForm_mcp: "MCP",
   agentForm_selectMcp: "MCP-Server binden",
   agentForm_query: "KI-Abfrage",
-  agentForm_queryHint: "Wenn aktiviert, können Geschäftsfragen auf Basis der Systemdaten beantwortet werden",
+  agentForm_queryHint:
+    "Wenn aktiviert, können Geschäftsfragen auf Basis der Systemdaten beantwortet werden",
   agentForm_queryDatasource: "Abfragedatenquelle",
   agentForm_systemData: "Systemdaten",
   agentForm_temperature: "Temperatur",
@@ -254,7 +258,8 @@ export default {
   workshop_clear: "Leeren",
   workshop_demoHint: "Demo: nur ont_orders unterstützt das Schreiben",
   workshop_noFieldForApp: "Diese App hat keine konfigurierten Felder",
-  workshop_dragHint: "Spaltenkopf ziehen, um zu verschieben (Demo, wird bei Aktualisierung zurückgesetzt)",
+  workshop_dragHint:
+    "Spaltenkopf ziehen, um zu verschieben (Demo, wird bei Aktualisierung zurückgesetzt)",
   workshop_inputAppName: "Bitte App-Namen eingeben",
   workshop_updated: "Aktualisiert",
   workshop_created: "Erstellt",
@@ -262,7 +267,8 @@ export default {
   workshop_loadFailed: "Laden fehlgeschlagen",
   workshop_savedToObject: "In Objekttabelle gespeichert",
   workshop_submitFailed: "Übermitteln fehlgeschlagen",
-  workshop_deleteConfirm: 'App "{name}" löschen? Dies kann nicht rückgängig gemacht werden. Fortfahren?',
+  workshop_deleteConfirm:
+    'App "{name}" löschen? Dies kann nicht rückgängig gemacht werden. Fortfahren?',
   workshop_deleteTitle: "Löschbestätigung",
   workshop_deleted: "Gelöscht",
 
@@ -296,7 +302,8 @@ export default {
   space_inputFileName: "Bitte Dateinamen eingeben",
   space_moveSuccess: "Erfolgreich verschoben",
   space_moveFailed: "Verschieben fehlgeschlagen",
-  space_deleteFilesConfirm: "{label} ({count} Element(e)) löschen? Dies kann nicht rückgängig gemacht werden.",
+  space_deleteFilesConfirm:
+    "{label} ({count} Element(e)) löschen? Dies kann nicht rückgängig gemacht werden.",
   space_deleteFile: "Datei löschen",
   space_deletedCount: "{count} Datei(en) gelöscht",
   space_previewFailed: "Vorschau fehlgeschlagen",

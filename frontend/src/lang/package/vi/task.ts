@@ -143,7 +143,8 @@ export default {
   condition: "Điều kiện",
   control: "Điều khiển",
   all: "Tất cả",
-  funcPlaceholder: "Phải định nghĩa handler(*args, **kwargs), có thể nhận dữ liệu từ phía trước và biến",
+  funcPlaceholder:
+    "Phải định nghĩa handler(*args, **kwargs), có thể nhận dữ liệu từ phía trước và biến",
   argsPlaceholder: "Phân tách bằng dấu phẩy, ví dụ: a, b",
   kwargsPlaceholder: 'JSON, ví dụ: {"key": "v"}',
   createNodeType: "Tạo loại nút",
@@ -176,7 +177,8 @@ export default {
   executeNow: "Thực thi ngay",
   deleteWorkflowConfirm: "Bạn có chắc chắn muốn xóa các quy trình đã chọn?",
   publishConfirmTitle: "Xác nhận xuất bản",
-  publishConfirm: "Bạn có chắc chắn muốn xuất bản quy trình này? Sau khi xuất bản, quy trình có thể được thực thi.",
+  publishConfirm:
+    "Bạn có chắc chắn muốn xuất bản quy trình này? Sau khi xuất bản, quy trình có thể được thực thi.",
   workflowIdMissing: "ID quy trình không tồn tại",
   publishSuccess: "Đã xuất bản thành công",
   publishFailed: "Xuất bản thất bại",
@@ -220,8 +222,7 @@ export default {
   validatePassWithWarnings: "Quy trình đã vượt qua xác thực, nhưng có cảnh báo ({count}):",
   validateFailed: "Xác thực thất bại",
   deleteNodeTitle: "Xóa nút",
-  deleteNodeConfirmSingle:
-    "Bạn có chắc chắn muốn xóa nút này? Sau khi xóa không thể khôi phục.",
+  deleteNodeConfirmSingle: "Bạn có chắc chắn muốn xóa nút này? Sau khi xóa không thể khôi phục.",
   nodeDeleteSuccess: "Đã xóa nút thành công",
   deleteEdgeTitle: "Xóa cạnh",
   deleteEdgeConfirm: "Bạn có chắc chắn muốn xóa cạnh này? Sau khi xóa không thể khôi phục.",

@@ -318,7 +318,8 @@ export default {
     retryFailed: "실패한 작업 재시도",
     close: "닫기",
     retryDispatchFail: "재시도 배포 실패",
-    hotUpdateConfirm: "알고리즘「{name}」의 현재 모델을 이를 사용하는 모든 작업에 핫 업데이트하시겠습니까?",
+    hotUpdateConfirm:
+      "알고리즘「{name}」의 현재 모델을 이를 사용하는 모든 작업에 핫 업데이트하시겠습니까?",
     hotUpdateConfirmTitle: "핫 업데이트 확인",
     confirmDispatch: "배포 확인",
     hotUpdateFail: "핫 업데이트 실패",
@@ -394,8 +395,10 @@ export default {
     updateSuccess: "수정되었습니다",
     enrollSuccess: "등록되었습니다",
     readFileFail: "파일 읽기에 실패했습니다",
-    reidEmptyTip: "ReID 라이브러리가 비어 있습니다: REID_TRACK 규칙이 적용되지 않습니다. 먼저 ReID 특징을 등록하세요",
-    reidEmptyListTip: "ReID 라이브러리가 비어 있습니다: REID_TRACK 규칙을 활성화하기 전에 ReID 특징을 등록하세요",
+    reidEmptyTip:
+      "ReID 라이브러리가 비어 있습니다: REID_TRACK 규칙이 적용되지 않습니다. 먼저 ReID 특징을 등록하세요",
+    reidEmptyListTip:
+      "ReID 라이브러리가 비어 있습니다: REID_TRACK 규칙을 활성화하기 전에 ReID 특징을 등록하세요",
     faceEmptyTip:
       "얼굴 라이브러리가 비어 있습니다: FACE_REC / STRANGER 규칙이 적용되지 않습니다. 먼저 얼굴 특징을 등록하세요",
     faceEmptyListTip:

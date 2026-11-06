@@ -29,7 +29,8 @@ export default {
   endDate: "Fecha de fin",
   rangeSeparator: "a",
   warning: "Advertencia",
-  deleteConfirmMessage: "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
+  deleteConfirmMessage:
+    "¿Está seguro de eliminar los datos seleccionados? Esta acción no se puede deshacer.",
   createTitle: "Agregar aviso",
   updateTitle: "Editar aviso",
   detailTitle: "Detalle del aviso",

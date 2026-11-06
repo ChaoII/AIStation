@@ -96,7 +96,8 @@ export default {
   ig_includeQuery: "Inclure dans la requête",
   ig_objectModeling: "Modélisation d'objets d'ontologie",
   ig_includeObject: "Inclure dans l'objet d'ontologie",
-  ig_objectTypeHint: "Génère un ObjectType pour la consommation par l'ontologie/permissions/actions",
+  ig_objectTypeHint:
+    "Génère un ObjectType pour la consommation par l'ontologie/permissions/actions",
   ig_keyCol: "Colonne de clé primaire",
   ig_nameCol: "Colonne de nom d'affichage",
   ig_fieldCount: "Champs ({count})",
@@ -132,7 +133,8 @@ export default {
   ig_fieldMapping: "Correspondance de champs",
   ig_mappingPlaceholder:
     'Chaque ligne "champ source champ cible" ; ou collez un tableau JSON [{"from":"a","to":"b"}]',
-  ig_pipeGraphTitle: "Graphe d'orchestration de pipeline (Table source → Pipeline → Objet d'ontologie)",
+  ig_pipeGraphTitle:
+    "Graphe d'orchestration de pipeline (Table source → Pipeline → Objet d'ontologie)",
   ig_pipeGraphEmpty: "Aucun pipeline pour le moment. Créez-en un d'abord",
   ig_pipeDataTitle: "Données du pipeline : {name}",
   ig_pipeDataEmpty: "Aucune donnée. Exécutez le pipeline d'abord",
@@ -194,7 +196,8 @@ export default {
   // ===== 术语 =====
   ig_newTerm: "Nouveau terme",
   ig_editTerm: "Modifier le terme",
-  ig_termHint: "Jargon métier ↔ correspondance mesure/champ (entre dans la voie rapide déterministe)",
+  ig_termHint:
+    "Jargon métier ↔ correspondance mesure/champ (entre dans la voie rapide déterministe)",
   ig_termHintAlert:
     "Division du travail : Termes = correspondance du jargon métier → mesure/champ (priorité la plus élevée ; les hits vont à la voie rapide). Maintenez les alias d'objets sous Ontologie ; maintenez les synonymes de concepts sous Concepts métiers — ne dupliquez pas ici.",
   ig_noTerm: "Aucun terme",
@@ -215,7 +218,8 @@ export default {
   // ===== 概念 =====
   ig_newConcept: "Nouveau concept",
   ig_editConcept: "Modifier le concept",
-  ig_conceptHint: "Concepts métiers (couche sémantique de requête ; inclut les alias d'objets d'ontologie)",
+  ig_conceptHint:
+    "Concepts métiers (couche sémantique de requête ; inclut les alias d'objets d'ontologie)",
   ig_conceptHintAlert:
     'Division du travail : Concepts = concepts métiers hiérarchiques + synonymes ; "Mesures liées" participent à la correspondance à voie rapide. Maintenez les alias d\'objets sous Ontologie (fusionnés en lecture seule ici) ; utilisez "Termes" pour la correspondance du jargon.',
   ig_noConcept: "Aucun concept",
@@ -256,10 +260,11 @@ export default {
 
   // ===== 血缘图 =====
   ig_kgAlert:
-    'Filiation côté données : relations entre tables / champs / mesures / termes / concepts. Ce n\'est pas la même chose que le "Graphe de couche de types d\'ontologie" — ce dernier se trouve sous Ontologie → Types de relations → Visualisation.',
+    "Filiation côté données : relations entre tables / champs / mesures / termes / concepts. Ce n'est pas la même chose que le \"Graphe de couche de types d'ontologie\" — ce dernier se trouve sous Ontologie → Types de relations → Visualisation.",
   ig_rebuildGraph: "Reconstruire le graphe",
   ig_autoLink: "Lier automatiquement les arêtes",
-  ig_autoLinkHint: "Liaison automatique : entités de la base de connaissances ↔ tables/champs du schéma",
+  ig_autoLinkHint:
+    "Liaison automatique : entités de la base de connaissances ↔ tables/champs du schéma",
   ig_kgTableNode: "Nœuds de tables",
   ig_kgEdge: "Arêtes de relations",
   ig_kgEntity: "Entités",
@@ -291,7 +296,8 @@ export default {
   ig_unknownCount: "{count} entrées absentes des tables de la source de données actuelle",
   ig_batchPreviewEmpty: "L'aperçu apparaît ici après avoir collé le contenu",
   ig_match: "Correspondance",
-  ig_batchPreviewLimit: "Seules les 8 premières entrées sont prévisualisées ; toutes seront écrites à l'enregistrement.",
+  ig_batchPreviewLimit:
+    "Seules les 8 premières entrées sont prévisualisées ; toutes seront écrites à l'enregistrement.",
   ig_saveCount: "Enregistrer {count} entrées",
   ig_batchSaveFail: "Échec de l'enregistrement groupé",
   ig_savedTableCount: "{count} tables enregistrées",
@@ -354,7 +360,8 @@ export default {
   ig_username: "Nom d'utilisateur",
   ig_password: "Mot de passe",
   ig_readOnly: "Session en lecture seule",
-  ig_filterRuleSection: "Règles de filtrage (étiqueter automatiquement les tables système/champs d'audit)",
+  ig_filterRuleSection:
+    "Règles de filtrage (étiqueter automatiquement les tables système/champs d'audit)",
   ig_enableRule: "Activer les règles",
   ig_sysTablePrefix: "Préfixe de table système",
   ig_enterAddPrefix: "Entrée pour ajouter, par ex. SYS_ / FUEL_",
@@ -394,9 +401,10 @@ export default {
   ig_saveRules: "Enregistrer les règles",
   ig_saveApplyRules: "Enregistrer et appliquer",
   ig_frwbHint:
-    'Tout changement de règle actualise automatiquement l\'aperçu ci-dessous (lecture seule, n\'affecte pas les règles enregistrées) ; confirmez puis cliquez sur "Enregistrer les règles / Enregistrer et appliquer".',
+    "Tout changement de règle actualise automatiquement l'aperçu ci-dessous (lecture seule, n'affecte pas les règles enregistrées) ; confirmez puis cliquez sur \"Enregistrer les règles / Enregistrer et appliquer\".",
   ig_tabRuleConfig: "Configuration des règles",
-  ig_enableRuleHint: "Lorsque désactivé, les tables système / champs d'audit ne sont plus étiquetés automatiquement par les règles",
+  ig_enableRuleHint:
+    "Lorsque désactivé, les tables système / champs d'audit ne sont plus étiquetés automatiquement par les règles",
   ig_sysTableDetect: "Détection de table système",
   ig_auditFieldDetect: "Détection de champ d'audit",
   ig_draftStatus:
@@ -415,12 +423,15 @@ export default {
   ig_auditBiz: "Audit/Métier",
   ig_tabCompare: "Avant/Après",
   ig_refreshCompare: "Actualiser la comparaison",
-  ig_compareHint: "Règles enregistrées vs brouillon actuel (tables/champs dont le tag de hit a changé)",
+  ig_compareHint:
+    "Règles enregistrées vs brouillon actuel (tables/champs dont le tag de hit a changé)",
   ig_savedDraftCount: "Enregistrés {saved} / Brouillon {draft}",
   ig_compareEmpty:
     'Pas encore comparé : après avoir cliqué sur "Actualiser la comparaison", voyez les différences de hits entre les règles enregistrées et le brouillon actuel.',
-  ig_compareSame: "Les règles enregistrées correspondent au brouillon actuel ; aucun changement de hit.",
-  ig_noDiff: 'Aucune différence pour le moment (cliquez sur "Actualiser la comparaison" ou modifiez d\'abord les règles du brouillon)',
+  ig_compareSame:
+    "Les règles enregistrées correspondent au brouillon actuel ; aucun changement de hit.",
+  ig_noDiff:
+    'Aucune différence pour le moment (cliquez sur "Actualiser la comparaison" ou modifiez d\'abord les règles du brouillon)',
   ig_name: "Nom",
   ig_hitChange: "Changement de hit",
   ig_hitRuleCompare: "Règle correspondante (Enregistrée → Brouillon)",
@@ -433,12 +444,14 @@ export default {
     'Les trois zones ci-dessous sont des règles/suggestions candidates assistées par LLM ; "Appliquer au brouillon" n\'écrit que dans le brouillon front-end (non enregistré). Confirmé, vous pouvez affiner dans "Configuration des règles" puis enregistrer.',
   ig_genCandidateRules: "Générer des règles candidates",
   ig_applyDraft: "Appliquer au brouillon",
-  ig_genCandidateEmpty: 'Cliquez sur "Générer des règles candidates" pour que le LLM donne des règles candidates',
+  ig_genCandidateEmpty:
+    'Cliquez sur "Générer des règles candidates" pour que le LLM donne des règles candidates',
   ig_nlConfig: "Configuration en langage naturel",
   ig_nlPlaceholder:
     "Décrivez les règles en langage naturel, par ex. traiter les tables préfixées par SYS_ comme tables système, et created_time / is_deleted comme champs d'audit",
   ig_parse: "Analyser",
-  ig_parseEmpty: 'Saisissez le langage naturel puis cliquez sur "Analyser" pour convertir en règles de filtrage',
+  ig_parseEmpty:
+    'Saisissez le langage naturel puis cliquez sur "Analyser" pour convertir en règles de filtrage',
   ig_perTableSuggest: "Suggestions par table/champ",
   ig_getClassify: "Obtenir des suggestions de classification",
   ig_sysSuggest: "Suggestions de tables système ({count})",
@@ -446,7 +459,8 @@ export default {
   ig_suggestReason: "Raison",
   ig_classifyHint:
     "Ce sont des suggestions de classification par élément, pas des règles complètes ; pour référence uniquement et non réécrites dans le brouillon.",
-  ig_classifyEmpty: 'Cliquez sur "Obtenir des suggestions de classification" pour voir les suggestions par table/champ',
+  ig_classifyEmpty:
+    'Cliquez sur "Obtenir des suggestions de classification" pour voir les suggestions par table/champ',
   ig_enabledOn: "Activé",
   ig_enabledOff: "Désactivé",
   ig_previewFail: "Échec de l'aperçu",
@@ -500,7 +514,8 @@ export default {
   ig_govPolicyCount: "{count} politiques ABAC",
   ig_govAbacAlert:
     'ABAC : les super admins voient tout par défaut ; ceux correspondant à "Libération sensible" peuvent voir les champs d\'objets sensibles, sinon la résolution/requête supprime automatiquement les champs sensibles.',
-  ig_govNoPolicy: 'Aucune politique ABAC. Cliquez sur "Nouvelle politique" pour configurer le contrôle d\'accès',
+  ig_govNoPolicy:
+    'Aucune politique ABAC. Cliquez sur "Nouvelle politique" pour configurer le contrôle d\'accès',
   ig_govPolicy: "Politique",
   ig_govAttribute: "Attribut",
   ig_govAttributeValue: "Valeur d'attribut",
@@ -521,7 +536,8 @@ export default {
   ig_govMemberIds: "IDs d'utilisateurs membres",
   ig_govOntSummary:
     "Objets d'ontologie · pipelines sources / en aval / score de qualité des données | Moyenne {avg}",
-  ig_govNoOnt: 'Aucun objet d\'ontologie. Définissez des objets sous "Ontologie" et matérialisez-les d\'abord',
+  ig_govNoOnt:
+    "Aucun objet d'ontologie. Définissez des objets sous \"Ontologie\" et matérialisez-les d'abord",
   ig_govQuality: "Score de santé",
   ig_govSourcePipeline: "Pipelines sources",
   ig_govDownstream: "Mesures/concepts en aval",
@@ -636,6 +652,8 @@ export default {
   ig_govRejected: "Rejeté",
   ig_govOpFail: "Échec de l'opération",
   ig_govScanned: "Analyse complète terminée",
+  ig_govScanOne: "Analyser",
+  ig_govScannedOne: "{table} analysé : {score}",
   ig_govScanFail: "Échec de l'analyse",
   ig_govPolicyRequired: "Veuillez renseigner le nom de la politique / la valeur d'attribut",
   ig_govDomainNameRequired: "Veuillez renseigner le nom du domaine",

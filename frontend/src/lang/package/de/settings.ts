@@ -37,7 +37,8 @@ export default {
   resetSuccess: "Auf Standardkonfiguration zurückgesetzt",
   copyDescription:
     "Konfiguration kopieren erzeugt den aktuellen Einstellungscode, Zurücksetzen stellt alle Einstellungen auf den Standard wieder her",
-  confirmReset: "Möchten Sie wirklich alle Einstellungen auf den Standard zurücksetzen? Diese Aktion kann nicht rückgängig gemacht werden.",
+  confirmReset:
+    "Möchten Sie wirklich alle Einstellungen auf den Standard zurücksetzen? Diese Aktion kann nicht rückgängig gemacht werden.",
   applyToFile: "Auf Datei anwenden",
   onlyCopy: "Nur kopieren",
   leftLayout: "Links-Modus",

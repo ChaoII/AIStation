@@ -132,7 +132,8 @@ export default {
   ig_fieldMapping: "Mapeo de campos",
   ig_mappingPlaceholder:
     'Cada línea "campo de origen campo objetivo"; o pega una matriz JSON [{"from":"a","to":"b"}]',
-  ig_pipeGraphTitle: "Grafo de orquestación del pipeline (tabla de origen → pipeline → objeto de ontología)",
+  ig_pipeGraphTitle:
+    "Grafo de orquestación del pipeline (tabla de origen → pipeline → objeto de ontología)",
   ig_pipeGraphEmpty: "Aún no hay pipelines. Crea uno primero",
   ig_pipeDataTitle: "Datos del pipeline: {name}",
   ig_pipeDataEmpty: "Sin datos. Ejecuta el pipeline primero",
@@ -181,7 +182,8 @@ export default {
   ig_invalidCandidates: "Candidatos que fallaron la validación (no se guardarán)",
   ig_applySelected: "Aplicar seleccionados {count}",
   ig_autoModelTitleMetric: "Generar automáticamente métricas vinculadas (vista previa)",
-  ig_autoModelTitleAnnotation: "Generar automáticamente anotaciones de objeto/propiedad (vista previa)",
+  ig_autoModelTitleAnnotation:
+    "Generar automáticamente anotaciones de objeto/propiedad (vista previa)",
   ig_emptyHintMetric:
     "No hay candidatos de métricas utilizables para este lote de objetos en esta fuente de datos (posiblemente el objeto no tiene propiedades numéricas agregables, o el LLM no dio métricas verificables)",
   ig_emptyHintAnnotation:
@@ -215,7 +217,8 @@ export default {
   // ===== 概念 =====
   ig_newConcept: "Nuevo concepto",
   ig_editConcept: "Editar concepto",
-  ig_conceptHint: "Conceptos de negocio (capa semántica de consulta; incluye alias de objetos de ontología)",
+  ig_conceptHint:
+    "Conceptos de negocio (capa semántica de consulta; incluye alias de objetos de ontología)",
   ig_conceptHintAlert:
     'División del trabajo: Conceptos = conceptos de negocio jerárquicos + sinónimos; las "Métricas relacionadas" participan en el emparejamiento de ruta rápida. Mantén los alias de objetos en Ontología (solo lectura, fusionados aquí); usa "Términos" para el mapeo de jerga.',
   ig_noConcept: "No hay conceptos",
@@ -259,7 +262,8 @@ export default {
     'Linaje del lado de datos: relaciones entre tablas / campos / métricas / términos / conceptos. No es lo mismo que el "Grafo de capa de tipos de la ontología" — este último está en Ontología → Tipos de relación → Visualización.',
   ig_rebuildGraph: "Reconstruir grafo",
   ig_autoLink: "Enlazar aristas automáticamente",
-  ig_autoLinkHint: "Enlace automático: entidades de la base de conocimiento ↔ tablas/campos del esquema",
+  ig_autoLinkHint:
+    "Enlace automático: entidades de la base de conocimiento ↔ tablas/campos del esquema",
   ig_kgTableNode: "Nodos de tabla",
   ig_kgEdge: "Aristas de relación",
   ig_kgEntity: "Entidades",
@@ -291,7 +295,8 @@ export default {
   ig_unknownCount: "{count} entradas no están en las tablas de la fuente de datos actual",
   ig_batchPreviewEmpty: "La vista previa aparecerá aquí después de pegar contenido",
   ig_match: "Coincidir",
-  ig_batchPreviewLimit: "Solo se previsualizan las primeras 8 entradas; todas se escribirán al guardar.",
+  ig_batchPreviewLimit:
+    "Solo se previsualizan las primeras 8 entradas; todas se escribirán al guardar.",
   ig_saveCount: "Guardar {count} entradas",
   ig_batchSaveFail: "Error en el guardado en lote",
   ig_savedTableCount: "Guardadas {count} tablas",
@@ -354,7 +359,8 @@ export default {
   ig_username: "Nombre de usuario",
   ig_password: "Contraseña",
   ig_readOnly: "Sesión de solo lectura",
-  ig_filterRuleSection: "Reglas de filtro (etiquetar automáticamente tablas del sistema/campos de auditoría)",
+  ig_filterRuleSection:
+    "Reglas de filtro (etiquetar automáticamente tablas del sistema/campos de auditoría)",
   ig_enableRule: "Habilitar reglas",
   ig_sysTablePrefix: "Prefijo de tablas del sistema",
   ig_enterAddPrefix: "Intro para añadir, p. ej. SYS_ / FUEL_",
@@ -370,7 +376,8 @@ export default {
   ig_syncFail: "Error al sincronizar",
   ig_tableSaved: "Información de tabla guardada",
   ig_importedObject: 'Importado como objeto de ontología "{object}" con {count} propiedades',
-  ig_noImportBizTable: "No hay tablas de negocio para importar (las tablas del sistema están ocultas)",
+  ig_noImportBizTable:
+    "No hay tablas de negocio para importar (las tablas del sistema están ocultas)",
   ig_importedCount: "Importados {count} objetos de ontología",
   ig_batchImportFail: "Error en la importación en lote",
   ig_delDsConfirm:
@@ -396,7 +403,8 @@ export default {
   ig_frwbHint:
     'Cualquier cambio de regla actualiza automáticamente la vista previa de abajo (solo lectura, no afecta a las reglas guardadas); confirma y luego haz clic en "Guardar reglas / Guardar y aplicar".',
   ig_tabRuleConfig: "Configuración de reglas",
-  ig_enableRuleHint: "Al desactivarse, las tablas del sistema / campos de auditoría ya no se etiquetan automáticamente por reglas",
+  ig_enableRuleHint:
+    "Al desactivarse, las tablas del sistema / campos de auditoría ya no se etiquetan automáticamente por reglas",
   ig_sysTableDetect: "Detección de tablas del sistema",
   ig_auditFieldDetect: "Detección de campos de auditoría",
   ig_draftStatus:
@@ -415,12 +423,15 @@ export default {
   ig_auditBiz: "Auditoría/Negocio",
   ig_tabCompare: "Antes/Después",
   ig_refreshCompare: "Actualizar comparación",
-  ig_compareHint: "Reglas guardadas vs borrador actual (tablas/campos cuya etiqueta de acierto cambió)",
+  ig_compareHint:
+    "Reglas guardadas vs borrador actual (tablas/campos cuya etiqueta de acierto cambió)",
   ig_savedDraftCount: "Guardadas {saved} / Borrador {draft}",
   ig_compareEmpty:
     'Aún no se ha comparado: tras hacer clic en "Actualizar comparación", ve las diferencias en los aciertos entre las reglas guardadas y el borrador actual.',
-  ig_compareSame: "Las reglas guardadas coinciden con el borrador actual; no hay cambios de aciertos.",
-  ig_noDiff: 'Aún no hay diferencias (haz clic en "Actualizar comparación" o modifica primero las reglas del borrador)',
+  ig_compareSame:
+    "Las reglas guardadas coinciden con el borrador actual; no hay cambios de aciertos.",
+  ig_noDiff:
+    'Aún no hay diferencias (haz clic en "Actualizar comparación" o modifica primero las reglas del borrador)',
   ig_name: "Nombre",
   ig_hitChange: "Cambio de acierto",
   ig_hitRuleCompare: "Regla coincidente (Guardada → Borrador)",
@@ -433,12 +444,14 @@ export default {
     'Las tres áreas de abajo son reglas/sugerencias candidatas asistidas por LLM; "Aplicar al borrador" solo escribe en el borrador del front-end (no guardado). Confirmado, puedes ajustar en "Configuración de reglas" y luego guardar.',
   ig_genCandidateRules: "Generar reglas candidatas",
   ig_applyDraft: "Aplicar al borrador",
-  ig_genCandidateEmpty: 'Haz clic en "Generar reglas candidatas" para que el LLM dé reglas candidatas',
+  ig_genCandidateEmpty:
+    'Haz clic en "Generar reglas candidatas" para que el LLM dé reglas candidatas',
   ig_nlConfig: "Configuración en lenguaje natural",
   ig_nlPlaceholder:
     "Describe reglas en lenguaje natural, p. ej. tratar las tablas con prefijo SYS_ como tablas del sistema, y created_time / is_deleted como campos de auditoría",
   ig_parse: "Analizar",
-  ig_parseEmpty: 'Ingresa lenguaje natural y luego haz clic en "Analizar" para convertirlo en reglas de filtro',
+  ig_parseEmpty:
+    'Ingresa lenguaje natural y luego haz clic en "Analizar" para convertirlo en reglas de filtro',
   ig_perTableSuggest: "Sugerencias por tabla/campo",
   ig_getClassify: "Obtener sugerencias de clasificación",
   ig_sysSuggest: "Sugerencias de tablas del sistema ({count})",
@@ -446,7 +459,8 @@ export default {
   ig_suggestReason: "Motivo",
   ig_classifyHint:
     "Estas son sugerencias de clasificación por elemento, no reglas completas; solo de referencia y no se escriben de vuelta al borrador.",
-  ig_classifyEmpty: 'Haz clic en "Obtener sugerencias de clasificación" para ver sugerencias por tabla/campo',
+  ig_classifyEmpty:
+    'Haz clic en "Obtener sugerencias de clasificación" para ver sugerencias por tabla/campo',
   ig_enabledOn: "Habilitado",
   ig_enabledOff: "Deshabilitado",
   ig_previewFail: "Error en la vista previa",
@@ -500,7 +514,8 @@ export default {
   ig_govPolicyCount: "{count} políticas ABAC",
   ig_govAbacAlert:
     'ABAC: los superadministradores ven todo por defecto; aquellos que coincidan con "Liberación sensible" pueden ver los campos sensibles de los objetos, de lo contrario resolver/consultar elimina automáticamente los campos sensibles.',
-  ig_govNoPolicy: 'No hay políticas ABAC. Haz clic en "Nueva política" para configurar el control de acceso',
+  ig_govNoPolicy:
+    'No hay políticas ABAC. Haz clic en "Nueva política" para configurar el control de acceso',
   ig_govPolicy: "Política",
   ig_govAttribute: "Atributo",
   ig_govAttributeValue: "Valor del atributo",
@@ -521,7 +536,8 @@ export default {
   ig_govMemberIds: "IDs de usuarios miembros",
   ig_govOntSummary:
     "Objetos de ontología · pipelines de origen / aguas abajo / puntuación de calidad de datos | Media {avg}",
-  ig_govNoOnt: 'No hay objetos de ontología. Define objetos en "Ontología" y materialízalos primero',
+  ig_govNoOnt:
+    'No hay objetos de ontología. Define objetos en "Ontología" y materialízalos primero',
   ig_govQuality: "Puntuación de salud",
   ig_govSourcePipeline: "Pipelines de origen",
   ig_govDownstream: "Métricas/conceptos aguas abajo",
@@ -636,6 +652,8 @@ export default {
   ig_govRejected: "Rechazado",
   ig_govOpFail: "Error en la operación",
   ig_govScanned: "Escaneo completo finalizado",
+  ig_govScanOne: "Escanear",
+  ig_govScannedOne: "{table} escaneado: {score}",
   ig_govScanFail: "Error en el escaneo",
   ig_govPolicyRequired: "Por favor, completa el nombre de la política / valor del atributo",
   ig_govDomainNameRequired: "Por favor, completa el nombre del dominio",

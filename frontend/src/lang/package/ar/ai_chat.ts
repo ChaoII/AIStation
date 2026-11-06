@@ -27,8 +27,7 @@ export default {
   messageItem_copied: "تم النسخ إلى الحافظة",
   messageItem_liked: "أعجبك",
   messageItem_unliked: "تمت إزالة الإعجاب",
-  messageItem_feedbackPrompt:
-    "يرجى تقديم ملاحظاتك (اختياري، يُستخدم فقط لتحسين الردود):",
+  messageItem_feedbackPrompt: "يرجى تقديم ملاحظاتك (اختياري، يُستخدم فقط لتحسين الردود):",
   messageItem_feedback: "ملاحظات",
   messageItem_submit: "إرسال",
   messageItem_cancel: "إلغاء",
@@ -84,7 +83,8 @@ export default {
   welcome_promptPerfPrompt: "كيف أحسّن أداء نظام AIStation؟",
 
   // workspace/chat.vue
-  workspaceChat_noLongerSupported: "هذا النوع من العناصر لم يعد يدعم المحادثة؛ سيتم العودة إلى مساحة العمل",
+  workspaceChat_noLongerSupported:
+    "هذا النوع من العناصر لم يعد يدعم المحادثة؛ سيتم العودة إلى مساحة العمل",
   workspaceChat_agent: "وكيل",
   workspaceChat_app: "تطبيق",
   workspaceChat_workflow: "سير عمل",
@@ -174,8 +174,7 @@ export default {
   agentForm_tools: "الأدوات",
   agentForm_selectTools: "اختيار الأدوات",
   agentForm_ontologyTools: "أدوات الوجود (Ontology)",
-  agentForm_ontologyPlaceholder:
-    "ربط وظائف/أفعال الوجود (تُنشأ عند تجميع الوكيل للأدوات)",
+  agentForm_ontologyPlaceholder: "ربط وظائف/أفعال الوجود (تُنشأ عند تجميع الوكيل للأدوات)",
   agentForm_ontologyHint:
     "بعد التحديد، يحصل الوكيل على أدوات الوظيفة/الفعل المقابلة من الوجود؛ يظل التنفيذ يتحقق من صلاحيات الوجود الخاصة بالمتصل.",
   agentForm_skills: "المهارات",
@@ -345,8 +344,7 @@ export default {
   space_reason: "السبب",
   space_reasonPlaceholder:
     "يرجى توضيح سبب حاجتك إلى مساحة أكبر، مثل الحاجة إلى تخزين المزيد من نتائج تدريب النماذج.",
-  space_pendingAlert:
-    "لديك بالفعل طلب توسعة قيد الانتظار. يرجى انتظار معالجة المسؤول له.",
+  space_pendingAlert: "لديك بالفعل طلب توسعة قيد الانتظار. يرجى انتظار معالجة المسؤول له.",
   space_myRequests: "طلباتي",
   space_noRequests: "لا توجد سجلات طلبات",
   space_status: "الحالة",

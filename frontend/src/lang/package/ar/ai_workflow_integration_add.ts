@@ -90,8 +90,7 @@ export default {
   ig_importAsObject: "استيراد ككائن وجود",
   ig_aliasPlaceholder: "مثال: جدول تسوية شراء الفحم الرئيسي",
   ig_domainPlaceholder: "مثال: فحم / معدات / أفراد",
-  ig_descPlaceholder:
-    "ما يخزّنه هذا الجدول وكيف يُستخدم — يقرأ الاستعلام هذا لفهم الجدول",
+  ig_descPlaceholder: "ما يخزّنه هذا الجدول وكيف يُستخدم — يقرأ الاستعلام هذا لفهم الجدول",
   ig_bizScenarioPlaceholder: "أي تقارير/أعمال تستخدمه",
   ig_includeQuery: "إدراج في الاستعلام",
   ig_objectModeling: "نمذجة كائن الوجود",
@@ -101,8 +100,7 @@ export default {
   ig_nameCol: "عمود اسم العرض",
   ig_fieldCount: "الحقول ({count})",
   ig_onlyBizField: "حقول الأعمال فقط",
-  ig_auditHint:
-    "التعليقات العلوية للاسترشاد؛ يمكن صيانة الأسماء الصينية/التعدادات يدويًا",
+  ig_auditHint: "التعليقات العلوية للاسترشاد؛ يمكن صيانة الأسماء الصينية/التعدادات يدويًا",
   ig_noColEmpty: "لا توجد معلومات حقول لهذا الجدول. مزامنة المخطط أولاً",
   ig_field: "الحقل",
   ig_relatedTable: "الجدول المرتبط",
@@ -115,8 +113,7 @@ export default {
   ig_newPipe: "خط أنابيب جديد",
   ig_editPipe: "تعديل خط الأنابيب",
   ig_pipeGraph: "مخطط خط الأنابيب",
-  ig_pipeHint:
-    "الجدول المصدر ← الكائن الهدف؛ تُجسّد التشغيلات في جدول التجسيد لخط الأنابيب",
+  ig_pipeHint: "الجدول المصدر ← الكائن الهدف؛ تُجسّد التشغيلات في جدول التجسيد لخط الأنابيب",
   ig_noPipe: "لا توجد خطوط أنابيب",
   ig_srcToTarget: "المصدر ← الهدف",
   ig_run: "تشغيل",
@@ -130,8 +127,7 @@ export default {
   ig_targetObject: "الكائن الهدف",
   ig_targetObjectPlaceholder: "اسم كائن الوجود / اسم الجدول الهدف",
   ig_fieldMapping: "تعيين الحقول",
-  ig_mappingPlaceholder:
-    'كل سطر "حقل مصدر حقل هدف"؛ أو الصق مصفوفة JSON [{"from":"a","to":"b"}]',
+  ig_mappingPlaceholder: 'كل سطر "حقل مصدر حقل هدف"؛ أو الصق مصفوفة JSON [{"from":"a","to":"b"}]',
   ig_pipeGraphTitle: "مخطط تنسيق خط الأنابيب (جدول مصدر ← خط أنابيب ← كائن الوجود)",
   ig_pipeGraphEmpty: "لا توجد خطوط أنابيب بعد. أنشئ واحدًا أولاً",
   ig_pipeDataTitle: "بيانات خط الأنابيب: {name}",
@@ -245,8 +241,7 @@ export default {
   ig_question: "السؤال",
   ig_exampleSql: "مثال SQL",
   ig_systemLibOption: "مكتبة النظام (جداول دعم الوجود)",
-  ig_questionPlaceholder:
-    "سؤال بلغة طبيعية، مثال: عدّ توزيع حالات الكاميرات",
+  ig_questionPlaceholder: "سؤال بلغة طبيعية، مثال: عدّ توزيع حالات الكاميرات",
   ig_questionRequired: "يرجى إدخال سؤال",
   ig_sqlRequired: "يرجى إدخال مثال SQL",
   ig_exampleSaved: "تم حفظ المثال",
@@ -326,8 +321,7 @@ export default {
     "يوصي النموذج بالمقاييس عالية التكرار والمصطلحات التجارية بناءً على القاموس الصيني للأصول المضمّنة؛ اعتمدها واحدًا تلو الآخر لكتابتها في مكتبة المقاييس/المصطلحات.",
   ig_suggestMetrics: "المقاييس الموصى بها ({count})",
   ig_suggestTerms: "المصطلحات الموصى بها ({count})",
-  ig_noSuggestResult:
-    "لم تُولَّد توصيات. حسّن الأوصاف التجارية للأصول أولاً وأعد المحاولة",
+  ig_noSuggestResult: "لم تُولَّد توصيات. حسّن الأوصاف التجارية للأصول أولاً وأعد المحاولة",
   ig_suggestFail: "فشلت التوصية",
 
   // ===== 字段属性 =====
@@ -385,8 +379,7 @@ export default {
   ig_noBizTableAfterHide: "جداول النظام مخفية؛ لا توجد جداول أعمال حاليًا",
   ig_noMatchTable: "لا توجد جداول مطابقة",
   ig_syncToLoad: 'انقر "مزامنة" لتحميل المخطط',
-  ig_descGenerated:
-    "تم توليد الأوصاف: {tables} جدول، {columns} حقل (يسري بعد مراجعة يدوية)",
+  ig_descGenerated: "تم توليد الأوصاف: {tables} جدول، {columns} حقل (يسري بعد مراجعة يدوية)",
   ig_descGenFail: "فشل توليد الأوصاف بالذكاء الاصطناعي",
 
   // ===== 筛选规则工作台 =====
@@ -399,8 +392,7 @@ export default {
   ig_enableRuleHint: "عند الإيقاف، لن تُوسم جداول النظام/حقول التدقيق تلقائيًا بواسطة القواعد",
   ig_sysTableDetect: "اكتشاف جداول النظام",
   ig_auditFieldDetect: "اكتشاف حقول التدقيق",
-  ig_draftStatus:
-    'المسودة الحالية: {status}؛ بعد الحفظ تصبح خط الأساس لمقارنة "قبل/بعد"',
+  ig_draftStatus: 'المسودة الحالية: {status}؛ بعد الحفظ تصبح خط الأساس لمقارنة "قبل/بعد"',
   ig_tabPreview: "معاينة حية",
   ig_frwbPreviewHint:
     "أدناه نتائج المطابقة لقواعد المسودة الحالية (للقراءة فقط)؛ لا تؤثر على القواعد المحفوظة.",
@@ -529,15 +521,13 @@ export default {
   ig_govActionAlert:
     'هذه "الكتابة العكسية للجدول" القديمة؛ عرّف أفعالًا جديدة تحت الوجود ← أنواع الأفعال (بما يتماشى مع دلالات Palantir). هذه الوحدة قيد الإيقاف التدريجي.',
   ig_govPendingCount: "أفعال معلّقة {pending} · تعريفات أفعال {defs}",
-  ig_govPendingSection:
-    "معلّق (الكتابة العكسية تتطلب موافقة يدوية؛ يسري بعد الموافقة)",
+  ig_govPendingSection: "معلّق (الكتابة العكسية تتطلب موافقة يدوية؛ يسري بعد الموافقة)",
   ig_govNoPending: "لا توجد أفعال معلّقة",
   ig_govRecord: "سجل",
   ig_govParams: "المعلمات",
   ig_govApprove: "موافقة",
   ig_govReject: "رفض",
-  ig_govDefSection:
-    "تعريفات الأفعال (الأعمدة القابلة للكتابة / التحقق / هل تتطلب موافقة)",
+  ig_govDefSection: "تعريفات الأفعال (الأعمدة القابلة للكتابة / التحقق / هل تتطلب موافقة)",
   ig_govNoActionDef: "لا توجد تعريفات أفعال",
   ig_govWritableCols: "الأعمدة القابلة للكتابة",
   ig_govValidation: "التحقق",
@@ -623,8 +613,7 @@ export default {
   ig_govSuperuser: "متميز",
   ig_govNoRoleText: "لا يوجد دور",
   ig_govFdeTitleRequired: "يرجى إدخال عنوان الاقتراح",
-  ig_govDelFdeConfirm:
-    'سيحذف هذا اقتراح التسليم "{name}"، ولا يمكن التراجع عنه.',
+  ig_govDelFdeConfirm: 'سيحذف هذا اقتراح التسليم "{name}"، ولا يمكن التراجع عنه.',
   ig_govDelFdeTitle: "حذف اقتراح التسليم",
   ig_govShadowConfirm:
     'سيقارن هذا القيم الفعلية للمقياس الظلّي لـ"{title}" بالمعيار الذهبي ({golden}). هل تريد المتابعة؟',
@@ -636,6 +625,8 @@ export default {
   ig_govRejected: "مرفوض",
   ig_govOpFail: "فشلت العملية",
   ig_govScanned: "اكتمل المسح الكامل",
+  ig_govScanOne: "فحص",
+  ig_govScannedOne: "تم فحص {table}: {score}",
   ig_govScanFail: "فشل المسح",
   ig_govPolicyRequired: "يرجى إدخال اسم السياسة / قيمة السمة",
   ig_govDomainNameRequired: "يرجى إدخال اسم النطاق",

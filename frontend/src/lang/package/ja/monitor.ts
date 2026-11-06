@@ -28,8 +28,7 @@ export default {
   serverSysMem: "システムメモリ",
   serverPyMem: "Python メモリ",
   serverGpuUsage: "GPU 使用率",
-  serverGpuTip:
-    "ホストの NVIDIA GPU のリアルタイム状態。トレーニングコンテナの有無とは無関係です",
+  serverGpuTip: "ホストの NVIDIA GPU のリアルタイム状態。トレーニングコンテナの有無とは無関係です",
   serverGpuDriver: "ドライバー {ver}",
   serverGpuCuda: "ドライバーは CUDA {ver} をサポート",
   serverNoGpu: "NVIDIA GPU を検出できません",

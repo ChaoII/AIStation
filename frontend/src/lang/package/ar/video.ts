@@ -396,10 +396,8 @@ export default {
     readFileFail: "فشل قراءة الملف",
     reidEmptyTip: "مكتبة ReID فارغة: لن تُفعّل قواعد REID_TRACK، سجّل سمات ReID أولاً",
     reidEmptyListTip: "مكتبة ReID فارغة: سجّل سمات ReID قبل تفعيل قواعد REID_TRACK",
-    faceEmptyTip:
-      "مكتبة الوجوه فارغة: لن تُفعّل قواعد FACE_REC / STRANGER، سجّل سمات الوجوه أولاً",
-    faceEmptyListTip:
-      "مكتبة الوجوه فارغة: سجّل سمات الوجوه قبل تفعيل قواعد FACE_REC / STRANGER",
+    faceEmptyTip: "مكتبة الوجوه فارغة: لن تُفعّل قواعد FACE_REC / STRANGER، سجّل سمات الوجوه أولاً",
+    faceEmptyListTip: "مكتبة الوجوه فارغة: سجّل سمات الوجوه قبل تفعيل قواعد FACE_REC / STRANGER",
   },
   // ===== event =====
   event: {
