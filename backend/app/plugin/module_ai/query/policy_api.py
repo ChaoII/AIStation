@@ -17,8 +17,8 @@
 3. ``mask`` 必须有 ``mask_expr``；``allow`` / ``deny`` 的 ``mask_expr`` 必须为空；
 4. ``subject_kind`` 非 ``everyone`` 时 ``subject_value`` 不能为空（否则这条策略
    永远匹配不到任何主体 = 白配一条）；
-5. **2026-11 复审裁决（C2）**：编译器未接线前，``condition`` / ``mask_expr`` 一律 400
-   —— 执行的是原 SQL，收下它们等于让管理员以为行过滤/脱敏已生效。
+5. **2026-11 Step 1**：SQL 编译器已接线（``POLICY_ENGINE=enforce`` 真的执行
+   ``decision.sql``），``condition`` / ``mask_expr`` 可以保存；语法/语义校验一条不少。
 
 解释接口的身份**只从库里读**（``sys_user.is_superuser`` + 角色 + ``dept_id``）：
 入参只有 ``user_id``，没有 ``is_superuser``，避免"传个 true 就成超管"。
@@ -210,19 +210,6 @@ def _validate(
         error = validate_condition(condition)
         if error:
             return {}, empty, f"condition 不合法：{error}"
-
-    # C2（2026-11 复审裁决）：编译器未接线前，行/列策略一律不允许保存。
-    # ``_execute_one`` 执行的是**原 SQL**，condition/mask_expr 不会生效 —— 收下它们等于
-    # 让管理员以为行过滤/脱敏已生效（explain 还会显示 permit）。只在**本次请求真的提供了**
-    # 这两个字段时拦：存量库里可能已有历史行，允许改名/停用，但不允许新配。
-    #
-    # ⚠️ 必须在**结构校验之后**：闸门放在前面会把枚举/条件/掩码语法的 9 条用例全部
-    #    短路（用例仍绿但一点校验力都没有）。先校验"策略本身写对没有"，再谈"能不能用"。
-    if ("condition" in provided and condition) or ("mask_expr" in provided and mask_expr):
-        return {}, empty, (
-            "编译器未接线前不支持行/列策略（condition / mask_expr 不会被执行）。"
-            "请先使用 legacy/shadow，等 SQL 编译器接入后再配置"
-        )
 
     fields = {
         "name": name,
@@ -474,7 +461,7 @@ async def explain_access(
                 "matched": [],
                 "attrs_missing": [],
                 "superuser": False,
-                # C2：编译器未接线，实际施加的改写恒为空 —— 治理页据此判断"没生效"
+                # 没有主体就没有判定结果，自然也没有改写
                 "applied": [],
             },
             msg="查询成功",
@@ -497,9 +484,9 @@ async def explain_access(
             ],
             "attrs_missing": list(engine.missing_attributes(policies, principal, table)),
             "superuser": bool(principal.is_superuser),
-            # C2：enforce 未接线编译器，本次判定**没有施加任何**行过滤/掩码。
-            # 恒为空数组是刻意的：策略里有 condition/mask 也不代表它生效。
-            "applied": [],
+            # 真实判定会施加的改写（行过滤 / 掩码）：enforce 执行的就是这些改写；
+            # 拒绝时为空数组（拒绝 = 不执行，不产生改写）。
+            "applied": [dict(item) for item in decision.applied],
         },
         msg="查询成功",
     )

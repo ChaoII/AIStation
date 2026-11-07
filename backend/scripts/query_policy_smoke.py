@@ -7,7 +7,7 @@
 按 spec §11 的验收口径，直接驱动**线上同一套** ``guard.prepare`` / ``compiler.rewrite``，
 不经过 LLM、不依赖 HTTP 服务。
 
-五项检查
+八项检查
 --------
 1. 无主体 → deny（P0：禁止 ``auth=None`` 落到 permit）；
 2. 敏感表 ``select *`` → deny（P0 星号止血，三种模式都生效）；
@@ -15,8 +15,17 @@
    'smoke-policy-%'`` 清理，**不动真实策略**）；
 4. 审计表能读到第 2 步**本次新写**的 deny 记录（先记 ``max(id)`` 水位，只认
    ``id > 水位`` —— 审计 append-only，只按 hash 找会被历史行假通过）；
-5. 无法解析的 SQL → deny（编译器必须**因解析失败**拒；enforce 网关当前是硬闸，
-   只断言 deny，un-gate 后要恢复成"解析失败"的同口径断言）。
+5. 无法解析的 SQL → deny（编译器必须**因解析失败**拒）。
+
+6~8 是 **enforce 真实链路**（Step 1 起编译器已接线）：
+
+6. ``condition`` → ``prepare`` 返回的 ``decision.sql`` 含 ``WHERE``；
+7. 列 ``deny`` → 查询被拒（不让读受限列）；
+8. ``mask`` → 投影被替换成掩码表达式。
+
+6~8 用 ``ds:4`` 的**真实表**（表/列取自已同步的 ``ai_query_schema``），只驱动
+``guard.prepare``，不连远端库、不执行 SQL；临时策略同样以 ``smoke-policy-%`` 前缀
+首尾清理。
 
 用法::
 
@@ -72,6 +81,10 @@ SMOKE_LIKE = "smoke-policy-%"
 #: 用假表名可以保证"就算这行策略漏删，也影响不到任何真实查询"。
 SMOKE_TABLE = "smoke_policy_table"
 
+#: enforce 检查用**真实表**（ds:4 的已同步表；不执行 SQL，只编译）。
+SMOKE_DS = "ds:4"
+SMOKE_REAL_TABLE = "DTXY_PMXX"
+
 #: 行条件用 ``$attr.*``：顺带验证"属性绑定 → 生成过滤条件"这条真实链路。
 SMOKE_CONDITION = "dept_id = $attr.dept_id"
 SMOKE_DEPT = "7"
@@ -79,7 +92,7 @@ SMOKE_DEPT = "7"
 #: 审计里的数据源标记（便于识别、过滤冒烟产生的记录）。
 DATASOURCE = "smoke:policy"
 
-TOTAL = 5
+TOTAL = 8
 
 
 def _principal(*, user_id: int | None = 101, attrs: dict | None = None):
@@ -212,6 +225,164 @@ async def _check_row_filter(policy_id: int) -> tuple[bool, str]:
     return True, sql[:160]
 
 
+async def _insert_policy(
+    name: str,
+    *,
+    resource_code: str,
+    effect: str = "allow",
+    condition: str = "",
+    columns=None,
+    mask_expr: str = "",
+    priority: int = 50,
+) -> int:
+    """插一条临时策略（统一前缀，首尾清理）。"""
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+
+    now = datetime.now()
+    async with async_db_session.begin() as db:
+        result = await db.execute(
+            text(
+                "INSERT INTO ai_policy "
+                "(name, description, enabled, priority, resource_kind, resource_code, "
+                "effect, subject_kind, subject_value, condition, columns, mask_expr, "
+                "marking, created_time, updated_time, is_deleted) "
+                "VALUES (:name, :desc, true, :prio, 'table', :code, :effect, 'everyone', "
+                "'', :cond, :cols, :mask, '', :now, :now, false) RETURNING id"
+            ),
+            {
+                "name": name,
+                "desc": "问数权限冒烟临时策略（scripts/query_policy_smoke.py）",
+                "prio": priority,
+                "code": resource_code,
+                "effect": effect,
+                "cond": condition,
+                "cols": json.dumps(columns or [], ensure_ascii=False),
+                "mask": mask_expr,
+                "now": now,
+            },
+        )
+        return int(result.scalar())
+
+
+async def _real_table() -> tuple[str, list[str]]:
+    """挑一张 ds:4 的真实表与它的列（只读本地已同步的 ``ai_query_schema``）。
+
+    优先 ``DTXY_PMXX``（冒烟环境实测有数据、列名稳定）；不存在时按名字排序取第一张
+    非敏感、至少两列的表。返回空 = 环境没有可用的真实表元数据。
+    """
+    from app.plugin.module_ai.query.policy.model import sensitive_tables, table_columns
+
+    sensitive = {s.lower() for s in await sensitive_tables()}
+    got = await table_columns(SMOKE_DS, [SMOKE_REAL_TABLE])
+    if got.get(SMOKE_REAL_TABLE):
+        return SMOKE_REAL_TABLE, got[SMOKE_REAL_TABLE]
+
+    from app.plugin.module_ai.query.service import AiQueryService as Q
+
+    schema = await Q._ds_schema_map(SMOKE_DS)
+    for table in sorted(schema):
+        if table.lower() in sensitive:
+            continue
+        cols = await table_columns(SMOKE_DS, [table])
+        columns = cols.get(table) or []
+        if len(columns) >= 2:
+            return table, columns
+    return "", []
+
+
+def _pick_text_column(columns: list[str]) -> str:
+    """掩码测试优先用已知文本列（``left(col, 3)`` 在数字列上会报类型错）。"""
+    for name in ("VARIETY", "NAME", "COALTYPE", "CTYPE", "REMARK", "TOOLTIP"):
+        for col in columns:
+            if str(col).upper() == name:
+                return col
+    return columns[0] if columns else ""
+
+
+async def _prepare_enforce(sql: str, *, dialect: str = "postgres"):
+    """在**本进程内**以 enforce 模式驱动网关（不改库、不影响已启动服务）。"""
+    from app.plugin.module_ai.query.policy.guard import prepare
+
+    os.environ["POLICY_ENGINE"] = "enforce"
+    try:
+        return await prepare(
+            sql=sql,
+            principal=_principal(),
+            entry="ask",
+            datasource=SMOKE_DS,
+            dialect=dialect,
+        )
+    finally:
+        os.environ.pop("POLICY_ENGINE", None)
+
+
+async def _check_enforce_row_filter(table: str, columns: list[str]) -> tuple[bool, str]:
+    """⑥ enforce + condition → 编译后的 SQL 含 WHERE。"""
+    await _cleanup()
+    condition_col = columns[0]
+    await _insert_policy(
+        "smoke-policy-enforce-row",
+        resource_code=table,
+        condition=f"{condition_col} IS NOT NULL",
+    )
+    other = columns[1] if len(columns) > 1 else columns[0]
+    decision = await _prepare_enforce(f'SELECT "{condition_col}", "{other}" FROM "{table}"')
+    if not decision.permit:
+        return False, f"enforce 拒绝了带 allow 的查询：{decision.reason}"
+    sql = " ".join(str(decision.sql or "").split())
+    if "where" not in sql.lower():
+        return False, f"编译后的 SQL 不含 WHERE：{sql[:200]}"
+    if condition_col.lower() not in sql.lower():
+        return False, f"WHERE 里没有条件列 {condition_col}：{sql[:200]}"
+    if not decision.applied:
+        return False, "applied 为空（审计会以为没有施加改写）"
+    return True, sql[:160]
+
+
+async def _check_enforce_column_deny(table: str, columns: list[str]) -> tuple[bool, str]:
+    """⑦ enforce + 列 deny → 查询被拒。"""
+    await _cleanup()
+    await _insert_policy("smoke-policy-enforce-allow", resource_code=table)
+    denied = columns[1] if len(columns) > 1 else columns[0]
+    await _insert_policy(
+        "smoke-policy-enforce-deny",
+        resource_code=table,
+        effect="deny",
+        columns=[denied],
+    )
+    decision = await _prepare_enforce(f'SELECT "{denied}" FROM "{table}"')
+    if decision.permit:
+        return False, f"deny 列 {denied} 仍被放行（列策略没生效）"
+    if denied.lower() not in decision.reason.lower():
+        return False, f"拒绝了，但原因没说清是哪一列：{decision.reason}"
+    return True, decision.reason[:160]
+
+
+async def _check_enforce_mask(table: str, columns: list[str]) -> tuple[bool, str]:
+    """⑧ enforce + mask → 投影被替换成掩码表达式。"""
+    await _cleanup()
+    await _insert_policy("smoke-policy-enforce-allow", resource_code=table)
+    masked = _pick_text_column(columns)
+    await _insert_policy(
+        "smoke-policy-enforce-mask",
+        resource_code=table,
+        effect="mask",
+        columns=[masked],
+        mask_expr=f"left({masked}, 3)",
+    )
+    decision = await _prepare_enforce(f'SELECT "{masked}" FROM "{table}"')
+    if not decision.permit:
+        return False, f"enforce 拒绝了合法查询：{decision.reason}"
+    sql = " ".join(str(decision.sql or "").split())
+    if "left(" not in sql.lower():
+        return False, f"投影没有被掩码替换：{sql[:200]}"
+    if not any(str(item.get("mask") or "") for item in decision.applied):
+        return False, f"applied 里没有 mask：{decision.applied}"
+    return True, sql[:160]
+
+
 async def _check_audit(sql: str, min_id: int) -> tuple[bool, str]:
     """④ 审计表能读到第 ② 步**本次新写**的 deny 记录（``id > min_id``）。"""
     from app.plugin.module_ai.query.policy import audit
@@ -243,12 +414,7 @@ async def _check_parse_fail() -> tuple[bool, str]:
     走的是「无法解析 → fail-closed」这条语义。老版本用 ``select from where ((``，
     正则猜出表 ``where`` → 实际是"表未覆盖 → 默认拒绝"，**没验到解析失败**（Important 4）。
 
-    ⚠️ 2026-11 复审（C2）：``enforce`` 在编译器接线前是**硬闸**（一律 deny），
-    所以网关这一侧只断言「拒绝」。**un-gate 后必须恢复**成"reason 含解析失败"的断言
-    （前置条件见 ``policy/guard.py`` 模块 docstring）。
-
-    ``POLICY_ENGINE`` 只作用于**本进程**（``_cfg`` 每次读取都看环境变量），
-    不改库、不影响已启动的后端服务。
+    Step 1 起 enforce 已接线编译器，网关这一侧必须与编译器同口径：reason 含「解析」。
     """
     from app.plugin.module_ai.query.policy import compiler, repo
     from app.plugin.module_ai.query.policy.guard import prepare
@@ -272,17 +438,12 @@ async def _check_parse_fail() -> tuple[bool, str]:
         os.environ.pop("POLICY_ENGINE", None)
     if gateway.permit:
         return False, "enforce 网关放过了无法解析的 SQL"
-    if "解析" in gateway.reason:
-        tail = gateway.reason[:40]
-    elif "enforce" in gateway.reason and "编译器" in gateway.reason:
-        # 当前形态：硬闸。不是"表未覆盖"那种误判，可以接受。
-        tail = f"硬闸：{gateway.reason[:40]}"
-    else:
+    if "解析" not in gateway.reason:
         return False, (
-            "enforce 网关拒绝了，但不是预期原因（既不是解析失败也不是 enforce 硬闸）："
+            "enforce 网关拒绝了，但不是因为解析失败："
             f"{gateway.reason}"
         )
-    return True, f"compiler={compiled.reason[:40]} | guard={tail}"
+    return True, f"compiler={compiled.reason[:40]} | guard={gateway.reason[:40]}"
 
 
 def _report(index: int, title: str, ok: bool, detail: str) -> None:
@@ -372,6 +533,28 @@ async def main() -> int:
         _report(5, "无法解析的 SQL → deny", ok, detail)
         if not ok:
             problems.append(f"⑤ {detail}")
+
+        # ---- 6~8：enforce 真实链路（ds:4 真实表，只编译不执行）--------------
+        table, columns = await _real_table()
+        if not table:
+            _report(6, "enforce 行策略 → SQL 含 WHERE", False,
+                    f"{SMOKE_DS} 没有可用的真实表元数据（先同步 ai_query_schema）")
+            problems.append("⑥ 缺少 ds:4 真实表元数据，无法验证 enforce")
+        else:
+            ok, detail = await _check_enforce_row_filter(table, columns)
+            _report(6, f"enforce 行策略 → SQL 含 WHERE（{table}）", ok, detail)
+            if not ok:
+                problems.append(f"⑥ {detail}")
+
+            ok, detail = await _check_enforce_column_deny(table, columns)
+            _report(7, f"enforce 列 deny → 拒绝（{table}）", ok, detail)
+            if not ok:
+                problems.append(f"⑦ {detail}")
+
+            ok, detail = await _check_enforce_mask(table, columns)
+            _report(8, f"enforce mask → 投影被替换（{table}）", ok, detail)
+            if not ok:
+                problems.append(f"⑧ {detail}")
     finally:
         if policy_id:
             removed = await _cleanup()

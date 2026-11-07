@@ -125,13 +125,14 @@ def test_save_rejects_bad_policy(test_client, auth_headers, label, over):
     assert not [row for row in rows if row["name"] == name], f"{label} 的坏策略被写进了库"
 
 
-def test_save_rejects_row_condition_until_compiler_wired(test_client, auth_headers):
-    """C2：编译器未接线前，保存带 ``condition`` 的策略一律 400 且不入库。
+def test_save_accepts_row_condition(test_client, auth_headers):
+    """Step 1：编译器接线后，带 ``condition`` 的策略可以保存（校验不放松）。
 
-    历史缺陷：策略 API 收下 condition、explain 显示 permit，但执行路径用的是**原 SQL**
-    —— 管理员以为行过滤生效，实际明文全行。宁可显式拒绝，也不能"看起来配了"。
+    历史缺陷（C2）：编译器未接线时 API 收下 condition、explain 显示 permit，但执行
+    路径用原 SQL。现在 enforce 真的执行编译后的 SQL，保存闸门随之下线；语法校验
+    仍由 ``_validate`` + ``validate_condition`` 负责（坏条件用例见参数化矩阵）。
     """
-    name = "pytest-policy-attr-blocked"
+    name = "pytest-policy-attr-ok"
     r = _save(
         test_client,
         auth_headers,
@@ -140,12 +141,18 @@ def test_save_rejects_row_condition_until_compiler_wired(test_client, auth_heade
         condition="dept_id = $attr.dept_id AND owner_id = $user.id",
         columns=["dept_id", "owner_id"],
     )
-    assert r.status_code == 400, r.text
-    msg = r.json()["msg"]
-    assert "编译器" in msg, f"拒绝文案要说明原因（编译器未接线）：{msg}"
+    assert r.status_code == 200, r.text
+    pid = r.json()["data"]["id"]
 
-    rows = _list(test_client, auth_headers, resource_code="pytest_policy_attr")
-    assert not [row for row in rows if row["name"] == name], "被拒的策略不得入库"
+    try:
+        row = next(
+            x for x in _list(test_client, auth_headers, resource_code="pytest_policy_attr")
+            if x["id"] == pid
+        )
+        assert row["condition"] == "dept_id = $attr.dept_id AND owner_id = $user.id"
+        assert row["columns"] == ["dept_id", "owner_id"]
+    finally:
+        test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
 
 
 # ---------------------------------------------------------------------------
@@ -259,9 +266,9 @@ def test_partial_update_keeps_unchanged_fields(test_client, auth_headers):
         test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
 
 
-def test_save_rejects_mask_until_compiler_wired(test_client, auth_headers):
-    """C2：编译器未接线前，保存带 ``mask_expr`` 的策略一律 400（列脱敏不生效）。"""
-    name = "pytest-policy-mask-blocked"
+def test_save_accepts_mask(test_client, auth_headers):
+    """Step 1：带 ``mask_expr`` 的策略可以保存；非法掩码仍 400。"""
+    name = "pytest-policy-mask-ok"
     r = _save(
         test_client,
         auth_headers,
@@ -271,12 +278,19 @@ def test_save_rejects_mask_until_compiler_wired(test_client, auth_headers):
         columns=["phone"],
         mask_expr="upper(phone)",
     )
-    assert r.status_code == 400, r.text
-    msg = r.json()["msg"]
-    assert "编译器" in msg, f"拒绝文案要说明原因（编译器未接线）：{msg}"
+    assert r.status_code == 200, r.text
+    pid = r.json()["data"]["id"]
 
-    rows = _list(test_client, auth_headers, resource_code="pytest_policy_mask_keep")
-    assert not [row for row in rows if row["name"] == name], "被拒的 mask 策略不得入库"
+    try:
+        row = next(
+            x for x in _list(test_client, auth_headers, resource_code="pytest_policy_mask_keep")
+            if x["id"] == pid
+        )
+        assert row["effect"] == "mask"
+        assert row["mask_expr"] == "upper(phone)"
+        assert row["columns"] == ["phone"]
+    finally:
+        test_client.post(f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers)
 
 
 def test_update_validates_merged_state(test_client, auth_headers):
@@ -425,7 +439,7 @@ def test_explain_default_deny_for_plain_user(test_client, auth_headers, plain_us
     assert data["superuser"] is False
     assert "默认拒绝" in data["reason"]
     assert data["policy_ids"] == [] and data["matched"] == []
-    # C2：enforce 未接线编译器，explain 明确告诉治理页「实际施加的改写」为空
+    # 没有策略/没有 allow → 拒绝且不可能有改写；explain 如实返回空数组
     assert data["applied"] == []
 
 
@@ -455,8 +469,7 @@ def test_explain_reports_deny_policy_and_missing_attr(
         effect="deny",
         subject_kind="everyone",
     )
-    # 行/列策略暂时**不能经 API 保存**（C2 硬闸）—— 但存量库里可能已有这类行，
-    # explain 必须照样解释它们，所以这里直接写库（模拟迁移/历史数据）。
+    # 存量库里可能已有历史行（或直接写库模拟迁移数据）；explain 必须照样解释它们。
     from datetime import datetime
 
     now = datetime.now().replace(microsecond=0)
@@ -501,7 +514,7 @@ def test_explain_reports_deny_policy_and_missing_attr(
         assert a["permit"] is False
         assert "dept_id" in a["attrs_missing"]
         assert ids[1] in a["policy_ids"]
-        assert a["applied"] == [], "编译器未接线时不得声称已施加列/行改写"
+        assert a["applied"] == [], "拒绝的判定不可能有已施加的改写"
     finally:
         test_client.post(
             f"{BASE}/policy/delete", json={"ids": ids}, headers=auth_headers
