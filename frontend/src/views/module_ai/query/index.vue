@@ -403,6 +403,7 @@
             {{ t("ai_logs.correspondingQuestion", { q: r.question }) }}
           </div>
         </div>
+        <el-empty v-if="!visibleGroups.length" :image-size="56" description="没有匹配的配置项" />
       </div>
       <template #footer>
         <el-button @click="reportSuggestVisible = false">{{ t("ai_logs.skipQa") }}</el-button>
@@ -517,7 +518,7 @@
     <el-dialog
       v-model="setVisible"
       :title="t('ai_logs.querySettings')"
-      width="600px"
+      width="760px"
       append-to-body
     >
       <el-alert
@@ -528,15 +529,30 @@
         class="q-fb-tip"
       />
       <div v-loading="setLoading">
+        <el-input
+          v-model="setSearch"
+          size="small"
+          clearable
+          :placeholder="t('ai_logs.settingSearchPlaceholder')"
+          class="q-set__search"
+        />
         <el-radio-group v-model="setMode" size="small" class="q-set__mode">
           <el-radio-button label="simple">{{ t("ai_logs.settingModeSimple") }}</el-radio-button>
           <el-radio-button label="expert">{{ t("ai_logs.settingModeExpert") }}</el-radio-button>
         </el-radio-group>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
-          <div class="q-set__group-title">{{ g.name }}</div>
+          <div class="q-set__group-title">
+            {{ g.name }}
+            <span class="q-set__count">{{ g.items.length }}</span>
+          </div>
           <div v-for="d in g.items" :key="d.key" class="q-set__row">
             <div class="q-set__main">
-              <div class="q-set__label">{{ d.label }}</div>
+              <div class="q-set__label">
+                {{ d.label }}
+                <span v-if="setMode === 'expert' && d.rawKey !== d.label" class="q-set__key">
+                  {{ d.rawKey }}
+                </span>
+              </div>
               <div v-if="d.tip" class="q-set__tip">{{ d.tip }}</div>
             </div>
             <el-switch
@@ -1299,6 +1315,55 @@ onMounted(async () => {
 });
 
 // 其余参数只在「专家」档显示；label 用配置键本身，避免逐项翻译失真。
+
+const EXTRA_LABEL: Record<string, string> = {
+  nl2sql_max_tokens: "生成最大 token",
+  nl2sql_call_timeout: "生成超时（秒）",
+  nl2sql_thinking_mode: "思考模式（off/low/on）",
+  llm_keepalive_enabled: "模型保活",
+  llm_keepalive_interval: "保活间隔（秒）",
+  schema_top_k: "召回表数量",
+  schema_semantic_weight: "语义权重",
+  schema_keyword_weight: "关键词权重",
+  entity_enabled: "实体识别",
+  enum_hint_enabled: "枚举取值提示",
+  full_entity_no_limit: "全实体不截断",
+  entity_name_rule: "实体名规则",
+  entity_map: "实体映射（JSON）",
+  agno_semantic_enabled: "Agno 语义检索",
+  query_cost_max_rows: "费用查询行上限",
+  fewshot_auto_curate: "Few-shot 自动沉淀",
+  decomposed_planning: "多步分解",
+  kg_enabled: "知识图谱",
+  recall_top_k: "召回条数",
+  recall_min_score: "召回阈值",
+  recall_w_vector: "向量权重",
+  recall_w_keyword: "关键词权重",
+  recall_w_ontology: "本体权重",
+  recall_w_entity: "实体权重",
+  object_query_max_objects: "对象查询对象数",
+  object_query_call_timeout: "IR 生成超时（秒）",
+  object_query_max_traverse_depth: "关系遍历深度",
+  object_query_auto_index_after: "自动索引触发次数",
+  multi_dialect_enabled: "多方言支持",
+  query_rewrite_enabled: "查询改写",
+  query_rewrite_call_timeout: "改写超时（秒）",
+  schema_asset_meta_enabled: "资产描述进提示词",
+  recall_expand_cap: "召回扩展上限",
+  object_query_max_tokens: "对象查询 token",
+  policy_engine: "权限引擎（legacy/shadow/enforce）",
+};
+
+const EXTRA_HELP: Record<string, string> = {
+  recall_top_k: "影响选表召回，改动前先跑评测对比",
+  recall_min_score: "低于该分数的召回结果会被丢弃",
+  schema_top_k: "拼进提示词的表数量，过大拖慢生成",
+  object_query_enabled: "IR 两阶段规划，实测无收益时保持关闭",
+  policy_engine: "enforce 需先配好策略，否则会大面积拒答",
+  query_rewrite_enabled: "多一次模型调用，实测收益不稳定",
+  nl2sql_thinking_mode: "off 更快，复杂问题可试 low",
+};
+
 const EXTRA_KEYS = [
   "nl2sql_max_tokens",
   "nl2sql_call_timeout",
@@ -1366,21 +1431,37 @@ function guessGroup(key: string): string {
 }
 
 const ALL_DEFS = [
-  ...SETTING_DEFS.map((d: any) => ({ ...d, expert: false, group: guessGroup(d.key) })),
+  ...SETTING_DEFS.map((d: any) => ({
+    ...d,
+    expert: false,
+    rawKey: d.key,
+    group: guessGroup(d.key),
+  })),
   ...EXTRA_KEYS.map((k) => ({
     key: k,
-    label: k,
+    label: EXTRA_LABEL[k] || k,
+    rawKey: k,
     type: guessType(k),
-    tip: "",
+    tip: EXTRA_HELP[k] || "",
     expert: true,
     group: guessGroup(k),
   })),
 ];
 
 const setMode = ref<"simple" | "expert">("simple");
-const visibleDefs = computed(() =>
-  ALL_DEFS.filter((d: any) => setMode.value === "expert" || !d.expert)
-);
+const setSearch = ref("");
+const visibleDefs = computed(() => {
+  const kw = setSearch.value.trim().toLowerCase();
+  return ALL_DEFS.filter((d: any) => {
+    if (setMode.value !== "expert" && d.expert) return false;
+    if (!kw) return true;
+    return [d.label, d.key, d.tip].some((x) =>
+      String(x || "")
+        .toLowerCase()
+        .includes(kw)
+    );
+  });
+});
 const visibleGroups = computed(() => {
   const out: { name: string; items: any[] }[] = [];
   for (const d of visibleDefs.value) {
@@ -1448,6 +1529,26 @@ const visibleGroups = computed(() => {
 <style lang="scss" scoped>
 .q-set__mode {
   margin-bottom: 10px;
+}
+
+.q-set__search {
+  margin-bottom: 8px;
+}
+
+.q-set__count {
+  margin-left: 6px;
+  padding: 0 6px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+}
+
+.q-set__key {
+  margin-left: 6px;
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
 }
 
 .q-set__group-title {
@@ -1723,6 +1824,7 @@ const visibleGroups = computed(() => {
 }
 
 .q-set__tip {
+  line-height: 1.45;
   margin-top: 2px;
   font-size: 12px;
   line-height: 1.5;
