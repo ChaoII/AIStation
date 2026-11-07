@@ -257,6 +257,15 @@ async def _ensure_query_tables() -> None:
     from .policy.model import ensure_policy_tables
 
     await ensure_policy_tables()
+    # 血缘表（`ai_query_lineage`）：enforce/shadow 的视图映射依赖它。strict 化后
+    # "表不存在"会被当成读取失败 → enforce 全拒、shadow 静默零差异。必须与策略表
+    # 在同一处幂等创建；失败只降级（可见），不拖垮启动。
+    try:
+        from .lineage import ensure_lineage_table
+
+        await ensure_lineage_table()
+    except Exception as e:  # noqa: BLE001
+        _degrade("query_lineage_table", e)
     # T7 接线自检（addendum 第 4 条）：shadow 差异写入依赖
     # ``ai_policy_shadow_diff.rewrite`` 这一列。补列失败（无 DDL 权限）时差异会整条
     # 写不进去，而写入本身是 fail-open —— 表现为「差异表悄悄没数据」，灰度报告被
@@ -1089,11 +1098,14 @@ def validate_sql(sql: str, allowed_tables: set[str], question: str = "") -> str:
     removed_semis = cleaned.rstrip(";")
     if ";" in removed_semis:
         raise CustomException(msg="查询语句必须为单条 SELECT")
-    # 只读
-    head = removed_semis.strip().lower()
-    if not head.startswith("select") or head.startswith("select "):
-        if not head.startswith("select"):
-            raise CustomException(msg="仅允许 SELECT 查询")
+    # 只读：接受 SELECT 与 CTE（WITH ... SELECT）；其它语句一律拒。
+    # 不能只看 `head.startswith("select")` —— `WITH x AS (...) SELECT ...` 是合法只读
+    # 查询，enforce 补跑 validate 后会把整类 CTE 查询误杀（2026-11 复审回归）。
+    # CTE 体内若藏 DML（`WITH x AS (DELETE ...) SELECT`）由下面的 `_FORBIDDEN`
+    # 与 AST 的 DML 节点检查兜住。
+    head = removed_semis.lstrip().lower()
+    if re.match(r"^(select|with)\b", head) is None:
+        raise CustomException(msg="仅允许 SELECT 查询")
     if _FORBIDDEN.search(removed_semis):
         raise CustomException(msg="查询包含被禁止的写/DDL 语句")
     # 白名单表（**大小写不敏感**：大小写敏感库里模型可能把小写名写出来，
@@ -7894,22 +7906,15 @@ class AiQueryService:
                 await _assert_ds_access(ds_id, auth)
                 return _PolicyDecision(True, "legacy：数据源访问校验通过")
 
-            # I3：legacy 不解析方言（省一次 `_load_ds`）；enforce/shadow 才按真实方言编译。
-            try:
-                _mode = await _policy_guard._engine_mode()
-            except Exception:  # noqa: BLE001 - 读不到开关时让 guard 自己 fail-closed
-                _mode = ""
-            _dialect = (
-                "postgres" if _mode == "legacy" else await cls._sql_dialect(datasource)
-            )
-
+            # 三种模式都用**真实方言**：legacy 的星号止血（`unexpanded_star`）也要能
+            # 解析 MySQL 反引号 / `# 注释` / FORCE INDEX，否则"能跑的查询"会被误杀。
+            # `_sql_dialect` 有 300s 进程内缓存，成本可接受。
             decision = await _policy_guard.prepare(
                 sql=sql,
                 principal=principal,
                 entry=entry,
                 datasource=datasource,
-                # 外部库可能是 MySQL/SQLite：编译按真实方言读写，别把 PG 语法套过去
-                dialect=_dialect,
+                dialect=await cls._sql_dialect(datasource),
                 legacy_check=_legacy_ds_check,
             )
             if not decision.permit:

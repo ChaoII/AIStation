@@ -408,14 +408,73 @@ def _patch_execute_one_custom(monkeypatch, *, mode, dialect_calls):
     return captured
 
 
-def test_legacy_custom_ds_does_not_resolve_dialect(monkeypatch):
-    calls: list[str] = []
-    captured = _patch_execute_one_custom(
-        monkeypatch, mode="legacy", dialect_calls=calls
-    )
+def test_legacy_custom_ds_uses_real_dialect_for_star_stop(monkeypatch):
+    """legacy 也必须用真实方言做星号止血：MySQL 反引号 ``count(*)`` 不能被误杀。"""
+    import app.plugin.module_ai.query.service as S
+    from app.plugin.module_ai.query.policy import guard
+    from app.plugin.module_ai.query.policy import principal as P
+    from app.plugin.module_ai.query.service import AiQueryService as Q
 
-    assert calls == [], f"legacy 自定义源不应解析方言（多一次 _load_ds 查询）：{calls}"
-    assert captured["dialect"] == "postgres", captured
+    dialect_calls: list[str] = []
+    executed: list[str] = []
+
+    async def _engine_mode():
+        return "legacy"
+
+    async def _dialect(cls, datasource):
+        dialect_calls.append(datasource)
+        return "mysql"
+
+    async def _load_principal(auth, entry="ask"):
+        return SimpleNamespace(
+            user_id=42, is_superuser=False, roles=(), attrs={}, entry=entry
+        )
+
+    async def _ds_access(ds_id, auth):
+        return None
+
+    async def _custom(ds_id, sql, auth):
+        executed.append(sql)
+        return {"columns": ["cnt"], "rows": [[1]], "took_ms": 1}
+
+    async def _sensitive():
+        return {"ai_models"}  # 非空才会真的去解析 SQL
+
+    async def _audit(**kw):
+        return None
+
+    monkeypatch.setattr(guard, "_engine_mode", _engine_mode)
+    monkeypatch.setattr(guard, "sensitive_tables", _sensitive)
+    monkeypatch.setattr(guard, "write_access_log", _audit)
+    monkeypatch.setattr(P, "load_principal", _load_principal)
+    monkeypatch.setattr(Q, "_sql_dialect", classmethod(_dialect))
+    monkeypatch.setattr(S, "_assert_ds_access", _ds_access)
+    monkeypatch.setattr(S, "_execute_custom_ds_sql", _custom)
+
+    auth = SimpleNamespace(user=SimpleNamespace(id=42, is_superuser=False))
+    out = asyncio.run(Q._execute_one("select count(*) from `t`", "ds:7", auth))
+
+    assert dialect_calls == ["ds:7"], (
+        f"legacy 也必须解析真实方言（否则 postgres 解析 MySQL 反引号会误杀）：{dialect_calls}"
+    )
+    assert executed and out["rows"] == [[1]], "合法 MySQL count(*) 被星号止血误杀"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select count(*) from `t`",
+        "select count(*) from `t` # comment",
+        "select count(*) from `t` force index (idx_a)",
+        "select straight_join count(*) from `t`",
+    ],
+)
+def test_mysql_syntax_star_stop_tolerated_with_mysql_dialect(sql):
+    """MySQL 专有语法只有用 mysql 方言读才不误判（legacy 也必须传对方言）。"""
+    from app.plugin.module_ai.query.policy.star import unexpanded_star
+
+    assert unexpanded_star(sql, {"ai_models"}, "mysql") is None, sql
+    assert unexpanded_star(sql, {"ai_models"}, "postgres") == "*", sql
 
 
 def test_enforce_custom_ds_resolves_dialect(monkeypatch):
@@ -426,6 +485,69 @@ def test_enforce_custom_ds_resolves_dialect(monkeypatch):
 
     assert calls == ["ds:7"], f"enforce 必须按真实方言编译：{calls}"
     assert captured["dialect"] == "mysql", captured
+
+
+# ===========================================================================
+# 收尾回归：CTE 查询 / 血缘表启动建表
+# ===========================================================================
+def test_validate_sql_accepts_cte():
+    from app.plugin.module_ai.query.service import validate_sql
+
+    out = validate_sql("WITH x AS (SELECT 1) SELECT * FROM x", set())
+
+    assert "with" in out.lower() and "limit" in out.lower(), out
+
+
+def test_validate_sql_rejects_cte_with_delete():
+    from app.core.exceptions import CustomException
+    from app.plugin.module_ai.query.service import validate_sql
+
+    with pytest.raises(CustomException):
+        validate_sql("WITH x AS (DELETE FROM t RETURNING id) SELECT * FROM x", set())
+
+
+def test_ensure_query_tables_invokes_lineage_ensure(monkeypatch):
+    """启动期必须幂等创建 `ai_query_lineage`（否则 enforce 全拒 / shadow 零差异）。"""
+    from app.plugin.module_ai.query import lineage as L
+    from app.plugin.module_ai.query import service as S
+    from app.plugin.module_ai.query.policy import model as PM
+
+    called: list[int] = []
+
+    async def _ensure():
+        called.append(1)
+
+    async def _policy():
+        return None
+
+    monkeypatch.setattr(S, "_QUERY_TABLES_SQL", ())
+    monkeypatch.setattr(S, "_QUERY_ALTER_COLS", ())
+    monkeypatch.setattr(PM, "ensure_policy_tables", _policy)
+    monkeypatch.setattr(L, "ensure_lineage_table", _ensure)
+
+    asyncio.run(S._ensure_query_tables())
+
+    assert called, "_ensure_query_tables 没有调用 ensure_lineage_table"
+
+
+def test_lineage_table_created_at_startup(test_client, db_run):
+    """启动确保函数跑完后，库里真的有 `ai_query_lineage`。"""
+    from sqlalchemy import inspect as sa_inspect
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.query import service as S
+
+    db_run(S._ensure_query_tables())
+
+    async def _has() -> bool:
+        async with async_db_session() as db:
+            names = await db.run_sync(
+                lambda s: set(sa_inspect(s.connection()).get_table_names())
+            )
+        return "ai_query_lineage" in names
+
+    assert db_run(_has()) is True
+
 
 
 # ===========================================================================
