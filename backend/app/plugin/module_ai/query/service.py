@@ -6764,6 +6764,11 @@ class AiQueryService:
         return _ASSET_TMETA
 
     @classmethod
+    @classmethod
+    async def effective_settings(cls) -> dict:
+        """当前**生效**配置（默认值 + 库内覆盖），供界面回显。"""
+        return await cls._cfg()
+
     async def get_settings(cls) -> dict:
         defaults = {
             # 行数上限/超时/重试：**这三个以前只写在默认值里、代码从不读**

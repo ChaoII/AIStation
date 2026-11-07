@@ -238,6 +238,13 @@ export function getQueryStats() {
 export function getQuerySettings() {
   return request({ url: `${API_PATH}/settings`, method: "get" });
 }
+/** 问数配置的默认值（恢复默认用） */
+export function getQuerySettingsDefaults() {
+  return request<ApiResponse<Record<string, string>>>({
+    url: `${API_PATH}/settings/defaults`,
+    method: "get",
+  });
+}
 export function saveQuerySetting(data: { key: string; value: string; remark: string }) {
   return request({
     url: `${API_PATH}/settings/save`,

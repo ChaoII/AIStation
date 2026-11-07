@@ -590,12 +590,24 @@
                 style="width: 120px"
                 @update:model-value="(v: number | undefined) => (setForm[d.key] = String(v ?? 1))"
               />
+              <el-button
+                v-if="isChanged(d.key) && setDefaults[d.key] !== undefined"
+                link
+                size="small"
+                class="q-set__reset"
+                @click="resetOne(d)"
+              >
+                {{ t("ai_logs.settingReset") }}
+              </el-button>
               <span v-if="isChanged(d.key)" class="q-set__dot" />
             </div>
           </div>
         </div>
       </div>
       <template #footer>
+        <el-button class="q-set__reset-all" @click="resetAll">
+          {{ t("ai_logs.settingResetAll") }}
+        </el-button>
         <el-button @click="setVisible = false">{{ t("ai_logs.cancel") }}</el-button>
         <el-button type="primary" :loading="setSaving" @click="saveSettings">
           {{ t("ai_logs.save") }}
@@ -623,6 +635,7 @@ import {
   getQueryMessages,
   getQuerySessions,
   getQuerySettings,
+  getQuerySettingsDefaults,
   queryFeedback,
   promoteQueryMetric,
   getQueryStats,
@@ -1105,8 +1118,12 @@ async function openSettings() {
   setForm.value = { ...base };
   setLoaded.value = { ...base };
   try {
-    const r = await getQuerySettings();
+    const [r, rd] = await Promise.all([getQuerySettings(), getQuerySettingsDefaults()]);
     const d = r.data?.data || {};
+    const rawDefaults = rd.data?.data || {};
+    setDefaults.value = Object.fromEntries(
+      Object.entries(rawDefaults).map(([k, v]) => [k, String(v ?? "")])
+    );
     const merged: Record<string, string> = { ...base };
     ALL_DEFS.forEach((x: any) => {
       if (d[x.key] !== undefined && d[x.key] !== null) merged[x.key] = String(d[x.key]);
@@ -1118,6 +1135,28 @@ async function openSettings() {
   } finally {
     setLoading.value = false;
   }
+}
+
+function resetOne(d: any) {
+  const v = setDefaults.value[d.key];
+  if (v !== undefined) setForm.value[d.key] = v;
+}
+
+async function resetAll() {
+  try {
+    await ElMessageBox.confirm(t("ai_logs.settingResetConfirm"), t("ai_logs.settingResetAll"), {
+      type: "warning",
+      confirmButtonText: t("ai_logs.settingResetAll"),
+      cancelButtonText: t("ai_logs.cancel"),
+    });
+  } catch {
+    return;
+  }
+  const next: Record<string, string> = { ...setForm.value };
+  ALL_DEFS.forEach((d: any) => {
+    if (setDefaults.value[d.key] !== undefined) next[d.key] = setDefaults.value[d.key];
+  });
+  setForm.value = next;
 }
 
 async function saveSettings() {
@@ -1464,6 +1503,7 @@ const ALL_DEFS = [
 
 const setMode = ref<"simple" | "expert">("simple");
 const setSearch = ref("");
+const setDefaults = ref<Record<string, string>>({});
 const showChanged = ref(false);
 const collapsedGroups = ref<Record<string, boolean>>({});
 const changedKeys = computed(() => {
@@ -1604,6 +1644,15 @@ const visibleGroups = computed(() => {
   display: inline-block;
   width: 14px;
   color: var(--el-text-color-secondary);
+}
+
+.q-set__reset {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.q-set__reset-all {
+  float: left;
 }
 
 .q-set__dot {

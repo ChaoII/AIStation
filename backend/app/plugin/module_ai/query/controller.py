@@ -1709,6 +1709,13 @@ async def query_stats(
 async def query_settings(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.effective_settings(), msg="查询成功")
+
+
+@AiQueryRouter.get("/settings/defaults", summary="问数配置默认值")
+async def query_settings_defaults(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.get_settings(), msg="查询成功")
 
 

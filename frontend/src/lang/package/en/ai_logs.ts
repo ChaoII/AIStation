@@ -226,6 +226,9 @@ export default {
   settingGroupSecurity: "Security",
   settingSearchPlaceholder: "Search settings…",
   settingChangedOnly: "Changed only",
+  settingReset: "Reset",
+  settingResetAll: "Reset all",
+  settingResetConfirm: "Reset all settings to defaults? Applies after saving.",
   settingTip:
     'These are engineering switches for Smart Query; they take effect immediately after saving. Items marked "experimental" are off by default and require comparison validation before enabling.',
   leaveEmptyDefault: "Empty = default",
