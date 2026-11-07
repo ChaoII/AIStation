@@ -550,7 +550,8 @@ async def draft_asset_desc(
 ) -> JSONResponse:
     tables = list(data.get("tables") or [])
     return SuccessResponse(
-        data=await AiQueryService.draft_asset_descriptions(auth, tables),
+        data=await AiQueryService.draft_asset_descriptions(
+            auth, tables, missing_only=bool(data.get("missing_only"))),
         msg="起草完成",
     )
 

@@ -120,6 +120,14 @@
                   >
                     {{ t("ai_workflow.ig_genDesc") }}
                   </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:query:ask'"
+                    size="small"
+                    :loading="batchLoading"
+                    @click="runBatchDraft"
+                  >
+                    {{ t("ai_workflow.ig_aiDraftBatch") }}
+                  </el-button>
                   <el-switch v-model="hideSys" :active-text="t('ai_workflow.ig_onlyBizTable')" />
                   <el-switch
                     v-model="hideUnmaintained"
@@ -2078,6 +2086,31 @@
       </el-button>
     </template>
   </el-dialog>
+
+  <el-dialog
+    v-model="batchVisible"
+    :title="t('ai_workflow.ig_aiDraftBatchTitle', { count: batchDrafts.length })"
+    width="760px"
+    append-to-body
+  >
+    <el-table :data="batchDrafts" border size="small" max-height="420">
+      <el-table-column prop="table" :label="t('ai_workflow.ig_field')" width="220" />
+      <el-table-column prop="description" :label="t('ai_workflow.ig_description')" />
+      <el-table-column :label="t('ai_workflow.ig_fields')" width="80">
+        <template #default="{ row }">{{ (row.columns || []).length }}</template>
+      </el-table-column>
+      <el-table-column :label="t('ai_workflow.ig_aiDraftApply')" width="110">
+        <template #default="{ row }">
+          <el-button link type="primary" size="small" @click="applyBatchOne(row)">
+            {{ t("ai_workflow.ig_aiDraftFill") }}
+          </el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <el-button @click="batchVisible = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -2342,6 +2375,9 @@ const fieldDrawer = ref(false);
 const draftVisible = ref(false);
 const drafting = ref(false);
 const draft = ref<any>({ alias: "", description: "", columns: [] });
+const batchVisible = ref(false);
+const batchLoading = ref(false);
+const batchDrafts = ref<any[]>([]);
 
 /** AI 起草当前表的描述（只生成草稿，应用后仍需点「保存」才落库） */
 async function runDraft() {
@@ -2371,6 +2407,39 @@ async function runDraft() {
 }
 
 /** 应用草稿到表单（不直接落库，交由用户核对后保存） */
+/** 批量起草：只挑「还没有描述」的资产，结果仅预览，逐表填入表单确认 */
+async function runBatchDraft() {
+  batchLoading.value = true;
+  try {
+    const r: any = await draftQueryAssetDesc([], true);
+    const list = r.data?.data?.drafts || [];
+    if (!list.length) {
+      ElMessage.info(t("ai_workflow.ig_aiDraftBatchEmpty"));
+      return;
+    }
+    batchDrafts.value = list;
+    batchVisible.value = true;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_aiDraftFail"));
+  } finally {
+    batchLoading.value = false;
+  }
+}
+
+/** 把某张表的草稿填进字段抽屉（复用单表 applyDraft，避免覆盖式写入） */
+async function applyBatchOne(d: any) {
+  const row = (assets.value || []).find((x: any) => x.table === d.table);
+  if (row) await pickTable(row);
+  draft.value = {
+    alias: d.alias || "",
+    description: d.description || "",
+    columns: (d.columns || []).map((c: any) => ({ ...c })),
+  };
+  applyDraft();
+  fieldDrawer.value = true;
+  batchVisible.value = false;
+}
+
 function applyDraft() {
   const d = draft.value;
   if (!d) return;

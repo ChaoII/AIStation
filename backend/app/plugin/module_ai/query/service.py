@@ -3106,7 +3106,8 @@ class AiQueryService:
 
     @classmethod
     @classmethod
-    async def draft_asset_descriptions(cls, auth, tables: list[str]) -> dict:
+    async def draft_asset_descriptions(cls, auth, tables: list[str],
+                                       missing_only: bool = False) -> dict:
         """为指定表生成描述草稿（**不落库**，人工确认后再走 /assets/save）。
 
         与 ``generate_asset_descriptions`` 的区别：那个是"批量直接写库"，
@@ -3121,8 +3122,20 @@ class AiQueryService:
 
         names = list(dict.fromkeys(
             str(t).strip() for t in (tables or []) if str(t).strip()))[:MAX_TABLES]
+        if not names and missing_only:
+            # 批量模式：自动挑选「还没有描述」的资产（最多 MAX_TABLES 张）
+            from sqlalchemy import or_ as _or, select as _sel
+
+            async with async_db_session() as db:
+                rows = (await db.execute(_sel(AiQueryAssetModel.table_name).where(
+                    AiQueryAssetModel.is_deleted.is_(False),
+                    AiQueryAssetModel.included.is_(True),
+                    _or(AiQueryAssetModel.description.is_(None),
+                        AiQueryAssetModel.description == ""),
+                ).limit(MAX_TABLES))).scalars().all()
+            names = [str(x) for x in rows]
         if not names:
-            raise CustomException(msg="请选择要起草的表")
+            raise CustomException(msg="请选择要起草的表（或没有缺描述的资产）")
         async with async_db_session() as db:
             from sqlalchemy import select as _sel
 
