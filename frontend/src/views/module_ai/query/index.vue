@@ -573,6 +573,14 @@
                 active-value="true"
                 inactive-value="false"
               />
+              <el-select
+                v-else-if="d.options"
+                v-model="setForm[d.key]"
+                size="small"
+                style="width: 200px"
+              >
+                <el-option v-for="o in d.options" :key="o" :label="o" :value="o" />
+              </el-select>
               <el-input
                 v-else-if="d.type === 'text'"
                 v-model="setForm[d.key]"
@@ -1483,6 +1491,11 @@ function guessGroup(key: string): string {
   return t("ai_logs.settingGroupExecute");
 }
 
+const EXTRA_ENUMS: Record<string, string[]> = {
+  policy_engine: ["legacy", "shadow", "enforce"],
+  nl2sql_thinking_mode: ["off", "low", "on"],
+};
+
 const ALL_DEFS = [
   ...SETTING_DEFS.map((d: any) => ({
     ...d,
@@ -1496,6 +1509,7 @@ const ALL_DEFS = [
     rawKey: k,
     type: guessType(k),
     tip: EXTRA_HELP[k] || "",
+    options: EXTRA_ENUMS[k],
     expert: true,
     group: guessGroup(k),
   })),
