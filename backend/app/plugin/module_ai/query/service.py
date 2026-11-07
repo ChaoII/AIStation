@@ -4417,32 +4417,19 @@ class AiQueryService:
         except Exception:  # noqa: BLE001
             ds_code = None
         # 外部自定义数据源：在其库执行（否则平台库里根本没有这张表）
-        if ds_code and str(ds_code).startswith("ds:"):
-            try:
-                ds_id = int(str(ds_code)[3:])
-            except ValueError:
-                ds_id = 0
-            if ds_id:
-                try:
-                    res = await _execute_custom_ds_sql(
-                        ds_id, f"SELECT * FROM {table_name} LIMIT {n}", auth)
-                except Exception as e:  # noqa: BLE001
-                    return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
-                cols = res.get("columns") or []
-                rows_arr = res.get("rows") or []
-                data = [dict(zip(cols, r, strict=False)) for r in rows_arr]
-                return {"ok": True, "table": table_name, "columns": cols,
-                        "rows": data, "row_count": len(data)}
-        # 平台自身库
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            try:
-                rows = (await db.execute(_t(
-                    f'SELECT * FROM "{table_name}" LIMIT {n}'))).fetchall()
-            except Exception as e:  # noqa: BLE001
-                return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
-        cols = list(rows[0]._mapping.keys()) if rows else []
-        data = [dict(r._mapping) for r in rows]
+        # 导出必须按导出者重新走唯一网关：行/列策略、字段级 ACL、审计都生效。
+        ds = ds_code or SYSTEM_DS
+        ident = cls._require_ident(table_name, "表名")
+        sql = (f'SELECT * FROM "{ident}" LIMIT {n}' if ds == SYSTEM_DS
+               else f"SELECT * FROM {ident} LIMIT {n}")
+        try:
+            res = await cls._execute_one(
+                sql, ds, auth, f"导出 {table_name}", entry="export")
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
+        cols = res.get("columns") or []
+        rows_arr = res.get("rows") or []
+        data = [dict(zip(cols, r, strict=False)) for r in rows_arr]
         return {"ok": True, "table": table_name, "columns": cols, "rows": data,
                 "row_count": len(data)}
 
