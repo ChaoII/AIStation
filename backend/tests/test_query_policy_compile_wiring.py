@@ -80,7 +80,7 @@ def test_table_columns_skips_ds_table_comment(monkeypatch):
     """``_ds_schema_map`` 第一项 ``表名(注释)`` 是表注释，不是列。"""
     from app.plugin.module_ai.query.service import AiQueryService as Q
 
-    async def _ds(cls, datasource):
+    async def _ds(cls, datasource, strict=False):
         assert datasource == "ds:4"
         return {
             "DTXY_PMXX": ["DTXY_PMXX(煤炭品名表)", "ID(bigint)", "VARIETY(品种)"],
@@ -135,13 +135,13 @@ def test_view_mapping_does_not_fake_row_filter(monkeypatch):
     async def _domains(user_id):
         return ()
 
-    async def _columns(datasource, tables=None):
+    async def _columns(datasource, tables=None, strict=False):
         return {"v": ["a", "dept_id"], "t": ["a", "dept_id"]}
 
-    async def _tables(sql):
+    async def _tables(sql, dialect="postgres"):
         return {"v"}
 
-    async def _lineage(datasource, table):
+    async def _lineage(datasource, table, strict=False):
         assert table == "V"
         return {"upstream": [{"table": "t", "kind": "view"}]}
 
@@ -180,13 +180,13 @@ def test_view_mapping_does_not_fake_column_restriction(monkeypatch):
     async def _domains(user_id):
         return ()
 
-    async def _columns(datasource, tables=None):
+    async def _columns(datasource, tables=None, strict=False):
         return {"v": ["a", "secret"], "t": ["a", "secret"]}
 
-    async def _tables(sql):
+    async def _tables(sql, dialect="postgres"):
         return {"v"}
 
-    async def _lineage(datasource, table):
+    async def _lineage(datasource, table, strict=False):
         return {"upstream": [{"table": "t", "kind": "view"}]}
 
     monkeypatch.setattr(G, "list_policies", _policies)

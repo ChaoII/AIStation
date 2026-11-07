@@ -52,6 +52,8 @@ from typing import TYPE_CHECKING
 from .engine import (
     Decision,
     _attr_values,
+    _candidates,
+    _columns_of,
     _is_enabled,
     _table_key,
     decide_column,
@@ -262,6 +264,24 @@ def _metadata_columns(columns) -> list[str]:
 # ---------------------------------------------------------------------------
 # 计划构建
 # ---------------------------------------------------------------------------
+def _column_restriction_policies(policies, principal, table: str) -> list:
+    """该表上**对该主体生效**的列级 deny/mask 策略。
+
+    用途：列元数据缺失/不完整时判定"能不能证明受限列没被读出来"。只要存在一条
+    生效的列级 deny/mask，而元数据里认不出它引用的列，就必须 fail-closed。
+    """
+    out: list = []
+    for policy in _candidates(policies, principal, table):
+        if str(getattr(policy, "effect", "") or "").strip().lower() not in {
+            "deny",
+            "mask",
+        }:
+            continue
+        if _columns_of(policy):
+            out.append(policy)
+    return out
+
+
 def build_plan(
     policies: list[Policy], principal: Principal, tables: dict[str, list[str]]
 ) -> AccessPlan:
@@ -304,11 +324,13 @@ def build_plan(
             row_filters[table] = _bind_condition(table_decision.sql, principal)
 
         columns = _metadata_columns(raw_columns)
+        restricted_policies = _column_restriction_policies(policies, principal, table)
         if not columns:
-            # 无列元数据：带标记 → 拒绝（不放未知列）；否则保留星号并记审计
-            if _table_marking(policies, table):
+            # 无列元数据：带标记或**有列级 deny/mask** 都拒绝（证明不了受限列没被读出）；
+            # 只有"纯表级 allow"才保留星号（由 rewrite 记 star_unexpanded）。
+            if _table_marking(policies, table) or restricted_policies:
                 denied[table] = frozenset({DENIED_ALL})
-                # 标记本身也是"生效的策略"，审计要能追到
+                # 标记/列级限制本身也是"生效的策略"，审计要能追到
                 for policy in policies or ():
                     if policy is None or not _is_enabled(getattr(policy, "enabled", True)):
                         continue
@@ -316,8 +338,29 @@ def build_plan(
                         getattr(policy, "resource_code", "")
                     ) == table:
                         _add_ids([getattr(policy, "id", 0)])
+                _add_ids(
+                    [
+                        int(getattr(policy, "id", 0) or 0)
+                        for policy in restricted_policies
+                    ]
+                )
             else:
                 allowed_columns[table] = None
+            continue
+
+        # 元数据"不完整"同样危险：策略限制的列不在元数据里 → 无法逐列判定 → 整表拒绝。
+        known = {str(column).lower() for column in columns}
+        missing = [
+            column
+            for policy in restricted_policies
+            for column in _columns_of(policy)
+            if column not in known
+        ]
+        if missing:
+            denied[table] = frozenset({DENIED_ALL})
+            _add_ids(
+                [int(getattr(policy, "id", 0) or 0) for policy in restricted_policies]
+            )
             continue
 
         blocked: set[str] = set()

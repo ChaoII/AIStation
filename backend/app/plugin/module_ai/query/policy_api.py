@@ -4,6 +4,8 @@
 
 - 列表：``repo.list_policy_rows``（管理视图，含停用；判定侧仍走 ``repo.list_policies``）；
 - 解释：``engine.decide_table`` / ``engine.decide_column`` + ``audit.list_access_logs``；
+  返回 ``mode``（legacy/shadow/enforce）、``planned``（若切 enforce 会施加的改写）与
+  ``applied``（**只有 enforce 才与 planned 相同**；legacy/shadow 执行原 SQL，恒为空）；
 - 保存：入参先过 ``policy.compiler.validate_condition`` / ``validate_mask``
   （与执行期同一套 AST 白名单），坏策略一律 **400 且不入库**。
   为什么必须在这一层拦：策略是管理员手填的 SQL 片段，存进库后执行期才报错
@@ -449,6 +451,15 @@ async def explain_access(
     table: Annotated[str, Query(min_length=1, description="表名 / 视图名")],
     column: Annotated[str | None, Query(description="给定时做列级判定")] = None,
 ) -> JSONResponse:
+    # 当前判定模式：只有 enforce 才真的执行改写；legacy/shadow 下 applied 必须为空
+    # （否则治理页会误以为"已经脱敏/过滤"，这是 Step 1 复审 I2 的假安全）。
+    from .policy.guard import _engine_mode as _policy_engine_mode
+
+    try:
+        mode = await _policy_engine_mode()
+    except Exception:  # noqa: BLE001 - 读不到开关就按非 enforce 展示（不谎报已施加）
+        mode = "legacy"
+
     principal, identity_reason = await principal_for_user(user_id)
     if principal is None:
         # 不伪造主体：用户不存在/已停用 → 只能回答拒绝（fail-closed），
@@ -461,7 +472,9 @@ async def explain_access(
                 "matched": [],
                 "attrs_missing": [],
                 "superuser": False,
+                "mode": mode,
                 # 没有主体就没有判定结果，自然也没有改写
+                "planned": [],
                 "applied": [],
             },
             msg="查询成功",
@@ -473,6 +486,7 @@ async def explain_access(
     else:
         decision = engine.decide_table(policies, principal, table)
 
+    planned = [dict(item) for item in decision.applied]
     return SuccessResponse(
         data={
             "permit": bool(decision.permit),
@@ -484,9 +498,12 @@ async def explain_access(
             ],
             "attrs_missing": list(engine.missing_attributes(policies, principal, table)),
             "superuser": bool(principal.is_superuser),
-            # 真实判定会施加的改写（行过滤 / 掩码）：enforce 执行的就是这些改写；
-            # 拒绝时为空数组（拒绝 = 不执行，不产生改写）。
-            "applied": [dict(item) for item in decision.applied],
+            # ``mode``：legacy / shadow / enforce；``planned`` 是"若切 enforce 会施加的
+            # 改写"（诊断用），``applied`` 只在 enforce 下与 planned 相同 ——
+            # legacy/shadow 执行原 SQL，绝不能声称已施加。
+            "mode": mode,
+            "planned": planned,
+            "applied": planned if mode == "enforce" and decision.permit else [],
         },
         msg="查询成功",
     )

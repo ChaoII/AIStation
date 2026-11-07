@@ -181,7 +181,7 @@ def _columns_from_labels(table: str, labels) -> list[str]:
 
 
 async def table_columns(
-    datasource: str = "system", tables=None
+    datasource: str = "system", tables=None, strict: bool = False
 ) -> dict[str, list[str]]:
     """查询涉及的表 → **真实列名**（供编译器展开星号、落地列 deny/mask）。
 
@@ -190,6 +190,9 @@ async def table_columns(
     - 系统库（``system`` / 空）：``AiQueryService._system_schema()``（列标签带类型/中文名）；
     - 自定义源（``ds:*``）：``AiQueryService._ds_schema_map(datasource)``（已同步的
       ``ai_query_schema``，进程内缓存）。
+
+    ``strict=True`` 时，自定义源元数据读取失败**上抛**（enforce 据此 deny）；
+    默认 ``False`` 保持旧调用方"读不到就当没有元数据"的语义。
 
     ``tables`` 给定时只返回这些表（大小写不敏感）；表不在元数据里就不出现在结果中，
     调用方传空列清单给 :func:`compiler.build_plan`（= 无列元数据，保留星号/按标记拒绝）。
@@ -200,7 +203,7 @@ async def table_columns(
     if ds == "system":
         raw = await _svc.AiQueryService._system_schema()
     else:
-        raw = await _svc.AiQueryService._ds_schema_map(ds)
+        raw = await _svc.AiQueryService._ds_schema_map(ds, strict=strict)
 
     wanted = {
         str(t or "").strip().lower() for t in (tables or ()) if str(t or "").strip()

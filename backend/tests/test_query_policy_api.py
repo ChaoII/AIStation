@@ -433,14 +433,51 @@ def test_explain_default_deny_for_plain_user(test_client, auth_headers, plain_us
     data = r.json()["data"]
     assert set(data) == {
         "permit", "reason", "policy_ids", "matched", "attrs_missing", "superuser",
-        "applied",
+        "mode", "planned", "applied",
     }
     assert data["permit"] is False
     assert data["superuser"] is False
     assert "默认拒绝" in data["reason"]
     assert data["policy_ids"] == [] and data["matched"] == []
-    # 没有策略/没有 allow → 拒绝且不可能有改写；explain 如实返回空数组
+    # I2：默认（legacy）下没有真正施加改写；planned 可以保留诊断信息
+    assert data["mode"] == "legacy", data["mode"]
     assert data["applied"] == []
+    assert data["planned"] == []
+
+
+def test_explain_enforce_reports_applied(test_client, auth_headers, plain_user_id, monkeypatch):
+    """I2：enforce 下 applied 必须是真实改写；planned 保留计划信息。"""
+    from app.plugin.module_ai.query.policy import guard
+
+    async def _mode():
+        return "enforce"
+
+    monkeypatch.setattr(guard, "_engine_mode", _mode)
+
+    created = _save(
+        test_client,
+        auth_headers,
+        name="pytest-policy-explain-enforce",
+        resource_code="pytest_explain_enforce",
+        condition="dept_id = 3",
+        columns=["dept_id"],
+    )
+    assert created.status_code == 200, created.text
+    pid = created.json()["data"]["id"]
+    try:
+        data = test_client.get(
+            f"{BASE}/access/explain",
+            params={"user_id": plain_user_id, "table": "pytest_explain_enforce"},
+            headers=auth_headers,
+        ).json()["data"]
+        assert data["mode"] == "enforce", data
+        assert data["permit"] is True, data
+        assert data["applied"] and data["applied"][0].get("row") == "dept_id = 3", data
+        assert data["planned"] == data["applied"], data
+    finally:
+        test_client.post(
+            f"{BASE}/policy/delete", json={"ids": [pid]}, headers=auth_headers
+        )
 
 
 def test_explain_superuser_bypass_comes_from_db(test_client, auth_headers):
@@ -500,7 +537,7 @@ def test_explain_reports_deny_policy_and_missing_attr(
         assert d["permit"] is False
         assert ids[0] in d["policy_ids"]
         assert any(m["id"] == ids[0] and m["effect"] == "deny" for m in d["matched"])
-        assert d["applied"] == []
+        assert d["mode"] == "legacy" and d["applied"] == []
 
         a = test_client.get(
             f"{BASE}/access/explain",

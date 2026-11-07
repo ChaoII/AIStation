@@ -98,6 +98,9 @@ def _patch_env(
     async def _dialect(cls, datasource):
         return "postgres"
 
+    async def _engine_mode():
+        return "legacy"
+
     async def _prepare(**kw):
         rec.prepare_calls += 1
         rec.prepare_kwargs = dict(kw)
@@ -117,6 +120,7 @@ def _patch_env(
     monkeypatch.setattr(S, "_secure_ont_sql", _secure)
     monkeypatch.setattr(S, "_execute_sql", _exec)
     monkeypatch.setattr(guard, "prepare", _prepare)
+    monkeypatch.setattr(guard, "_engine_mode", _engine_mode)
     monkeypatch.setattr(P, "load_principal", _load_principal)
     return rec
 

@@ -463,7 +463,7 @@ def propagate_sensitive(rows: list, table: str, sensitive_cols: list[str]) -> li
     return [{"table": tb, "column": c, "via": k} for (tb, c, k) in sorted(out)]
 
 
-async def lineage_for_table(datasource: str, table_name: str) -> dict:
+async def lineage_for_table(datasource: str, table_name: str, strict: bool = False) -> dict:
     """一张表的血缘：上游（我依赖谁）/ 下游（谁依赖我）/ 被谁使用 / 敏感列。
 
     边方向是 `src → dst`，语义是「**src 依赖 dst**」（子表→父表、视图→基表、
@@ -471,6 +471,9 @@ async def lineage_for_table(datasource: str, table_name: str) -> dict:
         上游 = src_table 是我的行 → dst
         下游 = dst_table 是我的行 → src
         被谁用 = kind='usage' 且 src_table 是我
+
+    ``strict=True`` 时读库失败**上抛**：权限判定不能把"读不到血缘"当成"没有上游"
+    （后者会让视图静默绕过基表限制），由 guard 转成 deny。
     """
     t = (table_name or "").upper()
     if not t:
@@ -484,6 +487,8 @@ async def lineage_for_table(datasource: str, table_name: str) -> dict:
                 "AND (src_table=:t OR dst_table=:t)"), {"d": datasource, "t": t})).fetchall()
     except Exception as e:  # noqa: BLE001
         log.warning(f"[lineage] 读血缘失败（返回空）: {str(e)[:80]}")
+        if strict:
+            raise
         return dict(EMPTY_LINEAGE)
 
     # 边是**列级**的：同一张视图/同一个指标会因为多列各出现一次。

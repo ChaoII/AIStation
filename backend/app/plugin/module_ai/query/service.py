@@ -1268,6 +1268,11 @@ _SCHEMA_CTX_TTL = 120.0
 _SCHEMA_CTX_CACHE_MAX = 50
 _DS_SCHEMA_TTL = 600.0
 
+#: 数据源 → sqlglot 读方言（enforce/shadow 才用）。ds 类型很少变，缓存 5 分钟，
+#: 避免每次问数都为了取 type 多读一次 `ai_query_datasources`。
+_SQL_DIALECT_CACHE: dict[str, tuple[float, str]] = {}
+_SQL_DIALECT_TTL = 300.0
+
 
 #: 检索结果记忆缓存：同一问题在一次问答里会被检索两次（拼 prompt + 溯源），
 #: 而检索会走向量搜索。缓存它比缓存 SQL 更安全（不含数据、不含权限），
@@ -5564,18 +5569,27 @@ class AiQueryService:
         return result
 
     @classmethod
-    async def _sql_query_scope(cls, sql: str) -> tuple[set[str], set[str]]:
-        """用 sqlglot 精确解析查询涉及的表集与列名集；失败回退正则（不放过）。"""
+    async def _sql_query_scope(
+        cls, sql: str, dialect: str = "postgres"
+    ) -> tuple[set[str], set[str]]:
+        """用 sqlglot 按**数据源方言**解析查询涉及的表集与列名集；失败回退正则（不放过）。
+
+        ``dialect`` 必须与真实库一致：MySQL 的反引号 ``select * from `T``` 用 postgres
+        读会解析失败，正则也不认反引号 → 表集合为空（Step 1 复审 C1：会跳过整条编译）。
+        """
         try:
             import sqlglot
             from sqlglot import exp as _exp
 
-            parsed = sqlglot.parse_one(sql, read="postgres")
+            parsed = sqlglot.parse_one(sql, read=dialect)
             tables = {t.name for t in parsed.find_all(_exp.Table)}
             cols = {c.name for c in parsed.find_all(_exp.Column)}
             return tables, cols
         except Exception:  # noqa: BLE001
-            tables = set(re.findall(r"\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)", sql or "", re.IGNORECASE))
+            tables = set(re.findall(
+                r"\b(?:from|join)\s+[`\"\[]?([A-Za-z_][A-Za-z0-9_]*)",
+                sql or "", re.IGNORECASE,
+            ))
             cols = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", sql or ""))
             return tables, cols
 
@@ -7880,13 +7894,22 @@ class AiQueryService:
                 await _assert_ds_access(ds_id, auth)
                 return _PolicyDecision(True, "legacy：数据源访问校验通过")
 
+            # I3：legacy 不解析方言（省一次 `_load_ds`）；enforce/shadow 才按真实方言编译。
+            try:
+                _mode = await _policy_guard._engine_mode()
+            except Exception:  # noqa: BLE001 - 读不到开关时让 guard 自己 fail-closed
+                _mode = ""
+            _dialect = (
+                "postgres" if _mode == "legacy" else await cls._sql_dialect(datasource)
+            )
+
             decision = await _policy_guard.prepare(
                 sql=sql,
                 principal=principal,
                 entry=entry,
                 datasource=datasource,
                 # 外部库可能是 MySQL/SQLite：编译按真实方言读写，别把 PG 语法套过去
-                dialect=await cls._sql_dialect(datasource),
+                dialect=_dialect,
                 legacy_check=_legacy_ds_check,
             )
             if not decision.permit:
@@ -7931,6 +7954,9 @@ class AiQueryService:
             principal=principal,
             entry=entry,
             datasource=datasource or SYSTEM_DS,
+            # I4：编译器输入 = 本体安全改写后的 SQL，产出直接执行（只 secure 一次）。
+            # 这样执行 SQL 里同时含本体行过滤与策略行过滤，不会被二次改写覆盖。
+            compile_sql=secured["sql"],
             legacy_check=_legacy_check,
         )
         if not decision.permit:
@@ -7963,15 +7989,13 @@ class AiQueryService:
         if _default_hits:
             raise CustomException(
                 msg=f"查询包含内置敏感列（默认拦截，永不返回）：{', '.join(_default_hits)}")
-        # enforce：编译器基于**原 SQL**生成策略改写，本体权限（行/列过滤）必须在其
-        # **之后**再套一层 —— 直接用编译结果会覆盖掉 `_secure_ont_sql` 的过滤。
-        exec_sql = secured["sql"]
+        # enforce：guard 的编译产物直接执行（本体过滤已在编译输入里，不再二次改写）。
+        # I1：编译链路绕过了 `validate_sql`，这里补「只读/单语句/去注释/补 LIMIT」；
+        # `allowed_tables=set()` 在 `validate_sql` 里等价于**跳过表白名单**
+        # （`if allowed_lower and ...`），因此不会误杀策略允许的表。
         if decision.sql:
-            secured = await _secure_ont_sql(decision.sql, auth)
-            if secured.get("deny"):
-                raise CustomException(msg=secured["msg"])
-            exec_sql = secured["sql"]
-        return await _execute_sql(exec_sql)
+            return await _execute_sql(validate_sql(decision.sql, set()))
+        return await _execute_sql(secured["sql"])
 
     @classmethod
     async def _explain_rows(cls, sql: str) -> int:
@@ -8765,13 +8789,21 @@ class AiQueryService:
         """
         if not datasource or datasource == SYSTEM_DS:
             return "postgres"
+        key = str(datasource)
+        hit = _SQL_DIALECT_CACHE.get(key)
+        if hit and time.time() - hit[0] <= _SQL_DIALECT_TTL:
+            return hit[1]
         ds_type = ""
         try:
             _dialect, ds_type = await cls._resolve_dialect_info(datasource)
         except Exception:  # noqa: BLE001 - 方言解析失败按 PG 兜底（不阻断判定）
             return "postgres"
-        return {"mysql": "mysql", "sqlite": "sqlite"}.get(
+        value = {"mysql": "mysql", "sqlite": "sqlite"}.get(
             str(ds_type or "").lower(), "postgres")
+        if len(_SQL_DIALECT_CACHE) >= 20:
+            _SQL_DIALECT_CACHE.clear()
+        _SQL_DIALECT_CACHE[key] = (time.time(), value)
+        return value
 
     @classmethod
     async def _resolve_dialect_info(cls, datasource: str) -> tuple[dict, str]:
@@ -10276,11 +10308,16 @@ class AiQueryService:
         )
 
     @classmethod
-    async def _ds_schema_map(cls, datasource: str) -> dict[str, list[str]]:
+    async def _ds_schema_map(
+        cls, datasource: str, strict: bool = False
+    ) -> dict[str, list[str]]:
         """自定义数据源已同步的表结构：``{表名: [列标签]}``。
 
         与 ``_system_schema`` 同形，方便复用同一套关键词检索（``_relevant_tables``）。
         带进程内缓存——331 张表的同步结果每次问答都读库太浪费。
+
+        ``strict=True`` 时读取失败**上抛**：enforce 的权限判定不能把"读不到元数据"
+        当成"没有列级限制"（那是 fail-open），由 guard 转成 deny。
         """
         global _DS_SCHEMA_CACHE
         key = str(datasource or "")
@@ -10313,6 +10350,8 @@ class AiQueryService:
                 out[r["table"]] = cols
         except Exception as e:  # noqa: BLE001
             log.warning(f"[query] 读取数据源 {key} 表结构失败: {e}")
+            if strict:
+                raise
             return {}
         if len(_DS_SCHEMA_CACHE) >= 20:
             _DS_SCHEMA_CACHE.clear()

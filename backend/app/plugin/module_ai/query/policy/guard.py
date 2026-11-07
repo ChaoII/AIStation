@@ -76,7 +76,6 @@ from .audit import sql_hash, sql_preview, write_access_log
 from .compiler import DENIED_ALL, AccessPlan, build_plan, rewrite
 from .engine import (
     Decision,
-    _is_enabled,
     _table_key,
     matched_policies,
 )
@@ -133,30 +132,16 @@ async def _engine_mode() -> str:
 # ---------------------------------------------------------------------------
 # 查询结构
 # ---------------------------------------------------------------------------
-async def _tables_of(sql: str) -> set[str]:
-    """查询涉及的**表名**集合（复用既有解析器，P1 只做表级判定）。
+async def _tables_of(sql: str, dialect: str = "postgres") -> set[str]:
+    """查询涉及的**表名**集合（按数据源方言解析）。
 
-    ``_sql_query_scope`` 解析失败会正则兜底（不放过），因此这里拿到的可能是
-    正则猜出来的名字；真正的 fail-closed 兜底在 :func:`_new_decision`（空表集合时
-    再确认一次语法能否解析）。
+    MySQL 的反引号 / SQLite 的方括号只有用对应 dialect 读才认得；固定 postgres
+    会解析失败 → 表集合为空 → 跳过整条编译链路（Step 1 复审 C1 的 fail-open）。
     """
     from ..service import AiQueryService
 
-    tables, _columns = await AiQueryService._sql_query_scope(sql)
+    tables, _columns = await AiQueryService._sql_query_scope(sql, dialect)
     return {str(t) for t in tables if t}
-
-
-def _parsable(sql: str, dialect: str) -> bool:
-    """SQL 能否被 sqlglot 解析出语法树（用于区分「无表」与「解析失败」）。"""
-    try:
-        import sqlglot
-    except Exception:  # noqa: BLE001 - 依赖缺失按不可解析处理（fail-closed）
-        return False
-    try:
-        trees = sqlglot.parse(sql, read=dialect)
-    except Exception:  # noqa: BLE001
-        return False
-    return bool(trees) and all(tree is not None for tree in trees)
 
 
 # ---------------------------------------------------------------------------
@@ -233,20 +218,17 @@ async def _view_fragment(
 ) -> AccessPlan | None:
     """表是**视图**时，按血缘从基表策略推导一份补充计划（单层）。
 
-    判定"是不是视图"不猜元数据：只认「有一条启用中的 ``resource_kind=view`` 策略
-    指向它」。视图若连 allow 都没有，``build_plan`` 本身就会默认拒绝，不需要这里兜底。
+    「是不是视图」**以血缘为准**（上游存在 ``kind=view`` 边），不看
+    ``resource_kind`` —— 管理员可能只给基表配策略、视图名也没建策略，靠 view 类型
+    推断会漏掉整段映射。表名统一走 ``_table_key``（大小写/schema 不敏感）：
+    本库真实表名是大写，直接用原始大小写比较会让 ``FROM "V"`` 静默跳过（C2）。
 
-    血缘只取 ``kind=view`` 的上游（``lineage_for_table`` 的 ``upstream``），
-    且仅当本表确实是这些 view 边的源（即它是视图）。基表策略先按主体过滤
-    （``matched_policies``）再交给 ``resolve_view_policies`` —— 那个函数的契约是
-    "已按主体筛过"，传全量会把别人的 deny/allow 当成本用户的。
+    血缘读取失败**上抛**（enforce 转 deny）：不能把"读不到"当成"没有上游"。
+    基表策略先按主体过滤（``matched_policies``）再交给 ``resolve_view_policies``
+    —— 那个函数的契约是"已按主体筛过"。
     """
-    if not any(
-        str(getattr(p, "resource_kind", "") or "").strip().lower() == "view"
-        and _table_key(getattr(p, "resource_code", "")) == table
-        and _is_enabled(getattr(p, "enabled", True))
-        for p in policies or ()
-    ):
+    table_key = _table_key(table)
+    if not table_key:
         return None
 
     from .. import service as _svc
@@ -260,7 +242,7 @@ async def _view_fragment(
         except Exception as e:  # noqa: BLE001 - 血缘不可用不能拖垮判定
             log.warning(f"[问数权限] 读取表所属数据源失败（血缘降级）: {e}")
 
-    payload = await lineage_for_table(ds or "system", table.upper())
+    payload = await lineage_for_table(ds or "system", table.upper(), strict=True)
     entries = [
         item
         for item in (payload.get("upstream") or [])
@@ -278,7 +260,7 @@ async def _view_fragment(
     candidates = []
     for base in base_tables:
         candidates.extend(matched_policies(policies, principal, base))
-    fragment, _tier = resolve_view_policies(table, {table: entries}, candidates)
+    fragment, _tier = resolve_view_policies(table_key, {table_key: entries}, candidates)
     return fragment
 
 
@@ -357,32 +339,32 @@ async def _new_decision(
     if principal is None:
         return Decision(False, "missing principal")
     if getattr(principal, "is_superuser", False):
-        return Decision(True, "superuser bypass")
+        # 超管不受策略约束，但仍返回 SQL：执行侧要照常补 `validate_sql`
+        # （只读/单语句/LIMIT），不能因为"旁路"就跳过只读检查。
+        return Decision(True, "superuser bypass", sql=sql)
 
     try:
         policies = await list_policies()
         principal = await _with_domains(principal)
-        tables = await _tables_of(sql)
-        columns = await table_columns(datasource, tables) if tables else {}
+        tables = await _tables_of(sql, dialect)
+        # enforce 的元数据必须 strict：读不到 ≠ 没有列级限制（C3 fail-open）
+        columns = await table_columns(datasource, tables, strict=True) if tables else {}
     except Exception as e:  # noqa: BLE001
         # fail-closed：策略/域/元数据读不到就无法证明"该放行"，只能拒
         log.warning(f"[问数权限] 策略加载失败（按拒绝处理）: err={e}")
         raise _PolicyLoadError(f"策略加载失败，按拒绝处理（fail-closed）：{e}") from e
 
-    if not tables:
-        # 没有表可判定：语法能解析 = 真的不涉及表（如 select 1），放行；
-        # 解析不出语法树 = 认不出查询结构，按 fail-closed 拒绝（spec §5.6）。
-        if _parsable(sql, dialect):
-            return Decision(True, "查询未涉及任何表，无表级策略可判定")
-        return Decision(False, "无法解析查询语句，按拒绝处理（fail-closed）")
-
     # 元数据键按真实大小写，SQL 里的表名大小写不保证一致 → 大小写不敏感对齐
     lookup = {str(name).lower(): cols for name, cols in (columns or {}).items()}
     metadata = {table: lookup.get(str(table).lower(), []) for table in tables}
 
+    # ⚠️ 不再有「取不到表就直接放行」的捷径：一律走 build_plan + rewrite。
+    # 空表计划会让 `select 1` 正常放行，而 Command/非 SELECT/多语句由 rewrite 拒绝
+    # （C1：否则 `vacuum` / MySQL 反引号取不到表时会跳过整条只读/列策略检查）。
     plan = build_plan(policies, principal, metadata)
 
-    # 视图：单层血缘映射（失败/映射不到时由编译器的「表不在计划内/整表拒绝」兜底）
+    # 视图：单层血缘映射（失败/映射不到时由编译器的「表不在计划内/整表拒绝」兜底；
+    # 血缘读取失败会抛异常 → 上面/调用方按 deny 处理）
     for table in sorted(tables):
         fragment = await _view_fragment(table, datasource, policies, principal)
         if fragment is not None:
@@ -507,9 +489,10 @@ async def prepare(
     entry: str,
     datasource: str,
     dialect: str = "postgres",
+    compile_sql: str | None = None,
     legacy_check: Callable[[], Awaitable[Decision]] | None = None,
 ) -> Decision:
-    """唯一判定入口：返回放/拒 + （将来的）改写；**内部统一写审计**。
+    """唯一判定入口：返回放/拒 + （enforce 下的）可执行 SQL；**内部统一写审计**。
 
     参数口径：
 
@@ -517,6 +500,10 @@ async def prepare(
       审计与 shadow 都用它；
     - ``datasource``：数据源标识（审计字段，不参与判定）；
     - ``dialect``：sqlglot 读方言，与 ``service.py`` 一致（默认 postgres）；
+    - ``compile_sql``：**编译器输入**。系统库传「本体安全改写后的 SQL」——这样
+      编译器产出的 SQL 里同时含本体行过滤与策略行过滤，执行侧不用再套一次
+      ``_secure_ont_sql``（避免二次改写把带引号表名漏掉）。为空时退回 ``sql``；
+      审计/星号止血仍用**原始** ``sql``（legacy 行为不变）；
     - ``legacy_check``：旧判定（T7 传 ``validate_sql`` + ``_ont_sql_violations`` 组合）；
       ``None`` 视为旧判定放行，仅在 ``legacy`` / ``shadow`` 下会被调用。
 
@@ -541,6 +528,7 @@ async def prepare(
                 entry=entry,
                 datasource=datasource,
                 dialect=dialect,
+                compile_sql=compile_sql,
                 legacy_check=legacy_check,
             )
         except Exception as exc:  # noqa: BLE001 - CancelledError 是 BaseException，不捕
@@ -591,6 +579,7 @@ async def _prepare(
     entry: str,
     datasource: str,
     dialect: str,
+    compile_sql: str | None = None,
     legacy_check: Callable[[], Awaitable[Decision]] | None,
 ) -> tuple[Decision, list[dict]]:
     """三态编排（无主体已在 ``prepare`` 里短路）。
@@ -617,7 +606,10 @@ async def _prepare(
     if mode == "enforce":
         try:
             decision = await _new_decision(
-                sql=sql, principal=principal, dialect=dialect, datasource=datasource
+                sql=compile_sql or sql,
+                principal=principal,
+                dialect=dialect,
+                datasource=datasource,
             )
         except _PolicyLoadError as e:
             log.warning(f"[问数权限] enforce 策略加载失败（按拒绝处理）: {e}")
@@ -629,6 +621,19 @@ async def _prepare(
             return Decision(
                 False, f"策略判定失败，按拒绝处理（fail-closed）：{e}"
             ), []
+        # C1.3：enforce 放行却没有编译 SQL → 执行原 SQL 会跳过全部改写，必须拒。
+        # 显式超管旁路除外（引擎语义：超管不受策略约束，沿用原 SQL）。
+        if decision.permit and not decision.sql and not principal.is_superuser:
+            log.warning(
+                "[问数权限] enforce 放行但编译产物为空（按拒绝处理）："
+                f"user_id={principal.user_id}"
+            )
+            return Decision(
+                False,
+                "策略引擎未产出可执行 SQL，按拒绝处理（fail-closed；"
+                "执行原 SQL 会跳过行/列策略与只读检查）",
+                decision.policy_ids,
+            ), []
         applied = [dict(item) for item in decision.applied] if decision.permit else []
         return decision, applied
 
@@ -636,7 +641,10 @@ async def _prepare(
     legacy = await _legacy_decision(legacy_check)
     try:
         new = await _new_decision(
-            sql=sql, principal=principal, dialect=dialect, datasource=datasource
+            sql=compile_sql or sql,
+            principal=principal,
+            dialect=dialect,
+            datasource=datasource,
         )
     except _PolicyLoadError as e:
         # 新引擎这轮判断不出来：不写差异（否则灰度报告会全是"库坏了"的假差异）

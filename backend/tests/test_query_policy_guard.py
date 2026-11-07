@@ -83,6 +83,7 @@ def _setup(
     tables=("t",),
     columns=None,
     patch_tables=True,
+    views=False,
     record_shadow=True,
 ) -> _Stubs:
     """把 guard 的外部依赖全部打桩（模式/策略/域/敏感表/表解析/列元数据/审计/shadow）。"""
@@ -100,18 +101,21 @@ def _setup(
     async def _sensitive():
         return set(sensitive)
 
-    async def _tables(sql):
+    async def _tables(sql, dialect="postgres"):
         return set(tables)
 
     _columns = {"t": ["a", "dept_id"]} if columns is None else dict(columns)
 
-    async def _table_columns(datasource, wanted=None):
+    async def _table_columns(datasource, wanted=None, strict=False):
         names = {str(t).lower() for t in (wanted or ()) if str(t)}
         return {
             table: list(cols)
             for table, cols in _columns.items()
             if not names or str(table).lower() in names
         }
+
+    async def _no_view(table, datasource, policies, principal):
+        return None
 
     async def _audit(**kw):
         st.audit_calls.append(kw)
@@ -124,6 +128,9 @@ def _setup(
     monkeypatch.setattr(G, "domain_codes_for_user", _domains)
     monkeypatch.setattr(G, "sensitive_tables", _sensitive)
     monkeypatch.setattr(G, "table_columns", _table_columns)
+    if not views:
+        # 视图血缘由独立用例覆盖；这里不读库（enforce 现在每张表都会查血缘）
+        monkeypatch.setattr(G, "_view_fragment", _no_view)
     if patch_tables:
         monkeypatch.setattr(G, "_tables_of", _tables)
     monkeypatch.setattr(G, "write_access_log", _audit)
@@ -537,6 +544,7 @@ def test_new_decision_no_tables_but_parsable_is_permitted(monkeypatch):
     d = _run_new(G, sql="select 1")
 
     assert d.permit, d.reason
+    assert d.sql, "无表查询也要走 rewrite 产出可执行 SQL（不能靠空 SQL 跳过）"
 
 
 def test_new_decision_unparsable_sql_denies(monkeypatch):
