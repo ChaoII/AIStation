@@ -4463,39 +4463,25 @@ class AiQueryService:
         offset = (page - 1) * page_size
         ds_code = await cls._table_ds_code(table_name)
         # 外部自定义数据源
-        if ds_code and str(ds_code).startswith("ds:"):
-            try:
-                ds_id = int(str(ds_code)[3:])
-            except ValueError:
-                ds_id = 0
-            if ds_id:
-                try:
-                    cnt = await _execute_custom_ds_sql(
-                        ds_id, f"SELECT COUNT(*) FROM {table_name}", auth)
-                    total = int(((cnt.get("rows") or [[0]])[0][0]) or 0)
-                    res = await _execute_custom_ds_sql(
-                        ds_id, f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}", auth)
-                except Exception as e:  # noqa: BLE001
-                    return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
-                cols = res.get("columns") or []
-                data = [dict(zip(cols, r, strict=False)) for r in (res.get("rows") or [])]
-                return {"ok": True, "table": table_name, "columns": cols, "rows": data,
-                        "page": page, "page_size": page_size, "total": total,
-                        "has_next": offset + page_size < total}
-        # 平台自身库
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            try:
-                total = (await db.execute(_t(f'SELECT COUNT(*) FROM "{table_name}"'))).scalar() or 0
-                rows = (await db.execute(_t(
-                    f'SELECT * FROM "{table_name}" LIMIT {page_size} OFFSET {offset}'))).fetchall()
-            except Exception as e:  # noqa: BLE001
-                return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
-        cols = list(rows[0]._mapping.keys()) if rows else []
-        data = [dict(r._mapping) for r in rows]
+        # 与导出一致：按浏览者走唯一网关，行/列策略与审计都生效。
+        ds = ds_code or SYSTEM_DS
+        ident = cls._require_ident(table_name, "表名")
+        quoted = f'"{ident}"' if ds == SYSTEM_DS else ident
+        try:
+            cnt = await cls._execute_one(
+                f"SELECT COUNT(*) FROM {quoted}", ds, auth,
+                f"浏览 {table_name}", entry="object")
+            total = int(((cnt.get("rows") or [[0]])[0][0]) or 0)
+            res = await cls._execute_one(
+                f"SELECT * FROM {quoted} LIMIT {page_size} OFFSET {offset}",
+                ds, auth, f"浏览 {table_name}", entry="object")
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
+        cols = res.get("columns") or []
+        data = [dict(zip(cols, r, strict=False)) for r in (res.get("rows") or [])]
         return {"ok": True, "table": table_name, "columns": cols, "rows": data,
-                "page": page, "page_size": page_size, "total": int(total),
-                "has_next": offset + page_size < int(total)}
+                "page": page, "page_size": page_size, "total": total,
+                "has_next": offset + page_size < total}
 
     @classmethod
     async def _ensure_share_table(cls, db) -> None:
