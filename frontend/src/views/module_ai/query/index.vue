@@ -528,34 +528,41 @@
         class="q-fb-tip"
       />
       <div v-loading="setLoading">
-        <div v-for="d in SETTING_DEFS" :key="d.key" class="q-set__row">
-          <div class="q-set__main">
-            <div class="q-set__label">{{ d.label }}</div>
-            <div class="q-set__tip">{{ d.tip }}</div>
+        <el-radio-group v-model="setMode" size="small" class="q-set__mode">
+          <el-radio-button label="simple">{{ t("ai_logs.settingModeSimple") }}</el-radio-button>
+          <el-radio-button label="expert">{{ t("ai_logs.settingModeExpert") }}</el-radio-button>
+        </el-radio-group>
+        <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
+          <div class="q-set__group-title">{{ g.name }}</div>
+          <div v-for="d in g.items" :key="d.key" class="q-set__row">
+            <div class="q-set__main">
+              <div class="q-set__label">{{ d.label }}</div>
+              <div v-if="d.tip" class="q-set__tip">{{ d.tip }}</div>
+            </div>
+            <el-switch
+              v-if="d.type === 'bool'"
+              v-model="setForm[d.key]"
+              active-value="true"
+              inactive-value="false"
+            />
+            <el-input
+              v-else-if="d.type === 'text'"
+              v-model="setForm[d.key]"
+              size="small"
+              clearable
+              :placeholder="t('ai_logs.leaveEmptyDefault')"
+              style="width: 200px"
+            />
+            <el-input-number
+              v-else
+              :model-value="Number(setForm[d.key] || 1)"
+              :min="'min' in d ? d.min : 1"
+              :max="'max' in d ? d.max : 9"
+              size="small"
+              style="width: 120px"
+              @update:model-value="(v: number | undefined) => (setForm[d.key] = String(v ?? 1))"
+            />
           </div>
-          <el-switch
-            v-if="d.type === 'bool'"
-            v-model="setForm[d.key]"
-            active-value="true"
-            inactive-value="false"
-          />
-          <el-input
-            v-else-if="d.type === 'text'"
-            v-model="setForm[d.key]"
-            size="small"
-            clearable
-            :placeholder="t('ai_logs.leaveEmptyDefault')"
-            style="width: 200px"
-          />
-          <el-input-number
-            v-else
-            :model-value="Number(setForm[d.key] || 1)"
-            :min="'min' in d ? d.min : 1"
-            :max="'max' in d ? d.max : 9"
-            size="small"
-            style="width: 120px"
-            @update:model-value="(v: number | undefined) => (setForm[d.key] = String(v ?? 1))"
-          />
         </div>
       </div>
       <template #footer>
@@ -1062,7 +1069,7 @@ async function openSettings() {
   // 先用默认值铺底：**必须在 await 之前**赋值，否则弹窗渲染时开关绑定到 undefined，
   // Element Plus 会报 "[ElSwitch] model-value must be active-value or inactive-value"。
   const base: Record<string, string> = {};
-  SETTING_DEFS.forEach((d) => {
+  ALL_DEFS.forEach((d: any) => {
     base[d.key] = d.type === "bool" ? "false" : d.type === "text" ? "" : "1";
   });
   setForm.value = { ...base };
@@ -1071,7 +1078,7 @@ async function openSettings() {
     const r = await getQuerySettings();
     const d = r.data?.data || {};
     const merged: Record<string, string> = { ...base };
-    SETTING_DEFS.forEach((x) => {
+    ALL_DEFS.forEach((x: any) => {
       if (d[x.key] !== undefined && d[x.key] !== null) merged[x.key] = String(d[x.key]);
     });
     setLoaded.value = { ...merged };
@@ -1086,7 +1093,7 @@ async function openSettings() {
 async function saveSettings() {
   setSaving.value = true;
   try {
-    const changed = SETTING_DEFS.filter(
+    const changed = ALL_DEFS.filter(
       (d) => (setForm.value[d.key] ?? "") !== (setLoaded.value[d.key] ?? "")
     );
     if (!changed.length) {
@@ -1290,6 +1297,102 @@ onMounted(async () => {
     datasources.value = [];
   }
 });
+
+// 其余参数只在「专家」档显示；label 用配置键本身，避免逐项翻译失真。
+const EXTRA_KEYS = [
+  "nl2sql_max_tokens",
+  "nl2sql_call_timeout",
+  "nl2sql_thinking_mode",
+  "llm_keepalive_enabled",
+  "llm_keepalive_interval",
+  "schema_top_k",
+  "schema_semantic_weight",
+  "schema_keyword_weight",
+  "entity_enabled",
+  "enum_hint_enabled",
+  "full_entity_no_limit",
+  "entity_name_rule",
+  "entity_map",
+  "agno_semantic_enabled",
+  "query_cost_max_rows",
+  "fewshot_auto_curate",
+  "decomposed_planning",
+  "kg_enabled",
+  "recall_top_k",
+  "recall_min_score",
+  "recall_w_vector",
+  "recall_w_keyword",
+  "recall_w_ontology",
+  "recall_w_entity",
+  "object_query_max_objects",
+  "object_query_call_timeout",
+  "object_query_max_traverse_depth",
+  "object_query_auto_index_after",
+  "multi_dialect_enabled",
+  "query_rewrite_enabled",
+  "query_rewrite_call_timeout",
+  "schema_asset_meta_enabled",
+  "recall_expand_cap",
+  "object_query_max_tokens",
+  "policy_engine",
+];
+
+function guessType(key: string): "bool" | "int" | "text" {
+  if (/(enabled|self_correct|planning|auto_curate|multi_dialect|no_limit)$/.test(key))
+    return "bool";
+  if (
+    /(max|min|top_k|timeout|interval|weight|after|retry|rows|cap|tokens|depth|objects)$/.test(key)
+  )
+    return "int";
+  return "text";
+}
+
+function guessGroup(key: string): string {
+  if (key.startsWith("policy")) return t("ai_logs.settingGroupSecurity");
+  if (
+    /^(recall|schema_top_k|schema_semantic|schema_keyword|entity|enum_hint|kg_|agno_semantic)/.test(
+      key
+    )
+  )
+    return t("ai_logs.settingGroupRecall");
+  if (
+    /^(nl2sql|two_stage|decomposed|empty_self_correct|query_rewrite|fewshot|object_query|query_cost)/.test(
+      key
+    )
+  )
+    return t("ai_logs.settingGroupGenerate");
+  if (/^llm_keepalive/.test(key)) return t("ai_logs.settingGroupRuntime");
+  return t("ai_logs.settingGroupExecute");
+}
+
+const ALL_DEFS = [
+  ...SETTING_DEFS.map((d: any) => ({ ...d, expert: false, group: guessGroup(d.key) })),
+  ...EXTRA_KEYS.map((k) => ({
+    key: k,
+    label: k,
+    type: guessType(k),
+    tip: "",
+    expert: true,
+    group: guessGroup(k),
+  })),
+];
+
+const setMode = ref<"simple" | "expert">("simple");
+const visibleDefs = computed(() =>
+  ALL_DEFS.filter((d: any) => setMode.value === "expert" || !d.expert)
+);
+const visibleGroups = computed(() => {
+  const out: { name: string; items: any[] }[] = [];
+  for (const d of visibleDefs.value) {
+    let g = out.find((x) => x.name === d.group);
+    if (!g) {
+      g = { name: d.group, items: [] };
+      out.push(g);
+    }
+    g.items.push(d);
+  }
+  return out;
+});
 </script>
 
 <!-- 布局统一（非 scoped + 唯一类名，避免 data-v 在 keep-alive/HMR 下失效）：
@@ -1343,6 +1446,17 @@ onMounted(async () => {
 </style>
 
 <style lang="scss" scoped>
+.q-set__mode {
+  margin-bottom: 10px;
+}
+
+.q-set__group-title {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+}
+
 .q-side__head,
 .q-head {
   display: flex;

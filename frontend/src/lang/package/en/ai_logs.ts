@@ -217,6 +217,13 @@ export default {
   correctSqlPlaceholder: 'Correct SQL, e.g. SELECT COUNT(*) FROM "FUEL_CMCS_ASSAY"',
   markUselessOnly: "Just mark not useful",
   submitCorrect: "Submit Correction",
+  settingModeSimple: "Simple",
+  settingModeExpert: "Expert",
+  settingGroupRecall: "Retrieval",
+  settingGroupGenerate: "Generation",
+  settingGroupExecute: "Execution",
+  settingGroupRuntime: "Runtime",
+  settingGroupSecurity: "Security",
   settingTip:
     'These are engineering switches for Smart Query; they take effect immediately after saving. Items marked "experimental" are off by default and require comparison validation before enabling.',
   leaveEmptyDefault: "Empty = default",
