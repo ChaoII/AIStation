@@ -8858,7 +8858,8 @@ class AiQueryService:
         metrics = await cls.list_metrics(datasource or None)
         terms = await cls.list_terms(datasource or None)
         t_p0 = time.perf_counter()
-        schema_ctx = await cls._build_schema_context(question, datasource, metrics, terms)
+        schema_ctx = await cls._build_schema_context(question, datasource, metrics, terms,
+                                                     principal=await cls._context_principal(auth))
         t_p1 = time.perf_counter()
         # 留痕：prompt 体积。生成耗时几乎全在 prefill 上，prompt 一大就慢，
         # 所以这个数字必须可见（实测全量倾倒时 37K 字符 → 生成 7s）
@@ -9172,7 +9173,8 @@ class AiQueryService:
                      "不要为了省事写 LIMIT 截断，应返回全部（系统最多保留 1000 行）。\n")
         schema_ctx = await cls._build_schema_context(question, datasource,
                                                      await cls.list_metrics(datasource),
-                                                     await cls.list_terms(datasource))
+                                                     await cls.list_terms(datasource),
+                                                     principal=await cls._context_principal(auth))
         _dialect, _ds_type = await cls._resolve_dialect_info(datasource)
         system_prompt = build_system_prompt(
             _dialect, rules, schema_ctx, extra + templated_note(_ds_type))
@@ -10522,12 +10524,27 @@ class AiQueryService:
         return cls._SQL_LITERAL_RE.sub(_sub, sql), fixes
 
     @classmethod
-    async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
+    @classmethod
+    async def _context_principal(cls, auth):
+        """把 auth 解析成上下文投影用的 Principal；失败返回 None（不裁剪，执行期仍兜底）。"""
+        if auth is None:
+            return None
+        try:
+            from app.plugin.module_ai.query.policy.principal import load_principal
+            return await load_principal(auth, entry="ask")
+        except Exception:  # noqa: BLE001 - 裁剪失败不该阻断问数
+            return None
+
+    async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict],
+                                    principal=None) -> str:
         cfg = await cls._cfg()
+        # 主体指纹进缓存 key：不同用户不能复用同一份「有权 schema」提示词（否则等于绕过裁剪）
+        from app.plugin.module_ai.query.policy.context import scope_signature as _scope_sig
+        _sig = _scope_sig(principal)
         # 命中短时缓存直接返回（见函数尾部写入处）。key 与写入处必须完全一致
         # （含配置签名）—— 两处拼法不一致 = 缓存永不命中，白算一遍。
         if not _OBJECT_CTX.get() and not _BYPASS_CACHE.get():
-            _hit = _SCHEMA_CTX_CACHE.get(f"{datasource or ''}|{question}|{_cfg_sig(cfg)}")
+            _hit = _SCHEMA_CTX_CACHE.get(f"{datasource or ''}|{question}|{_cfg_sig(cfg)}|{_sig}")
             if _hit and time.time() - _hit[0] <= _SCHEMA_CTX_TTL:
                 return _hit[1]
         lines = []
@@ -10557,6 +10574,11 @@ class AiQueryService:
             # 与问题无关的对象上，又慢又干扰判断。现在只带检索命中的表。
             t_r0 = time.perf_counter()
             rel = await cls._semantic_tables(question, schema, metrics, terms, datasource)
+            # 生成前裁剪：无权表/列不进入提示词（执行期 guard 仍会兜底，这里是体验与防泄露）
+            from app.plugin.module_ai.query.policy.context import build_context_scope as _build_scope
+            _scope = await _build_scope(principal, list(rel), {t: list(schema.get(t) or []) for t in rel}) if principal else None
+            if _scope is not None:
+                rel = [t for t in rel if t in _scope.columns]
             t_r1 = time.perf_counter()
             ont = await cls._ont_ctx_block(only_tables=set(rel))
             t_r2 = time.perf_counter()
@@ -10566,7 +10588,11 @@ class AiQueryService:
             if ont:
                 lines.append(ont)
             for t in rel:
-                cols = schema.get(t, [])
+                cols = list(schema.get(t, []))
+                if _scope is not None:
+                    cols = list(_scope.columns.get(t, ()))
+                    _masked = set(_scope.masked.get(t, ()))
+                    cols = [f"{c}(脱敏)" if c in _masked else c for c in cols]
                 meta = tmeta.get(t) or {}
                 desc = meta.get("description") or ""
                 scen = meta.get("business_scenarios") or ""
@@ -10585,6 +10611,9 @@ class AiQueryService:
                 if extras:
                     head = f"{t}【" + "；".join(extras) + "】"
                 lines.append(f"- {head}: {', '.join(cols) if cols else ''}")
+            if _scope is not None and _scope.restricted:
+                lines.append("注意：你只能查询上面列出的表与字段；涉及行级限制的表，"
+                             "系统会自动追加过滤条件，不要尝试绕过。")
             lines.append(cls._query_conventions())
         else:
             # **自定义数据源**：原先这里**什么都不加** —— 模型对 ds:{id} 一张表、
@@ -10598,6 +10627,9 @@ class AiQueryService:
                 # ⚠️ 必须走带缓存的 `_semantic_tables`：`_recall_grounding` 会再查一次，
                 #    用 uncached 就等于同一题做两遍向量检索（实测每次白花 1.2~1.8 秒）。
                 rel = await cls._semantic_tables(question, ds_schema, metrics, terms, datasource)
+                _scope = await _build_scope(principal, list(rel), {t: list(ds_schema.get(t) or []) for t in rel}) if principal else None
+                if _scope is not None:
+                    rel = [t for t in rel if t in _scope.columns]
                 lines.append(
                     f"（数据源 {datasource}，共 {len(ds_schema)} 张表，"
                     f"下面是与问题最相关的 {len(rel)} 张）")
@@ -10611,7 +10643,11 @@ class AiQueryService:
                 tmeta = (await cls._asset_tmeta()) if cls._cfg_bool(
                     cfg, "schema_asset_meta_enabled", False) else {}
                 for t in rel:
-                    cols = ds_schema.get(t, [])
+                    cols = list(ds_schema.get(t, []))
+                    if _scope is not None:
+                        cols = list(_scope.columns.get(t, ()))
+                        _masked = set(_scope.masked.get(t, ()))
+                        cols = [f"{c}(脱敏)" if c in _masked else c for c in cols]
                     tmap = (_DS_TYPE_CACHE.get(datasource, (0, {}))[1].get(t) or {})
                     # 列标签后面补上**数据库类型**：模型据此决定是否需要 CAST
                     # （实测 LF/RZ 是 varchar，模型写成 AVG("LF") → 函数不存在直接失败）
@@ -10681,7 +10717,7 @@ class AiQueryService:
         # 只按「数据源|问题」缓存的话 —— 管理员刚改完开关，这边还在吐旧 prompt（最长 120 秒），
         # 表现就是"改了没反应"。eval 走 bypass_caches 不受影响，**线上**才会踩到。
         if not _OBJECT_CTX.get() and not _BYPASS_CACHE.get():
-            key = f"{datasource or ''}|{question}|{_cfg_sig(cfg)}"
+            key = f"{datasource or ''}|{question}|{_cfg_sig(cfg)}|{_sig}"
             if len(_SCHEMA_CTX_CACHE) >= _SCHEMA_CTX_CACHE_MAX:
                 for k in list(_SCHEMA_CTX_CACHE)[: _SCHEMA_CTX_CACHE_MAX // 5]:
                     _SCHEMA_CTX_CACHE.pop(k, None)
