@@ -225,6 +225,7 @@ export default {
   settingGroupRuntime: "Runtime",
   settingGroupSecurity: "Security",
   settingSearchPlaceholder: "Search settings…",
+  settingChangedOnly: "Changed only",
   settingTip:
     'These are engineering switches for Smart Query; they take effect immediately after saving. Items marked "experimental" are off by default and require comparison validation before enabling.',
   leaveEmptyDefault: "Empty = default",

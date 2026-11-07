@@ -219,6 +219,7 @@ export default {
   settingGroupRuntime: "執行環境",
   settingGroupSecurity: "安全",
   settingSearchPlaceholder: "搜尋設定項…",
+  settingChangedOnly: "只看已修改",
   settingTip: "這些是問數的工程開關，儲存後即時生效。標「實驗」的預設關閉，需先做對比驗證再開啟。",
   leaveEmptyDefault: "留空=預設",
   pleaseInputQuestion: "請先輸入問題",

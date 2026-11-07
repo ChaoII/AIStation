@@ -536,48 +536,62 @@
           :placeholder="t('ai_logs.settingSearchPlaceholder')"
           class="q-set__search"
         />
-        <el-radio-group v-model="setMode" size="small" class="q-set__mode">
-          <el-radio-button label="simple">{{ t("ai_logs.settingModeSimple") }}</el-radio-button>
-          <el-radio-button label="expert">{{ t("ai_logs.settingModeExpert") }}</el-radio-button>
-        </el-radio-group>
+        <div class="q-set__toolbar">
+          <el-radio-group v-model="setMode" size="small">
+            <el-radio-button label="simple">{{ t("ai_logs.settingModeSimple") }}</el-radio-button>
+            <el-radio-button label="expert">{{ t("ai_logs.settingModeExpert") }}</el-radio-button>
+          </el-radio-group>
+          <el-checkbox v-model="showChanged" size="small" class="q-set__changed-only">
+            {{ t("ai_logs.settingChangedOnly") }}
+          </el-checkbox>
+        </div>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
-          <div class="q-set__group-title">
+          <div class="q-set__group-title" @click="toggleGroup(g.name)">
+            <span class="q-set__caret">{{ collapsedGroups[g.name] ? "▸" : "▾" }}</span>
             {{ g.name }}
             <span class="q-set__count">{{ g.items.length }}</span>
           </div>
-          <div v-for="d in g.items" :key="d.key" class="q-set__row">
-            <div class="q-set__main">
-              <div class="q-set__label">
-                {{ d.label }}
-                <span v-if="setMode === 'expert' && d.rawKey !== d.label" class="q-set__key">
-                  {{ d.rawKey }}
-                </span>
+          <div v-show="!collapsedGroups[g.name]">
+            <div
+              v-for="d in g.items"
+              :key="d.key"
+              class="q-set__row"
+              :class="{ 'is-changed': isChanged(d.key) }"
+            >
+              <div class="q-set__main">
+                <div class="q-set__label">
+                  {{ d.label }}
+                  <span v-if="setMode === 'expert' && d.rawKey !== d.label" class="q-set__key">
+                    {{ d.rawKey }}
+                  </span>
+                </div>
+                <div v-if="d.tip" class="q-set__tip">{{ d.tip }}</div>
               </div>
-              <div v-if="d.tip" class="q-set__tip">{{ d.tip }}</div>
+              <el-switch
+                v-if="d.type === 'bool'"
+                v-model="setForm[d.key]"
+                active-value="true"
+                inactive-value="false"
+              />
+              <el-input
+                v-else-if="d.type === 'text'"
+                v-model="setForm[d.key]"
+                size="small"
+                clearable
+                :placeholder="t('ai_logs.leaveEmptyDefault')"
+                style="width: 200px"
+              />
+              <el-input-number
+                v-else
+                :model-value="Number(setForm[d.key] || 1)"
+                :min="'min' in d ? d.min : 0"
+                :max="'max' in d ? d.max : 100000"
+                size="small"
+                style="width: 120px"
+                @update:model-value="(v: number | undefined) => (setForm[d.key] = String(v ?? 1))"
+              />
+              <span v-if="isChanged(d.key)" class="q-set__dot" />
             </div>
-            <el-switch
-              v-if="d.type === 'bool'"
-              v-model="setForm[d.key]"
-              active-value="true"
-              inactive-value="false"
-            />
-            <el-input
-              v-else-if="d.type === 'text'"
-              v-model="setForm[d.key]"
-              size="small"
-              clearable
-              :placeholder="t('ai_logs.leaveEmptyDefault')"
-              style="width: 200px"
-            />
-            <el-input-number
-              v-else
-              :model-value="Number(setForm[d.key] || 1)"
-              :min="'min' in d ? d.min : 1"
-              :max="'max' in d ? d.max : 9"
-              size="small"
-              style="width: 120px"
-              @update:model-value="(v: number | undefined) => (setForm[d.key] = String(v ?? 1))"
-            />
           </div>
         </div>
       </div>
@@ -1450,10 +1464,29 @@ const ALL_DEFS = [
 
 const setMode = ref<"simple" | "expert">("simple");
 const setSearch = ref("");
+const showChanged = ref(false);
+const collapsedGroups = ref<Record<string, boolean>>({});
+const changedKeys = computed(() => {
+  const set = new Set<string>();
+  ALL_DEFS.forEach((d: any) => {
+    if ((setForm.value[d.key] ?? "") !== (setLoaded.value[d.key] ?? "")) set.add(d.key);
+  });
+  return set;
+});
+
+function isChanged(key: string) {
+  return changedKeys.value.has(key);
+}
+
+function toggleGroup(name: string) {
+  collapsedGroups.value = { ...collapsedGroups.value, [name]: !collapsedGroups.value[name] };
+}
+
 const visibleDefs = computed(() => {
   const kw = setSearch.value.trim().toLowerCase();
   return ALL_DEFS.filter((d: any) => {
     if (setMode.value !== "expert" && d.expert) return false;
+    if (showChanged.value && !changedKeys.value.has(d.key)) return false;
     if (!kw) return true;
     return [d.label, d.key, d.tip].some((x) =>
       String(x || "")
@@ -1536,12 +1569,17 @@ const visibleGroups = computed(() => {
 }
 
 .q-set__count {
+  display: inline-block;
+  min-width: 18px;
   margin-left: 6px;
   padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
   font-weight: 400;
   color: var(--el-text-color-secondary);
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
+  background: var(--el-fill-color);
+  border-radius: 9px;
 }
 
 .q-set__key {
@@ -1551,7 +1589,40 @@ const visibleGroups = computed(() => {
   color: var(--el-text-color-placeholder);
 }
 
+.q-set__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.q-set__changed-only {
+  margin-right: 2px;
+}
+
+.q-set__caret {
+  display: inline-block;
+  width: 14px;
+  color: var(--el-text-color-secondary);
+}
+
+.q-set__dot {
+  width: 6px;
+  height: 6px;
+  margin-left: 8px;
+  background: var(--el-color-warning);
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.q-set__row.is-changed {
+  background: var(--el-color-warning-light-9);
+  border-radius: 6px;
+}
+
 .q-set__group-title {
+  cursor: pointer;
+  user-select: none;
   margin: 14px 0 6px;
   font-size: 12px;
   font-weight: 600;
