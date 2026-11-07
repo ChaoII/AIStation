@@ -543,6 +543,18 @@ async def generate_asset_desc(
     )
 
 
+@AiQueryRouter.post("/assets/draft-desc", summary="LLM 起草表/字段描述（只返回草稿，不落库）")
+async def draft_asset_desc(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    tables = list(data.get("tables") or [])
+    return SuccessResponse(
+        data=await AiQueryService.draft_asset_descriptions(auth, tables),
+        msg="起草完成",
+    )
+
+
 @AiQueryRouter.post("/assets/kg/rebuild", summary="重建知识图谱(清缓存+重构建)")
 async def kg_rebuild(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

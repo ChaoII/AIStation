@@ -3089,6 +3089,45 @@ class AiQueryService:
                 "skipped": skipped, "total": len(items)}
 
     @classmethod
+    @classmethod
+    async def draft_asset_descriptions(cls, auth, tables: list[str]) -> dict:
+        """为指定表生成描述草稿（**不落库**，人工确认后再走 /assets/save）。
+
+        与 ``generate_asset_descriptions`` 的区别：那个是"批量直接写库"，
+        适合全量重建；这个是日常路径，避免 AI 猜错污染资产目录。
+        """
+        from app.plugin.module_ai.query.asset_draft import (
+            MAX_TABLES,
+            DraftResult,
+            build_draft_prompt,
+            filter_drafts,
+        )
+
+        names = list(dict.fromkeys(
+            str(t).strip() for t in (tables or []) if str(t).strip()))[:MAX_TABLES]
+        if not names:
+            raise CustomException(msg="请选择要起草的表")
+        async with async_db_session() as db:
+            from sqlalchemy import select as _sel
+
+            trows = (await db.execute(_sel(AiQueryAssetModel).where(
+                AiQueryAssetModel.table_name.in_(names),
+                AiQueryAssetModel.is_deleted.is_(False),
+            ))).scalars().all()
+            crows = (await db.execute(_sel(AiQueryAssetColumnModel).where(
+                AiQueryAssetColumnModel.table_name.in_(names),
+                AiQueryAssetColumnModel.is_deleted.is_(False),
+            ))).scalars().all()
+        if not trows:
+            raise CustomException(msg="没有找到可起草的表（请先同步资产目录）")
+        cols_by: dict[str, list[str]] = {}
+        for c in crows:
+            cols_by.setdefault(c.table_name, []).append(c.column_name)
+        known = {t.table_name: cols_by.get(t.table_name, []) for t in trows}
+        result = await cls._llm_structured(
+            build_draft_prompt(known), DraftResult, max_tokens=6000, tag="aistation-asset-draft")
+        return {"drafts": filter_drafts(result, known), "table_count": len(known)}
+
     async def generate_asset_descriptions(cls, auth, force: bool = False) -> dict:
         """用 LLM 为表/字段生成中文描述（带数据画像；人工校对后生效）。
 
