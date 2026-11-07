@@ -10524,7 +10524,6 @@ class AiQueryService:
         return cls._SQL_LITERAL_RE.sub(_sub, sql), fixes
 
     @classmethod
-    @classmethod
     async def _context_principal(cls, auth):
         """把 auth 解析成上下文投影用的 Principal；失败返回 None（不裁剪，执行期仍兜底）。"""
         if auth is None:
@@ -10535,6 +10534,7 @@ class AiQueryService:
         except Exception:  # noqa: BLE001 - 裁剪失败不该阻断问数
             return None
 
+    @classmethod
     async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict],
                                     principal=None) -> str:
         cfg = await cls._cfg()

@@ -65,3 +65,13 @@ def test_no_policies_keeps_legacy(monkeypatch):
 def test_signature_differs_by_principal():
     assert context.scope_signature(P(uid=1)) != context.scope_signature(P(uid=2))
     assert context.scope_signature(None) == ""
+
+
+def test_schema_context_helpers_are_classmethods():
+    """回归守卫：装饰器被挤掉会让所有慢路径问数 500（实测踩过）。"""
+    import inspect
+
+    from app.plugin.module_ai.query.service import AiQueryService as S
+
+    for name in ("_build_schema_context", "_context_principal"):
+        assert isinstance(inspect.getattr_static(S, name), classmethod), name
