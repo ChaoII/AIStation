@@ -1519,7 +1519,26 @@ const setMode = ref<"simple" | "expert">("simple");
 const setSearch = ref("");
 const setDefaults = ref<Record<string, string>>({});
 const showChanged = ref(false);
-const collapsedGroups = ref<Record<string, boolean>>({});
+const COLLAPSE_KEY = "ai_query_setting_collapsed";
+
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistCollapsed(v: Record<string, boolean>) {
+  try {
+    localStorage.setItem(COLLAPSE_KEY, JSON.stringify(v));
+  } catch {
+    /* 隐私模式下 localStorage 不可用，忽略 */
+  }
+}
+
+const collapsedGroups = ref<Record<string, boolean>>(loadCollapsed());
 const changedKeys = computed(() => {
   const set = new Set<string>();
   ALL_DEFS.forEach((d: any) => {
@@ -1534,6 +1553,7 @@ function isChanged(key: string) {
 
 function toggleGroup(name: string) {
   collapsedGroups.value = { ...collapsedGroups.value, [name]: !collapsedGroups.value[name] };
+  persistCollapsed(collapsedGroups.value);
 }
 
 const visibleDefs = computed(() => {
