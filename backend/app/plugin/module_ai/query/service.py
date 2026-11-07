@@ -721,6 +721,22 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
     return out
 
 
+
+def _auth_scope(auth) -> str:
+    """SQL 缓存的主体指纹：不同用户/角色不能复用同一份生成结果。
+
+    上下文裁剪与权限判定都依赖主体，生成的 SQL 可能不同（行条件、可见表）；
+    缓存不加指纹 = 把 A 的 SQL 给 B 用。
+    """
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    if uid is None:
+        return "anon"
+    try:
+        roles = ",".join(sorted(_user_role_codes(auth)))
+    except Exception:  # noqa: BLE001 - 角色取不到时退化为按用户隔离
+        roles = ""
+    return f"{uid}|{roles}"
+
 def _to_metric_dict(m: AiQueryMetricModel) -> dict:
     # 绑定型指标（object_code + agg_fn）：不展示占位 SQL，改为展示「绑定对象/属性/聚合」口径。
     obj_code = getattr(m, "object_code", "") or ""
@@ -1222,16 +1238,16 @@ _SQL_CACHE_TTL = 1800.0      # 秒；schema/数据口径变化靠 TTL 兜底
 _SQL_CACHE_MAX = 500         # 上限，防内存无界增长
 
 
-def _sql_cache_key(question: str, datasource: str | None) -> str:
+def _sql_cache_key(question: str, datasource: str | None, scope: str = "") -> str:
     """归一化问题文本作为键（去空白、统一小写），避免大小写/空格差异漏命中。"""
     q = re.sub(r"\s+", "", (question or "").strip().lower())
-    return f"{datasource or 'system'}::{q}"
+    return f"{datasource or 'system'}::{q}::s:{scope}"
 
 
-def _sql_cache_get(question: str, datasource: str | None) -> str | None:
+def _sql_cache_get(question: str, datasource: str | None, scope: str = "") -> str | None:
     if _BYPASS_CACHE.get():
         return None  # 评测：必须真的重新生成（见 _BYPASS_CACHE 的说明）
-    key = _sql_cache_key(question, datasource)
+    key = _sql_cache_key(question, datasource, scope)
     hit = _SQL_CACHE.get(key)
     if not hit:
         return None
@@ -1242,7 +1258,7 @@ def _sql_cache_get(question: str, datasource: str | None) -> str | None:
     return sql
 
 
-def _sql_cache_set(question: str, datasource: str | None, sql: str) -> None:
+def _sql_cache_set(question: str, datasource: str | None, sql: str, scope: str = "") -> None:
     if _BYPASS_CACHE.get():
         return  # 评测生成的 SQL 不得污染真实用户的缓存
     if not sql or not sql.strip():
@@ -1251,7 +1267,7 @@ def _sql_cache_set(question: str, datasource: str | None, sql: str) -> None:
         # 简单淘汰：删最早插入的一批，避免引入额外依赖
         for k in list(_SQL_CACHE)[: max(1, _SQL_CACHE_MAX // 10)]:
             _SQL_CACHE.pop(k, None)
-    _SQL_CACHE[_sql_cache_key(question, datasource)] = (time.time(), sql)
+    _SQL_CACHE[_sql_cache_key(question, datasource, scope)] = (time.time(), sql)
 
 
 def sql_cache_clear() -> int:
@@ -6764,11 +6780,11 @@ class AiQueryService:
         return _ASSET_TMETA
 
     @classmethod
-    @classmethod
     async def effective_settings(cls) -> dict:
         """当前**生效**配置（默认值 + 库内覆盖），供界面回显。"""
         return await cls._cfg()
 
+    @classmethod
     async def get_settings(cls) -> dict:
         defaults = {
             # 行数上限/超时/重试：**这三个以前只写在默认值里、代码从不读**
@@ -8664,7 +8680,7 @@ class AiQueryService:
         # 首轮生成失败（空内容/超时）→ 次轮强制关掉思考：实测推理型模型会把 max_tokens
         # 全吃在思考上，返回空正文，而"再想一遍"只会更慢更空（140s 后仍然失败）。
         force_no_thinking = False
-        cached_sql = _sql_cache_get(question, datasource)
+        cached_sql = _sql_cache_get(question, datasource, _auth_scope(auth))
         cache_used = bool(cached_sql)
         # 阶段计时：问数是"慢"被投诉的功能，必须能一眼看出时间花在哪
         t_start = time.perf_counter()
@@ -8739,7 +8755,7 @@ class AiQueryService:
                                for v in (r if isinstance(r, (list, tuple)) else [r])]
                 if (cache_used and attempt == 0
                         and (not _flat_cache or all(v is None for v in _flat_cache))):
-                    _SQL_CACHE.pop(_sql_cache_key(question, datasource), None)
+                    _SQL_CACHE.pop(_sql_cache_key(question, datasource, _auth_scope(auth)), None)
                     cached_sql, cache_used = None, False
                     last_err = "上一轮查询返回结果为空，可能是条件/表/字段选择不准确，请检查后再重新生成一条 SQL。"
                     continue
@@ -8770,7 +8786,7 @@ class AiQueryService:
                 if not _flat or all(v is None for v in _flat):
                     log.warning("[query] 结果为全 NULL，不写 SQL 缓存：{}", question[:30])
                 else:
-                    _sql_cache_set(question, datasource, sql)
+                    _sql_cache_set(question, datasource, sql, _auth_scope(auth))
                 # **口径提示**（只提示、不重试）：问句说要什么 vs SQL 做了什么。
                 # 这类差异在结果里看不出来（数字都合理），但值得让人知道。
                 # 实测当前题库 78 题**一次都没命中** —— 所以不拿它触发重试（重试就是多 5 秒），
@@ -9178,12 +9194,12 @@ class AiQueryService:
 
         # ---- SQL 缓存：同一问句直接回放上次生成的 SQL（跳过 LLM） ----
         # 旧实现只有非流式分支有缓存，界面上重复提问要重新生成（10~40s）。
-        cached_sql = _sql_cache_get(question, datasource)
+        cached_sql = _sql_cache_get(question, datasource, _auth_scope(auth))
         if cached_sql:
             evs = await cls._finish_sql_stream(question, sess["id"], cached_sql, datasource, auth)
             if any(e.get("type") == "error" for e in evs):
                 # 缓存的 SQL 已经跑不通（schema/口径变了）→ 失效并继续重新生成
-                _SQL_CACHE.pop(_sql_cache_key(question, datasource), None)
+                _SQL_CACHE.pop(_sql_cache_key(question, datasource, _auth_scope(auth)), None)
                 log.warning("[query] 流式缓存 SQL 执行失败，已失效并重新生成：{}", question[:30])
             else:
                 yield {"type": "sql_final", "sql": cached_sql, "cached": True}
@@ -9392,7 +9408,7 @@ class AiQueryService:
             # 只在**真有数据**时写 SQL 缓存（全 NULL 结果会把空表 SQL 缓存住，越查越空）
             flat = [v for r in rows for v in (r if isinstance(r, (list, tuple)) else [r])]
             if flat and any(v is not None for v in flat):
-                _sql_cache_set(question, datasource, sql)
+                _sql_cache_set(question, datasource, sql, _auth_scope(auth))
             return [
                 {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows),
                  "retrieved": retrieved, "ontology_used": ont_used, "message_id": msg.id,
