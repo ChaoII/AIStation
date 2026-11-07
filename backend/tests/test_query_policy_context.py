@@ -75,3 +75,4 @@ def test_schema_context_helpers_are_classmethods():
 
     for name in ("_build_schema_context", "_context_principal"):
         assert isinstance(inspect.getattr_static(S, name), classmethod), name
+

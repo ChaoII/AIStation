@@ -10539,7 +10539,10 @@ class AiQueryService:
                                     principal=None) -> str:
         cfg = await cls._cfg()
         # 主体指纹进缓存 key：不同用户不能复用同一份「有权 schema」提示词（否则等于绕过裁剪）
-        from app.plugin.module_ai.query.policy.context import scope_signature as _scope_sig
+        from app.plugin.module_ai.query.policy.context import (
+            build_context_scope as _build_scope,
+            scope_signature as _scope_sig,
+        )
         _sig = _scope_sig(principal)
         # 命中短时缓存直接返回（见函数尾部写入处）。key 与写入处必须完全一致
         # （含配置签名）—— 两处拼法不一致 = 缓存永不命中，白算一遍。
