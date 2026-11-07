@@ -118,6 +118,12 @@ export default {
 
   // ===== 字段维护抽屉 =====
   ig_fieldMaintainTitle: "字段维护：{table}",
+  ig_aiDraft: "AI 起草",
+  ig_aiDraftTitle: "AI 起草：{table}",
+  ig_aiDraftApply: "应用到表单",
+  ig_aiDraftEmpty: "AI 没有返回可用草稿，请先同步资产或手动填写",
+  ig_aiDraftDone: "已填入表单，核对后点「保存」",
+  ig_aiDraftFail: "AI 起草失败，请稍后重试",
   ig_saveTableInfo: "保存表信息",
   ig_importAsObject: "导入为本体对象",
   ig_aliasPlaceholder: "如：燃煤采购结算主表",

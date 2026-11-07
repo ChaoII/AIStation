@@ -255,6 +255,16 @@ export function getQueryAssets() {
 export function getQueryAssetColumns(tableName: string) {
   return request({ url: `${API_PATH}/assets/${tableName}/columns`, method: "get" });
 }
+/** AI 起草表/字段描述（只返回草稿，不落库；确认后由保存接口写入） */
+export function draftQueryAssetDesc(tables: string[]) {
+  return request({
+    url: `${API_PATH}/assets/draft-desc`,
+    method: "post",
+    data: { tables },
+    timeout: 120000,
+  });
+}
+
 export function generateQueryAssetDesc(force = false) {
   return request({
     url: `${API_PATH}/assets/generate-desc`,

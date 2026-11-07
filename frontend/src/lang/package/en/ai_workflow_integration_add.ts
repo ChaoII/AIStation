@@ -86,6 +86,12 @@ export default {
 
   // ===== 字段维护抽屉 =====
   ig_fieldMaintainTitle: "Field Maintenance: {table}",
+  ig_aiDraft: "AI draft",
+  ig_aiDraftTitle: "AI draft: {table}",
+  ig_aiDraftApply: "Apply to form",
+  ig_aiDraftEmpty: "No usable draft returned. Sync assets or fill it in manually.",
+  ig_aiDraftDone: "Applied to the form. Review and save.",
+  ig_aiDraftFail: "AI draft failed, please retry later",
   ig_saveTableInfo: "Save Table Info",
   ig_importAsObject: "Import as Ontology Object",
   ig_aliasPlaceholder: "e.g. Coal Purchase Settlement Master Table",

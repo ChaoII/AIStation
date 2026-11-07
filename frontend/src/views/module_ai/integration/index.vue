@@ -319,6 +319,9 @@
                     >
                       {{ t("ai_workflow.ig_saveTableInfo") }}
                     </el-button>
+                    <el-button size="small" :loading="drafting" @click="runDraft">
+                      {{ t("ai_workflow.ig_aiDraft") }}
+                    </el-button>
                     <el-select
                       v-model="importDomain"
                       size="small"
@@ -2042,6 +2045,39 @@
     <!-- 资产版本管理 -->
     <AssetVersionsDialog v-model="versionsVisible" :table="versionsTable" />
   </div>
+
+  <!-- AI 起草草稿：只回填表单，不直接写库 -->
+  <el-dialog
+    v-model="draftVisible"
+    :title="t('ai_workflow.ig_aiDraftTitle', { table: curTable || '' })"
+    width="640px"
+    append-to-body
+  >
+    <el-form label-width="80px">
+      <el-form-item :label="t('ai_workflow.ig_kgAlias')">
+        <el-input v-model="draft.alias" maxlength="60" />
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_description')">
+        <el-input v-model="draft.description" type="textarea" :rows="2" maxlength="200" />
+      </el-form-item>
+    </el-form>
+    <el-table :data="draft.columns" border size="small" max-height="320">
+      <el-table-column prop="name" :label="t('ai_workflow.ig_field')" width="180" />
+      <el-table-column :label="t('ai_workflow.ig_description')">
+        <template #default="{ row }">
+          <el-input v-model="row.description" size="small" maxlength="120" />
+        </template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <el-button @click="draftVisible = false">
+        {{ t("ai_workflow.ig_cancel") }}
+      </el-button>
+      <el-button type="primary" @click="applyDraft">
+        {{ t("ai_workflow.ig_aiDraftApply") }}
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -2105,6 +2141,7 @@ import {
   removeDataLifetime,
   extractQueryObjects,
   inferQueryAssetRelations,
+  draftQueryAssetDesc,
   generateQueryAssetDesc,
 } from "@/api/module_ai/query";
 import {
@@ -2302,6 +2339,54 @@ const savingCol = ref("");
 const savingDs = ref(false);
 const dsDlg = ref(false);
 const fieldDrawer = ref(false);
+const draftVisible = ref(false);
+const drafting = ref(false);
+const draft = ref<any>({ alias: "", description: "", columns: [] });
+
+/** AI 起草当前表的描述（只生成草稿，应用后仍需点「保存」才落库） */
+async function runDraft() {
+  if (!curTable.value) return;
+  drafting.value = true;
+  try {
+    const r: any = await draftQueryAssetDesc([curTable.value]);
+    const list = r.data?.data?.drafts || [];
+    const hit = list.find(
+      (x: any) => String(x.table || "").toLowerCase() === String(curTable.value).toLowerCase()
+    );
+    if (!hit) {
+      ElMessage.warning(t("ai_workflow.ig_aiDraftEmpty"));
+      return;
+    }
+    draft.value = {
+      alias: hit.alias || "",
+      description: hit.description || "",
+      columns: (hit.columns || []).map((c: any) => ({ ...c })),
+    };
+    draftVisible.value = true;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_aiDraftFail"));
+  } finally {
+    drafting.value = false;
+  }
+}
+
+/** 应用草稿到表单（不直接落库，交由用户核对后保存） */
+function applyDraft() {
+  const d = draft.value;
+  if (!d) return;
+  if (d.alias) tmeta.value.alias = d.alias;
+  if (d.description) tmeta.value.description = d.description;
+  const map = new Map<string, string>(
+    (d.columns || []).map((c: any) => [String(c.name || "").toLowerCase(), c.description || ""])
+  );
+  columns.value = columns.value.map((c: any) => {
+    const key = String(c.column_name || "").toLowerCase();
+    return map.has(key) && map.get(key) ? { ...c, description: map.get(key) } : c;
+  });
+  draftVisible.value = false;
+  ElMessage.success(t("ai_workflow.ig_aiDraftDone"));
+}
+
 const versionsVisible = ref(false);
 const versionsTable = ref("");
 function openVersions(row: any) {

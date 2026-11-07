@@ -84,6 +84,12 @@ export default {
 
   // ===== 欄位維護抽屜 =====
   ig_fieldMaintainTitle: "欄位維護：{table}",
+  ig_aiDraft: "AI 起草",
+  ig_aiDraftTitle: "AI 起草：{table}",
+  ig_aiDraftApply: "套用到表單",
+  ig_aiDraftEmpty: "AI 沒有回傳可用草稿，請先同步資產或手動填寫",
+  ig_aiDraftDone: "已填入表單，核對後按「儲存」",
+  ig_aiDraftFail: "AI 起草失敗，請稍後重試",
   ig_saveTableInfo: "儲存表資訊",
   ig_importAsObject: "匯入為本體物件",
   ig_aliasPlaceholder: "如：燃煤採購結算主表",
