@@ -7856,8 +7856,8 @@ class AiQueryService:
         # 设计稿 §7/§10：所有问数入口的**权限判定**只走这一处，各入口只换 ``entry``。
         # 放在字段级 ACL **之前**：星号止血（P0）与表级策略必须先于列级判定生效，
         # 否则"旧判定放行的查询仍带着敏感星号过去"（见 guard 模块 docstring 第 2 条）。
-        # ⚠️ P1 不执行 SQL 改写：``decision.sql`` 只给 shadow 差异看，执行仍用原 sql
-        #    （T9 编译器接入后才改成 ``sql = decision.sql``）。
+        # enforce 下 guard 会返回**编译后的可执行 SQL**（``decision.sql``）：行过滤已
+        # 下推、掩码已投影替换，执行时必须用它；legacy/shadow 为空（执行原 SQL）。
         from .policy import guard as _policy_guard
         from .policy.engine import Decision as _PolicyDecision
         from .policy.principal import load_principal as _load_principal
@@ -7885,11 +7885,13 @@ class AiQueryService:
                 principal=principal,
                 entry=entry,
                 datasource=datasource,
+                # 外部库可能是 MySQL/SQLite：编译按真实方言读写，别把 PG 语法套过去
+                dialect=await cls._sql_dialect(datasource),
                 legacy_check=_legacy_ds_check,
             )
             if not decision.permit:
                 raise CustomException(msg=decision.reason)
-            return await _execute_custom_ds_sql(ds_id, sql, auth)
+            return await _execute_custom_ds_sql(ds_id, decision.sql or sql, auth)
 
         # 复用本体的行级/列级权限：把本体对象支撑表改写成"已过滤的子查询"。
         # 问数是**任意形状的读**（聚合/分组/join），外面套 WHERE 是错的——
@@ -7935,8 +7937,8 @@ class AiQueryService:
             raise CustomException(msg=decision.reason)
 
         # 字段级 ACL：仍是**独立一层**。legacy_check 算过就直接复用；``enforce`` 模式下
-        # guard 只做表级判定（列级掩码属 T9），这里必须补算 —— 否则"切到新引擎"会把
-        # 列级 ACL 丢掉，受限字段重新变成可读。
+        # guard 不再执行旧判定（策略判定与编译改写由 guard 负责），这里必须补算 ——
+        # 否则"切到新引擎"会把列级 ACL 丢掉，受限字段重新变成可读。
         # 安全补丁（2026-10-19）：必须在**共同执行出口**生效，且 fail-closed
         # （检查一炸就等于没做，受限字段会被原样查出来）。
         if acl_violations is None:
@@ -7961,7 +7963,15 @@ class AiQueryService:
         if _default_hits:
             raise CustomException(
                 msg=f"查询包含内置敏感列（默认拦截，永不返回）：{', '.join(_default_hits)}")
-        return await _execute_sql(secured["sql"])
+        # enforce：编译器基于**原 SQL**生成策略改写，本体权限（行/列过滤）必须在其
+        # **之后**再套一层 —— 直接用编译结果会覆盖掉 `_secure_ont_sql` 的过滤。
+        exec_sql = secured["sql"]
+        if decision.sql:
+            secured = await _secure_ont_sql(decision.sql, auth)
+            if secured.get("deny"):
+                raise CustomException(msg=secured["msg"])
+            exec_sql = secured["sql"]
+        return await _execute_sql(exec_sql)
 
     @classmethod
     async def _explain_rows(cls, sql: str) -> int:
@@ -8744,6 +8754,24 @@ class AiQueryService:
             max_tokens=nl2sql_max_tokens(None), runtime=runtime,
             tag="aistation-query-plan")
         return json.dumps(out.model_dump(), ensure_ascii=False)
+
+    @classmethod
+    async def _sql_dialect(cls, datasource: str) -> str:
+        """数据源 → **sqlglot 读方言**名（编译器/解析器共用，未知回退 postgres）。
+
+        外部库可能是 MySQL/SQLite：把 PG 语法套过去会直接产生非法 SQL（反引号、
+        标识符大小写、函数名）。``api`` / ``file`` 这类没有 SQL 方言的源按 PG 处理
+        （它们本来也不走 SQL 执行链路）。
+        """
+        if not datasource or datasource == SYSTEM_DS:
+            return "postgres"
+        ds_type = ""
+        try:
+            _dialect, ds_type = await cls._resolve_dialect_info(datasource)
+        except Exception:  # noqa: BLE001 - 方言解析失败按 PG 兜底（不阻断判定）
+            return "postgres"
+        return {"mysql": "mysql", "sqlite": "sqlite"}.get(
+            str(ds_type or "").lower(), "postgres")
 
     @classmethod
     async def _resolve_dialect_info(cls, datasource: str) -> tuple[dict, str]:

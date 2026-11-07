@@ -8,9 +8,8 @@
                              datasource=ds, legacy_check=legacy)
     if not decision.permit:
         raise CustomException(decision.reason)
-    # ⚠️ P1 不做 SQL 改写：decision.sql 只用于 shadow 差异（多表条件 OR 到一起
-    #    不是可执行 SQL），**不要**用它覆盖/拼接原 SQL。
-    #    行/列改写由 T9 编译器产出，届时这里才变成 ``sql = decision.sql``。
+    # enforce 下 decision.sql 是**编译后的可执行 SQL**（行过滤 + 列投影/掩码）；
+    # legacy / shadow 下它为空（执行原 SQL），调用方按「非空才用」处理。
 
 三种开关（``POLICY_ENGINE``，读 ``AiQueryService._cfg()``，缺失/未知按 ``legacy``）：
 
@@ -18,25 +17,18 @@
 |---|---|
 | ``legacy`` | 只做「无主体拒绝 + 星号止血 + 审计」，结论来自调用方 ``legacy_check``；**不读策略、不跑引擎** |
 | ``shadow`` | 新旧都算；**旧结论生效**；结论不同（或改写不同）时写 ``ai_policy_shadow_diff`` |
-| ``enforce`` | **硬闸：一律拒绝**（2026-11 复审裁决）。编译器接线前不可用，见下 |
+| ``enforce`` | 新引擎判定 + **SQL 编译改写**；执行方（``_execute_one``）用 ``decision.sql`` |
 
-⚠️ ``enforce`` 为什么是硬闸
---------------------------
-``_execute_one`` 执行的始终是**原 SQL**（``decision.sql`` 从未被使用，行/列改写由
-``policy.compiler`` 产出、但**生产零调用点**）。若放开 enforce，就会出现"策略 API 收下
-``condition`` / ``mask_expr``、explain 显示 permit，而实际明文全行"的假安全。
-所以：``policy_engine == "enforce"`` 时一律 deny，reason 写明原因并打 warning，
-管理员只需切回 ``legacy`` / ``shadow``。
+``enforce`` 的判定链（任何一步失败一律 deny，不抛、不降级放行）：
 
-**恢复 enforce 的前置条件（un-gate，P3/P4）**：
-
-1. 先接入 ``policy.compiler``：执行前用 ``build_plan`` + ``rewrite`` 生成 SQL，
-   ``_execute_one`` 改为执行 ``decision.sql``（当前注释里写死了"不要用"）；
-2. 编译器自带 **SELECT-only + 系统函数白名单**检查（C3：enforce 当前丢掉了只读/系统
-   函数校验，硬闸顺带堵住了这个洞 —— un-gate 前**必须**补回）；
-3. 行/列策略的**上界求交**（多表条件与列白名单取交集）也要先生效；
-4. ``policy_api`` 的 ``condition`` / ``mask_expr`` 保存拦截同步放开，并让 explain 的
-   ``applied`` 反映真实改写。
+1. 读策略 + 主体（含数据域）→ 查询涉及的真实表；
+2. 读列元数据（``policy.model.table_columns``；系统库 / 自定义源各走各的）；
+3. **视图**（有 ``resource_kind=view`` 策略的表）按血缘做**单层**映射
+   （``views.resolve_view_policies``）；映射不到就拒绝，不伪造过滤；
+4. ``compiler.build_plan`` → ``compiler.rewrite``；编译拒绝（含解析失败、
+   条件/掩码不合法、表未被策略覆盖）都转成 ``Decision(False, ...)``；
+5. 放行时 ``decision.sql`` 是**可执行 SQL**（行过滤已下推、掩码已投影替换），
+   ``decision.applied`` 是**实际施加**的改写（审计与 shadow 都读它）。
 
 四条硬约定（评审关注点，别改动语义）：
 
@@ -51,19 +43,19 @@
 4. **域成员以库为准**：``principal.attrs["domains"]`` 由 ``repo.domain_codes_for_user``
    覆盖填充（逗号串），调用方传入的值不作数（防伪造域）。
 
-P1 的判定粒度**只到表级**（不含 SQL 改写，列级/改写留给 T9 编译器）：
+判定粒度（enforce）：
 
-- 用 ``AiQueryService._sql_query_scope`` 取涉及的表，逐表 ``engine.decide_table``；
-- 任一表拒绝 → 整体 deny，reason 带表名与策略 id；
-- 全部放行 → permit，并把各表的行过滤条件用 ``engine.union_condition`` 合并进
-  ``Decision.sql`` / ``applied``。**这份条件只给 shadow 看**（`"双放行但新增行过滤"`
-  正是 T9 之后"用户行被静默藏掉"的变更，必须被抓到），P1 **不执行**它。
+- 用 ``AiQueryService._sql_query_scope`` 取涉及的表，读列元数据后交给编译器；
+- 编译器按作用域识别真实表，逐表下推行条件、逐列施加 deny/mask；
+- 任一表/列被拒 → 整体 deny，reason 带表名/列名与策略 id；
+- 列表级策略（``condition`` / ``mask_expr``）在编译期生效，执行的是编译后的 SQL。
 
-已知边界（P1，写在明处）：
+已知边界（写在明处）：
 
 - ``_sql_query_scope`` 用 ``sqlglot`` 的 ``find_all(Table)``，**会把 CTE 名也当成表**
-  （``with x as (...) select * from x`` 里的 ``x``）→ enforce 下可能误拒。这正是
-  shadow 阶段存在的意义：先看差异再切开关，T9 编译器按作用域重写后消失；
+  （``with x as (...) select * from x`` 里的 ``x``）→ enforce 下可能误拒（fail-closed，
+  不会放行未覆盖的表）；
+- 视图只做**单层**血缘映射（``lineage_for_table`` 的 ``kind=view`` 上游），不做递归；
 - 判定不缓存：每次都是「读策略 + 逐表判定」，量大后再引入带 ``scope_hash`` 的缓存（spec §9）。
 """
 
@@ -81,10 +73,17 @@ from app.core.database import async_db_session_fresh
 from app.core.logger import log
 
 from .audit import sql_hash, sql_preview, write_access_log
-from .engine import Decision, decide_table, union_condition
-from .model import sensitive_tables
+from .compiler import DENIED_ALL, AccessPlan, build_plan, rewrite
+from .engine import (
+    Decision,
+    _is_enabled,
+    _table_key,
+    matched_policies,
+)
+from .model import sensitive_tables, table_columns
 from .repo import domain_codes_for_user, list_policies
 from .star import unexpanded_star
+from .views import resolve_view_policies
 
 if TYPE_CHECKING:  # 运行时不依赖 principal（它要连库），避免无谓的导入链
     from .principal import Principal
@@ -229,16 +228,131 @@ class _PolicyLoadError(RuntimeError):
     """策略/域/表结构读取失败：新判定做不出来（fail-closed 由调用方落地）。"""
 
 
+async def _view_fragment(
+    table: str, datasource: str, policies, principal
+) -> AccessPlan | None:
+    """表是**视图**时，按血缘从基表策略推导一份补充计划（单层）。
+
+    判定"是不是视图"不猜元数据：只认「有一条启用中的 ``resource_kind=view`` 策略
+    指向它」。视图若连 allow 都没有，``build_plan`` 本身就会默认拒绝，不需要这里兜底。
+
+    血缘只取 ``kind=view`` 的上游（``lineage_for_table`` 的 ``upstream``），
+    且仅当本表确实是这些 view 边的源（即它是视图）。基表策略先按主体过滤
+    （``matched_policies``）再交给 ``resolve_view_policies`` —— 那个函数的契约是
+    "已按主体筛过"，传全量会把别人的 deny/allow 当成本用户的。
+    """
+    if not any(
+        str(getattr(p, "resource_kind", "") or "").strip().lower() == "view"
+        and _table_key(getattr(p, "resource_code", "")) == table
+        and _is_enabled(getattr(p, "enabled", True))
+        for p in policies or ()
+    ):
+        return None
+
+    from .. import service as _svc
+    from ..lineage import lineage_for_table
+
+    ds = str(datasource or "").strip()
+    if not ds or ds == "system":
+        # 系统库的血缘按「表所属数据源」存（实测是 ds:4）；查不到就退回原值。
+        try:
+            ds = await _svc.AiQueryService._table_ds_code(table) or ds
+        except Exception as e:  # noqa: BLE001 - 血缘不可用不能拖垮判定
+            log.warning(f"[问数权限] 读取表所属数据源失败（血缘降级）: {e}")
+
+    payload = await lineage_for_table(ds or "system", table.upper())
+    entries = [
+        item
+        for item in (payload.get("upstream") or [])
+        if str(item.get("kind") or "").lower() == "view" and item.get("table")
+    ]
+    if not entries:
+        return None
+
+    base_tables: list[str] = []
+    for item in entries:
+        base = _table_key(item.get("table"))
+        if base and base not in base_tables:
+            base_tables.append(base)
+
+    candidates = []
+    for base in base_tables:
+        candidates.extend(matched_policies(policies, principal, base))
+    fragment, _tier = resolve_view_policies(table, {table: entries}, candidates)
+    return fragment
+
+
+def _merge_plan(plan: AccessPlan, fragment: AccessPlan | None) -> AccessPlan:
+    """把视图补充片段叠加到视图自身的计划上（只收紧、不放宽）。
+
+    - ``denied``：并集（``DENIED_ALL`` 天然覆盖全表）；
+    - ``row_filters``：两边都有时 ``AND`` 连接（都通过编译期白名单校验）；
+    - ``allowed_columns``：取交集（``None`` = 无元数据，保持未知，不冒进展开）；
+    - ``masked``：同一列不同掩码 → 无法判定，整表拒绝。
+    """
+    if fragment is None:
+        return plan
+
+    row_filters = dict(plan.row_filters)
+    for table, condition in (fragment.row_filters or {}).items():
+        if not condition:
+            continue
+        current = row_filters.get(table)
+        row_filters[table] = (
+            f"({current}) AND ({condition})" if current else condition
+        )
+
+    allowed_columns = dict(plan.allowed_columns)
+    for table, columns in (fragment.allowed_columns or {}).items():
+        if columns is None or table not in allowed_columns:
+            continue
+        current = allowed_columns[table]
+        if current is None:
+            continue
+        keep = {str(c).lower() for c in columns}
+        allowed_columns[table] = tuple(c for c in current if str(c).lower() in keep)
+
+    masked: dict[str, dict[str, str]] = {
+        table: dict(items) for table, items in (plan.masked or {}).items()
+    }
+    denied: dict[str, set[str]] = {
+        table: set(items) for table, items in (plan.denied or {}).items()
+    }
+    for table, items in (fragment.masked or {}).items():
+        current = masked.setdefault(table, {})
+        for column, expr in items.items():
+            if column in current and current[column] != expr:
+                denied.setdefault(table, set()).add(DENIED_ALL)
+            else:
+                current[column] = expr
+    for table, items in (fragment.denied or {}).items():
+        denied.setdefault(table, set()).update(items)
+
+    policy_ids = tuple(dict.fromkeys((*plan.policy_ids, *fragment.policy_ids)))
+    return AccessPlan(
+        row_filters=row_filters,
+        allowed_columns=allowed_columns,
+        masked=masked,
+        denied={table: frozenset(items) for table, items in denied.items()},
+        policy_ids=policy_ids,
+        deny_reason=plan.deny_reason or fragment.deny_reason,
+    )
+
+
 async def _new_decision(
-    *, sql: str, principal: Principal | None, dialect: str
+    *, sql: str, principal: Principal | None, dialect: str, datasource: str = "system"
 ) -> Decision:
-    """新引擎判定（表级）：逐表 ``decide_table``，任一拒绝即整体拒绝。
+    """新引擎判定：策略 + 列元数据 → 访问计划 → **编译后的可执行 SQL**。
 
-    超管先短路：引擎本来就会绕过，提前返回能省掉「读策略 + 读域」两次查询。
+    超管先短路：引擎本来就会绕过，提前返回能省掉「读策略 + 读域 + 读元数据」几轮查询。
 
-    策略/域读不到时抛 :class:`_PolicyLoadError`（已在内部 warning）：``enforce`` 据此
-    deny，``shadow`` 据此**不写差异** —— 把"库坏了"记成"新引擎要拒这批用户"会污染
-    灰度报告，比不记录更糟。
+    策略/域/元数据读不到时抛 :class:`_PolicyLoadError`（已在内部 warning）：
+    ``enforce`` 据此 deny，``shadow`` 据此**不写差异** —— 把"库坏了"记成
+    "新引擎要拒这批用户"会污染灰度报告，比不记录更糟。
+
+    编译拒绝（解析失败 / 非 SELECT / 条件或掩码不合法 / 表未被计划覆盖）本身是
+    ``Decision(False, ...)``，不抛异常；这里统一把 ``plan.policy_ids`` 带出去，
+    便于审计追问"是哪条策略拒的"。
     """
     if principal is None:
         return Decision(False, "missing principal")
@@ -249,8 +363,9 @@ async def _new_decision(
         policies = await list_policies()
         principal = await _with_domains(principal)
         tables = await _tables_of(sql)
+        columns = await table_columns(datasource, tables) if tables else {}
     except Exception as e:  # noqa: BLE001
-        # fail-closed：策略/域读不到就无法证明"该放行"，只能拒
+        # fail-closed：策略/域/元数据读不到就无法证明"该放行"，只能拒
         log.warning(f"[问数权限] 策略加载失败（按拒绝处理）: err={e}")
         raise _PolicyLoadError(f"策略加载失败，按拒绝处理（fail-closed）：{e}") from e
 
@@ -261,30 +376,32 @@ async def _new_decision(
             return Decision(True, "查询未涉及任何表，无表级策略可判定")
         return Decision(False, "无法解析查询语句，按拒绝处理（fail-closed）")
 
-    policy_ids: list[int] = []
-    conditions: list[str] = []
-    applied: list[dict] = []
-    for table in sorted(tables):
-        d = decide_table(policies, principal, table)
-        if not d.permit:
-            reason = f"表 {table} 拒绝：{d.reason}"
-            if d.policy_ids and "policy_ids" not in reason:
-                reason += f"（policy_ids={list(d.policy_ids)}）"
-            return Decision(False, reason, d.policy_ids)
-        policy_ids.extend(d.policy_ids)
-        conditions.append(d.sql)
-        applied.extend(dict(item) for item in d.applied)
+    # 元数据键按真实大小写，SQL 里的表名大小写不保证一致 → 大小写不敏感对齐
+    lookup = {str(name).lower(): cols for name, cols in (columns or {}).items()}
+    metadata = {table: lookup.get(str(table).lower(), []) for table in tables}
 
-    # 行过滤条件按 union_condition 合并（空串=无条件授权，吸收整组）。
-    # ⚠️ P1 这里**只用于 shadow 差异**：多表的条件 OR 到一起不是可执行 SQL（各表约束
-    # 应分别下推），真正的改写由 T9 编译器产出。T7 接线时不要拿 decision.sql 去拼查询。
-    row_sql = union_condition(conditions)
+    plan = build_plan(policies, principal, metadata)
+
+    # 视图：单层血缘映射（失败/映射不到时由编译器的「表不在计划内/整表拒绝」兜底）
+    for table in sorted(tables):
+        fragment = await _view_fragment(table, datasource, policies, principal)
+        if fragment is not None:
+            plan = _merge_plan(plan, fragment)
+
+    decision = rewrite(sql, plan, dialect=dialect)
+    if not decision.permit:
+        reason = decision.reason
+        if plan.policy_ids and not any(
+            str(pid) in reason for pid in plan.policy_ids
+        ):
+            reason += f"（policy_ids={list(plan.policy_ids)}）"
+        return Decision(False, reason, plan.policy_ids)
     return Decision(
         True,
-        f"新引擎放行：{len(tables)} 张表均通过表级判定",
-        tuple(dict.fromkeys(policy_ids)),
-        row_sql,
-        tuple(applied),
+        decision.reason,
+        plan.policy_ids,
+        decision.sql,
+        decision.applied,
     )
 
 
@@ -297,21 +414,21 @@ def _diff_kind(*, legacy_decision: Decision, new_decision: Decision) -> str | No
     三种 kind 与 DDL 注释一致：``legacy_permit_new_deny`` / ``legacy_deny_new_permit``
     / ``rewrite_only``。``rewrite_only`` 覆盖两种情况：
 
-    - 两边都放行但**新引擎多出/改变了行过滤条件**（``sql`` 或 ``applied`` 不同）——
-      T9 之后这就是"用户的行被静默藏掉"这类变更，必须被 shadow 抓到；
+    - 两边都放行但**新引擎多出/改变了改写**（``applied`` 不同）—— T9 之后这就是
+      "用户的行被静默藏掉"这类变更，必须被 shadow 抓到；
     - 两边都放行且改写不同（T9 起常见）。
 
-    注意：旧逻辑目前不产出行条件（``sql=""``），所以只要新引擎有行过滤就是
-    ``rewrite_only``；反过来（旧有、新无）同样记录，方向由 ``rewrite`` 列体现。
+    ⚠️ 只比较 ``applied``，**不比较整条 SQL 文本**：enforce 产出的编译 SQL 必然
+    与原 SQL 有格式差异（引号/函数大小写），拿它比会让每一条查询都变成
+    ``rewrite_only``，差异表被噪声灌满、真正的"多了一层过滤"反而看不见。
+    旧逻辑不产出改写（``applied=()``），所以只要新引擎真的施加了改写就记录。
     """
     if legacy_decision.permit and not new_decision.permit:
         return "legacy_permit_new_deny"
     if not legacy_decision.permit and new_decision.permit:
         return "legacy_deny_new_permit"
     if legacy_decision.permit and new_decision.permit:
-        if (legacy_decision.sql or "") != (new_decision.sql or "") or tuple(
-            legacy_decision.applied
-        ) != tuple(new_decision.applied):
+        if tuple(legacy_decision.applied) != tuple(new_decision.applied):
             return "rewrite_only"
     return None
 
@@ -334,16 +451,13 @@ def _json_array(value) -> str:
 
 
 def _shadow_rewrite(new: Decision) -> list[dict]:
-    """新引擎本次要施加的改写清单（``{"row": ...}`` / ``{"mask": ...}``）。
+    """新引擎本次**实际施加**的改写清单（``{"row": ...}`` / ``{"mask": ...}``）。
 
-    ``decide_table`` 已经把行条件放进 ``applied``；这里做一次兜底：万一某条实现
-    只填了 ``sql`` 没填 ``applied``，也要能在差异表里看到过滤条件（否则
-    ``rewrite_only`` 差异只剩一个空数组，等于没解释）。
+    只读 ``applied``：enforce 的编译结果里 ``sql`` 是整条可执行 SQL，把它塞进
+    ``rewrite`` 会让 ``rewrite_only`` 差异只剩一句"整条 SQL 变了"，失去解释力；
+    没有改写就是空数组（与审计同一口径）。
     """
-    items = [dict(item) for item in new.applied]
-    if not items and (new.sql or ""):
-        items.append({"row": new.sql})
-    return items
+    return [dict(item) for item in new.applied]
 
 
 async def _record_shadow_diff(
@@ -418,13 +532,14 @@ async def prepare(
     started = time.perf_counter()
 
     if principal is None:
-        decision = Decision(False, "missing principal")
+        decision, applied = Decision(False, "missing principal"), []
     else:
         try:
-            decision = await _prepare(
+            decision, applied = await _prepare(
                 sql=sql,
                 principal=principal,
                 entry=entry,
+                datasource=datasource,
                 dialect=dialect,
                 legacy_check=legacy_check,
             )
@@ -461,11 +576,9 @@ async def prepare(
         decision="permit" if decision.permit else "deny",
         reason=decision.reason,
         policy_ids=list(decision.policy_ids),
-        # ⚠️ P1 只做判定、**不执行任何 SQL 改写**：``decision.applied`` 是"计划中的
-        # 行过滤/掩码"，只给 shadow 差异表（``ai_policy_shadow_diff.rewrite``）做诊断。
-        # 审计里写"已施加"会让人误以为用户的行/列已被过滤，而实际执行的是原 SQL。
-        # T9 编译器接入后这里才改回 ``list(decision.applied)``（那时它确实已施加）。
-        rewrite=[],
+        # 只记**实际施加**的改写：enforce 的编译改写由 ``_prepare`` 带出（applied），
+        # legacy / shadow 执行的是原 SQL，所以恒为 ``[]``。
+        rewrite=list(applied),
         elapsed_ms=elapsed_ms,
     )
     return decision
@@ -476,57 +589,70 @@ async def _prepare(
     sql: str,
     principal: Principal,
     entry: str,
+    datasource: str,
     dialect: str,
     legacy_check: Callable[[], Awaitable[Decision]] | None,
-) -> Decision:
-    """三态编排（无主体已在 ``prepare`` 里短路）。"""
+) -> tuple[Decision, list[dict]]:
+    """三态编排（无主体已在 ``prepare`` 里短路）。
+
+    返回 ``(生效结论, 实际施加的改写)``：第二项只给审计，shadow / legacy 恒为空。
+    """
     # ① 星号止血：三种模式都先跑（顺序在旧判定之前，见模块 docstring 第 2 条）
     star = await _star_deny(sql, dialect)
     if star is not None:
-        return star
+        return star, []
 
     # ② 开关：读不到配置就无法保证合规 → fail-closed
     try:
         mode = await _engine_mode()
     except Exception as e:  # noqa: BLE001
         log.warning(f"[问数权限] 读取 POLICY_ENGINE 失败（按拒绝处理）: err={e}")
-        return Decision(False, f"无法读取判定开关，按拒绝处理（fail-closed）：{e}")
+        return Decision(False, f"无法读取判定开关，按拒绝处理（fail-closed）：{e}"), []
 
-    # ③ legacy：完全不碰策略/引擎
+    # ③ legacy：完全不碰策略/引擎（行为必须与改造前一致）
     if mode == "legacy":
-        return await _legacy_decision(legacy_check)
+        return await _legacy_decision(legacy_check), []
 
-    # ④ enforce：**硬闸**（编译器未接线，见模块 docstring 的 un-gate 前置条件）
+    # ④ enforce：策略 + 列元数据 → 编译改写；**任何异常都 deny**（不抛、不放行）
     if mode == "enforce":
-        log.warning(
-            "[问数权限] POLICY_ENGINE=enforce 但 SQL 编译器尚未接线：按拒绝处理。"
-            "请改用 legacy/shadow，或先完成 un-gate 前置条件（见 policy/guard.py 文档）"
-        )
-        return Decision(
-            False,
-            "enforce 尚未接线 SQL 编译器，请使用 legacy/shadow"
-            "（当前会执行原 SQL，行/列策略不会生效，故一律拒绝）",
-        )
+        try:
+            decision = await _new_decision(
+                sql=sql, principal=principal, dialect=dialect, datasource=datasource
+            )
+        except _PolicyLoadError as e:
+            log.warning(f"[问数权限] enforce 策略加载失败（按拒绝处理）: {e}")
+            return Decision(False, str(e)), []
+        except Exception as e:  # noqa: BLE001 - 编译/引擎异常一律 fail-closed
+            log.opt(exception=True).warning(
+                f"[问数权限] enforce 判定异常（按拒绝处理）: err={e}"
+            )
+            return Decision(
+                False, f"策略判定失败，按拒绝处理（fail-closed）：{e}"
+            ), []
+        applied = [dict(item) for item in decision.applied] if decision.permit else []
+        return decision, applied
 
     # ⑤ shadow：新旧都算，旧结论生效，差异落表（写失败 fail-open）
     legacy = await _legacy_decision(legacy_check)
     try:
-        new = await _new_decision(sql=sql, principal=principal, dialect=dialect)
+        new = await _new_decision(
+            sql=sql, principal=principal, dialect=dialect, datasource=datasource
+        )
     except _PolicyLoadError as e:
         # 新引擎这轮判断不出来：不写差异（否则灰度报告会全是"库坏了"的假差异）
         log.warning(f"[问数权限] shadow 新判定不可用，本轮跳过差异记录: {e}")
-        return legacy
+        return legacy, []
     except Exception as e:  # noqa: BLE001
         # 灰度期诊断能力出问题，绝不能把旧逻辑本来放行的查询打成失败。
         # 同样用 ``except Exception``（CancelledError 继续上抛）。
         log.opt(exception=True).warning(
             f"[问数权限] policy engine error（shadow 跳过本轮差异记录）: err={e}"
         )
-        return legacy
+        return legacy, []
 
     # 没差异就不进写函数：既省一次会话，也让「是否产生差异」这件事在编排层可测
     if _diff_kind(legacy_decision=legacy, new_decision=new):
         await _record_shadow_diff(
             sql=sql, principal=principal, entry=entry, legacy=legacy, new=new
         )
-    return legacy
+    return legacy, []

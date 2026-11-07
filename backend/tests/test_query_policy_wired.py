@@ -7,9 +7,9 @@
 2. **legacy 行为不变**：``legacy_check`` 就是改造前的旧校验组合
    （``validate_sql`` + ``_ont_sql_violations``），异常/文案/顺序与改造前一致，
    且同一请求里字段级 ACL **只算一遍**（复用 ``legacy_check`` 的结果）；
-3. **P1 不改写**：``decision.sql`` 恒为空串，即便桩返回了改写内容也**不得**用于执行；
-   字段级 ACL 在 guard 之后仍是一层独立检查（enforce 模式 guard 只做表级判定，
-   不能因此丢掉列级 ACL）；
+3. **编译结果按需执行**：``decision.sql`` 非空（enforce 编译产出）时用它执行；
+   为空（legacy/shadow）仍执行原 SQL。字段级 ACL 在 guard 之后仍是一层独立检查
+   （enforce 的引擎判定不能替代列级 ACL）；
 4. **开关可打开**：``policy_engine`` 有默认键（legacy），``POLICY_ENGINE`` 环境变量
    可覆盖（addendum 第 1 条）；审计不记录「没施加的改写」（addendum 第 2 条）。
 """
@@ -95,6 +95,9 @@ def _patch_env(
         rec.executed.append(sql)
         return {"columns": ["name"], "rows": [["cam-1"]], "took_ms": 1}
 
+    async def _dialect(cls, datasource):
+        return "postgres"
+
     async def _prepare(**kw):
         rec.prepare_calls += 1
         rec.prepare_kwargs = dict(kw)
@@ -109,6 +112,7 @@ def _patch_env(
 
     monkeypatch.setattr(Q, "_allowed_for_user", staticmethod(_allowed_for_user))
     monkeypatch.setattr(Q, "_ont_sql_violations", staticmethod(_ont_violations))
+    monkeypatch.setattr(Q, "_sql_dialect", classmethod(_dialect))
     monkeypatch.setattr(S, "validate_sql", _validate)
     monkeypatch.setattr(S, "_secure_ont_sql", _secure)
     monkeypatch.setattr(S, "_execute_sql", _exec)
@@ -282,19 +286,24 @@ def test_guard_deny_raises_with_reason_and_skips_execution(monkeypatch):
     assert rec.executed == [], f"被拒的 SQL 仍被执行：{rec.executed}"
 
 
-def test_decision_sql_is_not_used_in_p1(monkeypatch):
-    """P1 不执行 SQL 改写：``decision.sql`` 即便非空也**不得**用于执行（addendum 第 3 条）。"""
+def test_decision_sql_is_used_when_present(monkeypatch):
+    """enforce 的编译结果必须用于执行（行过滤/掩码才真正生效）。
+
+    legacy / shadow 的 ``decision.sql`` 为空 → 执行原 SQL；只有编译器产出非空
+    ``decision.sql`` 时才替换执行语句。
+    """
+    compiled = 'SELECT name FROM (SELECT * FROM video_cameras WHERE dept_id = 3) AS x'
     rec = _patch_env(
         monkeypatch,
-        decision=Decision(True, "ok", sql="dept_id = 3"),
+        decision=Decision(True, "ok", sql=compiled),
     )
 
     from app.plugin.module_ai.query.service import AiQueryService as Q
 
     _run(Q._execute_one(SQL, "system", _auth()))
 
-    assert rec.executed == [SQL], (
-        f"执行用的不是原 SQL（P1 提前用了 decision.sql？）：{rec.executed}")
+    assert rec.executed == [compiled], (
+        f"执行用的不是编译后的 SQL（行/列策略不会生效）：{rec.executed}")
 
 
 def test_field_acl_still_runs_when_guard_engine_decides(monkeypatch):
@@ -349,6 +358,32 @@ def test_custom_datasource_also_goes_through_guard(monkeypatch):
         f"系统表白名单不该用于外部库（会误杀）：{rec.validate_calls}")
     assert rec.executed == ["ds:7"], rec.executed
     assert out["rows"] == [[1]], out
+
+
+def test_custom_datasource_uses_compiled_sql(monkeypatch):
+    """自定义数据源同样执行 ``decision.sql``（ds:* 不能绕过行/列策略）。"""
+    compiled = 'SELECT "ID" FROM (SELECT * FROM "T" WHERE "ID" > 1) AS "T"'
+    _patch_env(monkeypatch, decision=Decision(True, "ok", sql=compiled))
+
+    import app.plugin.module_ai.query.service as S
+    from app.plugin.module_ai.query.service import AiQueryService as Q
+
+    seen: list[str] = []
+
+    async def _assert_ds(ds_id, auth):
+        return None
+
+    async def _custom(ds_id, sql, auth):
+        seen.append(sql)
+        return {"columns": ["ID"], "rows": [[2]], "took_ms": 1}
+
+    monkeypatch.setattr(S, "_assert_ds_access", _assert_ds)
+    monkeypatch.setattr(S, "_execute_custom_ds_sql", _custom)
+
+    out = _run(Q._execute_one("SELECT ID FROM T", "ds:7", _auth()))
+
+    assert seen == [compiled], f"自定义数据源没用编译后的 SQL：{seen}"
+    assert out["rows"] == [[2]], out
 
 
 def test_custom_datasource_denied_when_access_check_fails(monkeypatch):

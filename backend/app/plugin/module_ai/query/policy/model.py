@@ -146,6 +146,76 @@ async def ensure_policy_tables() -> None:
             service._degrade("policy_table_columns", e)
 
 
+def _column_name(raw) -> str:
+    """把 schema 里的「列标签 / 列字典」归一成**真实列名**。
+
+    系统库标签形如 ``NAME(character varying)【中文名】``，自定义源形如
+    ``NAME(注释)``；两者都取第一个 ``(`` 之前的部分。dict 形态（``{"name": ...}``）
+    直接取 ``name``，兼容旧版 ``_system_schema`` 的返回结构。
+    """
+    if isinstance(raw, dict):
+        return str(raw.get("name") or "").strip()
+    return str(raw or "").split("(", 1)[0].strip()
+
+
+def _columns_from_labels(table: str, labels) -> list[str]:
+    """列标签列表 → 列名（去空、去重保序）。
+
+    ⚠️ ``_ds_schema_map`` 会把**表注释**放在第一项（``表名(注释)``），它不是列；
+    仅当第一项的列名与表名相同（大小写不敏感）时跳过，避免把真实列误删。
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(labels or ()):
+        name = _column_name(raw)
+        if not name:
+            continue
+        if index == 0 and name.lower() == str(table or "").strip().lower():
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(name)
+    return out
+
+
+async def table_columns(
+    datasource: str = "system", tables=None
+) -> dict[str, list[str]]:
+    """查询涉及的表 → **真实列名**（供编译器展开星号、落地列 deny/mask）。
+
+    数据来源（延迟 import，避免 ``service`` ↔ ``policy`` 模块级循环）：
+
+    - 系统库（``system`` / 空）：``AiQueryService._system_schema()``（列标签带类型/中文名）；
+    - 自定义源（``ds:*``）：``AiQueryService._ds_schema_map(datasource)``（已同步的
+      ``ai_query_schema``，进程内缓存）。
+
+    ``tables`` 给定时只返回这些表（大小写不敏感）；表不在元数据里就不出现在结果中，
+    调用方传空列清单给 :func:`compiler.build_plan`（= 无列元数据，保留星号/按标记拒绝）。
+    """
+    from .. import service as _svc
+
+    ds = str(datasource or "").strip() or "system"
+    if ds == "system":
+        raw = await _svc.AiQueryService._system_schema()
+    else:
+        raw = await _svc.AiQueryService._ds_schema_map(ds)
+
+    wanted = {
+        str(t or "").strip().lower() for t in (tables or ()) if str(t or "").strip()
+    }
+    out: dict[str, list[str]] = {}
+    for table, labels in (raw or {}).items():
+        name = str(table or "").strip()
+        if not name:
+            continue
+        if wanted and name.lower() not in wanted:
+            continue
+        out[name] = _columns_from_labels(name, labels)
+    return out
+
+
 async def sensitive_tables() -> set[str]:
     """敏感表名集合（小写去重）：**资产目录 ∪ 本体** 两个来源的并集。
 

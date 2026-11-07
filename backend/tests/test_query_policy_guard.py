@@ -81,10 +81,11 @@ def _setup(
     domains=(),
     sensitive=(),
     tables=("t",),
+    columns=None,
     patch_tables=True,
     record_shadow=True,
 ) -> _Stubs:
-    """把 guard 的外部依赖全部打桩（模式/策略/域/敏感表/表解析/审计/shadow）。"""
+    """把 guard 的外部依赖全部打桩（模式/策略/域/敏感表/表解析/列元数据/审计/shadow）。"""
     st = _Stubs()
 
     async def _mode():
@@ -102,6 +103,16 @@ def _setup(
     async def _tables(sql):
         return set(tables)
 
+    _columns = {"t": ["a", "dept_id"]} if columns is None else dict(columns)
+
+    async def _table_columns(datasource, wanted=None):
+        names = {str(t).lower() for t in (wanted or ()) if str(t)}
+        return {
+            table: list(cols)
+            for table, cols in _columns.items()
+            if not names or str(table).lower() in names
+        }
+
     async def _audit(**kw):
         st.audit_calls.append(kw)
 
@@ -112,6 +123,7 @@ def _setup(
     monkeypatch.setattr(G, "list_policies", _policies)
     monkeypatch.setattr(G, "domain_codes_for_user", _domains)
     monkeypatch.setattr(G, "sensitive_tables", _sensitive)
+    monkeypatch.setattr(G, "table_columns", _table_columns)
     if patch_tables:
         monkeypatch.setattr(G, "_tables_of", _tables)
     monkeypatch.setattr(G, "write_access_log", _audit)
@@ -163,7 +175,8 @@ def test_legacy_mode_never_calls_engine(monkeypatch):
 
     monkeypatch.setattr(G, "list_policies", _boom)
     monkeypatch.setattr(G, "domain_codes_for_user", _boom)
-    monkeypatch.setattr(G, "decide_table", _boom)
+    monkeypatch.setattr(G, "table_columns", _boom)
+    monkeypatch.setattr(G, "build_plan", _boom)
 
     async def _legacy():
         return Decision(True, "旧判定放行")
@@ -389,56 +402,81 @@ def test_shadow_records_rewrite_only_for_row_filter(monkeypatch):
     assert '"row"' in p["rw"] and "dept_id = 3" in p["rw"], p["rw"]
 
 
-def _run_new(G, *, sql="select a from t", principal=None, dialect="postgres"):
-    """直接跑新引擎判定（``_new_decision``）。
-
-    2026-11 复审裁决：``enforce`` 在编译器接线前是**硬闸**（一律 deny），所以引擎语义
-    （表级默认拒绝 / 行条件 / 域注入 / 解析失败）改为在这里直接验证 —— 覆盖不丢，
-    而 ``prepare`` 的 enforce 行为由下面的「硬闸」用例单独锁死。
-    """
+def _run_new(G, *, sql="select a from t", principal=None, dialect="postgres",
+             datasource="system"):
+    """直接跑新引擎判定（``_new_decision``）—— 现在包含 SQL 编译。"""
     return asyncio.run(
         G._new_decision(
             sql=sql,
             principal=_principal() if principal is None else principal,
             dialect=dialect,
+            datasource=datasource,
         )
     )
 
 
 # ---------------------------------------------------------------------------
-# 4. enforce：编译器接线前**一律拒绝**（硬闸）
+# 4. enforce：编译器接线后**真的执行改写**（不再是硬闸）
 # ---------------------------------------------------------------------------
-def test_enforce_mode_is_gated_until_compiler_wired(monkeypatch):
-    """C2：enforce 尚未接线 SQL 编译器 → 一律 deny，且不加载策略、不跑旧判定。
+def test_enforce_mode_applies_compiled_sql(monkeypatch):
+    """enforce：策略条件 → 可执行 SQL（含 WHERE），applied 记录实际改写。"""
+    G = _guard()
+    st = _setup(
+        monkeypatch,
+        G,
+        mode="enforce",
+        policies=(_policy(condition="dept_id = 3"),),
+        columns={"t": ["a", "dept_id"]},
+    )
 
-    历史缺陷：``_execute_one`` 执行的是**原 SQL**，``decision.sql`` 从未使用；
-    策略 API 又接受 ``condition`` / ``mask_expr``，explain 显示 permit ——
-    管理员以为脱敏/过滤生效，实际明文全行。先硬闸，等编译器接入再放开。
-    """
+    async def _legacy():  # pragma: no cover - enforce 不跑旧判定
+        raise AssertionError("enforce 不该调用旧判定")
+
+    d = _run(G, sql="select a from t", legacy_check=_legacy)
+
+    assert d.permit, d.reason
+    assert "where" in (d.sql or "").lower(), d.sql
+    assert "dept_id = 3" in (d.sql or ""), d.sql
+    assert d.applied and d.applied[0].get("row") == "dept_id = 3", d.applied
+    # 审计必须记**实际施加**的改写（不再是空数组）
+    call = st.audit_calls[-1]
+    assert call["decision"] == "permit", call
+    assert call["rewrite"] and call["rewrite"][0].get("row") == "dept_id = 3", call
+    assert 1 in call["policy_ids"], call
+
+
+def test_enforce_mode_denies_when_table_not_allowed(monkeypatch):
+    """enforce 默认拒绝：没有 allow 的表 → deny（不是硬闸，是引擎语义）。"""
+    G = _guard()
+    st = _setup(monkeypatch, G, mode="enforce", policies=())
+
+    d = _run(G)
+
+    assert not d.permit
+    assert "t" in d.reason, d.reason
+    assert st.audit_calls[-1]["decision"] == "deny"
+    assert st.audit_calls[-1]["rewrite"] == []
+
+
+def test_enforce_mode_failure_is_denied_not_raised(monkeypatch):
+    """enforce 判定链路异常 → deny（不抛、不降级放行）。"""
     G = _guard()
     st = _setup(monkeypatch, G, mode="enforce", policies=(_policy(),))
 
-    async def _boom(*a, **k):
-        raise AssertionError("enforce 硬闸不该加载策略 / 调用旧判定")
+    async def _boom(datasource, tables=None):
+        raise RuntimeError("元数据查询失败")
 
-    monkeypatch.setattr(G, "list_policies", _boom)
-    monkeypatch.setattr(G, "decide_table", _boom)
+    monkeypatch.setattr(G, "table_columns", _boom)
 
-    async def _legacy():  # pragma: no cover - 硬闸在旧判定之前
-        raise AssertionError("enforce 硬闸不该调用旧判定")
-
-    d = _run(G, legacy_check=_legacy)
+    d = _run(G)
 
     assert not d.permit
-    assert "enforce" in d.reason and "legacy/shadow" in d.reason, d.reason
-    assert "编译器" in d.reason, d.reason
-    assert st.audit_calls and st.audit_calls[-1]["decision"] == "deny", (
-        "硬闸拒绝也必须落审计"
-    )
+    assert "fail-closed" in d.reason, d.reason
+    assert st.audit_calls[-1]["decision"] == "deny"
 
 
 def test_enforce_gate_still_runs_star_stop(monkeypatch):
-    """硬闸不能把星号止血的顺序搞乱：敏感表 ``select *`` 的 reason 仍是星号原因。"""
+    """enforce 不能把星号止血的顺序搞乱：敏感表 ``select *`` 的 reason 仍是星号原因。"""
     G = _guard()
     _setup(
         monkeypatch,
@@ -454,7 +492,7 @@ def test_enforce_gate_still_runs_star_stop(monkeypatch):
     assert "星号" in d.reason, d.reason
 
 
-# 4.1 新引擎语义（直接调 ``_new_decision``，不经 enforce 硬闸）
+# 4.1 新引擎语义（直接调 ``_new_decision``，现在包含 SQL 编译）
 def test_new_decision_denies_table_without_allow(monkeypatch):
     G = _guard()
     _setup(monkeypatch, G, mode="enforce", policies=())
@@ -512,23 +550,25 @@ def test_new_decision_unparsable_sql_denies(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 4.1 引擎意外异常：新引擎直接抛（enforce 已硬闸）；shadow 不影响旧结论
+# 4.1 引擎意外异常：``_new_decision`` 函数契约直接抛；enforce 在编排层转 deny
 # ---------------------------------------------------------------------------
 def test_new_decision_engine_error_propagates(monkeypatch):
-    """``decide_table`` 抛非 ``_PolicyLoadError`` 的异常时，``_new_decision`` 原样上抛。
-
-    enforce 已是硬闸（不会走到引擎），所以这里锁的是**函数契约**：异常不被吞成
-    permit。恢复 enforce 时必须在本层补 fail-closed（见 guard 注释）。
-    """
+    """编译/计划构建异常时 ``_new_decision`` 原样上抛（fail-closed 由 ``prepare`` 落地）。"""
     import pytest
 
     G = _guard()
-    _setup(monkeypatch, G, mode="enforce", policies=(_policy(),))
+    _setup(
+        monkeypatch,
+        G,
+        mode="enforce",
+        policies=(_policy(),),
+        columns={"t": ["a"]},
+    )
 
     def _boom(*a, **k):
         raise ValueError("引擎炸了")
 
-    monkeypatch.setattr(G, "decide_table", _boom)
+    monkeypatch.setattr(G, "build_plan", _boom)
 
     with pytest.raises(ValueError, match="引擎炸了"):
         _run_new(G)
@@ -542,7 +582,7 @@ def test_shadow_engine_error_returns_legacy_without_diff(monkeypatch):
     def _boom(*a, **k):
         raise ValueError("引擎炸了")
 
-    monkeypatch.setattr(G, "decide_table", _boom)
+    monkeypatch.setattr(G, "build_plan", _boom)
 
     async def _legacy():
         return Decision(True, "旧判定放行")
@@ -554,16 +594,23 @@ def test_shadow_engine_error_returns_legacy_without_diff(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 4.2 行过滤条件随 Decision 带出（shadow 靠它发现"多了一层过滤"）
+# 4.2 编译结果随 Decision 带出（行过滤下推 + applied 记录实际改写）
 # ---------------------------------------------------------------------------
 def test_new_decision_carries_row_condition(monkeypatch):
     G = _guard()
-    _setup(monkeypatch, G, mode="enforce", policies=(_policy(condition="dept_id = 3"),))
+    _setup(
+        monkeypatch,
+        G,
+        mode="enforce",
+        policies=(_policy(condition="dept_id = 3"),),
+        columns={"t": ["a", "dept_id"]},
+    )
 
     d = _run_new(G)
 
     assert d.permit
-    assert d.sql == "dept_id = 3", "行过滤条件必须带出来"
+    assert "where" in d.sql.lower(), d.sql
+    assert "dept_id = 3" in d.sql, "编译后的 SQL 必须含行过滤条件"
     assert d.applied and d.applied[0].get("row") == "dept_id = 3", d.applied
 
 
@@ -577,12 +624,13 @@ def test_new_decision_unions_row_conditions(monkeypatch):
             _policy(condition="dept_id = 3", pid=1),
             _policy(condition="dept_id = 4", pid=2),
         ),
+        columns={"t": ["a", "dept_id"]},
     )
 
     d = _run_new(G)
 
-    assert d.sql == "(dept_id = 3) OR (dept_id = 4)", d.sql
-    assert len(d.applied) == 2, d.applied
+    assert "(dept_id = 3) OR (dept_id = 4)" in d.sql, d.sql
+    assert len(d.applied) == 1 and "OR" in d.applied[0]["row"], d.applied
 
 
 def test_new_decision_unconditional_allow_absorbs_conditions(monkeypatch):
@@ -592,11 +640,14 @@ def test_new_decision_unconditional_allow_absorbs_conditions(monkeypatch):
         G,
         mode="enforce",
         policies=(_policy(condition="dept_id = 3", pid=1), _policy(pid=2)),
+        columns={"t": ["a", "dept_id"]},
     )
 
     d = _run_new(G)
 
-    assert d.sql == "" and d.applied == (), "无条件授权吸收条件（union_condition 语义）"
+    assert d.permit
+    assert "where" not in d.sql.lower(), d.sql
+    assert d.applied == (), "无条件授权吸收条件（union_condition 语义）"
 
 
 # ---------------------------------------------------------------------------
@@ -712,13 +763,13 @@ def test_domains_injected_into_principal_attrs(monkeypatch):
     )
 
     seen: list[dict] = []
-    real = G.decide_table
+    real = G.build_plan
 
-    def _spy(policies, principal, table):
+    def _spy(policies, principal, tables):
         seen.append(dict(principal.attrs))
-        return real(policies, principal, table)
+        return real(policies, principal, tables)
 
-    monkeypatch.setattr(G, "decide_table", _spy)
+    monkeypatch.setattr(G, "build_plan", _spy)
 
     d = _run_new(G)
 
