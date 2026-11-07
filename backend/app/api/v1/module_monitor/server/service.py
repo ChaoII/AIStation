@@ -323,10 +323,11 @@ class ServerService:
             start_time=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start_time)),
             run_time=run_time,
             home=str(Path(current_process.exe())),
-            memory_total=bytes2human(memory.available),
+            memory_total=bytes2human(memory.total),
             memory_used=bytes2human(process_memory.rss),
-            memory_free=bytes2human(memory.available - process_memory.rss),
-            memory_usage=round((process_memory.rss / memory.available) * 100, 2),
+            memory_free=bytes2human(max(0, memory.total - process_memory.rss)),
+            # 分母必须是 total：用 available 会让占比超过 100%，schema（le=100）直接 400
+            memory_usage=round((process_memory.rss / max(1, memory.total)) * 100, 2),
         )
 
     @classmethod
