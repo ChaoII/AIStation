@@ -6872,6 +6872,8 @@ class AiQueryService:
             # （§10 三态开关；值只认 legacy/shadow/enforce，缺失/未知按 legacy）。
             # 也支持环境变量 POLICY_ENGINE 覆盖（见 `_cfg`，dev 用，方便切 shadow）。
             "policy_engine": "legacy",
+        # 无 HTTP 身份通道（定时任务/嵌入聊天）使用的服务主体；空 = 不启用（一律拒绝）
+        "service_principal_user_id": "",
         }
         async with async_db_session() as db:
             from sqlalchemy import select

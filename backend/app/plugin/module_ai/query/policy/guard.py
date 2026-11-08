@@ -519,6 +519,9 @@ async def prepare(
     started = time.perf_counter()
 
     if principal is None:
+        # 无用户身份（定时任务/嵌入聊天）→ 看是否配置了服务主体；没配就拒绝
+        principal = await _service_principal(entry)
+    if principal is None:
         decision, applied = Decision(False, "missing principal"), []
     else:
         try:
@@ -570,6 +573,28 @@ async def prepare(
         elapsed_ms=elapsed_ms,
     )
     return decision
+
+
+
+async def _service_principal(entry: str):
+    """配置了 ``service_principal_user_id`` 时，用它当无身份通道的主体。
+
+    默认空 = 不启用（与 P0「无主体即拒绝」一致）。只给调度/嵌入这类确实没有用户的通道用，
+    且仍按该用户**当前**的权限判定（停用/删除即拒绝）。
+    """
+    try:
+        from app.plugin.module_ai.query.service import AiQueryService as S
+
+        cfg = await S._cfg()
+        raw = str(cfg.get("service_principal_user_id") or "").strip()
+        if not raw:
+            return None
+        from .principal import load_principal_by_id
+
+        return await load_principal_by_id(int(raw), entry=entry)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[问数权限] 服务主体解析失败（按无主体处理）: {e}")
+        return None
 
 
 async def _prepare(

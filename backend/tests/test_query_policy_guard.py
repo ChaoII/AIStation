@@ -1108,3 +1108,22 @@ def _capture_kind(st: _Stubs):
         st.shadow_calls.append(kw)
 
     return _shadow
+
+
+def test_service_principal_uses_configured_user(monkeypatch):
+    """无身份通道（cron/嵌入）配置了服务主体时，按该用户装载；未配置则 None。"""
+    import asyncio
+
+    from app.plugin.module_ai.query.policy import guard, principal as P
+    from app.plugin.module_ai.query.service import AiQueryService as S
+
+    monkeypatch.setattr(
+        S, "_cfg", classmethod(lambda cls: asyncio.sleep(0, result={"service_principal_user_id": "7"}))
+    )
+    monkeypatch.setattr(P, "load_principal_by_id",
+                        lambda uid, entry="service": asyncio.sleep(0, result={"uid": uid, "entry": entry}))
+    got = asyncio.run(guard._service_principal("cron"))
+    assert got == {"uid": 7, "entry": "cron"}
+
+    monkeypatch.setattr(S, "_cfg", classmethod(lambda cls: asyncio.sleep(0, result={})))
+    assert asyncio.run(guard._service_principal("cron")) is None

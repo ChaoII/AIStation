@@ -1496,6 +1496,7 @@ const EXTRA_LABEL: Record<string, string> = {
   recall_expand_cap: "召回扩展上限",
   object_query_max_tokens: "对象查询 token",
   policy_engine: "权限引擎（legacy/shadow/enforce）",
+  service_principal_user_id: "服务主体用户 id",
 };
 
 const EXTRA_HELP: Record<string, string> = {
@@ -1505,6 +1506,7 @@ const EXTRA_HELP: Record<string, string> = {
   object_query_enabled: "IR 两阶段规划，实测无收益时保持关闭",
   policy_engine: "enforce 需先配好策略，否则会大面积拒答",
   query_rewrite_enabled: "多一次模型调用，实测收益不稳定",
+  service_principal_user_id: "空=不启用；填用户 id 后定时任务/嵌入聊天按该用户权限执行",
   nl2sql_thinking_mode: "off 更快，复杂问题可试 low",
 };
 
@@ -1544,6 +1546,7 @@ const EXTRA_KEYS = [
   "recall_expand_cap",
   "object_query_max_tokens",
   "policy_engine",
+  "service_principal_user_id",
 ];
 
 function guessType(key: string): "bool" | "int" | "text" {

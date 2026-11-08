@@ -104,3 +104,41 @@ async def load_principal(auth, entry: str = "ask") -> Principal | None:
         attrs=await _load_attrs(uid),
         entry=entry,
     )
+
+
+async def load_principal_by_id(user_id: int, entry: str = "service") -> Principal | None:
+    """按用户 id 装载主体（无 HTTP 上下文的调度/嵌入通道用）。
+
+    与 ``load_principal`` 的区别：身份来自**配置的服务主体**，不从 auth 推断。
+    用户不存在/已删除/已停用 → ``None``（判定侧按 missing principal 拒绝）。
+    """
+    uid = int(user_id or 0)
+    if not uid:
+        return None
+    from .. import service
+
+    try:
+        async with async_db_session() as db:
+            row = (
+                await db.execute(
+                    text("SELECT status, is_deleted FROM sys_user WHERE id=:u"), {"u": uid}
+                )
+            ).fetchone()
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[问数权限] 服务主体查询失败: user_id={uid}, err={e}")
+        return None
+    if not row or row[1] or str(row[0]) != "0":
+        return None
+    try:
+        is_super = bool(await service.AiQueryService._is_superuser(uid))
+        roles = tuple(sorted(str(c) for c in await service.AiQueryService._user_role_codes_by_id(uid) if c))
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[问数权限] 服务主体角色读取失败（按无角色处理）: user_id={uid}, err={e}")
+        is_super, roles = False, ()
+    return Principal(
+        user_id=uid,
+        is_superuser=is_super,
+        roles=roles,
+        attrs=await _load_attrs(uid),
+        entry=entry,
+    )
