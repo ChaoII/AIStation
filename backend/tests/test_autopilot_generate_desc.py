@@ -87,9 +87,13 @@ def _install(monkeypatch, tables, columns):
     # 2026-11-08：资产读写已拆到 assets_ops，两个模块各持一份 async_db_session
     # 引用，只 patch 一处会让被测代码落到真库（表现为关系表不存在）。
     from app.plugin.module_ai.query import assets_ops as qassets
+    from app.plugin.module_ai.query import autopilot_ops as qauto
 
-    monkeypatch.setattr(qservice, "async_db_session", _FakeDB(session))
-    monkeypatch.setattr(qassets, "async_db_session", _FakeDB(session))
+    fake = _FakeDB(session)
+    # 2026-11-08：资产读写与描述生成分属不同模块，各持一份 async_db_session 引用，
+    # 只 patch 一处会让被测代码落到真库（表现为关系表不存在）。
+    for mod in (qservice, qassets, qauto):
+        monkeypatch.setattr(mod, "async_db_session", fake)
 
     async def _profile(tname, colnames):
         return {"table": tname, "rows": 1,
