@@ -838,3 +838,8 @@ export function recallProbe(question: string) {
 export function rebuildRecall() {
   return request({ url: `${API_PATH}/recall/rebuild`, method: "post" });
 }
+
+/** 静默降级快照（哪些能力坏了但流程还在跑） */
+export function getDegradedStatus() {
+  return request({ url: `${API_PATH}/system/degraded`, method: "get" });
+}

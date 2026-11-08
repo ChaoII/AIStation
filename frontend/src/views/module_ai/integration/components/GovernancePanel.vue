@@ -59,6 +59,50 @@
             </el-col>
           </el-row>
         </el-card>
+        <el-card shadow="never" style="margin-bottom: 12px">
+          <template #header>
+            <div class="gp-head">
+              <span>{{ t("ai_workflow.ig_govHealthTitle") }}</span>
+              <el-tag :type="degraded.total ? 'warning' : 'success'" size="small">
+                {{
+                  degraded.total
+                    ? t("ai_workflow.ig_govHealthCount", { n: degraded.total })
+                    : t("ai_workflow.ig_govHealthOk")
+                }}
+              </el-tag>
+            </div>
+          </template>
+          <el-table
+            v-if="degraded.areas?.length"
+            :data="degraded.areas"
+            border
+            stripe
+            size="small"
+            max-height="220"
+          >
+            <el-table-column
+              prop="area"
+              :label="t('ai_workflow.ig_govHealthArea')"
+              min-width="200"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="count" :label="t('ai_workflow.ig_govHealthTimes')" width="90" />
+            <el-table-column prop="at" :label="t('ai_workflow.ig_govHealthAt')" width="180" />
+            <el-table-column
+              prop="error"
+              :label="t('ai_workflow.ig_govHealthError')"
+              min-width="320"
+              show-overflow-tooltip
+            />
+          </el-table>
+          <el-alert
+            v-else
+            type="success"
+            :closable="false"
+            show-icon
+            :title="t('ai_workflow.ig_govHealthNone')"
+          />
+        </el-card>
         <el-row :gutter="12">
           <el-col :span="12">
             <el-card shadow="never">
@@ -1444,6 +1488,7 @@ import {
   deletePolicies,
   explainAccess,
   getAccessLogs,
+  getDegradedStatus,
 } from "@/api/module_ai/query";
 import { UserAPI } from "@/api/module_system/user";
 
@@ -1636,6 +1681,7 @@ async function loadLineage() {
   }
 }
 const g = ref<any>({ overview: {} });
+const degraded = ref<any>({ total: 0, areas: [] });
 const accessRules = ref<any[]>([]);
 // 权限矩阵 / 沙箱
 const matrixDialog = ref(false);
@@ -1870,6 +1916,13 @@ async function loadDomainUsers() {
 async function loadOverview() {
   const r = await getGovernanceOverview();
   g.value = { overview: r.data?.data || {} };
+  // 静默降级：链路里大量容错失败不留痕迹，这里主动暴露（无数据即全好）
+  try {
+    const d: any = await getDegradedStatus();
+    degraded.value = d.data?.data || { total: 0, areas: [] };
+  } catch {
+    degraded.value = { total: 0, areas: [] };
+  }
 }
 async function loadAccess() {
   const r = await getAccessRules();
