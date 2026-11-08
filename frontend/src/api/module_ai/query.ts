@@ -853,3 +853,13 @@ export function rebuildLineage(datasource = "ds:4") {
 export function getAccessStats(hours = 24) {
   return request({ url: `${API_PATH}/access/stats`, method: "get", params: { hours } });
 }
+
+/** 数据质量规则模板（非空/唯一/范围） */
+export function getDqRules() {
+  return request({ url: `${API_PATH}/dq-rules`, method: "get" });
+}
+
+/** 执行一条质量规则（table/column 会被后端做标识符 + 白名单校验） */
+export function runDqRule(params: { table: string; column: string; rule_type: string }) {
+  return request({ url: `${API_PATH}/dq-rules/run`, method: "get", params });
+}

@@ -385,6 +385,80 @@
             show-icon
           />
         </div>
+        <el-card shadow="never" class="gp-dqrule">
+          <template #header>
+            <div class="gp-head">
+              <span>{{ t("ai_workflow.ig_dqRuleTitle") }}</span>
+              <el-tag
+                v-if="dqRuleResult"
+                size="small"
+                :type="dqRuleResult.passed ? 'success' : 'warning'"
+              >
+                {{
+                  dqRuleResult.passed
+                    ? t("ai_workflow.ig_dqRulePassed")
+                    : t("ai_workflow.ig_dqRuleFailed")
+                }}
+              </el-tag>
+            </div>
+          </template>
+          <div class="gp-bar">
+            <el-select
+              v-model="dqRuleTable"
+              filterable
+              clearable
+              size="small"
+              style="width: 240px"
+              :placeholder="t('ai_workflow.ig_dqRuleTable')"
+              @change="onDqRuleTableChange"
+            >
+              <el-option
+                v-for="o in govObjects"
+                :key="o.table"
+                :label="(o.alias || o.table) + ' (' + o.table + ')'"
+                :value="o.table"
+              />
+            </el-select>
+            <el-select
+              v-model="dqRuleColumn"
+              filterable
+              clearable
+              size="small"
+              style="width: 200px"
+              :disabled="!dqRuleTable"
+              :placeholder="t('ai_workflow.ig_dqRuleColumn')"
+            >
+              <el-option
+                v-for="c in dqRuleColumns"
+                :key="c.column_name"
+                :label="c.column_name"
+                :value="c.column_name"
+              />
+            </el-select>
+            <el-select v-model="dqRuleType" size="small" style="width: 160px">
+              <el-option v-for="r in dqRuleTypes" :key="r.key" :label="r.name" :value="r.key" />
+            </el-select>
+            <el-button
+              v-hasPerm="'module_ai:query:ask'"
+              type="primary"
+              size="small"
+              :loading="dqRuleRunning"
+              @click="runDqRuleOnce"
+            >
+              {{ t("ai_workflow.ig_dqRuleRun") }}
+            </el-button>
+          </div>
+          <el-alert
+            v-if="dqRuleResult"
+            :type="dqRuleResult.passed ? 'success' : 'warning'"
+            :closable="false"
+            show-icon
+            :title="dqRuleSummary"
+          />
+          <el-text v-else type="info" size="small">
+            {{ t("ai_workflow.ig_dqRuleHint") }}
+          </el-text>
+        </el-card>
         <el-table :data="dqData.items || []" size="small" border stripe>
           <template #empty>
             <el-empty :description="t('ai_workflow.ig_govNoDq')" :image-size="60" />
@@ -1542,6 +1616,9 @@ import {
   getActionList,
   getActionLogs,
   getGovernanceSummary,
+  getDqRules,
+  runDqRule,
+  getQueryAssetColumns,
   getPolicyList,
   savePolicy,
   deletePolicies,
@@ -2036,6 +2113,76 @@ async function loadAccess() {
   const r = await getAccessRules();
   accessRules.value = r.data?.data || [];
 }
+// 规则校验：表 + 列 + 规则 → 通过率（表/列先过标识符 + 按用户白名单校验）
+const dqRuleTable = ref("");
+const dqRuleColumn = ref("");
+const dqRuleType = ref("not_null");
+const dqRuleColumns = ref<any[]>([]);
+const dqRuleTypes = ref<any[]>([]);
+const dqRuleRunning = ref(false);
+const dqRuleResult = ref<any>(null);
+const dqRuleSummary = computed(() => {
+  const r = dqRuleResult.value || {};
+  return t("ai_workflow.ig_dqRuleSummary", {
+    total: r.total ?? 0,
+    valid: r.valid ?? 0,
+    rate: r.pass_rate ?? 0,
+  });
+});
+
+async function loadDqRules() {
+  if (dqRuleTypes.value.length) return;
+  try {
+    const r: any = await getDqRules();
+    dqRuleTypes.value = (r.data?.data || []).filter((x: any) => x.key !== "range");
+  } catch {
+    dqRuleTypes.value = [
+      { key: "not_null", name: "非空校验" },
+      { key: "unique", name: "唯一性校验" },
+    ];
+  }
+  if (!dqRuleTypes.value.length) dqRuleType.value = "";
+}
+
+async function onDqRuleTableChange() {
+  dqRuleColumn.value = "";
+  dqRuleColumns.value = [];
+  dqRuleResult.value = null;
+  if (!dqRuleTable.value) return;
+  try {
+    const r: any = await getQueryAssetColumns(dqRuleTable.value);
+    dqRuleColumns.value = r.data?.data || [];
+  } catch {
+    dqRuleColumns.value = [];
+  }
+}
+
+async function runDqRuleOnce() {
+  if (!dqRuleTable.value || !dqRuleColumn.value) {
+    ElMessage.warning(t("ai_workflow.ig_dqRuleNeedInput"));
+    return;
+  }
+  dqRuleRunning.value = true;
+  try {
+    const r: any = await runDqRule({
+      table: dqRuleTable.value,
+      column: dqRuleColumn.value,
+      rule_type: dqRuleType.value,
+    });
+    const d = r.data?.data || {};
+    if (d.ok === false) {
+      ElMessage.warning(d.msg || t("ai_workflow.ig_dqRuleFailed"));
+      dqRuleResult.value = null;
+      return;
+    }
+    dqRuleResult.value = d;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_dqRuleFailed"));
+  } finally {
+    dqRuleRunning.value = false;
+  }
+}
+
 async function loadDq() {
   const r = await getDqOverview();
   dqData.value = r.data?.data || { avg_score: 0, healthy: 0, risk: 0, items: [] };
@@ -2060,6 +2207,7 @@ function onTab(name: any) {
   else if (name === "dq") {
     loadDq();
     loadDqAlert();
+    loadDqRules();
   } else if (name === "domain") loadDomain();
   else if (name === "fde") loadFde();
   else if (name === "action") loadActions();
