@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import os
 import re
@@ -70,6 +69,12 @@ from .ontology_ops import OntologyOps
 from .propositions_ops import PropositionsOps
 from .schema import QueryAssetUpsert
 from .slowpath_ops import SlowPathOps
+from .sqlcache import cfg_sig as _cfg_sig  # noqa: F401
+from .sqlcache import retrieval_cache_key as _retrieval_cache_key  # noqa: F401
+from .sqlcache import sql_cache_clear  # noqa: F401
+from .sqlcache import sql_cache_get as _sql_cache_get  # noqa: F401
+from .sqlcache import sql_cache_key as _sql_cache_key  # noqa: F401
+from .sqlcache import sql_cache_set as _sql_cache_set  # noqa: F401
 from .sqlguard import COMMENT_RE as _COMMENT_RE  # noqa: F401
 from .sqlguard import FORBIDDEN_RE as _FORBIDDEN  # noqa: F401
 from .sqlguard import tables_in_sql as _tables_in_sql  # noqa: F401
@@ -1085,44 +1090,6 @@ _SQL_CACHE_TTL = 1800.0      # 秒；schema/数据口径变化靠 TTL 兜底
 _SQL_CACHE_MAX = 500         # 上限，防内存无界增长
 
 
-def _sql_cache_key(question: str, datasource: str | None, scope: str = "") -> str:
-    """归一化问题文本作为键（去空白、统一小写），避免大小写/空格差异漏命中。"""
-    q = re.sub(r"\s+", "", (question or "").strip().lower())
-    return f"{datasource or 'system'}::{q}::s:{scope}"
-
-
-def _sql_cache_get(question: str, datasource: str | None, scope: str = "") -> str | None:
-    if _BYPASS_CACHE.get():
-        return None  # 评测：必须真的重新生成（见 _BYPASS_CACHE 的说明）
-    key = _sql_cache_key(question, datasource, scope)
-    hit = _SQL_CACHE.get(key)
-    if not hit:
-        return None
-    ts, sql = hit
-    if time.time() - ts > _SQL_CACHE_TTL:
-        _SQL_CACHE.pop(key, None)
-        return None
-    return sql
-
-
-def _sql_cache_set(question: str, datasource: str | None, sql: str, scope: str = "") -> None:
-    if _BYPASS_CACHE.get():
-        return  # 评测生成的 SQL 不得污染真实用户的缓存
-    if not sql or not sql.strip():
-        return
-    if len(_SQL_CACHE) >= _SQL_CACHE_MAX:
-        # 简单淘汰：删最早插入的一批，避免引入额外依赖
-        for k in list(_SQL_CACHE)[: max(1, _SQL_CACHE_MAX // 10)]:
-            _SQL_CACHE.pop(k, None)
-    _SQL_CACHE[_sql_cache_key(question, datasource, scope)] = (time.time(), sql)
-
-
-def sql_cache_clear() -> int:
-    n = len(_SQL_CACHE)
-    _SQL_CACHE.clear()
-    return n
-
-
 #: 别名检索一次最多补几张表。
 #: 对象名（如"告警记录表"）含"告警"这种通用词，若拿它当匹配信号，会给大量
 #: 无关问题塞进额外表 —— 实测这让 prompt 变大、生成 p50 从 3147ms 涨到 6483ms
@@ -1178,13 +1145,6 @@ def scope_tables_to_schema(ranked: list[str], schema_map: dict, core_tables,
     return picked
 
 
-def _retrieval_cache_key(question: str, datasource: str | None = None) -> str:
-    """检索缓存 key：**必须含数据源** —— 否则同一句话在两个数据源之间互相串结果
-    （实测 ds:4 的问题会命中 system 源的缓存，召回到 video_*/ai_* 表）。"""
-    q = re.sub(r"\s+", "", (question or "").strip().lower())
-    return f"{datasource or ''}|{q}"
-
-
 #: 会影响「召回结果 / prompt 内容」的设置项。这些 key 一变，缓存必须换 key，
 #: 否则管理员改完开关，进程内缓存还会按旧配置继续吐结果（TTL 120~600 秒）。
 #: 判据：**它出现在 prompt 里，或决定进 prompt 哪些表/列**。新增同类开关记得加进来。
@@ -1197,18 +1157,6 @@ _CTX_CFG_KEYS: tuple[str, ...] = (
     "schema_asset_meta_enabled",
     "multi_dialect_enabled",
 )
-
-
-def _cfg_sig(cfg: dict | None) -> str:
-    """配置指纹：只取影响召回/prompt 的那些 key，算一个短哈希。
-
-    为什么不用「保存设置时清缓存」：那是**进程内**的，多进程/多副本部署时只有
-    接住这次保存的那个进程会清，其它进程照旧吐旧结果 —— 这类"偶发"最难查。
-    把指纹拼进 cache key 是确定性的，和有多少个进程无关。
-    """
-    cfg = cfg or {}
-    raw = "|".join(f"{k}={cfg.get(k)}" for k in _CTX_CFG_KEYS)
-    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
 
 
 async def _system_allowed() -> set[str]:
