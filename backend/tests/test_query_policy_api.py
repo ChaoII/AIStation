@@ -743,3 +743,44 @@ def test_access_logs_returns_recent_rows(test_client, auth_headers):
     data = r.json()["data"]
     assert isinstance(data, list)
     assert len(data) <= 5
+
+
+def test_access_stats_groups_by_entry(test_client, auth_headers):
+    """看板：按入口汇总放行/拒绝，结构与口径正确（deny_rate 是百分比）。"""
+    import asyncio
+
+    from app.plugin.module_ai.query.policy import audit
+    from types import SimpleNamespace
+
+    for entry, decision in (("stats-probe", "permit"), ("stats-probe", "deny")):
+        asyncio.run(
+            audit.write_access_log(
+                principal=SimpleNamespace(user_id=1),
+                entry=entry,
+                datasource="ds:4",
+                sql="SELECT 1",
+                decision=decision,
+                reason="stats test",
+                policy_ids=[],
+                rewrite=[],
+                elapsed_ms=3,
+            )
+        )
+
+    r = test_client.get(f"{BASE}/access/stats", params={"hours": 1}, headers=auth_headers)
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["hours"] == 1
+    assert data["total"] >= 2
+
+    row = next(e for e in data["entries"] if e["entry"] == "stats-probe")
+    assert row["permit"] >= 1 and row["deny"] >= 1
+    assert row["total"] == row["permit"] + row["deny"]
+    assert 0 <= row["deny_rate"] <= 100
+
+
+def test_access_stats_clamps_hours(test_client, auth_headers):
+    """hours 传 0 / 负数按 1 小时处理，不会把 SQL 弄坏。"""
+    r = test_client.get(f"{BASE}/access/stats", params={"hours": 0}, headers=auth_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["hours"] == 1

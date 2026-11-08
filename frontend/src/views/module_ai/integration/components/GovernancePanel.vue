@@ -103,6 +103,59 @@
             :title="t('ai_workflow.ig_govHealthNone')"
           />
         </el-card>
+        <el-card shadow="never" style="margin-bottom: 12px">
+          <template #header>
+            <div class="gp-head">
+              <span>{{ t("ai_workflow.ig_govEntryTitle") }}</span>
+              <div class="gp-head__ops">
+                <el-radio-group v-model="statsHours" size="small" @change="loadAccessStats">
+                  <el-radio-button :label="24">
+                    {{ t("ai_workflow.ig_govEntry24h") }}
+                  </el-radio-button>
+                  <el-radio-button :label="168">
+                    {{ t("ai_workflow.ig_govEntry7d") }}
+                  </el-radio-button>
+                </el-radio-group>
+                <el-tag size="small" effect="plain">
+                  {{ t("ai_workflow.ig_govEntryTotal", { n: accessStats.total }) }}
+                </el-tag>
+              </div>
+            </div>
+          </template>
+          <el-table
+            v-loading="statsLoading"
+            :data="accessStats.entries"
+            border
+            stripe
+            size="small"
+            max-height="240"
+          >
+            <el-table-column
+              prop="entry"
+              :label="t('ai_workflow.ig_govEntryName')"
+              min-width="140"
+            />
+            <el-table-column prop="permit" :label="t('ai_workflow.ig_policyPermit')" width="110" />
+            <el-table-column prop="deny" :label="t('ai_workflow.ig_policyDeny')" width="110" />
+            <el-table-column
+              prop="total"
+              :label="t('ai_workflow.ig_govEntryTotalCol')"
+              width="110"
+            />
+            <el-table-column :label="t('ai_workflow.ig_govEntryDenyRate')" min-width="160">
+              <template #default="{ row }">
+                <el-progress
+                  :percentage="row.deny_rate"
+                  :stroke-width="10"
+                  :color="row.deny_rate >= 50 ? 'var(--el-color-danger)' : undefined"
+                />
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty :image-size="60" :description="t('ai_workflow.ig_govEntryEmpty')" />
+            </template>
+          </el-table>
+        </el-card>
         <el-row :gutter="12">
           <el-col :span="12">
             <el-card shadow="never">
@@ -1496,6 +1549,7 @@ import {
   getAccessLogs,
   getDegradedStatus,
   rebuildLineage as rebuildLineageApi,
+  getAccessStats,
 } from "@/api/module_ai/query";
 import { UserAPI } from "@/api/module_system/user";
 
@@ -1959,6 +2013,24 @@ async function loadOverview() {
   } catch {
     degraded.value = { total: 0, areas: [] };
   }
+  await loadAccessStats();
+}
+
+// 入口使用看板：谁在用、放了多少、拒了多少（对应 P4「每个入口能回答为什么放/拒」）
+const accessStats = ref<any>({ total: 0, permit: 0, deny: 0, entries: [] });
+const statsHours = ref(24);
+const statsLoading = ref(false);
+
+async function loadAccessStats() {
+  statsLoading.value = true;
+  try {
+    const r: any = await getAccessStats(statsHours.value);
+    accessStats.value = r.data?.data || { total: 0, permit: 0, deny: 0, entries: [] };
+  } catch {
+    accessStats.value = { total: 0, permit: 0, deny: 0, entries: [] };
+  } finally {
+    statsLoading.value = false;
+  }
 }
 async function loadAccess() {
   const r = await getAccessRules();
@@ -2175,6 +2247,11 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.gp-head__ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .gp-bar {
   margin-bottom: 8px;

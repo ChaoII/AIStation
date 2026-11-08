@@ -848,3 +848,8 @@ export function getDegradedStatus() {
 export function rebuildLineage(datasource = "ds:4") {
   return request({ url: `${API_PATH}/lineage/rebuild`, method: "post", params: { datasource } });
 }
+
+/** 访问审计按入口汇总（看板：哪个入口在用、拒了多少） */
+export function getAccessStats(hours = 24) {
+  return request({ url: `${API_PATH}/access/stats`, method: "get", params: { hours } });
+}

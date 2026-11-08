@@ -530,3 +530,11 @@ async def access_logs(
 ) -> JSONResponse:
     rows = await audit.list_access_logs(limit)
     return SuccessResponse(data=rows, msg="查询成功")
+
+
+@PolicyRouter.get("/access/stats", summary="访问审计按入口汇总（看板）")
+async def access_stats_api(
+    auth: Annotated[AuthSchema, Depends(AuthPermission([_PERM_QUERY]))],
+    hours: int = 24,
+) -> JSONResponse:
+    return SuccessResponse(data=await audit.access_stats(hours), msg="查询成功")

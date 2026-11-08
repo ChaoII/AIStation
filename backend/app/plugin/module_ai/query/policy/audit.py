@@ -34,7 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import text
 
@@ -56,8 +56,8 @@ _LITERAL_RE = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"")
 _INSERT_SQL = (
     "INSERT INTO ai_query_access_log"
     "(user_id, entry, datasource, sql_hash, sql_preview, decision, reason, "
-    "policy_ids, rewrite, elapsed_ms) "
-    "VALUES(:uid, :entry, :ds, :h, :prev, :dec, :reason, :pids, :rw, :ms)"
+    "policy_ids, rewrite, elapsed_ms, created_time) "
+    "VALUES(:uid, :entry, :ds, :h, :prev, :dec, :reason, :pids, :rw, :ms, :ct)"
 )
 
 #: 回溯查询用到的列（顺序与 ``_log_row`` 一一对应）。
@@ -222,6 +222,10 @@ async def write_access_log(
             "pids": _json_array(policy_ids),
             "rw": _json_array(rewrite),
             "ms": _int_or_none(elapsed_ms),
+            # **显式写本地时间**：PG 的 ``now()`` 是会话时区的本地时间，SQLite 的
+            # ``CURRENT_TIMESTAMP`` 却是 UTC —— 靠列默认值会让两套库的时间口径差 8 小时，
+            # 按窗口聚合（``access_stats``）在测试库上就会少算。统一由应用给值。
+            "ct": datetime.now(),
         }
         async with async_db_session_fresh() as db:
             async with db.begin():
@@ -229,6 +233,62 @@ async def write_access_log(
     except Exception as e:  # noqa: BLE001
         # 只记 warning（带 traceback）：调用方（查询主链路）绝不能因为审计失败而失败
         _warn_failed(e)
+
+
+async def access_stats(hours: int = 24) -> dict:
+    """按**入口**汇总放行/拒绝（治理看板用，回答"哪个入口在用、拒了多少"）。
+
+    只做只读聚合，不写库；``hours`` 做安全钳制（1 小时 ~ 90 天），传错按 24 小时。
+    时间下界用 Python 侧的 ``datetime`` 绑定，不拼字符串 —— PG 与 SQLite 都能
+    正确比较（字符串拼进 SQL 会在 PG 上变成 text 与 timestamp 比较而报错）。
+    """
+    try:
+        h = max(1, min(int(hours), 24 * 90))
+    except (TypeError, ValueError):
+        h = 24
+    since = datetime.now() - timedelta(hours=h)
+    async with async_db_session() as db:
+        rows = (
+            await db.execute(
+                text(
+                    "SELECT entry, decision, COUNT(*) FROM ai_query_access_log "
+                    "WHERE created_time >= :since GROUP BY entry, decision"
+                ),
+                {"since": since},
+            )
+        ).fetchall()
+
+    buckets: dict[str, dict[str, int]] = {}
+    for entry, decision, count in rows:
+        key = str(entry or "")
+        bucket = buckets.setdefault(key, {"permit": 0, "deny": 0})
+        bucket[str(decision or "").lower()] = int(count or 0)
+
+    entries = []
+    for entry, bucket in buckets.items():
+        permit, deny = bucket.get("permit", 0), bucket.get("deny", 0)
+        total = permit + deny
+        entries.append(
+            {
+                "entry": entry,
+                "permit": permit,
+                "deny": deny,
+                "total": total,
+                "deny_rate": round(deny / total * 100, 1) if total else 0.0,
+            }
+        )
+    entries.sort(key=lambda x: (-x["total"], x["entry"]))
+
+    permit_total = sum(e["permit"] for e in entries)
+    deny_total = sum(e["deny"] for e in entries)
+    return {
+        "hours": h,
+        "since": since.strftime("%Y-%m-%d %H:%M:%S"),
+        "total": permit_total + deny_total,
+        "permit": permit_total,
+        "deny": deny_total,
+        "entries": entries,
+    }
 
 
 async def list_access_logs(limit: int = 100) -> list[dict]:
