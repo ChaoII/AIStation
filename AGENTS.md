@@ -61,6 +61,18 @@ pnpm run lint                  # eslint + prettier + stylelint
 
 ### 改问数（`module_ai/query`）时的提交前冒烟（强制）
 
+> **交付门槛（强制）**：改问数相关代码后，下面四步**缺一不可**，没跑完不得说“做完了”。
+> 历史教训：单测全绿 + `py_compile` 通过 + eslint 干净，仍然出现
+> `@classmethod` 丢失（慢路径全 500）、`ds:*` 分支漏导入（所有自定义源问数失败）、
+> `/settings` 返回默认值而非生效值、配置数字被 `max=9` 截断、快路径 result 没带 SQL
+> （执行详情按钮不出现）、模板被脚本切坏——**全部只有“真的用一遍”才暴露**。
+>
+> 1. `py_compile` / `vue-tsc` / `eslint` + 相关单测；
+> 2. `uv run python scripts/query_golden_smoke.py`（后端运行时断点）；
+> 3. `cd frontend && node scripts/golden_path.mjs`（真实 UI 金路径 + 接口 4xx 清零）；
+> 4. 有 UI 改动 → 1920×1080 截图并读图核对。
+
+
 单测**覆盖不到运行时链路**：2026-11 一次"整段替换"删掉了 `_prune_columns`，`py_compile`
 通过、单测全绿，但真实提问一律 `AttributeError`，评测 accuracy 0.96 → 0.13。
 
