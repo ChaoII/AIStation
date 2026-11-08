@@ -26,6 +26,7 @@ MODULE_NAMES = (
     "version_ops",
     "recall_ops",
     "routing_ops",
+    "schema_ops",
     "service",
     "ask_ops",
     "actions_ops",
