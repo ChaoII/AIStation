@@ -20,6 +20,7 @@ MODULE_NAMES = (
     "degraded",
     "datasource_ops",
     "session_ops",
+    "report_ops",
     "service",
     "ask_ops",
     "actions_ops",
