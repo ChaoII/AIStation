@@ -13,7 +13,6 @@ import json
 import os
 import re
 import time
-from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
 from types import SimpleNamespace
@@ -28,6 +27,11 @@ from app.core.logger import log
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
+# 静默降级计数已拆到 ``degraded.py``（2026-11-08）：这里只做**同名再导出**，
+# 保证 `service._degrade` / `service.degraded_status` / `S.reset_degraded` 等
+# 全部旧调用点（含测试 monkeypatch）继续可用。
+from .degraded import degrade as _degrade  # noqa: F401
+from .degraded import degraded_status, reset_degraded  # noqa: F401
 from .dialect import build_system_prompt, dialect_name, templated_note
 from .filtering import (
     DEFAULT_FILTER_RULES,
@@ -183,50 +187,6 @@ def _ddl_for_dialect(sql: str) -> str:
     from .ddl_dialect import ddl_for_dialect
 
     return ddl_for_dialect(sql)
-
-
-#: 静默降级计数：哪些能力「坏了但流程还在跑」。
-#:
-#: 这个模块有 28 处 ``except: pass`` —— 容错本身是对的（一个附加统计失败不该让
-#: 整页 500），但这些失败**不留任何痕迹**。实测三次事故都是这么来的：
-#: 影子表没建出来（no such table）、启动对账没生效、资产血缘恒为 0。
-#: 界面结构正常、数字全空，没人会发现。
-#:
-#: 约定：``except`` 里不再写裸 ``pass``，改 ``_degrade("能力名", e)`` ——
-#: 计数 + 首次几次打日志 + 暴露到 ``GET /ai/query/system/degraded``。
-_DEGRADED: Counter[str] = Counter()
-_DEGRADED_INFO: dict[str, dict] = {}
-#: 每个能力最多打几次 warning（避免每次请求刷屏）
-_DEGRADE_LOG_TIMES = 3
-
-
-def _degrade(area: str, exc: BaseException | None = None) -> None:
-    """记录一次静默降级（能力不可用，流程继续）。"""
-    _DEGRADED[area] += 1
-    _DEGRADED_INFO[area] = {
-        "at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "error": f"{type(exc).__name__}: {exc}"[:200] if exc else "",
-    }
-    if _DEGRADED[area] <= _DEGRADE_LOG_TIMES:
-        log.warning("[query][降级] {}: {}", area,
-                    f"{type(exc).__name__}: {exc}"[:160] if exc else "(无异常信息)")
-
-
-def degraded_status() -> dict:
-    """降级状态快照（给健康检查 / 运维看："现在有哪些能力是坏的"）。"""
-    return {
-        "total": sum(_DEGRADED.values()),
-        "areas": [
-            {"area": k, "count": v, **(_DEGRADED_INFO.get(k) or {})}
-            for k, v in _DEGRADED.most_common()
-        ],
-    }
-
-
-def reset_degraded() -> None:
-    """清空计数（测试与人工排查用）。"""
-    _DEGRADED.clear()
-    _DEGRADED_INFO.clear()
 
 
 async def _ensure_query_tables() -> None:
@@ -721,7 +681,6 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
     return out
 
 
-
 def _auth_scope(auth) -> str:
     """SQL 缓存的主体指纹：不同用户/角色不能复用同一份生成结果。
 
@@ -736,6 +695,7 @@ def _auth_scope(auth) -> str:
     except Exception:  # noqa: BLE001 - 角色取不到时退化为按用户隔离
         roles = ""
     return f"{uid}|{roles}"
+
 
 def _to_metric_dict(m: AiQueryMetricModel) -> dict:
     # 绑定型指标（object_code + agg_fn）：不展示占位 SQL，改为展示「绑定对象/属性/聚合」口径。
