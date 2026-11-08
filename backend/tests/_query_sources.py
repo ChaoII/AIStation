@@ -21,6 +21,7 @@ MODULE_NAMES = (
     "datasource_ops",
     "session_ops",
     "report_ops",
+    "dq_ops",
     "service",
     "ask_ops",
     "actions_ops",
