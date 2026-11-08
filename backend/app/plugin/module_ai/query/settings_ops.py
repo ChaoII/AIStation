@@ -10,12 +10,51 @@ from __future__ import annotations
 import os
 
 from app.core.database import async_db_session
+from app.core.exceptions import CustomException
 
 from . import service as _svc
 from .model import AiQuerySettingModel
 
 
 class SettingsOps:
+    @classmethod
+    async def save_setting(cls, key: str, value: str, remark: str, auth) -> dict:
+        """写一条工程配置。
+
+        ``policy_engine`` 是**问数权限判定开关**，只允许超级管理员修改：
+        ``/ai/query/settings/save`` 只要求 ``module_ai:query:ask``，任何能问数的人都能
+        把它改成 ``legacy`` 来关掉判定（2026-11 复审 I2）。这里不静默忽略 —— 显式报错
+        才能让调用方知道"没生效"，也不会让管理员误以为保存成功。
+        """
+        if str(key or "").strip() == "policy_engine":
+            is_super = bool(getattr(getattr(auth, "user", None), "is_superuser", False))
+            if not is_super:
+                raise CustomException(
+                    msg="policy_engine 只允许超级管理员修改（问数权限判定开关，禁止普通用户变更）",
+                    status_code=403,
+                )
+        async with async_db_session.begin() as db:
+            from sqlalchemy import select
+
+            existing = (
+                await db.execute(
+                    select(AiQuerySettingModel).where(
+                        AiQuerySettingModel.key == key,
+                        AiQuerySettingModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.value = value
+                existing.remark = remark
+                existing.updated_id = auth.user.id
+            else:
+                db.add(AiQuerySettingModel(key=key, value=value, remark=remark,
+                                           created_id=auth.user.id, updated_id=auth.user.id))
+            await db.flush()
+        _svc._SETTINGS_CACHE = None
+        return {"key": key, "value": value}
+
     @classmethod
     async def effective_settings(cls) -> dict:
         """当前**生效**配置（默认值 + 库内覆盖），供界面回显。"""

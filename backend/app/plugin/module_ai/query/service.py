@@ -1668,88 +1668,10 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @classmethod
-    async def save_setting(cls, key: str, value: str, remark: str, auth) -> dict:
-        """写一条工程配置。
-
-        ``policy_engine`` 是**问数权限判定开关**，只允许超级管理员修改：
-        ``/ai/query/settings/save`` 只要求 ``module_ai:query:ask``，任何能问数的人都能
-        把它改成 ``legacy`` 来关掉判定（2026-11 复审 I2）。这里不静默忽略 —— 显式报错
-        才能让调用方知道"没生效"，也不会让管理员误以为保存成功。
-        """
-        if str(key or "").strip() == "policy_engine":
-            is_super = bool(getattr(getattr(auth, "user", None), "is_superuser", False))
-            if not is_super:
-                raise CustomException(
-                    msg="policy_engine 只允许超级管理员修改（问数权限判定开关，禁止普通用户变更）",
-                    status_code=403,
-                )
-        async with async_db_session.begin() as db:
-            from sqlalchemy import select
-
-            existing = (
-                await db.execute(
-                    select(AiQuerySettingModel).where(
-                        AiQuerySettingModel.key == key,
-                        AiQuerySettingModel.is_deleted.is_(False),
-                    )
-                )
-            ).scalar_one_or_none()
-            if existing:
-                existing.value = value
-                existing.remark = remark
-                existing.updated_id = auth.user.id
-            else:
-                db.add(AiQuerySettingModel(key=key, value=value, remark=remark,
-                                           created_id=auth.user.id, updated_id=auth.user.id))
-            await db.flush()
-        global _SETTINGS_CACHE
-        _SETTINGS_CACHE = None
-        return {"key": key, "value": value}
 
     # ---- 使用统计 / 反馈闭环 ----
-    @classmethod
-    async def stats(cls) -> dict:
-        async with async_db_session() as db:
-            from sqlalchemy import func, or_, select
 
-            # 不计评测会话：评测会走同一条 ask 链路，混进来使用统计就失真了
-            base = (
-                select(func.count())
-                .select_from(AiQueryMessageModel)
-                .outerjoin(AiQuerySessionModel,
-                           AiQuerySessionModel.id == AiQueryMessageModel.session_id)
-                .where(
-                    AiQueryMessageModel.is_deleted.is_(False),
-                    or_(AiQuerySessionModel.is_eval.is_(False),
-                        AiQuerySessionModel.is_eval.is_(None)),
-                )
-            )
-            total = (await db.execute(base)).scalar_one()
-            fast = (await db.execute(
-                base.where(AiQueryMessageModel.path == "fast"))).scalar_one()
-            errors = (await db.execute(
-                base.where(AiQueryMessageModel.is_error.is_(True)))).scalar_one()
-        return {
-            "total": total, "fast": fast, "slow": max(0, total - fast),
-            "errors": errors, "ok": max(0, total - errors),
-        }
 
-    @classmethod
-    async def delete_metric(cls, ids: list[int]) -> None:
-        async with async_db_session.begin() as db:
-            for mid in ids:
-                m = await db.get(AiQueryMetricModel, mid)
-                if m:
-                    await db.delete(m)
-
-    @classmethod
-    async def delete_term(cls, ids: list[int]) -> None:
-        async with async_db_session.begin() as db:
-            for tid in ids:
-                t = await db.get(AiQueryDictionaryModel, tid)
-                if t:
-                    await db.delete(t)
 
     # ---- 数据源 ----
 
@@ -1867,13 +1789,5 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @classmethod
-    async def run_metric(cls, metric_key: str, datasource: str | None, params: dict, auth) -> dict:
-        metrics = await cls.list_metrics(datasource)
-        metric = next((m for m in metrics if m["key"] == metric_key), None)
-        if not metric:
-            raise CustomException(msg=f"指标「{metric_key}」不存在")
-        res = await _execute_metric(metric, params or {}, auth)
-        return res
 
     # ---- 反馈 ----

@@ -15,6 +15,7 @@ import re
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 
+from . import service as _svc
 from .model import (
     AiQueryDictionaryModel,
     AiQueryMessageModel,
@@ -70,6 +71,58 @@ def _to_metric_dict(m: AiQueryMetricModel) -> dict:
 
 
 class MetricsOps:
+    @classmethod
+    async def stats(cls) -> dict:
+        async with async_db_session() as db:
+            from sqlalchemy import func, or_, select
+
+            # 不计评测会话：评测会走同一条 ask 链路，混进来使用统计就失真了
+            base = (
+                select(func.count())
+                .select_from(AiQueryMessageModel)
+                .outerjoin(AiQuerySessionModel,
+                           AiQuerySessionModel.id == AiQueryMessageModel.session_id)
+                .where(
+                    AiQueryMessageModel.is_deleted.is_(False),
+                    or_(AiQuerySessionModel.is_eval.is_(False),
+                        AiQuerySessionModel.is_eval.is_(None)),
+                )
+            )
+            total = (await db.execute(base)).scalar_one()
+            fast = (await db.execute(
+                base.where(AiQueryMessageModel.path == "fast"))).scalar_one()
+            errors = (await db.execute(
+                base.where(AiQueryMessageModel.is_error.is_(True)))).scalar_one()
+        return {
+            "total": total, "fast": fast, "slow": max(0, total - fast),
+            "errors": errors, "ok": max(0, total - errors),
+        }
+
+    @classmethod
+    async def run_metric(cls, metric_key: str, datasource: str | None, params: dict, auth) -> dict:
+        metrics = await cls.list_metrics(datasource)
+        metric = next((m for m in metrics if m["key"] == metric_key), None)
+        if not metric:
+            raise CustomException(msg=f"指标「{metric_key}」不存在")
+        res = await _svc._execute_metric(metric, params or {}, auth)
+        return res
+
+    @classmethod
+    async def delete_metric(cls, ids: list[int]) -> None:
+        async with async_db_session.begin() as db:
+            for mid in ids:
+                m = await db.get(AiQueryMetricModel, mid)
+                if m:
+                    await db.delete(m)
+
+    @classmethod
+    async def delete_term(cls, ids: list[int]) -> None:
+        async with async_db_session.begin() as db:
+            for tid in ids:
+                t = await db.get(AiQueryDictionaryModel, tid)
+                if t:
+                    await db.delete(t)
+
     @classmethod
     async def list_metrics(cls, datasource: str | None = None) -> list[dict]:
         await cls.ensure_system_seed()
