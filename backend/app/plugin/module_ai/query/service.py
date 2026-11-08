@@ -67,6 +67,13 @@ from .model import (
 from .nl2sql_ops import Nl2SqlOps
 from .ontology_ops import OntologyOps
 from .propositions_ops import PropositionsOps
+from .question_rules import DAYS_RE as _DAYS_RE  # noqa: F401
+from .question_rules import LISTING_RE as _LISTING_RE  # noqa: F401
+from .question_rules import detect_time_frame as _detect_time_frame  # noqa: F401
+from .question_rules import is_listing_question as _is_listing_question  # noqa: F401
+from .question_rules import metric_time_hint as _metric_time_hint  # noqa: F401
+from .question_rules import parse_time_range  # noqa: F401
+from .question_rules import wants_full_list as _wants_full_list  # noqa: F401
 from .schema import QueryAssetUpsert
 from .slowpath_ops import SlowPathOps
 from .sqlcache import cfg_sig as _cfg_sig  # noqa: F401
@@ -996,41 +1003,16 @@ _NL2SQL_FEWSHOT = [
 # ---------------------------------------------------------------------------
 # 时间/参数解析
 # ---------------------------------------------------------------------------
-_DAYS_RE = re.compile(r"(?:最近|近|过去)\s*(\d+)\s*(?:天|日)", re.IGNORECASE)
-
-
-def parse_time_range(question: str) -> dict[str, Any]:
-    """从问句中解析时间区间，返回可注入 SQL 的参数。"""
-    m = _DAYS_RE.search(question)
-    if m:
-        return {"days": int(m.group(1))}
-    if re.search(r"今天|今日", question):
-        return {"days": 1}
-    if re.search(r"本月|这个月", question):
-        return {"days": 30}
-    if re.search(r"本周|这周", question):
-        return {"days": 7}
-    return {}
 
 
 # ---------------------------------------------------------------------------
 # SQL 安全校验
 # ---------------------------------------------------------------------------
 #: 问题里出现这些词，说明用户要的是**全量列举**（"每个告警规则各触发多少"）
-_ALL_LIST_HINTS = ("每个", "各", "所有", "全部", "分别", "每类", "每种", "列出",
-                   "逐个", "清单", "都有哪些", "有哪些")
 
 #: 但这些词出现时，用户要的是**前 N 条**，恰恰不能放宽 LIMIT。
 #: 真实踩过：`各算法类型的平均延迟，取前5名` 里含"各"，被误判成全量列举，
 #: 5 行被放到 1000 行——基准立刻从 ✓ 变 ✗（自己引入的回退，靠复测抓出来的）。
-_TOP_N_RE = re.compile(r"前\s*\d+|排名|排前|top\s*\d+|前几|最多前", re.IGNORECASE)
-
-
-def _wants_full_list(question: str) -> bool:
-    q = question or ""
-    if _TOP_N_RE.search(q):
-        return False
-    return any(h in q for h in _ALL_LIST_HINTS)
 
 
 def _render_template(template: str, params: dict[str, Any]) -> str:
@@ -1385,38 +1367,6 @@ async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> di
 # ---------------------------------------------------------------------------
 # 语义匹配（快路径）：术语/指标名 → 指标 + 参数
 # ---------------------------------------------------------------------------
-def _detect_time_frame(question: str) -> str:
-    """识别问句的时间语境，用于指标维度对齐。"""
-    q = question.lower()
-    if re.search(r"本月|这个月|当月", q):
-        return "month"
-    if re.search(r"今天|今日", q):
-        return "today"
-    if re.search(r"近7|最近7|近七|最近七|过去7", q):
-        return "days"
-    return ""
-
-
-def _metric_time_hint(m: dict) -> str:
-    """从指标 key/name/描述推断其时间维度，用于对齐问句时间语境。"""
-    s = f"{m.get('key', '')} {m.get('name', '')} {m.get('description', '')}".lower()
-    if "month" in s or "本月" in s or "当月" in s:
-        return "month"
-    if "7d" in s or "最近" in s or "近7" in s or "近七" in s:
-        return "days"
-    if "today" in s or "今日" in s or "今天" in s:
-        return "today"
-    return ""
-
-
-_LISTING_RE = re.compile(
-    r"(哪些|列出|列表|清单|明细|罗列|有哪些|分别是什么|各叫什么|的名称|的名字|叫啥|叫什么名字)"
-)
-
-
-def _is_listing_question(question: str) -> bool:
-    """列举类问题（哪些/列出/名称等）不走指标模板，强制慢路径 NL2SQL。"""
-    return bool(_LISTING_RE.search(question or ""))
 
 
 #: 无区分度的中文二元组：出现在问句里**不代表**指向某个指标（实测误命中的元凶）
