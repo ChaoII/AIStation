@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 from .actions_ops import ActionsOps
 from .ask_ops import AskOps
 from .assets_ops import AssetsOps
+from .pipeline_ops import PipelineOps
+from .version_ops import VersionOps
 from .dq_ops import DqOps
 from .report_ops import ReportOps
 from .session_ops import SessionOps
@@ -1494,7 +1496,7 @@ _ONT_IMPORT_EXCLUDE: set[str] = {
 # ---------------------------------------------------------------------------
 # 语义层 CRUD + 种子
 # ---------------------------------------------------------------------------
-class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, PropositionsOps, ExecuteOps, ContextOps, Nl2SqlOps, SlowPathOps, AskOps, SettingsOps, DatasourceOps, SessionOps, ReportOps, DqOps):
+class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, PropositionsOps, ExecuteOps, ContextOps, Nl2SqlOps, SlowPathOps, AskOps, SettingsOps, DatasourceOps, SessionOps, ReportOps, DqOps, PipelineOps, VersionOps):
 
     @classmethod
     async def count_writeback_actions(cls) -> int:
@@ -1515,20 +1517,6 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
                 or 0
             )
 
-    @classmethod
-    async def pipeline_run_status(cls) -> dict[str, int]:
-        """数据管道运行状态分布（`ai_pipeline_run` 按 status 计数）。"""
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            rows = (
-                await db.execute(
-                    _t(
-                        "SELECT status, count(*) FROM ai_pipeline_run "
-                        "WHERE is_deleted=false GROUP BY status"
-                    )
-                )
-            ).fetchall()
-        return {str(r[0]): int(r[1]) for r in rows}
 
     @classmethod
     async def ensure_system_seed(cls) -> None:
@@ -1965,165 +1953,12 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
                         updated_cols += 1
         return {"tables": updated_tables, "columns": updated_cols}
 
-    @classmethod
-    async def _record_version(cls, table_name: str, snapshot: dict, field_name: str = "", operator: str = "") -> None:
-        import json as _json
-        async with async_db_session.begin() as db:
-            from sqlalchemy import text as _t
 
-            n = (await db.execute(_t(
-                "SELECT COALESCE(MAX(version_no),0) FROM ai_asset_version WHERE table_name=:t AND field_name=:f AND is_deleted=false"),
-                {"t": table_name, "f": field_name})).scalar() or 0
-            await db.execute(_t(
-                "INSERT INTO ai_asset_version(table_name,field_name,snapshot,version_no,operator) "
-                "VALUES (:t,:f,:s,:n,:o)"), {
-                "t": table_name, "f": field_name, "s": _json.dumps(snapshot, ensure_ascii=False),
-                "n": int(n) + 1, "o": operator or ""})
 
-    @classmethod
-    async def list_versions(cls, table_name: str) -> list[dict]:
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
 
-            res = await db.execute(_t(
-                "SELECT id,table_name,field_name,snapshot,version_no,operator,created_time "
-                "FROM ai_asset_version WHERE table_name=:t AND is_deleted=false ORDER BY id DESC LIMIT 50"),
-                {"t": table_name})
-            rows = res.fetchall()
-        import json as _json
-        return [{
-            "id": r[0], "table": r[1], "field": r[2],
-            "snapshot": r[3] if isinstance(r[3], dict) else (_json.loads(r[3]) if r[3] else {}),
-            "version": r[4], "operator": r[5] or "", "time": str(r[6]) if r[6] else "",
-        } for r in rows]
 
-    @classmethod
-    async def version_diff(cls, id_a: int, id_b: int) -> dict:
-        """版本 diff：对比两个版本快照，输出新增/删除/变更的字段（表级或字段级）。"""
-        import json as _json
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            ra = (await db.execute(_t("SELECT table_name,field_name,snapshot,version_no FROM ai_asset_version WHERE id=:i AND is_deleted=false"), {"i": id_a})).fetchone()
-            rb = (await db.execute(_t("SELECT table_name,field_name,snapshot,version_no FROM ai_asset_version WHERE id=:i AND is_deleted=false"), {"i": id_b})).fetchone()
-        if not ra or not rb:
-            return {"ok": False, "msg": "版本不存在"}
 
-        def _load(raw):
-            return raw if isinstance(raw, dict) else (_json.loads(raw) if raw else {})
-        sa, sb = _load(ra[2]), _load(rb[2])
-        keys = set(sa.keys()) | set(sb.keys())
-        changed = []
-        for k in sorted(keys):
-            va, vb = sa.get(k), sb.get(k)
-            if va != vb:
-                changed.append({"key": k, "from": va, "to": vb})
-        return {"ok": True, "table": ra[0], "field": ra[1] or "", "field_b": rb[1] or "",
-                "version_a": ra[3], "version_b": rb[3],
-                "changed": changed, "changed_count": len(changed)}
 
-    @classmethod
-    async def asset_publish(cls, table_name: str, version_id: int, auth) -> dict:
-        """数据集/对象版本发布：把指定版本标记为当前发布版本（可回滚发布）。"""
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            v = (await db.execute(_t(
-                "SELECT table_name,field_name,snapshot,version_no FROM ai_asset_version WHERE id=:i AND is_deleted=false"),
-                {"i": version_id})).fetchone()
-        if not v:
-            return {"ok": False, "msg": "版本不存在"}
-        if v[0] != table_name:
-            return {"ok": False, "msg": "版本不属于该对象"}
-        from datetime import datetime
-        async with async_db_session.begin() as db:
-            from sqlalchemy import text as _t
-            await cls._ensure_asset_publish(db)
-            # 跨库 upsert：先删后插（PG/MySQL/SQLite 通用；避免 SQLite 专属 INSERT OR REPLACE）
-            await db.execute(_t("DELETE FROM ai_asset_publish WHERE table_name=:t"), {"t": table_name})
-            await db.execute(_t(
-                "INSERT INTO ai_asset_publish(table_name,version_id,published_time,operator) "
-                "VALUES (:t,:v,:now,:op)"),
-                {"t": table_name, "v": int(version_id),
-                 "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                 "op": str(getattr(getattr(auth, "user", None), "id", ""))})
-        return {"ok": True, "table": table_name, "version": v[3], "msg": f"已发布版本 {v[3]}"}
-
-    @staticmethod
-    async def _ensure_asset_publish(db) -> None:
-        """幂等创建「发布版本」记录表（asset_releases 查询前 / 发布前都需保证存在）。
-
-        历史缺陷：建表只写在「发布」动作里，而「版本」弹窗先查 asset_releases，
-        表不存在时直接 400。这里统一建表，兼容 PG（VARCHAR 主键）。"""
-        from sqlalchemy import text as _t
-        await db.execute(_t(
-            "CREATE TABLE IF NOT EXISTS ai_asset_publish "
-            "(table_name VARCHAR(255) PRIMARY KEY, version_id INTEGER, "
-            "published_time VARCHAR(64), operator VARCHAR(64))"))
-
-    @classmethod
-    async def asset_releases(cls, table_name: str) -> dict:
-        """当前发布版本 + 该对象的版本列表（含是否已发布）。"""
-        import json as _json
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            await cls._ensure_asset_publish(db)
-            version_rows = (await db.execute(_t(
-                "SELECT id,field_name,snapshot,version_no,created_time FROM ai_asset_version "
-                "WHERE table_name=:t AND is_deleted=false ORDER BY version_no DESC LIMIT 50"),
-                {"t": table_name})).fetchall()
-            pub = (await db.execute(_t(
-                "SELECT version_id,published_time FROM ai_asset_publish WHERE table_name=:t"),
-                {"t": table_name})).fetchone()
-        published_version_id = int(pub[0]) if pub else None
-        versions = []
-        for r in version_rows:
-            snap = r[2] if isinstance(r[2], dict) else (_json.loads(r[2]) if r[2] else {})
-            versions.append({"id": r[0], "field": r[1] or "", "snapshot": snap,
-                             "version": r[3], "time": str(r[4]) if r[4] else "",
-                             "published": (r[0] == published_version_id)})
-        return {"table": table_name, "published_version_id": published_version_id,
-                "published_time": str(pub[1]) if pub and pub[1] else "",
-                "versions": versions}
-
-    @classmethod
-    async def rollback_version(cls, version_id: int, auth) -> dict:
-        import json as _json
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-
-            v = (await db.execute(_t(
-                "SELECT table_name,field_name,snapshot,version_no FROM ai_asset_version WHERE id=:i AND is_deleted=false"),
-                {"i": version_id})).fetchone()
-        if not v:
-            return {"ok": False, "msg": "版本不存在"}
-        table, field, snap_raw, vno = v[0], v[1], v[2], v[3]
-        snap = snap_raw if isinstance(snap_raw, dict) else (_json.loads(snap_raw) if snap_raw else {})
-        if field:
-            # 字段级回滚
-            async with async_db_session.begin() as db:
-                from sqlalchemy import text as _t
-                await db.execute(_t(
-                    "UPDATE ai_query_asset_columns SET description=:d, business_scenarios=:s, "
-                    "related_table=:rt, related_field=:rf, sensitive=:se "
-                    "WHERE table_name=:t AND column_name=:c AND is_deleted=false"), {
-                    "d": snap.get("description", ""), "s": snap.get("business_scenarios", ""),
-                    "rt": snap.get("related_table") or "", "rf": snap.get("related_field") or "",
-                    "se": bool(snap.get("sensitive", False)), "t": table, "c": field})
-        else:
-            async with async_db_session.begin() as db:
-                from sqlalchemy import text as _t
-                await db.execute(_t(
-                    "UPDATE ai_query_assets SET alias=:a, domain=:d, description=:de, business_scenarios=:b, "
-                    "included=:i, object_enabled=:oe, object_key_col=:ok, object_name_col=:on, object_icon=:oi "
-                    "WHERE table_name=:t AND is_deleted=false"), {
-                    "a": snap.get("alias", ""), "d": snap.get("domain", ""), "de": snap.get("description", ""),
-                    "b": snap.get("business_scenarios", ""), "i": bool(snap.get("included", True)),
-                    "oe": bool(snap.get("object_enabled", False)), "ok": snap.get("object_key_col") or "id",
-                    "on": snap.get("object_name_col") or "name", "oi": snap.get("object_icon") or "el-icon-Box",
-                    "t": table})
-        await cls._record_version(table, snap, field, operator=str(getattr(getattr(auth, "user", None), "id", "")))
-        _SCHEMA_CACHE = None
-        _ASSET_TMETA = None
-        return {"ok": True, "msg": f"已回滚到版本 {vno}"}
 
     @classmethod
     async def _object_backing_map(cls) -> dict[str, str]:
@@ -2639,252 +2474,10 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @classmethod
-    async def pipeline_graph(cls) -> dict:
-        """数据管道(ELT)编排图：源表 → 管道 → 本体对象，返回 nodes/edges（number id 供 GraphCanvas）。"""
-        pipes = await cls.list_pipelines()
-        nodes: list[dict] = []
-        edges: list[dict] = []
-        idmap: dict[str, int] = {}
 
-        def nid(key: str) -> int:
-            if key not in idmap:
-                idmap[key] = len(idmap) + 1
-            return idmap[key]
 
-        def add_node(key: str, name: str, etype: str) -> None:
-            if key in idmap:
-                return
-            i = nid(key)
-            nodes.append({"id": i, "name": name or "-", "etype": etype, "weight": 1})
 
-        for p in pipes:
-            src = f"src:{p.get('source_table')}"
-            pipe = f"pipe:{p.get('name')}"
-            tgt = f"obj:{p.get('target_object')}"
-            add_node(pipe, p.get("name") or "管道", "pipeline")
-            if p.get("source_table"):
-                add_node(src, p["source_table"], "source")
-                edges.append({"source": nid(src), "target": nid(pipe), "rtype": "to", "weight": 1})
-            if p.get("target_object"):
-                add_node(tgt, p["target_object"], "object")
-                edges.append({"source": nid(pipe), "target": nid(tgt), "rtype": "writes", "weight": 1})
-        return {"nodes": nodes, "edges": edges}
 
-    @classmethod
-    async def list_pipelines(cls, datasource: str | None = None) -> list[dict]:
-        datasource = await _norm_datasource(datasource)
-        async with async_db_session() as db:
-            from sqlalchemy import inspect
-            from sqlalchemy import text as _t
-
-            # `datasource` 是后补列：SQLite 不支持 `ADD COLUMN IF NOT EXISTS`，老测试库可能没有。
-            # 探测列是否存在而不是「先查再兜底异常」，避免事务被污染。
-            has_ds = await db.run_sync(
-                lambda s: "datasource" in {
-                    c["name"] for c in inspect(s.connection()).get_columns("ai_pipeline")
-                }
-            )
-            ds_col = "p.datasource" if has_ds else "''"
-            sql = (
-                "SELECT p.id,p.name,p.source_connection,p.source_table,p.target_object,p.mappings,p.enabled,"
-                "(SELECT status FROM ai_pipeline_run r WHERE r.pipeline_id=p.id AND r.is_deleted=false ORDER BY r.id DESC LIMIT 1) AS last_status,"
-                "(SELECT ran_at FROM ai_pipeline_run r WHERE r.pipeline_id=p.id AND r.is_deleted=false ORDER BY r.id DESC LIMIT 1) AS last_at,"
-                f"{ds_col} "
-                "FROM ai_pipeline p WHERE p.is_deleted=false")
-            params: dict = {}
-            if datasource and has_ds:
-                sql += " AND p.datasource=:ds"
-                params["ds"] = datasource
-            sql += " ORDER BY p.id DESC"
-            rows = (await db.execute(_t(sql), params)).fetchall()
-        import json as _json
-        return [{
-            "id": r[0], "name": r[1] or "", "source_connection": r[2] or "", "source_table": r[3] or "",
-            "target_object": r[4] or "",
-            "mappings": r[5] if isinstance(r[5], list) else (_json.loads(r[5]) if r[5] else []),
-            "enabled": bool(r[6]), "last_status": r[7] or "", "last_at": str(r[8]) if r[8] else "",
-            "datasource": r[9] or "",
-        } for r in rows]
-
-    @classmethod
-    async def upsert_pipeline(cls, data: dict) -> dict:
-        import json as _json
-        mp = _json.dumps(data.get("mappings") or [], ensure_ascii=False)
-        ds = await _norm_datasource((data.get("datasource") or "").strip()) or ""
-        async with async_db_session.begin() as db:
-            from sqlalchemy import text as _t
-            if data.get("id"):
-                await db.execute(_t(
-                    "UPDATE ai_pipeline SET name=:n, source_connection=:sc, source_table=:st, "
-                    "target_object=:to, mappings=:m, enabled=:e, datasource=:ds, updated_time=now() WHERE id=:i"), {
-                    "n": data.get("name", ""), "sc": data.get("source_connection", ""),
-                    "st": data.get("source_table", ""), "to": data.get("target_object", ""),
-                    "m": mp, "e": bool(data.get("enabled", True)), "ds": ds, "i": data["id"]})
-                return {"id": data["id"]}
-            res = await db.execute(_t(
-                "INSERT INTO ai_pipeline(name,source_connection,source_table,target_object,mappings,enabled,datasource) "
-                "VALUES (:n,:sc,:st,:to,:m,:e,:ds) RETURNING id"), {
-                "n": data.get("name", ""), "sc": data.get("source_connection", ""),
-                "st": data.get("source_table", ""), "to": data.get("target_object", ""),
-                "m": mp, "e": bool(data.get("enabled", True)), "ds": ds})
-            return {"id": res.scalar()}
-
-    @classmethod
-    async def run_pipeline(cls, pipeline_id: int) -> dict:
-        """P3-⑤ 真实数据接入：从外部数据源/本系统拉取源表数据，按映射落库到目标对象表，并同步资产与运行血缘。
-
-        source_connection 为数字 → 视为外部数据源 id（走 executor 真实连接拉数）；
-        否则 / 空 → 视为本系统表。目标数据落到 ``ai_pipeline_data_{id}`` 运行物化表。
-        """
-        import json as _json
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            row = (await db.execute(_t(
-                "SELECT name,source_connection,source_table,target_object,mappings FROM ai_pipeline "
-                "WHERE id=:i AND is_deleted=false"), {"i": pipeline_id})).fetchone()
-        if not row:
-            return {"ok": False, "msg": "管道不存在"}
-        name, sc, st, to, mp_raw = row[0], row[1], row[2], row[3], row[4]
-        mappings = mp_raw if isinstance(mp_raw, list) else (_json.loads(mp_raw) if mp_raw else [])
-        # 映射键名兼容两种口径：界面保存的是 {from,to}，早期/接口保存的是 {source_col,target_col}。
-        # 只认后者会让「界面上新建的管道」运行时 target_cols 全空 → 落库必失败（真实断层）。
-        norm_maps = []
-        for mp in mappings:
-            if not isinstance(mp, dict):
-                continue
-            s = str(mp.get("source_col") or mp.get("from") or "").strip()
-            t = str(mp.get("target_col") or mp.get("to") or s).strip()
-            if s or t:
-                norm_maps.append({"source_col": s, "target_col": t or s})
-        mappings = norm_maps
-        # 1) 拉取源数据
-        try:
-            if str(sc).strip().isdigit() and int(sc) > 0:
-                ds = await _load_ds(int(sc))
-                cfg = _ds_cfg_from_model(ds)
-                from . import executor as _ex
-                res = await _ex.execute_select(cfg, f'SELECT * FROM "{st}" LIMIT 200')
-                src_cols, src_rows = res.get("columns") or [], res.get("rows") or []
-                source_desc = f"{ds.name}({ds.type})"
-            else:
-                async with async_db_session() as db:
-                    from sqlalchemy import text as _t
-                    src = (await db.execute(_t(
-                        f'SELECT * FROM "{st}" LIMIT 200'))).mappings().fetchall()
-                src_cols = list(src[0].keys()) if src else []
-                src_rows = [[str(v) if v is not None else None for v in r.values()] for r in src]
-                source_desc = f"本系统 {st}"
-        except Exception as e:  # noqa: BLE001
-            return {"ok": False, "msg": f"拉取源数据失败：{str(e)[:120]}"}
-        # 2) 按映射构建目标行
-        col_idx = {c: i for i, c in enumerate(src_cols)}
-        target_cols: list[str] = []
-        for mp in mappings:
-            t = mp.get("target_col") or mp.get("source_col")
-            if t and t not in target_cols:  # 去重：同名列重复会让建表 DDL 冲突
-                target_cols.append(t)
-        target_rows: list[list] = []
-        for r in src_rows:
-            out = []
-            for mp in mappings:
-                s = mp.get("source_col", "")
-                val = r[col_idx[s]] if s in col_idx else None
-                out.append(val)
-            target_rows.append(out)
-        # 3) 物化到 ai_pipeline_data_{id}（全量刷新）
-        materialized = 0
-        try:
-            async with async_db_session.begin() as db:
-                from sqlalchemy import text as _t
-                tname = f"ai_pipeline_data_{pipeline_id}"
-                cols_ddl = ", ".join(f'"{c}" TEXT' for c in target_cols) if target_cols else ""
-                await db.execute(_t(
-                    f'CREATE TABLE IF NOT EXISTS "{tname}" (id BIGSERIAL PRIMARY KEY, {cols_ddl})'))
-                await db.execute(_t(f'DELETE FROM "{tname}"'))
-                for r in target_rows:
-                    ph = ", ".join(f":c{i}" for i in range(len(r)))
-                    cols_sql = ", ".join(f'"{c}"' for c in target_cols) if target_cols else ""
-                    params = {f"c{i}": v for i, v in enumerate(r)}
-                    await db.execute(_t(
-                        f'INSERT INTO "{tname}" ({cols_sql}) VALUES ({ph})'), params)
-                    materialized += 1
-        except Exception as e:  # noqa: BLE001
-            return {"ok": False, "msg": f"落库失败：{str(e)[:120]}"}
-        # 3.5) 目标为本体对象 → 把数据同步进本体对象表 ont_{to}（数据与集成支撑本体）
-        ont_synced = 0
-        try:
-            objs = await cls._ont_objs()
-            if to in objs:
-                ont_table = f"ont_{to}"
-                props = await cls._ont_props(to)
-                prop_codes = [p["code"] for p in props] or target_cols
-                cols_ddl = ", ".join(f'"{c}" TEXT' for c in prop_codes)
-                async with async_db_session.begin() as db:
-                    from sqlalchemy import text as _t
-                    await db.execute(_t(
-                        f'CREATE TABLE IF NOT EXISTS "{ont_table}" (id BIGSERIAL PRIMARY KEY, {cols_ddl})'))
-                    await db.execute(_t(f'DELETE FROM "{ont_table}"'))
-                    for r in target_rows:
-                        # 仅写入本体属性列
-                        mapped = {tc: v for tc, v in zip(target_cols, r)}
-                        ins_cols = [c for c in prop_codes if c in mapped]
-                        if not ins_cols:
-                            continue
-                        ph = ", ".join(f":c{i}" for i in range(len(ins_cols)))
-                        cols_sql = ", ".join(f'"{c}"' for c in ins_cols)
-                        params = {f"c{i}": mapped[c] for i, c in enumerate(ins_cols)}
-                        await db.execute(_t(
-                            f'INSERT INTO "{ont_table}" ({cols_sql}) VALUES ({ph})'), params)
-                        ont_synced += 1
-        except Exception:  # noqa: BLE001
-            ont_synced = 0
-        # 4) 同步资产元数据（对象可见 + 映射目标列描述）
-        meta = (await cls._asset_tmeta()).get(to) or {}
-        try:
-            await cls.upsert_asset(QueryAssetUpsert(
-                table_name=to, alias=meta.get("alias") or to, domain=meta.get("domain") or "接入",
-                description=meta.get("description") or f"由管道 {name} 接入", business_scenarios="",
-                included=True, remark="", object_enabled=True, object_key_col="id",
-                object_name_col="name", object_icon="el-icon-Connection"),
-                SimpleNamespace(user=SimpleNamespace(id=1)))
-            async with async_db_session.begin() as db:
-                from sqlalchemy import text as _t
-                for mp in mappings:
-                    tgt = mp.get("target_col") or mp.get("source_col")
-                    upd = await db.execute(_t(
-                        "UPDATE ai_query_asset_columns SET description=:d WHERE table_name=:t AND column_name=:c AND is_deleted=false"),
-                        {"t": to, "c": tgt, "d": f"自 {source_desc}.{st}#{mp.get('source_col')} 接入"})
-                    if not (upd.rowcount or 0):
-                        await db.execute(_t(
-                            "INSERT INTO ai_query_asset_columns(table_name,column_name,description,included,is_deleted) "
-                            "VALUES (:t,:c,:d,true,false)"), {"t": to, "c": tgt, "d": f"自 {source_desc}.{st}#{mp.get('source_col')} 接入"})
-        except Exception:  # noqa: BLE001
-            pass
-        # 5) 记录运行
-        msg = f"自 {source_desc}.{st} 拉取 {len(src_rows)} 行，落库 {materialized} 行到对象 {to}"
-        async with async_db_session.begin() as db:
-            from sqlalchemy import text as _t
-            await db.execute(_t(
-                "INSERT INTO ai_pipeline_run(pipeline_id,status,message,rows) VALUES (:p,'success',:m,:r)"),
-                {"p": pipeline_id, "m": msg, "r": materialized})
-        _SCHEMA_CACHE = None
-        _ASSET_TMETA = None
-        return {"ok": True, "msg": msg, "synced": len(mappings), "rows": materialized, "ont_synced": ont_synced}
-
-    @classmethod
-    async def pipeline_data(cls, pipeline_id: int, limit: int = 50) -> dict:
-        """P3-⑤ 查看管道落库结果（物化表 ai_pipeline_data_{id}）。"""
-        tname = f"ai_pipeline_data_{pipeline_id}"
-        try:
-            async with async_db_session() as db:
-                from sqlalchemy import text as _t
-                res = await db.execute(_t(f'SELECT * FROM "{tname}" ORDER BY id DESC LIMIT :n'), {"n": limit})
-                cols = list(res.keys())
-                rows = [list(r) for r in res.fetchall()]
-            return {"ok": True, "columns": cols, "rows": rows}
-        except Exception as e:  # noqa: BLE001
-            return {"ok": False, "msg": f"暂无落库结果：{str(e)[:80]}"}
 
     @classmethod
     async def workshop_objects(cls) -> list[dict]:
