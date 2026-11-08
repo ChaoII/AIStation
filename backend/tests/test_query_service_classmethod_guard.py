@@ -20,6 +20,9 @@ TARGETS = [
     "app/plugin/module_ai/query/service.py",
     "app/plugin/module_ai/query/actions_ops.py",
     "app/plugin/module_ai/query/assets_ops.py",
+    "app/plugin/module_ai/query/metrics_ops.py",
+    "app/plugin/module_ai/query/ontology_ops.py",
+    "app/plugin/module_ai/query/propositions_ops.py",
 ]
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]

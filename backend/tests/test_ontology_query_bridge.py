@@ -343,6 +343,25 @@ class TestRelationsInPrompt:
 # ===========================================================================
 # 5) 语义收敛：本体是唯一语义源，问数走统一接口
 # ===========================================================================
+
+def _query_module_sources() -> str:
+    """service 及其 mixin 的源码（2026-11 拆分后，语义接口的使用点可能在新模块里）。"""
+    import inspect
+
+    from app.plugin.module_ai.query import (
+        actions_ops,
+        assets_ops,
+        metrics_ops,
+        ontology_ops,
+        propositions_ops,
+        service,
+    )
+
+    return "\n".join(
+        inspect.getsource(m)
+        for m in (service, actions_ops, assets_ops, metrics_ops, ontology_ops, propositions_ops)
+    )
+
 class TestSemanticConvergence:
     def test_interface_returns_all_five_parts(self):
         from app.plugin.module_ai.ontology import semantic as S
@@ -389,7 +408,7 @@ class TestSemanticConvergence:
         """
         from app.plugin.module_ai.query import service as Q
 
-        src = inspect.getsource(Q)
+        src = _query_module_sources()
         # 去掉 DELETE FROM（写路径）后再找读
         stripped = re.sub(r"DELETE\s+FROM\s+ai_ont_\w+", "", src, flags=re.IGNORECASE)
         reads = re.findall(r"(?:FROM|JOIN)\s+(ai_ont_\w+)", stripped, re.IGNORECASE)
@@ -398,7 +417,7 @@ class TestSemanticConvergence:
     def test_query_uses_semantic_interface(self):
         from app.plugin.module_ai.query import service as Q
 
-        src = inspect.getsource(Q)
+        src = _query_module_sources()
         assert "ontology import semantic" in src
         assert "semantic.context_block" in src or "semantic import" in src
 
