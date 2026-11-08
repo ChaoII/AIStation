@@ -863,3 +863,8 @@ export function getDqRules() {
 export function runDqRule(params: { table: string; column: string; rule_type: string }) {
   return request({ url: `${API_PATH}/dq-rules/run`, method: "get", params });
 }
+
+/** 数据域对账：域里引用的表是否都已登记（系统库 + 各业务源已同步 schema） */
+export function domainReconcile() {
+  return request({ url: `${API_PATH}/domain/reconcile`, method: "get" });
+}

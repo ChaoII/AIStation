@@ -551,6 +551,14 @@
           >
             {{ t("ai_workflow.ig_govNewDomain") }}
           </el-button>
+          <el-button
+            v-hasPerm="'module_ai:query:ask'"
+            size="small"
+            :loading="reconcileLoading"
+            @click="runReconcile"
+          >
+            {{ t("ai_workflow.ig_domainReconcile") }}
+          </el-button>
           <el-tag size="small" type="info" effect="plain">
             {{
               t("ai_workflow.ig_govDomainCount", {
@@ -1453,6 +1461,59 @@
     </template>
   </el-dialog>
 
+  <el-dialog
+    v-model="reconcileVisible"
+    :title="t('ai_workflow.ig_domainReconcile')"
+    width="640px"
+    append-to-body
+  >
+    <el-alert
+      :type="reconcileData.issue_count ? 'warning' : 'success'"
+      :closable="false"
+      show-icon
+      :title="
+        t('ai_workflow.ig_domainReconcileSummary', {
+          domains: reconcileData.total_domains || 0,
+          issues: reconcileData.issue_count || 0,
+        })
+      "
+    />
+    <el-table
+      :data="reconcileData.issues || []"
+      border
+      stripe
+      size="small"
+      max-height="360"
+      style="margin-top: 12px"
+    >
+      <el-table-column
+        prop="domain"
+        :label="t('ai_workflow.ig_govDomain')"
+        min-width="140"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        prop="table"
+        :label="t('ai_workflow.ig_tableName')"
+        min-width="200"
+        show-overflow-tooltip
+      />
+      <el-table-column :label="t('ai_workflow.ig_domainReconcileState')" width="120">
+        <template #default>
+          <el-tag size="small" type="warning">
+            {{ t("ai_workflow.ig_domainReconcileMissing") }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <template #empty>
+        <el-empty :image-size="60" :description="t('ai_workflow.ig_domainReconcileOk')" />
+      </template>
+    </el-table>
+    <template #footer>
+      <el-button @click="reconcileVisible = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+    </template>
+  </el-dialog>
+
   <!-- 策略「为什么」：解释某用户对该表/列的判定（命中策略 / 缺失属性 / 是否已施加改写） -->
   <el-dialog
     v-model="explainVisible"
@@ -1616,6 +1677,7 @@ import {
   getActionList,
   getActionLogs,
   getGovernanceSummary,
+  domainReconcile,
   getDqRules,
   runDqRule,
   getQueryAssetColumns,
@@ -2180,6 +2242,24 @@ async function runDqRuleOnce() {
     ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_dqRuleFailed"));
   } finally {
     dqRuleRunning.value = false;
+  }
+}
+
+// 数据域对账：域里引用的表是否都已登记（系统库 + 各业务源已同步 schema）
+const reconcileVisible = ref(false);
+const reconcileLoading = ref(false);
+const reconcileData = ref<any>({ total_domains: 0, issue_count: 0, issues: [] });
+
+async function runReconcile() {
+  reconcileLoading.value = true;
+  try {
+    const r: any = await domainReconcile();
+    reconcileData.value = r.data?.data || { total_domains: 0, issue_count: 0, issues: [] };
+    reconcileVisible.value = true;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_domainReconcileFailed"));
+  } finally {
+    reconcileLoading.value = false;
   }
 }
 
