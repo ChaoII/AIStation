@@ -828,3 +828,13 @@ export function explainAccess(params: { user_id: number; table: string; column?:
 export function getAccessLogs(limit = 100) {
   return request({ url: `${API_PATH}/access/logs`, method: "get", params: { limit } });
 }
+
+/** 召回探针：某问题会选中哪些表（语义层调优用） */
+export function recallProbe(question: string) {
+  return request({ url: `${API_PATH}/recall/probe`, method: "get", params: { question } });
+}
+
+/** 重建语义召回单元（改了资产/术语/指标后手动刷新） */
+export function rebuildRecall() {
+  return request({ url: `${API_PATH}/recall/rebuild`, method: "post" });
+}

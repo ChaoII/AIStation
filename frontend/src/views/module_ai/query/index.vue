@@ -406,7 +406,7 @@
             {{ t("ai_logs.correspondingQuestion", { q: r.question }) }}
           </div>
         </div>
-        <el-empty v-if="!visibleGroups.length" :image-size="56" description="没有匹配的配置项" />
+        <el-empty v-if="!reportSuggestList.length" :image-size="56" description="暂无可选报表" />
       </div>
       <template #footer>
         <el-button @click="reportSuggestVisible = false">{{ t("ai_logs.skipQa") }}</el-button>
@@ -547,6 +547,14 @@
           <el-checkbox v-model="showChanged" size="small" class="q-set__changed-only">
             {{ t("ai_logs.settingChangedOnly") }}
           </el-checkbox>
+          <el-button
+            size="small"
+            class="q-set__probe"
+            style="margin-left: auto"
+            @click="probeVisible = true"
+          >
+            召回探针
+          </el-button>
         </div>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
           <div class="q-set__group-title" @click="toggleGroup(g.name)">
@@ -614,6 +622,7 @@
             </div>
           </div>
         </div>
+        <el-empty v-if="!visibleGroups.length" :image-size="56" description="没有匹配的配置项" />
       </div>
       <template #footer>
         <el-button class="q-set__reset-all" @click="resetAll">
@@ -623,6 +632,37 @@
         <el-button type="primary" :loading="setSaving" @click="saveSettings">
           {{ t("ai_logs.save") }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 召回探针：语义召回到底选了哪些表（排查"答错表/漏表"用） -->
+    <el-dialog v-model="probeVisible" title="召回探针" width="640px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="输入一个问题，查看语义召回最终选中的表（四通道融合后的结果）"
+        class="q-fb-tip"
+      />
+      <div class="q-probe__bar">
+        <el-input
+          v-model="probeQuestion"
+          placeholder="例如：上个月入厂煤量总和"
+          clearable
+          @keyup.enter="runProbe"
+        />
+        <el-button type="primary" :loading="probeLoading" @click="runProbe">开始探测</el-button>
+      </div>
+      <div v-if="probeDone" class="q-probe__result">
+        <div class="q-probe__count">命中 {{ probeTables.length }} 张表</div>
+        <div class="q-probe__tags">
+          <el-tag v-for="t2 in probeTables" :key="t2" size="small" effect="plain">{{ t2 }}</el-tag>
+          <el-empty v-if="!probeTables.length" :image-size="48" description="没有召回任何表" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button :loading="probeRebuilding" @click="doRebuildRecall">重建召回单元</el-button>
+        <el-button @click="probeVisible = false">{{ t("ai_logs.cancel") }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -703,6 +743,8 @@ import {
   saveQueryReport,
   saveQuerySetting,
   streamQuery,
+  recallProbe,
+  rebuildRecall,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiQuery" });
@@ -1168,6 +1210,54 @@ const setLoading = ref(false);
 const setSaving = ref(false);
 const setLoaded = ref<Record<string, string>>({});
 const setForm = ref<Record<string, string>>({});
+
+// 召回探针：输入一个问题，看语义召回选中了哪些表（调语义层用），并支持重建召回单元
+const probeVisible = ref(false);
+const probeLoading = ref(false);
+const probeRebuilding = ref(false);
+const probeQuestion = ref("");
+const probeTables = ref<string[]>([]);
+const probeDone = ref(false);
+
+async function runProbe() {
+  const q = probeQuestion.value.trim();
+  if (!q) {
+    ElMessage.warning("请输入一个问题");
+    return;
+  }
+  probeLoading.value = true;
+  probeDone.value = false;
+  try {
+    const r: any = await recallProbe(q);
+    probeTables.value = r.data?.data?.final || [];
+    probeDone.value = true;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "召回探测失败");
+  } finally {
+    probeLoading.value = false;
+  }
+}
+
+async function doRebuildRecall() {
+  try {
+    await ElMessageBox.confirm(
+      "将按当前资产、术语与指标重建语义召回单元；重建期间召回可能短暂不完整。是否继续？",
+      "重建召回单元",
+      { type: "warning", confirmButtonText: "重建", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  probeRebuilding.value = true;
+  try {
+    await rebuildRecall();
+    ElMessage.success("召回单元已重建");
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "重建失败");
+  } finally {
+    probeRebuilding.value = false;
+  }
+}
 
 async function openSettings() {
   setVisible.value = true;
@@ -1767,6 +1857,24 @@ const visibleGroups = computed(() => {
 
 .q-set__changed-only {
   margin-right: 2px;
+}
+
+.q-probe__bar {
+  display: flex;
+  gap: 8px;
+}
+.q-probe__result {
+  margin-top: 12px;
+}
+.q-probe__count {
+  margin-bottom: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.q-probe__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .q-set__caret {
