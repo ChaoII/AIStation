@@ -137,6 +137,8 @@ export default {
   ig_govHealthAt: "Last at",
   ig_govHealthError: "Error",
   ig_govHealthNone: "No silent degradation recently",
+  ig_govLineageRebuild: "Rebuild lineage",
+  ig_govLineageDs: "Datasource",
   ig_saveTableInfo: "Save Table Info",
   ig_importAsObject: "Import as Ontology Object",
   ig_aliasPlaceholder: "e.g. Coal Purchase Settlement Master Table",

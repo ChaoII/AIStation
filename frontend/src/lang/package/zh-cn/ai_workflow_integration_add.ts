@@ -169,6 +169,8 @@ export default {
   ig_govHealthAt: "最近一次",
   ig_govHealthError: "错误",
   ig_govHealthNone: "最近没有静默降级",
+  ig_govLineageRebuild: "重算血缘",
+  ig_govLineageDs: "数据源",
   ig_saveTableInfo: "保存表信息",
   ig_importAsObject: "导入为本体对象",
   ig_aliasPlaceholder: "如：燃煤采购结算主表",

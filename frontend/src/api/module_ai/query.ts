@@ -843,3 +843,8 @@ export function rebuildRecall() {
 export function getDegradedStatus() {
   return request({ url: `${API_PATH}/system/degraded`, method: "get" });
 }
+
+/** 重算表级血缘（外键 / 视图 / 命名约定 / 使用记录四源） */
+export function rebuildLineage(datasource = "ds:4") {
+  return request({ url: `${API_PATH}/lineage/rebuild`, method: "post", params: { datasource } });
+}

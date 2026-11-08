@@ -707,6 +707,12 @@
       </el-tab-pane>
       <el-tab-pane :label="t('ai_workflow.ig_govLineage')" name="lineage" lazy>
         <div v-loading="lineageLoading" class="gp-lineage">
+          <div class="gp-lineage__toolbar">
+            <span class="gp-lineage__ds">{{ t("ai_workflow.ig_govLineageDs") }}：ds:4</span>
+            <el-button size="small" :loading="lineageRebuilding" @click="rebuildLineage">
+              {{ t("ai_workflow.ig_govLineageRebuild") }}
+            </el-button>
+          </div>
           <el-row v-if="lineage" :gutter="12" class="gp-lineage__stats">
             <el-col :span="8">
               <el-statistic
@@ -1489,6 +1495,7 @@ import {
   explainAccess,
   getAccessLogs,
   getDegradedStatus,
+  rebuildLineage as rebuildLineageApi,
 } from "@/api/module_ai/query";
 import { UserAPI } from "@/api/module_system/user";
 
@@ -1678,6 +1685,35 @@ async function loadLineage() {
     lineage.value = null;
   } finally {
     lineageLoading.value = false;
+  }
+}
+
+// 重算血缘：外键 / 视图 / 命名约定 / 使用记录四源；耗时较长，走二次确认
+const lineageRebuilding = ref(false);
+async function rebuildLineage() {
+  try {
+    await ElMessageBox.confirm(
+      "将按外键、视图、命名约定与使用记录重算 ds:4 的表级/列级血缘，覆盖现有血缘边。是否继续？",
+      "重算血缘",
+      { type: "warning", confirmButtonText: "重算", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  lineageRebuilding.value = true;
+  try {
+    const r: any = await rebuildLineageApi("ds:4");
+    const counts = r.data?.data?.counts || {};
+    ElMessage.success(
+      `血缘已重算：${Object.entries(counts)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" ")}`
+    );
+    await loadLineage();
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "重算失败");
+  } finally {
+    lineageRebuilding.value = false;
   }
 }
 const g = ref<any>({ overview: {} });
@@ -2189,6 +2225,16 @@ onMounted(() => {
 <style lang="scss">
 /* el-row 的 gutter 会加负边距，在 overflow:auto 的页签容器里会顶出**横向滚动条**
    （项目里记过这个坑）。这里改用 flex + gap，并把 col 的内边距清掉。 */
+.gp-lineage__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.gp-lineage__ds {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
 .gp-lineage__stats {
   display: flex;
   gap: 12px;
