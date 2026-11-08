@@ -31,6 +31,8 @@ MODULE_NAMES = (
     "ontbridge_ops",
     "seed_ops",
     "autopilot_ops",
+    "answer_ops",
+    "rewrite_ops",
     "service",
     "ask_ops",
     "actions_ops",
