@@ -84,7 +84,12 @@ class _FakeDB:
 def _install(monkeypatch, tables, columns):
     """把 DB / 画像 / LLM 全部打桩，返回假会话供断言。"""
     session = _FakeSession(tables, columns)
+    # 2026-11-08：资产读写已拆到 assets_ops，两个模块各持一份 async_db_session
+    # 引用，只 patch 一处会让被测代码落到真库（表现为关系表不存在）。
+    from app.plugin.module_ai.query import assets_ops as qassets
+
     monkeypatch.setattr(qservice, "async_db_session", _FakeDB(session))
+    monkeypatch.setattr(qassets, "async_db_session", _FakeDB(session))
 
     async def _profile(tname, colnames):
         return {"table": tname, "rows": 1,
