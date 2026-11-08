@@ -19,6 +19,7 @@ MODULE_NAMES = (
     "metric_rules",
     "degraded",
     "datasource_ops",
+    "session_ops",
     "service",
     "ask_ops",
     "actions_ops",
