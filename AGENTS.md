@@ -124,7 +124,7 @@ uv run python scripts/query_session_cleanup.py --apply     # 软删：评测会�
   （backfill 生成）。只删前者，覆盖率不会降（实测 566 仍全开）。
 - 收窄工具：`scripts/query_policy_narrow.py --dry-run|--apply [--user ID]`，
   按「有域用域、无域用 ABAC、两者都无则不动」计算保留集。
-- **`service.py` 拆分（2026-11-08）**：`service.py` 从 11,041 行降到 7,226 行，
+- **`service.py` 拆分（2026-11-08）**：`service.py` 从 11,041 行降到 6,773 行，
   已拆出 `degraded.py`（降级计数）、`actions_ops.py`（动作/写回/审批）、`assets_ops.py`
   （资产读写 + 敏感扫描）、`metrics_ops.py`（指标/术语/建模）、`ontology_ops.py`（概念/图谱/对象解析）、
   `propositions_ops.py`（FDE 命题 + 影子校验）、`execute_ops.py`（取数收口 `_execute_one`）、
@@ -132,7 +132,8 @@ uv run python scripts/query_session_cleanup.py --apply     # 软删：评测会�
   `slowpath_ops.py`（`_slow_path`）、`ask_ops.py`（`ask` / `ask_stream`）、
   `sqlguard.py`（SQL 校验）、`sqlcache.py`（SQL/检索缓存逻辑）、`question_rules.py`（时间/列举/全量判断）、
   `metric_rules.py`（指标匹配/快路径阻断/参数构造/样例检索）、`settings_ops.py`（设置/生效值/_cfg*）、
-  `datasource_ops.py`（数据源 CRUD + 导入本体）、`session_ops.py`（会话/消息/反馈）。`AiQueryService` 改为继承这些
+  `datasource_ops.py`（数据源 CRUD + 导入本体）、`session_ops.py`（会话/消息/反馈）、
+  `report_ops.py`（报表建议/行业模板）、`dq_ops.py`（数据质量）。`AiQueryService` 改为继承这些
   mixin，`service.py` 保留**同名再导出**，全仓调用点与测试 monkeypatch 零改动。
   ⚠️ 两条踩过的坑：① 搬移脚本按缩进切片时，**不要把模块级常量（`_SYSTEM_METRICS` 等）一起切走**；
   ② mixin 里 `global _SCHEMA_CACHE` 只会建本模块的新变量，必须 `from . import service as _svc`
