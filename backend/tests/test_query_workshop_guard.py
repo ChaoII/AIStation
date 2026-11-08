@@ -119,7 +119,12 @@ def _patch(monkeypatch, allowed=("ai_models",), db=None):
         return allow
 
     monkeypatch.setattr(S.AiQueryService, "_allowed_for_user", staticmethod(_allowed))
-    monkeypatch.setattr(S, "async_db_session", db if db is not None else _no_db)
+    fake = db if db is not None else _no_db
+    # 2026-11-08：workshop_* 已拆到 workspace_ops，两个模块各持一份 async_db_session 引用
+    from app.plugin.module_ai.query import workspace_ops as qws
+
+    for mod in (S, qws):
+        monkeypatch.setattr(mod, "async_db_session", fake)
 
 
 # ===========================================================================
