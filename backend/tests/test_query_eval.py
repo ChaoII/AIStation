@@ -599,8 +599,9 @@ def test_decomposed_planning_is_prompt_only_two_stage_is_the_real_one():
 
     root = pathlib.Path(__file__).resolve().parents[1]
     query_dir = root / "app" / "plugin" / "module_ai" / "query"
+    # 2026-11-08 拆分：设置默认值在 settings_ops.py，真分解调用点在 nl2sql_ops.py
     src = (query_dir / "service.py").read_text(encoding="utf-8")
-    # 2026-11-08：_nl2sql 已拆到 nl2sql_ops.py，真分解的调用点在那里
+    src += (query_dir / "settings_ops.py").read_text(encoding="utf-8")
     nlsrc = (query_dir / "nl2sql_ops.py").read_text(encoding="utf-8")
 
     # 1) 真分解（plan 模块）只允许挂在 two_stage_planning 分支下

@@ -12,6 +12,12 @@ from __future__ import annotations
 import inspect
 
 MODULE_NAMES = (
+    "settings_ops",
+    "sqlguard",
+    "sqlcache",
+    "question_rules",
+    "metric_rules",
+    "degraded",
     "service",
     "ask_ops",
     "actions_ops",

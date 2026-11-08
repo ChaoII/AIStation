@@ -34,7 +34,7 @@ from app.core.exceptions import CustomException
 QUERY_DIR = Path(__file__).resolve().parents[1] / "app" / "plugin" / "module_ai" / "query"
 
 
-def _read_keys(src_file: Path) -> set[str]:
+def _read_keys(src_file: Path, include_cfg_get: bool = False) -> set[str]:
     """扫出 `_cfg_bool/_cfg_int/...` 与 `cfg.get("x")` 里出现的设置 key。"""
     tree = ast.parse(open(src_file, encoding="utf-8").read())
     keys: set[str] = set()
@@ -48,7 +48,7 @@ def _read_keys(src_file: Path) -> set[str]:
                 a = node.args[1]
                 if isinstance(a, ast.Constant) and isinstance(a.value, str):
                     keys.add(a.value)
-        elif name == "get" and isinstance(fn, ast.Attribute):
+        elif include_cfg_get and name == "get" and isinstance(fn, ast.Attribute):
             # cfg.get("x") / config.get("x")
             if getattr(fn.value, "id", "") in ("cfg", "config") and node.args:
                 a = node.args[0]
@@ -57,13 +57,21 @@ def _read_keys(src_file: Path) -> set[str]:
     return keys
 
 
-def _default_keys(src_file: Path) -> set[str]:
-    tree = ast.parse(open(src_file, encoding="utf-8").read())
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "defaults":
-            return {k.value for k in node.value.keys
-                    if isinstance(k, ast.Constant) and isinstance(k.value, str)}
-    raise AssertionError("service.py 里找不到 get_settings() 的 defaults 字典")
+#: 问数包下的全部源码（2026-11 拆分后，设置/规则分散到多个模块）
+ALL_SRC = sorted(QUERY_DIR.glob("*.py"))
+
+
+def _default_keys() -> set[str]:
+    """全包里所有 `defaults = {...}` 字面量的 key（拆分前后口径一致）。"""
+    keys: set[str] = set()
+    for src_file in ALL_SRC:
+        tree = ast.parse(open(src_file, encoding="utf-8").read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "defaults":
+                keys |= {k.value for k in node.value.keys
+                         if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+    assert keys, "query 包里找不到 get_settings() 的 defaults 字典"
+    return keys
 
 
 def test_every_read_setting_key_is_declared_in_defaults():
@@ -72,11 +80,11 @@ def test_every_read_setting_key_is_declared_in_defaults():
     否则：新库上「设置弹窗看不到这个键」（弹窗按 get_settings 的返回渲染），
     用户想改只能自己去 UPDATE 数据库 —— 我上一轮的三个开关就是这样。
     """
-    service = QUERY_DIR / "service.py"
-    declared = _default_keys(service)
-    read = _read_keys(service)
-    for extra in ("keepalive.py", "eval_runner.py"):
-        read |= _read_keys(QUERY_DIR / extra)
+    declared = _default_keys()
+    read: set[str] = set()
+    cfg_objects = {"service.py", "settings_ops.py"}
+    for src_file in ALL_SRC:
+        read |= _read_keys(src_file, include_cfg_get=src_file.name in cfg_objects)
 
     missing = sorted(read - declared)
     assert not missing, f"这些 key 有代码在读，但默认值表里没有：{missing}"
@@ -88,7 +96,7 @@ def test_prune_and_literal_fix_are_visible_and_default_on():
     `schema_column_prune_enabled` / `literal_fix_enabled` 是 A/B 的产物，
     默认开；一旦不进默认值表，界面上就没有回退入口。
     """
-    declared = _default_keys(QUERY_DIR / "service.py")
+    declared = _default_keys()
     assert "schema_column_prune_enabled" in declared
     assert "literal_fix_enabled" in declared
 
@@ -204,7 +212,7 @@ def test_ctx_cache_signature_covers_all_prompt_affecting_keys():
     """
     from app.plugin.module_ai.query.service import _CTX_CFG_KEYS
 
-    declared = _default_keys(QUERY_DIR / "service.py")
+    declared = _default_keys()
     missing = [k for k in _CTX_CFG_KEYS if k not in declared]
     assert not missing, f"指纹里的 key 不在默认值表（拼错就会静默失效）：{missing}"
 
@@ -308,7 +316,7 @@ def test_softdelete_rewrite_hook_and_setting_exist():
 
     from app.plugin.module_ai.query.service import AiQueryService as S
 
-    assert "sql_softdelete_rewrite_enabled" in _default_keys(QUERY_DIR / "service.py")
+    assert "sql_softdelete_rewrite_enabled" in _default_keys()
     src = inspect.getsource(S._execute_one)
     assert "_apply_softdelete_policy" in src
     assert "sql_softdelete_rewrite_enabled" in src
@@ -339,4 +347,4 @@ def test_lineage_switch_declared_and_default_off():
     from app.plugin.module_ai.query.service import AiQueryService as S
 
     assert S._cfg_bool({}, "lineage_enabled", False) is False
-    assert "lineage_enabled" in _default_keys(QUERY_DIR / "service.py")
+    assert "lineage_enabled" in _default_keys()
