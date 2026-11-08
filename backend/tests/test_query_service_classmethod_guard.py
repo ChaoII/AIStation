@@ -26,6 +26,22 @@ _ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize("rel", TARGETS)
+def test_no_cross_module_global_state(rel: str) -> None:
+    """mixin 里不得用 ``global`` 改 service 的进程级缓存。
+
+    搬进 mixin 后 ``global _SCHEMA_CACHE`` 只会创建**本模块**的新变量：
+    service 的缓存永远不失效，表现为「改完资产/生成完指标，前端还是旧数据」。
+    正确写法是 ``from . import service as _svc; _svc._SCHEMA_CACHE = None``。
+    """
+    src = io.open(_ROOT / rel, encoding="utf-8").read()
+    # service.py 是这些缓存的**主人**，它用 global 是正确的；只有搬出去的模块不行
+    if not rel.endswith("/service.py"):
+        for cache in ("_SCHEMA_CACHE", "_SEMANTIC_INDEX", "_ASSET_TMETA", "_SETTINGS_CACHE"):
+            assert f"global {cache}" not in src, f"{rel} 用 global 改 {cache}（跨模块无效）"
+            assert f"global _SCHEMA_CACHE, {cache}" not in src, rel
+
+
+@pytest.mark.parametrize("rel", TARGETS)
 def test_class_methods_keep_decorator(rel: str) -> None:
     lines = io.open(_ROOT / rel, encoding="utf-8").read().split("\n")
     missing: list[str] = []

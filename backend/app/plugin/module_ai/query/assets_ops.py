@@ -348,7 +348,6 @@ class AssetsOps:
 
     @classmethod
     async def upsert_asset(cls, data, auth) -> dict:
-        global _SCHEMA_CACHE, _SEMANTIC_INDEX, _ASSET_TMETA
         async with async_db_session.begin() as db:
             from sqlalchemy import select
 
@@ -388,9 +387,11 @@ class AssetsOps:
             "object_key_col": data.object_key_col, "object_name_col": data.object_name_col,
             "object_icon": data.object_icon,
         }, operator=str(getattr(getattr(auth, "user", None), "id", "")))
-        _SCHEMA_CACHE = None
-        _SEMANTIC_INDEX = None
-        _ASSET_TMETA = None
+        from . import service as _svc
+
+        _svc._SCHEMA_CACHE = None
+        _svc._SEMANTIC_INDEX = None
+        _svc._ASSET_TMETA = None
         return {"table_name": data.table_name, "included": data.included}
 
     @classmethod
@@ -462,10 +463,13 @@ class AssetsOps:
                 saved.append(table)
             await db.flush()
 
-        global _SCHEMA_CACHE, _SEMANTIC_INDEX, _ASSET_TMETA
-        _SCHEMA_CACHE = None
-        _SEMANTIC_INDEX = None
-        _ASSET_TMETA = None
+        # 三个缓存都是 **service 模块** 的进程级全局：搬进 mixin 后必须显式回写，
+        # 否则只是在本模块建了新变量，问数侧继续用旧缓存（改完资产不生效）。
+        from . import service as _svc
+
+        _svc._SCHEMA_CACHE = None
+        _svc._SEMANTIC_INDEX = None
+        _svc._ASSET_TMETA = None
         return {"ok": True, "saved": len(saved), "tables": saved,
                 "skipped": skipped, "total": len(items)}
 
@@ -525,7 +529,6 @@ class AssetsOps:
 
     @classmethod
     async def upsert_asset_column(cls, data, auth) -> dict:
-        global _SEMANTIC_INDEX, _SCHEMA_CACHE
         async with async_db_session.begin() as db:
             from sqlalchemy import select
 
@@ -560,6 +563,8 @@ class AssetsOps:
                                                enum=enum,
                                                created_id=auth.user.id, updated_id=auth.user.id))
             await db.flush()
-        _SEMANTIC_INDEX = None
-        _SCHEMA_CACHE = None
+        from . import service as _svc
+
+        _svc._SEMANTIC_INDEX = None
+        _svc._SCHEMA_CACHE = None
         return {"table_name": data.table_name, "column_name": data.column_name}

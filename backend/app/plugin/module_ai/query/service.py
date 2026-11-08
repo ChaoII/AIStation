@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 # 全部旧调用点（含测试 monkeypatch）继续可用。
 from .actions_ops import ActionsOps
 from .assets_ops import AssetsOps
+from .metrics_ops import MetricsOps
 from .assets_ops import ensure_marking_columns as _ensure_marking_columns
 from .degraded import degrade as _degrade  # noqa: F401
 from .degraded import degraded_status, reset_degraded  # noqa: F401
@@ -681,26 +682,6 @@ def _auth_scope(auth) -> str:
     return f"{uid}|{roles}"
 
 
-def _to_metric_dict(m: AiQueryMetricModel) -> dict:
-    # 绑定型指标（object_code + agg_fn）：不展示占位 SQL，改为展示「绑定对象/属性/聚合」口径。
-    obj_code = getattr(m, "object_code", "") or ""
-    prop_code = getattr(m, "property_code", "") or ""
-    agg_fn = getattr(m, "agg_fn", "") or ""
-    sql_template = m.sql_template
-    if obj_code and agg_fn and (not sql_template or "SELECT 1" in (sql_template or "")):
-        sql_template = f"绑定对象:{obj_code} 属性:{prop_code or '(整对象)'} 聚合:{agg_fn}"
-    return {
-        "id": m.id, "datasource": m.datasource, "key": m.key, "name": m.name,
-        "description": m.description or "", "sql_template": sql_template,
-        "params": m.params or [], "dimensions": m.dimensions or [], "agg": m.agg,
-        "unit": m.unit or "", "permission_tag": m.permission_tag or "",
-        "enabled": m.enabled, "sort": m.sort or 0, "cache_ttl": m.cache_ttl or 0,
-        # 指标 ↔ 本体绑定（S1）
-        "object_code": obj_code,
-        "property_code": prop_code,
-        "agg_fn": agg_fn,
-        "bound_dimensions": getattr(m, "bound_dimensions", None) or [],
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -1972,7 +1953,7 @@ _ONT_IMPORT_EXCLUDE: set[str] = {
 # ---------------------------------------------------------------------------
 # 语义层 CRUD + 种子
 # ---------------------------------------------------------------------------
-class AiQueryService(ActionsOps, AssetsOps):
+class AiQueryService(ActionsOps, AssetsOps, MetricsOps):
 
     @classmethod
     async def count_writeback_actions(cls) -> int:
@@ -2086,207 +2067,10 @@ class AiQueryService(ActionsOps, AssetsOps):
         _SEED_DONE = True
 
     # ---- 指标 ----
-    @classmethod
-    async def list_metrics(cls, datasource: str | None = None) -> list[dict]:
-        await cls.ensure_system_seed()
-        datasource = await _norm_datasource(datasource)
-        async with async_db_session() as db:
-            from sqlalchemy import select
 
-            q = select(AiQueryMetricModel).where(AiQueryMetricModel.is_deleted.is_(False))
-            if datasource:
-                q = q.where(AiQueryMetricModel.datasource == datasource)
-            q = q.order_by(AiQueryMetricModel.datasource, AiQueryMetricModel.sort, AiQueryMetricModel.id)
-            rows = (await db.execute(q)).scalars().all()
-            return [_to_metric_dict(m) for m in rows]
 
-    @classmethod
-    async def upsert_metric(cls, data, auth) -> dict:
-        async with async_db_session.begin() as db:
-            from sqlalchemy import select
 
-            existing = (
-                await db.execute(
-                    select(AiQueryMetricModel).where(
-                        AiQueryMetricModel.datasource == data.datasource,
-                        AiQueryMetricModel.key == data.key,
-                        AiQueryMetricModel.is_deleted.is_(False),
-                    )
-                )
-            ).scalar_one_or_none()
-            if existing:
-                for k in ("name", "description", "sql_template", "params", "dimensions",
-                          "agg", "unit", "permission_tag", "enabled", "sort", "cache_ttl",
-                          "object_code", "property_code", "agg_fn", "bound_dimensions"):
-                    setattr(existing, k, getattr(data, k))
-                existing.updated_id = auth.user.id
-                obj = existing
-            else:
-                obj = AiQueryMetricModel(
-                    datasource=data.datasource, key=data.key, name=data.name,
-                    description=data.description, sql_template=data.sql_template,
-                    params=data.params, dimensions=data.dimensions, agg=data.agg,
-                    unit=data.unit, permission_tag=data.permission_tag,
-                    enabled=data.enabled, sort=data.sort, cache_ttl=data.cache_ttl,
-                    object_code=data.object_code, property_code=data.property_code,
-                    agg_fn=data.agg_fn, bound_dimensions=data.bound_dimensions,
-                    created_id=auth.user.id, updated_id=auth.user.id,
-                )
-                db.add(obj)
-            await db.flush()
-            return _to_metric_dict(obj)
 
-    @classmethod
-    async def generate_modeling(cls, kind: str, datasource: str, auth,
-                                max_objects: int = 12, dry: bool = False,
-                                offset: int = 0) -> dict:
-        """触发大模型自动建模（``kind``：``metrics`` / ``annotate``），并失效语义缓存。
-
-        建模会**写指标/对象/属性** → 必须失效缓存，否则前端与问数看不到刚生成的内容
-        （`_SETTINGS_CACHE`/`_SEMANTIC_INDEX`/`_ASSET_TMETA` 均为进程内缓存）。
-        """
-        global _SETTINGS_CACHE, _SEMANTIC_INDEX, _ASSET_TMETA
-
-        from . import modeling as _m
-
-        datasource = await _norm_datasource(datasource)
-
-        if kind == "metrics":
-            out = await _m.generate_metrics(datasource, auth, max_objects=max_objects,
-                                            dry=dry, offset=offset)
-        elif kind == "annotate":
-            out = await _m.generate_annotations(datasource, auth, max_objects=max_objects,
-                                                offset=offset)
-        else:
-            raise CustomException(msg=f"未知建模类型：{kind}")
-        if not dry:
-            _SETTINGS_CACHE = None
-            _SEMANTIC_INDEX = None
-            _ASSET_TMETA = None
-        return out
-
-    @classmethod
-    async def promote_message_to_metric(cls, message_id: int, name: str, key: str, auth) -> dict:
-        """FDE 复用闭环：把一条已验证问答沉淀为「可复用指标」（确定性快路径）。
-
-        校验 SQL 合法后落为系统指标，并把该问题登记为术语（黑话→指标），
-        下次同类问题直接走快路径（100%、秒级），不再依赖 LLM 生成。
-        """
-        name = (name or "").strip()
-        key = (key or "").strip()
-        if not name or not key:
-            raise CustomException(msg="请提供指标名称(key)与显示名(name)")
-        if not re.fullmatch(r"[A-Za-z0-9_]+", key):
-            raise CustomException(msg="指标 key 仅允许字母/数字/下划线")
-        async with async_db_session.begin() as db:
-            from sqlalchemy import select as _sel
-
-            m = await db.get(AiQueryMessageModel, message_id)
-            if not m or not (m.sql or ""):
-                raise CustomException(msg="问答记录无效或缺少 SQL")
-            # 归属校验：message_id 只是自增主键，枚举即可命中他人问答。
-            # 先按 session_id 反查会话并复用统一归属校验，再谈"沉淀成指标"。
-            cls._ensure_session_owner(
-                await db.get(AiQuerySessionModel, m.session_id), auth)
-            try:
-                validate_sql(m.sql, await _system_allowed())
-            except CustomException as e:  # noqa: BLE001
-                raise CustomException(msg=f"该 SQL 无法作为指标：{e}") from e
-            existing = (
-                await db.execute(
-                    _sel(AiQueryMetricModel).where(
-                        AiQueryMetricModel.datasource == SYSTEM_DS,
-                        AiQueryMetricModel.key == key,
-                        AiQueryMetricModel.is_deleted.is_(False),
-                    )
-                )
-            ).scalar_one_or_none()
-            if existing:
-                existing.name = name
-                existing.sql_template = m.sql
-                existing.enabled = True
-                existing.updated_id = auth.user.id
-            else:
-                db.add(AiQueryMetricModel(
-                    datasource=SYSTEM_DS, key=key, name=name,
-                    description=f"由问答「{m.question[:40]}」沉淀", sql_template=m.sql,
-                    params=[], dimensions=[], agg="count", unit="",
-                    enabled=True, cache_ttl=60,
-                    created_id=auth.user.id, updated_id=auth.user.id,
-                ))
-            # 把问题登记为术语（黑话 → 指标）
-            term = (m.question or "").strip()[:128]
-            if term:
-                tex = (
-                    await db.execute(
-                        _sel(AiQueryDictionaryModel).where(
-                            AiQueryDictionaryModel.datasource == SYSTEM_DS,
-                            AiQueryDictionaryModel.term == term,
-                            AiQueryDictionaryModel.is_deleted.is_(False),
-                        )
-                    )
-                ).scalar_one_or_none()
-                if tex:
-                    tex.metric_key = key
-                else:
-                    db.add(AiQueryDictionaryModel(
-                        datasource=SYSTEM_DS, term=term, metric_key=key,
-                        field_path="", type="metric",
-                    ))
-            await db.flush()
-            return {"key": key, "name": name, "term": term}
-
-    # ---- 术语 ----
-    @classmethod
-    async def list_terms(cls, datasource: str | None = None) -> list[dict]:
-        datasource = await _norm_datasource(datasource)
-        async with async_db_session() as db:
-            from sqlalchemy import select
-
-            q = select(AiQueryDictionaryModel).where(AiQueryDictionaryModel.is_deleted.is_(False))
-            if datasource:
-                q = q.where(AiQueryDictionaryModel.datasource == datasource)
-            rows = (await db.execute(q)).scalars().all()
-            return [
-                {"id": t.id, "datasource": t.datasource, "term": t.term,
-                 "metric_key": t.metric_key or "", "field_path": t.field_path or "",
-                 "type": t.type}
-                for t in rows
-            ]
-
-    @classmethod
-    async def upsert_term(cls, data, auth) -> dict:
-        async with async_db_session.begin() as db:
-            from sqlalchemy import select
-
-            existing = (
-                await db.execute(
-                    select(AiQueryDictionaryModel).where(
-                        AiQueryDictionaryModel.datasource == data.datasource,
-                        AiQueryDictionaryModel.term == data.term,
-                        AiQueryDictionaryModel.is_deleted.is_(False),
-                    )
-                )
-            ).scalar_one_or_none()
-            if existing:
-                existing.metric_key = data.metric_key
-                existing.field_path = data.field_path
-                existing.type = data.type
-                existing.updated_id = auth.user.id
-                obj = existing
-            else:
-                obj = AiQueryDictionaryModel(
-                    datasource=data.datasource, term=data.term, metric_key=data.metric_key,
-                    field_path=data.field_path, type=data.type,
-                    created_id=auth.user.id, updated_id=auth.user.id,
-                )
-                db.add(obj)
-            await db.flush()
-            return {"id": obj.id, "datasource": obj.datasource, "term": obj.term,
-                    "metric_key": obj.metric_key or "", "field_path": obj.field_path or "",
-                    "type": obj.type}
-
-    # ---- 数据资产目录（表/字段筛选 + 中文描述维护）----
 
     @classmethod
     async def autopilot(cls) -> dict:
