@@ -818,3 +818,13 @@ export function savePolicy(data: any) {
 export function deletePolicies(ids: number[]) {
   return request({ url: `${API_PATH}/policy/delete`, method: "post", data: { ids } });
 }
+
+/** 解释某用户对表/列的访问判定（治理页「为什么」） */
+export function explainAccess(params: { user_id: number; table: string; column?: string }) {
+  return request({ url: `${API_PATH}/access/explain`, method: "get", params });
+}
+
+/** 访问审计（最近 N 条，新的在前） */
+export function getAccessLogs(limit = 100) {
+  return request({ url: `${API_PATH}/access/logs`, method: "get", params: { limit } });
+}

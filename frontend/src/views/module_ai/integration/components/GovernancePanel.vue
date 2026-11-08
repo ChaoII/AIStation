@@ -765,6 +765,9 @@
                   <el-option label="deny" value="deny" />
                   <el-option label="mask" value="mask" />
                 </el-select>
+                <el-button size="small" @click="openAudit()">
+                  {{ t("ai_workflow.ig_policyAudit") }}
+                </el-button>
                 <el-button type="primary" size="small" @click="openPolicy()">
                   {{ t("ai_workflow.ig_policyNew") }}
                 </el-button>
@@ -816,10 +819,13 @@
             <el-table-column :label="t('ai_workflow.ig_policyEnabled')" width="80">
               <template #default="{ row }">{{ row.enabled ? "✓" : "—" }}</template>
             </el-table-column>
-            <el-table-column :label="t('ai_workflow.ig_govOp')" width="120" fixed="right">
+            <el-table-column :label="t('ai_workflow.ig_govOp')" width="170" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="openPolicy(row)">
                   {{ t("ai_workflow.ig_edit") }}
+                </el-button>
+                <el-button link type="info" size="small" @click="openExplain(row)">
+                  {{ t("ai_workflow.ig_policyExplain") }}
                 </el-button>
                 <el-button link type="danger" size="small" @click="removePolicy(row)">
                   {{ t("ai_workflow.ig_delete") }}
@@ -1269,6 +1275,139 @@
       </el-button>
     </template>
   </el-dialog>
+
+  <!-- 策略「为什么」：解释某用户对该表/列的判定（命中策略 / 缺失属性 / 是否已施加改写） -->
+  <el-dialog
+    v-model="explainVisible"
+    :title="t('ai_workflow.ig_policyExplain')"
+    width="680px"
+    append-to-body
+  >
+    <el-form :model="explainForm" label-width="90px">
+      <el-form-item :label="t('ai_workflow.ig_policyExplainUser')">
+        <el-select v-model="explainForm.user_id" filterable style="width: 260px">
+          <el-option v-for="u in domainUsers" :key="u.id" :label="u.label" :value="u.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_policyResource')">
+        <el-input v-model="explainForm.table" style="width: 300px" />
+        <el-input
+          v-model="explainForm.column"
+          style="width: 200px; margin-left: 8px"
+          :placeholder="t('ai_workflow.ig_policyExplainColumn')"
+        />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" :loading="explainLoading" @click="runExplain()">
+          {{ t("ai_workflow.ig_policyExplainRun") }}
+        </el-button>
+      </el-form-item>
+    </el-form>
+
+    <template v-if="explainResult">
+      <el-alert
+        :type="explainResult.permit ? 'success' : 'error'"
+        :closable="false"
+        show-icon
+        :title="
+          explainResult.permit ? t('ai_workflow.ig_policyPermit') : t('ai_workflow.ig_policyDeny')
+        "
+        :description="explainResult.reason"
+      />
+      <el-descriptions :column="2" border size="small" style="margin-top: 12px">
+        <el-descriptions-item :label="t('ai_workflow.ig_policyEngine')">
+          {{ explainResult.mode }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_workflow.ig_policySuperuser')">
+          {{ explainResult.superuser ? "✓" : "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_workflow.ig_policyAttrsMissing')" :span="2">
+          {{ (explainResult.attrs_missing || []).join(", ") || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_workflow.ig_policyApplied')" :span="2">
+          {{ (explainResult.applied || []).length }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-table
+        :data="explainResult.matched || []"
+        border
+        stripe
+        size="small"
+        max-height="220"
+        style="margin-top: 8px"
+      >
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column
+          prop="name"
+          :label="t('ai_workflow.ig_policyName')"
+          min-width="140"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="effect" :label="t('ai_workflow.ig_policyEffect')" width="90" />
+        <el-table-column
+          prop="subject_kind"
+          :label="t('ai_workflow.ig_policySubject')"
+          width="110"
+        />
+        <el-table-column
+          prop="subject_value"
+          :label="t('ai_workflow.ig_policySubjectValue')"
+          min-width="110"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="priority" :label="t('ai_workflow.ig_policyPriority')" width="80" />
+        <template #empty>
+          <el-empty :image-size="60" :description="t('ai_workflow.ig_policyNoMatch')" />
+        </template>
+      </el-table>
+    </template>
+    <template #footer>
+      <el-button @click="explainVisible = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 访问审计：最近 100 条允许/拒绝记录 -->
+  <el-drawer
+    v-model="auditVisible"
+    :title="t('ai_workflow.ig_policyAudit')"
+    size="900px"
+    append-to-body
+  >
+    <el-table
+      v-loading="auditLoading"
+      :data="auditRows"
+      border
+      stripe
+      max-height="calc(100vh - 160px)"
+    >
+      <el-table-column
+        prop="created_time"
+        :label="t('ai_workflow.ig_policyAuditTime')"
+        width="180"
+      />
+      <el-table-column prop="user_id" :label="t('ai_workflow.ig_policyExplainUser')" width="90" />
+      <el-table-column prop="entry" :label="t('ai_workflow.ig_policyAuditEntry')" width="100" />
+      <el-table-column prop="datasource" :label="t('ai_workflow.ig_datasource')" width="110" />
+      <el-table-column :label="t('ai_workflow.ig_policyEffect')" width="90">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.decision === 'deny' ? 'danger' : 'success'">
+            {{ row.decision }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column
+        prop="reason"
+        :label="t('ai_workflow.ig_policyAuditReason')"
+        min-width="200"
+        show-overflow-tooltip
+      />
+      <el-table-column prop="sql_preview" label="SQL" min-width="240" show-overflow-tooltip />
+      <el-table-column prop="elapsed_ms" label="ms" width="80" />
+      <template #empty>
+        <el-empty :image-size="60" :description="t('ai_workflow.ig_govEmptyAll')" />
+      </template>
+    </el-table>
+  </el-drawer>
 </template>
 
 <script setup lang="ts">
@@ -1303,6 +1442,8 @@ import {
   getPolicyList,
   savePolicy,
   deletePolicies,
+  explainAccess,
+  getAccessLogs,
 } from "@/api/module_ai/query";
 import { UserAPI } from "@/api/module_system/user";
 
@@ -1417,6 +1558,66 @@ async function removePolicy(row: any) {
     await loadPolicies();
   } catch (e: any) {
     ElMessage.error(e?.data?.msg || e?.msg || "删除失败");
+  }
+}
+
+// 策略「为什么」：解释某用户对某张表/列的判定（命中策略、缺失属性、是否已施加改写）
+const explainVisible = ref(false);
+const explainLoading = ref(false);
+const explainForm = ref<any>({ user_id: undefined, table: "", column: "" });
+const explainResult = ref<any>(null);
+
+async function openExplain(row: any) {
+  explainForm.value = {
+    user_id: explainForm.value.user_id,
+    table: row?.resource_code || "",
+    column: "",
+  };
+  explainResult.value = null;
+  explainVisible.value = true;
+  if (!domainUsers.value.length) await loadDomainUsers();
+}
+
+async function runExplain() {
+  const f = explainForm.value;
+  if (!f.user_id) {
+    ElMessage.warning("请选择用户");
+    return;
+  }
+  if (!f.table) {
+    ElMessage.warning("请填写表/视图名");
+    return;
+  }
+  explainLoading.value = true;
+  try {
+    const r: any = await explainAccess({
+      user_id: f.user_id,
+      table: f.table,
+      column: f.column || undefined,
+    });
+    explainResult.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "解释失败");
+  } finally {
+    explainLoading.value = false;
+  }
+}
+
+// 访问审计（谁在什么时候被允许/拒绝）
+const auditVisible = ref(false);
+const auditLoading = ref(false);
+const auditRows = ref<any[]>([]);
+
+async function openAudit() {
+  auditVisible.value = true;
+  auditLoading.value = true;
+  try {
+    const r: any = await getAccessLogs(100);
+    auditRows.value = r.data?.data || [];
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "审计加载失败");
+  } finally {
+    auditLoading.value = false;
   }
 }
 

@@ -327,10 +327,16 @@ async def principal_for_user(user_id: int) -> tuple[Principal | None, str]:
     return await _with_domains(principal), ""
 
 
-def _matched_item(policy) -> dict:
-    """``matched`` 的元素：治理页展示"判定时看到了哪条策略"。"""
+def _matched_item(policy, names: dict[int, str] | None = None) -> dict:
+    """``matched`` 的元素：治理页展示"判定时看到了哪条策略"。
+
+    ``Policy`` 投影里**没有** ``name``（判定不需要），名字由管理视图一次性取回后
+    通过 ``names`` 带进来；取不到就留空，不影响判定展示。
+    """
+    names = names or {}
     return {
         "id": int(policy.id or 0),
+        "name": names.get(int(policy.id or 0), ""),
         "effect": policy.effect,
         "resource_kind": policy.resource_kind,
         "resource_code": policy.resource_code,
@@ -487,13 +493,21 @@ async def explain_access(
         decision = engine.decide_table(policies, principal, table)
 
     planned = [dict(item) for item in decision.applied]
+    # 名字只在治理视图里有（Policy 投影无 name），一次取全量映射给展示用
+    try:
+        names = {
+            int(r["id"]): (r.get("name") or "")
+            for r in await repo.list_policy_rows()
+        }
+    except Exception:  # noqa: BLE001 - 名字取不到不影响判定结果
+        names = {}
     return SuccessResponse(
         data={
             "permit": bool(decision.permit),
             "reason": decision.reason,
             "policy_ids": [int(i) for i in decision.policy_ids],
             "matched": [
-                _matched_item(p)
+                _matched_item(p, names)
                 for p in engine.matched_policies(policies, principal, table)
             ],
             "attrs_missing": list(engine.missing_attributes(policies, principal, table)),
