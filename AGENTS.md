@@ -124,7 +124,7 @@ uv run python scripts/query_session_cleanup.py --apply     # 软删：评测会�
   （backfill 生成）。只删前者，覆盖率不会降（实测 566 仍全开）。
 - 收窄工具：`scripts/query_policy_narrow.py --dry-run|--apply [--user ID]`，
   按「有域用域、无域用 ABAC、两者都无则不动」计算保留集。
-- **`service.py` 拆分（2026-11-08）**：`service.py` 从 11,041 行降到 5,573 行（约一半）
+- **`service.py` 拆分（2026-11-08）**：`service.py` 从 11,041 行降到 5,078 行（不足一半）
   已拆出 `degraded.py`（降级计数）、`actions_ops.py`（动作/写回/审批）、`assets_ops.py`
   （资产读写 + 敏感扫描）、`metrics_ops.py`（指标/术语/建模）、`ontology_ops.py`（概念/图谱/对象解析）、
   `propositions_ops.py`（FDE 命题 + 影子校验）、`execute_ops.py`（取数收口 `_execute_one`）、
@@ -135,7 +135,8 @@ uv run python scripts/query_session_cleanup.py --apply     # 软删：评测会�
   `datasource_ops.py`（数据源 CRUD + 导入本体）、`session_ops.py`（会话/消息/反馈）、
   `report_ops.py`（报表建议/行业模板）、`dq_ops.py`（数据质量）、
   `pipeline_ops.py`（数据管道）、`version_ops.py`（资产版本/发布/回滚）、
-  `recall_ops.py`（语义召回四通道 + RRF）、`routing_ops.py`（指标快路径/对象路径判定）。`AiQueryService` 改为继承这些
+  `recall_ops.py`（语义召回四通道 + RRF）、`routing_ops.py`（指标快路径/对象路径判定）、
+  `schema_ops.py`（系统/外部库 schema、取值、枚举提示）、`llm_ops.py`（结构化输出/IR/计划/画像/运行时）。`AiQueryService` 改为继承这些
   mixin，`service.py` 保留**同名再导出**，全仓调用点与测试 monkeypatch 零改动。
   ⚠️ 两条踩过的坑：① 搬移脚本按缩进切片时，**不要把模块级常量（`_SYSTEM_METRICS` 等）一起切走**；
   ② mixin 里 `global _SCHEMA_CACHE` 只会建本模块的新变量，必须 `from . import service as _svc`
