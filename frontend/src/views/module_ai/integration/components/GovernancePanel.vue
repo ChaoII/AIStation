@@ -738,6 +738,75 @@
           </template>
         </div>
       </el-tab-pane>
+
+      <el-tab-pane :label="t('ai_workflow.ig_policyTab')" name="policy">
+        <el-card shadow="never">
+          <template #header>
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <span>{{ t("ai_workflow.ig_policyTitle") }}</span>
+              <el-button type="primary" size="small" @click="openPolicy()">
+                {{ t("ai_workflow.ig_policyNew") }}
+              </el-button>
+            </div>
+          </template>
+          <el-table v-loading="policyLoading" :data="policyRows" border stripe max-height="560">
+            <el-table-column
+              prop="name"
+              :label="t('ai_workflow.ig_policyName')"
+              min-width="140"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('ai_workflow.ig_policyEffect')" width="100">
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="
+                    row.effect === 'deny' ? 'danger' : row.effect === 'mask' ? 'warning' : 'success'
+                  "
+                >
+                  {{ row.effect }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="resource_code"
+              :label="t('ai_workflow.ig_policyResource')"
+              min-width="160"
+              show-overflow-tooltip
+            />
+            <el-table-column :label="t('ai_workflow.ig_policySubject')" min-width="140">
+              <template #default="{ row }">
+                {{ row.subject_kind }}
+                <span v-if="row.subject_value">:{{ row.subject_value }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="condition"
+              :label="t('ai_workflow.ig_policyCondition')"
+              min-width="160"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              prop="priority"
+              :label="t('ai_workflow.ig_policyPriority')"
+              width="80"
+            />
+            <el-table-column :label="t('ai_workflow.ig_policyEnabled')" width="80">
+              <template #default="{ row }">{{ row.enabled ? "✓" : "—" }}</template>
+            </el-table-column>
+            <el-table-column :label="t('ai_workflow.ig_govOp')" width="120" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openPolicy(row)">
+                  {{ t("ai_workflow.ig_edit") }}
+                </el-button>
+                <el-button link type="danger" size="small" @click="removePolicy(row)">
+                  {{ t("ai_workflow.ig_delete") }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 权限策略编辑 -->
@@ -1105,6 +1174,79 @@
       </template>
     </el-dialog>
   </div>
+
+  <el-dialog
+    v-model="policyVisible"
+    :title="policyForm.id ? t('ai_workflow.ig_policyEdit') : t('ai_workflow.ig_policyNew')"
+    width="620px"
+    append-to-body
+  >
+    <el-form :model="policyForm" label-width="96px">
+      <el-form-item :label="t('ai_workflow.ig_policyName')">
+        <el-input v-model="policyForm.name" maxlength="120" />
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_policyEffect')">
+        <el-select v-model="policyForm.effect" style="width: 160px">
+          <el-option label="allow" value="allow" />
+          <el-option label="deny" value="deny" />
+          <el-option label="mask" value="mask" />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_policyResource')">
+        <el-select v-model="policyForm.resource_kind" style="width: 120px">
+          <el-option label="table" value="table" />
+          <el-option label="view" value="view" />
+        </el-select>
+        <el-input
+          v-model="policyForm.resource_code"
+          style="width: 260px; margin-left: 8px"
+          :placeholder="t('ai_workflow.ig_policyResourcePh')"
+        />
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_policySubject')">
+        <el-select v-model="policyForm.subject_kind" style="width: 140px">
+          <el-option label="everyone" value="everyone" />
+          <el-option label="role" value="role" />
+          <el-option label="user" value="user" />
+          <el-option label="attr" value="attr" />
+          <el-option label="domain" value="domain" />
+        </el-select>
+        <el-input
+          v-model="policyForm.subject_value"
+          style="width: 240px; margin-left: 8px"
+          :placeholder="t('ai_workflow.ig_policySubjectPh')"
+        />
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_policyCondition')">
+        <el-input
+          v-model="policyForm.condition"
+          type="textarea"
+          :rows="2"
+          placeholder="dept_id = $attr.dept_id（仅 allow）"
+        />
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_policyColumns')">
+        <el-input v-model="policyForm.columnsText" placeholder="逗号分隔；空 = 整表" />
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_policyMask')">
+        <el-input v-model="policyForm.mask_expr" placeholder="left(phone,3)（仅 mask）" />
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_policyPriority')">
+        <el-input-number v-model="policyForm.priority" :min="1" :max="10000" />
+        <el-switch
+          v-model="policyForm.enabled"
+          style="margin-left: 16px"
+          :active-text="t('ai_workflow.ig_policyEnabled')"
+        />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="policyVisible = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+      <el-button type="primary" :loading="policySaving" @click="savePolicyForm">
+        {{ t("ai_workflow.ig_save") }}
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -1136,6 +1278,9 @@ import {
   getActionList,
   getActionLogs,
   getGovernanceSummary,
+  getPolicyList,
+  savePolicy,
+  deletePolicies,
 } from "@/api/module_ai/query";
 import { UserAPI } from "@/api/module_system/user";
 
@@ -1144,6 +1289,100 @@ defineOptions({ name: "GovernancePanel" });
 const { t } = useI18n();
 
 const tab = ref("overview");
+
+const policyRows = ref<any[]>([]);
+const policyLoading = ref(false);
+const policyVisible = ref(false);
+const policySaving = ref(false);
+const policyForm = ref<any>({
+  id: null,
+  name: "",
+  effect: "allow",
+  resource_kind: "table",
+  resource_code: "",
+  subject_kind: "everyone",
+  subject_value: "",
+  condition: "",
+  columnsText: "",
+  mask_expr: "",
+  priority: 100,
+  enabled: true,
+});
+
+async function loadPolicies() {
+  policyLoading.value = true;
+  try {
+    const r: any = await getPolicyList();
+    policyRows.value = r.data?.data || [];
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "策略加载失败");
+  } finally {
+    policyLoading.value = false;
+  }
+}
+
+function openPolicy(row?: any) {
+  policyForm.value = row
+    ? { ...row, columnsText: (row.columns || []).join(",") }
+    : {
+        id: null,
+        name: "",
+        effect: "allow",
+        resource_kind: "table",
+        resource_code: "",
+        subject_kind: "everyone",
+        subject_value: "",
+        condition: "",
+        columnsText: "",
+        mask_expr: "",
+        priority: 100,
+        enabled: true,
+      };
+  policyVisible.value = true;
+}
+
+async function savePolicyForm() {
+  if (!policyForm.value.resource_code) {
+    ElMessage.warning("请填写表/视图名");
+    return;
+  }
+  policySaving.value = true;
+  try {
+    const payload = { ...policyForm.value };
+    payload.columns = String(payload.columnsText || "")
+      .split(",")
+      .map((x: string) => x.trim())
+      .filter(Boolean);
+    delete payload.columnsText;
+    await savePolicy(payload);
+    ElMessage.success("已保存");
+    policyVisible.value = false;
+    await loadPolicies();
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "保存失败");
+  } finally {
+    policySaving.value = false;
+  }
+}
+
+async function removePolicy(row: any) {
+  try {
+    await ElMessageBox.confirm(`将删除策略「${row.name || row.id}」，不可恢复。`, "删除策略", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+    });
+  } catch {
+    return;
+  }
+  try {
+    await deletePolicies([row.id]);
+    ElMessage.success("已删除");
+    await loadPolicies();
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "删除失败");
+  }
+}
 
 // 血缘页签：懒加载（覆盖率要聚合多张表，别在挂载时白白跑）
 const lineage = ref<any>(null);
@@ -1417,6 +1656,7 @@ async function loadObjects() {
 }
 
 function onTab(name: any) {
+  if (name === "policy") loadPolicies();
   if (name === "overview") loadOverview();
   else if (name === "access") loadAccess();
   else if (name === "dq") {

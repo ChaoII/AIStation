@@ -429,3 +429,16 @@ def test_empty_policy_list_and_decision_shape():
     d = decide_table([], P(), "t")
     assert d == Decision(False, d.reason), "未命中时没有 policy_ids/sql/applied"
     assert isinstance(d.policy_ids, tuple) and isinstance(d.applied, tuple)
+
+
+def test_role_allow_overrides_everyone_column_deny():
+    """sensitive_ok：更具体主体的列 allow 可覆盖 everyone 级列 deny。"""
+    pols = [
+        allow("t", "everyone", ""),
+        deny("t", "everyone", "", columns=("phone",)),
+        allow("t", "role", "production", columns=("phone",)),
+    ]
+    yes = decide_column(pols, P(roles=("production",)), "t", "phone")
+    no = decide_column(pols, P(roles=("OTHER",)), "t", "phone")
+    assert yes.permit, yes.reason
+    assert not no.permit

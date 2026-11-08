@@ -803,3 +803,18 @@ export function getGovernanceSummary(datasource = "ds:4") {
     params: { datasource },
   });
 }
+
+/** 策略列表 */
+export function getPolicyList(params?: any) {
+  return request({ url: `${API_PATH}/policy/list`, method: "get", params });
+}
+
+/** 新建/更新策略 */
+export function savePolicy(data: any) {
+  return request({ url: `${API_PATH}/policy/save`, method: "post", data });
+}
+
+/** 删除策略（二次确认由调用方做） */
+export function deletePolicies(ids: number[]) {
+  return request({ url: `${API_PATH}/policy/delete`, method: "post", data: { ids } });
+}

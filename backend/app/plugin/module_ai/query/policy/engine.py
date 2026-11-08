@@ -510,8 +510,17 @@ def decide_column(
 
     column_denies = [p for p in _by_effect(candidates, "deny") if _covers_column(p, column)]
     if column_denies:
-        column_denies.sort(key=_sort_key)
-        return Decision(False, _deny_reason(column_denies, f"列 {column}"), _ids(column_denies))
+        # 列级例外：**更具体主体**的 allow 可以覆盖 everyone 级列 deny
+        # （用于 sensitive_ok：某角色可见敏感列）。表级 deny 不适用此例外。
+        top = max(_subject_specificity(p) for p in column_denies)
+        overrides = [
+            p for p in _by_effect(candidates, "allow")
+            if _covers_column(p, column) and _subject_specificity(p) > top
+        ]
+        allowed_override, _, _ = _split_allows(overrides, principal) if overrides else ([], [], [])
+        if not allowed_override:
+            column_denies.sort(key=_sort_key)
+            return Decision(False, _deny_reason(column_denies, f"列 {column}"), _ids(column_denies))
 
     allows = _by_effect(candidates, "allow")
     applicable, _conditions, missing = _split_allows(allows, principal)
