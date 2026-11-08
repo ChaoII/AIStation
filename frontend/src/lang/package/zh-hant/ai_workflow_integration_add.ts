@@ -110,6 +110,7 @@ export default {
   ig_policyResourcePh: "表名 / 檢視名",
   ig_policySubjectPh: "角色碼 / 使用者 id / 屬性",
   ig_govOp: "操作",
+  ig_policySearchPh: "搜尋名稱 / 表名 / 主體",
   ig_saveTableInfo: "儲存表資訊",
   ig_importAsObject: "匯入為本體物件",
   ig_aliasPlaceholder: "如：燃煤採購結算主表",

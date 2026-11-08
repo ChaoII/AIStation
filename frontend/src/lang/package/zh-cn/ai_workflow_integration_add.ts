@@ -144,6 +144,7 @@ export default {
   ig_policyResourcePh: "表名 / 视图名",
   ig_policySubjectPh: "角色码 / 用户 id / 属性",
   ig_govOp: "操作",
+  ig_policySearchPh: "搜索名称 / 表名 / 主体",
   ig_saveTableInfo: "保存表信息",
   ig_importAsObject: "导入为本体对象",
   ig_aliasPlaceholder: "如：燃煤采购结算主表",

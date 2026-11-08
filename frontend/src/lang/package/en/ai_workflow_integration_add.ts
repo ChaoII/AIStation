@@ -112,6 +112,7 @@ export default {
   ig_policyResourcePh: "table / view name",
   ig_policySubjectPh: "role code / user id / attribute",
   ig_govOp: "Actions",
+  ig_policySearchPh: "Search name / table / subject",
   ig_saveTableInfo: "Save Table Info",
   ig_importAsObject: "Import as Ontology Object",
   ig_aliasPlaceholder: "e.g. Coal Purchase Settlement Master Table",

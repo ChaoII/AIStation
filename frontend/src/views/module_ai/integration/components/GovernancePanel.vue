@@ -742,14 +742,36 @@
       <el-tab-pane :label="t('ai_workflow.ig_policyTab')" name="policy">
         <el-card shadow="never">
           <template #header>
-            <div style="display: flex; align-items: center; justify-content: space-between">
+            <div
+              style="display: flex; align-items: center; justify-content: space-between; gap: 8px"
+            >
               <span>{{ t("ai_workflow.ig_policyTitle") }}</span>
-              <el-button type="primary" size="small" @click="openPolicy()">
-                {{ t("ai_workflow.ig_policyNew") }}
-              </el-button>
+              <div style="display: flex; align-items: center; gap: 8px; margin-left: auto">
+                <el-input
+                  v-model="policySearch"
+                  size="small"
+                  clearable
+                  style="width: 220px"
+                  :placeholder="t('ai_workflow.ig_policySearchPh')"
+                />
+                <el-select
+                  v-model="policyEffect"
+                  size="small"
+                  clearable
+                  style="width: 120px"
+                  :placeholder="t('ai_workflow.ig_policyEffect')"
+                >
+                  <el-option label="allow" value="allow" />
+                  <el-option label="deny" value="deny" />
+                  <el-option label="mask" value="mask" />
+                </el-select>
+                <el-button type="primary" size="small" @click="openPolicy()">
+                  {{ t("ai_workflow.ig_policyNew") }}
+                </el-button>
+              </div>
             </div>
           </template>
-          <el-table v-loading="policyLoading" :data="policyRows" border stripe max-height="560">
+          <el-table v-loading="policyLoading" :data="policyFiltered" border stripe max-height="560">
             <el-table-column
               prop="name"
               :label="t('ai_workflow.ig_policyName')"
@@ -1250,7 +1272,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { computed, ref, reactive, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Refresh } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
@@ -1291,6 +1313,20 @@ const { t } = useI18n();
 const tab = ref("overview");
 
 const policyRows = ref<any[]>([]);
+const policySearch = ref("");
+const policyEffect = ref("");
+const policyFiltered = computed(() => {
+  const kw = policySearch.value.trim().toLowerCase();
+  return (policyRows.value || []).filter((x: any) => {
+    if (policyEffect.value && x.effect !== policyEffect.value) return false;
+    if (!kw) return true;
+    return [x.name, x.resource_code, x.subject_value, x.condition].some((v) =>
+      String(v || "")
+        .toLowerCase()
+        .includes(kw)
+    );
+  });
+});
 const policyLoading = ref(false);
 const policyVisible = ref(false);
 const policySaving = ref(false);
