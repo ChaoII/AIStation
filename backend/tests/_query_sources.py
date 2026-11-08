@@ -24,6 +24,8 @@ MODULE_NAMES = (
     "dq_ops",
     "pipeline_ops",
     "version_ops",
+    "recall_ops",
+    "routing_ops",
     "service",
     "ask_ops",
     "actions_ops",
