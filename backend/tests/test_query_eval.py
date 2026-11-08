@@ -598,17 +598,18 @@ def test_decomposed_planning_is_prompt_only_two_stage_is_the_real_one():
     import re
 
     root = pathlib.Path(__file__).resolve().parents[1]
-    src = (root / "app" / "plugin" / "module_ai" / "query" / "service.py").read_text(
-        encoding="utf-8"
-    )
+    query_dir = root / "app" / "plugin" / "module_ai" / "query"
+    src = (query_dir / "service.py").read_text(encoding="utf-8")
+    # 2026-11-08：_nl2sql 已拆到 nl2sql_ops.py，真分解的调用点在那里
+    nlsrc = (query_dir / "nl2sql_ops.py").read_text(encoding="utf-8")
 
     # 1) 真分解（plan 模块）只允许挂在 two_stage_planning 分支下
-    i = src.index("from .plan import")
-    gate = src[max(0, i - 600) : i]
+    i = nlsrc.index("from .plan import")
+    gate = nlsrc[max(0, i - 600) : i]
     assert "two_stage_planning" in gate, "plan 模块必须在 two_stage_planning 开关下使用"
 
     # 2) decomposed_planning 不得与真分解同现（它只能是提示词开关）
-    for ln in src.splitlines():
+    for ln in (src + "\n" + nlsrc).splitlines():
         if "decomposed_planning" in ln:
             assert "plan_prompt" not in ln and "is_multistep" not in ln and "from .plan" not in ln
 
