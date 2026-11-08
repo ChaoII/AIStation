@@ -34,6 +34,8 @@ MODULE_NAMES = (
     "answer_ops",
     "rewrite_ops",
     "access_ops",
+    "governance_ops",
+    "fewshot_ops",
     "service",
     "workspace_ops",
     "ask_ops",
