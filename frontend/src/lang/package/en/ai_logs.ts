@@ -235,6 +235,11 @@ export default {
   traceApplied: "Policy rewrites",
   tracePolicy: "Matched policies",
   traceError: "Failed",
+  traceRecall: "Retrieved tables",
+  traceOntology: "Ontology grounding",
+  traceCopyDiag: "Copy diagnostics",
+  traceCopied: "Diagnostics copied",
+  traceCopyFail: "Copy failed, please select manually",
   settingTip:
     'These are engineering switches for Smart Query; they take effect immediately after saving. Items marked "experimental" are off by default and require comparison validation before enabling.',
   leaveEmptyDefault: "Empty = default",

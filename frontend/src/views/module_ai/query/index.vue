@@ -652,6 +652,12 @@
         <el-descriptions-item :label="t('ai_logs.tracePolicy')">
           {{ (traceMsg.policy_ids || []).join(", ") || "—" }}
         </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.traceRecall')">
+          {{ (traceMsg.grounding?.retrieved || []).join("、") || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.traceOntology')">
+          {{ (traceMsg.grounding?.ontology_used || []).join("、") || "—" }}
+        </el-descriptions-item>
       </el-descriptions>
       <el-alert
         v-if="traceMsg.is_error"
@@ -663,6 +669,9 @@
       />
       <div v-if="traceMsg.sql" class="q-trace__sql">
         <CodeBlock :code="traceMsg.sql" language="sql" />
+      </div>
+      <div class="q-trace__actions">
+        <el-button size="small" @click="copyTrace">{{ t("ai_logs.traceCopyDiag") }}</el-button>
       </div>
     </template>
   </el-drawer>
@@ -1244,6 +1253,26 @@ async function saveSettings() {
 const traceVisible = ref(false);
 const traceMsg = ref<any>(null);
 
+async function copyTrace() {
+  const m = traceMsg.value || {};
+  const lines = [
+    `path: ${m.path || "-"}`,
+    `took_ms: ${m.took_ms ?? 0}, rows: ${m.result_rows ?? 0}`,
+    `applied: ${JSON.stringify(m.applied || [])}`,
+    `policy_ids: ${JSON.stringify(m.policy_ids || [])}`,
+    `retrieved: ${JSON.stringify(m.grounding?.retrieved || [])}`,
+    `ontology: ${JSON.stringify(m.grounding?.ontology_used || [])}`,
+    `sql: ${m.sql || ""}`,
+    m.is_error ? `error: ${m.error || m.summary || ""}` : "",
+  ].filter(Boolean);
+  try {
+    await navigator.clipboard.writeText(lines.join("\n"));
+    ElMessage.success(t("ai_logs.traceCopied"));
+  } catch {
+    ElMessage.error(t("ai_logs.traceCopyFail"));
+  }
+}
+
 function openTrace(m: any) {
   traceMsg.value = m;
   traceVisible.value = true;
@@ -1688,6 +1717,11 @@ const visibleGroups = computed(() => {
 </style>
 
 <style lang="scss" scoped>
+.q-trace__actions {
+  margin-top: 12px;
+  text-align: right;
+}
+
 .q-trace__sql {
   margin-top: 12px;
 }
