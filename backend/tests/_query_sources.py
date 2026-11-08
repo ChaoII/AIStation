@@ -33,6 +33,7 @@ MODULE_NAMES = (
     "autopilot_ops",
     "answer_ops",
     "rewrite_ops",
+    "access_ops",
     "service",
     "ask_ops",
     "actions_ops",
