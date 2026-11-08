@@ -104,6 +104,16 @@
                   <el-button
                     v-hasPerm="'module_ai:query:ask'"
                     size="small"
+                    :icon="Coin"
+                    :loading="assetSyncing"
+                    :title="t('ai_workflow.ig_syncAssetsTitle')"
+                    @click="syncAssetCatalog"
+                  >
+                    {{ t("ai_workflow.ig_syncAssets") }}
+                  </el-button>
+                  <el-button
+                    v-hasPerm="'module_ai:query:ask'"
+                    size="small"
                     :icon="Timer"
                     :disabled="!curDs"
                     @click="openLifetime"
@@ -2135,6 +2145,7 @@ import {
   testQueryDatasource,
   deleteQueryDatasources,
   syncQueryDatasourceSchema,
+  syncQueryAssets,
   getQueryDatasourceSchema,
   importDsAsOntology,
   importDsAsOntologyBatch,
@@ -2730,6 +2741,28 @@ async function loadDsTables() {
     }));
   } catch {
     dsTables.value = [];
+  }
+}
+
+const assetSyncing = ref(false);
+
+async function syncAssetCatalog() {
+  assetSyncing.value = true;
+  try {
+    const r: any = await syncQueryAssets();
+    const d = r.data?.data || {};
+    ElMessage.success(
+      t("ai_workflow.ig_syncAssetsDone", {
+        tables: d.tables ?? 0,
+        columns: d.columns ?? 0,
+        added: d.new_tables ?? 0,
+      })
+    );
+    await loadAssets();
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_syncFail"));
+  } finally {
+    assetSyncing.value = false;
   }
 }
 

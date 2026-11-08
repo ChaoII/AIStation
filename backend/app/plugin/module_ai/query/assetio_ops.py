@@ -323,38 +323,74 @@ class AssetIoOps:
             cols = [(r[0], r[1]) for r in colr.fetchall()]
         upserted = 0
         async with async_db_session.begin() as db:
-            from sqlalchemy import select
+            from sqlalchemy import text as _t
 
             # Task3：写打标列前幂等补列；本地库表/字段按默认规则打 is_system/is_audit
             await _svc._ensure_marking_columns(db)
-            for t in tables:
-                inc = t in _svc.SYSTEM_ALLOWED_TABLES
-                is_sys = is_system_table(t)
-                exists = (
-                    await db.execute(select(AiQueryAssetModel).where(AiQueryAssetModel.table_name == t))
-                ).scalar_one_or_none()
-                if not exists:
-                    db.add(AiQueryAssetModel(table_name=t, description="", included=inc,
-                                             is_system=is_sys, remark="",
-                                             created_id=auth.user.id, updated_id=auth.user.id))
-                    upserted += 1
-                else:
-                    # 重跑同步时校正已有行的系统表标记（按名字判定，幂等）
-                    exists.is_system = is_sys
-            for t, c in cols:
-                is_aud = is_audit_field(c)
-                exists = (
-                    await db.execute(select(AiQueryAssetColumnModel).where(
-                        AiQueryAssetColumnModel.table_name == t,
-                        AiQueryAssetColumnModel.column_name == c))
-                ).scalar_one_or_none()
-                if not exists:
-                    db.add(AiQueryAssetColumnModel(table_name=t, column_name=c, description="",
-                                                   included=True, sensitive=False,
-                                                   is_audit=is_aud,
-                                                   created_id=auth.user.id, updated_id=auth.user.id))
-                else:
-                    exists.is_audit = is_aud
+
+            # ⚠️ 性能：旧实现**逐表/逐列** SELECT（本库 631 表 / 11,688 列 ≈ 1.2 万次往返），
+            # 实测 90s 都跑不完，接口从 UI 调用会一直转圈。改成两次预取 + 批量写入。
+            existing_tables = {
+                r[0]: bool(r[1])
+                for r in (
+                    await db.execute(_t(
+                        "SELECT table_name, is_system FROM ai_query_assets WHERE is_deleted = false"))
+                ).fetchall()
+            }
+            existing_columns = {
+                (r[0], r[1]): bool(r[2])
+                for r in (
+                    await db.execute(_t(
+                        "SELECT table_name, column_name, is_audit "
+                        "FROM ai_query_asset_columns WHERE is_deleted = false"))
+                ).fetchall()
+            }
+
+            new_rows = [
+                AiQueryAssetModel(
+                    table_name=t, description="",
+                    included=t in _svc.SYSTEM_ALLOWED_TABLES,
+                    is_system=is_system_table(t), remark="",
+                    created_id=auth.user.id, updated_id=auth.user.id,
+                )
+                for t in tables
+                if t not in existing_tables
+            ]
+            if new_rows:
+                db.add_all(new_rows)
+                upserted = len(new_rows)
+                await db.flush()
+
+            # 重跑同步时校正已有行的系统表标记（按名字判定，幂等；只更新有变化的）
+            changed_sys = [
+                {"t": t, "v": is_system_table(t)} for t in tables
+                if t in existing_tables and existing_tables[t] != is_system_table(t)
+            ]
+            if changed_sys:
+                await db.execute(
+                    _t("UPDATE ai_query_assets SET is_system = :v WHERE table_name = :t"), changed_sys)
+
+            new_cols = [
+                AiQueryAssetColumnModel(
+                    table_name=t, column_name=c, description="",
+                    included=True, sensitive=False, is_audit=is_audit_field(c),
+                    created_id=auth.user.id, updated_id=auth.user.id,
+                )
+                for t, c in cols
+                if (t, c) not in existing_columns
+            ]
+            if new_cols:
+                db.add_all(new_cols)
+                await db.flush()
+
+            changed_aud = [
+                {"t": t, "c": c, "v": is_audit_field(c)} for t, c in cols
+                if (t, c) in existing_columns and existing_columns[(t, c)] != is_audit_field(c)
+            ]
+            if changed_aud:
+                await db.execute(
+                    _t("UPDATE ai_query_asset_columns SET is_audit = :v "
+                       "WHERE table_name = :t AND column_name = :c"), changed_aud)
         return {"tables": len(tables), "columns": len(cols), "new_tables": upserted}
 
     @classmethod

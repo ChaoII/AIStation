@@ -868,3 +868,8 @@ export function runDqRule(params: { table: string; column: string; rule_type: st
 export function domainReconcile() {
   return request({ url: `${API_PATH}/domain/reconcile`, method: "get" });
 }
+
+/** 从 information_schema 全量同步表/字段到资产目录（新表白名单内的默认纳入） */
+export function syncQueryAssets() {
+  return request({ url: `${API_PATH}/assets/sync`, method: "post" });
+}
