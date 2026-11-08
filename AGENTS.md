@@ -110,6 +110,14 @@ uv run python scripts/query_policy_grant_legacy.py    # 把每个非超管的旧
 - 收窄权限：按 `name='legacy-keep'` 删除对应行，再按域/角色重建 allow。
 - `sensitive_ok` 无法表达（引擎列 deny 优先于 allow），迁移时已进 skipped；需要给相关角色
   配 `mask` 或调整敏感列策略。
+- **收窄实例（2026-11-08）**：`test_acc` 原本无域/无规则，legacy 566 张 →
+  建域 `demo-fuel`（名称「演示（燃煤基线）」，范围 = `fuel-v2` 评测 gold_sql 实际用到的 10 张
+  ds:4 表，成员 test_acc）后收到 **10 张**；`ac` 属于既有域（58 张）不变。
+- ⚠️ 收窄时**两批兜底都要处理**：`legacy-keep`（grant_legacy 生成）和 `legacy_default_allow`
+  （backfill 生成）。只删前者，覆盖率不会降（实测 566 仍全开）。
+- 收窄工具：`scripts/query_policy_narrow.py --dry-run|--apply [--user ID]`，
+  按「有域用域、无域用 ABAC、两者都无则不动」计算保留集。
+
 
 ### 首次跑测试 / 新建 worktree 必看（2026-10 实测）
 
