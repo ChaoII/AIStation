@@ -256,7 +256,12 @@ class AskOps:
                        "columns": ans.get("columns") or [], "rows": ans.get("rows") or [],
                        "summary": ans.get("summary") or "",
                        "ontology_used": ans.get("ontology_used") or [],
-                       "message_id": ans.get("message_id"), "sql": (res.get("sql") or ""), "took_ms": res.get("took_ms", 0), "applied": res.get("applied") or [], "policy_ids": res.get("policy_ids") or []}
+                       "message_id": ans.get("message_id"),
+                       # 对象路径没有 SQL 改写（execute_ir 走自己的 ACL），applied/policy_ids 为空；
+                       # 原先写成 `res.get(...)`——`res` 是快路径分支的局部变量，对象分支没定义，
+                       # 一进对象路径就 UnboundLocalError（对象路径默认关，UI 金路径没暴露）。
+                       "sql": ans.get("sql") or "", "took_ms": ans.get("took_ms", 0),
+                       "applied": [], "policy_ids": []}
                 yield {"type": "done", "path": "object", "session_id": sess["id"],
                        "message_id": ans.get("message_id")}
                 return

@@ -28,6 +28,8 @@ MODULE_NAMES = (
     "routing_ops",
     "schema_ops",
     "llm_ops",
+    "ontbridge_ops",
+    "seed_ops",
     "service",
     "ask_ops",
     "actions_ops",
