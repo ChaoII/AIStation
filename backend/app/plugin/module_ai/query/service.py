@@ -33,7 +33,9 @@ from .actions_ops import ActionsOps
 from .ask_ops import AskOps
 from .answer_ops import AnswerOps
 from .access_ops import AccessOps
+from .assetio_ops import AssetIoOps
 from .assets_ops import AssetsOps
+from .vector_ops import VectorOps
 from .fewshot_ops import FewshotOps
 from .governance_ops import GovernanceOps
 from .workspace_ops import WorkspaceOps
@@ -1509,7 +1511,7 @@ _ONT_IMPORT_EXCLUDE: set[str] = {
 # ---------------------------------------------------------------------------
 # 语义层 CRUD + 种子
 # ---------------------------------------------------------------------------
-class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, PropositionsOps, ExecuteOps, ContextOps, Nl2SqlOps, SlowPathOps, AskOps, SettingsOps, DatasourceOps, SessionOps, ReportOps, DqOps, PipelineOps, VersionOps, RecallOps, RoutingOps, SchemaOps, LlmOps, OntBridgeOps, SeedOps, AutopilotOps, AnswerOps, RewriteOps, AccessOps, WorkspaceOps, GovernanceOps, FewshotOps):
+class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, PropositionsOps, ExecuteOps, ContextOps, Nl2SqlOps, SlowPathOps, AskOps, SettingsOps, DatasourceOps, SessionOps, ReportOps, DqOps, PipelineOps, VersionOps, RecallOps, RoutingOps, SchemaOps, LlmOps, OntBridgeOps, SeedOps, AutopilotOps, AnswerOps, RewriteOps, AccessOps, WorkspaceOps, GovernanceOps, FewshotOps, AssetIoOps, VectorOps):
 
 
 
@@ -1575,83 +1577,8 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @classmethod
-    async def export_asset(cls, table_name: str, auth, limit: int = 100) -> dict:
-        """数据集导出：读取真实表数据（CSV/JSON 由前端生成下载）。
-
-        表可能属于**外部自定义数据源**（如 ds:4 燃煤库）或平台自身库。先按
-        ``ai_query_schema.datasource`` 定位归属：外部源在其库执行，平台源在平台库执行。
-        """
-        table_name = await cls._require_queryable_table(table_name, auth)
-        deny = await cls._sensitive_table_deny(table_name)
-        if deny:
-            return {"ok": False, "msg": deny}
-        n = max(1, min(int(limit), 500))
-        # 定位表所属数据源
-        ds_code = None
-        try:
-            async with async_db_session() as db:
-                from sqlalchemy import text as _t
-                row = (await db.execute(_t(
-                    "SELECT datasource FROM ai_query_schema "
-                    "WHERE UPPER(table_name)=UPPER(:t) AND is_deleted=false LIMIT 1"),
-                    {"t": table_name})).fetchone()
-                ds_code = (row[0] if row else None) or None
-        except Exception:  # noqa: BLE001
-            ds_code = None
-        # 外部自定义数据源：在其库执行（否则平台库里根本没有这张表）
-        # 导出必须按导出者重新走唯一网关：行/列策略、字段级 ACL、审计都生效。
-        ds = ds_code or SYSTEM_DS
-        ident = cls._require_ident(table_name, "表名")
-        sql = (f'SELECT * FROM "{ident}" LIMIT {n}' if ds == SYSTEM_DS
-               else f"SELECT * FROM {ident} LIMIT {n}")
-        try:
-            res = await cls._execute_one(
-                sql, ds, auth, f"导出 {table_name}", entry="export")
-        except Exception as e:  # noqa: BLE001
-            return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
-        cols = res.get("columns") or []
-        rows_arr = res.get("rows") or []
-        data = [dict(zip(cols, r, strict=False)) for r in rows_arr]
-        return {"ok": True, "table": table_name, "columns": cols, "rows": data,
-                "row_count": len(data)}
 
 
-    @classmethod
-    async def object_browse(cls, table_name: str, auth, page: int = 1, page_size: int = 20) -> dict:
-        """对象数据浏览器：分页读取真实表数据（前端表格浏览）。
-
-        与导出同口径：按表所属数据源路由（外部自定义库 vs 平台库），否则平台库里
-        根本没有业务表、必然「表不存在」。
-        """
-        # P0-1：表名直接拼 SELECT，先过「标识符 + 按用户白名单」校验（fail-closed）
-        table_name = await cls._require_queryable_table(table_name, auth)
-        deny = await cls._sensitive_table_deny(table_name)
-        if deny:
-            return {"ok": False, "msg": deny}
-        page = max(1, int(page)); page_size = max(1, min(int(page_size), 100))
-        offset = (page - 1) * page_size
-        ds_code = await cls._table_ds_code(table_name)
-        # 外部自定义数据源
-        # 与导出一致：按浏览者走唯一网关，行/列策略与审计都生效。
-        ds = ds_code or SYSTEM_DS
-        ident = cls._require_ident(table_name, "表名")
-        quoted = f'"{ident}"' if ds == SYSTEM_DS else ident
-        try:
-            cnt = await cls._execute_one(
-                f"SELECT COUNT(*) FROM {quoted}", ds, auth,
-                f"浏览 {table_name}", entry="object")
-            total = int(((cnt.get("rows") or [[0]])[0][0]) or 0)
-            res = await cls._execute_one(
-                f"SELECT * FROM {quoted} LIMIT {page_size} OFFSET {offset}",
-                ds, auth, f"浏览 {table_name}", entry="object")
-        except Exception as e:  # noqa: BLE001
-            return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
-        cols = res.get("columns") or []
-        data = [dict(zip(cols, r, strict=False)) for r in (res.get("rows") or [])]
-        return {"ok": True, "table": table_name, "columns": cols, "rows": data,
-                "page": page, "page_size": page_size, "total": total,
-                "has_next": offset + page_size < total}
 
 
 
@@ -1664,35 +1591,6 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @classmethod
-    async def guardrails_status(cls) -> dict:
-        """AIP 安全护栏/治理策略状态：ABAC/数据域/敏感剔除/审批/审计/版本 各护栏开关。"""
-        checks: list[dict] = []
-        try:
-            rules = await cls.list_access_rules()
-            checks.append({"key": "abac", "name": "ABAC 权限控制", "enabled": bool(rules),
-                           "detail": f"{len(rules)} 条策略"})
-        except Exception:  # noqa: BLE001
-            checks.append({"key": "abac", "name": "ABAC 权限控制", "enabled": False, "detail": "未启用"})
-        try:
-            domains = await cls.list_domains()
-            checks.append({"key": "datadomain", "name": "数据域隔离", "enabled": bool(domains),
-                           "detail": f"{len(domains)} 个数据域"})
-        except Exception:  # noqa: BLE001
-            checks.append({"key": "datadomain", "name": "数据域隔离", "enabled": False, "detail": "未启用"})
-        try:
-            assets = await cls.list_assets()
-            sens = any((a.get("sensitive_count") or 0) > 0 for a in assets)
-            checks.append({"key": "sensitive", "name": "敏感字段剔除", "enabled": sens,
-                           "detail": "非授权自动剔除" if sens else "无敏感字段"})
-        except Exception:  # noqa: BLE001
-            checks.append({"key": "sensitive", "name": "敏感字段剔除", "enabled": False, "detail": "未启用"})
-        checks.append({"key": "approval", "name": "写回审批流", "enabled": True, "detail": "已启用"})
-        checks.append({"key": "audit", "name": "审计日志", "enabled": True, "detail": "已启用"})
-        checks.append({"key": "version", "name": "版本/发布管控", "enabled": True, "detail": "已启用"})
-        on = sum(1 for c in checks if c["enabled"])
-        return {"total": len(checks), "enabled": on,
-                "score": round(on / len(checks) * 100) if checks else 0, "checks": checks}
 
 
 
@@ -1736,32 +1634,6 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @classmethod
-    async def _pick_time_col(cls, table_name: str, datasource: str) -> str | None:
-        """从已同步的表结构里挑一个「更新时间」列（业务数据源扫描新鲜度用）。"""
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            row = (await db.execute(_t(
-                "SELECT columns FROM ai_query_schema WHERE datasource=:d AND table_name=:t "
-                "AND is_deleted=false LIMIT 1"), {"d": datasource, "t": table_name})).fetchone()
-        import json as _json
-        cols = []
-        if row and row[0]:
-            try:
-                cols = row[0] if isinstance(row[0], list) else _json.loads(row[0])
-            except Exception:  # noqa: BLE001
-                cols = []
-        names = [str(c.get("name") or "") for c in cols if isinstance(c, dict)]
-        lowered = {n.lower(): n for n in names}
-        for pref in ("lastmodificationtime", "updatetime", "updated_time", "modifytime",
-                     "modify_time", "createtime", "creationtime", "created_time"):
-            if pref in lowered:
-                return lowered[pref]
-        for n in names:
-            ln = n.lower()
-            if ln.endswith("time") or ln.endswith("date"):
-                return n
-        return None
 
 
 
@@ -1781,55 +1653,6 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @classmethod
-    async def sync_assets(cls, auth) -> dict:
-        """从数据库 information_schema 全量同步表/字段到资产目录；已在白名单的表默认纳入。"""
-        async with async_db_session() as db:
-            from sqlalchemy import text as _text
-
-            result = await db.execute(
-                _text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")
-            )
-            tables = [r[0] for r in result.fetchall()]
-            colr = await db.execute(
-                _text("SELECT table_name, column_name FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name, ordinal_position")
-            )
-            cols = [(r[0], r[1]) for r in colr.fetchall()]
-        upserted = 0
-        async with async_db_session.begin() as db:
-            from sqlalchemy import select
-
-            # Task3：写打标列前幂等补列；本地库表/字段按默认规则打 is_system/is_audit
-            await _ensure_marking_columns(db)
-            for t in tables:
-                inc = t in SYSTEM_ALLOWED_TABLES
-                is_sys = is_system_table(t)
-                exists = (
-                    await db.execute(select(AiQueryAssetModel).where(AiQueryAssetModel.table_name == t))
-                ).scalar_one_or_none()
-                if not exists:
-                    db.add(AiQueryAssetModel(table_name=t, description="", included=inc,
-                                             is_system=is_sys, remark="",
-                                             created_id=auth.user.id, updated_id=auth.user.id))
-                    upserted += 1
-                else:
-                    # 重跑同步时校正已有行的系统表标记（按名字判定，幂等）
-                    exists.is_system = is_sys
-            for t, c in cols:
-                is_aud = is_audit_field(c)
-                exists = (
-                    await db.execute(select(AiQueryAssetColumnModel).where(
-                        AiQueryAssetColumnModel.table_name == t,
-                        AiQueryAssetColumnModel.column_name == c))
-                ).scalar_one_or_none()
-                if not exists:
-                    db.add(AiQueryAssetColumnModel(table_name=t, column_name=c, description="",
-                                                   included=True, sensitive=False,
-                                                   is_audit=is_aud,
-                                                   created_id=auth.user.id, updated_id=auth.user.id))
-                else:
-                    exists.is_audit = is_aud
-        return {"tables": len(tables), "columns": len(cols), "new_tables": upserted}
 
     # ---- 示例工程（few-shot）----
 
@@ -1837,29 +1660,6 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
     # ---- 查询限额配置 ----
-    @staticmethod
-    async def _asset_tmeta() -> dict:
-        """表级资产元数据（中文名/业务域/描述/业务场景），进程级缓存。"""
-        global _ASSET_TMETA
-        if _ASSET_TMETA is not None:
-            return _ASSET_TMETA
-        async with async_db_session() as db:
-            from sqlalchemy import select
-
-            rows = (
-                await db.execute(
-                    select(AiQueryAssetModel).where(AiQueryAssetModel.is_deleted.is_(False))
-                )
-            ).scalars().all()
-        _ASSET_TMETA = {
-            a.table_name: {
-                "alias": a.alias or "", "domain": a.domain or "",
-                "description": a.description or "",
-                "business_scenarios": a.business_scenarios or "",
-            }
-            for a in rows
-        }
-        return _ASSET_TMETA
 
 
 
@@ -1974,293 +1774,19 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @classmethod
-    def _msg_dict(cls, m: AiQueryMessageModel) -> dict:
-        return {
-            "id": m.id, "session_id": m.session_id, "question": m.question,
-            "path": m.path, "datasource": m.datasource, "sql": m.sql or "",
-            "columns": m.columns or [], "rows": m.rows or [], "summary": m.summary or "",
-            "result_rows": m.result_rows or 0, "took_ms": m.took_ms or 0,
-            "cached": m.cached, "usage": m.usage, "is_error": m.is_error,
-            "feedback": m.feedback or "", "correct_sql": m.correct_sql or "",
-            "grounding": m.grounding,
-            "created_time": m.created_time,
-        }
 
     # ---- 核心：问答入口 ----
 
 
-    @staticmethod
-    def _cache_key(metric: dict, params: dict, user_id: int | None = None) -> str:
-        import hashlib
-        import json
 
-        raw = json.dumps(
-            {"ds": metric.get("datasource"), "key": metric.get("key"),
-             "params": sorted(params.items()),
-             # 安全补丁（2026-10-19）：缓存 key 必须含 user。指标结果是**按调用者
-             # 权限**算出来的（行/列策略已下推），不含 user ⇒ A 按自己权限算出的
-             # 结果会在 TTL（30~120s）内被 B 直接拿到 —— 越权读。
-             "uid": int(user_id or 0)},
-            ensure_ascii=False, sort_keys=True, default=str,
-        )
-        return f"ai:query:{hashlib.md5(raw.encode()).hexdigest()}"
 
-    @staticmethod
-    async def _cache_get(redis, key: str):
-        try:
-            val = await redis.get(key)
-            if not val:
-                return None
-            import json
 
-            return json.loads(val)
-        except Exception:  # noqa: BLE001
-            return None
 
-    @staticmethod
-    async def _cache_set(redis, key: str, res: dict, ttl: int) -> None:
-        try:
-            import json
-
-            await redis.set(key, json.dumps(res, ensure_ascii=False, default=str), ex=max(ttl, 1))
-        except Exception:  # noqa: BLE001
-            pass
-
-    @classmethod
-    async def _apply_softdelete_policy(cls, question: str, sql: str,
-                                       datasource: str) -> str:
-        """按"业务数据默认排除软删除"口径改写模型生成的 SQL。
-
-        只在**自定义数据源**上用（系统库用 `is_deleted` 小写，且口径已写在提示词里）。
-        问句本身在问"已删除"时**不动**；SQL 里已经有 `ISDELETED` 条件时也不动
-        （避免覆盖模型自己写的 `= true`）。
-
-        失败一律返回原 SQL：改写是**增强**，绝不能因为改写失败让整题挂掉。
-        """
-        from .softdelete import asks_about_deletion, inject_softdelete
-
-        try:
-            if not sql or asks_about_deletion(question):
-                return sql
-            if "ISDELETED" in sql.replace(" ", "").upper():
-                return sql
-            schema_map = await cls._ds_schema_map(datasource)
-            del_tables = {
-                t.upper() for t, labels in (schema_map or {}).items()
-                if any(str(lab).upper().startswith("ISDELETED(") for lab in (labels or []))
-            }
-            if not del_tables:
-                return sql
-            new_sql, hit = inject_softdelete(sql, del_tables)
-            if hit:
-                log.info("[query] 软删除口径改写：表 {}（{} 处）",
-                         "/".join(sorted(set(hit))[:3]), len(hit))
-            return new_sql
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 软删除口径改写失败（用原 SQL）: {str(e)[:100]}")
-            return sql
-
-    @classmethod
-    async def _explain_rows(cls, sql: str) -> int:
-        """EXPLAIN 预估结果行数（用于查询代价护栏）。"""
-        from sqlalchemy import text as _t
-
-        async with async_db_session() as db:
-            row = (await db.execute(_t(f"EXPLAIN (FORMAT JSON) {sql.rstrip(';')}"))).scalar()
-            plan = row[0] if isinstance(row, list) else row
-            return int((plan.get("Plan") or {}).get("Plan Rows") or 0)
 
     # ------------------------------------------------------------------
     # 对象查询（语义执行层）：LLM 只输出 IR，由本体实例层确定性执行
     # 设计：docs/superpowers/specs/2026-10-14-semantic-query-layer-design.md
     # ------------------------------------------------------------------
-    @classmethod
-    async def _allowed_objects_for_query(cls, question: str, auth, max_objects: int = 8,
-                                         datasource: str = SYSTEM_DS,
-                                         prefer_object: str | None = None) -> dict:
-        """构建「授权 ∩ 检索命中」的对象白名单（scope 收敛的落点）。
-
-        - 系统库：只保留**已物化**（支撑表存在）且用户**有权访问**的对象类型；
-        - 自定义数据源（``ds:{id}``）：保留**归属该数据源**（``datasource_id`` 相等）的对象；
-        - 用 ``_semantic_tables`` 的召回结果收窄（仅系统库；未命中则放宽到全部授权对象）；
-        - 字段只带**真实存在的列**，关系只带非隐藏项；并挂上**绑定到该对象的指标**。
-
-        这一步同时是**反幻觉**的架构保证：IR 里出现清单外的对象/字段/指标会被丢弃。
-        """
-        from app.plugin.module_ai.ontology import semantic as _sem
-
-        try:
-            ctx = await _sem.semantic_context()
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 对象查询：本体语义读取失败 {str(e)[:100]}")
-            return {}
-
-        # 自定义数据源 id（``ds:{id}``）；系统库为 None
-        ds_id: int | None = None
-        if datasource and datasource not in (SYSTEM_DS, None):
-            try:
-                ds_id = int(str(datasource).split(":")[-1])
-            except (TypeError, ValueError):
-                ds_id = None
-
-        try:
-            tmap = await _sem.object_table_map()
-        except Exception:  # noqa: BLE001
-            tmap = {}
-        try:
-            allowed_tables = await cls._allowed_for_user(auth)
-        except Exception:  # noqa: BLE001
-            allowed_tables = set()
-
-        cand: list[dict] = []
-        for o in ctx.get("objects") or []:
-            table = str(o.get("table") or "")
-            if ds_id is not None:
-                # 自定义数据源：按对象归属的数据源过滤（跨库不越权）
-                if int(o.get("datasource_id") or 0) != ds_id:
-                    continue
-            elif not table or (allowed_tables and table not in allowed_tables):
-                continue
-            cand.append(o)
-
-        # 按检索命中收窄（仅系统库；检索基于系统 schema，对自定义源不适用）
-        if ds_id is None:
-            hit_codes: set[str] = set()
-            try:
-                schema = await cls._system_schema()
-                hits = await cls._semantic_tables(question, schema, None, None, SYSTEM_DS)
-                for t in hits or []:
-                    code = tmap.get(t) or (str(t)[4:] if str(t).startswith("ont_") else None)
-                    if code:
-                        hit_codes.add(code)
-            except Exception:  # noqa: BLE001
-                hit_codes = set()
-            if hit_codes:
-                narrowed = [o for o in cand if o.get("code") in hit_codes]
-                if narrowed:
-                    cand = narrowed
-
-        # 绑定指标：按 object_code 归组，挂到对象 spec 上（供 IR 提示词/校验/执行使用）
-        metrics_by_object: dict[str, list] = {}
-        try:
-            for m in await cls.list_metrics(datasource):
-                oc = str(m.get("object_code") or "")
-                if oc:
-                    metrics_by_object.setdefault(oc, []).append(m)
-        except Exception:  # noqa: BLE001
-            metrics_by_object = {}
-
-        out: dict = {}
-        for o in cand:
-            if len(out) >= max_objects:
-                break
-            code = str(o.get("code") or "")
-            if not code:
-                continue
-            spec = await cls._object_spec_for(code)
-            if spec:
-                spec["metrics"] = {m["key"]: m for m in metrics_by_object.get(code, [])}
-                out[code] = spec
-        # 命中指标所属对象**强制包含**：数据集对象常有几百个，它很可能排在 max_objects 之外
-        # 被截掉（实测：`coal_batch` 排在 336 个对象之后 → IR 反推出它却"不在可查询范围"）。
-        if prefer_object and prefer_object not in out:
-            spec = await cls._object_spec_for(prefer_object)
-            if spec:
-                spec["metrics"] = {m["key"]: m for m in metrics_by_object.get(prefer_object, [])}
-                out[prefer_object] = spec
-        return out
-
-    @classmethod
-    async def _object_spec_for(cls, code: str) -> dict | None:
-        """单个对象的可查询规格（已物化 + 真实列 + 非隐藏关系）；不可用返回 ``None``。
-
-        抽成独立方法是为了让「当前对象」能被**强制加入**词表（即使检索没命中它）。
-        """
-        from app.plugin.module_ai.ontology import service as ont
-
-        from . import object_query as oq
-
-        try:
-            meta = await ont._instance_meta(code)
-        except Exception:  # noqa: BLE001
-            return None
-        if not meta or meta.get("error") or not meta.get("materialized"):
-            return None
-        cols = set(meta.get("cols") or [])
-        fields = [
-            p for p in (meta.get("props") or [])
-            if p.get("code") in cols and (p.get("visibility") or "normal") != "hidden"
-        ]
-        if not fields:
-            return None
-        try:
-            links = [
-                lk for lk in await ont.list_links(code)
-                if (lk.get("visibility") or "normal") != "hidden"
-            ]
-        except Exception:  # noqa: BLE001
-            links = []
-        spec = oq.build_allowed(
-            [{"code": code, "name": meta.get("name") or code}], {code: fields}, {code: links})
-        return spec.get(code)
-
-
-    @classmethod
-    async def _ir_runtime(cls) -> dict:
-        """IR 生成用的模型。
-
-        默认与 NL2SQL 同源（``_get_runtime()``）；可用设置 ``object_query_model``
-        指定一个**更快的模型**（填模型名或 id）。
-
-        为什么留这个口子：实测同一提示词经 agno —— deepseek-flash ≈4.4s、
-        LLM-27B-FP8 ≈8.9s、LLM-284B-MXFP4 ≈29.4s（且长尾能到 60s+）。
-        IR 是纯结构化抽取，用大模型既浪费又把"优化路径"拖成"更慢的路径"。
-        """
-        cfg = await cls._cfg()
-        pick = str(cfg.get("object_query_model") or "").strip()
-        model_id: int | None = None
-        if pick:
-            if pick.isdigit():
-                model_id = int(pick)
-            else:
-                from sqlalchemy import text as _t
-
-                try:
-                    async with async_db_session() as db:
-                        row = (await db.execute(_t(
-                            "SELECT id FROM ai_models WHERE is_deleted=false AND enabled=true "
-                            "AND name=:n ORDER BY is_default DESC, id DESC LIMIT 1"),
-                            {"n": pick})).fetchone()
-                    model_id = int(row[0]) if row else None
-                except Exception:  # noqa: BLE001
-                    model_id = None
-        if model_id is not None:
-            from app.plugin.module_ai.models.service import AiModelService
-
-            try:
-                r = await AiModelService.get_runtime_model(model_id=model_id)
-                if r:
-                    return r
-            except Exception:  # noqa: BLE001
-                pass
-        return await cls._get_runtime()
-
-
-
-
-
-    @classmethod
-    async def _auto_index(cls, object_code: str) -> None:
-        """后台按建议为某对象建索引（失败不阻断、允许重试）。"""
-        from app.plugin.module_ai.ontology import indexing as _idx
-
-        try:
-            r = await _idx.apply_suggestions(object_code, only_high=True)
-            log.warning("[query] 自动建索引 object={} -> {}", object_code, r.get("msg"))
-        except Exception as e:  # noqa: BLE001
-            _OQ_INDEXED.discard(object_code)   # 失败回滚占位，下次可再试
-            log.warning(f"[query] 自动建索引失败（忽略）object={object_code}: {str(e)[:120]}")
 
 
 
@@ -2270,59 +1796,17 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @staticmethod
-    async def _embedding_mid() -> int | None:
-        """解析 usage='embedding' 的模型 id（供 embed_texts 使用），无则 None。"""
-        try:
-            from sqlalchemy import text as _t
-
-            async with async_db_session() as db:
-                m = (
-                    await db.execute(
-                        _t(
-                            "SELECT id FROM ai_models "
-                            "WHERE usage=:usage AND enabled=true AND is_deleted=false "
-                            "ORDER BY is_default DESC, id DESC LIMIT 1"
-                        ),
-                        {"usage": "embedding"},
-                    )
-                ).scalar_one_or_none()
-                return int(m) if m else None
-        except Exception:  # noqa: BLE001
-            return None
 
 
 
-    @classmethod
-    async def _pgv_search(cls, question: str, top_k: int = 12) -> list[str]:
-        """pgvector 向量检索：返回最相关表（HNSW 余弦）。"""
-        try:
-            await cls._ensure_vector_table()
-        except Exception:  # noqa: BLE001
-            return []
-        try:
-            from app.plugin.module_ai.knowledge.embedding import embed_texts
 
-            qvec = (await embed_texts([question], model_id=await cls._embedding_mid()))[0]
-        except Exception:  # noqa: BLE001
-            return []
-        async with async_db_session() as db:
-            from sqlalchemy import text as _text
 
-            r = await db.execute(
-                _text(
-                    "SELECT tables FROM ai_query_asset_vectors "
-                    "ORDER BY embedding <-> CAST(:q AS vector) LIMIT :k"
-                ),
-                {"q": str(qvec), "k": top_k},
-            )
-            rows = r.fetchall()
-        tables: set[str] = set()
-        for row in rows:
-            t = row[0]
-            if t:
-                tables.update(t)
-        return list(tables)
+
+
+
+
+
+
 
 
     # ---- 语义召回单元（阶段1：自建召回服务的底座）----
@@ -2337,12 +1821,6 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
     )
 
 
-    @staticmethod
-    def _parse_col_label(label: str) -> dict:
-        """从 ``_system_schema()`` 的列标签 ``col(type)【中文名】…`` 抽出列名与中文名。"""
-        name = (label or "").split("(", 1)[0].strip()
-        m = re.search(r"【([^】]+)】", label or "")
-        return {"column_name": name, "description": m.group(1) if m else ""}
 
 
 
@@ -2350,31 +1828,6 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
 
 
 
-    @classmethod
-    async def _agno_search_tables(cls, question: str, schema: dict, top_k: int) -> list[str]:
-        """用 Agno Knowledge(PgVector) 语义检索，返回命中的表集合。
-
-        首次调用触发**后台播种**（不阻塞当前请求，回退 pgvector），
-        播种完成后走 Agno 检索。
-        """
-        global _AGNO_SEEDED, _AGNO_SEEDING
-        from .agno_store import AgnoSemanticStore
-
-        store = await AgnoSemanticStore.get()
-        await store.ensure()
-        if not _AGNO_SEEDED and (await store.count()) == 0 and not _AGNO_SEEDING:
-            _AGNO_SEEDING = True
-            import asyncio as _asyncio
-
-            _asyncio.ensure_future(cls._agno_seed_units(schema))
-            return []  # 本次回退到 pgvector，播种完成后走 Agno
-        texts = await store.search(question, top_k=top_k)
-        tables: set[str] = set()
-        for txt in texts:
-            for t in schema:
-                if t in txt:
-                    tables.add(t)
-        return list(tables)
 
 
 
