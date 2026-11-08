@@ -229,6 +229,12 @@ export default {
   settingReset: "Reset",
   settingResetAll: "Reset all",
   settingResetConfirm: "Reset all settings to defaults? Applies after saving.",
+  traceTitle: "Execution details",
+  tracePath: "Path",
+  traceTook: "Time / rows",
+  traceApplied: "Policy rewrites",
+  tracePolicy: "Matched policies",
+  traceError: "Failed",
   settingTip:
     'These are engineering switches for Smart Query; they take effect immediately after saving. Items marked "experimental" are off by default and require comparison validation before enabling.',
   leaveEmptyDefault: "Empty = default",

@@ -7965,7 +7965,10 @@ class AiQueryService:
             )
             if not decision.permit:
                 raise CustomException(msg=decision.reason)
-            return await _execute_custom_ds_sql(ds_id, decision.sql or sql, auth)
+            out = await _execute_custom_ds_sql(ds_id, decision.sql or sql, auth)
+            out["applied"] = [dict(a) for a in (decision.applied or ())]
+            out["policy_ids"] = list(decision.policy_ids or ())
+            return out
 
         # 复用本体的行级/列级权限：把本体对象支撑表改写成"已过滤的子查询"。
         # 问数是**任意形状的读**（聚合/分组/join），外面套 WHERE 是错的——
@@ -8045,8 +8048,13 @@ class AiQueryService:
         # `allowed_tables=set()` 在 `validate_sql` 里等价于**跳过表白名单**
         # （`if allowed_lower and ...`），因此不会误杀策略允许的表。
         if decision.sql:
-            return await _execute_sql(validate_sql(decision.sql, set()))
-        return await _execute_sql(secured["sql"])
+            out = await _execute_sql(validate_sql(decision.sql, set()))
+        else:
+            out = await _execute_sql(secured["sql"])
+        # 供问数页「执行详情」展示：实际施加了哪些改写、命中哪些策略
+        out["applied"] = [dict(a) for a in (decision.applied or ())]
+        out["policy_ids"] = list(decision.policy_ids or ())
+        return out
 
     @classmethod
     async def _explain_rows(cls, sql: str) -> int:
@@ -9136,6 +9144,9 @@ class AiQueryService:
                     summary=summary)
                 yield {"type": "result", "path": "fast",
                        "columns": res["columns"], "rows": res["rows"],
+                       "sql": res.get("sql") or "", "took_ms": res.get("took_ms", 0),
+                       "applied": res.get("applied") or [],
+                       "policy_ids": res.get("policy_ids") or [],
                        "summary": summary, "message_id": msg.id}
                 yield {"type": "done", "path": "fast", "session_id": sess["id"]}
                 return
@@ -9173,7 +9184,7 @@ class AiQueryService:
                        "columns": ans.get("columns") or [], "rows": ans.get("rows") or [],
                        "summary": ans.get("summary") or "",
                        "ontology_used": ans.get("ontology_used") or [],
-                       "message_id": ans.get("message_id")}
+                       "message_id": ans.get("message_id"), "sql": (res.get("sql") or ""), "took_ms": res.get("took_ms", 0), "applied": res.get("applied") or [], "policy_ids": res.get("policy_ids") or []}
                 yield {"type": "done", "path": "object", "session_id": sess["id"],
                        "message_id": ans.get("message_id")}
                 return
@@ -9397,6 +9408,8 @@ class AiQueryService:
                 _sql_cache_set(question, datasource, sql, _auth_scope(auth))
             return [
                 {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows),
+                 "sql": sql, "took_ms": res.get("took_ms", 0),
+                 "applied": res.get("applied") or [], "policy_ids": res.get("policy_ids") or [],
                  "retrieved": retrieved, "ontology_used": ont_used, "message_id": msg.id,
                  "dq_warning": await cls._dq_warning_for_sql(sql)},
                 {"type": "answer", "summary": "以下是根据你的问题生成的结果："},

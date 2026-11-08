@@ -274,6 +274,9 @@
 
                   <template #footer>
                     <div v-if="m.id" class="q-msg__fb">
+                      <el-button v-if="m.sql || m.took_ms" link size="small" @click="openTrace(m)">
+                        {{ t("ai_logs.traceTitle") }}
+                      </el-button>
                       <el-button icon="Select" link size="small" @click="feedback(m, 'up')">
                         {{ t("ai_logs.useful") }}
                       </el-button>
@@ -623,6 +626,46 @@
       </template>
     </el-dialog>
   </div>
+
+  <el-drawer v-model="traceVisible" :title="t('ai_logs.traceTitle')" size="560px" append-to-body>
+    <template v-if="traceMsg">
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item :label="t('ai_logs.tracePath')">
+          {{ traceMsg.path || "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.traceTook')">
+          {{ traceMsg.took_ms ?? 0 }} ms · {{ traceMsg.result_rows ?? 0 }} 行
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.traceApplied')">
+          <el-tag
+            v-for="(a, i) in traceMsg.applied || []"
+            :key="i"
+            size="small"
+            type="warning"
+            effect="plain"
+            style="margin-right: 4px"
+          >
+            {{ Object.values(a).join(" · ") }}
+          </el-tag>
+          <span v-if="!(traceMsg.applied || []).length">—</span>
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_logs.tracePolicy')">
+          {{ (traceMsg.policy_ids || []).join(", ") || "—" }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-alert
+        v-if="traceMsg.is_error"
+        :title="traceMsg.error || traceMsg.summary || t('ai_logs.traceError')"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-top: 10px"
+      />
+      <div v-if="traceMsg.sql" class="q-trace__sql">
+        <CodeBlock :code="traceMsg.sql" language="sql" />
+      </div>
+    </template>
+  </el-drawer>
 </template>
 
 <script setup lang="ts">
@@ -842,6 +885,9 @@ async function ask() {
         cur.rows = d.rows || [];
         cur.result_rows = d.result_rows ?? (d.rows || []).length;
         cur.took_ms = d.took_ms;
+        cur.sql = d.sql || cur.sql;
+        cur.applied = d.applied || [];
+        cur.policy_ids = d.policy_ids || [];
         cur.path = cur.path || d.path || "result";
         // 后端字段名是 retrieved / ontology_used，渲染函数（recalledOf/ontologyOf）只认
         // grounding 这一层；之前这里读的是 d.recalled / d.ontology（两个都不存在），
@@ -1195,6 +1241,14 @@ async function saveSettings() {
 }
 
 // 沉淀为指标（FDE 复用闭环）：把已验证问答落为确定性指标
+const traceVisible = ref(false);
+const traceMsg = ref<any>(null);
+
+function openTrace(m: any) {
+  traceMsg.value = m;
+  traceVisible.value = true;
+}
+
 const pmVisible = ref(false);
 const pmName = ref("");
 const pmKey = ref("");
@@ -1634,6 +1688,10 @@ const visibleGroups = computed(() => {
 </style>
 
 <style lang="scss" scoped>
+.q-trace__sql {
+  margin-top: 12px;
+}
+
 .q-set__mode {
   margin-bottom: 10px;
 }
