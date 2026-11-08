@@ -69,11 +69,17 @@ cd backend
 uv run python scripts/query_smoke.py                 # 路由 + 两条真实提问，约 40s
 uv run python scripts/query_smoke.py --routing-only   # 只验路由，约 10s（不构造应用）
 uv run python scripts/query_policy_smoke.py           # 权限网关 + 星号止血，约 20s
+# 金路径冒烟：类方法装饰器/路由/缓存隔离/导出走网关（单测看不见的那类）
+uv run python scripts/query_golden_smoke.py             # 约 30s（要构造应用）
+
 uv run python scripts/query_policy_backfill.py --dry-run  # 旧权限→策略迁移预演（不写库）
 ```
 
 它检查三件事：慢路径依赖的类方法都在、22 条用例的快/慢路由没串（术语抢答、跨表减法、
 条件/去重必须让位）、一条快路径 + 一条慢路径**真的能答出数据**。退出码非 0 即失败。
+
+前端金路径（需 5181/8002 已启动）：`cd frontend && node scripts/golden_path.mjs`
+覆盖 登录 → 问数 → 执行详情 → 配置面板折叠 → 资产起草入口 + 接口 4xx/5xx 清零，约 40s。
 
 `query_policy_smoke.py` 直接驱动线上的 `guard.prepare` / `compiler.rewrite`（不经过 LLM，
 也不需要起服务，但需要数据库）：无主体拒绝、敏感表 `select *` 拒绝、行策略真的生成
