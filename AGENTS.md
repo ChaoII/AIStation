@@ -85,6 +85,7 @@ uv run python scripts/query_policy_smoke.py           # 权限网关 + 星号止
 uv run python scripts/query_golden_smoke.py             # 约 30s（要构造应用）
 
 uv run python scripts/query_policy_backfill.py --dry-run  # 旧权限→策略迁移预演（不写库）
+uv run python scripts/query_policy_grant_legacy.py    # 把每个非超管的旧范围落成 allow（切 enforce 前跑）
 ```
 
 它检查三件事：慢路径依赖的类方法都在、22 条用例的快/慢路由没串（术语抢答、跨表减法、
@@ -96,6 +97,19 @@ uv run python scripts/query_policy_backfill.py --dry-run  # 旧权限→策略�
 `query_policy_smoke.py` 直接驱动线上的 `guard.prepare` / `compiler.rewrite`（不经过 LLM，
 也不需要起服务，但需要数据库）：无主体拒绝、敏感表 `select *` 拒绝、行策略真的生成
 `WHERE` 过滤、审计落库、解析失败 fail-closed；临时策略用 `smoke-policy-%` 首尾自清理。
+
+
+### 问数权限 enforce 状态（2026-11-08）
+
+- dev 库已切 `policy_engine=enforce`（配置在 `ai_query_settings`，不是环境变量）。
+- 切换前做过两件事：`query_policy_backfill.py --apply`（域/ABAC/敏感列/行策略迁移）
+  + `query_policy_grant_legacy.py`（把每个非超管的旧可查范围落成显式 allow，name=`legacy-keep`）。
+  **不跑第二个会收掉现有权限**：实测 `ac` 58→6 张、`test_acc` 566→240 张。
+- 回滚：`UPDATE ai_query_settings SET value='legacy' WHERE key='policy_engine'`（即时生效，
+  `_SETTINGS_CACHE` 会在下一次读配置时刷新）。
+- 收窄权限：按 `name='legacy-keep'` 删除对应行，再按域/角色重建 allow。
+- `sensitive_ok` 无法表达（引擎列 deny 优先于 allow），迁移时已进 skipped；需要给相关角色
+  配 `mask` 或调整敏感列策略。
 
 ### 首次跑测试 / 新建 worktree 必看（2026-10 实测）
 
