@@ -89,10 +89,26 @@ class Nl2SqlOps:
                      "用户会直接看到列头。")
         if cls._cfg_bool(cfg, "decomposed_planning", True):
             rules.append("（6）先判断问题属于「单表聚合 / 多表联查 / 嵌套子查询」，再按此规划生成 SQL；")
+        rules.append(
+            "（7）先看要的是「明细」还是「汇总」：出现 平均/均值/占比/百分比/比例/最多/最少/最高/最低/"
+            "最大/最小 时，**先按组聚合、再在外层汇总或取 TOP1**"
+            "（例：平均每个供应商关联几个矿点 = AVG(每组 COUNT)；关联最多的那家占多少 = 按组计数后 "
+            "ORDER BY 计数 DESC LIMIT 1）；这类题即使句式里有「每个/各」，也**不要**返回全量分组明细。"
+        )
         extra = ""
         if cls._cfg_bool(cfg, "full_entity_no_limit", True):
-            extra = ("注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
-                     "不要为了省事写 LIMIT 截断，应返回全部（系统最多保留 1000 行）。\n")
+            # 全量列举与「组上聚合」是**互斥**的两种诉求：
+            # 前者要求别截断（每个/各/所有…），后者要求先聚合再取一个数（平均/占比/最多…）。
+            # 旧实现无条件贴"全量列举"提示，实测把「最多的那家占全部关系的百分之多少」
+            # 引成了 53 行分组清单（正确答案 1 行）。
+            if _svc._wants_full_list(question):
+                extra = ("注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
+                         "不要为了省事写 LIMIT 截断，应返回全部（系统最多保留 1000 行）。\n")
+            else:
+                extra = ("注意：若问的是「平均每个…」「最多的/最少的那一个是谁」「占多少比例」，"
+                         "要**先按组聚合、再在外层算一个数或取 TOP1**"
+                         "（如 AVG(每组计数)、或 ORDER BY 计数 DESC LIMIT 1），"
+                         "不要返回整张分组清单。\n")
         _dialect, _ds_type = await cls._resolve_dialect_info(datasource)
         system_prompt = build_system_prompt(
             _dialect, rules, schema_ctx, extra + templated_note(_ds_type))

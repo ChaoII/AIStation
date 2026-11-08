@@ -72,16 +72,39 @@ def check_rank(columns: list, rows: list) -> list[dict]:
     return []
 
 
-def check_row_magnitude(question: str, rows: list) -> list[dict]:
-    """「每个/各…」类问题只返回 1 行 → 很可能没分组。"""
+#: 问句要的是**组上的聚合**（均值/极值/占比）时，1 行就是正确答案：
+#: 例「每个供应商平均关联几个矿点」→ AVG(每组 COUNT)；「最多的那家占多少」→ 取 1 行。
+#: 这类词必须豁免 check_row_magnitude，否则会把正确结果判成"漏了 GROUP BY"，
+#: 触发重试后模型改成返回全量分组清单（实测 1140 就被这样带偏）。
+_AGG_OVER_GROUPS_RE = re.compile(
+    r"(平均|均值|人均|户均|占比|百分比|比例|最多|最少|最高|最低|最大|最小)")
+_LIMIT_ONE_RE = re.compile(r"\bLIMIT\s+1\b", re.IGNORECASE)
+_OUTER_AGG_RE = re.compile(
+    r"^\s*SELECT\s+(?:ROUND\s*\(\s*)?(?:AVG|SUM|MIN|MAX|COUNT)\s*\(",
+    re.IGNORECASE)
+
+
+def check_row_magnitude(question: str, rows: list, sql: str = "") -> list[dict]:
+    """「每个/各…」类问题只返回 1 行 → 很可能没分组。
+
+    **例外**（三类都按"1 行是正确结果"处理，不报）：
+    1. 问句要的是组上的聚合（平均/占比/最多…）；
+    2. SQL 显式 ``LIMIT 1``（"最多的那一家"）；
+    3. SQL 最外层就是聚合（``SELECT ROUND(AVG(...``，对子查询求平均）。
+    """
     if not rows or len(rows) != 1:
         return []
-    if _GROUP_HINT_RE.search(question or ""):
+    q = question or ""
+    if _AGG_OVER_GROUPS_RE.search(q):
+        return []
+    if sql and (_LIMIT_ONE_RE.search(sql) or _OUTER_AGG_RE.search(sql)):
+        return []
+    if _GROUP_HINT_RE.search(q):
         return [{"kind": "rows", "msg": "问题要求分组/逐个统计，但只返回 1 行，可能漏了 GROUP BY"}]
     return []
 
 
-def run_selfcheck(question: str, columns: list, rows: list) -> list[dict]:
+def run_selfcheck(question: str, columns: list, rows: list, sql: str = "") -> list[dict]:
     """返回可疑项列表（空 = 通过）。**只作提示**，不阻断。"""
     issues: list[dict] = []
     for fn in (check_ratio, check_cumulative, check_rank):
@@ -90,7 +113,7 @@ def run_selfcheck(question: str, columns: list, rows: list) -> list[dict]:
         except Exception:  # noqa: BLE001
             continue
     try:
-        issues.extend(check_row_magnitude(question, rows))
+        issues.extend(check_row_magnitude(question, rows, sql))
     except Exception:  # noqa: BLE001
         pass
     return issues

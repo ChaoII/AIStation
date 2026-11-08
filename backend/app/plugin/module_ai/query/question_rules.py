@@ -73,8 +73,18 @@ ALL_LIST_HINTS = ("每个", "各", "所有", "全部", "分别", "每类", "每�
 TOP_N_RE = re.compile(r"前\s*\d+|排名|排前|top\s*\d+|前几|最多前", re.IGNORECASE)
 
 
+#: 组上聚合的措辞：出现这些词时，问句要的是**一个数**（均值/极值/占比），
+#: 即使含「全部/每个」也不是"全量列举"。
+#: 实测反例：「关联最多的那家供应商是谁，它占**全部**关系的百分之多少」被当成全量列举，
+#: 于是 LIMIT 被放宽到 1000、提示词也鼓励返回整张清单（53 行），答案直接判错。
+AGG_OVER_GROUPS_RE = re.compile(
+    r"(平均|均值|人均|户均|占比|百分比|比例|最多|最少|最高|最低|最大|最小)")
+
+
 def wants_full_list(question: str) -> bool:
     q = question or ""
     if TOP_N_RE.search(q):
+        return False
+    if AGG_OVER_GROUPS_RE.search(q):
         return False
     return any(h in q for h in ALL_LIST_HINTS)

@@ -126,7 +126,8 @@ class SlowPathOps:
                         from .selfcheck import format_issue, run_selfcheck
 
                         _iss = run_selfcheck(
-                            question, res.get("columns") or [], res.get("rows") or []
+                            question, res.get("columns") or [], res.get("rows") or [],
+                            sql,
                         )
                         if _iss:
                             last_err = ("上一次结果看起来有问题：" + format_issue(_iss)
