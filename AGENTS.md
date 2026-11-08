@@ -139,6 +139,8 @@ uv run python scripts/query_session_cleanup.py --apply     # 软删：评测会�
   ⚠️ 两条踩过的坑：① 搬移脚本按缩进切片时，**不要把模块级常量（`_SYSTEM_METRICS` 等）一起切走**；
   ② mixin 里 `global _SCHEMA_CACHE` 只会建本模块的新变量，必须 `from . import service as _svc`
   显式回写。护栏见 `tests/test_query_service_classmethod_guard.py`（装饰器 + 跨模块 global）。
+  ⚠️ 第三条：**批量搬多组方法时，必须一趟算完所有 ast 行号区间再统一删除**——
+     先删第一组再按旧行号删第二组会切坏文件（实测一次，靠 py_compile 当场发现）。
 
 
 ### 首次跑测试 / 新建 worktree 必看（2026-10 实测）
