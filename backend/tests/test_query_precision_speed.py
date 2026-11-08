@@ -6,6 +6,8 @@
 3. 支撑表解析 —— `backing_table` 为空时按库里实际存在的表定，两个函数不许打架
 """
 import inspect
+
+from _query_sources import query_module_sources
 import re
 
 import pytest
@@ -202,7 +204,7 @@ class TestContextBlockFilter:
 class TestNoRegressions:
     def test_tool_agent_default_off(self):
         """工具往返实测 7.25 次/题，而信息本地已全覆盖 —— 默认必须是关的。"""
-        src = inspect.getsource(Q)
+        src = query_module_sources()
         assert 'cfg, "agno_tool_agent", False' in src, "默认值应为 False"
         assert 'cfg, "agno_tool_agent", True' not in src, "不应残留 True 默认"
 
@@ -216,7 +218,7 @@ class TestNoRegressions:
 
     def test_retrieval_memoised(self):
         """同一问题一次问答里会被检索两次（拼 prompt + 溯源）。"""
-        src = inspect.getsource(Q)
+        src = query_module_sources()
         assert "_RETRIEVAL_CACHE" in src
         assert "_semantic_tables_uncached" in src
 

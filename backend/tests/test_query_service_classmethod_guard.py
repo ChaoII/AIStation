@@ -19,6 +19,7 @@ import pytest
 TARGETS = [
     "app/plugin/module_ai/query/service.py",
     "app/plugin/module_ai/query/actions_ops.py",
+    "app/plugin/module_ai/query/ask_ops.py",
     "app/plugin/module_ai/query/assets_ops.py",
     "app/plugin/module_ai/query/slowpath_ops.py",
     "app/plugin/module_ai/query/nl2sql_ops.py",
