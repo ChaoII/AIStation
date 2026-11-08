@@ -18,6 +18,7 @@ MODULE_NAMES = (
     "question_rules",
     "metric_rules",
     "degraded",
+    "datasource_ops",
     "service",
     "ask_ops",
     "actions_ops",
