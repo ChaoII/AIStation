@@ -84,6 +84,39 @@ ok("资产页有 AI 生成描述", labels.includes("AI 生成描述"), JSON.stri
 ok("资产页有批量起草", labels.includes("批量起草"), JSON.stringify(labels.slice(0, 12)));
 ok("接口无 4xx/5xx", bad.length === 0, bad.join(" | "));
 
+// 4) 清理本次冒烟产生的会话：它走真实 UI 提问，会留一条会话；
+//    不清理的话左侧「会话」列表会被同一句冒烟问题刷屏（实测曾积累 37 条）。
+try {
+  const api = process.env.E2E_API_URL || "http://127.0.0.1:8002/api/v1";
+  const token = await page.evaluate(() => {
+    const raw =
+      localStorage.getItem("access_token") || sessionStorage.getItem("access_token") || "";
+    // Storage 里存的是 JSON 字符串（带引号），直接塞 Bearer 会被判无效认证
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+  });
+  if (token) {
+    const r = await fetch(`${api}/ai/query/sessions/list`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const list = (await r.json())?.data || [];
+    // 列表按 id 倒序，本次刚创建的在最前；标题一致才删，避免误删别的会话
+    const mine = list.filter((s) => s.title === "煤场进煤记录有多少条？").slice(0, 1);
+    for (const s of mine) {
+      await fetch(`${api}/ai/query/sessions/${s.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+    console.log(`清理冒烟会话 ${mine.length} 条`);
+  }
+} catch (e) {
+  console.log("清理冒烟会话失败（忽略，不影响判定）: " + e.message);
+}
+
 await browser.close();
 console.log(fails.length ? `\n失败 ${fails.length} 项` : "\n全部通过");
 process.exit(fails.length ? 1 : 0);

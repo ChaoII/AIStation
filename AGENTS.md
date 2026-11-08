@@ -93,6 +93,13 @@ uv run python scripts/query_policy_grant_legacy.py    # 把每个非超管的旧
 
 前端金路径（需 5181/8002 已启动）：`cd frontend && node scripts/golden_path.mjs`
 覆盖 登录 → 问数 → 执行详情 → 配置面板折叠 → 资产起草入口 + 接口 4xx/5xx 清零，约 40s。
+它会真的提问一次，**结束时自动删掉本次产生的会话**（否则左侧会话列表会被同一句冒烟
+问题刷屏；实测曾积累 37 条）。批量清理历史垃圾用：
+
+```bash
+uv run python scripts/query_session_cleanup.py --dry-run   # 预演（默认只清 1 天前）
+uv run python scripts/query_session_cleanup.py --apply     # 软删：评测会话 + 单条消息会话
+```
 
 `query_policy_smoke.py` 直接驱动线上的 `guard.prepare` / `compiler.rewrite`（不经过 LLM，
 也不需要起服务，但需要数据库）：无主体拒绝、敏感表 `select *` 拒绝、行策略真的生成
