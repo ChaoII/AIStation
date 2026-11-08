@@ -32,6 +32,41 @@ if TYPE_CHECKING:
 from .actions_ops import ActionsOps
 from .ask_ops import AskOps
 from .answer_ops import AnswerOps
+from .runtime_flags import bypass_caches  # noqa: F401
+from .runtime_flags import config_override  # noqa: F401
+from .runtime_flags import set_eval_context  # noqa: F401
+from .runtime_flags import invalidate_ont_allow_cache  # noqa: F401
+from .runtime_flags import _mark_ir_fail  # noqa: F401
+from .runtime_flags import _ir_circuit_open  # noqa: F401
+from .runtime_flags import _ensure_query_tables  # noqa: F401
+from .runtime_flags import _ddl_for_dialect  # noqa: F401
+from .datasource_core import _load_ds  # noqa: F401
+from .datasource_core import _ds_code  # noqa: F401
+from .datasource_core import _ds_cfg_from_model  # noqa: F401
+from .datasource_core import _norm_datasource  # noqa: F401
+from .datasource_core import test_datasource_conn  # noqa: F401
+from .datasource_core import sync_datasource_schema  # noqa: F401
+from .datasource_core import list_ds_schema  # noqa: F401
+from .datasource_core import _assert_ds_access  # noqa: F401
+from .execution import _execute_sql  # noqa: F401
+from .execution import _secure_ont_sql  # noqa: F401
+from .execution import _execute_bound_metric  # noqa: F401
+from .execution import _execute_metric  # noqa: F401
+from .execution import _execute_custom_ds_sql  # noqa: F401
+from .execution import _system_allowed  # noqa: F401
+from .execution import _scan_ont_tables  # noqa: F401
+from .execution import _default_sensitive_return_cols  # noqa: F401
+from .execution import _auth_scope  # noqa: F401
+from .execution import _actor_id  # noqa: F401
+from .execution import _user_role_codes  # noqa: F401
+from .execution import _clamp_rows  # noqa: F401
+from .execution import _json_cell  # noqa: F401
+from .execution import _cosine  # noqa: F401
+from .execution import _render_template  # noqa: F401
+from .execution import scope_tables_to_schema  # noqa: F401
+from .execution import nl2sql_max_tokens  # noqa: F401
+from .execution import nl2sql_attempts  # noqa: F401
+from .execution import _ir_max_tokens  # noqa: F401
 from .access_ops import AccessOps
 from .assetio_ops import AssetIoOps
 from .assets_ops import AssetsOps
@@ -141,18 +176,6 @@ MAX_ROWS = 1000
 QUERY_TIMEOUT = 10  # 秒
 
 
-def _clamp_rows(n) -> int:
-    """行数上限的**唯一**收敛点：设置项脏值/<=0 时回落到 ``MAX_ROWS``。
-
-    与 `executor.clamp_max_rows` 同区间，两处必须一致（有守护测试比对）。
-    """
-    try:
-        v = int(float(n))
-    except (TypeError, ValueError):
-        return MAX_ROWS
-    if v <= 0:
-        return MAX_ROWS
-    return max(1, min(5000, v))
 
 
 # 模块级标记：系统种子仅首次执行，避免每次 ask 都做 upsert 拖慢快路径
@@ -254,64 +277,8 @@ _QUERY_ALTER_COLS = (
 )
 
 
-def _ddl_for_dialect(sql: str) -> str:
-    """兼容旧调用名：统一走 ``ddl_dialect.ddl_for_dialect``（方言规则只有一份）。"""
-    from .ddl_dialect import ddl_for_dialect
-
-    return ddl_for_dialect(sql)
 
 
-async def _ensure_query_tables() -> None:
-    """确保问数侧影子表与新增列存在（幂等、best-effort）。
-
-    ⚠️ 不加"已执行"进程标记：测试会多次重建 SQLite 库，标记会让第二个库缺列。
-    这里只有 3 次 inspect + 少量 CREATE IF NOT EXISTS，重复执行代价可接受。
-    """
-    for sql in _QUERY_TABLES_SQL:
-        try:
-            async with async_db_session.begin() as db:
-                await db.execute(text(_ddl_for_dialect(sql)))
-        except Exception as e:  # noqa: BLE001
-            _degrade("shadow_tables", e)
-    for table, col, ddl in _QUERY_ALTER_COLS:
-        try:
-            async with async_db_session.begin() as db:
-                from sqlalchemy import inspect
-
-                cols = await db.run_sync(
-                    lambda s, _t=table: {c["name"] for c in inspect(s.connection()).get_columns(_t)}
-                )
-                if col not in cols:
-                    await db.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
-        except Exception as e:  # noqa: BLE001
-            _degrade("shadow_table_columns", e)
-    # 策略/审计/shadow 三张表（统一策略引擎的数据层），建表逻辑收敛在 policy/model.py
-    from .policy.model import ensure_policy_tables
-
-    await ensure_policy_tables()
-    # 血缘表（`ai_query_lineage`）：enforce/shadow 的视图映射依赖它。strict 化后
-    # "表不存在"会被当成读取失败 → enforce 全拒、shadow 静默零差异。必须与策略表
-    # 在同一处幂等创建；失败只降级（可见），不拖垮启动。
-    try:
-        from .lineage import ensure_lineage_table
-
-        await ensure_lineage_table()
-    except Exception as e:  # noqa: BLE001
-        _degrade("query_lineage_table", e)
-    # T7 接线自检（addendum 第 4 条）：shadow 差异写入依赖
-    # ``ai_policy_shadow_diff.rewrite`` 这一列。补列失败（无 DDL 权限）时差异会整条
-    # 写不进去，而写入本身是 fail-open —— 表现为「差异表悄悄没数据」，灰度报告被
-    # 静默骗过。启动时明确 warning，别让它沉在日志里。
-    _policy_bad = [
-        a["area"] for a in degraded_status()["areas"]
-        if a["area"] in ("policy_tables", "policy_table_columns")
-    ]
-    if _policy_bad:
-        log.warning(
-            "[问数权限] 策略表就绪异常（degraded_status 含 {}）：shadow 差异可能整条"
-            "写不进去（fail-open，不会报错），切 shadow/enforce 前先修表结构",
-            "/".join(_policy_bad),
-        )
 
 
 # Agno 向量库是否已播种语义单元
@@ -330,15 +297,6 @@ _ONT_ALLOW_CACHE_AT: float = 0.0
 _ONT_ALLOW_TTL = 60.0
 
 
-def invalidate_ont_allow_cache() -> None:
-    """本体对象/支撑表变化后调用：让「可查询白名单」缓存立即失效。
-
-    原先该缓存**只在进程启动时建立、永不失效** ⇒ 导入本体后必须重启后端，
-    问数才认得新对象的支撑表（表现为「表 xxx 不在可查询白名单内」）。
-    """
-    global _ONT_ALLOW_CACHE, _ONT_ALLOW_CACHE_AT
-    _ONT_ALLOW_CACHE = None
-    _ONT_ALLOW_CACHE_AT = 0.0
 
 
 #: 当前对象上下文（对齐 Palantir Retrieval Context 的 Fixed Object Set）。
@@ -361,14 +319,6 @@ _EVAL_CTX: ContextVar[bool] = ContextVar("ai_query_eval_ctx", default=False)
 _BYPASS_CACHE: ContextVar[bool] = ContextVar("ai_query_bypass_cache", default=False)
 
 
-@contextmanager
-def bypass_caches():
-    """当前任务内旁路全部问数缓存（评测/对比用）。"""
-    token = _BYPASS_CACHE.set(True)
-    try:
-        yield
-    finally:
-        _BYPASS_CACHE.reset(token)
 
 
 #: 工程配置的任务内覆盖层。
@@ -381,24 +331,8 @@ _CFG_OVERRIDE: ContextVar[dict[str, str] | None] = ContextVar(
     "ai_query_cfg_override", default=None)
 
 
-@contextmanager
-def config_override(overrides: dict | None):
-    """当前任务内临时覆盖工程配置（不落库、不外溢）。"""
-    if not overrides:
-        yield
-        return
-    merged = {**(_CFG_OVERRIDE.get() or {}),
-              **{str(k): str(v) for k, v in overrides.items()}}
-    token = _CFG_OVERRIDE.set(merged)
-    try:
-        yield
-    finally:
-        _CFG_OVERRIDE.reset(token)
 
 
-def set_eval_context(on: bool = True) -> None:
-    """评测执行器调用前打标（同任务内生效，子任务会继承）。"""
-    _EVAL_CTX.set(bool(on))
 
 
 #: 对象查询热度（对象编码 → 命中次数）与「本进程已自动建过索引」的对象。
@@ -413,21 +347,10 @@ _IR_FAIL_AT: float = 0.0
 _IR_FAIL_COOLDOWN = 90.0
 
 
-def _mark_ir_fail() -> None:
-    global _IR_FAIL_AT
-    _IR_FAIL_AT = time.time()
 
 
-def _ir_circuit_open() -> bool:
-    return _IR_FAIL_AT > 0 and (time.time() - _IR_FAIL_AT) < _IR_FAIL_COOLDOWN
 
 
-def _cosine(a: list[float], b: list[float]) -> float:
-    if not a or not b:
-        return 0.0
-    return sum(x * y for x, y in zip(a, b, strict=False)) / (
-        (sum(x * x for x in a) ** 0.5) * (sum(y * y for y in b) ** 0.5) + 1e-9
-    )
 
 
 # 禁止出现的 SQL 关键片段（防 DDL/DML/多语句/写操作）
@@ -473,275 +396,28 @@ _ENTITY_TABLE: dict[str, set[str]] = {
 # ---------------------------------------------------------------------------
 # 自定义数据源连接/执行（阶段B）
 # ---------------------------------------------------------------------------
-def _ds_cfg_from_model(ds) -> dict:
-    return {
-        "type": ds.type or "postgres", "host": ds.host or "", "port": ds.port or 0,
-        "database": ds.database or "", "username": ds.username or "",
-        "password": ds.password or "",
-    }
 
 
-def _ds_code(datasource_id: int) -> str:
-    return f"ds:{datasource_id}"
 
 
-def _actor_id(auth) -> int | None:
-    """取当前操作人 id；**内部调度**（无 HTTP 用户上下文）返回 ``None``。
-
-    背景（实测回归）：``generate_asset_descriptions`` 这类批量动作既会被 HTTP
-    接口触发（有 auth），也会被自主巡检在**后台**触发（``auth=None``）。旧实现
-    直接写 ``auth.user.id`` → AttributeError → 整批「补全描述」必然失败。
-
-    这里统一兜底为 ``None``（= 系统写入，审计字段留空），
-    **不放宽任何 ACL**：归属过滤仍按真实 auth 走，``None`` 只影响审计列。
-    """
-    return getattr(getattr(auth, "user", None), "id", None)
 
 
-async def _load_ds(datasource_id: int):
-    async with async_db_session() as db:
-        ds = await db.get(AiQueryDatasourceModel, datasource_id)
-        if not ds or ds.is_deleted:
-            raise CustomException(msg="数据源不存在")
-        return ds
 
 
-async def _norm_datasource(datasource) -> str | None:
-    """把数据源入参**归一化**为后端口径：``system`` / ``ds:{id}``。
-
-    背景（实测踩坑）：前端下拉的 `:value` 用的是**数据源编码**（如 ``ezdcs_pg``），
-    而后端语义层（指标 `datasource`、`list_ds_schema`、`_execute_custom_ds_sql`）
-    统一用 ``ds:{id}``。不归一化会导致 `int('ezdcs_pg')` 报错、
-    ``list_metrics('ezdcs_pg')`` 匹配不到任何指标。
-
-    接受 ``None``/``''``（→None，表示不限）、``system``、``ds:{id}``、编码（→查 id）。
-    """
-    from sqlalchemy import text as _t
-
-    ds = str(datasource or "").strip()
-    if not ds:
-        return None
-    if ds == SYSTEM_DS or ds.startswith("ds:"):
-        return ds
-    try:
-        async with async_db_session() as db:
-            row = (await db.execute(_t(
-                "SELECT id FROM ai_query_datasources WHERE code=:c AND is_deleted=false"),
-                {"c": ds})).fetchone()
-        if row:
-            return _ds_code(int(row[0]))
-    except Exception:  # noqa: BLE001
-        pass
-    return ds
 
 
-async def test_datasource_conn(datasource_id: int) -> dict:
-    ds = await _load_ds(datasource_id)
-    from . import executor as _ex
-
-    return await _ex.test_connection(_ds_cfg_from_model(ds))
 
 
-async def sync_datasource_schema(datasource_id: int) -> dict:
-    ds = await _load_ds(datasource_id)
-    from . import executor as _ex
-
-    tables = await _ex.introspect_schema(_ds_cfg_from_model(ds))
-    code = _ds_code(datasource_id)
-    # Task3：同步时按该数据源 filter_rules 给每个字段打 is_audit 标
-    rules = ds.filter_rules or DEFAULT_FILTER_RULES
-    async with async_db_session.begin() as db:
-        from sqlalchemy import delete
-        from sqlalchemy import text as _t
-
-        # 运行时补列（本项目 ai_* 表不走 Alembic，惯用 ADD COLUMN IF NOT EXISTS）
-        try:
-            await db.execute(_t(
-                "ALTER TABLE ai_query_schema "
-                "ADD COLUMN IF NOT EXISTS table_comment VARCHAR(255) DEFAULT ''"))
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 补 ai_query_schema.table_comment 失败: {e}")
-        await db.execute(
-            delete(AiQuerySchemaModel).where(AiQuerySchemaModel.datasource == code)
-        )
-        for t in tables:
-            cols = t["columns"] or []
-            for c in cols:
-                if isinstance(c, dict) and c.get("name"):
-                    c["is_audit"] = is_audit_field(c["name"], rules)
-            db.add(
-                AiQuerySchemaModel(
-                    datasource=code, table_name=t["table"],
-                    table_comment=str(t.get("comment") or "")[:255],
-                    columns=cols,
-                )
-            )
-    # 同步完顺手重算血缘：schema 变了，旧血缘就不准了。
-    # ★ 必须 try/except —— 血缘是增强，不能因为它让 schema 同步失败。
-    try:
-        from .lineage import rebuild_lineage
-
-        await rebuild_lineage(datasource_id)
-    except Exception as e:  # noqa: BLE001
-        log.warning(f"[query] 血缘重算失败（忽略）: {str(e)[:120]}")
-    return {"tables": len(tables)}
 
 
-async def list_ds_schema(datasource_id: int, included_only: bool = False) -> list[dict]:
-    """某自定义数据源已同步的表结构。
-
-    ``included_only=True`` 时只返回**数据资产目录里已纳入**的表 ——
-    用于检索/prompt 的范围收敛（实测 ds:4 同步了 311 张表，其中 92 张是
-    SYS_*/_BAK 等技术表，混进检索会污染召回与提示词）。
-    """
-    code = _ds_code(datasource_id)
-    # Task3：按该数据源 filter_rules 现算 is_system/is_audit；数据源不存在时兜底默认规则
-    try:
-        rules = (await _load_ds(datasource_id)).filter_rules or DEFAULT_FILTER_RULES
-    except CustomException:
-        rules = DEFAULT_FILTER_RULES
-    async with async_db_session() as db:
-        from sqlalchemy import select
-        from sqlalchemy import text as _t
-
-        rows = (
-            await db.execute(
-                select(AiQuerySchemaModel).where(
-                    AiQuerySchemaModel.datasource == code,
-                    AiQuerySchemaModel.is_deleted.is_(False),
-                )
-            )
-        ).scalars().all()
-        if included_only:
-            # 一张表有三种状态：**显式纳入**（included=true）/ **显式排除**（included=false）/
-            # **从未建过资产行**（同步过 schema 但没治理过）。
-            #
-            # 旧逻辑只认「显式纳入」⇒ 新数据源刚同步完表结构（ai_query_assets 还没有行）
-            # 时交集为空，NL2SQL 的 prompt 里一张表都没有 → 模型开始「编表名」。
-            # 现在：没治理过的表**默认纳入**（同步即可用，界面上标「未治理」），
-            # 用户显式排除的仍然排除——这与前端「纳入」列的口径一致（见 integration/index.vue）。
-            seen: dict[str, bool] = {}
-            for row in (
-                await db.execute(
-                    _t(
-                        "SELECT table_name, included FROM ai_query_assets WHERE is_deleted=false"
-                    )
-                )
-            ).fetchall():
-                seen[str(row[0]).upper()] = bool(row[1])
-            rows = [r for r in rows if seen.get(str(r.table_name).upper(), True)]
-    return [
-        {
-            "table": r.table_name,
-            "comment": r.table_comment or "",
-            # 每列现算 is_audit（存储的 columns 可能来自旧 schema，名字判定更可靠）
-            "columns": [
-                (
-                    {**c, "is_audit": is_audit_field(c.get("name", ""), rules)}
-                    if isinstance(c, dict)
-                    else c
-                )
-                for c in (r.columns or [])
-            ],
-            "is_system": is_system_table(r.table_name, rules),
-        }
-        for r in rows
-    ]
 
 
-def _user_role_codes(auth) -> set[str]:
-    try:
-        return {getattr(r, "code", "") for r in getattr(getattr(auth, "user", None), "roles", []) or []}
-    except Exception:  # noqa: BLE001
-        return set()
 
 
-async def _assert_ds_access(datasource_id: int, auth) -> None:
-    """校验当前用户是否有权访问该自定义数据源；超管/未限角色直接放行。"""
-    ds = await _load_ds(datasource_id)
-    allowed = ds.allowed_roles or []
-    if not allowed:
-        return
-    if getattr(getattr(auth, "user", None), "is_superuser", False):
-        return
-    if not (_user_role_codes(auth) & set(allowed)):
-        raise CustomException(msg="您无权限访问该数据源")
 
 
-async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dict:
-    """对自定义数据源执行只读 SQL（含 schema 白名单校验 + 角色授权）。"""
-    if auth is not None:
-        await _assert_ds_access(datasource_id, auth)
-    ds = await _load_ds(datasource_id)
-    schema_rows = await list_ds_schema(datasource_id)
-    allowed = {r["table"] for r in schema_rows}
-    from . import executor as _ex
-    from .sql_quote import quote_schema_identifiers
-
-    sql = validate_sql(sql, allowed)
-    # 大小写敏感库（如 ds:4）必须把表/列名写成「真实大小写 + 双引号」，
-    # 否则 PG 折成小写 → 关系/列不存在（实测把整题打崩的根因之一）。
-    schema_map = {
-        r["table"]: [c.get("name") for c in (r.get("columns") or [])]
-        for r in schema_rows
-    }
-    sql = quote_schema_identifiers(sql, schema_map)
-    # **值匹配纠错**：SQL 里的字面量若与库里的取值"归一后相等但写法不同"
-    # （尾随空格 / 全角 / 大小写），换成库里的原样写法 —— 否则等值比较查不到行。
-    # 这是 Genie「entity matching」的等价物（它做匹配纠错，而不是把值列进提示词）。
-    if AiQueryService._cfg_bool(await AiQueryService._cfg(), "literal_fix_enabled", True):
-        try:
-            used = [t for t in schema_map if t.lower() in sql.lower()][:5]
-            if used:
-                vmap = await AiQueryService._ds_value_map(f"ds:{datasource_id}", used, schema_map)
-                if vmap:
-                    fixed, fixes = AiQueryService.fix_sql_literals(sql, vmap)
-                    if fixes:
-                        log.info("[query] 值匹配纠错：{}（{} 处）", "；".join(fixes[:3]), len(fixes))
-                        sql = fixed
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 值匹配纠错失败（忽略）: {str(e)[:80]}")
-    # **字段级 ACL 对自定义数据源同样生效**（fail-closed）。
-    # 之前这道检查只在系统库分支：本体/资产里把「煤款单价」标成敏感，
-    # 走 ds:4 的问数照样能查出来 —— 标记形同摆设。
-    # `_ont_sql_violations` 本身是按**表名**匹配 `ai_query_asset_columns.sensitive`，
-    # 对外部库的表一样成立，差的只是没人调用它。
-    uid = getattr(getattr(auth, "user", None), "id", None) if auth is not None else None
-    try:
-        violations = await AiQueryService._ont_sql_violations(sql, uid)
-    except Exception as e:  # noqa: BLE001
-        log.warning(f"[query] 外部源字段级 ACL 校验失败，拒绝执行：{e}")
-        raise CustomException(msg=f"字段级权限校验失败，已拒绝执行：{str(e)[:120]}") from e
-    if violations:
-        raise CustomException(
-            msg=f"字段级权限：无权限访问 {', '.join(violations)}（请联系管理员申请可见权限）")
-    # 行数上限 / 执行超时同样从设置读取：这两个 key 以前只在默认值表里躺着，
-    # 实际生效的是 executor.MAX_ROWS / QUERY_TIMEOUT 常量 —— 界面改了没反应。
-    _cfg = await AiQueryService._cfg()
-    out = await _ex.execute_select(
-        _ds_cfg_from_model(ds), sql,
-        max_rows=AiQueryService._cfg_int(_cfg, "query_max_rows", _ex.MAX_ROWS),
-        timeout=AiQueryService._cfg_int(_cfg, "query_timeout_sec", int(_ex.QUERY_TIMEOUT)),
-    )
-    # 回传**实际执行**的 SQL（已加引号）：否则展示/排查看到的是未加引号的模板，会被误导
-    out["sql"] = sql
-    return out
 
 
-def _auth_scope(auth) -> str:
-    """SQL 缓存的主体指纹：不同用户/角色不能复用同一份生成结果。
-
-    上下文裁剪与权限判定都依赖主体，生成的 SQL 可能不同（行条件、可见表）；
-    缓存不加指纹 = 把 A 的 SQL 给 B 用。
-    """
-    uid = getattr(getattr(auth, "user", None), "id", None)
-    if uid is None:
-        return "anon"
-    try:
-        roles = ",".join(sorted(_user_role_codes(auth)))
-    except Exception:  # noqa: BLE001 - 角色取不到时退化为按用户隔离
-        roles = ""
-    return f"{uid}|{roles}"
 
 
 # ---------------------------------------------------------------------------
@@ -1061,45 +737,11 @@ _NL2SQL_FEWSHOT = [
 #: 5 行被放到 1000 行——基准立刻从 ✓ 变 ✗（自己引入的回退，靠复测抓出来的）。
 
 
-def _render_template(template: str, params: dict[str, Any]) -> str:
-    """把 {key} 占位替换为安全值（仅支持数字/日期/白名单字符串）。"""
-    def repl(m: re.Match) -> str:
-        key = m.group(1)
-        val = params.get(key)
-        if val is None:
-            return m.group(0)
-        if isinstance(val, (int, float)):
-            return str(int(val) if float(val).is_integer() else val)
-        s = str(val)
-        if not re.fullmatch(r"[A-Za-z0-9_\u4e00-\u9fa5\- ]+", s):
-            raise CustomException(msg=f"参数「{key}」包含非法字符")
-        return s
-
-    return re.sub(r"\{(\w+)\}", repl, template)
 
 
 # ---------------------------------------------------------------------------
 # 查询执行（只读、超时、行数上限）
 # ---------------------------------------------------------------------------
-def _json_cell(v):
-    """把数据库返回值转成 JSON 安全类型（Decimal→float、日期→iso 等）。"""
-    if v is None:
-        return None
-    if isinstance(v, bool) or isinstance(v, (int, float, str)):
-        return v
-    from decimal import Decimal
-
-    if isinstance(v, Decimal):
-        return float(v)
-    from datetime import date, datetime, time
-
-    if isinstance(v, (datetime, date, time)):
-        return v.isoformat()
-    if isinstance(v, (list, tuple)):
-        return [_json_cell(x) for x in v]
-    if isinstance(v, dict):
-        return {str(k): _json_cell(x) for k, x in v.items()}
-    return str(v)
 
 
 # ---------------------------------------------------------------------------
@@ -1152,25 +794,6 @@ _RETRIEVAL_CACHE_TTL = 600.0
 _RETRIEVAL_CACHE_MAX = 500
 
 
-def scope_tables_to_schema(ranked: list[str], schema_map: dict, core_tables,
-                           top_k: int) -> list[str]:
-    """**数据源隔离**：把召回结果限制在本次数据源的 schema 内。
-
-    向量/本体通道是全局的（不认数据源），实测 ds:4 的问题会被召回到
-    video_*/ai_* 等 system 表 → prompt 里没有真正的业务表 → 模型**编表名** → 空 SQL。
-
-    ⚠️ ``schema_map`` 为空表示**schema 未知**（如测试库取不到 information_schema）
-    —— 此时不做隔离（否则会把召回清空），保持原行为。
-    """
-    if not schema_map:
-        picked = list(ranked or [])[:top_k]
-        return picked or list(core_tables or [])
-    picked = [t for t in (ranked or []) if t in schema_map][:top_k]
-    if not picked:
-        picked = [t for t in (core_tables or []) if t in schema_map][:top_k]
-    if not picked:
-        picked = list(schema_map)[:top_k]
-    return picked
 
 
 #: 会影响「召回结果 / prompt 内容」的设置项。这些 key 一变，缓存必须换 key，
@@ -1187,37 +810,8 @@ _CTX_CFG_KEYS: tuple[str, ...] = (
 )
 
 
-async def _system_allowed() -> set[str]:
-    """可查询表白名单 = 系统表 + 本体对象支撑表。
-
-    注意：支撑表**不一定**叫 ``ont_{code}``——由数据源支撑的对象
-    （如 ``video_cameras`` / ``demo_sales``）支撑表就是它自己。
-    旧实现只拼 ``ont_{code}``，于是这些表**根本查不到**
-    （表现为「表 xxx 不在可查询白名单内」）。两种都收进来。
-    """
-    global _ONT_ALLOW_CACHE, _ONT_ALLOW_CACHE_AT
-    now = time.monotonic()
-    if _ONT_ALLOW_CACHE is not None and (now - _ONT_ALLOW_CACHE_AT) < _ONT_ALLOW_TTL:
-        return _ONT_ALLOW_CACHE
-    # 走本体的统一语义接口拿"真实支撑表名 → code"，不再自己拼 SQL
-    try:
-        from app.plugin.module_ai.ontology import semantic as _sem
-
-        ont_tables = set((await _sem.object_table_map()).keys())
-    except Exception:  # noqa: BLE001
-        ont_tables = set()
-    _ONT_ALLOW_CACHE = set(SYSTEM_ALLOWED_TABLES) | ont_tables
-    _ONT_ALLOW_CACHE_AT = now
-    return _ONT_ALLOW_CACHE
 
 
-def _scan_ont_tables(sql: str) -> list[str]:
-    """从生成 SQL 中检测用到的本体物化表（ont_xxx），作为「问答使用本体」的可视溯源。"""
-    if not sql:
-        return []
-    return list(dict.fromkeys(
-        m.group(1) for m in re.finditer(r"\b(ont_[A-Za-z0-9_]+)\b", sql)
-    ))
 
 
 # P1-12 方案 b：内置默认敏感列名单（fail-closed 底板）。
@@ -1234,159 +828,14 @@ _DEFAULT_SENSITIVE_COLS: frozenset[str] = frozenset({
 })
 
 
-def _default_sensitive_return_cols(sql: str) -> list[str]:
-    """筛出 SQL **返回结果列**中命中内置敏感名单的列名（原始形式）。
-
-    - 用 sqlglot 精确提取 SELECT 投影表达式里的列（含函数内列、别名），
-      避免正则误伤字符串；**不扫 WHERE / JOIN**（那里引用敏感列不拦）。
-    - 别名场景（``id AS password``）以**别名**作为结果列名判定——结果列就叫 password，必须拦。
-    - 解析失败时回退正则（宁可多报、不可漏报，保持 fail-closed）。
-    """
-    if not sql:
-        return []
-    try:
-        import sqlglot
-        from sqlglot import exp as _exp
-
-        parsed = sqlglot.parse_one(sql, read="postgres")
-    except Exception:  # noqa: BLE001
-        try:
-            names = re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", sql)
-        except Exception:  # noqa: BLE001
-            return []
-        return [n for n in names if n.lower() in _DEFAULT_SENSITIVE_COLS]
-
-    candidates: list[str] = []
-    for sel in parsed.find_all(_exp.Select):
-        for expr in sel.expressions:
-            # 别名：以「别名」作为结果列名（如 `id AS password`）
-            if isinstance(expr, _exp.Alias):
-                candidates.append(expr.alias)
-            # 内部列：覆盖直接列（password）、函数内列（MAX(api_token)）
-            for col in expr.find_all(_exp.Column):
-                candidates.append(col.name)
-
-    seen: set[str] = set()
-    hits: list[str] = []
-    for name in candidates:
-        low = name.lower()
-        if low in seen:
-            continue
-        seen.add(low)
-        if low in _DEFAULT_SENSITIVE_COLS:
-            hits.append(name)
-    return hits
 
 
-async def _execute_sql(sql: str) -> dict:
-    start = time.time()
-    try:
-        async with async_db_session() as db:
-            result = await db.execute(text(sql))
-            rows = result.fetchall()
-            cols = list(result.keys())
-    except Exception as e:  # noqa: BLE001
-        log.warning(f"[query] 执行失败: {e}")
-        raise CustomException(msg=f"查询执行失败：{e}")
-    # 行数上限走设置项（clamp 到安全区间），不再直接吃常量 MAX_ROWS
-    limit = MAX_ROWS
-    try:
-        limit = _clamp_rows(AiQueryService._cfg_int(await AiQueryService._cfg(),
-                                                    "query_max_rows", MAX_ROWS))
-    except Exception as e:  # noqa: BLE001
-        log.warning(f"[query] 读取行数上限失败，回落 {MAX_ROWS}：{str(e)[:80]}")
-    data = [[_json_cell(v) for v in r] for r in rows[:limit]]
-    return {"columns": cols, "rows": data, "took_ms": int((time.time() - start) * 1000),
-            "truncated": len(rows) > limit}
 
 
-async def _secure_ont_sql(sql: str, auth) -> dict:
-    """把问数生成的 SQL 交给本体的行级/列级策略改写。
-
-    返回 ``{"sql": <可能已改写>, "deny": bool, "msg": str, "rewritten": [...]}``。
-    取不到身份时**不改写**（保持既有行为），但会在日志里留痕——
-    宁可显式记录"这次没做权限改写"，也不要假装做了。
-    """
-    try:
-        uid = getattr(getattr(auth, "user", None), "id", None)
-    except Exception:  # noqa: BLE001
-        uid = None
-    if not uid:
-        log.warning("[query] 无调用者身份，跳过本体权限改写")
-        return {"sql": sql, "deny": False, "rewritten": [],
-                "msg": "无身份，未改写"}
-    try:
-        from app.plugin.module_ai.ontology import security as _ont_sec
-
-        principal = await _ont_sec.load_principal(uid)
-        r = await _ont_sec.secure_sql(sql, principal)
-    except Exception as e:  # noqa: BLE001
-        # 权限改写失败 → **fail-closed**：宁可拒绝，也不要放行未过滤的查询
-        log.warning(f"[query] 本体权限改写失败，拒绝执行：{e}")
-        return {"sql": sql, "deny": True, "rewritten": [],
-                "msg": f"权限校验失败，已拒绝执行：{str(e)[:120]}"}
-    if not r.get("ok"):
-        return {"sql": sql, "deny": True, "rewritten": r.get("rewritten") or [],
-                "msg": r.get("note") or "存在无法安全改写的表，已拒绝执行"}
-    return {"sql": r["sql"], "deny": False, "rewritten": r.get("rewritten") or [],
-            "msg": r.get("note") or ""}
 
 
-async def _execute_bound_metric(metric: dict, auth=None) -> dict:
-    """执行**绑定型指标**：口径由「本体对象 + 属性 + 聚合」确定性推导（不写 SQL）。
-
-    对齐设计 §2.2：绑定型指标既可走对象查询路径，也可走指标快路径——这里让快路径
-    复用本体实例层（`instance_aggregate`），从而**无需 sql_template**。
-    """
-    from app.plugin.module_ai.ontology import security as _ont_sec
-    from app.plugin.module_ai.ontology import service as ont
-
-    obj = str(metric.get("object_code") or "")
-    prop = str(metric.get("property_code") or "")
-    fn = str(metric.get("agg_fn") or "count")
-    # 快路径是**单值**语义（分组诉求由 `_wants_grouping` 挡在门外，交给对象查询路径）：
-    # 故这里不按 bound_dimensions 自动分组，只给总量。
-    gb = ""
-    a: dict = {"fn": fn}
-    if prop:
-        a["prop"] = prop
-    uid = getattr(getattr(auth, "user", None), "id", None)
-    try:
-        principal = await _ont_sec.load_principal(uid)
-    except Exception:  # noqa: BLE001
-        principal = None
-    r = await ont.instance_aggregate(obj, group_by=gb, aggs=[a], principal=principal)
-    if not r.get("ok"):
-        raise CustomException(msg=r.get("msg") or "指标执行失败")
-    rows = r.get("rows") or []
-    return {
-        "sql": f"-- 绑定型指标：本体实例层执行 {obj}.{fn}({prop or '*'})",
-        "columns": [gb or "合计", metric.get("name") or fn],
-        "rows": rows, "took_ms": 0,
-        "note": f"绑定型指标 {metric.get('key')} 由本体实例层确定性执行",
-    }
 
 
-async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> dict:
-    # 绑定型指标（object_code + agg_fn）：走本体实例层，**不依赖 sql_template**
-    if str(metric.get("object_code") or "") and str(metric.get("agg_fn") or ""):
-        return await _execute_bound_metric(metric, auth)
-    sql = _render_template(metric["sql_template"], params)
-    ds_code = metric.get("datasource") or SYSTEM_DS
-    if ds_code == SYSTEM_DS:
-        table = await AiQueryService._allowed_for_user(auth)
-        sql = validate_sql(sql, table)
-    # 安全补丁（P0-3）：执行一律走 `_execute_one`（与 ask / ask_stream / 报表共用
-    # 的**唯一收口**）—— 字段级 ACL 与本体行/列改写都在那里做，指标不再直连
-    # `_execute_sql`，否则「指标模板」就是绕过敏感字段拦截的后门。
-    # 第四个参数传**指标名**：软删除口径改写需要“问句”来判断是不是在问已删除。
-    # 漏传过一次（只改了 ask 的两条路）—— 指标快路径把「每日耗用量合计」
-    # 答成 41,827,138（含 3390 条软删行），金标 3,550,065，评测里就这一道暴露。
-    # ``entry="metric"``：审计/shadow 差异按入口标记（P1 唯一收口的口径）。
-    res = await AiQueryService._execute_one(
-        sql, ds_code, auth, str(metric.get("name") or ""), entry="metric")
-    res["sql"] = res.get("sql") or sql
-    return res
 
 
 # ---------------------------------------------------------------------------
@@ -1405,49 +854,10 @@ NL2SQL_MIN_MAX_TOKENS = 4000
 NL2SQL_DEFAULT_MAX_TOKENS = 8000
 
 
-def nl2sql_max_tokens(cfg: dict | None) -> int:
-    """NL2SQL 生成用的 max_tokens：取配置值，但**不得低于下限**。"""
-    raw = (cfg or {}).get("nl2sql_max_tokens")
-    try:
-        val = int(str(raw).strip()) if raw is not None else 0
-    except (TypeError, ValueError):
-        val = 0
-    if val < NL2SQL_MIN_MAX_TOKENS:
-        # 低于下限（含未配置/非法）一律用默认值，宁可多给预算也不要出空 SQL
-        return NL2SQL_DEFAULT_MAX_TOKENS
-    return val
 
 
-def nl2sql_attempts(cfg: dict | None) -> int:
-    """慢路径最多尝试几次（含首次）。
-
-    设置项是 ``nl2sql_retry``，语义按**总尝试次数**解释：``2`` = 首次 + 1 次自纠错
-    （与改动前硬编码的 ``range(2)`` 完全等价，默认行为不变）。
-    想做"只试一次、不重试省时间"就把值改成 1。
-    """
-    raw = (cfg or {}).get("nl2sql_retry")
-    try:
-        val = int(float(str(raw).strip())) if raw not in (None, "") else 2
-    except (TypeError, ValueError):
-        val = 2
-    return max(1, min(5, val))
 
 
-def _ir_max_tokens(cfg: dict | None) -> int:
-    """对象查询（IR 生成）的 max_tokens。
-
-    ``object_query_max_tokens`` 的语义是**覆盖**主预算，``0``（或非法/负数）表示
-    「跟随 nl2sql_max_tokens」。之前写的是
-    ``_cfg_int(cfg, "object_query_max_tokens", nl2sql_max_tokens(cfg))`` ——
-    默认值只在 key **缺失**时生效；而该 key 一进默认值表就恒为 "0"，
-    于是 max_tokens=0，模型直接返回空（这个坑正是"键进默认值"时才暴露）。
-    """
-    raw = (cfg or {}).get("object_query_max_tokens")
-    try:
-        val = int(float(str(raw).strip())) if raw not in (None, "") else 0
-    except (TypeError, ValueError):
-        val = 0
-    return val if val > 0 else nl2sql_max_tokens(cfg)
 
 
 #: 「分组/逐个」诉求：单值指标答不了，快路径必须让位给慢路径（实测会答成语义完全错）
