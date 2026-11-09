@@ -87,7 +87,7 @@ test("工作流定时调度：TriggerEditor 回显每天 09:00，保存后统一
     await expect(page.locator(".ai-workspace-page").first()).toBeVisible({ timeout: 25_000 });
     await dismissTour(page);
 
-    await page.getByRole("tab", { name: "工作流" }).first().click();
+    // 工作台已取消「传统智能体 / 工作流」页签（类别改到工具栏下拉），直接按名称检索即可
     await page.getByPlaceholder("搜索条目").fill(name);
     const card = page.locator(".ws-card", { hasText: name }).first();
     await expect(card).toBeVisible({ timeout: 15_000 });

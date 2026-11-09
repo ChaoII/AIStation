@@ -19,7 +19,8 @@ test("编辑模型仓库仅弹出一个成功提示", async ({ page, request }) 
   //    该版本行即 /train/model/list 中展示、可编辑的记录）
   const name = `e2e-toast-${Date.now()}`;
   const created = await request.post(`${API}/train/model/repos`, {
-    data: { name, framework: "ultralytics" },
+    // 退场框架（ultralytics/paddlex）会被后端 ensure_active 拒绝 → 用唯一在用的 torchkiln
+    data: { name, framework: "torchkiln" },
     headers: auth,
   });
   expect(created.ok()).toBeTruthy();
@@ -35,7 +36,7 @@ test("编辑模型仓库仅弹出一个成功提示", async ({ page, request }) 
   const searchInput = page.getByPlaceholder("请输入模型名称");
   await expect(searchInput).toBeVisible({ timeout: 15_000 });
   await searchInput.fill(name);
-  await page.locator("form").getByRole("button", { name: "搜索" }).click();
+  await page.locator("form").getByRole("button", { name: /^(查询|搜索)$/ }).click();
 
   // 4) 打开目标行的「编辑」弹窗
   const row = page.locator(`tr:has-text("${name}")`).first();
@@ -47,15 +48,15 @@ test("编辑模型仓库仅弹出一个成功提示", async ({ page, request }) 
 
   // 修改一个字段后提交
   const updatedDesc = `e2e-updated-${Date.now()}`;
-  await dialog.getByPlaceholder("模型描述（可选）").fill(updatedDesc);
+  await dialog.getByPlaceholder("请输入描述").fill(updatedDesc);
   await dialog.getByRole("button", { name: "保存" }).click();
 
   // 5) 必须出现成功提示：若 PUT 失败只会出现 error 提示，
   //    此断言会失败（避免原用例“失败也恰好 1 个 toast”的假通过）
-  await expect(page.locator(".el-message--success")).toHaveCount(1, { timeout: 10_000 });
-
-  // 6) 断言仅一个 el-message（重复 toast 回归时这里会 > 1）
-  await expect(page.locator(".el-message")).toHaveCount(1, { timeout: 10_000 });
+  // 5) 保存成功的反馈是**关闭弹窗**：全局成功 toast 已下线
+  //    （见 utils/request.ts "成功提示已改为页面内联…不再根据服务端 msg 自动弹"），
+  //    此页也不再单独弹 success，因此这里断言弹窗关闭 + 数据真的落库。
+  await expect(dialog).toBeHidden({ timeout: 10_000 });
 
   // 7) 落库校验：编辑请求失败时不会持久化，行内描述仍是旧值
   const list = await request.get(`${API}/train/model/list`, {

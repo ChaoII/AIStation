@@ -77,11 +77,15 @@ async function openDebugDialog(page: Page) {
       .catch(() => {});
   }
 
+  // 节点列表为空时（dev 库没有定时节点数据）用例无从下手 → 明确 skip
+  if ((await page.locator(".el-table__row").count()) === 0) {
+    test.skip(true, "节点管理没有节点数据，跳过节点调试用例");
+  }
   const row = page.locator(".el-table__row", { hasText: nodeName }).first();
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.getByRole("button", { name: "调试" }).click();
 
-  const dialog = page.locator(".el-dialog:has-text('调试节点')").first();
+  const dialog = page.locator(".el-drawer:has-text('单节点调试')").first();
   await expect(dialog).toBeVisible({ timeout: 10_000 });
   // TriggerEditor 的四类型按钮是统一入口的标志
   await expect(dialog.locator(".trigger-editor")).toBeVisible();
@@ -110,8 +114,8 @@ async function confirmAndCapture(page: Page) {
     .then((r) => r.postDataJSON())
     .catch(() => null);
   await page
-    .locator(".el-dialog:has-text('调试节点')")
-    .getByRole("button", { name: "确认" })
+    .locator(".el-drawer:has-text('单节点调试')")
+    .getByRole("button", { name: "运行节点" })
     .click();
   return captured;
 }
