@@ -45,8 +45,14 @@ export async function openOffice(
   await page.addInitScript(
     ([key, fresh]) => {
       try {
-        if (fresh) localStorage.removeItem(key);
-        else localStorage.setItem(key, "1");
+        // addInitScript 在**每次**导航（含 reload）都会跑：freshGuide 只该在首屏清一次，
+        // 否则「关闭引导 → 刷新 → 不应再出现」这条断言永远不可能成立（实测踩过）。
+        // sessionStorage 在同标签页跨 reload 保留，用它做一次性标记。
+        const seedKey = `${key}.seeded`;
+        const seeded = sessionStorage.getItem(seedKey) === "1";
+        if (fresh && !seeded) localStorage.removeItem(key);
+        else if (!fresh) localStorage.setItem(key, "1");
+        sessionStorage.setItem(seedKey, "1");
       } catch {
         /* 忽略 */
       }

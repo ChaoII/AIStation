@@ -37,11 +37,12 @@ async function openRunDrawer(page: Page) {
   await expect(page.locator(".ai-workspace-page").first()).toBeVisible({ timeout: 20_000 });
   await dismissTour(page);
 
-  await page.getByRole("tab", { name: "工作流" }).first().click();
+  // 工作台已取消「传统智能体 / 工作流」页签（类别改到工具栏下拉），按名称检索即可
   const card = page.locator(".ws-card", { hasText: "ccc" }).first();
   await expect(card).toBeVisible({ timeout: 15_000 });
   await card.locator(".ws-card__actions .el-dropdown").first().click();
-  await page.locator(".el-dropdown-menu__item", { hasText: "编辑" }).first().click();
+  // 所有卡片的菜单都渲染在 DOM 里，只有当前展开的可见 → 必须限定 visible
+  await page.locator(".el-popper:visible .el-dropdown-menu__item", { hasText: "编辑" }).first().click();
 
   const runBtn = page.getByRole("button", { name: /^运行$/ }).first();
   await expect(runBtn).toBeVisible({ timeout: 20_000 });
@@ -113,7 +114,8 @@ test("流式不被缓冲：运行中即可看到「执行中」节点与增量�
   // 关键断言：**运行尚未结束**时就能看到「执行中」的节点轨迹行。
   // 若 SSE 被 GZip 缓冲（缺 Content-Encoding: identity），帧会在流结束时才一次性到达，
   // 此处必然超时失败——这就是「流式被缓冲」的浏览器侧回归护栏。
-  const runningRow = page.locator(".chat-trace .trace-item__status", { hasText: "执行中" });
+  // 状态文案已改为「运行中」（wf_status_running）；「执行中」是旧文案
+  const runningRow = page.locator(".chat-trace .trace-item__status", { hasText: /执行中|运行中/ });
   await expect(runningRow).toBeVisible({ timeout: 20_000 });
   // 双保险：此刻仍在运行（停止按钮还在），排除"结束后才到"恰好满足上一条
   await expect(stop).toBeVisible();
