@@ -275,6 +275,20 @@ export function resolveMainMetricSpec(opts: {
       { key: "top5", label: "Top5", color: "#409eff", icon: StarFilled },
     ];
   }
+  // PaddleX：det 看 HMean/Precision/Recall，rec 看 Acc。
+  // 这里只用于**兜底**（任务没有逐 step 日志、也没有汇总指标时）；有数据时以数据枚举为准。
+  const fw = String(opts.framework || "").toLowerCase();
+  const mode = String(opts.mode || "").toLowerCase();
+  if (fw === "paddlex") {
+    if (mode === "rec" || mode === "cls") {
+      return [{ key: "acc", label: "Acc", color: "#52c41a", icon: Aim }];
+    }
+    return [
+      { key: "hmean", label: "HMean", color: "#fa8c16", icon: StarFilled },
+      { key: "precision", label: "Precision", color: "#52c41a", icon: Aim },
+      { key: "recall", label: "Recall", color: "#409eff", icon: Search },
+    ];
+  }
   return [
     { key: "map50", label: "mAP@50", color: "#fa8c16", icon: StarFilled },
     { key: "map5095", label: "mAP@50:95", color: "#9b59b6", icon: TrophyBase },

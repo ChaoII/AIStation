@@ -791,9 +791,48 @@ const remoteEvalKeys = ref<string[]>([]);
 const logMetricKeys = computed(() => enumerateMetricsFromLog(chartLog.value));
 
 /** 训练指标（loss / box_loss / lr / ips / 显存…），从 step 行枚举 */
-const trainMetricSpec = computed<MetricSpecItem[]>(() =>
-  buildMetricSpecFromKeys(logMetricKeys.value.train)
-);
+/**
+ * 汇总指标（best/last）里出现的键。
+ *
+ * 真实缺口（2026-11-09 实测）：详情页只从 `metrics_log` 枚举指标，若任务**没有逐 step 日志**
+ * （只有最终 `last_metrics` / `best_metrics`，或日志被裁剪），数据枚举为空 → 直接退回
+ * YOLO 检测的硬编码清单，于是 PaddleX det 显示 mAP@50、rec 显示 Precision/Recall 而不是 HMean/Acc。
+ * 这些键本来就代表"这个任务真的算了什么"，必须并进枚举。
+ */
+const SUMMARY_SKIP = new Set(["epoch", "total_epochs", "main_indicator", "step", "id"]);
+const summaryMetricKeys = computed<string[]>(() => {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const m of [
+    displayBestMetrics.value,
+    displayLastMetrics.value,
+    bestMetrics.value,
+    lastMetrics.value,
+  ]) {
+    if (!m || typeof m !== "object") continue;
+    for (const [k, v] of Object.entries(m as Record<string, unknown>)) {
+      if (seen.has(k) || SUMMARY_SKIP.has(k)) continue;
+      const num = typeof v === "number" ? v : Number(v);
+      if (v != null && v !== "" && !Number.isNaN(num)) {
+        seen.add(k);
+        keys.push(k);
+      }
+    }
+  }
+  return keys;
+});
+
+const trainMetricSpec = computed<MetricSpecItem[]>(() => {
+  const keys = [...logMetricKeys.value.train];
+  const seen = new Set(keys);
+  for (const k of summaryMetricKeys.value) {
+    if (!seen.has(k)) {
+      seen.add(k);
+      keys.push(k);
+    }
+  }
+  return buildMetricSpecFromKeys(keys);
+});
 
 /**
  * 评估指标：**模型接口的键在前**（权威，代表该模型会算什么），
@@ -819,7 +858,14 @@ const evalMetricSpec = computed<MetricSpecItem[]>(() => {
  * 都为空时（如 YOLO 任务 metrics_log 为空）退回按框架的硬编码清单做兜底。
  */
 const metricSpec = computed<MetricSpecItem[]>(() => {
-  const all = [...trainMetricSpec.value, ...evalMetricSpec.value];
+  // 同一 key 可能在训练/评估/汇总里都出现（如 precision），按 key 去重，保持首次出现顺序
+  const seen = new Set<string>();
+  const all: MetricSpecItem[] = [];
+  for (const s of [...trainMetricSpec.value, ...evalMetricSpec.value]) {
+    if (seen.has(s.key)) continue;
+    seen.add(s.key);
+    all.push(s);
+  }
   if (all.length) {
     // key 和 src 都要进集合：非 TorchKiln 的 lossSpec 用驼峰 `key`（clsLoss）+
     // 原始 `src`（cls_loss），只按 key 排除会让 `cls_loss` 从数据枚举里漏进来重复出卡
@@ -1275,24 +1321,34 @@ const compareTableData = computed(() => {
   }));
 });
 
-function pushLiveMetrics() {
+function pushLiveMetrics(kind?: "classify" | "detect") {
   if (yoloMetrics.epoch > 0) {
-    liveMetricsLog.value.push({
+    // 只推**本任务真实有值**的指标：全字段都推的话，分类任务也会带出
+    // precision/recall=0、检测任务带出 top1/top5=0，指标清单按「出现过」枚举，
+    // 于是分类卡片上会多出 Precision/Recall（实测 e2e 打红）。
+    const row: Record<string, number> = {
       epoch: yoloMetrics.epoch,
       total_epochs: yoloMetrics.totalEpochs,
-      box_loss: yoloMetrics.boxLoss,
-      cls_loss: yoloMetrics.clsLoss,
-      dfl_loss: yoloMetrics.dflLoss,
       loss: yoloMetrics.loss,
-      precision: yoloMetrics.precision,
-      recall: yoloMetrics.recall,
-      map50: yoloMetrics.map50,
-      map5095: yoloMetrics.map5095,
-      hmean: yoloMetrics.hmean,
-      acc: yoloMetrics.acc,
-      top1: yoloMetrics.top1,
-      top5: yoloMetrics.top5,
-    });
+    };
+    // kind 来自**日志行格式**（5 列=分类 / 7 列=检测），不能只看 isClassifyTask：
+    // 后者要靠 top1/top5 或 -cls 模型推断，而"第一条分类日志"正是它拿不到的信号（会死锁）。
+    const classify = kind ? kind === "classify" : isClassifyTask.value;
+    if (classify) {
+      row.top1 = yoloMetrics.top1;
+      row.top5 = yoloMetrics.top5;
+    } else {
+      row.box_loss = yoloMetrics.boxLoss;
+      row.cls_loss = yoloMetrics.clsLoss;
+      row.dfl_loss = yoloMetrics.dflLoss;
+      row.precision = yoloMetrics.precision;
+      row.recall = yoloMetrics.recall;
+      row.map50 = yoloMetrics.map50;
+      row.map5095 = yoloMetrics.map5095;
+      row.hmean = yoloMetrics.hmean;
+      row.acc = yoloMetrics.acc;
+    }
+    liveMetricsLog.value.push(row);
     // ⚠️ 卡片与曲线现在都只读 400ms 快照 chartLog（见 liveBestMetrics 处注释）。
     //    这条 YOLO/PaddleX 日志解析通路原来**从不**安排图表同步 ——
     //    以前卡片读活数组所以还能动，改成读快照后若不调度就会一直卡在旧值。
@@ -1358,7 +1414,7 @@ function parseYoloMetrics(line: string) {
       yoloMetrics.top1 = parseFloat(parts[3]) || 0;
       yoloMetrics.top5 = parseFloat(parts[4]) || 0;
     }
-    pushLiveMetrics();
+    pushLiveMetrics(parts.length >= 7 ? "detect" : "classify");
   }
 }
 
