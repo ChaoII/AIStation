@@ -30,10 +30,27 @@
           V{{ r.version }}
         </el-tag>
       </div>
-      <el-table :data="versions" size="small" border max-height="60vh" stripe>
+      <div class="av-bar">
+        <span class="av-bar__hint">
+          {{ t("ai_workflow.ig_diffSelected", { n: selected.length }) }}
+        </span>
+        <el-button type="primary" size="small" :disabled="selected.length !== 2" @click="openDiff">
+          {{ t("ai_workflow.ig_diffCompare") }}
+        </el-button>
+      </div>
+      <el-table
+        :data="versions"
+        size="small"
+        border
+        max-height="60vh"
+        stripe
+        row-key="id"
+        @selection-change="onSelectionChange"
+      >
         <template #empty>
           <el-empty :description="t('ai_workflow.ig_assetVersionsEmpty')" :image-size="60" />
         </template>
+        <el-table-column type="selection" width="42" reserve-selection />
         <el-table-column :label="t('ai_workflow.ig_version')" width="80" align="center">
           <template #default="{ row }">V{{ row.version }}</template>
         </el-table-column>
@@ -83,6 +100,53 @@
       </el-table>
     </div>
   </el-dialog>
+
+  <el-dialog
+    v-model="diffVisible"
+    :title="t('ai_workflow.ig_diffTitle')"
+    width="760px"
+    append-to-body
+  >
+    <el-alert
+      v-if="diffData"
+      :type="diffData.changed_count ? 'warning' : 'success'"
+      :closable="false"
+      show-icon
+      :title="
+        diffData.changed_count
+          ? t('ai_workflow.ig_diffCount', { n: diffData.changed_count })
+          : t('ai_workflow.ig_diffNone')
+      "
+      :description="
+        diffData ? `V${diffData.version_a} ↔ V${diffData.version_b} · ${diffData.table || ''}` : ''
+      "
+    />
+    <el-table
+      v-if="diffData && diffData.changed?.length"
+      :data="diffData.changed"
+      size="small"
+      border
+      stripe
+      max-height="50vh"
+      style="margin-top: 12px"
+    >
+      <el-table-column
+        prop="key"
+        :label="t('ai_workflow.ig_diffField')"
+        min-width="150"
+        show-overflow-tooltip
+      />
+      <el-table-column :label="t('ai_workflow.ig_diffFrom')" min-width="220" show-overflow-tooltip>
+        <template #default="{ row }">{{ fmt(row.from) }}</template>
+      </el-table-column>
+      <el-table-column :label="t('ai_workflow.ig_diffTo')" min-width="220" show-overflow-tooltip>
+        <template #default="{ row }">{{ fmt(row.to) }}</template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <el-button @click="diffVisible = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -91,6 +155,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 
 import {
+  getAssetVersionDiff,
   getAssetVersions,
   getAssetReleases,
   publishAsset,
@@ -106,6 +171,41 @@ const { t } = useI18n();
 const loading = ref(false);
 const versions = ref<any[]>([]);
 const releases = ref<any[]>([]);
+
+const selected = ref<any[]>([]);
+const diffVisible = ref(false);
+const diffData = ref<any>(null);
+
+function onSelectionChange(rows: any[]) {
+  // 只允许对比两个版本：超过 2 个时保留最近选中的两个
+  selected.value = rows.length <= 2 ? rows : rows.slice(-2);
+}
+
+function fmt(v: any) {
+  if (v === null || v === undefined) return "-";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+async function openDiff() {
+  if (selected.value.length !== 2) {
+    ElMessage.warning(t("ai_workflow.ig_diffNeedTwo"));
+    return;
+  }
+  const [a, b] = selected.value;
+  try {
+    const r: any = await getAssetVersionDiff(a.id, b.id);
+    const d = r.data?.data || null;
+    if (!d || d.ok === false) {
+      ElMessage.warning(d?.msg || t("ai_workflow.ig_loadFail"));
+      return;
+    }
+    diffData.value = d;
+    diffVisible.value = true;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_loadFail"));
+  }
+}
 
 async function load() {
   loading.value = true;
@@ -127,7 +227,11 @@ async function load() {
 watch(
   () => props.modelValue,
   (open) => {
-    if (open) load();
+    if (open) {
+      selected.value = [];
+      diffData.value = null;
+      load();
+    }
   }
 );
 
@@ -175,5 +279,15 @@ function rollback(row: any) {
 }
 .av-releases__label {
   color: var(--el-text-color-secondary);
+}
+.av-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.av-bar__hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

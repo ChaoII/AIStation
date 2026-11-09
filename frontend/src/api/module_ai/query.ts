@@ -873,3 +873,12 @@ export function domainReconcile() {
 export function syncQueryAssets() {
   return request({ url: `${API_PATH}/assets/sync`, method: "post" });
 }
+
+/** 版本 diff：对比两个版本快照，返回字段级差异 */
+export function getAssetVersionDiff(idA: number, idB: number) {
+  return request({
+    url: `${API_PATH}/assets/version/diff`,
+    method: "get",
+    params: { id_a: idA, id_b: idB },
+  });
+}
