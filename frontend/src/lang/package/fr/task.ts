@@ -145,7 +145,7 @@ export default {
   all: "Tout",
   funcPlaceholder: "Doit définir handler(*args, **kwargs), peut recevoir les variables amont",
   argsPlaceholder: "Séparés par des virgules, ex. a, b",
-  kwargsPlaceholder: 'JSON, ex. {"key": "v"}',
+  kwargsPlaceholder: `JSON, ex. {'{'}"key": "v"{'}'}`,
   createNodeType: "Créer un type de nœud",
   editNodeType: "Modifier le type de nœud",
   add: "Ajouter",

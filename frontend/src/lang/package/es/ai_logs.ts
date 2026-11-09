@@ -79,7 +79,7 @@ export default {
   noParamsTip: "Este informe no requiere parámetros",
   paramDefTitle: "Definición de parámetros: {name}",
   paramOriginTip:
-    "Los parámetros provienen de los marcadores {placeholder} en la plantilla SQL (extraídos automáticamente al guardar). Edita aquí el nombre en chino / tipo / obligatorio / valor predeterminado; se validan en tiempo de ejecución.",
+    `Los parámetros provienen de los marcadores {'{'}placeholder{'}'} en la plantilla SQL (extraídos automáticamente al guardar). Edita aquí el nombre en chino / tipo / obligatorio / valor predeterminado; se validan en tiempo de ejecución.`,
   placeholderKey: "Clave del marcador",
   placeholderKeyHint: "p. ej. start_date",
   chineseName: "Nombre en chino",
@@ -470,9 +470,9 @@ export default {
   capabilityEval:
     "Evaluación de capacidades de IA (evaluación de capacidades · regresión en sombra)",
   capabilityEvalSub:
-    "Cada fila {input, expected_keywords[], actual}; acierta las aserciones clave para aprobar, precisión de salida",
+    `Cada fila {'{'}input, expected_keywords[], actual{'}'}; acierta las aserciones clave para aprobar, precisión de salida`,
   evalSamplePlaceholder:
-    'Ejemplo: [{"input":"suma del importe del pedido","expected_keywords":["90500"],"actual":"la suma del importe del pedido es 90500"}]',
+    `Ejemplo: [{'{'}"input":"suma del importe del pedido","expected_keywords":["90500"],"actual":"la suma del importe del pedido es 90500"{'}'}]`,
   runEval: "Ejecutar evaluación",
   loadSample: "Cargar ejemplo",
   evalPrecision: "Precisión {pct}% · {passed}/{total}",

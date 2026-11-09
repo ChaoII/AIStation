@@ -431,7 +431,7 @@ export default {
     pushChannel: "푸시 채널",
     channelExample: "예: webhook_target",
     advancedJson: "고급 JSON (선택 사항, 위 항목을 덮어씀)",
-    advancedJsonPlaceholder: '더 복잡한 매개변수에 사용, 예: {"storage_days": 30}',
+    advancedJsonPlaceholder: `더 복잡한 매개변수에 사용, 예: {'{'}"storage_days": 30{'}'}`,
     editLinkage: "연계 편집",
     newLinkage: "새 연계",
     jsonFormatError: "고급 JSON 형식 오류, 무시됨",
@@ -574,7 +574,7 @@ export default {
     webhookHeaders: "사용자 지정 헤더 (JSON, 선택 사항)",
     webhookTemplate: "요청 본문 템플릿 (선택 사항, 변수 치환)",
     webhookTemplatePlaceholder:
-      '비워 두면 전체 JSON 전송: {"alarm_id":1,"alarm_type":"INTRUSION",...}',
+      `비워 두면 전체 JSON 전송: {'{'}"alarm_id":1,"alarm_type":"INTRUSION",...{'}'}`,
     availableVars: "사용 가능한 변수:",
     severityCritical: "심각",
     severityWarning: "경고",

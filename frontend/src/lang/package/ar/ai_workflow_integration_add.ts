@@ -127,7 +127,7 @@ export default {
   ig_targetObject: "الكائن الهدف",
   ig_targetObjectPlaceholder: "اسم كائن الوجود / اسم الجدول الهدف",
   ig_fieldMapping: "تعيين الحقول",
-  ig_mappingPlaceholder: 'كل سطر "حقل مصدر حقل هدف"؛ أو الصق مصفوفة JSON [{"from":"a","to":"b"}]',
+  ig_mappingPlaceholder: `كل سطر "حقل مصدر حقل هدف"؛ أو الصق مصفوفة JSON [{'{'}"from":"a","to":"b"{'}'}]`,
   ig_pipeGraphTitle: "مخطط تنسيق خط الأنابيب (جدول مصدر ← خط أنابيب ← كائن الوجود)",
   ig_pipeGraphEmpty: "لا توجد خطوط أنابيب بعد. أنشئ واحدًا أولاً",
   ig_pipeDataTitle: "بيانات خط الأنابيب: {name}",

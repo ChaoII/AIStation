@@ -315,7 +315,7 @@ export default {
   pluginKeyPlaceholder: "ví dụ: web_fetch",
   displayNamePlaceholder: "Tên hiển thị",
   configLabel: "Cấu hình",
-  jsonConfigPlaceholder: 'Cấu hình JSON, ví dụ: {"timeout": 15}',
+  jsonConfigPlaceholder: `Cấu hình JSON, ví dụ: {'{'}"timeout": 15{'}'}`,
   requirePluginKey: "Vui lòng nhập khóa plugin",
   invalidJson: "Cấu hình phải là JSON hợp lệ",
 

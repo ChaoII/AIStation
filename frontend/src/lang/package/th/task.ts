@@ -145,7 +145,7 @@ export default {
   all: "ทั้งหมด",
   funcPlaceholder: "ต้องกำหนด handler(*args, **kwargs), สามารถรับข้อมูลต้นน้ำและตัวแปรได้",
   argsPlaceholder: "คั่นด้วยเครื่องหมายจุลภาค เช่น a, b",
-  kwargsPlaceholder: 'JSON เช่น {"key": "v"}',
+  kwargsPlaceholder: `JSON เช่น {'{'}"key": "v"{'}'}`,
   createNodeType: "สร้างประเภทโหนด",
   editNodeType: "แก้ไขประเภทโหนด",
   add: "เพิ่ม",

@@ -432,7 +432,7 @@ export default {
     pushChannel: "Canal de notificación",
     channelExample: "p. ej. webhook_target",
     advancedJson: "JSON avanzado (opcional, sobrescribe lo anterior)",
-    advancedJsonPlaceholder: 'Úselo para parámetros más complejos, p. ej. {"storage_days": 30}',
+    advancedJsonPlaceholder: `Úselo para parámetros más complejos, p. ej. {'{'}"storage_days": 30{'}'}`,
     editLinkage: "Editar enlace",
     newLinkage: "Nuevo enlace",
     jsonFormatError: "Error de formato del JSON avanzado, ignorado",
@@ -576,7 +576,7 @@ export default {
     webhookHeaders: "Cabeceras personalizadas (JSON, opcional)",
     webhookTemplate: "Plantilla del cuerpo de la petición (opcional, sustitución de variables)",
     webhookTemplatePlaceholder:
-      'Déjelo vacío para enviar el JSON completo: {"alarm_id":1,"alarm_type":"INTRUSION",...}',
+      `Déjelo vacío para enviar el JSON completo: {'{'}"alarm_id":1,"alarm_type":"INTRUSION",...{'}'}`,
     availableVars: "Variables disponibles:",
     severityCritical: "Crítico",
     severityWarning: "Advertencia",

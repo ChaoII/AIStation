@@ -434,7 +434,7 @@ export default {
     channelExample: "ex. webhook_target",
     advancedJson: "JSON avancé (facultatif, remplace ce qui précède)",
     advancedJsonPlaceholder:
-      'Utilisez pour des paramètres plus complexes, ex. {"storage_days": 30}',
+      `Utilisez pour des paramètres plus complexes, ex. {'{'}"storage_days": 30{'}'}`,
     editLinkage: "Modifier la liaison",
     newLinkage: "Nouvelle liaison",
     jsonFormatError: "Erreur de format du JSON avancé, ignorée",
@@ -577,7 +577,7 @@ export default {
     webhookHeaders: "En-têtes personnalisés (JSON, facultatifs)",
     webhookTemplate: "Modèle de corps de requête (facultatif, substitution de variables)",
     webhookTemplatePlaceholder:
-      'Laisser vide pour envoyer le JSON complet : {"alarm_id":1,"alarm_type":"INTRUSION",...}',
+      `Laisser vide pour envoyer le JSON complet : {'{'}"alarm_id":1,"alarm_type":"INTRUSION",...{'}'}`,
     availableVars: "Variables disponibles :",
     severityCritical: "Critique",
     severityWarning: "Avertissement",

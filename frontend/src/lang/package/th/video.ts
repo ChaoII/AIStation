@@ -426,7 +426,7 @@ export default {
     pushChannel: "ช่องส่ง",
     channelExample: "เช่น webhook_target",
     advancedJson: "JSON ขั้นสูง (ไม่บังคับ, แทนที่ด้านบน)",
-    advancedJsonPlaceholder: 'ใช้สำหรับพารามิเตอร์ที่ซับซ้อน เช่น {"storage_days": 30}',
+    advancedJsonPlaceholder: `ใช้สำหรับพารามิเตอร์ที่ซับซ้อน เช่น {'{'}"storage_days": 30{'}'}`,
     editLinkage: "แก้ไขการเชื่อมโยง",
     newLinkage: "การเชื่อมโยงใหม่",
     jsonFormatError: "รูปแบบ JSON ขั้นสูงผิดพลาด ละเว้น",
@@ -568,7 +568,7 @@ export default {
     webhookHeaders: "ส่วนหัวกำหนดเอง (JSON, ไม่บังคับ)",
     webhookTemplate: "เทมเพลตเนื้อหาคำขอ (ไม่บังคับ, แทนที่ตัวแปร)",
     webhookTemplatePlaceholder:
-      'เว้นว่างเพื่อส่ง JSON เต็ม: {"alarm_id":1,"alarm_type":"INTRUSION",...}',
+      `เว้นว่างเพื่อส่ง JSON เต็ม: {'{'}"alarm_id":1,"alarm_type":"INTRUSION",...{'}'}`,
     availableVars: "ตัวแปรที่ใช้ได้:",
     severityCritical: "รุนแรง",
     severityWarning: "เตือน",

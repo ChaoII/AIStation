@@ -144,7 +144,7 @@ export default {
   all: "全部",
   funcPlaceholder: "须定义 handler(*args, **kwargs)，可接收 upstream、variables",
   argsPlaceholder: "逗号分隔，如 a, b",
-  kwargsPlaceholder: 'JSON，如 {"key": "v"}',
+  kwargsPlaceholder: `JSON，如 {'{'}"key": "v"{'}'}`,
   createNodeType: "新增节点类型",
   editNodeType: "编辑节点类型",
   add: "新增",

@@ -79,7 +79,7 @@ export default {
   noParamsTip: "이 리포트는 파라미터가 필요 없습니다",
   paramDefTitle: "파라미터 정의: {name}",
   paramOriginTip:
-    "파라미터는 SQL 템플릿의 플레이스홀더 {placeholder}에서 옵니다 (저장 시 자동 추출). 여기서 한글 이름/유형/필수/기본값을 편집하며, 실행 시 검증됩니다.",
+    `파라미터는 SQL 템플릿의 플레이스홀더 {'{'}placeholder{'}'}에서 옵니다 (저장 시 자동 추출). 여기서 한글 이름/유형/필수/기본값을 편집하며, 실행 시 검증됩니다.`,
   placeholderKey: "플레이스홀더 키",
   placeholderKeyHint: "예: start_date",
   chineseName: "한글 이름",
@@ -450,9 +450,9 @@ export default {
   pendingApprovals: "승인 대기 {count}",
   capabilityEval: "AI 역량 평가 (역량 평가 · 섀도 회귀)",
   capabilityEvalSub:
-    "각 행은 {input, expected_keywords[], actual}입니다. 핵심 단언을 맞히면 통과, 출력 정밀도 산출",
+    `각 행은 {'{'}input, expected_keywords[], actual{'}'}입니다. 핵심 단언을 맞히면 통과, 출력 정밀도 산출`,
   evalSamplePlaceholder:
-    '예시: [{"input":"order amount sum","expected_keywords":["90500"],"actual":"order amount sum is 90500"}]',
+    `예시: [{'{'}"input":"order amount sum","expected_keywords":["90500"],"actual":"order amount sum is 90500"{'}'}]`,
   runEval: "평가 실행",
   loadSample: "샘플 로드",
   evalPrecision: "정밀도 {pct}% · {passed}/{total}",

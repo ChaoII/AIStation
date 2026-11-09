@@ -223,7 +223,7 @@ export default {
   ig_targetObject: "目標物件",
   ig_targetObjectPlaceholder: "本體物件名 / 目標表名",
   ig_fieldMapping: "欄位對映",
-  ig_mappingPlaceholder: '每行「源欄位 目標欄位」；也可直接貼上 JSON 陣列 [{"from":"a","to":"b"}]',
+  ig_mappingPlaceholder: `每行「源欄位 目標欄位」；也可直接貼上 JSON 陣列 [{'{'}"from":"a","to":"b"{'}'}]`,
   ig_pipeGraphTitle: "管道編排圖（源表 → 管道 → 本體物件）",
   ig_pipeGraphEmpty: "暫無管道，先新建管道",
   ig_pipeDataTitle: "管道資料：{name}",

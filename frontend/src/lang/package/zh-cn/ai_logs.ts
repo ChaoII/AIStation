@@ -79,7 +79,7 @@ export default {
   noParamsTip: "该报表无需参数",
   paramDefTitle: "参数定义：{name}",
   paramOriginTip:
-    "参数来自 SQL 模板里的 {占位符}（保存时自动抽取）。这里可改中文名/类型/必填/默认值，运行时会按此校验。",
+    `参数来自 SQL 模板里的 {'{'}占位符{'}'}（保存时自动抽取）。这里可改中文名/类型/必填/默认值，运行时会按此校验。`,
   placeholderKey: "占位符 key",
   placeholderKeyHint: "如 start_date",
   chineseName: "中文名",
@@ -486,9 +486,9 @@ export default {
   actionsCount: "动作 {count}",
   pendingApprovals: "待审批 {count}",
   capabilityEval: "AI 能力评测（Capability Eval · 影子回归）",
-  capabilityEvalSub: "每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度",
+  capabilityEvalSub: `每行 {'{'}input, expected_keywords[], actual{'}'}，命中关键断言即通过，输出精度`,
   evalSamplePlaceholder:
-    '示例：[{"input":"订单金额总和","expected_keywords":["90500"],"actual":"订单金额总和是 90500"}]',
+    `示例：[{'{'}"input":"订单金额总和","expected_keywords":["90500"],"actual":"订单金额总和是 90500"{'}'}]`,
   runEval: "运行评估",
   loadSample: "载入示例",
   evalPrecision: "精度 {pct}% · {passed}/{total}",

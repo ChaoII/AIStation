@@ -49,7 +49,7 @@ export default {
   develop_selectCapability: "Chọn một năng lực",
   develop_selectCapabilityRequired: "Vui lòng chọn một năng lực",
   develop_payloadJson: "Payload (JSON)",
-  develop_payloadPlaceholder: 'Payload yêu cầu, ví dụ: {"agent_name": "..."}',
+  develop_payloadPlaceholder: `Payload yêu cầu, ví dụ: {'{'}"agent_name": "..."{'}'}`,
   develop_invalidJson: "JSON không hợp lệ",
   develop_result: "Kết quả",
   develop_rawResponse: "Phản hồi thô",
@@ -265,80 +265,78 @@ export default {
   develop_downloadStarted: "Đã bắt đầu tải xuống",
   develop_restExample: `# 1. Kiểm tra thông tin xác thực: xác nhận trạng thái ứng dụng và năng lực được ủy quyền
 curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
 # 2. Danh sách năng lực: chỉ trả về năng lực **được ủy quyền** của ứng dụng
 curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
-# 3. Gọi một năng lực (điểm vào thống nhất): mã từ danh sách năng lực, phần thân cố định là {"payload": {...}}
+# 3. Gọi một năng lực (điểm vào thống nhất): mã từ danh sách năng lực, phần thân cố định là {'{'}"payload": {'{'}...{'}'}{'}'}
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"agent_name": "Trợ lý tạo bên ngoài"}}'
+  -d '{'{'}"payload": {'{'}"agent_name": "Trợ lý tạo bên ngoài"{'}'}{'}'}'
 
 # 4. Trò chuyện (trả lời tổng hợp, không phát trực tiếp)
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "xin chào"}}'
+  -d '{'{'}"payload": {'{'}"kind": "workflow", "target_id": 12, "message": "xin chào"{'}'}{'}'}'
 
 # 5. Trao đổi token nhúng web (trình duyệt không bao giờ chạm AppKey)
 curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"kind": "agent", "target_id": 123}'`,
+  -d '{'{'}"kind": "agent", "target_id": 123{'}'}'`,
   develop_mcpExample: `// Điểm cuối (Streamable HTTP): https://<host>/api/v1/ai/develop-api/mcp
-// Xác thực: header Authorization: Bearer {appid}:{appkey} (cùng thông tin xác thực như REST)
+// Xác thực: header Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'} (cùng thông tin xác thực như REST)
 
 // Cách 1: máy khách hỗ trợ header tùy chỉnh (khuyến nghị)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "type": "http",
       "url": "https://<host>/api/v1/ai/develop-api/mcp",
-      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
-    }
-  }
-}
+      "headers": {'{'} "Authorization": "Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" {'}'}
+    {'}'}
+  {'}'}
+{'}'}
 
 // Cách 2: máy khách chỉ hỗ trợ stdio (chuyển tiếp header qua mcp-remote)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "command": "npx",
       "args": [
         "-y", "mcp-remote",
         "https://<host>/api/v1/ai/develop-api/mcp",
-        "--header", "Authorization: Bearer {appid}:{appkey}"
+        "--header", "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
       ]
-    }
-  }
-}
+    {'}'}
+  {'}'}
+{'}'}
 
 // Công cụ = năng lực: tools/list chỉ trả về năng lực được ủy quyền của ứng dụng; mỗi cuộc gọi đều được kiểm toán.`,
   develop_embedExample:
     `<!-- Cách 1: nhúng iframe trực tiếp (token được máy chủ trao đổi và tiêm) -->
-<iframe src="https://<host>/web/#/embed?token={access_token}"
+<iframe src="https://<host>/web/#/embed?token={'{'}access_token{'}'}"
         width="420" height="620" style="border:0;border-radius:12px"></iframe>
 
 <!-- Cách 2: Script SDK (khuyến nghị: gọi lại sự kiện + gia hạn) -->
-<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
-    `ipt>
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></script>
 <div id="ai-assistant" style="width:420px;height:620px"></div>
 <script>
-  const ai = AiAssistant.init({
+  const ai = AiAssistant.init({'{'}
     container: "#ai-assistant",
-    token: "{access_token}",
+    token: "{'{'}access_token{'}'}",
     apiBase: "https://<host>/api/v1/ai",
     webBase: "https://<host>/web",
-    theme: { primary: "#409eff" }
-  });
-  ai.on("token_expired", async () => {
+    theme: {'{'} primary: "#409eff" {'}'}
+  {'}'});
+  ai.on("token_expired", async () => {'{'}
     ai.setToken(await fetchTokenFromYourBackend());  // máy chủ đổi lại vé
-  });
-</scr` +
-    `ipt>`,
+  {'}'});
+</script>`,
 
   // ===== develop_embed (嵌入弹窗) =====
   develop_embedTitle: "Nhúng Trò chuyện · {name}",

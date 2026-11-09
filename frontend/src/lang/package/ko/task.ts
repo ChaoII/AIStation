@@ -144,7 +144,7 @@ export default {
   all: "전체",
   funcPlaceholder: "handler(*args, **kwargs)를 정의해야 하며, 업스트림과 변수를 받을 수 있습니다",
   argsPlaceholder: "쉼표로 구분, 예: a, b",
-  kwargsPlaceholder: 'JSON, 예: {"key": "v"}',
+  kwargsPlaceholder: `JSON, 예: {'{'}"key": "v"{'}'}`,
   createNodeType: "노드 유형 생성",
   editNodeType: "노드 유형 편집",
   add: "추가",

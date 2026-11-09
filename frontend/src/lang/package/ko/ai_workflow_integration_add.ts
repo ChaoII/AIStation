@@ -129,7 +129,7 @@ export default {
   ig_targetObjectPlaceholder: "온톨로지 객체 이름 / 대상 테이블 이름",
   ig_fieldMapping: "필드 매핑",
   ig_mappingPlaceholder:
-    '각 줄 "원본 필드 대상 필드"; 또는 JSON 배열 [{"from":"a","to":"b"}] 붙여넣기',
+    `각 줄 "원본 필드 대상 필드"; 또는 JSON 배열 [{'{'}"from":"a","to":"b"{'}'}] 붙여넣기`,
   ig_pipeGraphTitle: "파이프라인 오케스트레이션 그래프 (원본 테이블 → 파이프라인 → 온톨로지 객체)",
   ig_pipeGraphEmpty: "아직 파이프라인이 없습니다. 먼저 생성하세요",
   ig_pipeDataTitle: "파이프라인 데이터: {name}",

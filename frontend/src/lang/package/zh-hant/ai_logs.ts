@@ -79,7 +79,7 @@ export default {
   noParamsTip: "該報表無需參數",
   paramDefTitle: "參數定義：{name}",
   paramOriginTip:
-    "參數來自 SQL 範本裡的 {佔位符}（儲存時自動抽取）。這裡可改中文名/類型/必填/預設值，執行時會依此校驗。",
+    `參數來自 SQL 範本裡的 {'{'}佔位符{'}'}（儲存時自動抽取）。這裡可改中文名/類型/必填/預設值，執行時會依此校驗。`,
   placeholderKey: "佔位符 key",
   placeholderKeyHint: "如 start_date",
   chineseName: "中文名",
@@ -488,9 +488,9 @@ export default {
   actionsCount: "動作 {count}",
   pendingApprovals: "待審批 {count}",
   capabilityEval: "AI 能力評測（Capability Eval · 影子回歸）",
-  capabilityEvalSub: "每行 {input, expected_keywords[], actual}，命中關鍵斷言即通過，輸出精度",
+  capabilityEvalSub: `每行 {'{'}input, expected_keywords[], actual{'}'}，命中關鍵斷言即通過，輸出精度`,
   evalSamplePlaceholder:
-    '範例：[{"input":"訂單金額總和","expected_keywords":["90500"],"actual":"訂單金額總和是 90500"}]',
+    `範例：[{'{'}"input":"訂單金額總和","expected_keywords":["90500"],"actual":"訂單金額總和是 90500"{'}'}]`,
   runEval: "運行評估",
   loadSample: "載入範例",
   evalPrecision: "精度 {pct}% · {passed}/{total}",

@@ -79,7 +79,7 @@ export default {
   noParamsTip: "このレポートにパラメータは不要です",
   paramDefTitle: "パラメータ定義: {name}",
   paramOriginTip:
-    "パラメータは SQL テンプレート内のプレースホルダー {placeholder} から取られます（保存時に自動抽出）。ここで中国語名・タイプ・必須・デフォルトを編集できます。実行時に検証されます。",
+    `パラメータは SQL テンプレート内のプレースホルダー {'{'}placeholder{'}'} から取られます（保存時に自動抽出）。ここで中国語名・タイプ・必須・デフォルトを編集できます。実行時に検証されます。`,
   placeholderKey: "プレースホルダーキー",
   placeholderKeyHint: "例: start_date",
   chineseName: "中国語名",
@@ -452,9 +452,9 @@ export default {
   pendingApprovals: "保留中の承認 {count}",
   capabilityEval: "AI 機能評価（機能評価 · シャドー回帰）",
   capabilityEvalSub:
-    "各行 {input、 expected_keywords[]、 actual}。キーアサーションにヒットして合格、出力精度",
+    `各行 {'{'}input、 expected_keywords[]、 actual{'}'}。キーアサーションにヒットして合格、出力精度`,
   evalSamplePlaceholder:
-    '例: [{"input":"注文金額合計","expected_keywords":["90500"],"actual":"注文金額合計は 90500"}]',
+    `例: [{'{'}"input":"注文金額合計","expected_keywords":["90500"],"actual":"注文金額合計は 90500"{'}'}]`,
   runEval: "評価を実行",
   loadSample: "サンプルを読み込み",
   evalPrecision: "精度 {pct}% · {passed}/{total}",

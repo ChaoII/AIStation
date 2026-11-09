@@ -257,7 +257,7 @@ export default {
   ig_targetObject: "目标对象",
   ig_targetObjectPlaceholder: "本体对象名 / 目标表名",
   ig_fieldMapping: "字段映射",
-  ig_mappingPlaceholder: '每行「源字段 目标字段」；也可直接粘贴 JSON 数组 [{"from":"a","to":"b"}]',
+  ig_mappingPlaceholder: `每行「源字段 目标字段」；也可直接粘贴 JSON 数组 [{'{'}"from":"a","to":"b"{'}'}]`,
   ig_pipeGraphTitle: "管道编排图（源表 → 管道 → 本体对象）",
   ig_pipeGraphEmpty: "暂无管道，先新建管道",
   ig_pipeDataTitle: "管道数据：{name}",

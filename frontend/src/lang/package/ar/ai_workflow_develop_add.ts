@@ -48,7 +48,7 @@ export default {
   develop_selectCapability: "اختر قدرة",
   develop_selectCapabilityRequired: "يرجى اختيار قدرة",
   develop_payloadJson: "الحمولة (JSON)",
-  develop_payloadPlaceholder: 'حمولة الطلب، مثال: {"agent_name": "..."}',
+  develop_payloadPlaceholder: `حمولة الطلب، مثال: {'{'}"agent_name": "..."{'}'}`,
   develop_invalidJson: "JSON غير صالح",
   develop_result: "النتيجة",
   develop_rawResponse: "الاستجابة الخام",
@@ -261,80 +261,78 @@ export default {
   develop_downloadStarted: "بدأ التنزيل",
   develop_restExample: `# 1. التحقق من البيانات: تأكيد حالة التطبيق والقدرات المفوّضة
 curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
 # 2. قائمة القدرات: تُرجع فقط قدرات التطبيق **المفوّضة**
 curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
-# 3. استدعاء قدرة (مدخل موحّد): الرمز من قائمة القدرات، النص ثابت كـ {"payload": {...}}
+# 3. استدعاء قدرة (مدخل موحّد): الرمز من قائمة القدرات، النص ثابت كـ {'{'}"payload": {'{'}...{'}'}{'}'}
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"agent_name": "مساعد إنشاء خارجي"}}'
+  -d '{'{'}"payload": {'{'}"agent_name": "مساعد إنشاء خارجي"{'}'}{'}'}'
 
 # 4. محادثة (رد مجمّع، غير بث)
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "مرحبًا"}}'
+  -d '{'{'}"payload": {'{'}"kind": "workflow", "target_id": 12, "message": "مرحبًا"{'}'}{'}'}'
 
 # 5. تبادل رمز تضمين الويب (المتصفح لا يلمس مفتاح التطبيق أبدًا)
 curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"kind": "agent", "target_id": 123}'`,
+  -d '{'{'}"kind": "agent", "target_id": 123{'}'}'`,
   develop_mcpExample: `// نقطة النهاية (HTTP قابل للبث): https://<host>/api/v1/ai/develop-api/mcp
-// المصادقة: ترويسة Authorization: Bearer {appid}:{appkey} (نفس بيانات اعتماد REST)
+// المصادقة: ترويسة Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'} (نفس بيانات اعتماد REST)
 
 // الطريقة 1: العميل يدعم الترويسات المخصصة أصليًا (موصى به)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "type": "http",
       "url": "https://<host>/api/v1/ai/develop-api/mcp",
-      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
-    }
-  }
-}
+      "headers": {'{'} "Authorization": "Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" {'}'}
+    {'}'}
+  {'}'}
+{'}'}
 
 // الطريقة 2: العميل يدعم stdio فقط (مرّر الترويسات عبر mcp-remote)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "command": "npx",
       "args": [
         "-y", "mcp-remote",
         "https://<host>/api/v1/ai/develop-api/mcp",
-        "--header", "Authorization: Bearer {appid}:{appkey}"
+        "--header", "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
       ]
-    }
-  }
-}
+    {'}'}
+  {'}'}
+{'}'}
 
 // الأداة = قدرة: tools/list تُرجع فقط قدرات التطبيق المفوّضة؛ يُدقَّق كل استدعاء.`,
   develop_embedExample:
     `<!-- الطريقة 1: تضمين iframe مباشر (يُحقن الرمز عبر التبادل من جانب الخادم) -->
-<iframe src="https://<host>/web/#/embed?token={access_token}"
+<iframe src="https://<host>/web/#/embed?token={'{'}access_token{'}'}"
         width="420" height="620" style="border:0;border-radius:12px"></iframe>
 
 <!-- الطريقة 2: حزمة Script SDK (موصى بها: استدعاءات الأحداث + التجديد) -->
-<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
-    `ipt>
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></script>
 <div id="ai-assistant" style="width:420px;height:620px"></div>
 <script>
-  const ai = AiAssistant.init({
+  const ai = AiAssistant.init({'{'}
     container: "#ai-assistant",
-    token: "{access_token}",
+    token: "{'{'}access_token{'}'}",
     apiBase: "https://<host>/api/v1/ai",
     webBase: "https://<host>/web",
-    theme: { primary: "#409eff" }
-  });
-  ai.on("token_expired", async () => {
+    theme: {'{'} primary: "#409eff" {'}'}
+  {'}'});
+  ai.on("token_expired", async () => {'{'}
     ai.setToken(await fetchTokenFromYourBackend());  // الخادم يعيد تبادل الرمز
-  });
-</scr` +
-    `ipt>`,
+  {'}'});
+</script>`,
 
   // ===== develop_embed (嵌入弹窗) =====
   develop_embedTitle: "تضمين المحادثة · {name}",

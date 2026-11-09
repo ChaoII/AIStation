@@ -145,7 +145,7 @@ export default {
   all: "すべて",
   funcPlaceholder: "handler(*args, **kwargs) を定義する必要があります。上流と変数を受け取れます",
   argsPlaceholder: "カンマ区切り（例：a, b）",
-  kwargsPlaceholder: 'JSON（例：{"key": "v"}）',
+  kwargsPlaceholder: `JSON（例：{'{'}"key": "v"{'}'}）`,
   createNodeType: "ノード種別を作成",
   editNodeType: "ノード種別を編集",
   add: "追加",

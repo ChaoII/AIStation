@@ -50,7 +50,7 @@ export default {
   develop_selectCapability: "Eine Fähigkeit auswählen",
   develop_selectCapabilityRequired: "Bitte eine Fähigkeit auswählen",
   develop_payloadJson: "Payload (JSON)",
-  develop_payloadPlaceholder: 'Anfrage-Payload, z. B. {"agent_name": "..."}',
+  develop_payloadPlaceholder: `Anfrage-Payload, z. B. {'{'}"agent_name": "..."{'}'}`,
   develop_invalidJson: "Ungültiges JSON",
   develop_result: "Ergebnis",
   develop_rawResponse: "Rohantwort",
@@ -268,80 +268,78 @@ export default {
   develop_downloadStarted: "Download gestartet",
   develop_restExample: `# 1. Anmeldeprüfung: App-Status und autorisierte Fähigkeiten bestätigen
 curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
 # 2. Fähigkeitsliste: gibt nur die **autorisierten** Fähigkeiten der App zurück
 curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
-# 3. Fähigkeit aufrufen (einheitlicher Eingang): Code aus der Fähigkeitsliste, Body fest als {"payload": {...}}
+# 3. Fähigkeit aufrufen (einheitlicher Eingang): Code aus der Fähigkeitsliste, Body fest als {'{'}"payload": {'{'}...{'}'}{'}'}
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"agent_name": "外部创建助手"}}'
+  -d '{'{'}"payload": {'{'}"agent_name": "外部创建助手"{'}'}{'}'}'
 
 # 4. Chat (aggregierte Antwort, nicht-streaming)
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "你好"}}'
+  -d '{'{'}"payload": {'{'}"kind": "workflow", "target_id": 12, "message": "你好"{'}'}{'}'}'
 
 # 5. Web-Einbettungs-Tokenaustausch (Browser berührt den AppKey nie)
 curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"kind": "agent", "target_id": 123}'`,
+  -d '{'{'}"kind": "agent", "target_id": 123{'}'}'`,
   develop_mcpExample: `// Endpoint (Streamable HTTP): https://<host>/api/v1/ai/develop-api/mcp
-// Auth: Header Authorization: Bearer {appid}:{appkey} (gleiche Anmeldedaten wie REST)
+// Auth: Header Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'} (gleiche Anmeldedaten wie REST)
 
 // Weg 1: Client unterstützt nativ benutzerdefinierte Header (empfohlen)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "type": "http",
       "url": "https://<host>/api/v1/ai/develop-api/mcp",
-      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
-    }
-  }
-}
+      "headers": {'{'} "Authorization": "Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" {'}'}
+    {'}'}
+  {'}'}
+{'}'}
 
 // Weg 2: Client unterstützt nur stdio (Header über mcp-remote weiterleiten)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "command": "npx",
       "args": [
         "-y", "mcp-remote",
         "https://<host>/api/v1/ai/develop-api/mcp",
-        "--header", "Authorization: Bearer {appid}:{appkey}"
+        "--header", "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
       ]
-    }
-  }
-}
+    {'}'}
+  {'}'}
+{'}'}
 
 // Werkzeug = Fähigkeit: tools/list gibt nur die autorisierten Fähigkeiten der App zurück; jeder Aufruf wird geprüft.`,
   develop_embedExample:
     `<!-- Weg 1: direkte iframe-Einbettung (Token durch serverseitigen Austausch injiziert) -->
-<iframe src="https://<host>/web/#/embed?token={access_token}"
+<iframe src="https://<host>/web/#/embed?token={'{'}access_token{'}'}"
         width="420" height="620" style="border:0;border-radius:12px"></iframe>
 
 <!-- Weg 2: Script-SDK (empfohlen: Ereignis-Callbacks + Erneuerung) -->
-<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
-    `ipt>
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></script>
 <div id="ai-assistant" style="width:420px;height:620px"></div>
 <script>
-  const ai = AiAssistant.init({
+  const ai = AiAssistant.init({'{'}
     container: "#ai-assistant",
-    token: "{access_token}",
+    token: "{'{'}access_token{'}'}",
     apiBase: "https://<host>/api/v1/ai",
     webBase: "https://<host>/web",
-    theme: { primary: "#409eff" }
-  });
-  ai.on("token_expired", async () => {
+    theme: {'{'} primary: "#409eff" {'}'}
+  {'}'});
+  ai.on("token_expired", async () => {'{'}
     ai.setToken(await fetchTokenFromYourBackend());  // 服务端重新换票
-  });
-</scr` +
-    `ipt>`,
+  {'}'});
+</script>`,
 
   // ===== develop_embed (嵌入弹窗) =====
   develop_embedTitle: "Chat einbetten · {name}",

@@ -432,7 +432,7 @@ export default {
     channelExample: "например webhook_target",
     advancedJson: "Расширенный JSON (необязательно, переопределяет вышеуказанное)",
     advancedJsonPlaceholder:
-      'Используйте для более сложных параметров, например {"storage_days": 30}',
+      `Используйте для более сложных параметров, например {'{'}"storage_days": 30{'}'}`,
     editLinkage: "Изменить связку",
     newLinkage: "Новая связка",
     jsonFormatError: "Ошибка формата расширенного JSON, игнорируется",
@@ -575,7 +575,7 @@ export default {
     webhookHeaders: "Пользовательские заголовки (JSON, необязательно)",
     webhookTemplate: "Шаблон тела запроса (необязательно, подстановка переменных)",
     webhookTemplatePlaceholder:
-      'Оставьте пустым, чтобы отправить полный JSON: {"alarm_id":1,"alarm_type":"INTRUSION",...}',
+      `Оставьте пустым, чтобы отправить полный JSON: {'{'}"alarm_id":1,"alarm_type":"INTRUSION",...{'}'}`,
     availableVars: "Доступные переменные:",
     severityCritical: "Критично",
     severityWarning: "Предупреждение",

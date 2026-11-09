@@ -146,7 +146,7 @@ export default {
   funcPlaceholder:
     "Phải định nghĩa handler(*args, **kwargs), có thể nhận dữ liệu từ phía trước và biến",
   argsPlaceholder: "Phân tách bằng dấu phẩy, ví dụ: a, b",
-  kwargsPlaceholder: 'JSON, ví dụ: {"key": "v"}',
+  kwargsPlaceholder: `JSON, ví dụ: {'{'}"key": "v"{'}'}`,
   createNodeType: "Tạo loại nút",
   editNodeType: "Sửa loại nút",
   add: "Thêm",

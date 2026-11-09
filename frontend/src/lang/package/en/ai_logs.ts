@@ -79,7 +79,7 @@ export default {
   noParamsTip: "This report requires no parameters",
   paramDefTitle: "Parameter Definition: {name}",
   paramOriginTip:
-    "Parameters come from placeholders {placeholder} in the SQL template (auto-extracted on save). Edit the Chinese name / type / required / default here; they are validated at run time.",
+    `Parameters come from placeholders {'{'}placeholder{'}'} in the SQL template (auto-extracted on save). Edit the Chinese name / type / required / default here; they are validated at run time.`,
   placeholderKey: "Placeholder Key",
   placeholderKeyHint: "e.g. start_date",
   chineseName: "Chinese Name",
@@ -516,9 +516,9 @@ export default {
   pendingApprovals: "Pending approvals {count}",
   capabilityEval: "AI Capability Eval (Capability Eval · shadow regression)",
   capabilityEvalSub:
-    "Each row {input, expected_keywords[], actual}; hit key assertions to pass, output precision",
+    `Each row {'{'}input, expected_keywords[], actual{'}'}; hit key assertions to pass, output precision`,
   evalSamplePlaceholder:
-    'Example: [{"input":"order amount sum","expected_keywords":["90500"],"actual":"order amount sum is 90500"}]',
+    `Example: [{'{'}"input":"order amount sum","expected_keywords":["90500"],"actual":"order amount sum is 90500"{'}'}]`,
   runEval: "Run Eval",
   loadSample: "Load Sample",
   evalPrecision: "Precision {pct}% · {passed}/{total}",

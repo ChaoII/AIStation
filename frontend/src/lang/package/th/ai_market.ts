@@ -312,7 +312,7 @@ export default {
   pluginKeyPlaceholder: "เช่น web_fetch",
   displayNamePlaceholder: "ชื่อแสดง",
   configLabel: "การกำหนดค่า",
-  jsonConfigPlaceholder: 'การกำหนดค่า JSON เช่น {"timeout": 15}',
+  jsonConfigPlaceholder: `การกำหนดค่า JSON เช่น {'{'}"timeout": 15{'}'}`,
   requirePluginKey: "กรุณากรอกคีย์ปลั๊กอิน",
   invalidJson: "การกำหนดค่าต้องเป็น JSON ที่ถูกต้อง",
 

@@ -145,7 +145,7 @@ export default {
   all: "All",
   funcPlaceholder: "Must define handler(*args, **kwargs), can receive upstream and variables",
   argsPlaceholder: "Comma separated, e.g. a, b",
-  kwargsPlaceholder: 'JSON, e.g. {"key": "v"}',
+  kwargsPlaceholder: `JSON, e.g. {'{'}"key": "v"{'}'}`,
   createNodeType: "Create Node Type",
   editNodeType: "Edit Node Type",
   add: "Add",

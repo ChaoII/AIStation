@@ -79,7 +79,7 @@ export default {
   noParamsTip: "Ce rapport ne nécessite aucun paramètre",
   paramDefTitle: "Définition des paramètres : {name}",
   paramOriginTip:
-    "Les paramètres proviennent des espaces réservés {placeholder} dans le modèle SQL (extraits automatiquement à l'enregistrement). Modifiez ici le nom chinois / le type / le caractère obligatoire / la valeur par défaut ; ils sont validés à l'exécution.",
+    `Les paramètres proviennent des espaces réservés {'{'}placeholder{'}'} dans le modèle SQL (extraits automatiquement à l'enregistrement). Modifiez ici le nom chinois / le type / le caractère obligatoire / la valeur par défaut ; ils sont validés à l'exécution.`,
   placeholderKey: "Clé d'espace réservé",
   placeholderKeyHint: "par ex. start_date",
   chineseName: "Nom chinois",
@@ -471,9 +471,9 @@ export default {
   pendingApprovals: "Approbations en attente {count}",
   capabilityEval: "Évaluation des capacités IA (Évaluation de capacités · régression fantôme)",
   capabilityEvalSub:
-    "Chaque ligne {input, expected_keywords[], actual} ; touchez les assertions clés pour réussir, précision de sortie",
+    `Chaque ligne {'{'}input, expected_keywords[], actual{'}'} ; touchez les assertions clés pour réussir, précision de sortie`,
   evalSamplePlaceholder:
-    'Exemple : [{"input":"order amount sum","expected_keywords":["90500"],"actual":"order amount sum is 90500"}]',
+    `Exemple : [{'{'}"input":"order amount sum","expected_keywords":["90500"],"actual":"order amount sum is 90500"{'}'}]`,
   runEval: "Exécuter l'évaluation",
   loadSample: "Charger l'exemple",
   evalPrecision: "Précision {pct}% · {passed}/{total}",

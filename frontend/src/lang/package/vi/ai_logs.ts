@@ -79,7 +79,7 @@ export default {
   noParamsTip: "Báo cáo này không yêu cầu tham số",
   paramDefTitle: "Định nghĩa Tham số: {name}",
   paramOriginTip:
-    "Các tham số đến từ các chỗ giữ chỗ {placeholder} trong mẫu SQL (tự động trích xuất khi lưu). Chỉnh sửa tên tiếng Việt / loại / bắt buộc / mặc định tại đây; chúng được xác thực khi chạy.",
+    `Các tham số đến từ các chỗ giữ chỗ {'{'}placeholder{'}'} trong mẫu SQL (tự động trích xuất khi lưu). Chỉnh sửa tên tiếng Việt / loại / bắt buộc / mặc định tại đây; chúng được xác thực khi chạy.`,
   placeholderKey: "Khóa chỗ giữ chỗ",
   placeholderKeyHint: "ví dụ: start_date",
   chineseName: "Tên tiếng Việt",
@@ -463,9 +463,9 @@ export default {
   pendingApprovals: "Phê duyệt đang chờ {count}",
   capabilityEval: "Đánh giá năng lực AI (Đánh giá năng lực · hồi quy bóng)",
   capabilityEvalSub:
-    "Mỗi hàng {input, expected_keywords[], actual}; chạm các khẳng định chính để đạt, xuất độ chính xác",
+    `Mỗi hàng {'{'}input, expected_keywords[], actual{'}'}; chạm các khẳng định chính để đạt, xuất độ chính xác`,
   evalSamplePlaceholder:
-    'Ví dụ: [{"input":"tổng tiền đơn hàng","expected_keywords":["90500"],"actual":"tổng tiền đơn hàng là 90500"}]',
+    `Ví dụ: [{'{'}"input":"tổng tiền đơn hàng","expected_keywords":["90500"],"actual":"tổng tiền đơn hàng là 90500"{'}'}]`,
   runEval: "Chạy Đánh giá",
   loadSample: "Tải Mẫu",
   evalPrecision: "Độ chính xác {pct}% · {passed}/{total}",

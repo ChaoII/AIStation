@@ -130,7 +130,7 @@ export default {
   ig_targetObjectPlaceholder: "オントロジーオブジェクト名 / ターゲットテーブル名",
   ig_fieldMapping: "フィールドマッピング",
   ig_mappingPlaceholder:
-    '各行「ソースフィールド ターゲットフィールド」。または JSON 配列 [{"from":"a","to":"b"}] を貼り付け',
+    `各行「ソースフィールド ターゲットフィールド」。または JSON 配列 [{'{'}"from":"a","to":"b"{'}'}] を貼り付け`,
   ig_pipeGraphTitle:
     "パイプラインオーケストレーショングラフ（ソーステーブル → パイプライン → オントロジーオブジェクト）",
   ig_pipeGraphEmpty: "まだパイプラインがありません。先に作成してください",

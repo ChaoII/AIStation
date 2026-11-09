@@ -48,7 +48,7 @@ export default {
   develop_selectCapability: "เลือกความสามารถ",
   develop_selectCapabilityRequired: "กรุณาเลือกความสามารถ",
   develop_payloadJson: "Payload (JSON)",
-  develop_payloadPlaceholder: 'Payload คำขอ เช่น {"agent_name": "..."}',
+  develop_payloadPlaceholder: `Payload คำขอ เช่น {'{'}"agent_name": "..."{'}'}`,
   develop_invalidJson: "JSON ไม่ถูกต้อง",
   develop_result: "ผลลัพธ์",
   develop_rawResponse: "การตอบกลับดิบ",
@@ -262,80 +262,78 @@ export default {
   develop_downloadStarted: "ดาวน์โหลดเริ่มแล้ว",
   develop_restExample: `# 1. ตรวจสอบข้อมูลรับรอง: ยืนยันสถานะแอปและความสามารถที่ได้รับอนุญาต
 curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
 # 2. รายการความสามารถ: ส่งคืนเฉพาะความสามารถที่แอป **ได้รับอนุญาต**
 curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
-# 3. เรียกความสามารถ (ทางเข้าด้วยกัน): รหัสจากรายการความสามารถ body กำหนดเป็น {"payload": {...}}
+# 3. เรียกความสามารถ (ทางเข้าด้วยกัน): รหัสจากรายการความสามารถ body กำหนดเป็น {'{'}"payload": {'{'}...{'}'}{'}'}
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"agent_name": "外部创建助手"}}'
+  -d '{'{'}"payload": {'{'}"agent_name": "外部创建助手"{'}'}{'}'}'
 
 # 4. แชท (คำตอบรวม ไม่ใช่สตรีมมิ่ง)
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "你好"}}'
+  -d '{'{'}"payload": {'{'}"kind": "workflow", "target_id": 12, "message": "你好"{'}'}{'}'}'
 
 # 5. แลกเปลี่ยนโทเคนฝังเว็บ (เบราว์เซอร์ไม่แตะ AppKey)
 curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"kind": "agent", "target_id": 123}'`,
+  -d '{'{'}"kind": "agent", "target_id": 123{'}'}'`,
   develop_mcpExample: `// ปลายทาง (Streamable HTTP): https://<host>/api/v1/ai/develop-api/mcp
-// Auth: header Authorization: Bearer {appid}:{appkey} (ข้อมูลรับรองเดียวกับ REST)
+// Auth: header Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'} (ข้อมูลรับรองเดียวกับ REST)
 
 // วิธีที่ 1: ไคลเอนต์รองรับเฮดเดอร์กำหนดเองโดยธรรมชาติ (แนะนำ)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "type": "http",
       "url": "https://<host>/api/v1/ai/develop-api/mcp",
-      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
-    }
-  }
-}
+      "headers": {'{'} "Authorization": "Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" {'}'}
+    {'}'}
+  {'}'}
+{'}'}
 
 // วิธีที่ 2: ไคลเอนต์รองรับเฉพาะ stdio (ส่งต่อเฮดเดอร์ผ่าน mcp-remote)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "command": "npx",
       "args": [
         "-y", "mcp-remote",
         "https://<host>/api/v1/ai/develop-api/mcp",
-        "--header", "Authorization: Bearer {appid}:{appkey}"
+        "--header", "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
       ]
-    }
-  }
-}
+    {'}'}
+  {'}'}
+{'}'}
 
 // Tool = ความสามารถ: tools/list ส่งคืนเฉพาะความสามารถที่แอปได้รับอนุญาต; ทุกการเรียกถูกตรวจสอบ`,
   develop_embedExample:
     `<!-- วิธีที่ 1: ฝัง iframe โดยตรง (โทเคนถูกฉีดโดยการแลกเปลี่ยนฝั่งเซิร์ฟเวอร์) -->
-<iframe src="https://<host>/web/#/embed?token={access_token}"
+<iframe src="https://<host>/web/#/embed?token={'{'}access_token{'}'}"
         width="420" height="620" style="border:0;border-radius:12px"></iframe>
 
 <!-- วิธีที่ 2: Script SDK (แนะนำ: การเรียกกลับเหตุการณ์ + ต่ออายุ) -->
-<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
-    `ipt>
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></script>
 <div id="ai-assistant" style="width:420px;height:620px"></div>
 <script>
-  const ai = AiAssistant.init({
+  const ai = AiAssistant.init({'{'}
     container: "#ai-assistant",
-    token: "{access_token}",
+    token: "{'{'}access_token{'}'}",
     apiBase: "https://<host>/api/v1/ai",
     webBase: "https://<host>/web",
-    theme: { primary: "#409eff" }
-  });
-  ai.on("token_expired", async () => {
+    theme: {'{'} primary: "#409eff" {'}'}
+  {'}'});
+  ai.on("token_expired", async () => {'{'}
     ai.setToken(await fetchTokenFromYourBackend());  // แลกเปลี่ยนโทเคนใหม่ฝั่งเซิร์ฟเวอร์
-  });
-</scr` +
-    `ipt>`,
+  {'}'});
+</script>`,
 
   // ===== develop_embed (嵌入弹窗) =====
   develop_embedTitle: "ฝังแชท · {name}",

@@ -50,7 +50,7 @@ export default {
   develop_selectCapability: "Выберите возможность",
   develop_selectCapabilityRequired: "Пожалуйста, выберите возможность",
   develop_payloadJson: "Полезная нагрузка (JSON)",
-  develop_payloadPlaceholder: 'Полезная нагрузка запроса, например {"agent_name": "..."}',
+  develop_payloadPlaceholder: `Полезная нагрузка запроса, например {'{'}"agent_name": "..."{'}'}`,
   develop_invalidJson: "Неверный JSON",
   develop_result: "Результат",
   develop_rawResponse: "Необработанный ответ",
@@ -268,80 +268,78 @@ export default {
   develop_downloadStarted: "Скачивание началось",
   develop_restExample: `# 1. Credential check: confirm app status and authorized capabilities
 curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
 # 2. Capability list: returns only the app's **authorized** capabilities
 curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
-# 3. Invoke a capability (unified entry): code from the capability list, body fixed as {"payload": {...}}
+# 3. Invoke a capability (unified entry): code from the capability list, body fixed as {'{'}"payload": {'{'}...{'}'}{'}'}
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"agent_name": "外部创建助手"}}'
+  -d '{'{'}"payload": {'{'}"agent_name": "外部创建助手"{'}'}{'}'}'
 
 # 4. Chat (aggregated reply, non-streaming)
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "你好"}}'
+  -d '{'{'}"payload": {'{'}"kind": "workflow", "target_id": 12, "message": "你好"{'}'}{'}'}'
 
 # 5. Web embed token exchange (browser never touches AppKey)
 curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"kind": "agent", "target_id": 123}'`,
+  -d '{'{'}"kind": "agent", "target_id": 123{'}'}'`,
   develop_mcpExample: `// Endpoint (Streamable HTTP): https://<host>/api/v1/ai/develop-api/mcp
-// Auth: header Authorization: Bearer {appid}:{appkey} (same credentials as REST)
+// Auth: header Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'} (same credentials as REST)
 
 // Way 1: client natively supports custom headers (recommended)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "type": "http",
       "url": "https://<host>/api/v1/ai/develop-api/mcp",
-      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
-    }
-  }
-}
+      "headers": {'{'} "Authorization": "Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" {'}'}
+    {'}'}
+  {'}'}
+{'}'}
 
 // Way 2: client supports only stdio (forward headers via mcp-remote)
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "command": "npx",
       "args": [
         "-y", "mcp-remote",
         "https://<host>/api/v1/ai/develop-api/mcp",
-        "--header", "Authorization: Bearer {appid}:{appkey}"
+        "--header", "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
       ]
-    }
-  }
-}
+    {'}'}
+  {'}'}
+{'}'}
 
 // Tool = capability: tools/list only returns the app's authorized capabilities; every call is audited.`,
   develop_embedExample:
     `<!-- Way 1: direct iframe embed (token injected by server-side exchange) -->
-<iframe src="https://<host>/web/#/embed?token={access_token}"
+<iframe src="https://<host>/web/#/embed?token={'{'}access_token{'}'}"
         width="420" height="620" style="border:0;border-radius:12px"></iframe>
 
 <!-- Way 2: Script SDK (recommended: event callbacks + renewal) -->
-<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
-    `ipt>
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></script>
 <div id="ai-assistant" style="width:420px;height:620px"></div>
 <script>
-  const ai = AiAssistant.init({
+  const ai = AiAssistant.init({'{'}
     container: "#ai-assistant",
-    token: "{access_token}",
+    token: "{'{'}access_token{'}'}",
     apiBase: "https://<host>/api/v1/ai",
     webBase: "https://<host>/web",
-    theme: { primary: "#409eff" }
-  });
-  ai.on("token_expired", async () => {
+    theme: {'{'} primary: "#409eff" {'}'}
+  {'}'});
+  ai.on("token_expired", async () => {'{'}
     ai.setToken(await fetchTokenFromYourBackend());  // 服务端重新换票
-  });
-</scr` +
-    `ipt>`,
+  {'}'});
+</script>`,
 
   // ===== develop_embed (嵌入弹窗) =====
   develop_embedTitle: "Встраивание чата · {name}",

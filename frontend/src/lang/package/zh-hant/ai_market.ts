@@ -303,7 +303,7 @@ export default {
   pluginKeyPlaceholder: "如：web_fetch",
   displayNamePlaceholder: "展示名",
   configLabel: "配置",
-  jsonConfigPlaceholder: 'JSON 配置，例如：{"timeout": 15}',
+  jsonConfigPlaceholder: `JSON 配置，例如：{'{'}"timeout": 15{'}'}`,
   requirePluginKey: "請輸入外掛標識",
   invalidJson: "配置必須是合法 JSON",
 

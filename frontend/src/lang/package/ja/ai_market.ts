@@ -314,7 +314,7 @@ export default {
   pluginKeyPlaceholder: "例: web_fetch",
   displayNamePlaceholder: "表示名",
   configLabel: "設定",
-  jsonConfigPlaceholder: 'JSON 設定、例: {"timeout": 15}',
+  jsonConfigPlaceholder: `JSON 設定、例: {'{'}"timeout": 15{'}'}`,
   requirePluginKey: "プラグインキーを入力してください",
   invalidJson: "設定は有効な JSON である必要があります",
 

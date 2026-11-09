@@ -79,7 +79,7 @@ export default {
   noParamsTip: "รายงานนี้ไม่ต้องใช้พารามิเตอร์",
   paramDefTitle: "คำนิยามพารามิเตอร์: {name}",
   paramOriginTip:
-    "พารามิเตอร์มาจากตัวยึด {placeholder} ในเทมเพลต SQL (แยกอัตโนมัติเมื่อบันทึก) แก้ชื่อภาษาไทย / ประเภท / บังคับ / ค่าเริ่มต้นที่นี่; ตรวจสอบเมื่อรัน",
+    `พารามิเตอร์มาจากตัวยึด {'{'}placeholder{'}'} ในเทมเพลต SQL (แยกอัตโนมัติเมื่อบันทึก) แก้ชื่อภาษาไทย / ประเภท / บังคับ / ค่าเริ่มต้นที่นี่; ตรวจสอบเมื่อรัน`,
   placeholderKey: "คีย์ตัวยึด",
   placeholderKeyHint: "เช่น start_date",
   chineseName: "ชื่อภาษาไทย",
@@ -455,9 +455,9 @@ export default {
   pendingApprovals: "การอนุมัติรอดำเนินการ {count}",
   capabilityEval: "การประเมินความสามารถ AI (การประเมินความสามารถ · การถดถอยเงา)",
   capabilityEvalSub:
-    "แต่ละแถว {input, expected_keywords[], actual}; ตีคำยืนยันหลักเพื่อผ่าน แสดงความแม่นยำ",
+    `แต่ละแถว {'{'}input, expected_keywords[], actual{'}'}; ตีคำยืนยันหลักเพื่อผ่าน แสดงความแม่นยำ`,
   evalSamplePlaceholder:
-    'ตัวอย่าง: [{"input":"ผลรวมยอดออเดอร์","expected_keywords":["90500"],"actual":"ผลรวมยอดออเดอร์คือ 90500"}]',
+    `ตัวอย่าง: [{'{'}"input":"ผลรวมยอดออเดอร์","expected_keywords":["90500"],"actual":"ผลรวมยอดออเดอร์คือ 90500"{'}'}]`,
   runEval: "รันการประเมิน",
   loadSample: "โหลดตัวอย่าง",
   evalPrecision: "ความแม่นยำ {pct}% · {passed}/{total}",

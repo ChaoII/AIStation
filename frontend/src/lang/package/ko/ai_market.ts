@@ -311,7 +311,7 @@ export default {
   pluginKeyPlaceholder: "예: web_fetch",
   displayNamePlaceholder: "표시 이름",
   configLabel: "구성",
-  jsonConfigPlaceholder: 'JSON 구성, 예: {"timeout": 15}',
+  jsonConfigPlaceholder: `JSON 구성, 예: {'{'}"timeout": 15{'}'}`,
   requirePluginKey: "플러그인 키를 입력하세요",
   invalidJson: "구성은 유효한 JSON이어야 합니다",
 

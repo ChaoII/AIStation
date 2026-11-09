@@ -426,7 +426,7 @@ export default {
     pushChannel: "قناة الإرسال",
     channelExample: "مثال: webhook_target",
     advancedJson: "JSON متقدم (اختياري، يتجاوز ما سبق)",
-    advancedJsonPlaceholder: 'استخدمه لمعاملات أكثر تعقيدًا، مثال: {"storage_days": 30}',
+    advancedJsonPlaceholder: `استخدمه لمعاملات أكثر تعقيدًا، مثال: {'{'}"storage_days": 30{'}'}`,
     editLinkage: "تعديل الربط",
     newLinkage: "ربط جديد",
     jsonFormatError: "خطأ في صيغة JSON المتقدم، تم تجاهله",
@@ -569,7 +569,7 @@ export default {
     webhookHeaders: "ترويسات مخصصة (JSON، اختياري)",
     webhookTemplate: "قالب نص الطلب (اختياري، استبدال المتغيرات)",
     webhookTemplatePlaceholder:
-      'اتركه فارغًا لإرسال JSON كامل: {"alarm_id":1,"alarm_type":"INTRUSION",...}',
+      `اتركه فارغًا لإرسال JSON كامل: {'{'}"alarm_id":1,"alarm_type":"INTRUSION",...{'}'}`,
     availableVars: "المتغيرات المتاحة:",
     severityCritical: "حرج",
     severityWarning: "تحذير",

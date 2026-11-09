@@ -432,7 +432,7 @@ export default {
     pushChannel: "Push-Kanal",
     channelExample: "z. B. webhook_target",
     advancedJson: "Erweitertes JSON (optional, überschreibt Obiges)",
-    advancedJsonPlaceholder: 'Für komplexere Parameter verwenden, z. B. {"storage_days": 30}',
+    advancedJsonPlaceholder: `Für komplexere Parameter verwenden, z. B. {'{'}"storage_days": 30{'}'}`,
     editLinkage: "Verknüpfung bearbeiten",
     newLinkage: "Neue Verknüpfung",
     jsonFormatError: "Fehler im erweiterten JSON-Format, ignoriert",
@@ -575,7 +575,7 @@ export default {
     webhookHeaders: "Benutzerdefinierte Header (JSON, optional)",
     webhookTemplate: "Anfrage-Body-Vorlage (optional, Variablenersetzung)",
     webhookTemplatePlaceholder:
-      'Leer lassen, um vollständiges JSON zu senden: {"alarm_id":1,"alarm_type":"INTRUSION",...}',
+      `Leer lassen, um vollständiges JSON zu senden: {'{'}"alarm_id":1,"alarm_type":"INTRUSION",...{'}'}`,
     availableVars: "Verfügbare Variablen:",
     severityCritical: "Kritisch",
     severityWarning: "Warnung",

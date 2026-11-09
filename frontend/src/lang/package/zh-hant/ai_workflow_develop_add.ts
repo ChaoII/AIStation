@@ -47,7 +47,7 @@ export default {
   develop_selectCapability: "選擇能力",
   develop_selectCapabilityRequired: "請選擇能力",
   develop_payloadJson: "Payload（JSON）",
-  develop_payloadPlaceholder: '請求載荷，如 {"agent_name": "..."}',
+  develop_payloadPlaceholder: `請求載荷，如 {'{'}"agent_name": "..."{'}'}`,
   develop_invalidJson: "JSON 格式錯誤",
   develop_result: "結果",
   develop_rawResponse: "原始回應",
@@ -309,80 +309,78 @@ export default {
   develop_downloadStarted: "已開始下載",
   develop_restExample: `# 1. 憑證校驗：確認應用狀態與已授權能力
 curl -X GET "https://<host>/api/v1/ai/develop-api/auth/verify" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
 # 2. 能力清單：只返回本應用**已授權**的能力
 curl -X GET "https://<host>/api/v1/ai/develop-api/capabilities" \\
-  -H "Authorization: Bearer {appid}:{appkey}"
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
 
-# 3. 呼叫能力（統一入口）：code 取自能力清單，body 固定為 {"payload": {...}}
+# 3. 呼叫能力（統一入口）：code 取自能力清單，body 固定為 {'{'}"payload": {'{'}...{'}'}{'}'}
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/agent.create" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"agent_name": "外部建立助手"}}'
+  -d '{'{'}"payload": {'{'}"agent_name": "外部建立助手"{'}'}{'}'}'
 
 # 4. 對話（聚合回覆，非串流）
 curl -X POST "https://<host>/api/v1/ai/develop-api/capabilities/chat.send" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"payload": {"kind": "workflow", "target_id": 12, "message": "你好"}}'
+  -d '{'{'}"payload": {'{'}"kind": "workflow", "target_id": 12, "message": "你好"{'}'}{'}'}'
 
 # 5. 網頁嵌入換票（瀏覽器面不接觸 appkey）
 curl -X POST "https://<host>/api/v1/ai/develop-api/auth/token" \\
-  -H "Authorization: Bearer {appid}:{appkey}" \\
+  -H "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" \\
   -H "Content-Type: application/json" \\
-  -d '{"kind": "agent", "target_id": 123}'`,
+  -d '{'{'}"kind": "agent", "target_id": 123{'}'}'`,
   develop_mcpExample: `// 端點（Streamable HTTP）：https://<host>/api/v1/ai/develop-api/mcp
-// 鑑權：請求標頭 Authorization: Bearer {appid}:{appkey}（與 REST 同一套憑證）
+// 鑑權：請求標頭 Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}（與 REST 同一套憑證）
 
 // 方式一：用戶端原生支援自訂請求標頭（推薦）
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "type": "http",
       "url": "https://<host>/api/v1/ai/develop-api/mcp",
-      "headers": { "Authorization": "Bearer {appid}:{appkey}" }
-    }
-  }
-}
+      "headers": {'{'} "Authorization": "Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}" {'}'}
+    {'}'}
+  {'}'}
+{'}'}
 
 // 方式二：用戶端只支援 stdio（用 mcp-remote 代理轉發請求標頭）
-{
-  "mcpServers": {
-    "aistation": {
+{'{'}
+  "mcpServers": {'{'}
+    "aistation": {'{'}
       "command": "npx",
       "args": [
         "-y", "mcp-remote",
         "https://<host>/api/v1/ai/develop-api/mcp",
-        "--header", "Authorization: Bearer {appid}:{appkey}"
+        "--header", "Authorization: Bearer {'{'}appid{'}'}:{'{'}appkey{'}'}"
       ]
-    }
-  }
-}
+    {'}'}
+  {'}'}
+{'}'}
 
 // 工具 = 能力：tools/list 只返回該應用已授權的能力；每次呼叫都寫稽核。`,
   develop_embedExample:
     `<!-- 方式一：iframe 直嵌（token 由服務端換票注入） -->
-<iframe src="https://<host>/web/#/embed?token={access_token}"
+<iframe src="https://<host>/web/#/embed?token={'{'}access_token{'}'}"
         width="420" height="620" style="border:0;border-radius:12px"></iframe>
 
 <!-- 方式二：Script SDK（推薦：事件回呼 + 續期） -->
-<script src="https://<host>/api/v1/ai/embed/sdk.js"></scr` +
-    `ipt>
+<script src="https://<host>/api/v1/ai/embed/sdk.js"></script>
 <div id="ai-assistant" style="width:420px;height:620px"></div>
 <script>
-  const ai = AiAssistant.init({
+  const ai = AiAssistant.init({'{'}
     container: "#ai-assistant",
-    token: "{access_token}",
+    token: "{'{'}access_token{'}'}",
     apiBase: "https://<host>/api/v1/ai",
     webBase: "https://<host>/web",
-    theme: { primary: "#409eff" }
-  });
-  ai.on("token_expired", async () => {
+    theme: {'{'} primary: "#409eff" {'}'}
+  {'}'});
+  ai.on("token_expired", async () => {'{'}
     ai.setToken(await fetchTokenFromYourBackend());  // 服務端重新換票
-  });
-</scr` +
-    `ipt>`,
+  {'}'});
+</script>`,
 
   // ===== develop_embed (嵌入彈窗) =====
   develop_embedTitle: "嵌入對話 · {name}",

@@ -146,7 +146,7 @@ export default {
   funcPlaceholder:
     "Debe definir handler(*args, **kwargs), puede recibir valores ascendentes y variables",
   argsPlaceholder: "Separados por comas, p. ej. a, b",
-  kwargsPlaceholder: 'JSON, p. ej. {"key": "v"}',
+  kwargsPlaceholder: `JSON, p. ej. {'{'}"key": "v"{'}'}`,
   createNodeType: "Crear tipo de nodo",
   editNodeType: "Editar tipo de nodo",
   add: "Añadir",

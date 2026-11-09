@@ -79,7 +79,7 @@ export default {
   noParamsTip: "Dieser Bericht erfordert keine Parameter",
   paramDefTitle: "Parameterdefinition: {name}",
   paramOriginTip:
-    "Parameter stammen aus Platzhaltern {placeholder} in der SQL-Vorlage (werden beim Speichern automatisch extrahiert). Bearbeiten Sie hier den chinesischen Namen / Typ / Pflichtfeld / Standardwert; sie werden zur Laufzeit validiert.",
+    `Parameter stammen aus Platzhaltern {'{'}placeholder{'}'} in der SQL-Vorlage (werden beim Speichern automatisch extrahiert). Bearbeiten Sie hier den chinesischen Namen / Typ / Pflichtfeld / Standardwert; sie werden zur Laufzeit validiert.`,
   placeholderKey: "Platzhalterschlüssel",
   placeholderKeyHint: "z. B. start_date",
   chineseName: "Chinesischer Name",
@@ -468,9 +468,9 @@ export default {
   pendingApprovals: "Ausstehende Genehmigungen {count}",
   capabilityEval: "KI-Fähigkeitsbewertung (Fähigkeitsbewertung · Schattenregression)",
   capabilityEvalSub:
-    "Jede Zeile {input, expected_keywords[], actual}; Schlüsselassertionen treffen, um zu bestehen, Ausgabepräzision",
+    `Jede Zeile {'{'}input, expected_keywords[], actual{'}'}; Schlüsselassertionen treffen, um zu bestehen, Ausgabepräzision`,
   evalSamplePlaceholder:
-    'Beispiel: [{"input":"Bestellbetragssumme","expected_keywords":["90500"],"actual":"Bestellbetragssumme ist 90500"}]',
+    `Beispiel: [{'{'}"input":"Bestellbetragssumme","expected_keywords":["90500"],"actual":"Bestellbetragssumme ist 90500"{'}'}]`,
   runEval: "Auswertung ausführen",
   loadSample: "Beispiel laden",
   evalPrecision: "Präzision {pct}% · {passed}/{total}",

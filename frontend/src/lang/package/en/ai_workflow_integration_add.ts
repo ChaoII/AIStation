@@ -229,7 +229,7 @@ export default {
   ig_targetObjectPlaceholder: "Ontology object name / target table name",
   ig_fieldMapping: "Field Mapping",
   ig_mappingPlaceholder:
-    'Each line "source field target field"; or paste a JSON array [{"from":"a","to":"b"}]',
+    `Each line "source field target field"; or paste a JSON array [{'{'}"from":"a","to":"b"{'}'}]`,
   ig_pipeGraphTitle: "Pipeline Orchestration Graph (Source Table → Pipeline → Ontology Object)",
   ig_pipeGraphEmpty: "No pipelines yet. Create one first",
   ig_pipeDataTitle: "Pipeline Data: {name}",

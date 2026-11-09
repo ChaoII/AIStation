@@ -317,7 +317,7 @@ export default {
   pluginKeyPlaceholder: "например, web_fetch",
   displayNamePlaceholder: "Отображаемое имя",
   configLabel: "Конфигурация",
-  jsonConfigPlaceholder: 'JSON-конфигурация, например {"timeout": 15}',
+  jsonConfigPlaceholder: `JSON-конфигурация, например {'{'}"timeout": 15{'}'}`,
   requirePluginKey: "Введите ключ плагина",
   invalidJson: "Конфигурация должна быть корректным JSON",
 

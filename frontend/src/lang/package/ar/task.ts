@@ -144,7 +144,7 @@ export default {
   all: "الكل",
   funcPlaceholder: "يجب تعريف handler(*args, **kwargs)، ويمكنه استقبال المدخلات والمتغيرات",
   argsPlaceholder: "مفصولة بفواصل، مثال: a, b",
-  kwargsPlaceholder: 'JSON، مثال: {"key": "v"}',
+  kwargsPlaceholder: `JSON، مثال: {'{'}"key": "v"{'}'}`,
   createNodeType: "إنشاء نوع عقدة",
   editNodeType: "تعديل نوع العقدة",
   add: "إضافة",

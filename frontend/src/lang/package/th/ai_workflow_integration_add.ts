@@ -129,7 +129,7 @@ export default {
   ig_targetObjectPlaceholder: "ชื่ออ็อบเจกต์ ontology / ชื่อตารางเป้าหมาย",
   ig_fieldMapping: "การแมปฟิลด์",
   ig_mappingPlaceholder:
-    'แต่ละบรรทัด "ฟิลด์ต้นทาง ฟิลด์เป้าหมาย"; หรือวางอาร์เรย์ JSON [{"from":"a","to":"b"}]',
+    `แต่ละบรรทัด "ฟิลด์ต้นทาง ฟิลด์เป้าหมาย"; หรือวางอาร์เรย์ JSON [{'{'}"from":"a","to":"b"{'}'}]`,
   ig_pipeGraphTitle: "กราฟออร์เคสตราไปป์ไลน์ (ตารางต้นทาง → ไปป์ไลน์ → อ็อบเจกต์ ontology)",
   ig_pipeGraphEmpty: "ยังไม่มีไปป์ไลน์ สร้างหนึ่งก่อน",
   ig_pipeDataTitle: "ข้อมูลไปป์ไลน์: {name}",

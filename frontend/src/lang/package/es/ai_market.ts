@@ -320,7 +320,7 @@ export default {
   pluginKeyPlaceholder: "p. ej. web_fetch",
   displayNamePlaceholder: "Nombre de visualización",
   configLabel: "Configuración",
-  jsonConfigPlaceholder: 'Configuración JSON, p. ej. {"timeout": 15}',
+  jsonConfigPlaceholder: `Configuración JSON, p. ej. {'{'}"timeout": 15{'}'}`,
   requirePluginKey: "Por favor, ingresa la clave del plugin",
   invalidJson: "La configuración debe ser JSON válido",
 

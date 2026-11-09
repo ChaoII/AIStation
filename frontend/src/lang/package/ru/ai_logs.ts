@@ -79,7 +79,7 @@ export default {
   noParamsTip: "Этот отчёт не требует параметров",
   paramDefTitle: "Определение параметра: {name}",
   paramOriginTip:
-    "Параметры берутся из плейсхолдеров {placeholder} в SQL-шаблоне (извлекаются автоматически при сохранении). Здесь измените китайское имя / тип / обязательность / значение по умолчанию; они проверяются во время выполнения.",
+    `Параметры берутся из плейсхолдеров {'{'}placeholder{'}'} в SQL-шаблоне (извлекаются автоматически при сохранении). Здесь измените китайское имя / тип / обязательность / значение по умолчанию; они проверяются во время выполнения.`,
   placeholderKey: "Ключ плейсхолдера",
   placeholderKeyHint: "например, start_date",
   chineseName: "Китайское имя",
@@ -465,9 +465,9 @@ export default {
   pendingApprovals: "Ожидающих согласования {count}",
   capabilityEval: "Оценка возможностей ИИ (Оценка возможностей · теневая регрессия)",
   capabilityEvalSub:
-    "Каждая строка {input, expected_keywords[], actual}; попадание по ключевым утверждениям — для прохождения, точность вывода",
+    `Каждая строка {'{'}input, expected_keywords[], actual{'}'}; попадание по ключевым утверждениям — для прохождения, точность вывода`,
   evalSamplePlaceholder:
-    'Пример: [{"input":"order amount sum","expected_keywords":["90500"],"actual":"order amount sum is 90500"}]',
+    `Пример: [{'{'}"input":"order amount sum","expected_keywords":["90500"],"actual":"order amount sum is 90500"{'}'}]`,
   runEval: "Запустить оценку",
   loadSample: "Загрузить пример",
   evalPrecision: "Точность {pct}% · {passed}/{total}",

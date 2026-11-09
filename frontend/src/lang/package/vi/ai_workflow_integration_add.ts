@@ -131,7 +131,7 @@ export default {
   ig_targetObjectPlaceholder: "Tên đối tượng bản thể luận / tên bảng đích",
   ig_fieldMapping: "Ánh xạ trường",
   ig_mappingPlaceholder:
-    'Mỗi dòng "trường nguồn trường đích"; hoặc dán một mảng JSON [{"from":"a","to":"b"}]',
+    `Mỗi dòng "trường nguồn trường đích"; hoặc dán một mảng JSON [{'{'}"from":"a","to":"b"{'}'}]`,
   ig_pipeGraphTitle: "Đồ thị điều phối Pipeline (Bảng nguồn → Pipeline → Đối tượng bản thể luận)",
   ig_pipeGraphEmpty: "Chưa có pipeline. Hãy tạo một cái trước",
   ig_pipeDataTitle: "Dữ liệu Pipeline: {name}",

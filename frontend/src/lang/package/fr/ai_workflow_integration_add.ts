@@ -132,7 +132,7 @@ export default {
   ig_targetObjectPlaceholder: "Nom d'objet d'ontologie / nom de table cible",
   ig_fieldMapping: "Correspondance de champs",
   ig_mappingPlaceholder:
-    'Chaque ligne "champ source champ cible" ; ou collez un tableau JSON [{"from":"a","to":"b"}]',
+    `Chaque ligne "champ source champ cible" ; ou collez un tableau JSON [{'{'}"from":"a","to":"b"{'}'}]`,
   ig_pipeGraphTitle:
     "Graphe d'orchestration de pipeline (Table source → Pipeline → Objet d'ontologie)",
   ig_pipeGraphEmpty: "Aucun pipeline pour le moment. Créez-en un d'abord",

@@ -131,7 +131,7 @@ export default {
   ig_targetObjectPlaceholder: "Ontologie-Objektname / Zieltabellenname",
   ig_fieldMapping: "Feldzuordnung",
   ig_mappingPlaceholder:
-    'Jede Zeile "Quellfeld Zielfeld"; oder ein JSON-Array [{"from":"a","to":"b"}] einfügen',
+    `Jede Zeile "Quellfeld Zielfeld"; oder ein JSON-Array [{'{'}"from":"a","to":"b"{'}'}] einfügen`,
   ig_pipeGraphTitle: "Pipeline-Orchestrierungsgraph (Quelltabelle → Pipeline → Ontologie-Objekt)",
   ig_pipeGraphEmpty: "Noch keine Pipelines. Zuerst eine erstellen",
   ig_pipeDataTitle: "Pipeline-Daten: {name}",

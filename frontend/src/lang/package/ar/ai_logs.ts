@@ -79,7 +79,7 @@ export default {
   noParamsTip: "هذا التقرير لا يتطلب معلمات",
   paramDefTitle: "تعريف المعلمات: {name}",
   paramOriginTip:
-    "تأتي المعلمات من العناصر النائبة {placeholder} في قالب SQL (تُستخرج تلقائيًا عند الحفظ). عدّل الاسم الصيني / النوع / الإلزامي / الافتراضي هنا؛ تُتحقق منها عند التشغيل.",
+    `تأتي المعلمات من العناصر النائبة {'{'}placeholder{'}'} في قالب SQL (تُستخرج تلقائيًا عند الحفظ). عدّل الاسم الصيني / النوع / الإلزامي / الافتراضي هنا؛ تُتحقق منها عند التشغيل.`,
   placeholderKey: "مفتاح العنصر النائب",
   placeholderKeyHint: "مثال: start_date",
   chineseName: "الاسم الصيني",
@@ -449,9 +449,9 @@ export default {
   pendingApprovals: "موافقات معلّقة {count}",
   capabilityEval: "تقييم قدرة الذكاء الاصطناعي (تقييم القدرات · انحدار ظلّي)",
   capabilityEvalSub:
-    "كل صف {input, expected_keywords[], actual}؛ إصابة التأكيدات الرئيسية للاجتياز، وإخراج الدقة",
+    `كل صف {'{'}input, expected_keywords[], actual{'}'}؛ إصابة التأكيدات الرئيسية للاجتياز، وإخراج الدقة`,
   evalSamplePlaceholder:
-    'مثال: [{"input":"مجموع مبلغ الطلب","expected_keywords":["90500"],"actual":"مجموع مبلغ الطلب هو 90500"}]',
+    `مثال: [{'{'}"input":"مجموع مبلغ الطلب","expected_keywords":["90500"],"actual":"مجموع مبلغ الطلب هو 90500"{'}'}]`,
   runEval: "تشغيل التقييم",
   loadSample: "تحميل العينة",
   evalPrecision: "الدقة {pct}% · {passed}/{total}",

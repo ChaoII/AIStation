@@ -432,7 +432,7 @@ export default {
     pushChannel: "Kênh đẩy",
     channelExample: "ví dụ: webhook_target",
     advancedJson: "JSON nâng cao (tùy chọn, ghi đè phần trên)",
-    advancedJsonPlaceholder: 'Dùng cho tham số phức tạp hơn, ví dụ: {"storage_days": 30}',
+    advancedJsonPlaceholder: `Dùng cho tham số phức tạp hơn, ví dụ: {'{'}"storage_days": 30{'}'}`,
     editLinkage: "Sửa liên kết",
     newLinkage: "Liên kết mới",
     jsonFormatError: "Lỗi định dạng JSON nâng cao, được bỏ qua",
@@ -575,7 +575,7 @@ export default {
     webhookHeaders: "Tiêu đề tùy chỉnh (JSON, tùy chọn)",
     webhookTemplate: "Mẫu nội dung yêu cầu (tùy chọn, thay thế biến)",
     webhookTemplatePlaceholder:
-      'Để trống để gửi JSON đầy đủ: {"alarm_id":1,"alarm_type":"INTRUSION",...}',
+      `Để trống để gửi JSON đầy đủ: {'{'}"alarm_id":1,"alarm_type":"INTRUSION",...{'}'}`,
     availableVars: "Các biến khả dụng:",
     severityCritical: "Nghiêm trọng",
     severityWarning: "Cảnh báo",

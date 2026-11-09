@@ -309,7 +309,7 @@ export default {
   pluginKeyPlaceholder: "مثال: web_fetch",
   displayNamePlaceholder: "اسم العرض",
   configLabel: "الإعداد",
-  jsonConfigPlaceholder: 'إعداد JSON، مثال: {"timeout": 15}',
+  jsonConfigPlaceholder: `إعداد JSON، مثال: {'{'}"timeout": 15{'}'}`,
   requirePluginKey: "يرجى إدخال مفتاح الإضافة",
   invalidJson: "يجب أن يكون الإعداد JSON صالحًا",
 

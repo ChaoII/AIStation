@@ -146,7 +146,7 @@ export default {
   funcPlaceholder:
     "Muss handler(*args, **kwargs) definieren, kann Upstream und Variablen empfangen",
   argsPlaceholder: "Durch Kommas getrennt, z. B. a, b",
-  kwargsPlaceholder: 'JSON, z. B. {"key": "v"}',
+  kwargsPlaceholder: `JSON, z. B. {'{'}"key": "v"{'}'}`,
   createNodeType: "Knotentyp erstellen",
   editNodeType: "Knotentyp bearbeiten",
   add: "Hinzufügen",

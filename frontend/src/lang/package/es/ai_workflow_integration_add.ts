@@ -131,7 +131,7 @@ export default {
   ig_targetObjectPlaceholder: "Nombre del objeto de ontología / nombre de la tabla objetivo",
   ig_fieldMapping: "Mapeo de campos",
   ig_mappingPlaceholder:
-    'Cada línea "campo de origen campo objetivo"; o pega una matriz JSON [{"from":"a","to":"b"}]',
+    `Cada línea "campo de origen campo objetivo"; o pega una matriz JSON [{'{'}"from":"a","to":"b"{'}'}]`,
   ig_pipeGraphTitle:
     "Grafo de orquestación del pipeline (tabla de origen → pipeline → objeto de ontología)",
   ig_pipeGraphEmpty: "Aún no hay pipelines. Crea uno primero",

@@ -146,7 +146,7 @@ export default {
   funcPlaceholder:
     "Должен определять handler(*args, **kwargs), может принимать входные данные и переменные",
   argsPlaceholder: "Через запятую, например a, b",
-  kwargsPlaceholder: 'JSON, например {"key": "v"}',
+  kwargsPlaceholder: `JSON, например {'{'}"key": "v"{'}'}`,
   createNodeType: "Создать тип узла",
   editNodeType: "Изменить тип узла",
   add: "Добавить",

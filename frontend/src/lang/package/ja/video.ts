@@ -431,7 +431,7 @@ export default {
     pushChannel: "プッシュチャネル",
     channelExample: "例：webhook_target",
     advancedJson: "詳細 JSON（任意。上記を上書き）",
-    advancedJsonPlaceholder: 'より複雑なパラメータに使用（例：{"storage_days": 30}）',
+    advancedJsonPlaceholder: `より複雑なパラメータに使用（例：{'{'}"storage_days": 30{'}'}）`,
     editLinkage: "連動を編集",
     newLinkage: "新規連動",
     jsonFormatError: "詳細 JSON の形式エラー。無視されました",
@@ -574,7 +574,7 @@ export default {
     webhookHeaders: "カスタムヘッダー（JSON、任意）",
     webhookTemplate: "リクエストボディテンプレート（任意、変数置換）",
     webhookTemplatePlaceholder:
-      '空にすると完全な JSON を送信：{"alarm_id":1,"alarm_type":"INTRUSION",...}',
+      `空にすると完全な JSON を送信：{'{'}"alarm_id":1,"alarm_type":"INTRUSION",...{'}'}`,
     availableVars: "利用可能な変数：",
     severityCritical: "重大",
     severityWarning: "警告",
