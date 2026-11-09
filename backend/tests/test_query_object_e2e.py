@@ -377,6 +377,15 @@ def test_ask_stream_yields_ir_event(monkeypatch):
     monkeypatch.setattr(AiQueryService, "_cfg", _cfg)
     monkeypatch.setattr(AiQueryService, "_object_query_path", _obj_path)
 
+    # 指标快路径在对象路径**之前**，且按全库指标匹配（共享库 → 其它用例建的指标
+    # 可能在 -n 4 全量下抢先命中「摄像机状态」，流式变成 fast 路径）。
+    # 这里把指标/术语清空，锁死「必然走到对象路径」。
+    async def _empty(*a, **kw):
+        return []
+
+    monkeypatch.setattr(AiQueryService, "list_metrics", _empty)
+    monkeypatch.setattr(AiQueryService, "list_terms", _empty)
+
     async def _go():
         return [ev async for ev in
                 AiQueryService.ask_stream("统计摄像机状态", _auth(), None, "system")]

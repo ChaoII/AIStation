@@ -1,10 +1,19 @@
 """火电厂数据整理：纯逻辑单测（可 ``PYTEST_NO_APP=1`` 快速跑）。
 
 落库/LLM 部分见 ``scripts/seed_power_plant_ontology.py``（不在单测里跑外部库与 LLM）。
+落库那条用例显式依赖 ``test_client``，快速模式下会被自动 skip（而不是因 ORM 映射未初始化报错）。
 """
 import asyncio
 
+import pytest
+
 from app.plugin.module_ai.query import power_plant as PP
+
+
+@pytest.fixture
+def _need_app(test_client):
+    """标记「这条要应用上下文」：``PYTEST_NO_APP=1`` 时自动 skip。"""
+    return test_client
 
 
 def _rec(table: str, comment: str = "", cols: list | None = None) -> dict:
@@ -41,9 +50,11 @@ def test_asset_payload_uses_table_comment_as_alias():
     assert p["object_name_col"] == "NAME"
 
 
-def test_asset_payload_without_comment_has_empty_alias_and_no_object():
+def test_asset_payload_without_comment_falls_back_to_table_name():
+    """无表注释时 alias 回退表名（2026-10-30 起；避免前端显示 "-"），且不纳入对象。"""
     p = PP.asset_payload(_rec("FUEL_STG_X"))
-    assert p["alias"] == ""
+    assert p["alias"] == "FUEL_STG_X"
+    assert p["description"] == "FUEL_STG_X"
     assert p["object_enabled"] is False
 
 
@@ -115,7 +126,7 @@ def test_infer_links_requires_target_to_have_id_and_dedups():
 # ===========================================================================
 # 落库契约：我们构造的**字段载荷**必须能被真实 service 接受
 # ===========================================================================
-def test_column_payloads_are_accepted_by_service():
+def test_column_payloads_are_accepted_by_service(_need_app):
     """``upsert_asset_column`` 接受我们的载荷（资产载荷形状由上面的纯测试覆盖）。
 
     注：``upsert_asset`` 会额外写 ``ai_asset_version``（测试库未建该表），

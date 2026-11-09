@@ -63,7 +63,11 @@ def test_stats_shape_and_counts(test_client, auth_headers):
         assert {"calls", "success", "failed", "denied", "pending"} <= set(data["series"][0])
         assert data["apps"]["total"] >= 1
         assert "pending" in data["approvals"]
-        assert any(item["capability"] == "agent.list" for item in data["top_capabilities"])
+        # top_capabilities 是**全库 Top6**（不是本应用的）：与其他用例并行跑（-n 4）时，
+        # 别的 worker 写的日志会把它挤出前 6 —— 实测全量下必现。这里只校验形状与非空；
+        # 「本次调用确实落了日志」由 test_call_log_filters_by_time_range 精确覆盖。
+        assert data["top_capabilities"]
+        assert {"capability", "calls", "category"} <= set(data["top_capabilities"][0])
     finally:
         _cleanup(test_client, auth_headers, app["id"])
 

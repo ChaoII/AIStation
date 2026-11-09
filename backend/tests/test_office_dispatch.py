@@ -114,13 +114,47 @@ def test_office_dispatch_marks_leader_and_delegate(monkeypatch, test_client, aut
         assert member_name in data["members"]
 
         office = _office(test_client, auth_headers)
-        # 组长与组员都被点亮
         leader = next(a for a in office.values() if a["name"] == data["leader"])
-        assert leader["status"] == "busy"
-
         member = office[ids[1]]
-        assert member["status"] == "busy"
-        assert "组长派单" in member["task"]
+        # 2026-11-09：派活已是**同步**接口，返回时 `_office_dispatch_locked` 的 finally
+        # 已经把状态清成 idle（跑完立刻回待命，不留"假工作中"）。
+        # 「打点 → busy → 收工 → idle」这条状态机在下一条用例里确定性验证。
+        assert leader["status"] == "idle" and member["status"] == "idle"
+    finally:
+        _delete_agents(test_client, auth_headers, ids)
+
+
+def test_office_activity_mark_then_clear(test_client, auth_headers):
+    """状态机本身：mark 之后 `office_view` 是 busy，clear 之后回到 idle。
+
+    用**确定性调用**验证打点链路，不依赖派活请求的时序——同步派活返回时状态
+    已经被 finally 清掉，从 HTTP 层观察不到中间态（旧用例正是在这里翻车）。
+    """
+    import asyncio
+
+    ids = [
+        _create_agent(test_client, auth_headers, _name("leader"), "主控 · 调度"),
+        _create_agent(test_client, auth_headers, _name("member"), "研究员"),
+    ]
+    try:
+        from app.plugin.module_ai.agent import office_activity as oa
+        from app.plugin.module_ai.agent.service import AiAgentService
+
+        async def _go():
+            await oa.mark(ids[0], task="正在拆解任务", leader_id=ids[0], ttl_seconds=300)
+            await oa.mark(ids[1], task="组长派单：竞品周报", leader_id=ids[0], ttl_seconds=300)
+            view = {a["id"]: a for a in await AiAgentService.office_view()}
+            assert view[ids[0]]["status"] == "busy"
+            assert view[ids[1]]["status"] == "busy"
+            assert "组长派单" in view[ids[1]]["task"]
+
+            await oa.clear(ids)
+            view2 = {a["id"]: a for a in await AiAgentService.office_view()}
+            assert view2[ids[0]]["status"] == "idle"
+            assert view2[ids[1]]["status"] == "idle"
+            assert view2[ids[1]]["task"] == ""
+
+        asyncio.run(_go())
     finally:
         _delete_agents(test_client, auth_headers, ids)
 
