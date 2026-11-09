@@ -86,7 +86,8 @@ async function openRuleTab(page: Page, ip: string) {
 
 /** 打开新增规则对话框。 */
 async function openCreateDialog(page: Page, pane: ReturnType<Page["locator"]>) {
-  await pane.getByRole("button", { name: /新增/ }).first().click({ force: true });
+  // 按钮文案是「添加」（历史「新增」）
+  await pane.getByRole("button", { name: /^(新增|添加)$/ }).first().click({ force: true });
   const dialog = page.locator(".el-dialog");
   await expect(dialog).toBeVisible();
   return dialog;
@@ -156,7 +157,8 @@ async function setRolloutPercent(page: Page, dialog: ReturnType<Page["locator"]>
 /** 经「规则名称」搜索定位列表行（规则列表按 id 升序、分页 10 条，搜索最稳）。 */
 async function searchRuleRow(page: Page, pane: ReturnType<Page["locator"]>, name: string) {
   await pane.getByPlaceholder("请输入规则名称").fill(name);
-  await pane.getByRole("button", { name: "搜索" }).click();
+  // 搜索按钮文案是「查询」（CRUD 统一按钮）
+  await pane.getByRole("button", { name: /^(查询|搜索)$/ }).click();
   const row = pane.locator(".el-table__row").filter({ hasText: name }).first();
   await expect(row).toBeVisible({ timeout: 15_000 });
   return row;

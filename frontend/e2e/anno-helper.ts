@@ -1,12 +1,26 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { expect, type Page, type APIRequestContext } from "@playwright/test";
+import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
 
 // 创建流程 e2e 公共步骤：登录 → 建数据集 → 上传 16x16 PNG → 建任务 → 进入标注工作台。
 // 供各 create-*.spec.ts 复用，避免重复的“造数据 + 进工作台”样板。
 
 const API = process.env.E2E_API_URL || "http://127.0.0.1:8001/api/v1";
+
+// 对象存储（RustFS）可用性：所有 create-*/upload* 步骤都要先上传素材，存储不可用时明确 skip，
+// 而不是在 helper 里 `expect(upRes.ok())` 打红（实测本地没起 9010 时 6 个 create 用例全红）。
+const STORAGE = process.env.RUSTFS_ENDPOINT || "http://127.0.0.1:9010";
+let _storageUp: boolean | null = null;
+export async function requireStorage(): Promise<void> {
+  if (_storageUp === null) {
+    _storageUp = await fetch(STORAGE, { signal: AbortSignal.timeout(1500) })
+      .then(() => true)
+      .catch(() => false);
+  }
+  test.skip(!_storageUp, `对象存储不可用（${STORAGE}），跳过需要上传素材的标注用例`);
+}
+
 
 // 视频帧级测试用的小 MP4 fixture（320x240 / 25fps / 2s ≈ 50 帧）。
 const VIDEO = readFileSync(fileURLToPath(new URL("./fixtures/test.mp4", import.meta.url)));
@@ -48,6 +62,7 @@ export async function createAnnotationTask(
   expect(dsRes.ok()).toBeTruthy();
   const dsId = (await dsRes.json()).data.id;
 
+  await requireStorage();
   const upRes = await request.post(`${API}/annotation/dataset/${dsId}/upload`, {
     headers: auth,
     multipart: { files: { name: "test-image.jpg", mimeType: "image/jpeg", buffer: PNG } },
@@ -94,6 +109,7 @@ export async function uploadTestVideo(
   auth: Record<string, string>,
   datasetId: number
 ) {
+  await requireStorage();
   const upRes = await request.post(`${API}/annotation/video/upload?dataset_id=${datasetId}`, {
     headers: auth,
     multipart: { file: { name: "test.mp4", mimeType: "video/mp4", buffer: VIDEO } },
@@ -155,6 +171,7 @@ export async function uploadTestDocument(
   auth: Record<string, string>,
   datasetId: number
 ) {
+  await requireStorage();
   const upRes = await request.post(`${API}/annotation/document/upload?dataset_id=${datasetId}`, {
     headers: auth,
     multipart: { file: { name: "sample.txt", mimeType: "text/plain", buffer: TEXT } },
@@ -301,6 +318,7 @@ export async function uploadTestAudio(
   auth: Record<string, string>,
   datasetId: number
 ) {
+  await requireStorage();
   const upRes = await request.post(`${API}/annotation/audio/upload?dataset_id=${datasetId}`, {
     headers: auth,
     multipart: { file: { name: "test-audio.wav", mimeType: "audio/wav", buffer: AUDIO } },
@@ -377,6 +395,7 @@ export async function uploadTimeSeriesCsv(
   auth: Record<string, string>,
   datasetId: number
 ) {
+  await requireStorage();
   const upRes = await request.post(`${API}/annotation/timeseries/upload?dataset_id=${datasetId}`, {
     headers: auth,
     multipart: { file: { name: "test-series.csv", mimeType: "text/csv", buffer: SERIES } },
