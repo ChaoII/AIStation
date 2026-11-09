@@ -235,4 +235,15 @@ class CameraService:
                 status_code=400,
             )
 
+        # 软删除的规则仍占着 group_id：组是**物理删除**，FK 会把这些行的 group_id 置 NULL，
+        # 而 CHECK `ck_video_alarm_rules_scope_xor` 要求 camera_id/group_id 恰有其一非空
+        # → CheckViolation，接口 500「删除失败」（实测复现：建组→建规则→删规则→删组）。
+        # 逻辑上已删除的规则没有保留价值，删除组前顺手物理清理。
+        await auth.db.execute(
+            sa_delete(AlarmRuleModel).where(
+                AlarmRuleModel.group_id.in_(ids),
+                AlarmRuleModel.is_deleted.is_(True),
+            )
+        )
+
         await CameraGroupCRUD(auth).delete_crud(ids=ids)

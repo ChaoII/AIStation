@@ -194,3 +194,60 @@ def test_group_delete_blocked_when_child_group_exists(test_client, auth_headers)
         headers=auth_headers,
     )
     assert resp.status_code == 400, resp.text
+
+def test_group_delete_succeeds_after_rule_soft_deleted(test_client, auth_headers):
+    """回归（2026-11-09 实测 500）：组下有**软删除**的规则时，删组必须成功。
+
+    组是物理删除，FK 会把软删规则的 ``group_id`` 置 NULL，而 CHECK
+    ``ck_video_alarm_rules_scope_xor`` 要求 camera_id/group_id 恰有其一非空 →
+    CheckViolation（接口 500「删除失败」）。删除服务需先物理清理这些软删规则。
+    """
+    suffix = uuid.uuid4().hex[:8]
+    group = test_client.post(
+        "/api/v1/video/camera/group/create",
+        json={"name": f"del-softrule-group-{suffix}"},
+        headers=auth_headers,
+    )
+    assert group.status_code == 200, group.text
+    group_id = group.json()["data"]["id"]
+
+    rule = test_client.post(
+        "/api/v1/video/alarm/rule/create",
+        json={
+            "name": f"del-softrule-rule-{suffix}",
+            "group_id": group_id,
+            "alarm_type": "GATHER",
+            "severity": "WARNING",
+            "interval_seconds": 30,
+            "status": True,
+            "params": {"group_window_sec": 10, "group_count": 2},
+            "conditions": None,
+        },
+        headers=auth_headers,
+    )
+    assert rule.status_code == 200, rule.text
+    rule_id = rule.json()["data"]["id"]
+
+    # 软删除规则（服务只置 is_deleted，行还占着 group_id）
+    deleted = test_client.request(
+        "DELETE", "/api/v1/video/alarm/rule/delete", json=[rule_id], headers=auth_headers
+    )
+    assert deleted.status_code == 200, deleted.text
+
+    resp = test_client.request(
+        "DELETE", "/api/v1/video/camera/group/delete", json=[group_id], headers=auth_headers
+    )
+    assert resp.status_code == 200, resp.text
+
+    # 软删规则应被物理清理（否则以后再建同 id 的组还会踩同一个约束）
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+
+    async def _count() -> int:
+        async with async_db_session() as db:
+            row = (await db.execute(text(
+                "SELECT count(*) FROM video_alarm_rules WHERE id = :i"), {"i": rule_id})).fetchone()
+            return int(row[0])
+
+    assert _run(_count()) == 0
