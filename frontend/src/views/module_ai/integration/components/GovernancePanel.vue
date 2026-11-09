@@ -278,6 +278,9 @@
           <el-button v-hasPerm="'module_ai:query:ask'" size="small" @click="openSandbox">
             {{ t("ai_workflow.ig_govSandbox") }}
           </el-button>
+          <el-button v-hasPerm="'module_ai:query:ask'" size="small" @click="openPermCheck">
+            {{ t("ai_workflow.ig_permCheck") }}
+          </el-button>
           <el-tag size="small" type="info" effect="plain">
             {{ t("ai_workflow.ig_govPolicyCount", { count: accessRules.length }) }}
           </el-tag>
@@ -1462,6 +1465,57 @@
   </el-dialog>
 
   <el-dialog
+    v-model="permCheckVisible"
+    :title="t('ai_workflow.ig_permCheck')"
+    width="560px"
+    append-to-body
+  >
+    <el-form :model="permCheckForm" label-width="90px">
+      <el-form-item :label="t('ai_workflow.ig_policyExplainUser')">
+        <el-select v-model="permCheckForm.user_id" filterable style="width: 260px">
+          <el-option v-for="u in domainUsers" :key="u.id" :label="u.label" :value="u.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('ai_workflow.ig_tableName')">
+        <el-input
+          v-model="permCheckForm.table"
+          style="width: 320px"
+          :placeholder="t('ai_workflow.ig_policyResourcePh')"
+        />
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" :loading="permCheckLoading" @click="runPermCheck">
+          {{ t("ai_workflow.ig_permCheckRun") }}
+        </el-button>
+      </el-form-item>
+    </el-form>
+    <template v-if="permCheckResult">
+      <el-alert
+        :type="permCheckResult.allowed ? 'success' : 'error'"
+        :closable="false"
+        show-icon
+        :title="
+          permCheckResult.allowed
+            ? t('ai_workflow.ig_permCheckAllowed')
+            : t('ai_workflow.ig_permCheckDenied')
+        "
+        :description="permCheckResult.reason"
+      />
+      <el-descriptions :column="1" border size="small" style="margin-top: 12px">
+        <el-descriptions-item :label="t('ai_workflow.ig_permCheckRoles')">
+          {{ (permCheckResult.roles || []).join(", ") || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('ai_workflow.ig_permCheckSensitive')">
+          {{ permCheckResult.sensitive_visible ? "✓" : "—" }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </template>
+    <template #footer>
+      <el-button @click="permCheckVisible = false">{{ t("ai_workflow.ig_cancel") }}</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
     v-model="reconcileVisible"
     :title="t('ai_workflow.ig_domainReconcile')"
     width="640px"
@@ -1679,6 +1733,7 @@ import {
   getGovernanceSummary,
   domainReconcile,
   getDqRules,
+  checkPermission,
   runDqRule,
   getQueryAssetColumns,
   getPolicyList,
@@ -2242,6 +2297,39 @@ async function runDqRuleOnce() {
     ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_dqRuleFailed"));
   } finally {
     dqRuleRunning.value = false;
+  }
+}
+
+// 权限检查（用户 × 表）：与 explain 互补，额外给出角色与敏感列可见性
+const permCheckVisible = ref(false);
+const permCheckLoading = ref(false);
+const permCheckForm = ref<any>({ user_id: undefined, table: "" });
+const permCheckResult = ref<any>(null);
+
+async function openPermCheck() {
+  permCheckResult.value = null;
+  permCheckVisible.value = true;
+  if (!domainUsers.value.length) await loadDomainUsers();
+}
+
+async function runPermCheck() {
+  const f = permCheckForm.value;
+  if (!f.user_id) {
+    ElMessage.warning(t("ai_workflow.ig_policyExplainUser"));
+    return;
+  }
+  if (!f.table) {
+    ElMessage.warning(t("ai_workflow.ig_policyResourcePh"));
+    return;
+  }
+  permCheckLoading.value = true;
+  try {
+    const r: any = await checkPermission(f.user_id, f.table);
+    permCheckResult.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_loadFail"));
+  } finally {
+    permCheckLoading.value = false;
   }
 }
 

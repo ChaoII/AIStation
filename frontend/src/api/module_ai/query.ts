@@ -882,3 +882,12 @@ export function getAssetVersionDiff(idA: number, idB: number) {
     params: { id_a: idA, id_b: idB },
   });
 }
+
+/** 权限检查（用户 × 表）：能否访问、角色、敏感列可见性 */
+export function checkPermission(user_id: number, table: string) {
+  return request({
+    url: `${API_PATH}/access/permission-check`,
+    method: "get",
+    params: { user_id, table },
+  });
+}
