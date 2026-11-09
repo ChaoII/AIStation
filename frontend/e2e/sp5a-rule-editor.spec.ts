@@ -64,7 +64,8 @@ async function deleteRuleByName(page: Page, name: string) {
 async function searchRuleRow(page: Page, name: string) {
   const pane = page.locator("#pane-rule");
   await pane.getByPlaceholder("请输入规则名称").fill(name);
-  await pane.getByRole("button", { name: "搜索" }).click();
+  // 搜索按钮文案是「查询」
+  await pane.getByRole("button", { name: /^(查询|搜索)$/ }).click();
   const row = pane.locator(".el-table__row").filter({ hasText: name }).first();
   await expect(row).toBeVisible({ timeout: 15_000 });
   return row;
@@ -92,7 +93,8 @@ test("规则编辑器：ROI 画布 + 条件树 创建并回填", async ({ page }
 
     // 1. 切到「告警规则」页签（lazy 加载），打开新增对话框
     await page.getByRole("tab", { name: "告警规则" }).click();
-    await page.getByRole("button", { name: /新增/ }).first().click({ force: true });
+    // 按钮文案是「添加」（历史「新增」）
+    await page.getByRole("button", { name: /^(新增|添加)$/ }).first().click({ force: true });
     const dialog = page.locator(".el-dialog");
     await expect(dialog).toBeVisible();
 
