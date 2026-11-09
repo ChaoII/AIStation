@@ -124,7 +124,7 @@ uv run python scripts/query_session_cleanup.py --apply     # 软删：评测会�
   （backfill 生成）。只删前者，覆盖率不会降（实测 566 仍全开）。
 - 收窄工具：`scripts/query_policy_narrow.py --dry-run|--apply [--user ID]`，
   按「有域用域、无域用 ABAC、两者都无则不动」计算保留集。
-- **`service.py` 拆分（2026-11-08）**：`service.py` 从 11,041 行降到 1,203 行（-89%）
+- **`service.py` 拆分（2026-11-08）**：`service.py` 从 11,041 行降到 510 行（-95%）
   已拆出 `degraded.py`（降级计数）、`actions_ops.py`（动作/写回/审批）、`assets_ops.py`
   （资产读写 + 敏感扫描）、`metrics_ops.py`（指标/术语/建模）、`ontology_ops.py`（概念/图谱/对象解析）、
   `propositions_ops.py`（FDE 命题 + 影子校验）、`execute_ops.py`（取数收口 `_execute_one`）、
@@ -144,7 +144,9 @@ uv run python scripts/query_session_cleanup.py --apply     # 软删：评测会�
   `governance_ops.py`（血缘/影响面/治理看板/语义搜索）、`fewshot_ops.py`（样例库/过滤规则/接入辅助）、
   `vector_ops.py`（向量检索/答案缓存）、`assetio_ops.py`（导出/对象浏览/IR 运行规格）、
   `execution.py`（SQL/指标执行与主体工具）、`datasource_core.py`（数据源加载与 schema 同步）、
-  `runtime_flags.py`（评测/消融上下文开关、IR 熔断、影子表建表）。`AiQueryService` 改为继承这些
+  `runtime_flags.py`（评测/消融上下文开关、IR 熔断、影子表建表）、
+  `seed_data.py`（预置指标/术语/实体映射/少样本）、`allowlist.py`（系统表白名单/敏感列默认集）、
+  `query_ddl.py`（影子表 DDL）。`AiQueryService` 改为继承这些
   mixin，`service.py` 保留**同名再导出**，全仓调用点与测试 monkeypatch 零改动。
   ⚠️ 两条踩过的坑：① 搬移脚本按缩进切片时，**不要把模块级常量（`_SYSTEM_METRICS` 等）一起切走**；
   ② mixin 里 `global _SCHEMA_CACHE` 只会建本模块的新变量，必须 `from . import service as _svc`
