@@ -82,7 +82,7 @@ def test_run_target_agent_consumes_stream(monkeypatch):
         yield "frame-2"
 
     monkeypatch.setattr(
-        AiAgentService, "run_ui_stream", classmethod(fake_run_ui_stream)
+        AiAgentService, "_run_ui_stream_locked", classmethod(fake_run_ui_stream)
     )
     asyncio.run(ws.WorkspaceService._run_target("agent", 42))
 
@@ -138,7 +138,11 @@ def test_run_target_collects_run_content_text(monkeypatch):
         yield agno_event_frame("RunContent", {"content": "数据集 273 个，"})
         yield agno_event_frame("RunContent", {"content": "标注任务 237 个。"})
 
-    monkeypatch.setattr(AiAgentService, "run_ui_stream", classmethod(fake_run_ui_stream))
+    # 2026-11-09：`_run_target` 自己拿并发锁后**直接**调 `_run_ui_stream_locked`（绕开
+    # 持锁的 `run_ui_stream` 薄壳），所以桩要打在 locked 版本上。
+    monkeypatch.setattr(
+        AiAgentService, "_run_ui_stream_locked", classmethod(fake_run_ui_stream)
+    )
     text, err, tools = asyncio.run(ws.WorkspaceService._run_target("agent", 42))
     assert err is None
     assert text == "数据集 273 个，标注任务 237 个。"
@@ -156,7 +160,11 @@ def test_run_target_treats_runerror_frame_as_failure(monkeypatch):
     async def fake_run_ui_stream(cls, agent_id, ui_messages, auth, variables=None, session_id=None):
         yield agno_error_frame("智能体不存在或未启用")
 
-    monkeypatch.setattr(AiAgentService, "run_ui_stream", classmethod(fake_run_ui_stream))
+    # 2026-11-09：`_run_target` 自己拿并发锁后**直接**调 `_run_ui_stream_locked`（绕开
+    # 持锁的 `run_ui_stream` 薄壳），所以桩要打在 locked 版本上。
+    monkeypatch.setattr(
+        AiAgentService, "_run_ui_stream_locked", classmethod(fake_run_ui_stream)
+    )
     text, err, tools = asyncio.run(ws.WorkspaceService._run_target("agent", 42))
     assert text == ""
     assert err == "智能体不存在或未启用"
@@ -256,7 +264,11 @@ def test_run_target_collects_tool_calls(monkeypatch):
         )
         yield agno_event_frame("RunContent", {"content": "共 273 个数据集。"})
 
-    monkeypatch.setattr(AiAgentService, "run_ui_stream", classmethod(fake_run_ui_stream))
+    # 2026-11-09：`_run_target` 自己拿并发锁后**直接**调 `_run_ui_stream_locked`（绕开
+    # 持锁的 `run_ui_stream` 薄壳），所以桩要打在 locked 版本上。
+    monkeypatch.setattr(
+        AiAgentService, "_run_ui_stream_locked", classmethod(fake_run_ui_stream)
+    )
     text, err, tools = asyncio.run(ws.WorkspaceService._run_target("agent", 42))
     assert err is None
     assert text == "共 273 个数据集。"

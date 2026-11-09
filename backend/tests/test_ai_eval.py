@@ -281,6 +281,8 @@ class TestAiEval:
         assert bad["ok"] is False
 
     def test_export_asset(self, monkeypatch):
+        from types import SimpleNamespace
+
         from sqlalchemy import text as _t
 
         from app.core.database import async_db_session
@@ -292,22 +294,28 @@ class TestAiEval:
 
         monkeypatch.setattr(AiQueryService, "_allowed_for_user", staticmethod(_allowed))
 
+        # 2026-11-09：导出/浏览已统一走权限网关（`_execute_one` → `guard.prepare`），
+        # 而网关**无主体一律拒绝**（reason="missing principal"）。旧用例传 auth=None
+        # 拿到的是 {"ok": False, "msg": "...missing principal"}。
+        # 这里用超管主体（`load_principal` 只读 `auth.user.id/is_superuser`）。
+        auth = SimpleNamespace(user=SimpleNamespace(id=1, is_superuser=True))
+
         async def _go():
             async with async_db_session.begin() as db:
                 await db.execute(_t("DROP TABLE IF EXISTS t_export"))
                 await db.execute(_t("CREATE TABLE t_export (id INTEGER, name TEXT)"))
                 await db.execute(_t("INSERT INTO t_export VALUES (1,'a'),(2,'b')"))
-            r = await AiQueryService.export_asset("t_export", None, 10)
+            r = await AiQueryService.export_asset("t_export", auth, 10)
             assert r["ok"] is True and r["row_count"] == 2
             assert "name" in r["columns"]
             # P0-1 后：白名单外表直接拒绝（fail-closed 抛错，不再碰数据库）
             try:
-                await AiQueryService.export_asset("t_nope", None)
+                await AiQueryService.export_asset("t_nope", auth)
             except CustomException:
                 pass
             else:
                 raise AssertionError("白名单外表 t_nope 未被拒绝（越权导出）")
-            b = await AiQueryService.object_browse("t_export", None, 1, 2)
+            b = await AiQueryService.object_browse("t_export", auth, 1, 2)
             assert b["ok"] is True and b["total"] == 2 and "has_next" in b
             return True
         assert asyncio.run(_go())

@@ -68,8 +68,10 @@ def test_object_path_returns_object_answer(monkeypatch):
     _stub(monkeypatch)
 
     async def _go():
-        return await AiQueryService._object_query_path(
-            "统计摄像机的状态分布", 1, "system", _auth())
+        # 2026-11-09：问句不要含「分布/各/平均」——对象路径只做**实例属性检索**，
+        # 聚合/分组/排序诉求会主动降级 NL2SQL（见 `_object_query_path` 的守卫），
+        # 那些语义另有 test_object_path_degrades_on_grouping_semantics 覆盖。
+        return await AiQueryService._object_query_path("摄像机的状态", 1, "system", _auth())
 
     ans = asyncio.run(_go())
     assert ans is not None

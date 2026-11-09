@@ -328,21 +328,22 @@ class TestTableLevelAcl:
         from app.plugin.module_ai.query.service import AiQueryService
 
         async def _go():
-            from sqlalchemy import select as _sel
-
-            from app.plugin.module_ai.query.model import AiQueryAssetModel
+            from app.plugin.module_ai.ontology import semantic as _sem
             async with async_db_session.begin() as db:
                 await db.execute(_t("DELETE FROM ai_dq_report WHERE table_name='video_cameras'"))
-                existing = (await db.execute(_sel(AiQueryAssetModel).where(
-                    AiQueryAssetModel.table_name == "video_cameras",
-                    AiQueryAssetModel.is_deleted.is_(False)))).scalar_one_or_none()
-                if not existing:
-                    db.add(AiQueryAssetModel(
-                        table_name="video_cameras", alias="摄像头",
-                        object_enabled=True, included=True))
+                # 2026-11-09：DQ 的对象源已从 ``ai_query_assets`` 改为「本体为唯一真相源」
+                # （`dq_overview` → `_objects_light` → `list_objects` → `semantic_context`）。
+                # 只建 ai_query_assets 行不会再让 video_cameras 进入 DQ 总览 → 断言恒 False。
+                # 这里改为建本体对象（backing_table 显式指向该表）。
+                await db.execute(_t("DELETE FROM ai_ont_object WHERE code='video_cameras'"))
+                await db.execute(_t(
+                    "INSERT INTO ai_ont_object(code,name,backing_table,key_prop,name_prop,enabled,is_deleted) "
+                    "VALUES ('video_cameras','摄像头','video_cameras','id','name',true,false)"))
                 await db.execute(_t(
                     "INSERT INTO ai_dq_report(table_name,alias,total,score,completeness,uniqueness,freshness,issues,is_deleted) "
                     "VALUES ('video_cameras','摄像头',10,40,50,60,30,'[]',0)"))
+            # 语义上下文有 60 秒进程缓存，刚写完本体必须显式失效，否则读到的还是旧快照。
+            _sem.invalidate_semantic_cache()
             w = await AiQueryService._dq_warning_for_sql("SELECT COUNT(*) FROM video_cameras")
             assert any(x["table"] == "video_cameras" and x["score"] < 60 for x in w)
             w2 = await AiQueryService._dq_warning_for_sql("SELECT COUNT(*) FROM video_alarm_records")

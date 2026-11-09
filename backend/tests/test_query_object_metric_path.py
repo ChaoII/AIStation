@@ -25,7 +25,7 @@ def test_object_query_path_attempts_custom_ds(monkeypatch):
                         prefer_object=None:
                         _fake_allowed(q, a, max_objects, datasource, prefer_object)))
         auth = SimpleNamespace(user=SimpleNamespace(id=1, is_superuser=True))
-        ans = await S.AiQueryService._object_query_path("各煤种批次量", 1, "ds:4", auth)
+        ans = await S.AiQueryService._object_query_path("煤种的批次量", 1, "ds:4", auth)
         return ans, seen
 
     ans, seen = asyncio.run(_go())
