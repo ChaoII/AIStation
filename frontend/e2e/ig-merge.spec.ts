@@ -48,9 +48,15 @@ test("数据资产并入数据与集成；智能问数为独立目录含 4 个�
     await aiSub.locator(":scope > .el-sub-menu__title").first().click();
     await page.waitForTimeout(400);
   }
-  await group.locator(":scope > .el-sub-menu__title").click();
-  await page.waitForTimeout(500);
-  for (const item of ["数据与集成", "智能问数", "问数评测", "自定义报表"]) {
+  // 幂等展开：本页就是当前路由时目录默认已展开，无条件点标题反而会收起（同 ai-query-menu）
+  const firstItem = group.locator(".el-menu-item", { hasText: "数据与集成" }).first();
+  for (let i = 0; i < 3; i++) {
+    if (await firstItem.isVisible().catch(() => false)) break;
+    await group.locator(":scope > .el-sub-menu__title").click();
+    await page.waitForTimeout(600);
+  }
+  // 子菜单已从 4 个变 5 个（新增「治理」；「自定义报表」改名「报表模板」）
+  for (const item of ["数据与集成", "智能问数", "问数评测", "报表模板", "治理"]) {
     await expect(group.locator(".el-menu-item", { hasText: item }).first()).toBeVisible();
   }
   await expect(aiSub.getByText("数据资产", { exact: true })).toHaveCount(0);

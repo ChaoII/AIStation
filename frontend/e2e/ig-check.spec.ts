@@ -35,21 +35,22 @@ test("数据与集成：选数据源 → 选表 → 元数据维护", async ({ p
   await page.screenshot({ path: "e2e/ig-1-初始.png" });
 
   // ① 选数据源（左侧第一张表的第一行）
-  const dsRow = page.locator(".el-card .el-table__row").first();
-  await dsRow.waitFor({ state: "visible", timeout: 20_000 });
-  await dsRow.click();
+  // 左侧数据源已从表格改成卡片列表（.ig-ds-item）；点第二个（业务库）才有表
+  const dsItem = page.locator(".ig-ds-item").nth(1);
+  await dsItem.waitFor({ state: "visible", timeout: 20_000 });
+  await dsItem.click();
   await page.waitForTimeout(4_000);
   await page.screenshot({ path: "e2e/ig-2-选数据源.png" });
 
-  const tableCount = await page.locator(".ig-tables .el-table__row").count();
+  const tableCount = await page.locator(".app-main .el-table__row:visible").count();
 
   // ② 选表
   let colCount = 0;
   if (tableCount > 0) {
-    await page.locator(".ig-tables .el-table__row").first().click();
+    await page.locator(".app-main .el-table__row:visible").first().click();
     await page.waitForTimeout(4_000);
     await page.screenshot({ path: "e2e/ig-3-选表.png" });
-    colCount = await page.locator(".ig-detail .el-table__row").count();
+    colCount = await page.locator(".app-main .el-table__row:visible").count();
   }
 
   // eslint-disable-next-line no-console

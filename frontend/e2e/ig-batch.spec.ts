@@ -21,7 +21,8 @@ test("批量维护表信息", async ({ page }) => {
   await dismissTour(page);
   await page.waitForTimeout(1500);
   // 选数据源
-  await page.locator(".el-card .el-table__row").first().click();
+  // 左侧数据源是卡片列表，点第二个（业务库）
+  await page.locator(".ig-ds-item").nth(1).click();
   await page.waitForTimeout(4000);
   // 打开批量维护
   await page.getByRole("button", { name: "批量维护" }).click();

@@ -19,7 +19,8 @@ test("批量维护：界面上真的保存", async ({ page }) => {
   await page.waitForTimeout(2500);
   await dismissTour(page);
   await page.waitForTimeout(1500);
-  await page.locator(".el-card .el-table__row").first().click();
+  // 左侧数据源是卡片列表，点第二个（业务库）
+  await page.locator(".ig-ds-item").nth(1).click();
   await page.waitForTimeout(4000);
   await page.getByRole("button", { name: "批量维护" }).click();
   await page.waitForTimeout(800);
