@@ -91,6 +91,41 @@ def portable_add_column(
     op.execute(f"ALTER TABLE {table} ADD COLUMN {column_name} {column_type}")
 
 
+def portable_alter_nullable(
+    table: str,
+    column_name: str,
+    *,
+    nullable: bool,
+    existing_type: Any = None,
+    existing_comment: str | None = None,
+) -> None:
+    """跨方言「改可空」：SQLite 不支持 ``ALTER COLUMN``，只能 batch 重建表。
+
+    其余方言直接 ``ALTER COLUMN``。存在性/幂等守卫由调用方负责。
+    历史迁移里直接用 ``op.alter_column`` 的，在空库全链重放（SQLite 回归）会
+    报 ``near "ALTER": syntax error``。
+    """
+    from alembic import op
+
+    bind = op.get_bind()
+    if is_sqlite(bind):
+        with op.batch_alter_table(table) as batch_op:
+            batch_op.alter_column(
+                column_name,
+                existing_type=existing_type,
+                nullable=nullable,
+                existing_comment=existing_comment,
+            )
+        return
+    op.alter_column(
+        table,
+        column_name,
+        existing_type=existing_type,
+        nullable=nullable,
+        existing_comment=existing_comment,
+    )
+
+
 def portable_drop_column(
     table: str,
     column_name: str,

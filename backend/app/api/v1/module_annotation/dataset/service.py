@@ -26,7 +26,14 @@ class DatasetService:
     async def create_dataset(cls, data: DatasetCreateSchema, auth) -> Any:
         crud = DatasetCRUD(auth=auth)
         dataset = await crud.create(data=data)
-        s3_client.ensure_bucket()
+        # 建数据集只是**元数据**操作：对象存储不可用（本地没起 RustFS / S3 抖动）
+        # 不应该让创建直接 500 —— 真正需要存储的是上传/导出，那里会自己报错。
+        # 历史行为是硬调用 `ensure_bucket()`，实测本地无 RustFS 时创建数据集直接
+        # `EndpointConnectionError`，且 boto3 重试会**同步阻塞事件循环**若干秒。
+        try:
+            s3_client.ensure_bucket()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[annotation] 数据集已创建，但对象存储桶不可用（上传/导出前需修好）：{e}")
         return dataset
 
     @classmethod

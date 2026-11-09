@@ -17,6 +17,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
+from app.alembic.dialect_compat import portable_alter_nullable
+
 # revision identifiers, used by Alembic.
 revision: str = "f5a6b7c8d9e0"
 down_revision: str | None = "e3f4a5b6c7d8"
@@ -30,7 +32,7 @@ def upgrade() -> None:
 
     cols = {c["name"] for c in insp.get_columns("ai_integration_call_logs")}
     if "app_id" in cols:
-        op.alter_column(
+        portable_alter_nullable(
             "ai_integration_call_logs", "app_id",
             existing_type=sa.Integer(),
             nullable=True,
@@ -40,7 +42,7 @@ def upgrade() -> None:
     if "ai_integration_mcp_sessions" in insp.get_table_names():
         mcols = {c["name"] for c in insp.get_columns("ai_integration_mcp_sessions")}
         if "app_id" in mcols:
-            op.alter_column(
+            portable_alter_nullable(
                 "ai_integration_mcp_sessions", "app_id",
                 existing_type=sa.Integer(),
                 nullable=True,
@@ -54,7 +56,7 @@ def downgrade() -> None:
 
     cols = {c["name"] for c in insp.get_columns("ai_integration_call_logs")}
     if "app_id" in cols:
-        op.alter_column(
+        portable_alter_nullable(
             "ai_integration_call_logs", "app_id",
             existing_type=sa.Integer(),
             nullable=False,
@@ -64,7 +66,7 @@ def downgrade() -> None:
     if "ai_integration_mcp_sessions" in insp.get_table_names():
         mcols = {c["name"] for c in insp.get_columns("ai_integration_mcp_sessions")}
         if "app_id" in mcols:
-            op.alter_column(
+            portable_alter_nullable(
                 "ai_integration_mcp_sessions", "app_id",
                 existing_type=sa.Integer(),
                 nullable=False,

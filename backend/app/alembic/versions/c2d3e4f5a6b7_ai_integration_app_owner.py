@@ -16,6 +16,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from app.alembic.dialect_compat import is_sqlite
+
 # revision identifiers, used by Alembic.
 revision: str = "c2d3e4f5a6b7"
 down_revision: str | None = "f3a4b5c6d7e8"
@@ -35,15 +37,27 @@ def upgrade() -> None:
                 "ai_integration_apps",
                 sa.Column("owner_user_id", sa.Integer(), nullable=True, comment="归属用户ID（null=平台级/管理员分配A；非空=用户自助申请B）"),
             )
-            op.create_foreign_key(
-                "fk_ai_integration_apps_owner_user_id",
-                "ai_integration_apps",
-                "sys_user",
-                ["owner_user_id"],
-                ["id"],
-                onupdate="CASCADE",
-                ondelete="SET NULL",
-            )
+            # SQLite 不支持 ALTER TABLE ADD CONSTRAINT，必须 batch 重建（空库全链重放会走到）
+            if is_sqlite(bind):
+                with op.batch_alter_table("ai_integration_apps") as batch_op:
+                    batch_op.create_foreign_key(
+                        "fk_ai_integration_apps_owner_user_id",
+                        "sys_user",
+                        ["owner_user_id"],
+                        ["id"],
+                        onupdate="CASCADE",
+                        ondelete="SET NULL",
+                    )
+            else:
+                op.create_foreign_key(
+                    "fk_ai_integration_apps_owner_user_id",
+                    "ai_integration_apps",
+                    "sys_user",
+                    ["owner_user_id"],
+                    ["id"],
+                    onupdate="CASCADE",
+                    ondelete="SET NULL",
+                )
             op.create_index(
                 op.f("ix_ai_integration_apps_owner_user_id"),
                 "ai_integration_apps",
@@ -101,5 +115,13 @@ def downgrade() -> None:
         cols = {c["name"] for c in insp.get_columns("ai_integration_apps")}
         if "owner_user_id" in cols:
             op.drop_index(op.f("ix_ai_integration_apps_owner_user_id"), table_name="ai_integration_apps")
-            op.drop_constraint("fk_ai_integration_apps_owner_user_id", "ai_integration_apps", type_="foreignkey")
-            op.drop_column("ai_integration_apps", "owner_user_id")
+            # 同 upgrade：SQLite 的 DROP CONSTRAINT 也要走 batch 重建
+            if is_sqlite(bind):
+                with op.batch_alter_table("ai_integration_apps") as batch_op:
+                    batch_op.drop_constraint(
+                        "fk_ai_integration_apps_owner_user_id", type_="foreignkey"
+                    )
+                    batch_op.drop_column("owner_user_id")
+            else:
+                op.drop_constraint("fk_ai_integration_apps_owner_user_id", "ai_integration_apps", type_="foreignkey")
+                op.drop_column("ai_integration_apps", "owner_user_id")
