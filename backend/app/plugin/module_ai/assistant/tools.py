@@ -303,7 +303,6 @@ async def list_alarm_records(limit: int = 50) -> dict:
 )
 async def platform_stats() -> dict:
     """平台自身资源计数（管理库直查，避免元数据问题误投业务问数 NL2SQL）。"""
-    from datetime import date, datetime
     from importlib import import_module
 
     from sqlalchemy import func
@@ -337,22 +336,13 @@ async def platform_stats() -> dict:
             except Exception:  # noqa: BLE001 单表缺失不影响其它统计
                 counts[key] = None
         try:
-            from app.plugin.module_ai.overview.model import AiCallLogModel
+            # 走 logs_center 取数：ai_call_logs 的读只允许在那里发生
+            # （见 tests/test_call_logs_ownership.py）。
+            from app.plugin.module_ai.logs_center.service import AiLogService
 
-            counts["calls_total"] = int(
-                (await db.execute(sel(func.count()).select_from(AiCallLogModel))).scalar() or 0
-            )
-            today_start = datetime.combine(date.today(), datetime.min.time())
-            counts["calls_today"] = int(
-                (
-                    await db.execute(
-                        sel(func.count())
-                        .select_from(AiCallLogModel)
-                        .where(AiCallLogModel.created_time >= today_start)
-                    )
-                ).scalar()
-                or 0
-            )
+            c = await AiLogService.counts()
+            counts["calls_total"] = int(c["total"])
+            counts["calls_today"] = int(c["today"])
             labels["calls_total"] = "累计调用"
             labels["calls_today"] = "今日调用"
         except Exception:  # noqa: BLE001

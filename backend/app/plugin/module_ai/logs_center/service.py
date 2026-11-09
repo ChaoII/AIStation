@@ -76,6 +76,57 @@ class AiLogService:
             }
 
     @classmethod
+    async def counts(cls) -> dict:
+        """调用量计数（``total`` 累计 / ``today`` 今日）。
+
+        供**其它模块**的「平台概览」类工具取数（如 ``assistant`` 的 ``platform_stats``）：
+        ``ai_call_logs`` 的读只能发生在 ``logs_center``，别再各自 import 模型。
+        """
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        async with async_db_session() as db:
+            total = await db.scalar(
+                select(func.count())
+                .select_from(AiCallLogModel)
+                .where(AiCallLogModel.is_deleted.is_(False))
+            )
+            today = await db.scalar(
+                select(func.count())
+                .select_from(AiCallLogModel)
+                .where(
+                    AiCallLogModel.is_deleted.is_(False),
+                    AiCallLogModel.created_time >= today_start,
+                )
+            )
+        return {"total": int(total or 0), "today": int(today or 0)}
+
+    @classmethod
+    async def runs_by_app(
+        cls,
+        app_id: int,
+        limit: int = 50,
+        usage: str | None = None,
+    ) -> list[dict]:
+        """按应用取最近运行记录（定时任务执行历史等）。
+
+        ``app_id`` 的语义由**写日志方**决定：定时任务把 cron id 记在 ``app_id``、
+        并把 ``usage`` 写成 ``cron``（见 `run_scheduled_workspace_cron`）。
+        这里只按列过滤，不猜业务含义。
+        """
+        stmt = select(AiCallLogModel).where(
+            AiCallLogModel.app_id == int(app_id),
+            AiCallLogModel.is_deleted.is_(False),
+        )
+        if usage:
+            stmt = stmt.where(AiCallLogModel.usage == usage)
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    stmt.order_by(desc(AiCallLogModel.id)).limit(max(1, int(limit)))
+                )
+            ).scalars().all()
+        return [_log_dict(r) for r in rows]
+
+    @classmethod
     async def stats(cls, days: int = 7) -> dict:
         """调用日志统计：总量/成功率/耗时 + 按模型/用途分布 + 按日趋势。"""
         since = datetime.now() - timedelta(days=max(int(days or 7), 1))

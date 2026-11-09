@@ -571,35 +571,26 @@ class WorkspaceService:
         数据源：`ai_call_logs` 中 `usage="cron"` 且 `app_id=cron_id` 的记录（每次调度
         /「立即执行」由 `run_scheduled_workspace_cron` 写入），含成败、耗时、错误与
         输出摘要——解决「只知道在干、不知道干成什么样」。
-        """
-        from app.plugin.module_ai.overview.model import AiCallLogModel
 
-        async with async_db_session() as db:
-            rows = (
-                await db.execute(
-                    select(AiCallLogModel)
-                    .where(
-                        AiCallLogModel.usage == "cron",
-                        AiCallLogModel.app_id == cron_id,
-                        AiCallLogModel.is_deleted.is_(False),
-                    )
-                    .order_by(AiCallLogModel.id.desc())
-                    .limit(limit)
-                )
-            ).scalars().all()
-            return [
-                {
-                    "id": r.id,
-                    "created_time": r.created_time.strftime("%Y-%m-%d %H:%M:%S")
-                    if r.created_time
-                    else "",
-                    "result": r.result or "success",
-                    "latency_ms": int(r.latency_ms or 0),
-                    "error": r.error or "",
-                    "reply_preview": r.reply_preview or "",
-                }
-                for r in rows
-            ]
+        取数走 ``logs_center``（``ai_call_logs`` 的读只允许在那里发生，见
+        `tests/test_call_logs_ownership.py`）。
+        """
+        from app.plugin.module_ai.logs_center.service import AiLogService
+
+        rows = await AiLogService.runs_by_app(cron_id, limit, usage="cron")
+        return [
+            {
+                "id": r["id"],
+                "created_time": r["created_time"].strftime("%Y-%m-%d %H:%M:%S")
+                if r.get("created_time")
+                else "",
+                "result": r.get("result") or "success",
+                "latency_ms": int(r.get("latency_ms") or 0),
+                "error": r.get("error") or "",
+                "reply_preview": r.get("reply_preview") or "",
+            }
+            for r in rows
+        ]
 
     @staticmethod
     def _cron_dict(r: AiWorkspaceCronModel) -> dict:
