@@ -1,4 +1,4 @@
-// 训练「定时训练」面板改用统一 TriggerEditor 后的回归用例（Task C5）。
+// 训练「定时任务」面板改用统一 TriggerEditor 后的回归用例（Task C5）。
 //
 // 覆盖点：
 // 1. 裸 cron 输入框与停更的 vue3-cron-plus 可视化弹窗已不在表单里（换成 .trigger-editor）；
@@ -42,7 +42,7 @@ async function createDataset(request: APIRequestContext) {
   return { id: (await res.json()).data.id as number, name };
 }
 
-/** 进入训练页 → 定时训练 Tab → 打开「新建定时计划」弹窗。 */
+/** 进入训练页 → 定时任务 Tab → 打开「新建定时计划」弹窗。 */
 async function openScheduleDialog(page: Page) {
   // 引导遮罩（`.el-tour`）会拦截指针事件，而 `components/Guide/index.vue` 是 `:show-close="false"`
   // ⇒ 遮罩上没有关闭按钮（C5 审查 Minor 4）。正解：**导航前**预置开关，让引导根本不渲染。
@@ -53,12 +53,19 @@ async function openScheduleDialog(page: Page) {
   await page.goto("/#/train/task", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
-  await page
-    .locator(".el-tabs__item:has-text('定时训练')")
-    .first()
-    .evaluate((el) => (el as HTMLElement).click());
-  const btn = page.getByRole("button", { name: "新建定时计划" });
-  await btn.waitFor({ state: "visible", timeout: 10_000 });
+  // 页签已从「定时训练」改名为「定时任务」；面板是惰挂载，点完必须等按钮出现。
+  // 实测偶发首次点击没生效（探针定位到 30s 也没等到按钮）→ 用真实 click + 最多重试 3 次。
+  const tab = page.locator(".el-tabs__item", { hasText: "定时任务" }).first();
+  const btn = page.getByRole("button", { name: "新建定时计划" }).first();
+  for (let i = 0; i < 3; i++) {
+    if (await tab.count()) await tab.click({ force: true }).catch(() => {});
+    const shown = await btn
+      .waitFor({ state: "visible", timeout: 8_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (shown) break;
+    await page.waitForTimeout(500);
+  }
   await btn.click();
   const dialog = page.locator(".el-dialog");
   await expect(dialog).toBeVisible();
@@ -99,7 +106,7 @@ async function deleteRow(page: Page, name: string) {
   await expect(page.locator(".el-table__row").filter({ hasText: name })).toHaveCount(0);
 }
 
-test("定时训练：间隔触发（每 2 小时）预览与保存后列表回显", async ({ page, request }) => {
+test("定时任务：间隔触发（每 2 小时）预览与保存后列表回显", async ({ page, request }) => {
   const dataset = await createDataset(request);
   const name = `e2e-训练调度-${Date.now()}`;
 
@@ -134,7 +141,7 @@ test("定时训练：间隔触发（每 2 小时）预览与保存后列表回�
   await deleteRow(page, name);
 });
 
-test("定时训练：定时触发默认表达式可保存并回显触发方式", async ({ page, request }) => {
+test("定时任务：定时触发默认表达式可保存并回显触发方式", async ({ page, request }) => {
   const dataset = await createDataset(request);
   const name = `e2e-训练cron-${Date.now()}`;
 

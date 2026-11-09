@@ -5,7 +5,19 @@ import { fileURLToPath } from "node:url";
 const API = process.env.E2E_API_URL || "http://127.0.0.1:8001/api/v1";
 const PNG = readFileSync(fileURLToPath(new URL("./fixtures/test-image.jpg", import.meta.url)));
 
+/** 对象存储（RustFS）可用性：上传依赖它，本地没起时明确 skip。 */
+const STORAGE = process.env.RUSTFS_ENDPOINT || "http://127.0.0.1:9010";
+async function storageUp(): Promise<boolean> {
+  try {
+    await fetch(STORAGE, { signal: AbortSignal.timeout(1500) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test("工作台可打开标注历史抽屉", async ({ page, request }) => {
+  test.skip(!(await storageUp()), `对象存储不可用（${STORAGE}），跳过上传+工作台用例`);
   const login = await request.post(`${API}/system/auth/login`, {
     form: { username: "admin", password: "123456" },
     headers: { "X-Forwarded-For": "127.0.0.1" },

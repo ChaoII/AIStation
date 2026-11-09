@@ -63,7 +63,8 @@ test("编辑任务：字典形态 classes 归一化后保存不丢类别", async
   const searchInput = page.getByPlaceholder("请输入任务名称");
   await expect(searchInput).toBeVisible({ timeout: 15_000 });
   await searchInput.fill(name);
-  await page.locator("form").getByRole("button", { name: "搜索" }).click();
+  // 搜索按钮文案是「查询」（CRUD 统一按钮），不是「搜索」
+  await page.locator("form").getByRole("button", { name: /^(查询|搜索)$/ }).click();
 
   const row = page.locator(`tr:has-text("${name}")`).first();
   await expect(row).toBeVisible({ timeout: 15_000 });
@@ -75,7 +76,9 @@ test("编辑任务：字典形态 classes 归一化后保存不丢类别", async
   await expect(dialog.locator(".el-tag", { hasText: "bird" })).toBeVisible();
 
   await dialog.getByRole("button", { name: "保存" }).click();
-  await expect(page.locator(".el-message--success")).toHaveCount(1, { timeout: 10_000 });
+  // 保存成功的反馈是**关闭弹窗**：全局成功 toast 已下线（见 utils/request.ts 的
+  // "成功提示已改为页面内联…此处不再根据服务端 msg 自动弹"），此页也不再单独弹 success。
+  await expect(dialog).toBeHidden({ timeout: 10_000 });
   expect(Array.isArray(savedClasses)).toBeTruthy();
   expect(savedClasses?.map((c) => c.name).sort()).toEqual(["bird", "dog"]);
 });
@@ -90,7 +93,8 @@ test("新增任务：关闭后重开弹窗类别列表为空", async ({ page }) 
   });
   await page.goto("/#/annotation/task", { waitUntil: "domcontentloaded" });
 
-  const addBtn = page.getByRole("button", { name: "新增" });
+  // 文案现为「添加」（历史「新增」）
+  const addBtn = page.getByRole("button", { name: /^(新增|添加)$/ });
   await expect(addBtn).toBeVisible({ timeout: 15_000 });
 
   const dialog = page.locator(".el-dialog").filter({ hasText: "新增任务" });

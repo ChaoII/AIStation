@@ -47,7 +47,8 @@ async function openMetricCard(page: Page, data: Record<string, any>) {
   );
   await page.goto(`/#/train/task/${TASK_ID}`, { waitUntil: "domcontentloaded" });
   const card = page.locator(".section-card", { hasText: "训练指标" }).first();
-  await expect(card).toBeVisible({ timeout: 15_000 });
+  // 该页会同时拉 detail/logs/模型接口并渲染图表，慢机器上首屏偶发 >15s（实测并行跑整组时打红）
+  await expect(card).toBeVisible({ timeout: 30_000 });
   return card;
 }
 
