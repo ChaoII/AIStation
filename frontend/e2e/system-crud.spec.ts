@@ -276,3 +276,44 @@ test("日志管理：列表能加载 + 按请求路径过滤", async ({ page }) 
   const first = await page.locator(".el-table__row").first().innerText();
   expect(first).toContain("/api");
 });
+
+test("用户管理：新建用户（部门/角色/密码）→ 搜索命中 → 删除", async ({ page, request }) => {
+  const headers = await authOf(request);
+  const account = `e2e${Date.now().toString().slice(-8)}`;
+  const name = `E2E 用户 ${account}`;
+
+  async function pickSelect(label: string) {
+    const drawer = page.locator(".el-drawer:visible").last();
+    const item = drawer.locator(".el-form-item").filter({ hasText: label }).first();
+    await item.locator(".el-select").click();
+    const opt = page.locator(".el-select-dropdown__item:visible").first();
+    await expect(opt).toBeVisible({ timeout: 10_000 });
+    await opt.click();
+    // 选完弹层还可能挂着，盖住下一个下拉 → 等它消失再继续
+    await expect(opt).toBeHidden({ timeout: 5_000 }).catch(() => {});
+    await page.waitForTimeout(300);
+  }
+
+  try {
+    await page.goto("/#/system/user", { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".search-container")).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: /^(新增|添加)$/ }).first().click();
+
+    const drawer = page.locator(".el-drawer:visible").last();
+    await expect(drawer).toBeVisible({ timeout: 15_000 });
+    await drawer.getByPlaceholder("请输入账号").fill(account);
+    await drawer.getByPlaceholder("请输入用户名").fill(name);
+    await drawer.getByPlaceholder("请输入密码").fill("Aa123456!");
+    await pickSelect("部门");
+    await pickSelect("角色");
+
+    await drawer.getByRole("button", { name: /^(确定|保存)$/ }).last().click();
+    await expect(drawer).toBeHidden({ timeout: 20_000 });
+
+    // 搜索命中
+    await searchName(page, "请输入账号", account);
+    await expect(page.locator(".el-table__row", { hasText: account }).first()).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await apiDeleteByName(request, headers, "/system/user/list", "/system/user/delete", account, "username");
+  }
+});
