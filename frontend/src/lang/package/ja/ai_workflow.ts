@@ -176,7 +176,7 @@ export default {
   prompt_noBlocks: "ブロックがありません",
   prompt_addBlock: "ブロックを追加",
   prompt_blockIndex: "ブロック {index} / {total}",
-  prompt_contentPlaceholder: "{type} の内容。{{variable}} 補間に対応",
+  prompt_contentPlaceholder: "{type} の内容。{'{{'}variable{'}}'} 補間に対応",
   prompt_hintPrefix: "対応",
   prompt_hintSuffix:
     "補間。左のブロックをドラッグして並べ替え、右でサンプル値を入力するとライブプレビュー",

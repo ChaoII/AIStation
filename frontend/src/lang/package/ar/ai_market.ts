@@ -283,7 +283,7 @@ export default {
   editLabel: "تعديل",
   preview: "معاينة",
   skillContentPlaceholder:
-    "تعليمات/استخدام Markdown، يدعم {{variable}}، يُدمج في تلميح النظام بعد ربطه بوكيل",
+    "تعليمات/استخدام Markdown، يدعم {'{{'}variable{'}}'}، يُدمج في تلميح النظام بعد ربطه بوكيل",
   sortLabel: "ترتيب الفرز",
   pastePlaceholder:
     "الصق المستند الكامل للمهارة (قد يتضمن --- YAML frontmatter ---)، مثل SKILL.md من صفحة تفاصيل SkillHub",

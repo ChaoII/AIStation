@@ -211,7 +211,8 @@ export default {
   eval_stopped: "Stopped",
   eval_import: "Import",
   eval_importTitle: "Bulk import cases",
-  eval_importHint: "CSV with header question,gold_sql,datasource,difficulty,form,scenario,dataset — or a JSON array. Rows without question/gold_sql are skipped.",
+  eval_importHint:
+    "CSV with header question,gold_sql,datasource,difficulty,form,scenario,dataset — or a JSON array. Rows without question/gold_sql are skipped.",
   eval_importFormat: "Format",
   eval_importContent: "Content",
   eval_importPlaceholder: "Paste CSV or JSON…",
@@ -229,9 +230,11 @@ export default {
   eval_exportFail: "Export failed",
   eval_loading: "Loading…",
   eval_subRuns: "Runs:",
-  eval_benchLegacy: "Legacy benchmark (hard-coded 20 fast + 98 NL2SQL cases), kept for regression only. Use the Run tab for regular evaluation (maintainable case set, dataset filters, exportable results).",
+  eval_benchLegacy:
+    "Legacy benchmark (hard-coded 20 fast + 98 NL2SQL cases), kept for regression only. Use the Run tab for regular evaluation (maintainable case set, dataset filters, exportable results).",
   eval_goRun: "Go to Run",
-  eval_noCases: "No matching cases: check the datasource / dataset / difficulty filters, or enable cases in the test set first",
+  eval_noCases:
+    "No matching cases: check the datasource / dataset / difficulty filters, or enable cases in the test set first",
   eval_model: "Model",
   eval_compareRuns: "Compare",
   eval_compareTitle: "Compare two runs",
@@ -241,7 +244,8 @@ export default {
   eval_compareStatus: "Change",
   eval_compareBaseCol: "Baseline",
   eval_compareTargetCol: "Target",
-  eval_compareSummary: "fixed {fixed} / regressed {regressed} / same {same} (net {net}); accuracy {baseAcc}% → {targetAcc}%{modelChanged}",
+  eval_compareSummary:
+    "fixed {fixed} / regressed {regressed} / same {same} (net {net}); accuracy {baseAcc}% → {targetAcc}%{modelChanged}",
   eval_compareSame: "Pick two different runs",
   eval_compareFail: "Comparison failed",
   eval_modelChanged: " (model changed)",

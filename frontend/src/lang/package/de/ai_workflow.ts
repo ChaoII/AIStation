@@ -176,7 +176,7 @@ export default {
   prompt_noBlocks: "Keine Blöcke",
   prompt_addBlock: "Block hinzufügen",
   prompt_blockIndex: "Block {index} / {total}",
-  prompt_contentPlaceholder: "{type}-Inhalt, unterstützt {{variable}}-Interpolation",
+  prompt_contentPlaceholder: "{type}-Inhalt, unterstützt {'{{'}variable{'}}'}-Interpolation",
   prompt_hintPrefix: "Unterstützt",
   prompt_hintSuffix:
     "Interpolation; Blöcke links ziehen, um zu sortieren, Beispieldaten rechts für eine Live-Vorschau ausfüllen",

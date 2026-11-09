@@ -207,7 +207,8 @@ export default {
   eval_stopped: "已停止",
   eval_import: "匯入",
   eval_importTitle: "批次匯入題庫",
-  eval_importHint: "支援 CSV（首列表頭 question,gold_sql,datasource,difficulty,form,scenario,dataset）或 JSON 陣列",
+  eval_importHint:
+    "支援 CSV（首列表頭 question,gold_sql,datasource,difficulty,form,scenario,dataset）或 JSON 陣列",
   eval_importFormat: "格式",
   eval_importContent: "內容",
   eval_importPlaceholder: "貼上 CSV 或 JSON…",
@@ -225,7 +226,8 @@ export default {
   eval_exportFail: "匯出失敗",
   eval_loading: "載入中…",
   eval_subRuns: "各次執行：",
-  eval_benchLegacy: "本頁是舊基準腳本（題集寫死在程式碼裡：20 道快路徑 + 98 道 NL2SQL），僅作回歸對照用；日常評測請用「執行」頁",
+  eval_benchLegacy:
+    "本頁是舊基準腳本（題集寫死在程式碼裡：20 道快路徑 + 98 道 NL2SQL），僅作回歸對照用；日常評測請用「執行」頁",
   eval_goRun: "去執行評測",
   eval_noCases: "沒有符合的題目：請檢查資料源 / 資料集 / 難度篩選，或先在「測試集」啟用題目",
   eval_model: "模型",
@@ -237,7 +239,8 @@ export default {
   eval_compareStatus: "變化",
   eval_compareBaseCol: "基線結果",
   eval_compareTargetCol: "對比結果",
-  eval_compareSummary: "修復 {fixed} / 回退 {regressed} / 不變 {same}（淨 {net}）；準確率 {baseAcc}% → {targetAcc}%{modelChanged}",
+  eval_compareSummary:
+    "修復 {fixed} / 回退 {regressed} / 不變 {same}（淨 {net}）；準確率 {baseAcc}% → {targetAcc}%{modelChanged}",
   eval_compareSame: "請選擇兩次不同的執行",
   eval_compareFail: "對比失敗",
   eval_modelChanged: "（模型已變更）",

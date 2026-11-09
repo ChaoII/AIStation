@@ -1267,7 +1267,8 @@ export default {
   openedViewMsg: "已打开视图「{name}」",
   emptyMeansUncategorized: "留空 = 未分类",
   actionTypeActingOn: "动作类型 · 作用于 {name}",
-  actionScopeHint: "本体动作由「对象页 · 执行动作」「决策中心」和智能体工具（ont_action__代码）调用；问数（NL2SQL）不会自动执行动作——问数侧的行级写回是历史实现「数据与集成 → 治理 → 动作/写回」，正在逐步下线。",
+  actionScopeHint:
+    "本体动作由「对象页 · 执行动作」「决策中心」和智能体工具（ont_action__代码）调用；问数（NL2SQL）不会自动执行动作——问数侧的行级写回是历史实现「数据与集成 → 治理 → 动作/写回」，正在逐步下线。",
   needsApproval: "需审批",
   noApprovalNeeded: "无需审批",
   notFilled: "未填写",

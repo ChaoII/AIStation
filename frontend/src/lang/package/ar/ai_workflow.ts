@@ -174,7 +174,7 @@ export default {
   prompt_noBlocks: "لا توجد كتل",
   prompt_addBlock: "إضافة كتلة",
   prompt_blockIndex: "الكتلة {index} / {total}",
-  prompt_contentPlaceholder: "محتوى {type}، يدعم إدراج {{variable}}",
+  prompt_contentPlaceholder: "محتوى {type}، يدعم إدراج {'{{'}variable{'}}'}",
   prompt_hintPrefix: "يدعم",
   prompt_hintSuffix:
     "الإدراج؛ اسحب الكتل على اليسار لإعادة الترتيب، واملأ قيمًا نموذجية على اليمين للمعاينة الحية",

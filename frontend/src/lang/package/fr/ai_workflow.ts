@@ -178,7 +178,7 @@ export default {
   prompt_noBlocks: "Aucun bloc",
   prompt_addBlock: "Ajouter un bloc",
   prompt_blockIndex: "Bloc {index} / {total}",
-  prompt_contentPlaceholder: "Contenu {type}, prend en charge l'interpolation {{variable}}",
+  prompt_contentPlaceholder: "Contenu {type}, prend en charge l'interpolation {'{{'}variable{'}}'}",
   prompt_hintPrefix: "Prend en charge",
   prompt_hintSuffix:
     "interpolation ; faites glisser les blocs à gauche pour réorganiser, remplissez les valeurs d'exemple à droite pour un aperçu en direct",

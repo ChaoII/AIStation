@@ -287,7 +287,7 @@ export default {
   editLabel: "編集",
   preview: "プレビュー",
   skillContentPlaceholder:
-    "Markdown の指示・用法。{{variable}} に対応。エージェントにバインドするとシステムプロンプトにマージされます",
+    "Markdown の指示・用法。{'{{'}variable{'}}'} に対応。エージェントにバインドするとシステムプロンプトにマージされます",
   sortLabel: "並び順",
   pastePlaceholder:
     "スキル文書全体を貼り付け（--- YAML frontmatter --- を含む場合あり）。例: SkillHub 詳細ページの SKILL.md",

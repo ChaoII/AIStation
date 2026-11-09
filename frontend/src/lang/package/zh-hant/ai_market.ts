@@ -276,7 +276,8 @@ export default {
   skillContentLabel: "技能內容",
   editLabel: "編輯",
   preview: "預覽",
-  skillContentPlaceholder: "Markdown 指令/使用說明，支援 {{變數}}，綁定到智慧體後併入系統提示詞",
+  skillContentPlaceholder:
+    "Markdown 指令/使用說明，支援 {'{{'}變數{'}}'}，綁定到智慧體後併入系統提示詞",
   sortLabel: "排序",
   pastePlaceholder:
     "貼上技能文件全文（可含 --- YAML frontmatter ---），例如 SkillHub 技能詳情頁的 SKILL.md 內容",

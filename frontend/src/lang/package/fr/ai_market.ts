@@ -292,7 +292,7 @@ export default {
   editLabel: "Modifier",
   preview: "Aperçu",
   skillContentPlaceholder:
-    "Instructions/usage en Markdown, prend en charge {{variable}}, fusionnées dans le prompt système après liaison à un agent",
+    "Instructions/usage en Markdown, prend en charge {'{{'}variable{'}}'}, fusionnées dans le prompt système après liaison à un agent",
   sortLabel: "Ordre de tri",
   pastePlaceholder:
     "Collez le document complet de la compétence (peut inclure --- frontmatter YAML ---), par ex. le SKILL.md d'une page de détail SkillHub",

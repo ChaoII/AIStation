@@ -177,7 +177,7 @@ export default {
   prompt_noBlocks: "No hay bloques",
   prompt_addBlock: "Añadir bloque",
   prompt_blockIndex: "Bloque {index} / {total}",
-  prompt_contentPlaceholder: "Contenido de {type}, admite interpolación de {{variable}}",
+  prompt_contentPlaceholder: "Contenido de {type}, admite interpolación de {'{{'}variable{'}}'}",
   prompt_hintPrefix: "Admite",
   prompt_hintSuffix:
     "interpolación; arrastra los bloques de la izquierda para reordenar, completa valores de ejemplo a la derecha para una vista previa en vivo",

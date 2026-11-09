@@ -292,7 +292,7 @@ export default {
   editLabel: "Editar",
   preview: "Vista previa",
   skillContentPlaceholder:
-    "Instrucciones/uso en Markdown, admite {{variable}}, se fusiona en el prompt del sistema tras vincularse a un agente",
+    "Instrucciones/uso en Markdown, admite {'{{'}variable{'}}'}, se fusiona en el prompt del sistema tras vincularse a un agente",
   sortLabel: "Orden",
   pastePlaceholder:
     "Pega el documento completo de la habilidad (puede incluir --- YAML frontmatter ---), p. ej. el SKILL.md de una página de detalle de SkillHub",

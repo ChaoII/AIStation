@@ -286,7 +286,7 @@ export default {
   editLabel: "แก้ไข",
   preview: "พรีวิว",
   skillContentPlaceholder:
-    "คำสั่ง/การใช้งาน Markdown รองรับ {{variable}} ถูกรวมเข้าระบบพรอมต์หลังผูกกับเอเจนต์",
+    "คำสั่ง/การใช้งาน Markdown รองรับ {'{{'}variable{'}}'} ถูกรวมเข้าระบบพรอมต์หลังผูกกับเอเจนต์",
   sortLabel: "ลำดับการจัดเรียง",
   pastePlaceholder:
     "วางเอกสารสกิลทั้งหมด (อาจมี --- YAML frontmatter ---) เช่น SKILL.md จากหน้ารายละเอียด SkillHub",

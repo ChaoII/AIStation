@@ -291,7 +291,7 @@ export default {
   editLabel: "Bearbeiten",
   preview: "Vorschau",
   skillContentPlaceholder:
-    "Markdown-Anweisungen/Nutzung, unterstützt {{variable}}, wird nach der Bindung an einen Agenten in den System-Prompt eingefügt",
+    "Markdown-Anweisungen/Nutzung, unterstützt {'{{'}variable{'}}'}, wird nach der Bindung an einen Agenten in den System-Prompt eingefügt",
   sortLabel: "Sortierreihenfolge",
   pastePlaceholder:
     "Das vollständige Fähigkeitsdokument einfügen (kann --- YAML-Frontmatter --- enthalten), z. B. die SKILL.md von einer SkillHub-Detailseite",

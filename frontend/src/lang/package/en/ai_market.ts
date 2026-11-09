@@ -286,7 +286,7 @@ export default {
   editLabel: "Edit",
   preview: "Preview",
   skillContentPlaceholder:
-    "Markdown instructions/usage, supports {{variable}}, merged into the system prompt after binding to an agent",
+    "Markdown instructions/usage, supports {'{{'}variable{'}}'}, merged into the system prompt after binding to an agent",
   sortLabel: "Sort order",
   pastePlaceholder:
     "Paste the full skill document (may include --- YAML frontmatter ---), e.g. the SKILL.md from a SkillHub detail page",

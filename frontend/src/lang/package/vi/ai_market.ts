@@ -288,7 +288,7 @@ export default {
   editLabel: "Chỉnh sửa",
   preview: "Xem trước",
   skillContentPlaceholder:
-    "Chỉ dẫn/cách dùng Markdown, hỗ trợ {{variable}}, được hợp nhất vào prompt hệ thống sau khi liên kết với tác nhân",
+    "Chỉ dẫn/cách dùng Markdown, hỗ trợ {'{{'}variable{'}}'}, được hợp nhất vào prompt hệ thống sau khi liên kết với tác nhân",
   sortLabel: "Thứ tự sắp xếp",
   pastePlaceholder:
     "Dán toàn bộ tài liệu kỹ năng (có thể bao gồm --- YAML frontmatter ---), ví dụ: SKILL.md từ trang chi tiết SkillHub",

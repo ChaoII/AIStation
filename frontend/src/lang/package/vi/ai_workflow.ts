@@ -175,7 +175,7 @@ export default {
   prompt_noBlocks: "Không có khối",
   prompt_addBlock: "Thêm Khối",
   prompt_blockIndex: "Khối {index} / {total}",
-  prompt_contentPlaceholder: "Nội dung {type}, hỗ trợ chèn {{variable}}",
+  prompt_contentPlaceholder: "Nội dung {type}, hỗ trợ chèn {'{{'}variable{'}}'}",
   prompt_hintPrefix: "Hỗ trợ",
   prompt_hintSuffix:
     "chèn; kéo các khối bên trái để sắp xếp lại, điền giá trị mẫu bên phải để xem trước trực tiếp",

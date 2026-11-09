@@ -207,7 +207,8 @@ export default {
   eval_stopped: "已停止",
   eval_import: "导入",
   eval_importTitle: "批量导入题库",
-  eval_importHint: "支持 CSV（首行表头 question,gold_sql,datasource,difficulty,form,scenario,dataset）或 JSON 数组；缺 question/gold_sql 的条目会被跳过",
+  eval_importHint:
+    "支持 CSV（首行表头 question,gold_sql,datasource,difficulty,form,scenario,dataset）或 JSON 数组；缺 question/gold_sql 的条目会被跳过",
   eval_importFormat: "格式",
   eval_importContent: "内容",
   eval_importPlaceholder: "粘贴 CSV 或 JSON…",
@@ -225,7 +226,8 @@ export default {
   eval_exportFail: "导出失败",
   eval_loading: "加载中…",
   eval_subRuns: "各次运行：",
-  eval_benchLegacy: "本页是旧基准脚本（题集写死在代码里：20 道快路径 + 98 道 NL2SQL），仅作回归对照用；日常评测请用「运行」页（题库可维护、可按数据集/维度筛选、结果可导出）",
+  eval_benchLegacy:
+    "本页是旧基准脚本（题集写死在代码里：20 道快路径 + 98 道 NL2SQL），仅作回归对照用；日常评测请用「运行」页（题库可维护、可按数据集/维度筛选、结果可导出）",
   eval_goRun: "去运行评测",
   eval_noCases: "没有匹配的题目：请检查数据源 / 数据集 / 难度筛选，或先在「测试集」里启用题目",
   eval_model: "模型",
@@ -237,7 +239,8 @@ export default {
   eval_compareStatus: "变化",
   eval_compareBaseCol: "基线结果",
   eval_compareTargetCol: "对比结果",
-  eval_compareSummary: "修复 {fixed} / 回退 {regressed} / 不变 {same}（净 {net}）；准确率 {baseAcc}% → {targetAcc}%{modelChanged}",
+  eval_compareSummary:
+    "修复 {fixed} / 回退 {regressed} / 不变 {same}（净 {net}）；准确率 {baseAcc}% → {targetAcc}%{modelChanged}",
   eval_compareSame: "请选择两次不同的运行",
   eval_compareFail: "对比失败",
   eval_modelChanged: "（模型已变更）",

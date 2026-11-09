@@ -175,7 +175,7 @@ export default {
   prompt_noBlocks: "ไม่มีบล็อก",
   prompt_addBlock: "เพิ่มบล็อก",
   prompt_blockIndex: "บล็อก {index} / {total}",
-  prompt_contentPlaceholder: "เนื้อหา {type} รองรับการแทรก {{variable}}",
+  prompt_contentPlaceholder: "เนื้อหา {type} รองรับการแทรก {'{{'}variable{'}}'}",
   prompt_hintPrefix: "รองรับ",
   prompt_hintSuffix:
     "การแทรก; ลากบล็อกทางซ้ายเพื่อเรียงลำดับใหม่ กรอกค่าตัวอย่างทางขวาเพื่อพรีวิวสด",

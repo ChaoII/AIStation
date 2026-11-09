@@ -175,7 +175,7 @@ export default {
   prompt_noBlocks: "블록 없음",
   prompt_addBlock: "블록 추가",
   prompt_blockIndex: "블록 {index} / {total}",
-  prompt_contentPlaceholder: "{type} 내용, {{variable}} 보간 지원",
+  prompt_contentPlaceholder: "{type} 내용, {'{{'}variable{'}}'} 보간 지원",
   prompt_hintPrefix: "지원",
   prompt_hintSuffix:
     "보간; 왼쪽에서 블록을 끌어 순서 변경, 오른쪽에서 샘플 값을 입력해 실시간 미리보기",

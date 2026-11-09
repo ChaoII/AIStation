@@ -172,7 +172,7 @@ export default {
   prompt_noBlocks: "暫無塊",
   prompt_addBlock: "新增塊",
   prompt_blockIndex: "第 {index} / {total} 塊",
-  prompt_contentPlaceholder: "{type}內容，支援 {{變數名}} 插值",
+  prompt_contentPlaceholder: "{type}內容，支援 {'{{'}變數名{'}}'} 插值",
   prompt_hintPrefix: "支援",
   prompt_hintSuffix: "插值；左側拖曳調整塊順序，右側可填寫範例值並即時預覽",
   prompt_noBlocksMain: "暫無塊，請從左側新增",

@@ -176,7 +176,7 @@ export default {
   prompt_noBlocks: "Нет блоков",
   prompt_addBlock: "Добавить блок",
   prompt_blockIndex: "Блок {index} / {total}",
-  prompt_contentPlaceholder: "Содержимое {type}, поддерживает подстановку {{variable}}",
+  prompt_contentPlaceholder: "Содержимое {type}, поддерживает подстановку {'{{'}variable{'}}'}",
   prompt_hintPrefix: "Поддерживает",
   prompt_hintSuffix:
     "подстановку; перетаскивайте блоки слева для изменения порядка, заполните примеры значений справа для предпросмотра в реальном времени",

@@ -284,7 +284,7 @@ export default {
   editLabel: "편집",
   preview: "미리보기",
   skillContentPlaceholder:
-    "Markdown 지시/사용법, {{variable}} 지원, 에이전트에 바인딩 후 시스템 프롬프트에 병합됩니다",
+    "Markdown 지시/사용법, {'{{'}variable{'}}'} 지원, 에이전트에 바인딩 후 시스템 프롬프트에 병합됩니다",
   sortLabel: "정렬 순서",
   pastePlaceholder:
     "전체 스킬 문서를 붙여넣으세요 (--- YAML frontmatter --- 포함 가능), 예: SkillHub 상세 페이지의 SKILL.md",
