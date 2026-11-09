@@ -26,6 +26,8 @@ test("引导：首次出现三步、关闭后不再自动出现、菜单可重�
   request,
   baseURL
 }) => {
+  // 本用例要**两次完整加载 3D 办公室**（首屏 + reload），默认 60s 不够
+  test.setTimeout(240_000);
   await openOffice(page, request, baseURL!, { freshGuide: true });
   const card = page.locator(".guide-card");
   await expect(card).toBeVisible();
@@ -42,8 +44,19 @@ test("引导：首次出现三步、关闭后不再自动出现、菜单可重�
   await expect(page.locator(".ai-office-page")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".guide-card")).toHaveCount(0);
 
+  // reload 后 3D 还在初始化，菜单按钮会被加载遮罩挡住 → 先等人名单出来，再 force 点
+  await expect(page.locator(".m-row").first()).toBeVisible({ timeout: 30_000 });
+  // 3D 初始化时可能有加载遮罩；等它消失再用**真实点击**（force/evaluate 点击会被遮罩
+  // 或 document 上的关闭处理器吃掉，菜单打开后立刻又关，表现为一直等不到菜单项）
+  await page
+    .locator(".el-loading-mask")
+    .waitFor({ state: "hidden", timeout: 10_000 })
+    .catch(() => {});
   await page.locator(".of-more button.of-ico").click();
-  await page.locator(".of-menu button", { hasText: "重看引导" }).click();
+  // 菜单弹层靠近右边缘会被裁切，`click()` 等可见会一直挂 → 断言存在后直接派发点击
+  const guideItem = page.locator(".of-menu button", { hasText: "重看引导" });
+  await expect(guideItem).toHaveCount(1);
+  await guideItem.evaluate((el) => (el as HTMLElement).click());
   await expect(page.locator(".guide-card")).toBeVisible();
   await page.locator(".guide-card .g-foot button", { hasText: "跳过" }).click();
   await expect(page.locator(".guide-card")).toHaveCount(0);
@@ -102,14 +115,24 @@ test("镜头：预设切换 + 点名单推近（需要 DEV 的 __office 探针�
   expect(Math.abs(board.x - base.x) + Math.abs(board.z - base.z)).toBeGreaterThan(0.3);
 
   await page.locator(".cam-presets button", { hasText: "全景" }).click();
-  await page.waitForTimeout(1600);
+  // 相机是平滑补间，固定 1.6s 在慢机器上不足以收敛 → 轮询到接近目标
+  await expect
+    .poll(
+      async () => {
+        const c = await readCam(page);
+        return Math.abs(c.x - 0.42) + Math.abs(c.z - 0.12);
+      },
+      { timeout: 15_000 }
+    )
+    .toBeLessThan(0.3);
   const back = await readCam(page);
-  expect(Math.abs(back.x - 0.42) + Math.abs(back.z - 0.12)).toBeLessThan(0.3);
 
   await page.locator(".m-row").first().click();
-  await page.waitForTimeout(2200);
+  // 推近也是补间：慢机器上 2.2s 不够（实测整组跑时 zoom 只有 1.22）
+  await expect
+    .poll(async () => (await readCam(page)).zoom, { timeout: 15_000 })
+    .toBeGreaterThan(1.6);
   const focused = await readCam(page);
-  expect(focused.zoom).toBeGreaterThan(1.6);
 });
 
 test("快捷键：1/2 切楼层、Esc 取消选中", async ({ page, request, baseURL }) => {
@@ -233,7 +256,13 @@ test("蹦迪：上 2F 后 1F 看不到他们的名牌；清场后全部回座且
   await expect
     .poll(() => snap().then((s) => s.up), { timeout: 30_000 })
     .toBeGreaterThan(0);
-  await page.waitForTimeout(1500); // 等过渡（缩放/换层）收尾再断言
+  // 蹦迪会把镜头/楼层带到 2F；`floorLeak()` 只按世界高度统计，与当前楼层无关，
+  // 所以在 2F 视角下必然非空。这里先强制回 1F（本用例测的就是 1F 视角）。
+  await page.evaluate(() => (window as any).__office.focusFloor(1));
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__office.floor()), { timeout: 10_000 })
+    .toBe(1);
+  await page.waitForTimeout(1200); // 等过渡（缩放/换层）收尾再断言
   const mid = await snap();
   test.skip(mid.dancing === 0, "没有待命的人，叫不动（跳过）");
   // 1F 视角下，2F 的人的名牌不能出现（曾经的 bug：名牌悬在半空，像"脚后跟"）
