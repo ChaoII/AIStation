@@ -845,6 +845,38 @@
       </el-tab-pane>
       <el-tab-pane :label="t('ai_workflow.ig_govLineage')" name="lineage" lazy>
         <div v-loading="lineageLoading" class="gp-lineage">
+          <div class="gp-lineage__lookup">
+            <el-input
+              v-model="kgStart"
+              size="small"
+              clearable
+              style="width: 220px"
+              :placeholder="t('ai_workflow.ig_kgStartPh')"
+              @keyup.enter="runKgTraverse"
+            />
+            <el-select v-model="kgHops" size="small" style="width: 96px">
+              <el-option :label="t('ai_workflow.ig_kgHopsN', { n: 1 })" :value="1" />
+              <el-option :label="t('ai_workflow.ig_kgHopsN', { n: 2 })" :value="2" />
+              <el-option :label="t('ai_workflow.ig_kgHopsN', { n: 3 })" :value="3" />
+            </el-select>
+            <el-button size="small" :loading="kgLoading" @click="runKgTraverse">
+              {{ t("ai_workflow.ig_kgRun") }}
+            </el-button>
+            <span v-if="kgNodes.length" class="gp-lineage__ds">
+              {{ t("ai_workflow.ig_kgHits", { n: kgNodes.length }) }}
+            </span>
+          </div>
+          <div v-if="kgNodes.length" class="gp-lineage__tags">
+            <el-tag
+              v-for="(n, i) in kgNodes"
+              :key="i"
+              size="small"
+              :type="n.etype === 'metric' ? 'warning' : 'info'"
+              effect="plain"
+            >
+              {{ n.name }}
+            </el-tag>
+          </div>
           <div class="gp-lineage__toolbar">
             <span class="gp-lineage__ds">{{ t("ai_workflow.ig_govLineageDs") }}：ds:4</span>
             <el-button size="small" :loading="lineageRebuilding" @click="rebuildLineage">
@@ -1733,6 +1765,7 @@ import {
   getGovernanceSummary,
   domainReconcile,
   getDqRules,
+  kgTraverse,
   checkPermission,
   runDqRule,
   getQueryAssetColumns,
@@ -1933,6 +1966,35 @@ async function loadLineage() {
     lineage.value = null;
   } finally {
     lineageLoading.value = false;
+  }
+}
+
+// 多跳图检索：从一张表出发，看它关联到哪些指标/表（AGE 图库，双向）
+const kgStart = ref("");
+const kgHops = ref(2);
+const kgLoading = ref(false);
+const kgNodes = ref<any[]>([]);
+
+async function runKgTraverse() {
+  if (!kgStart.value.trim()) {
+    ElMessage.warning(t("ai_workflow.ig_kgStartPh"));
+    return;
+  }
+  kgLoading.value = true;
+  try {
+    const r: any = await kgTraverse(kgStart.value.trim(), kgHops.value);
+    const d = r.data?.data || {};
+    if (d.error) {
+      ElMessage.warning(d.error);
+      kgNodes.value = [];
+      return;
+    }
+    kgNodes.value = d.nodes || [];
+    if (!kgNodes.value.length) ElMessage.info(t("ai_workflow.ig_kgEmpty"));
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || t("ai_workflow.ig_loadFail"));
+  } finally {
+    kgLoading.value = false;
   }
 }
 
@@ -2623,6 +2685,18 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+.gp-lineage__lookup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.gp-lineage__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 .gp-lineage__ds {
   color: var(--el-text-color-secondary);

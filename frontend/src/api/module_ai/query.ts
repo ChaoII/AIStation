@@ -891,3 +891,8 @@ export function checkPermission(user_id: number, table: string) {
     params: { user_id, table },
   });
 }
+
+/** 跨域多跳图检索：从某张表出发，返回可达节点（表/指标/对象，排除字段噪声） */
+export function kgTraverse(start: string, hops = 2) {
+  return request({ url: `${API_PATH}/assets/kg/traverse`, method: "post", data: { start, hops } });
+}

@@ -489,16 +489,40 @@ async def save_layout(items: list[dict]) -> int:
 
 
 async def traverse(start: str, hops: int = 2) -> dict:
-    """跨域多跳图查询：从某节点出发，经 AGE 图库返回可达节点/路径（schema+知识库统一）。"""
+    """跨域多跳图查询：从某节点出发，经 AGE 返回**双向**可达节点。
+
+    两个实测要点（2026-11-09）：
+    1. AGE 里的边是**有方向**的（``指标 → 表``、``字段 → 表``）。旧实现只走出边，
+       从表出发永远查不到东西（实测 ``表:video_cameras`` 返回 0 节点，
+       而 ``指标:今日告警数 -> 表: video_alarm_records`` 这条边是存在的）。
+       「谁关联到这张表」本身是有用信息，所以这里用**无向**匹配 ``-[*..n]-``。
+    2. 调用方通常只给裸表名（``video_cameras``），而图里节点名是 ``表:video_cameras``
+       （中文前缀 + 冒号，冒号后**无空格**）。这里两种都试，避免调用方必须知道内部命名。
+    """
     if not await _age_available() or not await _ensure_schema_age_graph():
         return {"nodes": [], "edges": [], "error": "AGE 不可用"}
-    s = (start or "").replace("'", "''")
+
+    raw = (start or "").strip()
+    if not raw:
+        return {"nodes": [], "edges": [], "error": "缺少起始节点"}
+    candidates = [raw]
+    if not any(raw.startswith(p) for p in ("表:", "字段:", "指标:", "对象:", "概念:")):
+        candidates.insert(0, f"表:{raw}")
+
+    hop = max(1, min(int(hops or 2), 4))
     try:
-        rows = await _run_cypher(
-            f"MATCH (a:SNode {{name:'{s}'}})-[*..{int(hops)}]->(b:SNode) "
-            f"RETURN DISTINCT b.name, b.etype", ["n", "e"])
-        nodes = [{"name": _ag(r[0]), "etype": _ag(r[1])} for r in rows if _ag(r[0])]
-        return {"nodes": nodes, "edges": [], "from": start, "hops": hops}
+        for name in candidates:
+            safe = name.replace("'", "''")
+            rows = await _run_cypher(
+                f"MATCH (a:SNode {{name:'{safe}'}})-[*..{hop}]-(b:SNode) "
+                f"WHERE b.name <> a.name AND b.etype <> 'field' "
+                f"RETURN DISTINCT b.name, b.etype LIMIT 50",
+                ["n", "e"],
+            )
+            nodes = [{"name": _ag(r[0]), "etype": _ag(r[1])} for r in rows if _ag(r[0])]
+            if nodes:
+                return {"nodes": nodes, "edges": [], "from": name, "hops": hop}
+        return {"nodes": [], "edges": [], "from": candidates[0], "hops": hop}
     except Exception as e:  # noqa: BLE001
         return {"nodes": [], "edges": [], "error": str(e)[:120]}
 
