@@ -50,13 +50,14 @@ async function apiDeleteByName(
   headers: Record<string, string>,
   listPath: string,
   deletePath: string,
-  name: string
+  name: string,
+  field = "name"
 ) {
   try {
-    const r = await request.get(`${API}${listPath}`, { headers, params: { name, page_no: 1, page_size: 50 } });
+    const r = await request.get(`${API}${listPath}`, { headers, params: { page_no: 1, page_size: 100 } });
     if (!r.ok()) return;
     const items = (await r.json())?.data?.items || [];
-    const hit = items.filter((it: any) => it.name === name).map((it: any) => it.id);
+    const hit = items.filter((it: any) => it[field] === name).map((it: any) => it.id);
     if (hit.length) {
       await request.delete(`${API}${deletePath}`, { headers, data: hit });
     }
@@ -204,4 +205,74 @@ test("菜单管理：树能加载、新增表单可打开（不落库）", async
   await expect(form).toBeVisible({ timeout: 15_000 });
   await expect(form.getByPlaceholder("请输入菜单名称")).toBeVisible();
   await page.keyboard.press("Escape");
+});
+
+test("用户管理：搜索已有账号命中 + 新增抽屉字段完整（不落库）", async ({ page }) => {
+  await page.goto("/#/system/user", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".search-container")).toBeVisible({ timeout: 20_000 });
+
+  await searchName(page, "请输入账号", "admin");
+  await expect(page.locator(".el-table__row", { hasText: "admin" }).first()).toBeVisible({ timeout: 15_000 });
+
+  // 新增是抽屉表单（和列表页的对话框不同），只验证能开、关键字段在，然后关闭
+  await page.getByRole("button", { name: /^(新增|添加)$/ }).first().click();
+  const drawer = page.locator(".el-drawer:visible").last();
+  await expect(drawer).toBeVisible({ timeout: 15_000 });
+  await expect(drawer.getByPlaceholder("请输入账号")).toBeVisible();
+  await expect(drawer.getByPlaceholder("请输入密码")).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
+test("通知公告：列表能加载 + 按标题搜索命中", async ({ page, request }) => {
+  const headers = await authOf(request);
+  const title = uniq("e2e-notice");
+  const created = await request.post(`${API}/system/notice/create`, {
+    headers,
+    data: {
+      notice_title: title,
+      notice_type: "1",
+      notice_content: "<p>e2e</p>",
+      status: "0",
+      description: "e2e",
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  try {
+    await page.goto("/#/system/notice", { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".search-container")).toBeVisible({ timeout: 20_000 });
+    await searchName(page, "请输入标题", title);
+    await expect(page.locator(".el-table__row", { hasText: title }).first()).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await apiDeleteByName(request, headers, "/system/notice/list", "/system/notice/delete", title, "notice_title");
+  }
+});
+
+test("租户管理：新增租户并能被搜索到", async ({ page, request }) => {
+  const headers = await authOf(request);
+  const name = uniq("e2e-tenant");
+  const code = name.replace(/-/g, "").slice(0, 16);
+  try {
+    await page.goto("/#/system/tenant", { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".search-container")).toBeVisible({ timeout: 20_000 });
+
+    const dialog = await openAddDialog(page);
+    await dialog.getByPlaceholder("请输入租户名称").fill(name);
+    await dialog.getByPlaceholder("字母与数字，创建后不可改").fill(code);
+    await submitDialog(dialog);
+
+    await searchName(page, "请输入租户名称", name);
+    await expect(page.locator(".el-table__row", { hasText: name }).first()).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await apiDeleteByName(request, headers, "/system/tenant/list", "/system/tenant/delete", name);
+  }
+});
+
+test("日志管理：列表能加载 + 按请求路径过滤", async ({ page }) => {
+  await page.goto("/#/system/log", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".search-container")).toBeVisible({ timeout: 20_000 });
+  await page.getByPlaceholder("请输入请求路径").fill("/api/v1");
+  await page.locator("form").getByRole("button", { name: /^(查询|搜索)$/ }).first().click();
+  await expect(page.locator(".el-table__row").first()).toBeVisible({ timeout: 20_000 });
+  const first = await page.locator(".el-table__row").first().innerText();
+  expect(first).toContain("/api");
 });
