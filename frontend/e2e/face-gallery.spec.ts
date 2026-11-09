@@ -44,7 +44,8 @@ test("人脸底库页可加载并完成录入→列表→删除", async ({ page 
   // 删除（勾选行 → 工具栏删除 → 确认）
   await row.locator(".el-checkbox").click();
   await page.getByRole("button", { name: /^删除$/ }).first().click({ force: true });
-  await page.getByRole("button", { name: "确定" }).click();
+  // PageContent 的删除确认按钮文案默认取 i18n "common.delete" = 删除（不是「确定」）
+  await page.locator(".el-message-box__btns").getByRole("button", { name: /^(删除|确定|确认)$/ }).last().click();
   await expect(page.locator(".el-table__row", { hasText: name })).toHaveCount(0);
 });
 
@@ -76,6 +77,7 @@ test("底库页可切换跨镜底库并完成录入→列表→删除", async ({
   // 删除
   await row.locator(".el-checkbox").click();
   await page.getByRole("button", { name: /^删除$/ }).first().click({ force: true });
-  await page.getByRole("button", { name: "确定" }).click();
+  // PageContent 的删除确认按钮文案默认取 i18n "common.delete" = 删除（不是「确定」）
+  await page.locator(".el-message-box__btns").getByRole("button", { name: /^(删除|确定|确认)$/ }).last().click();
   await expect(page.locator(".el-table__row", { hasText: name })).toHaveCount(0);
 });

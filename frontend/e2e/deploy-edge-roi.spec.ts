@@ -19,7 +19,8 @@ test("布控页可选择推理设备并打开 ROI 编辑器", async ({ page }) =
 
   await dismissTour(page);
 
-  await page.getByRole("button", { name: /新增/ }).first().click({ force: true });
+  // 按钮文案是「添加」（历史「新增」）
+  await page.getByRole("button", { name: /^(新增|添加)$/ }).first().click({ force: true });
   const dialog = page.locator(".el-dialog");
   await expect(dialog).toBeVisible();
 
