@@ -1,7 +1,7 @@
 """执行与主体工具：真正落库取数的那一层（2026-11-08 从 service.py 拆出）。
 
 测试里大量 monkeypatch 这些函数（``service._execute_sql`` 等），所以 service **保留同名
-再导出**，且本模块内部交叉调用也走 ``_svc.``——否则打桩只对一半路径生效。
+再导出**，且本模块内部交叉调用也走 ``_svc().``——否则打桩只对一半路径生效。
 """
 from __future__ import annotations
 
@@ -15,7 +15,12 @@ from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
 
-from . import service as _svc
+
+def _svc():
+    """延迟取 service 模块：顶层 import 会与 service 的按名导入互相等待（循环）。"""
+    from . import service
+
+    return service
 
 
 async def _execute_sql(sql: str) -> dict:
@@ -28,14 +33,14 @@ async def _execute_sql(sql: str) -> dict:
     except Exception as e:  # noqa: BLE001
         log.warning(f"[query] 执行失败: {e}")
         raise CustomException(msg=f"查询执行失败：{e}")
-    # 行数上限走设置项（clamp 到安全区间），不再直接吃常量 _svc.MAX_ROWS
-    limit = _svc.MAX_ROWS
+    # 行数上限走设置项（clamp 到安全区间），不再直接吃常量 _svc().MAX_ROWS
+    limit = _svc().MAX_ROWS
     try:
-        limit = _svc._clamp_rows(_svc.AiQueryService._cfg_int(await _svc.AiQueryService._cfg(),
-                                                    "query_max_rows", _svc.MAX_ROWS))
+        limit = _svc()._clamp_rows(_svc().AiQueryService._cfg_int(await _svc().AiQueryService._cfg(),
+                                                    "query_max_rows", _svc().MAX_ROWS))
     except Exception as e:  # noqa: BLE001
-        log.warning(f"[query] 读取行数上限失败，回落 {_svc.MAX_ROWS}：{str(e)[:80]}")
-    data = [[_svc._json_cell(v) for v in r] for r in rows[:limit]]
+        log.warning(f"[query] 读取行数上限失败，回落 {_svc().MAX_ROWS}：{str(e)[:80]}")
+    data = [[_svc()._json_cell(v) for v in r] for r in rows[:limit]]
     return {"columns": cols, "rows": data, "took_ms": int((time.time() - start) * 1000),
             "truncated": len(rows) > limit}
 
@@ -110,20 +115,20 @@ async def _execute_bound_metric(metric: dict, auth=None) -> dict:
 async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> dict:
     # 绑定型指标（object_code + agg_fn）：走本体实例层，**不依赖 sql_template**
     if str(metric.get("object_code") or "") and str(metric.get("agg_fn") or ""):
-        return await _svc._execute_bound_metric(metric, auth)
-    sql = _svc._render_template(metric["sql_template"], params)
-    ds_code = metric.get("datasource") or _svc.SYSTEM_DS
-    if ds_code == _svc.SYSTEM_DS:
-        table = await _svc.AiQueryService._allowed_for_user(auth)
-        sql = _svc.validate_sql(sql, table)
+        return await _svc()._execute_bound_metric(metric, auth)
+    sql = _svc()._render_template(metric["sql_template"], params)
+    ds_code = metric.get("datasource") or _svc().SYSTEM_DS
+    if ds_code == "system":
+        table = await _svc().AiQueryService._allowed_for_user(auth)
+        sql = _svc().validate_sql(sql, table)
     # 安全补丁（P0-3）：执行一律走 `_execute_one`（与 ask / ask_stream / 报表共用
     # 的**唯一收口**）—— 字段级 ACL 与本体行/列改写都在那里做，指标不再直连
-    # `_svc._execute_sql`，否则「指标模板」就是绕过敏感字段拦截的后门。
+    # `_svc()._execute_sql`，否则「指标模板」就是绕过敏感字段拦截的后门。
     # 第四个参数传**指标名**：软删除口径改写需要“问句”来判断是不是在问已删除。
     # 漏传过一次（只改了 ask 的两条路）—— 指标快路径把「每日耗用量合计」
     # 答成 41,827,138（含 3390 条软删行），金标 3,550,065，评测里就这一道暴露。
     # ``entry="metric"``：审计/shadow 差异按入口标记（P1 唯一收口的口径）。
-    res = await _svc.AiQueryService._execute_one(
+    res = await _svc().AiQueryService._execute_one(
         sql, ds_code, auth, str(metric.get("name") or ""), entry="metric")
     res["sql"] = res.get("sql") or sql
     return res
@@ -132,14 +137,14 @@ async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> di
 async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dict:
     """对自定义数据源执行只读 SQL（含 schema 白名单校验 + 角色授权）。"""
     if auth is not None:
-        await _svc._assert_ds_access(datasource_id, auth)
-    ds = await _svc._load_ds(datasource_id)
-    schema_rows = await _svc.list_ds_schema(datasource_id)
+        await _svc()._assert_ds_access(datasource_id, auth)
+    ds = await _svc()._load_ds(datasource_id)
+    schema_rows = await _svc().list_ds_schema(datasource_id)
     allowed = {r["table"] for r in schema_rows}
     from . import executor as _ex
     from .sql_quote import quote_schema_identifiers
 
-    sql = _svc.validate_sql(sql, allowed)
+    sql = _svc().validate_sql(sql, allowed)
     # 大小写敏感库（如 ds:4）必须把表/列名写成「真实大小写 + 双引号」，
     # 否则 PG 折成小写 → 关系/列不存在（实测把整题打崩的根因之一）。
     schema_map = {
@@ -150,13 +155,13 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
     # **值匹配纠错**：SQL 里的字面量若与库里的取值"归一后相等但写法不同"
     # （尾随空格 / 全角 / 大小写），换成库里的原样写法 —— 否则等值比较查不到行。
     # 这是 Genie「entity matching」的等价物（它做匹配纠错，而不是把值列进提示词）。
-    if _svc.AiQueryService._cfg_bool(await _svc.AiQueryService._cfg(), "literal_fix_enabled", True):
+    if _svc().AiQueryService._cfg_bool(await _svc().AiQueryService._cfg(), "literal_fix_enabled", True):
         try:
             used = [t for t in schema_map if t.lower() in sql.lower()][:5]
             if used:
-                vmap = await _svc.AiQueryService._ds_value_map(f"ds:{datasource_id}", used, schema_map)
+                vmap = await _svc().AiQueryService._ds_value_map(f"ds:{datasource_id}", used, schema_map)
                 if vmap:
-                    fixed, fixes = _svc.AiQueryService.fix_sql_literals(sql, vmap)
+                    fixed, fixes = _svc().AiQueryService.fix_sql_literals(sql, vmap)
                     if fixes:
                         log.info("[query] 值匹配纠错：{}（{} 处）", "；".join(fixes[:3]), len(fixes))
                         sql = fixed
@@ -169,7 +174,7 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
     # 对外部库的表一样成立，差的只是没人调用它。
     uid = getattr(getattr(auth, "user", None), "id", None) if auth is not None else None
     try:
-        violations = await _svc.AiQueryService._ont_sql_violations(sql, uid)
+        violations = await _svc().AiQueryService._ont_sql_violations(sql, uid)
     except Exception as e:  # noqa: BLE001
         log.warning(f"[query] 外部源字段级 ACL 校验失败，拒绝执行：{e}")
         raise CustomException(msg=f"字段级权限校验失败，已拒绝执行：{str(e)[:120]}") from e
@@ -178,11 +183,11 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
             msg=f"字段级权限：无权限访问 {', '.join(violations)}（请联系管理员申请可见权限）")
     # 行数上限 / 执行超时同样从设置读取：这两个 key 以前只在默认值表里躺着，
     # 实际生效的是 executor.MAX_ROWS / QUERY_TIMEOUT 常量 —— 界面改了没反应。
-    _cfg = await _svc.AiQueryService._cfg()
+    _cfg = await _svc().AiQueryService._cfg()
     out = await _ex.execute_select(
-        _svc._ds_cfg_from_model(ds), sql,
-        max_rows=_svc.AiQueryService._cfg_int(_cfg, "query_max_rows", _ex.MAX_ROWS),
-        timeout=_svc.AiQueryService._cfg_int(_cfg, "query_timeout_sec", int(_ex.QUERY_TIMEOUT)),
+        _svc()._ds_cfg_from_model(ds), sql,
+        max_rows=_svc().AiQueryService._cfg_int(_cfg, "query_max_rows", _ex.MAX_ROWS),
+        timeout=_svc().AiQueryService._cfg_int(_cfg, "query_timeout_sec", int(_ex.QUERY_TIMEOUT)),
     )
     # 回传**实际执行**的 SQL（已加引号）：否则展示/排查看到的是未加引号的模板，会被误导
     out["sql"] = sql
@@ -198,8 +203,8 @@ async def _system_allowed() -> set[str]:
     （表现为「表 xxx 不在可查询白名单内」）。两种都收进来。
     """
     now = time.monotonic()
-    if _svc._ONT_ALLOW_CACHE is not None and (now - _svc._ONT_ALLOW_CACHE_AT) < _svc._ONT_ALLOW_TTL:
-        return _svc._ONT_ALLOW_CACHE
+    if _svc()._ONT_ALLOW_CACHE is not None and (now - _svc()._ONT_ALLOW_CACHE_AT) < _svc()._ONT_ALLOW_TTL:
+        return _svc()._ONT_ALLOW_CACHE
     # 走本体的统一语义接口拿"真实支撑表名 → code"，不再自己拼 SQL
     try:
         from app.plugin.module_ai.ontology import semantic as _sem
@@ -207,9 +212,9 @@ async def _system_allowed() -> set[str]:
         ont_tables = set((await _sem.object_table_map()).keys())
     except Exception:  # noqa: BLE001
         ont_tables = set()
-    _svc._ONT_ALLOW_CACHE = set(_svc.SYSTEM_ALLOWED_TABLES) | ont_tables
-    _svc._ONT_ALLOW_CACHE_AT = now
-    return _svc._ONT_ALLOW_CACHE
+    _svc()._ONT_ALLOW_CACHE = set(_svc().SYSTEM_ALLOWED_TABLES) | ont_tables
+    _svc()._ONT_ALLOW_CACHE_AT = now
+    return _svc()._ONT_ALLOW_CACHE
 
 
 def _scan_ont_tables(sql: str) -> list[str]:
@@ -241,7 +246,7 @@ def _default_sensitive_return_cols(sql: str) -> list[str]:
             names = re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", sql)
         except Exception:  # noqa: BLE001
             return []
-        return [n for n in names if n.lower() in _svc._DEFAULT_SENSITIVE_COLS]
+        return [n for n in names if n.lower() in _svc()._DEFAULT_SENSITIVE_COLS]
 
     candidates: list[str] = []
     for sel in parsed.find_all(_exp.Select):
@@ -260,7 +265,7 @@ def _default_sensitive_return_cols(sql: str) -> list[str]:
         if low in seen:
             continue
         seen.add(low)
-        if low in _svc._DEFAULT_SENSITIVE_COLS:
+        if low in _svc()._DEFAULT_SENSITIVE_COLS:
             hits.append(name)
     return hits
 
@@ -275,7 +280,7 @@ def _auth_scope(auth) -> str:
     if uid is None:
         return "anon"
     try:
-        roles = ",".join(sorted(_svc._user_role_codes(auth)))
+        roles = ",".join(sorted(_svc()._user_role_codes(auth)))
     except Exception:  # noqa: BLE001 - 角色取不到时退化为按用户隔离
         roles = ""
     return f"{uid}|{roles}"
@@ -302,16 +307,16 @@ def _user_role_codes(auth) -> set[str]:
 
 
 def _clamp_rows(n) -> int:
-    """行数上限的**唯一**收敛点：设置项脏值/<=0 时回落到 ``_svc.MAX_ROWS``。
+    """行数上限的**唯一**收敛点：设置项脏值/<=0 时回落到 ``_svc().MAX_ROWS``。
 
     与 `executor.clamp_max_rows` 同区间，两处必须一致（有守护测试比对）。
     """
     try:
         v = int(float(n))
     except (TypeError, ValueError):
-        return _svc.MAX_ROWS
+        return _svc().MAX_ROWS
     if v <= 0:
-        return _svc.MAX_ROWS
+        return _svc().MAX_ROWS
     return max(1, min(5000, v))
 
 
@@ -389,9 +394,9 @@ def nl2sql_max_tokens(cfg: dict | None) -> int:
         val = int(str(raw).strip()) if raw is not None else 0
     except (TypeError, ValueError):
         val = 0
-    if val < _svc.NL2SQL_MIN_MAX_TOKENS:
+    if val < _svc().NL2SQL_MIN_MAX_TOKENS:
         # 低于下限（含未配置/非法）一律用默认值，宁可多给预算也不要出空 SQL
-        return _svc.NL2SQL_DEFAULT_MAX_TOKENS
+        return _svc().NL2SQL_DEFAULT_MAX_TOKENS
     return val
 
 
@@ -414,8 +419,8 @@ def _ir_max_tokens(cfg: dict | None) -> int:
     """对象查询（IR 生成）的 max_tokens。
 
     ``object_query_max_tokens`` 的语义是**覆盖**主预算，``0``（或非法/负数）表示
-    「跟随 _svc.nl2sql_max_tokens」。之前写的是
-    ``_cfg_int(cfg, "object_query_max_tokens", _svc.nl2sql_max_tokens(cfg))`` ——
+    「跟随 _svc().nl2sql_max_tokens」。之前写的是
+    ``_cfg_int(cfg, "object_query_max_tokens", _svc().nl2sql_max_tokens(cfg))`` ——
     默认值只在 key **缺失**时生效；而该 key 一进默认值表就恒为 "0"，
     于是 max_tokens=0，模型直接返回空（这个坑正是"键进默认值"时才暴露）。
     """
@@ -424,4 +429,4 @@ def _ir_max_tokens(cfg: dict | None) -> int:
         val = int(float(str(raw).strip())) if raw not in (None, "") else 0
     except (TypeError, ValueError):
         val = 0
-    return val if val > 0 else _svc.nl2sql_max_tokens(cfg)
+    return val if val > 0 else _svc().nl2sql_max_tokens(cfg)

@@ -6,8 +6,8 @@
 - ``_mark_ir_fail`` / ``_ir_circuit_open``：IR 生成失败熔断；
 - ``_ensure_query_tables`` / ``_ddl_for_dialect``：影子表幂等建表与方言适配。
 
-⚠️ 这些函数直接改 service 的进程级状态（``_svc._BYPASS_CACHE`` / ``_svc._CFG_OVERRIDE`` /
-``_svc._EVAL_CTX`` / ``_svc._IR_FAIL_AT`` / ``_svc._DEGRADED``），一律 ``_svc.`` 读写，**不写 global**。
+⚠️ 这些函数直接改 service 的进程级状态（``_svc()._BYPASS_CACHE`` / ``_svc()._CFG_OVERRIDE`` /
+``_svc()._EVAL_CTX`` / ``_svc()._IR_FAIL_AT`` / ``_svc()._DEGRADED``），一律 ``_svc().`` 读写，**不写 global**。
 """
 from __future__ import annotations
 
@@ -19,7 +19,13 @@ from sqlalchemy import text
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from . import service as _svc
+
+
+def _svc():
+    """延迟取 service 模块：顶层 import 会与 service 的按名导入互相等待（循环）。"""
+    from . import service
+
+    return service
 from .degraded import degrade as _degrade
 from .degraded import degraded_status
 
@@ -27,11 +33,11 @@ from .degraded import degraded_status
 @contextmanager
 def bypass_caches():
     """当前任务内旁路全部问数缓存（评测/对比用）。"""
-    token = _svc._BYPASS_CACHE.set(True)
+    token = _svc()._BYPASS_CACHE.set(True)
     try:
         yield
     finally:
-        _svc._BYPASS_CACHE.reset(token)
+        _svc()._BYPASS_CACHE.reset(token)
 
 
 @contextmanager
@@ -40,18 +46,18 @@ def config_override(overrides: dict | None):
     if not overrides:
         yield
         return
-    merged = {**(_svc._CFG_OVERRIDE.get() or {}),
+    merged = {**(_svc()._CFG_OVERRIDE.get() or {}),
               **{str(k): str(v) for k, v in overrides.items()}}
-    token = _svc._CFG_OVERRIDE.set(merged)
+    token = _svc()._CFG_OVERRIDE.set(merged)
     try:
         yield
     finally:
-        _svc._CFG_OVERRIDE.reset(token)
+        _svc()._CFG_OVERRIDE.reset(token)
 
 
 def set_eval_context(on: bool = True) -> None:
     """评测执行器调用前打标（同任务内生效，子任务会继承）。"""
-    _svc._EVAL_CTX.set(bool(on))
+    _svc()._EVAL_CTX.set(bool(on))
 
 
 def invalidate_ont_allow_cache() -> None:
@@ -60,16 +66,16 @@ def invalidate_ont_allow_cache() -> None:
     原先该缓存**只在进程启动时建立、永不失效** ⇒ 导入本体后必须重启后端，
     问数才认得新对象的支撑表（表现为「表 xxx 不在可查询白名单内」）。
     """
-    _svc._ONT_ALLOW_CACHE = None
-    _svc._ONT_ALLOW_CACHE_AT = 0.0
+    _svc()._ONT_ALLOW_CACHE = None
+    _svc()._ONT_ALLOW_CACHE_AT = 0.0
 
 
 def _mark_ir_fail() -> None:
-    _svc._IR_FAIL_AT = time.time()
+    _svc()._IR_FAIL_AT = time.time()
 
 
 def _ir_circuit_open() -> bool:
-    return _svc._IR_FAIL_AT > 0 and (time.time() - _svc._IR_FAIL_AT) < _svc._IR_FAIL_COOLDOWN
+    return _svc()._IR_FAIL_AT > 0 and (time.time() - _svc()._IR_FAIL_AT) < _svc()._IR_FAIL_COOLDOWN
 
 
 async def _ensure_query_tables() -> None:
@@ -78,13 +84,13 @@ async def _ensure_query_tables() -> None:
     ⚠️ 不加"已执行"进程标记：测试会多次重建 SQLite 库，标记会让第二个库缺列。
     这里只有 3 次 inspect + 少量 CREATE IF NOT EXISTS，重复执行代价可接受。
     """
-    for sql in _svc._QUERY_TABLES_SQL:
+    for sql in _svc()._QUERY_TABLES_SQL:
         try:
             async with async_db_session.begin() as db:
-                await db.execute(text(_svc._ddl_for_dialect(sql)))
+                await db.execute(text(_svc()._ddl_for_dialect(sql)))
         except Exception as e:  # noqa: BLE001
             _degrade("shadow_tables", e)
-    for table, col, ddl in _svc._QUERY_ALTER_COLS:
+    for table, col, ddl in _svc()._QUERY_ALTER_COLS:
         try:
             async with async_db_session.begin() as db:
                 from sqlalchemy import inspect

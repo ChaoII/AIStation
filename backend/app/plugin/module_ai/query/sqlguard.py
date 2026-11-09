@@ -13,8 +13,6 @@ import re
 
 from app.core.exceptions import CustomException
 
-from . import service as _svc
-
 #: 禁止出现的语句关键字（DML/DDL/管理语句）
 FORBIDDEN_RE = re.compile(
     r"\b(insert|update|delete|drop|alter|create|truncate|replace|merge|grant|revoke|"
@@ -85,6 +83,8 @@ def validate_sql(sql: str, allowed_tables: set[str], question: str = "") -> str:
     # 模型常自作主张加一个小 LIMIT（实测把 216 行截成 50 行，答案直接判错）。
     # 提示词里已经写了"不要 LIMIT"，但模型不总听——所以在这里兜住：
     # 放宽到系统上限（外层本来就有 _svc.MAX_ROWS 保护，放宽不会失控）。
+    from . import service as _svc
+
     m_lim = re.search(r"\blimit\s+(\d+)", removed_semis, re.IGNORECASE)
     if not m_lim:
         removed_semis = removed_semis + f" LIMIT {_svc.MAX_ROWS}"
@@ -96,6 +96,8 @@ def validate_sql(sql: str, allowed_tables: set[str], question: str = "") -> str:
 
 def tables_in_sql(sql: str) -> set[str]:
     """从指标 SQL 提取涉及的系统表（含 FROM/JOIN）。"""
+    from . import service as _svc
+
     names = {
         m.group(1)
         for m in re.finditer(

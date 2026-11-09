@@ -15,8 +15,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from . import service as _svc
 from .question_rules import detect_time_frame, metric_time_hint, parse_time_range
+
+#: 与 service 同值（常量，避免顶层 import service 造成循环）
+SYSTEM_DS = "system"
 
 GENERIC_BIGRAMS = {
     "多少", "数量", "合计", "统计", "所有", "每个", "分别", "共有", "总数", "总共",
@@ -107,7 +109,7 @@ def pick_fewshots(question: str, examples: list[dict], datasource: str | None = 
         if re.sub(r"\s+", "", fq.strip()) == qkey:
             continue
         s = score_fewshot(question, fq)
-        if not datasource or f.get("datasource") == datasource or datasource == _svc.SYSTEM_DS:
+        if not datasource or f.get("datasource") == datasource or datasource == SYSTEM_DS:
             s += 1
         scored.append((s, i, f))
     scored.sort(key=lambda x: (-x[0], -x[1]))

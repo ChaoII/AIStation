@@ -9,10 +9,15 @@ from __future__ import annotations
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
-
-from . import service as _svc
 from .filtering import DEFAULT_FILTER_RULES, is_audit_field, is_system_table
 from .model import AiQueryDatasourceModel, AiQuerySchemaModel
+
+
+def _svc():
+    """延迟取 service 模块：顶层 import 会与 service 的按名导入互相等待（循环）。"""
+    from . import service
+
+    return service
 
 
 async def _load_ds(datasource_id: int):
@@ -39,7 +44,7 @@ async def _norm_datasource(datasource) -> str | None:
     """把数据源入参**归一化**为后端口径：``system`` / ``ds:{id}``。
 
     背景（实测踩坑）：前端下拉的 `:value` 用的是**数据源编码**（如 ``ezdcs_pg``），
-    而后端语义层（指标 `datasource`、`_svc.list_ds_schema`、`_svc._execute_custom_ds_sql`）
+    而后端语义层（指标 `datasource`、`_svc().list_ds_schema`、`_svc()._execute_custom_ds_sql`）
     统一用 ``ds:{id}``。不归一化会导致 `int('ezdcs_pg')` 报错、
     ``list_metrics('ezdcs_pg')`` 匹配不到任何指标。
 
@@ -50,7 +55,7 @@ async def _norm_datasource(datasource) -> str | None:
     ds = str(datasource or "").strip()
     if not ds:
         return None
-    if ds == _svc.SYSTEM_DS or ds.startswith("ds:"):
+    if ds == "system" or ds.startswith("ds:"):
         return ds
     try:
         async with async_db_session() as db:
@@ -58,25 +63,25 @@ async def _norm_datasource(datasource) -> str | None:
                 "SELECT id FROM ai_query_datasources WHERE code=:c AND is_deleted=false"),
                 {"c": ds})).fetchone()
         if row:
-            return _svc._ds_code(int(row[0]))
+            return _svc()._ds_code(int(row[0]))
     except Exception:  # noqa: BLE001
         pass
     return ds
 
 
 async def test_datasource_conn(datasource_id: int) -> dict:
-    ds = await _svc._load_ds(datasource_id)
+    ds = await _svc()._load_ds(datasource_id)
     from . import executor as _ex
 
-    return await _ex.test_connection(_svc._ds_cfg_from_model(ds))
+    return await _ex.test_connection(_svc()._ds_cfg_from_model(ds))
 
 
 async def sync_datasource_schema(datasource_id: int) -> dict:
-    ds = await _svc._load_ds(datasource_id)
+    ds = await _svc()._load_ds(datasource_id)
     from . import executor as _ex
 
-    tables = await _ex.introspect_schema(_svc._ds_cfg_from_model(ds))
-    code = _svc._ds_code(datasource_id)
+    tables = await _ex.introspect_schema(_svc()._ds_cfg_from_model(ds))
+    code = _svc()._ds_code(datasource_id)
     # Task3：同步时按该数据源 filter_rules 给每个字段打 is_audit 标
     rules = ds.filter_rules or DEFAULT_FILTER_RULES
     async with async_db_session.begin() as db:
@@ -123,10 +128,10 @@ async def list_ds_schema(datasource_id: int, included_only: bool = False) -> lis
     用于检索/prompt 的范围收敛（实测 ds:4 同步了 311 张表，其中 92 张是
     SYS_*/_BAK 等技术表，混进检索会污染召回与提示词）。
     """
-    code = _svc._ds_code(datasource_id)
+    code = _svc()._ds_code(datasource_id)
     # Task3：按该数据源 filter_rules 现算 is_system/is_audit；数据源不存在时兜底默认规则
     try:
-        rules = (await _svc._load_ds(datasource_id)).filter_rules or DEFAULT_FILTER_RULES
+        rules = (await _svc()._load_ds(datasource_id)).filter_rules or DEFAULT_FILTER_RULES
     except CustomException:
         rules = DEFAULT_FILTER_RULES
     async with async_db_session() as db:
@@ -180,11 +185,11 @@ async def list_ds_schema(datasource_id: int, included_only: bool = False) -> lis
 
 async def _assert_ds_access(datasource_id: int, auth) -> None:
     """校验当前用户是否有权访问该自定义数据源；超管/未限角色直接放行。"""
-    ds = await _svc._load_ds(datasource_id)
+    ds = await _svc()._load_ds(datasource_id)
     allowed = ds.allowed_roles or []
     if not allowed:
         return
     if getattr(getattr(auth, "user", None), "is_superuser", False):
         return
-    if not (_svc._user_role_codes(auth) & set(allowed)):
+    if not (_svc()._user_role_codes(auth) & set(allowed)):
         raise CustomException(msg="您无权限访问该数据源")

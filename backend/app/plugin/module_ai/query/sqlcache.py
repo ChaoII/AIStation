@@ -5,7 +5,7 @@
 - 检索缓存必须带数据源，否则同一句话在两个源之间互相串结果。
 
 缓存字典本身仍归 ``service.py``（``_SQL_CACHE`` / ``_RETRIEVAL_CACHE`` /
-``_BYPASS_CACHE`` 等），这里用 ``_svc.`` 读取：测试里 ``S._SQL_CACHE.clear()``
+``_BYPASS_CACHE`` 等），这里用 ``_svc().`` 读取：测试里 ``S._SQL_CACHE.clear()``
 与 ``monkeypatch.setattr(svc, "_RETRIEVAL_CACHE", {})`` 这类操作继续生效。
 """
 from __future__ import annotations
@@ -14,7 +14,12 @@ import hashlib
 import re
 import time
 
-from . import service as _svc
+
+def _svc():
+    """延迟取 service 模块：顶层 import 会与 service 的按名导入互相等待（循环）。"""
+    from . import service
+
+    return service
 
 
 def sql_cache_key(question: str, datasource: str | None, scope: str = "") -> str:
@@ -24,34 +29,34 @@ def sql_cache_key(question: str, datasource: str | None, scope: str = "") -> str
 
 
 def sql_cache_get(question: str, datasource: str | None, scope: str = "") -> str | None:
-    if _svc._BYPASS_CACHE.get():
-        return None  # 评测：必须真的重新生成（见 _svc._BYPASS_CACHE 的说明）
+    if _svc()._BYPASS_CACHE.get():
+        return None  # 评测：必须真的重新生成（见 _svc()._BYPASS_CACHE 的说明）
     key = sql_cache_key(question, datasource, scope)
-    hit = _svc._SQL_CACHE.get(key)
+    hit = _svc()._SQL_CACHE.get(key)
     if not hit:
         return None
     ts, sql = hit
-    if time.time() - ts > _svc._SQL_CACHE_TTL:
-        _svc._SQL_CACHE.pop(key, None)
+    if time.time() - ts > _svc()._SQL_CACHE_TTL:
+        _svc()._SQL_CACHE.pop(key, None)
         return None
     return sql
 
 
 def sql_cache_set(question: str, datasource: str | None, sql: str, scope: str = "") -> None:
-    if _svc._BYPASS_CACHE.get():
+    if _svc()._BYPASS_CACHE.get():
         return  # 评测生成的 SQL 不得污染真实用户的缓存
     if not sql or not sql.strip():
         return
-    if len(_svc._SQL_CACHE) >= _svc._SQL_CACHE_MAX:
+    if len(_svc()._SQL_CACHE) >= _svc()._SQL_CACHE_MAX:
         # 简单淘汰：删最早插入的一批，避免引入额外依赖
-        for k in list(_svc._SQL_CACHE)[: max(1, _svc._SQL_CACHE_MAX // 10)]:
-            _svc._SQL_CACHE.pop(k, None)
-    _svc._SQL_CACHE[sql_cache_key(question, datasource, scope)] = (time.time(), sql)
+        for k in list(_svc()._SQL_CACHE)[: max(1, _svc()._SQL_CACHE_MAX // 10)]:
+            _svc()._SQL_CACHE.pop(k, None)
+    _svc()._SQL_CACHE[sql_cache_key(question, datasource, scope)] = (time.time(), sql)
 
 
 def sql_cache_clear() -> int:
-    n = len(_svc._SQL_CACHE)
-    _svc._SQL_CACHE.clear()
+    n = len(_svc()._SQL_CACHE)
+    _svc()._SQL_CACHE.clear()
     return n
 
 
@@ -70,5 +75,5 @@ def cfg_sig(cfg: dict | None) -> str:
     把指纹拼进 cache key 是确定性的，和有多少个进程无关。
     """
     cfg = cfg or {}
-    raw = "|".join(f"{k}={cfg.get(k)}" for k in _svc._CTX_CFG_KEYS)
+    raw = "|".join(f"{k}={cfg.get(k)}" for k in _svc()._CTX_CFG_KEYS)
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
