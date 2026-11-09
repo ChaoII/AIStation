@@ -556,7 +556,7 @@ export default {
     email: "郵件",
     webhook: "Webhook/REST API",
     emailRecipients: "郵件收件人",
-    emailPlaceholder: "admin@example.com, ops@example.com（逗號分隔）",
+    emailPlaceholder: "admin{'@'}example.com, ops{'@'}example.com（逗號分隔）",
     smsPhones: "簡訊接收號碼",
     smsPlaceholder: "13800138000, 13900139000（逗號分隔）",
     webhookUrl: "Webhook URL",

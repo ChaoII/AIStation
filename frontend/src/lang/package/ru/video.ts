@@ -565,7 +565,7 @@ export default {
     email: "Email",
     webhook: "Webhook/REST API",
     emailRecipients: "Получатели email",
-    emailPlaceholder: "admin@example.com, ops@example.com (через запятую)",
+    emailPlaceholder: "admin{'@'}example.com, ops{'@'}example.com (через запятую)",
     smsPhones: "Номера SMS",
     smsPlaceholder: "13800138000, 13900139000 (через запятую)",
     webhookUrl: "URL Webhook",

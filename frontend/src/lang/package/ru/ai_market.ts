@@ -330,7 +330,7 @@ export default {
   commandPlaceholder: "например, npx или python",
   argsLabel: "Аргументы команды",
   argsPlaceholder:
-    "По одному аргументу в строке, например\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+    "По одному аргументу в строке, например\n-y\n{'@'}modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "Переменные окружения",
   envPlaceholder: "По одной KEY=VALUE в строке, например\nAPI_KEY=xxx",
   urlLabel: "URL сервера",

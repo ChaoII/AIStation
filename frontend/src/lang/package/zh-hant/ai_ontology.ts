@@ -1489,7 +1489,7 @@ export default {
   requiredLinksPlaceholder: '[{"api_name":"video_camera_groups","name":"攝像機分組"}]',
   requiredActionsJson: "必需動作（JSON）",
   requiredActionsPlaceholder: '[{"code":"cam_rename","name":"修改名稱"}]',
-  validateValuePlaceholder: "填一個值，如 abc@example.com",
+  validateValuePlaceholder: "填一個值，如 abc{'@'}example.com",
   validatePass: "校驗通過",
   validateNotPass: "校驗不通過",
   rejectedDetail: "{base}；被拒：{detail}",

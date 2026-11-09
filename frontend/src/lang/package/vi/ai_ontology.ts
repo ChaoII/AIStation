@@ -1534,7 +1534,7 @@ export default {
   requiredLinksPlaceholder: '[{"api_name":"video_camera_groups","name":"摄像机分组"}]',
   requiredActionsJson: "Hành động bắt buộc (JSON)",
   requiredActionsPlaceholder: '[{"code":"cam_rename","name":"修改名称"}]',
-  validateValuePlaceholder: "Nhập một giá trị, ví dụ: abc@example.com",
+  validateValuePlaceholder: "Nhập một giá trị, ví dụ: abc{'@'}example.com",
   validatePass: "Xác thực đạt",
   validateNotPass: "Xác thực thất bại",
   rejectedDetail: "{base}; bị từ chối: {detail}",

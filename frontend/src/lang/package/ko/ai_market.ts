@@ -323,7 +323,7 @@ export default {
   commandLabel: "시작 명령",
   commandPlaceholder: "예: npx 또는 python",
   argsLabel: "명령 인자",
-  argsPlaceholder: "한 줄에 인자 하나, 예:\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+  argsPlaceholder: "한 줄에 인자 하나, 예:\n-y\n{'@'}modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "환경 변수",
   envPlaceholder: "한 줄에 KEY=VALUE, 예:\nAPI_KEY=xxx",
   urlLabel: "서버 URL",

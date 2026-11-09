@@ -559,7 +559,7 @@ export default {
     email: "البريد الإلكتروني",
     webhook: "Webhook/REST API",
     emailRecipients: "مستلمو البريد",
-    emailPlaceholder: "admin@example.com, ops@example.com (مفصولة بفواصل)",
+    emailPlaceholder: "admin{'@'}example.com, ops{'@'}example.com (مفصولة بفواصل)",
     smsPhones: "أرقام SMS",
     smsPlaceholder: "13800138000, 13900139000 (مفصولة بفواصل)",
     webhookUrl: "رابط Webhook",

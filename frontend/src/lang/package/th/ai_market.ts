@@ -325,7 +325,7 @@ export default {
   commandPlaceholder: "เช่น npx หรือ python",
   argsLabel: "อาร์กิวเมนต์คำสั่ง",
   argsPlaceholder:
-    "หนึ่งอาร์กิวเมนต์ต่อบรรทัด เช่น\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+    "หนึ่งอาร์กิวเมนต์ต่อบรรทัด เช่น\n-y\n{'@'}modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "ตัวแปรสภาพแวดล้อม",
   envPlaceholder: "หนึ่ง KEY=VALUE ต่อบรรทัด เช่น\nAPI_KEY=xxx",
   urlLabel: "URL เซิร์ฟเวอร์",

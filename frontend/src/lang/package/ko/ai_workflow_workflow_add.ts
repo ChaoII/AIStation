@@ -242,7 +242,7 @@ export default {
   p_api_key_ph: "Authorization 헤더에 Bearer 토큰으로 주입됩니다",
   p_search_result_format: "포맷된 검색 결과",
   p_conn_dsn: "연결 DSN",
-  p_dsn_ph: "postgresql+asyncpg://user:pass@host/db 또는 sqlite+aiosqlite:///a.db",
+  p_dsn_ph: "postgresql+asyncpg://user:pass{'@'}host/db 또는 sqlite+aiosqlite:///a.db",
   p_sql_with_var: "SQL ({'{{'}variable{'}}'} 지원)",
   p_row_array: "결과 행 배열",
   p_output_template: "출력 템플릿",

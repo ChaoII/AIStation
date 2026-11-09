@@ -241,7 +241,7 @@ export default {
   p_api_key_ph: "以 Bearer 形式注入 Authorization 標頭",
   p_search_result_format: "格式化後的搜尋結果",
   p_conn_dsn: "連接 DSN",
-  p_dsn_ph: "postgresql+asyncpg://user:pass@host/db 或 sqlite+aiosqlite:///a.db",
+  p_dsn_ph: "postgresql+asyncpg://user:pass{'@'}host/db 或 sqlite+aiosqlite:///a.db",
   p_sql_with_var: "SQL（支援 {'{{'}變量{'}}'}）",
   p_row_array: "查詢得到的列陣列",
   p_output_template: "輸出範本",

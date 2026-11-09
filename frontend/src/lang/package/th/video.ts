@@ -558,7 +558,7 @@ export default {
     email: "อีเมล",
     webhook: "Webhook/REST API",
     emailRecipients: "ผู้รับอีเมล",
-    emailPlaceholder: "admin@example.com, ops@example.com (คั่นด้วยจุลภาค)",
+    emailPlaceholder: "admin{'@'}example.com, ops{'@'}example.com (คั่นด้วยจุลภาค)",
     smsPhones: "หมายเลข SMS",
     smsPlaceholder: "13800138000, 13900139000 (คั่นด้วยจุลภาค)",
     webhookUrl: "URL Webhook",

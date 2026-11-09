@@ -243,7 +243,7 @@ export default {
   p_api_key_ph: "Được tiêm vào header Authorization dưới dạng token Bearer",
   p_search_result_format: "Kết quả tìm kiếm đã định dạng",
   p_conn_dsn: "DSN kết nối",
-  p_dsn_ph: "postgresql+asyncpg://user:pass@host/db hoặc sqlite+aiosqlite:///a.db",
+  p_dsn_ph: "postgresql+asyncpg://user:pass{'@'}host/db hoặc sqlite+aiosqlite:///a.db",
   p_sql_with_var: "SQL (hỗ trợ {'{{'}variable{'}}'})",
   p_row_array: "Mảng dòng kết quả",
   p_output_template: "Mẫu đầu ra",

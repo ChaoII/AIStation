@@ -566,7 +566,7 @@ export default {
     email: "Correo electrónico",
     webhook: "Webhook/API REST",
     emailRecipients: "Destinatarios de correo",
-    emailPlaceholder: "admin@example.com, ops@example.com (separados por comas)",
+    emailPlaceholder: "admin{'@'}example.com, ops{'@'}example.com (separados por comas)",
     smsPhones: "Números SMS",
     smsPlaceholder: "13800138000, 13900139000 (separados por comas)",
     webhookUrl: "URL del webhook",

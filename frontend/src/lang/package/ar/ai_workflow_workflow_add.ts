@@ -242,7 +242,7 @@ export default {
   p_api_key_ph: "يُحقن في ترويسة Authorization كرمز Bearer",
   p_search_result_format: "نتائج البحث المنسّقة",
   p_conn_dsn: "DSN الاتصال",
-  p_dsn_ph: "postgresql+asyncpg://user:pass@host/db أو sqlite+aiosqlite:///a.db",
+  p_dsn_ph: "postgresql+asyncpg://user:pass{'@'}host/db أو sqlite+aiosqlite:///a.db",
   p_sql_with_var: "SQL (يدعم {'{{'}variable{'}}'})",
   p_row_array: "مصفوفة الصفوف الناتجة",
   p_output_template: "قالب الإخراج",

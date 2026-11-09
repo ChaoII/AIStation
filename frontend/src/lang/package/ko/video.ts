@@ -564,7 +564,7 @@ export default {
     email: "이메일",
     webhook: "웹훅/REST API",
     emailRecipients: "이메일 수신자",
-    emailPlaceholder: "admin@example.com, ops@example.com (쉼표 구분)",
+    emailPlaceholder: "admin{'@'}example.com, ops{'@'}example.com (쉼표 구분)",
     smsPhones: "SMS 번호",
     smsPlaceholder: "13800138000, 13900139000 (쉼표 구분)",
     webhookUrl: "웹훅 URL",

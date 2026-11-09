@@ -248,7 +248,7 @@ export default {
   p_api_key_ph: "Se inyecta en la cabecera Authorization como token Bearer",
   p_search_result_format: "Resultados de búsqueda formateados",
   p_conn_dsn: "DSN de conexión",
-  p_dsn_ph: "postgresql+asyncpg://user:pass@host/db o sqlite+aiosqlite:///a.db",
+  p_dsn_ph: "postgresql+asyncpg://user:pass{'@'}host/db o sqlite+aiosqlite:///a.db",
   p_sql_with_var: "SQL (admite {'{{'}variable{'}}'})",
   p_row_array: "Matriz de filas resultante",
   p_output_template: "Plantilla de salida",

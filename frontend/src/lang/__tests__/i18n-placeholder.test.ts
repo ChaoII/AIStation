@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 
 const BASE = join(process.cwd(), "src", "lang", "package");
 const RAW = /\{\{[^{}]*\}\}/;
+const AT_ESC = "{'@'}";
 
 function langFiles(): string[] {
   const out: string[] = [];
@@ -35,6 +36,21 @@ describe("i18n 文案", () => {
       lines.forEach((line, i) => {
         if (line.trimStart().startsWith("//")) return;
         if (RAW.test(line)) offenders.push(`${file}:${i + 1}: ${line.trim().slice(0, 100)}`);
+      });
+    }
+    expect(offenders, offenders.join("\n")).toEqual([]);
+  });
+
+  it("不得含裸 @（会报 Invalid linked format，必须写成 {'@'}）", () => {
+    const offenders: string[] = [];
+    for (const file of langFiles()) {
+      const lines = readFileSync(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        if (line.trimStart().startsWith("//")) return;
+        // 去掉已转义片段后再看是否还有裸 @（邮箱、DSN、npm 包名都踩过）
+        if (line.split(AT_ESC).join("").includes("@")) {
+          offenders.push(`${file}:${i + 1}: ${line.trim().slice(0, 100)}`);
+        }
       });
     }
     expect(offenders, offenders.join("\n")).toEqual([]);

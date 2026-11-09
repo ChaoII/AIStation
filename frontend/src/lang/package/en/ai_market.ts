@@ -325,7 +325,7 @@ export default {
   commandLabel: "Startup command",
   commandPlaceholder: "e.g. npx or python",
   argsLabel: "Command args",
-  argsPlaceholder: "One arg per line, e.g.\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+  argsPlaceholder: "One arg per line, e.g.\n-y\n{'@'}modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "Env vars",
   envPlaceholder: "One KEY=VALUE per line, e.g.\nAPI_KEY=xxx",
   urlLabel: "Server URL",

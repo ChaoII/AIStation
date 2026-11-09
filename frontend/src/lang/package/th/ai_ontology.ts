@@ -1530,7 +1530,7 @@ export default {
   requiredLinksPlaceholder: '[{"api_name":"video_camera_groups","name":"摄像机分组"}]',
   requiredActionsJson: "แอ็กชันที่จำเป็น (JSON)",
   requiredActionsPlaceholder: '[{"code":"cam_rename","name":"修改名称"}]',
-  validateValuePlaceholder: "ป้อนค่า เช่น abc@example.com",
+  validateValuePlaceholder: "ป้อนค่า เช่น abc{'@'}example.com",
   validatePass: "การตรวจสอบผ่าน",
   validateNotPass: "การตรวจสอบไม่ผ่าน",
   rejectedDetail: "{base}; ถูกปฏิเสธ: {detail}",

@@ -242,7 +242,7 @@ export default {
   p_api_key_ph: "ฉีดเข้าสู่เฮดเดอร์ Authorization เป็น Bearer token",
   p_search_result_format: "ผลลัพธ์ค้นหาที่จัดรูปแบบ",
   p_conn_dsn: "DSN การเชื่อมต่อ",
-  p_dsn_ph: "postgresql+asyncpg://user:pass@host/db หรือ sqlite+aiosqlite:///a.db",
+  p_dsn_ph: "postgresql+asyncpg://user:pass{'@'}host/db หรือ sqlite+aiosqlite:///a.db",
   p_sql_with_var: "SQL (รองรับ {'{{'}variable{'}}'})",
   p_row_array: "อาร์เรย์แถวผลลัพธ์",
   p_output_template: "เทมเพลตเอาต์พุต",

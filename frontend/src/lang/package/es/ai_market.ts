@@ -333,7 +333,7 @@ export default {
   commandPlaceholder: "p. ej. npx o python",
   argsLabel: "Argumentos del comando",
   argsPlaceholder:
-    "Un argumento por línea, p. ej.\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+    "Un argumento por línea, p. ej.\n-y\n{'@'}modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "Variables de entorno",
   envPlaceholder: "Un KEY=VALUE por línea, p. ej.\nAPI_KEY=xxx",
   urlLabel: "URL del servidor",

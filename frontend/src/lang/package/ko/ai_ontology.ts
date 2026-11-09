@@ -1518,7 +1518,7 @@ export default {
   requiredLinksPlaceholder: '[{"api_name":"video_camera_groups","name":"摄像机分组"}]',
   requiredActionsJson: "필수 액션 (JSON)",
   requiredActionsPlaceholder: '[{"code":"cam_rename","name":"修改名称"}]',
-  validateValuePlaceholder: "값 입력, 예: abc@example.com",
+  validateValuePlaceholder: "값 입력, 예: abc{'@'}example.com",
   validatePass: "검증 통과",
   validateNotPass: "검증 실패",
   rejectedDetail: "{base}; 거부됨: {detail}",

@@ -1550,7 +1550,7 @@ export default {
   requiredLinksPlaceholder: '[{"api_name":"video_camera_groups","name":"摄像机分组"}]',
   requiredActionsJson: "Обязательные действия (JSON)",
   requiredActionsPlaceholder: '[{"code":"cam_rename","name":"修改名称"}]',
-  validateValuePlaceholder: "Введите значение, например abc@example.com",
+  validateValuePlaceholder: "Введите значение, например abc{'@'}example.com",
   validatePass: "Проверка пройдена",
   validateNotPass: "Проверка не пройдена",
   rejectedDetail: "{base}; отклонено: {detail}",

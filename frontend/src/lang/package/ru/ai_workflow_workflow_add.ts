@@ -245,7 +245,7 @@ export default {
   p_api_key_ph: "Внедряется в заголовок Authorization как Bearer-токен",
   p_search_result_format: "Отформатированные результаты поиска",
   p_conn_dsn: "DSN подключения",
-  p_dsn_ph: "postgresql+asyncpg://user:pass@host/db или sqlite+aiosqlite:///a.db",
+  p_dsn_ph: "postgresql+asyncpg://user:pass{'@'}host/db или sqlite+aiosqlite:///a.db",
   p_sql_with_var: "SQL (поддерживает {'{{'}variable{'}}'})",
   p_row_array: "Результирующий массив строк",
   p_output_template: "Шаблон вывода",

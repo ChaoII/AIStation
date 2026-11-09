@@ -1564,7 +1564,7 @@ export default {
   requiredLinksPlaceholder: '[{"api_name":"video_camera_groups","name":"摄像机分组"}]',
   requiredActionsJson: "Actions requises (JSON)",
   requiredActionsPlaceholder: '[{"code":"cam_rename","name":"修改名称"}]',
-  validateValuePlaceholder: "Saisissez une valeur, par ex. abc@example.com",
+  validateValuePlaceholder: "Saisissez une valeur, par ex. abc{'@'}example.com",
   validatePass: "Validation réussie",
   validateNotPass: "Validation échouée",
   rejectedDetail: "{base} ; rejeté : {detail}",

@@ -316,7 +316,7 @@ export default {
   commandPlaceholder: "如：npx 或 python",
   argsLabel: "命令参数",
   argsPlaceholder:
-    "每行一个参数，例如：&#10;-y&#10;@modelcontextprotocol/server-filesystem&#10;D:/data",
+    "每行一个参数，例如：&#10;-y&#10;{'@'}modelcontextprotocol/server-filesystem&#10;D:/data",
   envLabel: "环境变量",
   envPlaceholder: "每行 KEY=VALUE，例如：&#10;API_KEY=xxx",
   urlLabel: "服务地址",

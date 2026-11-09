@@ -328,7 +328,7 @@ export default {
   commandPlaceholder: "ví dụ: npx hoặc python",
   argsLabel: "Đối số lệnh",
   argsPlaceholder:
-    "Mỗi đối số một dòng, ví dụ:\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+    "Mỗi đối số một dòng, ví dụ:\n-y\n{'@'}modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "Biến môi trường",
   envPlaceholder: "Mỗi KEY=VALUE một dòng, ví dụ:\nAPI_KEY=xxx",
   urlLabel: "URL máy chủ",

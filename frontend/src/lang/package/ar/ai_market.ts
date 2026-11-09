@@ -321,7 +321,7 @@ export default {
   commandLabel: "أمر الإقلاع",
   commandPlaceholder: "مثال: npx أو python",
   argsLabel: "وسائط الأمر",
-  argsPlaceholder: "وسيط لكل سطر، مثال:\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+  argsPlaceholder: "وسيط لكل سطر، مثال:\n-y\n{'@'}modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "متغيرات البيئة",
   envPlaceholder: "KEY=VALUE لكل سطر، مثال:\nAPI_KEY=xxx",
   urlLabel: "رابط الخادم",

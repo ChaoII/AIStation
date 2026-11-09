@@ -242,7 +242,7 @@ export default {
   p_api_key_ph: "Authorization ヘッダーに Bearer トークンとして注入されます",
   p_search_result_format: "整形された検索結果",
   p_conn_dsn: "接続 DSN",
-  p_dsn_ph: "postgresql+asyncpg://user:pass@host/db または sqlite+aiosqlite:///a.db",
+  p_dsn_ph: "postgresql+asyncpg://user:pass{'@'}host/db または sqlite+aiosqlite:///a.db",
   p_sql_with_var: "SQL（{'{{'}variable{'}}'} に対応）",
   p_row_array: "結果の行配列",
   p_output_template: "出力テンプレート",

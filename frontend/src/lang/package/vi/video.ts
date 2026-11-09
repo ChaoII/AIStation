@@ -565,7 +565,7 @@ export default {
     email: "Email",
     webhook: "Webhook/REST API",
     emailRecipients: "Người nhận email",
-    emailPlaceholder: "admin@example.com, ops@example.com (phân tách bằng dấu phẩy)",
+    emailPlaceholder: "admin{'@'}example.com, ops{'@'}example.com (phân tách bằng dấu phẩy)",
     smsPhones: "Số điện thoại SMS",
     smsPlaceholder: "13800138000, 13900139000 (phân tách bằng dấu phẩy)",
     webhookUrl: "URL webhook",

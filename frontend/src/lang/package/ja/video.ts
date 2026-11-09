@@ -564,7 +564,7 @@ export default {
     email: "メール",
     webhook: "Webhook/REST API",
     emailRecipients: "メール受信者",
-    emailPlaceholder: "admin@example.com, ops@example.com（カンマ区切り）",
+    emailPlaceholder: "admin{'@'}example.com, ops{'@'}example.com（カンマ区切り）",
     smsPhones: "SMS 番号",
     smsPlaceholder: "13800138000, 13900139000（カンマ区切り）",
     webhookUrl: "Webhook の URL",

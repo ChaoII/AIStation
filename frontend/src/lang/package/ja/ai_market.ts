@@ -326,7 +326,7 @@ export default {
   commandLabel: "起動コマンド",
   commandPlaceholder: "例: npx または python",
   argsLabel: "コマンド引数",
-  argsPlaceholder: "1 行に 1 引数、例:\n-y\n@modelcontextprotocol/server-filesystem\nD:/data",
+  argsPlaceholder: "1 行に 1 引数、例:\n-y\n{'@'}modelcontextprotocol/server-filesystem\nD:/data",
   envLabel: "環境変数",
   envPlaceholder: "1 行に 1 KEY=VALUE、例:\nAPI_KEY=xxx",
   urlLabel: "サーバー URL",

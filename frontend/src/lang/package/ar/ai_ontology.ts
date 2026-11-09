@@ -1516,7 +1516,7 @@ export default {
   requiredLinksPlaceholder: '[{"api_name":"video_camera_groups","name":"مجموعات الكاميرات"}]',
   requiredActionsJson: "الأفعال المطلوبة (JSON)",
   requiredActionsPlaceholder: '[{"code":"cam_rename","name":"تعديل الاسم"}]',
-  validateValuePlaceholder: "أدخل قيمة، مثال: abc@example.com",
+  validateValuePlaceholder: "أدخل قيمة، مثال: abc{'@'}example.com",
   validatePass: "نجح التحقق",
   validateNotPass: "فشل التحقق",
   rejectedDetail: "{base}؛ مرفوض: {detail}",
