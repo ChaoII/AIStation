@@ -13,6 +13,7 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 from . import service as _svc
+from .lineage import EMPTY_LINEAGE
 
 
 class GovernanceOps:
@@ -151,7 +152,7 @@ class GovernanceOps:
         # 默认关的理由：血缘是新数据，先让人核对 3 张表再决定是否默认读它。
         from .lineage import lineage_for_table
 
-        lineage_payload = dict(_svc.EMPTY_LINEAGE)
+        lineage_payload = dict(EMPTY_LINEAGE)
         try:
             if cls._cfg_bool(await cls._cfg(), "lineage_enabled", False):
                 ds_code = await cls._table_ds_code(table_name) or "ds:4"

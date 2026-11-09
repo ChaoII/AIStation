@@ -7,107 +7,71 @@
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import os
 import re
-import time
-from contextlib import contextmanager
 from contextvars import ContextVar
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
-
-from sqlalchemy import text
-
-from app.core.database import async_db_session
-from app.core.exceptions import CustomException
-from app.core.logger import log
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
+    pass
 
 # 静默降级计数已拆到 ``degraded.py``（2026-11-08）：这里只做**同名再导出**，
 # 保证 `service._degrade` / `service.degraded_status` / `S.reset_degraded` 等
 # 全部旧调用点（含测试 monkeypatch）继续可用。
-from .actions_ops import ActionsOps
-from .ask_ops import AskOps
-from .answer_ops import AnswerOps
-from .runtime_flags import bypass_caches  # noqa: F401
-from .runtime_flags import config_override  # noqa: F401
-from .runtime_flags import set_eval_context  # noqa: F401
-from .runtime_flags import invalidate_ont_allow_cache  # noqa: F401
-from .runtime_flags import _mark_ir_fail  # noqa: F401
-from .runtime_flags import _ir_circuit_open  # noqa: F401
-from .runtime_flags import _ensure_query_tables  # noqa: F401
-from .runtime_flags import _ddl_for_dialect  # noqa: F401
-from .datasource_core import _load_ds  # noqa: F401
-from .datasource_core import _ds_code  # noqa: F401
-from .datasource_core import _ds_cfg_from_model  # noqa: F401
-from .datasource_core import _norm_datasource  # noqa: F401
-from .datasource_core import test_datasource_conn  # noqa: F401
-from .datasource_core import sync_datasource_schema  # noqa: F401
-from .datasource_core import list_ds_schema  # noqa: F401
-from .datasource_core import _assert_ds_access  # noqa: F401
-from .execution import _execute_sql  # noqa: F401
-from .execution import _secure_ont_sql  # noqa: F401
-from .execution import _execute_bound_metric  # noqa: F401
-from .execution import _execute_metric  # noqa: F401
-from .execution import _execute_custom_ds_sql  # noqa: F401
-from .execution import _system_allowed  # noqa: F401
-from .execution import _scan_ont_tables  # noqa: F401
-from .execution import _default_sensitive_return_cols  # noqa: F401
-from .execution import _auth_scope  # noqa: F401
-from .execution import _actor_id  # noqa: F401
-from .execution import _user_role_codes  # noqa: F401
-from .execution import _clamp_rows  # noqa: F401
-from .execution import _json_cell  # noqa: F401
-from .execution import _cosine  # noqa: F401
-from .execution import _render_template  # noqa: F401
-from .execution import scope_tables_to_schema  # noqa: F401
-from .execution import nl2sql_max_tokens  # noqa: F401
-from .execution import nl2sql_attempts  # noqa: F401
-from .execution import _ir_max_tokens  # noqa: F401
+from app.core.database import async_db_session  # noqa: F401
+
 from .access_ops import AccessOps
+from .actions_ops import ActionsOps
+from .allowlist import (
+    _DEFAULT_SENSITIVE_COLS,  # noqa: F401
+    _ONT_IMPORT_EXCLUDE,  # noqa: F401
+    SYSTEM_ALLOWED_TABLES,  # noqa: F401
+)
+from .answer_ops import AnswerOps
+from .ask_ops import AskOps
 from .assetio_ops import AssetIoOps
 from .assets_ops import AssetsOps
-from .vector_ops import VectorOps
-from .fewshot_ops import FewshotOps
-from .governance_ops import GovernanceOps
-from .workspace_ops import WorkspaceOps
-from .rewrite_ops import RewriteOps
+from .assets_ops import ensure_marking_columns as _ensure_marking_columns  # noqa: F401
 from .autopilot_ops import AutopilotOps
-from .ontbridge_ops import OntBridgeOps
-from .seed_ops import SeedOps
-from .llm_ops import LlmOps
-from .schema_ops import SchemaOps
-from .recall_ops import RecallOps
-from .routing_ops import RoutingOps
-from .pipeline_ops import PipelineOps
-from .version_ops import VersionOps
-from .dq_ops import DqOps
-from .report_ops import ReportOps
-from .session_ops import SessionOps
-from .datasource_ops import DatasourceOps
-from .settings_ops import SettingsOps
-from .assets_ops import ensure_marking_columns as _ensure_marking_columns
 from .context_ops import ContextOps
+from .datasource_core import (
+    _assert_ds_access,  # noqa: F401
+    _ds_cfg_from_model,  # noqa: F401
+    _ds_code,  # noqa: F401
+    _load_ds,  # noqa: F401
+    _norm_datasource,  # noqa: F401
+    list_ds_schema,  # noqa: F401
+    sync_datasource_schema,  # noqa: F401
+    test_datasource_conn,  # noqa: F401
+)
+from .datasource_ops import DatasourceOps
 from .degraded import degrade as _degrade  # noqa: F401
 from .degraded import degraded_status, reset_degraded  # noqa: F401
+from .dq_ops import DqOps
 from .execute_ops import ExecuteOps
-from .filtering import (
-    DEFAULT_FILTER_RULES,
-    classify_fields,
-    classify_tables,
-    is_audit_field,
-    is_system_table,
+from .execution import (
+    _actor_id,  # noqa: F401
+    _auth_scope,  # noqa: F401
+    _clamp_rows,  # noqa: F401
+    _cosine,  # noqa: F401
+    _default_sensitive_return_cols,  # noqa: F401
+    _execute_bound_metric,  # noqa: F401
+    _execute_custom_ds_sql,  # noqa: F401
+    _execute_metric,  # noqa: F401
+    _execute_sql,  # noqa: F401
+    _ir_max_tokens,  # noqa: F401
+    _json_cell,  # noqa: F401
+    _render_template,  # noqa: F401
+    _scan_ont_tables,  # noqa: F401
+    _secure_ont_sql,  # noqa: F401
+    _system_allowed,  # noqa: F401
+    _user_role_codes,  # noqa: F401
+    nl2sql_attempts,  # noqa: F401
+    nl2sql_max_tokens,  # noqa: F401
+    scope_tables_to_schema,  # noqa: F401
 )
-from .llm_schemas import (
-    AssetDescriptionOut,
-    ClassifyAdviseOut,
-    FilterRulesOut,
-    MetricsTermsOut,
-    PlanOut,
-)
+from .fewshot_ops import FewshotOps
+from .governance_ops import GovernanceOps
+from .llm_ops import LlmOps
 from .metric_rules import AGG_INTENT as _AGG_INTENT  # noqa: F401
 from .metric_rules import AGG_NOUN_RE as _AGG_NOUN_RE  # noqa: F401
 from .metric_rules import GENERIC_BIGRAMS as _GENERIC_BIGRAMS  # noqa: F401
@@ -133,21 +97,12 @@ from .metric_rules import pick_fewshots, score_fewshot  # noqa: F401
 from .metric_rules import prioritize_metric_object as _prioritize_metric_object  # noqa: F401
 from .metric_rules import wants_grouping as _wants_grouping  # noqa: F401
 from .metrics_ops import MetricsOps
-from .model import (
-    AiQueryAssetColumnModel,
-    AiQueryAssetModel,
-    AiQueryDatasourceModel,
-    AiQueryDictionaryModel,
-    AiQueryFewshotModel,
-    AiQueryMessageModel,
-    AiQueryMetricModel,
-    AiQuerySchemaModel,
-    AiQuerySessionModel,
-    AiQuerySettingModel,
-)
 from .nl2sql_ops import Nl2SqlOps
+from .ontbridge_ops import OntBridgeOps
 from .ontology_ops import OntologyOps
+from .pipeline_ops import PipelineOps
 from .propositions_ops import PropositionsOps
+from .query_ddl import _QUERY_TABLES_SQL  # noqa: F401
 from .question_rules import DAYS_RE as _DAYS_RE  # noqa: F401
 from .question_rules import LISTING_RE as _LISTING_RE  # noqa: F401
 from .question_rules import detect_time_frame as _detect_time_frame  # noqa: F401
@@ -155,7 +110,30 @@ from .question_rules import is_listing_question as _is_listing_question  # noqa:
 from .question_rules import metric_time_hint as _metric_time_hint  # noqa: F401
 from .question_rules import parse_time_range  # noqa: F401
 from .question_rules import wants_full_list as _wants_full_list  # noqa: F401
-from .schema import QueryAssetUpsert
+from .recall_ops import RecallOps
+from .report_ops import ReportOps
+from .rewrite_ops import RewriteOps
+from .routing_ops import RoutingOps
+from .runtime_flags import (
+    _ddl_for_dialect,  # noqa: F401
+    _ensure_query_tables,  # noqa: F401
+    _ir_circuit_open,  # noqa: F401
+    _mark_ir_fail,  # noqa: F401
+    bypass_caches,  # noqa: F401
+    config_override,  # noqa: F401
+    invalidate_ont_allow_cache,  # noqa: F401
+    set_eval_context,  # noqa: F401
+)
+from .schema_ops import SchemaOps
+from .seed_data import (
+    _ENTITY_TABLE,  # noqa: F401
+    _NL2SQL_FEWSHOT,  # noqa: F401
+    _SYSTEM_METRICS,  # noqa: F401
+    _SYSTEM_TERMS,  # noqa: F401
+)
+from .seed_ops import SeedOps
+from .session_ops import SessionOps
+from .settings_ops import SettingsOps
 from .slowpath_ops import SlowPathOps
 from .sqlcache import cfg_sig as _cfg_sig  # noqa: F401
 from .sqlcache import retrieval_cache_key as _retrieval_cache_key  # noqa: F401
@@ -167,6 +145,9 @@ from .sqlguard import COMMENT_RE as _COMMENT_RE  # noqa: F401
 from .sqlguard import FORBIDDEN_RE as _FORBIDDEN  # noqa: F401
 from .sqlguard import tables_in_sql as _tables_in_sql  # noqa: F401
 from .sqlguard import validate_sql  # noqa: F401
+from .vector_ops import VectorOps
+from .version_ops import VersionOps
+from .workspace_ops import WorkspaceOps
 
 # ---------------------------------------------------------------------------
 # 本系统数据源保留编码
@@ -174,8 +155,6 @@ from .sqlguard import validate_sql  # noqa: F401
 SYSTEM_DS = "system"
 MAX_ROWS = 1000
 QUERY_TIMEOUT = 10  # 秒
-
-
 
 
 # 模块级标记：系统种子仅首次执行，避免每次 ask 都做 upsert 拖慢快路径
@@ -196,76 +175,6 @@ _VECTOR_SEEDED = False
 # 这里补齐统一的运行时建表（幂等、best-effort），并在应用启动时调用一次。
 # SQLite（单元测试库）不支持 BIGSERIAL，由测试自身 DDL 提供结构，此处失败不影响功能。
 # ---------------------------------------------------------------------------
-_QUERY_TABLES_SQL = (
-    "CREATE TABLE IF NOT EXISTS ai_pipeline ("
-    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), source_connection VARCHAR(120), "
-    "source_table VARCHAR(120), target_object VARCHAR(120), mappings JSONB DEFAULT '[]', "
-    "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
-    "datasource VARCHAR(120), "
-    "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now())", "CREATE TABLE IF NOT EXISTS ai_pipeline_run ("
-    "id BIGSERIAL PRIMARY KEY, pipeline_id BIGINT, status VARCHAR(20), message TEXT, "
-    "ran_at TIMESTAMP DEFAULT now(), is_deleted BOOLEAN DEFAULT false, rows INTEGER DEFAULT 0)",
-    # ⚠️ 这是**问数/治理侧**的「数据域」（Data Domain：把数据表按业务主题归类，用于问数权限与治理）。
-    # 它与本体页的 `ai_ont_domain`（**本体域**：本体对象的命名空间）是**两张完全不同的表**——
-    # 互不可见、互不相通、不共享数据：治理面板里的「数据域」数量/内容 ≠ 本体页的「本体域」，
-    # 界面上的区分见 GovernancePanel 的说明 tooltip 与本体页「本体域」侧栏标题。
-    # 合并两张表会同时动权限模型与本体命名空间，属于数据迁移级改动，**不要顺手做**。
-    #
-    # ⚠️ 2026-11 核查确认：数据域**目前不参与问数**——既不进 prompt、也不进召回，
-    # 更不参与权限（问数可查范围 = 资产白名单 `ai_query_assets.included` + ABAC 规则
-    # `ai_access_rule.allowed_tables`）。它只用于治理页的归类与统计。
-    # 界面文案已按此修正；若将来要接进召回/权限，改这里的同时记得同步那句文案。
-    "CREATE TABLE IF NOT EXISTS ai_data_domain ("
-    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), code VARCHAR(60), description VARCHAR(255), "
-    "tables JSONB DEFAULT '[]', members JSONB DEFAULT '[]', enabled BOOLEAN DEFAULT true, "
-    "is_deleted BOOLEAN DEFAULT false, created_time TIMESTAMP DEFAULT now())",
-    "CREATE TABLE IF NOT EXISTS ai_workshop_app ("
-    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), object_table VARCHAR(120), "
-    "view_type VARCHAR(20) DEFAULT 'table', columns JSONB DEFAULT '[]', "
-    "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
-    "deleted_time TIMESTAMP, created_time TIMESTAMP DEFAULT now(), "
-    "updated_time TIMESTAMP DEFAULT now())",
-    "CREATE TABLE IF NOT EXISTS ai_access_rule ("
-    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), attribute VARCHAR(60) DEFAULT 'role', "
-    "value VARCHAR(120), allowed_tables JSONB DEFAULT '[]', sensitive_ok BOOLEAN DEFAULT false, "
-    "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
-    "created_time TIMESTAMP DEFAULT now())",
-    "CREATE TABLE IF NOT EXISTS ai_delivery_proposition ("
-    "id BIGSERIAL PRIMARY KEY, title VARCHAR(200), description TEXT, criteria TEXT, "
-    "owner VARCHAR(100), step_diagnosis VARCHAR(12) DEFAULT 'todo', "
-    "step_modeling VARCHAR(12) DEFAULT 'todo', step_assembly VARCHAR(12) DEFAULT 'todo', "
-    "step_shadow VARCHAR(12) DEFAULT 'todo', step_handover VARCHAR(12) DEFAULT 'todo', "
-    "gap JSONB DEFAULT '[]', delivery_assets JSONB DEFAULT '[]', "
-    "status VARCHAR(20) DEFAULT 'open', is_deleted BOOLEAN DEFAULT false, "
-    "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now(), "
-    "fde_translator VARCHAR(100) DEFAULT '', fde_data VARCHAR(100) DEFAULT '', "
-    "fde_app VARCHAR(100) DEFAULT '', shadow_metric VARCHAR(120) DEFAULT '', "
-    "shadow_golden VARCHAR(64) DEFAULT '', shadow_tolerance VARCHAR(32) DEFAULT '', "
-    "shadow_result VARCHAR(32) DEFAULT '', shadow_actual VARCHAR(64) DEFAULT '', "
-    "shadow_at TIMESTAMP)",
-    # ⚠️ 与本体动作 `ai_ont_action` 是**两套**东西（2026-11 核对）：
-    #   - 本表（ai_query_writeback）= 问数侧「表级写回」：直接 UPDATE 业务表某行、
-    #     走 writable_cols 白名单 + 审批留痕（ai_query_writeback_log）；属历史实现，
-    #     界面已标注「逐步下线」，定义在「数据与集成 → 治理 → 动作/写回」。
-    #   - ai_ont_action = 本体对象上的动作：由对象页/决策中心/智能体工具
-    #     （ont_action__<code>）调用，带字段白名单、规则校验、副作用与审批。
-    #   **问数（NL2SQL）不会自动执行任何一方**；不要在问数链路上接 ai_ont_action。
-    "CREATE TABLE IF NOT EXISTS ai_query_writeback ("
-    "id BIGSERIAL PRIMARY KEY, name VARCHAR(120), object_table VARCHAR(120), "
-    "writable_cols JSONB DEFAULT '[]', validation TEXT, approve BOOLEAN DEFAULT true, "
-    "enabled BOOLEAN DEFAULT true, is_deleted BOOLEAN DEFAULT false, "
-    "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now(), "
-    "writable_by_role JSONB)",
-    "CREATE TABLE IF NOT EXISTS ai_query_writeback_log ("
-    "id BIGSERIAL PRIMARY KEY, action_name VARCHAR(120), object_table VARCHAR(120), "
-    "object_key VARCHAR(120), params JSONB, operator VARCHAR(100), result VARCHAR(20), "
-    "detail TEXT, created_time TIMESTAMP DEFAULT now(), is_deleted BOOLEAN DEFAULT false)",
-    "CREATE TABLE IF NOT EXISTS ai_dq_report ("
-    "id BIGSERIAL PRIMARY KEY, table_name VARCHAR(120), alias VARCHAR(120), "
-    "total INTEGER DEFAULT 0, score NUMERIC DEFAULT 0, completeness NUMERIC DEFAULT 0, "
-    "uniqueness NUMERIC DEFAULT 0, freshness NUMERIC DEFAULT 0, issues JSONB DEFAULT '[]', "
-    "checked_at TIMESTAMP DEFAULT now(), is_deleted BOOLEAN DEFAULT false)",
-)
 
 #: 存量库缺列补齐（SQLite 不支持 ADD COLUMN IF NOT EXISTS，失败忽略）
 _QUERY_ALTER_COLS = (
@@ -275,10 +184,6 @@ _QUERY_ALTER_COLS = (
     ("ai_pipeline", "datasource", "VARCHAR(120)"),
     ("ai_query_sessions", "is_eval", "BOOLEAN"),
 )
-
-
-
-
 
 
 # Agno 向量库是否已播种语义单元
@@ -295,8 +200,6 @@ _ONT_ALLOW_CACHE: set | None = None
 #: 最多 60 秒后重建；同模块的写入路径则**立即**失效（见 `invalidate_ont_allow_cache`）。
 _ONT_ALLOW_CACHE_AT: float = 0.0
 _ONT_ALLOW_TTL = 60.0
-
-
 
 
 #: 当前对象上下文（对齐 Palantir Retrieval Context 的 Fixed Object Set）。
@@ -319,8 +222,6 @@ _EVAL_CTX: ContextVar[bool] = ContextVar("ai_query_eval_ctx", default=False)
 _BYPASS_CACHE: ContextVar[bool] = ContextVar("ai_query_bypass_cache", default=False)
 
 
-
-
 #: 工程配置的任务内覆盖层。
 #:
 #: 评测的消融需要「临时改几个开关」。旧实现直接 `UPDATE ai_query_settings` 再恢复，
@@ -329,10 +230,6 @@ _BYPASS_CACHE: ContextVar[bool] = ContextVar("ai_query_bypass_cache", default=Fa
 #: 子任务通过 context 继承自然生效。
 _CFG_OVERRIDE: ContextVar[dict[str, str] | None] = ContextVar(
     "ai_query_cfg_override", default=None)
-
-
-
-
 
 
 #: 对象查询热度（对象编码 → 命中次数）与「本进程已自动建过索引」的对象。
@@ -347,50 +244,14 @@ _IR_FAIL_AT: float = 0.0
 _IR_FAIL_COOLDOWN = 90.0
 
 
-
-
-
-
-
-
 # 禁止出现的 SQL 关键片段（防 DDL/DML/多语句/写操作）
 # 合法 SQL 标识符（表名/列名）：数据资产入口把参数直接拼进 ``FROM "x"``，
 # 表名含 ``"`` 即可闭合引号注入任意 SQL，所以必须先卡标识符再拼 SQL（P0-1）
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # 本系统可查询表（白名单，用于系统数据源的安全校验）
-SYSTEM_ALLOWED_TABLES = {
-    "ai_call_logs", "ai_assistant_messages", "ai_assistant_sessions", "ai_apps", "ai_agents",
-    "ai_models", "ai_providers", "ai_skills", "ai_tools", "ai_prompts",
-    "ai_reports", "ai_workflows", "annotation_dataset", "annotation_record",
-    "annotation_task", "synthesis_job",
-    "train_tasks", "train_models", "train_evals", "train_predicts", "train_deploys",
-    "train_schedules", "train_model_repos",
-    "video_alarm_records", "video_alarm_rules", "video_cameras",
-    "video_camera_groups", "video_algorithms", "video_algorithm_tasks",
-    "video_edge_devices", "video_edge_events", "video_face_gallery", "video_layouts",
-    "video_record_files", "video_record_plans", "video_record_execution_logs",
-    "sys_user", "sys_user_notification",
-}
 
 #: 实体名词 → 相关表（保证联表取名称时，name 承载表一定进入 schema 上下文）
-_ENTITY_TABLE: dict[str, set[str]] = {
-    "摄像头": {"video_cameras", "video_camera_groups"},
-    "设备": {"video_edge_devices"},
-    "算法": {"video_algorithms"},
-    "任务": {"video_algorithm_tasks", "annotation_task", "train_tasks"},
-    "数据集": {"annotation_dataset"},
-    "规则": {"video_alarm_rules"},
-    "标注": {"annotation_dataset", "annotation_task", "annotation_record"},
-    "告警": {"video_alarm_records"},
-    "报警": {"video_alarm_records"},
-    "事件": {"video_edge_events"},
-    "模型": {"ai_models", "ai_call_logs"},
-    "用户": {"sys_user"},
-    "合成": {"synthesis_job"},
-    "报表": {"ai_reports"},
-    "工作流": {"ai_workflows"},
-}
 
 
 # ---------------------------------------------------------------------------
@@ -398,328 +259,12 @@ _ENTITY_TABLE: dict[str, set[str]] = {
 # ---------------------------------------------------------------------------
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # 语义层：本系统数据源预置指标（可经指标运营后台增改）
 # ---------------------------------------------------------------------------
-_SYSTEM_METRICS = [
-    {
-        "key": "alert_count_today", "name": "今日告警数", "agg": "count", "unit": "条",
-        "description": "今天产生的视频告警总数（按告警时间 alarm_time）",
-        "sql_template": (
-            "SELECT COUNT(*) AS 数值 FROM video_alarm_records "
-            "WHERE alarm_time >= CURRENT_DATE"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 30,
-    },
-    {
-        "key": "alert_count_month", "name": "本月告警数", "agg": "count", "unit": "条",
-        "description": "本自然月产生的视频告警总数",
-        "sql_template": (
-            "SELECT COUNT(*) AS 数值 FROM video_alarm_records "
-            "WHERE alarm_time >= date_trunc('month', CURRENT_DATE)"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 60,
-    },
-    {
-        "key": "alert_by_type", "name": "按告警类型的分布", "agg": "group", "unit": "条",
-        "description": "按告警类型分组的告警数量，可过滤最近N天",
-        "sql_template": (
-            "SELECT COALESCE(alarm_type, '未知') AS 类型, COUNT(*) AS 数量 "
-            "FROM video_alarm_records "
-            "WHERE alarm_time >= CURRENT_DATE - INTERVAL '{days}' DAY "
-            "GROUP BY 类型 ORDER BY 数量 DESC LIMIT 50"
-        ),
-        "params": [{"key": "days", "label": "最近天数", "type": "value"}],
-        "dimensions": [{"key": "类型", "label": "类型", "field": "类型", "type": "string"}],
-        "cache_ttl": 60,
-    },
-    {
-        "key": "camera_online_count", "name": "在线摄像头数", "agg": "count", "unit": "台",
-        "description": "摄像头总数（未删除）",
-        "sql_template": "SELECT COUNT(*) AS 数值 FROM video_cameras WHERE is_deleted = false",
-        "params": [], "dimensions": [], "cache_ttl": 30,
-    },
-    {
-        "key": "train_task_count", "name": "训练任务总数", "agg": "count", "unit": "个",
-        "description": "训练任务总数（未删除）",
-        "sql_template": (
-            "SELECT COUNT(*) AS 数值 FROM train_tasks WHERE is_deleted = false"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 60,
-    },
-    {
-        "key": "call_count_7d", "name": "近7天模型调用量", "agg": "count", "unit": "次",
-        "description": "近7天 AI 调用日志数量",
-        "sql_template": (
-            "SELECT COUNT(*) AS 数值 FROM ai_call_logs "
-            "WHERE created_time >= CURRENT_DATE - 7 AND is_deleted = false"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 60,
-    },
-    {
-        "key": "user_count", "name": "系统用户数", "agg": "count", "unit": "人",
-        "description": "系统用户总数（未删除）",
-        "sql_template": "SELECT COUNT(*) AS 数值 FROM sys_user WHERE is_deleted = false",
-        "params": [], "dimensions": [], "cache_ttl": 120,
-    },
-    # ===== 本体业务语义（Palantir：以本体为单一事实源，把业务黑话确定为可执行指标）=====
-    {
-        "key": "device_health_rate", "name": "设备健康度", "agg": "ratio", "unit": "%",
-        "description": "设备健康度 = 在线摄像头占比（ONLINE / 全部未删除，百分比）",
-        "sql_template": (
-            "SELECT ROUND(COUNT(*) FILTER (WHERE status='ONLINE')*100.0/COUNT(*),2) AS 数值 "
-            "FROM video_cameras WHERE is_deleted = false"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 30,
-    },
-    {
-        "key": "active_algorithm_count", "name": "活跃算法数", "agg": "count", "unit": "个",
-        "description": "当前正在运行的视频算法任务数量（status=RUNNING）",
-        "sql_template": (
-            "SELECT COUNT(*) AS 数值 FROM video_algorithm_tasks WHERE status = 'RUNNING'"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 30,
-    },
-    {
-        "key": "pending_alert_count", "name": "待处理告警数", "agg": "count", "unit": "条",
-        "description": "当前待处理（PENDING）的视频告警数量",
-        "sql_template": (
-            "SELECT COUNT(*) AS 数值 FROM video_alarm_records WHERE status = 'PENDING'"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 30,
-    },
-    {
-        "key": "query_success_rate", "name": "查询成功率", "agg": "ratio", "unit": "%",
-        "description": "AI 调用查询成功率 = result='success' 占比（百分比）",
-        "sql_template": (
-            "SELECT ROUND(COUNT(*) FILTER (WHERE result='success')*100.0/NULLIF(COUNT(*),0),2) AS 数值 "
-            "FROM ai_call_logs WHERE is_deleted = false"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 60,
-    },
-    {
-        "key": "online_event_ratio", "name": "在线事件占比", "agg": "ratio", "unit": "%",
-        "description": "边缘事件在线（matched=true）占比（百分比）",
-        "sql_template": (
-            "SELECT ROUND(COUNT(*) FILTER (WHERE matched=true)*100.0/NULLIF(COUNT(*),0),2) AS 数值 "
-            "FROM video_edge_events"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 60,
-    },
-    {
-        "key": "annotation_complete_rate", "name": "标注完成率", "agg": "ratio", "unit": "%",
-        "description": "标注完成率 = 已标注图片数占比（百分比）",
-        "sql_template": (
-            "SELECT ROUND(SUM(annotated_count)*100.0/NULLIF(SUM(image_count),0),2) AS 数值 "
-            "FROM annotation_dataset"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 60,
-    },
-    {
-        "key": "superadmin_count", "name": "超级管理员数", "agg": "count", "unit": "人",
-        "description": "超级管理员数量（is_superuser=true 且未删除）",
-        "sql_template": (
-            "SELECT COUNT(*) AS 数值 FROM sys_user WHERE is_superuser = true AND is_deleted = false"
-        ),
-        "params": [], "dimensions": [], "cache_ttl": 120,
-    },
-]
 
-_SYSTEM_TERMS = [
-    # 术语 → 指标/字段 映射（用于快路径意图识别与慢路径语义注入）
-    {"term": "告警", "metric_key": "alert_count_today", "type": "metric"},
-    {"term": "报警", "metric_key": "alert_count_today", "type": "metric"},
-    {"term": "在线摄像头", "metric_key": "camera_online_count", "type": "metric"},
-    {"term": "在线设备", "metric_key": "camera_online_count", "type": "metric"},
-    {"term": "训练任务", "metric_key": "train_task_count", "type": "metric"},
-    {"term": "模型调用", "metric_key": "call_count_7d", "type": "metric"},
-    {"term": "调用量", "metric_key": "call_count_7d", "type": "metric"},
-    {"term": "用户数", "metric_key": "user_count", "type": "metric"},
-    {"term": "人数", "metric_key": "user_count", "type": "metric"},
-    {"term": "用户", "metric_key": "user_count", "type": "metric"},
-    # 本体业务语义术语（黑话 → 指标）
-    {"term": "设备健康度", "metric_key": "device_health_rate", "type": "metric"},
-    {"term": "健康度", "metric_key": "device_health_rate", "type": "metric"},
-    {"term": "活跃算法", "metric_key": "active_algorithm_count", "type": "metric"},
-    {"term": "待处理告警", "metric_key": "pending_alert_count", "type": "metric"},
-    {"term": "待办告警", "metric_key": "pending_alert_count", "type": "metric"},
-    {"term": "查询成功率", "metric_key": "query_success_rate", "type": "metric"},
-    {"term": "成功率", "metric_key": "query_success_rate", "type": "metric"},
-    {"term": "在线事件占比", "metric_key": "online_event_ratio", "type": "metric"},
-    {"term": "事件占比", "metric_key": "online_event_ratio", "type": "metric"},
-    {"term": "标注完成率", "metric_key": "annotation_complete_rate", "type": "metric"},
-    {"term": "标注率", "metric_key": "annotation_complete_rate", "type": "metric"},
-    {"term": "完成率", "metric_key": "annotation_complete_rate", "type": "metric"},
-    {"term": "超级管理员", "metric_key": "superadmin_count", "type": "metric"},
-]
 
 # NL2SQL few-shot 示例：覆盖 JOIN / 时间序列 / 分组聚合 等常用报表模式
-_NL2SQL_FEWSHOT = [
-    {
-        "q": "按告警类型统计各类告警的数量",
-        "sql": "SELECT alarm_type AS 类型, COUNT(*) AS 数量 FROM video_alarm_records GROUP BY 类型 ORDER BY 数量 DESC LIMIT 50",
-    },
-    {
-        "q": "每个摄像头各产生多少条告警",
-        "sql": "SELECT COALESCE(c.name,'未知') AS 摄像头, COUNT(r.id) AS 告警数 FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY 摄像头 ORDER BY 告警数 DESC",
-    },
-    {
-        "q": "各摄像头组的告警数量",
-        "sql": "SELECT COALESCE(g.name,'未分组') AS 摄像头组, COUNT(r.id) AS 告警数 FROM video_cameras c LEFT JOIN video_camera_groups g ON c.group_id=g.id LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY 摄像头组 ORDER BY 告警数 DESC LIMIT 50",
-    },
-    {
-        "q": "最近7天每天的告警量走势",
-        "sql": "SELECT TO_CHAR(alarm_time,'YYYY-MM-DD') AS 日期, COUNT(*) AS 告警数 FROM video_alarm_records WHERE alarm_time >= CURRENT_DATE - 7 GROUP BY 日期 ORDER BY 日期 LIMIT 50",
-    },
-    {
-        "q": "各算法类型的边缘事件数量",
-        "sql": "SELECT COALESCE(algorithm_type,'未知') AS 算法类型, COUNT(*) AS 事件数 FROM video_edge_events GROUP BY 算法类型 ORDER BY 事件数 DESC LIMIT 50",
-    },
-    {
-        "q": "平均每次模型调用的耗时",
-        "sql": "SELECT ROUND(AVG(latency_ms),1) AS 平均耗时ms, COUNT(*) AS 次数 FROM ai_call_logs WHERE is_deleted = false",
-    },
-    {
-        "q": "模型调用平均耗时（毫秒）是多少",
-        "sql": "SELECT ROUND(AVG(latency_ms),1) AS 平均耗时ms FROM ai_call_logs WHERE is_deleted = false",
-    },
-    # ---- 复杂报表模式：占比 / 窗口函数 / 联表取名称 / 多表对比 / 枚举 / 显式日期 ----
-    {
-        "q": "告警中 DET_ZONE 类型占比多少",
-        "sql": "SELECT ROUND(COUNT(*)*100.0/(SELECT COUNT(*) FROM video_alarm_records),2) AS pct FROM video_alarm_records WHERE alarm_type='DET_ZONE'",
-    },
-    {
-        "q": "在线摄像头占全部摄像头的比例",
-        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE status='ONLINE')*100.0/COUNT(*),2) AS pct FROM video_cameras WHERE is_deleted=false",
-    },
-    {
-        "q": "平均每个摄像头产生多少条告警",
-        "sql": "SELECT ROUND(COUNT(*)*1.0/COUNT(DISTINCT camera_id),1) AS avg_cam FROM video_alarm_records WHERE camera_id IS NOT NULL",
-    },
-    {
-        "q": "给每种告警类型按数量排名",
-        "sql": "SELECT alarm_type, COUNT(*) AS c, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) AS rn FROM video_alarm_records GROUP BY alarm_type ORDER BY rn",
-    },
-    {
-        "q": "各告警类型数量及累计占比",
-        "sql": "SELECT alarm_type, COUNT(*) AS c, ROUND(100.0*SUM(COUNT(*)) OVER (ORDER BY COUNT(*) DESC)/SUM(COUNT(*)) OVER (),2) AS cum_pct FROM video_alarm_records GROUP BY alarm_type ORDER BY c DESC",
-    },
-    {
-        "q": "按告警数量给摄像头排名",
-        "sql": "SELECT c.name, COUNT(r.id) AS c, RANK() OVER (ORDER BY COUNT(r.id) DESC) AS rk FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY c.name ORDER BY rk",
-    },
-    {
-        "q": "每个边缘设备各产生多少边缘事件",
-        "sql": "SELECT COALESCE(d.name,'未知') AS 设备, COUNT(e.id) AS c FROM video_edge_devices d LEFT JOIN video_edge_events e ON e.edge_code=d.code GROUP BY 设备 ORDER BY c DESC",
-    },
-    {
-        "q": "每个摄像头各有多少边缘事件",
-        "sql": "SELECT COALESCE(c.name,'未知') AS 摄像头, COUNT(e.id) AS c FROM video_cameras c LEFT JOIN video_edge_events e ON e.camera_id=c.id GROUP BY 摄像头 ORDER BY c DESC",
-    },
-    {
-        "q": "触发告警最多的前3条告警规则",
-        "sql": "SELECT r.name, COUNT(a.id) AS c FROM video_alarm_rules r JOIN video_alarm_records a ON a.rule_id=r.id GROUP BY r.name ORDER BY c DESC LIMIT 3",
-    },
-    {
-        "q": "各摄像头告警数与边缘事件数对比，取告警最多前5",
-        "sql": "SELECT c.name, COUNT(DISTINCT r.id) AS alarms, COUNT(DISTINCT e.id) AS events FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id LEFT JOIN video_edge_events e ON e.camera_id=c.id GROUP BY c.name ORDER BY alarms DESC LIMIT 5",
-    },
-    {
-        "q": "当前正在运行的视频算法任务有多少",
-        "sql": "SELECT COUNT(*) AS c FROM video_algorithm_tasks WHERE status='RUNNING'",
-    },
-    {
-        "q": "运行失败的算法任务编号",
-        "sql": "SELECT id FROM video_algorithm_tasks WHERE status='ERROR' ORDER BY id",
-    },
-    {
-        "q": "边缘事件的平均处理延迟是多少毫秒",
-        "sql": "SELECT ROUND(AVG(latency_ms)::numeric,2) AS avg FROM video_edge_events WHERE latency_ms IS NOT NULL",
-    },
-    {
-        "q": "9月16日当天共有多少条告警",
-        "sql": "SELECT COUNT(*) AS c FROM video_alarm_records WHERE alarm_time >= '2026-09-16' AND alarm_time < '2026-09-17'",
-    },
-    # ---- 设备 / 合成 / 摄像头 / 边缘延迟TOP-N / 联表取名称 / 显式日期 ----
-    {
-        "q": "列出当前离线的边缘设备",
-        "sql": "SELECT name, code FROM video_edge_devices WHERE status='offline' ORDER BY name",
-    },
-    {
-        "q": "在线和离线的边缘设备各有多少",
-        "sql": "SELECT status, COUNT(*) AS c FROM video_edge_devices GROUP BY status",
-    },
-    {
-        "q": "距上次心跳最久的10台边缘设备",
-        "sql": "SELECT name, last_heartbeat FROM video_edge_devices ORDER BY last_heartbeat ASC NULLS LAST LIMIT 10",
-    },
-    {
-        "q": "各合成算法供应商的完成总量",
-        "sql": "SELECT provider, SUM(done) AS done, SUM(total) AS total FROM synthesis_job GROUP BY provider",
-    },
-    {
-        "q": "当前离线的摄像头有多少",
-        "sql": "SELECT COUNT(*) AS c FROM video_cameras WHERE status='OFFLINE'",
-    },
-    {
-        "q": "各状态下的摄像头数量",
-        "sql": "SELECT status, COUNT(*) AS c FROM video_cameras GROUP BY status",
-    },
-    {
-        "q": "处理延迟最高的10条边缘事件",
-        "sql": "SELECT id, latency_ms FROM video_edge_events WHERE latency_ms IS NOT NULL ORDER BY latency_ms DESC LIMIT 10",
-    },
-    {
-        "q": "各算法类型的平均延迟，取前5名",
-        "sql": "SELECT algorithm_type, ROUND(AVG(latency_ms)::numeric,2) AS a FROM video_edge_events WHERE latency_ms IS NOT NULL GROUP BY algorithm_type ORDER BY a DESC LIMIT 5",
-    },
-    {
-        "q": "边缘事件每天有多少条",
-        "sql": "SELECT date(ts) AS d, COUNT(*) AS c FROM video_edge_events GROUP BY d ORDER BY d",
-    },
-    {
-        "q": "运行中的算法任务对应哪些摄像头",
-        "sql": "SELECT c.name, t.id FROM video_algorithm_tasks t LEFT JOIN video_cameras c ON c.id=t.camera_id WHERE t.status='RUNNING'",
-    },
-    {
-        "q": "每个算法被多少个任务使用",
-        "sql": "SELECT alg.name, COUNT(t.id) AS c FROM video_algorithms alg LEFT JOIN video_algorithm_tasks t ON t.algorithm_id=alg.id GROUP BY alg.name ORDER BY c DESC",
-    },
-    {
-        "q": "各算法类型分别挂了多少任务",
-        "sql": "SELECT alg.algorithm_type, COUNT(t.id) AS c FROM video_algorithms alg LEFT JOIN video_algorithm_tasks t ON t.algorithm_id=alg.id GROUP BY alg.algorithm_type ORDER BY c DESC",
-    },
-    {
-        "q": "9月15号每个摄像头的告警数量",
-        "sql": "SELECT c.name, COUNT(*) AS c FROM video_cameras c JOIN video_alarm_records r ON r.camera_id=c.id WHERE r.alarm_time >= '2026-09-15' AND r.alarm_time < '2026-09-16' GROUP BY c.name ORDER BY c DESC",
-    },
-    {
-        "q": "每个标注数据集下各有多少标注任务",
-        "sql": "SELECT ds.name, COUNT(t.id) AS c FROM annotation_dataset ds LEFT JOIN annotation_task t ON t.dataset_id=ds.id WHERE ds.is_deleted=false GROUP BY ds.name ORDER BY c DESC",
-    },
-]
 
 
 # ---------------------------------------------------------------------------
@@ -735,8 +280,6 @@ _NL2SQL_FEWSHOT = [
 #: 但这些词出现时，用户要的是**前 N 条**，恰恰不能放宽 LIMIT。
 #: 真实踩过：`各算法类型的平均延迟，取前5名` 里含"各"，被误判成全量列举，
 #: 5 行被放到 1000 行——基准立刻从 ✓ 变 ✗（自己引入的回退，靠复测抓出来的）。
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -794,8 +337,6 @@ _RETRIEVAL_CACHE_TTL = 600.0
 _RETRIEVAL_CACHE_MAX = 500
 
 
-
-
 #: 会影响「召回结果 / prompt 内容」的设置项。这些 key 一变，缓存必须换 key，
 #: 否则管理员改完开关，进程内缓存还会按旧配置继续吐结果（TTL 120~600 秒）。
 #: 判据：**它出现在 prompt 里，或决定进 prompt 哪些表/列**。新增同类开关记得加进来。
@@ -810,32 +351,10 @@ _CTX_CFG_KEYS: tuple[str, ...] = (
 )
 
 
-
-
-
-
 # P1-12 方案 b：内置默认敏感列名单（fail-closed 底板）。
 # 作为「配置显式标记（ai_query_asset_columns.sensitive / 本体属性 sensitive）」之外的兜底，
 # 凡**返回结果列**命中该名单（大小写不敏感，含常见变体）即默认拦截、永不返回明文。
 # 只拦「返回列」，不拦 WHERE / JOIN 里的引用（否则会伤到正常过滤）。
-_DEFAULT_SENSITIVE_COLS: frozenset[str] = frozenset({
-    "password", "passwd", "pwd", "secret", "token",
-    "access_token", "refresh_token", "api_token",
-    "api_key", "apikey", "private_key", "encrypt_key",
-    "auth_secret", "credential", "salt",
-    "user_passwd", "user_password", "login_password",
-    "auth_key", "sign_key", "secret_key", "passkey", "passcode",
-})
-
-
-
-
-
-
-
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -852,12 +371,6 @@ _DEFAULT_SENSITIVE_COLS: frozenset[str] = frozenset({
 #: 低于此下限时预算被推理吃光 → finish_reason=length、正文为空 → "未生成有效的查询语句"。
 NL2SQL_MIN_MAX_TOKENS = 4000
 NL2SQL_DEFAULT_MAX_TOKENS = 8000
-
-
-
-
-
-
 
 
 #: 「分组/逐个」诉求：单值指标答不了，快路径必须让位给慢路径（实测会答成语义完全错）
@@ -896,26 +409,6 @@ _OBJECT_AGG_RE = re.compile(r"(平均|合计|总计|总量|求和|汇总|占比|
 # 导入后只会在本体里制造噪声对象。需要全量导入时传 include_technical=True。
 # 名字做表名精确匹配（不支持通配）。
 # ---------------------------------------------------------------------------
-_ONT_IMPORT_EXCLUDE: set[str] = {
-    # 迁移 / 调度
-    "alembic_version", "apscheduler_jobs",
-    # 框架运行时（Agno 会话）
-    "agno_sessions", "agno_schema_versions",
-    # 纯日志
-    "sys_log", "ai_call_logs", "ai_search_logs", "ai_chunk_annotation_logs",
-    "ai_workflow_run_logs", "video_record_execution_logs",
-    # 代码生成器脚手架
-    "gen_demo", "gen_demo01",
-    # 会话/消息运行时
-    "ai_assistant_sessions", "ai_assistant_messages",
-    # 向量 / schema 注册 / 配置 / 前端布局
-    "ai_query_asset_vectors", "ai_query_schema", "ai_query_settings", "ai_query_kg_layout",
-    # 纯多对多关联表
-    "sys_role_menus", "sys_user_roles", "sys_user_positions", "sys_role_depts",
-    "ai_knowledge_entity_chunks",
-    # 调度/版本快照
-    "ai_workflow_schedules", "ai_workflow_versions",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -923,12 +416,7 @@ _ONT_IMPORT_EXCLUDE: set[str] = {
 # ---------------------------------------------------------------------------
 class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, PropositionsOps, ExecuteOps, ContextOps, Nl2SqlOps, SlowPathOps, AskOps, SettingsOps, DatasourceOps, SessionOps, ReportOps, DqOps, PipelineOps, VersionOps, RecallOps, RoutingOps, SchemaOps, LlmOps, OntBridgeOps, SeedOps, AutopilotOps, AnswerOps, RewriteOps, AccessOps, WorkspaceOps, GovernanceOps, FewshotOps, AssetIoOps, VectorOps):
 
-
-
-
     # ---- 指标 ----
-
-
 
     # ---------------------------------------------------------------- #
     # 派生指标规则引擎（Ontology）
@@ -942,33 +430,13 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
          "desc": "本月告警数 / 30，估算日均告警量"},
     ]
 
-
-
-
-
     # ---------------------------------------------------------------- #
     # Compass 收藏/引用中心
     # ---------------------------------------------------------------- #
 
-
-
-
     # ---------------------------------------------------------------- #
     # AIP 插件/工具市场
     # ---------------------------------------------------------------- #
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     # ---------------------------------------------------------------- #
     # 数据质量规则引擎
@@ -979,167 +447,35 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
         {"key": "range", "name": "范围校验", "desc": "校验字段数值在指定范围"},
     ]
 
-
     # ---------------------------------------------------------------- #
     # 数据资产入口（导出/浏览/质量规则）统一表名校验（P0-1 安全修复）
     # ---------------------------------------------------------------- #
-
-
-
-
-
-
-
-
-
-
 
     # ---------------------------------------------------------------- #
     # Compass 数据目录分类
     # ---------------------------------------------------------------- #
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     #: 允许表单写入的对象表（演示安全白名单）
     _WORKSHOP_WRITABLE = {"ont_orders"}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     # ---- 示例工程（few-shot）----
-
-
-
 
     # ---- 查询限额配置 ----
 
-
-
-
-
-
-
-
-
     # ---- 使用统计 / 反馈闭环 ----
-
-
 
     # ---- 数据源 ----
 
-
-
-
-
-
     # ---- 大模型辅助：筛选规则（suggest / parse / classify-advise） ----
-
-
-
-
-
-
-
-
 
     # ---- 会话与问答 ----
 
-
-
-
-
-
     # ---- 核心：问答入口 ----
-
-
-
-
-
-
 
     # ------------------------------------------------------------------
     # 对象查询（语义执行层）：LLM 只输出 IR，由本体实例层确定性执行
     # 设计：docs/superpowers/specs/2026-10-14-semantic-query-layer-design.md
     # ------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     # ---- 语义召回单元（阶段1：自建召回服务的底座）----
     #
@@ -1152,21 +488,6 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
         "created_time TIMESTAMP, updated_time TIMESTAMP, UNIQUE(kind, ref)"
     )
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     #: 技术列前缀：同步/版本/排序这类，取值对写 SQL 没有帮助
     _ENUM_SKIP_PREFIX = ("SYNC", "VERSION", "SORT", "SERIAL", "ROWVERSION", "DISCRIMINATOR")
 
@@ -1174,30 +495,15 @@ class AiQueryService(ActionsOps, AssetsOps, MetricsOps, OntologyOps, Proposition
     _ENUM_COL_RE = re.compile(
         r"^(IS[A-Z_]+|.*(STATUS|STATE|TYPE|WAY|KIND|MODE|LEVEL|FLAG|CATEGORY|CLASS|SOURCE))$")
 
-
-
     #: 结构性列：主键/外键/时间/名称/状态——即使问句没提到也要保留
     _STRUCT_COL_RE = re.compile(
         r"(^ID$|ID$|CODE$|NAME$|DATE$|TIME$|^IS[A-Z]|STATUS$|TYPE$|WAY$|QTY$|AMOUNT$|PRICE$)")
 
-
     #: 字面量里的普通字符串（单引号，排除双引号标识符与转义）
     _SQL_LITERAL_RE = re.compile(r"'((?:[^']|'')*)'")
-
-
-
-
-
 
     #: 模型偷懒时用的占位列名 —— 这些当成"没起名"，摘要里不念出来
     _LAZY_COLS = {"c", "n", "cnt", "count", "total", "num", "value", "v",
                   "数量", "总数", "个数", "结果", "值", "合计", "总计"}
-
-
-
-
-
-
-
 
     # ---- 反馈 ----
