@@ -29,7 +29,8 @@ test("提示词列表搜索在上，弹窗内画布可添加块并识别变量�
   expect(searchBox!.y).toBeLessThan(tableBox!.y);
 
   // 点击新增打开全屏画布弹窗
-  const addButton = page.getByRole("button", { name: "新增" }).first();
+  // 文案现为「添加」（历史「新增」），两者都容忍
+  const addButton = page.getByRole("button", { name: /^(新增|添加)$/ }).first();
   await expect(addButton).toBeVisible({ timeout: 10_000 });
   await addButton.evaluate((el) => (el as HTMLElement).click());
 

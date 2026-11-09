@@ -27,11 +27,13 @@ test("AI 调用日志页：统计卡与明细表正常渲染，数字与接口�
   await openPage(page, "/#/ai/logs", ".ai-logs-page");
 
   const body = await (await statsP).json();
-  const cards = page.locator(".ai-logs-page .el-statistic");
+  const cards = page.locator(".ai-logs-page .log-stat");
   await expect(cards.first()).toBeVisible({ timeout: 20_000 });
   expect(await cards.count()).toBeGreaterThanOrEqual(4);
   // 「总调用」必须等于接口返回值（不是初始占位 0）
-  await expect(cards.first()).toContainText(String(body.data.total), { timeout: 20_000 });
+  await expect(cards.first().locator(".log-stat__value")).toContainText(String(body.data.total), {
+    timeout: 20_000,
+  });
   // 明细表必须有行渲染出来（库里确有数据；空态会是 el-empty）
   await expect(page.locator(".ai-logs-page .el-table__row").first()).toBeVisible({
     timeout: 20_000,

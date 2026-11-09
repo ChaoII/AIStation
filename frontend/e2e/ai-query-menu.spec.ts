@@ -43,11 +43,17 @@ test("智能问数：AI 菜单下为独立目录，展开含 4 个子菜单，�
   // 「智能问数」应为可展开的目录（二级子菜单）
   const group = aiSub.locator(".el-sub-menu", { hasText: /智能问数/ }).first();
   await expect(group.locator(".el-sub-menu__title")).toContainText("智能问数", { timeout: 10_000 });
-  // 展开目录
-  await group.locator(".el-sub-menu__title").click();
-  await page.waitForTimeout(500);
-  // 4 个子菜单均可见（同名「智能问数」子项也需出现）
-  for (const item of ["数据与集成", "智能问数", "问数评测", "自定义报表"]) {
+  // 展开目录（**幂等 + 重试**：本页就是当前路由，目录默认已展开，无条件 click 会把它收起；
+  // 且首帧菜单可能还在动画/折叠态，单次点击不可靠 —— 用「不可见就点，最多 3 次」）
+  const firstItem = group.locator(".el-menu-item", { hasText: "数据与集成" });
+  for (let i = 0; i < 3; i++) {
+    if (await firstItem.first().isVisible().catch(() => false)) break;
+    await group.locator(".el-sub-menu__title").click();
+    await page.waitForTimeout(600);
+  }
+  // 5 个子菜单均可见（同名「智能问数」子项也需出现；「治理」2026-11 新增，
+  // 「自定义报表」已改名为「报表模板」）
+  for (const item of ["数据与集成", "智能问数", "问数评测", "报表模板", "治理"]) {
     await expect(group.locator(".el-menu-item", { hasText: item })).toBeVisible();
   }
   // 数据资产已并入数据与集成，不出现在菜单
@@ -113,3 +119,4 @@ test("智能问数：/ai/asset 重定向到数据与集成页", async ({ page })
   await expect(page.locator(".ai-integration-page")).toBeVisible({ timeout: 20_000 });
   expect(page.url()).toContain("/ai/integration");
 });
+

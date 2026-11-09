@@ -42,8 +42,9 @@ test("AI 应用页搜索在列表上方且新增按钮可见", async ({ page }) 
   expect(tableBox).not.toBeNull();
   expect(searchBox!.y).toBeLessThan(tableBox!.y);
 
-  // 「新增」按钮可见
-  const addButton = page.getByRole("button", { name: "新增" }).first();
+  // 「新增/添加」按钮可见（文案由 CrudToolbarLeft + i18n 决定：历史为「新增」，
+  // 现为「添加」。用正则同时容忍，避免文案调整再把用例打红）
+  const addButton = page.getByRole("button", { name: /^(新增|添加)$/ }).first();
   await addButton.scrollIntoViewIfNeeded();
   await expect(addButton).toBeVisible({ timeout: 10_000 });
 });

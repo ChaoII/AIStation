@@ -22,7 +22,8 @@ test("模型配置页可打开新增弹窗且搜索在列表上方", async ({ pa
   await expect(search).toBeVisible({ timeout: 10_000 });
   await expect(search.locator(".el-form")).toBeVisible();
 
-  const btn = page.getByRole("button", { name: /新增/ }).first();
+  // 新增按钮（文案为「添加」，历史上是「新增」；两者都容忍）
+  const btn = page.getByRole("button", { name: /^(新增|添加)$/ }).first();
   await btn.waitFor({ state: "visible", timeout: 10_000 });
 
   const table = page.locator(".el-table").first();

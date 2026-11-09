@@ -28,9 +28,12 @@ test("调用日志页搜索在列表上方并展示筛选与表格", async ({ pa
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
 
-  // 页面容器与日志表格渲染
+  // 页面容器与日志表格渲染（页内可能还有隐藏的表格模板，取可见的那个；
+  // 表格要等 /ai/logs/list 回来才渲染，后端偶发慢，给 20s）
   await expect(page.locator(".ai-logs-page")).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator(".ai-logs-page .el-table").first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".ai-logs-page .el-table__row").first()).toBeVisible({
+    timeout: 20_000,
+  });
 
   // 搜索表单（用途/结果/关键字）在表格上方（DOM 纵向顺序）
   const search = page.locator(".ai-logs-page .search-container");
@@ -41,7 +44,7 @@ test("调用日志页搜索在列表上方并展示筛选与表格", async ({ pa
   await expect(labels.filter({ hasText: "关键字" })).toBeVisible();
 
   const searchBox = await search.boundingBox();
-  const tableBox = await page.locator(".ai-logs-page .el-table").first().boundingBox();
+  const tableBox = await page.locator(".ai-logs-page .el-table__body-wrapper").first().boundingBox();
   expect(searchBox).not.toBeNull();
   expect(tableBox).not.toBeNull();
   expect(searchBox!.y).toBeLessThan(tableBox!.y);

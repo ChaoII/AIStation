@@ -9,6 +9,17 @@ import { login } from "./anno-helper";
 
 const API = process.env.E2E_API_URL || "http://127.0.0.1:8002/api/v1";
 
+/** 对象存储（RustFS）可用性：上传/下载类闭环依赖它，本地没起时明确 skip 而不是打红。 */
+const STORAGE = process.env.RUSTFS_ENDPOINT || "http://127.0.0.1:9010";
+async function storageUp(): Promise<boolean> {
+  try {
+    await fetch(STORAGE, { signal: AbortSignal.timeout(1500) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test("个人工作空间：页面可达且配额/文件夹树渲染", async ({ page, request }) => {
   const headers = await login(request);
 
@@ -51,6 +62,7 @@ test("个人工作空间：页面可达且配额/文件夹树渲染", async ({ p
 // 写路径闭环：上传 → 列表可查 → 下载内容一致 → 配额计入 → 删除 → 配额归零。
 // 这条覆盖的是"接线是否真的通"（而不是页面能不能打开），失败会留下脏数据，故用 finally 清理。
 test("个人工作空间：上传→列表→下载→配额→删除 闭环", async ({ request }) => {
+  test.skip(!(await storageUp()), `对象存储不可用（${STORAGE}），跳过上传闭环`);
   const headers = await login(request);
   const quota = async () => {
     const r = await (await request.get(`${API}/ai/space/quota`, { headers })).json();
