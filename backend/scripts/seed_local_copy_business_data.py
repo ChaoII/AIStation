@@ -52,11 +52,34 @@ EXTRA_METRICS = [
      'FROM "FUEL_CMCS_HEATASSAY" WHERE "ISDELETED" = false', "avg", "Kcal/kg"),
     ("plan_year_in_qty", "年度计划进煤量", "年度计划（FUEL_CMCS_PLANYEAR）当年计划进煤量",
      'SELECT SUM("INCOALQTY") AS "年度计划进煤量" FROM "FUEL_CMCS_PLANYEAR" '
-     'WHERE "ISDELETED" = false AND "YEAR" = EXTRACT(YEAR FROM CURRENT_DATE)', "sum", "吨"),
+     'WHERE "ISDELETED" = false AND "YEAR" = ('
+     'SELECT MAX("YEAR") FROM "FUEL_CMCS_PLANYEAR" WHERE "ISDELETED" = false)', "sum", "吨"),
     ("plan_month_in_qty", "月度计划进煤量", "月度计划（FUEL_CMCS_PLANMONTH）当月计划进煤量",
      'SELECT SUM("INCOALQTY") AS "月度计划进煤量" FROM "FUEL_CMCS_PLANMONTH" '
-     'WHERE "ISDELETED" = false AND "PLANDATE" >= date_trunc(\'month\', CURRENT_DATE) '
-     'AND "PLANDATE" < date_trunc(\'month\', CURRENT_DATE) + INTERVAL \'1 month\'', "sum", "吨"),
+     'WHERE "ISDELETED" = false AND date_trunc(\'month\', "PLANDATE") = ('
+     'SELECT date_trunc(\'month\', MAX("PLANDATE")) FROM "FUEL_CMCS_PLANMONTH" '
+     'WHERE "ISDELETED" = false)', "sum", "吨"),
+    ("contract_quality_count", "合同质量约束数", "合同质量约束（FUEL_CB_COALCONTRACTQUALITY）条数",
+     'SELECT COUNT(*) AS "合同质量约束数" FROM "FUEL_CB_COALCONTRACTQUALITY" '
+     'WHERE "ISDELETED" = false', "count", "条"),
+    ("sampling_detail_count", "采样明细条数", "采样明细（FUEL_CMCS_RCSAMPLINGDETAIL）条数",
+     'SELECT COUNT(*) AS "采样明细条数" FROM "FUEL_CMCS_RCSAMPLINGDETAIL" '
+     'WHERE "ISDELETED" = false', "count", "条"),
+    ("plan_month_detail_count", "月计划明细条数", "月计划明细（FUEL_CMCS_PLANMONTHDETAIL）条数",
+     'SELECT COUNT(*) AS "月计划明细条数" FROM "FUEL_CMCS_PLANMONTHDETAIL" '
+     'WHERE "ISDELETED" = false', "count", "条"),
+    ("assay_carbon_avg", "化验平均碳含量", "元素化验（FUEL_CMCS_ELEMENTASSAY）CAD 平均值",
+     'SELECT ROUND(AVG("CAD")::numeric, 2) AS "化验平均碳含量" '
+     'FROM "FUEL_CMCS_ELEMENTASSAY" WHERE "ISDELETED" = false', "avg", "%"),
+]
+
+# ds:6 专用术语：把「化验口径」与「明细条数」绑到对应指标，避免被老指标抢答
+EXTRA_TERMS = [
+    ("硫分化验", "assay_sulfur_avg"),
+    ("热值化验", "assay_heat_avg"),
+    ("采样明细", "sampling_detail_count"),
+    ("月计划明细", "plan_month_detail_count"),
+    ("合同质量约束", "contract_quality_count"),
 ]
 
 
@@ -161,7 +184,47 @@ async def seed_extra_metrics(ds_id: int) -> None:
                     "created_time,updated_time) VALUES (:d,:k,:n,:ds,:s,'[]'::jsonb,'[]'::jsonb,:a,:u,"
                     "'',true,0,0,false,gen_random_uuid(),'0',now(),now())"
                 ), {"d": target, "k": key, "n": name, "ds": desc, "s": sql, "a": agg, "u": unit})
-    print(f"[meta] 副本专用指标 {len(EXTRA_METRICS)} 个已就绪")
+        for term, key in EXTRA_TERMS:
+            found = (await db.execute(text(
+                "SELECT 1 FROM ai_query_dictionary WHERE datasource=:d AND term=:t AND is_deleted=false"
+            ), {"d": target, "t": term})).first()
+            if found:
+                await db.execute(text(
+                    "UPDATE ai_query_dictionary SET metric_key=:k WHERE datasource=:d AND term=:t"
+                ), {"k": key, "d": target, "t": term})
+            else:
+                await db.execute(text(
+                    "INSERT INTO ai_query_dictionary(datasource,term,metric_key,type,is_deleted,"
+                    "uuid,status,created_time,updated_time) "
+                    "VALUES (:d,:t,:k,'term',false,gen_random_uuid(),'0',now(),now())"
+                ), {"d": target, "t": term, "k": key})
+    print(f"[meta] 副本专用指标 {len(EXTRA_METRICS)} 个、术语 {len(EXTRA_TERMS)} 个已就绪")
+
+
+async def reset_demo(conn) -> None:
+    """清掉上一版演示数据（只删 DEMO- 前缀），保证重跑能修正口径。"""
+    from sqlalchemy import text
+
+    tables = [
+        "FUEL_CMCS_PURCHASEMONTHDETAIL", "FUEL_CMCS_PURCHASEMONTH",
+        "FUEL_CMCS_PLANMONTHDETAIL", "FUEL_CMCS_PLANMONTH",
+        "FUEL_CMCS_PLANDAYDETAIL", "FUEL_CMCS_PLANDAY",
+        "FUEL_CMCS_PLANYEARDETAIL", "FUEL_CMCS_PLANYEAR",
+        "FUEL_CMCS_MAKEDETAIL", "FUEL_CMCS_MAKE",
+        "FUEL_CMCS_RCSAMPLINGDETAIL", "FUEL_CMCS_RCSAMPLING",
+        "FUEL_CMCS_ELEMENTASSAY", "FUEL_CMCS_SULFURASSAY", "FUEL_CMCS_HEATASSAY",
+        "FUEL_CMCS_PROXIMATEASSAY", "FUEL_CMCS_MOISTUREASSAY",
+        "FUEL_CB_CONTRACTTEMPITEM", "FUEL_CB_COALCONTRACTQUALITY", "FUEL_CB_COALCONTRACT",
+        "CMMS_CANVASCOMPONENT", "CMMS_COMPONENT", "CMMS_CANVAS",
+        "CMMS_CANVASCLASSIFICATION", "CMMS_COMPONENTCLASSIFICATION",
+        "FR_PERSONNELINFO", "CMCS_APPVERSION",
+    ]
+    await conn.execute(text(
+        'UPDATE "FUEL_CMCS_INFACTORYBATCH" SET "CONTRACTID"=NULL WHERE "CONTRACTID" LIKE \'DEMO-%\''
+    ))
+    for t in tables:
+        await conn.execute(text(f'DELETE FROM "{t}" WHERE "ID" LIKE \'DEMO-%\''))
+    await conn.commit()
 
 
 async def seed_business(conn) -> None:
@@ -182,16 +245,18 @@ async def seed_business(conn) -> None:
     ))).scalar()
     batches = (await conn.execute(text(
         'SELECT "ID","BATCH","FACTARRIVEDATE" FROM "FUEL_CMCS_INFACTORYBATCH" '
-        'WHERE "ISDELETED"=false ORDER BY "FACTARRIVEDATE" DESC LIMIT 500'
+        "WHERE \"ISDELETED\"=false AND \"FACTARRIVEDATE\" >= '2025-01-01' "
+        "AND \"FACTARRIVEDATE\" < '2027-01-01' ORDER BY \"FACTARRIVEDATE\" DESC"
     ))).fetchall()
     assays = (await conn.execute(text(
         'SELECT "ID","ASSAYCODE","ASSAYDATE" FROM "FUEL_CMCS_ASSAY" '
-        'WHERE "ISDELETED"=false ORDER BY "ASSAYDATE" DESC LIMIT 500'
+        'WHERE "ISDELETED"=false ORDER BY "ASSAYDATE" DESC'
     ))).fetchall()
     if not suppliers or not mines or not kinds or not batches or not assays:
         raise SystemExit("参考表为空，无法补数")
     print(f"[ref] suppliers={len(suppliers)} mines={len(mines)} kinds={len(kinds)} "
           f"batches={len(batches)} assays={len(assays)} template={bool(template_id)}")
+    await reset_demo(conn)  # 重跑时先清旧演示数据，修正口径
 
     # ---------- 1. 采购合同 + 质量约束 + 模板量价条款 ----------
     contracts, quality, temp_items = [], [], []
@@ -203,9 +268,10 @@ async def seed_business(conn) -> None:
         sid, sname = suppliers[(i - 1) % len(suppliers)]
         mine_name = mines[(i - 1) % len(mines)][1]
         kind_name = kinds[(i - 1) % len(kinds)][1]
-        monthly = {m: amount // 12 for m in
-                   ("JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
-                    "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER")}
+        months = ("JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
+                  "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER")
+        monthly = dict.fromkeys(months, amount // 12)
+        monthly[months[-1]] += amount - sum(monthly.values())  # 余数落到 12 月
         row = {
             "ID": cid, "CREATIONTIME": sign, "SIGNDATE": sign,
             "CONTRACTNUM": f"HT2026{i:04d}", "CONTRACTTYPE": "长协煤" if i % 2 else "市场煤",
@@ -247,13 +313,30 @@ async def seed_business(conn) -> None:
         n2 = await _bulk(conn, "FUEL_CB_COALCONTRACTQUALITY", quality)
         n3 = await _bulk(conn, "FUEL_CB_CONTRACTTEMPITEM", temp_items)
     print(f"[contract] 合同 {n1}、质量约束 {n2}、模板条款 {n3}")
+    await conn.rollback()
+    async with conn.begin():
+        linked = await conn.execute(text(
+            'UPDATE "FUEL_CMCS_INFACTORYBATCH" b SET "CONTRACTID" = ('
+            'SELECT c."ID" FROM "FUEL_CB_COALCONTRACT" c '
+            'JOIN "FUEL_CMCS_SUPPLIER" s ON s."ID"=c."SUPPLIERID" '
+            "WHERE c.\"ID\" LIKE 'DEMO-%' AND s.\"NAME\"=b.\"SUPPLIERNAME\" "
+            'AND b."FACTARRIVEDATE" BETWEEN c."STARTEXECUTEDATE" AND c."ENDEXECUTEDATE" '
+            'ORDER BY c."STARTEXECUTEDATE" DESC LIMIT 1) '
+            'WHERE b."CONTRACTID" IS NULL AND b."ISDELETED"=false AND EXISTS ('
+            'SELECT 1 FROM "FUEL_CB_COALCONTRACT" c '
+            'JOIN "FUEL_CMCS_SUPPLIER" s ON s."ID"=c."SUPPLIERID" '
+            "WHERE c.\"ID\" LIKE 'DEMO-%' AND s.\"NAME\"=b.\"SUPPLIERNAME\" "
+            'AND b."FACTARRIVEDATE" BETWEEN c."STARTEXECUTEDATE" AND c."ENDEXECUTEDATE")'
+        ))
+    print(f"[contract] 批次->合同回填 {linked.rowcount} 条")
 
     # ---------- 2. 采样 / 制样 / 明细 ----------
     samplings, sampling_detail, makes, make_detail = [], [], [], []
     for i in range(1, 241):
         sid = f"DEMO-SP-{i:03d}"
         batch = batches[(i - 1) % len(batches)]
-        when = dt.datetime(2026, 6, 1) + dt.timedelta(hours=7 * i)
+        arrived = batch[2] or dt.datetime(2026, 6, 1)
+        when = arrived + dt.timedelta(hours=2, minutes=(i * 7) % 60)
         samplings.append({
             "ID": sid, "CREATIONTIME": when, "ORGANIZATIONCODE": "00001", "ISDELETED": False,
             "INFACTORYBATCHID": batch[0], "SAMPLINGTYPE": "机械采样",
@@ -358,7 +441,7 @@ async def seed_business(conn) -> None:
             "COALCOST": D(54_000_000), "COALSTOCK": D(25_000 + m * 800),
             "PLANCOALSTOCK": D(26_000 + m * 800), "WFSTATUS": 1, "WFNAME": "已审批",
         })
-        for j in range(3):
+        for j in range(5):
             pmd.append({
                 "ID": f"DEMO-PMD-{m:02d}-{j + 1}", "CREATIONTIME": dt.datetime(2026, m, 1),
                 "ISDELETED": False, "ORGANIZATIONCODE": "00001",
@@ -517,6 +600,10 @@ async def main() -> None:
 
     create_app()
     engine, ds_id = await _engine()
+    # 新数据源必须先同步 schema（平台按数据源缓存表结构），否则慢路径拿不到表结构
+    from app.plugin.module_ai.query import datasource_core as dc
+
+    print(f"[schema] 同步 {ds_id}: {await dc.sync_datasource_schema(ds_id)}")
     await clone_query_meta(ds_id)
     await seed_extra_metrics(ds_id)
     async with engine.connect() as conn:

@@ -233,14 +233,19 @@ class RoutingOps:
         if metric:
             q_low = question.lower()
             hit_terms = [t for t in terms if t.get("term") and str(t["term"]).lower() in q_low]
+            # 多术语命中时，**更长/更具体**的术语优先：
+            # 「硫分化验」应改判到新增化验指标，而不是被更短的「硫分」拉回煤质信息表。
+            hit_terms.sort(key=lambda t: len(str(t.get("term") or "")), reverse=True)
             bound = {t.get("metric_key") for t in hit_terms if t.get("metric_key")}
             # 术语已**明确绑定**到这个指标：说明用户说的就是它，后面的「来源表共同词」
             # 守卫不该再拦（否则「热值是多少」会被判成"来源表与问句无共同词"→ 慢路径，
             # 实测模型还会返回空 SQL，答案直接失败）。
             via_term = metric["key"] in bound
             unbound = [t["term"] for t in hit_terms if not t.get("metric_key")]
-            if bound and metric["key"] not in bound and len(bound) == 1:
-                alt = next((m for m in metrics if m["key"] in bound and m.get("enabled")), None)
+            top = next((t for t in hit_terms if t.get("metric_key")), None)
+            top_key = top.get("metric_key") if top else None
+            if top_key and metric["key"] != top_key:
+                alt = next((m for m in metrics if m["key"] == top_key and m.get("enabled")), None)
                 # 问句明确问「条数/记录数」且当前就是行数指标时不要改判：
                 # 「每日耗用量及存煤量条数」里的「存煤量」会把 370 条改判成存煤吨数。
                 if alt and not _svc._prefers_rowcount(question, metric):

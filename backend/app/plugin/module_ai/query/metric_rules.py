@@ -97,7 +97,8 @@ def is_rowcount_metric(metric: dict) -> bool:
     """指标是否在数「行数」（而不是求和/求平均）。"""
     name = str(metric.get("name") or "").strip()
     key = str(metric.get("key") or "").strip().lower()
-    return bool(ROWCOUNT_NAME_RE.search(name)) or key.startswith("count_")
+    return (bool(ROWCOUNT_NAME_RE.search(name)) or key.startswith("count_")
+            or key.endswith("_count"))
 
 
 def prefers_rowcount(question: str, metric: dict) -> bool:
