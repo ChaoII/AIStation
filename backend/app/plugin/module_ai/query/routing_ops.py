@@ -234,6 +234,10 @@ class RoutingOps:
             q_low = question.lower()
             hit_terms = [t for t in terms if t.get("term") and str(t["term"]).lower() in q_low]
             bound = {t.get("metric_key") for t in hit_terms if t.get("metric_key")}
+            # 术语已**明确绑定**到这个指标：说明用户说的就是它，后面的「来源表共同词」
+            # 守卫不该再拦（否则「热值是多少」会被判成"来源表与问句无共同词"→ 慢路径，
+            # 实测模型还会返回空 SQL，答案直接失败）。
+            via_term = metric["key"] in bound
             unbound = [t["term"] for t in hit_terms if not t.get("metric_key")]
             if bound and metric["key"] not in bound and len(bound) == 1:
                 alt = next((m for m in metrics if m["key"] in bound and m.get("enabled")), None)
@@ -245,6 +249,9 @@ class RoutingOps:
                 log.warning("[query] 问句用了未绑定指标的术语 {}，跳过快路径（question={}）",
                             unbound, question[:40])
                 metric = None
+            if metric:
+                # 改判后要重算：via_term 必须以**最终**指标为准
+                via_term = metric["key"] in bound
         # 准入检查（白名单）：模板必须能解释问句里的时间范围与聚合口径，
         # 解释不了就让位 NL2SQL —— 宁可变慢，不要"自信地答错"。
         if metric:
@@ -262,7 +269,7 @@ class RoutingOps:
                 mname = (metric.get("name") or "").strip()
                 # 本体对象名命中 = 已确认"说的是这个实体"，不必再用列标签二元组兜底
                 oname = str((objects.get(str(metric.get("object_code") or "")) or {}).get("name") or "")
-                if mt and not (mname and mname in question) and not (len(oname) >= 2 and oname in question):
+                if mt and not via_term and not (mname and mname in question) and not (len(oname) >= 2 and oname in question):
                     sch = await cls._ds_schema_map(datasource)
                     hint = " ".join(sch.get(mt) or [])
                     shared = _svc._bigrams(question) & _svc._bigrams(hint)

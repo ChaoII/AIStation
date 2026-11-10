@@ -79,7 +79,7 @@ ORDER_WORD_RE = re.compile(r"(排序|升序|降序|从大到小|从小到大|按
 
 TIME_QUALIFIER_RE = re.compile(
     r"(最近|近\s*\d|近一|过去|本(月|周|年|季度)|这个月|这周|当月|今年|去年"
-    r"|上(月|周|年)|今天|今日|昨天|昨日|\d{4}\s*年|\d+\s*(天|日|周|个?月|年))"
+    r"|上(个?月|个?周|个?年|个?季度)|今天|今日|昨天|昨日|\d{4}\s*年|\d+\s*(天|日|周|个?月|年))"
 )
 
 
@@ -209,7 +209,10 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
                     break
         for t in terms:
             if t.get("metric_key") == m["key"] and t.get("term") and t["term"].lower() in q:
-                word += 3
+                # 术语是**人工绑定**的映射：用户说「热值」就是指 avg_rz，
+                # 权重必须高到能单独过阈值（+3 时低于 MIN_METRIC_SCORE=4，
+                # 实测「热值是多少」永远匹配不到 → 走慢路径且模型返回空 SQL）。
+                word += 6
         for nm, mk in concept_bind:
             if mk == m["key"] and nm in q:
                 word += 3
@@ -220,7 +223,9 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
         if frame and mtime == frame:
             time_bonus = 4
         elif frame and mtime and mtime != frame:
-            time_bonus = -2
+            # 时间语境是**硬约束**：问「这个月」时，"今日告警"这类指标不该参与竞争。
+            # 以前只 -2，术语权重一提高它就会反超（实测 alert_count_today 抢走本月题）。
+            continue
         # 合格门槛：词证据够强，或时间维度正好对上
         if word < MIN_METRIC_SCORE and not (frame and mtime == frame):
             continue

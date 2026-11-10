@@ -717,7 +717,11 @@ async def ontology_catalog_text(max_objects: int = 20) -> str:
 
         objs = await ont.list_objects()
         lines: list[str] = []
-        for o in objs[:max_objects]:
+        # ⚠️ 先过滤「确实有函数/动作」再截断：以前是 objs[:max_objects] 后再过滤，
+        # 前几个对象（系统库/本体）恰好没能力时整段返回空 —— Agent 会以为"没有本体能力"。
+        for o in objs:
+            if len(lines) >= max_objects:
+                break
             if not _visible(o):
                 continue
             funcs = [f for f in await ont.list_functions(o["code"]) if _visible(f)]

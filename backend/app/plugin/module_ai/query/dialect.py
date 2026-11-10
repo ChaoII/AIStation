@@ -85,6 +85,54 @@ def is_templated_type(datasource_type: str) -> bool:
     return (datasource_type or "").strip().lower() in _TEMPLATED_TYPES
 
 
+def time_rules(dialect: dict | None) -> str:
+    """时间口径的**确定性**写法（随方言变化）。
+
+    为什么必须写死在提示词里：模型对「上个月」极易写成
+    ``>= date_trunc('month', CURRENT_DATE)``（那是**本月**），
+    数据一旦跨月就会答错且不报错（实测 2026-11 问「上个月」返回 0 行）。
+    """
+    name = (dialect or DIALECTS[_DEFAULT]).get("name") or "PostgreSQL"
+    if name == "MySQL":
+        body = (
+            "- 今天：>= CURDATE()\n"
+            "- 本周：>= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)\n"
+            "- 本月：>= DATE_FORMAT(CURDATE(), '%Y-%m-01')\n"
+            "- 上个月：>= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')"
+            " AND < DATE_FORMAT(CURDATE(), '%Y-%m-01')\n"
+            "- 今年：>= DATE_FORMAT(CURDATE(), '%Y-01-01')\n"
+            "- 去年：>= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 YEAR), '%Y-01-01')"
+            " AND < DATE_FORMAT(CURDATE(), '%Y-01-01')\n"
+            "- 最近N天：>= DATE_SUB(CURDATE(), INTERVAL N DAY)\n"
+        )
+    elif name == "SQLite":
+        body = (
+            "- 今天：>= date('now')\n"
+            "- 本月：>= date('now','start of month')\n"
+            "- 上个月：>= date('now','-1 month','start of month')"
+            " AND < date('now','start of month')\n"
+            "- 今年：>= date('now','start of year')\n"
+            "- 去年：>= date('now','-1 year','start of year')"
+            " AND < date('now','start of year')\n"
+            "- 最近N天：>= date('now','-N day')\n"
+        )
+    else:
+        body = (
+            "- 今天：>= CURRENT_DATE\n"
+            "- 本周：>= date_trunc('week', CURRENT_DATE)\n"
+            "- 本月：>= date_trunc('month', CURRENT_DATE)\n"
+            "- 上个月：>= date_trunc('month', CURRENT_DATE - INTERVAL '1 month')"
+            " AND < date_trunc('month', CURRENT_DATE)\n"
+            "- 今年：>= date_trunc('year', CURRENT_DATE)\n"
+            "- 去年：>= date_trunc('year', CURRENT_DATE - INTERVAL '1 year')"
+            " AND < date_trunc('year', CURRENT_DATE)\n"
+            "- 最近N天：>= CURRENT_DATE - N\n"
+        )
+    return (
+        "时间口径（按此逐字使用，不要自创；「上个月」**不是** >= 本月1日）：\n" + body
+    )
+
+
 def build_system_prompt(dialect: dict | None, rules: list[str], schema_ctx: str,
                         extra: str = "") -> str:
     """组装慢路径的 system_prompt（按方言参数化）。
@@ -106,7 +154,7 @@ def build_system_prompt(dialect: dict | None, rules: list[str], schema_ctx: str,
         header
         + "必须写 FROM 子句并只使用给定的表/字段。只返回一条 SQL，不要多余解释，"
         + "不要使用 DELETE/UPDATE/INSERT/DDL。\n注意："
-        + "".join(rules) + "\n" + (extra or "") + (schema_ctx or "")
+        + "".join(rules) + time_rules(d) + "\n" + (extra or "") + (schema_ctx or "")
     )
 
 
@@ -119,5 +167,5 @@ def templated_note(datasource_type: str) -> str:
 
 __all__ = [
     "DIALECTS", "resolve_dialect", "dialect_name", "dialect_syntax_sentence",
-    "is_templated_type", "build_system_prompt", "templated_note",
+    "is_templated_type", "build_system_prompt", "templated_note", "time_rules",
 ]
