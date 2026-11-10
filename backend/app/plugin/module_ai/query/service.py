@@ -94,6 +94,7 @@ from .metric_rules import metric_name_core as _metric_name_core  # noqa: F401
 from .metric_rules import metric_prompt_hint as _metric_prompt_hint  # noqa: F401
 from .metric_rules import needs_custom_sql as _needs_custom_sql  # noqa: F401
 from .metric_rules import pick_fewshots, score_fewshot  # noqa: F401
+from .metric_rules import prefers_rowcount as _prefers_rowcount  # noqa: F401
 from .metric_rules import prioritize_metric_object as _prioritize_metric_object  # noqa: F401
 from .metric_rules import wants_grouping as _wants_grouping  # noqa: F401
 from .metrics_ops import MetricsOps

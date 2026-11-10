@@ -241,7 +241,9 @@ class RoutingOps:
             unbound = [t["term"] for t in hit_terms if not t.get("metric_key")]
             if bound and metric["key"] not in bound and len(bound) == 1:
                 alt = next((m for m in metrics if m["key"] in bound and m.get("enabled")), None)
-                if alt:
+                # 问句明确问「条数/记录数」且当前就是行数指标时不要改判：
+                # 「每日耗用量及存煤量条数」里的「存煤量」会把 370 条改判成存煤吨数。
+                if alt and not _svc._prefers_rowcount(question, metric):
                     log.warning("[query] 术语明确指向另一指标，改判：{} → {}（question={}）",
                                 metric["key"], alt["key"], question[:40])
                     metric = alt

@@ -146,6 +146,18 @@ METRICS = [
         "agg": "count",
         "unit": "条",
     },
+    # 存煤量：**不要**用 view_aikb_fuelstorageinfo——它按批次视图 JOIN，
+    # 而该视图有 29 个重复 id（267 行），会把 QTYHAVE 重复累加
+    # （视图合计 313,740 vs 源表真实 234,938）。直接汇总进煤流水的剩余量。
+    {
+        "key": "coal_storage_qty",
+        "name": "煤场存煤量",
+        "description": "按进煤流水剩余量（FUEL_STG_ALLINMIDDLE.QTYHAVE）汇总的当前存煤量（吨）",
+        "sql_template": 'SELECT COALESCE(SUM("QTYHAVE"), 0) AS "存煤量" '
+                        'FROM "FUEL_STG_ALLINMIDDLE" WHERE "ISDELETED" = false AND "QTYHAVE" > 0',
+        "agg": "sum",
+        "unit": "吨",
+    },
 ]
 
 # 术语 → 指标的绑定（人工口径映射，权重 6，能单独过阈值）
@@ -157,6 +169,23 @@ TERMS = [
     # 绑定「引用」后 _select_metric 会按术语改判到组件引用记录数（术语命中即改判，
     # 不依赖分数反超）。注意不能写「引用组件」——问句里中间夹了「了多少次」，不是子串。
     ("引用", "CMMS_CANVASCOMPONENT_count_ID"),
+    # 存煤量口径：源表剩余量汇总（视图有重复计数，见 METRICS 注释）
+    ("存煤量", "coal_storage_qty"),
+    ("库存量", "coal_storage_qty"),
+]
+
+# few-shot：慢路径易选错表的「先分组再取值」题（模型会误用日报表的单列 MAX）
+FEWSHOTS = [
+    (
+        "进煤流水里单日进煤量最多是多少？",
+        'SELECT ROUND(CAST(MAX(d) AS DECIMAL), 2) AS 单日最大进煤量\n'
+        'FROM (\n'
+        '  SELECT SUM(CAST("QTYIN" AS DECIMAL)) AS d\n'
+        '  FROM "FUEL_STG_ALLINMIDDLE"\n'
+        '  WHERE "FUEL_STG_ALLINMIDDLE"."ISDELETED" = FALSE\n'
+        '  GROUP BY DATE("RECORDDATE")\n'
+        ') AS x',
+    ),
 ]
 
 # 数据集语义对齐：expected_metric 里混着中文标签与指标键，统一改写成指标键。
@@ -417,6 +446,26 @@ async def align_metrics() -> None:
             "UPDATE ai_query_fewshot SET sql='SELECT SUM(\"RAILLOST\") AS 运损合计 "
             "FROM \"FUEL_CMCS_INFACTORYBATCH\"' WHERE question LIKE '%运损%' AND datasource='ds:4'"
         ))
+        # 同题示例会被 pick_fewshots 的「防泄题」规则直接丢弃，清掉旧版本
+        await db.execute(text(
+            "DELETE FROM ai_query_fewshot WHERE datasource='ds:4' "
+            "AND question='煤场进煤量的单日最大值是多少？'"
+        ))
+        for q, sql in FEWSHOTS:
+            found = (await db.execute(text(
+                "SELECT 1 FROM ai_query_fewshot WHERE datasource='ds:4' AND question=:q AND is_deleted=false"
+            ), {"q": q})).first()
+            if found:
+                await db.execute(text(
+                    "UPDATE ai_query_fewshot SET sql=:s, enabled=true "
+                    "WHERE datasource='ds:4' AND question=:q"
+                ), {"s": sql, "q": q})
+            else:
+                await db.execute(text(
+                    "INSERT INTO ai_query_fewshot(datasource,question,sql,enabled,is_deleted,"
+                    "uuid,status,created_time,updated_time) "
+                    "VALUES ('ds:4',:q,:s,true,false,gen_random_uuid(),'0',now(),now())"
+                ), {"q": q, "s": sql})
     print("[metrics] aligned")
 
 
@@ -478,7 +527,10 @@ async def verify() -> None:
               "组态画面一共有多少个", "人脸识别人员信息表里一共有多少人员",
               "小程序版本管理表中共有多少条版本记录",
               "组态画面中一共引用了多少次组件",
-              "人脸识别人员信息中男性有多少人"):
+              "人脸识别人员信息中男性有多少人",
+              "当前煤场的存煤量是多少",
+              "每日耗用量及存煤量条数是多少",
+              "煤场进煤量的单日最大值是多少"):
         ans = await QS.ask(q, auth, None, "ds:4")
         print(f"[ask] {q} | path={ans.get('path')} | rows={(ans.get('rows') or [])[:1]}")
 

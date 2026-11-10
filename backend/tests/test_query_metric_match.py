@@ -77,6 +77,31 @@ def test_count_question_prefers_count_metric_over_avg():
         assert got and got["key"] == "contract_count", f"{q} 实际: {got and got['key']}"
 
 
+def test_physical_quantity_skips_rowcount_metric():
+    """「存煤量是多少」问的是吨数，不能被「…条数」指标答成行数（实测返回 370）。"""
+    rowcount = _m("count_fuel_report_dayinoutstorage", "每日耗用量及存煤量条数",
+                  "每日耗用量及存煤量（FUEL_REPORT_DAYINOUTSTORAGE）的记录条数", agg="count")
+    storage = _m("coal_storage_qty", "煤场存煤量",
+                 "按进煤流水剩余量汇总的当前存煤量（吨）", agg="sum")
+    terms = [{"term": "存煤量", "metric_key": "coal_storage_qty"}]
+    got = _match_metric("当前煤场的存煤量是多少", [rowcount, storage], terms)
+    assert got and got["key"] == "coal_storage_qty", f"实际: {got and got['key']}"
+    # 没有正确的存煤指标时，也不该退化成行数
+    assert _match_metric("当前煤场的存煤量是多少", [rowcount], []) is None
+
+
+def test_explicit_rowcount_question_still_uses_count_metric():
+    """用户明确问「条数」时，行数指标仍然是对的。"""
+    rowcount = _m("count_fuel_report_dayinoutstorage", "每日耗用量及存煤量条数",
+                  "每日耗用量及存煤量（FUEL_REPORT_DAYINOUTSTORAGE）的记录条数", agg="count")
+    got = _match_metric("每日耗用量及存煤量条数是多少", [rowcount], [])
+    assert got and got["key"] == "count_fuel_report_dayinoutstorage"
+    # 术语「存煤量」命中也不许把它改判走
+    from app.plugin.module_ai.query.metric_rules import prefers_rowcount
+    assert prefers_rowcount("每日耗用量及存煤量条数是多少", rowcount) is True
+    assert prefers_rowcount("当前煤场的存煤量是多少", rowcount) is False
+
+
 def test_term_only_question_matches_metric():
     """问句只有术语（「热值是多少」）也要能选中指标。
 

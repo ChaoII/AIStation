@@ -83,6 +83,31 @@ COUNT_INTENT_RE = re.compile(
 NON_COUNT_AGG = {"avg", "max", "min", "ratio"}
 NON_COUNT_NAME_RE = re.compile(r"^(平均|最大|最小|最高|最低)")
 
+# 「物理量诉求」：问存煤量/总量/合计/吨数/金额时，**行数类指标**（条数/记录数/计数）
+# 不可能答对。实测：「当前煤场的存煤量是多少」被「每日耗用量及存煤量条数」抢答，
+# 返回 370（表行数）而不是吨数。
+PHYSICAL_QTY_RE = re.compile(
+    r"(存煤|库存|总量|合计|总和|吨数|多少吨|多少方|大卡|金额|余额|耗用|发热量|硫分|灰分|水分)")
+# 问句明确问「条数/记录数」时，行数指标仍然有效（是用户要的）
+ROWCOUNT_ASK_RE = re.compile(r"(条数|记录数|笔数|多少条|多少笔)")
+ROWCOUNT_NAME_RE = re.compile(r"(条数|记录数|笔数)$")
+
+
+def is_rowcount_metric(metric: dict) -> bool:
+    """指标是否在数「行数」（而不是求和/求平均）。"""
+    name = str(metric.get("name") or "").strip()
+    key = str(metric.get("key") or "").strip().lower()
+    return bool(ROWCOUNT_NAME_RE.search(name)) or key.startswith("count_")
+
+
+def prefers_rowcount(question: str, metric: dict) -> bool:
+    """问句明确问「条数/记录数」，且当前指标就是在数行数 → 术语不应把它改判走。
+
+    实测：「每日耗用量及存煤量**条数**是多少」里有「存煤量」，会被术语改判到
+    「煤场存煤量」（吨），把 370 条答成 23 万吨。
+    """
+    return bool(ROWCOUNT_ASK_RE.search(question or "")) and is_rowcount_metric(metric)
+
 
 ORDER_WORD_RE = re.compile(r"(排序|升序|降序|从大到小|从小到大|按.{0,6}排|前\s*\d+\s*(名|条|个)|排名)")
 
@@ -175,6 +200,8 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
     q_grams = bigrams(question)
     frame = detect_time_frame(question)
     count_intent = bool(COUNT_INTENT_RE.search(question))
+    physical_qty = bool(PHYSICAL_QTY_RE.search(question))
+    rowcount_asked = bool(ROWCOUNT_ASK_RE.search(question))
     # 业务概念（含同义词）→ 指标：与术语同等参与快路径匹配，闭合「概念→指标」
     concept_bind: list[tuple[str, str]] = []
     for c in concepts or []:
@@ -194,6 +221,9 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
         name = (m.get("name") or "").lower()
         key = (m.get("key") or "").lower()
         core = metric_name_core(m.get("name")).lower()
+        # 问的是物理量（存煤量/总量/金额…）时，数行数的指标不参与竞争。
+        if physical_qty and not rowcount_asked and is_rowcount_metric(m):
+            continue
         # 计数意图下，平均值/极值类指标不参与竞争（除非问句明确说了完整口径）。
         # 「燃煤合同一共有多少份」与「平均合同单价」都含「合同」，不拦就会答成平均单价。
         if count_intent and (
