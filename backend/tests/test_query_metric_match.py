@@ -53,3 +53,21 @@ def test_time_frame_month_prefers_month_metric():
 def test_disabled_metric_never_matches():
     metrics = [_m("avg_contract_price", "平均合同单价", "合同单价平均值", enabled=False)]
     assert _match_metric("平均合同单价是多少？", metrics, []) is None
+
+def test_term_only_question_matches_metric():
+    """问句只有术语（「热值是多少」）也要能选中指标。
+
+    实测 2026-11-10：术语绑定只 +3 分，低于 MIN_METRIC_SCORE=4 → 匹配不到，
+    最终走慢路径且模型返回空 SQL（答案直接失败）。术语是人工绑定，权重按 +6 算。
+    """
+    metrics = [
+        {"key": "avg_rz", "name": "平均收到基低位发热量", "description": "煤质信息中收到基低位发热量的平均值",
+         "enabled": True, "dimensions": [], "sql_template": 'SELECT AVG("RZ") FROM t', "agg": "avg"},
+        {"key": "avg_lf", "name": "平均干基全硫", "description": "煤质信息中干基全硫的平均值",
+         "enabled": True, "dimensions": [], "sql_template": 'SELECT AVG("LF") FROM t', "agg": "avg"},
+    ]
+    terms = [{"term": "热值", "metric_key": "avg_rz"}, {"term": "硫分", "metric_key": "avg_lf"}]
+    got = _match_metric("热值是多少", metrics, terms)
+    assert got and got["key"] == "avg_rz", f"实际: {got and got['key']}"
+    got2 = _match_metric("硫分是多少", metrics, terms)
+    assert got2 and got2["key"] == "avg_lf", f"实际: {got2 and got2['key']}"
