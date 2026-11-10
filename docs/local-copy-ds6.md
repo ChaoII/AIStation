@@ -53,8 +53,12 @@ docker exec -e PGPASSWORD=ServBay.dev aistation-pg-rag \
 
 ```bash
 cd backend
-uv run python scripts/seed_local_copy_business_data.py
+# 以「今天」为锚重建完整链路（合同→批次→采样→制样→化验→结算），并同步指标/术语/示例
+uv run python scripts/seed_realistic_business_data.py
 ```
+
+> 旧脚本 `scripts/seed_local_copy_business_data.py` 仍保留：提供指标/术语/示例克隆与
+> ds:6 专用指标，被新脚本复用（不单独执行数据部分）。
 
 脚本幂等：先按 `DEMO-` 前缀删除上一版演示行（含批次→合同回填的清空），再重新写入，
 因此可以反复执行修正口径。只写 ds:6。补数内容：

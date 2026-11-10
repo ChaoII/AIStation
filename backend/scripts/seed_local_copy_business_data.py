@@ -68,9 +68,25 @@ EXTRA_METRICS = [
     ("plan_month_detail_count", "月计划明细条数", "月计划明细（FUEL_CMCS_PLANMONTHDETAIL）条数",
      'SELECT COUNT(*) AS "月计划明细条数" FROM "FUEL_CMCS_PLANMONTHDETAIL" '
      'WHERE "ISDELETED" = false', "count", "条"),
+    # 这两个指标在 ds:4 是「本体绑定型」（走对象实例，绑的是 ds:4），
+    # 副本新增数据后实例数不会变 → 改为直接统计 ds:6 的表。
+    ("coal_assay_count", "化验单数", "化验单数（直接统计 ds:6 化验表）",
+     'SELECT COUNT(*) AS "化验单数" FROM "FUEL_CMCS_ASSAY"', "count", "条"),
+    ("coal_batch_count", "入厂批次数", "入厂批次（直接统计 ds:6 批次表）",
+     'SELECT COUNT(*) AS "入厂批次数" FROM "FUEL_CMCS_INFACTORYBATCH"', "count", "批"),
+    ("total_settlement_qty", "结算总量", "燃煤结算主表中的结算数量合计（空月返回 0）",
+     'SELECT COALESCE(SUM("BALANCEQTY"), 0) AS "结算总量" FROM "FUEL_CB_COALBALANCE" '
+     'WHERE "ISDELETED" = false', "sum", "吨"),
     ("assay_carbon_avg", "化验平均碳含量", "元素化验（FUEL_CMCS_ELEMENTASSAY）CAD 平均值",
      'SELECT ROUND(AVG("CAD")::numeric, 2) AS "化验平均碳含量" '
      'FROM "FUEL_CMCS_ELEMENTASSAY" WHERE "ISDELETED" = false', "avg", "%"),
+]
+
+# ds:6 专用 few-shot：模型偶发把「备注不为空」写成只判 IS NOT NULL
+D6_FEWSHOTS = [
+    ("化验单里备注非空的有多少条？",
+     "SELECT COUNT(*) AS 备注非空化验单数 FROM \"FUEL_CMCS_ASSAY\" "
+     "WHERE \"REMARK\" IS NOT NULL AND \"REMARK\" <> ''"),
 ]
 
 # ds:6 专用术语：把「化验口径」与「明细条数」绑到对应指标，避免被老指标抢答
@@ -177,6 +193,11 @@ async def seed_extra_metrics(ds_id: int) -> None:
                     "UPDATE ai_query_metrics SET name=:n, description=:ds, sql_template=:s, agg=:a, unit=:u "
                     "WHERE datasource=:d AND key=:k"
                 ), {"n": name, "ds": desc, "s": sql, "a": agg, "u": unit, "d": target, "k": key})
+                if key in ("coal_assay_count", "coal_batch_count"):
+                    await db.execute(text(
+                        "UPDATE ai_query_metrics SET object_code='', property_code='', agg_fn='' "
+                        "WHERE datasource=:d AND key=:k"
+                    ), {"d": target, "k": key})
             else:
                 await db.execute(text(
                     "INSERT INTO ai_query_metrics(datasource,key,name,description,sql_template,params,"
@@ -198,7 +219,18 @@ async def seed_extra_metrics(ds_id: int) -> None:
                     "uuid,status,created_time,updated_time) "
                     "VALUES (:d,:t,:k,'term',false,gen_random_uuid(),'0',now(),now())"
                 ), {"d": target, "t": term, "k": key})
-    print(f"[meta] 副本专用指标 {len(EXTRA_METRICS)} 个、术语 {len(EXTRA_TERMS)} 个已就绪")
+    async with async_db_session.begin() as db:
+        for q, sql in D6_FEWSHOTS:
+            exists = (await db.execute(text(
+                "SELECT 1 FROM ai_query_fewshot WHERE datasource=:d AND question=:q AND is_deleted=false"
+            ), {"d": target, "q": q})).first()
+            if not exists:
+                await db.execute(text(
+                    "INSERT INTO ai_query_fewshot(datasource,question,sql,enabled,is_deleted,"
+                    "uuid,status,created_time,updated_time) "
+                    "VALUES (:d,:q,:s,true,false,gen_random_uuid(),'0',now(),now())"
+                ), {"d": target, "q": q, "s": sql})
+    print(f"[meta] 副本专用指标 {len(EXTRA_METRICS)} 个、术语 {len(EXTRA_TERMS)} 个、示例 {len(D6_FEWSHOTS)} 条已就绪")
 
 
 async def reset_demo(conn) -> None:
