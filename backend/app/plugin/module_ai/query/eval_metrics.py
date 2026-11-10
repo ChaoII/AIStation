@@ -83,14 +83,19 @@ def summarize(results: list[dict], k: int = 8) -> dict:
     if not n:
         return {"total": 0, "all_total": len(rows_all), "degenerate_n": degenerate_n,
                 "data_accuracy": 0.0, "semantic_accuracy": 0.0,
-                "fast_rate": 0.0, "object_rate": 0.0, "recall_at_k": 0.0, "avg_ms": 0.0,
-                "p50_ms": 0.0, "p95_ms": 0.0, "error_rate": 0.0,
+                "fast_rate": 0.0, "object_rate": 0.0, "recall_at_k": 0.0,
+                "recall_at_k_retrieval": 0.0, "retrieval_total": 0,
+                "avg_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0, "error_rate": 0.0,
                 "metric_total": 0, "metric_accuracy": 0.0,
                 "generation_total": 0, "generation_accuracy": 0.0}
     ms = [int(r.get("took_ms") or 0) for r in rows]
     with_metric = [r for r in rows if r.get("expected_metric")]
     sem_hit = sum(1 for r in with_metric if r.get("metric_key") == r.get("expected_metric"))
     recalls = [float(r.get("recall") or 0.0) for r in rows]
+    # 召回只看**真的做了检索**的行：快路径直接用指标模板出 SQL，不走向量检索，
+    # 把它算 0 分会让「快路径变多」看起来像「召回变差」（实测 0.719 → 0.586）。
+    retrieval_rows = [r for r in rows if (r.get("path") or "") != "fast"]
+    retrieval_recalls = [float(r.get("recall") or 0.0) for r in retrieval_rows]
     # 快路径能答的题（指标枚举） vs 只能靠模型生成 SQL 的题 —— **分开报**，
     # 否则"指标命中率"会被误当成"NL2SQL 生成能力"。
     metric_rows = [r for r in rows if r.get("metric_eligible")]
@@ -105,6 +110,10 @@ def summarize(results: list[dict], k: int = 8) -> dict:
         # 对象查询（语义执行层）命中率：与 fast_rate 对称，便于按 path 观察三条路径的分布
         "object_rate": _pct(sum(1 for r in rows if r.get("path") == "object"), n),
         "recall_at_k": round(sum(recalls) / n, 4),
+        # 真实检索质量：只统计走检索的路径（slow/object），快路径不计入分母
+        "recall_at_k_retrieval": (round(sum(retrieval_recalls) / len(retrieval_rows), 4)
+                                  if retrieval_rows else 0.0),
+        "retrieval_total": len(retrieval_rows),
         "avg_ms": round(sum(ms) / n, 1),
         "p50_ms": _pctile(ms, 0.5),
         "p95_ms": _pctile(ms, 0.95),

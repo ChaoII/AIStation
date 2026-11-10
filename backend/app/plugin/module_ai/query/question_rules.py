@@ -60,10 +60,20 @@ LISTING_RE = re.compile(
     r"(哪些|列出|列表|清单|明细|罗列|有哪些|分别是什么|各叫什么|的名称|的名字|叫啥|叫什么名字)"
 )
 
+# 「计数意图」优先：问的是一条/一个数时，即使带「明细」这类词也不是列举。
+# 实测：「原煤仓入煤明细条数是多少」被「明细」判成列举，指标已匹配上却被踢去慢路径。
+COUNT_OVERRIDE_RE = re.compile(
+    r"(条数|数量|总数|总条数|多少个|多少条|多少份|多少张|多少人|多少家|合计|总和|总量)")
+# 真正的列举动词：出现这些词时仍按列举处理（哪怕句子里也有「数量」）。
+LISTING_VERB_RE = re.compile(r"(列出|列表|清单|罗列|哪些|分别|名称|叫啥|叫什么)")
+
 
 def is_listing_question(question: str) -> bool:
     """列举类问题（哪些/列出/名称等）不走指标模板，强制慢路径 NL2SQL。"""
-    return bool(LISTING_RE.search(question or ""))
+    q = question or ""
+    if COUNT_OVERRIDE_RE.search(q) and not LISTING_VERB_RE.search(q):
+        return False
+    return bool(LISTING_RE.search(q))
 
 
 ALL_LIST_HINTS = ("每个", "各", "所有", "全部", "分别", "每类", "每种", "列出",

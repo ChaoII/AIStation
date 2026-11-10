@@ -89,6 +89,20 @@ def test_summarize_and_group_by_dimension():
     assert summarize([])["total"] == 0
 
 
+def test_recall_excludes_fast_path():
+    """快路径不走向量检索，不该被算 0 分拖低召回。"""
+    from app.plugin.module_ai.query.eval_metrics import summarize
+
+    results = [
+        {"gold_match": True, "path": "fast", "recall": 0.0, "took_ms": 100},
+        {"gold_match": True, "path": "slow", "recall": 0.5, "took_ms": 100},
+    ]
+    s = summarize(results)
+    assert s["recall_at_k"] == 0.25          # 旧口径：快路径按 0 算
+    assert s["recall_at_k_retrieval"] == 0.5  # 新口径：只看检索路径
+    assert s["retrieval_total"] == 1
+
+
 # ===========================================================================
 # 批次3：LLM 出题解析 + 金标校验入库
 # ===========================================================================

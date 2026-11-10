@@ -14,6 +14,8 @@
    - 结算总量、平均合同单价 → 结算表；
    - 验收量 → 入厂批次 CHECKQTY（不再冒充结算量）；
    - 新增「合同数量」指标（此前合同数题被平均合同单价抢答）；
+   - 新增系统域（组态/人脸/小程序）6 个计数指标，并把数据集里混用的中文标签
+     改写成指标键（不改题目与 gold）。
 4. 给燃料对象加 2 个本体函数 + 1 个动作（动作只允许改 REMARK）。
 
 幂等：数据按 DEMO- 前缀 / 主键判重，指标按 key upsert，术语/用例按条件更新。
@@ -93,6 +95,57 @@ METRICS = [
         "agg": "count",
         "unit": "份",
     },
+    # 系统域（组态/人脸/小程序）计数指标：这些表都在 ds:4，此前一个指标都没有，
+    # 「组态画面一共有多少个」这类题只能走慢路径（实测 p50 约 8.8s）。
+    {
+        "key": "CMMS_CANVAS_count_ID",
+        "name": "组态画面总数",
+        "description": "组态画面（CMMS_CANVAS）的记录数量",
+        "sql_template": 'SELECT COUNT(*) AS "组态画面总数" FROM "CMMS_CANVAS" WHERE "ISDELETED" = false',
+        "agg": "count",
+        "unit": "个",
+    },
+    {
+        "key": "CMMS_COMPONENT_count_ID",
+        "name": "组件数量",
+        "description": "组态组件（CMMS_COMPONENT）的记录数量",
+        "sql_template": 'SELECT COUNT(*) AS "组件数量" FROM "CMMS_COMPONENT" WHERE "ISDELETED" = false',
+        "agg": "count",
+        "unit": "个",
+    },
+    {
+        "key": "CMMS_COMPONENTCLASSIFICATION_count_ID",
+        "name": "组件分类总数",
+        "description": "组件分类（CMMS_COMPONENTCLASSIFICATION）的记录数量",
+        "sql_template": 'SELECT COUNT(*) AS "组件分类总数" FROM "CMMS_COMPONENTCLASSIFICATION" '
+                        'WHERE "ISDELETED" = false',
+        "agg": "count",
+        "unit": "个",
+    },
+    {
+        "key": "CMMS_CANVASCOMPONENT_count_ID",
+        "name": "组件引用记录数",
+        "description": "组态画面引用组件（CMMS_CANVASCOMPONENT）的记录数量（该表无 ISDELETED 列）",
+        "sql_template": 'SELECT COUNT(*) AS "组件引用记录数" FROM "CMMS_CANVASCOMPONENT"',
+        "agg": "count",
+        "unit": "条",
+    },
+    {
+        "key": "FR_PERSONNELINFO_count_ID",
+        "name": "人员总数",
+        "description": "人脸识别人员信息（FR_PERSONNELINFO）的记录数量",
+        "sql_template": 'SELECT COUNT(*) AS "人员总数" FROM "FR_PERSONNELINFO" WHERE "ISDELETED" = false',
+        "agg": "count",
+        "unit": "人",
+    },
+    {
+        "key": "CMCS_APPVERSION_count_ID",
+        "name": "小程序版本记录数",
+        "description": "小程序版本管理（CMCS_APPVERSION）的记录数量",
+        "sql_template": 'SELECT COUNT(*) AS "小程序版本记录数" FROM "CMCS_APPVERSION" WHERE "ISDELETED" = false',
+        "agg": "count",
+        "unit": "条",
+    },
 ]
 
 # 术语 → 指标的绑定（人工口径映射，权重 6，能单独过阈值）
@@ -100,7 +153,41 @@ TERMS = [
     ("验收量", "total_check_qty"),
     ("合同记录", "contract_count"),
     ("合同份数", "contract_count"),
+    # 「组态画面中一共引用了多少次组件」里「组态画面」词更重，会把指标抢到画面总数；
+    # 绑定「引用」后 _select_metric 会按术语改判到组件引用记录数（术语命中即改判，
+    # 不依赖分数反超）。注意不能写「引用组件」——问句里中间夹了「了多少次」，不是子串。
+    ("引用", "CMMS_CANVASCOMPONENT_count_ID"),
 ]
+
+# 数据集语义对齐：expected_metric 里混着中文标签与指标键，统一改写成指标键。
+# 只改「单值统计」的题；分组/占比/窗口题（如「统计每个测点类型的测点数量」）保持原样。
+RELABEL = [
+    ("组态画面一共有多少个？", "CMMS_CANVAS_count_ID"),
+    ("当前系统中有多少个组件？", "CMMS_COMPONENT_count_ID"),
+    ("当前系统中有多少个组态画面？", "CMMS_CANVAS_count_ID"),
+    ("人脸识别系统中有多少条人员信息？", "FR_PERSONNELINFO_count_ID"),
+    ("燃煤合同主表中有多少条合同记录？", "contract_count"),
+    ("燃煤合同一共有多少份？", "contract_count"),
+    ("组态监视的测点有多少个？", "CMMS_POINT_count_ID"),
+    ("小程序版本管理中有多少个版本记录？", "CMCS_APPVERSION_count_ID"),
+    ("一共有多少个组态画面？", "CMMS_CANVAS_count_ID"),
+    ("一共有多少个组件？", "CMMS_COMPONENT_count_ID"),
+    ("人员信息表中有多少人？", "FR_PERSONNELINFO_count_ID"),
+    ("化验记录一共有多少条？", "coal_assay_count"),
+    ("总共有多少个组态画面？", "CMMS_CANVAS_count_ID"),
+    ("总共有多少个组件分类？", "CMMS_COMPONENTCLASSIFICATION_count_ID"),
+    ("组态画面中一共引用了多少次组件？", "CMMS_CANVASCOMPONENT_count_ID"),
+    ("咱们一共有多少份燃煤合同？", "contract_count"),
+    ("组态画面总共有多少个？", "CMMS_CANVAS_count_ID"),
+    ("人脸识别人员信息中总共有多少人？", "FR_PERSONNELINFO_count_ID"),
+    ("皮带路线流向一共记录了多少条？", "FUEL_CMCS_BELTLINEFLOW_count_ID"),
+    ("组态画面表中共有多少个组态画面？", "CMMS_CANVAS_count_ID"),
+    ("人脸识别人员信息表中共有多少条人员记录？", "FR_PERSONNELINFO_count_ID"),
+    ("小程序版本管理表中共有多少条版本记录？", "CMCS_APPVERSION_count_ID"),
+    ("人脸识别人员信息表里一共有多少人员？", "FR_PERSONNELINFO_count_ID"),
+    ("化验表里一共有多少条化验记录？", "count_fuel_cmcs_assay"),
+]
+
 
 FUNCS = [
     {
@@ -285,6 +372,17 @@ async def align_metrics() -> None:
                     "uuid,status,created_time,updated_time) "
                     "VALUES ('ds:4',:t,:mk,'term',false,gen_random_uuid(),'0',now(),now())"
                 ), {"t": term, "mk": metric_key})
+        # 清理上一版留下的无效术语（问句里不是子串，永远不会命中）
+        await db.execute(text(
+            "DELETE FROM ai_query_dictionary WHERE datasource='ds:4' "
+            "AND term IN ('引用组件', '组件引用')"
+        ))
+        # 数据集语义对齐：expected_metric 标签 → 指标键（只改单值统计题）
+        for question, metric_key in RELABEL:
+            await db.execute(text(
+                "UPDATE ai_query_testcase SET expected_metric=:mk "
+                "WHERE question=:q AND datasource='ds:4'"
+            ), {"mk": metric_key, "q": question})
         # 评测口径：结算单价统一读结算表；验收量归属入厂验收量指标
         await db.execute(text(
             "UPDATE ai_query_testcase SET "
@@ -375,7 +473,12 @@ async def verify() -> None:
               "上个月各煤种的入库量", "本月各煤种的入库量", "入厂批次数量",
               "燃煤合同一共有多少份", "入厂煤的验收量合计是多少",
               "按矿点统计入厂煤批次数量",
-              "按组织编码统计入厂煤批次的数量，取数量最多的前 3 个"):
+              "按组织编码统计入厂煤批次的数量，取数量最多的前 3 个",
+              "原煤仓入煤明细条数是多少",
+              "组态画面一共有多少个", "人脸识别人员信息表里一共有多少人员",
+              "小程序版本管理表中共有多少条版本记录",
+              "组态画面中一共引用了多少次组件",
+              "人脸识别人员信息中男性有多少人"):
         ans = await QS.ask(q, auth, None, "ds:4")
         print(f"[ask] {q} | path={ans.get('path')} | rows={(ans.get('rows') or [])[:1]}")
 
