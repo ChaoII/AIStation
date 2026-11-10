@@ -54,6 +54,29 @@ def test_disabled_metric_never_matches():
     metrics = [_m("avg_contract_price", "平均合同单价", "合同单价平均值", enabled=False)]
     assert _match_metric("平均合同单价是多少？", metrics, []) is None
 
+
+def test_count_intent_skips_average_metric():
+    """计数意图（多少份/多少条）下，平均值指标不该被抢答。
+
+    实测 2026-11-10：「燃煤合同一共有多少份」与「平均合同单价」都含「合同」，
+    平均单价以 4 分压线命中（名称二元组 3 + 描述 1）→ 快路径答成 539.75，gold 是 COUNT。
+    """
+    metrics = [_m("avg_contract_price", "平均合同单价", "燃煤结算主表中的合同单价平均值", agg="avg")]
+    assert _match_metric("燃煤合同一共有多少份？", metrics, []) is None
+
+
+def test_count_question_prefers_count_metric_over_avg():
+    """有「合同数量」指标时，计数题要选它而不是平均单价。"""
+    metrics = [
+        _m("avg_contract_price", "平均合同单价", "燃煤结算主表中的合同单价平均值", agg="avg"),
+        _m("contract_count", "合同数量", "燃煤采购合同主表中的合同记录数", agg="count",
+           sql_template='SELECT COUNT(*) FROM "FUEL_CB_COALCONTRACT"'),
+    ]
+    for q in ("燃煤合同一共有多少份？", "咱们一共有多少份燃煤合同？"):
+        got = _match_metric(q, metrics, [])
+        assert got and got["key"] == "contract_count", f"{q} 实际: {got and got['key']}"
+
+
 def test_term_only_question_matches_metric():
     """问句只有术语（「热值是多少」）也要能选中指标。
 

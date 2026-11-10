@@ -73,6 +73,14 @@ AGG_INTENT: tuple[tuple[str, tuple[str, ...]], ...] = (
 AGG_NOUN_RE = re.compile(
     r"(平均|最大|最小|最高|最低)([\u4e00-\u9fff]{2,12}?)(?=是多少|为多少|一共|共有|多少|呢|吗|？|\?|$)")
 
+# 「计数意图」：问「多少条/多少份/多少个/数量」时，平均值/极值类指标不可能答对。
+# 实测「燃煤合同一共有多少份」被描述里含「合同」的「平均合同单价」以 4 分抢走 →
+# 快路径答成平均单价（数值对不上 gold 的 COUNT）。
+COUNT_INTENT_RE = re.compile(
+    r"(多少|几)\s*(条|份|个|张|家|次|种|名|项|台|套|样|批)|数量|条数|记录数|计数|总数")
+NON_COUNT_AGG = {"avg", "max", "min", "ratio"}
+NON_COUNT_NAME_RE = re.compile(r"^(平均|最大|最小|最高|最低)")
+
 
 ORDER_WORD_RE = re.compile(r"(排序|升序|降序|从大到小|从小到大|按.{0,6}排|前\s*\d+\s*(名|条|个)|排名)")
 
@@ -164,6 +172,7 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
     q = question.lower()
     q_grams = bigrams(question)
     frame = detect_time_frame(question)
+    count_intent = bool(COUNT_INTENT_RE.search(question))
     # 业务概念（含同义词）→ 指标：与术语同等参与快路径匹配，闭合「概念→指标」
     concept_bind: list[tuple[str, str]] = []
     for c in concepts or []:
@@ -182,6 +191,14 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
             continue
         name = (m.get("name") or "").lower()
         key = (m.get("key") or "").lower()
+        core = metric_name_core(m.get("name")).lower()
+        # 计数意图下，平均值/极值类指标不参与竞争（除非问句明确说了完整口径）。
+        # 「燃煤合同一共有多少份」与「平均合同单价」都含「合同」，不拦就会答成平均单价。
+        if count_intent and (
+            (m.get("agg") or "").lower() in NON_COUNT_AGG
+            or NON_COUNT_NAME_RE.match(m.get("name") or "")
+        ) and not (core and core in q):
+            continue
         # 「词证据」：指标自己的用词出现在问句里才算数；名称权重 > 描述，且不重复计同一个词
         n_grams = bigrams(m.get("name"))
         d_grams = bigrams(m.get("description")) - n_grams
@@ -190,7 +207,6 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
             word += 6
         else:
             # 实体名命中：指标「矿点数」的实体是「矿点」，问句说的也是「矿点」
-            core = metric_name_core(m.get("name")).lower()
             if core and len(core) >= 2 and core in q:
                 word += 5
         if key and key in q:
