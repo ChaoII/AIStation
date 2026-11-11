@@ -33,7 +33,8 @@ async def _wait_run(run_id: str):
 
 async def main(run_limit: int, abl_limit: int, skip_run: bool = False,
                force_slow: bool = False, datasource: str = "",
-               split: str = "", config: dict | None = None) -> None:
+               split: str = "", config: dict | None = None,
+               dataset: str = "") -> None:
     from main import create_app
 
     create_app()
@@ -54,6 +55,8 @@ async def main(run_limit: int, abl_limit: int, skip_run: bool = False,
             flt["datasource"] = datasource
         if split:
             flt["split"] = split
+        if dataset:
+            flt["dataset"] = dataset
         rid = R.start_run(auth, filter=flt or None, config=config or None)
         st = await _wait_run(rid)
         print("\n=== 全量运行 summary ===")
@@ -106,6 +109,7 @@ def cli() -> None:
     ap.add_argument("--force-slow", action="store_true")
     ap.add_argument("--datasource", default="")
     ap.add_argument("--split", default="", help="留出法：只跑 A 或 B 半")
+    ap.add_argument("--dataset", default="", help="只跑某个数据集（如 holdout-v1）")
     ap.add_argument("--config", default="", help="配置覆盖，k=v 逗号分隔，如 two_stage_planning=true")
     a = ap.parse_args()
     cfg: dict | None = None
@@ -116,7 +120,7 @@ def cli() -> None:
                 k, v = part.split("=", 1)
                 cfg[k.strip()] = v.strip()
     asyncio.run(main(a.run_limit, a.ablation_limit, a.skip_run, a.force_slow,
-                     a.datasource, a.split, cfg))
+                     a.datasource, a.split, cfg, a.dataset))
 
 
 if __name__ == "__main__":

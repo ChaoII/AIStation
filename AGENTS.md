@@ -1059,6 +1059,11 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
   干净（禁 few-shot + force_slow）**96.19%**、公平（保留指标/术语/本体，剔除与考题近似的 20 条
   few-shot）**97.14%** —— **对外报公平档**。脚本：`scripts/eval_fair.py`；权限评测
   `scripts/eval_permissions.py`（表/行/列/模块 + 网关 + 端到端，16/16，泄漏 0，快路径不绕过表权限）。
+- **留出集 `holdout-v1`**（2026-11-11）：47 道题、11 张**从未被 gold/few-shot/指标引用**、也没被
+  `seed_*` 造过数据的表；题目指纹 `ddaf882848def329`。生成/校验/落库：`scripts/seed_holdout_set.py`
+  （`--check` 只验金标、`--apply` 幂等落库并做泄漏检查：原题命中 0、示例 SQL 不碰这些表）。
+  跑法：`run_eval_once.py --dataset=holdout-v1 --datasource=ds:6`。**纪律**：不进 few-shot、不建指标、
+  不加术语；跑完**不许按错题反改**（要修只能修通用缺陷且用别的表验证）。详见 `docs/holdout-v1.md`。
 - e2e：`trigger-workspace.spec.ts`（打 `/ai/cron` 卡片）**必须清理**（afterAll 按名称删除本次创建的
   定时任务，否则 dev 库会被 `e2e-*` 垃圾淹没——曾累积 44 条）；`ai-workspace.spec.ts` 锁类别下拉只剩
   智能体家族 + 左右两个独立卡片容器。e2e 直连 dev 后端，运行需 `E2E_API_URL=http://127.0.0.1:8002/api/v1`（清理用）。
