@@ -1064,6 +1064,14 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
   （`--check` 只验金标、`--apply` 幂等落库并做泄漏检查：原题命中 0、示例 SQL 不碰这些表）。
   跑法：`run_eval_once.py --dataset=holdout-v1 --datasource=ds:6`。**纪律**：不进 few-shot、不建指标、
   不加术语；跑完**不许按错题反改**（要修只能修通用缺陷且用别的表验证）。详见 `docs/holdout-v1.md`。
+- **留出集 v2 + 资产描述注入 A/B**（2026-11-11）：37 题 / 12 张新表（`holdout-v2`，指纹
+  `4f66ce3c4b93f137`）。A（不注入描述）与 B（注入）**都是 21/37 = 56.76%，0 翻转**，
+  但 B 里 15 条 SQL 变了 —— 结论：**把中文名/描述塞进提示词没用**，因为选表发生在召回阶段，
+  描述到达时表已经选错。失败集中在两处：① 指标快路径把「通用词重合」当同一张表
+  （「供应商煤质限制」→`供应商数量`、「配煤方案分仓明细」→`配煤方案数量`），且指标 SQL 不带
+  `ISDELETED`；② 召回分不清同族表（主表/明细、方案/方案明细）。回填脚本
+  `scripts/backfill_table_descriptions.py`（直连目标库做画像，只写 alias/description）、
+  对比脚本 `scripts/compare_holdout.py`。详见 `docs/holdout-v2.md`。
 - e2e：`trigger-workspace.spec.ts`（打 `/ai/cron` 卡片）**必须清理**（afterAll 按名称删除本次创建的
   定时任务，否则 dev 库会被 `e2e-*` 垃圾淹没——曾累积 44 条）；`ai-workspace.spec.ts` 锁类别下拉只剩
   智能体家族 + 左右两个独立卡片容器。e2e 直连 dev 后端，运行需 `E2E_API_URL=http://127.0.0.1:8002/api/v1`（清理用）。
