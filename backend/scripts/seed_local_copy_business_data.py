@@ -259,6 +259,45 @@ async def reset_demo(conn) -> None:
     await conn.commit()
 
 
+# 副本里新增了数据的表：这些表上的「绑定型指标」仍指向 ds:4 的本体实例，
+# 计数/求和会返回远端旧值 → 在副本上改成直连 SQL。
+CHANGED_TABLES = {
+    "FUEL_CMCS_INFACTORYBATCH", "FUEL_CMCS_ASSAY", "FUEL_CMCS_RCSAMPLING",
+    "FUEL_CMCS_MAKE", "FUEL_CMCS_RCSAMPLINGDETAIL",
+}
+
+
+async def unbind_stale_metrics(ds_id: int) -> None:
+    """把副本里「改了数据的表」上的绑定型指标改成直连 SQL（只写 ds:6）。"""
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+
+    target = f"ds:{ds_id}"
+    changed = 0
+    async with async_db_session.begin() as db:
+        rows = (await db.execute(text(
+            "SELECT key,name,object_code,property_code,agg_fn FROM ai_query_metrics "
+            "WHERE datasource=:d AND is_deleted=false AND COALESCE(object_code,'')<>''"
+        ), {"d": target})).fetchall()
+        for key, name, obj, prop, fn in rows:
+            if obj not in CHANGED_TABLES:
+                continue
+            fn = (fn or "count").lower()
+            if fn == "count":
+                sql = f'SELECT COUNT(*) AS "{name}" FROM "{obj}"'
+            elif prop and fn in ("sum", "avg", "max", "min"):
+                sql = f'SELECT {fn.upper()}("{prop}") AS "{name}" FROM "{obj}"'
+            else:
+                continue
+            await db.execute(text(
+                "UPDATE ai_query_metrics SET sql_template=:s, object_code='', property_code='', agg_fn='' "
+                "WHERE datasource=:d AND key=:k"
+            ), {"s": sql, "d": target, "k": key})
+            changed += 1
+    print(f"[meta] 绑定型指标改直连 {changed} 个（副本新增数据的表）")
+
+
 async def seed_business(conn) -> None:
     from sqlalchemy import text
 

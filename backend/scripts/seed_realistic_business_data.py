@@ -546,10 +546,13 @@ async def main() -> None:
 
     print(f"[schema] 同步 {ds_id}: {await dc.sync_datasource_schema(ds_id)}")
     # 指标/术语/示例/副本专用指标（复用旧脚本里的幂等函数）
-    from seed_local_copy_business_data import clone_query_meta, seed_extra_metrics
+    from seed_local_copy_business_data import (
+        clone_query_meta, seed_extra_metrics, unbind_stale_metrics,
+    )
 
     await clone_query_meta(ds_id)
     await seed_extra_metrics(ds_id)
+    await unbind_stale_metrics(ds_id)
     async with engine.connect() as conn:
         await seed(conn)
         await verify(conn)
