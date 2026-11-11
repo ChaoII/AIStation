@@ -43,7 +43,8 @@ docker exec -e PGPASSWORD=ServBay.dev aistation-pg-rag \
 | 连接 | `127.0.0.1:5432/ezdcs_yuanmei`，root |
 | 只读 | true（用户查询只读；补数脚本直连） |
 
-`ds:4` 保持不动 → fuel-v2 评测基准不受影响。
+`ds:6` 已设为**默认数据源**，并把 ds:4 的题库复制到 ds:6（366 条）。
+`ds:4` 保留为远端基线，不影响副本。
 
 > ⚠️ 新建数据源后**必须同步 schema**（`sync_datasource_schema`），否则平台按数据源缓存表结构为空，
 > 慢路径拿不到表结构会批量返回空结果（实测未同步时 105 题只有 74 题通过，同步后 104 题）。
