@@ -115,6 +115,15 @@ async def _ensure_query_tables() -> None:
         await ensure_lineage_table()
     except Exception as e:  # noqa: BLE001
         _degrade("query_lineage_table", e)
+    # 生成规则表（`ai_query_prompt_rules`）：提示词规则从代码搬到库里。
+    # 失败只降级——读不到时 `prompt_rules.render_rules` 会回退代码默认文案，
+    # 所以这里建表失败不会影响问数本身（但界面改不了规则）。
+    try:
+        from .prompt_rules import ensure_prompt_rules
+
+        await ensure_prompt_rules()
+    except Exception as e:  # noqa: BLE001
+        _degrade("query_prompt_rules", e)
     # T7 接线自检（addendum 第 4 条）：shadow 差异写入依赖
     # ``ai_policy_shadow_diff.rewrite`` 这一列。补列失败（无 DDL 权限）时差异会整条
     # 写不进去，而写入本身是 fail-open —— 表现为「差异表悄悄没数据」，灰度报告被

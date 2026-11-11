@@ -17,6 +17,7 @@ from app.core.logger import log
 
 from . import service as _svc
 from .dialect import build_system_prompt, dialect_name, templated_note
+from .prompt_rules import render_rules as _render_prompt_rules
 
 
 class Nl2SqlOps:
@@ -76,24 +77,15 @@ class Nl2SqlOps:
                         log.warning("[query] 两段式：计划解析失败，降级为单段生成")
             except Exception as e:  # noqa: BLE001
                 log.warning(f"[query] 计划阶段失败，降级为单段生成: {str(e)[:100]}")
-        rules = []
-        if cls._cfg_bool(cfg, "entity_name_rule", True):
-            rules.append("（1）问题要求按实体（摄像头/设备/算法/数据集/规则等）展示时，"
-                         "应 JOIN 对应表用其「name」列，而不是直接返回外键 id；")
-        if cls._cfg_bool(cfg, "enum_hint_enabled", False):
-            rules.append("（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；")
-        rules.append("（3）占比用“COUNT(*) * 100.0 / 总数”或“FILTER (WHERE ...)”计算；")
-        rules.append("（4）多行 SQL 直接换行输出即可，不要加注释。")
-        rules.append("（5）**所有聚合列和计算列必须起中文别名**（如 COUNT(*) AS 告警数、"
-                     "SUM(amount) AS 销售额），不要用 c / count / total 这类占位名——"
-                     "用户会直接看到列头。")
-        if cls._cfg_bool(cfg, "decomposed_planning", True):
-            rules.append("（6）先判断问题属于「单表聚合 / 多表联查 / 嵌套子查询」，再按此规划生成 SQL；")
-        rules.append(
-            "（7）先看要的是「明细」还是「汇总」：出现 平均/均值/占比/百分比/比例/最多/最少/最高/最低/"
-            "最大/最小 时，**先按组聚合、再在外层汇总或取 TOP1**"
-            "（例：平均每个供应商关联几个矿点 = AVG(每组 COUNT)；关联最多的那家占多少 = 按组计数后 "
-            "ORDER BY 计数 DESC LIMIT 1）；这类题即使句式里有「每个/各」，也**不要**返回全量分组明细。"
+        # 生成规则来自 `ai_query_prompt_rules`（可配置）：默认文案与历史写死的 8 条
+        # 逐字一致（编号在渲染时统一生成，改顺序/停用不会串号）；读库失败回退代码
+        # 默认——问数可用性优先于配置可编辑性。
+        # 边界：核心安全约束（只读 SELECT / 必须 FROM / 只用给定表/字段）留在
+        # `dialect.build_system_prompt`，**不经过这张表、不可关闭**；确定性口径
+        # （软删、时间、权限）仍由代码改写，不进提示词。
+        _dialect, _ds_type = await cls._resolve_dialect_info(datasource)
+        rules = await _render_prompt_rules(
+            cfg, datasource or "", (_dialect or {}).get("name") or "",
         )
         extra = ""
         if cls._cfg_bool(cfg, "full_entity_no_limit", True):
@@ -109,7 +101,6 @@ class Nl2SqlOps:
                          "要**先按组聚合、再在外层算一个数或取 TOP1**"
                          "（如 AVG(每组计数)、或 ORDER BY 计数 DESC LIMIT 1），"
                          "不要返回整张分组清单。\n")
-        _dialect, _ds_type = await cls._resolve_dialect_info(datasource)
         system_prompt = build_system_prompt(
             _dialect, rules, schema_ctx, extra + templated_note(_ds_type))
         user_msg = question

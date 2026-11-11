@@ -15,6 +15,14 @@ from __future__ import annotations
 
 from typing import Any
 
+#: 核心安全约束（**唯一真源**）：不可关闭、不可改文案，只读展示在「生成规则」面板里。
+#: 放在本模块（纯逻辑、无 IO）而不是 ``prompt_rules``，是为了让 `PYTEST_NO_APP=1`
+#: 的快测也能导入；拼接方式必须与历史实现逐字一致（``"".join``，无分隔符）。
+CORE_RULES: tuple[str, ...] = (
+    "必须写 FROM 子句并只使用给定的表/字段。",
+    "只返回一条 SQL，不要多余解释，不要使用 DELETE/UPDATE/INSERT/DDL。",
+)
+
 #: 各方言的语法提示。`rules` 会在 prompt 里以「必须使用 X 语法（…）」出现，
 #: 直接约束模型在该数据源下写出兼容 SQL。
 DIALECTS: dict[str, dict[str, Any]] = {
@@ -152,8 +160,7 @@ def build_system_prompt(dialect: dict | None, rules: list[str], schema_ctx: str,
     )
     return (
         header
-        + "必须写 FROM 子句并只使用给定的表/字段。只返回一条 SQL，不要多余解释，"
-        + "不要使用 DELETE/UPDATE/INSERT/DDL。\n注意："
+        + "".join(CORE_RULES) + "\n注意："
         + "".join(rules) + time_rules(d) + "\n" + (extra or "") + (schema_ctx or "")
     )
 

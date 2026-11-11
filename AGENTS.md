@@ -1043,6 +1043,18 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 - **分类树统一视觉**（工作台 + 知识库共用）：全局 `.ai-tree`（`styles/element-plus.scss`）——
   文件夹图标 + 名称（title 提示）+ 计数徽章，选中浅蓝高亮；树默认 `default-expand-all`；
   左栏统一 240px。工作台计数为「分类及子孙分类下的智能体/工作流数」（前端统计）。
+- **问数生成规则可配置**（2026-11-11）：原来 8 条提示词规则写死在 `query/nl2sql_ops.py`，现搬到
+  `ai_query_prompt_rules`（`prompt_rules.py` 启动幂等建表 + 播种，**不覆盖**已改文案），
+  接口 `/ai/query/prompt-rules*`，界面「问数设置 → 生成规则」。三条纪律：
+  ① **核心安全约束**（只读 SELECT / 必须 FROM / 只用给定表）留在 `dialect.CORE_RULES`，只读展示、不可关；
+  ② **确定性口径**（软删/时间/权限）继续由代码改写，不进提示词（软删提示词版实测两轮自翻 5 题）；
+  ③ 表里只放**书写偏好**（别名/格式/占比/Top-N 空值）。编号**渲染时生成**（停用不跳号）；
+  `source_setting` 复用已有开关（开关=要不要，表=写什么）；读库失败回退代码默认文案。
+  顺带补齐：流式 `ask_stream` 过去只抄 (1)~(6)，缺 (7)(8)，现与非流式共用一份规则。
+- **问数评测三档口径**（2026-11-11，105 题 ds:6）：官方（few-shot+快路径）**99.05%**、
+  干净（禁 few-shot + force_slow）**96.19%**、公平（保留指标/术语/本体，剔除与考题近似的 20 条
+  few-shot）**97.14%** —— **对外报公平档**。脚本：`scripts/eval_fair.py`；权限评测
+  `scripts/eval_permissions.py`（表/行/列/模块 + 网关 + 端到端，16/16，泄漏 0，快路径不绕过表权限）。
 - e2e：`trigger-workspace.spec.ts`（打 `/ai/cron` 卡片）**必须清理**（afterAll 按名称删除本次创建的
   定时任务，否则 dev 库会被 `e2e-*` 垃圾淹没——曾累积 44 条）；`ai-workspace.spec.ts` 锁类别下拉只剩
   智能体家族 + 左右两个独立卡片容器。e2e 直连 dev 后端，运行需 `E2E_API_URL=http://127.0.0.1:8002/api/v1`（清理用）。

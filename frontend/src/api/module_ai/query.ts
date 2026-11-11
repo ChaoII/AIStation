@@ -255,6 +255,42 @@ export function saveQuerySetting(data: { key: string; value: string; remark: str
   });
 }
 
+// ---- 生成规则（可配置提示词规则）----
+// 规则 = 拼进 NL2SQL 提示词的 SQL 书写规范；核心安全约束（只读 SELECT / 必须 FROM /
+// 只用给定表）由后端只读返回，不可关闭、不可改文案。
+export function getPromptRules() {
+  return request({ url: `${API_PATH}/prompt-rules`, method: "get" });
+}
+export function createPromptRule(data: {
+  title?: string;
+  body: string;
+  scope?: string;
+  scope_value?: string;
+  priority?: number;
+  enabled?: boolean;
+}) {
+  return request({ url: `${API_PATH}/prompt-rules`, method: "post", data });
+}
+export function updatePromptRule(
+  id: number,
+  data: {
+    title?: string;
+    body?: string;
+    scope?: string;
+    scope_value?: string;
+    priority?: number;
+    enabled?: boolean;
+  }
+) {
+  return request({ url: `${API_PATH}/prompt-rules/${id}`, method: "put", data });
+}
+export function resetPromptRule(id: number) {
+  return request({ url: `${API_PATH}/prompt-rules/${id}/reset`, method: "post" });
+}
+export function deletePromptRule(id: number) {
+  return request({ url: `${API_PATH}/prompt-rules/${id}`, method: "delete" });
+}
+
 // 数据资产目录
 export function getQueryAssets() {
   return request({ url: `${API_PATH}/assets/list`, method: "get" });

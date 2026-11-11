@@ -555,6 +555,7 @@
           >
             召回探针
           </el-button>
+          <el-button size="small" @click="openPromptRules">生成规则</el-button>
         </div>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
           <div class="q-set__group-title" @click="toggleGroup(g.name)">
@@ -632,6 +633,116 @@
         <el-button type="primary" :loading="setSaving" @click="saveSettings">
           {{ t("ai_logs.save") }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 生成规则：拼进 NL2SQL 提示词的 SQL 书写规范（可启停/改文案/调顺序） -->
+    <el-dialog v-model="rulesVisible" title="生成规则" width="900px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="这些规则会拼进问数的提示词，影响模型怎么写 SQL。停用/改文案立即生效（无需重启），可在改完后用评测对比。"
+        class="q-fb-tip"
+      />
+      <div class="q-rules__bar">
+        <span class="q-rules__hint">共 {{ promptRules.length }} 条可配置规则</span>
+        <el-button
+          size="small"
+          type="primary"
+          style="margin-left: auto"
+          @click="openRuleEdit(null)"
+        >
+          新增规则
+        </el-button>
+      </div>
+      <el-table
+        v-loading="rulesLoading"
+        :data="promptRules"
+        border
+        stripe
+        size="small"
+        max-height="360"
+      >
+        <el-table-column prop="priority" label="顺序" width="70" align="center" />
+        <el-table-column prop="title" label="标题" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="body" label="规则内容" min-width="360" show-overflow-tooltip />
+        <el-table-column label="状态" width="80" align="center">
+          <template #default="{ row }">
+            <el-switch
+              v-model="row.enabled"
+              size="small"
+              :loading="row._saving"
+              @change="(v: any) => toggleRule(row, v)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openRuleEdit(row)">编辑</el-button>
+            <el-button
+              v-if="!row.is_custom"
+              link
+              type="primary"
+              size="small"
+              @click="restoreRule(row)"
+            >
+              恢复默认
+            </el-button>
+            <el-button
+              v-if="row.is_custom"
+              link
+              type="danger"
+              size="small"
+              @click="removeRule(row)"
+            >
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty :image-size="60" description="暂无规则" />
+        </template>
+      </el-table>
+      <div class="q-rules__core">
+        <div class="q-rules__core-title">核心安全约束（只读，不可关闭）</div>
+        <div v-for="(c, i) in coreRules" :key="i" class="q-rules__core-item">· {{ c }}</div>
+      </div>
+      <template #footer>
+        <el-button @click="rulesVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 规则编辑 -->
+    <el-dialog
+      v-model="ruleEditVisible"
+      :title="ruleForm.id ? '编辑规则' : '新增规则'"
+      width="620px"
+      append-to-body
+    >
+      <el-form :model="ruleForm" label-width="90px">
+        <el-form-item label="标题">
+          <el-input v-model="ruleForm.title" maxlength="120" placeholder="给规则起个短名字" />
+        </el-form-item>
+        <el-form-item label="规则内容">
+          <el-input
+            v-model="ruleForm.body"
+            type="textarea"
+            :rows="6"
+            placeholder="直接用中文写清要求，会原样拼进提示词"
+          />
+        </el-form-item>
+        <el-form-item label="顺序">
+          <el-input-number v-model="ruleForm.priority" :min="1" :max="9999" size="small" />
+          <span class="q-rules__hint" style="margin-left: 8px">数字小的排在前面</span>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="ruleForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ruleEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="ruleSaving" @click="saveRule">保存</el-button>
       </template>
     </el-dialog>
 
@@ -729,7 +840,10 @@ import ReasoningBlock from "@/views/module_ai/chat/components/ReasoningBlock.vue
 import ToolCallTimeline from "@/views/module_ai/chat/components/ToolCallTimeline.vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
+  createPromptRule,
+  deletePromptRule,
   deleteQuerySession,
+  getPromptRules,
   getQueryDatasources,
   getQueryFewshots,
   getQueryMessages,
@@ -739,12 +853,14 @@ import {
   queryFeedback,
   promoteQueryMetric,
   getQueryStats,
+  resetPromptRule,
   runQueryReport,
   saveQueryReport,
   saveQuerySetting,
   streamQuery,
   recallProbe,
   rebuildRecall,
+  updatePromptRule,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiQuery" });
@@ -1339,6 +1455,129 @@ async function saveSettings() {
   }
 }
 
+// ---- 生成规则（可配置提示词规则）----
+const rulesVisible = ref(false);
+const rulesLoading = ref(false);
+const promptRules = ref<any[]>([]);
+const coreRules = ref<string[]>([]);
+const ruleEditVisible = ref(false);
+const ruleSaving = ref(false);
+const ruleForm = ref<any>({
+  id: null,
+  title: "",
+  body: "",
+  priority: 900,
+  enabled: true,
+});
+
+async function loadPromptRules() {
+  rulesLoading.value = true;
+  try {
+    const r = await getPromptRules();
+    promptRules.value = (r.data?.data?.items || []).map((x: any) => ({ ...x, _saving: false }));
+    coreRules.value = r.data?.data?.core_rules || [];
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "加载生成规则失败");
+  } finally {
+    rulesLoading.value = false;
+  }
+}
+
+async function openPromptRules() {
+  rulesVisible.value = true;
+  await loadPromptRules();
+}
+
+function openRuleEdit(row: any | null) {
+  ruleForm.value = row
+    ? { id: row.id, title: row.title, body: row.body, priority: row.priority, enabled: row.enabled }
+    : { id: null, title: "", body: "", priority: 900, enabled: true };
+  ruleEditVisible.value = true;
+}
+
+async function toggleRule(row: any, value: any) {
+  row._saving = true;
+  try {
+    await updatePromptRule(row.id, { enabled: !!value });
+    ElMessage.success(value ? "已启用" : "已停用");
+  } catch (e: any) {
+    row.enabled = !value;
+    ElMessage.error(e?.data?.msg || e?.msg || "保存失败");
+  } finally {
+    row._saving = false;
+  }
+}
+
+async function saveRule() {
+  if (!String(ruleForm.value.body || "").trim()) {
+    ElMessage.warning("规则内容不能为空");
+    return;
+  }
+  ruleSaving.value = true;
+  try {
+    if (ruleForm.value.id) {
+      await updatePromptRule(ruleForm.value.id, {
+        title: ruleForm.value.title,
+        body: ruleForm.value.body,
+        priority: ruleForm.value.priority,
+        enabled: ruleForm.value.enabled,
+      });
+    } else {
+      await createPromptRule({
+        title: ruleForm.value.title,
+        body: ruleForm.value.body,
+        priority: ruleForm.value.priority,
+        enabled: ruleForm.value.enabled,
+      });
+    }
+    ElMessage.success("已保存");
+    ruleEditVisible.value = false;
+    await loadPromptRules();
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "保存失败");
+  } finally {
+    ruleSaving.value = false;
+  }
+}
+
+async function restoreRule(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `将把「${row.title}」恢复为内置默认文案，你改过的内容会丢失。`,
+      "恢复默认",
+      { type: "warning", confirmButtonText: "恢复默认", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await resetPromptRule(row.id);
+    ElMessage.success("已恢复默认");
+    await loadPromptRules();
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "恢复失败");
+  }
+}
+
+async function removeRule(row: any) {
+  try {
+    await ElMessageBox.confirm(`将删除自定义规则「${row.title}」，删除后不可恢复。`, "删除规则", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+    });
+  } catch {
+    return;
+  }
+  try {
+    await deletePromptRule(row.id);
+    ElMessage.success("已删除");
+    await loadPromptRules();
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "删除失败");
+  }
+}
+
 // 沉淀为指标（FDE 复用闭环）：把已验证问答落为确定性指标
 const traceVisible = ref(false);
 const traceMsg = ref<any>(null);
@@ -1857,6 +2096,33 @@ const visibleGroups = computed(() => {
 
 .q-set__changed-only {
   margin-right: 2px;
+}
+
+/* 生成规则：工具条 + 核心约束说明 */
+.q-rules__bar {
+  display: flex;
+  align-items: center;
+  margin: 4px 0 8px;
+}
+.q-rules__hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.q-rules__core {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-lighter);
+}
+.q-rules__core-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.q-rules__core-item {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .q-probe__bar {

@@ -140,6 +140,18 @@ class QuerySettingUpsert(BaseModel):
     remark: str = ""
 
 
+class PromptRuleUpsert(BaseModel):
+    """问数生成规则（新增/更新）：只传要改的字段，省略 = 不修改。"""
+
+    code: str | None = None
+    title: str | None = None
+    body: str | None = None
+    scope: str | None = None
+    scope_value: str | None = None
+    priority: int | None = None
+    enabled: bool | None = None
+
+
 class QueryRunRequest(BaseModel):
     """直接用指标/数据源执行（调试用）。"""
 

@@ -16,6 +16,7 @@ from .schema import (
     FilterRulesParseRequest,
     FilterRulesPreviewRequest,
     FilterRulesSuggestRequest,
+    PromptRuleUpsert,
     QueryAskRequest,
     QueryAssetColumnUpsert,
     QueryAssetUpsert,
@@ -1729,6 +1730,83 @@ async def save_query_setting(
         data=await AiQueryService.save_setting(data.key, data.value, data.remark, auth),
         msg="保存成功",
     )
+
+
+# ---- 生成规则（可配置提示词规则）----
+# 规则 = 拼进 NL2SQL 提示词的「书写规范」。核心安全约束（只读 SELECT / 必须 FROM /
+# 只用给定表）不在表里、不可关闭，只随 list 接口只读返回。
+@AiQueryRouter.get("/prompt-rules", summary="生成规则列表")
+async def list_prompt_rules(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from . import prompt_rules
+
+    return SuccessResponse(data=await prompt_rules.list_rules(), msg="查询成功")
+
+
+@AiQueryRouter.post("/prompt-rules", summary="新增生成规则")
+async def create_prompt_rule(
+    data: PromptRuleUpsert,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from app.core.exceptions import CustomException
+
+    from . import prompt_rules
+
+    try:
+        item = await prompt_rules.create_rule(data.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise CustomException(msg=str(e)) from e
+    return SuccessResponse(data=item, msg="创建成功")
+
+
+@AiQueryRouter.put("/prompt-rules/{rule_id}", summary="更新生成规则")
+async def update_prompt_rule(
+    rule_id: int,
+    data: PromptRuleUpsert,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from app.core.exceptions import CustomException
+
+    from . import prompt_rules
+
+    try:
+        item = await prompt_rules.update_rule(rule_id, data.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise CustomException(msg=str(e)) from e
+    return SuccessResponse(data=item, msg="更新成功")
+
+
+@AiQueryRouter.post("/prompt-rules/{rule_id}/reset", summary="恢复默认规则文案")
+async def reset_prompt_rule(
+    rule_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from app.core.exceptions import CustomException
+
+    from . import prompt_rules
+
+    try:
+        item = await prompt_rules.reset_rule(rule_id)
+    except ValueError as e:
+        raise CustomException(msg=str(e)) from e
+    return SuccessResponse(data=item, msg="已恢复默认")
+
+
+@AiQueryRouter.delete("/prompt-rules/{rule_id}", summary="删除生成规则（仅自定义）")
+async def delete_prompt_rule(
+    rule_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from app.core.exceptions import CustomException
+
+    from . import prompt_rules
+
+    try:
+        await prompt_rules.delete_rule(rule_id)
+    except ValueError as e:
+        raise CustomException(msg=str(e)) from e
+    return SuccessResponse(msg="删除成功")
 
 
 # ---- 会话/历史 ----
