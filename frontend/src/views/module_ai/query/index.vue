@@ -637,7 +637,7 @@
     </el-dialog>
 
     <!-- 生成规则：拼进 NL2SQL 提示词的 SQL 书写规范（可启停/改文案/调顺序） -->
-    <el-dialog v-model="rulesVisible" title="生成规则" width="900px" append-to-body>
+    <el-dialog v-model="rulesVisible" title="生成规则" width="1040px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
@@ -647,14 +647,10 @@
       />
       <div class="q-rules__bar">
         <span class="q-rules__hint">共 {{ promptRules.length }} 条可配置规则</span>
-        <el-button
-          size="small"
-          type="primary"
-          style="margin-left: auto"
-          @click="openRuleEdit(null)"
-        >
-          新增规则
+        <el-button size="small" style="margin-left: auto" @click="openPreview">
+          预览生效规则
         </el-button>
+        <el-button size="small" type="primary" @click="openRuleEdit(null)">新增规则</el-button>
       </div>
       <el-table
         v-loading="rulesLoading"
@@ -662,12 +658,15 @@
         border
         stripe
         size="small"
-        max-height="360"
+        max-height="340"
       >
         <el-table-column prop="priority" label="顺序" width="70" align="center" />
-        <el-table-column prop="title" label="标题" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="body" label="规则内容" min-width="360" show-overflow-tooltip />
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column prop="title" label="标题" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="body" label="规则内容" min-width="330" show-overflow-tooltip />
+        <el-table-column label="作用域" width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ scopeLabel(row) }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="70" align="center">
           <template #default="{ row }">
             <el-switch
               v-model="row.enabled"
@@ -677,7 +676,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" align="center">
+        <el-table-column label="操作" width="170" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openRuleEdit(row)">编辑</el-button>
             <el-button
@@ -708,8 +707,48 @@
         <div class="q-rules__core-title">核心安全约束（只读，不可关闭）</div>
         <div v-for="(c, i) in coreRules" :key="i" class="q-rules__core-item">· {{ c }}</div>
       </div>
+
+      <!-- A/B：本轮临时禁用若干规则去跑评测，跑完到「问数评测 → 报告」对比两次运行 -->
+      <div class="q-rules__core">
+        <div class="q-rules__core-title">A/B 对比（只影响这一轮评测，不改线上配置）</div>
+        <div class="q-rules__ab">
+          <el-select
+            v-model="abDisabled"
+            multiple
+            collapse-tags
+            clearable
+            size="small"
+            placeholder="选择本轮要禁用的规则"
+            style="flex: 1 1 auto"
+          >
+            <el-option v-for="r in promptRules" :key="r.code" :label="r.title" :value="r.code" />
+          </el-select>
+          <el-input-number v-model="abLimit" :min="1" :max="200" size="small" />
+          <el-button size="small" type="primary" :loading="abStarting" @click="startAbRun">
+            启动对比评测
+          </el-button>
+        </div>
+        <div class="q-rules__hint">
+          完成后到「问数评测 → 报告 → 对比运行」选择本轮与基线，即可看到逐题翻转与准确率变化。
+        </div>
+      </div>
       <template #footer>
         <el-button @click="rulesVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 生效规则预览：作用域/开关是运行时过滤，列表看不出最终拼进提示词的样子 -->
+    <el-dialog v-model="previewVisible" title="生效规则预览" width="760px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        :title="`当前数据源下共 ${previewRules.length} 条规则会拼进提示词（不含核心安全约束）`"
+        class="q-fb-tip"
+      />
+      <pre class="q-rules__preview">{{ previewText }}</pre>
+      <template #footer>
+        <el-button @click="previewVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -731,6 +770,38 @@
             :rows="6"
             placeholder="直接用中文写清要求，会原样拼进提示词"
           />
+        </el-form-item>
+        <el-form-item label="作用域">
+          <el-select v-model="ruleForm.scope" size="small" style="width: 150px">
+            <el-option label="全部数据源" value="all" />
+            <el-option label="仅指定数据源" value="datasource" />
+            <el-option label="仅指定方言" value="dialect" />
+          </el-select>
+          <el-select
+            v-if="ruleForm.scope === 'datasource'"
+            v-model="ruleForm.scope_value"
+            size="small"
+            clearable
+            placeholder="选择数据源"
+            style="width: 220px; margin-left: 8px"
+          >
+            <el-option
+              v-for="d in datasources"
+              :key="d.code || d.id"
+              :label="d.name"
+              :value="`ds:${d.id}`"
+            />
+          </el-select>
+          <el-select
+            v-else-if="ruleForm.scope === 'dialect'"
+            v-model="ruleForm.scope_value"
+            size="small"
+            clearable
+            placeholder="选择方言"
+            style="width: 160px; margin-left: 8px"
+          >
+            <el-option v-for="d in DIALECTS" :key="d" :label="d" :value="d" />
+          </el-select>
         </el-form-item>
         <el-form-item label="顺序">
           <el-input-number v-model="ruleForm.priority" :min="1" :max="9999" size="small" />
@@ -853,10 +924,12 @@ import {
   queryFeedback,
   promoteQueryMetric,
   getQueryStats,
+  previewPromptRules,
   resetPromptRule,
   runQueryReport,
   saveQueryReport,
   saveQuerySetting,
+  startEvalRun,
   streamQuery,
   recallProbe,
   rebuildRecall,
@@ -1490,8 +1563,24 @@ async function openPromptRules() {
 
 function openRuleEdit(row: any | null) {
   ruleForm.value = row
-    ? { id: row.id, title: row.title, body: row.body, priority: row.priority, enabled: row.enabled }
-    : { id: null, title: "", body: "", priority: 900, enabled: true };
+    ? {
+        id: row.id,
+        title: row.title,
+        body: row.body,
+        priority: row.priority,
+        enabled: row.enabled,
+        scope: row.scope || "all",
+        scope_value: row.scope_value || "",
+      }
+    : {
+        id: null,
+        title: "",
+        body: "",
+        priority: 900,
+        enabled: true,
+        scope: "all",
+        scope_value: "",
+      };
   ruleEditVisible.value = true;
 }
 
@@ -1521,6 +1610,8 @@ async function saveRule() {
         body: ruleForm.value.body,
         priority: ruleForm.value.priority,
         enabled: ruleForm.value.enabled,
+        scope: ruleForm.value.scope,
+        scope_value: ruleForm.value.scope === "all" ? "" : ruleForm.value.scope_value,
       });
     } else {
       await createPromptRule({
@@ -1528,6 +1619,8 @@ async function saveRule() {
         body: ruleForm.value.body,
         priority: ruleForm.value.priority,
         enabled: ruleForm.value.enabled,
+        scope: ruleForm.value.scope,
+        scope_value: ruleForm.value.scope === "all" ? "" : ruleForm.value.scope_value,
       });
     }
     ElMessage.success("已保存");
@@ -1575,6 +1668,75 @@ async function removeRule(row: any) {
     await loadPromptRules();
   } catch (e: any) {
     ElMessage.error(e?.data?.msg || e?.msg || "删除失败");
+  }
+}
+
+// ---- 生成规则：作用域 / 预览 / A/B ----
+const DIALECTS = ["PostgreSQL", "MySQL", "SQLite"];
+const previewVisible = ref(false);
+const previewRules = ref<string[]>([]);
+const previewText = ref("");
+const abDisabled = ref<string[]>([]);
+const abLimit = ref(105);
+const abStarting = ref(false);
+
+function scopeLabel(row: any) {
+  const scope = row.scope || "all";
+  if (scope === "datasource") return `数据源：${row.scope_value || "未指定"}`;
+  if (scope === "dialect") return `方言：${row.scope_value || "未指定"}`;
+  return "全部";
+}
+
+/** 当前页面选中的数据源 → 内部标识（ds:{id}）；system/空 → 空串（评测不限数据源） */
+function currentDs(): string {
+  const v = datasource.value;
+  if (!v || v === "system") return "";
+  if (/^ds:\d+$/.test(v)) return v;
+  const hit = datasources.value.find((d: any) => (d.code || `ds:${d.id}`) === v);
+  return hit ? `ds:${hit.id}` : "";
+}
+
+async function openPreview() {
+  try {
+    const r = await previewPromptRules({ datasource: currentDs() });
+    previewRules.value = r.data?.data?.rules || [];
+    previewText.value = r.data?.data?.text || "（当前没有会生效的规则）";
+  } catch (e: any) {
+    previewText.value = e?.data?.msg || e?.msg || "预览失败";
+  }
+  previewVisible.value = true;
+}
+
+async function startAbRun() {
+  if (!abDisabled.value.length) {
+    ElMessage.warning("先选一条要禁用的规则（不选等于原样跑一轮）");
+    return;
+  }
+  const ds = currentDs();
+  const ids = promptRules.value
+    .filter((r: any) => abDisabled.value.includes(r.code))
+    .map((r: any) => r.title);
+  try {
+    await ElMessageBox.confirm(
+      `将按「禁用：${ids.join("、")}」跑 ${abLimit.value} 道题（每轮约 15~20 分钟）。` +
+        `跑完到「问数评测 → 报告 → 对比运行」选择本轮与基线看差异。`,
+      "启动对比评测",
+      { type: "info", confirmButtonText: "启动", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  abStarting.value = true;
+  try {
+    const filter: any = { limit: abLimit.value, rules_disable: [...abDisabled.value] };
+    if (ds) filter.datasource = ds;
+    const r = await startEvalRun({ filter, mode: "full" });
+    const runId = r.data?.data?.run_id;
+    ElMessage.success(`已启动：${runId || "-"}（可在问数评测页看进度）`);
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "启动失败");
+  } finally {
+    abStarting.value = false;
   }
 }
 
@@ -2123,6 +2285,26 @@ const visibleGroups = computed(() => {
   color: var(--el-text-color-regular);
   font-size: 12px;
   line-height: 1.6;
+}
+.q-rules__ab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.q-rules__preview {
+  max-height: 420px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-regular);
+  font-family: var(--el-font-family);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
 }
 
 .q-probe__bar {

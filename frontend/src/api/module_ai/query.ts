@@ -261,6 +261,14 @@ export function saveQuerySetting(data: { key: string; value: string; remark: str
 export function getPromptRules() {
   return request({ url: `${API_PATH}/prompt-rules`, method: "get" });
 }
+/** 预览当前生效规则（作用域/开关是运行时过滤，列表看不出最终结果） */
+export function previewPromptRules(params: {
+  datasource?: string;
+  dialect?: string;
+  disabled?: string;
+}) {
+  return request({ url: `${API_PATH}/prompt-rules/preview`, method: "get", params });
+}
 export function createPromptRule(data: {
   title?: string;
   body: string;

@@ -1744,6 +1744,36 @@ async def list_prompt_rules(
     return SuccessResponse(data=await prompt_rules.list_rules(), msg="查询成功")
 
 
+@AiQueryRouter.get("/prompt-rules/preview", summary="预览当前生效的生成规则")
+async def preview_prompt_rules(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str = "",
+    dialect: str = "",
+    disabled: str = "",
+) -> JSONResponse:
+    """按数据源/方言与「临时禁用」预览真实拼进提示词的文本。
+
+    为什么要有：作用域（按数据源/按方言）和开关是**运行时**过滤的，只看列表看不出
+    "这条到底会不会进 prompt"。预览让改完立刻能核对，不用先问一次数。
+    """
+    from . import prompt_rules
+
+    cfg = await AiQueryService._cfg()
+    codes = [c.strip() for c in (disabled or "").split(",") if c.strip()]
+    prompt_rules.set_disabled_codes(codes)
+    try:
+        rules = await prompt_rules.render_rules(cfg, datasource, dialect)
+    finally:
+        prompt_rules.set_disabled_codes(())
+    data = {
+        "rules": rules,
+        "count": len(rules),
+        "text": "\n".join(rules),
+        "core": list(prompt_rules.CORE_RULES),
+    }
+    return SuccessResponse(data=data, msg="查询成功")
+
+
 @AiQueryRouter.post("/prompt-rules", summary="新增生成规则")
 async def create_prompt_rule(
     data: PromptRuleUpsert,

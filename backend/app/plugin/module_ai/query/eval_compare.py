@@ -75,18 +75,46 @@ def compare_runs(base_rows: list[dict], target_rows: list[dict],
             "run_id": (base_meta or {}).get("run_id", ""),
             "model": meta_b.get("model", ""),
             "config": meta_b.get("config") or {},
+            "rules": _rules_brief(meta_b),
             "data_accuracy": _acc(base_rows),
         },
         "target": {
             "run_id": (target_meta or {}).get("run_id", ""),
             "model": meta_t.get("model", ""),
             "config": meta_t.get("config") or {},
+            "rules": _rules_brief(meta_t),
             "data_accuracy": _acc(target_rows),
         },
         "model_changed": _model_changed(meta_b, meta_t),
+        # 生成规则差异（本轮新增）：A/B 时最需要看的就是"两轮规则哪里不同"
+        "rules_changed": _rules_changed(meta_b, meta_t),
         "items": items[:limit],
         "truncated": len(items) > limit,
     }
+
+
+def _rules_brief(meta: dict) -> dict:
+    """从指纹里取规则摘要（兼容没有该字段的老运行）。"""
+    rules = (meta or {}).get("rules") or {}
+    return {
+        "hash": rules.get("hash", ""),
+        "count": rules.get("count", 0),
+        "enabled_count": rules.get("enabled_count", 0),
+        "disabled_override": list(rules.get("disabled_override") or []),
+    }
+
+
+def _rules_changed(a: dict, b: dict) -> bool:
+    """两轮规则是否不同：文案/启用状态（hash）或本轮禁用清单不同即算变更。
+
+    老运行没有 rules 指纹 → 返回 False（"未知"不能当成"改过"，与 ``_model_changed`` 同口径）。
+    """
+    ra, rb = _rules_brief(a), _rules_brief(b)
+    if not ra["hash"] or not rb["hash"]:
+        return False
+    if ra["hash"] != rb["hash"]:
+        return True
+    return sorted(ra["disabled_override"]) != sorted(rb["disabled_override"])
 
 
 def _model_changed(a: dict, b: dict) -> bool:

@@ -43,10 +43,12 @@ def get_status(run_id: str | None) -> dict | None:
     return {k: v for k, v in r.items() if k != "_task"}
 
 
-async def _fingerprint() -> dict:
-    """记录本轮用的「模型 + 关键配置」指纹，供跨版本回归对比。
+async def _fingerprint(flt: dict | None = None) -> dict:
+    """记录本轮用的「模型 + 关键配置 + 生成规则」指纹，供跨版本回归对比。
 
     没有它，两次跑分对不上就说不清是「代码/提示词改了」还是「换了模型」。
+    生成规则（`ai_query_prompt_rules`）参与 prompt 拼装，所以必须一起留痕：
+    否则「同配置两次跑分不同」会被误判成模型抖动。
     """
     from datetime import datetime
 
@@ -73,6 +75,15 @@ async def _fingerprint() -> dict:
         out["max_tokens_effective"] = nl2sql_max_tokens(cfg)
     except Exception as e:  # noqa: BLE001
         out["config_error"] = str(e)[:120]
+    try:
+        from . import prompt_rules
+
+        snap = await prompt_rules.snapshot()
+        # 本轮评测额外禁用的规则（A/B）以 filter 为准，快照里再记一次便于直接读运行记录
+        snap["disabled_override"] = list((flt or {}).get("rules_disable") or ())
+        out["rules"] = snap
+    except Exception as e:  # noqa: BLE001
+        out["rules_error"] = str(e)[:120]
     return out
 
 
@@ -197,6 +208,11 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
         results: list[dict] = []
         schemas: dict[str, dict] = {}
         gold_cache: dict[int, dict] = {}
+        # A/B：本轮禁用的生成规则（按 code）。只作用于**本任务**（ContextVar），
+        # 不改库、不影响真实用户；跑完必须复位，否则同进程后续的其它任务会继承。
+        from . import prompt_rules as _prompt_rules
+
+        _prompt_rules.set_disabled_codes(flt.get("rules_disable") or ())
         for c in cases:
             _RUNS[run_id]["current"] = c["question"]
             ds = c["datasource"] or "system"
@@ -251,6 +267,8 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
             _RUNS[run_id]["done"] = len(results)
             # 进度也要落库（历史列表的「进度」列读的是 DB，不是内存）
             await _persist_run_progress(run_id, done=len(results))
+        # 复位 A/B 规则禁用：异常路径由外层 except 兜底（同一任务内不会再有问数）
+        _prompt_rules.set_disabled_codes(())
         await _finish_run(run_id, results, status="done")
     except Exception as e:  # noqa: BLE001
         log.error(f"[ai-eval] 运行失败: {e}")
@@ -544,7 +562,7 @@ def start_run(auth, filter: dict | None = None, mode: str = "full",
     async def _bootstrap() -> None:
         await ensure_eval_tables()
         # 指纹（模型 + 关键配置）随运行一起落库：没有它，两次跑分差异无法归因
-        fp = await _fingerprint()
+        fp = await _fingerprint(flt)
         _RUNS[run_id]["fingerprint"] = fp
         cfg_payload = {**(config or {}), "fingerprint": fp}
         async with async_db_session.begin() as db:

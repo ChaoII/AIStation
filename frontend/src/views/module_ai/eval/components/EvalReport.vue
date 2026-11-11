@@ -62,6 +62,18 @@
           <el-tag v-if="meta.filter?.dataset" size="small" effect="plain">
             {{ $t("ai_workflow.eval_dataset") }}：{{ meta.filter.dataset }}
           </el-tag>
+          <!-- 生成规则指纹：A/B（按轮禁用规则）时必须能一眼看出两轮差在哪条规则上 -->
+          <el-tag v-if="meta.fingerprint?.rules" size="small" effect="plain">
+            rules={{ meta.fingerprint.rules.hash }}
+          </el-tag>
+          <el-tag
+            v-if="meta.fingerprint?.rules?.disabled_override?.length"
+            size="small"
+            type="warning"
+            effect="plain"
+          >
+            rules_off={{ meta.fingerprint.rules.disabled_override.join(",") }}
+          </el-tag>
         </div>
         <el-alert
           v-if="degenerateNote"

@@ -99,3 +99,70 @@ def test_render_is_empty_when_all_disabled():
     for r in rows:
         r["enabled"] = False
     assert _render(rows, {}, "ds:6", "PostgreSQL") == []
+
+
+def test_ab_override_disables_only_current_task():
+    """A/B：任务内禁用某条规则 → 该规则不出现；复位后恢复（不改库、不改全局）。"""
+    from app.plugin.module_ai.query.prompt_rules import (
+        disabled_codes,
+        set_disabled_codes,
+    )
+
+    try:
+        set_disabled_codes(["topn_null"])
+        rules = _render(default_rows(), {}, "ds:6", "PostgreSQL")
+        assert not any("Top N" in r for r in rules)
+        assert len(rules) == 6
+        assert disabled_codes() == ("topn_null",)
+    finally:
+        set_disabled_codes(())
+    rules = _render(default_rows(), {}, "ds:6", "PostgreSQL")
+    assert any("Top N" in r for r in rules) and len(rules) == 7
+
+
+def test_snapshot_hash_changes_when_body_changes(monkeypatch):
+    """指纹要能区分"文案改过"，否则两次跑分差异无法归因。"""
+    import asyncio
+
+    from app.plugin.module_ai.query import prompt_rules as PR
+
+    async def fake_rows():
+        return PR.default_rows()
+
+    monkeypatch.setattr(PR, "_load_rows", fake_rows)
+    first = asyncio.run(PR.snapshot())
+    rows = PR.default_rows()
+    rows[0]["body"] = rows[0]["body"] + "（改过）"
+    monkeypatch.setattr(PR, "_load_rows", lambda: _async_value(rows))
+    second = asyncio.run(PR.snapshot())
+    assert first["hash"] != second["hash"]
+    assert first["count"] == second["count"] == len(PR.DEFAULT_RULES)
+
+
+async def _async_value(value):
+    return value
+
+
+def test_compare_reports_rules_changed():
+    """A/B 对比必须能说清「两轮规则不同」，否则提升了也归不了因。"""
+    from app.plugin.module_ai.query.eval_compare import compare_runs
+
+    rows = [{"testcase_id": 1, "question": "q", "gold_match": True, "took_ms": 10}]
+    base_meta = {"run_id": "a", "fingerprint": {"rules": {"hash": "aaa", "count": 8,
+                                                         "enabled_count": 8,
+                                                         "disabled_override": []}}}
+    target_meta = {"run_id": "b", "fingerprint": {"rules": {"hash": "aaa", "count": 8,
+                                                           "enabled_count": 8,
+                                                           "disabled_override": ["topn_null"]}}}
+    out = compare_runs(rows, rows, base_meta, target_meta)
+    assert out["rules_changed"] is True
+    assert out["target"]["rules"]["disabled_override"] == ["topn_null"]
+
+    # 老运行没有 rules 指纹 → 不能报"改了"
+    assert compare_runs(rows, rows, {"run_id": "a"}, {"run_id": "b"})["rules_changed"] is False
+
+    # 文案变了（hash 不同）→ 也算改了
+    other = {"run_id": "c", "fingerprint": {"rules": {"hash": "bbb"}}}
+    assert compare_runs(rows, rows, base_meta, other)["rules_changed"] is True
+
+

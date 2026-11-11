@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import time
+from contextvars import ContextVar as _ContextVar
 from datetime import datetime
 from typing import Any
 
@@ -144,6 +145,19 @@ DEFAULT_RULES: list[dict[str, Any]] = [
 _CACHE: dict[str, Any] = {"at": 0.0, "rows": None}
 _CACHE_TTL = 60.0
 
+#: 本轮评测的规则禁用集合（A/B 用）：只作用于**当前 asyncio 任务**，不改库、不改全局配置。
+#: 与 `eval_runner.override_settings` 同思路——消融/对比不能把真实用户带跑。
+_RULES_DISABLED: _ContextVar[tuple[str, ...]] = _ContextVar("query_rules_disabled", default=())
+
+
+def set_disabled_codes(codes) -> None:
+    """本轮任务内禁用若干规则（按 code）。传空 = 全部启用。"""
+    _RULES_DISABLED.set(tuple(str(c) for c in (codes or ())))
+
+
+def disabled_codes() -> tuple[str, ...]:
+    return _RULES_DISABLED.get()
+
 
 def invalidate_cache() -> None:
     """让规则缓存立即失效（写操作/播种后调用）。"""
@@ -251,8 +265,11 @@ def _render(items: list[dict[str, Any]], cfg: dict, datasource: str,
     out: list[str] = []
     ds = (datasource or "").strip()
     dname = (dialect_name or "").strip().lower()
+    disabled = set(_RULES_DISABLED.get())
     for r in sorted(items, key=lambda x: (int(x.get("priority") or 100), int(x.get("id") or 0))):
         if not r.get("enabled"):
+            continue
+        if (r.get("code") or "") in disabled:
             continue
         scope = (r.get("scope") or "all").lower()
         if scope == "datasource" and (r.get("scope_value") or "") not in ("", ds):
@@ -281,6 +298,39 @@ async def render_rules(cfg: dict, datasource: str = "",
     except Exception:  # noqa: BLE001 - 配置读不到不能拖垮问数
         items = default_rows()
     return _render(items, cfg, datasource, dialect_name)
+
+
+async def snapshot() -> dict[str, Any]:
+    """当前生效规则的**快照**，随评测运行落库（用于两次跑分归因）。
+
+    只存 code / enabled / scope / 文案指纹（sha1 前 12 位），不存全文：
+    配置里塞 8 段中文 prompt 会让运行记录难以阅读，而指纹足以判断"改没改"。
+    """
+    import hashlib
+
+    try:
+        items = await _load_rows()
+        if not items:
+            items = default_rows()
+    except Exception:  # noqa: BLE001
+        items = default_rows()
+    rows = []
+    for r in sorted(items, key=lambda x: (int(x.get("priority") or 100), int(x.get("id") or 0))):
+        body = (r.get("body") or "").strip()
+        rows.append({
+            "code": r.get("code") or "",
+            "enabled": bool(r.get("enabled")),
+            "scope": f"{r.get('scope') or 'all'}:{r.get('scope_value') or ''}".rstrip(":"),
+            "body_sha": hashlib.sha1(body.encode("utf-8")).hexdigest()[:12],
+        })
+    joined = "|".join(f"{r['code']}:{int(r['enabled'])}:{r['body_sha']}" for r in rows)
+    return {
+        "count": len(rows),
+        "enabled_count": sum(1 for r in rows if r["enabled"]),
+        "hash": hashlib.sha1(joined.encode("utf-8")).hexdigest()[:16],
+        "items": rows,
+        "disabled_override": list(_RULES_DISABLED.get()),
+    }
 
 
 async def list_rules() -> dict[str, Any]:
@@ -483,5 +533,6 @@ async def reset_rule(rule_id: int) -> dict[str, Any]:
 __all__ = [
     "CORE_RULES", "DEFAULT_RULES", "TABLE_DDL", "ensure_prompt_rules", "render_rules",
     "list_rules", "update_rule", "create_rule", "delete_rule", "reset_rule",
-    "invalidate_cache", "default_rows",
+    "invalidate_cache", "default_rows", "snapshot",
+    "set_disabled_codes", "disabled_codes",
 ]
