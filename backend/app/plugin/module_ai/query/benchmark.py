@@ -495,8 +495,10 @@ def _norm_cell(v) -> str:
         return "∅"
     if raw.startswith(_UNKNOWN_PREFIXES):
         return "∅"
-    # 同一时刻的两种写法：date() 给 '2026-08-24'，date_trunc 给 '2026-08-24 00:00:00'
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2} 00:00:00(\.0+)?", raw):
+    # 同一时刻的两种写法：date() 给 '2026-08-24'，date_trunc 给 '2026-08-24 00:00:00'；
+    # 而时间戳列经 JSON 序列化后是 ISO 的 '2026-08-24T00:00:00'（分隔符是 T）。
+    # 三者指同一时刻，比对时必须视作相等，否则「按日期汇总」这类题会被误判为错。
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}[ T]00:00:00(\.0+)?", raw):
         return raw[:10]
     # 数字统一到 2 位小数（处理 ROUND(…,2) vs 未取整浮点）
     try:

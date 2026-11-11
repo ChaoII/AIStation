@@ -141,7 +141,12 @@ def _json_cell(v):
         return float(v)
     from datetime import date, datetime, time
 
-    if isinstance(v, (datetime, date, time)):
+    if isinstance(v, datetime):
+        # 同 execution._json_cell：午夜整点的时间戳按日期输出，避免 `T00:00:00`
+        if (v.hour, v.minute, v.second, v.microsecond) == (0, 0, 0, 0):
+            return v.date().isoformat()
+        return v.isoformat()
+    if isinstance(v, (date, time)):
         return v.isoformat()
     if isinstance(v, (list, tuple)):
         return [_json_cell(x) for x in v]

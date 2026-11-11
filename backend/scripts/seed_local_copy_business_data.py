@@ -82,6 +82,13 @@ EXTRA_METRICS = [
      'FROM "FUEL_CMCS_ELEMENTASSAY" WHERE "ISDELETED" = false', "avg", "%"),
 ]
 
+# 字段级术语：把业务词直接映射到列（比指标更细，供模型写 SQL 时定位）
+FIELD_TERMS = [
+    ("全水分", "DTXY_PMXX.QSF"),
+    ("挥发分", "DTXY_PMXX.HFF"),
+    ("灰分", "DTXY_PMXX.HF"),
+]
+
 # ds:6 专用 few-shot：模型偶发把「备注不为空」写成只判 IS NOT NULL
 D6_FEWSHOTS = [
     ("化验单里备注非空的有多少条？",
@@ -230,7 +237,23 @@ async def seed_extra_metrics(ds_id: int) -> None:
                     "uuid,status,created_time,updated_time) "
                     "VALUES (:d,:q,:s,true,false,gen_random_uuid(),'0',now(),now())"
                 ), {"d": target, "q": q, "s": sql})
-    print(f"[meta] 副本专用指标 {len(EXTRA_METRICS)} 个、术语 {len(EXTRA_TERMS)} 个、示例 {len(D6_FEWSHOTS)} 条已就绪")
+    async with async_db_session.begin() as db:
+        for term, field_path in FIELD_TERMS:
+            found = (await db.execute(text(
+                "SELECT 1 FROM ai_query_dictionary WHERE datasource=:d AND term=:t AND is_deleted=false"
+            ), {"d": target, "t": term})).first()
+            if found:
+                await db.execute(text(
+                    "UPDATE ai_query_dictionary SET field_path=:f, metric_key='' "
+                    "WHERE datasource=:d AND term=:t"
+                ), {"f": field_path, "d": target, "t": term})
+            else:
+                await db.execute(text(
+                    "INSERT INTO ai_query_dictionary(datasource,term,metric_key,field_path,type,is_deleted,"
+                    "uuid,status,created_time,updated_time) "
+                    "VALUES (:d,:t,'',:f,'term',false,gen_random_uuid(),'0',now(),now())"
+                ), {"d": target, "t": term, "f": field_path})
+    print(f"[meta] 副本专用指标 {len(EXTRA_METRICS)} 个、术语 {len(EXTRA_TERMS)} 个、字段术语 {len(FIELD_TERMS)} 个、示例 {len(D6_FEWSHOTS)} 条已就绪")
 
 
 async def reset_demo(conn) -> None:

@@ -332,7 +332,14 @@ def _json_cell(v):
         return float(v)
     from datetime import date, datetime, time
 
-    if isinstance(v, (datetime, date, time)):
+    if isinstance(v, datetime):
+        # 时间戳列常被当成「业务日期」用（日报表 RECORDDATE 等），值是当天 00:00:00。
+        # 直接 isoformat() 会输出 `2025-12-14T00:00:00`，前端表格与答案文案都很刺眼；
+        # 午夜整点且无微秒时按日期输出（与评测比对口径一致：两者是同一时刻）。
+        if (v.hour, v.minute, v.second, v.microsecond) == (0, 0, 0, 0):
+            return v.date().isoformat()
+        return v.isoformat()
+    if isinstance(v, (date, time)):
         return v.isoformat()
     if isinstance(v, (list, tuple)):
         return [_json_cell(x) for x in v]
