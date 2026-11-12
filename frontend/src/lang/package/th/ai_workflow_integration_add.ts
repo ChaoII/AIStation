@@ -392,6 +392,11 @@ export default {
     'การเปลี่ยนแปลงกฎใด ๆ รีเฟรชพรีวิวด้านล่างอัตโนมัติ (อ่านอย่างเดียว ไม่กระทบกฎที่บันทึก); ยืนยันแล้วคลิก "บันทึกกฎ / บันทึกและใช้"',
   ig_tabRuleConfig: "การกำหนดค่ากฎ",
   ig_enableRuleHint: "เมื่อปิด ตารางระบบ/ฟิลด์ตรวจสอบจะไม่ถูกติดแท็กอัตโนมัติโดยกฎ",
+  ig_softDeleteSection: "Soft-delete policy (business tables exclude deleted rows)",
+  ig_softDeleteColumn: "Soft-delete column",
+  ig_softDeleteHints: "Wording for deleted rows",
+  ig_enterAddHint: "Type and press Enter",
+  ig_softDeleteTip: "Which column marks soft-deleted rows; rows are not filtered when the question contains these words.",
   ig_sysTableDetect: "การตรวจจับตารางระบบ",
   ig_auditFieldDetect: "การตรวจจับฟิลด์ตรวจสอบ",
   ig_draftStatus:

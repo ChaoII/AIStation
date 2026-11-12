@@ -398,6 +398,11 @@ export default {
   ig_tabRuleConfig: "Cấu hình Quy tắc",
   ig_enableRuleHint:
     "Khi tắt, bảng hệ thống / trường kiểm toán không còn được tự động gắn nhãn bởi quy tắc",
+  ig_softDeleteSection: "Soft-delete policy (business tables exclude deleted rows)",
+  ig_softDeleteColumn: "Soft-delete column",
+  ig_softDeleteHints: "Wording for deleted rows",
+  ig_enterAddHint: "Type and press Enter",
+  ig_softDeleteTip: "Which column marks soft-deleted rows; rows are not filtered when the question contains these words.",
   ig_sysTableDetect: "Phát hiện Bảng hệ thống",
   ig_auditFieldDetect: "Phát hiện Trường kiểm toán",
   ig_draftStatus:

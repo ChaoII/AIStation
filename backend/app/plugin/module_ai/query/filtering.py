@@ -63,6 +63,29 @@ def softdelete_rules(rules: dict | None = None) -> dict[str, Any]:
     return {"column": col, "deletion_hints": [str(h) for h in hints if str(h).strip()]}
 
 
+def effective_filter_rules(rules: dict | None = None) -> dict[str, Any]:
+    """**生效**的筛选规则（默认值 + 已保存覆盖），供界面回显。
+
+    为什么需要：界面上只显示库里存的 JSON，而默认值在代码里 —— 用户看到「软删词表是空的」，
+    实际却按 7 个内置说法在跑。**看见的必须等于生效的**，否则改配置就是盲改。
+    """
+    r = rules if isinstance(rules, dict) else {}
+    st_saved = r.get("system_table") if isinstance(r.get("system_table"), dict) else {}
+    st = {
+        **DEFAULT_FILTER_RULES["system_table"],
+        **{k: v for k, v in st_saved.items() if v not in (None, "")},
+    }
+    audit = r.get("audit_fields")
+    if not isinstance(audit, list) or not audit:
+        audit = list(DEFAULT_FILTER_RULES["audit_fields"])
+    return {
+        "enabled": r.get("enabled", True) is not False,
+        "system_table": st,
+        "audit_fields": audit,
+        "softdelete": softdelete_rules(r),
+    }
+
+
 def _norm(value: Any) -> str:
     """统一转成小写字符串，用于大小写不敏感匹配。"""
     return str(value or "").lower()

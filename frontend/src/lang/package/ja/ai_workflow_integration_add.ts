@@ -398,6 +398,11 @@ export default {
   ig_tabRuleConfig: "ルール設定",
   ig_enableRuleHint:
     "オフの場合、システムテーブル/監査フィールドはルールで自動タグ付けされなくなります",
+  ig_softDeleteSection: "Soft-delete policy (business tables exclude deleted rows)",
+  ig_softDeleteColumn: "Soft-delete column",
+  ig_softDeleteHints: "Wording for deleted rows",
+  ig_enterAddHint: "Type and press Enter",
+  ig_softDeleteTip: "Which column marks soft-deleted rows; rows are not filtered when the question contains these words.",
   ig_sysTableDetect: "システムテーブル検出",
   ig_auditFieldDetect: "監査フィールド検出",
   ig_draftStatus: "現在の下書き: {status}。保存後「前後」比較のベースラインになります",

@@ -1925,6 +1925,7 @@
       v-model="dsDlg"
       :title="dsForm.id ? t('ai_workflow.ig_editDs') : t('ai_workflow.ig_newDs')"
       width="520px"
+      class="ig-ds-dlg"
     >
       <el-form :model="dsForm" label-width="90px" size="small">
         <el-form-item :label="t('ai_workflow.ig_dsCode')">
@@ -2047,6 +2048,38 @@
                 :key="a"
                 :label="a"
                 :value="a"
+              />
+            </el-select>
+          </el-form-item>
+          <!-- 软删口径：不同业务库列名不同（ISDELETED / IS_DELETED / DEL_FLAG），
+               属于「数据源 schema 语义」，必须在这里维护，而不是写死在代码里。 -->
+          <el-divider content-position="left" class="ig-form__divider">
+            {{ t("ai_workflow.ig_softDeleteSection") }}
+          </el-divider>
+          <el-form-item :label="t('ai_workflow.ig_softDeleteColumn')">
+            <el-input
+              v-model="dsForm.filter_rules.softdelete.column"
+              size="small"
+              placeholder="ISDELETED"
+            />
+            <div class="ig-form__tip">{{ t("ai_workflow.ig_softDeleteTip") }}</div>
+          </el-form-item>
+          <el-form-item :label="t('ai_workflow.ig_softDeleteHints')">
+            <el-select
+              v-model="dsForm.filter_rules.softdelete.deletion_hints"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              size="small"
+              :placeholder="t('ai_workflow.ig_enterAddHint')"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="h in dsForm.filter_rules.softdelete.deletion_hints"
+                :key="h"
+                :label="h"
+                :value="h"
               />
             </el-select>
           </el-form-item>
@@ -3023,10 +3056,14 @@ function openDs(row?: any) {
   dsDlg.value = true;
 }
 
-// 确保 dsForm.filter_rules 结构完整，供编辑弹窗绑定
+// 确保 dsForm.filter_rules 结构完整，供编辑弹窗绑定。
+// ⚠️ 必须**保留未识别的键**（...fr）：以前这里只重建已知字段，保存时会把后端新增的配置
+// （如 softdelete）默默丢掉 —— UI 看起来正常，配置却被清空。
 function normalizeRules(f: any) {
   const fr = f?.filter_rules || {};
+  const soft = fr?.softdelete || {};
   f.filter_rules = {
+    ...fr,
     enabled: fr.enabled !== false,
     system_table: {
       prefixes: Array.isArray(fr?.system_table?.prefixes) ? fr.system_table.prefixes : [],
@@ -3035,6 +3072,10 @@ function normalizeRules(f: any) {
       regex: fr?.system_table?.regex || "",
     },
     audit_fields: Array.isArray(fr?.audit_fields) ? fr.audit_fields : [],
+    softdelete: {
+      column: soft.column || "ISDELETED",
+      deletion_hints: Array.isArray(soft.deletion_hints) ? soft.deletion_hints : [],
+    },
   };
 }
 
@@ -3980,6 +4021,13 @@ async function handleInferRelations() {
 
 <!-- 布局统一（非 scoped + 唯一类名）：左栏固定 240px（与工作台/个人空间/问数/本体一致） -->
 <style lang="scss">
+/* 数据源编辑弹窗字段多（连接 + 筛选规则 + 软删口径），固定 max-height 让内容区自己滚，
+   否则底部字段（软删列名/词表）会被视口裁掉、根本点不到。 */
+.ig-ds-dlg .el-dialog__body {
+  max-height: 66vh;
+  overflow-y: auto;
+}
+
 .ai-integration-page > .el-row.ig-fill {
   flex-wrap: nowrap;
   gap: 12px;

@@ -399,6 +399,11 @@ export default {
   ig_tabRuleConfig: "Regelkonfiguration",
   ig_enableRuleHint:
     "Wenn aus, werden Systemtabellen / Prüffelder nicht mehr automatisch von Regeln gekennzeichnet",
+  ig_softDeleteSection: "Soft-delete policy (business tables exclude deleted rows)",
+  ig_softDeleteColumn: "Soft-delete column",
+  ig_softDeleteHints: "Wording for deleted rows",
+  ig_enterAddHint: "Type and press Enter",
+  ig_softDeleteTip: "Which column marks soft-deleted rows; rows are not filtered when the question contains these words.",
   ig_sysTableDetect: "Erkennung von Systemtabellen",
   ig_auditFieldDetect: "Erkennung von Prüffeldern",
   ig_draftStatus:

@@ -15,7 +15,7 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 from . import service as _svc
-from .filtering import DEFAULT_FILTER_RULES
+from .filtering import DEFAULT_FILTER_RULES, effective_filter_rules
 from .model import AiQueryDatasourceModel
 
 
@@ -116,7 +116,7 @@ class DatasourceOps:
             return {}
         source = {"id": d.id, "name": d.name, "type": d.type, "host": d.host, "port": d.port,
                   "database": d.database, "username": d.username, "read_only": d.read_only,
-                  "enabled": d.enabled, "filter_rules": d.filter_rules or DEFAULT_FILTER_RULES,
+                  "enabled": d.enabled, "filter_rules": effective_filter_rules(d.filter_rules),
                   "remark": d.remark or ""}
         tables = await _svc.list_ds_schema(datasource_id)
         connector = next((c for c in await cls.connector_types() if c["type"] == d.type), None)
@@ -153,7 +153,7 @@ class DatasourceOps:
                  "host": d.host, "port": d.port, "database": d.database,
                  "username": d.username, "read_only": d.read_only, "default": d.default,
                  "enabled": d.enabled, "allowed_roles": d.allowed_roles or [],
-                 "filter_rules": d.filter_rules,
+                 "filter_rules": effective_filter_rules(d.filter_rules),
                  "table_count": counts.get(f"ds:{d.id}", 0),
                  "remark": d.remark or ""}
                 for d in rows

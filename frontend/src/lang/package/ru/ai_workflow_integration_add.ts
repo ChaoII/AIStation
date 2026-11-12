@@ -401,6 +401,11 @@ export default {
   ig_tabRuleConfig: "Конфигурация правил",
   ig_enableRuleHint:
     "Когда выключено, системные таблицы / поля аудита больше не помечаются правилами автоматически",
+  ig_softDeleteSection: "Soft-delete policy (business tables exclude deleted rows)",
+  ig_softDeleteColumn: "Soft-delete column",
+  ig_softDeleteHints: "Wording for deleted rows",
+  ig_enterAddHint: "Type and press Enter",
+  ig_softDeleteTip: "Which column marks soft-deleted rows; rows are not filtered when the question contains these words.",
   ig_sysTableDetect: "Обнаружение системных таблиц",
   ig_auditFieldDetect: "Обнаружение полей аудита",
   ig_draftStatus:

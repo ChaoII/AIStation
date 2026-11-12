@@ -405,6 +405,11 @@ export default {
   ig_tabRuleConfig: "Configuración de reglas",
   ig_enableRuleHint:
     "Al desactivarse, las tablas del sistema / campos de auditoría ya no se etiquetan automáticamente por reglas",
+  ig_softDeleteSection: "Soft-delete policy (business tables exclude deleted rows)",
+  ig_softDeleteColumn: "Soft-delete column",
+  ig_softDeleteHints: "Wording for deleted rows",
+  ig_enterAddHint: "Type and press Enter",
+  ig_softDeleteTip: "Which column marks soft-deleted rows; rows are not filtered when the question contains these words.",
   ig_sysTableDetect: "Detección de tablas del sistema",
   ig_auditFieldDetect: "Detección de campos de auditoría",
   ig_draftStatus:

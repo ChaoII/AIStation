@@ -495,6 +495,11 @@ export default {
     'Any rule change auto-refreshes the preview below (read-only, does not affect saved rules); confirm then click "Save Rules / Save & Apply".',
   ig_tabRuleConfig: "Rule Config",
   ig_enableRuleHint: "When off, system tables / audit fields are no longer auto-tagged by rules",
+  ig_softDeleteSection: "Soft-delete policy (business tables exclude deleted rows)",
+  ig_softDeleteColumn: "Soft-delete column",
+  ig_softDeleteHints: "Wording for deleted rows",
+  ig_enterAddHint: "Type and press Enter",
+  ig_softDeleteTip: "Which column marks soft-deleted rows; rows are not filtered when the question contains these words.",
   ig_sysTableDetect: "System Table Detection",
   ig_auditFieldDetect: "Audit Field Detection",
   ig_draftStatus:

@@ -68,3 +68,22 @@ def test_custom_hints_are_honoured():
 def test_inject_softdelete_signature_still_backward_compatible():
     out, hit = inject_softdelete('SELECT * FROM "A"', {"A"})
     assert hit == ["A"] and '"ISDELETED" = FALSE' in out.upper()
+
+
+def test_effective_rules_show_defaults_in_ui():
+    """界面回显必须是**生效值**：库里没存 softdelete 时也要看到默认列名与词表。"""
+    from app.plugin.module_ai.query.filtering import effective_filter_rules
+
+    eff = effective_filter_rules(None)
+    assert eff["softdelete"]["column"] == "ISDELETED"
+    assert "作废" in eff["softdelete"]["deletion_hints"]
+    # 已保存的覆盖要生效
+    eff2 = effective_filter_rules({
+        "softdelete": {"column": "IS_DELETED", "deletion_hints": ["注销"]},
+        "system_table": {"prefixes": ["TMP_"]},
+    })
+    assert eff2["softdelete"]["column"] == "IS_DELETED"
+    assert eff2["softdelete"]["deletion_hints"] == ["注销"]
+    assert eff2["system_table"]["prefixes"] == ["TMP_"]
+    # 旧配置（无 system_table）→ 默认前缀仍在
+    assert effective_filter_rules({"enabled": True})["system_table"]["prefixes"]

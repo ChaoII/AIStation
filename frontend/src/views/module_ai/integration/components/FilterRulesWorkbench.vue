@@ -569,6 +569,8 @@ function defaultRules() {
     enabled: true,
     system_table: { prefixes: [], keywords: [], exact: [], regex: "" },
     audit_fields: [],
+    // 软删口径也归这里：工作台保存时**不能丢**（否则数据源编辑页配好的列名会被抹掉）
+    softdelete: { column: "ISDELETED", deletion_hints: [] },
   };
 }
 
@@ -577,7 +579,10 @@ function defaultRules() {
 function normalizeRules(raw: any) {
   const r = raw || {};
   const st = r.system_table || {};
+  const soft = r.softdelete || {};
   return {
+    // 保留未识别的键：否则工作台保存会把数据源编辑页维护的配置（如 softdelete）清掉
+    ...r,
     enabled: r.enabled !== false,
     system_table: {
       prefixes: Array.isArray(st.prefixes) ? st.prefixes : [],
@@ -586,6 +591,10 @@ function normalizeRules(raw: any) {
       regex: st.regex || "",
     },
     audit_fields: Array.isArray(r.audit_fields) ? r.audit_fields : [],
+    softdelete: {
+      column: soft.column || "ISDELETED",
+      deletion_hints: Array.isArray(soft.deletion_hints) ? soft.deletion_hints : [],
+    },
   };
 }
 
