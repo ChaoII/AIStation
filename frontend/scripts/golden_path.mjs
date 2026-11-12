@@ -36,7 +36,10 @@ await page.goto(`${BASE}/#/ai/query?datasource=ds:4`, { waitUntil: "domcontentlo
 await page.waitForSelector(".chat-shell", { timeout: 30000 });
 await page.waitForTimeout(1000);
 await page.locator("textarea").first().fill("煤场进煤记录有多少条？");
-await page.getByRole("button", { name: /提\s*问/ }).first().click();
+await page
+  .getByRole("button", { name: /提\s*问/ })
+  .first()
+  .click();
 await page.waitForTimeout(20000);
 const fb = await page.evaluate(() =>
   [...document.querySelectorAll(".q-msg__fb button")].map((b) => b.textContent?.trim())
@@ -76,7 +79,12 @@ await page.waitForTimeout(300);
 
 // 3) 资产起草入口
 await page.goto(`${BASE}/#/ai/integration`, { waitUntil: "domcontentloaded" });
-await page.waitForTimeout(4000);
+// 等按钮真的渲染出来（固定 4 秒会在慢机上偶发误判「页面没有入口」）
+await page
+  .getByRole("button", { name: "批量起草" })
+  .first()
+  .waitFor({ state: "visible", timeout: 30000 })
+  .catch(() => {});
 const labels = await page.evaluate(() =>
   [...document.querySelectorAll("button")].map((b) => b.textContent?.trim()).filter(Boolean)
 );

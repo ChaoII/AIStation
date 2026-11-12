@@ -261,6 +261,14 @@ export function saveQuerySetting(data: { key: string; value: string; remark: str
 export function getPromptRules() {
   return request({ url: `${API_PATH}/prompt-rules`, method: "get" });
 }
+// ---- 治理包（别名/描述/术语）导入导出 ----
+export function getGovernanceExport(params: { datasource?: string }) {
+  return request({ url: `${API_PATH}/governance/export`, method: "get", params });
+}
+export function importGovernance(data: { data: any; apply?: boolean; datasource?: string }) {
+  return request({ url: `${API_PATH}/governance/import`, method: "post", data });
+}
+
 // ---- 指标体检（脏指标/抢答题清单 + 启停）----
 export function getMetricsAudit(params: { datasource?: string; top?: number }) {
   return request({ url: `${API_PATH}/metrics/audit`, method: "get", params });

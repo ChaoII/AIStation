@@ -147,6 +147,14 @@ class LanguageProbeRequest(BaseModel):
     rules: dict[str, Any] | None = None
 
 
+class GovernanceImportRequest(BaseModel):
+    """治理包导入（`apply=False` 只预演）。"""
+
+    data: dict[str, Any]
+    apply: bool = False
+    datasource: str = "ds:6"
+
+
 class MetricEnabledUpsert(BaseModel):
     """指标体检：只改启用开关。"""
 

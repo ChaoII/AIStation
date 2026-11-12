@@ -16,6 +16,7 @@ from .schema import (
     FilterRulesParseRequest,
     FilterRulesPreviewRequest,
     FilterRulesSuggestRequest,
+    GovernanceImportRequest,
     LanguageProbeRequest,
     MetricEnabledUpsert,
     PromptRuleUpsert,
@@ -111,6 +112,27 @@ async def list_metrics(
 
 
 @AiQueryRouter.post("/metrics/save", summary="指标保存")
+@AiQueryRouter.get("/governance/export", summary="治理包导出（别名/描述/术语）")
+async def governance_export(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str = "ds:6",
+) -> JSONResponse:
+    from .governance_io import export_bundle
+
+    return SuccessResponse(data=await export_bundle(datasource), msg="导出成功")
+
+
+@AiQueryRouter.post("/governance/import", summary="治理包导入（预演/应用）")
+async def governance_import(
+    data: GovernanceImportRequest,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from .governance_io import import_bundle
+
+    out = await import_bundle(data.data or {}, data.datasource, apply=bool(data.apply))
+    return SuccessResponse(data=out, msg="已应用" if data.apply else "预演完成")
+
+
 @AiQueryRouter.get("/metrics/audit", summary="指标体检（脏指标/抢答题清单）")
 async def audit_metrics_api(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

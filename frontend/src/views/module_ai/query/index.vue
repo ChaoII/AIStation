@@ -559,6 +559,7 @@
           <el-button size="small" @click="openEntityMap">实体映射</el-button>
           <el-button size="small" @click="openLanguageRules">语言规则</el-button>
           <el-button size="small" @click="openAudit">指标体检</el-button>
+          <el-button size="small" @click="govVisible = true">治理导入导出</el-button>
           <el-button size="small" @click="mapVisible = true">配置地图</el-button>
         </div>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
@@ -685,6 +686,74 @@
         <el-button @click="entVisible = false">取消</el-button>
         <el-button :loading="entSaving" @click="resetEntityMap">恢复默认</el-button>
         <el-button type="primary" :loading="entSaving" @click="saveEntityMap">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 治理导入导出：别名/描述/术语 打包，换环境不用手点 -->
+    <el-dialog
+      v-model="govVisible"
+      title="治理导入导出（别名/描述/术语）"
+      width="900px"
+      append-to-body
+    >
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="导出是可读 JSON；导入先「预演」再「应用」。应用只更新包里有值的字段，不会清空其它内容。"
+        class="q-fb-tip"
+      />
+      <div class="q-rules__bar">
+        <el-button size="small" type="primary" :loading="govExporting" @click="exportGovernance">
+          导出当前数据源治理包
+        </el-button>
+        <span class="q-rules__hint" style="margin-left: 8px">
+          数据源：{{ currentDs() || "ds:6" }}
+        </span>
+      </div>
+      <el-input
+        v-model="govText"
+        type="textarea"
+        :rows="10"
+        placeholder="把导出的 JSON 粘贴到这里（或选择文件）"
+      />
+      <div class="q-rules__bar">
+        <input type="file" accept=".json" class="q-gov__file" @change="onGovFile" />
+        <el-button size="small" :loading="govLoading" @click="previewGovernance">预演</el-button>
+        <el-button size="small" type="primary" :loading="govLoading" @click="applyGovernance">
+          应用
+        </el-button>
+      </div>
+      <div v-if="govResult" class="q-gov__result">
+        <el-descriptions :column="3" size="small" border>
+          <el-descriptions-item label="资产别名/描述">
+            新增 {{ govResult.assets?.add || 0 }} / 更新 {{ govResult.assets?.update || 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item label="本体别名">
+            新增 {{ govResult.ontology_aliases?.add || 0 }} / 更新
+            {{ govResult.ontology_aliases?.update || 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item label="术语">
+            新增 {{ govResult.terms?.add || 0 }} / 更新 {{ govResult.terms?.update || 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item label="未知表/对象">
+            {{
+              (govResult.unknown_tables?.length || 0) +
+              (govResult.ontology_aliases?.unknown_codes?.length || 0)
+            }}
+          </el-descriptions-item>
+          <el-descriptions-item label="重复行（同名不同大小写）">
+            {{ govResult.assets?.duplicates || 0 }}
+          </el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag v-if="govResult.applied" type="success" size="small">已应用</el-tag>
+            <el-tag v-else type="info" size="small">仅预演</el-tag>
+          </el-descriptions-item>
+        </el-descriptions>
+        <div v-if="govResult.applied" class="q-rules__hint">已应用，下一句问数立即生效。</div>
+      </div>
+      <template #footer>
+        <el-button @click="govVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -1152,6 +1221,7 @@ import {
   getEntityMap,
   getQueryAssets,
   getLanguageRules,
+  getGovernanceExport,
   getMetricsAudit,
   getQueryFewshots,
   getQueryMessages,
@@ -1167,6 +1237,7 @@ import {
   runQueryReport,
   saveQueryReport,
   saveQuerySetting,
+  importGovernance,
   setMetricEnabled,
   startEvalRun,
   streamQuery,
@@ -1830,6 +1901,90 @@ async function resetEntityMap() {
   }
 }
 
+// ---- 治理导入导出 ----
+const govVisible = ref(false);
+const govText = ref("");
+const govLoading = ref(false);
+const govExporting = ref(false);
+const govResult = ref<any>(null);
+
+async function exportGovernance() {
+  govExporting.value = true;
+  try {
+    const ds = currentDs() || "ds:6";
+    const r = await getGovernanceExport({ datasource: ds });
+    const bundle = r.data?.data || {};
+    const text = JSON.stringify(bundle, null, 2);
+    govText.value = text;
+    const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `governance-${ds.replace(":", "_")}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    ElMessage.success("已导出");
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "导出失败");
+  } finally {
+    govExporting.value = false;
+  }
+}
+
+function onGovFile(ev: Event) {
+  const input = ev.target as HTMLInputElement;
+  const f = input.files?.[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    govText.value = String(reader.result || "");
+  };
+  reader.readAsText(f, "utf-8");
+}
+
+async function previewGovernance() {
+  govLoading.value = true;
+  try {
+    const bundle = JSON.parse(govText.value || "{}");
+    const r = await importGovernance({
+      data: bundle,
+      apply: false,
+      datasource: currentDs() || "ds:6",
+    });
+    govResult.value = r.data?.data || {};
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "预演失败（检查 JSON 格式）");
+  } finally {
+    govLoading.value = false;
+  }
+}
+
+async function applyGovernance() {
+  try {
+    await ElMessageBox.confirm(
+      "将按上面的包更新别名/描述/术语（只更新有值的字段，不会删除其它内容）。确认应用？",
+      "应用治理包",
+      { type: "warning", confirmButtonText: "应用", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  govLoading.value = true;
+  try {
+    const bundle = JSON.parse(govText.value || "{}");
+    const r = await importGovernance({
+      data: bundle,
+      apply: true,
+      datasource: currentDs() || "ds:6",
+    });
+    govResult.value = r.data?.data || {};
+    ElMessage.success("已应用");
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "应用失败");
+  } finally {
+    govLoading.value = false;
+  }
+}
+
 // ---- 指标体检（脏指标/抢答题）----
 const auditVisible = ref(false);
 const auditLoading = ref(false);
@@ -2022,6 +2177,12 @@ const configMap = [
     where: "数据与集成 → 术语",
     when: "用户说的词和字段名对不上（如「全水分」「热值」）",
     path: "/ai/integration",
+  },
+  {
+    what: "别名/描述/术语（批量）",
+    where: "问数设置 → 治理导入导出",
+    when: "几百张表要一次性维护，或者把 dev 调好的配置搬到生产",
+    path: "",
   },
   {
     what: "指标口径",
@@ -2859,6 +3020,12 @@ const visibleGroups = computed(() => {
   color: var(--el-text-color-regular);
   font-size: 12px;
   line-height: 1.6;
+}
+.q-gov__result {
+  margin-top: 10px;
+}
+.q-gov__file {
+  font-size: 12px;
 }
 .q-ent {
   max-height: 56vh;
