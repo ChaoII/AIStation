@@ -57,6 +57,7 @@ ALIASES: dict[str, list[str]] = {
     "FUEL_CMCS_SUPPLIER": ["供应商", "供应商台账"],
     "FUEL_CMCS_SUPPLIERQUALITYLIMIT": ["供应商煤质限制", "煤质限制", "供应商质量限制"],
     "FUEL_CMCS_SUPPLIERMINE": ["供应商矿点", "矿点关系", "供煤矿别"],
+    "DTXY_GYSKDGX": ["供应商矿点关系", "矿点关系", "供煤矿点关系"],
     # 运输 / 皮带
     "FUEL_CMCS_TRANSPORTPLAN": ["运输计划", "调运计划"],
     "FUEL_CMCS_TRANSPORTPLANDETAIL": ["运输计划明细", "调运明细"],

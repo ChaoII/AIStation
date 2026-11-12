@@ -189,6 +189,41 @@ SIBLING_QUALIFIERS: tuple[str, ...] = (
 )
 
 
+def _competitor_alias(
+    question: str, own_table: str, alias_map: dict[str, list[str]] | None,
+    own_aliases: list[str] | None = None,
+) -> str:
+    """问句里是否点到了**别的表**的业务别名（且比本表别名更具体）。
+
+    为什么需要（2026-11-12）：指标护栏只管住了计数型，`sum/avg` 仍会跨表抢答——
+    「期初库存明细的 QTY 合计」被库存指标（绑定进煤流水）抢；「配煤结果的混煤量」被
+    「配煤方案结果明细表STOQTY合计」抢。它们的共同点是：**问句里出现了另一张表的
+    业务别名**（期初库存明细 / 配煤结果），而指标绑定表对不上。
+
+    只认长度 ≥4 的别名，且不与本表别名互相包含，避免「库存」「合同」这类短词误伤。
+    """
+    if not alias_map:
+        return ""
+    q = (question or "").lower()
+    own = [str(a).lower() for a in (own_aliases or []) if str(a).strip()]
+    own_tbl = str(own_table or "").upper()
+    own_best = max((len(a) for a in own if a in q), default=0)
+    best_alias = ""
+    best_len = own_best
+    for tbl, arr in alias_map.items():
+        if str(tbl).upper() in (own_tbl, own_tbl[4:] if own_tbl.startswith("ONT_") else own_tbl):
+            continue
+        for a in arr or []:
+            al = str(a).strip().lower()
+            if len(al) < 4 or al not in q:
+                continue
+            if any(al in o or o in al for o in own):
+                continue
+            if len(al) > best_len:
+                best_alias, best_len = al, len(al)
+    return best_alias
+
+
 def _metric_table_evidence(question: str, metric_name: str, metric_core: str,
                            table: str, aliases: list[str] | None = None) -> bool:
     """计数型指标是否有资格回答（防「通用词重合 = 同一张表」的误劫持）。
@@ -289,6 +324,15 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
                 if not _metric_table_evidence(
                     question, m.get("name") or "", core, _tbl, list(_al)
                 ):
+                    continue
+        # 问句点到了别的表的业务别名 → 本指标不参战（对所有聚合类型生效）
+        if table_alias is not None:
+            _tbl2 = metric_main_table(m) or str(m.get("object_code") or "")
+            if _tbl2:
+                _own = table_alias.get(_tbl2) or table_alias.get(_tbl2.upper()) or []
+                if isinstance(_own, str):
+                    _own = [_own]
+                if _competitor_alias(question, _tbl2, table_alias, list(_own)):
                     continue
         # 问「多少条/多少笔」是数行数：非计数指标不参战
         if rowcount_asked and not physical_qty and (m.get("agg") or "").lower() != "count":

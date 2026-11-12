@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from app.plugin.module_ai.query.metric_rules import (
+    _competitor_alias,
     _metric_table_evidence,
     match_metric,
 )
@@ -68,3 +69,31 @@ def test_alias_evidence_and_sibling_veto():
                                      "FUEL_MIX_COALSCHEME", ["配煤方案"])
     assert not _metric_table_evidence("一共有多少条", "供应商数量", "",
                                      "FUEL_CMCS_SUPPLIER", ["供应商"])
+
+
+def test_competitor_alias_rule():
+    """问句点到别的表的业务别名 → 该指标不参战（sum/avg 也拦）。"""
+    amap = {
+        "FUEL_STG_ALLINMIDDLE": ["煤场进煤记录(流水)", "煤场进煤记录"],
+        "FUEL_STG_STORAGEINITIALIZEDETAIL": ["期初库存明细", "初始库存明细"],
+        "FUEL_MIX_COALSCHEMEREUSLTDETAIL": ["配煤结果明细"],
+        "FUEL_MIX_COALSCHEMERESULT": ["配煤结果", "掺配结果"],
+    }
+    # 别的表别名命中 → 返回它
+    assert _competitor_alias("期初库存明细的库存量合计是多少", "FUEL_STG_ALLINMIDDLE",
+                             amap, amap["FUEL_STG_ALLINMIDDLE"]) == "期初库存明细"
+    # 只命中自己的别名 → 没有竞争者
+    assert _competitor_alias("本月煤场进煤记录有多少条", "FUEL_STG_ALLINMIDDLE",
+                             amap, amap["FUEL_STG_ALLINMIDDLE"]) == ""
+    # 短别名（<4）不算证据
+    assert _competitor_alias("库存有多少", "X", {"T": ["库存"]}, []) == ""
+
+
+def test_sum_metric_blocked_by_competitor():
+    stock = _metric("coal_storage_qty", "煤场存煤量", "FUEL_STG_ALLINMIDDLE", agg="sum")
+    amap = {
+        "FUEL_STG_ALLINMIDDLE": ["煤场进煤记录(流水)", "煤场进煤记录"],
+        "FUEL_STG_STORAGEINITIALIZEDETAIL": ["期初库存明细"],
+    }
+    assert match_metric("期初库存明细的库存量合计是多少", [stock], [], [], {},
+                        table_alias=amap) is None
