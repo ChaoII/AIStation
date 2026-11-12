@@ -757,62 +757,116 @@
       </template>
     </el-dialog>
 
-    <!-- 指标体检：自动生成的脏指标 / 抢答题；可停用，改名去指标页 -->
-    <el-dialog v-model="auditVisible" title="指标体检" width="980px" append-to-body>
+    <!-- 治理体检：可疑指标 / 抢答题 / 悬空引用（只读发现，处置走指标页与各语义页） -->
+    <el-dialog v-model="auditVisible" title="治理体检" width="1000px" append-to-body>
       <el-alert
         type="info"
         :closable="false"
         show-icon
-        :title="`共 ${auditStats.total_metrics || 0} 个启用指标，可疑 ${auditStats.suspect || 0} 个（抢答 ${auditStats.hijacking || 0} 个）。停用只关开关，不改口径。`"
+        :title="`共 ${auditStats.total_metrics || 0} 个启用指标，扫描 ${auditStats.total_cases || 0} 道题；可疑 ${auditStats.suspect || 0} 个，抢答 ${auditStats.hijacking || 0} 条，悬空引用 ${auditStats.dangling_total || 0} 条。停用只关开关，不改口径。`"
         class="q-fb-tip"
       />
-      <el-table
-        v-loading="auditLoading"
-        :data="auditRows"
-        border
-        stripe
-        size="small"
-        max-height="460"
-      >
-        <el-table-column prop="name" label="指标名" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="table" label="绑定表/对象" min-width="180" show-overflow-tooltip />
-        <el-table-column label="问题" min-width="200">
-          <template #default="{ row }">
-            <el-tag
-              v-for="r in row.reasons"
-              :key="r"
-              size="small"
-              type="warning"
-              effect="plain"
-              style="margin-right: 4px"
-            >
-              {{ r }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="抢答（留出集）" width="110" align="center">
-          <template #default="{ row }">{{ row.questions?.length || 0 }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="150" align="center">
-          <template #default="{ row }">
-            <el-button
-              link
-              type="danger"
-              size="small"
-              :loading="row._saving"
-              @click="toggleMetric(row)"
-            >
-              停用
-            </el-button>
-            <el-button link type="primary" size="small" @click="goConfig('/ai/integration')">
-              去改名
-            </el-button>
-          </template>
-        </el-table-column>
-        <template #empty>
-          <el-empty :image-size="60" description="没有可疑指标" />
-        </template>
-      </el-table>
+      <div class="q-rules__bar">
+        <span class="q-rules__hint">扫描范围</span>
+        <el-select
+          v-model="auditDataset"
+          size="small"
+          placeholder="全部题库"
+          style="width: 200px"
+          @change="openAudit"
+        >
+          <el-option label="全部题库" value="" />
+          <el-option
+            v-for="d in auditStats.datasets_scanned || []"
+            :key="d"
+            :label="d || '未标注数据集'"
+            :value="d"
+          />
+        </el-select>
+        <span class="q-rules__hint" style="margin-left: 8px">
+          数据集：{{ (auditStats.datasets_scanned || []).filter(Boolean).join("、") || "—" }}
+        </span>
+      </div>
+      <el-tabs v-model="auditTab">
+        <el-tab-pane label="可疑指标" name="metrics">
+          <el-table
+            v-loading="auditLoading"
+            :data="auditRows"
+            border
+            stripe
+            size="small"
+            max-height="420"
+          >
+            <el-table-column prop="name" label="指标名" min-width="220" show-overflow-tooltip />
+            <el-table-column
+              prop="table"
+              label="绑定表/对象"
+              min-width="170"
+              show-overflow-tooltip
+            />
+            <el-table-column label="问题" min-width="190">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="r in row.reasons"
+                  :key="r"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  style="margin-right: 4px"
+                >
+                  {{ r }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="抢答" width="80" align="center">
+              <template #default="{ row }">{{ row.questions?.length || 0 }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="140" align="center">
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="danger"
+                  size="small"
+                  :loading="row._saving"
+                  @click="toggleMetric(row)"
+                >
+                  停用
+                </el-button>
+                <el-button link type="primary" size="small" @click="goConfig('/ai/integration')">
+                  去改名
+                </el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty :image-size="60" description="没有可疑指标" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane :label="`悬空引用 (${auditStats.dangling_total || 0})`" name="dangling">
+          <el-table
+            v-loading="auditLoading"
+            :data="auditDangling"
+            border
+            stripe
+            size="small"
+            max-height="420"
+          >
+            <el-table-column label="类型" width="130">
+              <template #default="{ row }">
+                <el-tag size="small" type="danger" effect="plain">
+                  {{ auditKindLabel(row.kind) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="ref" label="引用" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="detail" label="说明" min-width="260" show-overflow-tooltip />
+            <el-table-column prop="fix" label="怎么处理" min-width="220" show-overflow-tooltip />
+            <template #empty>
+              <el-empty :image-size="60" description="没有悬空引用" />
+            </template>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
         <el-button @click="auditVisible = false">关闭</el-button>
       </template>
@@ -1989,17 +2043,37 @@ async function applyGovernance() {
 const auditVisible = ref(false);
 const auditLoading = ref(false);
 const auditRows = ref<any[]>([]);
+const auditDangling = ref<any[]>([]);
 const auditStats = ref<any>({});
+const auditDataset = ref("");
+const auditTab = ref("metrics");
+
+const AUDIT_KIND_LABELS: Record<string, string> = {
+  metric_object: "指标→本体对象",
+  metric_table: "指标→表",
+  entity_map: "实体映射→表",
+  ontology_table: "本体对象→表",
+  term_field: "术语→字段",
+};
+
+function auditKindLabel(kind: string) {
+  return AUDIT_KIND_LABELS[kind] || kind;
+}
 
 async function openAudit() {
   auditVisible.value = true;
   auditLoading.value = true;
   try {
     const ds = currentDs() || "ds:6";
-    const r = await getMetricsAudit({ datasource: ds, top: 100 });
+    const r = await getMetricsAudit({
+      datasource: ds,
+      top: 200,
+      dataset: auditDataset.value || undefined,
+    });
     const d = r.data?.data || {};
     auditStats.value = d;
     auditRows.value = (d.items || []).map((x: any) => ({ ...x, _saving: false }));
+    auditDangling.value = d.dangling || [];
   } catch (e: any) {
     ElMessage.error(e?.data?.msg || e?.msg || "加载指标体检失败");
   } finally {

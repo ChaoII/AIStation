@@ -111,7 +111,6 @@ async def list_metrics(
     return SuccessResponse(data=await AiQueryService.list_metrics(datasource), msg="查询成功")
 
 
-@AiQueryRouter.post("/metrics/save", summary="指标保存")
 @AiQueryRouter.get("/governance/export", summary="治理包导出（别名/描述/术语）")
 async def governance_export(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
@@ -133,16 +132,22 @@ async def governance_import(
     return SuccessResponse(data=out, msg="已应用" if data.apply else "预演完成")
 
 
-@AiQueryRouter.get("/metrics/audit", summary="指标体检（脏指标/抢答题清单）")
+@AiQueryRouter.get("/metrics/audit", summary="治理体检（可疑指标 + 悬空引用）")
 async def audit_metrics_api(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     datasource: str = "ds:6",
     top: int = 100,
+    dataset: str | None = None,
 ) -> JSONResponse:
-    """治理用：只读清单。停用/改名在界面上操作（`/metrics/enabled` + 指标页）。"""
+    """治理用：只读清单。停用/改名在界面上操作（`/metrics/enabled` + 指标页）。
+
+    `dataset` 为空时扫描该数据源的**全部题库**（原来只扫两个留出集，105 题里的抢答看不到）。
+    """
     from .metric_audit import audit_metrics
 
-    return SuccessResponse(data=await audit_metrics(datasource, top), msg="查询成功")
+    return SuccessResponse(
+        data=await audit_metrics(datasource, top, dataset=dataset), msg="查询成功"
+    )
 
 
 @AiQueryRouter.post("/metrics/enabled", summary="启用/停用指标（指标体检用）")
@@ -159,6 +164,7 @@ async def set_metric_enabled_api(
     return SuccessResponse(data=out, msg="已更新")
 
 
+@AiQueryRouter.post("/metrics/save", summary="指标保存")
 async def save_metric(
     data: QueryMetricUpsert,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

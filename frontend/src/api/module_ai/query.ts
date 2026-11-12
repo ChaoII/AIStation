@@ -270,7 +270,7 @@ export function importGovernance(data: { data: any; apply?: boolean; datasource?
 }
 
 // ---- 指标体检（脏指标/抢答题清单 + 启停）----
-export function getMetricsAudit(params: { datasource?: string; top?: number }) {
+export function getMetricsAudit(params: { datasource?: string; top?: number; dataset?: string }) {
   return request({ url: `${API_PATH}/metrics/audit`, method: "get", params });
 }
 export function setMetricEnabled(data: { key: string; enabled: boolean }) {
