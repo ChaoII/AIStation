@@ -88,3 +88,23 @@
    所以必须先解决表消歧，护栏才有意义。
 
 代码已 `git checkout` 回退；两个数字（v2 64.86% / 105 98.10%）作为"此路不通"的证据保留。
+
+## 七、修复：绑定型指标补软删口径（已上线）
+
+`instance_aggregate` 新增 `exclude_deleted`（默认关闭，只由**指标快路径**打开）：
+对象支撑表存在 `ISDELETED` 列时，聚合前追加 `"ISDELETED" = false`。
+为什么默认关：对象浏览/图表看的是全量，口径不该被指标路径的需求改动。
+
+| 验证 | 修复前 | 修复后 |
+|------|--------|--------|
+| 指标 `FUEL_CMCS_PURCHASEPLAN_count_ID` | 5（含 1 条软删） | **4**（库内有效行=4） |
+| 无 `ISDELETED` 的表（供应商煤质限制） | 7 | 7（未受影响） |
+| 问「采购计划主表一共有多少条记录」 | fast，答 5（错） | **fast，答 4（对）** |
+| holdout-v2 | 21/37 = 56.76% | **22/37 = 59.46%**（fixed 1 / regressed 0，快路径占比不变 8/37） |
+| 105 题回归 | 104/105 = 99.05%，fast 31.43% | **完全一致** |
+
+> 只 +1 题是符合预期的：这个缺陷只影响「问"有多少条"、且该表有软删行」的指标题。
+> 它与 v2 里 6 条「指标劫持」不是一回事 —— 劫持要靠选表解决（见第六节：护栏是负收益）。
+
+代码：`ontology/service.py::_deleted_condition` + `instance_aggregate(exclude_deleted=...)`；
+调用点 `query/execution.py::_execute_bound_metric`；单测 `tests/test_ontology_softdelete_condition.py`。

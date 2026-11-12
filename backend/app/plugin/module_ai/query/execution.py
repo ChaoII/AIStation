@@ -100,7 +100,8 @@ async def _execute_bound_metric(metric: dict, auth=None) -> dict:
         principal = await _ont_sec.load_principal(uid)
     except Exception:  # noqa: BLE001
         principal = None
-    r = await ont.instance_aggregate(obj, group_by=gb, aggs=[a], principal=principal)
+    r = await ont.instance_aggregate(obj, group_by=gb, aggs=[a], principal=principal,
+                                     exclude_deleted=True)
     if not r.get("ok"):
         raise CustomException(msg=r.get("msg") or "指标执行失败")
     rows = r.get("rows") or []

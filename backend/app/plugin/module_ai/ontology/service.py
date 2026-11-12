@@ -3102,12 +3102,24 @@ def _json_safe(v: Any) -> Any:
     return v
 
 
+def _deleted_condition(cols) -> str:
+    """软删条件：表里有 ``ISDELETED`` 才返回（否则空串），供聚合/指标快路径复用。
+
+    为什么单独抽出来：问数慢路径会给业务表补 `"ISDELETED" = false`（`softdelete` 模块），
+    而本体聚合走的是另一条路 —— 同一个问题「有多少条」指标给 5、实际有效 4（2026-11 实测）。
+    """
+    if any(str(c).upper() == "ISDELETED" for c in (cols or ())):
+        return f"{_q('ISDELETED')} = false"
+    return ""
+
+
 async def instance_aggregate(object_code: str, group_by: str = "",
                              aggs: list[dict] | None = None,
                              filters: dict | None = None,
                              limit: int = 50,
                              principal: Any = None,
-                             scenario_code: str = "") -> dict:
+                             scenario_code: str = "",
+                             exclude_deleted: bool = False) -> dict:
     """**带权限的聚合**：按字段分组统计。
 
     为什么必须有它：`instance_search` 只能点查；而图表的聚合是直接拼 SQL 的，
@@ -3141,6 +3153,13 @@ async def instance_aggregate(object_code: str, group_by: str = "",
     if not rf.get("ok"):
         return {"ok": False, "blocked_by": "row_policy", "msg": rf.get("reason")}
     where = rf.get("where") or ""
+    # 软删口径（2026-11-12）：本体聚合默认含软删行，而问数慢路径会给业务表补
+    # `"ISDELETED" = false`。指标快路径走的是这里，于是同一张表「有多少条」
+    # 指标给 5、实际有效 4（留出集 v2 实测）。由调用方显式开启，避免影响图表/浏览。
+    if exclude_deleted:
+        _del_cond = _deleted_condition(cols)
+        if _del_cond:
+            where = f"{where} AND {_del_cond}" if where else _del_cond
 
     # 列级过滤：不可见的列既不能分组也不能聚合
     vis = await _sec.visible_properties(object_code, principal)

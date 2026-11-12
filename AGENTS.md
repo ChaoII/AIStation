@@ -1078,6 +1078,11 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
   正确计数指标被挡、金额合计指标赢了快路径）。根因：资产中文名覆盖不全，规则一拦就误伤。
   该修的是**指标本身**（绑定 count 指标补 `ISDELETED`，实测「采购计划主表有多少条」给 5/实际 4；
   指标名别写「配煤方案结果明细表STOQTY合计」）和**表消歧**，不是匹配规则。
+- **绑定型指标软删口径已修**（2026-11-12）：`ontology.service.instance_aggregate` 加
+  `exclude_deleted`（默认关，只有指标快路径 `execution._execute_bound_metric` 打开），
+  表有 `ISDELETED` 时聚合前补 `"ISDELETED" = false`。验证：该指标 5→4（库内有效 4），
+  无该列的表不受影响；holdout-v2 56.76%→59.46%（fixed 1/regressed 0，快路径不变），
+  105 题 99.05% / fast 31.43% 完全不变。单测 `tests/test_ontology_softdelete_condition.py`。
 - e2e：`trigger-workspace.spec.ts`（打 `/ai/cron` 卡片）**必须清理**（afterAll 按名称删除本次创建的
   定时任务，否则 dev 库会被 `e2e-*` 垃圾淹没——曾累积 44 条）；`ai-workspace.spec.ts` 锁类别下拉只剩
   智能体家族 + 左右两个独立卡片容器。e2e 直连 dev 后端，运行需 `E2E_API_URL=http://127.0.0.1:8002/api/v1`（清理用）。
