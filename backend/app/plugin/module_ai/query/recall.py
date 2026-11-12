@@ -137,8 +137,18 @@ def recall_ontology(
         return []
     code_to_table: dict[str, str] = {}
     for tbl, code in (table_map or {}).items():
-        code_to_table.setdefault(code, tbl)
-    tiers: list[list[str]] = [[], [], [], []]
+        t = str(tbl or "")
+        if not t:
+            continue
+        # `object_table_map()` 里同一对象同时有 `ont_x -> x` 和 `x -> x` 两条。
+        # 旧实现用 setdefault，先遇到的 `ont_x` 被固化 → 本体通道返回的全是 `ont_xxx`，
+        # 与 schema 表名对不上，**整条通道的分数被丢弃**（实测：别名命中也不生效）。
+        # 这里优先取**不带 ont_ 前缀**的那个名字。
+        if code not in code_to_table or (
+            code_to_table[code].lower().startswith("ont_") and not t.lower().startswith("ont_")
+        ):
+            code_to_table[code] = t
+    tiers: list[list[tuple[int, str]]] = [[], [], [], []]
     for o in objects or []:
         code = o.get("code")
         tbl = code_to_table.get(code) or o.get("table")
@@ -148,17 +158,24 @@ def recall_ontology(
         syns = [s for s in re.split(r"[,，\s、/]+", str(o.get("synonyms") or "")) if len(s) >= 2]
         props = [str(p) for p in (o.get("properties") or []) if p and len(str(p)) >= 2]
         name = str(o.get("name") or "")
-        if any(a.lower() in q for a in aliases):
-            tiers[0].append(tbl)
-        elif any(s.lower() in q for s in syns):
-            tiers[1].append(tbl)
-        elif any(p.lower() in q for p in props):
-            tiers[2].append(tbl)
+        # 命中长度 = 该对象最长的命中词长度。**更具体的词优先**：
+        # 「期初库存明细」同时命中 alias「期初库存」和「期初库存明细」时，后者必须排前面，
+        # 否则同族表（主表/明细）照样混。
+        a_hit = max((len(a) for a in aliases if a.lower() in q), default=0)
+        s_hit = max((len(s) for s in syns if s.lower() in q), default=0)
+        p_hit = max((len(p) for p in props if p.lower() in q), default=0)
+        if a_hit:
+            tiers[0].append((a_hit, tbl))
+        elif s_hit:
+            tiers[1].append((s_hit, tbl))
+        elif p_hit:
+            tiers[2].append((p_hit, tbl))
         elif name and name.lower() in q:
-            tiers[3].append(tbl)
+            tiers[3].append((len(name), tbl))
     out: list[str] = []
     for tier in tiers:
-        for tbl in tier:
+        # 档内按命中长度降序（稳定的更具体优先）；长度相同保持对象顺序
+        for _n, tbl in sorted(tier, key=lambda x: -x[0]):
             if tbl not in out:
                 out.append(tbl)
     return out

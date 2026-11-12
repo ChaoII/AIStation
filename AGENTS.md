@@ -1110,6 +1110,12 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
   正确计数指标被挡、金额合计指标赢了快路径）。根因：资产中文名覆盖不全，规则一拦就误伤。
   该修的是**指标本身**（绑定 count 指标补 `ISDELETED`，实测「采购计划主表有多少条」给 5/实际 4；
   指标名别写「配煤方案结果明细表STOQTY合计」）和**表消歧**，不是匹配规则。
+- **本体别名通道曾整体失效**（2026-11-12，已修）：`object_table_map()` 同时返回 `ont_x -> x` 与 `x -> x`，
+  `recall_ontology` 用 `setdefault` 把 `ont_x` 固化 → 通道返回 `ont_xxx`，与 schema 表名对不上，**整条通道
+  的分数在 RRF 融合时被丢弃**；叠加 `ai_ont_object.aliases` 全空，等于没有消歧能力。
+  修法：① 优先取不带 `ont_` 前缀的表名；② 档内按**命中词长度降序**（「期初库存明细」要压过「期初库存」）；
+  ③ `scripts/seed_ontology_aliases.py` 给 46 个易混对象补业务别名（幂等、可 --dry-run）。
+  实测：留出集 v2 召回命中 **29/37 → 37/37**，准确率 **59.46% → 81.08%（fixed 8 / regressed 0）**；105 题不变（99.05% / fast 31.43%）。回归用例 `tests/test_query_recall_ontology_alias.py`。
 - **本体对象必须绑在当前主数据源上**（2026-11-12 实测教训）：`ai_ont_object.datasource_id` 曾一直指向
   **ds:4（远端）**，而问数默认已切 ds:6（副本）——同一对象两套数字：入厂批次 287 vs 577、燃煤合同 0 vs 120、
   结算主表 4 vs 36。修复脚本 `scripts/rebind_ontology_ds.py`（`--dry-run`/`--apply`，按 backing_table 校验目标库
