@@ -306,7 +306,8 @@ class AskOps:
                                                      principal=await cls._context_principal(auth))
         _dialect, _ds_type = await cls._resolve_dialect_info(datasource)
         system_prompt = build_system_prompt(
-            _dialect, rules, schema_ctx, extra + templated_note(_ds_type))
+            _dialect, rules, schema_ctx, extra + templated_note(_ds_type),
+            time_cfg=await cls._ds_time_cfg(datasource))
 
         from agno.agent import Agent
         from agno.models.openai.like import OpenAILike

@@ -2083,6 +2083,31 @@
               />
             </el-select>
           </el-form-item>
+          <!-- 时间口径：周从周几开始、月份按自然月还是滚动 30 天 —— 业务口径，按数据源维护 -->
+          <el-divider content-position="left" class="ig-form__divider">
+            {{ t("ai_workflow.ig_timeSection") }}
+          </el-divider>
+          <el-form-item :label="t('ai_workflow.ig_weekStart')">
+            <el-select
+              v-model="dsForm.filter_rules.time.week_start"
+              size="small"
+              style="width: 180px"
+            >
+              <el-option :label="t('ai_workflow.ig_weekStartMonday')" value="monday" />
+              <el-option :label="t('ai_workflow.ig_weekStartSunday')" value="sunday" />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('ai_workflow.ig_monthMode')">
+            <el-select
+              v-model="dsForm.filter_rules.time.month_mode"
+              size="small"
+              style="width: 220px"
+            >
+              <el-option :label="t('ai_workflow.ig_monthNatural')" value="natural" />
+              <el-option :label="t('ai_workflow.ig_monthRolling')" value="rolling30" />
+            </el-select>
+            <div class="ig-form__tip">{{ t("ai_workflow.ig_timeTip") }}</div>
+          </el-form-item>
         </template>
       </el-form>
       <template #footer>
@@ -3062,6 +3087,7 @@ function openDs(row?: any) {
 function normalizeRules(f: any) {
   const fr = f?.filter_rules || {};
   const soft = fr?.softdelete || {};
+  const tm = fr?.time || {};
   f.filter_rules = {
     ...fr,
     enabled: fr.enabled !== false,
@@ -3075,6 +3101,11 @@ function normalizeRules(f: any) {
     softdelete: {
       column: soft.column || "ISDELETED",
       deletion_hints: Array.isArray(soft.deletion_hints) ? soft.deletion_hints : [],
+    },
+    // 时间口径：界面显示生效值（默认周一起 + 自然月）
+    time: {
+      week_start: tm.week_start === "sunday" ? "sunday" : "monday",
+      month_mode: tm.month_mode === "rolling30" ? "rolling30" : "natural",
     },
   };
 }

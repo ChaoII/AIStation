@@ -26,7 +26,7 @@
 
 | 优先级 | 内容 | 现在在哪 | 建议去处 | 风险 |
 |--------|------|----------|----------|------|
-| P1 | **方言语法提示 + 时间口径**（"上周/本月"的 SQL 写法） | `dialect.py::DIALECTS` / `time_rules()` | 数据源 `filter_rules.dialect`（或 `ai_query_settings.dialect_time_rules` JSON） | 中：直接影响时间类问答，需按方言 A/B |
+| ~~P1~~ | ~~时间口径~~ → **已完成**（2026-11-12，数据源按需配）；**方言语法提示**仍留 `dialect.py::DIALECTS` | 新增方言类型时再迁 | 低 |
 | P2 | **问句语言启发式**（计数诉求、物理量、排序、分组、全量列举、"多少条/多少笔"） | `metric_rules.py` 的 `COUNT_INTENT_RE` / `PHYSICAL_QTY_RE` / `ROWCOUNT_ASK_RE` / `ORDER_WORD_RE` / `AGG_NOUN_RE` / `GROUPING_RE`；`question_rules.py` 的 `LISTING_RE` / `COUNT_OVERRIDE_RE` / `TOP_N_RE` / `AGG_OVER_GROUPS_RE` / `ALL_LIST_HINTS` | `ai_query_settings.query_language_rules`（JSON：正则 + 词表），代码保留默认 | 高：牵动路由与快路径，必须先做 v2 基线再改 |
 | P3 | 实体名词→表 默认映射 | `seed_data.py::_ENTITY_TABLE`（可被 `settings.entity_map` 覆盖） | 术语表（entity 类型）或保留为**种子**并注明 | 低：已有覆盖通道 |
 | P4 | 敏感列默认集 | `allowlist.py` | 数据源 `filter_rules` 或策略表 | 中：涉及脱敏，改动要先跑权限评测 |
@@ -38,6 +38,16 @@
   `sqlguard.FORBIDDEN_RE`（禁 DDL/DML）、白名单校验、fail-closed 逻辑。
 - **协议/错误处理**：重试、降级、超时、SSE 帧格式。
 - **上表各项的默认值**：必须存在，且必须能被库里的配置覆盖（有单测）。
+
+## 三点五、界面可维护性（2026-11-12 追加要求）
+
+用户原话：「我目前 UI 做了很多功能，这些你调试的点都需要在 ui 里面能够维护和体现」。
+
+- 数据源编辑页新增两段：**软删口径**（列名 + 词表）、**时间口径**（周起始日 + 月份口径）。
+- 接口返回**生效值**（默认值合并后），不是库里原始 JSON —— 看见的必须等于生效的。
+- 两处 `normalizeRules`（数据源弹窗 / 筛选规则工作台）改为**保留未识别键**：旧实现会在保存时把后端新增字段静默丢掉。
+- 数据源编辑弹窗内容区 `max-height:66vh` 自适应滚动，底部字段不再被裁掉。
+- 问数设置新增「**配置地图**」：11 项「要改什么 / 在哪改 / 什么时候用」+ 跳转。
 
 ## 四、迁移模板（每迁一项照做）
 

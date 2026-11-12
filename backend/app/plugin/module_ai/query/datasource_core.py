@@ -9,6 +9,7 @@ from __future__ import annotations
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
+
 from .filtering import DEFAULT_FILTER_RULES, is_audit_field, is_system_table
 from .model import AiQueryDatasourceModel, AiQuerySchemaModel
 
@@ -181,6 +182,22 @@ async def list_ds_schema(datasource_id: int, included_only: bool = False) -> lis
         }
         for r in rows
     ]
+
+
+async def ds_filter_rules(datasource: str) -> dict:
+    """按数据源标识（``ds:{id}``）读 ``filter_rules``；系统库/读不到返回空 dict。
+
+    用于**运行时口径**（时间口径、软删列名）：这些是"按数据源维护"的语义，
+    由调用方合并默认值，读失败一律当"没配置"。
+    """
+    if not datasource or datasource == _svc().SYSTEM_DS:
+        return {}
+    try:
+        ds = await _load_ds(int(str(datasource).split(":")[-1]))
+        raw = getattr(ds, "filter_rules", None) or {}
+        return dict(raw) if isinstance(raw, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 async def _assert_ds_access(datasource_id: int, auth) -> None:

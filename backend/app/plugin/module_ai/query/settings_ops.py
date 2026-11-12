@@ -256,3 +256,18 @@ class SettingsOps:
             elif isinstance(tables, str):
                 base[str(noun)] = [x.strip() for x in tables.split(",") if x.strip()]
         return base
+
+    @classmethod
+    async def _ds_time_cfg(cls, datasource: str | None) -> dict:
+        """当前数据源**生效**的时间口径（默认 + ``filter_rules.time`` 覆盖）。
+
+        周起始日、月份口径属于业务语义：按数据源维护（数据源编辑页「时间口径」），
+        代码只保留默认值（周一起 + 自然月）。
+        """
+        from .datasource_core import ds_filter_rules
+        from .filtering import time_rules_cfg
+
+        try:
+            return time_rules_cfg(await ds_filter_rules(datasource or ""))
+        except Exception:  # noqa: BLE001 - 读不到就用默认
+            return time_rules_cfg(None)

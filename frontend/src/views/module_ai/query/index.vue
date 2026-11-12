@@ -556,6 +556,7 @@
             召回探针
           </el-button>
           <el-button size="small" @click="openPromptRules">生成规则</el-button>
+          <el-button size="small" @click="mapVisible = true">配置地图</el-button>
         </div>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
           <div class="q-set__group-title" @click="toggleGroup(g.name)">
@@ -633,6 +634,33 @@
         <el-button type="primary" :loading="setSaving" @click="saveSettings">
           {{ t("ai_logs.save") }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 配置地图：这些「业务口径/语义」都在界面里维护，改完不用发版 -->
+    <el-dialog v-model="mapVisible" title="配置地图：要改什么，去哪改" width="980px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="下面每一项都在界面里维护，改完即时生效、不用改代码。先想清楚「改的是什么」，再按「在哪改」找入口。"
+        class="q-fb-tip"
+      />
+      <el-table :data="configMap" border stripe size="small" max-height="460">
+        <el-table-column prop="what" label="要改什么" min-width="170" />
+        <el-table-column prop="where" label="在哪改" min-width="240" show-overflow-tooltip />
+        <el-table-column prop="when" label="什么时候用它" min-width="300" show-overflow-tooltip />
+        <el-table-column label="入口" width="90" align="center">
+          <template #default="{ row }">
+            <el-button v-if="row.path" link type="primary" size="small" @click="goConfig(row.path)">
+              前往
+            </el-button>
+            <span v-else class="q-rules__hint">当前页</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="mapVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -1526,6 +1554,82 @@ async function saveSettings() {
   } finally {
     setSaving.value = false;
   }
+}
+
+// ---- 配置地图：业务口径/语义各自在哪维护（避免「界面功能很多但不知道怎么用」）----
+const mapVisible = ref(false);
+const configMap = [
+  {
+    what: "业务术语 / 同义词",
+    where: "数据与集成 → 术语",
+    when: "用户说的词和字段名对不上（如「全水分」「热值」）",
+    path: "/ai/integration",
+  },
+  {
+    what: "指标口径",
+    where: "数据与集成 → 指标",
+    when: "同一个业务数字有固定算法（库存、总量、合同数量）",
+    path: "/ai/integration",
+  },
+  {
+    what: "表/字段含义、别名、枚举",
+    where: "数据与集成 → 表与字段",
+    when: "模型选错表、看不懂某列是什么意思",
+    path: "/ai/integration",
+  },
+  {
+    what: "对象 / 属性 / 关系 / 业务函数",
+    where: "知识与本体 → 本体",
+    when: "要按业务对象查，或有公司自己的计算公式",
+    path: "/ai/ontology",
+  },
+  {
+    what: "表间关联 / 影响面",
+    where: "数据与集成 → 数据关系图",
+    when: "多表联查、想知道改一张表会波及谁",
+    path: "/ai/integration",
+  },
+  {
+    what: "示例问答（few-shot）",
+    where: "数据与集成 → 示例工程",
+    when: "某类问法反复答错，且你能写出标准 SQL",
+    path: "/ai/integration",
+  },
+  {
+    what: "提示词书写规范",
+    where: "问数设置 → 生成规则",
+    when: "想让 SQL 带中文别名、换行、排序排除空值等",
+    path: "",
+  },
+  {
+    what: "软删列名 / 「已删除」的说法",
+    where: "数据与集成 → 数据源 → 编辑 → 软删口径",
+    when: "业务表不是 ISDELETED，或说法不是「已删除」",
+    path: "/ai/integration",
+  },
+  {
+    what: "时间口径（周起始 / 月份）",
+    where: "数据与集成 → 数据源 → 编辑 → 时间口径",
+    when: "「本周」按周日起，或「上个月」按滚动 30 天",
+    path: "/ai/integration",
+  },
+  {
+    what: "开关与阈值",
+    where: "问数设置（简单 / 专家模式）",
+    when: "召回数量、超时、重试、思考档位等",
+    path: "",
+  },
+  {
+    what: "权限（表 / 行 / 列 / 模块）",
+    where: "问数设置 → 权限策略 / 治理",
+    when: "某角色只能看部分表、部分行或部分列",
+    path: "",
+  },
+];
+
+function goConfig(path: string) {
+  mapVisible.value = false;
+  router.push(path);
 }
 
 // ---- 生成规则（可配置提示词规则）----

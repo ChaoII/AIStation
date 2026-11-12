@@ -93,44 +93,98 @@ def is_templated_type(datasource_type: str) -> bool:
     return (datasource_type or "").strip().lower() in _TEMPLATED_TYPES
 
 
-def time_rules(dialect: dict | None) -> str:
-    """时间口径的**确定性**写法（随方言变化）。
+def time_rules(dialect: dict | None, time_cfg: dict | None = None) -> str:
+    """时间口径的**确定性**写法（随方言变化，口径可配）。
 
-    为什么必须写死在提示词里：模型对「上个月」极易写成
+    为什么必须写进提示词：模型对「上个月」极易写成
     ``>= date_trunc('month', CURRENT_DATE)``（那是**本月**），
     数据一旦跨月就会答错且不报错（实测 2026-11 问「上个月」返回 0 行）。
+
+    为什么可配（2026-11-12 原则「语义不写死」）：周从周几开始、月份按自然月还是
+    滚动 30 天，是**业务口径**，各厂不同。默认 = 周一起 + 自然月，由数据源
+    `filter_rules.time`（`week_start` / `month_mode`）覆盖。
     """
-    name = (dialect or DIALECTS[_DEFAULT]).get("name") or "PostgreSQL"
+    name = ((dialect or DIALECTS[_DEFAULT]).get("name") or "PostgreSQL").strip()
+    cfg = time_cfg or {}
+    week_start = str(cfg.get("week_start") or "monday").strip().lower()
+    month_mode = str(cfg.get("month_mode") or "natural").strip().lower()
+    if week_start not in ("monday", "sunday"):
+        week_start = "monday"
+    if month_mode not in ("natural", "rolling30"):
+        month_mode = "natural"
     if name == "MySQL":
+        week = (
+            ">= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)"
+            if week_start == "monday"
+            else ">= DATE_SUB(CURDATE(), INTERVAL DAYOFWEEK(CURDATE()) - 1 DAY)"
+        )
+        month = (
+            ">= DATE_FORMAT(CURDATE(), '%Y-%m-01')" if month_mode == "natural"
+            else ">= DATE_SUB(CURDATE(), INTERVAL 30 DAY)"
+        )
+        last_month = (
+            ">= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')"
+            " AND < DATE_FORMAT(CURDATE(), '%Y-%m-01')"
+            if month_mode == "natural"
+            else "> DATE_SUB(CURDATE(), INTERVAL 60 DAY)"
+            " AND <= DATE_SUB(CURDATE(), INTERVAL 30 DAY)"
+        )
         body = (
             "- 今天：>= CURDATE()\n"
-            "- 本周：>= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)\n"
-            "- 本月：>= DATE_FORMAT(CURDATE(), '%Y-%m-01')\n"
-            "- 上个月：>= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01')"
-            " AND < DATE_FORMAT(CURDATE(), '%Y-%m-01')\n"
+            f"- 本周：{week}\n"
+            f"- 本月：{month}\n"
+            f"- 上个月：{last_month}\n"
             "- 今年：>= DATE_FORMAT(CURDATE(), '%Y-01-01')\n"
             "- 去年：>= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 YEAR), '%Y-01-01')"
             " AND < DATE_FORMAT(CURDATE(), '%Y-01-01')\n"
             "- 最近N天：>= DATE_SUB(CURDATE(), INTERVAL N DAY)\n"
         )
     elif name == "SQLite":
+        week = (
+            ">= date('now','weekday 1','-7 days')"
+            if week_start == "monday"
+            else ">= date('now','weekday 0','-7 days')"
+        )
+        month = (
+            ">= date('now','start of month')" if month_mode == "natural"
+            else ">= date('now','-30 day')"
+        )
+        last_month = (
+            ">= date('now','-1 month','start of month') AND < date('now','start of month')"
+            if month_mode == "natural"
+            else "> date('now','-60 day') AND <= date('now','-30 day')"
+        )
         body = (
             "- 今天：>= date('now')\n"
-            "- 本月：>= date('now','start of month')\n"
-            "- 上个月：>= date('now','-1 month','start of month')"
-            " AND < date('now','start of month')\n"
+            f"- 本周：{week}\n"
+            f"- 本月：{month}\n"
+            f"- 上个月：{last_month}\n"
             "- 今年：>= date('now','start of year')\n"
             "- 去年：>= date('now','-1 year','start of year')"
             " AND < date('now','start of year')\n"
             "- 最近N天：>= date('now','-N day')\n"
         )
     else:
+        week = (
+            ">= date_trunc('week', CURRENT_DATE)"
+            if week_start == "monday"
+            else ">= date_trunc('week', CURRENT_DATE + INTERVAL '1 day') - INTERVAL '1 day'"
+        )
+        month = (
+            ">= date_trunc('month', CURRENT_DATE)" if month_mode == "natural"
+            else ">= CURRENT_DATE - 30"
+        )
+        last_month = (
+            ">= date_trunc('month', CURRENT_DATE - INTERVAL '1 month')"
+            " AND < date_trunc('month', CURRENT_DATE)"
+            if month_mode == "natural"
+            else "> CURRENT_DATE - 60 AND <= CURRENT_DATE - 30"
+        )
         body = (
             "- 今天：>= CURRENT_DATE\n"
-            "- 本周：>= date_trunc('week', CURRENT_DATE)\n"
-            "- 本月：>= date_trunc('month', CURRENT_DATE)\n"
-            "- 上个月：>= date_trunc('month', CURRENT_DATE - INTERVAL '1 month')"
-            " AND < date_trunc('month', CURRENT_DATE)\n"
+            f"- 本周：{week}\n"
+            f"- 本月：{month}\n"
+            f"- 上个月：{last_month}\n"
             "- 今年：>= date_trunc('year', CURRENT_DATE)\n"
             "- 去年：>= date_trunc('year', CURRENT_DATE - INTERVAL '1 year')"
             " AND < date_trunc('year', CURRENT_DATE)\n"
@@ -142,7 +196,7 @@ def time_rules(dialect: dict | None) -> str:
 
 
 def build_system_prompt(dialect: dict | None, rules: list[str], schema_ctx: str,
-                        extra: str = "") -> str:
+                        extra: str = "", time_cfg: dict | None = None) -> str:
     """组装慢路径的 system_prompt（按方言参数化）。
 
     参数与 `_nl2sql` / `ask_stream` 里原有的硬编码拼装**逐字兼容**，只是把
@@ -161,7 +215,7 @@ def build_system_prompt(dialect: dict | None, rules: list[str], schema_ctx: str,
     return (
         header
         + "".join(CORE_RULES) + "\n注意："
-        + "".join(rules) + time_rules(d) + "\n" + (extra or "") + (schema_ctx or "")
+        + "".join(rules) + time_rules(d, time_cfg) + "\n" + (extra or "") + (schema_ctx or "")
     )
 
 

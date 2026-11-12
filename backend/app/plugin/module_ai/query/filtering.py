@@ -43,6 +43,12 @@ DEFAULT_FILTER_RULES: dict[str, Any] = {
             "已删除", "删除的", "删除记录", "排除已删除", "是否删除", "作废", "被删",
         ],
     },
+    # 时间口径（2026-11-12）：周从周几开始、月份按自然月还是滚动 30 天。
+    # 这是**业务口径**（各厂不同），由数据源覆盖；默认 = 周一起 + 自然月。
+    "time": {
+        "week_start": "monday",   # monday | sunday
+        "month_mode": "natural",  # natural | rolling30
+    },
 }
 
 
@@ -61,6 +67,21 @@ def softdelete_rules(rules: dict | None = None) -> dict[str, Any]:
     if not isinstance(hints, list) or not hints:
         hints = list(DEFAULT_FILTER_RULES["softdelete"]["deletion_hints"])
     return {"column": col, "deletion_hints": [str(h) for h in hints if str(h).strip()]}
+
+
+def time_rules_cfg(rules: dict | None = None) -> dict[str, str]:
+    """**生效**的时间口径（默认 + 数据源覆盖）：``week_start`` / ``month_mode``。"""
+    base = dict(DEFAULT_FILTER_RULES.get("time") or {})
+    cfg = ((rules or {}).get("time") or {}) if isinstance(rules, dict) else {}
+    if isinstance(cfg, dict):
+        base.update({k: v for k, v in cfg.items() if v not in (None, "")})
+    week = str(base.get("week_start") or "monday").strip().lower()
+    month = str(base.get("month_mode") or "natural").strip().lower()
+    if week not in ("monday", "sunday"):
+        week = "monday"
+    if month not in ("natural", "rolling30"):
+        month = "natural"
+    return {"week_start": week, "month_mode": month}
 
 
 def effective_filter_rules(rules: dict | None = None) -> dict[str, Any]:
@@ -83,6 +104,7 @@ def effective_filter_rules(rules: dict | None = None) -> dict[str, Any]:
         "system_table": st,
         "audit_fields": audit,
         "softdelete": softdelete_rules(r),
+        "time": time_rules_cfg(r),
     }
 
 

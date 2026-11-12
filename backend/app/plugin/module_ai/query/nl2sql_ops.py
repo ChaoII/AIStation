@@ -102,7 +102,8 @@ class Nl2SqlOps:
                          "（如 AVG(每组计数)、或 ORDER BY 计数 DESC LIMIT 1），"
                          "不要返回整张分组清单。\n")
         system_prompt = build_system_prompt(
-            _dialect, rules, schema_ctx, extra + templated_note(_ds_type))
+            _dialect, rules, schema_ctx, extra + templated_note(_ds_type),
+            time_cfg=await cls._ds_time_cfg(datasource))
         user_msg = question
         if prev_error:
             user_msg = (

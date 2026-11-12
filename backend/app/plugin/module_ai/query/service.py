@@ -39,6 +39,7 @@ from .datasource_core import (
     _ds_code,  # noqa: F401
     _load_ds,  # noqa: F401
     _norm_datasource,  # noqa: F401
+    ds_filter_rules,  # noqa: F401
     list_ds_schema,  # noqa: F401
     sync_datasource_schema,  # noqa: F401
     test_datasource_conn,  # noqa: F401
