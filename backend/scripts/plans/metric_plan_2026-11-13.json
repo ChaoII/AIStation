@@ -1,0 +1,215 @@
+{
+  "version": 1,
+  "datasource": "ds:6",
+  "created": "2026-11-13",
+  "note": "自动生成指标的体检处置方案。action: disable=停用, rename=改名, confirm=需业务确认（脚本跳过）",
+  "items": [
+    {
+      "key": "sum_fuel_mix_coalschemereusltdetail_stoqty",
+      "name": "配煤方案结果明细表STOQTY合计",
+      "action": "disable",
+      "reason": "明细表按行重复，SUM(库存量) 会把同一方案的行累加；且它是唯一抢答题（问「分仓灰分上限>20 有多少条」被它接走）"
+    },
+    {
+      "key": "sum_fuel_mix_genset_designvalue",
+      "name": "机组信息表DESIGNVALUE合计",
+      "action": "disable",
+      "reason": "DESIGNVALUE 是设计值，求和没有业务含义"
+    },
+    {
+      "key": "sum_fuel_mix_gensetrealtime_facelecrate",
+      "name": "分仓计量机组实时数据表FACELECRATE合计",
+      "action": "disable",
+      "reason": "FACELECRATE 是率值（发电负荷率），率不能相加；要就改成 avg"
+    },
+    {
+      "key": "sum_fuel_mix_rawcoalbunker_maxamount",
+      "name": "机组原煤仓表MAXAMOUNT合计",
+      "action": "disable",
+      "reason": "MAXAMOUNT 是上限值，求和无意义"
+    },
+    {
+      "key": "sum_fuel_mix_runsetting_coalconsump",
+      "name": "机组工况运行设置主表COALCONSUMP合计",
+      "action": "rename",
+      "new_name": "机组工况设置耗煤量合计",
+      "reason": "COALCONSUMP 是耗煤量，SUM 有意义；只需业务化取名"
+    },
+    {
+      "key": "sum_fuel_report_incoalbunker_ordernumber",
+      "name": "日入炉煤统计报表ORDERNUMBER合计",
+      "action": "disable",
+      "reason": "ORDERNUMBER 是单据号，求和是无效数字；要「单据数」应新建 count 指标"
+    },
+    {
+      "key": "sum_fuel_report_infactorystorage_ordernumber",
+      "name": "日入厂分场统计报表ORDERNUMBER合计",
+      "action": "disable",
+      "reason": "同上，单据号求和"
+    },
+    {
+      "key": "sum_fuel_stg_deposit_totalqty",
+      "name": "入厂煤堆放信息表TOTALQTY合计",
+      "action": "rename",
+      "new_name": "入厂煤堆放总量",
+      "reason": "TOTALQTY 是堆放总量，SUM 有意义"
+    },
+    {
+      "key": "count_fuel_cmcs_assaycheck",
+      "name": "FUEL_CMCS_ASSAYCHECK条数",
+      "action": "rename",
+      "new_name": "入厂煤化验记录条数",
+      "reason": "count 口径正确，只是名字是表名"
+    },
+    {
+      "key": "count_fuel_cmcs_infactoryplan",
+      "name": "FUEL_CMCS_INFACTORYPLAN条数",
+      "action": "rename",
+      "new_name": "入厂计划明细条数",
+      "reason": "count 口径正确"
+    },
+    {
+      "key": "count_fuel_cmcs_insilohistory",
+      "name": "FUEL_CMCS_INSILOHISTORY条数",
+      "action": "rename",
+      "new_name": "筒仓煤量历史记录数",
+      "reason": "count 口径正确"
+    },
+    {
+      "key": "count_fuel_report_daycoalstorageledger",
+      "name": "FUEL_REPORT_DAYCOALSTORAGELEDGER条数",
+      "action": "rename",
+      "new_name": "日煤场存煤台账记录数",
+      "reason": "count 口径正确；与同表 sum 指标（22 行）区分"
+    },
+    {
+      "key": "count_fuel_stg_controllog",
+      "name": "FUEL_STG_CONTROLLOG条数",
+      "action": "rename",
+      "new_name": "燃料运行交接班日志条数",
+      "reason": "count 口径正确"
+    },
+    {
+      "key": "count_fuel_stg_inventoryreportdetail",
+      "name": "FUEL_STG_INVENTORYREPORTDETAIL条数",
+      "action": "rename",
+      "new_name": "库存报告明细条数",
+      "reason": "count 口径正确"
+    },
+    {
+      "key": "sum_fuel_mix_appraisesettingdetail_ordernumber",
+      "name": "评价规则执行明细ORDERNUMBER合计",
+      "action": "disable",
+      "reason": "ORDERNUMBER 是序号/单据号，求和无意义"
+    },
+    {
+      "key": "sum_fuel_mix_coalscheme_standqty",
+      "name": "配煤方案主表STANDQTY合计",
+      "action": "confirm",
+      "suggest_name": "配煤方案标准煤量合计",
+      "reason": "STANDQTY 含义需业务确认：若是「标准煤量」则改名保留，若是「标准值/阈值」则停用"
+    },
+    {
+      "key": "sum_fuel_mix_loadplan_totalelec",
+      "name": "负荷计划表TOTALELEC合计",
+      "action": "rename",
+      "new_name": "负荷计划总电量合计",
+      "reason": "TOTALELEC 是电量，SUM 有意义"
+    },
+    {
+      "key": "sum_fuel_mix_runsettingbunkerdetail_ordernum",
+      "name": "机组工况运行设置煤仓煤质要求ORDERNUM合计",
+      "action": "disable",
+      "reason": "ORDERNUM 是序号，求和无意义"
+    },
+    {
+      "key": "sum_fuel_mix_runsettingdetail_minvalue",
+      "name": "机组工况运行设置负荷煤质明细MINVALUE合计",
+      "action": "disable",
+      "reason": "MINVALUE 是下限，求和无意义"
+    },
+    {
+      "key": "sum_fuel_mix_storeschemestorage_qtyhave",
+      "name": "配仓方案-煤种信息QTYHAVE合计",
+      "action": "rename",
+      "new_name": "配仓方案现有煤量合计",
+      "reason": "QTYHAVE 是现有量，SUM 有意义"
+    },
+    {
+      "key": "sum_fuel_report_daycoalstorageledger_qty",
+      "name": "FUEL_REPORT_DAYCOALSTORAGELEDGERQTY合计",
+      "action": "rename",
+      "new_name": "日煤场存煤量合计",
+      "reason": "QTY 是存煤量，SUM 有意义；与同表 count 指标（12 行）区分"
+    },
+    {
+      "key": "sum_fuel_report_dayinoutstorage_totaluseqty",
+      "name": "每日耗用量及存煤量TOTALUSEQTY合计",
+      "action": "rename",
+      "new_name": "每日耗用量合计",
+      "reason": "TOTALUSEQTY 是耗用量，SUM 有意义"
+    },
+    {
+      "key": "sum_fuel_report_infacinfurqcaldiff_rl_qty_1_1",
+      "name": "入厂入炉热值差月报RL_QTY_1_1合计",
+      "action": "confirm",
+      "suggest_name": "入厂入炉热值差月报（待定字段）合计",
+      "reason": "RL_QTY_1_1 字段含义不明（报表列编号），需业务确认后再决定改名或停用"
+    },
+    {
+      "key": "sum_fuel_report_infurnacequality_qty1",
+      "name": "入炉煤质量分析月报表QTY1合计",
+      "action": "confirm",
+      "suggest_name": "入炉煤质量分析月报（待定字段）合计",
+      "reason": "QTY1 字段含义不明，需业务确认"
+    },
+    {
+      "key": "sum_fuel_stg_allinmiddle_qtyin",
+      "name": "煤场进煤记录(流水)QTYIN合计",
+      "action": "rename",
+      "new_name": "煤场进煤量合计",
+      "reason": "QTYIN 是进煤量，SUM 有意义；注意这是留出集 v2 快路径依赖的指标，改名后必须跑回归"
+    },
+    {
+      "key": "sum_fuel_stg_alloutmiddle_qtyout",
+      "name": "煤场取煤记录(流水)QTYOUT合计",
+      "action": "rename",
+      "new_name": "煤场取煤量合计",
+      "reason": "QTYOUT 是取煤量，SUM 有意义；同样要做回归"
+    },
+    {
+      "key": "FUEL_CMCS_ASSAY_count_ID",
+      "name": "化验主表记录数",
+      "action": "rename",
+      "new_name": "化验主表单据数",
+      "reason": "名字本身没错，但与「入厂煤化验记录条数」(ASSAYCHECK) 太像，需要区分是哪张表"
+    },
+    {
+      "key": "count_dtxy_gyskdgx",
+      "name": "DTXY_GYSKDGX条数",
+      "action": "rename",
+      "new_name": "供应商矿点关系条数",
+      "reason": "count 口径正确，表中文名「供应商矿点对应」已存在"
+    },
+    {
+      "key": "count_dtxy_qyxx",
+      "name": "DTXY_QYXX条数",
+      "action": "rename",
+      "new_name": "区域信息条数",
+      "reason": "count 口径正确；但资产目录里该表还没中文名（alias=表名），建议先在资产页补「区域信息表」"
+    },
+    {
+      "key": "sum_fuel_mix_storescheme_standqty",
+      "name": "配仓方案STANDQTY合计",
+      "action": "confirm",
+      "suggest_name": "配仓方案标准煤量合计",
+      "reason": "与「配煤方案主表STANDQTY合计」同一个字段，需一并确认含义"
+    },
+    {
+      "key": "sum_fuel_stg_beltoperation_count",
+      "name": "皮带操作记录COUNT合计",
+      "action": "disable",
+      "reason": "对计数字段 SUM 是重复计数；要次数就用 count(*)"
+    }
+  ]
+}
