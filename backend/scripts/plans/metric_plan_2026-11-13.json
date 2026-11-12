@@ -2,7 +2,7 @@
   "version": 1,
   "datasource": "ds:6",
   "created": "2026-11-13",
-  "note": "自动生成指标的体检处置方案。action: disable=停用, rename=改名, confirm=需业务确认（脚本跳过）",
+  "note": "自动生成指标的体检处置方案。action: disable=停用, rename=改名, confirm=需业务确认（脚本跳过） 2026-11-13 业务确认：STANDQTY=标煤量，两条改为改名保留。",
   "items": [
     {
       "key": "sum_fuel_mix_coalschemereusltdetail_stoqty",
@@ -105,9 +105,10 @@
     {
       "key": "sum_fuel_mix_coalscheme_standqty",
       "name": "配煤方案主表STANDQTY合计",
-      "action": "confirm",
+      "action": "rename",
       "suggest_name": "配煤方案标准煤量合计",
-      "reason": "STANDQTY 含义需业务确认：若是「标准煤量」则改名保留，若是「标准值/阈值」则停用"
+      "reason": "业务确认：STANDQTY=标煤量（把普通煤折算成 7000 大卡），SUM 有意义",
+      "new_name": "配煤方案标煤量合计"
     },
     {
       "key": "sum_fuel_mix_loadplan_totalelec",
@@ -201,9 +202,10 @@
     {
       "key": "sum_fuel_mix_storescheme_standqty",
       "name": "配仓方案STANDQTY合计",
-      "action": "confirm",
+      "action": "rename",
       "suggest_name": "配仓方案标准煤量合计",
-      "reason": "与「配煤方案主表STANDQTY合计」同一个字段，需一并确认含义"
+      "reason": "业务确认：STANDQTY=标煤量（折算 7000 大卡），与「配煤方案主表」同一字段口径",
+      "new_name": "配仓方案标煤量合计"
     },
     {
       "key": "sum_fuel_stg_beltoperation_count",

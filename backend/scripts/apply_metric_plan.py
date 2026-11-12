@@ -53,15 +53,18 @@ async def run(plan: dict, apply: bool, only: str | None) -> int:
     cur = {str(k): {"name": n, "enabled": bool(e)} for k, n, e in rows}
 
     errors: list[str] = []
+    already: set[str] = set()
     for it in items:
         if it["action"] == "confirm":
             continue
-        if it["key"] not in cur:
-            errors.append(f"指标不存在：{it['key']}")
-        elif not cur[it["key"]]["enabled"]:
-            errors.append(f"指标已停用（请确认是否重复处置）：{it['key']}")
+        key = it["key"]
+        if key not in cur:
+            errors.append(f"指标不存在：{key}")
+        elif it["action"] == "disable" and not cur[key]["enabled"]:
+            # 幂等：同一条计划重复跑（或分批跑）不该报错
+            already.add(key)
         elif it["action"] == "rename" and not str(it.get("new_name") or "").strip():
-            errors.append(f"缺少 new_name：{it['key']}")
+            errors.append(f"缺少 new_name：{key}")
 
     want_names: dict[str, str] = {}
     for it in items:
@@ -92,7 +95,10 @@ async def run(plan: dict, apply: bool, only: str | None) -> int:
             print(f"[待确认] {it['name']}  → 建议 {it.get('suggest_name') or '（见 reason）'}")
             print(f"           {it.get('reason') or ''}")
             continue
-        if action == "disable":
+        if it["key"] in already:
+            counts["skip"] += 1
+            print(f"[已停用，跳过] {it['name']}  ({it['key']})")
+        elif action == "disable":
             counts["disable"] += 1
             print(f"[停用] {it['name']}  ({it['key']})")
         elif action == "rename":
@@ -114,6 +120,8 @@ async def run(plan: dict, apply: bool, only: str | None) -> int:
     changed = {"disable": 0, "rename": 0}
     async with async_db_session.begin() as db:
         for it in items:
+            if it["key"] in already:
+                continue
             if it["action"] == "disable":
                 res = await db.execute(text(
                     "UPDATE ai_query_metrics SET enabled=false, updated_time=CURRENT_TIMESTAMP "
