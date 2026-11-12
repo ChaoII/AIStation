@@ -996,6 +996,7 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 | 内容 | 该维护在哪 | 具体位置 |
 |------|------------|----------|
 | 业务术语 / 同义词（"热值"→哪个指标） | 术语 | `ai_query_dictionary` |
+| 实体名词 → 表（"矿点"→哪张表） | 设置（界面「实体映射」） | `ai_query_settings.entity_map` |
 | 指标口径 / 公式 / 绑定聚合 | 指标 | `ai_query_metrics` |
 | 表 / 字段的业务含义 | 资产目录 | `ai_query_assets`、`ai_query_asset_columns` |
 | 对象 / 属性 / 关系 / 业务函数 | 本体 | `ai_ont_object/property/link/action` |

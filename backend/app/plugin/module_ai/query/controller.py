@@ -1733,6 +1733,29 @@ async def save_query_setting(
     )
 
 
+@AiQueryRouter.get("/entity-map", summary="实体名词→表（生效值 + 默认值）")
+async def get_entity_map(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    """业务词 → 表 的映射（召回「实体通道」用）。
+
+    默认值仍在代码（`seed_data._ENTITY_TABLE`，兼容旧库），但**界面可覆盖**：
+    设置项 `entity_map`（JSON）。这里同时返回默认值与生效值，界面才能显示
+    「这条是默认还是你改过」。
+    """
+    from .seed_data import _ENTITY_TABLE
+
+    cfg = await AiQueryService._cfg()
+    effective = AiQueryService._cfg_entity_map(cfg)
+    return SuccessResponse(
+        data={
+            "effective": {k: sorted(v) for k, v in effective.items()},
+            "defaults": {k: sorted(v) for k, v in _ENTITY_TABLE.items()},
+        },
+        msg="查询成功",
+    )
+
+
 # ---- 语言规则（可配置词表：计数/物理量/排序/列举/全量…）----
 # 只暴露**词表与开关**，不把正则摊给业务：改说法不用发版，改算法才改代码。
 @AiQueryRouter.get("/language/rules", summary="语言规则（生效值 + 默认值）")

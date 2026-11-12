@@ -261,6 +261,11 @@ export function saveQuerySetting(data: { key: string; value: string; remark: str
 export function getPromptRules() {
   return request({ url: `${API_PATH}/prompt-rules`, method: "get" });
 }
+// ---- 实体映射（业务词 → 表，召回「实体通道」用）----
+export function getEntityMap() {
+  return request({ url: `${API_PATH}/entity-map`, method: "get" });
+}
+
 // ---- 语言规则（可配置词表：计数/物理量/排序/列举…）----
 export function getLanguageRules() {
   return request({ url: `${API_PATH}/language/rules`, method: "get" });

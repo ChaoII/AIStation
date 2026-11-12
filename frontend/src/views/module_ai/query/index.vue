@@ -556,6 +556,7 @@
             召回探针
           </el-button>
           <el-button size="small" @click="openPromptRules">生成规则</el-button>
+          <el-button size="small" @click="openEntityMap">实体映射</el-button>
           <el-button size="small" @click="openLanguageRules">语言规则</el-button>
           <el-button size="small" @click="mapVisible = true">配置地图</el-button>
         </div>
@@ -635,6 +636,54 @@
         <el-button type="primary" :loading="setSaving" @click="saveSettings">
           {{ t("ai_logs.save") }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 实体映射：业务词 → 表（召回「实体通道」；命中哪个词就把哪张表排前面） -->
+    <el-dialog v-model="entVisible" title="实体映射（业务词 → 表）" width="900px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="用户说这些词时，把对应表优先召回。改完下一句问数立即生效；不填的表仍按语义/关键词召回。"
+        class="q-fb-tip"
+      />
+      <div v-loading="entLoading" class="q-ent">
+        <div v-for="(row, i) in entForm" :key="i" class="q-ent__row">
+          <el-input
+            v-model="row.noun"
+            size="small"
+            placeholder="业务词，如 矿点"
+            style="width: 180px"
+          />
+          <el-select
+            v-model="row.tables"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            size="small"
+            placeholder="对应表（可多选，也可直接输入表名）"
+            style="flex: 1 1 auto"
+          >
+            <el-option v-for="t in entTables" :key="t" :label="t" :value="t" />
+          </el-select>
+          <el-button link type="danger" size="small" @click="entForm.splice(i, 1)">删除</el-button>
+        </div>
+        <el-empty v-if="!entForm.length" :image-size="60" description="还没有映射，点下面新增" />
+        <div class="q-rules__bar">
+          <el-button size="small" @click="entForm.push({ noun: '', tables: [] })">
+            新增映射
+          </el-button>
+          <span class="q-rules__hint" style="margin-left: 8px">
+            共 {{ entForm.length }} 条；表选项来自资产目录（{{ entTables.length }} 张）
+          </span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="entVisible = false">取消</el-button>
+        <el-button :loading="entSaving" @click="resetEntityMap">恢复默认</el-button>
+        <el-button type="primary" :loading="entSaving" @click="saveEntityMap">保存</el-button>
       </template>
     </el-dialog>
 
@@ -1011,6 +1060,8 @@ import {
   deleteQuerySession,
   getPromptRules,
   getQueryDatasources,
+  getEntityMap,
+  getQueryAssets,
   getLanguageRules,
   getQueryFewshots,
   getQueryMessages,
@@ -1625,6 +1676,69 @@ async function saveSettings() {
   }
 }
 
+// ---- 实体映射（业务词 → 表）：召回「实体通道」用 ----
+const entVisible = ref(false);
+const entLoading = ref(false);
+const entSaving = ref(false);
+const entForm = ref<Array<{ noun: string; tables: string[] }>>([]);
+const entTables = ref<string[]>([]);
+
+async function openEntityMap() {
+  entVisible.value = true;
+  entLoading.value = true;
+  try {
+    const [r, assets] = await Promise.all([getEntityMap(), getQueryAssets()]);
+    const eff = r.data?.data?.effective || {};
+    entForm.value = Object.keys(eff)
+      .sort()
+      .map((k) => ({ noun: k, tables: [...(eff[k] || [])] }));
+    const list = assets.data?.data || [];
+    entTables.value = Array.from(
+      new Set(list.map((x: any) => String(x.table_name || x.table || "")).filter(Boolean))
+    ).sort() as string[];
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "加载实体映射失败");
+  } finally {
+    entLoading.value = false;
+  }
+}
+
+async function saveEntityMap() {
+  const map: Record<string, string[]> = {};
+  for (const row of entForm.value) {
+    const noun = String(row.noun || "").trim();
+    const tables = (row.tables || []).map((t) => String(t).trim()).filter(Boolean);
+    if (noun && tables.length) map[noun] = tables;
+  }
+  entSaving.value = true;
+  try {
+    await saveQuerySetting({
+      key: "entity_map",
+      value: JSON.stringify(map),
+      remark: "实体名词→表",
+    });
+    ElMessage.success("已保存，下一句问数立即生效");
+    entVisible.value = false;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "保存失败");
+  } finally {
+    entSaving.value = false;
+  }
+}
+
+async function resetEntityMap() {
+  entSaving.value = true;
+  try {
+    await saveQuerySetting({ key: "entity_map", value: "{}", remark: "恢复默认实体映射" });
+    ElMessage.success("已恢复默认（代码内置映射）");
+    await openEntityMap();
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "恢复失败");
+  } finally {
+    entSaving.value = false;
+  }
+}
+
 // ---- 语言规则（词表可配）：改说法不用发版 ----
 const langVisible = ref(false);
 const langLoading = ref(false);
@@ -1790,6 +1904,12 @@ const configMap = [
     where: "数据与集成 → 示例工程",
     when: "某类问法反复答错，且你能写出标准 SQL",
     path: "/ai/integration",
+  },
+  {
+    what: "实体名词 → 表",
+    where: "问数设置 → 实体映射",
+    when: "用户说的业务词没把正确的表召回（如说「矿点」要优先查供应商矿点表）",
+    path: "",
   },
   {
     what: "语言规则（词表）",
@@ -2591,6 +2711,16 @@ const visibleGroups = computed(() => {
   color: var(--el-text-color-regular);
   font-size: 12px;
   line-height: 1.6;
+}
+.q-ent {
+  max-height: 56vh;
+  overflow-y: auto;
+}
+.q-ent__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 .q-lang {
   max-height: 62vh;
