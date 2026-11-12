@@ -7,6 +7,10 @@
 """
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from app.plugin.module_ai.query.metric_rules import (
     _competitor_alias,
     _metric_table_evidence,
@@ -118,11 +122,6 @@ def test_guard_params_are_configurable():
         set_guard_rules(None)
 
 
-import os
-
-import pytest
-
-
 @pytest.mark.skipif(os.environ.get("PYTEST_NO_APP") == "1", reason="需要构造应用（ORM）")
 def test_metric_audit_shape():
     """指标体检返回结构（总/可疑/抢答 + 条目字段）。"""
@@ -135,3 +134,33 @@ def test_metric_audit_shape():
     assert isinstance(out["items"], list)
     if out["items"]:
         assert set(out["items"][0]) >= {"key", "name", "reasons", "questions", "action"}
+
+
+def _mk(key: str, name: str, agg: str, sql: str = "") -> dict:
+    return {
+        "key": key, "name": name, "agg": agg, "enabled": True, "description": "",
+        "sql_template": sql or f'SELECT {agg.upper()}("X") FROM "T"',
+        "object_code": "", "params": [], "dimensions": [],
+    }
+
+
+def test_count_question_is_not_hijacked_by_sum_metric():
+    """问「多少条」时，SUM 型指标不参战——即使句子里顺带提到灰分/耗用这类物理量词。
+
+    实测翻车：配煤方案主表STANDQTY合计 把「分仓里灰分上限大于20的有多少条」答成了标煤量。
+    """
+    ms = [_mk("sum_x", "配煤方案标煤量合计", "sum", 'SELECT SUM("ST") FROM "FUEL_MIX_COALSCHEME"')]
+    assert match_metric("配煤方案分仓里灰分上限（AD_MAX）大于 20 的有多少条？", ms, [], [], {}) is None
+    # 同一句里的物理量问法仍可走指标
+    assert match_metric("配煤方案标煤量合计是多少？", ms, [], [], {}) is not None
+
+
+def test_rowcount_metric_recognised_by_generated_key_shapes():
+    """`xxx_count_ID` / 名字带「计数/总数」也算计数指标（自动生成的指标就是这种命名）。"""
+    from app.plugin.module_ai.query.metric_rules import is_rowcount_metric
+
+    assert is_rowcount_metric({"key": "FUEL_CMCS_ASSAY_count_ID", "name": "化验主表单据数"})
+    assert is_rowcount_metric({"key": "count_dtxy_qyxx", "name": "区域信息条数"})
+    assert is_rowcount_metric({"key": "x", "name": "入厂煤批次计数"})
+    assert is_rowcount_metric({"key": "x", "name": "人员总数"})
+    assert not is_rowcount_metric({"key": "sum_x", "name": "煤场进煤量合计"})

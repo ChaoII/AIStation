@@ -92,15 +92,20 @@ PHYSICAL_QTY_RE = re.compile(
     r"(存煤|库存|总量|合计|总和|吨数|多少吨|多少方|大卡|金额|余额|耗用|发热量|硫分|灰分|水分)")
 # 问句明确问「条数/记录数」时，行数指标仍然有效（是用户要的）
 ROWCOUNT_ASK_RE = re.compile(r"(条数|记录数|笔数|多少条|多少笔)")
-ROWCOUNT_NAME_RE = re.compile(r"(条数|记录数|笔数)$")
+ROWCOUNT_NAME_RE = re.compile(r"(条数|记录数|笔数|计数|总数)$")
 
 
 def is_rowcount_metric(metric: dict) -> bool:
     """指标是否在数「行数」（而不是求和/求平均）。"""
     name = str(metric.get("name") or "").strip()
     key = str(metric.get("key") or "").strip().lower()
-    return (bool(ROWCOUNT_NAME_RE.search(name)) or key.startswith("count_")
-            or key.endswith("_count"))
+    # key 形态不止 count_xxx / xxx_count：自动生成的还有 xxx_count_ID / count_xxx_ID
+    return (
+        bool(ROWCOUNT_NAME_RE.search(name))
+        or key.startswith("count_")
+        or key.endswith("_count")
+        or "_count_" in key
+    )
 
 
 def prefers_rowcount(question: str, metric: dict) -> bool:
@@ -397,8 +402,11 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
                     _own = [_own]
                 if _competitor_alias(question, _tbl2, table_alias, list(_own)):
                     continue
-        # 问「多少条/多少笔」是数行数：非计数指标不参战
-        if rowcount_asked and not physical_qty and (m.get("agg") or "").lower() != "count":
+        # 问「多少条/多少笔」是数行数：非计数指标一律不参战。
+        # 旧的「not physical_qty」放行条件有漏洞：问句里带一个物理量词（灰分/耗用）就绕过，
+        # 实测「配煤方案分仓里灰分上限大于 20 的有多少条」被 SUM(标煤量) 接走并答错。
+        # 「多少条」是显式计数诉求，比句中顺带提到的物理量词更具体。
+        if rowcount_asked and (m.get("agg") or "").lower() != "count":
             continue
         # 「词证据」：指标自己的用词出现在问句里才算数；名称权重 > 描述，且不重复计同一个词
         n_grams = bigrams(m.get("name"))
