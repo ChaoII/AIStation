@@ -16,19 +16,27 @@
 """
 from __future__ import annotations
 
-#: 问句在问"删除"本身：此时**不能**把 `= false` 塞进去，否则问的就是反的
-DELETION_HINTS = (
-    "已删除", "删除的", "删除记录", "排除已删除", "是否删除", "作废", "被删",
-)
+from .filtering import softdelete_rules
+
+#: 问句在问"删除"本身：此时**不能**把 `= false` 塞进去，否则问的就是反的。
+#: 词表以 ``filtering.DEFAULT_FILTER_RULES["softdelete"]["deletion_hints"]`` 为唯一来源，
+#: 这里只做别名导出（历史调用方按这个名字引用），避免两处各写一份。
+DELETION_HINTS = tuple(softdelete_rules(None)["deletion_hints"])
 
 
-def asks_about_deletion(question: str) -> bool:
-    """问句是否在问"已删除/删除"（含"排除已删除"这种要求过滤的表述）。"""
+def asks_about_deletion(question: str, hints: list[str] | None = None) -> bool:
+    """问句是否在问"已删除/删除"（含"排除已删除"这种要求过滤的表述）。
+
+    ``hints`` 可由数据源配置覆盖（``filter_rules.softdelete.deletion_hints``）：
+    不同业务的说法不一样（作废/注销/失效…），不该写死在代码里。
+    """
     q = question or ""
-    return any(h in q for h in DELETION_HINTS)
+    words = hints or softdelete_rules(None)["deletion_hints"]
+    return any(h and h in q for h in words)
 
 
-def inject_softdelete(sql: str, del_tables: set[str]) -> tuple[str, list[str]]:
+def inject_softdelete(sql: str, del_tables: set[str],
+                      column: str = "ISDELETED") -> tuple[str, list[str]]:
     """给每个 SELECT 各自直接引用的软删表补 `ISDELETED = false`。
 
     返回 ``(新 SQL, 被注入的标识符列表)``；无可注入时原样返回。
@@ -63,7 +71,7 @@ def inject_softdelete(sql: str, del_tables: set[str]) -> tuple[str, list[str]]:
                 continue
             ident = t.alias_or_name
             conds.append(exp.EQ(
-                this=exp.Column(this=exp.Identifier(this="ISDELETED", quoted=True),
+                this=exp.Column(this=exp.Identifier(this=column, quoted=True),
                                 table=exp.Identifier(this=ident, quoted=True)),
                 expression=exp.false(),
             ))
@@ -78,3 +86,58 @@ def inject_softdelete(sql: str, del_tables: set[str]) -> tuple[str, list[str]]:
     if not hit:
         return sql, []
     return parsed.sql(dialect="postgres"), hit
+
+
+def apply_softdelete_policy(question: str, sql: str, schema_map: dict | None,
+                            rules: dict | None = None) -> tuple[str, list[str]]:
+    """纯逻辑：按数据源规则给人写的/SQL 补软删条件，返回 ``(SQL, 命中标识符)``。
+
+    规则来源 = ``ai_query_datasources.filter_rules.softdelete``（缺省即 ``ISDELETED``）：
+    - ``column``：软删列名（不同库可能叫 IS_DELETED / DEL_FLAG）；
+    - ``deletion_hints``：问句里出现这些词时**不动**（问的就是已删除）。
+    """
+    cfg = softdelete_rules(rules)
+    column = cfg["column"]
+    if not sql or asks_about_deletion(question, cfg["deletion_hints"]):
+        return sql, []
+    flat = sql.replace(" ", "").upper()
+    if column.replace(" ", "").upper() in flat:
+        return sql, []
+    want = f"{column}(".upper()
+    del_tables = {
+        str(t).upper() for t, labels in (schema_map or {}).items()
+        if any(str(lab).upper().startswith(want) for lab in (labels or []))
+    }
+    if not del_tables:
+        return sql, []
+    return inject_softdelete(sql, del_tables, column)
+
+
+async def rewrite_generated_sql(question: str, sql: str, datasource: str) -> str:
+    """问数入口用：读数据源配置 + schema，补软删条件；**任何异常都返回原 SQL**。
+
+    为什么收口到这里（2026-11-12）：`execute_ops` 与 `assetio_ops` 各有一份**逐字重复**的实现，
+    改一处忘另一处就是"两个入口口径不同"。现在配置（列名/提示词）在数据源里维护，
+    代码只留一份执行逻辑。
+    """
+    from app.core.logger import log
+
+    try:
+        from . import service as _svc
+
+        rules = None
+        try:
+            ds_id = int(str(datasource).split(":")[-1])
+            ds = await _svc.AiQueryService._load_ds(ds_id)
+            rules = getattr(ds, "filter_rules", None)
+        except Exception:  # noqa: BLE001 - 配置读不到就用默认
+            rules = None
+        schema_map = await _svc.AiQueryService._ds_schema_map(datasource)
+        new_sql, hit = apply_softdelete_policy(question, sql, schema_map, rules)
+        if hit:
+            log.info("[query] 软删除口径改写：表 {}（{} 处）",
+                     "/".join(sorted(set(hit))[:3]), len(hit))
+        return new_sql
+    except Exception as e:  # noqa: BLE001 - 改写是增强，失败不影响答数
+        log.warning(f"[query] 软删除口径改写失败（用原 SQL）: {str(e)[:100]}")
+        return sql

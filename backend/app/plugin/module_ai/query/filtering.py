@@ -34,7 +34,33 @@ DEFAULT_FILTER_RULES: dict[str, Any] = {
         "created_by",
         "updated_by",
     ],
+    # 软删口径（2026-11-12 原则：**语义/口径要能维护，不写死在代码里**）。
+    # 不同业务库的软删列名并不统一（ISDELETED / IS_DELETED / DEL_FLAG），
+    # 按数据源在 `ai_query_datasources.filter_rules` 里覆盖；代码只保留默认值。
+    "softdelete": {
+        "column": "ISDELETED",
+        "deletion_hints": [
+            "已删除", "删除的", "删除记录", "排除已删除", "是否删除", "作废", "被删",
+        ],
+    },
 }
+
+
+def softdelete_rules(rules: dict | None = None) -> dict[str, Any]:
+    """合并出**生效**的软删规则（缺省 + 数据源覆盖）。
+
+    与 ``system_table`` / ``audit_fields`` 同模式：库里的 JSON 可能是旧版（没有
+    ``softdelete`` 段），这里逐键合并，不要求用户重新保存一遍配置。
+    """
+    base = dict(DEFAULT_FILTER_RULES.get("softdelete") or {})
+    cfg = ((rules or {}).get("softdelete") or {}) if isinstance(rules, dict) else {}
+    if isinstance(cfg, dict):
+        base.update({k: v for k, v in cfg.items() if v not in (None, "")})
+    col = str(base.get("column") or "ISDELETED").strip() or "ISDELETED"
+    hints = base.get("deletion_hints")
+    if not isinstance(hints, list) or not hints:
+        hints = list(DEFAULT_FILTER_RULES["softdelete"]["deletion_hints"])
+    return {"column": col, "deletion_hints": [str(h) for h in hints if str(h).strip()]}
 
 
 def _norm(value: Any) -> str:

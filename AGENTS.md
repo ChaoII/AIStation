@@ -986,6 +986,35 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 
 `backend/tests/test_paddlex_removal.py` 已改为 PaddleX 支持测试（枚举/权重规格/cmd 构建），64 测试全通过。
 
+## 工程原则：语义/口径不写死在代码里（用户强制要求，2026-11-12）
+
+> 用户原话（原样记录）：**「有一条原则，很多调整，指令、语义等等内容不要在代码中写死，而是要在这个地方去维护，比如本体，比如其它，血缘，术语等等位置。」**
+
+**判定方法（一句话）**：改一条业务口径/语义，如果**需要发版**，那它就放错了位置。
+代码里只允许留**默认值**，且必须能被下列位置覆盖。
+
+| 内容 | 该维护在哪 | 具体位置 |
+|------|------------|----------|
+| 业务术语 / 同义词（"热值"→哪个指标） | 术语 | `ai_query_dictionary` |
+| 指标口径 / 公式 / 绑定聚合 | 指标 | `ai_query_metrics` |
+| 表 / 字段的业务含义 | 资产目录 | `ai_query_assets`、`ai_query_asset_columns` |
+| 对象 / 属性 / 关系 / 业务函数 | 本体 | `ai_ont_object/property/link/action` |
+| 表间关联 / 影响面 | 血缘 | `ai_query_lineage` |
+| 提示词书写规范（别名/排序/空值） | 生成规则 | `ai_query_prompt_rules` |
+| 示例问答 | few-shot | `ai_query_fewshot` |
+| 枚举取值 | 资产字段枚举 | `ai_query_asset_columns.enum` |
+| 软删列名 / "已删除"说法 | **数据源** schema 语义 | `ai_query_datasources.filter_rules.softdelete` |
+| 数值阈值 / 开关 | 设置 | `ai_query_settings` |
+| 权限（表/行/列/模块） | 策略 | `ai_policy*` |
+
+**允许留在代码里的**（不在上表）：安全护栏（只读 SELECT、表白名单、禁止 DDL）、
+协议/错误处理、以及上表各项的**默认值**。默认值必须可被上表位置覆盖，且加单测证明"覆盖生效"。
+
+**迁移纪律**：每迁一项要 ① 保留旧默认值（行为不变）② 加"配置能覆盖默认"的单测
+③ 跑 105 题回归（准确率与快路径占比不降）。
+
+**盘点**：`docs/query-semantics-home.md`（哪些已可配、哪些还在代码里、迁移顺序）。
+
 ## AI 管理模块（v2，进行中）
 
 - 位置：后端 `backend/app/plugin/module_ai/`（自动发现，容器前缀 `/ai`）；前端 `frontend/src/views/module_ai/`。

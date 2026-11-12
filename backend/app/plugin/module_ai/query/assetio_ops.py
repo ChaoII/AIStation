@@ -180,36 +180,15 @@ class AssetIoOps:
     @classmethod
     async def _apply_softdelete_policy(cls, question: str, sql: str,
                                        datasource: str) -> str:
-        """按"业务数据默认排除软删除"口径改写模型生成的 SQL。
+        """按数据源配置的软删口径改写模型生成的 SQL（见 ``softdelete.rewrite_generated_sql``）。
 
-        只在**自定义数据源**上用（系统库用 `is_deleted` 小写，且口径已写在提示词里）。
-        问句本身在问"已删除"时**不动**；SQL 里已经有 `ISDELETED` 条件时也不动
-        （避免覆盖模型自己写的 `= true`）。
-
-        失败一律返回原 SQL：改写是**增强**，绝不能因为改写失败让整题挂掉。
+        语义/口径**不在代码里写死**：列名（ISDELETED / IS_DELETED / DEL_FLAG）与
+        「问句在问已删除」的提示词都从 `ai_query_datasources.filter_rules.softdelete`
+        读，代码只保留默认值。失败一律返回原 SQL（改写是增强，不能拖垮答数）。
         """
-        from .softdelete import asks_about_deletion, inject_softdelete
+        from .softdelete import rewrite_generated_sql
 
-        try:
-            if not sql or asks_about_deletion(question):
-                return sql
-            if "ISDELETED" in sql.replace(" ", "").upper():
-                return sql
-            schema_map = await cls._ds_schema_map(datasource)
-            del_tables = {
-                t.upper() for t, labels in (schema_map or {}).items()
-                if any(str(lab).upper().startswith("ISDELETED(") for lab in (labels or []))
-            }
-            if not del_tables:
-                return sql
-            new_sql, hit = inject_softdelete(sql, del_tables)
-            if hit:
-                log.info("[query] 软删除口径改写：表 {}（{} 处）",
-                         "/".join(sorted(set(hit))[:3]), len(hit))
-            return new_sql
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 软删除口径改写失败（用原 SQL）: {str(e)[:100]}")
-            return sql
+        return await rewrite_generated_sql(question, sql, datasource)
 
     @classmethod
     async def _allowed_objects_for_query(cls, question: str, auth, max_objects: int = 8,
