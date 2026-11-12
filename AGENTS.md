@@ -1004,6 +1004,8 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 | 示例问答 | few-shot | `ai_query_fewshot` |
 | 枚举取值 | 资产字段枚举 | `ai_query_asset_columns.enum` |
 | 软删列名 / "已删除"说法 | **数据源** schema 语义 | `ai_query_datasources.filter_rules.softdelete` |
+| 时间口径（周起始 / 月份） | **数据源**业务口径 | `ai_query_datasources.filter_rules.time` |
+| 问句语言规则（计数/物理量/排序/列举/全量 的词表与开关） | 设置（界面「语言规则」+ 试一句预览） | `ai_query_settings.query_language_rules` |
 | 数值阈值 / 开关 | 设置 | `ai_query_settings` |
 | 权限（表/行/列/模块） | 策略 | `ai_policy*` |
 

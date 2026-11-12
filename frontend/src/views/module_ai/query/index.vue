@@ -556,6 +556,7 @@
             召回探针
           </el-button>
           <el-button size="small" @click="openPromptRules">生成规则</el-button>
+          <el-button size="small" @click="openLanguageRules">语言规则</el-button>
           <el-button size="small" @click="mapVisible = true">配置地图</el-button>
         </div>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
@@ -634,6 +635,72 @@
         <el-button type="primary" :loading="setSaving" @click="saveSettings">
           {{ t("ai_logs.save") }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 语言规则：词表可配（计数/物理量/排序/列举/全量） -->
+    <el-dialog v-model="langVisible" title="语言规则（词表可配）" width="1000px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="这些词决定「这句话走不走指标快路径」「要不要全量列举」。改说法用它；改判定算法才动代码。"
+        class="q-fb-tip"
+      />
+      <div v-loading="langLoading" class="q-lang">
+        <div class="q-lang__switches">
+          <el-checkbox v-for="s in LANG_SWITCHES" :key="s.key" v-model="langForm.switches[s.key]">
+            {{ s.label }}
+          </el-checkbox>
+        </div>
+        <div class="q-lang__grid">
+          <div v-for="g in LANG_WORD_GROUPS" :key="g.key" class="q-lang__item">
+            <div class="q-lang__label">
+              {{ g.label }}
+              <span class="q-rules__hint">{{ g.tip }}</span>
+            </div>
+            <el-select
+              v-model="langForm[g.key]"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              size="small"
+              style="width: 100%"
+            >
+              <el-option v-for="w in langForm[g.key] || []" :key="w" :label="w" :value="w" />
+            </el-select>
+          </div>
+        </div>
+        <el-divider content-position="left">试一句（按当前草稿判定，不用先保存）</el-divider>
+        <div class="q-rules__ab">
+          <el-input
+            v-model="langProbeQ"
+            size="small"
+            placeholder="例如：本月一共有多少份合同？"
+            style="flex: 1 1 auto"
+          />
+          <el-button size="small" type="primary" :loading="langProbing" @click="runLangProbe">
+            试一句
+          </el-button>
+        </div>
+        <div v-if="langProbeResult" class="q-lang__probe">
+          <el-tag
+            v-for="t in langProbeTags"
+            :key="t.label"
+            :type="t.hit ? 'success' : 'info'"
+            size="small"
+            effect="plain"
+          >
+            {{ t.label }}：{{ t.hit ? "是" : "否" }}
+          </el-tag>
+          <div class="q-rules__hint">命中片段：{{ langProbeMatched }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="langVisible = false">取消</el-button>
+        <el-button :loading="langLoading" @click="loadLanguageRules(true)">恢复默认</el-button>
+        <el-button type="primary" :loading="langSaving" @click="saveLanguageRules">保存</el-button>
       </template>
     </el-dialog>
 
@@ -944,6 +1011,7 @@ import {
   deleteQuerySession,
   getPromptRules,
   getQueryDatasources,
+  getLanguageRules,
   getQueryFewshots,
   getQueryMessages,
   getQuerySessions,
@@ -953,6 +1021,7 @@ import {
   promoteQueryMetric,
   getQueryStats,
   previewPromptRules,
+  probeLanguageRules,
   resetPromptRule,
   runQueryReport,
   saveQueryReport,
@@ -1556,6 +1625,133 @@ async function saveSettings() {
   }
 }
 
+// ---- 语言规则（词表可配）：改说法不用发版 ----
+const langVisible = ref(false);
+const langLoading = ref(false);
+const langSaving = ref(false);
+const langProbing = ref(false);
+const langForm = ref<any>({ switches: {} });
+const langProbeQ = ref("");
+const langProbeResult = ref<any>(null);
+const LANG_SWITCHES = [
+  { key: "count_intent", label: "计数意图（多少份/多少个）" },
+  { key: "physical_qty", label: "物理量优先（库存/合计/吨数）" },
+  { key: "rowcount", label: "明确问条数（多少条/记录数）" },
+  { key: "order", label: "排序诉求（排序/前N/最高）" },
+  { key: "listing", label: "列举类（哪些/列出）" },
+  { key: "all_list", label: "全量列举（每个/所有）" },
+];
+const LANG_WORD_GROUPS = [
+  { key: "count_quantifiers", label: "计数·疑问词", tip: "多少 / 几" },
+  { key: "count_units", label: "计数·量词", tip: "条 / 份 / 个…" },
+  { key: "count_nouns", label: "计数·名词", tip: "数量 / 条数…" },
+  { key: "physical_qty_words", label: "物理量词", tip: "库存 / 合计 / 吨数…" },
+  { key: "rowcount_ask_words", label: "明确问条数", tip: "多少条 / 记录数…" },
+  { key: "order_words", label: "排序词", tip: "排序 / 升序 / 最高…" },
+  { key: "non_count_prefixes", label: "非计数指标前缀", tip: "平均 / 最大…" },
+  { key: "listing_words", label: "列举词", tip: "哪些 / 列出…" },
+  { key: "listing_verbs", label: "列举动词", tip: "列出 / 清单…" },
+  { key: "count_override_words", label: "计数覆盖词", tip: "条数 / 合计…" },
+  { key: "all_list_words", label: "全量列举词", tip: "每个 / 所有…" },
+  { key: "agg_over_groups_words", label: "组上聚合词", tip: "平均 / 占比…" },
+  { key: "group_words", label: "分组词", tip: "每个 / 各…" },
+  { key: "group_nouns", label: "分组触发名词", tip: "数量 / 统计…" },
+];
+const LANG_PROBE_LABELS: Record<string, string> = {
+  count_intent: "计数意图",
+  physical_qty: "物理量",
+  rowcount_ask: "问条数",
+  order: "排序",
+  listing: "列举",
+  all_list: "全量列举",
+  grouping: "分组",
+  non_count_prefix: "非计数前缀",
+  listing_verb: "列举动词",
+  count_override: "计数覆盖",
+  agg_over_groups: "组上聚合",
+};
+
+async function loadLanguageRules(useDefaults = false) {
+  langLoading.value = true;
+  try {
+    const r = await getLanguageRules();
+    const d = r.data?.data || {};
+    const src = useDefaults ? d.defaults : d.effective;
+    langForm.value = { switches: { ...(src?.switches || {}) } };
+    LANG_WORD_GROUPS.forEach((g) => {
+      langForm.value[g.key] = Array.isArray(src?.[g.key]) ? [...src[g.key]] : [];
+    });
+    langProbeResult.value = null;
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "加载语言规则失败");
+  } finally {
+    langLoading.value = false;
+  }
+}
+
+function openLanguageRules() {
+  langVisible.value = true;
+  loadLanguageRules(false);
+}
+
+async function saveLanguageRules() {
+  langSaving.value = true;
+  try {
+    const payload: any = { switches: { ...langForm.value.switches } };
+    LANG_WORD_GROUPS.forEach((g) => {
+      payload[g.key] = langForm.value[g.key] || [];
+    });
+    await saveQuerySetting({
+      key: "query_language_rules",
+      value: JSON.stringify(payload),
+      remark: "语言规则（词表可配）",
+    });
+    ElMessage.success("已保存，下一句问数立即生效");
+    await loadLanguageRules(false);
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "保存失败");
+  } finally {
+    langSaving.value = false;
+  }
+}
+
+const langProbeTags = computed(() => {
+  const res = langProbeResult.value || {};
+  return Object.keys(LANG_PROBE_LABELS).map((k) => ({
+    label: LANG_PROBE_LABELS[k],
+    hit: !!res[k],
+  }));
+});
+
+const langProbeMatched = computed(() => {
+  const m = langProbeResult.value?.matched || {};
+  const parts = Object.entries(m)
+    .filter(([, v]) => !!v)
+    .map(([k, v]) => `${LANG_PROBE_LABELS[k] || k}=${v}`);
+  return parts.length ? parts.join("，") : "（没有命中词）";
+});
+
+async function runLangProbe() {
+  const q = String(langProbeQ.value || "").trim();
+  if (!q) {
+    ElMessage.warning("先输入一句话");
+    return;
+  }
+  langProbing.value = true;
+  try {
+    const payload: any = { switches: { ...langForm.value.switches } };
+    LANG_WORD_GROUPS.forEach((g) => {
+      payload[g.key] = langForm.value[g.key] || [];
+    });
+    const r = await probeLanguageRules({ question: q, rules: payload });
+    langProbeResult.value = r.data?.data || {};
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "预览失败");
+  } finally {
+    langProbing.value = false;
+  }
+}
+
 // ---- 配置地图：业务口径/语义各自在哪维护（避免「界面功能很多但不知道怎么用」）----
 const mapVisible = ref(false);
 const configMap = [
@@ -1594,6 +1790,12 @@ const configMap = [
     where: "数据与集成 → 示例工程",
     when: "某类问法反复答错，且你能写出标准 SQL",
     path: "/ai/integration",
+  },
+  {
+    what: "语言规则（词表）",
+    where: "问数设置 → 语言规则",
+    when: "「多少份/清单/合计」这类说法判得不对，或要关掉某类判定",
+    path: "",
   },
   {
     what: "提示词书写规范",
@@ -2389,6 +2591,34 @@ const visibleGroups = computed(() => {
   color: var(--el-text-color-regular);
   font-size: 12px;
   line-height: 1.6;
+}
+.q-lang {
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.q-lang__switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 4px 0 10px;
+}
+.q-lang__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+}
+.q-lang__item {
+  min-width: 0;
+}
+.q-lang__label {
+  margin-bottom: 2px;
+}
+.q-lang__probe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 .q-rules__ab {
   display: flex;

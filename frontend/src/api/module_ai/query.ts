@@ -261,6 +261,14 @@ export function saveQuerySetting(data: { key: string; value: string; remark: str
 export function getPromptRules() {
   return request({ url: `${API_PATH}/prompt-rules`, method: "get" });
 }
+// ---- 语言规则（可配置词表：计数/物理量/排序/列举…）----
+export function getLanguageRules() {
+  return request({ url: `${API_PATH}/language/rules`, method: "get" });
+}
+export function probeLanguageRules(data: { question: string; rules?: any }) {
+  return request({ url: `${API_PATH}/language/probe`, method: "post", data });
+}
+
 /** 预览当前生效规则（作用域/开关是运行时过滤，列表看不出最终结果） */
 export function previewPromptRules(params: {
   datasource?: string;

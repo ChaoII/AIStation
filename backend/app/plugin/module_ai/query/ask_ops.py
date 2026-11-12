@@ -34,6 +34,12 @@ class AskOps:
         if not question:
             raise CustomException(msg="请输入要查询的问题")
 
+        # 语言规则（词表可配）：在**本任务**内生效（ContextVar），缺配置回落默认。
+        # 放在 force_slow 之前：评测强制慢路径也应按配置的词表判断（列举/全量等）。
+        from .language_rules import set_from_settings as _set_lang
+
+        _set_lang(await cls._cfg())
+
         sess = await cls.get_or_create_session(session_id, question[:30], auth)
 
         # 评测强制慢路径：跳过模板匹配，直接用 LLM 生成 SQL。
@@ -289,6 +295,10 @@ class AskOps:
             yield {"type": "error", "message": f"未配置可用的问答模型：{e}"}
             return
         cfg = await cls._cfg()
+        # 语言规则（词表可配）在本任务内生效，与 ask 保持一致
+        from .language_rules import set_from_settings as _set_lang
+
+        _set_lang(cfg)
         # 与 `_nl2sql` 共用同一份可配置规则（`ai_query_prompt_rules`）。
         # 旧实现这里只抄了 (1)~(6)，流式路径**从来没有** (7) 明细/汇总 与 (8) Top-N 空值，
         # 于是「同一个问题走流式与走非流式，生成的 SQL 口径不一致」。

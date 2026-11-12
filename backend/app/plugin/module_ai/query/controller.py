@@ -16,6 +16,7 @@ from .schema import (
     FilterRulesParseRequest,
     FilterRulesPreviewRequest,
     FilterRulesSuggestRequest,
+    LanguageProbeRequest,
     PromptRuleUpsert,
     QueryAskRequest,
     QueryAssetColumnUpsert,
@@ -1730,6 +1731,35 @@ async def save_query_setting(
         data=await AiQueryService.save_setting(data.key, data.value, data.remark, auth),
         msg="保存成功",
     )
+
+
+# ---- 语言规则（可配置词表：计数/物理量/排序/列举/全量…）----
+# 只暴露**词表与开关**，不把正则摊给业务：改说法不用发版，改算法才改代码。
+@AiQueryRouter.get("/language/rules", summary="语言规则（生效值 + 默认值）")
+async def get_language_rules(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from . import language_rules as LR
+
+    cfg = await AiQueryService._cfg()
+    raw = cfg.get("query_language_rules")
+    return SuccessResponse(
+        data={"effective": LR.effective(raw), "defaults": LR.DEFAULT_LANGUAGE_RULES},
+        msg="查询成功",
+    )
+
+
+@AiQueryRouter.post("/language/probe", summary="语言规则预览（试一句话）")
+async def probe_language_rules(
+    data: LanguageProbeRequest,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from . import language_rules as LR
+
+    cfg = await AiQueryService._cfg()
+    rules = data.rules if isinstance(data.rules, dict) else LR.effective(
+        cfg.get("query_language_rules"))
+    return SuccessResponse(data=LR.probe(data.question, rules), msg="预览完成")
 
 
 # ---- 生成规则（可配置提示词规则）----

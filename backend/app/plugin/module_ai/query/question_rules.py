@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .language_rules import current as _lang
+
 DAYS_RE = re.compile(r"(?:最近|近|过去)\s*(\d+)\s*(?:天|日)", re.IGNORECASE)
 
 
@@ -71,9 +73,10 @@ LISTING_VERB_RE = re.compile(r"(列出|列表|清单|罗列|哪些|分别|名称
 def is_listing_question(question: str) -> bool:
     """列举类问题（哪些/列出/名称等）不走指标模板，强制慢路径 NL2SQL。"""
     q = question or ""
-    if COUNT_OVERRIDE_RE.search(q) and not LISTING_VERB_RE.search(q):
+    _lr = _lang()
+    if _lr["count_override"].search(q) and not _lr["listing_verbs"].search(q):
         return False
-    return bool(LISTING_RE.search(q))
+    return bool(_lr["listing"].search(q))
 
 
 ALL_LIST_HINTS = ("每个", "各", "所有", "全部", "分别", "每类", "每种", "列出",
@@ -95,6 +98,7 @@ def wants_full_list(question: str) -> bool:
     q = question or ""
     if TOP_N_RE.search(q):
         return False
-    if AGG_OVER_GROUPS_RE.search(q):
+    _lr = _lang()
+    if _lr["agg_over_groups"].search(q):
         return False
-    return any(h in q for h in ALL_LIST_HINTS)
+    return any(h in q for h in _lr["all_list_words"])

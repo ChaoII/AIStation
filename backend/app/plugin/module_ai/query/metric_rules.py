@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .language_rules import current as _lang
 from .question_rules import detect_time_frame, metric_time_hint, parse_time_range
 
 #: 与 service 同值（常量，避免顶层 import service 造成循环）
@@ -107,7 +108,7 @@ def prefers_rowcount(question: str, metric: dict) -> bool:
     实测：「每日耗用量及存煤量**条数**是多少」里有「存煤量」，会被术语改判到
     「煤场存煤量」（吨），把 370 条答成 23 万吨。
     """
-    return bool(ROWCOUNT_ASK_RE.search(question or "")) and is_rowcount_metric(metric)
+    return bool(_lang()["rowcount"].search(question or "")) and is_rowcount_metric(metric)
 
 
 ORDER_WORD_RE = re.compile(r"(排序|升序|降序|从大到小|从小到大|按.{0,6}排|前\s*\d+\s*(名|条|个)|排名)")
@@ -170,7 +171,7 @@ def latin_words(text: str) -> set[str]:
 
 def wants_grouping(question: str) -> bool:
     """问句是否要求**按实体分组/逐个**（单值指标答不了）。"""
-    return bool(GROUPING_RE.search(question or ""))
+    return bool(_lang()["grouping"].search(question or ""))
 
 
 def metric_name_core(name: str) -> str:
@@ -200,9 +201,10 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
     q = question.lower()
     q_grams = bigrams(question)
     frame = detect_time_frame(question)
-    count_intent = bool(COUNT_INTENT_RE.search(question))
-    physical_qty = bool(PHYSICAL_QTY_RE.search(question))
-    rowcount_asked = bool(ROWCOUNT_ASK_RE.search(question))
+    _lr = _lang()
+    count_intent = bool(_lr["count_intent"].search(question))
+    physical_qty = bool(_lr["physical_qty"].search(question))
+    rowcount_asked = bool(_lr["rowcount"].search(question))
     # 业务概念（含同义词）→ 指标：与术语同等参与快路径匹配，闭合「概念→指标」
     concept_bind: list[tuple[str, str]] = []
     for c in concepts or []:
@@ -229,7 +231,7 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
         # 「燃煤合同一共有多少份」与「平均合同单价」都含「合同」，不拦就会答成平均单价。
         if count_intent and (
             (m.get("agg") or "").lower() in NON_COUNT_AGG
-            or NON_COUNT_NAME_RE.match(m.get("name") or "")
+            or _lr["non_count_prefixes"].match(m.get("name") or "")
         ) and not (core and core in q):
             continue
         # 「词证据」：指标自己的用词出现在问句里才算数；名称权重 > 描述，且不重复计同一个词
@@ -335,7 +337,7 @@ def fast_path_blockers(question: str, metric: dict,
             reasons.append("模板没有时间参数（会答成全量）")
 
     # 排序诉求：模板只出一个聚合值，给不了"按X排序"的结果集
-    if ORDER_WORD_RE.search(q):
+    if _lang()["order"].search(q):
         reasons.append("问句要求排序（模板只出聚合值）")
 
     # 聚合对象必须与模板一致：问「平均灰分」却命中「平均发热量」的模板 —— 实测会

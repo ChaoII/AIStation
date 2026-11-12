@@ -140,6 +140,13 @@ class QuerySettingUpsert(BaseModel):
     remark: str = ""
 
 
+class LanguageProbeRequest(BaseModel):
+    """语言规则预览：给定问句看会被判成什么（可带草稿规则，不传则用生效配置）。"""
+
+    question: str
+    rules: dict[str, Any] | None = None
+
+
 class PromptRuleUpsert(BaseModel):
     """问数生成规则（新增/更新）：只传要改的字段，省略 = 不修改。"""
 
