@@ -225,7 +225,15 @@ class RoutingOps:
             }
         except Exception:  # noqa: BLE001
             objects = {}
-        metric = _svc._match_metric(question, metrics, terms, concepts, objects)
+        # 指标护栏（2026-11-12 二版）：计数型指标必须有「指标名 / 表名 / 业务别名」证据；
+        # 别名数据补齐后再启用（此前别名全空，规则一拦就误伤）。
+        try:
+            aliases = (await cls._metric_alias_map()) if cls._cfg_bool(
+                await cls._cfg(), "metric_table_guard_enabled", True) else None
+        except Exception:  # noqa: BLE001
+            aliases = None
+        metric = _svc._match_metric(question, metrics, terms, concepts, objects,
+                                    table_alias=aliases)
         if metric and metric.get("agg") != "group" and _svc._wants_grouping(question):
             log.warning("[query] 分组诉求，跳过单值指标快路径：metric={} question={}",
                         metric.get("key"), question[:40])

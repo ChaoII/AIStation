@@ -86,7 +86,9 @@ class SettingsOps:
             # 是否注入枚举字段真实取值。**默认关**：配对实测关掉更好
             # （0.9231 → 0.9487，2 题，仍在噪声内，但没有正收益证据）。
             "enum_hint_enabled": "false",
-            "full_entity_no_limit": "true",          # 全量实体查询提示词规则（不 LIMIT 截断）
+            "full_entity_no_limit": "true",
+            # 指标护栏：计数型指标必须有「指标名 / 表名 / 业务别名」证据才参战
+            "metric_table_guard_enabled": "true",          # 全量实体查询提示词规则（不 LIMIT 截断）
             # 问句语言规则（词表可配；界面「语言规则」维护，空 = 全用默认词表）
             "query_language_rules": "{}",
             "entity_name_rule": "true",              # 实体查询提示词规则（JOIN 取 name）

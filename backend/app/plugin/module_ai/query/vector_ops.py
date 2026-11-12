@@ -112,6 +112,7 @@ class VectorOps:
         """表级资产元数据（中文名/业务域/描述/业务场景），进程级缓存。"""
         if _svc._ASSET_TMETA is not None:
             return _svc._ASSET_TMETA
+
         async with async_db_session() as db:
             from sqlalchemy import select
 
@@ -129,6 +130,80 @@ class VectorOps:
             for a in rows
         }
         return _svc._ASSET_TMETA
+
+    @classmethod
+    async def _metric_alias_map(cls) -> dict[str, list[str]]:
+        """表名 → 业务别名列表（资产中文名 + 本体对象别名），供指标护栏判证据。"""
+        out: dict[str, list[str]] = {}
+
+        def _push(tbl: str, alias: str) -> None:
+            t = str(tbl or "").strip().upper()
+            a = str(alias or "").strip()
+            if a.lower().startswith("ont_"):
+                a = a[4:]
+            if not t or not a or a.upper() == t:
+                return
+            arr = out.setdefault(t, [])
+            if a not in arr:
+                arr.append(a)
+            # 括号里的补充说明（「煤场进煤记录(流水)」）会让「别名 in 问句」永远不成立，
+            # 这里再存一份去掉括号的版本（「煤场进煤记录」）。
+            bare = a.split("(")[0].split("（")[0].strip()
+            if bare and bare != a and bare.upper() != t and bare not in arr:
+                arr.append(bare)
+
+        try:
+            meta = await cls._asset_tmeta()
+            for t, m in (meta or {}).items():
+                alias = str((m or {}).get("alias") or "")
+                tt = str(t or "")
+                _push(tt, alias)
+                # 影子表在资产里可能叫 `ont_X`，业务别名要同时登记到 `X` 上
+                if tt.lower().startswith("ont_"):
+                    _push(tt[4:], alias)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            # 直读本体表：`semantic_context` 会过滤掉未物化对象，别名就丢了；
+            # 这里要的是"业务词 → 表"，不依赖实例数据。
+            import json as _json
+
+            from sqlalchemy import text as _text
+
+            from app.core.database import async_db_session as _session
+
+            async with _session() as db:
+                rows = (await db.execute(_text(
+                    "SELECT upper(coalesce(nullif(backing_table,''), code)), code, "
+                    "coalesce(aliases::text,'[]') FROM ai_ont_object WHERE is_deleted=false"
+                ))).fetchall()
+            for tbl, code, raw in rows:
+                try:
+                    arr = _json.loads(raw) if isinstance(raw, str) else (raw or [])
+                except Exception:  # noqa: BLE001
+                    arr = []
+                for a in arr:
+                    _push(str(tbl or ""), str(a))
+                    _push(str(code or ""), str(a))
+        except Exception:  # noqa: BLE001
+            pass
+        # 归一：`ont_X` 键也登记一份到 `X`；剔除"别名=表名"的垃圾值
+        for k in list(out.keys()):
+            if k.startswith("ONT_"):
+                bare = k[4:]
+                for a in out[k]:
+                    if a.upper() in (k, bare, f"ONT_{bare}"):
+                        continue
+                    arr = out.setdefault(bare, [])
+                    if a not in arr:
+                        arr.append(a)
+        for k in list(out.keys()):
+            cleaned = [a for a in out[k] if a.upper() not in (k, f"ONT_{k}")]
+            if cleaned:
+                out[k] = cleaned
+            else:
+                out.pop(k, None)
+        return out
 
     @staticmethod
     def _cache_key(metric: dict, params: dict, user_id: int | None = None) -> str:

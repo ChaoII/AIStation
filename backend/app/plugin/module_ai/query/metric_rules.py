@@ -183,9 +183,48 @@ def metric_name_core(name: str) -> str:
     return n
 
 
+#: 兄弟表限定词：问句里出现、而指标名/绑定表别名里没有 → 问的是同族里的**另一张表**。
+SIBLING_QUALIFIERS: tuple[str, ...] = (
+    "明细", "主表", "分仓", "结果", "限制", "台账", "参数", "历史", "流水", "汇总表",
+)
+
+
+def _metric_table_evidence(question: str, metric_name: str, metric_core: str,
+                           table: str, aliases: list[str] | None = None) -> bool:
+    """计数型指标是否有资格回答（防「通用词重合 = 同一张表」的误劫持）。
+
+    证据（满足其一）：
+    1. 指标名出现在问句；
+    2. 指标核心名（去掉通用词后 ≥3 字）出现在问句，且它不是表名/别名本身；
+    3. 绑定表的**表名或业务别名**出现在问句，且问句没有点出同族更具体的限定词。
+
+    数据来源（2026-11-12 补齐后）：资产中文名 + 本体对象别名。此前别名全空，
+    同样的规则一拦就误伤正确指标，所以先补数据再上规则。
+    """
+    q = (question or "").lower()
+    name = (metric_name or "").lower()
+    core = (metric_core or "").lower()
+    aliases = [str(a).strip().lower() for a in (aliases or []) if str(a).strip()]
+    t = (table or "").lower()
+    if name and name in q:
+        return True
+    core_is_table = bool(core) and (
+        core in t or any(core in a or a in core for a in aliases)
+    )
+    if len(core) >= 3 and core in q and not core_is_table:
+        return True
+    if not any((x and len(x) >= 2 and x in q) for x in [t, *aliases]):
+        return False
+    return not any(
+        (qual in q) and (qual not in name) and all(qual not in a for a in aliases)
+        for qual in SIBLING_QUALIFIERS
+    )
+
+
 def match_metric(question: str, metrics: list[dict], terms: list[dict],
                   concepts: list[dict] | None = None,
-                  objects: dict[str, dict] | None = None) -> dict | None:
+                  objects: dict[str, dict] | None = None,
+                  table_alias: dict[str, list[str]] | None = None) -> dict | None:
     """按得分选指标：**指标自己的用词**命中 + 术语绑定 + 概念(含同义词)绑定 + 时间语境对齐。
 
     打分（实测调过）：
@@ -233,6 +272,26 @@ def match_metric(question: str, metrics: list[dict], terms: list[dict],
             (m.get("agg") or "").lower() in NON_COUNT_AGG
             or _lr["non_count_prefixes"].match(m.get("name") or "")
         ) and not (core and core in q):
+            continue
+        # 计数型指标必须「问的就是这张表」：挡掉「供应商煤质限制 → 供应商数量」这类
+        # 由通用词（供应商/数量/计划/明细）造成的误劫持。只拦计数型：
+        # sum/avg 指标常被命名为「XX量」，与表名天生不同（库存量 vs 进煤流水）。
+        if table_alias is not None and (
+            (m.get("agg") or "").lower() == "count" or is_rowcount_metric(m)
+        ):
+            # 绑定型指标（object_code + agg_fn）没有 FROM，用对象 code 当表标识
+            _tbl = metric_main_table(m) or str(m.get("object_code") or "")
+            if _tbl:
+                _al = (table_alias.get(_tbl) or table_alias.get(_tbl.upper())
+                       or table_alias.get(str(m.get("object_code") or "")) or [])
+                if isinstance(_al, str):
+                    _al = [_al]
+                if not _metric_table_evidence(
+                    question, m.get("name") or "", core, _tbl, list(_al)
+                ):
+                    continue
+        # 问「多少条/多少笔」是数行数：非计数指标不参战
+        if rowcount_asked and not physical_qty and (m.get("agg") or "").lower() != "count":
             continue
         # 「词证据」：指标自己的用词出现在问句里才算数；名称权重 > 描述，且不重复计同一个词
         n_grams = bigrams(m.get("name"))

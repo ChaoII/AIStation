@@ -86,6 +86,12 @@ ALIASES: dict[str, list[str]] = {
     "DTXY_PMXX": ["煤质信息", "煤质", "煤品信息"],
     "FUEL_CMCS_STATION": ["站点", "煤场站点"],
     "FUEL_STG_CONTROLLOG_CHANGEHISTORY": ["变更历史", "皮带操作变更"],
+    # 指标护栏补全：这些表没有别名时，「多少条」类指标会被证据规则挡掉（105 快路径 7 条退化）
+    "coal_fuelkind": ["煤种", "煤种类型", "燃料种类"],
+    "coal_mine": ["矿点", "矿点信息", "供煤矿点"],
+    "DTXY_QYXX": ["区域", "企业信息", "区域信息"],
+    "FR_PERSONNELINFO": ["人员", "人员信息", "人脸人员"],
+    "FUEL_STG_ALLOUTMIDDLE": ["取煤记录", "出煤记录", "取煤流水"],
 }
 
 
@@ -120,6 +126,24 @@ async def main() -> None:
             arr = []
         current[code] = [str(x) for x in (arr or []) if str(x).strip()]
 
+    # 不在本体里的表（如 FR_PERSONNELINFO）退回到资产目录的 alias 字段：
+    # 指标护栏读的是「表名/业务别名」，资产 alias 同样算证据。
+    async with async_db_session() as db:
+        asset_rows = (await db.execute(text(
+            "SELECT table_name, COALESCE(alias,'') FROM ai_query_assets WHERE is_deleted=false"
+        ))).fetchall()
+    asset_alias = {str(r[0]).upper(): str(r[1] or "") for r in asset_rows}
+    asset_fill: list[tuple[str, str]] = []
+    for code, aliases in ALIASES.items():
+        if code in current:
+            continue
+        up = code.upper()
+        key = up if up in asset_alias else (f"ONT_{up}" if f"ONT_{up}" in asset_alias else "")
+        cur = (asset_alias.get(key) or "").strip() if key else ""
+        # 资产 alias 常常就是影子表名（`ont_X`）或表名本身 —— 等同"没写"，可以覆盖
+        if key and (not cur or cur.upper() in (up, f"ONT_{up}")):
+            asset_fill.append((code, aliases[0]))
+
     plan: list[tuple[str, list[str], list[str]]] = []
     for code, aliases in ALIASES.items():
         if code not in current:
@@ -129,7 +153,10 @@ async def main() -> None:
         if add:
             plan.append((code, current[code], add))
 
-    print(f"[plan] 待补别名对象 {len(plan)} 个（总映射 {len(ALIASES)}，库内对象 {len(current)}）")
+    print(f"[plan] 待补别名对象 {len(plan)} 个、资产别名 {len(asset_fill)} 个"
+          f"（总映射 {len(ALIASES)}，库内对象 {len(current)}）")
+    for code, alias in asset_fill[:10]:
+        print("  ASSET", code, "→", alias)
     for code, _have, add in plan[:10]:
         print("  ADD", code, "→", "、".join(add))
     if args.dry_run:
@@ -142,7 +169,15 @@ async def main() -> None:
                 "UPDATE ai_ont_object SET aliases=CAST(:a AS jsonb), updated_time=now() "
                 "WHERE code=:c AND is_deleted=false"
             ), {"a": json.dumps(merged, ensure_ascii=False), "c": code})
-    print(f"[ok] 已补 {len(plan)} 个对象的别名")
+    for code, alias in asset_fill:
+        async with async_db_session.begin() as db:
+            await db.execute(text(
+                "UPDATE ai_query_assets SET alias=:a, updated_time=now() "
+                "WHERE (upper(table_name)=:c OR upper(table_name)=:c2) "
+                "AND is_deleted=false "
+                "AND (COALESCE(alias,'')='' OR upper(alias) IN (:c,:c2))"
+            ), {"a": alias, "c": code.upper(), "c2": f"ONT_{code.upper()}"})
+    print(f"[ok] 已补 {len(plan)} 个对象别名、{len(asset_fill)} 个资产别名")
 
 
 if __name__ == "__main__":
