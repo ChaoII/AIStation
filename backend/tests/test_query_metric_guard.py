@@ -11,6 +11,7 @@ from app.plugin.module_ai.query.metric_rules import (
     _competitor_alias,
     _metric_table_evidence,
     match_metric,
+    set_guard_rules,
 )
 
 
@@ -97,3 +98,40 @@ def test_sum_metric_blocked_by_competitor():
     }
     assert match_metric("期初库存明细的库存量合计是多少", [stock], [], [], {},
                         table_alias=amap) is None
+
+
+def test_guard_params_are_configurable():
+    """兄弟限定词/最小长度可配：改配置立即生效，复位后回默认。"""
+    amap = {"FUEL_STG_ALLINMIDDLE": ["煤场进煤记录"], "T2": ["库存明细"]}
+    # 默认 min_alias_len=4：四字别名会被识别为竞争者
+    assert _competitor_alias("库存明细有多少", "FUEL_STG_ALLINMIDDLE", amap,
+                             amap["FUEL_STG_ALLINMIDDLE"]) == "库存明细"
+    try:
+        set_guard_rules({"min_alias_len": 6})
+        assert _competitor_alias("库存明细有多少", "FUEL_STG_ALLINMIDDLE", amap,
+                                 amap["FUEL_STG_ALLINMIDDLE"]) == ""
+        # 清空兄弟限定词后，表证据不再被否决
+        set_guard_rules({"sibling_qualifiers": []})
+        assert _metric_table_evidence("配煤方案分仓明细有多少条", "配煤方案数量", "",
+                                      "FUEL_MIX_COALSCHEME", ["配煤方案"])
+    finally:
+        set_guard_rules(None)
+
+
+import os
+
+import pytest
+
+
+@pytest.mark.skipif(os.environ.get("PYTEST_NO_APP") == "1", reason="需要构造应用（ORM）")
+def test_metric_audit_shape():
+    """指标体检返回结构（总/可疑/抢答 + 条目字段）。"""
+    import asyncio
+
+    from app.plugin.module_ai.query.metric_audit import audit_metrics
+
+    out = asyncio.run(audit_metrics("ds:6", top=5))
+    assert set(out) >= {"total_metrics", "suspect", "hijacking", "items"}
+    assert isinstance(out["items"], list)
+    if out["items"]:
+        assert set(out["items"][0]) >= {"key", "name", "reasons", "questions", "action"}

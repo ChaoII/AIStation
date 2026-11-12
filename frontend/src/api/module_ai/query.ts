@@ -261,6 +261,14 @@ export function saveQuerySetting(data: { key: string; value: string; remark: str
 export function getPromptRules() {
   return request({ url: `${API_PATH}/prompt-rules`, method: "get" });
 }
+// ---- 指标体检（脏指标/抢答题清单 + 启停）----
+export function getMetricsAudit(params: { datasource?: string; top?: number }) {
+  return request({ url: `${API_PATH}/metrics/audit`, method: "get", params });
+}
+export function setMetricEnabled(data: { key: string; enabled: boolean }) {
+  return request({ url: `${API_PATH}/metrics/enabled`, method: "post", data });
+}
+
 // ---- 实体映射（业务词 → 表，召回「实体通道」用）----
 export function getEntityMap() {
   return request({ url: `${API_PATH}/entity-map`, method: "get" });

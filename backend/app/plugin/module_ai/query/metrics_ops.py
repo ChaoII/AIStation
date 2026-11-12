@@ -72,6 +72,25 @@ def _to_metric_dict(m: AiQueryMetricModel) -> dict:
 
 class MetricsOps:
     @classmethod
+    async def set_metric_enabled(cls, key: str, enabled: bool, auth=None) -> dict:
+        """指标体检用：只改启用开关（不动口径），避免为了停用一条脏指标重传整份模板。"""
+        from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+
+        k = str(key or "").strip()
+        if not k:
+            raise ValueError("key 不能为空")
+        async with async_db_session.begin() as db:
+            res = await db.execute(_t(
+                "UPDATE ai_query_metrics SET enabled=:e, updated_time=now() "
+                "WHERE key=:k AND is_deleted=false"
+            ), {"e": bool(enabled), "k": k})
+            if not res.rowcount:
+                raise ValueError("指标不存在")
+        return {"key": k, "enabled": bool(enabled)}
+
+    @classmethod
     async def stats(cls) -> dict:
         async with async_db_session() as db:
             from sqlalchemy import func, or_, select

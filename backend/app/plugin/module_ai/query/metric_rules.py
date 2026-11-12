@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import re
+from contextvars import ContextVar as _ContextVar
 from typing import Any
 
 from .language_rules import current as _lang
@@ -183,10 +184,72 @@ def metric_name_core(name: str) -> str:
     return n
 
 
-#: 兄弟表限定词：问句里出现、而指标名/绑定表别名里没有 → 问的是同族里的**另一张表**。
-SIBLING_QUALIFIERS: tuple[str, ...] = (
-    "明细", "主表", "分仓", "结果", "限制", "台账", "参数", "历史", "流水", "汇总表",
-)
+#: 指标护栏参数**默认值**（可在「问数设置 → 语言规则 → 指标护栏」里改）。
+#: 原则：能改说法/阈值就不写死；代码只保留默认值，运行期用 `guard_rules()` 读取。
+DEFAULT_GUARD_RULES: dict = {
+    "sibling_qualifiers": [
+        "明细", "主表", "分仓", "结果", "限制", "台账", "参数", "历史", "流水", "汇总表",
+    ],
+    "min_alias_len": 4,
+    "min_core_len": 3,
+}
+
+_GUARD_CTX: _ContextVar[dict | None] = _ContextVar("query_metric_guard_rules", default=None)
+
+
+def _as_str_list(v, fallback: list[str]) -> list[str]:
+    if isinstance(v, list):
+        out = [str(x).strip() for x in v if str(x).strip()]
+        if out:
+            return out
+    return list(fallback)
+
+
+def set_guard_rules(raw) -> None:
+    """从设置装载护栏参数（`metric_guard_rules`）；坏配置回落默认。"""
+    if isinstance(raw, str) and raw.strip():
+        try:
+            import json as _json
+
+            raw = _json.loads(raw)
+        except Exception:  # noqa: BLE001
+            raw = None
+    if not isinstance(raw, dict):
+        _GUARD_CTX.set(None)
+        return
+    base = dict(DEFAULT_GUARD_RULES)
+    # 空列表是**有意义的配置**（=关掉这条否决），不能像词表那样回落默认
+    if isinstance(raw.get("sibling_qualifiers"), list):
+        base["sibling_qualifiers"] = [
+            str(x).strip() for x in raw["sibling_qualifiers"] if str(x).strip()
+        ]
+    else:
+        base["sibling_qualifiers"] = list(DEFAULT_GUARD_RULES["sibling_qualifiers"])
+    for k in ("min_alias_len", "min_core_len"):
+        try:
+            if raw.get(k) is not None:
+                base[k] = max(1, int(raw[k]))
+        except (TypeError, ValueError):
+            pass
+    _GUARD_CTX.set(base)
+
+
+def guard_rules() -> dict:
+    return _GUARD_CTX.get() or dict(DEFAULT_GUARD_RULES)
+
+
+def guard_effective(raw=None) -> dict:
+    """给界面：生效值（默认 + 覆盖）。"""
+    set_guard_rules(raw) if raw is not None else None
+    try:
+        return dict(guard_rules())
+    finally:
+        if raw is not None:
+            _GUARD_CTX.set(None)
+
+
+#: 兼容旧引用：默认兄弟限定词（运行期请用 guard_rules()["sibling_qualifiers"]）
+SIBLING_QUALIFIERS: tuple[str, ...] = tuple(DEFAULT_GUARD_RULES["sibling_qualifiers"])
 
 
 def _competitor_alias(
@@ -215,7 +278,7 @@ def _competitor_alias(
             continue
         for a in arr or []:
             al = str(a).strip().lower()
-            if len(al) < 4 or al not in q:
+            if len(al) < guard_rules()["min_alias_len"] or al not in q:
                 continue
             if any(al in o or o in al for o in own):
                 continue
@@ -246,13 +309,13 @@ def _metric_table_evidence(question: str, metric_name: str, metric_core: str,
     core_is_table = bool(core) and (
         core in t or any(core in a or a in core for a in aliases)
     )
-    if len(core) >= 3 and core in q and not core_is_table:
+    if len(core) >= guard_rules()["min_core_len"] and core in q and not core_is_table:
         return True
     if not any((x and len(x) >= 2 and x in q) for x in [t, *aliases]):
         return False
     return not any(
         (qual in q) and (qual not in name) and all(qual not in a for a in aliases)
-        for qual in SIBLING_QUALIFIERS
+        for qual in guard_rules()["sibling_qualifiers"]
     )
 
 

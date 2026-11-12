@@ -17,6 +17,7 @@ from .schema import (
     FilterRulesPreviewRequest,
     FilterRulesSuggestRequest,
     LanguageProbeRequest,
+    MetricEnabledUpsert,
     PromptRuleUpsert,
     QueryAskRequest,
     QueryAssetColumnUpsert,
@@ -30,7 +31,7 @@ from .schema import (
     QuerySettingUpsert,
     QueryTermUpsert,
 )
-from .service import AiQueryService, degraded_status, list_ds_schema
+from .service import AiQueryService, list_ds_schema
 from .service import sync_datasource_schema as _do_sync_schema
 
 # 注意：`test_datasource_conn` 是**模块级函数**，不是 AiQueryService 的类方法。
@@ -110,6 +111,32 @@ async def list_metrics(
 
 
 @AiQueryRouter.post("/metrics/save", summary="指标保存")
+@AiQueryRouter.get("/metrics/audit", summary="指标体检（脏指标/抢答题清单）")
+async def audit_metrics_api(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str = "ds:6",
+    top: int = 100,
+) -> JSONResponse:
+    """治理用：只读清单。停用/改名在界面上操作（`/metrics/enabled` + 指标页）。"""
+    from .metric_audit import audit_metrics
+
+    return SuccessResponse(data=await audit_metrics(datasource, top), msg="查询成功")
+
+
+@AiQueryRouter.post("/metrics/enabled", summary="启用/停用指标（指标体检用）")
+async def set_metric_enabled_api(
+    data: MetricEnabledUpsert,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from app.core.exceptions import CustomException
+
+    try:
+        out = await AiQueryService.set_metric_enabled(data.key, data.enabled, auth)
+    except ValueError as e:
+        raise CustomException(msg=str(e)) from e
+    return SuccessResponse(data=out, msg="已更新")
+
+
 async def save_metric(
     data: QueryMetricUpsert,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
@@ -1763,11 +1790,18 @@ async def get_language_rules(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     from . import language_rules as LR
+    from . import metric_rules as MR
 
     cfg = await AiQueryService._cfg()
     raw = cfg.get("query_language_rules")
     return SuccessResponse(
-        data={"effective": LR.effective(raw), "defaults": LR.DEFAULT_LANGUAGE_RULES},
+        data={
+            "effective": LR.effective(raw),
+            "defaults": LR.DEFAULT_LANGUAGE_RULES,
+            # 指标护栏参数（默认 + 覆盖）——界面要显示"生效值"，而不是空 JSON
+            "guard": MR.guard_effective(cfg.get("metric_guard_rules")),
+            "guard_defaults": dict(MR.DEFAULT_GUARD_RULES),
+        },
         msg="查询成功",
     )
 

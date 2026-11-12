@@ -558,6 +558,7 @@
           <el-button size="small" @click="openPromptRules">生成规则</el-button>
           <el-button size="small" @click="openEntityMap">实体映射</el-button>
           <el-button size="small" @click="openLanguageRules">语言规则</el-button>
+          <el-button size="small" @click="openAudit">指标体检</el-button>
           <el-button size="small" @click="mapVisible = true">配置地图</el-button>
         </div>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
@@ -687,6 +688,67 @@
       </template>
     </el-dialog>
 
+    <!-- 指标体检：自动生成的脏指标 / 抢答题；可停用，改名去指标页 -->
+    <el-dialog v-model="auditVisible" title="指标体检" width="980px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        :title="`共 ${auditStats.total_metrics || 0} 个启用指标，可疑 ${auditStats.suspect || 0} 个（抢答 ${auditStats.hijacking || 0} 个）。停用只关开关，不改口径。`"
+        class="q-fb-tip"
+      />
+      <el-table
+        v-loading="auditLoading"
+        :data="auditRows"
+        border
+        stripe
+        size="small"
+        max-height="460"
+      >
+        <el-table-column prop="name" label="指标名" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="table" label="绑定表/对象" min-width="180" show-overflow-tooltip />
+        <el-table-column label="问题" min-width="200">
+          <template #default="{ row }">
+            <el-tag
+              v-for="r in row.reasons"
+              :key="r"
+              size="small"
+              type="warning"
+              effect="plain"
+              style="margin-right: 4px"
+            >
+              {{ r }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="抢答（留出集）" width="110" align="center">
+          <template #default="{ row }">{{ row.questions?.length || 0 }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="150" align="center">
+          <template #default="{ row }">
+            <el-button
+              link
+              type="danger"
+              size="small"
+              :loading="row._saving"
+              @click="toggleMetric(row)"
+            >
+              停用
+            </el-button>
+            <el-button link type="primary" size="small" @click="goConfig('/ai/integration')">
+              去改名
+            </el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty :image-size="60" description="没有可疑指标" />
+        </template>
+      </el-table>
+      <template #footer>
+        <el-button @click="auditVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 语言规则：词表可配（计数/物理量/排序/列举/全量） -->
     <el-dialog v-model="langVisible" title="语言规则（词表可配）" width="1000px" append-to-body>
       <el-alert
@@ -719,6 +781,33 @@
             >
               <el-option v-for="w in langForm[g.key] || []" :key="w" :label="w" :value="w" />
             </el-select>
+          </div>
+        </div>
+        <el-divider content-position="left">指标护栏（计数型指标必须"问的就是这张表"）</el-divider>
+        <div class="q-lang__grid">
+          <div class="q-lang__item">
+            <div class="q-lang__label">
+              兄弟表限定词
+              <span class="q-rules__hint">问句里点到、指标名里没有 → 不参战</span>
+            </div>
+            <el-select
+              v-model="langGuard.sibling_qualifiers"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              size="small"
+              style="width: 100%"
+            >
+              <el-option v-for="w in langGuard.sibling_qualifiers" :key="w" :label="w" :value="w" />
+            </el-select>
+          </div>
+          <div class="q-lang__item">
+            <div class="q-lang__label">最小别名长度 / 最小核心名长度</div>
+            <div style="display: flex; gap: 8px">
+              <el-input-number v-model="langGuard.min_alias_len" :min="2" :max="12" size="small" />
+              <el-input-number v-model="langGuard.min_core_len" :min="2" :max="12" size="small" />
+            </div>
           </div>
         </div>
         <el-divider content-position="left">试一句（按当前草稿判定，不用先保存）</el-divider>
@@ -1063,6 +1152,7 @@ import {
   getEntityMap,
   getQueryAssets,
   getLanguageRules,
+  getMetricsAudit,
   getQueryFewshots,
   getQueryMessages,
   getQuerySessions,
@@ -1077,6 +1167,7 @@ import {
   runQueryReport,
   saveQueryReport,
   saveQuerySetting,
+  setMetricEnabled,
   startEvalRun,
   streamQuery,
   recallProbe,
@@ -1739,6 +1830,50 @@ async function resetEntityMap() {
   }
 }
 
+// ---- 指标体检（脏指标/抢答题）----
+const auditVisible = ref(false);
+const auditLoading = ref(false);
+const auditRows = ref<any[]>([]);
+const auditStats = ref<any>({});
+
+async function openAudit() {
+  auditVisible.value = true;
+  auditLoading.value = true;
+  try {
+    const ds = currentDs() || "ds:6";
+    const r = await getMetricsAudit({ datasource: ds, top: 100 });
+    const d = r.data?.data || {};
+    auditStats.value = d;
+    auditRows.value = (d.items || []).map((x: any) => ({ ...x, _saving: false }));
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "加载指标体检失败");
+  } finally {
+    auditLoading.value = false;
+  }
+}
+
+async function toggleMetric(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `将停用指标「${row.name}」。停用后该指标不再参与快路径，可随时在指标页重新启用。`,
+      "停用指标",
+      { type: "warning", confirmButtonText: "停用", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  row._saving = true;
+  try {
+    await setMetricEnabled({ key: row.key, enabled: false });
+    ElMessage.success("已停用");
+    await openAudit();
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "停用失败");
+  } finally {
+    row._saving = false;
+  }
+}
+
 // ---- 语言规则（词表可配）：改说法不用发版 ----
 const langVisible = ref(false);
 const langLoading = ref(false);
@@ -1747,6 +1882,7 @@ const langProbing = ref(false);
 const langForm = ref<any>({ switches: {} });
 const langProbeQ = ref("");
 const langProbeResult = ref<any>(null);
+const langGuard = ref<any>({ sibling_qualifiers: [], min_alias_len: 4, min_core_len: 3 });
 const LANG_SWITCHES = [
   { key: "count_intent", label: "计数意图（多少份/多少个）" },
   { key: "physical_qty", label: "物理量优先（库存/合计/吨数）" },
@@ -1796,6 +1932,13 @@ async function loadLanguageRules(useDefaults = false) {
       langForm.value[g.key] = Array.isArray(src?.[g.key]) ? [...src[g.key]] : [];
     });
     langProbeResult.value = null;
+    // 指标护栏参数：后端返回**生效值**（默认 + 覆盖），界面显示的就是实际在用的
+    const g = (r.data?.data?.guard || {}) as any;
+    langGuard.value = {
+      sibling_qualifiers: Array.isArray(g.sibling_qualifiers) ? g.sibling_qualifiers : [],
+      min_alias_len: Number(g.min_alias_len || 4),
+      min_core_len: Number(g.min_core_len || 3),
+    };
   } catch (e: any) {
     ElMessage.error(e?.data?.msg || e?.msg || "加载语言规则失败");
   } finally {
@@ -1819,6 +1962,11 @@ async function saveLanguageRules() {
       key: "query_language_rules",
       value: JSON.stringify(payload),
       remark: "语言规则（词表可配）",
+    });
+    await saveQuerySetting({
+      key: "metric_guard_rules",
+      value: JSON.stringify(langGuard.value),
+      remark: "指标护栏参数",
     });
     ElMessage.success("已保存，下一句问数立即生效");
     await loadLanguageRules(false);

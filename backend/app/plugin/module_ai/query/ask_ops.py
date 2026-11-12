@@ -38,7 +38,11 @@ class AskOps:
         # 放在 force_slow 之前：评测强制慢路径也应按配置的词表判断（列举/全量等）。
         from .language_rules import set_from_settings as _set_lang
 
-        _set_lang(await cls._cfg())
+        _cfg0 = await cls._cfg()
+        _set_lang(_cfg0)
+        from .metric_rules import set_guard_rules as _set_guard
+
+        _set_guard(_cfg0.get("metric_guard_rules"))
 
         sess = await cls.get_or_create_session(session_id, question[:30], auth)
 
@@ -299,6 +303,9 @@ class AskOps:
         from .language_rules import set_from_settings as _set_lang
 
         _set_lang(cfg)
+        from .metric_rules import set_guard_rules as _set_guard
+
+        _set_guard(cfg.get("metric_guard_rules"))
         # 与 `_nl2sql` 共用同一份可配置规则（`ai_query_prompt_rules`）。
         # 旧实现这里只抄了 (1)~(6)，流式路径**从来没有** (7) 明细/汇总 与 (8) Top-N 空值，
         # 于是「同一个问题走流式与走非流式，生成的 SQL 口径不一致」。

@@ -147,6 +147,13 @@ class LanguageProbeRequest(BaseModel):
     rules: dict[str, Any] | None = None
 
 
+class MetricEnabledUpsert(BaseModel):
+    """指标体检：只改启用开关。"""
+
+    key: str
+    enabled: bool
+
+
 class PromptRuleUpsert(BaseModel):
     """问数生成规则（新增/更新）：只传要改的字段，省略 = 不修改。"""
 
