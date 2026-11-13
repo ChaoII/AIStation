@@ -121,6 +121,9 @@
           <el-button size="small" type="primary" :loading="impLoading" @click="doBatchImport">
             {{ i18nT("ai_ontology.importObjectsByDataSource") }}
           </el-button>
+          <span class="ont-overview__muted" style="margin-left: 8px">
+            整库导入 331 张表约 30–60 秒，页面会自动等待，请勿关闭
+          </span>
         </el-form-item>
       </el-form>
     </el-card>

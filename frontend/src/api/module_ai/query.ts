@@ -132,6 +132,8 @@ export function importDsAsOntology(datasource_id: number, table: string, domain_
     url: `${API_PATH}/ontology/import-from-ds`,
     method: "post",
     data: { datasource_id, table, domain_code },
+    // 单表导入会同步建对象/属性，慢库要十几秒
+    timeout: 120000,
   });
 }
 export function importDsAsOntologyBatch(
@@ -144,6 +146,9 @@ export function importDsAsOntologyBatch(
     url: `${API_PATH}/ontology/import-from-ds/batch`,
     method: "post",
     data: { datasource_id, tables: tables || null, include_technical, domain_code },
+    // 整库导入：331 张表实测约 32 秒（每表建对象+属性）。默认 10s 会「客户端超时、
+    // 服务端仍在跑」，用户看到导入失败但数据其实已落库。
+    timeout: 300000,
   });
 }
 /** 筛选规则预览：提交筛选规则并返回命中/预览结果，rules 可为空（区分 None 与显式空规则）。 */
