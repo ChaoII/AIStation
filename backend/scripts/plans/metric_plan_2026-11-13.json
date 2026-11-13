@@ -2,7 +2,7 @@
   "version": 1,
   "datasource": "ds:6",
   "created": "2026-11-13",
-  "note": "自动生成指标的体检处置方案。action: disable=停用, rename=改名, confirm=需业务确认（脚本跳过） 2026-11-13 业务确认：STANDQTY=标煤量，两条改为改名保留。",
+  "note": "自动生成指标的体检处置方案。action: disable=停用, rename=改名, confirm=需业务确认（脚本跳过） 2026-11-13 业务确认：STANDQTY=标煤量，两条改为改名保留。 2026-11-13 二轮：STANDQTY 按库注释改为「标煤耗量」；RL_QTY_1_1 / QTY1 按库注释（一期#1原煤量 / 一期#1机给煤量）改名保留，无待确认项。",
   "items": [
     {
       "key": "sum_fuel_mix_coalschemereusltdetail_stoqty",
@@ -107,8 +107,8 @@
       "name": "配煤方案主表STANDQTY合计",
       "action": "rename",
       "suggest_name": "配煤方案标准煤量合计",
-      "reason": "业务确认：STANDQTY=标煤量（把普通煤折算成 7000 大卡），SUM 有意义",
-      "new_name": "配煤方案标煤量合计"
+      "reason": "库注释确认 STANDQTY=标煤耗煤量（折算 7000 大卡），SUM 有意义",
+      "new_name": "配煤方案标煤耗量合计"
     },
     {
       "key": "sum_fuel_mix_loadplan_totalelec",
@@ -153,16 +153,18 @@
     {
       "key": "sum_fuel_report_infacinfurqcaldiff_rl_qty_1_1",
       "name": "入厂入炉热值差月报RL_QTY_1_1合计",
-      "action": "confirm",
+      "action": "rename",
       "suggest_name": "入厂入炉热值差月报（待定字段）合计",
-      "reason": "RL_QTY_1_1 字段含义不明（报表列编号），需业务确认后再决定改名或停用"
+      "reason": "库注释：RL_QTY_1_1 = 一期#1原煤量(t)，不是列占位，按业务名保留",
+      "new_name": "一期#1原煤量合计"
     },
     {
       "key": "sum_fuel_report_infurnacequality_qty1",
       "name": "入炉煤质量分析月报表QTY1合计",
-      "action": "confirm",
+      "action": "rename",
       "suggest_name": "入炉煤质量分析月报（待定字段）合计",
-      "reason": "QTY1 字段含义不明，需业务确认"
+      "reason": "库注释：QTY1 = 一期#1机给煤量，按业务名保留",
+      "new_name": "一期#1机给煤量合计"
     },
     {
       "key": "sum_fuel_stg_allinmiddle_qtyin",
@@ -204,8 +206,8 @@
       "name": "配仓方案STANDQTY合计",
       "action": "rename",
       "suggest_name": "配仓方案标准煤量合计",
-      "reason": "业务确认：STANDQTY=标煤量（折算 7000 大卡），与「配煤方案主表」同一字段口径",
-      "new_name": "配仓方案标煤量合计"
+      "reason": "库注释确认 STANDQTY=标煤耗煤量，与「配煤方案」同一字段口径",
+      "new_name": "配仓方案标煤耗量合计"
     },
     {
       "key": "sum_fuel_stg_beltoperation_count",
