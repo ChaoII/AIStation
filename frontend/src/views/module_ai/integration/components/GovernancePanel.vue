@@ -967,6 +967,15 @@
             >
               <span>{{ t("ai_workflow.ig_policyTitle") }}</span>
               <div style="display: flex; align-items: center; gap: 8px; margin-left: auto">
+                <span class="gp-mode__label">执行模式</span>
+                <el-select v-model="policyMode" size="small" style="width: 180px">
+                  <el-option label="legacy（只看旧规则）" value="legacy" />
+                  <el-option label="shadow（只记录不改写）" value="shadow" />
+                  <el-option label="enforce（真正生效）" value="enforce" />
+                </el-select>
+                <el-button size="small" :loading="policyModeSaving" @click="savePolicyMode">
+                  保存模式
+                </el-button>
                 <el-input
                   v-model="policySearch"
                   size="small"
@@ -1784,6 +1793,8 @@ import {
   getDegradedStatus,
   rebuildLineage as rebuildLineageApi,
   getAccessStats,
+  getQuerySettings,
+  saveQuerySetting,
 } from "@/api/module_ai/query";
 import { UserAPI } from "@/api/module_system/user";
 import { useRoute } from "vue-router";
@@ -1801,10 +1812,49 @@ const _TAB_ALIAS: Record<string, string> = {
   audit: "query-audit",
   "query-audit": "query-audit",
   bundle: "bundle",
+  // 其余页签直接按名字支持（策略页手册里要能深链：?tab=policy）
+  overview: "overview",
+  access: "access",
+  dq: "dq",
+  domain: "domain",
+  fde: "fde",
+  action: "action",
+  lineage: "lineage",
+  policy: "policy",
 };
 const _initTab = _TAB_ALIAS[String(route.query.tab || "")];
 
 const tab = ref(_initTab || "overview");
+
+// 权限策略的**执行模式**：legacy（旧规则）/ shadow（只记录）/ enforce（真生效）
+const policyMode = ref("legacy");
+const policyModeSaving = ref(false);
+
+async function loadPolicyMode() {
+  try {
+    const r = await getQuerySettings();
+    const v = r.data?.data?.policy_engine;
+    if (v) policyMode.value = String(v);
+  } catch {
+    // 读不到保持默认，保存时会覆盖
+  }
+}
+
+async function savePolicyMode() {
+  policyModeSaving.value = true;
+  try {
+    await saveQuerySetting({
+      key: "policy_engine",
+      value: policyMode.value,
+      remark: "权限策略执行模式（legacy/shadow/enforce）",
+    });
+    ElMessage.success(`执行模式已切到 ${policyMode.value}`);
+  } catch (e: any) {
+    ElMessage.error(e?.data?.msg || e?.msg || "保存失败");
+  } finally {
+    policyModeSaving.value = false;
+  }
+}
 
 const policyRows = ref<any[]>([]);
 const policySearch = ref("");
@@ -2617,6 +2667,7 @@ onMounted(() => {
   loadOverview();
   loadObjects();
   loadDomainUsers();
+  loadPolicyMode();
 });
 </script>
 
@@ -2698,6 +2749,11 @@ onMounted(() => {
 </style>
 
 <style lang="scss">
+.gp-mode__label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
 /* el-row 的 gutter 会加负边距，在 overflow:auto 的页签容器里会顶出**横向滚动条**
    （项目里记过这个坑）。这里改用 flex + gap，并把 col 的内边距清掉。 */
 .gp-lineage__toolbar {

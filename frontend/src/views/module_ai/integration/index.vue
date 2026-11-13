@@ -1959,6 +1959,19 @@
         <el-form-item :label="t('ai_workflow.ig_password')">
           <el-input v-model="dsForm.password" type="password" show-password />
         </el-form-item>
+        <el-form-item label="允许角色">
+          <el-select
+            v-model="dsForm.allowed_roles"
+            multiple
+            filterable
+            clearable
+            style="width: 100%"
+            placeholder="留空 = 所有角色可用"
+          >
+            <el-option v-for="r in roleOptions" :key="r.code" :label="r.name" :value="r.code" />
+          </el-select>
+          <div class="ds-form__hint">数据源级权限：只让选中的角色能连这个库；留空表示不限制</div>
+        </el-form-item>
         <el-form-item :label="t('ai_workflow.ig_readOnly')">
           <el-switch v-model="dsForm.read_only" />
         </el-form-item>
@@ -2185,6 +2198,7 @@
 import { ref, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
+import RoleAPI from "@/api/module_system/role";
 import {
   Plus,
   Refresh,
@@ -2619,6 +2633,21 @@ const batchDlg = ref(false);
 const batchText = ref("");
 const batchSaving = ref(false);
 const dsForm = ref<any>({ type: "postgres", port: 5432, read_only: true });
+
+// 角色列表（数据源级权限用）
+const roleOptions = ref<any[]>([]);
+async function loadRoleOptions() {
+  if (roleOptions.value.length) return;
+  try {
+    const r = await RoleAPI.listRole({ page_no: 1, page_size: 100 } as any);
+    roleOptions.value = (r.data?.data?.items || []).map((x: any) => ({
+      code: x.code,
+      name: x.name,
+    }));
+  } catch {
+    roleOptions.value = [];
+  }
+}
 
 // 管道编排
 const pipeDlg = ref(false);
@@ -3074,10 +3103,13 @@ function openDs(row?: any) {
       username: "",
       password: "",
       read_only: true,
+      allowed_roles: [],
       filter_rules: null,
     };
     normalizeRules(dsForm.value);
   }
+  if (!Array.isArray(dsForm.value.allowed_roles)) dsForm.value.allowed_roles = [];
+  loadRoleOptions();
   dsDlg.value = true;
 }
 
@@ -3840,6 +3872,11 @@ async function handleInferRelations() {
 </script>
 
 <style lang="scss">
+.ds-form__hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
+}
 .app-container.ai-integration-page {
   display: flex;
   flex-direction: column;
