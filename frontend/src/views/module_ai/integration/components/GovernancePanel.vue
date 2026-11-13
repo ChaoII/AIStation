@@ -1893,7 +1893,10 @@ async function loadPolicies() {
   policyLoading.value = true;
   try {
     const r: any = await getPolicyList();
-    policyRows.value = r.data?.data || [];
+    // 接口返回可能是数组，也可能是 {items,total}（分页结构）；两种都要能渲染，
+    // 否则策略表永远「暂无数据」——实测踩过。
+    const d = r.data?.data;
+    policyRows.value = Array.isArray(d) ? d : d?.items || [];
   } catch (e: any) {
     ElMessage.error(e?.data?.msg || e?.msg || "策略加载失败");
   } finally {
@@ -2668,6 +2671,9 @@ onMounted(() => {
   loadObjects();
   loadDomainUsers();
   loadPolicyMode();
+  // 深链进入（?tab=policy 等）时 el-tabs 不会触发 tab-change，必须手动加载一次，
+  // 否则这些页签永远是空的（策略/权限/质量/血缘都踩过）。
+  if (tab.value !== "overview") onTab(tab.value);
 });
 </script>
 
