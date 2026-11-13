@@ -277,32 +277,46 @@
                       <el-button v-if="m.sql || m.took_ms" link size="small" @click="openTrace(m)">
                         {{ t("ai_logs.traceTitle") }}
                       </el-button>
-                      <el-button icon="Select" link size="small" @click="feedback(m, 'up')">
-                        {{ t("ai_logs.useful") }}
-                      </el-button>
-                      <el-button icon="Close" link size="small" @click="openCorrect(m)">
-                        {{ t("ai_logs.useless") }}
-                      </el-button>
-                      <el-button
+                      <el-dropdown trigger="click" @command="(c: string) => onMsgCommand(c, m)">
+                        <el-button link size="small">
+                          反馈
+                          <el-icon class="q-msg__caret"><ArrowDown /></el-icon>
+                        </el-button>
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <el-dropdown-item command="up">
+                              <el-icon><Select /></el-icon>
+                              {{ t("ai_logs.useful") }}
+                            </el-dropdown-item>
+                            <el-dropdown-item command="correct">
+                              <el-icon><Close /></el-icon>
+                              {{ t("ai_logs.useless") }}
+                            </el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
+                      <el-dropdown
                         v-if="m.sql && !m.is_error"
-                        icon="Document"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="openSaveReport(m)"
+                        trigger="click"
+                        @command="(c: string) => onMsgCommand(c, m)"
                       >
-                        {{ t("ai_logs.saveAsReport") }}
-                      </el-button>
-                      <el-button
-                        v-if="m.sql && !m.is_error"
-                        icon="DataAnalysis"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="openPromote(m)"
-                      >
-                        {{ t("ai_logs.promoteMetric") }}
-                      </el-button>
+                        <el-button link size="small">
+                          更多
+                          <el-icon class="q-msg__caret"><ArrowDown /></el-icon>
+                        </el-button>
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <el-dropdown-item command="report">
+                              <el-icon><Document /></el-icon>
+                              {{ t("ai_logs.saveAsReport") }}
+                            </el-dropdown-item>
+                            <el-dropdown-item command="promote">
+                              <el-icon><DataAnalysis /></el-icon>
+                              {{ t("ai_logs.promoteMetric") }}
+                            </el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
                     </div>
                   </template>
                 </ChatMessage>
@@ -539,6 +553,57 @@
           :placeholder="t('ai_logs.settingSearchPlaceholder')"
           class="q-set__search"
         />
+        <!-- 按「你要做什么」分组，而不是按参数平铺：20+ 开关一屏铺开没人知道该动哪个 -->
+        <div class="q-set__tasks">
+          <div class="q-set__task">
+            <div class="q-set__task-main">
+              <div class="q-set__task-title">让它答得更准</div>
+              <div class="q-set__task-desc">
+                换说法、加同义词、补「矿点→哪张表」；不确定哪条在生效就用召回探针
+              </div>
+            </div>
+            <div class="q-set__task-actions">
+              <el-button size="small" @click="openPromptRules">生成规则</el-button>
+              <el-button size="small" @click="openLanguageRules">语言规则</el-button>
+              <el-button size="small" @click="openEntityMap">实体映射</el-button>
+              <el-button size="small" @click="probeVisible = true">召回探针</el-button>
+            </div>
+          </div>
+          <div class="q-set__task">
+            <div class="q-set__task-main">
+              <div class="q-set__task-title">看数据质量</div>
+              <div class="q-set__task-desc">
+                可疑指标、抢答、悬空引用 —— 一次体检全列出来（在「治理」页）
+              </div>
+            </div>
+            <div class="q-set__task-actions">
+              <el-button size="small" @click="goGovernance('query-audit')">打开问答体检</el-button>
+            </div>
+          </div>
+          <div class="q-set__task">
+            <div class="q-set__task-main">
+              <div class="q-set__task-title">维护语义</div>
+              <div class="q-set__task-desc">
+                表/字段/指标/术语在「数据与集成」，对象/关系在本体 —— 改动后下一句问数生效
+              </div>
+            </div>
+            <div class="q-set__task-actions">
+              <el-button size="small" @click="goSub('/ai/integration')">数据与集成</el-button>
+              <el-button size="small" @click="goSub('/ai/ontology')">本体</el-button>
+            </div>
+          </div>
+          <div class="q-set__task">
+            <div class="q-set__task-main">
+              <div class="q-set__task-title">迁移与复用</div>
+              <div class="q-set__task-desc">
+                把别名/描述/术语打包成 JSON，换环境（dev→prod）一次导入
+              </div>
+            </div>
+            <div class="q-set__task-actions">
+              <el-button size="small" @click="goGovernance('bundle')">打开治理包</el-button>
+            </div>
+          </div>
+        </div>
         <div class="q-set__toolbar">
           <el-radio-group v-model="setMode" size="small">
             <el-radio-button label="simple">{{ t("ai_logs.settingModeSimple") }}</el-radio-button>
@@ -547,20 +612,9 @@
           <el-checkbox v-model="showChanged" size="small" class="q-set__changed-only">
             {{ t("ai_logs.settingChangedOnly") }}
           </el-checkbox>
-          <el-button
-            size="small"
-            class="q-set__probe"
-            style="margin-left: auto"
-            @click="probeVisible = true"
-          >
-            召回探针
+          <el-button link size="small" style="margin-left: auto" @click="mapVisible = true">
+            这些开关分别管什么？看配置地图
           </el-button>
-          <el-button size="small" @click="openPromptRules">生成规则</el-button>
-          <el-button size="small" @click="openEntityMap">实体映射</el-button>
-          <el-button size="small" @click="openLanguageRules">语言规则</el-button>
-          <el-button size="small" @click="goGovernance('query-audit')">治理体检</el-button>
-          <el-button size="small" @click="goGovernance('bundle')">治理包</el-button>
-          <el-button size="small" @click="mapVisible = true">配置地图</el-button>
         </div>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
           <div class="q-set__group-title" @click="toggleGroup(g.name)">
@@ -1375,6 +1429,14 @@ async function answerClarify() {
 }
 
 /** 把这次问答沉淀成报表模板（草稿，需人工确认后才长期复用）。 */
+/** 结果区下拉的统一分发（反馈 / 存报表 / 沉淀指标） */
+function onMsgCommand(cmd: string, m: any) {
+  if (cmd === "up") return feedback(m, "up");
+  if (cmd === "correct") return openCorrect(m);
+  if (cmd === "report") return openSaveReport(m);
+  if (cmd === "promote") return openPromote(m);
+}
+
 function openSaveReport(m: any) {
   srMsg.value = m;
   srName.value = "";
@@ -2728,10 +2790,44 @@ const visibleGroups = computed(() => {
   color: var(--el-text-color-placeholder);
 }
 
+.q-set__tasks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+.q-set__task {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--el-border-radius-base);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.q-set__task-title {
+  font-size: var(--el-font-size-base);
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.q-set__task-desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
+}
+.q-set__task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.q-msg__caret {
+  margin-left: 2px;
+  font-size: 12px;
+}
 .q-set__toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 6px;
 }
 
