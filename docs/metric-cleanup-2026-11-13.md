@@ -2,7 +2,8 @@
 
 **数据来源**：`GET /ai/query/metrics/audit?datasource=ds:6`（扫描该数据源全部 200 道题）。
 167 个启用指标中 **31 个可疑**，全部是自动生成痕迹（表名 + 字段码 + 聚合后缀）。
-**执行状态（2026-11-13）**：① 停用 10 条 —— **已执行**；② 改名 19 条 —— 待执行（必须先跑回归）；③ 待确认 2 条 —— 等业务给字段含义。
+**执行状态（2026-11-13）**：① 停用 10 条 —— **已执行**；② 改名 19 条 —— **已执行，回归 0 翻转**；③ 待确认 2 条 —— 等业务给字段含义。
+处置后体检：启用指标 157 个，可疑 **2**（只剩下面两条待确认），抢答 0，悬空引用 0。
 处置也可在界面「问数设置 → 治理体检」逐条操作，或用 `scripts/apply_metric_plan.py` 按计划文件批量执行（幂等，重复跑会跳过已停用的）。
 
 计划文件：`backend/scripts/plans/metric_plan_2026-11-13.json`（31 条，含 reason）。
@@ -81,14 +82,18 @@
 2. **所以改名必须回归**（顺序固定）：
    ```bash
    cd backend
-   uv run python scripts/run_eval_once.py --dataset=holdout-v2 --datasource=ds:6   # 基线 97.30%
-   uv run python scripts/run_eval_once.py --dataset=fuel-v2   --datasource=ds:6   # 基线 99.05% / fast 31.43%
+   uv run python scripts/run_eval_once.py --dataset=holdout-v2 --datasource=ds:6 \
+     --run-limit=1000 --ablation-limit=0     # 基线 97.30%
+   uv run python scripts/run_eval_once.py --dataset=fuel-v2 --datasource=ds:6 \
+     --run-limit=1000 --ablation-limit=0     # 当前 78 题 100%
    ```
    任一项下降 → 只回滚**改名**（停用不受影响，因为停用的都是答错的指标）。
+   本次 19 条改名实测 **0 翻转**，故未回滚。
 3. **停用是改善而不是删数据**：只关 `enabled`，指标与口径全在，随时可在指标页重新启用。
    本批 10 条已停用，停用 + 护栏修复后复跑（2026-11-13）：
    - **holdout-v2**：36/37 = **97.30%**，快路径 8.11%（与基线一致）；
    - **fuel-v2**：当前启用 78 题（原 105 题里 27 题已停用）**78/78 = 100%**，快路径 12.82%；与基线 `ev_852e82a95756` **同口径（同一批 78 题）对比 0 翻转**。
+   - **改名后再跑一遍**（`ev_706b3b50eec5` / `ev_8d2ebea9dc42`）：两个数据集 **逐题 0 翻转、指标命中 0 变化**，数字与改名前完全一致 —— 因为匹配证据主要来自表别名与描述，指标名的业务词只是辅助。
    复跑命令：`run_eval_once.py --dataset=<ds> --datasource=ds:6 --run-limit=1000 --ablation-limit=0`
    （`--run-limit` 是在全库 891 题里截前 N 再过滤，给小值会漏题；消融默认 20 题，不测就置 0。）
 4. **`DTXY_QYXX` 的资产中文名缺失**属于资产治理项，与改名同批做（否则新名「区域信息条数」
