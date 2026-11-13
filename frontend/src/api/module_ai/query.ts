@@ -2,6 +2,8 @@ import request from "@/utils/request";
 import { Auth } from "@/utils/auth";
 
 const API_PATH = "/ai/query";
+//: 长任务超时（3 分钟）：AI 生成/整库同步/报表执行这类接口 10s 必然超时
+const LONG_TIMEOUT = 180000;
 
 /** 流式问数：返回 SSE 事件异步迭代器（思考/工具调用/结果/完成等）。 */
 export async function* streamQuery(data: {
@@ -97,16 +99,33 @@ export function deleteQueryTerms(ids: number[]) {
 }
 
 // 数据源
-export function getQueryDatasources() {
-  return request({ url: `${API_PATH}/datasources/list`, method: "get" });
+//: 数据源列表在**一次页面加载里会被多个组件各要一遍**（实测问数评测页 3 次、
+//: 数据与集成 2 次）。这里做「进行中复用 + 15 秒缓存」，保存/删除/同步后主动失效。
+let _dsCache: { at: number; promise: Promise<any> } | null = null;
+
+export function invalidateDatasourcesCache() {
+  _dsCache = null;
+}
+
+export function getQueryDatasources(force = false) {
+  const now = Date.now();
+  if (!force && _dsCache && now - _dsCache.at < 15000) return _dsCache.promise;
+  const promise = request({ url: `${API_PATH}/datasources/list`, method: "get" });
+  _dsCache = { at: now, promise };
+  promise.catch(() => {
+    if (_dsCache?.promise === promise) _dsCache = null;
+  });
+  return promise;
 }
 export function getDatasourceDetail(id: number) {
   return request({ url: `${API_PATH}/datasources/${id}/detail`, method: "get" });
 }
 export function saveQueryDatasource(data: any) {
+  invalidateDatasourcesCache();
   return request({ url: `${API_PATH}/datasources/save`, method: "post", data });
 }
 export function deleteQueryDatasources(ids: number[]) {
+  invalidateDatasourcesCache();
   return request({ url: `${API_PATH}/datasources/delete`, method: "delete", data: ids });
 }
 export function testQueryDatasource(id: number) {
@@ -118,6 +137,7 @@ export function testQueryDatasource(id: number) {
   });
 }
 export function syncQueryDatasourceSchema(id: number) {
+  invalidateDatasourcesCache();
   return request({
     url: `${API_PATH}/datasources/${id}/sync-schema`,
     method: "post",
@@ -157,6 +177,7 @@ export function previewFilterRules(datasource_id: number, rules?: any) {
     url: `${API_PATH}/datasources/${datasource_id}/rules/preview`,
     method: "post",
     data: { rules },
+    timeout: LONG_TIMEOUT,
   });
 }
 /** 大模型生成候选筛选规则；rules 为当前草稿（可选） */
@@ -165,6 +186,7 @@ export function suggestFilterRules(datasource_id: number, rules?: any) {
     url: `${API_PATH}/datasources/${datasource_id}/rules/suggest`,
     method: "post",
     data: { rules },
+    timeout: LONG_TIMEOUT,
   });
 }
 /** 大模型把自然语言转成筛选规则 */
@@ -181,6 +203,7 @@ export function classifyAdvise(datasource_id: number, rules?: any) {
     url: `${API_PATH}/datasources/${datasource_id}/rules/classify-advise`,
     method: "post",
     data: { rules },
+    timeout: LONG_TIMEOUT,
   });
 }
 
@@ -221,6 +244,7 @@ export function runQueryReport(reportId: number, params?: any) {
     url: `${API_PATH}/reports/${reportId}/run`,
     method: "post",
     data: { params: params || {} },
+    timeout: LONG_TIMEOUT,
   });
 }
 export function verifyQueryReport(reportId: number) {
@@ -383,7 +407,12 @@ export function deleteFdePropositions(ids: number[]) {
   return request({ url: `${API_PATH}/fde/delete`, method: "delete", data: ids });
 }
 export function fdeShadowCheck(proposition_id: number) {
-  return request({ url: `${API_PATH}/fde/shadow`, method: "post", data: { proposition_id } });
+  return request({
+    url: `${API_PATH}/fde/shadow`,
+    method: "post",
+    data: { proposition_id },
+    timeout: LONG_TIMEOUT,
+  });
 }
 export function getActionList() {
   return request({ url: `${API_PATH}/writeback/list`, method: "get" });
@@ -392,7 +421,12 @@ export function saveAction(data: any) {
   return request({ url: `${API_PATH}/writeback/save`, method: "post", data });
 }
 export function executeAction(data: any) {
-  return request({ url: `${API_PATH}/writeback/execute`, method: "post", data });
+  return request({
+    url: `${API_PATH}/writeback/execute`,
+    method: "post",
+    data,
+    timeout: LONG_TIMEOUT,
+  });
 }
 export function getActionLogs(limit = 100) {
   return request({ url: `${API_PATH}/writeback/logs`, method: "get", params: { limit } });

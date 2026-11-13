@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import re
 
 FIELD_CODE_RE = re.compile(r"[A-Z][A-Z0-9_]{3,}")
@@ -78,6 +79,30 @@ async def _known_tables(datasource: str) -> set[str]:
     except Exception:  # noqa: BLE001 - 精简库/SQLite 没有这些表
         return store
     return store
+
+
+async def _query_domain_tables() -> set[str]:
+    """问数域的表（任意数据源的 `ai_query_schema`）。
+
+    实体映射里有些业务词指向的是**平台自身的表**（如 `video_camera_groups`），
+    它们本来就该由对应模块治理、不在问数资产目录里；拿「资产目录」当标准会把它们
+    全报成悬空。所以实体映射只检查「问数域出现过、但资产目录里没有」这种情况。
+    """
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session_fresh as session
+
+    try:
+        async with session() as db:
+            rows = (await db.execute(text(
+                "SELECT table_name FROM ai_query_schema WHERE is_deleted=false"
+            ))).fetchall()
+        store: set[str] = set()
+        for (t,) in rows:
+            _add_table(store, t)
+        return store
+    except Exception:  # noqa: BLE001
+        return set()
 
 
 async def _ont_objects(datasource: str) -> dict[str, dict]:
@@ -240,9 +265,11 @@ async def _dangling(datasource: str, metrics: list[dict]) -> list[dict]:
         emap = S._cfg_entity_map(cfg)
     except Exception:  # noqa: BLE001
         emap = {}
+    domain_tables = await _query_domain_tables()
     for noun, ts in (emap or {}).items():
         for t in ts or []:
-            if _bad_table(t):
+            # 只报「问数域有、资产目录没有」；平台表（视频/训练等）不由问数治理
+            if _bad_table(t) and _norm_table(t) in domain_tables:
                 out.append({
                     "kind": "entity_map", "ref": noun, "name": "",
                     "detail": f"实体映射「{noun}」指向的表 {t} 不在资产目录",
@@ -274,6 +301,41 @@ async def _dangling(datasource: str, metrics: list[dict]) -> list[dict]:
     return out
 
 
+def _scan_hits(
+    cases: list[dict],
+    prepared: list[tuple],
+    aliases: dict,
+    ont: dict,
+) -> tuple[dict[str, list[str]], int]:
+    """同步扫描：返回 {指标key: [被它抢答的问句]} 与命中总数。**不访问数据库**。"""
+    from . import metric_rules as M
+
+    def _bound_table(m: dict) -> str:
+        return M.metric_main_table(m) or ont.get(str(m.get("object_code") or ""), {}).get(
+            "table", ""
+        )
+
+    hits: dict[str, list[str]] = {}
+    matched = 0
+    for c in cases:
+        q = c["question"]
+        got = M.match_metric(q, _candidates(q, prepared), [], [], {}, table_alias=aliases)
+        if not got:
+            continue
+        matched += 1
+        # 只算**真的会走快路径且答错**的：快路径准入不拦，但金标查的表不是该指标的绑定表
+        try:
+            if M.fast_path_blockers(q, got):
+                continue
+        except Exception:  # noqa: BLE001
+            pass
+        mt = _norm_table(_bound_table(got))
+        gold = {_norm_table(t) for t in GOLD_TABLE_RE.findall(str(c.get("gold_sql") or ""))}
+        if mt and gold and mt not in gold:
+            hits.setdefault(got["key"], []).append(q)
+    return hits, matched
+
+
 async def audit_metrics(
     datasource: str = "ds:6",
     top: int = 100,
@@ -293,29 +355,12 @@ async def audit_metrics(
     aliases = await S._metric_alias_map()
     ont = await _ont_objects(datasource)
 
-    def _bound_table(m: dict) -> str:
-        return M.metric_main_table(m) or ont.get(str(m.get("object_code") or ""), {}).get("table", "")
-
-    hits: dict[str, list[str]] = {}
-    matched = 0
     prepared = _prepare_metrics(metrics, aliases)
-    for c in cases:
-        q = c["question"]
-        got = M.match_metric(q, _candidates(q, prepared), [], [], {},
-                             table_alias=aliases)
-        if not got:
-            continue
-        matched += 1
-        # 只算**真的会走快路径且答错**的：快路径准入不拦，但金标查的表不是该指标的绑定表
-        try:
-            if M.fast_path_blockers(q, got):
-                continue
-        except Exception:  # noqa: BLE001
-            pass
-        mt = _norm_table(_bound_table(got))
-        gold = {_norm_table(t) for t in GOLD_TABLE_RE.findall(str(c.get("gold_sql") or ""))}
-        if mt and gold and mt not in gold:
-            hits.setdefault(got["key"], []).append(q)
+    # 纯 CPU（约 2~3 秒）：放线程池，避免把事件循环冻住——体检期间别人点任何页面
+    # 都会被拖慢（实测同时段多个不相关接口一起变慢）。
+    hits, matched = await asyncio.to_thread(
+        _scan_hits, cases, prepared, aliases, ont
+    )
 
     rows = []
     for m in metrics:

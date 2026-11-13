@@ -1958,6 +1958,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
             await _ensure_query_tables()
         except Exception as e:  # noqa: BLE001  建表失败不阻断启动
             log.warning(f"⚠️  问数侧影子表建表失败（不阻断启动）: {e}")
+        # 评测表（题库/运行/结果）也在启动期建好：它的 DDL 要 ACCESS EXCLUSIVE 锁，
+        # 放在请求里（list_cases 懒执行）时，一旦有别处的 idle-in-transaction 会话，
+        # 首个请求会等锁几分钟（实测 6 分钟）。启动期做，用户感知不到。
+        try:
+            from app.plugin.module_ai.query.eval_set import ensure_eval_tables
+
+            await ensure_eval_tables()
+        except Exception as e:  # noqa: BLE001  建表失败不阻断启动
+            log.warning(f"⚠️  评测表建表失败（不阻断启动）: {e}")
         # 问数评测启动对账：进程重启后内存进度丢失，DB 里的 running 会永久悬挂
         # （实测 3 条「运行中」僵尸）→ 超时的标 error，并清掉不可达的孤儿结果。
         try:

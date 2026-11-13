@@ -34,6 +34,9 @@ def test_dangling_flags_missing_metric_table_and_term_field(monkeypatch):
     async def fake_terms(_ds: str) -> list[dict]:
         return [{"term": "灰分", "field_path": "FUEL_MISSING.AD"}]
 
+    async def fake_domain() -> set[str]:
+        return set()
+
     monkeypatch.setattr(MA, "_known_tables", fake_known)
     monkeypatch.setattr(MA, "_ont_objects", fake_ont)
     monkeypatch.setattr(MA, "_terms", fake_terms)
@@ -58,9 +61,13 @@ def test_dangling_accepts_ont_prefixed_and_bound_object_table(monkeypatch):
     async def fake_terms(_ds: str) -> list[dict]:
         return []
 
+    async def fake_domain() -> set[str]:
+        return set()
+
     monkeypatch.setattr(MA, "_known_tables", fake_known)
     monkeypatch.setattr(MA, "_ont_objects", fake_ont)
     monkeypatch.setattr(MA, "_terms", fake_terms)
+    monkeypatch.setattr(MA, "_query_domain_tables", fake_domain)
 
     out = asyncio.run(MA._dangling("ds:6", [
         {"key": "k1", "name": "绑定型", "object_code": "fuel_x", "sql_template": "SELECT 1"},

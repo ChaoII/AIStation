@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import platform
 import socket
@@ -63,24 +64,42 @@ class ServerService:
     _torch_env_cached_at: float = 0.0
     _torch_env_ttl: float = 0.0
 
+    #: 整份监控数据的短缓存（秒）。首页/看板会周期性拉，同一秒内多次请求直接复用。
+    INFO_TTL = 3.0
+    _info_cache: dict | None = None
+    _info_cached_at: float = 0.0
+
+    @classmethod
+    def _collect_info_blocking(cls) -> dict:
+        """**同步**采集 CPU/内存/磁盘/GPU。
+
+        这些调用（psutil 遍历磁盘、pynvml 初始化、Windows 信息查询）都是阻塞的：
+        早先直接在 async 函数里调用，会把事件循环**整个冻住**——实测冷启动一次
+        `/monitor/server/info` 要 8.8 秒，期间 5 个不相关接口全部跟着变慢并同时返回。
+        现在由 `asyncio.to_thread` 丢到线程池里跑。
+        """
+        return {
+            "cpu": cls._get_cpu_info(),
+            "mem": cls._get_memory_info(),
+            "sys": cls._get_system_info(),
+            "py": cls._get_python_info(),
+            "disks": cls._get_disk_info(),
+            "gpu": cls._get_gpu_info(),
+        }
+
     @classmethod
     async def get_server_monitor_info_service(cls) -> dict:
-        """
-        获取服务器监控信息
+        """获取服务器监控信息（阻塞采集走线程池 + 3 秒缓存，避免拖住整个事件循环）。"""
+        now = time.time()
+        if cls._info_cache is not None and now - cls._info_cached_at < cls.INFO_TTL:
+            return cls._info_cache
 
-        返回:
-        - Dict: 包含服务器监控信息的字典。
-        """
         torch_env = await cls._get_torch_env()
-        return ServerMonitorSchema(
-            cpu=cls._get_cpu_info(),
-            mem=cls._get_memory_info(),
-            sys=cls._get_system_info(),
-            py=cls._get_python_info(),
-            disks=cls._get_disk_info(),
-            gpu=cls._get_gpu_info(),
-            torch_env=torch_env,
-        ).model_dump()
+        blocking = await asyncio.to_thread(cls._collect_info_blocking)
+        data = ServerMonitorSchema(torch_env=torch_env, **blocking).model_dump()
+        cls._info_cache = data
+        cls._info_cached_at = now
+        return data
 
     # ------------------------------------------------------------ GPU（NVML）
     @classmethod

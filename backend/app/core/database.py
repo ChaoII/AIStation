@@ -364,42 +364,58 @@ async def db_leak_watchdog(app: FastAPI, status: bool) -> None:
     # ⚠️ 事件加载器是 **await** 每个函数的：这里绝不能自己跑循环，
     # 否则启动会被永久阻塞（真踩过：加了 while True 后端口一直不监听）。
     # 派生后台任务后立即返回，跟其它调度器一个套路。
+    # 先**立即**扫一次（阈值 20s）：dev 重启/强杀会留下 idle in transaction 会话，
+    # 它们握着表锁，首个请求会排队几分钟。启动时清掉，用户感知不到。
+    try:
+        await _db_sweep_once(20)
+    except Exception as e:  # noqa: BLE001 - 清理失败不影响启动
+        log.warning(f"启动时会话清理失败（忽略）: {e}")
+
     asyncio.create_task(_db_leak_sweep_loop())
+
+
+async def _db_sweep_once(sec: int) -> int:
+    """回收「idle in transaction」超过 ``sec`` 秒的会话，返回回收条数。
+
+    为什么要包含 ``idle in transaction (aborted)``：被强杀的进程（dev 的 reload 是
+    TerminateProcess）会留下这种会话，它**握着表锁**，新进程的查询会排队——实测重启后
+    首页/治理/体检三个不相关接口一起卡了 6 分钟，直到看门狗逐条回收。
+    """
+    from sqlalchemy import text as _t
+
+    async with async_engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                _t(
+                    "SELECT pid"
+                    " FROM pg_stat_activity"
+                    " WHERE datname = current_database()"
+                    "   AND state LIKE 'idle in transaction%'"
+                    "   AND pid <> pg_backend_pid()"
+                    "   AND now() - state_change > make_interval(secs => :sec)"
+                ),
+                {"sec": sec},
+            )
+        ).fetchall()
+        if not rows:
+            return 0
+        pids = [r[0] for r in rows]
+        for pid in pids:
+            await conn.execute(_t("SELECT pg_terminate_backend(:p)"), {"p": pid})
+        await conn.commit()
+        log.warning(
+            f"🧹 连接泄漏看门狗：回收了 {len(pids)} 条卡死连接"
+            f"（idle in transaction > {sec}s）：{pids}"
+        )
+        return len(pids)
 
 
 async def _db_leak_sweep_loop() -> None:
     """看门狗的实际巡检循环（由 :func:`db_leak_watchdog` 派生）。"""
-    from sqlalchemy import text as _t
-
     while True:
         await asyncio.sleep(_LEAK_SWEEP_INTERVAL)
         try:
-            async with async_engine.connect() as conn:
-                rows = (
-                    await conn.execute(
-                        _t(
-                            "SELECT pid"
-                            " FROM pg_stat_activity"
-                            " WHERE datname = current_database()"
-                            "   AND state = 'idle in transaction'"
-                            "   AND pid <> pg_backend_pid()"
-                            "   AND now() - state_change > make_interval(secs => :sec)"
-                        ),
-                        {"sec": _LEAK_IDLE_SECONDS},
-                    )
-                ).fetchall()
-                if not rows:
-                    continue
-                pids = [r[0] for r in rows]
-                for pid in pids:
-                    await conn.execute(
-                        _t("SELECT pg_terminate_backend(:p)"), {"p": pid}
-                    )
-                await conn.commit()
-                log.warning(
-                    f"🧹 连接泄漏看门狗：回收了 {len(pids)} 条卡死连接"
-                    f"（idle in transaction > {_LEAK_IDLE_SECONDS}s）：{pids}"
-                )
+            await _db_sweep_once(_LEAK_IDLE_SECONDS)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001 - 看门狗自身绝不能拖垮服务
