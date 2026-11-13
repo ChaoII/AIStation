@@ -1055,6 +1055,13 @@
           </el-table>
         </el-card>
       </el-tab-pane>
+      <!-- 问答治理：体检与治理包（原在问数设置里，按「维护在数据与集成、评估在治理」的分区搬到这里） -->
+      <el-tab-pane label="问答体检" name="query-audit" lazy>
+        <QueryAuditPanel />
+      </el-tab-pane>
+      <el-tab-pane label="治理包" name="bundle" lazy>
+        <GovernanceBundlePanel />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 权限策略编辑 -->
@@ -1779,12 +1786,25 @@ import {
   getAccessStats,
 } from "@/api/module_ai/query";
 import { UserAPI } from "@/api/module_system/user";
+import { useRoute } from "vue-router";
+
+import GovernanceBundlePanel from "@/views/module_ai/governance/components/GovernanceBundlePanel.vue";
+import QueryAuditPanel from "@/views/module_ai/governance/components/QueryAuditPanel.vue";
 
 defineOptions({ name: "GovernancePanel" });
 
 const { t } = useI18n();
 
-const tab = ref("overview");
+// 允许外部（问数设置）用 /ai/governance?tab=query-audit 直达具体页签
+const route = useRoute();
+const _TAB_ALIAS: Record<string, string> = {
+  audit: "query-audit",
+  "query-audit": "query-audit",
+  bundle: "bundle",
+};
+const _initTab = _TAB_ALIAS[String(route.query.tab || "")];
+
+const tab = ref(_initTab || "overview");
 
 const policyRows = ref<any[]>([]);
 const policySearch = ref("");

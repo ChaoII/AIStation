@@ -558,8 +558,8 @@
           <el-button size="small" @click="openPromptRules">生成规则</el-button>
           <el-button size="small" @click="openEntityMap">实体映射</el-button>
           <el-button size="small" @click="openLanguageRules">语言规则</el-button>
-          <el-button size="small" @click="openAudit">指标体检</el-button>
-          <el-button size="small" @click="govVisible = true">治理导入导出</el-button>
+          <el-button size="small" @click="goGovernance('query-audit')">治理体检</el-button>
+          <el-button size="small" @click="goGovernance('bundle')">治理包</el-button>
           <el-button size="small" @click="mapVisible = true">配置地图</el-button>
         </div>
         <div v-for="g in visibleGroups" :key="g.name" class="q-set__group">
@@ -686,189 +686,6 @@
         <el-button @click="entVisible = false">取消</el-button>
         <el-button :loading="entSaving" @click="resetEntityMap">恢复默认</el-button>
         <el-button type="primary" :loading="entSaving" @click="saveEntityMap">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 治理导入导出：别名/描述/术语 打包，换环境不用手点 -->
-    <el-dialog
-      v-model="govVisible"
-      title="治理导入导出（别名/描述/术语）"
-      width="900px"
-      append-to-body
-    >
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        title="导出是可读 JSON；导入先「预演」再「应用」。应用只更新包里有值的字段，不会清空其它内容。"
-        class="q-fb-tip"
-      />
-      <div class="q-rules__bar">
-        <el-button size="small" type="primary" :loading="govExporting" @click="exportGovernance">
-          导出当前数据源治理包
-        </el-button>
-        <span class="q-rules__hint" style="margin-left: 8px">
-          数据源：{{ currentDs() || "ds:6" }}
-        </span>
-      </div>
-      <el-input
-        v-model="govText"
-        type="textarea"
-        :rows="10"
-        placeholder="把导出的 JSON 粘贴到这里（或选择文件）"
-      />
-      <div class="q-rules__bar">
-        <input type="file" accept=".json" class="q-gov__file" @change="onGovFile" />
-        <el-button size="small" :loading="govLoading" @click="previewGovernance">预演</el-button>
-        <el-button size="small" type="primary" :loading="govLoading" @click="applyGovernance">
-          应用
-        </el-button>
-      </div>
-      <div v-if="govResult" class="q-gov__result">
-        <el-descriptions :column="3" size="small" border>
-          <el-descriptions-item label="资产别名/描述">
-            新增 {{ govResult.assets?.add || 0 }} / 更新 {{ govResult.assets?.update || 0 }}
-          </el-descriptions-item>
-          <el-descriptions-item label="本体别名">
-            新增 {{ govResult.ontology_aliases?.add || 0 }} / 更新
-            {{ govResult.ontology_aliases?.update || 0 }}
-          </el-descriptions-item>
-          <el-descriptions-item label="术语">
-            新增 {{ govResult.terms?.add || 0 }} / 更新 {{ govResult.terms?.update || 0 }}
-          </el-descriptions-item>
-          <el-descriptions-item label="未知表/对象">
-            {{
-              (govResult.unknown_tables?.length || 0) +
-              (govResult.ontology_aliases?.unknown_codes?.length || 0)
-            }}
-          </el-descriptions-item>
-          <el-descriptions-item label="重复行（同名不同大小写）">
-            {{ govResult.assets?.duplicates || 0 }}
-          </el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag v-if="govResult.applied" type="success" size="small">已应用</el-tag>
-            <el-tag v-else type="info" size="small">仅预演</el-tag>
-          </el-descriptions-item>
-        </el-descriptions>
-        <div v-if="govResult.applied" class="q-rules__hint">已应用，下一句问数立即生效。</div>
-      </div>
-      <template #footer>
-        <el-button @click="govVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 治理体检：可疑指标 / 抢答题 / 悬空引用（只读发现，处置走指标页与各语义页） -->
-    <el-dialog v-model="auditVisible" title="治理体检" width="1000px" append-to-body>
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        :title="`共 ${auditStats.total_metrics || 0} 个启用指标，扫描 ${auditStats.total_cases || 0} 道题；可疑 ${auditStats.suspect || 0} 个，抢答 ${auditStats.hijacking || 0} 条，悬空引用 ${auditStats.dangling_total || 0} 条。停用只关开关，不改口径。`"
-        class="q-fb-tip"
-      />
-      <div class="q-rules__bar">
-        <span class="q-rules__hint">扫描范围</span>
-        <el-select
-          v-model="auditDataset"
-          size="small"
-          placeholder="全部题库"
-          style="width: 200px"
-          @change="openAudit"
-        >
-          <el-option label="全部题库" value="" />
-          <el-option
-            v-for="d in auditStats.datasets_scanned || []"
-            :key="d"
-            :label="d || '未标注数据集'"
-            :value="d"
-          />
-        </el-select>
-        <span class="q-rules__hint" style="margin-left: 8px">
-          数据集：{{ (auditStats.datasets_scanned || []).filter(Boolean).join("、") || "—" }}
-        </span>
-      </div>
-      <el-tabs v-model="auditTab">
-        <el-tab-pane label="可疑指标" name="metrics">
-          <el-table
-            v-loading="auditLoading"
-            :data="auditRows"
-            border
-            stripe
-            size="small"
-            max-height="420"
-          >
-            <el-table-column prop="name" label="指标名" min-width="220" show-overflow-tooltip />
-            <el-table-column
-              prop="table"
-              label="绑定表/对象"
-              min-width="170"
-              show-overflow-tooltip
-            />
-            <el-table-column label="问题" min-width="190">
-              <template #default="{ row }">
-                <el-tag
-                  v-for="r in row.reasons"
-                  :key="r"
-                  size="small"
-                  type="warning"
-                  effect="plain"
-                  style="margin-right: 4px"
-                >
-                  {{ r }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="抢答" width="80" align="center">
-              <template #default="{ row }">{{ row.questions?.length || 0 }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="140" align="center">
-              <template #default="{ row }">
-                <el-button
-                  link
-                  type="danger"
-                  size="small"
-                  :loading="row._saving"
-                  @click="toggleMetric(row)"
-                >
-                  停用
-                </el-button>
-                <el-button link type="primary" size="small" @click="goConfig('/ai/integration')">
-                  去改名
-                </el-button>
-              </template>
-            </el-table-column>
-            <template #empty>
-              <el-empty :image-size="60" description="没有可疑指标" />
-            </template>
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane :label="`悬空引用 (${auditStats.dangling_total || 0})`" name="dangling">
-          <el-table
-            v-loading="auditLoading"
-            :data="auditDangling"
-            border
-            stripe
-            size="small"
-            max-height="420"
-          >
-            <el-table-column label="类型" width="130">
-              <template #default="{ row }">
-                <el-tag size="small" type="danger" effect="plain">
-                  {{ auditKindLabel(row.kind) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="ref" label="引用" min-width="200" show-overflow-tooltip />
-            <el-table-column prop="detail" label="说明" min-width="260" show-overflow-tooltip />
-            <el-table-column prop="fix" label="怎么处理" min-width="220" show-overflow-tooltip />
-            <template #empty>
-              <el-empty :image-size="60" description="没有悬空引用" />
-            </template>
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
-      <template #footer>
-        <el-button @click="auditVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -1275,8 +1092,6 @@ import {
   getEntityMap,
   getQueryAssets,
   getLanguageRules,
-  getGovernanceExport,
-  getMetricsAudit,
   getQueryFewshots,
   getQueryMessages,
   getQuerySessions,
@@ -1291,8 +1106,6 @@ import {
   runQueryReport,
   saveQueryReport,
   saveQuerySetting,
-  importGovernance,
-  setMetricEnabled,
   startEvalRun,
   streamQuery,
   recallProbe,
@@ -1955,154 +1768,6 @@ async function resetEntityMap() {
   }
 }
 
-// ---- 治理导入导出 ----
-const govVisible = ref(false);
-const govText = ref("");
-const govLoading = ref(false);
-const govExporting = ref(false);
-const govResult = ref<any>(null);
-
-async function exportGovernance() {
-  govExporting.value = true;
-  try {
-    const ds = currentDs() || "ds:6";
-    const r = await getGovernanceExport({ datasource: ds });
-    const bundle = r.data?.data || {};
-    const text = JSON.stringify(bundle, null, 2);
-    govText.value = text;
-    const blob = new Blob([text], { type: "application/json;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `governance-${ds.replace(":", "_")}-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    ElMessage.success("已导出");
-  } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "导出失败");
-  } finally {
-    govExporting.value = false;
-  }
-}
-
-function onGovFile(ev: Event) {
-  const input = ev.target as HTMLInputElement;
-  const f = input.files?.[0];
-  if (!f) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    govText.value = String(reader.result || "");
-  };
-  reader.readAsText(f, "utf-8");
-}
-
-async function previewGovernance() {
-  govLoading.value = true;
-  try {
-    const bundle = JSON.parse(govText.value || "{}");
-    const r = await importGovernance({
-      data: bundle,
-      apply: false,
-      datasource: currentDs() || "ds:6",
-    });
-    govResult.value = r.data?.data || {};
-  } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "预演失败（检查 JSON 格式）");
-  } finally {
-    govLoading.value = false;
-  }
-}
-
-async function applyGovernance() {
-  try {
-    await ElMessageBox.confirm(
-      "将按上面的包更新别名/描述/术语（只更新有值的字段，不会删除其它内容）。确认应用？",
-      "应用治理包",
-      { type: "warning", confirmButtonText: "应用", cancelButtonText: "取消" }
-    );
-  } catch {
-    return;
-  }
-  govLoading.value = true;
-  try {
-    const bundle = JSON.parse(govText.value || "{}");
-    const r = await importGovernance({
-      data: bundle,
-      apply: true,
-      datasource: currentDs() || "ds:6",
-    });
-    govResult.value = r.data?.data || {};
-    ElMessage.success("已应用");
-  } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "应用失败");
-  } finally {
-    govLoading.value = false;
-  }
-}
-
-// ---- 指标体检（脏指标/抢答题）----
-const auditVisible = ref(false);
-const auditLoading = ref(false);
-const auditRows = ref<any[]>([]);
-const auditDangling = ref<any[]>([]);
-const auditStats = ref<any>({});
-const auditDataset = ref("");
-const auditTab = ref("metrics");
-
-const AUDIT_KIND_LABELS: Record<string, string> = {
-  metric_object: "指标→本体对象",
-  metric_table: "指标→表",
-  entity_map: "实体映射→表",
-  ontology_table: "本体对象→表",
-  term_field: "术语→字段",
-};
-
-function auditKindLabel(kind: string) {
-  return AUDIT_KIND_LABELS[kind] || kind;
-}
-
-async function openAudit() {
-  auditVisible.value = true;
-  auditLoading.value = true;
-  try {
-    const ds = currentDs() || "ds:6";
-    const r = await getMetricsAudit({
-      datasource: ds,
-      top: 200,
-      dataset: auditDataset.value || undefined,
-    });
-    const d = r.data?.data || {};
-    auditStats.value = d;
-    auditRows.value = (d.items || []).map((x: any) => ({ ...x, _saving: false }));
-    auditDangling.value = d.dangling || [];
-  } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "加载指标体检失败");
-  } finally {
-    auditLoading.value = false;
-  }
-}
-
-async function toggleMetric(row: any) {
-  try {
-    await ElMessageBox.confirm(
-      `将停用指标「${row.name}」。停用后该指标不再参与快路径，可随时在指标页重新启用。`,
-      "停用指标",
-      { type: "warning", confirmButtonText: "停用", cancelButtonText: "取消" }
-    );
-  } catch {
-    return;
-  }
-  row._saving = true;
-  try {
-    await setMetricEnabled({ key: row.key, enabled: false });
-    ElMessage.success("已停用");
-    await openAudit();
-  } catch (e: any) {
-    ElMessage.error(e?.data?.msg || e?.msg || "停用失败");
-  } finally {
-    row._saving = false;
-  }
-}
-
 // ---- 语言规则（词表可配）：改说法不用发版 ----
 const langVisible = ref(false);
 const langLoading = ref(false);
@@ -2254,7 +1919,7 @@ const configMap = [
   },
   {
     what: "别名/描述/术语（批量）",
-    where: "问数设置 → 治理导入导出",
+    where: "治理 → 治理包",
     when: "几百张表要一次性维护，或者把 dev 调好的配置搬到生产",
     path: "",
   },
@@ -2331,6 +1996,11 @@ const configMap = [
     path: "",
   },
 ];
+
+/** 跳到「治理」页的指定页签（问数这里的质检/治理包已迁过去，只留入口） */
+function goGovernance(tab: string) {
+  router.push({ path: "/ai/governance", query: { tab } });
+}
 
 function goConfig(path: string) {
   mapVisible.value = false;
@@ -3094,12 +2764,6 @@ const visibleGroups = computed(() => {
   color: var(--el-text-color-regular);
   font-size: 12px;
   line-height: 1.6;
-}
-.q-gov__result {
-  margin-top: 10px;
-}
-.q-gov__file {
-  font-size: 12px;
 }
 .q-ent {
   max-height: 56vh;

@@ -263,15 +263,15 @@ export function getPromptRules() {
 }
 // ---- 治理包（别名/描述/术语）导入导出 ----
 export function getGovernanceExport(params: { datasource?: string }) {
-  return request({ url: `${API_PATH}/governance/export`, method: "get", params });
+  return request({ url: `${API_PATH}/governance/export`, method: "get", params, timeout: 60000 });
 }
 export function importGovernance(data: { data: any; apply?: boolean; datasource?: string }) {
-  return request({ url: `${API_PATH}/governance/import`, method: "post", data });
+  return request({ url: `${API_PATH}/governance/import`, method: "post", data, timeout: 60000 });
 }
 
 // ---- 指标体检（脏指标/抢答题清单 + 启停）----
 export function getMetricsAudit(params: { datasource?: string; top?: number; dataset?: string }) {
-  return request({ url: `${API_PATH}/metrics/audit`, method: "get", params });
+  return request({ url: `${API_PATH}/metrics/audit`, method: "get", params, timeout: 60000 });
 }
 export function setMetricEnabled(data: { key: string; enabled: boolean }) {
   return request({ url: `${API_PATH}/metrics/enabled`, method: "post", data });

@@ -128,6 +128,80 @@ async def _terms(datasource: str) -> list[dict]:
         return []
 
 
+def _prepare_metrics(metrics: list[dict], aliases: dict) -> list[tuple]:
+    """把「匹配所需的字面证据」预先算一次（名字/描述词集合、核心词、key、表别名）。
+
+    体检要跑 200 题；每题重算 157 个指标的词集合纯属浪费（实测 2 秒）。
+    这里只在体检开头算一遍，`match_metric` 的入参仍是原样的指标 dict。
+    """
+    from . import metric_rules as M
+
+    out: list[tuple] = []
+    for m in metrics:
+        name = str(m.get("name") or "").lower()
+        desc = str(m.get("description") or "").lower()
+        key = str(m.get("key") or "").lower()
+        core = M.metric_name_core(m.get("name") or "").lower()
+        tbl = M.metric_main_table(m) or str(m.get("object_code") or "")
+        als = (aliases.get(tbl) or aliases.get(tbl.upper()) or []) if tbl else []
+        if isinstance(als, str):
+            als = [als]
+        out.append((
+            m,
+            M.bigrams(name) | M.bigrams(desc),
+            core,
+            key,
+            [str(a).lower() for a in als if a],
+        ))
+    return out
+
+
+def _candidates(question: str, prepared: list[tuple]) -> list[dict]:
+    """体检用的**保守预筛**：只留下「字面上可能命中」的指标，再交给 `match_metric`。
+
+    为什么需要：体检是 200 题 × 157 指标，全量逐条比较约 7 秒（点开要等 10 秒）。
+    `match_metric` 的命中必须有词证据（名字/描述 bigram、核心词、key 或绑定表别名
+    出现在问句里），所以按同一套证据先滤一遍是**超集**，结果不变
+    （已用 200 题逐题比对：0 差异）。
+
+    注意：这是体检的加速，**不改线上问数链路**。
+    """
+    from . import metric_rules as M
+
+    q = (question or "").lower()
+    q_grams = M.bigrams(question)
+    out: list[dict] = []
+    for m, grams, core, key, als in prepared:
+        if q_grams & grams:
+            out.append(m)
+            continue
+        if core and len(core) >= 2 and core in q:
+            out.append(m)
+            continue
+        if key and key in q:
+            out.append(m)
+            continue
+        if als and any(a in q for a in als):
+            out.append(m)
+    return out
+
+
+async def _terms(datasource: str) -> list[dict]:
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session_fresh as async_db_session
+
+    try:
+        async with async_db_session() as db:
+            rows = (await db.execute(text(
+                "SELECT term, COALESCE(field_path,'') FROM ai_query_dictionary "
+                "WHERE is_deleted=false AND datasource=:d"
+            ), {"d": datasource})).fetchall()
+        return [{"term": str(t or ""), "field_path": str(f or "")} for t, f in rows]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 async def _dangling(datasource: str, metrics: list[dict]) -> list[dict]:
     """悬空引用：引用目标在资产目录/本体里找不到。"""
     from . import metric_rules as M
@@ -224,9 +298,11 @@ async def audit_metrics(
 
     hits: dict[str, list[str]] = {}
     matched = 0
+    prepared = _prepare_metrics(metrics, aliases)
     for c in cases:
         q = c["question"]
-        got = M.match_metric(q, metrics, [], [], {}, table_alias=aliases)
+        got = M.match_metric(q, _candidates(q, prepared), [], [], {},
+                             table_alias=aliases)
         if not got:
             continue
         matched += 1

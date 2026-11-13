@@ -1008,8 +1008,8 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 | 时间口径（周起始 / 月份） | **数据源**业务口径 | `ai_query_datasources.filter_rules.time` |
 | 问句语言规则（计数/物理量/排序/列举/全量 的词表与开关） | 设置（界面「语言规则」+ 试一句预览） | `ai_query_settings.query_language_rules` |
 | 指标护栏参数（兄弟限定词 / 最小别名长度） | 设置（界面「语言规则 → 指标护栏」） | `ai_query_settings.metric_guard_rules` |
-| 脏指标/抢答题/**悬空引用**的发现与停用 | 设置（界面「治理体检」，扫该数据源全部题库；抢答 = 命中指标且快路径准入不拦、但金标查的表不是该指标绑定的表） | `GET /metrics/audit` + `POST /metrics/enabled` |
-| 别名/描述/术语的批量维护与跨环境迁移 | 设置（界面「治理导入导出」：导出 JSON → 预演 → 应用） | `GET /governance/export`、`POST /governance/import` |
+| 脏指标/抢答题/**悬空引用**的发现与停用 | 治理页「问答体检」（扫该数据源全部题库；抢答 = 命中指标且快路径准入不拦、但金标查的表不是该指标绑定的表） | `GET /metrics/audit` + `POST /metrics/enabled` |
+| 别名/描述/术语的批量维护与跨环境迁移 | 治理页「治理包」（导出 JSON → 预演 → 应用） | `GET /governance/export`、`POST /governance/import` |
 | 数值阈值 / 开关 | 设置 | `ai_query_settings` |
 | 权限（表/行/列/模块） | 策略 | `ai_policy*` |
 

@@ -41,8 +41,18 @@ _TESTRESULT_DDL = (
 )
 
 
-async def ensure_eval_tables() -> None:
-    """建评测三张表（幂等）。"""
+#: 建表/建索引每进程只做一次。每次 `list_cases` 都跑 DDL 会拿 ACCESS EXCLUSIVE 锁：
+#: 只要别的会话（例如被强杀的评测进程）留下 idle-in-transaction，请求就会**卡几分钟**
+#: —— 实测体检接口被卡 793~1077 秒，就是 CREATE INDEX 在等锁。
+_ENSURED = False
+
+
+async def ensure_eval_tables(force: bool = False) -> None:
+    """建评测三张表（幂等）。默认每进程只跑一次；需要强制重建时传 ``force=True``。"""
+    global _ENSURED
+    if _ENSURED and not force:
+        return
+
     from sqlalchemy import text as _t
 
     from .ddl_dialect import ddl_for_dialect
@@ -60,6 +70,8 @@ async def ensure_eval_tables() -> None:
         )
         # S1：既有库补 `dataset` 列（方言无关；SQLite 不支持 ADD COLUMN IF NOT EXISTS）
         await _ensure_column(db, "ai_query_testcase", "dataset", "VARCHAR(64) DEFAULT ''")
+
+    _ENSURED = True
 
 
 async def _ensure_column(db, table: str, col: str, ddl: str) -> None:
