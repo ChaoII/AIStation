@@ -449,6 +449,7 @@
         <AgentSurface
           :key="`app-${detail.id}`"
           :transport="surfaceTransport"
+          :title="detail.name || t('ai_workflow.app_runDebug')"
           :session-id="''"
           theme="light"
           palette="paper"
