@@ -27,7 +27,9 @@ export interface SurfaceMapCtx {
 export function newSurfaceCtx(messageId: string): SurfaceMapCtx {
   return {
     messageId,
-    runId: `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    // 用随机后缀而不是纯时间戳：AgentSurface 会把 run.started.messageId 当作消息 id，
+    // 同一毫秒两次发送会撞 id（实测两轮气泡合并）。
+    runId: `run-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     seq: 0,
     finished: false,
   };
@@ -115,15 +117,18 @@ export function mapAgnoFrame(event: string, data: any, ctx: SurfaceMapCtx): Agen
 }
 
 /** 流被中断（没收到 RunCompleted/RunError）时，必须补一个收尾事件，否则消息永远停在 streaming */
-export function flushSurfaceRun(ctx: SurfaceMapCtx, status: "stopped" | "done" = "stopped"): AgentEvent[] {
+export function flushSurfaceRun(
+  ctx: SurfaceMapCtx,
+  status: "stopped" | "done" = "stopped"
+): AgentEvent[] {
   if (ctx.finished) return [];
   ctx.finished = true;
   return [{ type: "run.done", status }];
 }
 
 export interface AgnoSurfaceTransportOptions {
-  /** 相对 base 的路径，如 `/ai/assistant/stream` 或 `/ai/agents/3/run/stream` */
-  path: string;
+  /** 相对 base 的路径；需要随页面状态变化时传函数（如 `/ai/apps/{id}/run/stream`） */
+  path: string | (() => string);
   /** 每次请求动态构造的 body（会话 id、模型、知识库等） */
   buildBody?: () => Record<string, unknown>;
   /** 历史消息（`{role, parts}` 形式），后端要用它做多轮上下文 */
@@ -162,7 +167,8 @@ export class AgnoSurfaceTransport implements AgentTransport {
       ...(this.opts.buildBody?.() || {}),
     };
 
-    const resp = await fetch(`${base}${this.opts.path}`, {
+    const path = typeof this.opts.path === "function" ? this.opts.path() : this.opts.path;
+    const resp = await fetch(`${base}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -176,7 +182,7 @@ export class AgnoSurfaceTransport implements AgentTransport {
       throw new Error(`请求失败（${resp.status}）`);
     }
 
-    const ctx = newSurfaceCtx(`msg-${Date.now()}`);
+    const ctx = newSurfaceCtx(`msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";

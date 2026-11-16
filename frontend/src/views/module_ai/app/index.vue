@@ -444,7 +444,22 @@
       </el-descriptions>
 
       <el-divider content-position="left">{{ t("ai_workflow.app_runDebug") }}</el-divider>
-      <div class="app-run">
+      <!-- 新对话界面（灰度）：同 agent/app 的 agno 事件流；旧版是单条文本输出 -->
+      <div v-if="surfaceOn" class="app-run app-run--surface">
+        <AgentSurface
+          :key="`app-${detail.id}`"
+          :transport="surfaceTransport"
+          :session-id="''"
+          theme="light"
+          palette="paper"
+          locale="zh-CN"
+          :show-reasoning="true"
+          :show-tool-calls="true"
+          @feedback="onSurfaceFeedback"
+          @error="onSurfaceError"
+        />
+      </div>
+      <div v-else class="app-run">
         <div class="app-run__input">
           <el-input
             v-model="runQuery"
@@ -474,6 +489,10 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Auth } from "@/utils/auth";
 import { readAgnoFrames } from "@/composables/ai/agnoSse";
+import { AgentSurface } from "agent-surface";
+import "agent-surface/style.css";
+import { AgnoSurfaceTransport } from "@/composables/ai/surface/agnoSurfaceTransport";
+import { surfaceEnabled } from "@/composables/ai/surface/useSurfaceFlag";
 import { Delete, Plus, ArrowDown } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import PageSearch from "@/components/CURD/PageSearch.vue";
@@ -899,6 +918,23 @@ async function doCopy(row: any) {
   } catch {
     ElMessage.error(t("ai_workflow.app_copyFail"));
   }
+}
+
+// ---- 新对话界面（灰度开关）----
+const surfaceOn = surfaceEnabled();
+const surfaceTransport = new AgnoSurfaceTransport({
+  path: () => `/ai/apps/${detail.value?.id ?? 0}/run/stream`,
+});
+
+function onSurfaceFeedback(p: { messageId: string; value: "up" | "down" | "" }) {
+  try {
+    localStorage.setItem(`ws_msg_like_${p.messageId}`, p.value === "up" ? "1" : "0");
+  } catch {
+    /* 忽略 */
+  }
+}
+function onSurfaceError(msg: string) {
+  if (msg) ElMessage.error(msg);
 }
 
 const runQuery = ref("");
