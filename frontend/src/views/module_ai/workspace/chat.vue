@@ -87,21 +87,40 @@
         </div>
       </div>
       <ChatShell :scroll="false">
-        <ChatOutline
-          :items="outlineItems"
-          container=".chat-messages"
-          :title="t('ai_chat.chatOutline_title')"
+        <!-- 新对话界面（灰度）：agent/app 走 agno 事件；workflow 是 UI 帧协议，暂不切 -->
+        <AgentSurface
+          v-if="surfaceOn"
+          :key="`s-${currentSessionId || 'new'}`"
+          :transport="surfaceTransport"
+          :session-id="currentSessionId ? String(currentSessionId) : ''"
+          :initial-messages="surfaceMessages"
+          :title="assistantName"
+          subtitle=""
+          theme="light"
+          palette="paper"
+          locale="zh-CN"
+          :show-reasoning="true"
+          :show-tool-calls="true"
+          @feedback="onSurfaceFeedback"
+          @error="onSurfaceError"
         />
-        <ChatMessages
-          ref="msgRef"
-          :messages="chat.messages.value"
-          :error="chat.error.value || ''"
-          :is-streaming="chat.isStreaming.value"
-          :assistant-name="assistantName"
-          @prompt-click="onPrompt"
-          @resend="onSend"
-        />
-        <template #footer>
+        <template v-else>
+          <ChatOutline
+            :items="outlineItems"
+            container=".chat-messages"
+            :title="t('ai_chat.chatOutline_title')"
+          />
+          <ChatMessages
+            ref="msgRef"
+            :messages="chat.messages.value"
+            :error="chat.error.value || ''"
+            :is-streaming="chat.isStreaming.value"
+            :assistant-name="assistantName"
+            @prompt-click="onPrompt"
+            @resend="onSend"
+          />
+        </template>
+        <template v-if="!surfaceOn" #footer>
           <ChatInput
             :disabled="chat.isStreaming.value"
             :sending="chat.isStreaming.value"
@@ -143,6 +162,11 @@ import { getAiWorkflowDetail } from "@/api/module_ai/workflow";
 import { getAiAppList } from "@/api/module_ai/app";
 import { useAiChat } from "@/composables/ai/useAiChat";
 import { textOf } from "@/composables/ai/uiMessage";
+import { AgentSurface } from "agent-surface";
+import "agent-surface/style.css";
+import { AgnoSurfaceTransport } from "@/composables/ai/surface/agnoSurfaceTransport";
+import { toChatMessages } from "@/composables/ai/surface/messageMap";
+import { surfaceEnabled } from "@/composables/ai/surface/useSurfaceFlag";
 
 defineOptions({ name: "AiWorkspaceChat" });
 
@@ -229,6 +253,33 @@ const chat = useAiChat({
   id: currentSessionId,
   initialMessages,
 });
+
+// ---- 新对话界面（灰度）：仅 agent/app；workflow 仍走旧 UI（UI 帧 + HITL）----
+const surfaceOn = surfaceEnabled() && (kind === "agent" || kind === "app");
+
+const surfaceTransport = new AgnoSurfaceTransport({
+  path: pathMap[kind] || pathMap.agent,
+  buildBody: () => ({
+    session_id: currentSessionId.value,
+    model_id: chatModelId.value,
+    thinking: chatThinking.value,
+  }),
+});
+
+/** 历史消息（UIMessage）→ ChatMessage[]，切会话时由 :key 重建 */
+const surfaceMessages = computed(() => toChatMessages(initialMessages.value as any));
+
+function onSurfaceFeedback(p: { messageId: string; value: "up" | "down" | "" }) {
+  try {
+    localStorage.setItem(`ws_msg_like_${p.messageId}`, p.value === "up" ? "1" : "0");
+  } catch {
+    /* 忽略 */
+  }
+}
+
+function onSurfaceError(msg: string) {
+  if (msg) ElMessage.error(msg);
+}
 
 async function loadSessions() {
   const res: any = await getAiSessionList({ app_id: assetId });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildAgnoBody,
   flushSurfaceRun,
   mapAgnoFrame,
   newSurfaceCtx,
@@ -84,5 +85,21 @@ describe("agno → AgentEvent 映射", () => {
     const c = ctx();
     mapAgnoFrame("RunCompleted", {}, c);
     expect(flushSurfaceRun(c)).toEqual([]);
+  });
+});
+
+
+describe("请求体契约", () => {
+  it("按后端要求发 messages[{role,parts}]，并拼上历史", () => {
+    const body: any = buildAgnoBody(
+      { kind: "message", text: "你好" },
+      [{ role: "assistant", parts: [{ type: "text", text: "在" }] }]
+    );
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[1]).toEqual({
+      role: "user",
+      parts: [{ type: "text", text: "你好" }],
+    });
+    expect(body.message).toBeUndefined();
   });
 });

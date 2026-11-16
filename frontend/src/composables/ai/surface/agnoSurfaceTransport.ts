@@ -126,8 +126,28 @@ export interface AgnoSurfaceTransportOptions {
   path: string;
   /** 每次请求动态构造的 body（会话 id、模型、知识库等） */
   buildBody?: () => Record<string, unknown>;
+  /** 历史消息（`{role, parts}` 形式），后端要用它做多轮上下文 */
+  buildMessages?: () => Array<Record<string, unknown>>;
   /** 额外请求头 */
   headers?: () => Record<string, string>;
+}
+
+/** 把 surface 的发送输入转成 AIStation 后端的 `messages` 契约
+ *
+ * 后端（`/assistant/stream`、`/agents/{id}/run/stream`、`/apps/{id}/run/stream`）
+ * 都要 `messages: [{role, parts:[{type:"text", text}]}]`；
+ * 早先按 `{message: text}` 发送会被判「输入不能为空」——实测踩过。
+ */
+export function buildAgnoBody(
+  input: SendInput,
+  history: Array<Record<string, unknown>> = []
+): Record<string, unknown> {
+  const text =
+    input.kind === "message"
+      ? input.text
+      : String((input as Record<string, unknown>).displayText ?? "");
+  const userMsg = { role: "user", parts: [{ type: "text", text }] };
+  return { messages: [...history, userMsg] };
 }
 
 /** 把 agno SSE 端点包成 AgentSurface 可消费的 transport */
@@ -137,10 +157,10 @@ export class AgnoSurfaceTransport implements AgentTransport {
   async *stream(input: SendInput, runOpts?: { signal?: AbortSignal }): AsyncGenerator<AgentEvent> {
     const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
     const token = Auth.getAccessToken();
-    const body =
-      input.kind === "message"
-        ? { message: input.text, ...(this.opts.buildBody?.() || {}) }
-        : { ...(input as Record<string, unknown>), ...(this.opts.buildBody?.() || {}) };
+    const body = {
+      ...buildAgnoBody(input, this.opts.buildMessages?.() || []),
+      ...(this.opts.buildBody?.() || {}),
+    };
 
     const resp = await fetch(`${base}${this.opts.path}`, {
       method: "POST",
