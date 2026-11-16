@@ -1021,6 +1021,27 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 
 **盘点**：`docs/query-semantics-home.md`（哪些已可配、哪些还在代码里、迁移顺序）。
 
+## AI 对话界面（agent-surface，2026-11-16）
+
+- **四个入口**可切新外壳：悬浮助手、工作空间对话（agent/app）、应用详情「运行调试」、智能问数。
+  **工作流编排画布与 embed 外链页不换**（前者是编排器 + HITL 专有帧，后者协议特殊）。
+- **灰度开关**：浏览器 `localStorage.ai_chat_surface = 'surface'`（或 URL `?surface=1`），刷新生效；
+  回退删掉该键即可（旧组件原样保留）。悬浮助手还需 `aiEnabled=true`（默认关）。
+- **适配层**在 `frontend/src/composables/ai/surface/`：
+  - `agnoSurfaceTransport.ts`：agno 事件 → `AgentEvent`；用库给的 `opts.messages` 拼历史；
+  - `querySurfaceTransport.ts`：`/ai/query/ask/stream` → text + **surface 节点**；`result.message_id`
+    到达后补一个 `run.started` 把消息 id 对齐后端（feedback 才能对上库里的消息）；
+  - `messageMap.ts`：`UIMessage ↔ ChatMessage`（source/data part 丢弃不报错）；
+  - `querySurface.ts`：SQL/表格/路径标签/耗时/0 行空态/错误条（行兼容对象与数组两种）。
+- **依赖必须用 `link:`**：`"agent-surface": "link:../../AgentSurface/packages/agent-surface"`。
+  `file:` 会被 pnpm 复制进 store，重建 dist 不会生效（实测踩过）。
+  改库源码后 `npm --prefix D:/AgentSurface/packages/agent-surface run build` 即生效（link 指向源目录）。
+- **请求体契约**：`/assistant/stream`、`/agents/{id}/run/stream`、`/apps/{id}/run/stream` 都要
+  `messages:[{role, parts:[{type:"text",text}]}]`；`/assistant/chat`（非流式）是 `message`。
+  发错字段会得到「输入不能为空」。
+- **组件已知行为**：`run.started` 会**覆盖**消息 id（我们发随机后缀避免撞车）；feedback 的 `messageId`
+  就是 `run.started` 给的那个 id；surface part 无法回放成 UIMessage（历史以原消息存库）。
+
 ## AI 管理模块（v2，进行中）
 
 - 位置：后端 `backend/app/plugin/module_ai/`（自动发现，容器前缀 `/ai`）；前端 `frontend/src/views/module_ai/`。

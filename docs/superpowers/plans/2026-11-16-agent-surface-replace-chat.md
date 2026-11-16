@@ -1,5 +1,8 @@
 # 用 AgentSurface 替换对话界面 · 实施计划
 
+> 状态（2026-11-16）：任务 1~8 已完成并逐项验证；任务 9 的自动化验收（金路径/后端冒烟）通过，
+> 文档已更新（AGENTS + 用户手册）。工作流编辑器与 embed 按设计不在范围。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把 AIStation 的对话界面（悬浮助手、工作空间、应用、智能问数）统一换成 `agent-surface` 组件，保留后端协议与数据链路。
