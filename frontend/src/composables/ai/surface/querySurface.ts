@@ -22,11 +22,13 @@ export interface QuerySurfaceInput {
 
 function toCells(row: unknown, columns: string[]): Record<string, string | number | null> {
   const out: Record<string, string | number | null> = {};
+  // 行可能是对象（{列名: 值}）也可能是数组（[值, 值]）——后端两条路径都出现过
+  const isArr = Array.isArray(row);
   const r = (row || {}) as Record<string, unknown>;
-  for (const c of columns) {
-    const v = r[c];
+  columns.forEach((c, i) => {
+    const v = isArr ? (row as unknown[])[i] : r[c];
     out[c] = v == null ? null : typeof v === "number" ? v : String(v);
-  }
+  });
   return out;
 }
 
@@ -43,12 +45,13 @@ export function buildQuerySurface(msg: QuerySurfaceInput): SurfaceNode[] {
   }
 
   const rows = Array.isArray(msg.rows) ? msg.rows : [];
+  const first = rows[0];
   const columns =
     msg.columns && msg.columns.length
       ? msg.columns
-      : rows.length
-        ? Object.keys((rows[0] || {}) as Record<string, unknown>)
-        : [];
+      : first && !Array.isArray(first)
+        ? Object.keys(first as Record<string, unknown>)
+        : (first as unknown[] | undefined)?.map((_, i) => `列${i + 1}`) || [];
 
   if (rows.length && columns.length) {
     nodes.push({
@@ -59,7 +62,12 @@ export function buildQuerySurface(msg: QuerySurfaceInput): SurfaceNode[] {
     });
   } else if (msg.sql) {
     // 有 SQL 没行：明确告诉用户「查到了但没数据」，别给空白
-    nodes.push({ type: "callout", tone: "info", title: "查询成功", text: "没有匹配的数据（0 行）" });
+    nodes.push({
+      type: "callout",
+      tone: "info",
+      title: "查询成功",
+      text: "没有匹配的数据（0 行）",
+    });
   }
 
   if (msg.path === "fast" && msg.metric?.name) {

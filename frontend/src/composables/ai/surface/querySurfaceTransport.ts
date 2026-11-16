@@ -8,7 +8,13 @@
  * **改成后端 id**——这样组件发出的 `feedback.messageId` 能直接对上库里那条消息
  * （库的协议文档明确：run.started 给的 id 就是 feedback 的 id）。
  */
-import type { AgentEvent, AgentStreamOptions, AgentTransport, SendInput, SurfaceNode } from "agent-surface";
+import type {
+  AgentEvent,
+  AgentStreamOptions,
+  AgentTransport,
+  SendInput,
+  SurfaceNode,
+} from "agent-surface";
 
 import { Auth } from "@/utils/auth";
 import { parseAgnoFrame } from "../agnoChatTransport";
@@ -37,8 +43,18 @@ function actionRow(): SurfaceNode {
     gap: "sm",
     children: [
       { type: "button", label: "执行详情", action: { kind: "event", value: "trace" } },
-      { type: "button", label: "存为报表", action: { kind: "event", value: "report" }, variant: "secondary" },
-      { type: "button", label: "沉淀指标", action: { kind: "event", value: "promote" }, variant: "secondary" },
+      {
+        type: "button",
+        label: "存为报表",
+        action: { kind: "event", value: "report" },
+        variant: "secondary",
+      },
+      {
+        type: "button",
+        label: "沉淀指标",
+        action: { kind: "event", value: "promote" },
+        variant: "secondary",
+      },
     ],
   };
 }
@@ -67,7 +83,8 @@ export function mapAskFrame(type: string, data: any, ctx: QueryMapCtx): AgentEve
           id: String(data?.id ?? data?.tool_call_id ?? `tool-${data?.name ?? "sql"}`),
           status: type === "tool_error" ? "error" : "done",
           result: data?.result,
-          error: type === "tool_error" ? String(data?.message ?? data?.error ?? "工具失败") : undefined,
+          error:
+            type === "tool_error" ? String(data?.message ?? data?.error ?? "工具失败") : undefined,
         },
       ];
     case "result": {
@@ -92,7 +109,12 @@ export function mapAskFrame(type: string, data: any, ctx: QueryMapCtx): AgentEve
     }
     case "clarify": {
       const q = data?.clarify?.question || data?.clarify?.text || "需要补充信息";
-      return [{ type: "surface", node: { type: "callout", tone: "info", title: "需要补充", text: String(q) } }];
+      return [
+        {
+          type: "surface",
+          node: { type: "callout", tone: "info", title: "需要补充", text: String(q) },
+        },
+      ];
     }
     case "error":
       ctx.finished = true;
@@ -117,6 +139,8 @@ export interface QuerySurfaceTransportOptions {
   path?: string;
   /** 每次请求动态构造（question 之外的字段：datasource / session_id / object_code） */
   buildBody?: () => Record<string, unknown>;
+  /** 拿到 result 时回调（页面用它开「执行详情 / 存报表 / 沉淀指标」） */
+  onResult?: (data: Record<string, any>) => void;
 }
 
 export class QuerySurfaceTransport implements AgentTransport {
@@ -125,7 +149,8 @@ export class QuerySurfaceTransport implements AgentTransport {
   async *stream(input: SendInput, runOpts?: AgentStreamOptions): AsyncGenerator<AgentEvent> {
     const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
     const token = Auth.getAccessToken();
-    const question = input.kind === "message" ? input.text : String((input as any).displayText ?? "");
+    const question =
+      input.kind === "message" ? input.text : String((input as any).displayText ?? "");
     const body = { question, ...(this.opts.buildBody?.() || {}) };
 
     const resp = await fetch(`${base}${this.opts.path || "/ai/query/ask/stream"}`, {
@@ -154,6 +179,7 @@ export class QuerySurfaceTransport implements AgentTransport {
           buffer = buffer.slice(idx + 2);
           const frame = parseAgnoFrame(raw);
           if (frame) {
+            if (frame.event === "result" && frame.data) this.opts.onResult?.(frame.data);
             for (const ev of mapAskFrame(frame.event, frame.data, ctx)) yield ev;
             if (ctx.finished) return;
           }

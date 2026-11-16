@@ -100,7 +100,25 @@
               container=".chat-shell__body"
               :title="t('ai_chat.chatOutline_title')"
             />
-            <div class="q-chat__scroll">
+            <AgentSurface
+              v-if="surfaceOn"
+              :key="`q-${sessionId || 'new'}`"
+              :transport="surfaceTransport"
+              :session-id="sessionId ? String(sessionId) : ''"
+              :initial-messages="surfaceHistory"
+              :title="t('ai_logs.assistant')"
+              subtitle=""
+              theme="light"
+              palette="paper"
+              locale="zh-CN"
+              :show-reasoning="true"
+              :show-tool-calls="true"
+              :virtualize="false"
+              @action="onSurfaceAction"
+              @feedback="onSurfaceFeedback"
+              @error="onSurfaceError"
+            />
+            <div v-else class="q-chat__scroll">
               <el-alert
                 v-if="objectCode"
                 class="q-tip"
@@ -272,7 +290,7 @@
                     <span v-if="m.cached" class="q-msg__src">{{ t("ai_logs.cacheHit") }}</span>
                   </template>
 
-                  <template #footer>
+                  <template v-if="!surfaceOn" #footer>
                     <div v-if="m.id" class="q-msg__fb">
                       <el-button v-if="m.sql || m.took_ms" link size="small" @click="openTrace(m)">
                         {{ t("ai_logs.traceTitle") }}
@@ -323,7 +341,7 @@
               </div>
             </div>
 
-            <template #footer>
+            <template v-if="!surfaceOn" #footer>
               <div class="q-chat__composer">
                 <div class="q-composer">
                   <el-input
@@ -1131,6 +1149,12 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import ChatShell from "@/components/chat/ChatShell.vue";
+import { AgentSurface } from "agent-surface";
+import "agent-surface/style.css";
+import type { ChatMessage as SurfaceMessage } from "agent-surface";
+import { QuerySurfaceTransport } from "@/composables/ai/surface/querySurfaceTransport";
+import { buildQuerySurface } from "@/composables/ai/surface/querySurface";
+import { surfaceEnabled } from "@/composables/ai/surface/useSurfaceFlag";
 import ChatMessage from "@/components/chat/ChatMessage.vue";
 import CodeBlock from "@/components/chat/CodeBlock.vue";
 import ChatOutline from "@/components/chat/ChatOutline.vue";
@@ -1175,6 +1199,77 @@ const router = useRouter();
 const route = useRoute();
 
 const sessions = ref<any[]>([]);
+// ---- 新对话界面（灰度）：问数结果转 surface（SQL/表格/标签/耗时）----
+const surfaceOn = surfaceEnabled();
+let surfaceLastResult: any = null;
+
+const surfaceTransport = new QuerySurfaceTransport({
+  buildBody: () => ({
+    datasource: currentDs() || "ds:6",
+    session_id: sessionId.value ?? undefined,
+  }),
+  onResult: (d) => {
+    surfaceLastResult = d;
+  },
+});
+
+/** 当前会话的轮次 → AgentSurface 的历史消息（surface 承载 SQL/结果表） */
+const surfaceHistory = computed<SurfaceMessage[]>(() => {
+  const out: SurfaceMessage[] = [];
+  (messages.value || []).forEach((m: any, i: number) => {
+    out.push({
+      id: `u-${i}`,
+      role: "user",
+      createdAt: 0,
+      status: "done",
+      parts: [{ id: `u-${i}-t`, type: "text", text: String(m.question || "") }],
+    });
+    const parts: any[] = [];
+    buildQuerySurface({
+      sql: m.sql,
+      rows: m.rows,
+      columns: m.columns,
+      path: m.path,
+      metric: m.metric,
+      took_ms: m.took_ms,
+      error: m.is_error ? m.summary || "查询失败" : undefined,
+    }).forEach((node, j) => {
+      parts.push({ id: `a-${i}-${j}`, type: "surface", node, surfaceStatus: "pending" });
+    });
+    if (m.summary) parts.push({ id: `a-${i}-s`, type: "text", text: String(m.summary) });
+    out.push({
+      id: m.id ? String(m.id) : `a-${i}`,
+      role: "assistant",
+      createdAt: 0,
+      status: "done",
+      parts,
+    });
+  });
+  return out;
+});
+
+/** surface 里的按钮（执行详情 / 存报表 / 沉淀指标）→ 原有逻辑 */
+function onSurfaceAction(p: { label: string; value?: string }) {
+  if (!surfaceLastResult) return;
+  const msg: any = { ...surfaceLastResult, id: surfaceLastResult.message_id };
+  if (p.value === "trace") openTrace(msg);
+  else if (p.value === "report") openSaveReport(msg);
+  else if (p.value === "promote") openPromote(msg);
+}
+
+function onSurfaceFeedback(p: { messageId: string; value: "up" | "down" | "" }) {
+  try {
+    localStorage.setItem(`q_msg_fb_${p.messageId}`, p.value);
+  } catch {
+    /* 忽略 */
+  }
+  if (p.value) ElMessage.success("已记录反馈");
+}
+
+function onSurfaceError(msg: string) {
+  if (msg) ElMessage.error(msg);
+}
+
 const messages = ref<any[]>([]);
 
 const datasources = ref<any[]>([]);
