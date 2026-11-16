@@ -89,6 +89,7 @@
     "@vueuse/core": "^13.5.0",
     "@wangeditor-next/editor": "^5.6.49",
     "@wangeditor-next/editor-for-vue": "^5.1.14",
+    "agent-surface": "file:..\\..\\AgentSurface\\packages\\agent-surface",
     "ai": "^7.0.99",
     "animate.css": "^4.1.1",
     "axios": "^1.10.0",
