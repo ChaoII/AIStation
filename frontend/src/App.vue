@@ -10,7 +10,8 @@
       <router-view />
 
       <!-- AI 助手 -->
-      <AiAssistant v-if="enableAiAssistant" />
+      <SurfaceAssistant v-if="enableAiAssistant && surfaceOn" />
+      <AiAssistant v-else-if="enableAiAssistant" />
     </el-watermark>
   </el-config-provider>
 </template>
@@ -21,6 +22,11 @@ import { defaultSettings } from "@/settings";
 import { ThemeMode } from "@/enums/settings/theme.enum";
 import { ComponentSize } from "@/enums/settings/layout.enum";
 import AiAssistant from "@/components/AiAssistant/index.vue";
+import SurfaceAssistant from "@/components/AiAssistant/SurfaceAssistant.vue";
+import { surfaceEnabled } from "@/composables/ai/surface/useSurfaceFlag";
+
+// 对话界面灰度：浏览器级开关（localStorage `ai_chat_surface=surface` 或 ?surface=1）
+const surfaceOn = surfaceEnabled();
 
 const appStore = useAppStore();
 const settingsStore = useSettingsStore();
