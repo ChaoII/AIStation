@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildAgnoBody,
+  chatMessagesToBackend,
   flushSurfaceRun,
   mapAgnoFrame,
   newSurfaceCtx,
@@ -18,9 +19,7 @@ describe("agno → AgentEvent 映射", () => {
     expect(mapAgnoFrame("RunContent", { content: "你好" }, c)).toEqual([
       { type: "text.delta", text: "你好" },
     ]);
-    expect(mapAgnoFrame("RunCompleted", {}, c)).toEqual([
-      { type: "run.done", status: "done" },
-    ]);
+    expect(mapAgnoFrame("RunCompleted", {}, c)).toEqual([{ type: "run.done", status: "done" }]);
     expect(c.finished).toBe(true);
   });
 
@@ -33,7 +32,7 @@ describe("agno → AgentEvent 映射", () => {
     const out = mapAgnoFrame(
       "ToolCallStarted",
       { tool: { tool_name: "run_sql", tool_args: { q: "1" } } },
-      ctx(),
+      ctx()
     );
     expect(out).toHaveLength(1);
     const ev: any = out[0];
@@ -49,7 +48,7 @@ describe("agno → AgentEvent 映射", () => {
     const ok = mapAgnoFrame(
       "ToolCallCompleted",
       { tool: { tool_name: "run_sql", result: { rows: 1 } } },
-      c,
+      c
     );
     expect(ok).toEqual([
       { type: "tool.end", id: expect.any(String), status: "done", result: { rows: 1 } },
@@ -60,7 +59,7 @@ describe("agno → AgentEvent 映射", () => {
     const bad = mapAgnoFrame(
       "ToolCallCompleted",
       { tool: { tool_name: "run_sql", result: { success: false, error: "权限不足" } } },
-      c2,
+      c2
     );
     expect(bad).toEqual([
       { type: "tool.end", id: expect.any(String), status: "error", error: "权限不足" },
@@ -88,18 +87,52 @@ describe("agno → AgentEvent 映射", () => {
   });
 });
 
-
 describe("请求体契约", () => {
   it("按后端要求发 messages[{role,parts}]，并拼上历史", () => {
-    const body: any = buildAgnoBody(
-      { kind: "message", text: "你好" },
-      [{ role: "assistant", parts: [{ type: "text", text: "在" }] }]
-    );
+    const body: any = buildAgnoBody({ kind: "message", text: "你好" }, [
+      { role: "assistant", parts: [{ type: "text", text: "在" }] },
+    ]);
     expect(body.messages).toHaveLength(2);
     expect(body.messages[1]).toEqual({
       role: "user",
       parts: [{ type: "text", text: "你好" }],
     });
     expect(body.message).toBeUndefined();
+  });
+});
+
+describe("历史快照（库的 opts.messages）", () => {
+  it("只保留对话文本，丢掉思考与工具轨迹", () => {
+    const history = chatMessagesToBackend([
+      {
+        id: "a",
+        role: "assistant",
+        createdAt: 0,
+        status: "done",
+        parts: [
+          { id: "r", type: "reasoning", text: "想", status: "done" },
+          { id: "t", type: "text", text: "答案" },
+          { id: "x", type: "tool", name: "run_sql", status: "done" },
+        ],
+      } as any,
+      {
+        id: "u",
+        role: "user",
+        createdAt: 0,
+        status: "done",
+        parts: [{ id: "u1", type: "text", text: "问题" }],
+      } as any,
+      {
+        id: "s",
+        role: "system",
+        createdAt: 0,
+        status: "done",
+        parts: [{ id: "s1", type: "text", text: "系统" }],
+      } as any,
+    ]);
+    expect(history).toEqual([
+      { role: "assistant", parts: [{ type: "text", text: "答案" }] },
+      { role: "user", parts: [{ type: "text", text: "问题" }] },
+    ]);
   });
 });

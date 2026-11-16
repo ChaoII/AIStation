@@ -7,7 +7,13 @@
  *
  * 原则：这里只做转发，不写业务；反馈/存报表等由页面接 `feedback`/`action` 事件。
  */
-import type { AgentEvent, AgentTransport, SendInput } from "agent-surface";
+import type {
+  AgentEvent,
+  AgentStreamOptions,
+  AgentTransport,
+  ChatMessage,
+  SendInput,
+} from "agent-surface";
 
 import { Auth } from "@/utils/auth";
 import { parseAgnoFrame } from "../agnoChatTransport";
@@ -137,6 +143,24 @@ export interface AgnoSurfaceTransportOptions {
   headers?: () => Record<string, string>;
 }
 
+/** ChatMessage[] → 后端 `messages`（只保留对话文本；思考与工具轨迹不属于上下文） */
+export function chatMessagesToBackend(
+  messages: ChatMessage[] = []
+): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const m of messages) {
+    if (m.role === "system") continue;
+    const text = (m.parts || [])
+      .filter((p) => p.type === "text")
+      .map((p) => (p as { text?: string }).text || "")
+      .join("\n")
+      .trim();
+    if (!text) continue;
+    out.push({ role: m.role, parts: [{ type: "text", text }] });
+  }
+  return out;
+}
+
 /** 把 surface 的发送输入转成 AIStation 后端的 `messages` 契约
  *
  * 后端（`/assistant/stream`、`/agents/{id}/run/stream`、`/apps/{id}/run/stream`）
@@ -159,11 +183,15 @@ export function buildAgnoBody(
 export class AgnoSurfaceTransport implements AgentTransport {
   constructor(private readonly opts: AgnoSurfaceTransportOptions) {}
 
-  async *stream(input: SendInput, runOpts?: { signal?: AbortSignal }): AsyncGenerator<AgentEvent> {
+  async *stream(input: SendInput, runOpts?: AgentStreamOptions): AsyncGenerator<AgentEvent> {
     const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
     const token = Auth.getAccessToken();
+    // 历史优先用库给的 `opts.messages`（2026-11-16 起）；老版本/自建调用可回落到 buildMessages
+    const history = runOpts?.messages?.length
+      ? chatMessagesToBackend(runOpts.messages)
+      : this.opts.buildMessages?.() || [];
     const body = {
-      ...buildAgnoBody(input, this.opts.buildMessages?.() || []),
+      ...buildAgnoBody(input, history),
       ...(this.opts.buildBody?.() || {}),
     };
 
